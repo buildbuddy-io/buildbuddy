@@ -95,6 +95,7 @@ var (
 
 		// Audit logs.
 		buildBuddyServicePrefix + "GetAuditLogs",
+		buildBuddyServicePrefix + "GetAgentSecurityEvents",
 
 		// Sending notifications requires the SEND_NOTIFICATION capability.
 		// It's checked by the RPC handler.

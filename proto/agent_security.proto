@@ -34,15 +34,9 @@ message SecretRedactionEvent {
 }
 
 message AgentSecurityEvent {
-  string secret_name = 1;
-  ProtectionLayer protection_layer = 2;
-  AgentProvider provider = 3;
-  RedactionSurface surface = 4;
+  repeated string secret_names = 1;
   string invocation_id = 5;
-  string agent_session_id = 6;
-  google.protobuf.Timestamp first_seen = 7;
   google.protobuf.Timestamp last_seen = 8;
-  int64 occurrence_count = 9;
 }
 
 message GetAgentSecurityEventsRequest {

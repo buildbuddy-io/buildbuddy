@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,19 +42,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
+	aspb "github.com/buildbuddy-io/buildbuddy/proto/agent_security"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bzpb "github.com/buildbuddy-io/buildbuddy/proto/bazel_config"
@@ -2697,6 +2702,104 @@ func (s *BuildBuddyServer) GetAuditLogs(ctx context.Context, request *alpb.GetAu
 		return nil, status.UnimplementedError("Audit logger not configured")
 	}
 	return al.GetLogs(ctx, request)
+}
+
+func (s *BuildBuddyServer) GetAgentSecurityEvents(ctx context.Context, request *aspb.GetAgentSecurityEventsRequest) (*aspb.GetAgentSecurityEventsResponse, error) {
+	dbh := s.env.GetOLAPDBHandle()
+	if dbh == nil {
+		return nil, status.FailedPreconditionError("agent security events require an OLAP database")
+	}
+	user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	caps, err := capabilities.ForAuthenticatedUser(ctx, s.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) && !slices.Contains(caps, cappb.Capability_AUDIT_LOG_READ) {
+		return nil, status.PermissionDeniedError("missing required capabilities")
+	}
+
+	pageSize := int64(request.GetPageSize())
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	after := time.Now().Add(-7 * 24 * time.Hour)
+	if request.GetTimestampAfter() != nil {
+		if err := request.GetTimestampAfter().CheckValid(); err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid start time: %s", err)
+		}
+		after = request.GetTimestampAfter().AsTime()
+	}
+	before := time.Now()
+	if request.GetTimestampBefore() != nil {
+		if err := request.GetTimestampBefore().CheckValid(); err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid end time: %s", err)
+		}
+		before = request.GetTimestampBefore().AsTime()
+	}
+	if after.After(before) {
+		return nil, status.InvalidArgumentError("start time must not be after end time")
+	}
+
+	qb := query_builder.NewQuery(`
+		SELECT
+			invocation_id,
+			arraySort(groupUniqArray(secret_name)) AS secret_names,
+			max(event_time_usec) AS last_seen_usec
+		FROM AgentSecurityEvents
+	`)
+	qb.AddWhereClause("group_id = ?", user.GetGroupID())
+	qb.AddWhereClause("event_time_usec >= ?", after.UnixMicro())
+	qb.AddWhereClause("event_time_usec <= ?", before.UnixMicro())
+	if request.GetInvocationId() != "" {
+		qb.AddWhereClause("invocation_id = ?", request.GetInvocationId())
+	}
+	if request.GetAgentSessionId() != "" {
+		qb.AddWhereClause("agent_session_id = ?", request.GetAgentSessionId())
+	}
+	qb.SetGroupBy("invocation_id")
+	innerQuery, innerArgs := qb.Build()
+
+	outerQuery := query_builder.NewQueryWithArgs("SELECT * FROM ("+innerQuery+")", innerArgs)
+	if request.GetPageToken() != "" {
+		lastSeenUsec, err := strconv.ParseInt(request.GetPageToken(), 10, 64)
+		if err != nil {
+			return nil, status.InvalidArgumentError("invalid page token")
+		}
+		outerQuery.AddWhereClause("last_seen_usec <= ?", lastSeenUsec)
+	}
+	outerQuery.SetOrderBy("last_seen_usec", false)
+	outerQuery.SetLimit(pageSize + 1)
+	query, args := outerQuery.Build()
+
+	type eventRow struct {
+		InvocationID string
+		SecretNames  []string `gorm:"type:Array(String);"`
+		LastSeenUsec int64
+	}
+	response := &aspb.GetAgentSecurityEventsResponse{}
+	rq := dbh.NewQuery(ctx, "agent_security_get_events").Raw(query, args...)
+	err = db.ScanEach(rq, func(ctx context.Context, row *eventRow) error {
+		if int64(len(response.Events)) == pageSize {
+			response.NextPageToken = strconv.FormatInt(row.LastSeenUsec, 10)
+			return nil
+		}
+		response.Events = append(response.Events, &aspb.AgentSecurityEvent{
+			SecretNames:  row.SecretNames,
+			InvocationId: row.InvocationID,
+			LastSeen:     timestamppb.New(time.UnixMicro(row.LastSeenUsec)),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 func (s *BuildBuddyServer) CreateRepo(ctx context.Context, request *rppb.CreateRepoRequest) (*rppb.CreateRepoResponse, error) {
