@@ -99,6 +99,9 @@ var (
 	restrictMultiGroupToEnterprise = flag.Bool("app.restrict_multi_group_to_enterprise", false, "If true, only enterprise accounts can create multiple organizations.", flag.Internal)
 )
 
+// When enabled, propagates "blocked" status across users/groups.
+const propagateGroupBlocksExperiment = "app.propagate_group_blocks"
+
 const (
 	bytestreamProtocolPrefix  = "bytestream://"
 	actioncacheProtocolPrefix = "actioncache://"
@@ -567,6 +570,38 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
 
+func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp interfaces.ExperimentFlagProvider, u interfaces.UserInfo) (*tables.User, error) {
+	if efp == nil || !efp.Boolean(ctx, propagateGroupBlocksExperiment, false /*=default*/) {
+		return nil, nil
+	}
+
+	if u.GetUserID() == "" {
+		// Org-level API keys have no user, so the key's own group is the only
+		// membership that matters. Its status is already on the claims.
+		if u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS {
+			return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
+		}
+		return nil, nil
+	}
+
+	user, err := userDB.GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// No memberships means a new signup creating their first org.
+	blocked := len(user.Groups) > 0
+	for _, gr := range user.Groups {
+		if gr.Group.Status != grpb.Group_BLOCKED_GROUP_STATUS {
+			blocked = false
+			break
+		}
+	}
+	if blocked {
+		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
+	}
+	return user, nil
+}
+
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
@@ -585,18 +620,25 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		return nil, status.InvalidArgumentError("Group name cannot be empty")
 	}
 
+	user, err := createGroupAllowed(ctx, userDB, s.env.GetExperimentFlagProvider(), u)
+	if err != nil {
+		return nil, err
+	}
+
 	groupOwnedDomain := ""
 	// Groups created by a user via the UI can have "auto-join by domain"
 	// enabled for low-friction onboarding. Groups created using an API key
 	// are intended to be managed manually so we do not currently allow
 	// joining by domain.
 	if req.GetAutoPopulateFromOwnedDomain() && u.GetUserID() != "" {
-		user, err := userDB.GetUser(ctx)
-		if err != nil {
-			return nil, err
+		// createGroupAllowed only looks the user up when it needs to.
+		if user == nil {
+			user, err = userDB.GetUser(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
-		userEmailDomain := getEmailDomain(user.Email)
-		groupOwnedDomain = userEmailDomain
+		groupOwnedDomain = getEmailDomain(user.Email)
 	}
 
 	group := &tables.Group{
