@@ -1655,6 +1655,12 @@ message Tree {
   string uri = 2;
 }
 
+// A runtime file dependency and its metadata.
+message Runfile {
+  File file = 1;
+  bool is_executable = 2;
+}
+
 // Event describing the runtime properties of a runnable target.
 message RunTargetAnalyzed {
   // Default arguments configured for the target, typically in the BUILD file.
@@ -1663,11 +1669,13 @@ message RunTargetAnalyzed {
   // Path to the root of the runfiles directory.
   string runfiles_root = 2;
   // Any runtime file dependencies for the runnable target.
-  repeated File runfiles = 3;
+  repeated Runfile runfile_entries = 6;
   // Any runtime directory dependencies for the runnable target.
   repeated Tree runfileDirectories = 4;
   // Workspace-relative path to the executable selected by `bazel run`.
   string executable_path = 5;
+
+  repeated File runfiles = 3 [deprecated = true];
 }
 
 // Event reporting stats about the git fetches performed by a remote runner
