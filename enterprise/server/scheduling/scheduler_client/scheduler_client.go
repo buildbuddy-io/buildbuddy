@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
@@ -54,6 +56,13 @@ const (
 	// maxLabels labels.
 	maxLabels   = 20
 	maxLabelLen = 50
+)
+
+var (
+	// Caching for parsed command-line flags, to avoid racing against config
+	// reparsing logic in config.go.
+	registerReloadHookOnce sync.Once
+	configuredFlagsCache   atomic.Pointer[[]string]
 )
 
 // Options provide overrides for executor registration properties.
@@ -389,6 +398,9 @@ func (r *Registration) nodeWithStats() *scpb.ExecutionNode {
 	n := proto.Clone(r.node).(*scpb.ExecutionNode)
 	n.CurrentQueueLength = int32(r.taskScheduler.QueueLength())
 	n.ActiveActionCount = int32(r.taskScheduler.ActiveTaskCount())
+	if flags := configuredFlagsCache.Load(); flags != nil {
+		n.ConfiguredFlags = *flags
+	}
 	return n
 }
 
@@ -433,6 +445,11 @@ func (r *Registration) watchRunState(rootContext context.Context) {
 	}
 }
 
+func refreshConfiguredFlags() {
+	flags := redact.GetConfiguredFlags()
+	configuredFlagsCache.Store(&flags)
+}
+
 // NewRegistration creates a handle to maintain registration with a scheduler server.
 // The registration is not initiated until Start is called on the returned handle.
 func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler.PriorityTaskScheduler, executorID, executorHostID string, options *Options) (*Registration, error) {
@@ -450,6 +467,11 @@ func NewRegistration(env environment.Env, taskScheduler *priority_task_scheduler
 	if options.APIKeyOverride != "" {
 		apiKey = options.APIKeyOverride
 	}
+	// Register the config-reload hook and parse the current flags.
+	registerReloadHookOnce.Do(func() {
+		config.OnReload(refreshConfiguredFlags)
+	})
+	refreshConfiguredFlags()
 
 	shutdownSignal := make(chan struct{})
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {

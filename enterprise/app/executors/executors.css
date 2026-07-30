@@ -112,6 +112,11 @@
   gap: 8px;
 }
 
+.executors-page .executor-configured-flags {
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+
 .executors-page .pool-size-warning {
   margin-top: 16px;
   display: inline-flex;

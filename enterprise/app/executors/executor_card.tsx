@@ -124,6 +124,16 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Default:</div>
               <div>{this.props.isDefault ? "True" : "False"}</div>
             </div>
+            {this.props.node.configuredFlags.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Configuration:</div>
+                <div className="executor-configured-flags">
+                  {this.props.node.configuredFlags.map((f) => (
+                    <div key={f}>{f}</div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {this.props.lastCheckInTime && (
               <>

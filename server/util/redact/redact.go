@@ -1004,3 +1004,22 @@ func typeContainsSecrets(t reflect.Type, seen map[reflect.Type]bool) bool {
 	}
 	return false
 }
+
+// configuredFlags returns the flags this process was configured with (via
+// the command line or config file), in "--name=value" form. Flags left at
+// their default values are omitted, and the values of secret flags are
+// redacted.
+func GetConfiguredFlags() []string {
+	var flags []string
+	flag.CommandLine.VisitAll(func(flg *flag.Flag) {
+		value := flg.Value.String()
+		if value == flg.DefValue {
+			return
+		}
+		if IsSecret(flg) {
+			value = "<redacted>"
+		}
+		flags = append(flags, "--"+flg.Name+"="+value)
+	})
+	return flags
+}
