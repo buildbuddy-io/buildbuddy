@@ -106,9 +106,11 @@ message DeregisterResponse {}
 
 message ListRequest {}
 
-// Peer describes a single named peer currently registered with the gateway.
+// Peer describes a single peer currently registered with the gateway.
 message Peer {
-  // The name of this peer. Can be reached via "bb ssh <name>".
+  // The name of this peer. Can be reached via "bb ssh <name>". Empty for
+  // peers that registered without a name (e.g. transient bb ssh clients);
+  // those are reachable by IP only.
   string name = 1;
 
   // The IP address assigned to the peer within the tunnel.

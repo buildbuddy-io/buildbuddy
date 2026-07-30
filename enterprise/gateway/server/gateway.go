@@ -378,8 +378,9 @@ func (g *Gateway) Deregister(ctx context.Context, req *gwpb.DeregisterRequest) (
 	return &gwpb.DeregisterResponse{}, nil
 }
 
-// List returns the named peers ("boxes") currently registered by the caller's
-// group. Unnamed peers (e.g. transient bb ssh clients) are omitted.
+// List returns the peers currently registered by the caller's group. Every
+// Connect-registered peer has a session ID and is included, named or not;
+// peers from the deprecated Register RPC have no session ID and are omitted.
 func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListResponse, error) {
 	claims, err := g.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -398,7 +399,7 @@ func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListRe
 
 	peers := make([]*gwpb.Peer, 0)
 	for pubKeyHex, info := range g.peers {
-		if info.assignedName == "" {
+		if info.sessionID == "" {
 			continue
 		}
 		ns := info.networkState

@@ -275,18 +275,33 @@ func TestList(t *testing.T) {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	// A named peer shows up in List with its name and IP.
-	resp, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "box1", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
-	// An unnamed peer (e.g. a transient bb ssh client) must be omitted.
-	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t)})
+	// Connect-registered peers show up in List, named or not.
+	named, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-1",
+	})
+	startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-2",
+	})
+	// A peer registered via the deprecated Register RPC has no session ID
+	// and must be omitted.
+	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "legacy", PublicKey: newPubKeyHex(t)})
 	require.NoError(t, err)
 
 	list, err := gw.List(ctx, &gwpb.ListRequest{})
 	require.NoError(t, err)
-	require.Len(t, list.GetPeers(), 1)
-	require.Equal(t, "box1", list.GetPeers()[0].GetName())
-	require.Equal(t, resp.GetAssignedIp(), list.GetPeers()[0].GetIp())
+	require.Len(t, list.GetPeers(), 2)
+	bySession := make(map[string]*gwpb.Peer, len(list.GetPeers()))
+	for _, p := range list.GetPeers() {
+		bySession[p.GetSessionId()] = p
+	}
+	require.Equal(t, "box1", bySession["session-1"].GetName())
+	require.Equal(t, named.GetAssignedIp(), bySession["session-1"].GetIp())
+	require.Equal(t, "", bySession["session-2"].GetName())
 }
 
 func TestList_IsolatedByGroup(t *testing.T) {
@@ -301,8 +316,11 @@ func TestList_IsolatedByGroup(t *testing.T) {
 	ctx2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
 	require.NoError(t, err)
 
-	_, err = gw.Register(ctx1, &gwpb.RegisterRequest{PeerName: "box1", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
+	startConnect(t, gw, ctx1, &gwpb.ConnectRequest{
+		PeerName:  "box1",
+		PublicKey: newPubKeyHex(t),
+		SessionId: "session-1",
+	})
 
 	// group2 must not see group1's box, even on the same network name.
 	list, err := gw.List(ctx2, &gwpb.ListRequest{})
@@ -549,10 +567,12 @@ func TestConnect_UnnamedPeer(t *testing.T) {
 	})
 	require.NotEmpty(t, rsp.GetAssignedIp())
 
-	// Unnamed peers are omitted from List.
+	// Unnamed peers are still listed, identified by session ID.
 	list, err := gw.List(ctx, &gwpb.ListRequest{})
 	require.NoError(t, err)
-	require.Empty(t, list.GetPeers())
+	require.Len(t, list.GetPeers(), 1)
+	require.Equal(t, "", list.GetPeers()[0].GetName())
+	require.Equal(t, "session-1", list.GetPeers()[0].GetSessionId())
 
 	cancel()
 	require.NoError(t, <-done)
