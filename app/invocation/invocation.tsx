@@ -41,6 +41,7 @@ import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
 import QueryGraphCardComponent from "./invocation_query_graph_card";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
+import InvocationSecurityCardComponent from "./invocation_security_card";
 import SpawnCardComponent from "./invocation_spawn_card";
 import SuggestionCardComponent, { getSuggestions, hasSuggestionAboveInfo } from "./invocation_suggestion_card";
 import InvocationTabsComponent, { getActiveTab } from "./invocation_tabs";
@@ -652,6 +653,13 @@ export default class InvocationComponent extends React.Component<Props, State> {
 
           {(activeTab === "all" || activeTab === "log") && this.state.model.botSuggestions.length > 0 && (
             <InvocationBotCard suggestions={this.state.model.botSuggestions} />
+          )}
+
+          {activeTab === "all" && isRemoteRunnerInvocation && this.props.user?.isGroupAdmin() && (
+            <InvocationSecurityCardComponent
+              invocationId={this.props.invocationId}
+              invocationStartTime={this.state.model.getStartTimeDate()}
+            />
           )}
 
           {(activeTab === "all" || activeTab === "log") && (

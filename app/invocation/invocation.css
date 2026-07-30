@@ -1737,3 +1737,11 @@ svg.invocation-query-graph .nodes rect {
 .invocation-compare-button-container-mini .invocation-menu-button {
   border: none;
 }
+
+.agent-security-card > svg {
+  color: var(--color-status-success);
+}
+
+.agent-security-card .details {
+  margin-bottom: 12px;
+}

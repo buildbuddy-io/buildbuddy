@@ -8,6 +8,7 @@ import error_service from "../../../app/errors/error_service";
 import { formatDate } from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import * as proto from "../../../app/util/proto";
+import { agentsecurity } from "../../../proto/agent_security_ts_proto";
 import { auditlog } from "../../../proto/auditlog_ts_proto";
 import DateRangePickerButton from "../filter/date_range_picker_button";
 import { getEndDate, getStartDate } from "../filter/filter_util";
@@ -20,6 +21,7 @@ interface AuditLogsComponentProps {
 interface State {
   loading: boolean;
   entries: auditlog.Entry[];
+  securityEvents: agentsecurity.AgentSecurityEvent[];
   nextPageToken: string;
 }
 
@@ -27,18 +29,27 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
   state: State = {
     loading: false,
     entries: [],
+    securityEvents: [],
     nextPageToken: "",
   };
 
   componentDidMount() {
     document.title = "Audit logs | BuildBuddy";
-    this.fetchAuditLogs();
+    this.fetchActiveTab();
   }
 
   componentDidUpdate(prevProps: AuditLogsComponentProps) {
     if (prevProps.search.toString() !== this.props.search.toString()) {
-      this.setState({ nextPageToken: "" }, () => this.fetchAuditLogs());
+      this.setState({ nextPageToken: "", entries: [], securityEvents: [] }, () => this.fetchActiveTab());
     }
+  }
+
+  isAgentSecurityTab() {
+    return this.props.search.get("view") === "agent-security";
+  }
+
+  fetchActiveTab() {
+    return this.isAgentSecurityTab() ? this.fetchAgentSecurityEvents() : this.fetchAuditLogs();
   }
 
   async fetchAuditLogs() {
@@ -70,11 +81,44 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     }
   }
 
+  async fetchAgentSecurityEvents() {
+    const start = getStartDate(this.props.search);
+    const end = getEndDate(this.props.search) ?? startOfTomorrow();
+    const req = agentsecurity.GetAgentSecurityEventsRequest.create({
+      pageToken: this.state.nextPageToken,
+      timestampAfter: proto.dateToTimestamp(start),
+      timestampBefore: proto.dateToTimestamp(end),
+      invocationId: this.props.search.get("invocation_id") || "",
+    });
+    try {
+      const response = await rpcService.service.getAgentSecurityEvents(req);
+      this.setState((prevState) => ({
+        securityEvents: prevState.nextPageToken
+          ? prevState.securityEvents.concat(response.events)
+          : response.events,
+        nextPageToken: response.nextPageToken,
+      }));
+    } catch (e) {
+      error_service.handleError(e);
+    }
+  }
+
   onClickLoadMore() {
     this.setState({ loading: true });
-    this.fetchAuditLogs().then(() => {
+    this.fetchActiveTab().then(() => {
       this.setState({ loading: false });
     });
+  }
+
+  tabHref(view: "administrative" | "agent-security") {
+    const search = new URLSearchParams(this.props.search);
+    if (view === "agent-security") {
+      search.set("view", view);
+    } else {
+      search.delete("view");
+      search.delete("invocation_id");
+    }
+    return `?${search.toString()}`;
   }
 
   renderUser(authInfo: auditlog.AuthenticationInfo) {
@@ -209,7 +253,82 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
     return lines.slice(1, lines.length - 1).join("\n");
   }
 
+  renderAdministrativeLogs() {
+    return (
+      <div className="audit-logs">
+        {this.state.entries.length == 0 && (
+          <div className="empty-state">There are no audit logs in the specified time range.</div>
+        )}
+        {this.state.entries.length > 0 && (
+          <div className="audit-logs-table">
+            <div className="audit-logs-header">
+              <div className="timestamp">Time</div>
+              <div className="user">User</div>
+              <div className="resource">Resource</div>
+              <div className="method">Method</div>
+              <div className="request">Request</div>
+            </div>
+            {this.state.entries.map((entry) => (
+              <div className="audit-log-entry" key={String(entry.eventTime?.nanos) + entry.eventTime?.seconds}>
+                <div className="timestamp">{formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
+                <div className="user">{this.renderUser(entry.authenticationInfo!)}</div>
+                <div className="resource">{this.renderResource(entry.resource!)}</div>
+                <div className="method">{this.renderAction(entry.action)}</div>
+                <div className="request">
+                  <pre>{this.renderRequest(entry.request)}</pre>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  renderAgentSecurityEvents() {
+    return (
+      <div className="agent-security-events">
+        {this.props.search.get("invocation_id") && (
+          <div className="agent-security-filter">
+            Showing events for invocation <code>{this.props.search.get("invocation_id")}</code>
+          </div>
+        )}
+        {this.state.securityEvents.length == 0 && (
+          <div className="empty-state">No secret values were detected and redacted in the specified time range.</div>
+        )}
+        {this.state.securityEvents.length > 0 && (
+          <div className="agent-security-table">
+            <div className="agent-security-header">
+              <div>Last detected</div>
+              <div>Secrets detected</div>
+              <div>Invocation</div>
+            </div>
+            {this.state.securityEvents.map((event) => (
+              <div className="agent-security-entry" key={event.invocationId}>
+                <div>
+                  <div>{formatDate(proto.timestampToDate(event.lastSeen || {}))}</div>
+                </div>
+                <div>
+                  {event.secretNames.map((secretName) => (
+                    <code key={secretName}>{secretName}</code>
+                  ))}
+                </div>
+                <div>
+                  <a className="agent-security-invocation-link" href={`/invocation/${event.invocationId}`}>
+                    <span>Open invocation →</span>
+                    <code>{event.invocationId}</code>
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   render() {
+    const agentSecurityTab = this.isAgentSecurityTab();
     return (
       <div className="audit-logs-page">
         <div className="shelf">
@@ -221,37 +340,19 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
               <DateRangePickerButton search={this.props.search} />
             </div>
             <div className="title">Audit logs</div>
+            <div className="tabs">
+              <a className={`tab ${!agentSecurityTab ? "selected" : ""}`} href={this.tabHref("administrative")}>
+                Administrative
+              </a>
+              <a className={`tab ${agentSecurityTab ? "selected" : ""}`} href={this.tabHref("agent-security")}>
+                Agent security
+              </a>
+            </div>
           </div>
         </div>
         <div className="container">
-          <div className="audit-logs">
-            {this.state.entries.length == 0 && (
-              <div className="empty-state">There are no audit logs in the specified time range.</div>
-            )}
-            {this.state.entries.length > 0 && (
-              <div className="audit-logs-table">
-                <div className="audit-logs-header">
-                  <div className="timestamp">Time</div>
-                  <div className="user">User</div>
-                  <div className="resource">Resource</div>
-                  <div className="method">Method</div>
-                  <div className="request">Request</div>
-                </div>
-                {this.state.entries.map((entry) => {
-                  return (
-                    <div className="audit-log-entry">
-                      <div className="timestamp">{formatDate(proto.timestampToDate(entry.eventTime || {}))}</div>
-                      <div className="user">{this.renderUser(entry.authenticationInfo!)}</div>
-                      <div className="resource">{this.renderResource(entry.resource!)}</div>
-                      <div className="method">{this.renderAction(entry.action)}</div>
-                      <div className="request">
-                        <pre>{this.renderRequest(entry.request)}</pre>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          {agentSecurityTab ? this.renderAgentSecurityEvents() : this.renderAdministrativeLogs()}
+          <div className={agentSecurityTab ? "agent-security-events" : "audit-logs"}>
             {this.state.nextPageToken && (
               <Button
                 className="load-more-button"

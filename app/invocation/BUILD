@@ -39,6 +39,7 @@ ts_library(
         "//app/invocation:invocation_overview",
         "//app/invocation:invocation_query_graph_card",
         "//app/invocation:invocation_raw_logs_card",
+        "//app/invocation:invocation_security_card",
         "//app/invocation:invocation_spawn_card",
         "//app/invocation:invocation_suggestion_card",
         "//app/invocation:invocation_tabs",
@@ -573,6 +574,21 @@ ts_library(
         "//app/invocation:invocation_model",
         "//app/router",
         "//app/util:git",
+    ],
+)
+
+ts_library(
+    name = "invocation_security_card",
+    srcs = ["invocation_security_card.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/components/link",
+        "//app/service:rpc_service",
+        "//app/util:proto",
+        "//proto:agent_security_ts_proto",
     ],
 )
 
