@@ -31,7 +31,3 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 # Coding agents.
 RUN npm install -g @anthropic-ai/claude-code @openai/codex
 
-# bb CLI, unless the base image already provides one.
-RUN if ! command -v bb >/dev/null 2>&1; then \
-      curl -fsSL https://install.buildbuddy.io | bash; \
-    fi
