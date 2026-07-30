@@ -72,17 +72,8 @@ const (
 	// dockerReuse is treated as an alias for recycle-runner.
 	dockerReusePropertyName = "dockerReuse"
 
-	RunnerRecyclingKey                 = "runner-recycling-key"
-	RunnerRecyclingMaxWaitPropertyName = "runner-recycling-max-wait"
-
-	// DoNotRecycleMarkerFile, when created in the workspace root by an
-	// action, tells the executor not to recycle the runner or save a VM
-	// snapshot for it.
-	DoNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
-	// InvalidateSnapshotMarkerFile, when created in the workspace root by an
-	// action, invalidates the VM snapshot the action ran in. An action can
-	// write it if it detects that the snapshot it resumed from is corrupted.
-	InvalidateSnapshotMarkerFile             = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
+	RunnerRecyclingKey                       = "runner-recycling-key"
+	RunnerRecyclingMaxWaitPropertyName       = "runner-recycling-max-wait"
 	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
 	transientErrorExitCodes                  = "transient-error-exit-codes"
 	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"

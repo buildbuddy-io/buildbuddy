@@ -282,11 +282,11 @@ func handleCreate(args []string) (int, error) {
 			{Name: "BUILDBUDDY_API_KEY", Value: key},
 			{Name: "HOME", Value: "/home/buildbuddy"},
 			{Name: "USER", Value: "buildbuddy"},
-			// Tells bb ssh-server that it is running inside a remote action
-			// and where to write executor marker files (e.g. the
-			// do-not-recycle marker). /workspace is where the firecracker
-			// guest mounts the action workspace.
-			{Name: "BUILDBUDDY_WORKSPACE_ROOT", Value: "/workspace"},
+			// Tells bb ssh-server that it is running inside a remote
+			// action, where writing executor marker files (e.g. the
+			// do-not-recycle marker) to the working directory is
+			// meaningful.
+			{Name: "BUILDBUDDY_REMOTE_ACTION", Value: "1"},
 		},
 		Platform: plat,
 	}
@@ -498,7 +498,6 @@ func handleList(args []string) (int, error) {
 		rows = append(rows, []string{p.GetName(), p.GetIp(), p.GetSessionId(), lastHandshake})
 	}
 
-	// Plain output: content aligned with spaces only, no borders or styling.
 	cellStyle := lipgloss.NewStyle().Padding(0, 2, 0, 0)
 	t := table.New().
 		BorderTop(false).
@@ -509,7 +508,7 @@ func handleList(args []string) (int, error) {
 		BorderHeader(false).
 		Headers("NAME", "ADDRESS", "SESSION", "LAST HANDSHAKE").
 		Rows(rows...).
-		StyleFunc(func(row, col int) lipgloss.Style {
+		StyleFunc(func(_, _ int) lipgloss.Style {
 			return cellStyle
 		})
 	fmt.Println(t)

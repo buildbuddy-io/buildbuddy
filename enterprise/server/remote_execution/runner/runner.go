@@ -124,8 +124,13 @@ const (
 	// it should not be recycled, because it may cause failures if it's reused
 	maxRecyclableResourceUtilization = .99
 
-	doNotRecycleMarkerFile       = platform.DoNotRecycleMarkerFile
-	invalidateSnapshotMarkerFile = platform.InvalidateSnapshotMarkerFile
+	// Special file that actions can create in the workspace directory to
+	// prevent the runner from being recycled.
+	doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
+	// Special file that actions can create in the workspace directory to
+	// invalidate the snapshot the action was run in. This can be written
+	// if the action detects that the snapshot was corrupted upon startup.
+	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
 
 func GetBuildRoot() string {

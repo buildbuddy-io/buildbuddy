@@ -233,7 +233,10 @@ const (
 	// The max amount of time we'll wait for the balloon to expand to the target size.
 	maxUpdateBalloonDuration = 30 * time.Second
 
-	invalidateSnapshotMarkerFile = platform.InvalidateSnapshotMarkerFile
+	// Special file that actions can create in the workspace directory to
+	// invalidate the snapshot the action was run in. This can be written
+	// if the action detects that the snapshot was corrupted upon startup.
+	invalidateSnapshotMarkerFile = ".BUILDBUDDY_INVALIDATE_SNAPSHOT"
 )
 
 var (
@@ -3757,10 +3760,11 @@ func workspacePathsToExtract(task *repb.ExecutionTask) []string {
 		return []string{"/"}
 	}
 
-	// Special marker files that actions can create in the workspace root.
+	// Special files
+	// TODO: declare this list as a constant somewhere?
 	paths := []string{
-		platform.DoNotRecycleMarkerFile,
-		platform.InvalidateSnapshotMarkerFile,
+		".BUILDBUDDY_DO_NOT_RECYCLE",
+		".BUILDBUDDY_INVALIDATE_SNAPSHOT",
 	}
 
 	// Declared paths

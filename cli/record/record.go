@@ -147,7 +147,7 @@ func record(cmdArgs []string) (int, error) {
 	}
 	// Startup timing breadcrumb: how long BES setup delayed the child, and an
 	// absolute timestamp to correlate with executor/gateway logs.
-	log.Printf("record: started child in %s (t=%d)", time.Since(start), time.Now().UnixMilli())
+	log.Debugf("record: started child in %s (t=%d)", time.Since(start), time.Now().UnixMilli())
 
 	var wg sync.WaitGroup
 	wg.Add(2)

@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
@@ -60,23 +59,28 @@ var (
 	usage string
 )
 
-// workspaceRootEnvVar points at the remote action's workspace root. It is set
-// by `bb box create` on the action's environment (and inherited through bb
-// record), signaling both that we are running inside a remote action and
-// where executor marker files should be written.
-const workspaceRootEnvVar = "BUILDBUDDY_WORKSPACE_ROOT"
+// remoteActionEnvVar signals that this process is running inside a remote
+// action. It is set by `bb box create` on the action's environment (and
+// inherited through bb record).
+const remoteActionEnvVar = "BUILDBUDDY_REMOTE_ACTION"
+
+// doNotRecycleMarkerFile, when present in the workspace root, tells the
+// executor not to recycle the runner or save a VM snapshot for it. Mirrors
+// the constant in enterprise/server/remote_execution/runner.
+const doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
 
 // writeDoNotRecycleMarker writes the executor's do-not-recycle marker to the
-// remote action's workspace root, so the VM is neither recycled nor
-// snapshotted. No-op when running outside a remote action (workspace root
-// env var unset).
+// current working directory — which the executor guarantees is the workspace
+// root for remote actions — so the VM is neither recycled nor snapshotted.
+// No-op when running outside a remote action.
 func writeDoNotRecycleMarker() {
-	root := os.Getenv(workspaceRootEnvVar)
-	if root == "" {
+	if os.Getenv(remoteActionEnvVar) == "" {
 		return
 	}
-	path := filepath.Join(root, platform.DoNotRecycleMarkerFile)
-	if err := os.WriteFile(path, nil, 0644); err != nil {
+	// Log the absolute path so a violated workspace-root assumption is
+	// visible in the invocation log.
+	path, _ := filepath.Abs(doNotRecycleMarkerFile)
+	if err := os.WriteFile(doNotRecycleMarkerFile, nil, 0644); err != nil {
 		log.Warnf("write %s: %v", path, err)
 	} else {
 		log.Printf("Wrote %s", path)
@@ -292,9 +296,7 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 	log.Printf("Connected: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s name=%s session=%s",
 		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(), name, sid)
-	// Startup timing breadcrumb: process start -> gateway registration, plus
-	// an absolute timestamp to correlate with executor/gateway logs.
-	log.Printf("Registered with gateway %s after process start (t=%d)", time.Since(start), time.Now().UnixMilli())
+	registeredIn := time.Since(start)
 
 	// Bring up the userspace WireGuard tunnel.
 	assignedAddr := netip.MustParseAddr(rsp.GetAssignedIp())
@@ -367,7 +369,7 @@ func HandleSSHServer(args []string) (int, error) {
 		q.Set("name", name)
 	}
 	sshURL := &url.URL{Scheme: "bb-ssh", Host: hostPort, RawQuery: q.Encode()}
-	log.Printf("Listening on %s (startup took %s)", sshURL, time.Since(start))
+	log.Printf("Listening on %s (registered with gateway in %s, startup took %s)", sshURL, registeredIn, time.Since(start))
 	connectTarget := name
 	if connectTarget == "" {
 		connectTarget = rsp.GetAssignedIp()
