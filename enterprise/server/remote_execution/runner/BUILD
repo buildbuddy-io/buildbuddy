@@ -48,6 +48,7 @@ go_library(
         "//server/util/log",
         "//server/util/platform",
         "//server/util/proto",
+        "//server/util/shlex",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",
