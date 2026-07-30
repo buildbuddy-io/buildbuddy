@@ -543,7 +543,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			defer logsMu.Unlock()
 			serverLogs[name] = &repb.LogFile{
 				Digest:        d,
-				HumanReadable: true,
+				HumanReadable: !strings.HasSuffix(name, ".zst"),
 			}
 			return nil
 		})

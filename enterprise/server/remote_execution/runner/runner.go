@@ -561,6 +561,14 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	}
 
 	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
+	if transcript, err := r.collectAgentTranscript(ctx); err != nil {
+		log.CtxWarningf(ctx, "Could not preserve agent transcript: %s", err)
+	} else if len(transcript) > 0 {
+		if execResult.AuxiliaryLogs == nil {
+			execResult.AuxiliaryLogs = make(map[string][]byte)
+		}
+		execResult.AuxiliaryLogs[agentTranscriptArtifactName] = transcript
+	}
 
 	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {
 		r.doNotReuse = true

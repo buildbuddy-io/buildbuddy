@@ -808,6 +808,17 @@
   align-self: center;
 }
 
+.action-section .server-log-download {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+}
+
+.action-section .server-log-download svg {
+  height: 16px;
+  width: 16px;
+}
+
 .action-downloads {
   width: 100%;
 }

@@ -117,7 +117,8 @@ interface State {
 
 interface ServerLog {
   name: string;
-  text: string;
+  text?: string;
+  downloadUrl?: string;
 }
 
 export default class InvocationActionCardComponent extends React.Component<Props, State> {
@@ -614,6 +615,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
     for (const [name, file] of Object.entries(executeResponse.serverLogs)) {
       if (!file.digest) continue;
       const logsURL = this.props.model.getBytestreamURL(file.digest);
+      if (!file.humanReadable) {
+        const log: ServerLog = {
+          name,
+          downloadUrl: rpcService.getBytestreamUrl(logsURL, this.props.model.getInvocationId(), { filename: name }),
+        };
+        const serverLogs = [...(this.state.serverLogs ?? []), log];
+        serverLogs.sort((a, b) => a.name.localeCompare(b.name));
+        this.setState({ serverLogs });
+        continue;
+      }
       const rpc = rpcService
         .fetchBytestreamFile(logsURL, this.props.model.getInvocationId())
         .then((text) => {
@@ -2032,11 +2043,18 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.serverLogs ? (
                           this.state.serverLogs.map((log) => (
                             <div key={log.name}>
-                              <TerminalComponent
-                                title={<b className="server-log-title">{log.name}</b>}
-                                value={log.text}
-                                lightTheme={this.props.preferences.lightTerminalEnabled}
-                              />
+                              {log.downloadUrl ? (
+                                <a className="server-log-download" href={log.downloadUrl}>
+                                  <Download />
+                                  <span>Download {log.name}</span>
+                                </a>
+                              ) : (
+                                <TerminalComponent
+                                  title={<b className="server-log-title">{log.name}</b>}
+                                  value={log.text ?? ""}
+                                  lightTheme={this.props.preferences.lightTerminalEnabled}
+                                />
+                              )}
                             </div>
                           ))
                         ) : (
