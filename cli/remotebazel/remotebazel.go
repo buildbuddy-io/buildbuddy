@@ -468,12 +468,12 @@ func getCurrentRef() (string, error) {
 
 	// Handle detached head state
 	detachedHeadOutput, _ := runGit("branch")
-	regex := regexp.MustCompile(".*detached at ([^)]+).*")
+	regex := regexp.MustCompile(".*detached (at|from) ([^)]+).*")
 	matches := regex.FindStringSubmatch(detachedHeadOutput)
-	if len(matches) != 2 {
+	if len(matches) != 3 {
 		return "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
 	}
-	return strings.TrimSpace(matches[1]), nil
+	return strings.TrimSpace(matches[2]), nil
 }
 
 // branchTrackedRemotely returns whether the given branch exists remotely, as reflected in
