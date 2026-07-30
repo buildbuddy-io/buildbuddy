@@ -73,9 +73,9 @@ type Defined interface {
 	HasExpansion() bool
 	Expansion() iter.Seq[Option]
 	HasSupportedCommands() bool
-  SupportedCommands() iter.Seq[string]
+	SupportedCommands() iter.Seq[string]
 	Supports(string) bool
-	AddSupportedCommand(commands... string)
+	AddSupportedCommand(commands ...string)
 	PluginID() string
 }
 
@@ -151,7 +151,7 @@ func (d *Definition) HasExpansion() bool {
 
 func (d *Definition) Expansion() iter.Seq[Option] {
 	return func(yield func(Option) bool) {
-		for o := range d.Expansion() {
+		for _, o := range d.expansion {
 			if !yield(o.Clone()) {
 				return
 			}
@@ -161,6 +161,17 @@ func (d *Definition) Expansion() iter.Seq[Option] {
 
 func (d *Definition) SetExpansion(expansion []Option) {
 	d.expansion = expansion
+}
+
+func (d *Definition) ResolveExpansion(resolve func(Option) (Option, error)) error {
+	for i, opt := range d.expansion {
+		resolved, err := resolve(opt)
+		if err != nil {
+			return err
+		}
+		d.expansion[i] = resolved
+	}
+	return nil
 }
 
 func (d *Definition) HasSupportedCommands() bool {
@@ -276,7 +287,7 @@ func DefinitionsFromFlagSet(flagSet *flag.FlagSet, supportedCommands ...string) 
 
 // DefinitionFrom takes a FlagInfo proto message and converts it into a
 // Definition.
-func DefinitionFrom(info *bfpb.FlagInfo) Defined {
+func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 	switch info.GetName() {
 	case "bazelrc":
 		// `bazel help flags-as-proto` incorrectly reports `bazelrc` as not
@@ -332,15 +343,17 @@ func DefinitionFrom(info *bfpb.FlagInfo) Defined {
 		}
 	}
 	d := &Definition{
-		name:              info.GetName(),
-		shortName:         info.GetAbbreviation(),
-		oldName:           info.GetOldName(),
-		multi:             info.GetAllowsMultiple(),
-		hasNegative:       info.GetHasNegativeFlag(),
-		requiresValue:     info.GetRequiresValue(),
-		supportedCommands: make(set.Set[string], len(info.GetCommands())),
+		name:          info.GetName(),
+		shortName:     info.GetAbbreviation(),
+		oldName:       info.GetOldName(),
+		multi:         info.GetAllowsMultiple(),
+		hasNegative:   info.GetHasNegativeFlag(),
+		requiresValue: info.GetRequiresValue(),
+		expansion: slices.Collect(
+			seq.Fmap(info.GetOptionExpansions(), Defer),
+		),
+		supportedCommands: set.From(info.GetCommands()...),
 	}
-	d.AddSupportedCommand(info.GetCommands()...)
 	return d
 }
 
@@ -418,14 +431,14 @@ func NewOptionBase(opt string, d Defined) (*optionBase, error) {
 	}
 	return &optionBase{
 		Defined: d,
-		Form:       form,
+		Form:    form,
 	}, nil
 }
 
 func (o *optionBase) Clone() *optionBase {
 	return &optionBase{
 		Defined: o.Defined,
-		Form:       o.Form,
+		Form:    o.Form,
 	}
 }
 
@@ -842,6 +855,101 @@ func (o *UnknownOption) Normalized() Option {
 	return o
 }
 
+// DeferredOption is an option we declined to parse when encountering it, as we
+// do for the options in bazel_flags.FlagInfo.OptionExpansions.
+//
+// DeferredOptions only have their original, unparsed text stored, and act as
+// though their Definition is the empty Definition.
+type DeferredOption struct {
+	arguments.PositionalArgument
+}
+
+func (o *DeferredOption) Clone() Option {
+	return &DeferredOption{
+		PositionalArgument: o.PositionalArgument,
+	}
+}
+func (o *DeferredOption) Name() string {
+	return (&Definition{}).Name()
+}
+func (o *DeferredOption) OldName() string {
+	return (&Definition{}).OldName()
+}
+func (o *DeferredOption) ShortName() string {
+	return (&Definition{}).ShortName()
+}
+func (o *DeferredOption) Multi() bool {
+	return (&Definition{}).Multi()
+}
+func (o *DeferredOption) HasNegative() bool {
+	return (&Definition{}).HasNegative()
+}
+func (o *DeferredOption) RequiresValue() bool {
+	return (&Definition{}).RequiresValue()
+}
+func (o *DeferredOption) HasExpansion() bool {
+	return (&Definition{}).HasExpansion()
+}
+func (o *DeferredOption) Expansion() iter.Seq[Option] {
+	return (&Definition{}).Expansion()
+}
+func (o *DeferredOption) HasSupportedCommands() bool {
+	return (&Definition{}).HasSupportedCommands()
+}
+func (o *DeferredOption) SupportedCommands() iter.Seq[string] {
+	return (&Definition{}).SupportedCommands()
+}
+func (o *DeferredOption) Supports(command string) bool {
+	return (&Definition{}).Supports(command)
+}
+func (o *DeferredOption) AddSupportedCommand(commands ...string) {}
+func (o *DeferredOption) PluginID() string {
+	return (&Definition{}).PluginID()
+}
+func (o *DeferredOption) HasValue() bool {
+	return len(o.GetValue()) != 0
+}
+func (o *DeferredOption) ExpectsValue() bool {
+	return false
+}
+func (o *DeferredOption) ClearValue() {
+	o.SetValue("")
+}
+func (o *DeferredOption) SetValue(value string) {
+	o.PositionalArgument.Value = value
+}
+func (o *DeferredOption) GetDefinition() Defined {
+	return &Definition{}
+}
+func (o *DeferredOption) SetDefinition(Defined) {
+}
+func (o *DeferredOption) UseName()      {}
+func (o *DeferredOption) UseShortName() {}
+func (o *DeferredOption) UseOldName()   {}
+func (o *DeferredOption) UsesName() bool {
+	return false
+}
+func (o *DeferredOption) UsesShortName() bool {
+	return false
+}
+func (o *DeferredOption) UsesOldName() bool {
+	return false
+}
+func (o *DeferredOption) Normalized() Option {
+	return o
+}
+func (o *DeferredOption) BoolLike() BoolLike {
+	return nil
+}
+
+func Defer(value string) Option {
+	return &DeferredOption{
+		PositionalArgument: arguments.PositionalArgument{
+			Value: value,
+		},
+	}
+}
+
 func Canonicalize(opts []Option) []Option {
 	lastOptionIndex := map[string]int{}
 	for i, opt := range opts {
@@ -878,6 +986,19 @@ func NewOption(optName string, v *string, d Defined) (Option, error) {
 	return option, nil
 }
 
+func NilOptionFrom(d Defined) Option {
+	if d.PluginID() == StarlarkBuiltinPluginID {
+		return (*starlarkOption)(nil)
+	}
+	if d.RequiresValue() {
+		return (*RequiredValueOption)(nil)
+	}
+	if d.HasNegative() {
+		return (*BoolOrEnumOption)(nil)
+	}
+	return (*ExpansionOption)(nil)
+}
+
 func newOptionImpl(optName string, v *string, d Defined) (Option, error) {
 	if d == nil {
 		return nil, fmt.Errorf("In NewOption: definition was nil for optname %s and value %+v", optName, v)
@@ -886,53 +1007,52 @@ func newOptionImpl(optName string, v *string, d Defined) (Option, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	if d.PluginID() == StarlarkBuiltinPluginID {
+	switch t := NilOptionFrom(d).(type) {
+	case *starlarkOption:
 		return &starlarkOption{
 			BoolOrEnumOption: &BoolOrEnumOption{
 				optionBase: base,
 				Value:      v,
 			},
 		}, nil
-	}
-	if d.RequiresValue() {
+	case *RequiredValueOption:
 		return &RequiredValueOption{
 			optionBase: base,
 			Value:      v,
 			Joined:     v != nil,
 		}, nil
-	}
-	if v != nil {
-		// A flag that didn't require a value had one anyway; this is normally okay if this
-		// isn't a startup option, but if it's an expansion option we need to emit
-		// a warning, and if it's a boolean option prefixed with "no", we need to emit an
-		// error.
-		if d.Supports("startup") {
-			// Unlike command options, startup options don't allow specifying
-			// values for options that do not require values.
-			return nil, fmt.Errorf("in option --%q: option %q does not take a value", optName, d.Name())
+	case *BoolOrEnumOption:
+		if v != nil {
+			// A boolOrEnum option had a value; this is normally okay, but if it's a
+			// startup option or prefixed with "no" we need to emit an error.
+			if d.Supports("startup") {
+				// Unlike command options, startup options don't allow specifying
+				// values for options that do not require values.
+				return nil, fmt.Errorf("in option --%q: option %q does not take a value", optName, d.Name())
+			}
+			if base.Form.Negative() {
+				// This is a negative boolean value (of the form "--noNAME") with a
+				// specified value, which is only supported for starlark.
+				return nil, fmt.Errorf("Unexpected value after boolean option: %s", optName)
+			}
 		}
-		if !d.HasNegative() {
+		return &BoolOrEnumOption{
+			optionBase: base,
+			Value:      v,
+		}, nil
+	case *ExpansionOption:
+		if v != nil {
 			// This is an expansion option with a specified value. Expansion options
 			// ignore values and output a warning. Since we canonicalize the options
 			// and remove the value ourselves, we should output the warning instead.
 			log.Warnf("option '%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", d.Name(), v)
 		}
-		if base.Form.Negative() && d.PluginID() != StarlarkBuiltinPluginID {
-			// This is a negative boolean value (of the form "--noNAME") with a
-			// specified value, which is only supported for starlark.
-			return nil, fmt.Errorf("Unexpected value after boolean option: %s", optName)
-		}
-	}
-	if d.HasNegative() {
-		return &BoolOrEnumOption{
+		return &ExpansionOption{
 			optionBase: base,
-			Value:      v,
 		}, nil
+	default:
+		return nil, fmt.Errorf("Unsupported option type %T when creating an option with name %s and value %v.", t, optName, v)
 	}
-	return &ExpansionOption{
-		optionBase: base,
-	}, nil
 }
 
 type BoolOrEnum struct {

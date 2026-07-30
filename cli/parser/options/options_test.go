@@ -2021,23 +2021,35 @@ func TestExpansionOptionBase(t *testing.T) {
 }
 
 func TestCloneRequiredValueOption(t *testing.T) {
+	value := "value"
+	otherValue := "other"
+
 	name := "name"
 	oldName := "experimental_name"
 	shortName := "n"
-	value := "value"
-	otherValue := "other"
 	definition := RequiredValueDefinition(name, oldName, shortName)
 
+	otherName := "other_name"
+	otherOldName := "experimental_other_name"
+	otherShortName := "o"
+	otherDefinition := RequiredValueDefinition(otherName, otherOldName, otherShortName)
+
 	opt, err := options.NewOption(name, nil, definition)
+	opt.SetValue(value)
+	opt = opt.Normalized()
 	require.NoError(t, err)
+	require.NotNil(t, opt)
+
 	requiredOpt, ok := opt.(*options.RequiredValueOption)
 	require.True(t, ok)
-
-	opt.SetValue(value)
+	require.NotNil(t, requiredOpt)
 
 	clone := opt.Clone()
-	requiredClone, ok := opt.(*options.RequiredValueOption)
+	require.NotNil(t, clone)
+
+	requiredClone, ok := clone.(*options.RequiredValueOption)
 	require.True(t, ok)
+	require.NotNil(t, requiredClone)
 
 	assert.Equal(t, value, clone.GetValue())
 	assert.Equal(t, definition, clone.GetDefinition())
@@ -2048,9 +2060,9 @@ func TestCloneRequiredValueOption(t *testing.T) {
 	assert.Equal(t, value, opt.GetValue())
 	assert.Equal(t, otherValue, clone.GetValue())
 
-	clone.SetDefinition(nil)
+	clone.SetDefinition(otherDefinition)
 	assert.Equal(t, definition, opt.GetDefinition())
-	assert.Nil(t, clone.GetDefinition())
+	assert.Equal(t, otherDefinition, clone.GetDefinition())
 
 	clone.UseOldName()
 	assert.True(t, opt.UsesName())

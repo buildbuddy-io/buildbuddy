@@ -24,11 +24,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/rc_util"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -94,8 +96,9 @@ type Subparser struct {
 	ByName      map[string]options.Defined
 	ByShortName map[string]options.Defined
 
-	Subcommands set.Set[string]
-	Aliases     map[string]string
+	Subcommands         set.Set[string]
+	UnconditionalPhases set.Set[string]
+	Aliases             map[string]string
 
 	// Permissive specifies whether or not to error out when parsing an option
 	// that does not support the current command.
@@ -152,14 +155,16 @@ type Parser struct {
 func NewParser[D options.Defined](optionDefinitions iter.Seq[D], commands []string, aliases map[string]string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
-			ByName:      map[string]options.Defined{},
-			ByShortName: map[string]options.Defined{},
-			Subcommands: set.From(commands...),
-			Aliases:     aliases,
+			ByName:              map[string]options.Defined{},
+			ByShortName:         map[string]options.Defined{},
+			Subcommands:         set.From(commands...),
+			Aliases:             aliases,
+			UnconditionalPhases: set.From("startup"),
 		},
 		CommandOptionParser: &Subparser{
-			ByName:      map[string]options.Defined{},
-			ByShortName: map[string]options.Defined{},
+			ByName:              map[string]options.Defined{},
+			ByShortName:         map[string]options.Defined{},
+			UnconditionalPhases: set.FromSeq(rc_util.UnconditionalCommandPhases()),
 		},
 	}
 	for d := range optionDefinitions {
@@ -310,9 +315,6 @@ func (p *Parser) addOptionDefinitionImpl(d options.Defined, force bool) error {
 		if cmd != "startup" {
 			p.StartupOptionParser.Subcommands.Add(cmd)
 			if !addedToCommandParser {
-				// non-startup flags support the "common" and "always" bazelrc classifiers
-				d.AddSupportedCommand("common")
-				d.AddSupportedCommand("always")
 				if force {
 					p.CommandOptionParser.ForceAdd(d)
 				} else {
@@ -426,11 +428,12 @@ func (p *Subparser) ParseOptions(args []string, phase string) ([]options.Option,
 			return parsedOptions, i, nil
 		}
 		if phase != "" {
-			if option.PluginID() == options.UnknownBuiltinPluginID {
-				// If this is an unknown option, assume it's supported by this command.
-				option.GetDefinition().AddSupportedCommand(phase)
-			} else if !p.Permissive && !option.Supports(phase) && !bazelrc.IsUnconditionalCommandPhase(phase) {
-				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support phase '%s'", token, phase)
+			if !p.Permissive && !option.Supports(phase) && !p.UnconditionalPhases.Contains(phase) {
+				if option.PluginID() == options.UnknownBuiltinPluginID {
+					// If this is an unknown option, assume it's supported by this command.
+				} else {
+					return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support phase '%s'", token, phase)
+				}
 			}
 		}
 		parsedOptions = append(parsedOptions, option)
@@ -438,8 +441,6 @@ func (p *Subparser) ParseOptions(args []string, phase string) ([]options.Option,
 	}
 	return parsedOptions, len(args), nil
 }
-
-func (p *Subparser) 
 
 // Next parses the next option in the args list, starting at the given index. It
 // is intended to be called in a loop that parses an argument list against a
@@ -622,14 +623,35 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // OptionDefinitions, places each option definition into subparsers corresponding
 // to the commands it supports, and returns the resulting parser.
 func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
-	optionDefinitions := func(yield func(options.Defined) bool) {
-		for _, info := range flagCollection.FlagInfos {
-			if !yield(options.DefinitionFrom(info)) {
-				return
-			}
-		}
+	expansionDefinitions := []*options.Definition{}
+	p := NewParser(
+		seq.Fmap(
+			flagCollection.FlagInfos,
+			func(info *bfpb.FlagInfo) options.Defined {
+				d := options.DefinitionFrom(info)
+				if _, ok := options.NilOptionFrom(d).(*options.ExpansionOption); ok {
+					expansionDefinitions = append(expansionDefinitions, d)
+				}
+				return d
+			},
+		),
+		nil,
+		nil,
+	)
+	for _, d := range expansionDefinitions {
+		d.ResolveExpansion(
+			func(opt options.Option) (options.Option, error) {
+				resolved, err := p.CommandOptionParser.ParseOption(opt.GetValue())
+				if err != nil {
+					return nil, err
+				}
+				if resolved == nil {
+					return nil, fmt.Errorf("Encountered positional argument '%s' while resolving expansion options for '%s'.", opt.GetValue(), opt.Name())
+				}
+				return resolved, nil
+			},
+		)
 	}
-	p := NewParser(optionDefinitions, nil, nil)
 	return p, nil
 }
 
