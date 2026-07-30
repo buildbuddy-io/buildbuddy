@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/lipgloss/v2"
@@ -78,7 +79,8 @@ running, prints the command to connect via SSH.
 If a name is given, the runner is recycled after the session ends so that the
 next invocation resumes the same VM. Without a name the VM is ephemeral.
 
-list: Lists the named boxes currently available for your group.
+list: Lists your group's connected peers: boxes (with their names) and
+transient clients like bb ssh sessions (identified by session ID only).
 
 `
 )
@@ -95,6 +97,7 @@ var (
 	imageFlag   = createFlags.String("image", defaultImage, "Container image for the VM")
 	gracePeriod = createFlags.Duration("grace_period", 1*time.Minute, "How long the VM stays alive after all SSH connections close (max 5m)")
 	idleTimeout = createFlags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (max 5m)")
+	trace       = createFlags.Bool("trace", false, "Force server-side tracing for this box's execution and print the execution ID")
 
 	targetFlag              = createFlags.String("remote_executor", login.DefaultApiTarget, "Remote executor gRPC target")
 	gatewayFlag, apiKeyFlag = registerGatewayFlags(createFlags)
@@ -196,6 +199,11 @@ func handleCreate(args []string) (int, error) {
 	}
 
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
+	if *trace {
+		// Force server-side OTel sampling for every RPC in this session,
+		// including the remote execution itself.
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
+	}
 
 	conn, err := grpc_client.DialSimple(*targetFlag)
 	if err != nil {
@@ -274,6 +282,11 @@ func handleCreate(args []string) (int, error) {
 			{Name: "BUILDBUDDY_API_KEY", Value: key},
 			{Name: "HOME", Value: "/home/buildbuddy"},
 			{Name: "USER", Value: "buildbuddy"},
+			// Tells bb ssh-server that it is running inside a remote
+			// action, where writing executor marker files (e.g. the
+			// do-not-recycle marker) to the working directory is
+			// meaningful.
+			{Name: "BUILDBUDDY_REMOTE_ACTION", Value: "1"},
 		},
 		Platform: plat,
 	}
@@ -340,6 +353,7 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 	// Watch the operation stream for failures and cancel the context so the
 	// readiness polls below unblock immediately.
 	streamErrCh := make(chan error, 1)
+	var logExecutionID sync.Once
 	go func() {
 		for {
 			msg, err := stream.Recv()
@@ -347,6 +361,15 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 				streamErrCh <- fmt.Errorf("executor: %w", err)
 				cancel()
 				return
+			}
+			if name := msg.GetName(); name != "" {
+				logExecutionID.Do(func() {
+					if *trace {
+						log.Printf("Execution: %s", name)
+					} else {
+						log.Debugf("Execution: %s", name)
+					}
+				})
 			}
 			if msg.Err != nil {
 				streamErrCh <- fmt.Errorf("VM failed to start: %w", msg.Err)
@@ -472,20 +495,20 @@ func handleList(args []string) (int, error) {
 		if t := p.GetLastHandshakeTime(); t != nil {
 			lastHandshake = fmt.Sprintf("%s ago", time.Since(t.AsTime()).Truncate(time.Second))
 		}
-		rows = append(rows, []string{p.GetName(), p.GetIp(), lastHandshake})
+		rows = append(rows, []string{p.GetName(), p.GetIp(), p.GetSessionId(), lastHandshake})
 	}
 
-	headerStyle := lipgloss.NewStyle().Bold(true).Padding(0, 1)
-	cellStyle := lipgloss.NewStyle().Padding(0, 1)
+	cellStyle := lipgloss.NewStyle().Padding(0, 2, 0, 0)
 	t := table.New().
-		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("240"))).
-		Headers("NAME", "ADDRESS", "LAST HANDSHAKE").
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderColumn(false).
+		BorderHeader(false).
+		Headers("NAME", "ADDRESS", "SESSION", "LAST HANDSHAKE").
 		Rows(rows...).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return headerStyle
-			}
+		StyleFunc(func(_, _ int) lipgloss.Style {
 			return cellStyle
 		})
 	fmt.Println(t)
