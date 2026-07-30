@@ -56,6 +56,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -232,6 +233,11 @@ const (
 
 	// The max amount of time we'll wait for the balloon to expand to the target size.
 	maxUpdateBalloonDuration = 30 * time.Second
+
+	// Stop waiting for the balloon early if it has made no meaningful
+	// progress toward its target size for this long. Gives the balloon a
+	// second chance in case resource contention temporarily stalls it.
+	balloonStallTimeout = 5 * time.Second
 
 	// Special file that actions can create in the workspace directory to
 	// invalidate the snapshot the action was run in. This can be written
@@ -3202,10 +3208,19 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		log.CtxInfof(ctx, "Update balloon to %d MB (target %d MB) took %s", currentBalloonSize, targetSizeMib, time.Since(start).String())
 	}()
 
-	// Wait for the balloon to reach its target size.
-	pollInterval := 1 * time.Second
-	slowCount := 0
-	for {
+	// Poll until the balloon reaches its target size. Updates often complete
+	// almost immediately (deflating to zero especially), so poll with
+	// exponential backoff: quickly at first, capped at once per second.
+	r := retry.New(ctx, &retry.Options{
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     1 * time.Second,
+		Multiplier:     2,
+		// Polling is bounded by maxUpdateBalloonDuration and
+		// balloonStallTimeout below, not by an attempt count.
+		MaxRetries: math.MaxInt,
+	})
+	lastProgress := start
+	for r.Next() {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
 			return 0, err
@@ -3218,24 +3233,15 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 			return currentBalloonSize, nil
 		}
 
-		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
-			slowCount++
-			if slowCount == 5 {
-				// If the rate of inflation is consistently slow or stops, just stop early.
-				// Give the balloon a second chance in case there is resource contention
-				// that temporarily slows the balloon inflation.
-				return currentBalloonSize, nil
-			}
-		} else {
-			slowCount = 0
-		}
-
-		select {
-		case <-ctx.Done():
+		// If the balloon stops making meaningful progress, stop early.
+		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) >= 100 {
+			lastProgress = time.Now()
+		} else if time.Since(lastProgress) >= balloonStallTimeout {
 			return currentBalloonSize, nil
-		case <-time.After(pollInterval):
 		}
 	}
+	// The context was canceled while waiting.
+	return currentBalloonSize, nil
 }
 
 func pointer[T any](val T) *T {
