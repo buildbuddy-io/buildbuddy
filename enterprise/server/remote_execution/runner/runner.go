@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,11 +27,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy/ports"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
@@ -221,6 +226,10 @@ type taskRunner struct {
 	task *repb.ExecutionTask
 	// schedulingMetadata is the current task's scheduling metadata.
 	schedulingMetadata *scpb.SchedulingMetadata
+
+	llmProxySession       *llmproxy.Session
+	revokeLLMProxySession func()
+	llmProxyConfigDir     string
 	// State is the current state of the runner as it pertains to reuse. It is
 	// atomic because in some cases we want to print runner metadata for debug
 	// purposes but without having to hold the pool lock.
@@ -342,6 +351,9 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
 			return err
 		}
+	}
+	if err := r.prepareLLMProxyConfig(); err != nil {
+		log.CtxWarningf(ctx, "Could not prepare best-effort agent redaction hooks: %s", err)
 	}
 	return nil
 }
@@ -478,7 +490,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
 
-	if !r.PlatformProperties.RecycleRunner {
+	if !r.PlatformProperties.RecycleRunner && r.llmProxySession == nil {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
 		// TODO: Remove this `Run` method and call lifecycle methods directly.
@@ -510,14 +522,23 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		if err := r.Container.Create(ctx, wsPath); err != nil {
 			return commandutil.ErrorResult(err)
 		}
+		if err := r.startLLMProxySession(); err != nil {
+			return commandutil.ErrorResult(err)
+		}
 		r.p.mu.Lock()
 		r.setState(ready)
 		r.p.mu.Unlock()
 	case ready:
+		if err := r.startLLMProxySession(); err != nil {
+			return commandutil.ErrorResult(err)
+		}
 	case removed:
 		return commandutil.ErrorResult(status.UnavailableErrorf("Not starting new task since executor is shutting down"))
 	default:
 		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", s))
+	}
+	if err := r.installLLMProxyConfig(ctx); err != nil {
+		log.CtxWarningf(ctx, "Could not install best-effort agent redaction hooks: %s", err)
 	}
 
 	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
@@ -634,6 +655,7 @@ func (r *taskRunner) shutdown(ctx context.Context) error {
 }
 
 func (r *taskRunner) Remove(ctx context.Context) error {
+	r.clearLLMProxySession()
 	r.p.mu.Lock()
 	s := r.getState()
 	r.setState(removed)
@@ -716,19 +738,28 @@ type PoolOptions struct {
 	// CgroupParent is the parent cgroup under which all runner containers are
 	// placed.
 	CgroupParent string
+
+	// LLMSessionRegistrar enables execution-scoped LLM request redaction for
+	// Firecracker runners.
+	LLMSessionRegistrar llmproxy.SessionRegistrar
+
+	// LLMProxyURL is the HTTP origin reachable from Firecracker guests.
+	LLMProxyURL string
 }
 
 type pool struct {
-	env                environment.Env
-	podID              string
-	buildRoot          string
-	caseInsensitiveFS  bool
-	cgroupParent       string
-	blockDevice        *block_io.Device
-	cacheRoot          string
-	overrideProvider   container.Provider
-	oomKiller          oomkiller.Killer
-	containerProviders map[platform.ContainerType]container.Provider
+	env                 environment.Env
+	podID               string
+	buildRoot           string
+	caseInsensitiveFS   bool
+	cgroupParent        string
+	blockDevice         *block_io.Device
+	cacheRoot           string
+	overrideProvider    container.Provider
+	oomKiller           oomkiller.Killer
+	llmSessionRegistrar llmproxy.SessionRegistrar
+	llmProxyURL         string
+	containerProviders  map[platform.ContainerType]container.Provider
 
 	maxRunnerCount                 int
 	maxTotalRunnerMemoryUsageBytes int64
@@ -764,15 +795,23 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 	if err != nil {
 		return nil, status.InternalErrorf("Could not create OCI resolver: %s", err)
 	}
+	if opts.LLMSessionRegistrar != nil {
+		proxyURL, err := url.Parse(opts.LLMProxyURL)
+		if err != nil || proxyURL.Scheme != "http" || proxyURL.Host == "" || proxyURL.Path != "" || proxyURL.User != nil || proxyURL.RawQuery != "" || proxyURL.Fragment != "" {
+			return nil, status.InvalidArgumentError("LLM proxy URL must be an HTTP origin")
+		}
+	}
 	p := &pool{
-		env:          env,
-		podID:        podID,
-		buildRoot:    *rootDirectory,
-		cacheRoot:    cacheRoot,
-		cgroupParent: opts.CgroupParent,
-		oomKiller:    opts.OOMKiller,
-		runners:      []*taskRunner{},
-		resolver:     resolver,
+		env:                 env,
+		podID:               podID,
+		buildRoot:           *rootDirectory,
+		cacheRoot:           cacheRoot,
+		cgroupParent:        opts.CgroupParent,
+		oomKiller:           opts.OOMKiller,
+		llmSessionRegistrar: opts.LLMSessionRegistrar,
+		llmProxyURL:         strings.TrimRight(opts.LLMProxyURL, "/"),
+		runners:             []*taskRunner{},
+		resolver:            resolver,
 	}
 	if err := os.MkdirAll(p.buildRoot, fs.FileMode(0755)); err != nil {
 		return nil, status.InternalErrorf("Failed to create build root directory %q: %s", p.buildRoot, err)
@@ -1223,6 +1262,10 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if user != nil {
 		groupID = user.GetGroupID()
 	}
+	llmProxySession, sessionErr := p.newLLMProxySession(groupID, props, task)
+	if sessionErr != nil {
+		return nil, sessionErr
+	}
 	if !container.AnonymousRecyclingEnabled() && (props.RecycleRunner && err != nil) {
 		return nil, status.InvalidArgumentError(
 			"runner recycling is not supported for anonymous builds " +
@@ -1255,6 +1298,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 			r.schedulingMetadata = st.GetSchedulingMetadata()
 			r.metadata.TaskNumber++
 			r.PlatformProperties = props
+			r.llmProxySession = llmProxySession
 			p.mu.Unlock()
 			log.CtxInfof(ctx, "Reusing existing runner %s for task", r)
 			metrics.RecycleRunnerRequests.With(prometheus.Labels{
@@ -1276,8 +1320,148 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 	if err != nil {
 		return nil, err
 	}
+	r.llmProxySession = llmProxySession
 
 	return r, nil
+}
+
+func (p *pool) newLLMProxySession(groupID string, props *platform.Properties, task *repb.ExecutionTask) (*llmproxy.Session, error) {
+	if p.llmSessionRegistrar == nil || platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
+		return nil, nil
+	}
+	command := task.GetCommand()
+	var secretNames []string
+	for _, envVar := range command.GetEnvironmentVariables() {
+		if envVar.GetName() != ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction {
+			continue
+		}
+		if err := json.Unmarshal([]byte(envVar.GetValue()), &secretNames); err != nil {
+			return nil, status.InvalidArgumentErrorf("parse secret environment variable names: %s", err)
+		}
+		break
+	}
+	if len(secretNames) == 0 {
+		return nil, nil
+	}
+	if groupID == "" {
+		return nil, status.PermissionDeniedError("LLM proxy sessions require an authenticated group")
+	}
+
+	secretNameSet := make(map[string]struct{}, len(secretNames))
+	for _, name := range secretNames {
+		secretNameSet[name] = struct{}{}
+	}
+	session := &llmproxy.Session{}
+	for _, envVar := range command.GetEnvironmentVariables() {
+		if _, ok := secretNameSet[envVar.GetName()]; !ok {
+			continue
+		}
+		value := envVar.GetValue()
+		if value != "" {
+			session.RedactionValues = append(session.RedactionValues, value)
+			session.NamedRedactionValues = append(session.NamedRedactionValues, llmproxy.NamedRedactionValue{
+				Name:  envVar.GetName(),
+				Value: value,
+			})
+		}
+		switch envVar.GetName() {
+		case "ANTHROPIC_API_KEY":
+			session.AnthropicAPIKey = value
+		case "ANTHROPIC_AUTH_TOKEN":
+			session.AnthropicAuthToken = value
+		case "CODEX_API_KEY":
+			if session.OpenAIAPIKey == "" {
+				session.OpenAIAPIKey = value
+			}
+		case "OPENAI_API_KEY":
+			session.OpenAIAPIKey = value
+		}
+	}
+	if len(session.RedactionValues) == 0 {
+		return nil, nil
+	}
+	if session.AnthropicAPIKey != "" || session.AnthropicAuthToken != "" {
+		setCommandEnv(command, "ANTHROPIC_BASE_URL", p.llmProxyURL+"/anthropic")
+	}
+	if session.OpenAIAPIKey != "" {
+		setCommandEnv(command, "OPENAI_BASE_URL", p.llmProxyURL+"/openai/v1")
+	}
+	return session, nil
+}
+
+func setCommandEnv(command *repb.Command, name, value string) {
+	filtered := command.EnvironmentVariables[:0]
+	for _, envVar := range command.GetEnvironmentVariables() {
+		if envVar.GetName() != name {
+			filtered = append(filtered, envVar)
+		}
+	}
+	command.EnvironmentVariables = append(filtered, &repb.Command_EnvironmentVariable{
+		Name:  name,
+		Value: value,
+	})
+}
+
+func (r *taskRunner) prepareLLMProxyConfig() error {
+	if r.llmProxySession == nil {
+		return nil
+	}
+	configDirName, err := prepareAgentRedactionHooks(
+		r.Workspace.Path(), r.p.llmProxyURL, r.llmProxySession.OpenAIAPIKey != "")
+	if err != nil {
+		return err
+	}
+	r.llmProxyConfigDir = configDirName
+	guestConfigDir := "/tmp/" + r.llmProxyConfigDir
+	setCommandEnv(r.task.GetCommand(), "CLAUDE_CONFIG_DIR", guestConfigDir+"/claude")
+	setCommandEnv(r.task.GetCommand(), "CODEX_HOME", guestConfigDir+"/codex")
+	return nil
+}
+
+func (r *taskRunner) installLLMProxyConfig(ctx context.Context) error {
+	if r.llmProxySession == nil {
+		return nil
+	}
+	return installAgentRedactionHooks(
+		ctx, r.Container, r.Workspace.Path(), r.llmProxyConfigDir)
+}
+
+func (r *taskRunner) startLLMProxySession() error {
+	if r.llmProxySession == nil || r.revokeLLMProxySession != nil {
+		return nil
+	}
+	vm, ok := r.Container.Delegate.(container.VM)
+	if !ok {
+		return status.FailedPreconditionError("LLM proxy sessions require a VM runner")
+	}
+	listener, err := vm.NewHostVSockListener(ports.HostVSock)
+	if err != nil {
+		return status.WrapError(err, "create VM LLM proxy listener")
+	}
+	revoke, err := r.p.llmSessionRegistrar.RegisterSession(listener, r.llmProxySession)
+	if err != nil {
+		return status.WrapError(err, "register LLM proxy session")
+	}
+	r.revokeLLMProxySession = revoke
+	return nil
+}
+
+func (r *taskRunner) clearLLMProxySession() {
+	if r.revokeLLMProxySession != nil {
+		r.revokeLLMProxySession()
+		r.revokeLLMProxySession = nil
+	}
+	if r.llmProxySession != nil {
+		for i := range r.llmProxySession.RedactionValues {
+			r.llmProxySession.RedactionValues[i] = ""
+		}
+		for i := range r.llmProxySession.NamedRedactionValues {
+			r.llmProxySession.NamedRedactionValues[i].Value = ""
+		}
+		*r.llmProxySession = llmproxy.Session{}
+		r.llmProxySession = nil
+	}
+	r.llmProxyConfigDir = ""
 }
 
 // newRunner creates a runner either for the given task (if set) or restores the
@@ -1614,6 +1798,7 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		alert.UnexpectedEvent("unexpected_runner_type", "unexpected runner type %T", r)
 		return
 	}
+	cr.clearLLMProxySession()
 
 	// Measure workspace disk usage before the workspace is cleaned up or
 	// removed below. This runs after the result has been returned to the

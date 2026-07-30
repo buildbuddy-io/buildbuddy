@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -153,6 +154,18 @@ func setupNetworking(rootContext context.Context) {
 		fmt.Printf("Error configuring secondary network: %s", err)
 		os.Exit(1)
 	}
+}
+
+func startLLMProxy() (*llmproxy.Service, error) {
+	if !*llmProxyEnabled {
+		return nil, nil
+	}
+	service, err := llmproxy.NewService()
+	if err != nil {
+		return nil, err
+	}
+	log.Infof("LLM proxy enabled over per-VM vsock listeners")
+	return service, nil
 }
 
 func cleanupFUSEMounts() {

@@ -497,6 +497,7 @@ func main() {
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
 	})
+	eg.Go(runLLMProxyForwarder)
 	if *initDockerd {
 		die(startDockerd(ctx))
 	}

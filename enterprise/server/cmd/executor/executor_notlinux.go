@@ -5,8 +5,10 @@ package main
 import (
 	"context"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 func setupCgroups() (*Cgroups, error) {
@@ -14,6 +16,13 @@ func setupCgroups() (*Cgroups, error) {
 }
 
 func setupNetworking(rootContext context.Context) {
+}
+
+func startLLMProxy() (*llmproxy.Service, error) {
+	if *llmProxyEnabled {
+		return nil, status.UnimplementedError("the executor LLM proxy requires Linux")
+	}
+	return nil, nil
 }
 
 func cleanupFUSEMounts() {

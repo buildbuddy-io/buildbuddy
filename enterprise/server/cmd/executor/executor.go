@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/llmproxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -84,6 +85,7 @@ var (
 	maximumDiskFullness       = flag.Float64("executor.maximum_disk_fullness", 1.01, "Fail health check if device containing executor.local_cache_directory is more than this full")
 	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
 	clientType                = flag.String("executor.grpc_client_type", "executor", "The client type label for requests from this executor, used to differentiate e.g. workflow executor traffic.")
+	llmProxyEnabled           = flag.Bool("executor.llm_proxy.enabled", false, "Enable execution-scoped secret redaction for Anthropic and OpenAI requests from Firecracker runners.")
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -102,6 +104,13 @@ type Cgroups struct {
 	StartingCgroup string
 	// CgroupParent is the parent under which task cgroups are created.
 	CgroupParent string
+}
+
+func llmProxyBaseURL(service *llmproxy.Service) string {
+	if service == nil {
+		return ""
+	}
+	return service.BaseURL()
 }
 
 func isOldEndpoint(endpoint string) bool {
@@ -420,9 +429,19 @@ func main() {
 		oomKiller = k
 	}
 
+	llmProxy, err := startLLMProxy()
+	if err != nil {
+		log.Fatalf("Failed to initialize LLM proxy: %s", err)
+	}
+	if llmProxy != nil {
+		env.GetHealthChecker().RegisterShutdownFunction(llmProxy.Shutdown)
+	}
+
 	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{
-		CgroupParent: cgroups.CgroupParent,
-		OOMKiller:    oomKiller,
+		CgroupParent:        cgroups.CgroupParent,
+		OOMKiller:           oomKiller,
+		LLMSessionRegistrar: llmProxy,
+		LLMProxyURL:         llmProxyBaseURL(llmProxy),
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
