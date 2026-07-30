@@ -56,7 +56,10 @@ var (
 	hostKeyFile = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
 	sessionID   = flags.String("session_id", "", "Unique identifier for this gateway connection, shown in gateway listings (generated if empty)")
 
-	wgHealthTimeout = flags.Duration("wg_health_timeout", 5*time.Second, "Exit if the WireGuard tunnel has not completed a handshake with the gateway within this duration after coming up. 0 disables the check.")
+	// The default covers two handshake attempts: wireguard-go retransmits an
+	// unanswered handshake initiation after 5s (the protocol's REKEY_TIMEOUT,
+	// plus jitter), so a smaller value would tolerate zero packet loss.
+	wgHealthTimeout = flags.Duration("wg_health_timeout", 12*time.Second, "Exit if the WireGuard tunnel has not completed a handshake with the gateway within this duration after coming up. 0 disables the check.")
 
 	usage string
 )
@@ -64,10 +67,13 @@ var (
 // waitForHandshake polls the WireGuard device until its peer (the gateway)
 // completes a handshake, or the timeout elapses.
 func waitForHandshake(dev *device.Device, timeout time.Duration) error {
+	var lastErr error
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		cfg, err := dev.IpcGet()
-		if err == nil {
+		if err != nil {
+			lastErr = err
+		} else {
 			for line := range strings.SplitSeq(cfg, "\n") {
 				if v, ok := strings.CutPrefix(line, "last_handshake_time_sec="); ok && v != "0" {
 					return nil
@@ -76,7 +82,10 @@ func waitForHandshake(dev *device.Device, timeout time.Duration) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return status.UnavailableErrorf("no WireGuard handshake with the gateway within %s", *wgHealthTimeout)
+	if lastErr != nil {
+		return status.UnavailableErrorf("no WireGuard handshake with the gateway within %s (last device error: %s)", timeout, lastErr)
+	}
+	return status.UnavailableErrorf("no WireGuard handshake with the gateway within %s", timeout)
 }
 
 // remoteActionEnvVar signals that this process is running inside a remote
@@ -355,11 +364,12 @@ func HandleSSHServer(args []string) (int, error) {
 	// executor node). Exiting promptly surfaces the failure in the create
 	// log instead of leaving behind a registered but unreachable server.
 	if *wgHealthTimeout > 0 {
+		handshakeStart := time.Now()
 		if err := waitForHandshake(dev, *wgHealthTimeout); err != nil {
 			writeDoNotRecycleMarker()
 			return 1, err
 		}
-		log.Printf("WireGuard handshake completed in %s", time.Since(start))
+		log.Printf("WireGuard handshake completed in %s", time.Since(handshakeStart))
 	}
 
 	// Build the SSH server. WireGuard membership is the auth boundary; no SSH
