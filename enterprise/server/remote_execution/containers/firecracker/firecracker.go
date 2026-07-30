@@ -3219,13 +3219,13 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		// balloonStallTimeout below, not by an attempt count.
 		MaxRetries: math.MaxInt,
 	})
-	lastProgress := start
+	lastProgressTime := start
+	lastProgressSize := int64(-1)
 	for r.Next() {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
 			return 0, err
 		}
-		lastBalloonSize := currentBalloonSize
 		currentBalloonSize = *stats.ActualMib
 		if currentBalloonSize == targetSizeMib {
 			return currentBalloonSize, nil
@@ -3234,14 +3234,17 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		}
 
 		// If the balloon stops making meaningful progress, stop early.
-		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) >= 100 {
-			lastProgress = time.Now()
-		} else if time.Since(lastProgress) >= balloonStallTimeout {
+		if lastProgressSize == -1 || math.Abs(float64(currentBalloonSize-lastProgressSize)) >= 100 {
+			lastProgressSize = currentBalloonSize
+			lastProgressTime = time.Now()
+		} else if time.Since(lastProgressTime) >= balloonStallTimeout {
 			return currentBalloonSize, nil
 		}
 	}
-	// The context was canceled while waiting.
-	return currentBalloonSize, nil
+	// The context was canceled while waiting (possibly before the balloon
+	// was observed even once, in which case currentBalloonSize is zero and
+	// must not be reported as a successful update).
+	return currentBalloonSize, ctx.Err()
 }
 
 func pointer[T any](val T) *T {
