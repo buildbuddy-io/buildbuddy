@@ -2302,10 +2302,6 @@ func getDockerDaemonConfig() ([]byte, error) {
 }
 
 func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
-	return c.sendExecRequestToGuestAsUser(ctx, conn, cmd, workDir, c.user, stdio)
-}
-
-func (c *FirecrackerContainer) sendExecRequestToGuestAsUser(ctx context.Context, conn *grpc.ClientConn, cmd *repb.Command, workDir, user string, stdio *interfaces.Stdio) (_ *interfaces.CommandResult, healthy bool) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -2335,7 +2331,7 @@ func (c *FirecrackerContainer) sendExecRequestToGuestAsUser(ctx context.Context,
 		statsListener := func(stats *repb.UsageStats) {
 			c.updateLatestGuestStats(stats)
 		}
-		res := vmexec_client.Execute(ctx, client, cmd, workDir, user, statsListener, stdio)
+		res := vmexec_client.Execute(ctx, client, cmd, workDir, c.user, statsListener, stdio)
 		resultCh <- res
 	}()
 	// While we're executing the task in the VM, also track cgroup stats on the
@@ -2506,17 +2502,6 @@ func (c *FirecrackerContainer) monitorVMContext(ctx context.Context) (context.Co
 // If stdout is non-nil, the stdout of the executed process will be written to the
 // stdout writer.
 func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	return c.execWithUser(ctx, cmd, stdio, c.user)
-}
-
-// ExecAsRoot runs an executor-controlled command as root inside the VM. It is
-// intentionally not part of the general CommandContainer interface so that
-// user-provided action commands cannot request elevated privileges.
-func (c *FirecrackerContainer) ExecAsRoot(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	return c.execWithUser(ctx, cmd, stdio, "")
-}
-
-func (c *FirecrackerContainer) execWithUser(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio, user string) *interfaces.CommandResult {
 	log.CtxInfof(ctx, "Executing command.")
 
 	ctx, span := tracing.StartSpan(ctx)
@@ -2631,7 +2616,7 @@ func (c *FirecrackerContainer) execWithUser(ctx context.Context, cmd *repb.Comma
 	}
 
 	stage = "exec"
-	result, vmHealthy := c.sendExecRequestToGuestAsUser(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), user, stdio)
+	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()

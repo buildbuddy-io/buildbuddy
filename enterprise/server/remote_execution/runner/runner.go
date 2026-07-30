@@ -355,7 +355,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		}
 	}
 	if err := r.prepareLLMProxyConfig(); err != nil {
-		return err
+		log.CtxWarningf(ctx, "Could not prepare best-effort agent redaction hooks: %s", err)
 	}
 	return nil
 }
@@ -540,7 +540,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		return commandutil.ErrorResult(status.InternalErrorf("unexpected runner state %d; this should never happen", s))
 	}
 	if err := r.installLLMProxyConfig(ctx); err != nil {
-		return commandutil.ErrorResult(err)
+		log.CtxWarningf(ctx, "Could not install best-effort agent redaction hooks: %s", err)
 	}
 
 	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
@@ -1441,6 +1441,10 @@ func (r *taskRunner) prepareLLMProxyConfig() error {
 		return status.WrapError(err, "create LLM proxy config directory")
 	}
 	r.llmProxyConfigDir = filepath.Base(configDir)
+	guestConfigDir := "/tmp/" + r.llmProxyConfigDir
+	hookPath := guestConfigDir + "/redact-hook"
+	setCommandEnv(r.task.GetCommand(), "CLAUDE_CONFIG_DIR", guestConfigDir+"/claude")
+	setCommandEnv(r.task.GetCommand(), "CODEX_HOME", guestConfigDir+"/codex")
 
 	hookScript := `#!/bin/sh
 if ! command -v curl >/dev/null 2>&1; then
@@ -1459,7 +1463,6 @@ fi
 	}
 
 	claudeSettings := map[string]any{
-		"allowManagedHooksOnly": true,
 		"hooks": map[string]any{
 			"PostToolUse": []any{
 				map[string]any{
@@ -1467,7 +1470,7 @@ fi
 					"hooks": []any{
 						map[string]any{
 							"type":    "command",
-							"command": fmt.Sprintf("/usr/local/lib/buildbuddy/redact-hook %s/hooks/claude/post-tool-use", r.p.llmProxyURL),
+							"command": fmt.Sprintf("%s %s/hooks/claude/post-tool-use", hookPath, r.p.llmProxyURL),
 							"timeout": 30,
 						},
 					},
@@ -1477,45 +1480,39 @@ fi
 	}
 	claudeJSON, err := json.Marshal(claudeSettings)
 	if err != nil {
-		return status.WrapError(err, "marshal managed Claude settings")
+		return status.WrapError(err, "marshal Claude hook settings")
 	}
-	if err := os.WriteFile(filepath.Join(configDir, "claude-managed-settings.json"), claudeJSON, 0o444); err != nil {
-		return status.WrapError(err, "write managed Claude settings")
-	}
-
-	codexRequirements := fmt.Sprintf(`allow_managed_hooks_only = true
-
-[features]
-hooks = true
-
-[hooks]
-managed_dir = "/usr/local/lib/buildbuddy"
-
-[[hooks.PostToolUse]]
-matcher = "*"
-
-[[hooks.PostToolUse.hooks]]
-type = "command"
-command = "/usr/local/lib/buildbuddy/redact-hook %s/hooks/codex/post-tool-use"
-timeout = 30
-statusMessage = "Redacting secrets from tool output"
-`, r.p.llmProxyURL)
-	if err := os.WriteFile(filepath.Join(configDir, "codex-requirements.toml"), []byte(codexRequirements), 0o444); err != nil {
-		return status.WrapError(err, "write managed Codex requirements")
+	if err := os.WriteFile(filepath.Join(configDir, "claude-settings.json"), claudeJSON, 0o444); err != nil {
+		return status.WrapError(err, "write Claude hook settings")
 	}
 
+	var codexConfig strings.Builder
 	if r.llmProxySession.OpenAIAPIKey != "" {
-		codexConfig := fmt.Sprintf(`model_provider = "buildbuddy"
+		fmt.Fprintf(&codexConfig, `model_provider = "buildbuddy"
 
 [model_providers.buildbuddy]
 name = "BuildBuddy OpenAI proxy"
 base_url = %q
 env_key = "CODEX_API_KEY"
 wire_api = "responses"
+
 `, r.p.llmProxyURL+"/openai/v1")
-		if err := os.WriteFile(filepath.Join(configDir, "codex-config.toml"), []byte(codexConfig), 0o444); err != nil {
-			return status.WrapError(err, "write managed Codex config")
-		}
+	}
+	fmt.Fprintf(&codexConfig, `
+[features]
+hooks = true
+
+[[hooks.PostToolUse]]
+matcher = "*"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = %q
+timeout = 30
+statusMessage = "Redacting secrets from tool output"
+`, hookPath+" "+r.p.llmProxyURL+"/hooks/codex/post-tool-use")
+	if err := os.WriteFile(filepath.Join(configDir, "codex-config.toml"), []byte(codexConfig.String()), 0o444); err != nil {
+		return status.WrapError(err, "write Codex hook config")
 	}
 	return nil
 }
@@ -1528,10 +1525,11 @@ func (r *taskRunner) installLLMProxyConfig(ctx context.Context) error {
 		return status.FailedPreconditionError("LLM proxy config was not prepared")
 	}
 	stagingDir := filepath.Join(r.Workspace.Path(), r.llmProxyConfigDir)
+	guestConfigDir := "/tmp/" + r.llmProxyConfigDir
 	readConfig := func(name string) (string, error) {
 		b, err := os.ReadFile(filepath.Join(stagingDir, name))
 		if err != nil {
-			return "", status.WrapErrorf(err, "read managed agent config %q", name)
+			return "", status.WrapErrorf(err, "read agent hook config %q", name)
 		}
 		return string(b), nil
 	}
@@ -1539,50 +1537,37 @@ func (r *taskRunner) installLLMProxyConfig(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	claudeSettings, err := readConfig("claude-managed-settings.json")
+	claudeSettings, err := readConfig("claude-settings.json")
 	if err != nil {
 		return err
 	}
-	codexRequirements, err := readConfig("codex-requirements.toml")
+	codexConfig, err := readConfig("codex-config.toml")
 	if err != nil {
 		return err
 	}
 	commands := []string{
 		"set -eu",
-		"mkdir -p /usr/local/lib/buildbuddy /etc/claude-code /etc/codex",
-		fmt.Sprintf("printf %%s %s > /usr/local/lib/buildbuddy/redact-hook", shlex.Quote(hookScript)),
-		"chmod 0555 /usr/local/lib/buildbuddy/redact-hook",
-		fmt.Sprintf("printf %%s %s > /etc/claude-code/managed-settings.json", shlex.Quote(claudeSettings)),
-		fmt.Sprintf("printf %%s %s > /etc/codex/requirements.toml", shlex.Quote(codexRequirements)),
+		fmt.Sprintf("mkdir -p %s %s", shlex.Quote(guestConfigDir+"/claude"), shlex.Quote(guestConfigDir+"/codex")),
+		fmt.Sprintf("printf %%s %s > %s", shlex.Quote(hookScript), shlex.Quote(guestConfigDir+"/redact-hook")),
+		fmt.Sprintf("chmod 0555 %s", shlex.Quote(guestConfigDir+"/redact-hook")),
+		fmt.Sprintf("printf %%s %s > %s", shlex.Quote(claudeSettings), shlex.Quote(guestConfigDir+"/claude/settings.json")),
+		fmt.Sprintf("printf %%s %s > %s", shlex.Quote(codexConfig), shlex.Quote(guestConfigDir+"/codex/config.toml")),
 	}
-	if r.llmProxySession.OpenAIAPIKey != "" {
-		codexConfig, err := readConfig("codex-config.toml")
-		if err != nil {
-			return err
-		}
-		commands = append(commands, fmt.Sprintf("printf %%s %s > /etc/codex/config.toml", shlex.Quote(codexConfig)))
-	}
-	rootContainer, ok := r.Container.Delegate.(interface {
-		ExecAsRoot(context.Context, *repb.Command, *interfaces.Stdio) *interfaces.CommandResult
-	})
-	if !ok {
-		return status.FailedPreconditionError("managed agent redaction config requires a Firecracker runner")
-	}
-	result := rootContainer.ExecAsRoot(ctx, &repb.Command{
+	result := r.Container.Exec(ctx, &repb.Command{
 		Arguments: []string{"/bin/sh", "-c", strings.Join(commands, "\n")},
 	}, &interfaces.Stdio{})
 	stderr := strings.TrimSpace(string(result.Stderr))
 	if result.Error != nil {
 		if stderr != "" {
-			return status.WrapErrorf(result.Error, "install managed agent redaction config: %s", stderr)
+			return status.WrapErrorf(result.Error, "install agent redaction hooks: %s", stderr)
 		}
-		return status.WrapError(result.Error, "install managed agent redaction config")
+		return status.WrapError(result.Error, "install agent redaction hooks")
 	}
 	if result.ExitCode != 0 {
 		if stderr != "" {
-			return status.FailedPreconditionErrorf("install managed agent redaction config: exited with code %d: %s", result.ExitCode, stderr)
+			return status.FailedPreconditionErrorf("install agent redaction hooks: exited with code %d: %s", result.ExitCode, stderr)
 		}
-		return status.FailedPreconditionErrorf("install managed agent redaction config: exited with code %d", result.ExitCode)
+		return status.FailedPreconditionErrorf("install agent redaction hooks: exited with code %d", result.ExitCode)
 	}
 	return nil
 }
