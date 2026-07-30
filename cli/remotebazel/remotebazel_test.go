@@ -791,6 +791,22 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 	)
 }
 
+func TestEnvWithRunfilesDir(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"RUNFILES_DIR=/old/runfiles",
+		"RUNFILES_MANIFEST_FILE=/old/MANIFEST",
+		"RUNFILES_MANIFEST_ONLY=1",
+		"USER=test",
+	}
+
+	require.Equal(t, []string{
+		"PATH=/usr/bin",
+		"USER=test",
+		"RUNFILES_DIR=/new/runfiles",
+	}, envWithRunfilesDir(env, "/new/runfiles"))
+}
+
 func TestQuoteRemoteBazelArgs_RunScriptEnvVarExpanded(t *testing.T) {
 	// This flag should not be quoted with shlex.Quote, which explicitly prevents env var expansion.
 	// The path should be quoted with double quotes, so the remote shell expands the BUILDBUDDY_CI_RUNNER_ROOT_DIR

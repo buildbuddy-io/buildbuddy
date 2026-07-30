@@ -1666,7 +1666,7 @@ message RunTargetAnalyzed {
   // Default arguments configured for the target, typically in the BUILD file.
   // e.g. [--monitoring_port=8888, --max_shutdown_duration=30s]
   repeated string arguments = 1;
-  // Path to the root of the runfiles directory.
+  // Path to the working directory within the runfiles directory.
   string runfiles_root = 2;
   // Any runtime file dependencies for the runnable target.
   repeated Runfile runfile_entries = 6;
