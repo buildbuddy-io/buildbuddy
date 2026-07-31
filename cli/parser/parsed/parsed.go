@@ -730,6 +730,15 @@ type Config struct {
 	ByPhase map[string][]arguments.Argument
 }
 
+// ConfigExpansionPolicy describes how named configs apply to a command.
+type ConfigExpansionPolicy struct {
+	// ConfigFlag is the flag that selects a named config, without the leading
+	// dashes. For example, Bazel uses "config" and the BB CLI uses "bb_config".
+	ConfigFlag string
+	// GetPhases returns the rc sections to apply, in order, for a command.
+	GetPhases func(command string) []string
+}
+
 func NewConfig() *Config {
 	return &Config{
 		ByPhase: make(map[string][]arguments.Argument),
@@ -743,8 +752,12 @@ func (a *OrderedArgs) ExpandConfigs(
 	namedConfigs map[string]*Config,
 	defaultConfig *Config,
 ) (*OrderedArgs, error) {
+	policy := ConfigExpansionPolicy{
+		ConfigFlag: "config",
+		GetPhases:  bazelrc.GetPhases,
+	}
 	command := a.GetCommand()
-	expanded, err := a.expandConfigs(namedConfigs, defaultConfig)
+	expanded, err := a.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -758,7 +771,7 @@ func (a *OrderedArgs) ExpandConfigs(
 		bazelOS := bazelrc.GetBazelOS()
 		if platformConfig, ok := namedConfigs[bazelOS]; ok {
 			phases := bazelrc.GetPhases(command)
-			expansion, err := platformConfig.appendArgsForConfig(nil, namedConfigs, phases, []string{bazelOS}, true)
+			expansion, err := platformConfig.appendArgsForConfig(nil, namedConfigs, phases, []string{bazelOS}, true, policy)
 			if err != nil {
 				return nil, err
 			}
@@ -771,12 +784,16 @@ func (a *OrderedArgs) ExpandConfigs(
 	return expanded, nil
 }
 
-// expandConfigs expands all the config options in the args, using the
-// provided config parameters to resolve them.
-func (a *OrderedArgs) expandConfigs(
+// ExpandConfigsWithPolicy expands named configs using the provided config flag
+// and command sections.
+func (a *OrderedArgs) ExpandConfigsWithPolicy(
 	namedConfigs map[string]*Config,
 	defaultConfig *Config,
+	policy ConfigExpansionPolicy,
 ) (*OrderedArgs, error) {
+	if policy.ConfigFlag == "" || policy.GetPhases == nil {
+		return nil, fmt.Errorf("config expansion policy must define a config flag and command phases")
+	}
 	// Expand startup args first, before any other args (including explicit
 	// startup args).
 	//
@@ -791,27 +808,26 @@ func (a *OrderedArgs) expandConfigs(
 	expanded := slices.Concat(startupConfig, a.Args[:commandIndex])
 	expanded = append(expanded, command.PositionalArgument)
 
-	// Always apply bazelrc rules in order of the precedence hierarchy. For
-	// example, for the "test" command, apply options in order of "always",
-	// then "common", then "build", then "test".
-	phases := bazelrc.GetPhases(command.GetValue())
-	log.Debugf("Bazel command: %q, rc rule classes: %v", command, phases)
+	// Apply rc rules in the order specified by the policy.
+	phases := policy.GetPhases(command.GetValue())
+	log.Debugf("Command: %q, rc rule classes: %v", command, phases)
+	if len(phases) == 0 {
+		return nil, fmt.Errorf("config expansion policy returned no phases for command %q", command.GetValue())
+	}
 
-	// We'll refer to args in bazelrc which aren't expanded from a --config
-	// option as "default" args, like a .bazelrc line that just says
-	// "common -c dbg" or "build -c dbg" as opposed to something qualified like
-	// "build:dbg -c dbg".
+	// We'll refer to rc args which aren't expanded from a named config as
+	// "default" args.
 	//
 	// These default args take lower precedence than explicit command line args
 	// so we expand those first just after the command.
 	log.Debugf("Args before expanding default rc rules: %#v", arguments.FormatAll(expanded))
 	var err error
-	expanded, err = defaultConfig.appendArgsForConfig(expanded, namedConfigs, phases, []string{}, true)
+	expanded, err = defaultConfig.appendArgsForConfig(expanded, namedConfigs, phases, []string{}, true, policy)
 	if err != nil {
-		return nil, fmt.Errorf("failed to evaluate bazelrc configuration: %s", err)
+		return nil, fmt.Errorf("failed to evaluate rc configuration: %s", err)
 	}
 	log.Debugf("Args after expanding default rc rules: %v", arguments.FormatAll(expanded))
-	expanded, err = appendExpansion(expanded, a.Args[commandIndex+1:], command.Value, namedConfigs, phases, []string{}, false)
+	expanded, err = appendExpansion(expanded, a.Args[commandIndex+1:], command.Value, namedConfigs, phases, []string{}, false, policy)
 	if err != nil {
 		return nil, err
 	}
@@ -833,6 +849,7 @@ func (c *Config) appendArgsForConfig(
 	phases []string,
 	configStack []string,
 	allowEmpty bool,
+	policy ConfigExpansionPolicy,
 ) ([]arguments.Argument, error) {
 	empty := true
 	for _, phase := range phases {
@@ -850,6 +867,7 @@ func (c *Config) appendArgsForConfig(
 			phases,
 			configStack,
 			true,
+			policy,
 		)
 		if err != nil {
 			return nil, err
@@ -872,6 +890,7 @@ func appendExpansion(
 	phases []string,
 	configStack []string,
 	removeDoubleDash bool,
+	policy ConfigExpansionPolicy,
 ) ([]arguments.Argument, error) {
 	for _, a := range toExpand {
 		log.Debugf("Expanding %s", shlex.Quote(a.Format()...))
@@ -894,7 +913,7 @@ func appendExpansion(
 				log.Debugf("common rc rule: opt %q is unsupported by command %q; skipping", a.Name(), phases[len(phases)-1])
 				continue
 			}
-			if a.Name() != "config" {
+			if a.Name() != policy.ConfigFlag {
 				expanded = append(expanded, a)
 				continue
 			}
@@ -907,10 +926,10 @@ func appendExpansion(
 				return nil, fmt.Errorf("config value '%s' is not defined in any .rc file", a.GetValue())
 			}
 			if slices.Index(configStack, a.GetValue()) != -1 {
-				return nil, fmt.Errorf("circular --config reference detected: %s", strings.Join(append(configStack, a.GetValue()), " -> "))
+				return nil, fmt.Errorf("circular --%s reference detected: %s", policy.ConfigFlag, strings.Join(append(configStack, a.GetValue()), " -> "))
 			}
 			var err error
-			if expanded, err = config.appendArgsForConfig(expanded, namedConfigs, phases, append(configStack, a.GetValue()), false); err != nil {
+			if expanded, err = config.appendArgsForConfig(expanded, namedConfigs, phases, append(configStack, a.GetValue()), false, policy); err != nil {
 				return nil, fmt.Errorf("error expanding config '%s': %s", a.GetValue(), err)
 			}
 		case *arguments.PositionalArgument:

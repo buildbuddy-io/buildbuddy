@@ -20,6 +20,67 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+func TestExpandConfigsWithPolicy(t *testing.T) {
+	bbConfigDefinition := options.NewDefinition(
+		"bb_config",
+		options.WithRequiresValue(),
+		options.WithSupportFor("explain"),
+	)
+	bazelConfigDefinition := options.NewDefinition(
+		"config",
+		options.WithRequiresValue(),
+		options.WithSupportFor("explain"),
+	)
+	commonDefinition := options.NewDefinition(
+		"common_flag",
+		options.WithNegative(),
+		options.WithSupportFor("explain"),
+	)
+	detailedDefinition := options.NewDefinition(
+		"detailed",
+		options.WithNegative(),
+		options.WithSupportFor("explain"),
+	)
+
+	args := &parsed.OrderedArgs{Args: []arguments.Argument{
+		&arguments.PositionalArgument{Value: "explain"},
+		mustNewOption(t, "config", ptr("untouched"), bazelConfigDefinition),
+		mustNewOption(t, "bb_config", ptr("detailed"), bbConfigDefinition),
+		&arguments.PositionalArgument{Value: "invocation-id"},
+	}}
+	defaultConfig := parsed.NewConfig()
+	defaultConfig.ByPhase["common"] = []arguments.Argument{
+		mustNewOption(t, "common_flag", nil, commonDefinition),
+	}
+	namedConfigs := map[string]*parsed.Config{
+		"detailed": {
+			ByPhase: map[string][]arguments.Argument{
+				"explain": {mustNewOption(t, "detailed", nil, detailedDefinition)},
+			},
+		},
+	}
+
+	expanded, err := args.ExpandConfigsWithPolicy(
+		namedConfigs,
+		defaultConfig,
+		parsed.ConfigExpansionPolicy{
+			ConfigFlag: "bb_config",
+			GetPhases: func(command string) []string {
+				require.Equal(t, "explain", command)
+				return []string{"common", "explain"}
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"explain",
+		"--common_flag",
+		"--config=untouched",
+		"--detailed",
+		"invocation-id",
+	}, expanded.Format())
+}
+
 func TestRemoveAndAccumulateStartupOption(t *testing.T) {
 	startupOptionBoolName := "startup_option_bool"
 	startupOptionBoolDefinition := options.NewDefinition(
