@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh_server"
+	"github.com/buildbuddy-io/buildbuddy/cli/testhealth"
 	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
@@ -97,6 +98,12 @@ func register() {
 			Handler: fix.HandleFix,
 			Flags:   fix.Flags,
 		},
+		{
+			Name:    "get-tests",
+			Help:    "Lists reported tests and their health.",
+			Handler: testhealth.HandleGetTests,
+			Flags:   testhealth.GetTestsFlags,
+		},
 		// Handle 'help' command separately to avoid circular dependency with `cli_command`
 		// package
 		{
@@ -157,6 +164,12 @@ func register() {
 			Help:    "Runs an SSH server on a user-mode wireguard network.",
 			Handler: ssh_server.HandleSSHServer,
 			Flags:   ssh_server.Flags,
+		},
+		{
+			Name:    "test-report",
+			Help:    "Reports Bazel test.xml results to BuildBuddy.",
+			Handler: testhealth.HandleTestReport,
+			Flags:   testhealth.TestReportFlags,
 		},
 		{
 			Name:    "index",
