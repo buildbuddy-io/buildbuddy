@@ -950,6 +950,9 @@ type VMNetwork struct {
 	vmIP     string
 	vethPair *vethPair
 	cleanup  func(ctx context.Context) error
+
+	observerMu sync.Mutex
+	observer   *PacketObserver
 }
 
 // CreateVMNetwork initializes a network namespace, networking
@@ -1052,6 +1055,10 @@ func (v *VMNetwork) activate(ctx context.Context) error {
 }
 
 func (v *VMNetwork) deactivate(ctx context.Context) error {
+	if _, err := v.StopPacketObserver(); err != nil {
+		// Observation is best-effort and must not prevent network reuse.
+		log.CtxWarningf(ctx, "Failed to stop packet observer: %s", err)
+	}
 	// Before adding a VMNetwork to a pool, we need to remove the NAT rules for
 	// the tap device, since we'll be removing the IP from the veth pair before
 	// pooling.
@@ -1081,7 +1088,41 @@ func (v *VMNetwork) NamespacePath() string {
 }
 
 func (v *VMNetwork) Cleanup(ctx context.Context) error {
+	if _, err := v.StopPacketObserver(); err != nil {
+		log.CtxWarningf(ctx, "Failed to stop network observer: %s", err)
+	}
 	return v.cleanup(ctx)
+}
+
+// StartPacketObserver begins a fresh observation session on this VM's
+// host-side veth interface.
+func (v *VMNetwork) StartPacketObserver() error {
+	v.observerMu.Lock()
+	defer v.observerMu.Unlock()
+	if v.observer != nil {
+		v.observer.Reset()
+		return nil
+	}
+	observer, err := NewPacketObserver(v.vethPair.hostDevice, v.vethPair.network.NamespacedIP())
+	if err != nil {
+		return err
+	}
+	v.observer = observer
+	return nil
+}
+
+// StopPacketObserver stops the current observation session and returns its
+// final destination snapshot.
+func (v *VMNetwork) StopPacketObserver() ([]*NetworkDestination, error) {
+	v.observerMu.Lock()
+	observer := v.observer
+	v.observer = nil
+	v.observerMu.Unlock()
+	if observer == nil {
+		return nil, nil
+	}
+	err := observer.Close()
+	return observer.Destinations(), err
 }
 
 func (v *VMNetwork) setupTapNATRules(ctx context.Context) error {

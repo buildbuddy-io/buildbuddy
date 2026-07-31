@@ -534,6 +534,26 @@ type VM interface {
 	VMConfig() *fcpb.VMConfiguration
 }
 
+// NetworkDestination contains passive connection metadata for one remote
+// endpoint contacted by a container.
+type NetworkDestination struct {
+	IP              string `json:"ip"`
+	Port            uint16 `json:"port"`
+	Protocol        string `json:"protocol"`
+	BytesSent       int64  `json:"bytes_sent"`
+	BytesReceived   int64  `json:"bytes_received"`
+	PacketsSent     int64  `json:"packets_sent"`
+	PacketsReceived int64  `json:"packets_received"`
+	ConnectionCount int64  `json:"connection_count"`
+}
+
+// NetworkObserver is optionally implemented by containers which can observe
+// external network destinations without inspecting packet payloads.
+type NetworkObserver interface {
+	StartNetworkObserver() error
+	StopNetworkObserver() ([]*NetworkDestination, error)
+}
+
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {

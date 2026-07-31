@@ -1963,6 +1963,34 @@ func (c *FirecrackerContainer) NewHostVSockListener(port int) (net.Listener, err
 	return listener, nil
 }
 
+func (c *FirecrackerContainer) StartNetworkObserver() error {
+	if c.network == nil {
+		return status.FailedPreconditionError("VM network is not configured")
+	}
+	return c.network.StartPacketObserver()
+}
+
+func (c *FirecrackerContainer) StopNetworkObserver() ([]*container.NetworkDestination, error) {
+	if c.network == nil {
+		return nil, nil
+	}
+	destinations, err := c.network.StopPacketObserver()
+	result := make([]*container.NetworkDestination, 0, len(destinations))
+	for _, destination := range destinations {
+		result = append(result, &container.NetworkDestination{
+			IP:              destination.IP,
+			Port:            destination.Port,
+			Protocol:        destination.Protocol,
+			BytesSent:       destination.BytesSent,
+			BytesReceived:   destination.BytesReceived,
+			PacketsSent:     destination.PacketsSent,
+			PacketsReceived: destination.PacketsReceived,
+			ConnectionCount: destination.ConnectionCount,
+		})
+	}
+	return result, err
+}
+
 func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
 	if c.memoryStore == nil {
 		// No memory file to serve over UFFD; do nothing.

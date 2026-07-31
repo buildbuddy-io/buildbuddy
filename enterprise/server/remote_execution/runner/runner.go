@@ -94,6 +94,8 @@ var (
 	measureWorkspaceDiskUsage = flag.Bool("executor.workspace.measure_disk_usage", false, "If set, measure the disk space used by the task's buildroot (workspace) after each task finishes and report it in the task's usage stats. Note: this requires walking the entire workspace tree, which may add CPU/IO overhead for tasks with large workspaces.")
 )
 
+const agentNetworkDestinationsArtifactName = "network-destinations.json"
+
 const (
 	// Runner states
 
@@ -396,7 +398,29 @@ func (k *killableTask) String() string {
 func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *interfaces.CommandResult) {
 	start := time.Now()
 	defer func() {
-		if res == nil || r.llmProxySession == nil {
+		if r.llmProxySession == nil {
+			return
+		}
+		if observer, ok := r.Container.Delegate.(container.NetworkObserver); ok {
+			destinations, err := observer.StopNetworkObserver()
+			if err != nil {
+				log.CtxWarningf(ctx, "Could not stop network destination observer: %s", err)
+			}
+			if res != nil && len(destinations) > 0 {
+				report, err := json.Marshal(struct {
+					Destinations []*container.NetworkDestination `json:"destinations"`
+				}{Destinations: destinations})
+				if err != nil {
+					log.CtxWarningf(ctx, "Could not marshal network destination report: %s", err)
+				} else {
+					if res.AuxiliaryLogs == nil {
+						res.AuxiliaryLogs = make(map[string][]byte)
+					}
+					res.AuxiliaryLogs[agentNetworkDestinationsArtifactName] = report
+				}
+			}
+		}
+		if res == nil {
 			return
 		}
 		events := r.llmProxySession.EventCollector.Events()
@@ -1500,10 +1524,22 @@ func (r *taskRunner) startLLMProxySession() error {
 		return status.WrapError(err, "register LLM proxy session")
 	}
 	r.revokeLLMProxySession = revoke
+	if observer, ok := r.Container.Delegate.(container.NetworkObserver); ok {
+		if err := observer.StartNetworkObserver(); err != nil {
+			// Destination reporting is best-effort and must not prevent the agent
+			// from running.
+			log.Warningf("Could not start network destination observer: %s", err)
+		}
+	}
 	return nil
 }
 
 func (r *taskRunner) clearLLMProxySession() {
+	if observer, ok := r.Container.Delegate.(container.NetworkObserver); ok {
+		if _, err := observer.StopNetworkObserver(); err != nil {
+			log.Warningf("Could not stop network destination observer: %s", err)
+		}
+	}
 	if r.revokeLLMProxySession != nil {
 		r.revokeLLMProxySession()
 		r.revokeLLMProxySession = nil
