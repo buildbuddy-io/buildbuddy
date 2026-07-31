@@ -29,6 +29,7 @@ import (
 	"github.com/miekg/dns"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
@@ -36,11 +37,12 @@ import (
 )
 
 var (
-	udpListenPort     = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
-	publicHost        = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
-	stalePeerTimeout  = flag.Duration("gateway.stale_peer_timeout", 5*time.Minute, "Time after the last WireGuard handshake before a peer is removed. WireGuard re-handshakes every 3 minutes, so this should be at least that.")
-	cleanupInterval   = flag.Duration("gateway.cleanup_interval", time.Minute, "How often to scan for and remove stale peers.")
-	heartbeatInterval = flag.Duration("gateway.connect_heartbeat_interval", 30*time.Second, "How often Connect streams send an empty heartbeat message. Should be well under typical intermediary idle timeouts (usually 60s+).")
+	udpListenPort             = flag.Int("gateway.udp_listen_port", 51820, "UDP port for the WireGuard device")
+	publicHost                = flag.String("gateway.public_host", "localhost", "Public hostname returned to clients as the WireGuard endpoint")
+	stalePeerTimeout          = flag.Duration("gateway.stale_peer_timeout", 5*time.Minute, "Time after the last WireGuard handshake before a peer is removed. WireGuard re-handshakes every 3 minutes, so this should be at least that.")
+	cleanupInterval           = flag.Duration("gateway.cleanup_interval", time.Minute, "How often to scan for and remove stale peers.")
+	heartbeatInterval         = flag.Duration("gateway.connect_heartbeat_interval", 30*time.Second, "How often Connect streams send an empty heartbeat message. Should be well under typical intermediary idle timeouts (usually 60s+).")
+	watchFallbackPollInterval = flag.Duration("gateway.watch_fallback_poll_interval", time.Second, "How often Watch streams re-check the watched peer's state without being woken by an event. A backstop: registration changes and WireGuard handshake activity wake watchers directly.")
 )
 
 // networkState holds IP allocation and peer name state for one
@@ -81,6 +83,14 @@ type Gateway struct {
 	publicHost    string
 	udpListenPort int
 	done          chan struct{}
+
+	// watchMu guards stateChanged. Separate from mu so that notifyWatchers is
+	// safe to call from anywhere: under mu (peer add/remove) and from the
+	// WireGuard device's own goroutines (via the logger hook).
+	watchMu sync.Mutex
+	// stateChanged is closed and replaced whenever peer state may have
+	// changed, waking all Watch streams (see watchSignal).
+	stateChanged chan struct{}
 }
 
 // New creates a Gateway with a single shared WireGuard device.
@@ -92,9 +102,33 @@ func New(env environment.Env) (*Gateway, error) {
 
 	tunDev := newMuxTUN(1420)
 
+	gw := &Gateway{
+		env:           env,
+		tun:           tunDev,
+		networks:      make(map[string]*networkState),
+		peers:         make(map[string]*peerInfo),
+		publicHost:    *publicHost,
+		udpListenPort: *udpListenPort,
+		done:          make(chan struct{}),
+		stateChanged:  make(chan struct{}),
+	}
+
 	logger := &device.Logger{
-		Verbosef: func(format string, args ...any) { log.Debugf("wg: "+format, args...) },
-		Errorf:   func(format string, args ...any) { log.Errorf("wg: "+format, args...) },
+		Verbosef: func(format string, args ...any) {
+			log.Debugf("wg: "+format, args...)
+			// Handshake activity wakes Watch streams. The device logs a
+			// keepalive/handshake line at the moment a peer's last-handshake
+			// time is stamped (wireguard-go receive.go: timersHandshakeComplete
+			// runs, then "Receiving keepalive packet" is logged), so watchers
+			// learn of a completed handshake immediately. The match is
+			// deliberately loose: Watch re-reads real state on every wake, so a
+			// spurious wake is free and a missed one only costs latency (see
+			// watchFallbackPollInterval).
+			if strings.Contains(format, "handshake") || strings.Contains(format, "keepalive") {
+				gw.notifyWatchers()
+			}
+		},
+		Errorf: func(format string, args ...any) { log.Errorf("wg: "+format, args...) },
 	}
 	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), logger)
 
@@ -111,17 +145,8 @@ func New(env environment.Env) (*Gateway, error) {
 	pubKey := serverPrivKey.PublicKey().Hex()
 	log.Infof("WireGuard device up on port %d (pubkey %s...)", *udpListenPort, pubKey[:8])
 
-	gw := &Gateway{
-		env:           env,
-		dev:           dev,
-		tun:           tunDev,
-		pubKey:        pubKey,
-		networks:      make(map[string]*networkState),
-		peers:         make(map[string]*peerInfo),
-		publicHost:    *publicHost,
-		udpListenPort: *udpListenPort,
-		done:          make(chan struct{}),
-	}
+	gw.dev = dev
+	gw.pubKey = pubKey
 	go gw.cleanupLoop()
 	return gw, nil
 }
@@ -310,6 +335,126 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 	}
 }
 
+// Watch streams state changes for the peer connection with the requested
+// session ID in the caller's group. A message is sent when the peer first
+// appears (which may be after the watch starts) and whenever its state
+// changes, e.g. when its first WireGuard handshake completes. Once a
+// previously-reported peer is removed, the stream ends with NotFound.
+// Watching a session that never appears blocks until the caller gives up;
+// sessions in other groups are indistinguishable from nonexistent ones.
+// While the watched peer is quiet the stream carries periodic empty
+// heartbeat messages (as Connect does); clients ignore them.
+func (g *Gateway) Watch(req *gwpb.WatchRequest, stream gwsvcpb.GatewayService_WatchServer) error {
+	claims, err := g.env.GetAuthenticator().AuthenticatedUser(stream.Context())
+	if err != nil {
+		return err
+	}
+	groupID := claims.GetGroupID()
+	sessionID := req.GetSessionId()
+	if sessionID == "" {
+		return status.InvalidArgumentError("session_id is required")
+	}
+
+	ticker := time.NewTicker(*watchFallbackPollInterval)
+	defer ticker.Stop()
+	heartbeat := time.NewTicker(*heartbeatInterval)
+	defer heartbeat.Stop()
+
+	var last *gwpb.Peer
+	loggedSnapshotErr := false
+	for {
+		// Arm the signal before snapshotting: a state change landing after
+		// the snapshot closes the already-obtained channel, so the select
+		// below wakes instead of missing it.
+		signal := g.watchSignal()
+		peer, err := g.snapshotPeer(groupID, sessionID)
+		if err != nil && !loggedSnapshotErr {
+			// Log once per stream: this runs on every wake, and a
+			// persistently failing IpcGet would otherwise flood the log.
+			log.Errorf("Watch: %s", err)
+			loggedSnapshotErr = true
+		}
+		if peer == nil && last != nil {
+			return status.NotFoundErrorf("session %q is no longer registered", sessionID)
+		}
+		if peer != nil && !proto.Equal(peer, last) {
+			if err := stream.Send(&gwpb.WatchResponse{Peer: peer}); err != nil {
+				return err
+			}
+			last = peer
+		}
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case <-signal:
+		case <-ticker.C:
+		case <-heartbeat.C:
+			// Keep the stream alive through idle-sensitive intermediaries
+			// while the watched peer is quiet or not yet registered.
+			if err := stream.Send(&gwpb.WatchResponse{}); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+// notifyWatchers wakes all Watch streams so they re-check peer state.
+// Closing the channel broadcasts to every waiter; a fresh channel re-arms
+// the signal. Unlike sync.Cond, a channel can be waited on in a select
+// alongside the stream context and the fallback ticker.
+func (g *Gateway) notifyWatchers() {
+	g.watchMu.Lock()
+	close(g.stateChanged)
+	g.stateChanged = make(chan struct{})
+	g.watchMu.Unlock()
+}
+
+// watchSignal returns a channel that is closed on the next state change.
+// Callers must obtain the channel before reading the state they act on, so
+// that a change landing between the read and the wait still wakes them.
+func (g *Gateway) watchSignal() <-chan struct{} {
+	g.watchMu.Lock()
+	defer g.watchMu.Unlock()
+	return g.stateChanged
+}
+
+// snapshotPeer returns the current state of the peer with the given session
+// ID in groupID, or nil if no such peer is registered. A non-nil error
+// reports a failure to read handshake state; the returned peer is still
+// valid, with last_handshake_time left unset.
+func (g *Gateway) snapshotPeer(groupID, sessionID string) (*gwpb.Peer, error) {
+	// Locate the peer before touching the WireGuard device: dumping device
+	// state (lastHandshakeTimes) is O(all peers), and the common case for a
+	// watch on a still-booting session is that the peer doesn't exist yet.
+	var p *gwpb.Peer
+	var pubKeyHex string
+	g.mu.Lock()
+	for k, info := range g.peers {
+		if info.sessionID != sessionID || info.networkState.groupID != groupID {
+			continue
+		}
+		pubKeyHex = k
+		p = &gwpb.Peer{
+			Name:      info.assignedName,
+			Ip:        info.ip.String(),
+			SessionId: info.sessionID,
+		}
+		break
+	}
+	g.mu.Unlock()
+	if p == nil {
+		return nil, nil
+	}
+	handshakeTimes, err := g.lastHandshakeTimes()
+	if err != nil {
+		return p, err
+	}
+	if t, ok := handshakeTimes[pubKeyHex]; ok {
+		p.LastHandshakeTime = timestamppb.New(t)
+	}
+	return p, nil
+}
+
 // addPeerLocked allocates an IP in ns, registers it with the TUN and the
 // WireGuard device, and records the peer. assignedName and sessionID must
 // already be validated (and checked for conflicts) by the caller. Must be
@@ -348,6 +493,7 @@ func (g *Gateway) addPeerLocked(ns *networkState, pubKeyHex, assignedName, sessi
 		registeredAt: time.Now(),
 		cancel:       cancel,
 	}
+	g.notifyWatchers()
 	return assignedIP, nil
 }
 
@@ -544,6 +690,7 @@ func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
 	if info.cancel != nil {
 		info.cancel()
 	}
+	g.notifyWatchers()
 	log.Infof("Removed peer %s... (ip=%s name=%q session=%s)", pubKeyHex[:8], info.ip, info.assignedName, info.sessionID)
 }
 
