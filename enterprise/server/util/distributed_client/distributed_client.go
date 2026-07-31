@@ -560,9 +560,9 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	// Pebble rejects offset/limit when the request matches the stored compressor,
 	// so skip the rewrite on the partial-read path.
 	decompress := offset == 0 && limit == 0 && c.shouldReadCompressed(r)
-	// The compressor the caller expects returned bytes to be encoded with,
-	// captured before any transport-only rewrite below.
-	requestedCompressor := r.GetCompressor()
+	// The resource the caller actually asked for, captured before any
+	// transport-only compressor rewrite below.
+	requested := r
 	if decompress {
 		r = r.CloneVT()
 		r.Compressor = repb.Compressor_ZSTD
@@ -583,7 +583,6 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 
 	// The server provided a reference. Dereference it.
 	if rc.rsp.GetReference() != nil {
-		recordReadResponseMetrics("reference", r)
 		// Closing the stream (done below) returns the reference proto to the
 		// pool, but we need the reference for later, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
@@ -610,65 +609,15 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 			return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
 		}
 
-		// Dereferencing yields the bytes exactly as storedCompressor, so the storedCompressor
-		// compressor must be reconciled with the one the caller wants.
-		storedCompressor := ref.GetMetadata().GetFileRecord().GetCompressor()
-
-		// A ranged read of a compressed blob cannot be served: the caller's
-		// offset/limit refer to uncompressed bytes, which do not map to
-		// positions in the stored stream. This mirrors pebble's reader.
-		if storedCompressor == requestedCompressor && storedCompressor != repb.Compressor_IDENTITY && (offset != 0 || limit != 0) {
-			return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
-		}
-
-		if storedCompressor == requestedCompressor {
-			return refCache.Dereference(ctx, ref, offset, limit)
-		}
-		if storedCompressor == repb.Compressor_IDENTITY && requestedCompressor == repb.Compressor_ZSTD {
-			// The offset/limit refer to uncompressed bytes, so they can be
-			// applied to the stored stream directly before compressing.
-			drc, err := refCache.Dereference(ctx, ref, offset, limit)
-			if err != nil {
-				return nil, err
-			}
-			bufSize := int64(digest.SafeBufferSize(r, *config.ReadBufSizeBytes))
-			zr, err := compression.NewZstdCompressingReader(drc, c.bufPool, bufSize)
-			if err != nil {
-				drc.Close()
-				return nil, err
-			}
-			return zr, nil
-		}
-		if storedCompressor == repb.Compressor_ZSTD && requestedCompressor == repb.Compressor_IDENTITY {
-			drc, err := refCache.Dereference(ctx, ref, 0, 0)
-			if err != nil {
-				return nil, err
-			}
-			reader, err := compression.NewZstdDecompressingReader(drc)
-			if err != nil {
-				drc.Close()
-				return nil, err
-			}
-			// The offset/limit refer to uncompressed bytes, so apply them to
-			// the decompressed stream, as pebble's reader does.
-			if offset != 0 {
-				if _, err := io.CopyN(io.Discard, reader, offset); err != nil {
-					_ = reader.Close()
-					return nil, err
-				}
-			}
-			if limit != 0 {
-				return ioutil.LimitReadCloser(reader, limit), nil
-			}
-			return reader, nil
-		}
-		// Unreachable: every combination of stored and requestedCompressor compressors is
-		// handled above.
-		return nil, status.InternalErrorf("peer %q returned a reference stored with compressor %s, but %s was requested with offset %d and limit %d", peer, storedCompressor, requestedCompressor, offset, limit)
+		// Dereference reconciles the stored compressor with the requested one,
+		// so pass the caller's original resource, not the transport-rewritten
+		// one, and return its reader directly.
+		recordReadResponseMetrics("reference", r)
+		return refCache.Dereference(ctx, ref, requested, offset, limit)
 	}
 
-	recordReadResponseMetrics("bytes", r)
 	if !decompress {
+		recordReadResponseMetrics("bytes", r)
 		return rc, nil
 	}
 	dr, err := compression.NewZstdDecompressingReader(rc)
@@ -676,6 +625,7 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		rc.Close()
 		return nil, err
 	}
+	recordReadResponseMetrics("bytes", r)
 	return dr, nil
 }
 

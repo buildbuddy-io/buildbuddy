@@ -1386,10 +1386,18 @@ func startReferenceReadServerWithRecorder(t *testing.T, ref *refpb.Reference) (s
 }
 
 // fakeReferenceCache implements interfaces.ReferenceCache over an in-memory
-// map of blob name -> stored bytes, standing in for shared storage.
+// map of blob name -> stored bytes, standing in for shared storage. It records
+// the arguments of the last Dereference call so tests can assert on what the
+// client passed through; compressor reconciliation itself is the real
+// implementation's job and is tested in pebble_cache_test.go.
 type fakeReferenceCache struct {
 	interfaces.Cache
 	blobs map[string][]byte
+
+	mu           sync.Mutex
+	lastResource *rspb.ResourceName
+	lastOffset   int64
+	lastLimit    int64
 }
 
 func (c *fakeReferenceCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
@@ -1400,7 +1408,12 @@ func (c *fakeReferenceCache) SupportsCompressor(compressor repb.Compressor_Value
 	return compressor == repb.Compressor_IDENTITY || compressor == repb.Compressor_ZSTD
 }
 
-func (c *fakeReferenceCache) Dereference(ctx context.Context, ref *refpb.Reference, offset, limit int64) (io.ReadCloser, error) {
+func (c *fakeReferenceCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	c.mu.Lock()
+	c.lastResource = r
+	c.lastOffset = offset
+	c.lastLimit = limit
+	c.mu.Unlock()
 	data, ok := c.blobs[ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()]
 	if !ok {
 		return nil, status.NotFoundError("blob not found")
@@ -1413,6 +1426,12 @@ func (c *fakeReferenceCache) Dereference(ctx context.Context, ref *refpb.Referen
 		data = data[:limit]
 	}
 	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (c *fakeReferenceCache) LastDereference() (*rspb.ResourceName, int64, int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.lastResource, c.lastOffset, c.lastLimit
 }
 
 func makeReference(rn *rspb.ResourceName, blobName string, compressor repb.Compressor_Value) *refpb.Reference {
@@ -1434,14 +1453,14 @@ func makeReference(rn *rspb.ResourceName, blobName string, compressor repb.Compr
 	}
 }
 
-func newReferenceTestProxy(t *testing.T, te *testenv.TestEnv, blobs map[string][]byte) *distributed_client.Proxy {
+func newReferenceTestProxy(t *testing.T, te *testenv.TestEnv, blobs map[string][]byte) (*distributed_client.Proxy, *fakeReferenceCache) {
 	t.Helper()
 	localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	cache := &fakeReferenceCache{Cache: te.GetCache(), blobs: blobs}
 	c := distributed_client.New(te, cache, localPeer)
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
-	return c
+	return c, cache
 }
 
 func TestRemoteReadReference(t *testing.T) {
@@ -1454,7 +1473,7 @@ func TestRemoteReadReference(t *testing.T) {
 
 	t.Run("identity", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
 		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.NoError(t, err)
 		got, err := io.ReadAll(r)
@@ -1463,53 +1482,47 @@ func TestRemoteReadReference(t *testing.T) {
 		require.Equal(t, buf, got)
 	})
 
-	t.Run("identity ranged", func(t *testing.T) {
+	t.Run("range is forwarded to Dereference", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
 		r, err := c.RemoteReader(ctx, peer, rn, 5, 10)
 		require.NoError(t, err)
 		got, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.NoError(t, r.Close())
 		require.Equal(t, buf[5:15], got)
+		gotRN, gotOffset, gotLimit := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+		require.Equal(t, int64(5), gotOffset)
+		require.Equal(t, int64(10), gotLimit)
 	})
 
-	t.Run("zstd stored, identity wanted", func(t *testing.T) {
-		compressed := compression.CompressZstd(nil, buf)
-		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_ZSTD))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: compressed})
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf, got)
-	})
-
-	t.Run("identity stored, zstd wanted", func(t *testing.T) {
+	t.Run("requested compressor is forwarded to Dereference", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
 		rnZstd := rn.CloneVT()
 		rnZstd.Compressor = repb.Compressor_ZSTD
 		r, err := c.RemoteReader(ctx, peer, rnZstd, 0, 0)
 		require.NoError(t, err)
+		// The fake serves the mapped bytes verbatim; the client must return
+		// Dereference's reader directly without transcoding.
 		got, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.NoError(t, r.Close())
-		decompressed, err := compression.DecompressZstd(nil, got)
-		require.NoError(t, err)
-		require.Equal(t, buf, decompressed)
+		require.Equal(t, buf, got)
+		gotRN, _, _ := fake.LastDereference()
+		require.Equal(t, repb.Compressor_ZSTD, gotRN.GetCompressor())
 	})
 
 	t.Run("decompress transport rewrite", func(t *testing.T) {
 		// With compressed reads enabled and no offset/limit, RemoteReader
 		// rewrites the request to ZSTD for transport (the blob must be
-		// larger than 100 bytes to qualify). A reference response must
-		// still yield the IDENTITY bytes the caller asked for.
+		// larger than 100 bytes to qualify). On a reference response,
+		// Dereference must see the caller's original IDENTITY resource,
+		// not the transport-rewritten one.
 		bigRN, bigBuf := testdigest.RandomCASResourceBuf(t, 200)
-		compressed := compression.CompressZstd(nil, bigBuf)
 		peer, srv := startReferenceReadServerWithRecorder(t, makeReference(bigRN, blobName, repb.Compressor_ZSTD))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: compressed})
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: bigBuf})
 		c.SetEnableCompressedReads(true)
 		r, err := c.RemoteReader(ctx, peer, bigRN, 0, 0)
 		require.NoError(t, err)
@@ -1518,41 +1531,21 @@ func TestRemoteReadReference(t *testing.T) {
 		require.NoError(t, r.Close())
 		require.Equal(t, bigBuf, got)
 		// Confirm the transport rewrite actually happened: the peer saw a
-		// ZSTD request even though the caller asked for IDENTITY.
+		// ZSTD request even though the caller asked for IDENTITY...
 		require.Equal(t, repb.Compressor_ZSTD, srv.LastCompressor())
+		// ...but Dereference saw the caller's original request.
+		gotRN, _, _ := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
 	})
 
 	t.Run("digest mismatch is rejected", func(t *testing.T) {
 		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
 		peer := startReferenceReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsInternalError(err), "expected InternalError, got %s", err)
 		require.Contains(t, err.Error(), "returned a reference for")
-	})
-
-	t.Run("ranged zstd passthrough is rejected", func(t *testing.T) {
-		compressed := compression.CompressZstd(nil, buf)
-		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_ZSTD))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: compressed})
-		rnZstd := rn.CloneVT()
-		rnZstd.Compressor = repb.Compressor_ZSTD
-		_, err := c.RemoteReader(ctx, peer, rnZstd, 5, 10)
-		require.Error(t, err)
-		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
-	})
-
-	t.Run("ranged zstd to identity", func(t *testing.T) {
-		compressed := compression.CompressZstd(nil, buf)
-		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_ZSTD))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: compressed})
-		r, err := c.RemoteReader(ctx, peer, rn, 5, 10)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf[5:15], got)
 	})
 
 	t.Run("cache that cannot dereference is rejected", func(t *testing.T) {
@@ -1568,7 +1561,7 @@ func TestRemoteReadReference(t *testing.T) {
 
 	t.Run("missing blob is not found", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY))
-		c := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
