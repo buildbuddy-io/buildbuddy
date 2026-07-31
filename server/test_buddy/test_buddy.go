@@ -226,7 +226,7 @@ func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	resultsByCase := make(map[identity.CaseAddress][]*normalize.CaseResult)
 	for _, result := range report.CaseResults {
 		if analyzer.Eligible(analyzer.Sample{Outcome: result.Result.GetResult().GetOutcome()}) {
-			resultsByCase[result.Identity.Address] = append(resultsByCase[result.Identity.Address], result)
+			resultsByCase[result.Address] = append(resultsByCase[result.Address], result)
 		}
 	}
 	for _, results := range resultsByCase {
@@ -242,7 +242,7 @@ func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	resultsByTarget := make(map[identity.TargetAddress][]*normalize.TargetResult)
 	for _, result := range report.TargetResults {
 		if analyzer.Eligible(analyzer.Sample{Outcome: result.Result.GetResult().GetOutcome()}) {
-			resultsByTarget[result.Target.Address] = append(resultsByTarget[result.Target.Address], result)
+			resultsByTarget[result.Address] = append(resultsByTarget[result.Address], result)
 		}
 	}
 	for _, results := range resultsByTarget {
@@ -273,17 +273,17 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 	}
 	targets := make(map[identity.TargetAddress]*tables.TestTarget)
 	for _, result := range report.CaseResults {
-		target := result.Target
-		targets[target.Address] = &tables.TestTarget{
-			GroupID: groupID, Repository: repository, TargetLabel: target.Address.TargetLabel,
-			BucketID: identity.BucketForTarget(groupID, target.Address), PackagePath: target.Target.PackagePath,
+		target := result.Address.Target()
+		targets[target] = &tables.TestTarget{
+			GroupID: groupID, Repository: repository, TargetLabel: target.Label(),
+			BucketID: identity.BucketForTarget(groupID, target), PackagePath: target.PackagePath,
 		}
 	}
 	for _, result := range report.TargetResults {
-		target := result.Target
-		targets[target.Address] = &tables.TestTarget{
-			GroupID: groupID, Repository: repository, TargetLabel: target.Address.TargetLabel,
-			BucketID: identity.BucketForTarget(groupID, target.Address), PackagePath: target.Target.PackagePath,
+		target := result.Address
+		targets[target] = &tables.TestTarget{
+			GroupID: groupID, Repository: repository, TargetLabel: target.Label(),
+			BucketID: identity.BucketForTarget(groupID, target), PackagePath: target.PackagePath,
 		}
 	}
 	targetRows := make([]*tables.TestTarget, 0, len(targets))
@@ -327,11 +327,11 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 		end := min(start+reportBatchSize, len(report.CaseResults))
 		cases := make([]*tables.TestCase, 0, end-start)
 		for _, result := range report.CaseResults[start:end] {
-			address := result.Identity.Address
+			address := result.Address
 			cases = append(cases, &tables.TestCase{
-				GroupID: groupID, Repository: repository, TargetLabel: address.TargetLabel,
+				GroupID: groupID, Repository: repository, TargetLabel: address.Target().Label(),
 				CaseName: address.CaseName, BucketID: identity.BucketForTarget(groupID, address.Target()),
-				PackagePath: result.Identity.Target.PackagePath,
+				PackagePath: address.PackagePath,
 			})
 		}
 		if err := database.GORM(ctx, "test_buddy_admit_cases").
@@ -387,11 +387,12 @@ func analysisSamples(samples []retainedSample) []analyzer.Sample {
 
 func (s *Service) applyCase(ctx context.Context, groupID string, result *normalize.CaseResult, analyzerConfig *tbpb.TestAnalyzerConfig) error {
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		address := result.Identity.Address
+		address := result.Address
+		targetLabel := address.Target().Label()
 		if err := tx.GORM(ctx, "test_buddy_admit_state").
 			Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&tables.TestCaseState{
-				GroupID: groupID, Repository: address.Repository, TargetLabel: address.TargetLabel,
+				GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
 				CaseName: address.CaseName, Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
 				RecentResults: []byte("[]"),
 			}).Error; err != nil {
@@ -402,7 +403,7 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			WHERE group_id = ? AND repository = ? AND target_label = ? AND case_name = ?` +
 			s.env.GetDBHandle().SelectForUpdateModifier()
 		if err := tx.NewQuery(ctx, "test_buddy_lock_case_state").Raw(
-			query, groupID, address.Repository, address.TargetLabel, address.CaseName).Take(state); err != nil {
+			query, groupID, address.Repository, targetLabel, address.CaseName).Take(state); err != nil {
 			return err
 		}
 		resultInfo := result.Result.GetResult()
@@ -437,7 +438,7 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			return nil
 		}
 		return tx.NewQuery(ctx, "test_buddy_create_case_change").Create(&tables.TestCaseStateChange{
-			GroupID: groupID, Repository: address.Repository, TargetLabel: address.TargetLabel,
+			GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
 			CaseName: address.CaseName, StateVersion: state.StateVersion,
 			PreviousHealth: previousHealth, Health: state.Health,
 			PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
@@ -448,11 +449,12 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 
 func (s *Service) applyTarget(ctx context.Context, groupID string, result *normalize.TargetResult, analyzerConfig *tbpb.TestAnalyzerConfig) error {
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		address := result.Target.Address
+		address := result.Address
+		targetLabel := address.Label()
 		if err := tx.GORM(ctx, "test_buddy_admit_target_state").
 			Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&tables.TestTargetState{
-				GroupID: groupID, Repository: address.Repository, TargetLabel: address.TargetLabel,
+				GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
 				Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), RecentResults: []byte("[]"),
 			}).Error; err != nil {
 			return err
@@ -462,7 +464,7 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 			WHERE group_id = ? AND repository = ? AND target_label = ?` +
 			s.env.GetDBHandle().SelectForUpdateModifier()
 		if err := tx.NewQuery(ctx, "test_buddy_lock_target_state").Raw(
-			query, groupID, address.Repository, address.TargetLabel).Take(state); err != nil {
+			query, groupID, address.Repository, targetLabel).Take(state); err != nil {
 			return err
 		}
 		resultInfo := result.Result.GetResult()
@@ -497,7 +499,7 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 			return nil
 		}
 		return tx.NewQuery(ctx, "test_buddy_create_target_change").Create(&tables.TestTargetStateChange{
-			GroupID: groupID, Repository: address.Repository, TargetLabel: address.TargetLabel,
+			GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
 			StateVersion: state.StateVersion, PreviousHealth: previousHealth, Health: state.Health,
 			PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
 			EventTimeUsec: tx.NowFunc().UnixMicro(),
@@ -610,12 +612,12 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		args = append(args, packagePrefix, packagePrefix+"/", packagePrefix+"0")
 	}
 	if req.GetTarget() != nil {
-		target, err := identity.CanonicalizeTargetIdentity(repository, req.GetTarget().GetTargetLabel())
+		target, err := identity.CanonicalizeTarget(repository, req.GetTarget().GetTargetLabel())
 		if err != nil {
 			return err
 		}
 		where += ` AND tc.target_label = ?`
-		args = append(args, target.Address.TargetLabel)
+		args = append(args, target.Label())
 	}
 	args = append(args, tbpb.TestHealth_TEST_HEALTH_FLAKY.String())
 	query := fmt.Sprintf(`
@@ -651,9 +653,13 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 	rsp := &tbpb.GetTestsResponse{Tests: make([]*tbpb.TestCaseSummary, 0, queryBatchSize)}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_tests").Raw(query, args...)
 	err = db.ScanEach(rq, func(ctx context.Context, r *row) error {
+		target, err := identity.CanonicalizeTarget(repository, r.TargetLabel)
+		if err != nil {
+			return err
+		}
 		rsp.Tests = append(rsp.Tests, caseSummary(
 			identity.CaseAddress{
-				Repository: repository, TargetLabel: r.TargetLabel, CaseName: r.CaseName,
+				TargetAddress: target, CaseName: r.CaseName,
 			},
 			r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec))
 		if len(rsp.Tests) == queryBatchSize {
@@ -732,8 +738,12 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 	rsp := &tbpb.GetTestTargetsResponse{Targets: make([]*tbpb.TestTargetSummary, 0, queryBatchSize)}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_targets").Raw(query, args...)
 	err = db.ScanEach(rq, func(ctx context.Context, r *row) error {
+		target, err := identity.CanonicalizeTarget(repository, r.TargetLabel)
+		if err != nil {
+			return err
+		}
 		rsp.Targets = append(rsp.Targets, targetSummary(
-			identity.TargetAddress{Repository: repository, TargetLabel: r.TargetLabel},
+			target,
 			r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec))
 		if len(rsp.Targets) == queryBatchSize {
 			if err := stream.Send(rsp); err != nil {
@@ -871,7 +881,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	if err != nil {
 		return nil, err
 	}
-	target, err := identity.CanonicalizeTargetIdentity(req.GetRepoUrl(), req.GetIdentity().GetTargetLabel())
+	target, err := identity.CanonicalizeTarget(req.GetRepoUrl(), req.GetIdentity().GetTargetLabel())
 	if err != nil {
 		return nil, err
 	}
@@ -897,15 +907,15 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		WHERE tt.group_id = ? AND tt.repository = ? AND tt.target_label = ?
 		`,
 		tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), groupID,
-		target.Address.Repository, target.Address.TargetLabel).Take(row)
+		target.Repository, target.Label()).Take(row)
 	if db.IsRecordNotFound(err) {
-		return nil, status.NotFoundErrorf("test target %s was not found", target.Address.String())
+		return nil, status.NotFoundErrorf("test target %s was not found", target.String())
 	}
 	if err != nil {
 		return nil, err
 	}
 	rsp := &tbpb.GetTestTargetResponse{
-		Target: targetSummary(target.Address, row.Health, row.PassCount, row.FailCount,
+		Target: targetSummary(target, row.Health, row.PassCount, row.FailCount,
 			row.TimeoutCount, row.TotalDurationUsec),
 	}
 	samples, err := decodeSamples(row.RecentResults)
@@ -930,7 +940,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		WHERE group_id = ? AND repository = ? AND target_label = ?
 		ORDER BY state_version DESC
 		LIMIT 100`,
-		groupID, target.Address.Repository, target.Address.TargetLabel)
+		groupID, target.Repository, target.Label())
 	if err := db.ScanEach(rq, func(ctx context.Context, r *transitionRow) error {
 		rsp.Transitions = append(rsp.Transitions, &tbpb.TestHealthTransition{
 			PreviousHealth: health(r.PreviousHealth), Health: health(r.Health),
@@ -951,12 +961,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	if err != nil {
 		return nil, err
 	}
-	input := identity.CaseAddressFromProto(req.GetRepoUrl(), req.GetIdentity())
-	testCase, err := identity.CanonicalizeCase(identity.CaseInput{
-		RepositoryURL: input.Repository,
-		TargetLabel:   input.TargetLabel,
-		CaseName:      input.CaseName,
-	})
+	testCase, err := identity.CaseAddressFromProto(req.GetRepoUrl(), req.GetIdentity())
 	if err != nil {
 		return nil, err
 	}
@@ -982,15 +987,15 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		WHERE tc.group_id = ? AND tc.repository = ?
 			AND tc.target_label = ? AND tc.case_name = ?`,
 		tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), groupID,
-		testCase.Address.Repository, testCase.Address.TargetLabel, testCase.Address.CaseName).Take(row)
+		testCase.Repository, testCase.Target().Label(), testCase.CaseName).Take(row)
 	if db.IsRecordNotFound(err) {
-		return nil, status.NotFoundErrorf("test case %s was not found", testCase.Address.String())
+		return nil, status.NotFoundErrorf("test case %s was not found", testCase.String())
 	}
 	if err != nil {
 		return nil, err
 	}
 	rsp := &tbpb.GetTestCaseResponse{
-		Test: caseSummary(testCase.Address, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
+		Test: caseSummary(testCase, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
 	}
 	samples, err := decodeSamples(row.RecentResults)
 	if err != nil {
@@ -1009,7 +1014,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		WHERE group_id = ? AND repository = ? AND target_label = ? AND case_name = ?
 		ORDER BY state_version DESC
 		LIMIT 100`,
-		groupID, testCase.Address.Repository, testCase.Address.TargetLabel, testCase.Address.CaseName)
+		groupID, testCase.Repository, testCase.Target().Label(), testCase.CaseName)
 	type transitionRow struct {
 		PreviousHealth string
 		Health         string
@@ -1073,11 +1078,7 @@ func normalizePackagePrefix(raw string) (string, error) {
 	if strings.Contains(raw, ":") {
 		return "", status.InvalidArgumentError("package prefix must be a directory, not a target label")
 	}
-	target, err := identity.CanonicalizeTarget("//" + raw + ":__test_buddy_query__")
-	if err != nil {
-		return "", err
-	}
-	return target.PackagePath, nil
+	return identity.CanonicalizePackagePath(raw)
 }
 
 func (s *Service) groupID(ctx context.Context) (string, error) {

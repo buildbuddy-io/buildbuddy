@@ -351,12 +351,12 @@ func TargetLabelFromXMLPath(workspacePath, path string) (string, error) {
 	}
 	targetName := parts[len(parts)-1]
 	packagePath := strings.Join(parts[:len(parts)-1], "/")
-	target, err := identity.CanonicalizeTarget("//" + packagePath + ":" + targetName)
+	targetLabel, err := identity.CanonicalizeTargetLabel("//" + packagePath + ":" + targetName)
 	if err != nil {
 		return "", status.InvalidArgumentErrorf(
 			"cannot infer a Bazel target from %q: %s", path, err)
 	}
-	return target.Label, nil
+	return targetLabel, nil
 }
 
 func testXMLPaths(inputs []string) ([]string, error) {

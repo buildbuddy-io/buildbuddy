@@ -9,6 +9,7 @@ go_library(
         "//proto:test_buddy_go_proto",
         "//server/util/git",
         "//server/util/status",
+        "@bazel_gazelle//label",
     ],
 )
 

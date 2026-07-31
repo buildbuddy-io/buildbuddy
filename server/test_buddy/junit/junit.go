@@ -90,7 +90,7 @@ func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
 	if r == nil {
 		return nil, status.InvalidArgumentError("JUnit XML reader is required")
 	}
-	target, err := identity.CanonicalizeTarget(options.TargetLabel)
+	targetLabel, err := identity.CanonicalizeTargetLabel(options.TargetLabel)
 	if err != nil {
 		return nil, err
 	}
@@ -98,10 +98,10 @@ func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
-	options.TargetLabel = target.Label
+	options.TargetLabel = targetLabel
 	p := &parser{
 		ctx: ctx, options: options, limits: limits,
-		report: &Report{TargetLabel: target.Label},
+		report: &Report{TargetLabel: targetLabel},
 	}
 	p.reader = &countingReader{r: io.LimitReader(&contextReader{ctx: ctx, r: r}, limits.MaxXMLBytes+1)}
 	decoder := xml.NewDecoder(p.reader)
@@ -249,7 +249,7 @@ func (p *parser) caseRecord(index int, state *caseState) (*normalize.CaseRecord,
 	if state.name == "" {
 		return nil, []Diagnostic{{Code: DiagnosticMissingName, CaseIndex: index}}, nil
 	}
-	if err := identity.ValidateAddressComponent("case name", state.name, identity.MaxCaseNameBytes); err != nil {
+	if err := identity.ValidateCaseName(state.name); err != nil {
 		return nil, []Diagnostic{{Code: DiagnosticInvalidIdentity, CaseIndex: index}}, nil
 	}
 	var diagnostics []Diagnostic

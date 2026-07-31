@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -127,9 +128,9 @@ func TestReportAndQueryTests(t *testing.T) {
 	var targetRow tables.TestTarget
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_target_bucket").
 		Where("repository = ? AND target_label = ?", repository, "//a/b:unit_test").Take(&targetRow).Error)
-	bucketID := identity.BucketForTarget(targetRow.GroupID, identity.TargetAddress{
-		Repository: repository, TargetLabel: targetRow.TargetLabel,
-	})
+	targetAddress, err := identity.CanonicalizeTarget(repository, targetRow.TargetLabel)
+	require.NoError(t, err)
+	bucketID := identity.BucketForTarget(targetRow.GroupID, targetAddress)
 	for _, prefix := range []string{"", "a", "a/b"} {
 		var count int64
 		require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_cone_buckets").
@@ -187,6 +188,33 @@ func TestReportProcessesCasesIndependently(t *testing.T) {
 		RepoUrl: "https://github.com/acme/repo", PackagePrefix: "a/b",
 	})
 	require.Len(t, got, len(cases))
+}
+
+func TestMaximumLengthAddress(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/repo"
+	target := "//" + strings.Repeat("p", identity.MaxPackagePathBytes) + ":" +
+		strings.Repeat("t", identity.MaxTargetNameBytes)
+	caseName := strings.Repeat("c", identity.MaxCaseNameBytes)
+
+	_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository,
+		TestCases: []*tbpb.TestCaseResult{
+			caseResult("long-address", target, caseName, tbpb.TestOutcome_TEST_OUTCOME_FAIL, 1),
+		},
+		TestTargets: []*tbpb.TestTargetResult{
+			targetResult("long-address", target, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1),
+		},
+	})
+	require.NoError(t, err)
+	_, err = service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: target}, CaseName: caseName,
+		},
+	})
+	require.NoError(t, err)
 }
 
 func TestTargetStateIsIndependentFromCases(t *testing.T) {

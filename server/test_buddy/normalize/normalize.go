@@ -39,14 +39,13 @@ type CaseRecord struct {
 }
 
 type CaseResult struct {
-	Result   *tbpb.TestCaseResult
-	Identity *identity.Identity
-	Target   *identity.TargetIdentity
+	Result  *tbpb.TestCaseResult
+	Address identity.CaseAddress
 }
 
 type TargetResult struct {
-	Result *tbpb.TestTargetResult
-	Target *identity.TargetIdentity
+	Result  *tbpb.TestTargetResult
+	Address identity.TargetAddress
 }
 
 type Rejection struct {
@@ -81,7 +80,7 @@ func (c *Counts) add(kind RecordKind) {
 
 type Session struct {
 	repository string
-	targets    map[string]*identity.TargetIdentity
+	targets    map[string]identity.TargetAddress
 }
 
 func NewSession(repositoryURL string) (*Session, error) {
@@ -89,7 +88,7 @@ func NewSession(repositoryURL string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Session{repository: repository, targets: make(map[string]*identity.TargetIdentity)}, nil
+	return &Session{repository: repository, targets: make(map[string]identity.TargetAddress)}, nil
 }
 
 func Normalize(repositoryURL string, cases []*tbpb.TestCaseResult, targets []*tbpb.TestTargetResult) (*Report, error) {
@@ -125,25 +124,22 @@ func (s *Session) normalizeCase(record *tbpb.TestCaseResult) (*CaseResult, error
 	if record.GetIdentity().GetTarget() == nil {
 		return nil, status.InvalidArgumentError("case identity is required")
 	}
-	id, err := identity.CanonicalizeCase(identity.CaseInput{
-		RepositoryURL: s.repository,
-		TargetLabel:   record.GetIdentity().GetTarget().GetTargetLabel(),
-		CaseName:      record.GetIdentity().GetCaseName(),
-	})
-	if err != nil {
-		return nil, err
-	}
-	if err := validateResult(record.GetResult()); err != nil {
-		return nil, err
-	}
 	target, err := s.target(record.GetIdentity().GetTarget().GetTargetLabel())
 	if err != nil {
 		return nil, err
 	}
+	if err := identity.ValidateCaseName(record.GetIdentity().GetCaseName()); err != nil {
+		return nil, err
+	}
+	address := identity.CaseAddress{
+		TargetAddress: target, CaseName: record.GetIdentity().GetCaseName(),
+	}
+	if err := validateResult(record.GetResult()); err != nil {
+		return nil, err
+	}
 	return &CaseResult{
-		Identity: id,
-		Target:   target,
-		Result:   &tbpb.TestCaseResult{Identity: id.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
+		Address: address,
+		Result:  &tbpb.TestCaseResult{Identity: address.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
 	}, nil
 }
 
@@ -159,18 +155,18 @@ func (s *Session) normalizeTarget(record *tbpb.TestTargetResult) (*TargetResult,
 		return nil, err
 	}
 	return &TargetResult{
-		Target: target,
-		Result: &tbpb.TestTargetResult{Identity: target.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
+		Address: target,
+		Result:  &tbpb.TestTargetResult{Identity: target.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
 	}, nil
 }
 
-func (s *Session) target(label string) (*identity.TargetIdentity, error) {
-	if target := s.targets[label]; target != nil {
+func (s *Session) target(label string) (identity.TargetAddress, error) {
+	if target, ok := s.targets[label]; ok {
 		return target, nil
 	}
-	target, err := identity.CanonicalizeTargetIdentity(s.repository, label)
+	target, err := identity.CanonicalizeTarget(s.repository, label)
 	if err != nil {
-		return nil, err
+		return identity.TargetAddress{}, err
 	}
 	s.targets[label] = target
 	return target, nil
