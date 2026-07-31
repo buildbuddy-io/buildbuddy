@@ -827,6 +827,14 @@ proto_library(
 )
 
 proto_library(
+    name = "test_health_proto",
+    srcs = ["test_health.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
     name = "telemetry_proto",
     srcs = ["telemetry.proto"],
     deps = [
@@ -1782,6 +1790,16 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "test_health_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/test_health",
+    mode = "messages_and_services",
+    proto = ":test_health_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "telemetry_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/telemetry",
     mode = "messages_and_services",
@@ -2338,6 +2356,14 @@ ts_proto_library(
         ":kythe_filetree_ts_proto",
         ":kythe_graph_ts_proto",
         ":kythe_xref_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "test_health_ts_proto",
+    proto = ":test_health_proto",
+    deps = [
+        ":context_ts_proto",
     ],
 )
 

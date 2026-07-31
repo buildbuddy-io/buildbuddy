@@ -1,0 +1,231 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package test_health;
+
+message TestTargetIdentity {
+  string repo_url = 1;
+  string target_label = 2;
+}
+
+message TestCaseIdentity {
+  TestTargetIdentity target = 1;
+  string case_name = 2;
+}
+
+enum TestOutcome {
+  TEST_OUTCOME_UNKNOWN = 0;
+  TEST_OUTCOME_PASS = 1;
+  TEST_OUTCOME_FAIL = 2;
+  TEST_OUTCOME_TIMEOUT = 3;
+}
+
+enum ResultSource {
+  RESULT_SOURCE_UNKNOWN = 0;
+  RESULT_SOURCE_PRESUBMIT = 1;
+  RESULT_SOURCE_POSTSUBMIT = 2;
+}
+
+message TestCaseResult {
+  TestCaseIdentity identity = 1;
+  string invocation_id = 2;
+  TestOutcome outcome = 3;
+  ResultSource source = 4;
+  int64 duration_usec = 5;
+  string failure_message = 6;
+}
+
+message TestTargetResult {
+  TestTargetIdentity identity = 1;
+  string invocation_id = 2;
+  TestOutcome outcome = 3;
+  ResultSource source = 4;
+  int64 duration_usec = 5;
+  string failure_message = 6;
+}
+
+message TestStateCheckpoint {
+  repeated CheckpointSample samples = 1;
+}
+
+message CheckpointSample {
+  string invocation_id = 1;
+  TestOutcome outcome = 2;
+  ResultSource source = 3;
+  int64 duration_usec = 4;
+  string failure_message = 5;
+}
+
+enum TestHealth {
+  TEST_HEALTH_UNKNOWN = 0;
+  TEST_HEALTH_INSUFFICIENT_DATA = 1;
+  TEST_HEALTH_HEALTHY = 2;
+  TEST_HEALTH_FLAKY = 3;
+  TEST_HEALTH_TIMEOUT = 4;
+}
+
+message TestAnalyzerConfig {
+  int32 window_size = 1;
+  int32 failure_threshold = 2;
+  int32 target_timeout_threshold = 3;
+}
+
+message ReportedTestCase {
+  string target_label = 1;
+  string case_name = 2;
+  TestOutcome outcome = 3;
+  int64 duration_usec = 4;
+  string failure_message = 5;
+}
+
+message ReportedTestTarget {
+  string target_label = 1;
+  TestOutcome outcome = 2;
+  int64 duration_usec = 3;
+  string failure_message = 4;
+}
+
+message ReportTestResultsRequest {
+  string repo_url = 1;
+  string invocation_id = 2;
+  ResultSource source = 3;
+  repeated ReportedTestCase test_cases = 4;
+  repeated ReportedTestTarget test_targets = 5;
+}
+
+message ReportTestResultsResponse {
+  int32 accepted_count = 1;
+  int32 rejected_count = 2;
+}
+
+message GetTestsRequest {
+  string repo_url = 1;
+  string package_prefix = 2;
+  string target_label = 3;
+  // Group selection for browser requests; the effective tenant is always the
+  // authenticated group, never a raw request field.
+  context.RequestContext request_context = 4;
+}
+
+message TestSummary {
+  TestCaseIdentity identity = 1;
+  TestHealth health = 2;
+  int64 pass_count = 3;
+  int64 fail_count = 4;
+  int64 timeout_count = 5;
+  int64 mean_duration_usec = 6;
+  double pass_rate = 7;
+}
+
+message GetTestsResponse {
+  repeated TestSummary tests = 1;
+}
+
+message TestTargetSummary {
+  TestTargetIdentity identity = 1;
+  TestHealth health = 2;
+  int64 pass_count = 3;
+  int64 fail_count = 4;
+  int64 timeout_count = 5;
+  int64 mean_duration_usec = 6;
+  double pass_rate = 7;
+}
+
+message GetTestTargetsRequest {
+  string repo_url = 1;
+  string package_prefix = 2;
+  context.RequestContext request_context = 3;
+}
+
+message GetTestTargetsResponse {
+  repeated TestTargetSummary targets = 1;
+}
+
+message TestHealthTransition {
+  TestHealth previous_health = 1;
+  TestHealth health = 2;
+  int64 event_time_usec = 3;
+}
+
+message GetTestCaseRequest {
+  TestCaseIdentity identity = 1;
+  context.RequestContext request_context = 2;
+}
+
+message GetTestCaseResponse {
+  TestSummary test = 1;
+  repeated TestCaseResult recent_results = 2;
+  repeated TestHealthTransition transitions = 3;
+}
+
+message GetTestTargetRequest {
+  TestTargetIdentity identity = 1;
+  context.RequestContext request_context = 2;
+}
+
+message GetTestTargetResponse {
+  TestTargetSummary target = 1;
+  repeated TestTargetResult recent_results = 2;
+  repeated TestHealthTransition transitions = 3;
+}
+
+message GetTestAnalyzerConfigRequest {
+  string repo_url = 1;
+  context.RequestContext request_context = 2;
+}
+
+message GetTestAnalyzerConfigResponse {
+  TestAnalyzerConfig config = 1;
+}
+
+message SetTestAnalyzerConfigRequest {
+  string repo_url = 1;
+  int32 window_size = 2;
+  int32 failure_threshold = 3;
+  int32 target_timeout_threshold = 4;
+}
+
+message SetTestAnalyzerConfigResponse {
+  TestAnalyzerConfig config = 1;
+}
+
+message GetRepositoryHealthRequest {
+  string repo_url = 1;
+  context.RequestContext request_context = 2;
+}
+
+message TestHealthSummary {
+  int64 total_count = 1;
+  int64 healthy_count = 2;
+  int64 flaky_count = 3;
+  int64 insufficient_data_count = 4;
+  int64 unknown_count = 5;
+  int64 pass_count = 6;
+  int64 fail_count = 7;
+  int64 timeout_count = 8;
+  double pass_rate = 9;
+  int64 mean_duration_usec = 10;
+  int64 timed_out_count = 11;
+}
+
+message GetRepositoryHealthResponse {
+  TestHealthSummary targets = 1;
+  TestHealthSummary cases = 2;
+}
+
+service TestBuddyService {
+  rpc ReportTestResults(ReportTestResultsRequest)
+      returns (ReportTestResultsResponse);
+  rpc GetTests(GetTestsRequest) returns (stream GetTestsResponse);
+  rpc GetTestTargets(GetTestTargetsRequest)
+      returns (stream GetTestTargetsResponse);
+  rpc GetTestCase(GetTestCaseRequest) returns (GetTestCaseResponse);
+  rpc GetTestTarget(GetTestTargetRequest) returns (GetTestTargetResponse);
+  rpc GetRepositoryHealth(GetRepositoryHealthRequest)
+      returns (GetRepositoryHealthResponse);
+  rpc GetTestAnalyzerConfig(GetTestAnalyzerConfigRequest)
+      returns (GetTestAnalyzerConfigResponse);
+  rpc SetTestAnalyzerConfig(SetTestAnalyzerConfigRequest)
+      returns (SetTestAnalyzerConfigResponse);
+}
