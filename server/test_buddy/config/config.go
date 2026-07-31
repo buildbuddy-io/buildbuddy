@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	minWindowSize = 50
+	minWindowSize = 1
 	maxWindowSize = 100
 )
 

@@ -26,7 +26,8 @@ func TestDefault(t *testing.T) {
 func TestValidate(t *testing.T) {
 	assert.Error(t, config.Validate(nil))
 	assert.Error(t, config.Validate(&tbpb.TestAnalyzerConfig{}))
-	assert.Error(t, config.Validate(analyzerConfig(49, 1, 5)))
+	assert.NoError(t, config.Validate(analyzerConfig(1, 1, 1)))
+	assert.Error(t, config.Validate(analyzerConfig(0, 1, 1)))
 	assert.Error(t, config.Validate(analyzerConfig(101, 1, 5)))
 	assert.Error(t, config.Validate(analyzerConfig(50, 51, 5)))
 	assert.Error(t, config.Validate(analyzerConfig(50, 1, 51)))
