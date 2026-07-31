@@ -808,6 +808,17 @@
   align-self: center;
 }
 
+.action-section .server-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.action-section .server-log {
+  min-width: 0;
+}
+
 .action-section .server-log-download {
   align-items: center;
   display: inline-flex;

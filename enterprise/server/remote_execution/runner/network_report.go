@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -161,4 +162,13 @@ func networkDestinationSummaryName(summary *networkDestinationSummary) string {
 		return summary.IPs[0]
 	}
 	return ""
+}
+
+func compressNetworkDestinationReport(report []byte) ([]byte, error) {
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, err
+	}
+	defer encoder.Close()
+	return encoder.EncodeAll(report, nil), nil
 }

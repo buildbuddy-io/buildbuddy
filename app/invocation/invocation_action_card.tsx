@@ -2041,22 +2041,24 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-section">
                         <div className="action-property-title">Server logs</div>
                         {this.state.serverLogs ? (
-                          this.state.serverLogs.map((log) => (
-                            <div key={log.name}>
-                              {log.downloadUrl ? (
-                                <a className="server-log-download" href={log.downloadUrl}>
-                                  <Download />
-                                  <span>Download {log.name}</span>
-                                </a>
-                              ) : (
-                                <TerminalComponent
-                                  title={<b className="server-log-title">{log.name}</b>}
-                                  value={log.text ?? ""}
-                                  lightTheme={this.props.preferences.lightTerminalEnabled}
-                                />
-                              )}
-                            </div>
-                          ))
+                          <div className="server-logs">
+                            {this.state.serverLogs.map((log) => (
+                              <div className="server-log" key={log.name}>
+                                {log.downloadUrl ? (
+                                  <a className="server-log-download" href={log.downloadUrl}>
+                                    <Download />
+                                    <span>Download {log.name}</span>
+                                  </a>
+                                ) : (
+                                  <TerminalComponent
+                                    title={<b className="server-log-title">{log.name}</b>}
+                                    value={log.text ?? ""}
+                                    lightTheme={this.props.preferences.lightTerminalEnabled}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         ) : (
                           <div>None</div>
                         )}

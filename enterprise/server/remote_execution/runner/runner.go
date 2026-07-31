@@ -96,7 +96,7 @@ var (
 
 const (
 	agentNetworkDestinationsArtifactName    = "network-destinations.json"
-	agentNetworkDestinationsRawArtifactName = "network-destinations-raw.json"
+	agentNetworkDestinationsRawArtifactName = "network-destinations-raw.json.zst"
 )
 
 const (
@@ -410,21 +410,29 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 				log.CtxWarningf(ctx, "Could not stop network destination observer: %s", err)
 			}
 			if res != nil && len(destinations) > 0 {
+				report, err := json.MarshalIndent(buildNetworkDestinationReport(destinations, agentNetworkDestinationsRawArtifactName), "", "  ")
+				if err != nil {
+					log.CtxWarningf(ctx, "Could not marshal network destination summary: %s", err)
+				} else {
+					if res.AuxiliaryLogs == nil {
+						res.AuxiliaryLogs = make(map[string][]byte)
+					}
+					res.AuxiliaryLogs[agentNetworkDestinationsArtifactName] = report
+				}
 				rawReport, err := json.Marshal(struct {
 					Destinations []*container.NetworkDestination `json:"destinations"`
 				}{Destinations: destinations})
 				if err != nil {
 					log.CtxWarningf(ctx, "Could not marshal detailed network destination report: %s", err)
 				} else {
-					report, err := json.Marshal(buildNetworkDestinationReport(destinations, agentNetworkDestinationsRawArtifactName))
+					compressedRawReport, err := compressNetworkDestinationReport(rawReport)
 					if err != nil {
-						log.CtxWarningf(ctx, "Could not marshal network destination summary: %s", err)
+						log.CtxWarningf(ctx, "Could not compress detailed network destination report: %s", err)
 					} else {
 						if res.AuxiliaryLogs == nil {
 							res.AuxiliaryLogs = make(map[string][]byte)
 						}
-						res.AuxiliaryLogs[agentNetworkDestinationsArtifactName] = report
-						res.AuxiliaryLogs[agentNetworkDestinationsRawArtifactName] = rawReport
+						res.AuxiliaryLogs[agentNetworkDestinationsRawArtifactName] = compressedRawReport
 					}
 				}
 			}
