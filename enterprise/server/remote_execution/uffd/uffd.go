@@ -339,13 +339,10 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		}
 
 		// If no events were received, increase the polling timeout.
+		// Cap the max timeout to prevent the value from overflowing when
+		// unix.Poll converts milliseconds to nanoseconds.
 		if n == 0 {
-			// Cap the max timeout to prevent the value from overflowing when
-			// unix.Poll converts milliseconds to nanoseconds.
 			deferredPollTimeoutMs = min(deferredPollTimeoutMs*2, maxDeferredPollTimeoutMs)
-		} else {
-			// If we received an event, reset the timeout.
-			deferredPollTimeoutMs = initialDeferredPollTimeoutMs
 		}
 
 		// Check for an early termination message
