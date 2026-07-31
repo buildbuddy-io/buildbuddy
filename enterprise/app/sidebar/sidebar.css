@@ -58,7 +58,7 @@
 }
 
 .test-buddy-logo-buildbuddy,
-.test-buddy-logo-crop {
+.test-buddy-logo-testbuddy {
   position: absolute;
   inset: 0;
 }
@@ -68,19 +68,13 @@
   animation: test-buddy-logo-hide-buildbuddy 600ms both;
 }
 
-.test-buddy-logo-crop {
-  overflow: hidden;
+.test-buddy-logo-testbuddy {
   animation: test-buddy-logo-show-testbuddy 600ms both;
 }
 
 .test-buddy-logo-artwork {
-  position: absolute;
-  width: 228px;
-  max-width: none;
-  left: -9px;
-  top: -19px;
-  filter: invert(1);
-  mix-blend-mode: screen;
+  height: 100%;
+  width: auto;
 }
 
 @keyframes test-buddy-logo-flip {

@@ -1,12 +1,14 @@
 import React from "react";
 import errorService from "../../../app/errors/error_service";
 import format from "../../../app/format/format";
+import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import type { Cancelable } from "../../../app/service/rpc_service";
 import { test_buddy } from "../../../proto/test_buddy_ts_proto";
 
 interface Props {
   repo: string;
+  targetLabel: string;
 }
 
 interface State {
@@ -34,6 +36,17 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   componentDidMount() {
     this.loadRepository();
     this.loadTargets();
+    if (this.props.targetLabel) this.loadTarget({ targetLabel: this.props.targetLabel });
+  }
+
+  componentDidUpdate(previous: Props) {
+    if (previous.targetLabel === this.props.targetLabel) return;
+    if (this.props.targetLabel) {
+      this.loadTarget({ targetLabel: this.props.targetLabel });
+    } else {
+      this.casesStream?.cancel();
+      this.setState({ selected: undefined, selectedCases: [], loadingCases: false });
+    }
   }
 
   componentWillUnmount() {
@@ -88,24 +101,24 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   }
 
   private selectTarget(target: test_buddy.TestTargetSummary) {
-    const identity = target.identity;
-    if (!identity) return;
+    if (!target.identity?.targetLabel) return;
+    router.navigateToQueryParam("target", target.identity.targetLabel);
+  }
+
+  private loadTarget(identity: test_buddy.TestTargetIdentity) {
     this.casesStream?.cancel();
     rpcService.testBuddyService
       .getTestTarget(test_buddy.GetTestTargetRequest.create({ repoUrl: this.props.repo, identity }))
       .then((selected) => {
+        if (this.props.targetLabel !== identity.targetLabel) return;
         this.setState({ selected });
         this.loadCases(identity);
       })
       .catch((error) => {
+        if (this.props.targetLabel !== identity.targetLabel) return;
         this.setState({ loading: false });
         errorService.handleError(error);
       });
-  }
-
-  private clearTarget() {
-    this.casesStream?.cancel();
-    this.setState({ selected: undefined, selectedCases: [], loadingCases: false });
   }
 
   private renderSummary(name: string, summary?: test_buddy.TestHealthSummary | null) {
@@ -115,6 +128,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
         <h3>{name}</h3>
         <div className="test-buddy-stats">
           <Stat name="Total" value={summary.totalCount.toString()} />
+          <Stat name="Failing" value={summary.failingCount.toString()} />
           <Stat name="Flaky" value={summary.flakyCount.toString()} />
           <Stat name="Timed out" value={summary.timedOutCount.toString()} />
           <Stat name="Healthy" value={summary.healthyCount.toString()} />
@@ -134,9 +148,6 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     const summary = target.summary;
     return (
       <section className="test-buddy-target-detail">
-        <button className="test-buddy-back" onClick={() => this.clearTarget()}>
-          Back to targets
-        </button>
         <h2>{target.identity?.targetLabel}</h2>
         <div className="test-buddy-stats">
           <Stat name="Health" value={healthName(summary?.health)} />

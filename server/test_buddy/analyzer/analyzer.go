@@ -14,6 +14,7 @@ type Reason string
 
 const (
 	ReasonNoEligibleSamples Reason = "no_eligible_samples"
+	ReasonAllFailures       Reason = "all_failures"
 	ReasonFailuresInWindow  Reason = "failures_in_window"
 	ReasonTimeoutsInWindow  Reason = "timeouts_in_window"
 	ReasonConsecutivePasses Reason = "consecutive_passes"
@@ -68,6 +69,10 @@ func linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig, target bool) (Result
 	case len(eligible) == 0:
 		result.Health = tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA
 		result.Reason = ReasonNoEligibleSamples
+	case evidence.Failures-evidence.Timeouts >= int(linear.GetFailureThreshold()) &&
+		evidence.Failures-evidence.Timeouts == len(eligible):
+		result.Health = tbpb.TestHealth_TEST_HEALTH_FAILING
+		result.Reason = ReasonAllFailures
 	case !target && evidence.Failures >= int(linear.GetFailureThreshold()):
 		result.Health = tbpb.TestHealth_TEST_HEALTH_FLAKY
 		result.Reason = ReasonFailuresInWindow

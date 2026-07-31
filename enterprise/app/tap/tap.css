@@ -324,7 +324,6 @@
 }
 
 .test-buddy-search button,
-.test-buddy-back,
 .test-buddy-target-link {
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);

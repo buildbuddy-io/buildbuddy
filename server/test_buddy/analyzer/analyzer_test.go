@@ -29,6 +29,23 @@ func TestLinearUsesProcessingOrder(t *testing.T) {
 	assert.Equal(t, 2, result.Evidence.Failures)
 }
 
+func TestLinearDistinguishesFailingFromFlaky(t *testing.T) {
+	failing, err := analyzer.Linear(samples(
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+	), config.Default())
+	require.NoError(t, err)
+	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, failing.Health)
+	assert.Equal(t, analyzer.ReasonAllFailures, failing.Reason)
+
+	flaky, err := analyzer.Linear(samples(
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+		tbpb.TestOutcome_TEST_OUTCOME_PASS,
+	), config.Default())
+	require.NoError(t, err)
+	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, flaky.Health)
+}
+
 func TestLinearClassifiesHealthyAndInsufficient(t *testing.T) {
 	healthy, err := analyzer.Linear(samples(
 		tbpb.TestOutcome_TEST_OUTCOME_PASS,
@@ -80,7 +97,7 @@ func TestTargetFailureUsesFailureThreshold(t *testing.T) {
 		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
 	), config.Default())
 	require.NoError(t, err)
-	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, result.Health)
+	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, result.Health)
 }
 
 func TestUnknownOutcomesAreIgnored(t *testing.T) {

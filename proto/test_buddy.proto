@@ -43,6 +43,7 @@ enum TestHealth {
   TEST_HEALTH_HEALTHY = 2;
   TEST_HEALTH_FLAKY = 3;
   TEST_HEALTH_TIMEOUT = 4;
+  TEST_HEALTH_FAILING = 5;
 }
 
 message LinearAnalyzer {
@@ -174,6 +175,7 @@ message TestHealthSummary {
   double pass_rate = 9;
   int64 mean_duration_usec = 10;
   int64 timed_out_count = 11;
+  int64 failing_count = 12;
 }
 
 message GetRepositoryHealthResponse {

@@ -15,6 +15,11 @@ export default class TapComponent extends React.Component<Props> {
   }
 
   render() {
-    return <TestBuddyComponent repo="https://github.com/buildbuddy-io/buildbuddy" />;
+    return (
+      <TestBuddyComponent
+        repo="https://github.com/buildbuddy-io/buildbuddy"
+        targetLabel={this.props.search.get("target") || ""}
+      />
+    );
   }
 }

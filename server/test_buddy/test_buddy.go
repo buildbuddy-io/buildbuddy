@@ -657,7 +657,13 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		where += ` AND tc.target_label = ?`
 		args = append(args, target.Label())
 	}
-	args = append(args, tbpb.TestHealth_TEST_HEALTH_FLAKY.String())
+	args = append(args,
+		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
+		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
+		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA.String(),
+		tbpb.TestHealth_TEST_HEALTH_HEALTHY.String(),
+	)
 	query := fmt.Sprintf(`
 		SELECT tc.target_label, tc.case_name,
 			COALESCE(s.health, '%s') AS health,
@@ -673,7 +679,13 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 			ON s.group_id = tc.group_id AND s.repository = tc.repository
 			AND s.target_label = tc.target_label AND s.case_name = tc.case_name
 		WHERE %s
-		ORDER BY CASE WHEN s.health = ? THEN 0 ELSE 1 END,
+		ORDER BY CASE s.health
+			WHEN ? THEN 0
+			WHEN ? THEN 1
+			WHEN ? THEN 2
+			WHEN ? THEN 3
+			WHEN ? THEN 4
+			ELSE 5 END,
 			COALESCE(s.total_duration_usec * 1.0 /
 				NULLIF(s.pass_count + s.fail_count + s.timeout_count, 0), 0) DESC,
 			COALESCE(s.pass_count * 1.0 /
@@ -741,8 +753,11 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 		args = append(args, packagePrefix, packagePrefix+"/", packagePrefix+"0")
 	}
 	args = append(args,
-		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
 		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
+		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA.String(),
+		tbpb.TestHealth_TEST_HEALTH_HEALTHY.String(),
 	)
 	query := fmt.Sprintf(`
 		SELECT tt.target_label,
@@ -759,7 +774,13 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 			ON s.group_id = tt.group_id AND s.repository = tt.repository
 			AND s.target_label = tt.target_label
 		WHERE %s
-		ORDER BY CASE WHEN s.health = ? OR s.health = ? THEN 0 ELSE 1 END,
+		ORDER BY CASE s.health
+			WHEN ? THEN 0
+			WHEN ? THEN 1
+			WHEN ? THEN 2
+			WHEN ? THEN 3
+			WHEN ? THEN 4
+			ELSE 5 END,
 			COALESCE(s.total_duration_usec * 1.0 /
 				NULLIF(s.pass_count + s.fail_count + s.timeout_count, 0), 0) DESC,
 			COALESCE(s.pass_count * 1.0 /
@@ -873,6 +894,8 @@ func (s *Service) queryRepositoryHealth(ctx context.Context, groupID, repository
 			switch health(r.Health) {
 			case tbpb.TestHealth_TEST_HEALTH_HEALTHY:
 				out.HealthyCount += r.SubjectCount
+			case tbpb.TestHealth_TEST_HEALTH_FAILING:
+				out.FailingCount += r.SubjectCount
 			case tbpb.TestHealth_TEST_HEALTH_FLAKY:
 				out.FlakyCount += r.SubjectCount
 			case tbpb.TestHealth_TEST_HEALTH_TIMEOUT:
