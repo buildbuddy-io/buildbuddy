@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/ssh",
     visibility = ["//visibility:public"],
     deps = [
-        "//cli/arg",
         "//cli/log",
         "//cli/login",
         "//proto:gateway_go_proto",

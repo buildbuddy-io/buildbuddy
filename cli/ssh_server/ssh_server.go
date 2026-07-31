@@ -49,7 +49,7 @@ var (
 	network     = flags.String("network", "", "Network name (default is blank)")
 	apiKey      = flags.String("api_key", "", "Optionally override the API key with this value")
 	gracePeriod = flags.Duration("grace_period", 1*time.Minute, "How long the VM will remain alive when no users are connected")
-	idleTimeout = flags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (0 means no timeout)")
+	idleTimeout = flags.Duration("idle_timeout", 5*time.Minute, "Log out interactive sessions after this duration without user input")
 
 	sshPort     = flags.Int("port", 22, "SSH listen port on the tunnel interface")
 	shellPath   = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
@@ -180,6 +180,26 @@ func loadOrCreateHostKey(path string) ([]byte, error) {
 	return pemBytes, nil
 }
 
+// connIdleTimeout closes connections whose client has stopped sending
+// traffic entirely — bb ssh sends keepalives every 15s, so only a dead
+// client (host asleep, network gone) goes quiet this long. Distinct from
+// --idle_timeout, which logs out live-but-inactive interactive sessions.
+const connIdleTimeout = time.Minute
+
+// activityReader resets an inactivity timer on every read that carries data.
+type activityReader struct {
+	r     io.Reader
+	reset func()
+}
+
+func (a *activityReader) Read(p []byte) (int, error) {
+	n, err := a.r.Read(p)
+	if n > 0 {
+		a.reset()
+	}
+	return n, err
+}
+
 func setWinsize(f *os.File, w, h int) {
 	syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCSWINSZ),
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
@@ -187,59 +207,82 @@ func setWinsize(f *os.File, w, h int) {
 
 func handleSession(s ssh.Session) {
 	ptyReq, winCh, isPty := s.Pty()
-	if isPty {
-		log.Printf("SSH session opened: user=%s remote=%s pty=%s", s.User(), s.RemoteAddr(), ptyReq.Term)
-		defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
+	raw := s.RawCommand()
 
-		cmd := exec.Command(getShell(), "-l")
+	// Remote commands run through the shell (like sshd's `$SHELL -c`) so
+	// quoting, pipes, and expansions behave as users expect; the raw command
+	// string is used because ssh.Session.Command() pre-splits it. With no
+	// command, start a login shell.
+	var cmd *exec.Cmd
+	if raw != "" {
+		log.Printf("SSH exec: user=%s remote=%s pty=%v cmd=%q", s.User(), s.RemoteAddr(), isPty, raw)
+		cmd = exec.Command(getShell(), "-c", raw)
+	} else {
+		log.Printf("SSH session opened: user=%s remote=%s pty=%v", s.User(), s.RemoteAddr(), isPty)
+		cmd = exec.Command(getShell(), "-l")
+	}
+	defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
+
+	// Interactive sessions (anything with a PTY, or a shell with no command)
+	// are logged out after --idle_timeout without user input. Input means
+	// keystrokes or terminal resizes — program output doesn't count, so a
+	// chatty program can't keep a session logged in, and neither do client
+	// keepalives. Plain command execution is exempt: builds legitimately run
+	// for a long time with no input at all.
+	var logout *time.Timer
+	var input io.Reader = s
+	if *idleTimeout > 0 && (isPty || raw == "") {
+		logout = time.AfterFunc(*idleTimeout, func() {
+			fmt.Fprintf(s, "\r\nLogged out: no input for %s.\r\n", *idleTimeout)
+			s.Exit(0)
+			s.Close()
+		})
+		defer logout.Stop()
+		input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
+	}
+
+	if isPty {
 		cmd.Env = append(os.Environ(), "TERM="+ptyReq.Term)
 		f, err := pty.Start(cmd)
 		if err != nil {
-			fmt.Fprintf(s.Stderr(), "start shell: %v\n", err)
+			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
 			s.Exit(1)
 			return
 		}
 		defer f.Close()
+		setWinsize(f, ptyReq.Window.Width, ptyReq.Window.Height)
 		go func() {
 			for win := range winCh {
+				if logout != nil {
+					logout.Reset(*idleTimeout)
+				}
 				setWinsize(f, win.Width, win.Height)
 			}
 		}()
-		go io.Copy(f, s)
+		go io.Copy(f, input)
 		io.Copy(s, f)
-		if err := cmd.Wait(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				s.Exit(exitErr.ExitCode())
-				return
-			}
-		}
-		s.Exit(0)
 	} else {
-		// No PTY: run the provided command, or a non-interactive shell if none given.
-		args := s.Command()
-		var cmd *exec.Cmd
-		if len(args) > 0 {
-			log.Printf("SSH exec: user=%s remote=%s cmd=%q", s.User(), s.RemoteAddr(), args)
-			cmd = exec.Command(args[0], args[1:]...)
-		} else {
-			log.Printf("SSH session opened: user=%s remote=%s (no pty)", s.User(), s.RemoteAddr())
-			cmd = exec.Command(getShell(), "-l")
-		}
-		defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
 		cmd.Env = os.Environ()
 		cmd.Stdout = s
 		cmd.Stderr = s.Stderr()
-		cmd.Stdin = s
-		if err := cmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				s.Exit(exitErr.ExitCode())
-				return
-			}
+		cmd.Stdin = input
+		if err := cmd.Start(); err != nil {
+			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
 			s.Exit(1)
 			return
 		}
-		s.Exit(0)
 	}
+
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			s.Exit(exitErr.ExitCode())
+			return
+		}
+		fmt.Fprintf(s.Stderr(), "wait for command: %v\n", err)
+		s.Exit(1)
+		return
+	}
+	s.Exit(0)
 }
 
 func HandleSSHServer(args []string) (int, error) {
@@ -375,7 +418,7 @@ func HandleSSHServer(args []string) (int, error) {
 	// Build the SSH server. WireGuard membership is the auth boundary; no SSH
 	// credential checking is required. gliderlabs/ssh automatically sets
 	// NoClientAuth=true when no auth handlers are configured.
-	sshServer := &ssh.Server{IdleTimeout: *idleTimeout}
+	sshServer := &ssh.Server{IdleTimeout: connIdleTimeout}
 	hostKeyPath := *hostKeyFile
 	if hostKeyPath == "" {
 		cacheDir, err := os.UserCacheDir()

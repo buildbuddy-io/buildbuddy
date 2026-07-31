@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"net/url"
@@ -15,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -43,13 +43,19 @@ var (
 	apiKey        = flags.String("api_key", "", "Optionally override the API key with this value")
 	port          = flags.Int("p", 22, "SSH port to dial on the remote host")
 	user          = flags.String("l", "", "SSH login name (overrides user@host syntax)")
+	forceTTY      = flags.Bool("t", false, "Force pseudo-terminal allocation, e.g. to run an interactive program remotely")
 
 	usage string
 )
 
+// keepaliveInterval is how often the client pings the server over the SSH
+// transport. Well under the server's --idle_timeout (5m default), so live
+// connections are never reaped as idle.
+const keepaliveInterval = 15 * time.Second
+
 func init() {
 	var buf strings.Builder
-	fmt.Fprintf(&buf, "usage: bb %s [flags] [user@]<host>\n\nConnect to an SSH server reachable via the BuildBuddy gateway.\n\nFlags:\n", flags.Name())
+	fmt.Fprintf(&buf, "usage: bb %s [flags] [user@]<host> [command ...]\n\nConnect to an SSH server reachable via the BuildBuddy gateway.\n\nFlags:\n", flags.Name())
 	flags.SetOutput(&buf)
 	flags.PrintDefaults()
 	usage = buf.String()
@@ -73,7 +79,13 @@ func resolveEndpoint(endpoint string) (string, error) {
 }
 
 func HandleSSH(args []string) (int, error) {
-	if err := arg.ParseFlagSet(flags, args); err != nil {
+	// Parse with the standard library directly (not arg.ParseFlagSet, which
+	// re-parses flags after each positional arg): parsing must stop at the
+	// first positional so that flags in the remote command, e.g.
+	// `bb ssh box claude --continue`, are passed through rather than
+	// interpreted by bb. `--` also terminates flag parsing, as usual.
+	flags.SetOutput(io.Discard)
+	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
 			return 1, nil
@@ -250,6 +262,35 @@ func HandleSSH(args []string) (int, error) {
 		}
 	}()
 
+	// Keepalives serve two purposes. They reset the server's idle timer, so a
+	// quiet session (user afk, agent thinking) is never reaped while this
+	// client is alive — the server's --idle_timeout only ends connections
+	// whose client has stopped responding. And because each request waits for
+	// a reply, they detect a dead transport (server suspended, network gone)
+	// within about one interval: the client is closed so the session below
+	// unblocks with a clean message instead of hanging indefinitely.
+	// connDeadErr is written before connDead is closed, so it is safe to read
+	// after receiving from connDead.
+	var connDeadErr error
+	connDead := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(keepaliveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if _, _, err := client.SendRequest("keepalive@openssh.com", true, nil); err != nil {
+					connDeadErr = err
+					close(connDead)
+					client.Close()
+					return
+				}
+			case <-connectCtx.Done():
+				return
+			}
+		}
+	}()
+
 	session, err := client.NewSession()
 	if err != nil {
 		return 1, status.WrapError(err, "opening ssh session")
@@ -258,11 +299,11 @@ func HandleSSH(args []string) (int, error) {
 
 	session.Stdout = os.Stdout
 	session.Stderr = os.Stderr
-	// For remote commands, only wire up stdin when it is being piped — if
-	// stdin is a terminal, golang.org/x/crypto/ssh's Wait() would block on
-	// the stdin copy goroutine until the user presses Enter after the command
-	// exits. Piped stdin still works (e.g. echo data | bb ssh host cat).
-	if remoteCmd == "" || !term.IsTerminal(int(os.Stdin.Fd())) {
+	// For remote commands without -t, only wire up stdin when it is being
+	// piped (e.g. echo data | bb ssh host cat) — a program that doesn't read
+	// stdin shouldn't steal keystrokes typed while it runs. Interactive
+	// sessions and -t commands always get stdin.
+	if remoteCmd == "" || *forceTTY || !term.IsTerminal(int(os.Stdin.Fd())) {
 		session.Stdin = os.Stdin
 	}
 
@@ -276,9 +317,13 @@ func HandleSSH(args []string) (int, error) {
 		}
 	}()
 
-	// Request a PTY only for interactive sessions (no explicit remote command),
-	// matching standard ssh behaviour.
-	if remoteCmd == "" && term.IsTerminal(int(os.Stdin.Fd())) {
+	// Request a PTY for interactive sessions (no explicit remote command) and
+	// for remote commands run with -t, matching standard ssh behaviour.
+	wantPTY := remoteCmd == "" || *forceTTY
+	if *forceTTY && !term.IsTerminal(int(os.Stdin.Fd())) {
+		fmt.Fprintln(os.Stderr, "Pseudo-terminal will not be allocated because stdin is not a terminal.")
+	}
+	if wantPTY && term.IsTerminal(int(os.Stdin.Fd())) {
 		w, h, err := term.GetSize(int(os.Stdin.Fd()))
 		if err != nil {
 			w, h = 80, 24
@@ -315,8 +360,15 @@ func HandleSSH(args []string) (int, error) {
 
 	if remoteCmd != "" {
 		if err := session.Run(remoteCmd); err != nil {
-			if gwLostErr := lostGateway(gwLost, gwLostErr); gwLostErr != nil {
+			if gwLostErr := chanError(gwLost, gwLostErr); gwLostErr != nil {
 				return 1, status.UnavailableErrorf("gateway connection lost: %s", gwLostErr)
+			}
+			if kaErr := chanError(connDead, connDeadErr); kaErr != nil {
+				if rawRestore != nil {
+					rawRestore()
+					rawRestore = nil
+				}
+				return 1, status.UnavailableErrorf("connection to %s lost: no response from server (%s)", target, kaErr)
 			}
 			var exitErr *gossh.ExitError
 			if errors.As(err, &exitErr) {
@@ -331,7 +383,7 @@ func HandleSSH(args []string) (int, error) {
 	}
 
 	err = session.Wait()
-	if gwLostErr := lostGateway(gwLost, gwLostErr); gwLostErr != nil {
+	if gwLostErr := chanError(gwLost, gwLostErr); gwLostErr != nil {
 		// Restore the terminal before printing so the message lands at
 		// column 0 (the goroutine that noticed the loss can't print safely
 		// while the terminal is in raw mode).
@@ -342,15 +394,24 @@ func HandleSSH(args []string) (int, error) {
 		fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost: %v\n", target, gwLostErr)
 		return 1, nil
 	}
+	if kaErr := chanError(connDead, connDeadErr); kaErr != nil {
+		if rawRestore != nil {
+			rawRestore()
+			rawRestore = nil
+		}
+		fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server (%v).\n", target, kaErr)
+		return 1, nil
+	}
 	if err != nil {
 		var exitErr *gossh.ExitError
 		if errors.As(err, &exitErr) {
 			return exitErr.ExitStatus(), nil
 		}
-		// Server closed without an exit status (e.g. idle timeout); fall
-		// through to print the close message.
+		// Server closed without an exit status (e.g. its idle timeout or
+		// shutdown closed the connection); fall through to print the close
+		// message.
 		var missingErr *gossh.ExitMissingError
-		if !errors.As(err, &missingErr) {
+		if !errors.As(err, &missingErr) && err != io.EOF {
 			return 1, err
 		}
 	}
@@ -363,12 +424,12 @@ func HandleSSH(args []string) (int, error) {
 	return 0, nil
 }
 
-// lostGateway returns the gateway-loss error if the gwLost channel (closed
-// after gwLostErr is set) has fired, or nil otherwise.
-func lostGateway(gwLost chan struct{}, gwLostErr error) error {
+// chanError returns err if ch (closed only after err is set) has fired, or
+// nil otherwise.
+func chanError(ch chan struct{}, err error) error {
 	select {
-	case <-gwLost:
-		return gwLostErr
+	case <-ch:
+		return err
 	default:
 		return nil
 	}
