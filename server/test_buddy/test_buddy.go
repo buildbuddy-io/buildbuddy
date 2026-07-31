@@ -126,8 +126,27 @@ type proxy struct {
 	authenticator interfaces.Authenticator
 }
 
-func (p *proxy) ReportTestResults(ctx context.Context, req *tbpb.ReportTestResultsRequest) (*tbpb.ReportTestResultsResponse, error) {
-	return p.client.ReportTestResults(forwardAuth(ctx, p.authenticator), req)
+func (p *proxy) ReportTestResults(stream tbpb.TestBuddyService_ReportTestResultsServer) error {
+	client, err := p.client.ReportTestResults(forwardAuth(stream.Context(), p.authenticator))
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			rsp, err := client.CloseAndRecv()
+			if err != nil {
+				return err
+			}
+			return stream.SendAndClose(rsp)
+		}
+		if err != nil {
+			return err
+		}
+		if err := client.Send(req); err != nil {
+			return err
+		}
+	}
 }
 
 func (p *proxy) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyService_GetTestsServer) error {
@@ -202,7 +221,7 @@ func forwardAuth(ctx context.Context, authenticator interfaces.Authenticator) co
 	return metadata.NewOutgoingContext(ctx, outgoing)
 }
 
-func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestResultsRequest) (*tbpb.ReportTestResultsResponse, error) {
+func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestResultsRequest) (*tbpb.ReportTestResultsResponse, error) {
 	if req == nil {
 		return nil, status.InvalidArgumentError("request is required")
 	}
@@ -262,6 +281,25 @@ func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 		AcceptedCount: int32(len(report.CaseResults) + len(report.TargetResults)),
 		RejectedCount: int32(report.Rejected.Total()),
 	}, nil
+}
+
+func (s *Service) ReportTestResults(stream tbpb.TestBuddyService_ReportTestResultsServer) error {
+	rsp := &tbpb.ReportTestResultsResponse{}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(rsp)
+		}
+		if err != nil {
+			return err
+		}
+		batch, err := s.reportTestResults(stream.Context(), req)
+		if err != nil {
+			return err
+		}
+		rsp.AcceptedCount += batch.GetAcceptedCount()
+		rsp.RejectedCount += batch.GetRejectedCount()
+	}
 }
 
 func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, report *normalize.Report) error {

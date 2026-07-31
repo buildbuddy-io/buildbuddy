@@ -182,7 +182,7 @@ message GetRepositoryHealthResponse {
 }
 
 service TestBuddyService {
-  rpc ReportTestResults(ReportTestResultsRequest)
+  rpc ReportTestResults(stream ReportTestResultsRequest)
       returns (ReportTestResultsResponse);
   rpc GetTests(GetTestsRequest) returns (stream GetTestsResponse);
   rpc GetTestTargets(GetTestTargetsRequest)

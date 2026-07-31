@@ -17,9 +17,9 @@ queryable health state.
   timeouts use a separate default threshold of five and produce a distinct
   timeout state. Three consecutive passes make a subject healthy once failure
   evidence has left the window.
-- Reporting is synchronous. Each subject is updated in a small independent
-  transaction, and the RPC returns after every update has committed. There is
-  no queue or report-wide transaction.
+- Reporting uses a bounded client stream. Each subject is updated in a small
+  independent transaction, and the RPC returns after every streamed batch has
+  committed. There is no queue or report-wide transaction.
 - Heavy processing runs in the dedicated TestBuddy service. BuildBuddy apps
   authenticate and proxy RPCs, keeping report work off the app serving path.
 - Reads never parse reports. Package-cone queries return flaky subjects first;

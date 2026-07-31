@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
@@ -34,6 +36,9 @@ import (
 var bazelTestOutputDirectory = regexp.MustCompile(
 	`^(?:run_[1-9][0-9]*_of_[1-9][0-9]*|shard_[1-9][0-9]*_of_[1-9][0-9]*(?:_run_[1-9][0-9]*_of_[1-9][0-9]*)?)$`,
 )
+
+// Leave headroom below BuildBuddy's 50 MB gRPC receive limit.
+const reportRequestTargetBytes = 49_000_000
 
 var (
 	TestReportFlags = flag.NewFlagSet("test-report", flag.ContinueOnError)
@@ -80,8 +85,52 @@ func HandleTestReport(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	results := make([]*tbpb.TestCaseResult, 0)
-	targets := make([]*tbpb.TestTargetResult, 0, len(paths))
+	if len(paths) == 0 {
+		return 1, status.InvalidArgumentError("the supplied paths contain no test.xml files")
+	}
+	target, err := backend(*reportTarget)
+	if err != nil {
+		return 1, err
+	}
+	conn, err := grpc_client.DialSimple(target)
+	if err != nil {
+		return 1, err
+	}
+	defer conn.Close()
+	ctx, err := authenticatedContext(context.Background(), target)
+	if err != nil {
+		return 1, err
+	}
+	stream, err := tbpb.NewTestBuddyServiceClient(conn).ReportTestResults(ctx)
+	if err != nil {
+		return 1, err
+	}
+	defer stream.CloseSend()
+	batch := &tbpb.ReportTestResultsRequest{RepoUrl: repository}
+	batchSize := protowire.SizeTag(1) + protowire.SizeBytes(len(repository))
+	batchCount := 0
+	sendBatch := func() error {
+		if batchCount == 0 {
+			return nil
+		}
+		if err := stream.Send(batch); err != nil {
+			return err
+		}
+		batch = &tbpb.ReportTestResultsRequest{RepoUrl: repository}
+		batchSize = protowire.SizeTag(1) + protowire.SizeBytes(len(repository))
+		batchCount = 0
+		return nil
+	}
+	makeRoom := func(field protowire.Number, result proto.Message) (int, error) {
+		resultSize := proto.Size(result)
+		wireSize := protowire.SizeTag(field) + protowire.SizeBytes(resultSize)
+		if batchCount > 0 && batchSize+wireSize > reportRequestTargetBytes {
+			if err := sendBatch(); err != nil {
+				return 0, err
+			}
+		}
+		return wireSize, nil
+	}
 	diagnostics := 0
 	for _, path := range paths {
 		targetLabel := *reportTargetLabel
@@ -104,32 +153,31 @@ func HandleTestReport(args []string) (int, error) {
 			return 1, closeErr
 		}
 		diagnostics += report.DiagnosticCount
-		target, testCases, err := ResultsForReport(path, targetLabel, sourceURL, report)
+		targetResult, testCases, err := ResultsForReport(path, targetLabel, sourceURL, report)
 		if err != nil {
 			return 1, err
 		}
-		targets = append(targets, target)
-		results = append(results, testCases...)
+		wireSize, err := makeRoom(3, targetResult)
+		if err != nil {
+			return 1, err
+		}
+		batch.TestTargets = append(batch.TestTargets, targetResult)
+		batchSize += wireSize
+		batchCount++
+		for _, testCase := range testCases {
+			wireSize, err := makeRoom(2, testCase)
+			if err != nil {
+				return 1, err
+			}
+			batch.TestCases = append(batch.TestCases, testCase)
+			batchSize += wireSize
+			batchCount++
+		}
 	}
-	if len(results) == 0 && len(targets) == 0 {
-		return 1, status.InvalidArgumentError("the supplied XML contains no reportable test results")
-	}
-	target, err := backend(*reportTarget)
-	if err != nil {
+	if err := sendBatch(); err != nil {
 		return 1, err
 	}
-	conn, err := grpc_client.DialSimple(target)
-	if err != nil {
-		return 1, err
-	}
-	defer conn.Close()
-	ctx, err := authenticatedContext(context.Background(), target)
-	if err != nil {
-		return 1, err
-	}
-	rsp, err := tbpb.NewTestBuddyServiceClient(conn).ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: results, TestTargets: targets,
-	})
+	rsp, err := stream.CloseAndRecv()
 	if err != nil {
 		return 1, err
 	}

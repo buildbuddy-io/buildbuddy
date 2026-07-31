@@ -60,6 +60,39 @@ func (s *getTestTargetsStream) Send(response *tbpb.GetTestTargetsResponse) error
 	return nil
 }
 
+type reportTestResultsStream struct {
+	tbpb.TestBuddyService_ReportTestResultsServer
+	ctx      context.Context
+	requests []*tbpb.ReportTestResultsRequest
+	response *tbpb.ReportTestResultsResponse
+}
+
+func (s *reportTestResultsStream) Context() context.Context { return s.ctx }
+
+func (s *reportTestResultsStream) Recv() (*tbpb.ReportTestResultsRequest, error) {
+	if len(s.requests) == 0 {
+		return nil, io.EOF
+	}
+	req := s.requests[0]
+	s.requests = s.requests[1:]
+	return req, nil
+}
+
+func (s *reportTestResultsStream) SendAndClose(response *tbpb.ReportTestResultsResponse) error {
+	s.response = response
+	return nil
+}
+
+func reportTestResults(
+	service *testbuddy.Service,
+	ctx context.Context,
+	requests ...*tbpb.ReportTestResultsRequest,
+) (*tbpb.ReportTestResultsResponse, error) {
+	stream := &reportTestResultsStream{ctx: ctx, requests: requests}
+	err := service.ReportTestResults(stream)
+	return stream.response, err
+}
+
 func getTests(t *testing.T, service *testbuddy.Service, ctx context.Context, req *tbpb.GetTestsRequest) []*tbpb.TestCaseSummary {
 	t.Helper()
 	stream := &getTestsStream{ctx: ctx}
@@ -111,7 +144,7 @@ func TestReportAndQueryTests(t *testing.T) {
 	repository := "https://github.com/acme/repo"
 
 	report := func(invocationID, target, name string, outcome tbpb.TestOutcome) *tbpb.ReportTestResultsResponse {
-		rsp, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+		rsp, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl:   repository,
 			TestCases: []*tbpb.TestCaseResult{caseResult(invocationID, target, name, outcome, 1_000_000)},
 		})
@@ -178,7 +211,7 @@ func TestReportProcessesCasesIndependently(t *testing.T) {
 		cases[i] = caseResult("one-report", "//a/b:unit_test", fmt.Sprintf("TestCase%d", i),
 			tbpb.TestOutcome_TEST_OUTCOME_PASS, 0)
 	}
-	rsp, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+	rsp, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: "https://github.com/acme/repo", TestCases: cases,
 	})
 	require.NoError(t, err)
@@ -190,6 +223,37 @@ func TestReportProcessesCasesIndependently(t *testing.T) {
 	require.Len(t, got, len(cases))
 }
 
+func TestReportAggregatesStreamedBatches(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/repo"
+	rsp, err := reportTestResults(service, ctx,
+		&tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{
+				caseResult("run-1", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1),
+			},
+		},
+		&tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{
+				caseResult("run-2", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 1),
+			},
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), rsp.GetAcceptedCount())
+	got, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}, CaseName: "TestCase",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got.GetTest().GetSummary().GetPassCount())
+	require.Equal(t, int64(1), got.GetTest().GetSummary().GetFailCount())
+}
+
 func TestMaximumLengthAddress(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))
@@ -198,7 +262,7 @@ func TestMaximumLengthAddress(t *testing.T) {
 		strings.Repeat("t", identity.MaxTargetNameBytes)
 	caseName := strings.Repeat("c", identity.MaxCaseNameBytes)
 
-	_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: repository,
 		TestCases: []*tbpb.TestCaseResult{
 			caseResult("long-address", target, caseName, tbpb.TestOutcome_TEST_OUTCOME_FAIL, 1),
@@ -223,14 +287,14 @@ func TestTargetStateIsIndependentFromCases(t *testing.T) {
 	repository := "https://github.com/acme/repo"
 	target := "//a/b:unit_test"
 	reportTarget := func(invocationID string, outcome tbpb.TestOutcome) {
-		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl:     repository,
 			TestTargets: []*tbpb.TestTargetResult{targetResult(invocationID, target, outcome, 1_000_000)},
 		})
 		require.NoError(t, err)
 	}
 	reportCase := func(invocationID string, outcome tbpb.TestOutcome) {
-		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl:   repository,
 			TestCases: []*tbpb.TestCaseResult{caseResult(invocationID, target, "TestCase", outcome, 0)},
 		})
@@ -333,7 +397,7 @@ func TestAnalyzerConfigIsPerRepository(t *testing.T) {
 	require.Equal(t, int32(10), configured.GetConfig().GetLinear().GetTargetTimeoutThreshold())
 
 	reportFailure := func(repository string) {
-		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
 			TestCases: []*tbpb.TestCaseResult{caseResult(
 				"failure", "//a/b:unit_test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 0)},
@@ -365,7 +429,7 @@ func TestGetRepositoryHealth(t *testing.T) {
 	repository := "https://github.com/acme/repo"
 
 	report := func(invocationID, name string, outcome tbpb.TestOutcome, durationUsec int64) {
-		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
 			TestCases: []*tbpb.TestCaseResult{caseResult(
 				invocationID, "//a/b:unit_test", name, outcome, durationUsec)},
@@ -428,7 +492,7 @@ func TestConeQueriesStreamAllResults(t *testing.T) {
 		cases[i] = caseResult("one-big-run", fmt.Sprintf("//pkg/sub%d:test", i),
 			fmt.Sprintf("TestCase%04d", i), outcome, 1_000)
 	}
-	reported, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+	reported, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: repository, TestCases: cases,
 	})
 	require.NoError(t, err)
@@ -509,15 +573,23 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 		return rsp
 	}
 
-	// Reporting and reading work over the authenticated browser transport.
+	grpcConn, err := testenv.LocalGRPCConn(ctx, appConn)
+	require.NoError(t, err)
+	grpcClient := tbpb.NewTestBuddyServiceClient(grpcConn)
+	grpcCtx := metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, "user1")
+	reportStream, err := grpcClient.ReportTestResults(grpcCtx)
+	require.NoError(t, err)
 	for _, invocationID := range []string{"run-1", "run-2", "run-3"} {
-		rsp := post("user1", "ReportTestResults", &tbpb.ReportTestResultsRequest{
+		require.NoError(t, reportStream.Send(&tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
 			TestCases: []*tbpb.TestCaseResult{caseResult(
 				invocationID, "//a/b:unit_test", "TestHealthy", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1_000_000)},
-		})
-		require.Equal(t, http.StatusOK, rsp.Code, rsp.Body.String())
+		}))
 	}
+	reported, err := reportStream.CloseAndRecv()
+	require.NoError(t, err)
+	require.Equal(t, int32(3), reported.GetAcceptedCount())
+
 	healthRsp := post("user1", "GetRepositoryHealth", &tbpb.GetRepositoryHealthRequest{RepoUrl: repository})
 	require.Equal(t, http.StatusOK, healthRsp.Code, healthRsp.Body.String())
 	health := &tbpb.GetRepositoryHealthResponse{}
@@ -543,12 +615,7 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 	require.NotEqual(t, http.StatusOK, tampered.Code)
 	require.Contains(t, tampered.Body.String(), "was not found")
 
-	// The gRPC path the CLI uses is unchanged: API-key metadata through the
-	// app's gRPC server reaches the same backend.
-	grpcConn, err := testenv.LocalGRPCConn(ctx, appConn)
-	require.NoError(t, err)
-	grpcClient := tbpb.NewTestBuddyServiceClient(grpcConn)
-	grpcCtx := metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, "user1")
+	// API-key metadata on the gRPC path reaches the same backend.
 	grpcStream, err := grpcClient.GetTests(grpcCtx, &tbpb.GetTestsRequest{RepoUrl: repository})
 	require.NoError(t, err)
 	grpcRsp, err := grpcStream.Recv()
@@ -577,7 +644,7 @@ func TestReportPreservesRepeatedCaseSamples(t *testing.T) {
 		}
 		cases[i] = caseResult("repeated-runs", "//a/b:unit_test", "TestRepeated", outcome, 0)
 	}
-	rsp, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
+	rsp, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: "https://github.com/acme/repo", TestCases: cases,
 	})
 	require.NoError(t, err)
