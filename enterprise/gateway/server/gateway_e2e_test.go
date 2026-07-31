@@ -54,10 +54,15 @@ var sessionCounter atomic.Int64
 // gateway to initiate one.
 func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkName, peerName string) tunnelPeer {
 	t.Helper()
+	sessionID := fmt.Sprintf("e2e-session-%d", sessionCounter.Add(1))
+	return registerAndConnectWithSessionID(t, gw, ctx, networkName, peerName, sessionID)
+}
+
+func registerAndConnectWithSessionID(t testing.TB, gw *Gateway, ctx context.Context, networkName, peerName, sessionID string) tunnelPeer {
+	t.Helper()
 	privKey, err := wgkeys.GeneratePrivateKey()
 	require.NoError(t, err)
 
-	sessionID := fmt.Sprintf("e2e-session-%d", sessionCounter.Add(1))
 	resp, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
 		NetworkName: networkName,
 		PeerName:    peerName,
@@ -96,7 +101,9 @@ func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkN
 
 // TestEndToEnd_WatchReportsHandshake verifies that a Watch stream reports the
 // watched peer's first completed WireGuard handshake. The fallback poll is
-// set long so the test can only pass via the device-logger wake path.
+// set long so events can only arrive via push — the registration broadcast
+// or the device-logger wake, whichever the handshake's timing exercises —
+// never the poll.
 func TestEndToEnd_WatchReportsHandshake(t *testing.T) {
 	flags.Set(t, "gateway.watch_fallback_poll_interval", time.Minute)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
@@ -105,19 +112,24 @@ func TestEndToEnd_WatchReportsHandshake(t *testing.T) {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	peer := registerAndConnect(t, gw, ctx, "net1", "peer-a")
-	stream, cancelWatch, _ := startWatch(t, gw, ctx, peer.sessionID)
+	// Watch before the peer exists so the stream observes the full
+	// lifecycle: registration first, then the handshake.
+	sessionID := fmt.Sprintf("e2e-session-%d", sessionCounter.Add(1))
+	stream, cancelWatch, _ := startWatch(t, gw, ctx, sessionID)
 	defer cancelWatch()
 
-	// registerAndConnect's persistent keepalive triggers the handshake; the
-	// watch must eventually report a peer with a handshake time, woken by
-	// the WireGuard device's log events rather than the (long) fallback
-	// poll.
+	registerAndConnectWithSessionID(t, gw, ctx, "net1", "peer-a", sessionID)
+
+	// The peer's persistent keepalive triggers the handshake; the watch must
+	// eventually report a peer with a handshake time.
 	deadline := time.After(30 * time.Second)
 	for {
 		select {
 		case rsp := <-stream.responses:
-			require.Equal(t, peer.sessionID, rsp.GetPeer().GetSessionId())
+			if rsp.GetPeer() == nil {
+				continue // heartbeat
+			}
+			require.Equal(t, sessionID, rsp.GetPeer().GetSessionId())
 			if rsp.GetPeer().GetLastHandshakeTime() != nil {
 				return
 			}

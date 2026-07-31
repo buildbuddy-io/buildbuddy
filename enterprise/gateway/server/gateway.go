@@ -342,6 +342,8 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 // previously-reported peer is removed, the stream ends with NotFound.
 // Watching a session that never appears blocks until the caller gives up;
 // sessions in other groups are indistinguishable from nonexistent ones.
+// While the watched peer is quiet the stream carries periodic empty
+// heartbeat messages (as Connect does); clients ignore them.
 func (g *Gateway) Watch(req *gwpb.WatchRequest, stream gwsvcpb.GatewayService_WatchServer) error {
 	claims, err := g.env.GetAuthenticator().AuthenticatedUser(stream.Context())
 	if err != nil {
@@ -355,14 +357,23 @@ func (g *Gateway) Watch(req *gwpb.WatchRequest, stream gwsvcpb.GatewayService_Wa
 
 	ticker := time.NewTicker(*watchFallbackPollInterval)
 	defer ticker.Stop()
+	heartbeat := time.NewTicker(*heartbeatInterval)
+	defer heartbeat.Stop()
 
 	var last *gwpb.Peer
+	loggedSnapshotErr := false
 	for {
 		// Arm the signal before snapshotting: a state change landing after
 		// the snapshot closes the already-obtained channel, so the select
 		// below wakes instead of missing it.
 		signal := g.watchSignal()
-		peer := g.snapshotPeer(groupID, sessionID)
+		peer, err := g.snapshotPeer(groupID, sessionID)
+		if err != nil && !loggedSnapshotErr {
+			// Log once per stream: this runs on every wake, and a
+			// persistently failing IpcGet would otherwise flood the log.
+			log.Errorf("Watch: %s", err)
+			loggedSnapshotErr = true
+		}
 		if peer == nil && last != nil {
 			return status.NotFoundErrorf("session %q is no longer registered", sessionID)
 		}
@@ -377,6 +388,12 @@ func (g *Gateway) Watch(req *gwpb.WatchRequest, stream gwsvcpb.GatewayService_Wa
 			return nil
 		case <-signal:
 		case <-ticker.C:
+		case <-heartbeat.C:
+			// Keep the stream alive through idle-sensitive intermediaries
+			// while the watched peer is quiet or not yet registered.
+			if err := stream.Send(&gwpb.WatchResponse{}); err != nil {
+				return err
+			}
 		}
 	}
 }
@@ -402,30 +419,40 @@ func (g *Gateway) watchSignal() <-chan struct{} {
 }
 
 // snapshotPeer returns the current state of the peer with the given session
-// ID in groupID, or nil if no such peer is registered.
-func (g *Gateway) snapshotPeer(groupID, sessionID string) *gwpb.Peer {
-	handshakeTimes, err := g.lastHandshakeTimes()
-	if err != nil {
-		log.Errorf("Watch: %s", err)
-		// Proceed without handshake info; last_handshake_time is left unset.
-	}
+// ID in groupID, or nil if no such peer is registered. A non-nil error
+// reports a failure to read handshake state; the returned peer is still
+// valid, with last_handshake_time left unset.
+func (g *Gateway) snapshotPeer(groupID, sessionID string) (*gwpb.Peer, error) {
+	// Locate the peer before touching the WireGuard device: dumping device
+	// state (lastHandshakeTimes) is O(all peers), and the common case for a
+	// watch on a still-booting session is that the peer doesn't exist yet.
+	var p *gwpb.Peer
+	var pubKeyHex string
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	for pubKeyHex, info := range g.peers {
+	for k, info := range g.peers {
 		if info.sessionID != sessionID || info.networkState.groupID != groupID {
 			continue
 		}
-		p := &gwpb.Peer{
+		pubKeyHex = k
+		p = &gwpb.Peer{
 			Name:      info.assignedName,
 			Ip:        info.ip.String(),
 			SessionId: info.sessionID,
 		}
-		if t, ok := handshakeTimes[pubKeyHex]; ok {
-			p.LastHandshakeTime = timestamppb.New(t)
-		}
-		return p
+		break
 	}
-	return nil
+	g.mu.Unlock()
+	if p == nil {
+		return nil, nil
+	}
+	handshakeTimes, err := g.lastHandshakeTimes()
+	if err != nil {
+		return p, err
+	}
+	if t, ok := handshakeTimes[pubKeyHex]; ok {
+		p.LastHandshakeTime = timestamppb.New(t)
+	}
+	return p, nil
 }
 
 // addPeerLocked allocates an IP in ns, registers it with the TUN and the

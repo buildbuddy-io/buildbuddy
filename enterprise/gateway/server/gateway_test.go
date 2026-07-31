@@ -371,6 +371,55 @@ func startWatch(t testing.TB, gw *Gateway, ctx context.Context, sessionID string
 	return stream, cancel, done
 }
 
+func TestWatch_Unauthenticated(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	stream := &fakeWatchStream{ctx: context.Background(), responses: make(chan *gwpb.WatchResponse, 1)}
+	err := gw.Watch(&gwpb.WatchRequest{SessionId: "session-1"}, stream)
+	require.Error(t, err)
+}
+
+func TestWatch_MultipleWatchers(t *testing.T) {
+	// A long fallback interval ensures both watchers can only be woken by
+	// the registration/removal broadcast.
+	flags.Set(t, "gateway.watch_fallback_poll_interval", time.Minute)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	stream1, _, done1 := startWatch(t, gw, ctx, "session-1")
+	stream2, _, done2 := startWatch(t, gw, ctx, "session-1")
+
+	_, cancelConnect, connectDone := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		PublicKey: newPubKeyHex(t),
+		SessionId: "session-1",
+	})
+
+	// The broadcast wakes every watcher: both streams report the peer.
+	for i, stream := range []*fakeWatchStream{stream1, stream2} {
+		select {
+		case rsp := <-stream.responses:
+			require.Equal(t, "session-1", rsp.GetPeer().GetSessionId())
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for registration event on watcher %d", i+1)
+		}
+	}
+
+	cancelConnect()
+	require.NoError(t, <-connectDone)
+	for i, done := range []chan error{done1, done2} {
+		select {
+		case err := <-done:
+			require.True(t, status.IsNotFoundError(err), "watcher %d: expected NotFound, got: %v", i+1, err)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("timed out waiting for watcher %d to report removal", i+1)
+		}
+	}
+}
+
 func TestWatch_RequiresSessionID(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	gw := setupGateway(t, ta)
@@ -436,7 +485,7 @@ func TestWatch_IsolatedByGroup(t *testing.T) {
 	ctx2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
 	require.NoError(t, err)
 
-	_, _, _ = startConnect(t, gw, ctx1, &gwpb.ConnectRequest{
+	startConnect(t, gw, ctx1, &gwpb.ConnectRequest{
 		PublicKey: newPubKeyHex(t),
 		SessionId: "session-1",
 	})

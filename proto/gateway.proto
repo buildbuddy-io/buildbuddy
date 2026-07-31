@@ -141,8 +141,10 @@ message WatchRequest {
 }
 
 // WatchResponse messages are streamed by the Watch RPC, one per observed
-// state change of the watched peer.
+// state change of the watched peer. While the watched peer is quiet the
+// stream also carries periodic empty heartbeat messages; clients should
+// ignore messages with no peer.
 message WatchResponse {
-  // The watched peer's current state.
+  // The watched peer's current state. Unset in heartbeat messages.
   Peer peer = 1;
 }
