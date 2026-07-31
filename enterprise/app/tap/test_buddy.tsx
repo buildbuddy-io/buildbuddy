@@ -108,7 +108,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     this.setState({ selected: undefined, selectedCases: [], loadingCases: false });
   }
 
-  private renderSummary(name: string, summary?: test_buddy.TestHealthSummary) {
+  private renderSummary(name: string, summary?: test_buddy.TestHealthSummary | null) {
     if (!summary) return null;
     return (
       <div className="test-buddy-summary">
