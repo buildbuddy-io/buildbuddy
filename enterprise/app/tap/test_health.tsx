@@ -249,7 +249,6 @@ export default class TestHealthComponent extends React.Component<Props, State> {
         <table className="test-health-table">
           <thead>
             <tr>
-              <th>Package</th>
               <th>Target</th>
               <th>Health</th>
               <th>Pass rate</th>
@@ -259,7 +258,6 @@ export default class TestHealthComponent extends React.Component<Props, State> {
           <tbody>
             {this.state.targets.map((target) => (
               <tr key={target.identity?.targetLabel}>
-                <td>{packageName(target.identity?.targetLabel)}</td>
                 <td>
                   <button className="test-health-target-link" onClick={() => this.selectTarget(target)}>
                     {target.identity?.targetLabel}
@@ -291,6 +289,7 @@ function Stat({ name, value }: { name: string; value: string }) {
 }
 
 function healthName(health: test_health.TestHealth) {
+  if (health === test_health.TestHealth.TEST_HEALTH_UNKNOWN) return "NOT REPORTED";
   return test_health.TestHealth[health].replace("TEST_HEALTH_", "");
 }
 
@@ -300,11 +299,4 @@ function outcomeName(outcome: test_health.TestOutcome) {
 
 function percent(value: number) {
   return `${format.percent(value)}%`;
-}
-
-function packageName(label = "") {
-  const start = label.indexOf("//");
-  const end = label.indexOf(":", start + 2);
-  if (start < 0 || end < 0) return "";
-  return label.slice(start + 2, end) || "(root)";
 }
