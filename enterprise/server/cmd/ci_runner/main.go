@@ -1027,11 +1027,12 @@ func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
 
 // actionRunner runs a single action in the BuildBuddy config.
 type actionRunner struct {
-	isWorkflow bool
-	reporter   *buildEventReporter
-	rootDir    string
-	username   string
-	hostname   string
+	isWorkflow               bool
+	reporter                 *buildEventReporter
+	rootDir                  string
+	username                 string
+	hostname                 string
+	agentTranscriptCollector agentTranscriptCollector
 }
 
 func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
@@ -1294,6 +1295,12 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 
 		// Kick off background uploads for the action that just completed
 		if uploader != nil {
+			transcriptCount, err := ar.agentTranscriptCollector.preserve(artifactsDir, ar.reporter.log.redactionValues)
+			if err != nil {
+				ar.reporter.Printf("WARNING: failed to preserve agent transcripts as invocation artifacts: %s", err)
+			} else if transcriptCount > 0 {
+				writeCommandSummary(ws.log, "Preserved %d agent transcript artifact(s)", transcriptCount)
+			}
 			writeCommandSummary(ws.log, "Uploading artifacts from %s", artifactsDir)
 			uploader.UploadDirectory(namedSetID, artifactsDir) // does not return an error
 		}
