@@ -1,0 +1,83 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "test_health",
+    srcs = ["test_health.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/test_health",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:test_health_go_proto",
+        "//server/environment",
+        "//server/interfaces",
+        "//server/real_environment",
+        "//server/tables",
+        "//server/test_health/analyzer",
+        "//server/test_health/config",
+        "//server/test_health/identity",
+        "//server/test_health/normalize",
+        "//server/util/authutil",
+        "//server/util/db",
+        "//server/util/flag",
+        "//server/util/grpc_client",
+        "//server/util/status",
+        "//third_party/singleflight",
+        "@io_gorm_gorm//clause",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_x_sync//errgroup",
+    ],
+)
+
+go_test(
+    name = "test_health_test",
+    srcs = ["test_health_test.go"],
+    deps = [
+        ":test_health",
+        "//proto:context_go_proto",
+        "//proto:test_health_go_proto",
+        "//server/http/interceptors",
+        "//server/http/protolet",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/authutil",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "test_health_test_mysql",
+    srcs = ["test_health_test.go"],
+    args = [
+        "--testenv.database_type=mysql",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "mysql",
+    },
+    tags = ["docker"],
+    deps = [
+        ":test_health",
+        "//proto:context_go_proto",
+        "//proto:test_health_go_proto",
+        "//server/http/interceptors",
+        "//server/http/protolet",
+        "//server/testutil/testauth",
+        "//server/testutil/testenv",
+        "//server/util/authutil",
+        "//server/util/status",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//encoding/protojson",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

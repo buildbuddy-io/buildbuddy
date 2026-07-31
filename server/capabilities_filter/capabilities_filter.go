@@ -13,11 +13,13 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
 )
 
 var (
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
+	testBuddyServicePrefix  = "/" + thpb.TestBuddyService_ServiceDesc.ServiceName + "/"
 )
 
 var (
@@ -156,6 +158,14 @@ var (
 		buildBuddyServicePrefix + "SaveWorkspace",
 		buildBuddyServicePrefix + "GetWorkspaceDirectory",
 		buildBuddyServicePrefix + "GetWorkspaceFile",
+		// TestBuddy reads and result reporting.
+		testBuddyServicePrefix + "GetTests",
+		testBuddyServicePrefix + "GetTestTargets",
+		testBuddyServicePrefix + "GetTestCase",
+		testBuddyServicePrefix + "GetTestTarget",
+		testBuddyServicePrefix + "GetRepositoryHealth",
+		testBuddyServicePrefix + "GetTestAnalyzerConfig",
+		testBuddyServicePrefix + "ReportTestResults",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
@@ -223,6 +233,8 @@ var (
 		buildBuddyServicePrefix + "SetIPRulesConfig",
 		// GCP
 		buildBuddyServicePrefix + "GetGCPProject",
+		// TestBuddy analyzer configuration
+		testBuddyServicePrefix + "SetTestAnalyzerConfig",
 	}
 
 	// ServerAdminOnlyRPCs can only be called by server admins. It is different
