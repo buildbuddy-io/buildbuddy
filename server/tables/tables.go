@@ -636,6 +636,204 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
+// Test Health catalog: the durable set of test targets and cases a group has
+// reported, scoped by authenticated group. A catalog row is written once, when
+// the address is first cataloged, so Model.CreatedAtUsec is also when it was
+// first seen.
+//
+// # Keys are addresses
+//
+// Every Test Health table is keyed on the coordinates that identify the thing
+// it describes. A target is (group_id, repository, target_label); a case is
+// that plus case_name; package coverage uses the Bazel package path. A point
+// read is a primary-key probe, because a report already carries the address; a
+// listing of one target's cases is a primary-key range scan; and equality on
+// the address is identity, so nothing has to re-compare components after a key
+// match.
+//
+// Ordering follows from the same choice. Cases sort by target, then name, so a
+// page boundary is a position a reader can name, and cursors
+// carry coordinates: they stay opaque to callers, but nothing inside one is
+// derived.
+//
+// # Why these columns are ascii_bin
+//
+// server/test_health/identity validates every address component as printable
+// ASCII and caps a rendered address at 1,024 bytes, so these columns are ASCII
+// by construction. Declaring them so is what makes the composite keys
+// affordable: MySQL sizes an index key from the declared character set — one
+// byte per character for ascii, four for utf8mb4 — against a 3,072-byte
+// ceiling.
+//
+// The declaration has to happen at CREATE TABLE. AutoMigrate emits a table's
+// indexes in the same statement as its columns, so a collation fixed in
+// PostAutoMigrate arrives after MySQL has already measured and refused the
+// key; see createTestHealthTables.
+//
+// Binary comparison is the other half, and matters independently of size.
+// MySQL's default collation is case- and accent-insensitive while SQLite and
+// Postgres are not, so under it a package-prefix range scan would follow
+// collation weight rather than byte order — "//a/B" would fall inside the
+// "//a/b" cone, which Bazel says is a different package — and two labels
+// differing only in case would compare equal, merging two distinct tests.
+
+// TestRepositoryCatalog records a repository that has reported tests.
+type TestRepositoryCatalog struct {
+	Model
+	GroupID    string `gorm:"primaryKey;size:64;not null"`
+	Repository string `gorm:"primaryKey;size:512;not null"`
+}
+
+func (*TestRepositoryCatalog) TableName() string { return "TestRepositoryCatalogs" }
+
+// TestTarget records one test target.
+type TestTarget struct {
+	Model
+	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_target_cone_idx,priority:1"`
+	Repository  string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:2"`
+	TargetLabel string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:4"`
+	PackagePath string `gorm:"size:512;not null;index:test_target_cone_idx,priority:3"`
+}
+
+func (*TestTarget) TableName() string { return "TestTargets" }
+
+// TestCase records one test case beneath a target.
+type TestCase struct {
+	Model
+	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_case_cone_idx,priority:1"`
+	Repository  string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:2"`
+	TargetLabel string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:4"`
+	CaseName    string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:5"`
+	PackagePath string `gorm:"size:512;not null;index:test_case_cone_idx,priority:3"`
+}
+
+func (*TestCase) TableName() string { return "TestCases" }
+
+// TestPackageCoverage records the latest coverage fraction for a Bazel package.
+type TestPackageCoverage struct {
+	Model
+	GroupID          string  `gorm:"primaryKey;size:64;not null"`
+	Repository       string  `gorm:"primaryKey;size:512;not null"`
+	PackagePath      string  `gorm:"primaryKey;size:512;not null"`
+	CoverageFraction float64 `gorm:"not null"`
+}
+
+func (*TestPackageCoverage) TableName() string { return "TestPackageCoverages" }
+
+// TestAnalyzerConfig is the analyzer configuration for a group or repository.
+type TestAnalyzerConfig struct {
+	Model
+	GroupID    string `gorm:"primaryKey;size:64;not null"`
+	Repository string `gorm:"primaryKey;size:512;not null"`
+	Revision   int64  `gorm:"not null"`
+	Config     []byte `gorm:"size:max;not null"`
+}
+
+func (*TestAnalyzerConfig) TableName() string { return "TestAnalyzerConfigs" }
+
+// TestCaseState is the current state of one case.
+type TestCaseState struct {
+	Model
+	GroupID     string `gorm:"primaryKey;size:64;not null"`
+	Repository  string `gorm:"primaryKey;size:512;not null"`
+	TargetLabel string `gorm:"primaryKey;size:512;not null"`
+	CaseName    string `gorm:"primaryKey;size:512;not null"`
+
+	Health            string `gorm:"size:32;not null"`
+	Checkpoint        []byte `gorm:"size:max;not null"`
+	PassCount         int64
+	FailCount         int64
+	TimeoutCount      int64
+	TotalDurationUsec int64
+	StateVersion      int64 `gorm:"not null"`
+}
+
+func (*TestCaseState) TableName() string { return "TestCaseStates" }
+
+// TestTargetState is the current state of one target.
+type TestTargetState struct {
+	Model
+	GroupID     string `gorm:"primaryKey;size:64;not null"`
+	Repository  string `gorm:"primaryKey;size:512;not null"`
+	TargetLabel string `gorm:"primaryKey;size:512;not null"`
+
+	Health            string `gorm:"size:32;not null"`
+	Checkpoint        []byte `gorm:"size:max;not null"`
+	PassCount         int64
+	FailCount         int64
+	TimeoutCount      int64
+	TotalDurationUsec int64
+	StateVersion      int64 `gorm:"not null"`
+}
+
+func (*TestTargetState) TableName() string { return "TestTargetStates" }
+
+// TestCaseStateChange records one case health transition.
+type TestCaseStateChange struct {
+	Model
+	GroupID      string `gorm:"primaryKey;size:64;not null"`
+	Repository   string `gorm:"primaryKey;size:512;not null"`
+	TargetLabel  string `gorm:"primaryKey;size:512;not null"`
+	CaseName     string `gorm:"primaryKey;size:512;not null"`
+	StateVersion int64  `gorm:"primaryKey;autoIncrement:false;not null"`
+
+	PreviousHealth string `gorm:"size:32;not null"`
+	Health         string `gorm:"size:32;not null"`
+	PassCount      int64
+	FailCount      int64
+	TimeoutCount   int64
+	EventTimeUsec  int64 `gorm:"not null"`
+}
+
+func (*TestCaseStateChange) TableName() string { return "TestCaseStateChanges" }
+
+// TestTargetStateChange records one target health transition.
+type TestTargetStateChange struct {
+	Model
+	GroupID      string `gorm:"primaryKey;size:64;not null"`
+	Repository   string `gorm:"primaryKey;size:512;not null"`
+	TargetLabel  string `gorm:"primaryKey;size:512;not null"`
+	StateVersion int64  `gorm:"primaryKey;autoIncrement:false;not null"`
+
+	PreviousHealth string `gorm:"size:32;not null"`
+	Health         string `gorm:"size:32;not null"`
+	PassCount      int64
+	FailCount      int64
+	TimeoutCount   int64
+	EventTimeUsec  int64 `gorm:"not null"`
+}
+
+func (*TestTargetStateChange) TableName() string { return "TestTargetStateChanges" }
+
+const testHealthTableOptions = "ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin"
+
+func TestHealthTableNames() []string {
+	names := make([]string, 0, len(testHealthTables()))
+	for _, table := range testHealthTables() {
+		names = append(names, table.TableName())
+	}
+	return names
+}
+
+func testHealthTables() []Table {
+	return []Table{
+		&TestRepositoryCatalog{}, &TestTarget{}, &TestCase{}, &TestPackageCoverage{}, &TestAnalyzerConfig{},
+		&TestCaseState{}, &TestTargetState{}, &TestCaseStateChange{}, &TestTargetStateChange{},
+	}
+}
+
+func createTestHealthTables(db *gorm.DB) error {
+	for _, table := range testHealthTables() {
+		if db.Migrator().HasTable(table) {
+			continue
+		}
+		if err := db.Set("gorm:table_options", " "+testHealthTableOptions).Migrator().CreateTable(table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GitHubAppInstallation represents a BuildBuddy GitHub App installation linked
 // to an organization.
 //
@@ -1030,6 +1228,19 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	postMigrate := make([]PostAutoMigrateLogic, 0)
 
 	m := db.Migrator()
+
+	// Test Health tables must exist with an ASCII character set before
+	// AutoMigrate would create them with the schema default, because
+	// AutoMigrate declares a table's indexes in the same statement as its
+	// columns and MySQL measures a utf8mb4 key at four bytes per character.
+	// Fatal rather than logged: a table created with the wrong character set
+	// either fails outright (ERROR 1071) or silently mangles addresses, and
+	// both are worse than refusing to start.
+	if db.Dialector.Name() == mysqlDialect {
+		if err := createTestHealthTables(db); err != nil {
+			return nil, err
+		}
+	}
 
 	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "membership_status") {
@@ -1521,6 +1732,15 @@ func RegisterTables() {
 	registerTable("SK", &Secret{})
 	registerTable("SR", &ScheduledRun{})
 	registerTable("TA", &Target{})
+	registerTable("TC", &TestCase{})
+	registerTable("TD", &TestPackageCoverage{})
+	registerTable("TE", &TestTarget{})
+	registerTable("TF", &TestRepositoryCatalog{})
+	registerTable("TG", &TestCaseState{})
+	registerTable("TH", &TestTargetState{})
+	registerTable("TI", &TestAnalyzerConfig{})
+	registerTable("TJ", &TestCaseStateChange{})
+	registerTable("TK", &TestTargetStateChange{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("TO", &Token{})
 	registerTable("TS", &TargetStatus{})

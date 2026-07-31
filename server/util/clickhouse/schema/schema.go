@@ -90,6 +90,13 @@ func getEngine() string {
 	return "ReplacingMergeTree()"
 }
 
+func getVersionedReplacingEngine(versionColumn string) string {
+	if *dataReplicationEnabled {
+		return fmt.Sprintf("ReplicatedReplacingMergeTree('%s', '%s', %s)", *zooPath, *replicaName, versionColumn)
+	}
+	return fmt.Sprintf("ReplacingMergeTree(%s)", versionColumn)
+}
+
 // Invocation constains a subset of tables.Invocations.
 type Invocation struct {
 	GroupID        string `gorm:"primaryKey;"`

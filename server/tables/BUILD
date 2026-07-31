@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "tables",
@@ -17,5 +17,28 @@ go_library(
         "//server/util/status",
         "//server/util/uuid",
         "@io_gorm_gorm//:gorm",
+    ],
+)
+
+go_test(
+    name = "tables_test",
+    srcs = ["tables_test.go"],
+    args = [
+        "--testenv.database_type=mysql",
+        "--testenv.reuse_server",
+    ],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.init-dockerd": "true",
+        "test.recycle-runner": "true",
+        "test.runner-recycling-key": "mysql",
+    },
+    tags = ["docker"],
+    deps = [
+        ":tables",
+        "//server/testutil/testenv",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@io_gorm_gorm//schema",
     ],
 )
