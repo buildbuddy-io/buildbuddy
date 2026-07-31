@@ -65,6 +65,24 @@ func init() {
 	log.Configure()
 }
 
+// loadRunfilesLibrary is a Bash snippet that loads the Bazel-provided Bash
+// library defining rlocation. Test binaries that look up runfiles should
+// include it, and depend on `@bazel_tools//tools/bash/runfiles`.
+const loadRunfilesLibrary = `
+# Load the Bash library that defines rlocation.
+# Don't exit on the first failed lookup; try several possible locations.
+set +e
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$0.runfiles/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  { echo >&2 "ERROR: cannot find $f"; exit 1; }
+f=
+set -e
+`
+
 // Returns the invocation ID of the outer invocation.
 func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
@@ -598,20 +616,7 @@ sh_binary(
 `,
 				"main.sh": `#!/usr/bin/env bash
 set -euo pipefail
-` + test.beforeRunfilesInitializer + `
-# Load the Bash library that defines rlocation.
-# Don't exit on the first failed lookup; try several possible locations.
-set +e
-f=bazel_tools/tools/bash/runfiles/runfiles.bash
-source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
-  source "$0.runfiles/$f" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
-  { echo >&2 "ERROR: cannot find $f"; exit 1; }
-f=
-set -e
-
+` + test.beforeRunfilesInitializer + loadRunfilesLibrary + `
 # Look for the runfile message.txt. We should be able to successfully find it
 # on the local machine.
 message_path="$(rlocation "` + test.runfilePath + `" || true)"
@@ -669,8 +674,7 @@ genrule(
     name = "generated_helper",
     srcs = ["helper.sh"],
     outs = ["helper-generated.sh"],
-    cmd = "cp $< $@",
-    executable = True,
+    cmd = "cp $< $@ && chmod +x $@",
 )
 
 sh_binary(
@@ -682,20 +686,7 @@ sh_binary(
 `,
 		"main.sh": `#!/usr/bin/env bash
 set -euo pipefail
-
-# Load the Bash library that defines rlocation.
-# Don't exit on the first failed lookup; try several possible locations.
-set +e
-f=bazel_tools/tools/bash/runfiles/runfiles.bash
-source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
-  source "$0.runfiles/$f" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
-  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
-  { echo >&2 "ERROR: cannot find $f"; exit 1; }
-f=
-set -e
-
+` + loadRunfilesLibrary + `
 # The main binary runs the helper script from its runfiles directory.
 helper_path="$(rlocation _main/helper-generated.sh)"
 "$helper_path"
