@@ -691,8 +691,9 @@ type TestTarget struct {
 	Model
 	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_target_cone_idx,priority:1"`
 	Repository  string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:2"`
-	TargetLabel string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:4"`
-	PackagePath string `gorm:"size:512;not null;index:test_target_cone_idx,priority:3"`
+	TargetLabel string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:5"`
+	BucketID    int32  `gorm:"not null;index:test_target_cone_idx,priority:3"`
+	PackagePath string `gorm:"size:512;not null;index:test_target_cone_idx,priority:4"`
 }
 
 func (*TestTarget) TableName() string { return "TestTargets" }
@@ -702,12 +703,24 @@ type TestCase struct {
 	Model
 	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_case_cone_idx,priority:1"`
 	Repository  string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:2"`
-	TargetLabel string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:4"`
-	CaseName    string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:5"`
-	PackagePath string `gorm:"size:512;not null;index:test_case_cone_idx,priority:3"`
+	TargetLabel string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:5"`
+	CaseName    string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:6"`
+	BucketID    int32  `gorm:"not null;index:test_case_cone_idx,priority:3"`
+	PackagePath string `gorm:"size:512;not null;index:test_case_cone_idx,priority:4"`
 }
 
 func (*TestCase) TableName() string { return "TestCases" }
+
+// TestTargetConeBucket maps a package prefix to a logical target bucket.
+type TestTargetConeBucket struct {
+	Model
+	GroupID       string `gorm:"primaryKey;size:64;not null"`
+	Repository    string `gorm:"primaryKey;size:512;not null"`
+	PackagePrefix string `gorm:"primaryKey;size:512;not null"`
+	BucketID      int32  `gorm:"primaryKey;autoIncrement:false;not null"`
+}
+
+func (*TestTargetConeBucket) TableName() string { return "TestTargetConeBuckets" }
 
 // TestPackageCoverage records the latest coverage fraction for a Bazel package.
 type TestPackageCoverage struct {
@@ -805,29 +818,30 @@ type TestTargetStateChange struct {
 
 func (*TestTargetStateChange) TableName() string { return "TestTargetStateChanges" }
 
-const testHealthTableOptions = "ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin"
+const testBuddyTableOptions = "ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin"
 
 func TestBuddyTableNames() []string {
-	names := make([]string, 0, len(testHealthTables()))
-	for _, table := range testHealthTables() {
+	names := make([]string, 0, len(testBuddyTables()))
+	for _, table := range testBuddyTables() {
 		names = append(names, table.TableName())
 	}
 	return names
 }
 
-func testHealthTables() []Table {
+func testBuddyTables() []Table {
 	return []Table{
-		&TestRepositoryCatalog{}, &TestTarget{}, &TestCase{}, &TestPackageCoverage{}, &TestAnalyzerConfig{},
+		&TestRepositoryCatalog{}, &TestTarget{}, &TestCase{}, &TestTargetConeBucket{},
+		&TestPackageCoverage{}, &TestAnalyzerConfig{},
 		&TestCaseState{}, &TestTargetState{}, &TestCaseStateChange{}, &TestTargetStateChange{},
 	}
 }
 
 func createTestBuddyTables(db *gorm.DB) error {
-	for _, table := range testHealthTables() {
+	for _, table := range testBuddyTables() {
 		if db.Migrator().HasTable(table) {
 			continue
 		}
-		if err := db.Set("gorm:table_options", " "+testHealthTableOptions).Migrator().CreateTable(table); err != nil {
+		if err := db.Set("gorm:table_options", " "+testBuddyTableOptions).Migrator().CreateTable(table); err != nil {
 			return err
 		}
 	}
@@ -1742,6 +1756,7 @@ func RegisterTables() {
 	registerTable("TJ", &TestCaseStateChange{})
 	registerTable("TK", &TestTargetStateChange{})
 	registerTable("TL", &TelemetryLog{})
+	registerTable("TM", &TestTargetConeBucket{})
 	registerTable("TO", &Token{})
 	registerTable("TS", &TargetStatus{})
 	registerTable("UA", &Usage{})

@@ -305,14 +305,14 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 		target := result.Target
 		targets[target.Address] = &tables.TestTarget{
 			GroupID: groupID, Repository: repository, TargetLabel: target.Address.TargetLabel,
-			PackagePath: target.Target.PackagePath,
+			BucketID: identity.BucketForTarget(groupID, target.Address), PackagePath: target.Target.PackagePath,
 		}
 	}
 	for _, result := range report.TargetResults {
 		target := result.Target
 		targets[target.Address] = &tables.TestTarget{
 			GroupID: groupID, Repository: repository, TargetLabel: target.Address.TargetLabel,
-			PackagePath: target.Target.PackagePath,
+			BucketID: identity.BucketForTarget(groupID, target.Address), PackagePath: target.Target.PackagePath,
 		}
 	}
 	targetRows := make([]*tables.TestTarget, 0, len(targets))
@@ -327,13 +327,40 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 			return err
 		}
 	}
+	type coneKey struct {
+		prefix   string
+		bucketID int32
+	}
+	coneRows := make(map[coneKey]*tables.TestTargetConeBucket)
+	for _, target := range targetRows {
+		for _, prefix := range identity.PackagePrefixes(target.PackagePath) {
+			key := coneKey{prefix: prefix, bucketID: target.BucketID}
+			coneRows[key] = &tables.TestTargetConeBucket{
+				GroupID: groupID, Repository: repository, PackagePrefix: prefix, BucketID: target.BucketID,
+			}
+		}
+	}
+	cones := make([]*tables.TestTargetConeBucket, 0, len(coneRows))
+	for _, row := range coneRows {
+		cones = append(cones, row)
+	}
+	for start := 0; start < len(cones); start += reportBatchSize {
+		end := min(start+reportBatchSize, len(cones))
+		if err := database.GORM(ctx, "test_buddy_admit_cone_buckets").
+			Clauses(clause.OnConflict{DoNothing: true}).
+			Create(cones[start:end]).Error; err != nil {
+			return err
+		}
+	}
 	for start := 0; start < len(report.CaseResults); start += reportBatchSize {
 		end := min(start+reportBatchSize, len(report.CaseResults))
 		cases := make([]*tables.TestCase, 0, end-start)
 		for _, result := range report.CaseResults[start:end] {
+			address := result.Identity.Address
 			cases = append(cases, &tables.TestCase{
-				GroupID: groupID, Repository: repository, TargetLabel: result.Identity.Address.TargetLabel,
-				CaseName: result.Identity.Address.CaseName, PackagePath: result.Identity.Target.PackagePath,
+				GroupID: groupID, Repository: repository, TargetLabel: address.TargetLabel,
+				CaseName: address.CaseName, BucketID: identity.BucketForTarget(groupID, address.Target()),
+				PackagePath: result.Identity.Target.PackagePath,
 			})
 		}
 		if err := database.GORM(ctx, "test_buddy_admit_cases").
@@ -610,7 +637,7 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		return status.InvalidArgumentError("package_prefix and target_label cannot both be set")
 	}
 	where := `tc.group_id = ? AND tc.repository = ?`
-	args := []any{groupID, repository}
+	args := []any{packagePrefix, groupID, repository}
 	if packagePrefix != "" {
 		where += ` AND (tc.package_path = ? OR (tc.package_path >= ? AND tc.package_path < ?))`
 		args = append(args, packagePrefix, packagePrefix+"/", packagePrefix+"0")
@@ -632,6 +659,9 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 			COALESCE(s.timeout_count, 0) AS timeout_count,
 			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
 		FROM "TestCases" AS tc
+		JOIN "TestTargetConeBuckets" AS cone
+			ON cone.group_id = tc.group_id AND cone.repository = tc.repository
+			AND cone.bucket_id = tc.bucket_id AND cone.package_prefix = ?
 		LEFT JOIN "TestCaseStates" AS s
 			ON s.group_id = tc.group_id AND s.repository = tc.repository
 			AND s.target_label = tc.target_label AND s.case_name = tc.case_name
@@ -694,7 +724,7 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 		return err
 	}
 	where := `tt.group_id = ? AND tt.repository = ?`
-	args := []any{groupID, repository}
+	args := []any{packagePrefix, groupID, repository}
 	if packagePrefix != "" {
 		where += ` AND (tt.package_path = ? OR (tt.package_path >= ? AND tt.package_path < ?))`
 		args = append(args, packagePrefix, packagePrefix+"/", packagePrefix+"0")
@@ -711,6 +741,9 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 			COALESCE(s.timeout_count, 0) AS timeout_count,
 			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
 		FROM "TestTargets" AS tt
+		JOIN "TestTargetConeBuckets" AS cone
+			ON cone.group_id = tt.group_id AND cone.repository = tt.repository
+			AND cone.bucket_id = tt.bucket_id AND cone.package_prefix = ?
 		LEFT JOIN "TestTargetStates" AS s
 			ON s.group_id = tt.group_id AND s.repository = tt.repository
 			AND s.target_label = tt.target_label

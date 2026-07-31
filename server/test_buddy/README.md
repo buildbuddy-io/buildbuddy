@@ -25,6 +25,10 @@ queryable health state.
 - Reads never parse reports. Package-cone queries return flaky subjects first;
   exact reads return current health, aggregate statistics, recent evidence, and
   state-change history.
+- Each target hashes to one of 4,096 stable logical buckets. Admission maps the
+  target's package and every ancestor package to that bucket; cone reads use the
+  mapping to find candidate buckets, then apply exact package bounds. A future
+  router can move logical buckets between databases without changing test keys.
 
 `bb test-report` reads Bazel test output and reports it. JUnit is only an input
 format and is not part of test identity.

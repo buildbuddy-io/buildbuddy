@@ -71,3 +71,19 @@ func TestAddressRenderingIsReadableAndUnambiguous(t *testing.T) {
 	assert.Equal(t, `"https://github.com/acme/repo":"//pkg:test":"subtest \"quoted\""`, address.String())
 	assert.False(t, strings.Contains(address.String(), "\n"))
 }
+
+func TestBucketForTarget(t *testing.T) {
+	address := identity.TargetAddress{
+		Repository:  "https://github.com/buildbuddy-io/buildbuddy",
+		TargetLabel: "//server/test_buddy:tests",
+	}
+	assert.Equal(t, int32(996), identity.BucketForTarget("GR1", address))
+	assert.Equal(t, identity.BucketForTarget("GR1", address), identity.BucketForTarget("GR1", identity.CaseAddress{
+		Repository: address.Repository, TargetLabel: address.TargetLabel, CaseName: "TestOne",
+	}.Target()))
+}
+
+func TestPackagePrefixes(t *testing.T) {
+	assert.Equal(t, []string{""}, identity.PackagePrefixes(""))
+	assert.Equal(t, []string{"", "a", "a/b", "a/b/c"}, identity.PackagePrefixes("a/b/c"))
+}

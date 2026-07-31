@@ -2,6 +2,8 @@
 package identity
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,13 +16,32 @@ import (
 )
 
 const (
-	MaxAddressBytes = 1024
+	MaxAddressBytes   = 1024
+	TargetBucketCount = 4096
 
 	MaxRepositoryURLBytes = 512
 	MaxTargetLabelBytes   = 512
 	MaxPackagePathBytes   = 512
 	MaxCaseNameBytes      = 512
 )
+
+func BucketForTarget(groupID string, address TargetAddress) int32 {
+	digest := sha256.Sum256([]byte(groupID + "\x00" + address.Repository + "\x00" + address.TargetLabel))
+	return int32(binary.BigEndian.Uint32(digest[:4]) % TargetBucketCount)
+}
+
+func PackagePrefixes(packagePath string) []string {
+	prefixes := []string{""}
+	for i := 0; i < len(packagePath); i++ {
+		if packagePath[i] == '/' {
+			prefixes = append(prefixes, packagePath[:i])
+		}
+	}
+	if packagePath != "" {
+		prefixes = append(prefixes, packagePath)
+	}
+	return prefixes
+}
 
 type TargetAddress struct {
 	Repository  string

@@ -19,7 +19,9 @@ import (
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/http/protolet"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	testbuddy "github.com/buildbuddy-io/buildbuddy/server/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -81,7 +83,8 @@ func getTestTargets(t *testing.T, service *testbuddy.Service, ctx context.Contex
 
 func TestReportAndQueryTests(t *testing.T) {
 	ctx := context.Background()
-	service := testbuddy.New(testenv.GetTestEnv(t))
+	env := testenv.GetTestEnv(t)
+	service := testbuddy.New(env)
 	repository := "https://github.com/acme/repo"
 
 	report := func(invocationID, target, name string, outcome tbpb.TestOutcome) *tbpb.ReportTestResultsResponse {
@@ -101,6 +104,27 @@ func TestReportAndQueryTests(t *testing.T) {
 	report("m-middle-by-name", "//a/b:unit_test", "TestRequest", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
 	report("m-middle-by-name", "//a/b:unit_test", "TestRequest", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
 	report("sibling", "//a/b2:unit_test", "TestSibling", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
+
+	var targetRow tables.TestTarget
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_target_bucket").
+		Where("repository = ? AND target_label = ?", repository, "//a/b:unit_test").Take(&targetRow).Error)
+	bucketID := identity.BucketForTarget(targetRow.GroupID, identity.TargetAddress{
+		Repository: repository, TargetLabel: targetRow.TargetLabel,
+	})
+	for _, prefix := range []string{"", "a", "a/b"} {
+		var count int64
+		require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_cone_buckets").
+			Model(&tables.TestTargetConeBucket{}).
+			Where("repository = ? AND package_prefix = ? AND bucket_id = ?", repository, prefix, bucketID).
+			Count(&count).Error)
+		require.Equal(t, int64(1), count, prefix)
+	}
+	var caseRow tables.TestCase
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_case_bucket").
+		Where("repository = ? AND target_label = ? AND case_name = ?", repository, "//a/b:unit_test", "TestRequest").
+		Take(&caseRow).Error)
+	require.Equal(t, bucketID, targetRow.BucketID)
+	require.Equal(t, targetRow.BucketID, caseRow.BucketID)
 
 	tests := getTests(t, service, ctx, &tbpb.GetTestsRequest{
 		RepoUrl: repository, PackagePrefix: "a/b",
