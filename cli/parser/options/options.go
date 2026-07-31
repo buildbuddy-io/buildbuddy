@@ -73,7 +73,7 @@ type Defined interface {
 	HasExpansion() bool
 	Expansion() iter.Seq[Option]
 	HasSupportedCommands() bool
-	SupportedCommands() iter.Seq[string]
+	SupportedCommands() set.View[string]
 	Supports(string) bool
 	AddSupportedCommand(commands ...string)
 	PluginID() string
@@ -159,10 +159,10 @@ func (d *Definition) Expansion() iter.Seq[Option] {
 	}
 }
 
-func (d *Definition) SetExpansion(expansion []Option) {
-	d.expansion = expansion
-}
-
+// ResolveExpansion lets us resolve the options in the expansion. These are
+// normally deferred when a definition is created, because we need
+// definitions to construct a parser, and we need a parser to resolve
+// options.
 func (d *Definition) ResolveExpansion(resolve func(Option) (Option, error)) error {
 	for i, opt := range d.expansion {
 		resolved, err := resolve(opt)
@@ -178,14 +178,8 @@ func (d *Definition) HasSupportedCommands() bool {
 	return len(d.supportedCommands) != 0
 }
 
-func (d *Definition) SupportedCommands() iter.Seq[string] {
-	return func(yield func(string) bool) {
-		for k := range d.supportedCommands {
-			if !yield(k) {
-				return
-			}
-		}
-	}
+func (d *Definition) SupportedCommands() set.View[string] {
+	return d.supportedCommands
 }
 
 func (d *Definition) Supports(command string) bool {
@@ -200,7 +194,7 @@ func (d *Definition) Supports(command string) bool {
 
 func (d *Definition) AddSupportedCommand(commands ...string) {
 	if d.supportedCommands == nil {
-		d.supportedCommands = make(set.Set[string], 1)
+		d.supportedCommands = make(set.Set[string], len(commands))
 	}
 	d.supportedCommands.AddSeq(slices.Values(commands))
 }
@@ -373,13 +367,16 @@ type Option interface {
 	ClearValue()
 	SetValue(string)
 	GetDefinition() Defined
-	SetDefinition(Defined)
 	UseName()
 	UseShortName()
 	UseOldName()
 	UsesName() bool
 	UsesShortName() bool
 	UsesOldName() bool
+
+	// Normalized should always return an option which returns a single entry in
+	// the slice returned by Format(). In other words, Normalized options should
+	// be a single argument.
 	Normalized() Option
 
 	// Because Options wrap other Options sometimes, we cannot depend on being
@@ -837,6 +834,10 @@ func (o *ExpansionOption) BoolLike() BoolLike {
 	return nil
 }
 
+func (o *ExpansionOption) Expand() iter.Seq[Option] {
+	return o.Expansion()
+}
+
 // UnknownOption is used to represent an option that lacks a predetermined
 // option definition. These are assumed to be plugin options, but they may also
 // be misspellings of known options by users.
@@ -896,7 +897,7 @@ func (o *DeferredOption) Expansion() iter.Seq[Option] {
 func (o *DeferredOption) HasSupportedCommands() bool {
 	return (&Definition{}).HasSupportedCommands()
 }
-func (o *DeferredOption) SupportedCommands() iter.Seq[string] {
+func (o *DeferredOption) SupportedCommands() set.View[string] {
 	return (&Definition{}).SupportedCommands()
 }
 func (o *DeferredOption) Supports(command string) bool {
@@ -966,12 +967,13 @@ func Canonicalize(opts []Option) []Option {
 	return canonical
 }
 
-func NewStarlarkOptionDefinition(optName string) *Definition {
+func NewStarlarkOptionDefinition(optName string, supportedCommands set.Set[string]) *Definition {
 	return &Definition{
-		name:        strings.TrimPrefix(optName, "no"),
-		multi:       true,
-		hasNegative: true,
-		pluginID:    StarlarkBuiltinPluginID,
+		name:              strings.TrimPrefix(optName, "no"),
+		multi:             true,
+		hasNegative:       true,
+		pluginID:          StarlarkBuiltinPluginID,
+		supportedCommands: supportedCommands,
 	}
 }
 

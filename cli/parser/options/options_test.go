@@ -2060,7 +2060,7 @@ func TestCloneRequiredValueOption(t *testing.T) {
 	assert.Equal(t, value, opt.GetValue())
 	assert.Equal(t, otherValue, clone.GetValue())
 
-	clone.SetDefinition(otherDefinition)
+	requiredClone.Defined = otherDefinition
 	assert.Equal(t, definition, opt.GetDefinition())
 	assert.Equal(t, otherDefinition, clone.GetDefinition())
 

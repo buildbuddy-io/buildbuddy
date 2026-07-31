@@ -306,26 +306,23 @@ func (p *Parser) addOptionDefinitionImpl(d options.Defined, force bool) error {
 			p.StartupOptionParser.ForceAdd(d)
 		} else {
 			if err := p.StartupOptionParser.Add(d); err != nil {
-				return nil
+				return err
 			}
 		}
 	}
-	addedToCommandParser := false
-	for cmd := range d.SupportedCommands() {
-		if cmd != "startup" {
-			p.StartupOptionParser.Subcommands.Add(cmd)
-			if !addedToCommandParser {
-				if force {
-					p.CommandOptionParser.ForceAdd(d)
-				} else {
-					if err := p.CommandOptionParser.Add(d); err != nil {
-						return err
-					}
-				}
-				addedToCommandParser = true
+	notStartup := func(e string) bool { return e != "startup" }
+	if seq.Any(d.SupportedCommands().All(), notStartup) {
+		if force {
+			p.CommandOptionParser.ForceAdd(d)
+		} else {
+			if err := p.CommandOptionParser.Add(d); err != nil {
+				return err
 			}
 		}
 	}
+	p.StartupOptionParser.Subcommands.AddSeq(
+		seq.Filter(d.SupportedCommands().All(), notStartup),
+	)
 	return nil
 }
 
@@ -531,8 +528,7 @@ func (p *Subparser) parseLongNameOption(optName string) (options.Option, error) 
 	for prefix := range options.StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
 			// This is a new starlark definition; let's hang on to it.
-			d := options.NewStarlarkOptionDefinition(optName)
-			d.AddSupportedCommand(slices.Collect(bazel_command.Commands().All())...)
+			d := options.NewStarlarkOptionDefinition(optName, set.FromSeq(bazel_command.Commands().All()))
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
 			p.ForceAdd(d)
@@ -646,7 +642,10 @@ func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...
 					return nil, err
 				}
 				if resolved == nil {
-					return nil, fmt.Errorf("Encountered positional argument '%s' while resolving expansion options for '%s'.", opt.GetValue(), opt.Name())
+					return nil, fmt.Errorf("Encountered positional argument '%s' while resolving expansion options for '%s'.", opt.GetValue(), d.Name())
+				}
+				if resolved.PluginID() == options.UnknownBuiltinPluginID {
+					return nil, fmt.Errorf("Encountered unknown option '%s' while resolving expansion options for '%s'.", opt.Name(), d.Name())
 				}
 				return resolved, nil
 			},
@@ -1001,14 +1000,14 @@ func (p *Subparser) MakeOption(optionName string, value *string) (option options
 			return nil, err
 		}
 	}
-	option, err = options.NewOption(optionName, value, option.GetDefinition())
-	if err != nil {
-		return nil, err
+	if value != nil {
+		option.SetValue(*value)
 	}
 	if option.ExpectsValue() {
 		return nil, fmt.Errorf("Required value option %s must have a value, but none was provided.", optionName)
 	}
-	return option, nil
+
+	return option.Normalized(), nil
 }
 
 // ConsumeAndParseRCFiles removes all rc-file related options from the provided
