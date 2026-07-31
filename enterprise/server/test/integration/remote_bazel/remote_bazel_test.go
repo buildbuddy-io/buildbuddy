@@ -67,7 +67,7 @@ func init() {
 
 // loadRunfilesLibrary is a Bash snippet that loads the Bazel-provided Bash
 // library defining rlocation. Test binaries that look up runfiles should
-// include it, and depend on `@bazel_tools//tools/bash/runfiles`.
+// include it, and depend on `@rules_shell//shell/runfiles`.
 const loadRunfilesLibrary = `
 # Load the Bash library that defines rlocation.
 # Don't exit on the first failed lookup; try several possible locations.
@@ -611,7 +611,7 @@ sh_binary(
         ":generated_message",
         "@messages//:generated_message",
     ],
-    deps = ["@bazel_tools//tools/bash/runfiles"],
+    deps = ["@rules_shell//shell/runfiles"],
 )
 `,
 				"main.sh": `#!/usr/bin/env bash
@@ -681,7 +681,7 @@ sh_binary(
     name = "main",
     srcs = [":generated_script"],
     data = [":generated_helper"],
-    deps = ["@bazel_tools//tools/bash/runfiles"],
+    deps = ["@rules_shell//shell/runfiles"],
 )
 `,
 		"main.sh": `#!/usr/bin/env bash
