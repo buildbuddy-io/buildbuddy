@@ -3,7 +3,12 @@ load("//dockerfiles/test_images:defs.bzl", "NET_TOOLS_IMAGE")
 
 go_library(
     name = "networking",
-    srcs = ["networking.go"],
+    srcs = [
+        "network_observer.go",
+        "network_observer_linux.go",
+        "network_observer_stub.go",
+        "networking.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/networking",
     visibility = ["//visibility:public"],
     deps = [
