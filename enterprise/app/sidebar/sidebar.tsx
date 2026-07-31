@@ -141,6 +141,21 @@ export default class SidebarComponent extends React.Component<Props, State> {
     return capabilities.config.flipLogoOnHover;
   }
 
+  renderLogo() {
+    const hoverClass = this.flipLogoOnHover() ? "flipflop" : "";
+    if (!this.isTapSelected()) {
+      return <img src="/image/logo_white.svg" className={`logo ${hoverClass}`} />;
+    }
+    return (
+      <span className={`logo test-buddy-logo ${hoverClass}`}>
+        <img src="/image/logo_white.svg" className="test-buddy-logo-buildbuddy" />
+        <span className="test-buddy-logo-crop">
+          <img src="/image/test_buddy_logo.png" className="test-buddy-logo-artwork" />
+        </span>
+      </span>
+    );
+  }
+
   render() {
     let expanded =
       (!localStorage[sidebarExpandedKey] && !this.props.dense) ||
@@ -149,9 +164,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
     return (
       <div className={`sidebar ${expanded ? "expanded" : "collapsed"}`}>
         <div className="sidebar-header">
-          <a href="/">
-            <img src="/image/logo_white.svg" className={`logo ${this.flipLogoOnHover() ? "flipflop" : ""}`} />
-          </a>
+          <a href="/">{this.renderLogo()}</a>
         </div>
         <div className="sidebar-body">
           <SidebarLink selected={this.isHomeSelected()} href={Path.home} title="All builds">
