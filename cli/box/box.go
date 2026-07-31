@@ -97,7 +97,7 @@ var (
 
 	imageFlag   = createFlags.String("image", defaultImage, "Container image for the VM")
 	gracePeriod = createFlags.Duration("grace_period", 1*time.Minute, "How long the VM stays alive after all SSH connections close (max 5m)")
-	idleTimeout = createFlags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (max 5m)")
+	idleTimeout = createFlags.Duration("idle_timeout", 5*time.Minute, "Log out interactive SSH sessions after this duration without user input (max 5m)")
 	trace       = createFlags.Bool("trace", false, "Force server-side tracing for this box's execution and print the execution ID")
 
 	targetFlag              = createFlags.String("remote_executor", login.DefaultApiTarget, "Remote executor gRPC target")
