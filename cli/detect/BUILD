@@ -27,6 +27,8 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//proto:runner_go_proto",
         "//proto:spawn_diff_go_proto",
+        "//proto:target_go_proto",
+        "//proto/api/v1:common_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
         "//server/util/grpc_client",

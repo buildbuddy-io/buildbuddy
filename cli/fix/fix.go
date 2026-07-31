@@ -52,10 +52,14 @@ var (
 
 const (
 	usage = `
-usage: bb fix [ --diff ]
+usage: bb fix [--diff]
+	   bb fix test <invocation-id-or-url> [<target>] [--test_filter=<pattern>] [-n=<runs>] [options]
 
 Applies fixes to WORKSPACE and BUILD files.
 Use the --diff flag to print suggested fixes without applying.
+
+Subcommands:
+  test  Reproduce a flaky test, ask an agent to fix it, and verify the fix.
 `
 	gazelleTarget = "//:gazelle"
 )
@@ -63,6 +67,9 @@ Use the --diff flag to print suggested fixes without applying.
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9 ]+`)
 
 func HandleFix(args []string) (exitCode int, err error) {
+	if len(args) > 0 && args[0] == "test" {
+		return handleTest(args[1:])
+	}
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)

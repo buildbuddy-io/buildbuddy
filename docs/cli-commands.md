@@ -16,6 +16,30 @@ bb help
 bb help <command>
 ```
 
+## bb fix
+
+### bb fix test
+
+`bb fix test` first runs the same remote runner reconstruction and escalating
+strategies as `bb detect flake`. Once the flake is reproduced, it fetches the
+matching test output from the newly created child Bazel invocation using the
+same target and test filter accepted by `bb view`. It gives that output and the
+successful reproduction scope to the selected agent. The agent edits the local
+workspace, and the command then mirrors that patch into a second remote
+detector run. Verification retries only the strategy that reproduced the
+flake. For example, if the target and filter reproduced it, verification reruns
+only that filtered target command with the patch applied.
+
+```bash
+bb fix test <invocation-id-or-url> -n=100
+
+bb fix test <invocation-id-or-url> //server/foo:foo_test \
+  --test_filter=TestName -n=100
+```
+
+Use `--agent=claude` (the default) or `--agent=codex`; `--model` and `--effort`
+are forwarded to the selected agent.
+
 ## bb detect
 
 ### bb detect flake
@@ -33,10 +57,13 @@ the original outer runner command.
 
 1. The specified target and `--test_filter` with `--runs_per_test=n`.
 2. The specified target without the filter with `--runs_per_test=n`.
-3. The entire original command with `--runs_per_test=n`.
+3. The entire original command in up to `n` separate Bazel invocations, without
+   `--runs_per_test`.
 
-Each policy runs as a single Bazel invocation, so the command creates at most
-three Bazel invocation IDs beneath one outer runner invocation.
+The first two policies run once with `--runs_per_test=n`. The final policy
+preserves the original command shape and stops as soon as one of its repeated
+invocations fails. Every policy disables test-result caching and Bazel's
+flaky-test retries.
 
 ```bash
 bb detect flake <invocation-id> \

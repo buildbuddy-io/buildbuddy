@@ -66,6 +66,34 @@ type proposalMetadata struct {
 	Body  string `json:"body"`
 }
 
+// ProposalArtifactWriter captures the repository state before an agent edits
+// it, then writes the resulting patch using the same downloadable proposal
+// format as `bb ask`.
+type ProposalArtifactWriter struct {
+	context *proposalContext
+}
+
+// NewProposalArtifactWriter prepares to capture an agent-authored patch. When
+// BUILDBUDDY_ARTIFACTS_DIRECTORY is not set, Write is a no-op.
+func NewProposalArtifactWriter() *ProposalArtifactWriter {
+	return &ProposalArtifactWriter{context: loadProposalContext()}
+}
+
+// Write emits the patch and proposal manifest to the artifacts directory.
+func (w *ProposalArtifactWriter) Write(title, body string) error {
+	if w == nil || w.context == nil {
+		return nil
+	}
+	metadata := &proposalMetadata{
+		Title: strings.TrimSpace(title),
+		Body:  strings.TrimSpace(body),
+	}
+	if metadata.Title == "" || metadata.Body == "" {
+		return fmt.Errorf("proposal title and body are required")
+	}
+	return writeProposalArtifacts(w.context, metadata)
+}
+
 var (
 	flags         = flag.NewFlagSet("ask", flag.ContinueOnError)
 	Flags         = flags
