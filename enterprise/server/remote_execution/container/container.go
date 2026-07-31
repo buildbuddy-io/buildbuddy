@@ -537,14 +537,15 @@ type VM interface {
 // NetworkDestination contains passive connection metadata for one remote
 // endpoint contacted by a container.
 type NetworkDestination struct {
-	IP              string `json:"ip"`
-	Port            uint16 `json:"port"`
-	Protocol        string `json:"protocol"`
-	BytesSent       int64  `json:"bytes_sent"`
-	BytesReceived   int64  `json:"bytes_received"`
-	PacketsSent     int64  `json:"packets_sent"`
-	PacketsReceived int64  `json:"packets_received"`
-	ConnectionCount int64  `json:"connection_count"`
+	Hostnames       []string `json:"hostnames,omitempty"`
+	IP              string   `json:"ip"`
+	Port            uint16   `json:"port"`
+	Protocol        string   `json:"protocol"`
+	BytesSent       int64    `json:"bytes_sent"`
+	BytesReceived   int64    `json:"bytes_received"`
+	PacketsSent     int64    `json:"packets_sent"`
+	PacketsReceived int64    `json:"packets_received"`
+	ConnectionCount int64    `json:"connection_count"`
 }
 
 // NetworkObserver is optionally implemented by containers which can observe
