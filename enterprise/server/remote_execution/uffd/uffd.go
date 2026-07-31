@@ -33,6 +33,7 @@ const (
 	UFFDIO_ZEROPAGE = 0xc020aa04
 
 	initialDeferredPollTimeoutMs = 1
+	maxDeferredPollTimeoutMs     = 1000
 )
 
 // uffdMsg is a notification from the userfaultfd object about a change in the
@@ -318,26 +319,30 @@ func (h *Handler) handle(ctx context.Context, memoryStore *copy_on_write.COWStor
 		timeoutMs := -1
 		if len(deferredPageFaultEvents) > 0 {
 			timeoutMs = deferredPollTimeoutMs
-			deferredPollTimeoutMs *= 2
 
-			if deferredPollTimeoutMs > 1000 {
-				if !loggedStallWarning {
-					log.CtxWarningf(ctx, "UFFD handler is stalled on persistent EAGAIN and may trip guest-side RCU-stall / soft-lockup warnings.")
-					loggedStallWarning = true
-				}
+			if timeoutMs >= maxDeferredPollTimeoutMs && !loggedStallWarning {
+				log.CtxWarningf(ctx, "UFFD handler is stalled on persistent EAGAIN and may trip guest-side RCU-stall / soft-lockup warnings.")
+				loggedStallWarning = true
 			}
 		} else {
 			// If EAGAIN retry succeeded, reset the timeout.
 			deferredPollTimeoutMs = initialDeferredPollTimeoutMs
 			loggedStallWarning = false
 		}
-		_, pollErr := unix.Poll(pollFDs, timeoutMs)
+		n, pollErr := unix.Poll(pollFDs, timeoutMs)
 		if pollErr != nil {
 			if pollErr == unix.EINTR {
 				// Poll call was interrupted by another signal - retry
 				continue
 			}
 			return status.WrapError(pollErr, "poll uffd")
+		}
+
+		// If no events were received, increase the polling timeout.
+		// Cap the max timeout to prevent the value from overflowing when
+		// unix.Poll converts milliseconds to nanoseconds.
+		if n == 0 {
+			deferredPollTimeoutMs = min(deferredPollTimeoutMs*2, maxDeferredPollTimeoutMs)
 		}
 
 		// Check for an early termination message
