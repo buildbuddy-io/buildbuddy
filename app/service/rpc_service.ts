@@ -5,6 +5,7 @@ import { $stream, buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_status } from "../../proto/grpc_status_ts_proto";
+import { test_health } from "../../proto/test_health_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import { CancelablePromise } from "../util/async";
 import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
@@ -32,6 +33,7 @@ export type ServerStreamHandler<T> = $stream.ServerStreamHandler<T>;
  * instead of trying to transform the service types / classes like this.
  */
 export type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
+export type ExtendedTestBuddyService = CancelableService<test_health.TestBuddyService>;
 
 /**
  * BuildBuddyServiceRpcName is a union type consisting of all BuildBuddyService
@@ -71,6 +73,7 @@ const SUBDOMAIN_REGEX = /^[a-zA-Z0-9-]+$/;
 
 class RpcService {
   service: ExtendedBuildBuddyService;
+  testBuddyService: ExtendedTestBuddyService;
   regionalServices = new Map<string, ExtendedBuildBuddyService>();
   events: Subject<string>;
   requestContext = new context.RequestContext({
@@ -80,14 +83,24 @@ class RpcService {
   });
 
   constructor() {
-    this.service = this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "")));
+    this.service = this.getExtendedService(
+      new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, "")),
+      buildbuddy.service.BuildBuddyService
+    );
+    this.testBuddyService = this.getExtendedService(
+      new test_health.TestBuddyService(this.testBuddyRpc.bind(this)),
+      test_health.TestBuddyService
+    );
     this.events = new Subject();
 
     if (capabilities.config.regions) {
       for (let r of capabilities.config.regions) {
         this.regionalServices.set(
           r.name,
-          this.getExtendedService(new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server)))
+          this.getExtendedService(
+            new buildbuddy.service.BuildBuddyService(this.rpc.bind(this, r.server)),
+            buildbuddy.service.BuildBuddyService
+          )
         );
       }
     }
@@ -310,9 +323,10 @@ class RpcService {
     method: { name: string; serverStreaming?: boolean },
     requestData: Uint8Array,
     callback: (error: any, data?: Uint8Array) => void,
-    streamParams?: $stream.StreamingRPCParams
+    streamParams?: $stream.StreamingRPCParams,
+    serviceName = "BuildBuddyService"
   ): Promise<void> {
-    const url = `${server || ""}/rpc/BuildBuddyService/${method.name}`;
+    const url = `${server || ""}/rpc/${serviceName}/${method.name}`;
     // Protobufjs returns ArrayBuffer-backed Uint8Arrays, which are valid fetch request bodies.
     // TODO: Update protobufjs to return Uint8Array<ArrayBuffer> so this assertion is unnecessary.
     const init: RequestInit = { method: "POST", body: requestData as Uint8Array<ArrayBuffer> };
@@ -370,9 +384,12 @@ class RpcService {
     }
   }
 
-  private getExtendedService(service: buildbuddy.service.BuildBuddyService): ExtendedBuildBuddyService {
+  private getExtendedService<Service extends protobufjs.rpc.Service>(
+    service: Service,
+    serviceClass: Function
+  ): CancelableService<Service> {
     const extendedService = Object.create(service);
-    for (const rpcName of getRpcMethodNames(buildbuddy.service.BuildBuddyService)) {
+    for (const rpcName of getRpcMethodNames(serviceClass)) {
       const originalMethod = (service as any)[rpcName] as BaseRpcMethod<any, any>;
       const method = (request: Record<string, any>, subscriber?: any) => {
         if (this.requestContext && !request.requestContext) {
@@ -395,6 +412,15 @@ class RpcService {
       extendedService[rpcName] = method;
     }
     return extendedService;
+  }
+
+  private testBuddyRpc(
+    method: { name: string; serverStreaming?: boolean },
+    requestData: Uint8Array,
+    callback: (error: any, data?: Uint8Array) => void,
+    streamParams?: $stream.StreamingRPCParams
+  ) {
+    return this.rpc("", method, requestData, callback, streamParams, "TestBuddyService");
   }
 }
 
@@ -581,12 +607,10 @@ export type ServerStreamingRpcMethod<Request, Response> = ((
 };
 
 export type RpcMethod<Request, Response> =
-  | UnaryRpcMethod<Request, Response>
-  | ServerStreamingRpcMethod<Request, Response>;
+  UnaryRpcMethod<Request, Response> | ServerStreamingRpcMethod<Request, Response>;
 
 type BaseRpcMethod<Request, Response> =
-  | BaseUnaryRpcMethod<Request, Response>
-  | ServerStreamingRpcMethod<Request, Response>;
+  BaseUnaryRpcMethod<Request, Response> | ServerStreamingRpcMethod<Request, Response>;
 
 type RpcMethodNames<Service extends protobufjs.rpc.Service> = keyof Omit<Service, keyof protobufjs.rpc.Service>;
 

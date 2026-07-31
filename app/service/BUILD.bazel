@@ -17,5 +17,6 @@ ts_library(
         "//proto:context_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",
+        "//proto:test_health_ts_proto",
     ],
 )
