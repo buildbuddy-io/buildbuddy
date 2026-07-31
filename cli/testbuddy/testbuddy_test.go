@@ -64,23 +64,24 @@ func TestBazelTargetOutcome(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, outcome)
 
-	target, cases, err := testbuddy.ResultsForReport(xmlPath, "//pkg:timeout_test", &junit.Report{
-		DurationUsec: 1_000_000,
-		Cases: []normalize.CaseRecord{{
-			TargetLabel: "//pkg:timeout_test", CaseName: "TestTimeout",
-			Outcome: tbpb.TestOutcome_TEST_OUTCOME_FAIL,
-		}},
-	})
+	target, cases, err := testbuddy.ResultsForReport(
+		xmlPath, "//pkg:timeout_test", "https://app.buildbuddy.io/invocation/one", &junit.Report{
+			DurationUsec: 1_000_000,
+			Cases: []normalize.CaseRecord{{
+				TargetLabel: "//pkg:timeout_test", CaseName: "TestTimeout",
+				Outcome: tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+			}},
+		})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, target.GetOutcome())
-	require.Equal(t, int64(1_000_000), target.GetDurationUsec())
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, target.GetResult().GetOutcome())
+	require.Equal(t, int64(1_000_000), target.GetResult().GetDurationUsec())
 	require.Empty(t, cases)
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "test.log")))
-	target, cases, err = testbuddy.ResultsForReport(xmlPath, "//pkg:harness_test", &junit.Report{
-		UnattributedFailure: true,
-	})
+	target, cases, err = testbuddy.ResultsForReport(
+		xmlPath, "//pkg:harness_test", "https://app.buildbuddy.io/invocation/one",
+		&junit.Report{UnattributedFailure: true})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetOutcome())
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetResult().GetOutcome())
 	require.Empty(t, cases)
 }

@@ -9,72 +9,83 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func context() normalize.ReportContext {
-	return normalize.ReportContext{
-		RepositoryURL: "git@github.com:buildbuddy-io/buildbuddy.git",
-		InvocationID:  "invocation-1",
-		Source:        tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT,
+const repository = "git@github.com:buildbuddy-io/buildbuddy.git"
+
+func testResult(outcome tbpb.TestOutcome) *tbpb.TestResult {
+	return &tbpb.TestResult{Outcome: outcome, SourceUrl: "https://app.buildbuddy.io/invocation/one"}
+}
+
+func caseResult(outcome tbpb.TestOutcome) *tbpb.TestCaseResult {
+	return &tbpb.TestCaseResult{
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}, CaseName: "TestA",
+		},
+		Result: testResult(outcome),
+	}
+}
+
+func targetResult(outcome tbpb.TestOutcome) *tbpb.TestTargetResult {
+	return &tbpb.TestTargetResult{
+		Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}, Result: testResult(outcome),
 	}
 }
 
 func TestNormalizeCaseAndTarget(t *testing.T) {
-	report, err := normalize.Normalize(context(), []normalize.CaseRecord{{
-		TargetLabel: "//pkg:test", CaseName: "TestA", Outcome: tbpb.TestOutcome_TEST_OUTCOME_FAIL,
-		DurationUsec: 123, FailureMessage: "got 1, want 2",
-	}}, []normalize.TargetRecord{{
-		TargetLabel: "//pkg:test", Outcome: tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT,
-		DurationUsec: 456,
-	}})
+	caseRecord := caseResult(tbpb.TestOutcome_TEST_OUTCOME_FAIL)
+	caseRecord.Result.DurationUsec = 123
+	caseRecord.Result.FailureMessage = "got 1, want 2"
+	targetRecord := targetResult(tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT)
+	targetRecord.Result.DurationUsec = 456
+	report, err := normalize.Normalize(repository, []*tbpb.TestCaseResult{caseRecord}, []*tbpb.TestTargetResult{targetRecord})
 	require.NoError(t, err)
 	require.Len(t, report.CaseResults, 1)
 	require.Len(t, report.TargetResults, 1)
-	assert.Equal(t, "https://github.com/buildbuddy-io/buildbuddy", report.Context.RepositoryURL)
+	assert.Equal(t, "https://github.com/buildbuddy-io/buildbuddy", report.RepositoryURL)
 	assert.Equal(t, "TestA", report.CaseResults[0].Result.GetIdentity().GetCaseName())
 	assert.Equal(t, "//pkg:test", report.CaseResults[0].Result.GetIdentity().GetTarget().GetTargetLabel())
-	assert.Equal(t, "invocation-1", report.CaseResults[0].Result.GetInvocationId())
-	assert.Equal(t, "got 1, want 2", report.CaseResults[0].Result.GetFailureMessage())
-	assert.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, report.TargetResults[0].Result.GetOutcome())
+	assert.Equal(t, "https://app.buildbuddy.io/invocation/one", report.CaseResults[0].Result.GetResult().GetSourceUrl())
+	assert.Equal(t, "got 1, want 2", report.CaseResults[0].Result.GetResult().GetFailureMessage())
+	assert.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, report.TargetResults[0].Result.GetResult().GetOutcome())
 }
 
 func TestRepeatedResultsArePreserved(t *testing.T) {
-	record := normalize.CaseRecord{
-		TargetLabel: "//pkg:test", CaseName: "TestA", Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS,
-	}
-	report, err := normalize.Normalize(context(), []normalize.CaseRecord{record, record}, nil)
+	record := caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	report, err := normalize.Normalize(repository, []*tbpb.TestCaseResult{record, record}, nil)
 	require.NoError(t, err)
 	assert.Len(t, report.CaseResults, 2)
 	assert.Empty(t, report.Rejections)
 }
 
 func TestRepeatedResultsMayHaveDifferentOutcomes(t *testing.T) {
-	first := normalize.CaseRecord{TargetLabel: "//pkg:test", CaseName: "TestA", Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS}
-	second := first
-	second.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
-	report, err := normalize.Normalize(context(), []normalize.CaseRecord{first, second}, nil)
+	report, err := normalize.Normalize(repository, []*tbpb.TestCaseResult{
+		caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS), caseResult(tbpb.TestOutcome_TEST_OUTCOME_FAIL),
+	}, nil)
 	require.NoError(t, err)
 	assert.Len(t, report.CaseResults, 2)
 	assert.Zero(t, report.Rejected.Cases)
 }
 
 func TestRepeatedTargetResultsArePreserved(t *testing.T) {
-	first := normalize.TargetRecord{
-		TargetLabel: "//pkg:test", Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS,
-	}
-	second := first
-	second.Outcome = tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT
-	report, err := normalize.Normalize(context(), nil, []normalize.TargetRecord{first, second})
+	report, err := normalize.Normalize(repository, nil, []*tbpb.TestTargetResult{
+		targetResult(tbpb.TestOutcome_TEST_OUTCOME_PASS), targetResult(tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT),
+	})
 	require.NoError(t, err)
 	assert.Len(t, report.TargetResults, 2)
 	assert.Zero(t, report.Rejected.Targets)
 }
 
 func TestValidation(t *testing.T) {
-	_, err := normalize.Normalize(normalize.ReportContext{}, nil, nil)
+	_, err := normalize.Normalize("", nil, nil)
 	assert.Error(t, err)
 
-	report, err := normalize.Normalize(context(), []normalize.CaseRecord{{
-		TargetLabel: "//pkg:test", CaseName: "TestA", Outcome: tbpb.TestOutcome(99),
-	}}, nil)
+	invalid := caseResult(tbpb.TestOutcome(99))
+	report, err := normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, report.Rejected.Cases)
+
+	invalid = caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	invalid.Result.SourceUrl = "not a URL"
+	report, err = normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, report.Rejected.Cases)
 }

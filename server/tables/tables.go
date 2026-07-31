@@ -753,7 +753,7 @@ type TestCaseState struct {
 	CaseName    string `gorm:"primaryKey;size:512;not null"`
 
 	Health            string `gorm:"size:32;not null"`
-	Checkpoint        []byte `gorm:"size:max;not null"`
+	RecentResults     []byte `gorm:"size:max;not null"`
 	PassCount         int64
 	FailCount         int64
 	TimeoutCount      int64
@@ -771,7 +771,7 @@ type TestTargetState struct {
 	TargetLabel string `gorm:"primaryKey;size:512;not null"`
 
 	Health            string `gorm:"size:32;not null"`
-	Checkpoint        []byte `gorm:"size:max;not null"`
+	RecentResults     []byte `gorm:"size:max;not null"`
 	PassCount         int64
 	FailCount         int64
 	TimeoutCount      int64

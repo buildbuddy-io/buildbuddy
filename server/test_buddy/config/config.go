@@ -13,9 +13,11 @@ const (
 
 func Default() *tbpb.TestAnalyzerConfig {
 	return &tbpb.TestAnalyzerConfig{
-		WindowSize:             50,
-		FailureThreshold:       1,
-		TargetTimeoutThreshold: 5,
+		Analyzer: &tbpb.TestAnalyzerConfig_Linear{Linear: &tbpb.LinearAnalyzer{
+			WindowSize:             50,
+			FailureThreshold:       1,
+			TargetTimeoutThreshold: 5,
+		}},
 	}
 }
 
@@ -23,13 +25,17 @@ func Validate(cfg *tbpb.TestAnalyzerConfig) error {
 	if cfg == nil {
 		return status.InvalidArgumentError("analyzer configuration is required")
 	}
-	if cfg.GetWindowSize() < minWindowSize || cfg.GetWindowSize() > maxWindowSize {
+	linear := cfg.GetLinear()
+	if linear == nil {
+		return status.InvalidArgumentError("linear analyzer configuration is required")
+	}
+	if linear.GetWindowSize() < minWindowSize || linear.GetWindowSize() > maxWindowSize {
 		return status.InvalidArgumentErrorf("window_size must be between %d and %d", minWindowSize, maxWindowSize)
 	}
-	if cfg.GetFailureThreshold() <= 0 || cfg.GetFailureThreshold() > cfg.GetWindowSize() {
+	if linear.GetFailureThreshold() <= 0 || linear.GetFailureThreshold() > linear.GetWindowSize() {
 		return status.InvalidArgumentError("failure_threshold must be between 1 and window_size")
 	}
-	if cfg.GetTargetTimeoutThreshold() <= 0 || cfg.GetTargetTimeoutThreshold() > cfg.GetWindowSize() {
+	if linear.GetTargetTimeoutThreshold() <= 0 || linear.GetTargetTimeoutThreshold() > linear.GetWindowSize() {
 		return status.InvalidArgumentError("target_timeout_threshold must be between 1 and window_size")
 	}
 	return nil

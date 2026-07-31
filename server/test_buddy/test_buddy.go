@@ -3,6 +3,7 @@ package test_buddy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -209,33 +210,11 @@ func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	if err != nil {
 		return nil, err
 	}
-	records := make([]normalize.CaseRecord, 0, len(req.GetTestCases()))
-	for _, result := range req.GetTestCases() {
-		records = append(records, normalize.CaseRecord{
-			TargetLabel:    result.GetTargetLabel(),
-			CaseName:       result.GetCaseName(),
-			Outcome:        result.GetOutcome(),
-			DurationUsec:   result.GetDurationUsec(),
-			FailureMessage: result.GetFailureMessage(),
-		})
-	}
-	targetRecords := make([]normalize.TargetRecord, 0, len(req.GetTestTargets()))
-	for _, result := range req.GetTestTargets() {
-		targetRecords = append(targetRecords, normalize.TargetRecord{
-			TargetLabel: result.GetTargetLabel(), Outcome: result.GetOutcome(),
-			DurationUsec:   result.GetDurationUsec(),
-			FailureMessage: result.GetFailureMessage(),
-		})
-	}
-	report, err := normalize.Normalize(normalize.ReportContext{
-		RepositoryURL: req.GetRepoUrl(),
-		InvocationID:  req.GetInvocationId(),
-		Source:        req.GetSource(),
-	}, records, targetRecords)
+	report, err := normalize.Normalize(req.GetRepoUrl(), req.GetTestCases(), req.GetTestTargets())
 	if err != nil {
 		return nil, err
 	}
-	analyzerConfig, err := s.analyzerConfig(ctx, groupID, report.Context.RepositoryURL)
+	analyzerConfig, err := s.analyzerConfig(ctx, groupID, report.RepositoryURL)
 	if err != nil {
 		return nil, err
 	}
@@ -246,11 +225,7 @@ func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	group.SetLimit(max(1, runtime.GOMAXPROCS(0)))
 	resultsByCase := make(map[identity.CaseAddress][]*normalize.CaseResult)
 	for _, result := range report.CaseResults {
-		if analyzer.Eligible(analyzer.Sample{
-			InvocationID: result.Result.GetInvocationId(),
-			Outcome:      result.Result.GetOutcome(),
-			Source:       result.Result.GetSource(),
-		}) {
+		if analyzer.Eligible(analyzer.Sample{Outcome: result.Result.GetResult().GetOutcome()}) {
 			resultsByCase[result.Identity.Address] = append(resultsByCase[result.Identity.Address], result)
 		}
 	}
@@ -266,11 +241,7 @@ func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	}
 	resultsByTarget := make(map[identity.TargetAddress][]*normalize.TargetResult)
 	for _, result := range report.TargetResults {
-		if analyzer.Eligible(analyzer.Sample{
-			InvocationID: result.Result.GetInvocationId(),
-			Outcome:      result.Result.GetOutcome(),
-			Source:       result.Result.GetSource(),
-		}) {
+		if analyzer.Eligible(analyzer.Sample{Outcome: result.Result.GetResult().GetOutcome()}) {
 			resultsByTarget[result.Target.Address] = append(resultsByTarget[result.Target.Address], result)
 		}
 	}
@@ -294,7 +265,7 @@ func (s *Service) ReportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 }
 
 func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, report *normalize.Report) error {
-	repository := report.Context.RepositoryURL
+	repository := report.RepositoryURL
 	if err := database.GORM(ctx, "test_buddy_admit_repository").
 		Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&tables.TestRepositoryCatalog{GroupID: groupID, Repository: repository}).Error; err != nil {
@@ -372,19 +343,57 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 	return nil
 }
 
+type retainedSample struct {
+	Outcome        tbpb.TestOutcome `json:"o"`
+	DurationUsec   int64            `json:"d,omitempty"`
+	FailureMessage string           `json:"f,omitempty"`
+	SourceURL      string           `json:"u"`
+}
+
+func decodeSamples(encoded []byte) ([]retainedSample, error) {
+	if len(encoded) == 0 {
+		return nil, nil
+	}
+	var samples []retainedSample
+	if err := json.Unmarshal(encoded, &samples); err != nil {
+		return nil, status.InternalErrorf("decode recent test results: %s", err)
+	}
+	return samples, nil
+}
+
+func appendSample(encoded []byte, result *tbpb.TestResult, windowSize int) ([]retainedSample, []byte, error) {
+	samples, err := decodeSamples(encoded)
+	if err != nil {
+		return nil, nil, err
+	}
+	samples = append(samples, retainedSample{
+		Outcome: result.GetOutcome(), DurationUsec: result.GetDurationUsec(),
+		FailureMessage: result.GetFailureMessage(), SourceURL: result.GetSourceUrl(),
+	})
+	if extra := len(samples) - windowSize; extra > 0 {
+		samples = samples[extra:]
+	}
+	encoded, err = json.Marshal(samples)
+	return samples, encoded, err
+}
+
+func analysisSamples(samples []retainedSample) []analyzer.Sample {
+	out := make([]analyzer.Sample, 0, len(samples))
+	for _, sample := range samples {
+		out = append(out, analyzer.Sample{Outcome: sample.Outcome})
+	}
+	return out
+}
+
 func (s *Service) applyCase(ctx context.Context, groupID string, result *normalize.CaseResult, analyzerConfig *tbpb.TestAnalyzerConfig) error {
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		emptyCheckpoint, err := proto.Marshal(&tbpb.TestStateCheckpoint{})
-		if err != nil {
-			return err
-		}
 		address := result.Identity.Address
 		if err := tx.GORM(ctx, "test_buddy_admit_state").
 			Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&tables.TestCaseState{
 				GroupID: groupID, Repository: address.Repository, TargetLabel: address.TargetLabel,
 				CaseName: address.CaseName, Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
-				Checkpoint: emptyCheckpoint,
+				RecentResults: []byte("[]"),
 			}).Error; err != nil {
 			return err
 		}
@@ -396,34 +405,20 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			query, groupID, address.Repository, address.TargetLabel, address.CaseName).Take(state); err != nil {
 			return err
 		}
-		checkpoint := &tbpb.TestStateCheckpoint{}
-		if err := proto.Unmarshal(state.Checkpoint, checkpoint); err != nil {
-			return status.InternalErrorf("decode test state checkpoint: %s", err)
+		resultInfo := result.Result.GetResult()
+		samples, encoded, err := appendSample(
+			state.RecentResults, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+		if err != nil {
+			return err
 		}
-		checkpoint.Samples = append(checkpoint.Samples, &tbpb.CheckpointSample{
-			InvocationId:   result.Result.GetInvocationId(),
-			Outcome:        result.Result.GetOutcome(),
-			Source:         result.Result.GetSource(),
-			DurationUsec:   result.Result.GetDurationUsec(),
-			FailureMessage: result.Result.GetFailureMessage(),
-		})
-		if extra := len(checkpoint.Samples) - int(analyzerConfig.GetWindowSize()); extra > 0 {
-			checkpoint.Samples = checkpoint.Samples[extra:]
-		}
-		samples := make([]analyzer.Sample, 0, len(checkpoint.Samples))
-		for _, sample := range checkpoint.Samples {
-			samples = append(samples, analyzer.Sample{
-				InvocationID: sample.GetInvocationId(), Outcome: sample.GetOutcome(), Source: sample.GetSource(),
-			})
-		}
-		analysis, err := analyzer.Linear(samples, analyzerConfig)
+		analysis, err := analyzer.Linear(analysisSamples(samples), analyzerConfig)
 		if err != nil {
 			return err
 		}
 		previousHealth := state.Health
 		state.Health = analysis.Health.String()
 		state.StateVersion++
-		switch result.Result.GetOutcome() {
+		switch resultInfo.GetOutcome() {
 		case tbpb.TestOutcome_TEST_OUTCOME_PASS:
 			state.PassCount++
 		case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
@@ -433,11 +428,8 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 		default:
 			return status.InternalError("unknown outcome reached the analyzer")
 		}
-		state.TotalDurationUsec += result.Result.GetDurationUsec()
-		state.Checkpoint, err = proto.Marshal(checkpoint)
-		if err != nil {
-			return err
-		}
+		state.TotalDurationUsec += resultInfo.GetDurationUsec()
+		state.RecentResults = encoded
 		if err := tx.GORM(ctx, "test_buddy_update_case_state").Save(state).Error; err != nil {
 			return err
 		}
@@ -456,16 +448,12 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 
 func (s *Service) applyTarget(ctx context.Context, groupID string, result *normalize.TargetResult, analyzerConfig *tbpb.TestAnalyzerConfig) error {
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		emptyCheckpoint, err := proto.Marshal(&tbpb.TestStateCheckpoint{})
-		if err != nil {
-			return err
-		}
 		address := result.Target.Address
 		if err := tx.GORM(ctx, "test_buddy_admit_target_state").
 			Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&tables.TestTargetState{
 				GroupID: groupID, Repository: address.Repository, TargetLabel: address.TargetLabel,
-				Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), Checkpoint: emptyCheckpoint,
+				Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), RecentResults: []byte("[]"),
 			}).Error; err != nil {
 			return err
 		}
@@ -477,34 +465,20 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 			query, groupID, address.Repository, address.TargetLabel).Take(state); err != nil {
 			return err
 		}
-		checkpoint := &tbpb.TestStateCheckpoint{}
-		if err := proto.Unmarshal(state.Checkpoint, checkpoint); err != nil {
-			return status.InternalErrorf("decode test target state checkpoint: %s", err)
+		resultInfo := result.Result.GetResult()
+		samples, encoded, err := appendSample(
+			state.RecentResults, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+		if err != nil {
+			return err
 		}
-		checkpoint.Samples = append(checkpoint.Samples, &tbpb.CheckpointSample{
-			InvocationId:   result.Result.GetInvocationId(),
-			Outcome:        result.Result.GetOutcome(),
-			Source:         result.Result.GetSource(),
-			DurationUsec:   result.Result.GetDurationUsec(),
-			FailureMessage: result.Result.GetFailureMessage(),
-		})
-		if extra := len(checkpoint.Samples) - int(analyzerConfig.GetWindowSize()); extra > 0 {
-			checkpoint.Samples = checkpoint.Samples[extra:]
-		}
-		samples := make([]analyzer.Sample, 0, len(checkpoint.Samples))
-		for _, sample := range checkpoint.Samples {
-			samples = append(samples, analyzer.Sample{
-				InvocationID: sample.GetInvocationId(), Outcome: sample.GetOutcome(), Source: sample.GetSource(),
-			})
-		}
-		analysis, err := analyzer.LinearTarget(samples, analyzerConfig)
+		analysis, err := analyzer.LinearTarget(analysisSamples(samples), analyzerConfig)
 		if err != nil {
 			return err
 		}
 		previousHealth := state.Health
 		state.Health = analysis.Health.String()
 		state.StateVersion++
-		switch result.Result.GetOutcome() {
+		switch resultInfo.GetOutcome() {
 		case tbpb.TestOutcome_TEST_OUTCOME_PASS:
 			state.PassCount++
 		case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
@@ -514,11 +488,8 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 		default:
 			return status.InternalError("unknown target outcome reached the analyzer")
 		}
-		state.TotalDurationUsec += result.Result.GetDurationUsec()
-		state.Checkpoint, err = proto.Marshal(checkpoint)
-		if err != nil {
-			return err
-		}
+		state.TotalDurationUsec += resultInfo.GetDurationUsec()
+		state.RecentResults = encoded
 		if err := tx.GORM(ctx, "test_buddy_update_target_state").Save(state).Error; err != nil {
 			return err
 		}
@@ -565,11 +536,7 @@ func (s *Service) SetTestAnalyzerConfig(ctx context.Context, req *tbpb.SetTestAn
 	if err != nil {
 		return nil, err
 	}
-	analyzerConfig := &tbpb.TestAnalyzerConfig{
-		WindowSize:             req.GetWindowSize(),
-		FailureThreshold:       req.GetFailureThreshold(),
-		TargetTimeoutThreshold: req.GetTargetTimeoutThreshold(),
-	}
+	analyzerConfig := req.GetConfig()
 	if err := config.Validate(analyzerConfig); err != nil {
 		return nil, err
 	}
@@ -633,7 +600,7 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 	if err != nil {
 		return err
 	}
-	if packagePrefix != "" && req.GetTargetLabel() != "" {
+	if packagePrefix != "" && req.GetTarget() != nil {
 		return status.InvalidArgumentError("package_prefix and target_label cannot both be set")
 	}
 	where := `tc.group_id = ? AND tc.repository = ?`
@@ -642,8 +609,8 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		where += ` AND (tc.package_path = ? OR (tc.package_path >= ? AND tc.package_path < ?))`
 		args = append(args, packagePrefix, packagePrefix+"/", packagePrefix+"0")
 	}
-	if req.GetTargetLabel() != "" {
-		target, err := identity.CanonicalizeTargetIdentity(repository, req.GetTargetLabel())
+	if req.GetTarget() != nil {
+		target, err := identity.CanonicalizeTargetIdentity(repository, req.GetTarget().GetTargetLabel())
 		if err != nil {
 			return err
 		}
@@ -681,10 +648,10 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		TimeoutCount      int64
 		TotalDurationUsec int64
 	}
-	rsp := &tbpb.GetTestsResponse{Tests: make([]*tbpb.TestSummary, 0, queryBatchSize)}
+	rsp := &tbpb.GetTestsResponse{Tests: make([]*tbpb.TestCaseSummary, 0, queryBatchSize)}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_tests").Raw(query, args...)
 	err = db.ScanEach(rq, func(ctx context.Context, r *row) error {
-		rsp.Tests = append(rsp.Tests, summary(
+		rsp.Tests = append(rsp.Tests, caseSummary(
 			identity.CaseAddress{
 				Repository: repository, TargetLabel: r.TargetLabel, CaseName: r.CaseName,
 			},
@@ -693,7 +660,7 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 			if err := stream.Send(rsp); err != nil {
 				return err
 			}
-			rsp = &tbpb.GetTestsResponse{Tests: make([]*tbpb.TestSummary, 0, queryBatchSize)}
+			rsp = &tbpb.GetTestsResponse{Tests: make([]*tbpb.TestCaseSummary, 0, queryBatchSize)}
 		}
 		return nil
 	})
@@ -904,14 +871,13 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	if err != nil {
 		return nil, err
 	}
-	target, err := identity.CanonicalizeTargetIdentity(
-		req.GetIdentity().GetRepoUrl(), req.GetIdentity().GetTargetLabel())
+	target, err := identity.CanonicalizeTargetIdentity(req.GetRepoUrl(), req.GetIdentity().GetTargetLabel())
 	if err != nil {
 		return nil, err
 	}
 	type targetRow struct {
 		Health            string
-		Checkpoint        []byte
+		RecentResults     []byte
 		PassCount         int64
 		FailCount         int64
 		TimeoutCount      int64
@@ -919,7 +885,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	}
 	row := &targetRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_target").Raw(`
-		SELECT COALESCE(s.health, ?) AS health, s.checkpoint,
+		SELECT COALESCE(s.health, ?) AS health, s.recent_results,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -942,18 +908,15 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		Target: targetSummary(target.Address, row.Health, row.PassCount, row.FailCount,
 			row.TimeoutCount, row.TotalDurationUsec),
 	}
-	checkpoint := &tbpb.TestStateCheckpoint{}
-	if len(row.Checkpoint) > 0 {
-		if err := proto.Unmarshal(row.Checkpoint, checkpoint); err != nil {
-			return nil, status.InternalErrorf("decode test target state checkpoint: %s", err)
-		}
+	samples, err := decodeSamples(row.RecentResults)
+	if err != nil {
+		return nil, err
 	}
-	for i := len(checkpoint.GetSamples()) - 1; i >= 0; i-- {
-		sample := checkpoint.GetSamples()[i]
-		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestTargetResult{
-			Identity: target.Proto(), InvocationId: sample.GetInvocationId(),
-			Outcome: sample.GetOutcome(), Source: sample.GetSource(),
-			DurationUsec: sample.GetDurationUsec(), FailureMessage: sample.GetFailureMessage(),
+	for i := len(samples) - 1; i >= 0; i-- {
+		sample := samples[i]
+		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
+			Outcome: sample.Outcome, DurationUsec: sample.DurationUsec,
+			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
 		})
 	}
 	type transitionRow struct {
@@ -988,7 +951,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	if err != nil {
 		return nil, err
 	}
-	input := identity.CaseAddressFromProto(req.GetIdentity())
+	input := identity.CaseAddressFromProto(req.GetRepoUrl(), req.GetIdentity())
 	testCase, err := identity.CanonicalizeCase(identity.CaseInput{
 		RepositoryURL: input.Repository,
 		TargetLabel:   input.TargetLabel,
@@ -999,7 +962,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	}
 	type caseRow struct {
 		Health            string
-		Checkpoint        []byte
+		RecentResults     []byte
 		PassCount         int64
 		FailCount         int64
 		TimeoutCount      int64
@@ -1007,7 +970,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	}
 	row := &caseRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case").Raw(`
-		SELECT COALESCE(s.health, ?) AS health, s.checkpoint,
+		SELECT COALESCE(s.health, ?) AS health, s.recent_results,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -1027,20 +990,17 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		return nil, err
 	}
 	rsp := &tbpb.GetTestCaseResponse{
-		Test: summary(testCase.Address, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
+		Test: caseSummary(testCase.Address, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
 	}
-	checkpoint := &tbpb.TestStateCheckpoint{}
-	if len(row.Checkpoint) > 0 {
-		if err := proto.Unmarshal(row.Checkpoint, checkpoint); err != nil {
-			return nil, status.InternalErrorf("decode test state checkpoint: %s", err)
-		}
+	samples, err := decodeSamples(row.RecentResults)
+	if err != nil {
+		return nil, err
 	}
-	for i := len(checkpoint.GetSamples()) - 1; i >= 0; i-- {
-		sample := checkpoint.GetSamples()[i]
-		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestCaseResult{
-			Identity: testCase.Proto(), InvocationId: sample.GetInvocationId(),
-			Outcome: sample.GetOutcome(), Source: sample.GetSource(),
-			DurationUsec: sample.GetDurationUsec(), FailureMessage: sample.GetFailureMessage(),
+	for i := len(samples) - 1; i >= 0; i-- {
+		sample := samples[i]
+		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
+			Outcome: sample.Outcome, DurationUsec: sample.DurationUsec,
+			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
 		})
 	}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case_transitions").Raw(`
@@ -1069,12 +1029,9 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	return rsp, nil
 }
 
-func summary(address identity.CaseAddress, healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64) *tbpb.TestSummary {
+func testSummary(healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64) *tbpb.TestSummary {
 	result := &tbpb.TestSummary{
-		Identity:     identity.CaseProto(address),
-		Health:       health(healthValue),
-		PassCount:    passCount,
-		FailCount:    failCount,
+		Health: health(healthValue), PassCount: passCount, FailCount: failCount,
 		TimeoutCount: timeoutCount,
 	}
 	total := passCount + failCount + timeoutCount
@@ -1085,20 +1042,18 @@ func summary(address identity.CaseAddress, healthValue string, passCount, failCo
 	return result
 }
 
+func caseSummary(address identity.CaseAddress, healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64) *tbpb.TestCaseSummary {
+	return &tbpb.TestCaseSummary{
+		Identity: identity.CaseProto(address),
+		Summary:  testSummary(healthValue, passCount, failCount, timeoutCount, totalDurationUsec),
+	}
+}
+
 func targetSummary(address identity.TargetAddress, healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64) *tbpb.TestTargetSummary {
-	result := &tbpb.TestTargetSummary{
-		Identity: &tbpb.TestTargetIdentity{
-			RepoUrl: address.Repository, TargetLabel: address.TargetLabel,
-		},
-		Health: health(healthValue), PassCount: passCount, FailCount: failCount,
-		TimeoutCount: timeoutCount,
+	return &tbpb.TestTargetSummary{
+		Identity: identity.TargetProto(address),
+		Summary:  testSummary(healthValue, passCount, failCount, timeoutCount, totalDurationUsec),
 	}
-	total := passCount + failCount + timeoutCount
-	if total > 0 {
-		result.MeanDurationUsec = totalDurationUsec / total
-		result.PassRate = float64(passCount) / float64(total)
-	}
-	return result
 }
 
 func health(value string) tbpb.TestHealth {

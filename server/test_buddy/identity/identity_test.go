@@ -24,8 +24,7 @@ func TestCanonicalizeCase(t *testing.T) {
 	assert.Equal(t, "enterprise/server/remote_execution/containers/firecracker", got.Target.PackagePath)
 
 	proto := got.Proto()
-	assert.Equal(t, got.Address, identity.CaseAddressFromProto(proto))
-	assert.Equal(t, got.Address.Repository, proto.GetTarget().GetRepoUrl())
+	assert.Equal(t, got.Address, identity.CaseAddressFromProto(got.Address.Repository, proto))
 	assert.Equal(t, got.Address.TargetLabel, proto.GetTarget().GetTargetLabel())
 	assert.Equal(t, got.Address.CaseName, proto.GetCaseName())
 }

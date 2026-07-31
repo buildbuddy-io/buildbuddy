@@ -59,15 +59,37 @@ func (s *getTestTargetsStream) Send(response *tbpb.GetTestTargetsResponse) error
 	return nil
 }
 
-func getTests(t *testing.T, service *testbuddy.Service, ctx context.Context, req *tbpb.GetTestsRequest) []*tbpb.TestSummary {
+func getTests(t *testing.T, service *testbuddy.Service, ctx context.Context, req *tbpb.GetTestsRequest) []*tbpb.TestCaseSummary {
 	t.Helper()
 	stream := &getTestsStream{ctx: ctx}
 	require.NoError(t, service.GetTests(req, stream))
-	tests := make([]*tbpb.TestSummary, 0)
+	tests := make([]*tbpb.TestCaseSummary, 0)
 	for _, response := range stream.responses {
 		tests = append(tests, response.GetTests()...)
 	}
 	return tests
+}
+
+func caseResult(run, target, name string, outcome tbpb.TestOutcome, durationUsec int64) *tbpb.TestCaseResult {
+	return &tbpb.TestCaseResult{
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: target}, CaseName: name,
+		},
+		Result: &tbpb.TestResult{
+			Outcome: outcome, DurationUsec: durationUsec,
+			SourceUrl: "https://app.buildbuddy.io/invocation/" + run,
+		},
+	}
+}
+
+func targetResult(run, target string, outcome tbpb.TestOutcome, durationUsec int64) *tbpb.TestTargetResult {
+	return &tbpb.TestTargetResult{
+		Identity: &tbpb.TestTargetIdentity{TargetLabel: target},
+		Result: &tbpb.TestResult{
+			Outcome: outcome, DurationUsec: durationUsec,
+			SourceUrl: "https://app.buildbuddy.io/invocation/" + run,
+		},
+	}
 }
 
 func getTestTargets(t *testing.T, service *testbuddy.Service, ctx context.Context, req *tbpb.GetTestTargetsRequest) []*tbpb.TestTargetSummary {
@@ -89,11 +111,8 @@ func TestReportAndQueryTests(t *testing.T) {
 
 	report := func(invocationID, target, name string, outcome tbpb.TestOutcome) *tbpb.ReportTestResultsResponse {
 		rsp, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl: repository, InvocationId: invocationID,
-			Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT,
-			TestCases: []*tbpb.ReportedTestCase{{
-				TargetLabel: target, CaseName: name, Outcome: outcome, DurationUsec: 1_000_000,
-			}},
+			RepoUrl:   repository,
+			TestCases: []*tbpb.TestCaseResult{caseResult(invocationID, target, name, outcome, 1_000_000)},
 		})
 		require.NoError(t, err)
 		return rsp
@@ -133,37 +152,33 @@ func TestReportAndQueryTests(t *testing.T) {
 	got := tests[0]
 	require.Equal(t, "//a/b:unit_test", got.GetIdentity().GetTarget().GetTargetLabel())
 	require.Equal(t, "TestRequest", got.GetIdentity().GetCaseName())
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, got.GetHealth())
-	require.Equal(t, int64(1), got.GetPassCount())
-	require.Equal(t, int64(3), got.GetFailCount())
-	require.Equal(t, int64(0), got.GetTimeoutCount())
-	require.Equal(t, int64(1_000_000), got.GetMeanDurationUsec())
-	require.InDelta(t, 0.25, got.GetPassRate(), 0.0001)
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, got.GetSummary().GetHealth())
+	require.Equal(t, int64(1), got.GetSummary().GetPassCount())
+	require.Equal(t, int64(3), got.GetSummary().GetFailCount())
+	require.Equal(t, int64(0), got.GetSummary().GetTimeoutCount())
+	require.Equal(t, int64(1_000_000), got.GetSummary().GetMeanDurationUsec())
+	require.InDelta(t, 0.25, got.GetSummary().GetPassRate(), 0.0001)
 
 	detail, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
-		Identity: got.GetIdentity(),
+		RepoUrl: repository, Identity: got.GetIdentity(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, got, detail.GetTest())
 	require.Len(t, detail.GetRecentResults(), 4)
-	require.Equal(t, "m-middle-by-name", detail.GetRecentResults()[0].GetInvocationId())
+	require.Equal(t, "https://app.buildbuddy.io/invocation/m-middle-by-name", detail.GetRecentResults()[0].GetSourceUrl())
 	require.NotEmpty(t, detail.GetTransitions())
 }
 
 func TestReportProcessesCasesIndependently(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))
-	cases := make([]*tbpb.ReportedTestCase, 32)
+	cases := make([]*tbpb.TestCaseResult, 32)
 	for i := range cases {
-		cases[i] = &tbpb.ReportedTestCase{
-			TargetLabel: "//a/b:unit_test",
-			CaseName:    fmt.Sprintf("TestCase%d", i),
-			Outcome:     tbpb.TestOutcome_TEST_OUTCOME_PASS,
-		}
+		cases[i] = caseResult("one-report", "//a/b:unit_test", fmt.Sprintf("TestCase%d", i),
+			tbpb.TestOutcome_TEST_OUTCOME_PASS, 0)
 	}
 	rsp, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: "https://github.com/acme/repo", InvocationId: "one-report",
-		Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT, TestCases: cases,
+		RepoUrl: "https://github.com/acme/repo", TestCases: cases,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(len(cases)), rsp.GetAcceptedCount())
@@ -181,21 +196,15 @@ func TestTargetStateIsIndependentFromCases(t *testing.T) {
 	target := "//a/b:unit_test"
 	reportTarget := func(invocationID string, outcome tbpb.TestOutcome) {
 		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl: repository, InvocationId: invocationID,
-			Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT,
-			TestTargets: []*tbpb.ReportedTestTarget{{
-				TargetLabel: target, Outcome: outcome, DurationUsec: 1_000_000,
-			}},
+			RepoUrl:     repository,
+			TestTargets: []*tbpb.TestTargetResult{targetResult(invocationID, target, outcome, 1_000_000)},
 		})
 		require.NoError(t, err)
 	}
 	reportCase := func(invocationID string, outcome tbpb.TestOutcome) {
 		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl: repository, InvocationId: invocationID,
-			Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT,
-			TestCases: []*tbpb.ReportedTestCase{{
-				TargetLabel: target, CaseName: "TestCase", Outcome: outcome,
-			}},
+			RepoUrl:   repository,
+			TestCases: []*tbpb.TestCaseResult{caseResult(invocationID, target, "TestCase", outcome, 0)},
 		})
 		require.NoError(t, err)
 	}
@@ -204,60 +213,60 @@ func TestTargetStateIsIndependentFromCases(t *testing.T) {
 		reportTarget(fmt.Sprintf("target-timeout-%d", i), tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT)
 	}
 	targetDetail, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
-		Identity: &tbpb.TestTargetIdentity{RepoUrl: repository, TargetLabel: target},
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: target},
 	})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, targetDetail.GetTarget().GetHealth())
-	require.Equal(t, int64(4), targetDetail.GetTarget().GetTimeoutCount())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, targetDetail.GetTarget().GetSummary().GetHealth())
+	require.Equal(t, int64(4), targetDetail.GetTarget().GetSummary().GetTimeoutCount())
 	require.Empty(t, getTests(t, service, ctx, &tbpb.GetTestsRequest{
-		RepoUrl: repository, TargetLabel: target,
+		RepoUrl: repository, Target: &tbpb.TestTargetIdentity{TargetLabel: target},
 	}))
 
 	reportCase("case-failure", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
 	targetDetail, err = service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
-		Identity: &tbpb.TestTargetIdentity{RepoUrl: repository, TargetLabel: target},
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: target},
 	})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, targetDetail.GetTarget().GetHealth())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, targetDetail.GetTarget().GetSummary().GetHealth())
 	targetCases := getTests(t, service, ctx, &tbpb.GetTestsRequest{
-		RepoUrl: repository, TargetLabel: target,
+		RepoUrl: repository, Target: &tbpb.TestTargetIdentity{TargetLabel: target},
 	})
 	require.Len(t, targetCases, 1)
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, targetCases[0].GetHealth())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, targetCases[0].GetSummary().GetHealth())
 
 	reportTarget("target-timeout-4", tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT)
 	targetDetail, err = service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
-		Identity: &tbpb.TestTargetIdentity{RepoUrl: repository, TargetLabel: target},
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: target},
 	})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_TIMEOUT, targetDetail.GetTarget().GetHealth())
-	require.Equal(t, int64(5), targetDetail.GetTarget().GetTimeoutCount())
-	require.Equal(t, int64(0), targetDetail.GetTarget().GetFailCount())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_TIMEOUT, targetDetail.GetTarget().GetSummary().GetHealth())
+	require.Equal(t, int64(5), targetDetail.GetTarget().GetSummary().GetTimeoutCount())
+	require.Equal(t, int64(0), targetDetail.GetTarget().GetSummary().GetFailCount())
 	require.Len(t, targetDetail.GetRecentResults(), 5)
 	targetCases = getTests(t, service, ctx, &tbpb.GetTestsRequest{
-		RepoUrl: repository, TargetLabel: target,
+		RepoUrl: repository, Target: &tbpb.TestTargetIdentity{TargetLabel: target},
 	})
 	require.Len(t, targetCases, 1)
-	require.Equal(t, int64(1), targetCases[0].GetFailCount())
+	require.Equal(t, int64(1), targetCases[0].GetSummary().GetFailCount())
 
 	targets := getTestTargets(t, service, ctx, &tbpb.GetTestTargetsRequest{
 		RepoUrl: repository, PackagePrefix: "a/b",
 	})
 	require.Len(t, targets, 1)
 	require.Equal(t, target, targets[0].GetIdentity().GetTargetLabel())
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_TIMEOUT, targets[0].GetHealth())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_TIMEOUT, targets[0].GetSummary().GetHealth())
 
 	unattributedTarget := "//a/b:harness_test"
 	target = unattributedTarget
 	reportTarget("target-failure", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
 	unattributed, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
-		Identity: &tbpb.TestTargetIdentity{RepoUrl: repository, TargetLabel: unattributedTarget},
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: unattributedTarget},
 	})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, unattributed.GetTarget().GetHealth())
-	require.Equal(t, int64(1), unattributed.GetTarget().GetFailCount())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, unattributed.GetTarget().GetSummary().GetHealth())
+	require.Equal(t, int64(1), unattributed.GetTarget().GetSummary().GetFailCount())
 	require.Empty(t, getTests(t, service, ctx, &tbpb.GetTestsRequest{
-		RepoUrl: repository, TargetLabel: unattributedTarget,
+		RepoUrl: repository, Target: &tbpb.TestTargetIdentity{TargetLabel: unattributedTarget},
 	}))
 
 	repositoryHealth, err := service.GetRepositoryHealth(ctx, &tbpb.GetRepositoryHealthRequest{RepoUrl: repository})
@@ -276,45 +285,43 @@ func TestAnalyzerConfigIsPerRepository(t *testing.T) {
 		RepoUrl: configuredRepository,
 	})
 	require.NoError(t, err)
-	require.Equal(t, int32(50), defaultConfig.GetConfig().GetWindowSize())
-	require.Equal(t, int32(1), defaultConfig.GetConfig().GetFailureThreshold())
-	require.Equal(t, int32(5), defaultConfig.GetConfig().GetTargetTimeoutThreshold())
+	require.Equal(t, int32(50), defaultConfig.GetConfig().GetLinear().GetWindowSize())
+	require.Equal(t, int32(1), defaultConfig.GetConfig().GetLinear().GetFailureThreshold())
+	require.Equal(t, int32(5), defaultConfig.GetConfig().GetLinear().GetTargetTimeoutThreshold())
 
 	_, err = service.SetTestAnalyzerConfig(ctx, &tbpb.SetTestAnalyzerConfigRequest{
-		RepoUrl: configuredRepository, WindowSize: 100, FailureThreshold: 2,
-		TargetTimeoutThreshold: 10,
+		RepoUrl: configuredRepository,
+		Config: &tbpb.TestAnalyzerConfig{Analyzer: &tbpb.TestAnalyzerConfig_Linear{Linear: &tbpb.LinearAnalyzer{
+			WindowSize: 100, FailureThreshold: 2, TargetTimeoutThreshold: 10,
+		}}},
 	})
 	require.NoError(t, err)
 	configured, err := service.GetTestAnalyzerConfig(ctx, &tbpb.GetTestAnalyzerConfigRequest{
 		RepoUrl: configuredRepository,
 	})
 	require.NoError(t, err)
-	require.Equal(t, int32(100), configured.GetConfig().GetWindowSize())
-	require.Equal(t, int32(2), configured.GetConfig().GetFailureThreshold())
-	require.Equal(t, int32(10), configured.GetConfig().GetTargetTimeoutThreshold())
+	require.Equal(t, int32(100), configured.GetConfig().GetLinear().GetWindowSize())
+	require.Equal(t, int32(2), configured.GetConfig().GetLinear().GetFailureThreshold())
+	require.Equal(t, int32(10), configured.GetConfig().GetLinear().GetTargetTimeoutThreshold())
 
 	reportFailure := func(repository string) {
 		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl: repository, InvocationId: "failure",
-			Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT,
-			TestCases: []*tbpb.ReportedTestCase{{
-				TargetLabel: "//a/b:unit_test", CaseName: "TestCase",
-				Outcome: tbpb.TestOutcome_TEST_OUTCOME_FAIL,
-			}},
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{caseResult(
+				"failure", "//a/b:unit_test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 0)},
 		})
 		require.NoError(t, err)
 	}
 	getHealth := func(repository string) tbpb.TestHealth {
 		rsp, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+			RepoUrl: repository,
 			Identity: &tbpb.TestCaseIdentity{
-				Target: &tbpb.TestTargetIdentity{
-					RepoUrl: repository, TargetLabel: "//a/b:unit_test",
-				},
+				Target:   &tbpb.TestTargetIdentity{TargetLabel: "//a/b:unit_test"},
 				CaseName: "TestCase",
 			},
 		})
 		require.NoError(t, err)
-		return rsp.GetTest().GetHealth()
+		return rsp.GetTest().GetSummary().GetHealth()
 	}
 
 	reportFailure(configuredRepository)
@@ -331,12 +338,9 @@ func TestGetRepositoryHealth(t *testing.T) {
 
 	report := func(invocationID, name string, outcome tbpb.TestOutcome, durationUsec int64) {
 		_, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl: repository, InvocationId: invocationID,
-			Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT,
-			TestCases: []*tbpb.ReportedTestCase{{
-				TargetLabel: "//a/b:unit_test", CaseName: name,
-				Outcome: outcome, DurationUsec: durationUsec,
-			}},
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{caseResult(
+				invocationID, "//a/b:unit_test", name, outcome, durationUsec)},
 		})
 		require.NoError(t, err)
 	}
@@ -385,7 +389,7 @@ func TestConeQueriesStreamAllResults(t *testing.T) {
 	service := testbuddy.New(testenv.GetTestEnv(t))
 	repository := "https://github.com/acme/large"
 	const caseCount = 1_050
-	cases := make([]*tbpb.ReportedTestCase, caseCount)
+	cases := make([]*tbpb.TestCaseResult, caseCount)
 	flakyCount := int64(0)
 	for i := range cases {
 		outcome := tbpb.TestOutcome_TEST_OUTCOME_PASS
@@ -393,16 +397,11 @@ func TestConeQueriesStreamAllResults(t *testing.T) {
 			outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 			flakyCount++
 		}
-		cases[i] = &tbpb.ReportedTestCase{
-			TargetLabel:  fmt.Sprintf("//pkg/sub%d:test", i),
-			CaseName:     fmt.Sprintf("TestCase%04d", i),
-			Outcome:      outcome,
-			DurationUsec: 1_000,
-		}
+		cases[i] = caseResult("one-big-run", fmt.Sprintf("//pkg/sub%d:test", i),
+			fmt.Sprintf("TestCase%04d", i), outcome, 1_000)
 	}
 	reported, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, InvocationId: "one-big-run",
-		Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT, TestCases: cases,
+		RepoUrl: repository, TestCases: cases,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(caseCount), reported.GetAcceptedCount())
@@ -410,7 +409,7 @@ func TestConeQueriesStreamAllResults(t *testing.T) {
 	stream := &getTestsStream{ctx: ctx}
 	require.NoError(t, service.GetTests(&tbpb.GetTestsRequest{RepoUrl: repository}, stream))
 	require.Greater(t, len(stream.responses), 1)
-	listed := make([]*tbpb.TestSummary, 0, caseCount)
+	listed := make([]*tbpb.TestCaseSummary, 0, caseCount)
 	for _, response := range stream.responses {
 		listed = append(listed, response.GetTests()...)
 	}
@@ -485,12 +484,9 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 	// Reporting and reading work over the authenticated browser transport.
 	for _, invocationID := range []string{"run-1", "run-2", "run-3"} {
 		rsp := post("user1", "ReportTestResults", &tbpb.ReportTestResultsRequest{
-			RepoUrl: repository, InvocationId: invocationID,
-			Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT,
-			TestCases: []*tbpb.ReportedTestCase{{
-				TargetLabel: "//a/b:unit_test", CaseName: "TestHealthy",
-				Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS, DurationUsec: 1_000_000,
-			}},
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{caseResult(
+				invocationID, "//a/b:unit_test", "TestHealthy", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1_000_000)},
 		})
 		require.Equal(t, http.StatusOK, rsp.Code, rsp.Body.String())
 	}
@@ -530,7 +526,7 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 	grpcRsp, err := grpcStream.Recv()
 	require.NoError(t, err)
 	require.Len(t, grpcRsp.GetTests(), 1)
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_HEALTHY, grpcRsp.GetTests()[0].GetHealth())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_HEALTHY, grpcRsp.GetTests()[0].GetSummary().GetHealth())
 	_, err = grpcStream.Recv()
 	require.ErrorIs(t, err, io.EOF)
 
@@ -545,36 +541,29 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 func TestReportPreservesRepeatedCaseSamples(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))
-	cases := make([]*tbpb.ReportedTestCase, 100)
+	cases := make([]*tbpb.TestCaseResult, 100)
 	for i := range cases {
 		outcome := tbpb.TestOutcome_TEST_OUTCOME_PASS
 		if i%10 == 0 {
 			outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 		}
-		cases[i] = &tbpb.ReportedTestCase{
-			TargetLabel: "//a/b:unit_test",
-			CaseName:    "TestRepeated",
-			Outcome:     outcome,
-		}
+		cases[i] = caseResult("repeated-runs", "//a/b:unit_test", "TestRepeated", outcome, 0)
 	}
 	rsp, err := service.ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: "https://github.com/acme/repo", InvocationId: "repeated-runs",
-		Source: tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT, TestCases: cases,
+		RepoUrl: "https://github.com/acme/repo", TestCases: cases,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(len(cases)), rsp.GetAcceptedCount())
 
 	got, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: "https://github.com/acme/repo",
 		Identity: &tbpb.TestCaseIdentity{
-			Target: &tbpb.TestTargetIdentity{
-				RepoUrl:     "https://github.com/acme/repo",
-				TargetLabel: "//a/b:unit_test",
-			},
+			Target:   &tbpb.TestTargetIdentity{TargetLabel: "//a/b:unit_test"},
 			CaseName: "TestRepeated",
 		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, int64(90), got.GetTest().GetPassCount())
-	require.Equal(t, int64(10), got.GetTest().GetFailCount())
+	require.Equal(t, int64(90), got.GetTest().GetSummary().GetPassCount())
+	require.Equal(t, int64(10), got.GetTest().GetSummary().GetFailCount())
 	require.Len(t, got.GetRecentResults(), 50)
 }

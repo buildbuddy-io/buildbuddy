@@ -2,14 +2,17 @@
 package normalize
 
 import (
+	"net/url"
+
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
-	MaxInvocationIDBytes   = 1024
 	MaxFailureMessageBytes = 512
+	MaxSourceURLBytes      = 2048
 	MaxRetainedRejections  = 100
 )
 
@@ -27,22 +30,9 @@ const (
 	RecordKindTarget RecordKind = "target"
 )
 
-type ReportContext struct {
-	RepositoryURL string
-	InvocationID  string
-	Source        tbpb.ResultSource
-}
-
 type CaseRecord struct {
 	TargetLabel    string
 	CaseName       string
-	Outcome        tbpb.TestOutcome
-	DurationUsec   int64
-	FailureMessage string
-}
-
-type TargetRecord struct {
-	TargetLabel    string
 	Outcome        tbpb.TestOutcome
 	DurationUsec   int64
 	FailureMessage string
@@ -67,7 +57,7 @@ type Rejection struct {
 }
 
 type Report struct {
-	Context       ReportContext
+	RepositoryURL string
 	CaseResults   []*CaseResult
 	TargetResults []*TargetResult
 	Rejections    []Rejection
@@ -90,51 +80,38 @@ func (c *Counts) add(kind RecordKind) {
 }
 
 type Session struct {
-	ctx     ReportContext
-	targets map[string]*identity.TargetIdentity
+	repository string
+	targets    map[string]*identity.TargetIdentity
 }
 
-func NewSession(ctx ReportContext) (*Session, error) {
-	normalized, err := identity.NormalizeRepositoryURL(ctx.RepositoryURL)
+func NewSession(repositoryURL string) (*Session, error) {
+	repository, err := identity.NormalizeRepositoryURL(repositoryURL)
 	if err != nil {
 		return nil, err
 	}
-	if err := identity.ValidateBoundedString("invocation ID", ctx.InvocationID, MaxInvocationIDBytes); err != nil {
-		return nil, err
-	}
-	if ctx.InvocationID == "" {
-		return nil, status.InvalidArgumentError("invocation ID is required")
-	}
-	if ctx.Source != tbpb.ResultSource_RESULT_SOURCE_PRESUBMIT && ctx.Source != tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT {
-		return nil, status.InvalidArgumentErrorf("unsupported result source %d", ctx.Source)
-	}
-	ctx.RepositoryURL = normalized
-	return &Session{
-		ctx:     ctx,
-		targets: make(map[string]*identity.TargetIdentity),
-	}, nil
+	return &Session{repository: repository, targets: make(map[string]*identity.TargetIdentity)}, nil
 }
 
-func Normalize(ctx ReportContext, cases []CaseRecord, targets []TargetRecord) (*Report, error) {
-	session, err := NewSession(ctx)
+func Normalize(repositoryURL string, cases []*tbpb.TestCaseResult, targets []*tbpb.TestTargetResult) (*Report, error) {
+	session, err := NewSession(repositoryURL)
 	if err != nil {
 		return nil, err
 	}
 	return session.Normalize(cases, targets), nil
 }
 
-func (s *Session) Normalize(cases []CaseRecord, targets []TargetRecord) *Report {
-	report := &Report{Context: s.ctx}
-	for i := range cases {
-		result, err := s.normalizeCase(&cases[i])
+func (s *Session) Normalize(cases []*tbpb.TestCaseResult, targets []*tbpb.TestTargetResult) *Report {
+	report := &Report{RepositoryURL: s.repository}
+	for i, record := range cases {
+		result, err := s.normalizeCase(record)
 		if err != nil {
 			report.reject(RecordKindCase, i, RejectionInvalidContent, err)
 			continue
 		}
 		report.CaseResults = append(report.CaseResults, result)
 	}
-	for i := range targets {
-		result, err := s.normalizeTarget(&targets[i])
+	for i, record := range targets {
+		result, err := s.normalizeTarget(record)
 		if err != nil {
 			report.reject(RecordKindTarget, i, RejectionInvalidContent, err)
 			continue
@@ -144,54 +121,46 @@ func (s *Session) Normalize(cases []CaseRecord, targets []TargetRecord) *Report 
 	return report
 }
 
-func (s *Session) normalizeCase(record *CaseRecord) (*CaseResult, error) {
+func (s *Session) normalizeCase(record *tbpb.TestCaseResult) (*CaseResult, error) {
+	if record.GetIdentity().GetTarget() == nil {
+		return nil, status.InvalidArgumentError("case identity is required")
+	}
 	id, err := identity.CanonicalizeCase(identity.CaseInput{
-		RepositoryURL: s.ctx.RepositoryURL,
-		TargetLabel:   record.TargetLabel,
-		CaseName:      record.CaseName,
+		RepositoryURL: s.repository,
+		TargetLabel:   record.GetIdentity().GetTarget().GetTargetLabel(),
+		CaseName:      record.GetIdentity().GetCaseName(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	if err := validateResult(record.Outcome, record.DurationUsec, record.FailureMessage); err != nil {
+	if err := validateResult(record.GetResult()); err != nil {
 		return nil, err
 	}
-	target, err := s.target(record.TargetLabel)
+	target, err := s.target(record.GetIdentity().GetTarget().GetTargetLabel())
 	if err != nil {
 		return nil, err
 	}
 	return &CaseResult{
 		Identity: id,
 		Target:   target,
-		Result: &tbpb.TestCaseResult{
-			Identity:       id.Proto(),
-			InvocationId:   s.ctx.InvocationID,
-			Outcome:        record.Outcome,
-			Source:         s.ctx.Source,
-			DurationUsec:   record.DurationUsec,
-			FailureMessage: record.FailureMessage,
-		},
+		Result:   &tbpb.TestCaseResult{Identity: id.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
 	}, nil
 }
 
-func (s *Session) normalizeTarget(record *TargetRecord) (*TargetResult, error) {
-	target, err := s.target(record.TargetLabel)
+func (s *Session) normalizeTarget(record *tbpb.TestTargetResult) (*TargetResult, error) {
+	if record.GetIdentity() == nil {
+		return nil, status.InvalidArgumentError("target identity is required")
+	}
+	target, err := s.target(record.GetIdentity().GetTargetLabel())
 	if err != nil {
 		return nil, err
 	}
-	if err := validateResult(record.Outcome, record.DurationUsec, record.FailureMessage); err != nil {
+	if err := validateResult(record.GetResult()); err != nil {
 		return nil, err
 	}
 	return &TargetResult{
 		Target: target,
-		Result: &tbpb.TestTargetResult{
-			Identity:       target.Proto(),
-			InvocationId:   s.ctx.InvocationID,
-			Outcome:        record.Outcome,
-			Source:         s.ctx.Source,
-			DurationUsec:   record.DurationUsec,
-			FailureMessage: record.FailureMessage,
-		},
+		Result: &tbpb.TestTargetResult{Identity: target.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
 	}, nil
 }
 
@@ -199,7 +168,7 @@ func (s *Session) target(label string) (*identity.TargetIdentity, error) {
 	if target := s.targets[label]; target != nil {
 		return target, nil
 	}
-	target, err := identity.CanonicalizeTargetIdentity(s.ctx.RepositoryURL, label)
+	target, err := identity.CanonicalizeTargetIdentity(s.repository, label)
 	if err != nil {
 		return nil, err
 	}
@@ -207,14 +176,27 @@ func (s *Session) target(label string) (*identity.TargetIdentity, error) {
 	return target, nil
 }
 
-func validateResult(outcome tbpb.TestOutcome, durationUsec int64, failureMessage string) error {
-	if _, ok := tbpb.TestOutcome_name[int32(outcome)]; !ok {
-		return status.InvalidArgumentErrorf("unrecognized outcome %d", outcome)
+func validateResult(result *tbpb.TestResult) error {
+	if result == nil {
+		return status.InvalidArgumentError("result is required")
 	}
-	if durationUsec < 0 {
+	if _, ok := tbpb.TestOutcome_name[int32(result.GetOutcome())]; !ok {
+		return status.InvalidArgumentErrorf("unrecognized outcome %d", result.GetOutcome())
+	}
+	if result.GetDurationUsec() < 0 {
 		return status.InvalidArgumentError("duration_usec must not be negative")
 	}
-	return identity.ValidateBoundedString("failure message", failureMessage, MaxFailureMessageBytes)
+	if err := identity.ValidateBoundedString("failure message", result.GetFailureMessage(), MaxFailureMessageBytes); err != nil {
+		return err
+	}
+	if err := identity.ValidateBoundedString("source URL", result.GetSourceUrl(), MaxSourceURLBytes); err != nil {
+		return err
+	}
+	u, err := url.ParseRequestURI(result.GetSourceUrl())
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return status.InvalidArgumentError("source_url must be an absolute HTTP(S) URL")
+	}
+	return nil
 }
 
 func (r *Report) reject(kind RecordKind, index int, reason RejectionReason, err error) {

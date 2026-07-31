@@ -29,7 +29,6 @@ import (
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 )
 
 var bazelTestOutputDirectory = regexp.MustCompile(
@@ -37,12 +36,11 @@ var bazelTestOutputDirectory = regexp.MustCompile(
 )
 
 var (
-	TestReportFlags  = flag.NewFlagSet("test-report", flag.ContinueOnError)
-	reportTarget     = TestReportFlags.String("target", "", "BuildBuddy gRPC target; defaults to grpc://127.0.0.1:1985.")
-	reportRepo       = TestReportFlags.String("repo_url", "", "Repository URL; defaults to git remote.origin.url.")
-	reportInvocation = TestReportFlags.String(
-		"invocation_id", "", "Invocation ID; defaults to the most recent bb test invocation.")
-	reportSource      = TestReportFlags.String("source", "postsubmit", "Result source: presubmit or postsubmit.")
+	TestReportFlags = flag.NewFlagSet("test-report", flag.ContinueOnError)
+	reportTarget    = TestReportFlags.String("target", "", "BuildBuddy gRPC target; defaults to grpc://127.0.0.1:1985.")
+	reportRepo      = TestReportFlags.String("repo_url", "", "Repository URL; defaults to git remote.origin.url.")
+	reportSourceURL = TestReportFlags.String(
+		"source_url", "", "Result URL; defaults to the most recent bb test invocation.")
 	reportTargetLabel = TestReportFlags.String("target_label", "", "Bazel target label; inferred from bazel-testlogs paths by default.")
 
 	GetTestsFlags  = flag.NewFlagSet("get-tests", flag.ContinueOnError)
@@ -70,17 +68,7 @@ func HandleTestReport(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	invocationID := *reportInvocation
-	if invocationID == "" {
-		invocationID, err = flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
-		if err != nil {
-			return 1, err
-		}
-	}
-	if invocationID == "" {
-		invocationID = uuid.New()
-	}
-	source, err := parseSource(*reportSource)
+	sourceURL, err := resultURL(*reportSourceURL)
 	if err != nil {
 		return 1, err
 	}
@@ -92,8 +80,8 @@ func HandleTestReport(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	results := make([]*tbpb.ReportedTestCase, 0)
-	targets := make([]*tbpb.ReportedTestTarget, 0, len(paths))
+	results := make([]*tbpb.TestCaseResult, 0)
+	targets := make([]*tbpb.TestTargetResult, 0, len(paths))
 	diagnostics := 0
 	for _, path := range paths {
 		targetLabel := *reportTargetLabel
@@ -116,7 +104,7 @@ func HandleTestReport(args []string) (int, error) {
 			return 1, closeErr
 		}
 		diagnostics += report.DiagnosticCount
-		target, testCases, err := ResultsForReport(path, targetLabel, report)
+		target, testCases, err := ResultsForReport(path, targetLabel, sourceURL, report)
 		if err != nil {
 			return 1, err
 		}
@@ -140,15 +128,14 @@ func HandleTestReport(args []string) (int, error) {
 		return 1, err
 	}
 	rsp, err := tbpb.NewTestBuddyServiceClient(conn).ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, InvocationId: invocationID, Source: source,
-		TestCases: results, TestTargets: targets,
+		RepoUrl: repository, TestCases: results, TestTargets: targets,
 	})
 	if err != nil {
 		return 1, err
 	}
 	fmt.Printf("reported %d test results (%d rejected) from %d XML files\n",
 		rsp.GetAcceptedCount(), rsp.GetRejectedCount(), len(paths))
-	fmt.Printf("invocation %s\n", invocationID)
+	fmt.Printf("source %s\n", sourceURL)
 	if diagnostics > 0 {
 		fmt.Printf("%d JUnit diagnostics were ignored\n", diagnostics)
 	}
@@ -158,28 +145,35 @@ func HandleTestReport(args []string) (int, error) {
 	return 0, nil
 }
 
-func ResultsForReport(xmlPath, targetLabel string, report *junit.Report) (*tbpb.ReportedTestTarget, []*tbpb.ReportedTestCase, error) {
+func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
 	targetOutcome, err := BazelTargetOutcome(xmlPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	target := &tbpb.ReportedTestTarget{
-		TargetLabel: targetLabel, Outcome: targetOutcome, DurationUsec: report.DurationUsec,
+	target := &tbpb.TestTargetResult{
+		Identity: &tbpb.TestTargetIdentity{TargetLabel: targetLabel},
+		Result: &tbpb.TestResult{
+			Outcome: targetOutcome, DurationUsec: report.DurationUsec, SourceUrl: sourceURL,
+		},
 	}
 	if targetOutcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
-		target.FailureMessage = "Bazel test target timed out"
+		target.Result.FailureMessage = "Bazel test target timed out"
 		return target, nil, nil
 	}
 	if report.UnattributedFailure {
-		target.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
-		target.FailureMessage = "test target failed without an attributable test case"
+		target.Result.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
+		target.Result.FailureMessage = "test target failed without an attributable test case"
 	}
-	testCases := make([]*tbpb.ReportedTestCase, 0, len(report.Cases))
+	testCases := make([]*tbpb.TestCaseResult, 0, len(report.Cases))
 	for _, testCase := range report.Cases {
-		testCases = append(testCases, &tbpb.ReportedTestCase{
-			TargetLabel: testCase.TargetLabel, CaseName: testCase.CaseName,
-			Outcome: testCase.Outcome, DurationUsec: testCase.DurationUsec,
-			FailureMessage: testCase.FailureMessage,
+		testCases = append(testCases, &tbpb.TestCaseResult{
+			Identity: &tbpb.TestCaseIdentity{
+				Target: &tbpb.TestTargetIdentity{TargetLabel: testCase.TargetLabel}, CaseName: testCase.CaseName,
+			},
+			Result: &tbpb.TestResult{
+				Outcome: testCase.Outcome, DurationUsec: testCase.DurationUsec,
+				FailureMessage: testCase.FailureMessage, SourceUrl: sourceURL,
+			},
 		})
 	}
 	return target, testCases, nil
@@ -253,8 +247,9 @@ func HandleGetTests(args []string) (int, error) {
 			return 1, status.InvalidArgumentError("--target_label and --case_name must be specified together")
 		}
 		rsp, err := client.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+			RepoUrl: repository,
 			Identity: &tbpb.TestCaseIdentity{
-				Target:   &tbpb.TestTargetIdentity{RepoUrl: repository, TargetLabel: *getTargetLabel},
+				Target:   &tbpb.TestTargetIdentity{TargetLabel: *getTargetLabel},
 				CaseName: *getCaseName,
 			},
 		})
@@ -263,12 +258,11 @@ func HandleGetTests(args []string) (int, error) {
 		}
 		printSummary(rsp.GetTest())
 		fmt.Println("RECENT RESULTS")
-		fmt.Println("INVOCATION\tOUTCOME\tSOURCE\tDURATION\tFAILURE")
+		fmt.Println("SOURCE\tOUTCOME\tDURATION\tFAILURE")
 		for _, result := range rsp.GetRecentResults() {
-			fmt.Printf("%s\t%s\t%s\t%s\t%s\n",
-				result.GetInvocationId(),
+			fmt.Printf("%s\t%s\t%s\t%s\n",
+				result.GetSourceUrl(),
 				strings.TrimPrefix(result.GetOutcome().String(), "TEST_OUTCOME_"),
-				strings.TrimPrefix(result.GetSource().String(), "RESULT_SOURCE_"),
 				time.Duration(result.GetDurationUsec())*time.Microsecond,
 				result.GetFailureMessage())
 		}
@@ -304,10 +298,11 @@ func HandleGetTests(args []string) (int, error) {
 			return 1, err
 		}
 		for _, test := range rsp.GetTests() {
-			health := strings.TrimPrefix(test.GetHealth().String(), "TEST_HEALTH_")
+			summary := test.GetSummary()
+			health := strings.TrimPrefix(summary.GetHealth().String(), "TEST_HEALTH_")
 			fmt.Printf("%s\t%.1f%%\t%s\t%s\t%s\n",
-				health, test.GetPassRate()*100,
-				time.Duration(test.GetMeanDurationUsec())*time.Microsecond,
+				health, summary.GetPassRate()*100,
+				time.Duration(summary.GetMeanDurationUsec())*time.Microsecond,
 				test.GetIdentity().GetTarget().GetTargetLabel(), test.GetIdentity().GetCaseName())
 			printed++
 			if printed == *getLimit {
@@ -319,12 +314,13 @@ func HandleGetTests(args []string) (int, error) {
 	return 0, nil
 }
 
-func printSummary(test *tbpb.TestSummary) {
+func printSummary(test *tbpb.TestCaseSummary) {
+	summary := test.GetSummary()
 	fmt.Println("HEALTH\tPASS RATE\tMEAN\tTARGET\tCASE")
 	fmt.Printf("%s\t%.1f%%\t%s\t%s\t%s\n",
-		strings.TrimPrefix(test.GetHealth().String(), "TEST_HEALTH_"),
-		test.GetPassRate()*100,
-		time.Duration(test.GetMeanDurationUsec())*time.Microsecond,
+		strings.TrimPrefix(summary.GetHealth().String(), "TEST_HEALTH_"),
+		summary.GetPassRate()*100,
+		time.Duration(summary.GetMeanDurationUsec())*time.Microsecond,
 		test.GetIdentity().GetTarget().GetTargetLabel(),
 		test.GetIdentity().GetCaseName())
 }
@@ -417,16 +413,26 @@ func repositoryURL(workspacePath, override string) (string, error) {
 	return repository, nil
 }
 
-func parseSource(value string) (tbpb.ResultSource, error) {
-	switch strings.ToLower(value) {
-	case "presubmit":
-		return tbpb.ResultSource_RESULT_SOURCE_PRESUBMIT, nil
-	case "postsubmit":
-		return tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT, nil
-	default:
-		return tbpb.ResultSource_RESULT_SOURCE_UNKNOWN,
-			status.InvalidArgumentError("source must be presubmit or postsubmit")
+func resultURL(override string) (string, error) {
+	if override != "" {
+		return override, nil
 	}
+	invocationID, err := flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
+	if err != nil {
+		return "", err
+	}
+	base, err := flaghistory.GetPreviousFlag(flaghistory.BesResultsUrlFlagName)
+	if err != nil {
+		return "", err
+	}
+	if invocationID == "" || base == "" {
+		return "", status.FailedPreconditionError(
+			"could not determine the most recent invocation URL; pass --source_url")
+	}
+	if strings.Contains(base, invocationID) {
+		return base, nil
+	}
+	return base + invocationID, nil
 }
 
 func backend(override string) (string, error) {

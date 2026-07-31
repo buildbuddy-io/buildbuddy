@@ -7,9 +7,7 @@ import (
 )
 
 type Sample struct {
-	InvocationID string
-	Outcome      tbpb.TestOutcome
-	Source       tbpb.ResultSource
+	Outcome tbpb.TestOutcome
 }
 
 type Reason string
@@ -30,8 +28,6 @@ type Evidence struct {
 	Ineligible          int
 	ConsecutivePasses   int
 	ConsecutiveFailures int
-	FirstInvocationID   string
-	LastInvocationID    string
 }
 
 type Result struct {
@@ -52,6 +48,7 @@ func linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig, target bool) (Result
 	if err := config.Validate(cfg); err != nil {
 		return Result{}, err
 	}
+	linear := cfg.GetLinear()
 	eligible := make([]Sample, 0, len(samples))
 	ineligible := 0
 	for _, sample := range samples {
@@ -61,7 +58,7 @@ func linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig, target bool) (Result
 			ineligible++
 		}
 	}
-	if extra := len(eligible) - int(cfg.GetWindowSize()); extra > 0 {
+	if extra := len(eligible) - int(linear.GetWindowSize()); extra > 0 {
 		eligible = eligible[extra:]
 	}
 	evidence := summarize(eligible)
@@ -71,16 +68,16 @@ func linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig, target bool) (Result
 	case len(eligible) == 0:
 		result.Health = tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA
 		result.Reason = ReasonNoEligibleSamples
-	case !target && evidence.Failures >= int(cfg.GetFailureThreshold()):
+	case !target && evidence.Failures >= int(linear.GetFailureThreshold()):
 		result.Health = tbpb.TestHealth_TEST_HEALTH_FLAKY
 		result.Reason = ReasonFailuresInWindow
-	case target && evidence.Failures-evidence.Timeouts >= int(cfg.GetFailureThreshold()):
+	case target && evidence.Failures-evidence.Timeouts >= int(linear.GetFailureThreshold()):
 		result.Health = tbpb.TestHealth_TEST_HEALTH_FLAKY
 		result.Reason = ReasonFailuresInWindow
-	case target && evidence.Timeouts >= int(cfg.GetTargetTimeoutThreshold()):
+	case target && evidence.Timeouts >= int(linear.GetTargetTimeoutThreshold()):
 		result.Health = tbpb.TestHealth_TEST_HEALTH_TIMEOUT
 		result.Reason = ReasonTimeoutsInWindow
-	case evidence.ConsecutivePasses >= min(3, int(cfg.GetWindowSize())):
+	case evidence.ConsecutivePasses >= min(3, int(linear.GetWindowSize())):
 		result.Health = tbpb.TestHealth_TEST_HEALTH_HEALTHY
 		result.Reason = ReasonConsecutivePasses
 	default:
@@ -91,9 +88,6 @@ func linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig, target bool) (Result
 }
 
 func Eligible(sample Sample) bool {
-	if sample.Source != tbpb.ResultSource_RESULT_SOURCE_PRESUBMIT && sample.Source != tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT {
-		return false
-	}
 	switch sample.Outcome {
 	case tbpb.TestOutcome_TEST_OUTCOME_PASS,
 		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
@@ -109,8 +103,6 @@ func summarize(samples []Sample) Evidence {
 	if len(samples) == 0 {
 		return evidence
 	}
-	evidence.FirstInvocationID = samples[0].InvocationID
-	evidence.LastInvocationID = samples[len(samples)-1].InvocationID
 	for _, sample := range samples {
 		switch sample.Outcome {
 		case tbpb.TestOutcome_TEST_OUTCOME_PASS:

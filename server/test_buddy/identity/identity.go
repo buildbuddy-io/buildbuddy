@@ -190,14 +190,13 @@ func CaseProto(address CaseAddress) *tbpb.TestCaseIdentity {
 
 func TargetProto(address TargetAddress) *tbpb.TestTargetIdentity {
 	return &tbpb.TestTargetIdentity{
-		RepoUrl:     address.Repository,
 		TargetLabel: address.TargetLabel,
 	}
 }
 
-func CaseAddressFromProto(in *tbpb.TestCaseIdentity) CaseAddress {
+func CaseAddressFromProto(repository string, in *tbpb.TestCaseIdentity) CaseAddress {
 	return CaseAddress{
-		Repository:  in.GetTarget().GetRepoUrl(),
+		Repository:  repository,
 		TargetLabel: in.GetTarget().GetTargetLabel(),
 		CaseName:    in.GetCaseName(),
 	}

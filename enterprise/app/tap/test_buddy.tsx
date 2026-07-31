@@ -14,7 +14,7 @@ interface State {
   repository?: test_buddy.GetRepositoryHealthResponse;
   targets: test_buddy.TestTargetSummary[];
   selected?: test_buddy.GetTestTargetResponse;
-  selectedCases: test_buddy.TestSummary[];
+  selectedCases: test_buddy.TestCaseSummary[];
   loading: boolean;
   loadingCases: boolean;
 }
@@ -74,7 +74,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     this.casesStream = rpcService.testBuddyService.getTests(
       test_buddy.GetTestsRequest.create({
         repoUrl: this.props.repo,
-        targetLabel: target.targetLabel,
+        target,
       }),
       {
         next: (response) => this.setState((state) => ({ selectedCases: [...state.selectedCases, ...response.tests] })),
@@ -92,7 +92,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     if (!identity) return;
     this.casesStream?.cancel();
     rpcService.testBuddyService
-      .getTestTarget(test_buddy.GetTestTargetRequest.create({ identity }))
+      .getTestTarget(test_buddy.GetTestTargetRequest.create({ repoUrl: this.props.repo, identity }))
       .then((selected) => {
         this.setState({ selected });
         this.loadCases(identity);
@@ -131,6 +131,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     const response = this.state.selected;
     const target = response?.target;
     if (!response || !target) return null;
+    const summary = target.summary;
     return (
       <section className="test-buddy-target-detail">
         <button className="test-buddy-back" onClick={() => this.clearTarget()}>
@@ -138,12 +139,12 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
         </button>
         <h2>{target.identity?.targetLabel}</h2>
         <div className="test-buddy-stats">
-          <Stat name="Health" value={healthName(target.health)} />
-          <Stat name="Pass rate" value={percent(target.passRate)} />
-          <Stat name="Mean duration" value={format.durationUsec(target.meanDurationUsec)} />
-          <Stat name="Passes" value={target.passCount.toString()} />
-          <Stat name="Failures" value={target.failCount.toString()} />
-          <Stat name="Timeouts" value={target.timeoutCount.toString()} />
+          <Stat name="Health" value={healthName(summary?.health)} />
+          <Stat name="Pass rate" value={percent(summary?.passRate ?? 0)} />
+          <Stat name="Mean duration" value={format.durationUsec(summary?.meanDurationUsec ?? 0)} />
+          <Stat name="Passes" value={(summary?.passCount ?? 0).toString()} />
+          <Stat name="Failures" value={(summary?.failCount ?? 0).toString()} />
+          <Stat name="Timeouts" value={(summary?.timeoutCount ?? 0).toString()} />
         </div>
         <h3>Cases</h3>
         <table className="test-buddy-table">
@@ -162,12 +163,12 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             {this.state.selectedCases.map((testCase) => (
               <tr key={testCase.identity?.caseName}>
                 <td>{testCase.identity?.caseName}</td>
-                <td>{healthName(testCase.health)}</td>
-                <td>{percent(testCase.passRate)}</td>
-                <td>{format.durationUsec(testCase.meanDurationUsec)}</td>
-                <td>{testCase.passCount.toString()}</td>
-                <td>{testCase.failCount.toString()}</td>
-                <td>{testCase.timeoutCount.toString()}</td>
+                <td>{healthName(testCase.summary?.health)}</td>
+                <td>{percent(testCase.summary?.passRate ?? 0)}</td>
+                <td>{format.durationUsec(testCase.summary?.meanDurationUsec ?? 0)}</td>
+                <td>{(testCase.summary?.passCount ?? 0).toString()}</td>
+                <td>{(testCase.summary?.failCount ?? 0).toString()}</td>
+                <td>{(testCase.summary?.timeoutCount ?? 0).toString()}</td>
               </tr>
             ))}
           </tbody>
@@ -180,7 +181,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
         <table className="test-buddy-table">
           <thead>
             <tr>
-              <th>Invocation</th>
+              <th>Source</th>
               <th>Outcome</th>
               <th>Duration</th>
               <th>Details</th>
@@ -188,9 +189,9 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           </thead>
           <tbody>
             {response.recentResults.map((result, index) => (
-              <tr key={`${result.invocationId}-${index}`}>
+              <tr key={`${result.sourceUrl}-${index}`}>
                 <td>
-                  <a href={`/invocation/${result.invocationId}`}>{result.invocationId}</a>
+                  <a href={result.sourceUrl}>View result</a>
                 </td>
                 <td>{outcomeName(result.outcome)}</td>
                 <td>{format.durationUsec(result.durationUsec)}</td>
@@ -263,9 +264,9 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
                     {target.identity?.targetLabel}
                   </button>
                 </td>
-                <td>{healthName(target.health)}</td>
-                <td>{percent(target.passRate)}</td>
-                <td>{format.durationUsec(target.meanDurationUsec)}</td>
+                <td>{healthName(target.summary?.health)}</td>
+                <td>{percent(target.summary?.passRate ?? 0)}</td>
+                <td>{format.durationUsec(target.summary?.meanDurationUsec ?? 0)}</td>
               </tr>
             ))}
           </tbody>
@@ -288,7 +289,7 @@ function Stat({ name, value }: { name: string; value: string }) {
   );
 }
 
-function healthName(health: test_buddy.TestHealth) {
+function healthName(health = test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) {
   if (health === test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) return "NOT REPORTED";
   return test_buddy.TestHealth[health].replace("TEST_HEALTH_", "");
 }

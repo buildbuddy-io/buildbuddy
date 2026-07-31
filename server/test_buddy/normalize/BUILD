@@ -9,6 +9,7 @@ go_library(
         "//proto:test_buddy_go_proto",
         "//server/test_buddy/identity",
         "//server/util/status",
+        "@org_golang_google_protobuf//proto",
     ],
 )
 

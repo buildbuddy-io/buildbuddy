@@ -19,7 +19,6 @@ go_library(
         "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/status",
-        "//server/util/uuid",
         "@org_golang_google_grpc//metadata",
     ],
 )
