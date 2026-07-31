@@ -853,6 +853,22 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 		})
 	}
 
+	// Exempt guest traffic from destination NAT in the host's nat PREROUTING
+	// chain. Service proxies like kube-proxy install rules there that rewrite
+	// load balancer VIPs to backend pod IPs; a guest packet addressed to a
+	// public VIP would be rewritten to a private IP and then rejected by the
+	// private-range rules above. Guest traffic must leave the host addressed
+	// exactly as the guest sent it, like traffic from any external client.
+	// (ACCEPT only ends nat PREROUTING traversal; POSTROUTING masquerading
+	// still applies.)
+	natRule := []string{"-t", "nat", "-I", "PREROUTING", "-i", vp.hostDevice, "-j", "ACCEPT"}
+	if err := runCommand(ctx, append([]string{"iptables", "--wait"}, natRule...)...); err != nil {
+		return nil, err
+	}
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		return runCommand(ctx, "iptables", "--wait", "-t", "nat", "--delete", "PREROUTING", "-i", vp.hostDevice, "-j", "ACCEPT")
+	})
+
 	vp.Cleanup = cleanupStack.Cleanup
 	return vp, nil
 }
