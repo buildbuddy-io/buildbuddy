@@ -81,7 +81,11 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
                   <div className="title">Missing API Key</div>
                 </div>
                 <div className="details">
-                  <div>This invocation was missing a BuildBuddy API key. <TextLink href="https://www.buildbuddy.io/docs/guide-auth/">Configure an API key</TextLink> and try the invocation again.</div>
+                  <div>
+                    This invocation was missing a BuildBuddy API key.{" "}
+                    <TextLink href="https://www.buildbuddy.io/docs/guide-auth/">Configure an API key</TextLink> and try
+                    the invocation again.
+                  </div>
                 </div>
               </>
             )}

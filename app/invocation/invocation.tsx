@@ -287,9 +287,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           throw new BuildBuddyError("NotFound", "Invocation not found.");
         }
         const inv = response.invocation[0];
-        if (
-          inv.invocationStatus === invocation_status.InvocationStatus.MISSING_API_KEY_INVOCATION_STATUS
-        ) {
+        if (inv.invocationStatus === invocation_status.InvocationStatus.MISSING_API_KEY_INVOCATION_STATUS) {
           this.setState({ model: undefined, error: null, missingAPIKey: true, childInvocations: [] });
           return;
         }
