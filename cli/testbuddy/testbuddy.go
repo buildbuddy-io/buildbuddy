@@ -1,5 +1,5 @@
-// Package testhealth implements the test-report and get-tests CLI commands.
-package testhealth
+// Package testbuddy implements the test-report and get-tests CLI commands.
+package testbuddy
 
 import (
 	"bytes"
@@ -23,9 +23,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/identity"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/junit"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/junit"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -92,8 +92,8 @@ func HandleTestReport(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	results := make([]*thpb.ReportedTestCase, 0)
-	targets := make([]*thpb.ReportedTestTarget, 0, len(paths))
+	results := make([]*tbpb.ReportedTestCase, 0)
+	targets := make([]*tbpb.ReportedTestTarget, 0, len(paths))
 	diagnostics := 0
 	for _, path := range paths {
 		targetLabel := *reportTargetLabel
@@ -139,7 +139,7 @@ func HandleTestReport(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	rsp, err := thpb.NewTestBuddyServiceClient(conn).ReportTestResults(ctx, &thpb.ReportTestResultsRequest{
+	rsp, err := tbpb.NewTestBuddyServiceClient(conn).ReportTestResults(ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: repository, InvocationId: invocationID, Source: source,
 		TestCases: results, TestTargets: targets,
 	})
@@ -158,25 +158,25 @@ func HandleTestReport(args []string) (int, error) {
 	return 0, nil
 }
 
-func ResultsForReport(xmlPath, targetLabel string, report *junit.Report) (*thpb.ReportedTestTarget, []*thpb.ReportedTestCase, error) {
+func ResultsForReport(xmlPath, targetLabel string, report *junit.Report) (*tbpb.ReportedTestTarget, []*tbpb.ReportedTestCase, error) {
 	targetOutcome, err := BazelTargetOutcome(xmlPath)
 	if err != nil {
 		return nil, nil, err
 	}
-	target := &thpb.ReportedTestTarget{
+	target := &tbpb.ReportedTestTarget{
 		TargetLabel: targetLabel, Outcome: targetOutcome, DurationUsec: report.DurationUsec,
 	}
-	if targetOutcome == thpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
+	if targetOutcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
 		target.FailureMessage = "Bazel test target timed out"
 		return target, nil, nil
 	}
 	if report.UnattributedFailure {
-		target.Outcome = thpb.TestOutcome_TEST_OUTCOME_FAIL
+		target.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 		target.FailureMessage = "test target failed without an attributable test case"
 	}
-	testCases := make([]*thpb.ReportedTestCase, 0, len(report.Cases))
+	testCases := make([]*tbpb.ReportedTestCase, 0, len(report.Cases))
 	for _, testCase := range report.Cases {
-		testCases = append(testCases, &thpb.ReportedTestCase{
+		testCases = append(testCases, &tbpb.ReportedTestCase{
 			TargetLabel: testCase.TargetLabel, CaseName: testCase.CaseName,
 			Outcome: testCase.Outcome, DurationUsec: testCase.DurationUsec,
 			FailureMessage: testCase.FailureMessage,
@@ -185,34 +185,34 @@ func ResultsForReport(xmlPath, targetLabel string, report *junit.Report) (*thpb.
 	return target, testCases, nil
 }
 
-func BazelTargetOutcome(xmlPath string) (thpb.TestOutcome, error) {
+func BazelTargetOutcome(xmlPath string) (tbpb.TestOutcome, error) {
 	logPath := filepath.Join(filepath.Dir(xmlPath), "test.log")
 	file, err := os.Open(logPath)
 	if os.IsNotExist(err) {
-		return thpb.TestOutcome_TEST_OUTCOME_PASS, nil
+		return tbpb.TestOutcome_TEST_OUTCOME_PASS, nil
 	}
 	if err != nil {
-		return thpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
+		return tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
 	}
 	defer file.Close()
 	info, err := file.Stat()
 	if err != nil {
-		return thpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
+		return tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
 	}
 	const tailBytes = 64 << 10
 	if info.Size() > tailBytes {
 		if _, err := file.Seek(-tailBytes, io.SeekEnd); err != nil {
-			return thpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
+			return tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
 		}
 	}
 	tail, err := io.ReadAll(file)
 	if err != nil {
-		return thpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
+		return tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN, err
 	}
 	if bytes.Contains(tail, []byte("-- Test timed out at ")) {
-		return thpb.TestOutcome_TEST_OUTCOME_TIMEOUT, nil
+		return tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, nil
 	}
-	return thpb.TestOutcome_TEST_OUTCOME_PASS, nil
+	return tbpb.TestOutcome_TEST_OUTCOME_PASS, nil
 }
 
 func HandleGetTests(args []string) (int, error) {
@@ -247,14 +247,14 @@ func HandleGetTests(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	client := thpb.NewTestBuddyServiceClient(conn)
+	client := tbpb.NewTestBuddyServiceClient(conn)
 	if *getTargetLabel != "" || *getCaseName != "" {
 		if *getTargetLabel == "" || *getCaseName == "" {
 			return 1, status.InvalidArgumentError("--target_label and --case_name must be specified together")
 		}
-		rsp, err := client.GetTestCase(ctx, &thpb.GetTestCaseRequest{
-			Identity: &thpb.TestCaseIdentity{
-				Target:   &thpb.TestTargetIdentity{RepoUrl: repository, TargetLabel: *getTargetLabel},
+		rsp, err := client.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+			Identity: &tbpb.TestCaseIdentity{
+				Target:   &tbpb.TestTargetIdentity{RepoUrl: repository, TargetLabel: *getTargetLabel},
 				CaseName: *getCaseName,
 			},
 		})
@@ -287,7 +287,7 @@ func HandleGetTests(args []string) (int, error) {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	stream, err := client.GetTests(ctx, &thpb.GetTestsRequest{
+	stream, err := client.GetTests(ctx, &tbpb.GetTestsRequest{
 		RepoUrl: repository, PackagePrefix: *getPath,
 	})
 	if err != nil {
@@ -319,7 +319,7 @@ func HandleGetTests(args []string) (int, error) {
 	return 0, nil
 }
 
-func printSummary(test *thpb.TestSummary) {
+func printSummary(test *tbpb.TestSummary) {
 	fmt.Println("HEALTH\tPASS RATE\tMEAN\tTARGET\tCASE")
 	fmt.Printf("%s\t%.1f%%\t%s\t%s\t%s\n",
 		strings.TrimPrefix(test.GetHealth().String(), "TEST_HEALTH_"),
@@ -417,14 +417,14 @@ func repositoryURL(workspacePath, override string) (string, error) {
 	return repository, nil
 }
 
-func parseSource(value string) (thpb.ResultSource, error) {
+func parseSource(value string) (tbpb.ResultSource, error) {
 	switch strings.ToLower(value) {
 	case "presubmit":
-		return thpb.ResultSource_RESULT_SOURCE_PRESUBMIT, nil
+		return tbpb.ResultSource_RESULT_SOURCE_PRESUBMIT, nil
 	case "postsubmit":
-		return thpb.ResultSource_RESULT_SOURCE_POSTSUBMIT, nil
+		return tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT, nil
 	default:
-		return thpb.ResultSource_RESULT_SOURCE_UNKNOWN,
+		return tbpb.ResultSource_RESULT_SOURCE_UNKNOWN,
 			status.InvalidArgumentError("source must be presubmit or postsubmit")
 	}
 }

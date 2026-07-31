@@ -636,14 +636,14 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
-// Test Health catalog: the durable set of test targets and cases a group has
+// TestBuddy catalog: the durable set of test targets and cases a group has
 // reported, scoped by authenticated group. A catalog row is written once, when
 // the address is first cataloged, so Model.CreatedAtUsec is also when it was
 // first seen.
 //
 // # Keys are addresses
 //
-// Every Test Health table is keyed on the coordinates that identify the thing
+// Every TestBuddy table is keyed on the coordinates that identify the thing
 // it describes. A target is (group_id, repository, target_label); a case is
 // that plus case_name; package coverage uses the Bazel package path. A point
 // read is a primary-key probe, because a report already carries the address; a
@@ -658,7 +658,7 @@ func (ts *TargetStatus) TableName() string {
 //
 // # Why these columns are ascii_bin
 //
-// server/test_health/identity validates every address component as printable
+// server/test_buddy/identity validates every address component as printable
 // ASCII and caps a rendered address at 1,024 bytes, so these columns are ASCII
 // by construction. Declaring them so is what makes the composite keys
 // affordable: MySQL sizes an index key from the declared character set — one
@@ -668,7 +668,7 @@ func (ts *TargetStatus) TableName() string {
 // The declaration has to happen at CREATE TABLE. AutoMigrate emits a table's
 // indexes in the same statement as its columns, so a collation fixed in
 // PostAutoMigrate arrives after MySQL has already measured and refused the
-// key; see createTestHealthTables.
+// key; see createTestBuddyTables.
 //
 // Binary comparison is the other half, and matters independently of size.
 // MySQL's default collation is case- and accent-insensitive while SQLite and
@@ -807,7 +807,7 @@ func (*TestTargetStateChange) TableName() string { return "TestTargetStateChange
 
 const testHealthTableOptions = "ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin"
 
-func TestHealthTableNames() []string {
+func TestBuddyTableNames() []string {
 	names := make([]string, 0, len(testHealthTables()))
 	for _, table := range testHealthTables() {
 		names = append(names, table.TableName())
@@ -822,7 +822,7 @@ func testHealthTables() []Table {
 	}
 }
 
-func createTestHealthTables(db *gorm.DB) error {
+func createTestBuddyTables(db *gorm.DB) error {
 	for _, table := range testHealthTables() {
 		if db.Migrator().HasTable(table) {
 			continue
@@ -1229,7 +1229,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 
 	m := db.Migrator()
 
-	// Test Health tables must exist with an ASCII character set before
+	// TestBuddy tables must exist with an ASCII character set before
 	// AutoMigrate would create them with the schema default, because
 	// AutoMigrate declares a table's indexes in the same statement as its
 	// columns and MySQL measures a utf8mb4 key at four bytes per character.
@@ -1237,7 +1237,7 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	// either fails outright (ERROR 1071) or silently mangles addresses, and
 	// both are worse than refusing to start.
 	if db.Dialector.Name() == mysqlDialect {
-		if err := createTestHealthTables(db); err != nil {
+		if err := createTestBuddyTables(db); err != nil {
 			return nil, err
 		}
 	}

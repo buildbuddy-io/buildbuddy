@@ -1,4 +1,4 @@
-// Package identity validates Test Health target and case addresses.
+// Package identity validates TestBuddy target and case addresses.
 package identity
 
 import (
@@ -9,7 +9,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
@@ -156,25 +156,25 @@ func ValidateTargetAddress(address TargetAddress) error {
 	return checkAddressLength(address.String())
 }
 
-func (id *Identity) Proto() *thpb.TestCaseIdentity { return CaseProto(id.Address) }
+func (id *Identity) Proto() *tbpb.TestCaseIdentity { return CaseProto(id.Address) }
 
-func (t *TargetIdentity) Proto() *thpb.TestTargetIdentity { return TargetProto(t.Address) }
+func (t *TargetIdentity) Proto() *tbpb.TestTargetIdentity { return TargetProto(t.Address) }
 
-func CaseProto(address CaseAddress) *thpb.TestCaseIdentity {
-	return &thpb.TestCaseIdentity{
+func CaseProto(address CaseAddress) *tbpb.TestCaseIdentity {
+	return &tbpb.TestCaseIdentity{
 		Target:   TargetProto(address.Target()),
 		CaseName: address.CaseName,
 	}
 }
 
-func TargetProto(address TargetAddress) *thpb.TestTargetIdentity {
-	return &thpb.TestTargetIdentity{
+func TargetProto(address TargetAddress) *tbpb.TestTargetIdentity {
+	return &tbpb.TestTargetIdentity{
 		RepoUrl:     address.Repository,
 		TargetLabel: address.TargetLabel,
 	}
 }
 
-func CaseAddressFromProto(in *thpb.TestCaseIdentity) CaseAddress {
+func CaseAddressFromProto(in *tbpb.TestCaseIdentity) CaseAddress {
 	return CaseAddress{
 		Repository:  in.GetTarget().GetRepoUrl(),
 		TargetLabel: in.GetTarget().GetTargetLabel(),
@@ -352,7 +352,7 @@ func ValidatePrintableASCII(name, value string, maxBytes int) error {
 	for i := 0; i < len(value); i++ {
 		if c := value[i]; c < 0x20 || c > 0x7e {
 			return status.InvalidArgumentErrorf(
-				"%s must be printable ASCII for Test Health storage; byte %d is %#02x", name, i, c)
+				"%s must be printable ASCII for TestBuddy storage; byte %d is %#02x", name, i, c)
 		}
 	}
 	return nil

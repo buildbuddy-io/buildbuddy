@@ -1,16 +1,16 @@
-package testhealth_test
+package testbuddy_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/junit"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/normalize"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/junit"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/normalize"
 	"github.com/stretchr/testify/require"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/testhealth"
+	"github.com/buildbuddy-io/buildbuddy/cli/testbuddy"
 )
 
 func TestTargetLabelFromXMLPath(t *testing.T) {
@@ -40,7 +40,7 @@ func TestTargetLabelFromXMLPath(t *testing.T) {
 		},
 	} {
 		t.Run(test.path, func(t *testing.T) {
-			label, err := testhealth.TargetLabelFromXMLPath("/workspace", test.path)
+			label, err := testbuddy.TargetLabelFromXMLPath("/workspace", test.path)
 			require.NoError(t, err)
 			require.Equal(t, test.label, label)
 		})
@@ -52,35 +52,35 @@ func TestBazelTargetOutcome(t *testing.T) {
 	xmlPath := filepath.Join(dir, "test.xml")
 	require.NoError(t, os.WriteFile(xmlPath, []byte("<testsuite/>"), 0o644))
 
-	outcome, err := testhealth.BazelTargetOutcome(xmlPath)
+	outcome, err := testbuddy.BazelTargetOutcome(xmlPath)
 	require.NoError(t, err)
-	require.Equal(t, thpb.TestOutcome_TEST_OUTCOME_PASS, outcome)
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_PASS, outcome)
 
 	require.NoError(t, os.WriteFile(
 		filepath.Join(dir, "test.log"),
 		[]byte("test output\n-- Test timed out at 2026-07-30 12:00:00 UTC --\n"),
 		0o644))
-	outcome, err = testhealth.BazelTargetOutcome(xmlPath)
+	outcome, err = testbuddy.BazelTargetOutcome(xmlPath)
 	require.NoError(t, err)
-	require.Equal(t, thpb.TestOutcome_TEST_OUTCOME_TIMEOUT, outcome)
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, outcome)
 
-	target, cases, err := testhealth.ResultsForReport(xmlPath, "//pkg:timeout_test", &junit.Report{
+	target, cases, err := testbuddy.ResultsForReport(xmlPath, "//pkg:timeout_test", &junit.Report{
 		DurationUsec: 1_000_000,
 		Cases: []normalize.CaseRecord{{
 			TargetLabel: "//pkg:timeout_test", CaseName: "TestTimeout",
-			Outcome: thpb.TestOutcome_TEST_OUTCOME_FAIL,
+			Outcome: tbpb.TestOutcome_TEST_OUTCOME_FAIL,
 		}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, thpb.TestOutcome_TEST_OUTCOME_TIMEOUT, target.GetOutcome())
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, target.GetOutcome())
 	require.Equal(t, int64(1_000_000), target.GetDurationUsec())
 	require.Empty(t, cases)
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "test.log")))
-	target, cases, err = testhealth.ResultsForReport(xmlPath, "//pkg:harness_test", &junit.Report{
+	target, cases, err = testbuddy.ResultsForReport(xmlPath, "//pkg:harness_test", &junit.Report{
 		UnattributedFailure: true,
 	})
 	require.NoError(t, err)
-	require.Equal(t, thpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetOutcome())
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetOutcome())
 	require.Empty(t, cases)
 }

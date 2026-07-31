@@ -11,7 +11,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//app/auth:auth_service",
-        "//enterprise/app/tap:test_health",
+        "//enterprise/app/tap:test_buddy",
     ],
 )
 
@@ -103,8 +103,8 @@ ts_library(
 )
 
 ts_library(
-    name = "test_health",
-    srcs = ["test_health.tsx"],
+    name = "test_buddy",
+    srcs = ["test_buddy.tsx"],
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -112,6 +112,6 @@ ts_library(
         "//app/errors:error_service",
         "//app/format",
         "//app/service:rpc_service",
-        "//proto:test_health_ts_proto",
+        "//proto:test_buddy_ts_proto",
     ],
 )

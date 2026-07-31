@@ -1,8 +1,8 @@
-// Package config defines Test Health analyzer configuration.
+// Package config defines TestBuddy analyzer configuration.
 package config
 
 import (
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -11,15 +11,15 @@ const (
 	maxWindowSize = 100
 )
 
-func Default() *thpb.TestAnalyzerConfig {
-	return &thpb.TestAnalyzerConfig{
+func Default() *tbpb.TestAnalyzerConfig {
+	return &tbpb.TestAnalyzerConfig{
 		WindowSize:             50,
 		FailureThreshold:       1,
 		TargetTimeoutThreshold: 5,
 	}
 }
 
-func Validate(cfg *thpb.TestAnalyzerConfig) error {
+func Validate(cfg *tbpb.TestAnalyzerConfig) error {
 	if cfg == nil {
 		return status.InvalidArgumentError("analyzer configuration is required")
 	}

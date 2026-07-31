@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-func TestHealthTablesUseNaturalAddressKeys(t *testing.T) {
+func TestBuddyTablesUseNaturalAddressKeys(t *testing.T) {
 	for _, test := range []struct {
 		table any
 		want  []string
@@ -40,7 +40,7 @@ func TestHealthTablesUseNaturalAddressKeys(t *testing.T) {
 	}
 }
 
-func TestHealthTableNames(t *testing.T) {
+func TestBuddyTableNames(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"TestRepositoryCatalogs",
 		"TestTargets",
@@ -51,10 +51,10 @@ func TestHealthTableNames(t *testing.T) {
 		"TestTargetStates",
 		"TestCaseStateChanges",
 		"TestTargetStateChanges",
-	}, tables.TestHealthTableNames())
+	}, tables.TestBuddyTableNames())
 }
 
-func TestHealthAddressColumnsAreASCIIOnMySQL(t *testing.T) {
+func TestBuddyAddressColumnsAreASCIIOnMySQL(t *testing.T) {
 	ctx := context.Background()
 	dbh := testenv.GetTestEnv(t).GetDBHandle()
 	if dbh.DialectName() != "mysql" {
@@ -68,7 +68,7 @@ func TestHealthAddressColumnsAreASCIIOnMySQL(t *testing.T) {
 		InKey     int    `gorm:"column:in_key"`
 	}
 	var columns []column
-	require.NoError(t, dbh.GORM(ctx, "test_health_column_charsets").Raw(`
+	require.NoError(t, dbh.GORM(ctx, "test_buddy_column_charsets").Raw(`
 		SELECT c.table_name AS table_name,
 		       c.column_name AS column_name,
 		       c.character_set_name AS character_set_name,
@@ -83,7 +83,7 @@ func TestHealthAddressColumnsAreASCIIOnMySQL(t *testing.T) {
 		 WHERE c.table_schema = DATABASE()
 		   AND c.table_name IN ?
 		   AND c.character_set_name IS NOT NULL`,
-		tables.TestHealthTableNames()).Scan(&columns).Error)
+		tables.TestBuddyTableNames()).Scan(&columns).Error)
 	require.NotEmpty(t, columns)
 	for _, column := range columns {
 		if column.InKey != 0 {

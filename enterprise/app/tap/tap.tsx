@@ -1,6 +1,6 @@
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
-import TestHealthComponent from "./test_health";
+import TestBuddyComponent from "./test_buddy";
 
 interface Props {
   user: User;
@@ -15,6 +15,6 @@ export default class TapComponent extends React.Component<Props> {
   }
 
   render() {
-    return <TestHealthComponent repo="https://github.com/buildbuddy-io/buildbuddy" />;
+    return <TestBuddyComponent repo="https://github.com/buildbuddy-io/buildbuddy" />;
   }
 }

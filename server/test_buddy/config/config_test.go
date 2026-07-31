@@ -3,8 +3,8 @@ package config_test
 import (
 	"testing"
 
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/config"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,17 +19,17 @@ func TestDefault(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	assert.Error(t, config.Validate(nil))
-	assert.Error(t, config.Validate(&thpb.TestAnalyzerConfig{}))
-	assert.Error(t, config.Validate(&thpb.TestAnalyzerConfig{
+	assert.Error(t, config.Validate(&tbpb.TestAnalyzerConfig{}))
+	assert.Error(t, config.Validate(&tbpb.TestAnalyzerConfig{
 		WindowSize: 49, FailureThreshold: 1, TargetTimeoutThreshold: 5,
 	}))
-	assert.Error(t, config.Validate(&thpb.TestAnalyzerConfig{
+	assert.Error(t, config.Validate(&tbpb.TestAnalyzerConfig{
 		WindowSize: 101, FailureThreshold: 1, TargetTimeoutThreshold: 5,
 	}))
-	assert.Error(t, config.Validate(&thpb.TestAnalyzerConfig{
+	assert.Error(t, config.Validate(&tbpb.TestAnalyzerConfig{
 		WindowSize: 50, FailureThreshold: 51, TargetTimeoutThreshold: 5,
 	}))
-	assert.Error(t, config.Validate(&thpb.TestAnalyzerConfig{
+	assert.Error(t, config.Validate(&tbpb.TestAnalyzerConfig{
 		WindowSize: 50, FailureThreshold: 1, TargetTimeoutThreshold: 51,
 	}))
 }

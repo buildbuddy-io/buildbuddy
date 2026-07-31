@@ -37,7 +37,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -55,7 +55,7 @@ var (
 	apiHTTPPrefix           = "/api/v1/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
 	testBuddyHTTPPrefix     = "/rpc/TestBuddyService/"
-	testBuddyServicePrefix  = "/" + thpb.TestBuddyService_ServiceDesc.ServiceName + "/"
+	testBuddyServicePrefix  = "/" + tbpb.TestBuddyService_ServiceDesc.ServiceName + "/"
 )
 
 func getContentSecurityPolicyHeaderValue(nonce string) string {

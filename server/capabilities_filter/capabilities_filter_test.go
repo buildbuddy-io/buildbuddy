@@ -16,13 +16,13 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 )
 
 var (
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
-	testBuddyServicePrefix  = "/" + thpb.TestBuddyService_ServiceDesc.ServiceName + "/"
+	testBuddyServicePrefix  = "/" + tbpb.TestBuddyService_ServiceDesc.ServiceName + "/"
 )
 
 func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
@@ -35,7 +35,7 @@ func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 	for i := 0; i < apiServiceType.NumMethod(); i++ {
 		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+apiServiceType.Method(i).Name)
 	}
-	testBuddyServiceType := reflect.TypeOf((*thpb.TestBuddyServiceServer)(nil)).Elem()
+	testBuddyServiceType := reflect.TypeOf((*tbpb.TestBuddyServiceServer)(nil)).Elem()
 	for i := 0; i < testBuddyServiceType.NumMethod(); i++ {
 		serviceMethodNames = append(serviceMethodNames, testBuddyServicePrefix+testBuddyServiceType.Method(i).Name)
 	}

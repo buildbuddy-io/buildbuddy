@@ -14,7 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
-	testhealth "github.com/buildbuddy-io/buildbuddy/server/test_health"
+	testbuddy "github.com/buildbuddy-io/buildbuddy/server/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -75,7 +75,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err.Error())
 		}
-		testhealth.RegisterLocal(env, server.GetServer())
+		testbuddy.RegisterLocal(env, server.GetServer())
 		if err := server.Start(); err != nil {
 			log.Fatal(err.Error())
 		}

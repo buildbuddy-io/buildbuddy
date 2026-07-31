@@ -15,7 +15,7 @@ go_library(
         "//server/nullauth",
         "//server/real_environment",
         "//server/ssl",
-        "//server/test_health",
+        "//server/test_buddy",
         "//server/util/db",
         "//server/util/grpc_server",
         "//server/util/healthcheck",

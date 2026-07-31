@@ -24,7 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh_server"
-	"github.com/buildbuddy-io/buildbuddy/cli/testhealth"
+	"github.com/buildbuddy-io/buildbuddy/cli/testbuddy"
 	"github.com/buildbuddy-io/buildbuddy/cli/ui"
 	"github.com/buildbuddy-io/buildbuddy/cli/update"
 	"github.com/buildbuddy-io/buildbuddy/cli/upload"
@@ -101,8 +101,8 @@ func register() {
 		{
 			Name:    "get-tests",
 			Help:    "Lists reported tests and their health.",
-			Handler: testhealth.HandleGetTests,
-			Flags:   testhealth.GetTestsFlags,
+			Handler: testbuddy.HandleGetTests,
+			Flags:   testbuddy.GetTestsFlags,
 		},
 		// Handle 'help' command separately to avoid circular dependency with `cli_command`
 		// package
@@ -168,8 +168,8 @@ func register() {
 		{
 			Name:    "test-report",
 			Help:    "Reports Bazel test.xml results to BuildBuddy.",
-			Handler: testhealth.HandleTestReport,
-			Flags:   testhealth.TestReportFlags,
+			Handler: testbuddy.HandleTestReport,
+			Flags:   testbuddy.TestReportFlags,
 		},
 		{
 			Name:    "index",

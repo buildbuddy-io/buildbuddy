@@ -1,20 +1,20 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "test_health",
-    srcs = ["test_health.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/test_health",
+    name = "test_buddy",
+    srcs = ["test_buddy.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/test_buddy",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:test_health_go_proto",
+        "//proto:test_buddy_go_proto",
         "//server/environment",
         "//server/interfaces",
         "//server/real_environment",
         "//server/tables",
-        "//server/test_health/analyzer",
-        "//server/test_health/config",
-        "//server/test_health/identity",
-        "//server/test_health/normalize",
+        "//server/test_buddy/analyzer",
+        "//server/test_buddy/config",
+        "//server/test_buddy/identity",
+        "//server/test_buddy/normalize",
         "//server/util/authutil",
         "//server/util/db",
         "//server/util/flag",
@@ -30,12 +30,12 @@ go_library(
 )
 
 go_test(
-    name = "test_health_test",
-    srcs = ["test_health_test.go"],
+    name = "test_buddy_test",
+    srcs = ["test_buddy_test.go"],
     deps = [
-        ":test_health",
+        ":test_buddy",
         "//proto:context_go_proto",
-        "//proto:test_health_go_proto",
+        "//proto:test_buddy_go_proto",
         "//server/http/interceptors",
         "//server/http/protolet",
         "//server/testutil/testauth",
@@ -51,8 +51,8 @@ go_test(
 )
 
 go_test(
-    name = "test_health_test_mysql",
-    srcs = ["test_health_test.go"],
+    name = "test_buddy_test_mysql",
+    srcs = ["test_buddy_test.go"],
     args = [
         "--testenv.database_type=mysql",
         "--testenv.reuse_server",
@@ -65,9 +65,9 @@ go_test(
     },
     tags = ["docker"],
     deps = [
-        ":test_health",
+        ":test_buddy",
         "//proto:context_go_proto",
-        "//proto:test_health_go_proto",
+        "//proto:test_buddy_go_proto",
         "//server/http/interceptors",
         "//server/http/protolet",
         "//server/testutil/testauth",

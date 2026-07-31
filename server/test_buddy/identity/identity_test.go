@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/identity"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

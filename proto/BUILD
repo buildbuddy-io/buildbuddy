@@ -827,8 +827,8 @@ proto_library(
 )
 
 proto_library(
-    name = "test_health_proto",
-    srcs = ["test_health.proto"],
+    name = "test_buddy_proto",
+    srcs = ["test_buddy.proto"],
     deps = [
         ":context_proto",
     ],
@@ -1790,10 +1790,10 @@ go_proto_library(
 )
 
 go_proto_library(
-    name = "test_health_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/test_health",
+    name = "test_buddy_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/test_buddy",
     mode = "messages_and_services",
-    proto = ":test_health_proto",
+    proto = ":test_buddy_proto",
     deps = [
         ":context_go_proto",
     ],
@@ -2360,8 +2360,8 @@ ts_proto_library(
 )
 
 ts_proto_library(
-    name = "test_health_ts_proto",
-    proto = ":test_health_proto",
+    name = "test_buddy_ts_proto",
+    proto = ":test_buddy_proto",
     deps = [
         ":context_ts_proto",
     ],

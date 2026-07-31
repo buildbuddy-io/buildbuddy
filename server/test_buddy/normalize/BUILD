@@ -3,11 +3,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "normalize",
     srcs = ["normalize.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/server/test_health/normalize",
+    importpath = "github.com/buildbuddy-io/buildbuddy/server/test_buddy/normalize",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:test_health_go_proto",
-        "//server/test_health/identity",
+        "//proto:test_buddy_go_proto",
+        "//server/test_buddy/identity",
         "//server/util/status",
     ],
 )
@@ -17,7 +17,7 @@ go_test(
     srcs = ["normalize_test.go"],
     deps = [
         ":normalize",
-        "//proto:test_health_go_proto",
+        "//proto:test_buddy_go_proto",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

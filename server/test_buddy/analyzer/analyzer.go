@@ -2,14 +2,14 @@
 package analyzer
 
 import (
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/config"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/config"
 )
 
 type Sample struct {
 	InvocationID string
-	Outcome      thpb.TestOutcome
-	Source       thpb.ResultSource
+	Outcome      tbpb.TestOutcome
+	Source       tbpb.ResultSource
 }
 
 type Reason string
@@ -35,20 +35,20 @@ type Evidence struct {
 }
 
 type Result struct {
-	Health   thpb.TestHealth
+	Health   tbpb.TestHealth
 	Reason   Reason
 	Evidence Evidence
 }
 
-func Linear(samples []Sample, cfg *thpb.TestAnalyzerConfig) (Result, error) {
+func Linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig) (Result, error) {
 	return linear(samples, cfg, false)
 }
 
-func LinearTarget(samples []Sample, cfg *thpb.TestAnalyzerConfig) (Result, error) {
+func LinearTarget(samples []Sample, cfg *tbpb.TestAnalyzerConfig) (Result, error) {
 	return linear(samples, cfg, true)
 }
 
-func linear(samples []Sample, cfg *thpb.TestAnalyzerConfig, target bool) (Result, error) {
+func linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig, target bool) (Result, error) {
 	if err := config.Validate(cfg); err != nil {
 		return Result{}, err
 	}
@@ -69,35 +69,35 @@ func linear(samples []Sample, cfg *thpb.TestAnalyzerConfig, target bool) (Result
 	result := Result{Evidence: evidence}
 	switch {
 	case len(eligible) == 0:
-		result.Health = thpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA
+		result.Health = tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA
 		result.Reason = ReasonNoEligibleSamples
 	case !target && evidence.Failures >= int(cfg.GetFailureThreshold()):
-		result.Health = thpb.TestHealth_TEST_HEALTH_FLAKY
+		result.Health = tbpb.TestHealth_TEST_HEALTH_FLAKY
 		result.Reason = ReasonFailuresInWindow
 	case target && evidence.Failures-evidence.Timeouts >= int(cfg.GetFailureThreshold()):
-		result.Health = thpb.TestHealth_TEST_HEALTH_FLAKY
+		result.Health = tbpb.TestHealth_TEST_HEALTH_FLAKY
 		result.Reason = ReasonFailuresInWindow
 	case target && evidence.Timeouts >= int(cfg.GetTargetTimeoutThreshold()):
-		result.Health = thpb.TestHealth_TEST_HEALTH_TIMEOUT
+		result.Health = tbpb.TestHealth_TEST_HEALTH_TIMEOUT
 		result.Reason = ReasonTimeoutsInWindow
 	case evidence.ConsecutivePasses >= min(3, int(cfg.GetWindowSize())):
-		result.Health = thpb.TestHealth_TEST_HEALTH_HEALTHY
+		result.Health = tbpb.TestHealth_TEST_HEALTH_HEALTHY
 		result.Reason = ReasonConsecutivePasses
 	default:
-		result.Health = thpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA
+		result.Health = tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA
 		result.Reason = ReasonUncertain
 	}
 	return result, nil
 }
 
 func Eligible(sample Sample) bool {
-	if sample.Source != thpb.ResultSource_RESULT_SOURCE_PRESUBMIT && sample.Source != thpb.ResultSource_RESULT_SOURCE_POSTSUBMIT {
+	if sample.Source != tbpb.ResultSource_RESULT_SOURCE_PRESUBMIT && sample.Source != tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT {
 		return false
 	}
 	switch sample.Outcome {
-	case thpb.TestOutcome_TEST_OUTCOME_PASS,
-		thpb.TestOutcome_TEST_OUTCOME_FAIL,
-		thpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
+	case tbpb.TestOutcome_TEST_OUTCOME_PASS,
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+		tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
 		return true
 	default:
 		return false
@@ -113,19 +113,19 @@ func summarize(samples []Sample) Evidence {
 	evidence.LastInvocationID = samples[len(samples)-1].InvocationID
 	for _, sample := range samples {
 		switch sample.Outcome {
-		case thpb.TestOutcome_TEST_OUTCOME_PASS:
+		case tbpb.TestOutcome_TEST_OUTCOME_PASS:
 			evidence.Passes++
-		case thpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
+		case tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
 			evidence.Timeouts++
 			evidence.Failures++
 		default:
 			evidence.Failures++
 		}
 	}
-	for i := len(samples) - 1; i >= 0 && samples[i].Outcome == thpb.TestOutcome_TEST_OUTCOME_PASS; i-- {
+	for i := len(samples) - 1; i >= 0 && samples[i].Outcome == tbpb.TestOutcome_TEST_OUTCOME_PASS; i-- {
 		evidence.ConsecutivePasses++
 	}
-	for i := len(samples) - 1; i >= 0 && samples[i].Outcome != thpb.TestOutcome_TEST_OUTCOME_PASS; i-- {
+	for i := len(samples) - 1; i >= 0 && samples[i].Outcome != tbpb.TestOutcome_TEST_OUTCOME_PASS; i-- {
 		evidence.ConsecutiveFailures++
 	}
 	return evidence

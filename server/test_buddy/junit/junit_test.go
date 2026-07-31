@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/junit"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/junit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,13 +28,13 @@ func TestParse(t *testing.T) {
   <testcase name="skip" classname="pkg.C"><skipped/></testcase>
 </testsuite>`)
 	require.Len(t, report.Cases, 5)
-	assert.Equal(t, []thpb.TestOutcome{
-		thpb.TestOutcome_TEST_OUTCOME_PASS,
-		thpb.TestOutcome_TEST_OUTCOME_FAIL,
-		thpb.TestOutcome_TEST_OUTCOME_FAIL,
-		thpb.TestOutcome_TEST_OUTCOME_TIMEOUT,
-		thpb.TestOutcome_TEST_OUTCOME_UNKNOWN,
-	}, []thpb.TestOutcome{
+	assert.Equal(t, []tbpb.TestOutcome{
+		tbpb.TestOutcome_TEST_OUTCOME_PASS,
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+		tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT,
+		tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN,
+	}, []tbpb.TestOutcome{
 		report.Cases[0].Outcome, report.Cases[1].Outcome, report.Cases[2].Outcome,
 		report.Cases[3].Outcome, report.Cases[4].Outcome,
 	})

@@ -3,9 +3,9 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
-    name = "testhealth",
-    srcs = ["testhealth.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/cli/testhealth",
+    name = "testbuddy",
+    srcs = ["testbuddy.go"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/cli/testbuddy",
     visibility = ["//visibility:public"],
     deps = [
         "//cli/arg",
@@ -13,9 +13,9 @@ go_library(
         "//cli/log",
         "//cli/login",
         "//cli/workspace",
-        "//proto:test_health_go_proto",
-        "//server/test_health/identity",
-        "//server/test_health/junit",
+        "//proto:test_buddy_go_proto",
+        "//server/test_buddy/identity",
+        "//server/test_buddy/junit",
         "//server/util/git",
         "//server/util/grpc_client",
         "//server/util/status",
@@ -25,13 +25,13 @@ go_library(
 )
 
 go_test(
-    name = "testhealth_test",
-    srcs = ["testhealth_test.go"],
+    name = "testbuddy_test",
+    srcs = ["testbuddy_test.go"],
     deps = [
-        ":testhealth",
-        "//proto:test_health_go_proto",
-        "//server/test_health/junit",
-        "//server/test_health/normalize",
+        ":testbuddy",
+        "//proto:test_buddy_go_proto",
+        "//server/test_buddy/junit",
+        "//server/test_buddy/normalize",
         "@com_github_stretchr_testify//require",
     ],
 )

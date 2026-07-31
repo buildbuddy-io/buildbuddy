@@ -3,7 +3,7 @@ import errorService from "../../../app/errors/error_service";
 import format from "../../../app/format/format";
 import rpcService from "../../../app/service/rpc_service";
 import type { Cancelable } from "../../../app/service/rpc_service";
-import { test_health } from "../../../proto/test_health_ts_proto";
+import { test_buddy } from "../../../proto/test_buddy_ts_proto";
 
 interface Props {
   repo: string;
@@ -11,15 +11,15 @@ interface Props {
 
 interface State {
   packagePrefix: string;
-  repository?: test_health.GetRepositoryHealthResponse;
-  targets: test_health.TestTargetSummary[];
-  selected?: test_health.GetTestTargetResponse;
-  selectedCases: test_health.TestSummary[];
+  repository?: test_buddy.GetRepositoryHealthResponse;
+  targets: test_buddy.TestTargetSummary[];
+  selected?: test_buddy.GetTestTargetResponse;
+  selectedCases: test_buddy.TestSummary[];
   loading: boolean;
   loadingCases: boolean;
 }
 
-export default class TestHealthComponent extends React.Component<Props, State> {
+export default class TestBuddyComponent extends React.Component<Props, State> {
   private targetsStream?: Cancelable;
   private casesStream?: Cancelable;
 
@@ -43,7 +43,7 @@ export default class TestHealthComponent extends React.Component<Props, State> {
 
   private loadRepository() {
     rpcService.testBuddyService
-      .getRepositoryHealth(test_health.GetRepositoryHealthRequest.create({ repoUrl: this.props.repo }))
+      .getRepositoryHealth(test_buddy.GetRepositoryHealthRequest.create({ repoUrl: this.props.repo }))
       .then((repository) => this.setState({ repository }))
       .catch((error) => errorService.handleError(error));
   }
@@ -53,7 +53,7 @@ export default class TestHealthComponent extends React.Component<Props, State> {
     this.casesStream?.cancel();
     this.setState({ loading: true, targets: [], selected: undefined, selectedCases: [], loadingCases: false });
     this.targetsStream = rpcService.testBuddyService.getTestTargets(
-      test_health.GetTestTargetsRequest.create({
+      test_buddy.GetTestTargetsRequest.create({
         repoUrl: this.props.repo,
         packagePrefix: this.state.packagePrefix,
       }),
@@ -68,11 +68,11 @@ export default class TestHealthComponent extends React.Component<Props, State> {
     );
   }
 
-  private loadCases(target: test_health.TestTargetIdentity) {
+  private loadCases(target: test_buddy.TestTargetIdentity) {
     this.casesStream?.cancel();
     this.setState({ selectedCases: [], loadingCases: true });
     this.casesStream = rpcService.testBuddyService.getTests(
-      test_health.GetTestsRequest.create({
+      test_buddy.GetTestsRequest.create({
         repoUrl: this.props.repo,
         targetLabel: target.targetLabel,
       }),
@@ -87,12 +87,12 @@ export default class TestHealthComponent extends React.Component<Props, State> {
     );
   }
 
-  private selectTarget(target: test_health.TestTargetSummary) {
+  private selectTarget(target: test_buddy.TestTargetSummary) {
     const identity = target.identity;
     if (!identity) return;
     this.casesStream?.cancel();
     rpcService.testBuddyService
-      .getTestTarget(test_health.GetTestTargetRequest.create({ identity }))
+      .getTestTarget(test_buddy.GetTestTargetRequest.create({ identity }))
       .then((selected) => {
         this.setState({ selected });
         this.loadCases(identity);
@@ -108,12 +108,12 @@ export default class TestHealthComponent extends React.Component<Props, State> {
     this.setState({ selected: undefined, selectedCases: [], loadingCases: false });
   }
 
-  private renderSummary(name: string, summary?: test_health.TestHealthSummary) {
+  private renderSummary(name: string, summary?: test_buddy.TestHealthSummary) {
     if (!summary) return null;
     return (
-      <div className="test-health-summary">
+      <div className="test-buddy-summary">
         <h3>{name}</h3>
-        <div className="test-health-stats">
+        <div className="test-buddy-stats">
           <Stat name="Total" value={summary.totalCount.toString()} />
           <Stat name="Flaky" value={summary.flakyCount.toString()} />
           <Stat name="Timed out" value={summary.timedOutCount.toString()} />
@@ -132,12 +132,12 @@ export default class TestHealthComponent extends React.Component<Props, State> {
     const target = response?.target;
     if (!response || !target) return null;
     return (
-      <section className="test-health-target-detail">
-        <button className="test-health-back" onClick={() => this.clearTarget()}>
+      <section className="test-buddy-target-detail">
+        <button className="test-buddy-back" onClick={() => this.clearTarget()}>
           Back to targets
         </button>
         <h2>{target.identity?.targetLabel}</h2>
-        <div className="test-health-stats">
+        <div className="test-buddy-stats">
           <Stat name="Health" value={healthName(target.health)} />
           <Stat name="Pass rate" value={percent(target.passRate)} />
           <Stat name="Mean duration" value={format.durationUsec(target.meanDurationUsec)} />
@@ -146,7 +146,7 @@ export default class TestHealthComponent extends React.Component<Props, State> {
           <Stat name="Timeouts" value={target.timeoutCount.toString()} />
         </div>
         <h3>Cases</h3>
-        <table className="test-health-table">
+        <table className="test-buddy-table">
           <thead>
             <tr>
               <th>Case</th>
@@ -172,12 +172,12 @@ export default class TestHealthComponent extends React.Component<Props, State> {
             ))}
           </tbody>
         </table>
-        {this.state.loadingCases && <div className="test-health-empty">Loading cases…</div>}
+        {this.state.loadingCases && <div className="test-buddy-empty">Loading cases…</div>}
         {!this.state.loadingCases && this.state.selectedCases.length === 0 && (
-          <div className="test-health-empty">No cases found.</div>
+          <div className="test-buddy-empty">No cases found.</div>
         )}
         <h3>Recent target results</h3>
-        <table className="test-health-table">
+        <table className="test-buddy-table">
           <thead>
             <tr>
               <th>Invocation</th>
@@ -200,7 +200,7 @@ export default class TestHealthComponent extends React.Component<Props, State> {
           </tbody>
         </table>
         <h3>State changes</h3>
-        <table className="test-health-table">
+        <table className="test-buddy-table">
           <thead>
             <tr>
               <th>Time</th>
@@ -223,30 +223,30 @@ export default class TestHealthComponent extends React.Component<Props, State> {
   }
 
   render() {
-    if (this.state.selected) return <div className="container test-health">{this.renderTarget()}</div>;
+    if (this.state.selected) return <div className="container test-buddy">{this.renderTarget()}</div>;
     return (
-      <div className="container test-health">
+      <div className="container test-buddy">
         <h1>TestBuddy</h1>
-        <div className="test-health-repo">{this.props.repo}</div>
-        <div className="test-health-repository-summaries">
+        <div className="test-buddy-repo">{this.props.repo}</div>
+        <div className="test-buddy-repository-summaries">
           {this.renderSummary("Targets", this.state.repository?.targets)}
           {this.renderSummary("Cases", this.state.repository?.cases)}
         </div>
         <form
-          className="test-health-search"
+          className="test-buddy-search"
           onSubmit={(event) => {
             event.preventDefault();
             this.loadTargets();
           }}>
           <input
             aria-label="Bazel package"
-            placeholder="Package or directory, for example server/test_health"
+            placeholder="Package or directory, for example server/test_buddy"
             value={this.state.packagePrefix}
             onChange={(event) => this.setState({ packagePrefix: event.target.value })}
           />
           <button type="submit">Search</button>
         </form>
-        <table className="test-health-table">
+        <table className="test-buddy-table">
           <thead>
             <tr>
               <th>Target</th>
@@ -259,7 +259,7 @@ export default class TestHealthComponent extends React.Component<Props, State> {
             {this.state.targets.map((target) => (
               <tr key={target.identity?.targetLabel}>
                 <td>
-                  <button className="test-health-target-link" onClick={() => this.selectTarget(target)}>
+                  <button className="test-buddy-target-link" onClick={() => this.selectTarget(target)}>
                     {target.identity?.targetLabel}
                   </button>
                 </td>
@@ -270,9 +270,9 @@ export default class TestHealthComponent extends React.Component<Props, State> {
             ))}
           </tbody>
         </table>
-        {this.state.loading && <div className="test-health-empty">Loading targets…</div>}
+        {this.state.loading && <div className="test-buddy-empty">Loading targets…</div>}
         {!this.state.loading && this.state.targets.length === 0 && (
-          <div className="test-health-empty">No targets found.</div>
+          <div className="test-buddy-empty">No targets found.</div>
         )}
       </div>
     );
@@ -281,20 +281,20 @@ export default class TestHealthComponent extends React.Component<Props, State> {
 
 function Stat({ name, value }: { name: string; value: string }) {
   return (
-    <div className="test-health-stat">
+    <div className="test-buddy-stat">
       <div>{name}</div>
       <strong>{value}</strong>
     </div>
   );
 }
 
-function healthName(health: test_health.TestHealth) {
-  if (health === test_health.TestHealth.TEST_HEALTH_UNKNOWN) return "NOT REPORTED";
-  return test_health.TestHealth[health].replace("TEST_HEALTH_", "");
+function healthName(health: test_buddy.TestHealth) {
+  if (health === test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) return "NOT REPORTED";
+  return test_buddy.TestHealth[health].replace("TEST_HEALTH_", "");
 }
 
-function outcomeName(outcome: test_health.TestOutcome) {
-  return test_health.TestOutcome[outcome].replace("TEST_OUTCOME_", "");
+function outcomeName(outcome: test_buddy.TestOutcome) {
+  return test_buddy.TestOutcome[outcome].replace("TEST_OUTCOME_", "");
 }
 
 function percent(value: number) {

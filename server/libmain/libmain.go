@@ -41,7 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
-	testhealth "github.com/buildbuddy-io/buildbuddy/server/test_health"
+	testbuddy "github.com/buildbuddy-io/buildbuddy/server/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/channelz_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -70,7 +70,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	bburl "github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	static_bundle "github.com/buildbuddy-io/buildbuddy/static"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -323,7 +323,7 @@ func registerServices(env *real_environment.RealEnv, grpcServer *grpc.Server) {
 	}
 
 	bbspb.RegisterBuildBuddyServiceServer(grpcServer, env.GetBuildBuddyServer())
-	thpb.RegisterTestBuddyServiceServer(grpcServer, env.GetTestBuddyServiceServer())
+	tbpb.RegisterTestBuddyServiceServer(grpcServer, env.GetTestBuddyServiceServer())
 
 	// Register API Server as a gRPC service.
 	if api := env.GetAPIService(); api != nil {
@@ -415,7 +415,7 @@ func RegisterLocalServersAndClients(env *real_environment.RealEnv) {
 	if err := fetch_server.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := testhealth.Register(env); err != nil {
+	if err := testbuddy.Register(env); err != nil {
 		log.Fatalf("Could not register TestBuddy service: %s", err)
 	}
 }
@@ -458,7 +458,7 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for BuildBuddy server: %s", err)
 	}
-	testBuddyProtoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/TestBuddyService/", thpb.TestBuddyService_ServiceDesc.ServiceName, env.GetTestBuddyServiceServer(), env.GetGRPCServer())
+	testBuddyProtoletHandler, err := protolet.GenerateHTTPHandlers("/rpc/TestBuddyService/", tbpb.TestBuddyService_ServiceDesc.ServiceName, env.GetTestBuddyServiceServer(), env.GetGRPCServer())
 	if err != nil {
 		log.Fatalf("Error initializing RPC over HTTP handlers for TestBuddy server: %s", err)
 	}

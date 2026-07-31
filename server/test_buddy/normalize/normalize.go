@@ -2,8 +2,8 @@
 package normalize
 
 import (
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/identity"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -30,32 +30,32 @@ const (
 type ReportContext struct {
 	RepositoryURL string
 	InvocationID  string
-	Source        thpb.ResultSource
+	Source        tbpb.ResultSource
 }
 
 type CaseRecord struct {
 	TargetLabel    string
 	CaseName       string
-	Outcome        thpb.TestOutcome
+	Outcome        tbpb.TestOutcome
 	DurationUsec   int64
 	FailureMessage string
 }
 
 type TargetRecord struct {
 	TargetLabel    string
-	Outcome        thpb.TestOutcome
+	Outcome        tbpb.TestOutcome
 	DurationUsec   int64
 	FailureMessage string
 }
 
 type CaseResult struct {
-	Result   *thpb.TestCaseResult
+	Result   *tbpb.TestCaseResult
 	Identity *identity.Identity
 	Target   *identity.TargetIdentity
 }
 
 type TargetResult struct {
-	Result *thpb.TestTargetResult
+	Result *tbpb.TestTargetResult
 	Target *identity.TargetIdentity
 }
 
@@ -105,7 +105,7 @@ func NewSession(ctx ReportContext) (*Session, error) {
 	if ctx.InvocationID == "" {
 		return nil, status.InvalidArgumentError("invocation ID is required")
 	}
-	if ctx.Source != thpb.ResultSource_RESULT_SOURCE_PRESUBMIT && ctx.Source != thpb.ResultSource_RESULT_SOURCE_POSTSUBMIT {
+	if ctx.Source != tbpb.ResultSource_RESULT_SOURCE_PRESUBMIT && ctx.Source != tbpb.ResultSource_RESULT_SOURCE_POSTSUBMIT {
 		return nil, status.InvalidArgumentErrorf("unsupported result source %d", ctx.Source)
 	}
 	ctx.RepositoryURL = normalized
@@ -163,7 +163,7 @@ func (s *Session) normalizeCase(record *CaseRecord) (*CaseResult, error) {
 	return &CaseResult{
 		Identity: id,
 		Target:   target,
-		Result: &thpb.TestCaseResult{
+		Result: &tbpb.TestCaseResult{
 			Identity:       id.Proto(),
 			InvocationId:   s.ctx.InvocationID,
 			Outcome:        record.Outcome,
@@ -184,7 +184,7 @@ func (s *Session) normalizeTarget(record *TargetRecord) (*TargetResult, error) {
 	}
 	return &TargetResult{
 		Target: target,
-		Result: &thpb.TestTargetResult{
+		Result: &tbpb.TestTargetResult{
 			Identity:       target.Proto(),
 			InvocationId:   s.ctx.InvocationID,
 			Outcome:        record.Outcome,
@@ -207,8 +207,8 @@ func (s *Session) target(label string) (*identity.TargetIdentity, error) {
 	return target, nil
 }
 
-func validateResult(outcome thpb.TestOutcome, durationUsec int64, failureMessage string) error {
-	if _, ok := thpb.TestOutcome_name[int32(outcome)]; !ok {
+func validateResult(outcome tbpb.TestOutcome, durationUsec int64, failureMessage string) error {
+	if _, ok := tbpb.TestOutcome_name[int32(outcome)]; !ok {
 		return status.InvalidArgumentErrorf("unrecognized outcome %d", outcome)
 	}
 	if durationUsec < 0 {

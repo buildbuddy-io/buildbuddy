@@ -11,9 +11,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/identity"
-	"github.com/buildbuddy-io/buildbuddy/server/test_health/normalize"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/normalize"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
@@ -180,7 +180,7 @@ func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
 	}
 	attributedFailures := 0
 	for _, testCase := range p.report.Cases {
-		if testCase.Outcome == thpb.TestOutcome_TEST_OUTCOME_FAIL || testCase.Outcome == thpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
+		if testCase.Outcome == tbpb.TestOutcome_TEST_OUTCOME_FAIL || testCase.Outcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
 			attributedFailures++
 		}
 	}
@@ -265,25 +265,25 @@ func (p *parser) caseRecord(index int, state *caseState) (*normalize.CaseRecord,
 	}, diagnostics, nil
 }
 
-func (s *caseState) outcome(index int) (thpb.TestOutcome, []Diagnostic) {
+func (s *caseState) outcome(index int) (tbpb.TestOutcome, []Diagnostic) {
 	var diagnostics []Diagnostic
-	outcome := thpb.TestOutcome_TEST_OUTCOME_PASS
+	outcome := tbpb.TestOutcome_TEST_OUTCOME_PASS
 	switch strings.ToLower(strings.TrimSpace(s.status)) {
 	case "", "run", "passed", "pass", "success":
 	case "failed", "failure", "error":
-		outcome = thpb.TestOutcome_TEST_OUTCOME_FAIL
+		outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 	case "timeout", "timedout", "timed_out":
-		outcome = thpb.TestOutcome_TEST_OUTCOME_TIMEOUT
+		outcome = tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT
 	case "notrun", "skipped", "skip", "disabled", "ignored":
-		outcome = thpb.TestOutcome_TEST_OUTCOME_UNKNOWN
+		outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
 	default:
-		outcome = thpb.TestOutcome_TEST_OUTCOME_UNKNOWN
+		outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
 		diagnostics = append(diagnostics, Diagnostic{Code: DiagnosticUnknownStatus, CaseIndex: index})
 	}
 	if s.disabled != "" {
 		switch strings.ToLower(strings.TrimSpace(s.disabled)) {
 		case "true", "1", "yes":
-			outcome = thpb.TestOutcome_TEST_OUTCOME_UNKNOWN
+			outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
 		case "false", "0", "no":
 		default:
 			diagnostics = append(diagnostics, Diagnostic{Code: DiagnosticInvalidDisabled, CaseIndex: index})
@@ -291,9 +291,9 @@ func (s *caseState) outcome(index int) (thpb.TestOutcome, []Diagnostic) {
 	}
 	switch {
 	case s.hasError || s.hasFailure:
-		outcome = thpb.TestOutcome_TEST_OUTCOME_FAIL
+		outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 	case s.hasSkipped:
-		outcome = thpb.TestOutcome_TEST_OUTCOME_UNKNOWN
+		outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
 	}
 	return outcome, diagnostics
 }

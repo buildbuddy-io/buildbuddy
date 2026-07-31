@@ -13,13 +13,13 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
-	thpb "github.com/buildbuddy-io/buildbuddy/proto/test_health"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 )
 
 var (
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
-	testBuddyServicePrefix  = "/" + thpb.TestBuddyService_ServiceDesc.ServiceName + "/"
+	testBuddyServicePrefix  = "/" + tbpb.TestBuddyService_ServiceDesc.ServiceName + "/"
 )
 
 var (

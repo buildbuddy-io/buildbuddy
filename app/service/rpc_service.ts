@@ -5,7 +5,7 @@ import { $stream, buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
 import { context } from "../../proto/context_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_status } from "../../proto/grpc_status_ts_proto";
-import { test_health } from "../../proto/test_health_ts_proto";
+import { test_buddy } from "../../proto/test_buddy_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import { CancelablePromise } from "../util/async";
 import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
@@ -33,7 +33,7 @@ export type ServerStreamHandler<T> = $stream.ServerStreamHandler<T>;
  * instead of trying to transform the service types / classes like this.
  */
 export type ExtendedBuildBuddyService = CancelableService<buildbuddy.service.BuildBuddyService>;
-export type ExtendedTestBuddyService = CancelableService<test_health.TestBuddyService>;
+export type ExtendedTestBuddyService = CancelableService<test_buddy.TestBuddyService>;
 
 /**
  * BuildBuddyServiceRpcName is a union type consisting of all BuildBuddyService
@@ -88,8 +88,8 @@ class RpcService {
       buildbuddy.service.BuildBuddyService
     );
     this.testBuddyService = this.getExtendedService(
-      new test_health.TestBuddyService(this.testBuddyRpc.bind(this)),
-      test_health.TestBuddyService
+      new test_buddy.TestBuddyService(this.testBuddyRpc.bind(this)),
+      test_buddy.TestBuddyService
     );
     this.events = new Subject();
 

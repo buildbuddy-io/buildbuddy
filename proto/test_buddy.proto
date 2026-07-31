@@ -2,7 +2,7 @@ syntax = "proto3";
 
 import "proto/context.proto";
 
-package test_health;
+package test_buddy;
 
 message TestTargetIdentity {
   string repo_url = 1;
