@@ -1978,7 +1978,8 @@ func (c *FirecrackerContainer) StopNetworkObserver() ([]*container.NetworkDestin
 	result := make([]*container.NetworkDestination, 0, len(destinations))
 	for _, destination := range destinations {
 		result = append(result, &container.NetworkDestination{
-			Hostnames:       append([]string(nil), destination.Hostnames...),
+			Hostname:        destination.Hostname,
+			Aliases:         append([]string(nil), destination.Aliases...),
 			IP:              destination.IP,
 			Port:            destination.Port,
 			Protocol:        destination.Protocol,

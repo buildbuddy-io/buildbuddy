@@ -23,7 +23,8 @@ const (
 // NetworkDestination contains connection metadata observed for one remote
 // network endpoint. It intentionally does not contain any packet payloads.
 type NetworkDestination struct {
-	Hostnames       []string `json:"hostnames,omitempty"`
+	Hostname        string   `json:"hostname,omitempty"`
+	Aliases         []string `json:"aliases,omitempty"`
 	IP              string   `json:"ip"`
 	Port            uint16   `json:"port"`
 	Protocol        string   `json:"protocol"`
@@ -38,10 +39,13 @@ type destinationKey struct {
 	ip       netip.Addr
 	port     uint16
 	protocol uint8
+	hostname string
 }
 
 type flowKey struct {
-	destinationKey
+	ip        netip.Addr
+	port      uint16
+	protocol  uint8
 	localPort uint16
 }
 
@@ -54,9 +58,18 @@ type packetMetadata struct {
 }
 
 type dnsAnswer struct {
-	ip      netip.Addr
-	names   []string
-	expires time.Time
+	ip       netip.Addr
+	hostname string
+	aliases  []string
+	expires  time.Time
+	observed time.Time
+}
+
+type dnsAssociation struct {
+	hostname string
+	aliases  []string
+	expires  time.Time
+	observed time.Time
 }
 
 type packetCapture interface {
@@ -71,8 +84,8 @@ type PacketObserver struct {
 
 	mu           sync.Mutex
 	destinations map[destinationKey]*NetworkDestination
-	flows        map[flowKey]struct{}
-	dnsNames     map[netip.Addr]map[string]time.Time
+	flows        map[flowKey]destinationKey
+	dnsNames     map[netip.Addr][]dnsAssociation
 }
 
 // NewPacketObserver starts observing packets on interfaceName. runnerIP is the
@@ -95,8 +108,8 @@ func newPacketObserver(runnerIP netip.Addr) *PacketObserver {
 	return &PacketObserver{
 		runnerIP:     runnerIP,
 		destinations: make(map[destinationKey]*NetworkDestination),
-		flows:        make(map[flowKey]struct{}),
-		dnsNames:     make(map[netip.Addr]map[string]time.Time),
+		flows:        make(map[flowKey]destinationKey),
+		dnsNames:     make(map[netip.Addr][]dnsAssociation),
 	}
 }
 
@@ -113,8 +126,8 @@ func (o *PacketObserver) Reset() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.destinations = make(map[destinationKey]*NetworkDestination)
-	o.flows = make(map[flowKey]struct{})
-	o.dnsNames = make(map[netip.Addr]map[string]time.Time)
+	o.flows = make(map[flowKey]destinationKey)
+	o.dnsNames = make(map[netip.Addr][]dnsAssociation)
 }
 
 // Destinations returns a stable snapshot sorted by protocol, IP, and port.
@@ -124,8 +137,8 @@ func (o *PacketObserver) Destinations() []*NetworkDestination {
 	result := make([]*NetworkDestination, 0, len(o.destinations))
 	for _, d := range o.destinations {
 		clone := *d
-		clone.Hostnames = append([]string(nil), d.Hostnames...)
-		sort.Strings(clone.Hostnames)
+		clone.Aliases = append([]string(nil), d.Aliases...)
+		sort.Strings(clone.Aliases)
 		result = append(result, &clone)
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -135,7 +148,10 @@ func (o *PacketObserver) Destinations() []*NetworkDestination {
 		if result[i].IP != result[j].IP {
 			return result[i].IP < result[j].IP
 		}
-		return result[i].Port < result[j].Port
+		if result[i].Port != result[j].Port {
+			return result[i].Port < result[j].Port
+		}
+		return result[i].Hostname < result[j].Hostname
 	})
 	return result
 }
@@ -157,12 +173,23 @@ func (o *PacketObserver) observePacket(packet []byte) {
 	if sent {
 		remoteIP, remotePort, localPort = md.destinationIP, md.destinationPort, md.sourcePort
 	}
-	key := destinationKey{ip: remoteIP, port: remotePort, protocol: md.protocol}
-
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	for _, answer := range dnsAnswers {
 		o.recordDNSAnswer(answer)
+	}
+	now := time.Now()
+	flow := flowKey{ip: remoteIP, port: remotePort, protocol: md.protocol, localPort: localPort}
+	key, flowExists := o.flows[flow]
+	association := dnsAssociation{}
+	if !flowExists {
+		association = o.mostRecentDNSAssociation(remoteIP, now)
+		key = destinationKey{
+			ip:       remoteIP,
+			port:     remotePort,
+			protocol: md.protocol,
+			hostname: association.hostname,
+		}
 	}
 	destination, ok := o.destinations[key]
 	if !ok {
@@ -170,13 +197,14 @@ func (o *PacketObserver) observePacket(packet []byte) {
 			return
 		}
 		destination = &NetworkDestination{
+			Hostname: association.hostname,
+			Aliases:  append([]string(nil), association.aliases...),
 			IP:       remoteIP.String(),
 			Port:     remotePort,
 			Protocol: protocolName(md.protocol),
 		}
 		o.destinations[key] = destination
 	}
-	o.addHostnames(destination, remoteIP, time.Now())
 	if sent {
 		destination.BytesSent += md.bytes
 		destination.PacketsSent++
@@ -184,45 +212,82 @@ func (o *PacketObserver) observePacket(packet []byte) {
 		destination.BytesReceived += md.bytes
 		destination.PacketsReceived++
 	}
-	flow := flowKey{destinationKey: key, localPort: localPort}
-	if _, ok := o.flows[flow]; !ok && len(o.flows) < maxObservedFlows {
-		o.flows[flow] = struct{}{}
+	if !flowExists && len(o.flows) < maxObservedFlows {
+		o.flows[flow] = key
 		destination.ConnectionCount++
 	}
 }
 
-func (o *PacketObserver) addHostnames(destination *NetworkDestination, ip netip.Addr, now time.Time) {
-	for name, expires := range o.dnsNames[ip] {
-		if !now.Before(expires) || slices.Contains(destination.Hostnames, name) {
+func (o *PacketObserver) mostRecentDNSAssociation(ip netip.Addr, now time.Time) dnsAssociation {
+	var mostRecent dnsAssociation
+	for _, association := range o.dnsNames[ip] {
+		if !now.Before(association.expires) || association.observed.Before(mostRecent.observed) {
 			continue
 		}
-		if len(destination.Hostnames) >= maxHostnamesPerAddress {
-			return
-		}
-		destination.Hostnames = append(destination.Hostnames, name)
+		mostRecent = association
 	}
+	return mostRecent
 }
 
 func (o *PacketObserver) recordDNSAnswer(answer dnsAnswer) {
-	if !answer.ip.IsValid() || len(answer.names) == 0 {
+	if !answer.ip.IsValid() || answer.hostname == "" {
 		return
 	}
-	names, ok := o.dnsNames[answer.ip]
+	associations, ok := o.dnsNames[answer.ip]
 	if !ok {
 		if len(o.dnsNames) >= maxObservedDNSAddresses {
 			return
 		}
-		names = make(map[string]time.Time)
-		o.dnsNames[answer.ip] = names
 	}
-	for _, name := range answer.names {
-		if _, ok := names[name]; !ok && len(names) >= maxHostnamesPerAddress {
+	active := associations[:0]
+	for _, association := range associations {
+		if answer.observed.Before(association.expires) {
+			active = append(active, association)
+		}
+	}
+	associations = active
+	for i := range associations {
+		association := &associations[i]
+		if association.hostname != answer.hostname {
 			continue
 		}
-		if answer.expires.After(names[name]) {
-			names[name] = answer.expires
+		if answer.expires.After(association.expires) {
+			association.expires = answer.expires
 		}
+		association.observed = answer.observed
+		for _, alias := range answer.aliases {
+			if len(association.aliases) >= maxHostnamesPerAddress {
+				break
+			}
+			if !slices.Contains(association.aliases, alias) {
+				association.aliases = append(association.aliases, alias)
+			}
+		}
+		o.dnsNames[answer.ip] = associations
+		return
 	}
+	if len(associations) >= maxHostnamesPerAddress {
+		oldest := 0
+		for i := 1; i < len(associations); i++ {
+			if associations[i].observed.Before(associations[oldest].observed) {
+				oldest = i
+			}
+		}
+		associations[oldest] = dnsAssociation{
+			hostname: answer.hostname,
+			aliases:  append([]string(nil), answer.aliases...),
+			expires:  answer.expires,
+			observed: answer.observed,
+		}
+		o.dnsNames[answer.ip] = associations
+		return
+	}
+	o.dnsNames[answer.ip] = append(associations, dnsAssociation{
+		hostname: answer.hostname,
+		aliases:  append([]string(nil), answer.aliases...),
+		expires:  answer.expires,
+		observed: answer.observed,
+	})
 }
 
 func parseDNSResponse(md packetMetadata, received bool) []dnsAnswer {
@@ -239,9 +304,23 @@ func parseDNSResponse(md packetMetadata, received bool) []dnsAnswer {
 			questionNames = append(questionNames, name)
 		}
 	}
+	if len(questionNames) == 0 {
+		return nil
+	}
 	now := time.Now()
 	records := append([]dns.RR(nil), message.Answer...)
 	records = append(records, message.Extra...)
+	aliases := make([]string, 0)
+	for _, record := range records {
+		cname, ok := record.(*dns.CNAME)
+		if !ok {
+			continue
+		}
+		alias := normalizeDNSName(cname.Target)
+		if alias != "" && alias != questionNames[0] && len(aliases) < maxHostnamesPerAddress && !slices.Contains(aliases, alias) {
+			aliases = append(aliases, alias)
+		}
+	}
 	answers := make([]dnsAnswer, 0, len(records))
 	for _, record := range records {
 		var ip netip.Addr
@@ -256,9 +335,9 @@ func parseDNSResponse(md packetMetadata, received bool) []dnsAnswer {
 		if !ip.IsValid() {
 			continue
 		}
-		names := append([]string(nil), questionNames...)
-		if name := normalizeDNSName(record.Header().Name); name != "" && !slices.Contains(names, name) {
-			names = append(names, name)
+		recordAliases := append([]string(nil), aliases...)
+		if name := normalizeDNSName(record.Header().Name); name != "" && name != questionNames[0] && len(recordAliases) < maxHostnamesPerAddress && !slices.Contains(recordAliases, name) {
+			recordAliases = append(recordAliases, name)
 		}
 		ttl := time.Duration(record.Header().Ttl) * time.Second
 		if ttl <= 0 {
@@ -267,9 +346,11 @@ func parseDNSResponse(md packetMetadata, received bool) []dnsAnswer {
 			ttl = time.Minute
 		}
 		answers = append(answers, dnsAnswer{
-			ip:      ip.Unmap(),
-			names:   names,
-			expires: now.Add(ttl),
+			ip:       ip.Unmap(),
+			hostname: questionNames[0],
+			aliases:  recordAliases,
+			expires:  now.Add(ttl),
+			observed: now,
 		})
 	}
 	return answers

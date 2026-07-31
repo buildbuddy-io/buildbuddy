@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "llmproxy_hooks.go",
         "llmproxy_transcript.go",
+        "network_report.go",
         "runner.go",
         "runner_darwin.go",
         "runner_linux.go",

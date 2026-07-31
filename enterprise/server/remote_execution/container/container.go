@@ -537,7 +537,8 @@ type VM interface {
 // NetworkDestination contains passive connection metadata for one remote
 // endpoint contacted by a container.
 type NetworkDestination struct {
-	Hostnames       []string `json:"hostnames,omitempty"`
+	Hostname        string   `json:"hostname,omitempty"`
+	Aliases         []string `json:"aliases,omitempty"`
 	IP              string   `json:"ip"`
 	Port            uint16   `json:"port"`
 	Protocol        string   `json:"protocol"`

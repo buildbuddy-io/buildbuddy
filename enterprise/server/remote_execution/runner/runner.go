@@ -94,7 +94,10 @@ var (
 	measureWorkspaceDiskUsage = flag.Bool("executor.workspace.measure_disk_usage", false, "If set, measure the disk space used by the task's buildroot (workspace) after each task finishes and report it in the task's usage stats. Note: this requires walking the entire workspace tree, which may add CPU/IO overhead for tasks with large workspaces.")
 )
 
-const agentNetworkDestinationsArtifactName = "network-destinations.json"
+const (
+	agentNetworkDestinationsArtifactName    = "network-destinations.json"
+	agentNetworkDestinationsRawArtifactName = "network-destinations-raw.json"
+)
 
 const (
 	// Runner states
@@ -407,16 +410,22 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 				log.CtxWarningf(ctx, "Could not stop network destination observer: %s", err)
 			}
 			if res != nil && len(destinations) > 0 {
-				report, err := json.Marshal(struct {
+				rawReport, err := json.Marshal(struct {
 					Destinations []*container.NetworkDestination `json:"destinations"`
 				}{Destinations: destinations})
 				if err != nil {
-					log.CtxWarningf(ctx, "Could not marshal network destination report: %s", err)
+					log.CtxWarningf(ctx, "Could not marshal detailed network destination report: %s", err)
 				} else {
-					if res.AuxiliaryLogs == nil {
-						res.AuxiliaryLogs = make(map[string][]byte)
+					report, err := json.Marshal(buildNetworkDestinationReport(destinations, agentNetworkDestinationsRawArtifactName))
+					if err != nil {
+						log.CtxWarningf(ctx, "Could not marshal network destination summary: %s", err)
+					} else {
+						if res.AuxiliaryLogs == nil {
+							res.AuxiliaryLogs = make(map[string][]byte)
+						}
+						res.AuxiliaryLogs[agentNetworkDestinationsArtifactName] = report
+						res.AuxiliaryLogs[agentNetworkDestinationsRawArtifactName] = rawReport
 					}
-					res.AuxiliaryLogs[agentNetworkDestinationsArtifactName] = report
 				}
 			}
 		}
