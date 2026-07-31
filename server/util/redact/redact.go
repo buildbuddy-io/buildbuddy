@@ -267,6 +267,84 @@ func RedactTextWithValues(txt string, redactionValues []string) string {
 	return txt
 }
 
+// NamedRedactionValue associates a literal secret value with the name that may
+// safely be shown in redacted output.
+type NamedRedactionValue struct {
+	Name  string
+	Value string
+}
+
+// RedactTextWithNamedValues replaces known secret values with markers such as
+// "<REDACTED:MY_API_KEY>". Values without a known name use the ordinary
+// "<REDACTED>" marker. If multiple names have the same value, all names are
+// included in the marker.
+func RedactTextWithNamedValues(txt string, redactionValues []string, namedValues []NamedRedactionValue) string {
+	redacted, _ := RedactTextWithNamedValuesAndMatches(txt, redactionValues, namedValues)
+	return redacted
+}
+
+// RedactTextWithNamedValuesAndMatches redacts text and returns the names whose
+// values were actually replaced. Replacement and attribution both happen
+// longest-first, so a shorter secret contained entirely within a longer secret
+// is not incorrectly reported as a separate match.
+func RedactTextWithNamedValuesAndMatches(txt string, redactionValues []string, namedValues []NamedRedactionValue) (string, []string) {
+	replacements := make(map[string]string, len(redactionValues)+len(namedValues))
+	for _, value := range redactionValues {
+		if value != "" {
+			replacements[value] = redactedPlaceholder
+		}
+	}
+	namesByValue := make(map[string][]string)
+	for _, namedValue := range namedValues {
+		if namedValue.Name == "" || namedValue.Value == "" {
+			continue
+		}
+		namesByValue[namedValue.Value] = append(namesByValue[namedValue.Value], sanitizeRedactionName(namedValue.Name))
+	}
+	for value, names := range namesByValue {
+		slices.Sort(names)
+		names = slices.Compact(names)
+		replacements[value] = fmt.Sprintf("<REDACTED:%s>", strings.Join(names, ","))
+	}
+
+	values := make([]string, 0, len(replacements))
+	for value := range replacements {
+		values = append(values, value)
+	}
+	var matchedNames []string
+	for _, value := range sortByLengthDesc(values) {
+		if !strings.Contains(txt, value) {
+			continue
+		}
+		for _, namedValue := range namedValues {
+			if namedValue.Value == value && namedValue.Name != "" {
+				matchedNames = append(matchedNames, namedValue.Name)
+			}
+		}
+		txt = strings.ReplaceAll(txt, value, replacements[value])
+	}
+	slices.Sort(matchedNames)
+	matchedNames = slices.Compact(matchedNames)
+	return RedactText(txt), matchedNames
+}
+
+func sanitizeRedactionName(name string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		case r == '_', r == '-', r == '.':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
+}
+
 // sortByLengthDesc returns a deduplicated copy sorted by descending string
 // length (then lexicographically for stability).
 //

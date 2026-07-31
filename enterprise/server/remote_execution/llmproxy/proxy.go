@@ -55,10 +55,7 @@ type Session struct {
 	EventCollector       *EventCollector
 }
 
-type NamedRedactionValue struct {
-	Name  string
-	Value string
-}
+type NamedRedactionValue = redact.NamedRedactionValue
 
 type ProtectionLayer string
 
@@ -459,9 +456,8 @@ func redactJSONStringsWithMatches(value any, values []string, namedValues []Name
 	matches := make(map[string]struct{})
 	switch value := value.(type) {
 	case string:
-		addStringMatches(matches, value, namedValues)
-		redacted := redact.RedactTextWithValues(value, values)
-		return redacted, redacted != value, sortedMatchNames(matches)
+		redacted, matchedNames := redact.RedactTextWithNamedValuesAndMatches(value, values, namedValues)
+		return redacted, redacted != value, matchedNames
 	case map[string]any:
 		for key, child := range value {
 			redacted, childChanged, childMatches := redactJSONStringsWithMatches(child, values, namedValues)
@@ -489,11 +485,14 @@ func redactQueryWithMatches(query url.Values, session *Session) (url.Values, []s
 	redacted := make(url.Values, len(query))
 	matches := make(map[string]struct{})
 	for key, queryValues := range query {
-		addStringMatches(matches, key, session.NamedRedactionValues)
-		redactedKey := redact.RedactTextWithValues(key, session.RedactionValues)
+		redactedKey, keyMatches := redact.RedactTextWithNamedValuesAndMatches(
+			key, session.RedactionValues, session.NamedRedactionValues)
+		addMatchNames(matches, keyMatches)
 		for _, value := range queryValues {
-			addStringMatches(matches, value, session.NamedRedactionValues)
-			redacted[redactedKey] = append(redacted[redactedKey], redact.RedactTextWithValues(value, session.RedactionValues))
+			redactedValue, valueMatches := redact.RedactTextWithNamedValuesAndMatches(
+				value, session.RedactionValues, session.NamedRedactionValues)
+			addMatchNames(matches, valueMatches)
+			redacted[redactedKey] = append(redacted[redactedKey], redactedValue)
 		}
 	}
 	return redacted, sortedMatchNames(matches)
@@ -510,8 +509,10 @@ func copyRequestHeadersWithMatches(dst, src http.Header, session *Session) []str
 			continue
 		}
 		for _, value := range headerValues {
-			addStringMatches(matches, value, session.NamedRedactionValues)
-			dst.Add(key, redact.RedactTextWithValues(value, session.RedactionValues))
+			redactedValue, valueMatches := redact.RedactTextWithNamedValuesAndMatches(
+				value, session.RedactionValues, session.NamedRedactionValues)
+			addMatchNames(matches, valueMatches)
+			dst.Add(key, redactedValue)
 		}
 	}
 	return sortedMatchNames(matches)
@@ -568,14 +569,6 @@ func surfaceProto(surface Surface) aspb.RedactionSurface {
 		return aspb.RedactionSurface_REQUEST_QUERY
 	default:
 		return aspb.RedactionSurface_REDACTION_SURFACE_UNKNOWN
-	}
-}
-
-func addStringMatches(matches map[string]struct{}, value string, namedValues []NamedRedactionValue) {
-	for _, secret := range namedValues {
-		if secret.Name != "" && secret.Value != "" && strings.Contains(value, secret.Value) {
-			matches[secret.Name] = struct{}{}
-		}
 	}
 }
 

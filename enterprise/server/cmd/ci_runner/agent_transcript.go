@@ -1,12 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 )
 
@@ -38,6 +40,7 @@ func (c *agentTranscriptCollector) preserve(artifactsDir string, redactionValues
 		{name: "claude", path: os.Getenv("CLAUDE_CONFIG_DIR")},
 		{name: "codex", path: os.Getenv("CODEX_HOME")},
 	}
+	namedRedactionValues := agentTranscriptNamedRedactionValues()
 	tmpDir, err := os.MkdirTemp(artifactsDir, ".agent-transcript-")
 	if err != nil {
 		return 0, fmt.Errorf("create temporary agent transcript artifact directory: %w", err)
@@ -102,7 +105,7 @@ func (c *agentTranscriptCollector) preserve(artifactsDir string, redactionValues
 			if err := os.MkdirAll(filepath.Dir(destinationPath), 0o700); err != nil {
 				return err
 			}
-			sanitized := redact.RedactTextWithValues(string(contents), redactionValues)
+			sanitized := redact.RedactTextWithNamedValues(string(contents), redactionValues, namedRedactionValues)
 			if err := os.WriteFile(destinationPath, []byte(sanitized), 0o600); err != nil {
 				return err
 			}
@@ -125,4 +128,18 @@ func (c *agentTranscriptCollector) preserve(artifactsDir string, redactionValues
 		c.fileStates[sourcePath] = state
 	}
 	return fileCount, nil
+}
+
+func agentTranscriptNamedRedactionValues() []redact.NamedRedactionValue {
+	var names []string
+	if err := json.Unmarshal([]byte(os.Getenv(ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction)), &names); err != nil {
+		return nil
+	}
+	namedValues := make([]redact.NamedRedactionValue, 0, len(names))
+	for _, name := range names {
+		if value, ok := os.LookupEnv(name); ok && name != "" && value != "" {
+			namedValues = append(namedValues, redact.NamedRedactionValue{Name: name, Value: value})
+		}
+	}
+	return namedValues
 }

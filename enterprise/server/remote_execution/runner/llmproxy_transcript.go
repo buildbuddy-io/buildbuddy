@@ -116,7 +116,8 @@ func (r *taskRunner) collectAgentTranscript(ctx context.Context) ([]byte, error)
 		if err != nil {
 			return nil, status.WrapErrorf(err, "read transcript file %q", header.Name)
 		}
-		sanitized := []byte(redact.RedactTextWithValues(string(content), r.llmProxySession.RedactionValues))
+		sanitized := []byte(redact.RedactTextWithNamedValues(
+			string(content), r.llmProxySession.RedactionValues, r.llmProxySession.NamedRedactionValues))
 		sanitizedHeader := &tar.Header{
 			Name:     cleanName,
 			Mode:     0o600,
