@@ -86,8 +86,9 @@
   display: grid;
   grid-template-columns:
     minmax(150px, max-content) /* last detected */
-    minmax(220px, max-content) /* secrets */
-    minmax(220px, max-content) /* invocation */;
+    minmax(220px, 1fr) /* secrets */
+    minmax(220px, 1fr) /* invocation */;
+  width: 100%;
   max-width: 100%;
   overflow-x: auto;
   border: 1px solid var(--color-auditlog-border);
@@ -114,19 +115,17 @@
   background: var(--color-auditlog-entry-bg);
 }
 
-.agent-security-events .agent-security-entry code,
-.agent-security-events .agent-security-entry a {
+.agent-security-events .agent-security-entry code {
   display: block;
   width: fit-content;
 }
 
 .agent-security-events .agent-security-invocation-link {
-  text-decoration: none;
+  color: var(--color-link);
+  font-family: var(--code-font);
+  text-decoration: underline;
 }
 
-.agent-security-events .agent-security-invocation-link span {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 4px;
-  text-decoration: underline;
+.agent-security-events .agent-security-invocation-link:hover {
+  color: var(--color-link-hover);
 }

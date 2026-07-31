@@ -315,8 +315,7 @@ export default class AuditLogsComponent extends React.Component<AuditLogsCompone
                 </div>
                 <div>
                   <a className="agent-security-invocation-link" href={`/invocation/${event.invocationId}`}>
-                    <span>Open invocation →</span>
-                    <code>{event.invocationId}</code>
+                    {event.invocationId}
                   </a>
                 </div>
               </div>
