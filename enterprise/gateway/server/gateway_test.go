@@ -343,6 +343,122 @@ func TestList_Unauthenticated(t *testing.T) {
 	require.Error(t, err)
 }
 
+// fakeWatchStream implements gwsvcpb.GatewayService_WatchServer for testing.
+// Only Context and Send are used by the Watch handler; the embedded nil
+// grpc.ServerStream panics if anything else is called.
+type fakeWatchStream struct {
+	grpc.ServerStream
+	ctx       context.Context
+	responses chan *gwpb.WatchResponse
+}
+
+func (f *fakeWatchStream) Context() context.Context { return f.ctx }
+func (f *fakeWatchStream) Send(rsp *gwpb.WatchResponse) error {
+	f.responses <- rsp
+	return nil
+}
+
+// startWatch runs gw.Watch on a fake stream in the background. The returned
+// cancel func closes the stream; the done channel receives Watch's return
+// value.
+func startWatch(t testing.TB, gw *Gateway, ctx context.Context, sessionID string) (*fakeWatchStream, context.CancelFunc, chan error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(ctx)
+	t.Cleanup(cancel)
+	stream := &fakeWatchStream{ctx: ctx, responses: make(chan *gwpb.WatchResponse, 16)}
+	done := make(chan error, 1)
+	go func() { done <- gw.Watch(&gwpb.WatchRequest{SessionId: sessionID}, stream) }()
+	return stream, cancel, done
+}
+
+func TestWatch_RequiresSessionID(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	stream := &fakeWatchStream{ctx: ctx, responses: make(chan *gwpb.WatchResponse, 1)}
+	err = gw.Watch(&gwpb.WatchRequest{}, stream)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+}
+
+func TestWatch_ReportsRegistrationAndRemoval(t *testing.T) {
+	// A long fallback interval ensures this test can only pass via the push
+	// notifications from addPeerLocked/removePeerLocked, not the backstop
+	// ticker.
+	flags.Set(t, "gateway.watch_fallback_poll_interval", time.Minute)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	// Watch starts before the peer exists.
+	stream, _, watchDone := startWatch(t, gw, ctx, "session-1")
+
+	_, cancelConnect, connectDone := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
+		NetworkName: "net1",
+		PeerName:    "box1",
+		PublicKey:   newPubKeyHex(t),
+		SessionId:   "session-1",
+	})
+
+	// Registration is pushed to the watcher.
+	select {
+	case rsp := <-stream.responses:
+		require.Equal(t, "box1", rsp.GetPeer().GetName())
+		require.Equal(t, "session-1", rsp.GetPeer().GetSessionId())
+		require.NotEmpty(t, rsp.GetPeer().GetIp())
+		require.Nil(t, rsp.GetPeer().GetLastHandshakeTime())
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for registration event")
+	}
+
+	// Removal ends the watch with NotFound.
+	cancelConnect()
+	require.NoError(t, <-connectDone)
+	select {
+	case err := <-watchDone:
+		require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Watch to report removal")
+	}
+}
+
+func TestWatch_IsolatedByGroup(t *testing.T) {
+	flags.Set(t, "gateway.watch_fallback_poll_interval", 10*time.Millisecond)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1", "user2", "group2"))
+	gw := setupGateway(t, ta)
+
+	ctx1, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+	ctx2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
+	require.NoError(t, err)
+
+	_, _, _ = startConnect(t, gw, ctx1, &gwpb.ConnectRequest{
+		PublicKey: newPubKeyHex(t),
+		SessionId: "session-1",
+	})
+
+	// A watcher in another group must not see the peer, even across many
+	// poll cycles; its watch behaves exactly like one for a nonexistent
+	// session.
+	stream, cancelWatch, watchDone := startWatch(t, gw, ctx2, "session-1")
+	select {
+	case rsp := <-stream.responses:
+		t.Fatalf("group2 watcher saw group1's peer: %v", rsp)
+	case <-time.After(300 * time.Millisecond):
+	}
+	cancelWatch()
+	select {
+	case err := <-watchDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Watch to return after cancel")
+	}
+}
+
 // fakeConnectStream implements gwsvcpb.GatewayService_ConnectServer for
 // testing. Only Context and Send are used by the Connect handler; the
 // embedded nil grpc.ServerStream panics if anything else is called.

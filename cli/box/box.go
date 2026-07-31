@@ -418,24 +418,26 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 	}
 }
 
-// waitForPeer polls the gateway's List RPC until a peer whose session ID
-// matches the box's invocation ID appears — i.e. the moment the VM's
-// ssh-server registers with the gateway.
+// waitForPeer waits until a peer whose session ID matches the box's
+// invocation ID appears with a completed WireGuard handshake — i.e. the
+// moment the tunnel is actually usable, not just requested — using the
+// gateway's streaming Watch RPC.
 func waitForPeer(ctx context.Context, gwClient gwsvcpb.GatewayServiceClient, sessionID string) (*gwpb.Peer, error) {
+	stream, err := gwClient.Watch(ctx, &gwpb.WatchRequest{SessionId: sessionID})
+	if err != nil {
+		return nil, err
+	}
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
-		resp, err := gwClient.List(ctx, &gwpb.ListRequest{})
+		rsp, err := stream.Recv()
 		if err != nil {
-			continue
+			return nil, err
 		}
-		for _, p := range resp.GetPeers() {
-			if p.GetSessionId() == sessionID {
-				return p, nil
-			}
+		// Require a completed WireGuard handshake, not just a gateway
+		// registration: the VM registers before it validates its tunnel, and
+		// a box with a dark tunnel will exit shortly afterwards (see
+		// ssh-server's --wg_health_timeout).
+		if p := rsp.GetPeer(); p.GetLastHandshakeTime() != nil {
+			return p, nil
 		}
 	}
 }

@@ -133,3 +133,16 @@ message ListResponse {
   // authenticated for the ListRequest.
   repeated Peer peers = 1;
 }
+
+message WatchRequest {
+  // Required. The session ID of the peer connection to watch (see
+  // ConnectRequest.session_id).
+  string session_id = 1;
+}
+
+// WatchResponse messages are streamed by the Watch RPC, one per observed
+// state change of the watched peer.
+message WatchResponse {
+  // The watched peer's current state.
+  Peer peer = 1;
+}

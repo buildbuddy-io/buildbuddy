@@ -33,6 +33,7 @@ go_library(
         "@dev_gvisor_gvisor//pkg/tcpip/transport/icmp",
         "@dev_gvisor_gvisor//pkg/tcpip/transport/tcp",
         "@dev_gvisor_gvisor//pkg/tcpip/transport/udp",
+        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
