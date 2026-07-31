@@ -568,6 +568,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			execResult.AuxiliaryLogs = make(map[string][]byte)
 		}
 		execResult.AuxiliaryLogs[agentTranscriptArtifactName] = transcript
+		log.CtxInfof(ctx, "Preserving sanitized agent transcript as %q (%d bytes)", agentTranscriptArtifactName, len(transcript))
+	} else {
+		log.CtxWarningf(ctx, "Could not preserve agent transcript: no transcript files were found")
 	}
 
 	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {

@@ -58,7 +58,7 @@ func (r *taskRunner) collectAgentTranscript(ctx context.Context) ([]byte, error)
 	rawArchive.limit = maxAgentTranscriptArchiveBytes
 	result := r.Container.Exec(collectCtx, &repb.Command{
 		Arguments: []string{"/bin/sh", "-c", fmt.Sprintf(
-			"cd %s && find claude/projects codex/sessions -type f -name '*.jsonl' -print0 2>/dev/null | tar -cf - --null -T -",
+			"cd %s && find claude codex -type f -name '*.jsonl' -print0 2>/dev/null | tar -cf - --null -T -",
 			shlex.Quote(guestConfigDir),
 		)},
 	}, &interfaces.Stdio{Stdout: &rawArchive})
@@ -91,8 +91,8 @@ func (r *taskRunner) collectAgentTranscript(ctx context.Context) ([]byte, error)
 		}
 		cleanName := path.Clean(header.Name)
 		if cleanName != header.Name || path.IsAbs(cleanName) ||
-			(!strings.HasPrefix(cleanName, "claude/projects/") &&
-				!strings.HasPrefix(cleanName, "codex/sessions/")) {
+			(!strings.HasPrefix(cleanName, "claude/") &&
+				!strings.HasPrefix(cleanName, "codex/")) {
 			return nil, status.InvalidArgumentErrorf("unexpected transcript path %q", header.Name)
 		}
 		if header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA {
