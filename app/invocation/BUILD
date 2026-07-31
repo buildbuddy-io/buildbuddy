@@ -550,6 +550,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/breadcrumbs",
         "//app/components/button",
+        "//app/components/link",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//app/util:errors",
