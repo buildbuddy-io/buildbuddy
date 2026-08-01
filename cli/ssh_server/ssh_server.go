@@ -181,10 +181,13 @@ func loadOrCreateHostKey(path string) ([]byte, error) {
 }
 
 // connIdleTimeout closes connections whose client has stopped sending
-// traffic entirely — bb ssh sends keepalives every 15s, so only a dead
-// client (host asleep, network gone) goes quiet this long. Distinct from
-// --idle_timeout, which logs out live-but-inactive interactive sessions.
-const connIdleTimeout = time.Minute
+// traffic entirely — bb ssh sends keepalives every 15s (keepaliveInterval in
+// cli/ssh), so only a dead client (host asleep, network gone) goes quiet
+// this long. Sized with headroom for clients that don't send keepalives
+// (older bb versions, plain ssh): they stay connected as long as any
+// traffic flows within this window. Distinct from --idle_timeout, which
+// logs out live-but-inactive interactive sessions.
+const connIdleTimeout = 3 * time.Minute
 
 // activityReader resets an inactivity timer on every read that carries data.
 type activityReader struct {
@@ -198,6 +201,70 @@ func (a *activityReader) Read(p []byte) (int, error) {
 		a.reset()
 	}
 	return n, err
+}
+
+// inactivityTimer runs a logout callback after a period without user input.
+// Once fired it can't be re-armed: a keystroke racing the logout must not
+// resurrect the timer and run the (destructive) callback a second time.
+type inactivityTimer struct {
+	mu    sync.Mutex
+	fired bool
+	timer *time.Timer
+	d     time.Duration
+}
+
+func newInactivityTimer(d time.Duration, logout func()) *inactivityTimer {
+	t := &inactivityTimer{d: d}
+	t.timer = time.AfterFunc(d, func() {
+		t.mu.Lock()
+		if t.fired {
+			t.mu.Unlock()
+			return
+		}
+		t.fired = true
+		t.mu.Unlock()
+		logout()
+	})
+	return t
+}
+
+// Reset restarts the countdown, unless the timer has already fired.
+func (t *inactivityTimer) Reset() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.fired {
+		t.timer.Reset(t.d)
+	}
+}
+
+func (t *inactivityTimer) Stop() { t.timer.Stop() }
+
+// startInactivityTimer arms the --idle_timeout logout for interactive
+// sessions: anything with a PTY, or a shell with no command. Input means
+// keystrokes or terminal resizes — program output doesn't count, so a chatty
+// program can't keep a session logged in, and neither do client keepalives.
+// Plain command execution is exempt: builds legitimately run for a long time
+// with no input at all. Returns nil when no timer applies.
+//
+// On expiry the session ends with exit code 255 (like sshd's connection
+// errors) so an interrupted `bb ssh -t <host> <cmd>` is distinguishable from
+// the command succeeding. teardown, if set, runs after the session exits and
+// must unblock any I/O still tied to the session's process.
+func startInactivityTimer(s ssh.Session, isPty bool, raw string, teardown func()) *inactivityTimer {
+	if *idleTimeout <= 0 || (!isPty && raw != "") {
+		return nil
+	}
+	return newInactivityTimer(*idleTimeout, func() {
+		eol := "\n"
+		if isPty {
+			eol = "\r\n"
+		}
+		fmt.Fprintf(s, "%sLogged out: no input for %s.%s", eol, *idleTimeout, eol)
+		s.Exit(255)
+		if teardown != nil {
+			teardown()
+		}
+	})
 }
 
 func setWinsize(f *os.File, w, h int) {
@@ -223,24 +290,6 @@ func handleSession(s ssh.Session) {
 	}
 	defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
 
-	// Interactive sessions (anything with a PTY, or a shell with no command)
-	// are logged out after --idle_timeout without user input. Input means
-	// keystrokes or terminal resizes — program output doesn't count, so a
-	// chatty program can't keep a session logged in, and neither do client
-	// keepalives. Plain command execution is exempt: builds legitimately run
-	// for a long time with no input at all.
-	var logout *time.Timer
-	var input io.Reader = s
-	if *idleTimeout > 0 && (isPty || raw == "") {
-		logout = time.AfterFunc(*idleTimeout, func() {
-			fmt.Fprintf(s, "\r\nLogged out: no input for %s.\r\n", *idleTimeout)
-			s.Exit(0)
-			s.Close()
-		})
-		defer logout.Stop()
-		input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
-	}
-
 	if isPty {
 		cmd.Env = append(os.Environ(), "TERM="+ptyReq.Term)
 		f, err := pty.Start(cmd)
@@ -250,11 +299,21 @@ func handleSession(s ssh.Session) {
 			return
 		}
 		defer f.Close()
+		// Closing the pty master on logout hangs up the terminal: the
+		// foreground process group gets SIGHUP and the io.Copy(s, f) below
+		// unblocks, so the session goroutine can finish. A tmux server
+		// survives the hangup, keeping any agents inside for reattach.
+		logout := startInactivityTimer(s, isPty, raw, func() { f.Close() })
+		var input io.Reader = s
+		if logout != nil {
+			defer logout.Stop()
+			input = &activityReader{r: s, reset: logout.Reset}
+		}
 		setWinsize(f, ptyReq.Window.Width, ptyReq.Window.Height)
 		go func() {
 			for win := range winCh {
 				if logout != nil {
-					logout.Reset(*idleTimeout)
+					logout.Reset()
 				}
 				setWinsize(f, win.Width, win.Height)
 			}
@@ -262,10 +321,18 @@ func handleSession(s ssh.Session) {
 		go io.Copy(f, input)
 		io.Copy(s, f)
 	} else {
+		// No teardown needed on logout here: exiting the session closes it,
+		// the stdin copy into the child then fails, and the shell exits on
+		// EOF, unblocking cmd.Wait below.
+		logout := startInactivityTimer(s, isPty, raw, nil)
 		cmd.Env = os.Environ()
 		cmd.Stdout = s
 		cmd.Stderr = s.Stderr()
-		cmd.Stdin = input
+		cmd.Stdin = io.Reader(s)
+		if logout != nil {
+			defer logout.Stop()
+			cmd.Stdin = &activityReader{r: s, reset: logout.Reset}
+		}
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
 			s.Exit(1)
@@ -275,7 +342,13 @@ func handleSession(s ssh.Session) {
 
 	if err := cmd.Wait(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			s.Exit(exitErr.ExitCode())
+			// ExitCode is -1 for a signaled process; report 255 rather than
+			// the -1 wrapping around to 4294967295 on the wire.
+			if code := exitErr.ExitCode(); code >= 0 {
+				s.Exit(code)
+			} else {
+				s.Exit(255)
+			}
 			return
 		}
 		fmt.Fprintf(s.Stderr(), "wait for command: %v\n", err)
