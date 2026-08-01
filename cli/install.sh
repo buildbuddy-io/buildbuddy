@@ -18,10 +18,20 @@ install_buildbuddy_cli() (
   #   "browser_download_url": "https://github.com/buildbuddy-io/bazel/releases/.../bazel-...-${os}-${arch}"
   # and extract the URL.
   release="${1:-latest}"
-  latest_binary_url=$(
-    curl -fsSL https://api.github.com/repos/buildbuddy-io/bazel/releases/"$release" |
-      perl -nle 'if (/"browser_download_url":\s*"(.*?-'"${os}-${arch}"')"/) { print $1 }'
-  )
+
+  # Check if gh cli tool installed, get around Github REST API rate limit
+  if command -v gh && gh auth status --hostname github.com; then
+    latest_binary_url=$(
+    gh api repos/buildbuddy-io/bazel/releases/"$release" \
+        --jq '.assets[] | select(.browser_download_url | contains("-'"${os}-${arch}"'")) | .browser_download_url' |
+        head -n1
+    )
+  else
+    latest_binary_url=$(
+      curl -fsSL https://api.github.com/repos/buildbuddy-io/bazel/releases/"$release" |
+        perl -nle 'if (/"browser_download_url":\s*"(.*?-'"${os}-${arch}"')"/) { print $1 }'
+    )
+  fi
 
   if [[ ! "$latest_binary_url" ]]; then
     echo >&2 "Could not find a CLI release for os '$os', arch '$arch'"
