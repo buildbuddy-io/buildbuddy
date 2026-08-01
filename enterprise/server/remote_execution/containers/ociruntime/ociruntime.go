@@ -489,6 +489,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		forceRoot:          args.Props.DockerForceRoot,
 		execrootPath:       execroot,
 		shmSizeBytes:       shmSizeBytes,
+		shmExec:            args.Props.ShmExec,
 		persistentVolumes:  args.Props.PersistentVolumes,
 
 		milliCPU:      args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
@@ -536,6 +537,7 @@ type ociContainer struct {
 	forceRoot      bool
 	execrootPath   string
 	shmSizeBytes   int64
+	shmExec        bool
 
 	milliCPU      int64 // milliCPU allocation from task size
 	memoryBytes   int64 // memory allocation from task size in bytes
@@ -1182,6 +1184,11 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 	}
 
 	caps := append(capabilities, *capAdd...)
+	shmMountOptions := []string{"rw", "nosuid", "nodev"}
+	if !c.shmExec {
+		shmMountOptions = append(shmMountOptions, "noexec")
+	}
+	shmMountOptions = append(shmMountOptions, "relatime", fmt.Sprintf("size=%d", c.shmSizeBytes))
 	spec := specs.Spec{
 		Version: ociVersion,
 		Process: &specs.Process{
@@ -1252,10 +1259,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 				Destination: "/dev/shm",
 				Type:        "tmpfs",
 				Source:      "shm",
-				Options: []string{
-					"rw", "nosuid", "nodev", "noexec", "relatime",
-					fmt.Sprintf("size=%d", c.shmSizeBytes),
-				},
+				Options:     shmMountOptions,
 			},
 			// TODO: .containerenv
 			// {
