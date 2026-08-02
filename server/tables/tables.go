@@ -691,8 +691,7 @@ type TestTarget struct {
 	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_target_cone_idx,priority:1"`
 	Repository  string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:2"`
 	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
-	BucketID    int32  `gorm:"not null;index:test_target_cone_idx,priority:3"`
-	PackagePath string `gorm:"size:1024;not null;index:test_target_cone_idx,priority:4"`
+	PackagePath string `gorm:"size:1024;not null;index:test_target_cone_idx,priority:3"`
 }
 
 func (*TestTarget) TableName() string { return "TestTargets" }
@@ -704,22 +703,10 @@ type TestCase struct {
 	Repository  string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:2"`
 	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
 	CaseName    string `gorm:"primaryKey;size:512;not null"`
-	BucketID    int32  `gorm:"not null;index:test_case_cone_idx,priority:3"`
-	PackagePath string `gorm:"size:1024;not null;index:test_case_cone_idx,priority:4"`
+	PackagePath string `gorm:"size:1024;not null;index:test_case_cone_idx,priority:3"`
 }
 
 func (*TestCase) TableName() string { return "TestCases" }
-
-// TestTargetConeBucket maps a package prefix to a logical target bucket.
-type TestTargetConeBucket struct {
-	Model
-	GroupID       string `gorm:"primaryKey;size:64;not null"`
-	Repository    string `gorm:"primaryKey;size:512;not null"`
-	PackagePrefix string `gorm:"primaryKey;size:1024;not null"`
-	BucketID      int32  `gorm:"primaryKey;autoIncrement:false;not null"`
-}
-
-func (*TestTargetConeBucket) TableName() string { return "TestTargetConeBuckets" }
 
 // TestPackageCoverage records the latest coverage fraction for a Bazel package.
 type TestPackageCoverage struct {
@@ -829,7 +816,7 @@ func TestBuddyTableNames() []string {
 
 func testBuddyTables() []Table {
 	return []Table{
-		&TestRepositoryCatalog{}, &TestTarget{}, &TestCase{}, &TestTargetConeBucket{},
+		&TestRepositoryCatalog{}, &TestTarget{}, &TestCase{},
 		&TestPackageCoverage{}, &TestAnalyzerConfig{},
 		&TestCaseState{}, &TestTargetState{}, &TestCaseStateChange{}, &TestTargetStateChange{},
 	}
@@ -1755,7 +1742,6 @@ func RegisterTables() {
 	registerTable("TJ", &TestCaseStateChange{})
 	registerTable("TK", &TestTargetStateChange{})
 	registerTable("TL", &TelemetryLog{})
-	registerTable("TM", &TestTargetConeBucket{})
 	registerTable("TO", &Token{})
 	registerTable("TS", &TargetStatus{})
 	registerTable("UA", &Usage{})

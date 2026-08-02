@@ -160,26 +160,17 @@ func TestReportAndQueryTests(t *testing.T) {
 	report("m-middle-by-name", "//a/b:unit_test", "TestRequest", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
 	report("sibling", "//a/b2:unit_test", "TestSibling", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
 
+	// Admission stores each subject's own package path, and that column is the
+	// cone index. There is no routing row to keep in step with the catalog.
 	var targetRow tables.TestTarget
-	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_target_bucket").
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_target_catalog").
 		Where("repository = ? AND target_label = ?", repository, "//a/b:unit_test").Take(&targetRow).Error)
-	targetAddress, err := identity.CanonicalizeTarget(repository, targetRow.TargetLabel)
-	require.NoError(t, err)
-	bucketID := identity.BucketForTarget(targetRow.GroupID, targetAddress)
-	for _, prefix := range []string{"", "a", "a/b"} {
-		var count int64
-		require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_cone_buckets").
-			Model(&tables.TestTargetConeBucket{}).
-			Where("repository = ? AND package_prefix = ? AND bucket_id = ?", repository, prefix, bucketID).
-			Count(&count).Error)
-		require.Equal(t, int64(1), count, prefix)
-	}
+	require.Equal(t, "a/b", targetRow.PackagePath)
 	var caseRow tables.TestCase
-	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_case_bucket").
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_case_catalog").
 		Where("repository = ? AND target_label = ? AND case_name = ?", repository, "//a/b:unit_test", "TestRequest").
 		Take(&caseRow).Error)
-	require.Equal(t, bucketID, targetRow.BucketID)
-	require.Equal(t, targetRow.BucketID, caseRow.BucketID)
+	require.Equal(t, targetRow.PackagePath, caseRow.PackagePath)
 
 	tests := getTests(t, service, ctx, &tbpb.GetTestsRequest{
 		RepoUrl: repository, PackagePrefix: "a/b",
@@ -624,6 +615,56 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 		targets[1].GetSummary().GetHealth(),
 		targets[2].GetSummary().GetHealth(),
 	})
+}
+
+func TestConeBoundsFollowPackageComponents(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/repo"
+
+	// These packages are chosen so that matching raw characters and matching
+	// whole path components disagree: "ab" starts with the characters of "a"
+	// and "a/bc" starts with those of "a/b", but neither is inside that cone.
+	packages := []string{"", "a", "ab", "a/b", "a/b2", "a/bc", "a/b/c"}
+	results := make([]*tbpb.TestCaseResult, 0, len(packages))
+	for _, pkg := range packages {
+		results = append(results, caseResult("one-run", "//"+pkg+":test", "TestCase",
+			tbpb.TestOutcome_TEST_OUTCOME_PASS, 1_000))
+	}
+	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestCases: results,
+	})
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		prefix string
+		want   []string
+	}{
+		{"", []string{"//:test", "//a:test", "//ab:test", "//a/b:test", "//a/b2:test", "//a/bc:test", "//a/b/c:test"}},
+		{"a", []string{"//a:test", "//a/b:test", "//a/b2:test", "//a/bc:test", "//a/b/c:test"}},
+		{"a/b", []string{"//a/b:test", "//a/b/c:test"}},
+		{"a/b/c", []string{"//a/b/c:test"}},
+	} {
+		t.Run("cone="+test.prefix, func(t *testing.T) {
+			cases := getTests(t, service, ctx, &tbpb.GetTestsRequest{
+				RepoUrl: repository, PackagePrefix: test.prefix,
+			})
+			labels := make([]string, 0, len(cases))
+			for _, c := range cases {
+				labels = append(labels, c.GetIdentity().GetTarget().GetTargetLabel())
+			}
+			require.ElementsMatch(t, test.want, labels)
+
+			targets := getTestTargets(t, service, ctx, &tbpb.GetTestTargetsRequest{
+				RepoUrl: repository, PackagePrefix: test.prefix,
+			})
+			targetLabels := make([]string, 0, len(targets))
+			for _, target := range targets {
+				targetLabels = append(targetLabels, target.GetIdentity().GetTargetLabel())
+			}
+			require.ElementsMatch(t, test.want, targetLabels)
+		})
+	}
 }
 
 func TestConeQueriesStreamAllResults(t *testing.T) {

@@ -30,10 +30,10 @@ queryable health state.
 - Reads never parse reports. Package-cone queries return failing, timed-out, and
   flaky subjects before healthy ones; exact reads return current health,
   aggregate statistics, recent evidence, and state-change history.
-- Each target hashes to one of 4,096 stable logical buckets. Admission maps the
-  target's package and every ancestor package to that bucket; cone reads use the
-  mapping to find candidate buckets, then apply exact package bounds. A future
-  router can move logical buckets between databases without changing test keys.
+- A cone read is a range scan of the catalog's own
+  `(group_id, repository, package_path)` index, bounded on the package separator
+  so that `a/bc` stays outside the `a/b` cone. There is no routing table, prefix
+  table, or hashed bucket: the package path a target already stores is the index.
 
 `bb test-report` reads Bazel test output and reports it. JUnit is only an input
 format and is not part of test identity.

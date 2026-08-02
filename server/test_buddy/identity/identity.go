@@ -2,8 +2,6 @@
 package identity
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -16,7 +14,6 @@ import (
 )
 
 const (
-	TargetBucketCount     = 4096
 	MaxRepositoryURLBytes = 512
 	MaxPackagePathBytes   = 1024
 	MaxTargetNameBytes    = 512
@@ -101,25 +98,6 @@ func (a CaseAddress) String() string {
 }
 
 func (a CaseAddress) IsZero() bool { return a == CaseAddress{} }
-
-func BucketForTarget(groupID string, address TargetAddress) int32 {
-	digest := sha256.Sum256([]byte(groupID + "\x00" + address.Repository + "\x00" +
-		address.PackagePath + "\x00" + address.TargetName))
-	return int32(binary.BigEndian.Uint32(digest[:4]) % TargetBucketCount)
-}
-
-func PackagePrefixes(packagePath string) []string {
-	prefixes := []string{""}
-	for i := 0; i < len(packagePath); i++ {
-		if packagePath[i] == '/' {
-			prefixes = append(prefixes, packagePath[:i])
-		}
-	}
-	if packagePath != "" {
-		prefixes = append(prefixes, packagePath)
-	}
-	return prefixes
-}
 
 func CanonicalizeCase(repositoryURL, targetLabel, caseName string) (CaseAddress, error) {
 	target, err := CanonicalizeTarget(repositoryURL, targetLabel)

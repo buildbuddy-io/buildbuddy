@@ -318,14 +318,14 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 		target := result.Address.Target()
 		targets[target] = &tables.TestTarget{
 			GroupID: groupID, Repository: repository, TargetLabel: target.Label(),
-			BucketID: identity.BucketForTarget(groupID, target), PackagePath: target.PackagePath,
+			PackagePath: target.PackagePath,
 		}
 	}
 	for _, result := range report.TargetResults {
 		target := result.Address
 		targets[target] = &tables.TestTarget{
 			GroupID: groupID, Repository: repository, TargetLabel: target.Label(),
-			BucketID: identity.BucketForTarget(groupID, target), PackagePath: target.PackagePath,
+			PackagePath: target.PackagePath,
 		}
 	}
 	targetRows := make([]*tables.TestTarget, 0, len(targets))
@@ -340,31 +340,6 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 			return err
 		}
 	}
-	type coneKey struct {
-		prefix   string
-		bucketID int32
-	}
-	coneRows := make(map[coneKey]*tables.TestTargetConeBucket)
-	for _, target := range targetRows {
-		for _, prefix := range identity.PackagePrefixes(target.PackagePath) {
-			key := coneKey{prefix: prefix, bucketID: target.BucketID}
-			coneRows[key] = &tables.TestTargetConeBucket{
-				GroupID: groupID, Repository: repository, PackagePrefix: prefix, BucketID: target.BucketID,
-			}
-		}
-	}
-	cones := make([]*tables.TestTargetConeBucket, 0, len(coneRows))
-	for _, row := range coneRows {
-		cones = append(cones, row)
-	}
-	for start := 0; start < len(cones); start += reportBatchSize {
-		end := min(start+reportBatchSize, len(cones))
-		if err := database.GORM(ctx, "test_buddy_admit_cone_buckets").
-			Clauses(clause.OnConflict{DoNothing: true}).
-			Create(cones[start:end]).Error; err != nil {
-			return err
-		}
-	}
 	for start := 0; start < len(report.CaseResults); start += reportBatchSize {
 		end := min(start+reportBatchSize, len(report.CaseResults))
 		cases := make([]*tables.TestCase, 0, end-start)
@@ -372,8 +347,7 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 			address := result.Address
 			cases = append(cases, &tables.TestCase{
 				GroupID: groupID, Repository: repository, TargetLabel: address.Target().Label(),
-				CaseName: address.CaseName, BucketID: identity.BucketForTarget(groupID, address.Target()),
-				PackagePath: address.PackagePath,
+				CaseName: address.CaseName, PackagePath: address.PackagePath,
 			})
 		}
 		if err := database.GORM(ctx, "test_buddy_admit_cases").
@@ -701,10 +675,11 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		return status.InvalidArgumentError("package_prefix and target_label cannot both be set")
 	}
 	where := `tc.group_id = ? AND tc.repository = ?`
-	args := []any{packagePrefix, groupID, repository}
+	args := []any{groupID, repository}
 	if packagePrefix != "" {
-		where += ` AND (tc.package_path = ? OR (tc.package_path >= ? AND tc.package_path < ?))`
-		args = append(args, packagePrefix, packagePrefix+"/", packagePrefix+"0")
+		bound, boundArgs := conePackageBounds("tc.package_path", packagePrefix)
+		where += ` AND ` + bound
+		args = append(args, boundArgs...)
 	}
 	if req.GetTarget() != nil {
 		target, err := identity.CanonicalizeTarget(repository, req.GetTarget().GetTargetLabel())
@@ -729,9 +704,6 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 			COALESCE(s.timeout_count, 0) AS timeout_count,
 			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
 		FROM "TestCases" AS tc
-		JOIN "TestTargetConeBuckets" AS cone
-			ON cone.group_id = tc.group_id AND cone.repository = tc.repository
-			AND cone.bucket_id = tc.bucket_id AND cone.package_prefix = ?
 		LEFT JOIN "TestCaseStates" AS s
 			ON s.group_id = tc.group_id AND s.repository = tc.repository
 			AND s.target_label = tc.target_label AND s.case_name = tc.case_name
@@ -804,10 +776,11 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 		return err
 	}
 	where := `tt.group_id = ? AND tt.repository = ?`
-	args := []any{packagePrefix, groupID, repository}
+	args := []any{groupID, repository}
 	if packagePrefix != "" {
-		where += ` AND (tt.package_path = ? OR (tt.package_path >= ? AND tt.package_path < ?))`
-		args = append(args, packagePrefix, packagePrefix+"/", packagePrefix+"0")
+		bound, boundArgs := conePackageBounds("tt.package_path", packagePrefix)
+		where += ` AND ` + bound
+		args = append(args, boundArgs...)
 	}
 	args = append(args,
 		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
@@ -824,9 +797,6 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 			COALESCE(s.timeout_count, 0) AS timeout_count,
 			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
 		FROM "TestTargets" AS tt
-		JOIN "TestTargetConeBuckets" AS cone
-			ON cone.group_id = tt.group_id AND cone.repository = tt.repository
-			AND cone.bucket_id = tt.bucket_id AND cone.package_prefix = ?
 		LEFT JOIN "TestTargetStates" AS s
 			ON s.group_id = tt.group_id AND s.repository = tt.repository
 			AND s.target_label = tt.target_label
@@ -1186,6 +1156,25 @@ func health(value string) tbpb.TestHealth {
 		return tbpb.TestHealth(number)
 	}
 	return tbpb.TestHealth_TEST_HEALTH_UNKNOWN
+}
+
+// conePackageBounds returns a predicate and its bind values selecting every
+// package at or beneath prefix from an indexed package_path column.
+//
+// A cone is the prefix's own package plus everything below prefix + "/". In byte
+// order that second set is exactly the half-open range [prefix+"/", prefix+"0"),
+// because '0' is the byte immediately after '/'. Bounding on the separator is
+// what makes the range component-aware: "a/bc" sorts after "a/b0" and so stays
+// out of the "a/b" cone, where a plain "package_path LIKE 'a/b%'" would wrongly
+// pull it in. Both bounds are index-ordered, so a cone read is a range scan on
+// (group_id, repository, package_path) rather than a scan of the repository.
+//
+// The columns are declared ascii_bin, so SQL compares them in the same byte
+// order this bound assumes; under a case-insensitive collation "//a/B" would
+// fall inside the "//a/b" cone, which Bazel says is a different package.
+func conePackageBounds(column, prefix string) (string, []any) {
+	predicate := fmt.Sprintf(`(%s = ? OR (%s >= ? AND %s < ?))`, column, column, column)
+	return predicate, []any{prefix, prefix + "/", prefix + "0"}
 }
 
 func normalizePackagePrefix(raw string) (string, error) {
