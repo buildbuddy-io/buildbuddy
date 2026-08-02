@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/githubutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -34,7 +35,6 @@ import (
 var (
 	statusNameSuffix = flag.String("github.status_name_suffix", "", "Suffix to be appended to all reported GitHub status names. Useful for differentiating BuildBuddy deployments. For example: '(dev)' ** Enterprise only **")
 	JwtKey           = flag.String("github.jwt_key", "", "The key to use when signing JWT tokens for github auth.", flag.Secret)
-	enterpriseHost   = flag.String("github.enterprise_host", "", "The Github enterprise hostname to use if using GitHub enterprise server, not including https:// and no trailing slash.", flag.Secret)
 
 	accessToken = flag.String("github.access_token", "", "The GitHub access token used to post GitHub commit statuses. This is intended as a convenience option and can be set to a personal access token (PAT) or a shared machine account PAT.", flag.Secret)
 
@@ -802,19 +802,13 @@ func GetUserInfo(token string) (*GithubUserResponse, error) {
 }
 
 func IsEnterpriseConfigured() bool {
-	return *enterpriseHost != ""
+	return githubutil.IsEnterpriseConfigured()
 }
 
 func GithubHost() string {
-	if IsEnterpriseConfigured() {
-		return *enterpriseHost
-	}
-	return "github.com"
+	return githubutil.Host()
 }
 
 func apiEndpoint() string {
-	if IsEnterpriseConfigured() {
-		return *enterpriseHost + "/api/v3"
-	}
-	return "api.github.com"
+	return githubutil.APIEndpoint()
 }
