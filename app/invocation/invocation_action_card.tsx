@@ -143,6 +143,20 @@ export default class InvocationActionCardComponent extends React.Component<Props
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
   private treeShaToChildrenPromiseMap = new Map<string, Promise<TreeNode[]>>();
 
+  private isCasOnlyInvocation() {
+    return this.props.model.hasCASWriteCapability() && !this.props.model.hasActionCacheWriteCapability();
+  }
+
+  private cacheableLabel(action: build.bazel.remote.execution.v2.Action) {
+    if (action.doNotCache) {
+      return "No";
+    }
+    if (this.isCasOnlyInvocation()) {
+      return "No (CAS-only credentials)";
+    }
+    return "Yes";
+  }
+
   componentDidMount() {
     this.fetchAction();
     this.fetchExecuteResponseOrActionResult();
@@ -1716,7 +1730,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                     </div>
                     <div className="action-section">
                       <div className="action-property-title">Cacheable</div>
-                      <div>{!this.state.action.doNotCache ? "Yes" : "No"}</div>
+                      <div>{this.cacheableLabel(this.state.action)}</div>
                     </div>
                     <div className="action-section">
                       <div className="action-property-title">Timeout</div>

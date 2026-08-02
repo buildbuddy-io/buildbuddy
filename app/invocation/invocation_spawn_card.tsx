@@ -45,6 +45,17 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
 
   timeoutRef?: number;
 
+  private isCasOnlyInvocation() {
+    return this.props.model.hasCASWriteCapability() && !this.props.model.hasActionCacheWriteCapability();
+  }
+
+  private cacheableLabel(cacheable?: boolean) {
+    if (cacheable && this.isCasOnlyInvocation()) {
+      return "No (CAS-only credentials)";
+    }
+    return cacheable ? "true" : "false";
+  }
+
   componentDidMount() {
     this.fetchLog();
   }
@@ -343,7 +354,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                           </div>
                         ))}
                         <div>Remotable: {spawn.spawn?.remotable ? "true" : "false"}</div>
-                        <div>Cachable: {spawn.spawn?.cacheable ? "true" : "false"}</div>
+                        <div>Cacheable: {this.cacheableLabel(spawn.spawn?.cacheable)}</div>
                         <div>Exit code: {spawn.spawn?.exitCode || 0}</div>
                         {spawn.spawn?.metrics?.startTime && (
                           <div>Start time: {format.formatTimestamp(spawn.spawn.metrics.startTime)}</div>
