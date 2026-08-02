@@ -34,5 +34,6 @@ go_test(
         "//server/test_buddy/junit",
         "//server/test_buddy/normalize",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
     ],
 )

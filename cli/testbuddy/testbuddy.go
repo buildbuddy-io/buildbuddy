@@ -41,8 +41,92 @@ var bazelTestOutputDirectory = regexp.MustCompile(
 	`^(?:run_[1-9][0-9]*_of_[1-9][0-9]*|shard_[1-9][0-9]*_of_[1-9][0-9]*(?:_run_[1-9][0-9]*_of_[1-9][0-9]*)?)$`,
 )
 
-// Leave headroom below BuildBuddy's 50 MB gRPC receive limit.
-const reportRequestTargetBytes = 49_000_000
+// ReportRequestTargetBytes bounds one client-stream message.
+//
+// The gRPC receive limit is 50 MB, so this only has to be under that — but
+// filling the limit would make both sides hold a 50 MB message, and a single
+// failed send would cost the whole 50 MB again on retry. 8 MiB keeps peak
+// memory per in-flight message small on the CLI and on the server, which
+// processes each message synchronously before reading the next.
+//
+// A report larger than the budget spans several messages; it is never
+// truncated. One result cannot exceed the budget on its own: normalization
+// bounds every component of a result — a failure message to 512 bytes and a
+// source URL to 2,048 — so a result is kilobytes, not megabytes.
+const ReportRequestTargetBytes = 8 << 20
+
+// ReportBatcher packs results into client-stream messages that stay within
+// ReportRequestTargetBytes, sending each one as soon as it is full.
+//
+// Sizing is exact rather than estimated: a result contributes its own encoded
+// size plus the tag and length prefix that carry it in the enclosing message,
+// which is what the receiver measures against its limit.
+type ReportBatcher struct {
+	repository string
+	send       func(*tbpb.ReportTestResultsRequest) error
+	batch      *tbpb.ReportTestResultsRequest
+	size       int
+	count      int
+}
+
+func NewReportBatcher(repository string, send func(*tbpb.ReportTestResultsRequest) error) *ReportBatcher {
+	b := &ReportBatcher{repository: repository, send: send}
+	b.reset()
+	return b
+}
+
+func (b *ReportBatcher) reset() {
+	b.batch = &tbpb.ReportTestResultsRequest{RepoUrl: b.repository}
+	b.size = protowire.SizeTag(1) + protowire.SizeBytes(len(b.repository))
+	b.count = 0
+}
+
+// makeRoom flushes the pending message if result would push it over budget.
+// A result is never split, so an empty message always accepts one.
+func (b *ReportBatcher) makeRoom(field protowire.Number, result proto.Message) (int, error) {
+	wireSize := protowire.SizeTag(field) + protowire.SizeBytes(proto.Size(result))
+	if b.count > 0 && b.size+wireSize > ReportRequestTargetBytes {
+		if err := b.Flush(); err != nil {
+			return 0, err
+		}
+	}
+	return wireSize, nil
+}
+
+func (b *ReportBatcher) AddTarget(result *tbpb.TestTargetResult) error {
+	wireSize, err := b.makeRoom(3, result)
+	if err != nil {
+		return err
+	}
+	b.batch.TestTargets = append(b.batch.TestTargets, result)
+	b.size += wireSize
+	b.count++
+	return nil
+}
+
+func (b *ReportBatcher) AddCase(result *tbpb.TestCaseResult) error {
+	wireSize, err := b.makeRoom(2, result)
+	if err != nil {
+		return err
+	}
+	b.batch.TestCases = append(b.batch.TestCases, result)
+	b.size += wireSize
+	b.count++
+	return nil
+}
+
+// Flush sends the pending message, if any. Sending an empty message would
+// charge the server a round trip to learn nothing.
+func (b *ReportBatcher) Flush() error {
+	if b.count == 0 {
+		return nil
+	}
+	if err := b.send(b.batch); err != nil {
+		return err
+	}
+	b.reset()
+	return nil
+}
 
 var (
 	TestReportFlags = flag.NewFlagSet("test-report", flag.ContinueOnError)
@@ -110,31 +194,7 @@ func HandleTestReport(args []string) (int, error) {
 		return 1, err
 	}
 	defer stream.CloseSend()
-	batch := &tbpb.ReportTestResultsRequest{RepoUrl: repository}
-	batchSize := protowire.SizeTag(1) + protowire.SizeBytes(len(repository))
-	batchCount := 0
-	sendBatch := func() error {
-		if batchCount == 0 {
-			return nil
-		}
-		if err := stream.Send(batch); err != nil {
-			return err
-		}
-		batch = &tbpb.ReportTestResultsRequest{RepoUrl: repository}
-		batchSize = protowire.SizeTag(1) + protowire.SizeBytes(len(repository))
-		batchCount = 0
-		return nil
-	}
-	makeRoom := func(field protowire.Number, result proto.Message) (int, error) {
-		resultSize := proto.Size(result)
-		wireSize := protowire.SizeTag(field) + protowire.SizeBytes(resultSize)
-		if batchCount > 0 && batchSize+wireSize > reportRequestTargetBytes {
-			if err := sendBatch(); err != nil {
-				return 0, err
-			}
-		}
-		return wireSize, nil
-	}
+	batcher := NewReportBatcher(repository, stream.Send)
 	diagnostics := 0
 	fallbackEventTimeUsec := time.Now().UnixMicro()
 	for _, path := range paths {
@@ -163,24 +223,16 @@ func HandleTestReport(args []string) (int, error) {
 		if err != nil {
 			return 1, err
 		}
-		wireSize, err := makeRoom(3, targetResult)
-		if err != nil {
+		if err := batcher.AddTarget(targetResult); err != nil {
 			return 1, err
 		}
-		batch.TestTargets = append(batch.TestTargets, targetResult)
-		batchSize += wireSize
-		batchCount++
 		for _, testCase := range testCases {
-			wireSize, err := makeRoom(2, testCase)
-			if err != nil {
+			if err := batcher.AddCase(testCase); err != nil {
 				return 1, err
 			}
-			batch.TestCases = append(batch.TestCases, testCase)
-			batchSize += wireSize
-			batchCount++
 		}
 	}
-	if err := sendBatch(); err != nil {
+	if err := batcher.Flush(); err != nil {
 		return 1, err
 	}
 	rsp, err := stream.CloseAndRecv()
