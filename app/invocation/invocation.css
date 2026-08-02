@@ -696,6 +696,221 @@
   display: block;
 }
 
+.action-edge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 720px;
+}
+
+.action-edge-group {
+  min-width: 0;
+}
+
+.action-edge-artifact-path {
+  color: var(--color-text-secondary);
+  font-family: var(--monospace-font-family);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-edge-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.action-edge-row {
+  align-items: baseline;
+  color: var(--color-text-primary);
+  display: inline-flex;
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 100%;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.action-edge-row:hover {
+  text-decoration: underline;
+}
+
+.action-edge-row-static:hover {
+  text-decoration: none;
+}
+
+.action-edge-action-only .action-edge-action {
+  max-width: 100%;
+}
+
+.action-edge-target,
+.action-edge-action {
+  display: inline-block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-edge-target {
+  color: var(--color-text-secondary);
+  max-width: min(44ch, 50%);
+}
+
+.action-edge-action {
+  font-weight: 600;
+  max-width: min(44ch, 100%);
+}
+
+.action-edge-separator {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  height: 1em;
+  margin: 0 4px;
+  transform: translateY(0.15em);
+  width: 1em;
+}
+
+.action-edge-chip {
+  border: 1px solid var(--color-border-primary);
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  font-size: 11px;
+  margin-left: 6px;
+  padding: 0 4px;
+}
+
+.action-edge-chip.failed {
+  color: var(--color-status-error);
+}
+
+.action-edge-empty {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.action-edge-target-group {
+  min-width: 0;
+}
+
+.action-edge-target-group + .action-edge-target-group {
+  margin-top: 8px;
+}
+
+.action-edge-target-group-label {
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-edge-target-group-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 18px;
+  min-width: 0;
+}
+
+.action-edge-target-group-action {
+  min-width: 0;
+}
+
+.action-edge-section-toggle,
+.action-edge-output-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  gap: 2px;
+  line-height: 18px;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.action-edge-section-toggle:hover,
+.action-edge-output-toggle:hover {
+  color: var(--color-text-primary);
+  text-decoration: underline;
+}
+
+.action-edge-section-toggle .icon,
+.action-edge-output-toggle .icon {
+  height: 14px;
+  width: 14px;
+}
+
+.action-edge-section-panel {
+  margin-top: 6px;
+}
+
+.action-output-entry {
+  min-width: 0;
+}
+
+.action-output-entry > .file-name {
+  align-items: center;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.action-output-entry > .file-name > span:first-child,
+.action-output-entry > .file-name .artifact-view,
+.action-output-entry > .file-name .detail,
+.action-output-entry > .file-name .digest-component {
+  flex-shrink: 0;
+}
+
+.action-output-entry > .file-name .prop-link {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.action-output-entry + .action-output-entry {
+  margin-top: 4px;
+}
+
+.action-edge-output-consumer-section {
+  min-width: 0;
+}
+
+.action-edge-output-consumer-line {
+  margin: 1px 0 3px 24px;
+}
+
+.action-edge-output-consumer-line:empty {
+  display: none;
+}
+
+.action-edge-output-consumers {
+  border-left: 2px solid var(--color-border-primary);
+  margin: 2px 0 8px 38px;
+  max-width: 720px;
+  padding: 4px 0 4px 10px;
+}
+
+.action-edge-output-consumers .action-edge-group-list {
+  padding-left: 0;
+}
+
 .action-argument-row {
   align-items: center;
   display: flex;
