@@ -10,6 +10,7 @@ import error_service from "../errors/error_service";
 import format from "../format/format";
 import { digestToString } from "../util/cache";
 import ActionCompareButtonComponent from "./action_compare_button";
+import { CompactExecLogIndex } from "./compact_exec_log_index";
 import InvocationModel from "./invocation_model";
 
 interface Props {
@@ -26,7 +27,7 @@ interface State {
   runnerFilter: string;
   platformPropertyFilters: Map<string, string>;
   limit: number;
-  log: tools.protos.ExecLogEntry[] | undefined;
+  index: CompactExecLogIndex | undefined;
 }
 
 const ExecutionStage = build.bazel.remote.execution.v2.ExecutionStage;
@@ -40,10 +41,11 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     runnerFilter: "",
     platformPropertyFilters: new Map<string, string>(),
     limit: 100,
-    log: undefined,
+    index: undefined,
   };
 
   timeoutRef?: number;
+  fetchRequestId = 0;
 
   componentDidMount() {
     this.fetchLog();
@@ -51,29 +53,35 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
 
   componentDidUpdate(prevProps: Props) {
     if (this.props.model !== prevProps.model) {
-      this.fetchLog();
+      this.setState({ index: undefined }, () => this.fetchLog());
     }
   }
 
   componentWillUnmount() {
+    this.fetchRequestId++;
     clearTimeout(this.timeoutRef);
   }
 
   fetchLog() {
+    const requestId = ++this.fetchRequestId;
     if (!this.props.model.hasExecutionLog()) {
-      this.setState({ loading: false });
+      this.setState({ index: undefined, loading: false });
+      return;
     }
-
-    // Already fetched
-    if (this.state.log) return;
 
     this.setState({ loading: true });
 
-    this.props.model
-      .getExecutionLog()
-      .then((log) => this.setState({ log: log }))
+    const model = this.props.model;
+    model
+      .getExecutionLogIndex()
+      .then((index) => {
+        if (requestId !== this.fetchRequestId || this.props.model !== model) return;
+        this.setState({ index });
+      })
       .catch((e) => error_service.handleError(e))
-      .finally(() => this.setState({ loading: false }));
+      .finally(() => {
+        if (requestId === this.fetchRequestId) this.setState({ loading: false });
+      });
   }
 
   downloadLog() {
@@ -181,7 +189,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
     if (this.state.loading) {
       return <div className="loading" />;
     }
-    if (!this.state.log?.length) {
+    if (!this.state.index?.entries.length) {
       return (
         <div className="invocation-execution-empty-state">
           No execution log actions for this invocation{this.props.model.isInProgress() && <span> yet</span>}.
@@ -189,29 +197,12 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
       );
     }
 
-    const mnemonics = new Set<string>();
-    const runners = new Set<string>();
-    const platformPropertyValues = new Map<string, Set<string>>();
+    const mnemonics = this.state.index.spawnMnemonics;
+    const runners = this.state.index.spawnRunners;
+    const platformPropertyValues = this.state.index.spawnPlatformPropertyValues;
 
-    const spawns = this.state.log
+    const spawns = this.state.index.spawnEntries
       .filter((l) => {
-        if (l.spawn?.mnemonic) {
-          mnemonics.add(l.spawn.mnemonic);
-        }
-        if (l.spawn?.runner) {
-          runners.add(l.spawn.runner);
-        }
-        const platformProps = this.getPlatformProperties(l.spawn?.platform);
-        for (const [propName, propValue] of platformProps) {
-          if (!platformPropertyValues.has(propName)) {
-            platformPropertyValues.set(propName, new Set<string>());
-          }
-          platformPropertyValues.get(propName)!.add(propValue);
-        }
-
-        if (l.type != "spawn") {
-          return false;
-        }
         if (this.state.mnemonicFilter != "" && l.spawn?.mnemonic != this.state.mnemonicFilter) {
           return false;
         }

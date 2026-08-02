@@ -24,6 +24,7 @@ import { resourceNameToString } from "../util/cache";
 import { exitCode } from "../util/exit_codes";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
 import { quote } from "../util/shlex";
+import { buildCompactExecLogIndex, CompactExecLogIndex } from "./compact_exec_log_index";
 
 export const CI_RUNNER_ROLE = "CI_RUNNER";
 export const HOSTED_BAZEL_ROLE = "HOSTED_BAZEL";
@@ -79,6 +80,7 @@ export default class InvocationModel {
   rootCauseTargetLabels: Set<String> = new Set<String>();
 
   execLogEntryPromise: Promise<tools.protos.ExecLogEntry[]> | undefined;
+  execLogIndexPromise: Promise<CompactExecLogIndex> | undefined;
 
   private targetConfigurations: build_event_stream.Configuration[] = [];
   private fileSetIDToFilesMap: Map<string, build_event_stream.File[]> = new Map();
@@ -1153,11 +1155,21 @@ export default class InvocationModel {
           entries.push(tools.protos.ExecLogEntry.decode(byteArray.subarray(offset, offset + length)));
           offset += length;
         }
-        console.log(entries);
+        if (rpcService.debuggingEnabled()) {
+          console.debug("Decoded execution log", {
+            bytes: body.byteLength,
+            entries: entries.length,
+          });
+        }
         return entries;
       });
 
     return this.execLogEntryPromise;
+  }
+
+  getExecutionLogIndex() {
+    this.execLogIndexPromise ??= this.getExecutionLog().then(buildCompactExecLogIndex);
+    return this.execLogIndexPromise;
   }
 
   downloadExecutionLog() {

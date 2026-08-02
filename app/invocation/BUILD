@@ -149,6 +149,7 @@ ts_library(
         "//app/format",
         "//app/icons:file_icon",
         "//app/invocation:action_compare_button",
+        "//app/invocation:compact_exec_log_index",
         "//app/invocation:execution_status",
         "//app/invocation:invocation_action_tree_node",
         "//app/invocation:invocation_model",
@@ -172,6 +173,27 @@ ts_library(
         "//proto:stored_invocation_ts_proto",
         "//proto:timestamp_ts_proto",
         "//proto:workflow_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "compact_exec_log_index",
+    srcs = ["compact_exec_log_index.ts"],
+    deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/long",
+        "//proto:spawn_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "compact_exec_log_index_test",
+    srcs = ["compact_exec_log_index_test.ts"],
+    deps = [
+        ":compact_exec_log_index",
+        "//:node_modules/long",
+        "//:node_modules/tslib",
+        "//proto:spawn_ts_proto",
     ],
 )
 
@@ -490,6 +512,7 @@ ts_library(
         "//app/capabilities",
         "//app/favicon",
         "//app/format",
+        "//app/invocation:compact_exec_log_index",
         "//app/service:rpc_service",
         "//app/util:cache",
         "//app/util:exit_codes",
@@ -519,6 +542,7 @@ ts_jasmine_node_test(
         "//:node_modules/tslib",
         "//proto:build_event_stream_ts_proto",
         "//proto:invocation_ts_proto",
+        "//proto:spawn_ts_proto",
     ],
 )
 
@@ -903,9 +927,7 @@ ts_library(
     name = "invocation_file_card",
     srcs = ["invocation_file_card.tsx"],
     deps = [
-        "//:node_modules/@types/long",
         "//:node_modules/@types/react",
-        "//:node_modules/long",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//app/components/button",
@@ -914,6 +936,7 @@ ts_library(
         "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
+        "//app/invocation:compact_exec_log_index",
         "//app/invocation:invocation_model",
         "//proto:build_event_stream_ts_proto",
         "//proto:spawn_ts_proto",
@@ -935,6 +958,7 @@ ts_library(
         "//app/errors:error_service",
         "//app/format",
         "//app/invocation:action_compare_button",
+        "//app/invocation:compact_exec_log_index",
         "//app/invocation:invocation_model",
         "//app/util:cache",
         "//proto:remote_execution_ts_proto",
