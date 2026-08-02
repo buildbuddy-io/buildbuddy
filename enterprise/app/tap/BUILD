@@ -111,6 +111,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/errors:error_service",
         "//app/format",
+        "//app/router",
         "//app/service:rpc_service",
         "//proto:test_buddy_ts_proto",
     ],

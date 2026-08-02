@@ -36,13 +36,13 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   componentDidMount() {
     this.loadRepository();
     this.loadTargets();
-    if (this.props.targetLabel) this.loadTarget({ targetLabel: this.props.targetLabel });
+    if (this.props.targetLabel) this.loadTarget(this.props.targetLabel);
   }
 
   componentDidUpdate(previous: Props) {
     if (previous.targetLabel === this.props.targetLabel) return;
     if (this.props.targetLabel) {
-      this.loadTarget({ targetLabel: this.props.targetLabel });
+      this.loadTarget(this.props.targetLabel);
     } else {
       this.casesStream?.cancel();
       this.setState({ selected: undefined, selectedCases: [], loadingCases: false });
@@ -105,17 +105,20 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     router.navigateToQueryParam("target", target.identity.targetLabel);
   }
 
-  private loadTarget(identity: test_buddy.TestTargetIdentity) {
+  // The component navigates by target label, so the identity message is built
+  // here rather than at each call site.
+  private loadTarget(targetLabel: string) {
     this.casesStream?.cancel();
+    const identity = test_buddy.TestTargetIdentity.create({ targetLabel });
     rpcService.testBuddyService
       .getTestTarget(test_buddy.GetTestTargetRequest.create({ repoUrl: this.props.repo, identity }))
       .then((selected) => {
-        if (this.props.targetLabel !== identity.targetLabel) return;
+        if (this.props.targetLabel !== targetLabel) return;
         this.setState({ selected });
         this.loadCases(identity);
       })
       .catch((error) => {
-        if (this.props.targetLabel !== identity.targetLabel) return;
+        if (this.props.targetLabel !== targetLabel) return;
         this.setState({ loading: false });
         errorService.handleError(error);
       });
