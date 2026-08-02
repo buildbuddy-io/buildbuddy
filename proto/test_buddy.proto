@@ -25,6 +25,8 @@ message TestResult {
   int64 duration_usec = 2;
   string failure_message = 3;
   string source_url = 4;
+  int64 event_time_usec = 5;
+  string result_id = 6;
 }
 
 message TestCaseResult {

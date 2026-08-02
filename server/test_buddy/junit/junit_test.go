@@ -20,9 +20,9 @@ func parse(t *testing.T, xml string) *junit.Report {
 }
 
 func TestParse(t *testing.T) {
-	report := parse(t, `<testsuite name="suite" time="1.5" failures="2">
+	report := parse(t, `<testsuite name="suite" time="1.5" failures="2" timestamp="2026-07-30T12:00:00Z">
   <testcase name="pass" classname="pkg.C" time="0.25"/>
-  <testcase name="fail" classname="pkg.C"><failure message="got 1, want 2">ignored body</failure></testcase>
+  <testcase name="fail" classname="pkg.C" timestamp="2026-07-30T12:00:01.123456Z"><failure message="got 1, want 2">ignored body</failure></testcase>
   <testcase name="error" classname="pkg.C"><error message="panic"/></testcase>
   <testcase name="timeout" classname="pkg.C" status="timed_out"/>
   <testcase name="skip" classname="pkg.C"><skipped/></testcase>
@@ -43,6 +43,11 @@ func TestParse(t *testing.T) {
 	assert.Equal(t, "got 1, want 2", report.Cases[1].FailureMessage)
 	assert.Equal(t, "panic", report.Cases[2].FailureMessage)
 	assert.Equal(t, int64(1_500_000), report.DurationUsec)
+	assert.Equal(t, int64(1_785_412_800_000_000), report.EventTimeUsec)
+	assert.Equal(t, report.EventTimeUsec, report.Cases[0].EventTimeUsec)
+	assert.Equal(t, int64(1_785_412_801_123_456), report.Cases[1].EventTimeUsec)
+	assert.Equal(t, 0, report.Cases[0].OccurrenceIndex)
+	assert.Equal(t, 1, report.Cases[1].OccurrenceIndex)
 	assert.False(t, report.UnattributedFailure)
 
 	unattributed := parse(t, `<testsuite errors="1"/>`)
@@ -64,7 +69,7 @@ func TestInvalidCasesProduceDiagnostics(t *testing.T) {
 	report := parse(t, `<testsuite>
   <testcase/>
   <testcase name="bad-duration" time="-1"/>
-  <testcase name="unknown" status="vendor-status"/>
+  <testcase name="unknown" status="vendor-status" timestamp="not-a-time"/>
 </testsuite>`)
 	assert.Equal(t, 3, report.EncounteredCases)
 	assert.Len(t, report.Cases, 2)
@@ -72,7 +77,23 @@ func TestInvalidCasesProduceDiagnostics(t *testing.T) {
 		{Code: junit.DiagnosticMissingName, CaseIndex: 0},
 		{Code: junit.DiagnosticInvalidDuration, CaseIndex: 1},
 		{Code: junit.DiagnosticUnknownStatus, CaseIndex: 2},
+		{Code: junit.DiagnosticInvalidTimestamp, CaseIndex: 2},
 	}, report.Diagnostics)
+}
+
+func TestNestedSuiteTimestampIsInherited(t *testing.T) {
+	report := parse(t, `<testsuites>
+  <testsuite name="outer" timestamp="2026-07-30T12:00:00">
+    <testsuite name="inner" timestamp="2026-07-30T12:01:00Z">
+      <testcase name="inner-case"/>
+    </testsuite>
+    <testcase name="outer-case"/>
+  </testsuite>
+</testsuites>`)
+	require.Len(t, report.Cases, 2)
+	assert.Equal(t, int64(1_785_412_800_000_000), report.EventTimeUsec)
+	assert.Equal(t, int64(1_785_412_860_000_000), report.Cases[0].EventTimeUsec)
+	assert.Equal(t, int64(1_785_412_800_000_000), report.Cases[1].EventTimeUsec)
 }
 
 func TestLimitsAndMalformedXML(t *testing.T) {

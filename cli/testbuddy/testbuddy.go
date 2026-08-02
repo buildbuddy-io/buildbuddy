@@ -4,6 +4,9 @@ package testbuddy
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
@@ -13,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -132,6 +136,7 @@ func HandleTestReport(args []string) (int, error) {
 		return wireSize, nil
 	}
 	diagnostics := 0
+	fallbackEventTimeUsec := time.Now().UnixMicro()
 	for _, path := range paths {
 		targetLabel := *reportTargetLabel
 		if targetLabel == "" {
@@ -153,7 +158,8 @@ func HandleTestReport(args []string) (int, error) {
 			return 1, closeErr
 		}
 		diagnostics += report.DiagnosticCount
-		targetResult, testCases, err := ResultsForReport(path, targetLabel, sourceURL, report)
+		targetResult, testCases, err := ResultsForReport(
+			path, targetLabel, sourceURL, fallbackEventTimeUsec, report)
 		if err != nil {
 			return 1, err
 		}
@@ -193,15 +199,25 @@ func HandleTestReport(args []string) (int, error) {
 	return 0, nil
 }
 
-func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
+func ResultsForReport(xmlPath, targetLabel, sourceURL string, fallbackEventTimeUsec int64, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
 	targetOutcome, err := BazelTargetOutcome(xmlPath)
 	if err != nil {
 		return nil, nil, err
 	}
+	eventTimeUsec := report.EventTimeUsec
+	if eventTimeUsec <= 0 {
+		eventTimeUsec = fallbackEventTimeUsec
+	}
+	if eventTimeUsec <= 0 {
+		return nil, nil, status.InvalidArgumentError("a positive report event time is required")
+	}
+	executionContext := resultContext(xmlPath)
 	target := &tbpb.TestTargetResult{
 		Identity: &tbpb.TestTargetIdentity{TargetLabel: targetLabel},
 		Result: &tbpb.TestResult{
 			Outcome: targetOutcome, DurationUsec: report.DurationUsec, SourceUrl: sourceURL,
+			EventTimeUsec: eventTimeUsec,
+			ResultId:      resultID("target", sourceURL, targetLabel, executionContext),
 		},
 	}
 	if targetOutcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
@@ -214,6 +230,10 @@ func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Repo
 	}
 	testCases := make([]*tbpb.TestCaseResult, 0, len(report.Cases))
 	for _, testCase := range report.Cases {
+		caseEventTimeUsec := testCase.EventTimeUsec
+		if caseEventTimeUsec <= 0 {
+			caseEventTimeUsec = eventTimeUsec
+		}
 		testCases = append(testCases, &tbpb.TestCaseResult{
 			Identity: &tbpb.TestCaseIdentity{
 				Target: &tbpb.TestTargetIdentity{TargetLabel: testCase.TargetLabel}, CaseName: testCase.CaseName,
@@ -221,10 +241,34 @@ func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Repo
 			Result: &tbpb.TestResult{
 				Outcome: testCase.Outcome, DurationUsec: testCase.DurationUsec,
 				FailureMessage: testCase.FailureMessage, SourceUrl: sourceURL,
+				EventTimeUsec: caseEventTimeUsec,
+				ResultId: resultID("case", sourceURL, targetLabel, testCase.CaseName,
+					executionContext, strconv.Itoa(testCase.OccurrenceIndex)),
 			},
 		})
 	}
 	return target, testCases, nil
+}
+
+func resultContext(path string) string {
+	path = filepath.ToSlash(filepath.Clean(path))
+	for _, marker := range []string{"bazel-testlogs/", "testlogs/"} {
+		if index := strings.LastIndex(path, marker); index >= 0 {
+			return path[index+len(marker):]
+		}
+	}
+	return path
+}
+
+func resultID(parts ...string) string {
+	h := sha256.New()
+	var size [8]byte
+	for _, part := range parts {
+		binary.BigEndian.PutUint64(size[:], uint64(len(part)))
+		_, _ = h.Write(size[:])
+		_, _ = io.WriteString(h, part)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func BazelTargetOutcome(xmlPath string) (tbpb.TestOutcome, error) {

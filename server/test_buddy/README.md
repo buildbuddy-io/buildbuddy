@@ -21,6 +21,10 @@ queryable health state.
 - Reporting uses a bounded client stream. Each subject is updated in a small
   independent transaction, and the RPC returns after every streamed batch has
   committed. There is no queue or report-wide transaction.
+- Each observation retains its execution time and a stable reporter-derived
+  result ID. Analysis still follows processing order. Current state keeps the
+  bounded evidence window plus 200 recent ID fingerprints, so an exact retry is
+  a no-op while conflicting reuse is rejected.
 - Heavy processing runs in the dedicated TestBuddy service. BuildBuddy apps
   authenticate and proxy RPCs, keeping report work off the app serving path.
 - Reads never parse reports. Package-cone queries return failing, timed-out, and

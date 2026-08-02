@@ -111,7 +111,8 @@ func caseResult(run, target, name string, outcome tbpb.TestOutcome, durationUsec
 		},
 		Result: &tbpb.TestResult{
 			Outcome: outcome, DurationUsec: durationUsec,
-			SourceUrl: "https://app.buildbuddy.io/invocation/" + run,
+			SourceUrl:     "https://app.buildbuddy.io/invocation/" + run,
+			EventTimeUsec: 1_000_000, ResultId: run,
 		},
 	}
 }
@@ -121,7 +122,8 @@ func targetResult(run, target string, outcome tbpb.TestOutcome, durationUsec int
 		Identity: &tbpb.TestTargetIdentity{TargetLabel: target},
 		Result: &tbpb.TestResult{
 			Outcome: outcome, DurationUsec: durationUsec,
-			SourceUrl: "https://app.buildbuddy.io/invocation/" + run,
+			SourceUrl:     "https://app.buildbuddy.io/invocation/" + run,
+			EventTimeUsec: 1_000_000, ResultId: run,
 		},
 	}
 }
@@ -188,18 +190,20 @@ func TestReportAndQueryTests(t *testing.T) {
 	require.Equal(t, "TestRequest", got.GetIdentity().GetCaseName())
 	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FLAKY, got.GetSummary().GetHealth())
 	require.Equal(t, int64(1), got.GetSummary().GetPassCount())
-	require.Equal(t, int64(3), got.GetSummary().GetFailCount())
+	require.Equal(t, int64(2), got.GetSummary().GetFailCount())
 	require.Equal(t, int64(0), got.GetSummary().GetTimeoutCount())
 	require.Equal(t, int64(1_000_000), got.GetSummary().GetMeanDurationUsec())
-	require.InDelta(t, 0.25, got.GetSummary().GetPassRate(), 0.0001)
+	require.InDelta(t, 1.0/3.0, got.GetSummary().GetPassRate(), 0.0001)
 
 	detail, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
 		RepoUrl: repository, Identity: got.GetIdentity(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, got, detail.GetTest())
-	require.Len(t, detail.GetRecentResults(), 4)
+	require.Len(t, detail.GetRecentResults(), 3)
 	require.Equal(t, "https://app.buildbuddy.io/invocation/m-middle-by-name", detail.GetRecentResults()[0].GetSourceUrl())
+	require.Equal(t, int64(1_000_000), detail.GetRecentResults()[0].GetEventTimeUsec())
+	require.Equal(t, "m-middle-by-name", detail.GetRecentResults()[0].GetResultId())
 	require.NotEmpty(t, detail.GetTransitions())
 }
 
@@ -252,6 +256,104 @@ func TestReportAggregatesStreamedBatches(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(1), got.GetTest().GetSummary().GetPassCount())
 	require.Equal(t, int64(1), got.GetTest().GetSummary().GetFailCount())
+}
+
+func TestReportDeduplicatesRetransmissions(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/repo"
+	request := &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository,
+		TestCases: []*tbpb.TestCaseResult{
+			caseResult("case-result", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 10),
+		},
+		TestTargets: []*tbpb.TestTargetResult{
+			targetResult("target-result", "//pkg:test", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
+		},
+	}
+	rsp, err := reportTestResults(service, ctx, request, proto.Clone(request).(*tbpb.ReportTestResultsRequest))
+	require.NoError(t, err)
+	require.Equal(t, int32(4), rsp.GetAcceptedCount())
+
+	testCase, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}, CaseName: "TestCase",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), testCase.GetTest().GetSummary().GetPassCount())
+	require.Len(t, testCase.GetRecentResults(), 1)
+	require.Len(t, testCase.GetTransitions(), 1)
+
+	target, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), target.GetTarget().GetSummary().GetPassCount())
+	require.Len(t, target.GetRecentResults(), 1)
+	require.Len(t, target.GetTransitions(), 1)
+}
+
+func TestReportRejectsConflictingResultID(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/repo"
+	first := caseResult("result-1", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 10)
+	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{first},
+	})
+	require.NoError(t, err)
+	conflict := proto.Clone(first).(*tbpb.TestCaseResult)
+	conflict.Result.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
+	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{conflict},
+	})
+	require.True(t, status.IsFailedPreconditionError(err), err)
+
+	got, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}, CaseName: "TestCase",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), got.GetTest().GetSummary().GetPassCount())
+	require.Zero(t, got.GetTest().GetSummary().GetFailCount())
+}
+
+func TestResultIDDeduplicationIsBounded(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/repo"
+	const resultCount = 201
+	results := make([]*tbpb.TestCaseResult, resultCount)
+	for i := range results {
+		results[i] = caseResult(fmt.Sprintf("result-%03d", i), "//pkg:test", "TestCase",
+			tbpb.TestOutcome_TEST_OUTCOME_PASS, 1)
+	}
+	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestCases: results,
+	})
+	require.NoError(t, err)
+	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{proto.Clone(results[resultCount-1]).(*tbpb.TestCaseResult)},
+	})
+	require.NoError(t, err)
+	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{proto.Clone(results[0]).(*tbpb.TestCaseResult)},
+	})
+	require.NoError(t, err)
+
+	got, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}, CaseName: "TestCase",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(resultCount+1), got.GetTest().GetSummary().GetPassCount())
+	require.Len(t, got.GetRecentResults(), 50)
 }
 
 func TestMaximumLengthAddress(t *testing.T) {
@@ -691,6 +793,7 @@ func TestReportPreservesRepeatedCaseSamples(t *testing.T) {
 			outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 		}
 		cases[i] = caseResult("repeated-runs", "//a/b:unit_test", "TestRepeated", outcome, 0)
+		cases[i].Result.ResultId = fmt.Sprintf("repeated-run-%d", i)
 	}
 	rsp, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: "https://github.com/acme/repo", TestCases: cases,

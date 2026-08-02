@@ -9,6 +9,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
@@ -42,11 +43,12 @@ type Options struct {
 type DiagnosticCode string
 
 const (
-	DiagnosticMissingName     DiagnosticCode = "missing_name"
-	DiagnosticInvalidIdentity DiagnosticCode = "invalid_identity"
-	DiagnosticInvalidDuration DiagnosticCode = "invalid_duration"
-	DiagnosticUnknownStatus   DiagnosticCode = "unknown_status"
-	DiagnosticInvalidDisabled DiagnosticCode = "invalid_disabled"
+	DiagnosticMissingName      DiagnosticCode = "missing_name"
+	DiagnosticInvalidIdentity  DiagnosticCode = "invalid_identity"
+	DiagnosticInvalidDuration  DiagnosticCode = "invalid_duration"
+	DiagnosticInvalidTimestamp DiagnosticCode = "invalid_timestamp"
+	DiagnosticUnknownStatus    DiagnosticCode = "unknown_status"
+	DiagnosticInvalidDisabled  DiagnosticCode = "invalid_disabled"
 )
 
 type Diagnostic struct {
@@ -58,6 +60,7 @@ type Report struct {
 	TargetLabel         string
 	Cases               []normalize.CaseRecord
 	DurationUsec        int64
+	EventTimeUsec       int64
 	UnattributedFailure bool
 	EncounteredCases    int
 	Diagnostics         []Diagnostic
@@ -73,6 +76,7 @@ type parser struct {
 	reader        *countingReader
 	elements      int
 	suiteFailures int
+	suiteTimes    []int64
 }
 
 type caseState struct {
@@ -80,6 +84,7 @@ type caseState struct {
 	time           string
 	status         string
 	disabled       string
+	timestamp      string
 	hasFailure     bool
 	hasError       bool
 	hasSkipped     bool
@@ -138,6 +143,17 @@ func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
 			}
 			switch token.Name.Local {
 			case "testsuite":
+				suiteTime, timeErr := eventTimeUsec(attribute(token, "timestamp"))
+				if timeErr != nil {
+					p.addDiagnostic(Diagnostic{Code: DiagnosticInvalidTimestamp, CaseIndex: -1})
+				}
+				if suiteTime == 0 {
+					suiteTime = p.currentSuiteTime()
+				}
+				p.suiteTimes = append(p.suiteTimes, suiteTime)
+				if p.report.EventTimeUsec == 0 {
+					p.report.EventTimeUsec = suiteTime
+				}
 				duration, err := durationUsec(attribute(token, "time"))
 				if err == nil && duration > p.report.DurationUsec {
 					p.report.DurationUsec = duration
@@ -165,6 +181,9 @@ func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
 				}
 			}
 		case xml.EndElement:
+			if token.Name.Local == "testsuite" && len(p.suiteTimes) > 0 {
+				p.suiteTimes = p.suiteTimes[:len(p.suiteTimes)-1]
+			}
 			depth--
 			if depth < 0 {
 				return nil, p.malformedXMLError(nil)
@@ -194,7 +213,7 @@ func (p *parser) parseCase(decoder *xml.Decoder, start xml.StartElement, startDe
 	state := caseState{
 		name: attribute(start, "name"),
 		time: attribute(start, "time"), status: attribute(start, "status"),
-		disabled: attribute(start, "disabled"),
+		disabled: attribute(start, "disabled"), timestamp: attribute(start, "timestamp"),
 	}
 	depth := startDepth
 	for {
@@ -259,9 +278,19 @@ func (p *parser) caseRecord(index int, state *caseState) (*normalize.CaseRecord,
 	}
 	outcome, outcomeDiagnostics := state.outcome(index)
 	diagnostics = append(diagnostics, outcomeDiagnostics...)
+	eventTime := p.currentSuiteTime()
+	if state.timestamp != "" {
+		parsed, err := eventTimeUsec(state.timestamp)
+		if err != nil {
+			diagnostics = append(diagnostics, Diagnostic{Code: DiagnosticInvalidTimestamp, CaseIndex: index})
+		} else {
+			eventTime = parsed
+		}
+	}
 	return &normalize.CaseRecord{
 		TargetLabel: p.options.TargetLabel, CaseName: state.name,
 		Outcome: outcome, DurationUsec: duration, FailureMessage: state.failureMessage,
+		EventTimeUsec: eventTime, OccurrenceIndex: index,
 	}, diagnostics, nil
 }
 
@@ -331,6 +360,33 @@ func durationUsec(value string) (int64, error) {
 		return 0, status.InvalidArgumentError("invalid JUnit duration")
 	}
 	return int64(math.Round(seconds * 1_000_000)), nil
+}
+
+func eventTimeUsec(value string) (int64, error) {
+	if value == "" {
+		return 0, nil
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		if parsed.UnixMicro() > 0 {
+			return parsed.UnixMicro(), nil
+		}
+		return 0, status.InvalidArgumentError("invalid JUnit timestamp")
+	}
+	parsed, err := time.ParseInLocation("2006-01-02T15:04:05.999999999", value, time.UTC)
+	if err != nil {
+		return 0, status.InvalidArgumentError("invalid JUnit timestamp")
+	}
+	if parsed.UnixMicro() <= 0 {
+		return 0, status.InvalidArgumentError("invalid JUnit timestamp")
+	}
+	return parsed.UnixMicro(), nil
+}
+
+func (p *parser) currentSuiteTime() int64 {
+	if len(p.suiteTimes) == 0 {
+		return 0
+	}
+	return p.suiteTimes[len(p.suiteTimes)-1]
 }
 
 func attribute(element xml.StartElement, localName string) string {

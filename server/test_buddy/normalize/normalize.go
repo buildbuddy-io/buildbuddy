@@ -13,6 +13,7 @@ import (
 const (
 	MaxFailureMessageBytes = 512
 	MaxSourceURLBytes      = 2048
+	MaxResultIDBytes       = 128
 	MaxRetainedRejections  = 100
 )
 
@@ -31,11 +32,13 @@ const (
 )
 
 type CaseRecord struct {
-	TargetLabel    string
-	CaseName       string
-	Outcome        tbpb.TestOutcome
-	DurationUsec   int64
-	FailureMessage string
+	TargetLabel     string
+	CaseName        string
+	Outcome         tbpb.TestOutcome
+	DurationUsec    int64
+	FailureMessage  string
+	EventTimeUsec   int64
+	OccurrenceIndex int
 }
 
 type CaseResult struct {
@@ -181,6 +184,15 @@ func validateResult(result *tbpb.TestResult) error {
 	}
 	if result.GetDurationUsec() < 0 {
 		return status.InvalidArgumentError("duration_usec must not be negative")
+	}
+	if result.GetEventTimeUsec() <= 0 {
+		return status.InvalidArgumentError("event_time_usec must be greater than zero")
+	}
+	if result.GetResultId() == "" {
+		return status.InvalidArgumentError("result_id is required")
+	}
+	if err := identity.ValidateBoundedString("result ID", result.GetResultId(), MaxResultIDBytes); err != nil {
+		return err
 	}
 	if err := identity.ValidateBoundedString("failure message", result.GetFailureMessage(), MaxFailureMessageBytes); err != nil {
 		return err

@@ -3,6 +3,9 @@ package test_buddy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,8 +39,9 @@ import (
 )
 
 const (
-	queryBatchSize  = 500
-	reportBatchSize = 500
+	queryBatchSize        = 500
+	reportBatchSize       = 500
+	retainedResultIDLimit = 200
 )
 
 var backendTarget = flag.String("test_buddy.backend", "", "Internal gRPC target for the TestBuddy service.")
@@ -386,33 +390,80 @@ type retainedSample struct {
 	DurationUsec   int64            `json:"d,omitempty"`
 	FailureMessage string           `json:"f,omitempty"`
 	SourceURL      string           `json:"u"`
+	EventTimeUsec  int64            `json:"t"`
+	ResultID       string           `json:"i"`
 }
 
-func decodeSamples(encoded []byte) ([]retainedSample, error) {
+type retainedResultID struct {
+	ID          string `json:"i"`
+	Fingerprint string `json:"f"`
+}
+
+type retainedResults struct {
+	Samples   []retainedSample   `json:"s"`
+	ResultIDs []retainedResultID `json:"i"`
+}
+
+func decodeRetainedResults(encoded []byte) (*retainedResults, error) {
 	if len(encoded) == 0 {
-		return nil, nil
+		return &retainedResults{}, nil
 	}
-	var samples []retainedSample
-	if err := json.Unmarshal(encoded, &samples); err != nil {
+	results := &retainedResults{}
+	if err := json.Unmarshal(encoded, results); err != nil {
 		return nil, status.InternalErrorf("decode recent test results: %s", err)
 	}
-	return samples, nil
+	return results, nil
 }
 
-func appendSample(encoded []byte, result *tbpb.TestResult, windowSize int) ([]retainedSample, []byte, error) {
-	samples, err := decodeSamples(encoded)
+func appendSample(encoded []byte, result *tbpb.TestResult, windowSize int) (*retainedResults, []byte, bool, error) {
+	results, err := decodeRetainedResults(encoded)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
-	samples = append(samples, retainedSample{
+	fingerprint := resultFingerprint(result)
+	for _, retained := range results.ResultIDs {
+		if retained.ID != result.GetResultId() {
+			continue
+		}
+		if retained.Fingerprint != fingerprint {
+			return nil, nil, false, status.FailedPreconditionErrorf(
+				"result_id %q was reused with different content", result.GetResultId())
+		}
+		return results, encoded, true, nil
+	}
+	results.Samples = append(results.Samples, retainedSample{
 		Outcome: result.GetOutcome(), DurationUsec: result.GetDurationUsec(),
 		FailureMessage: result.GetFailureMessage(), SourceURL: result.GetSourceUrl(),
+		EventTimeUsec: result.GetEventTimeUsec(), ResultID: result.GetResultId(),
 	})
-	if extra := len(samples) - windowSize; extra > 0 {
-		samples = samples[extra:]
+	if extra := len(results.Samples) - windowSize; extra > 0 {
+		results.Samples = results.Samples[extra:]
 	}
-	encoded, err = json.Marshal(samples)
-	return samples, encoded, err
+	results.ResultIDs = append(results.ResultIDs, retainedResultID{
+		ID: result.GetResultId(), Fingerprint: fingerprint,
+	})
+	if extra := len(results.ResultIDs) - retainedResultIDLimit; extra > 0 {
+		results.ResultIDs = results.ResultIDs[extra:]
+	}
+	encoded, err = json.Marshal(results)
+	return results, encoded, false, err
+}
+
+func resultFingerprint(result *tbpb.TestResult) string {
+	h := sha256.New()
+	var encoded [8]byte
+	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetOutcome()))
+	_, _ = h.Write(encoded[:])
+	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetDurationUsec()))
+	_, _ = h.Write(encoded[:])
+	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetEventTimeUsec()))
+	_, _ = h.Write(encoded[:])
+	for _, value := range []string{result.GetFailureMessage(), result.GetSourceUrl()} {
+		binary.BigEndian.PutUint64(encoded[:], uint64(len(value)))
+		_, _ = h.Write(encoded[:])
+		_, _ = io.WriteString(h, value)
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func analysisSamples(samples []retainedSample) []analyzer.Sample {
@@ -432,7 +483,7 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			Create(&tables.TestCaseState{
 				GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
 				CaseName: address.CaseName, Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
-				RecentResults: []byte("[]"),
+				RecentResults: []byte("{}"),
 			}).Error; err != nil {
 			return err
 		}
@@ -445,12 +496,15 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			return err
 		}
 		resultInfo := result.Result.GetResult()
-		samples, encoded, err := appendSample(
+		retained, encoded, duplicate, err := appendSample(
 			state.RecentResults, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
 		if err != nil {
 			return err
 		}
-		analysis, err := analyzer.Linear(analysisSamples(samples), analyzerConfig)
+		if duplicate {
+			return nil
+		}
+		analysis, err := analyzer.Linear(analysisSamples(retained.Samples), analyzerConfig)
 		if err != nil {
 			return err
 		}
@@ -493,7 +547,7 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 			Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&tables.TestTargetState{
 				GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
-				Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), RecentResults: []byte("[]"),
+				Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), RecentResults: []byte("{}"),
 			}).Error; err != nil {
 			return err
 		}
@@ -506,12 +560,15 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 			return err
 		}
 		resultInfo := result.Result.GetResult()
-		samples, encoded, err := appendSample(
+		retained, encoded, duplicate, err := appendSample(
 			state.RecentResults, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
 		if err != nil {
 			return err
 		}
-		analysis, err := analyzer.LinearTarget(analysisSamples(samples), analyzerConfig)
+		if duplicate {
+			return nil
+		}
+		analysis, err := analyzer.LinearTarget(analysisSamples(retained.Samples), analyzerConfig)
 		if err != nil {
 			return err
 		}
@@ -979,15 +1036,16 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		Target: targetSummary(target, row.Health, row.PassCount, row.FailCount,
 			row.TimeoutCount, row.TotalDurationUsec),
 	}
-	samples, err := decodeSamples(row.RecentResults)
+	retained, err := decodeRetainedResults(row.RecentResults)
 	if err != nil {
 		return nil, err
 	}
-	for i := len(samples) - 1; i >= 0; i-- {
-		sample := samples[i]
+	for i := len(retained.Samples) - 1; i >= 0; i-- {
+		sample := retained.Samples[i]
 		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
 			Outcome: sample.Outcome, DurationUsec: sample.DurationUsec,
 			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
+			EventTimeUsec: sample.EventTimeUsec, ResultId: sample.ResultID,
 		})
 	}
 	type transitionRow struct {
@@ -1058,15 +1116,16 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	rsp := &tbpb.GetTestCaseResponse{
 		Test: caseSummary(testCase, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
 	}
-	samples, err := decodeSamples(row.RecentResults)
+	retained, err := decodeRetainedResults(row.RecentResults)
 	if err != nil {
 		return nil, err
 	}
-	for i := len(samples) - 1; i >= 0; i-- {
-		sample := samples[i]
+	for i := len(retained.Samples) - 1; i >= 0; i-- {
+		sample := retained.Samples[i]
 		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
 			Outcome: sample.Outcome, DurationUsec: sample.DurationUsec,
 			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
+			EventTimeUsec: sample.EventTimeUsec, ResultId: sample.ResultID,
 		})
 	}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case_transitions").Raw(`

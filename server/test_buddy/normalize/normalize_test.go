@@ -12,7 +12,10 @@ import (
 const repository = "git@github.com:buildbuddy-io/buildbuddy.git"
 
 func testResult(outcome tbpb.TestOutcome) *tbpb.TestResult {
-	return &tbpb.TestResult{Outcome: outcome, SourceUrl: "https://app.buildbuddy.io/invocation/one"}
+	return &tbpb.TestResult{
+		Outcome: outcome, SourceUrl: "https://app.buildbuddy.io/invocation/one",
+		EventTimeUsec: 1_000_000, ResultId: "result-1",
+	}
 }
 
 func caseResult(outcome tbpb.TestOutcome) *tbpb.TestCaseResult {
@@ -44,6 +47,8 @@ func TestNormalizeCaseAndTarget(t *testing.T) {
 	assert.Equal(t, "TestA", report.CaseResults[0].Result.GetIdentity().GetCaseName())
 	assert.Equal(t, "//pkg:test", report.CaseResults[0].Result.GetIdentity().GetTarget().GetTargetLabel())
 	assert.Equal(t, "https://app.buildbuddy.io/invocation/one", report.CaseResults[0].Result.GetResult().GetSourceUrl())
+	assert.Equal(t, int64(1_000_000), report.CaseResults[0].Result.GetResult().GetEventTimeUsec())
+	assert.Equal(t, "result-1", report.CaseResults[0].Result.GetResult().GetResultId())
 	assert.Equal(t, "got 1, want 2", report.CaseResults[0].Result.GetResult().GetFailureMessage())
 	assert.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, report.TargetResults[0].Result.GetResult().GetOutcome())
 }
@@ -85,6 +90,18 @@ func TestValidation(t *testing.T) {
 
 	invalid = caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS)
 	invalid.Result.SourceUrl = "not a URL"
+	report, err = normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, report.Rejected.Cases)
+
+	invalid = caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	invalid.Result.ResultId = ""
+	report, err = normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, report.Rejected.Cases)
+
+	invalid = caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	invalid.Result.EventTimeUsec = 0
 	report, err = normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, report.Rejected.Cases)
