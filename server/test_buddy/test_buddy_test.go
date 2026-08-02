@@ -473,8 +473,9 @@ func TestAnalyzerConfigIsPerRepository(t *testing.T) {
 	require.Equal(t, int32(50), defaultConfig.GetConfig().GetLinear().GetWindowSize())
 	require.Equal(t, int32(1), defaultConfig.GetConfig().GetLinear().GetFailureThreshold())
 	require.Equal(t, int32(5), defaultConfig.GetConfig().GetLinear().GetTargetTimeoutThreshold())
+	require.Positive(t, defaultConfig.GetRevision())
 
-	_, err = service.SetTestAnalyzerConfig(ctx, &tbpb.SetTestAnalyzerConfigRequest{
+	setConfig, err := service.SetTestAnalyzerConfig(ctx, &tbpb.SetTestAnalyzerConfigRequest{
 		RepoUrl: configuredRepository,
 		Config: &tbpb.TestAnalyzerConfig{Analyzer: &tbpb.TestAnalyzerConfig_Linear{Linear: &tbpb.LinearAnalyzer{
 			WindowSize: 100, FailureThreshold: 2, TargetTimeoutThreshold: 10,
@@ -488,6 +489,8 @@ func TestAnalyzerConfigIsPerRepository(t *testing.T) {
 	require.Equal(t, int32(100), configured.GetConfig().GetLinear().GetWindowSize())
 	require.Equal(t, int32(2), configured.GetConfig().GetLinear().GetFailureThreshold())
 	require.Equal(t, int32(10), configured.GetConfig().GetLinear().GetTargetTimeoutThreshold())
+	require.Equal(t, setConfig.GetRevision(), configured.GetRevision())
+	require.NotEqual(t, defaultConfig.GetRevision(), configured.GetRevision())
 
 	reportFailure := func(repository string) {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
@@ -497,7 +500,7 @@ func TestAnalyzerConfigIsPerRepository(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-	getHealth := func(repository string) tbpb.TestHealth {
+	getDetail := func(repository string) *tbpb.GetTestCaseResponse {
 		rsp, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
 			RepoUrl: repository,
 			Identity: &tbpb.TestCaseIdentity{
@@ -506,13 +509,97 @@ func TestAnalyzerConfigIsPerRepository(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		return rsp.GetTest().GetSummary().GetHealth()
+		return rsp
 	}
 
 	reportFailure(configuredRepository)
 	reportFailure(defaultRepository)
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, getHealth(configuredRepository))
-	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, getHealth(defaultRepository))
+	configuredDetail := getDetail(configuredRepository)
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, configuredDetail.GetTest().GetSummary().GetHealth())
+	require.Equal(t, configured.GetRevision(), configuredDetail.GetAnalyzerRevision())
+	defaultDetail := getDetail(defaultRepository)
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, defaultDetail.GetTest().GetSummary().GetHealth())
+	require.Equal(t, defaultConfig.GetRevision(), defaultDetail.GetAnalyzerRevision())
+}
+
+func TestAnalyzerProvenance(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/provenance"
+	configured, err := service.SetTestAnalyzerConfig(ctx, &tbpb.SetTestAnalyzerConfigRequest{
+		RepoUrl: repository,
+		Config: &tbpb.TestAnalyzerConfig{Analyzer: &tbpb.TestAnalyzerConfig_Linear{Linear: &tbpb.LinearAnalyzer{
+			WindowSize: 50, FailureThreshold: 1, TargetTimeoutThreshold: 5,
+		}}},
+	})
+	require.NoError(t, err)
+	revision := configured.GetRevision()
+
+	reportCase := func(run, name string, outcome tbpb.TestOutcome) {
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{
+				caseResult(run, "//pkg:test", name, outcome, 1),
+			},
+		})
+		require.NoError(t, err)
+	}
+	caseDetail := func(name string) *tbpb.GetTestCaseResponse {
+		rsp, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+			RepoUrl: repository,
+			Identity: &tbpb.TestCaseIdentity{
+				Target: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}, CaseName: name,
+			},
+		})
+		require.NoError(t, err)
+		return rsp
+	}
+	assertProvenance := func(reason string, eligible int64, revision int64, transition *tbpb.TestHealthTransition) {
+		require.Equal(t, reason, transition.GetAnalysisReason())
+		require.Equal(t, eligible, transition.GetEligibleSampleCount())
+		require.Equal(t, revision, transition.GetAnalyzerRevision())
+	}
+
+	reportCase("mixed-fail", "TestMixed", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
+	mixed := caseDetail("TestMixed")
+	require.Equal(t, "all_failures", mixed.GetAnalysisReason())
+	require.Equal(t, int64(1), mixed.GetEligibleSampleCount())
+	assertProvenance("all_failures", 1, revision, mixed.GetTransitions()[0])
+	reportCase("mixed-pass", "TestMixed", tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	mixed = caseDetail("TestMixed")
+	require.Equal(t, "failures_in_window", mixed.GetAnalysisReason())
+	require.Equal(t, int64(2), mixed.GetEligibleSampleCount())
+	assertProvenance("failures_in_window", 2, revision, mixed.GetTransitions()[0])
+
+	reportCase("healthy-1", "TestHealthy", tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	reportCase("healthy-2", "TestHealthy", tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	healthy := caseDetail("TestHealthy")
+	require.Equal(t, "uncertain", healthy.GetAnalysisReason())
+	require.Equal(t, int64(2), healthy.GetEligibleSampleCount())
+	require.Len(t, healthy.GetTransitions(), 1)
+	assertProvenance("uncertain", 1, revision, healthy.GetTransitions()[0])
+	reportCase("healthy-3", "TestHealthy", tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	healthy = caseDetail("TestHealthy")
+	require.Equal(t, "consecutive_passes", healthy.GetAnalysisReason())
+	require.Equal(t, int64(3), healthy.GetEligibleSampleCount())
+	assertProvenance("consecutive_passes", 3, revision, healthy.GetTransitions()[0])
+
+	for i := 0; i < 5; i++ {
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			TestTargets: []*tbpb.TestTargetResult{
+				targetResult(fmt.Sprintf("timeout-%d", i), "//pkg:timeout_test", tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1),
+			},
+		})
+		require.NoError(t, err)
+	}
+	target, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:timeout_test"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "timeouts_in_window", target.GetAnalysisReason())
+	require.Equal(t, int64(5), target.GetEligibleSampleCount())
+	assertProvenance("timeouts_in_window", 5, revision, target.GetTransitions()[0])
 }
 
 func TestGetRepositoryHealth(t *testing.T) {

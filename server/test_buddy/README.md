@@ -29,7 +29,9 @@ queryable health state.
   authenticate and proxy RPCs, keeping report work off the app serving path.
 - Reads never parse reports. Package-cone queries return failing, timed-out, and
   flaky subjects before healthy ones; exact reads return current health,
-  aggregate statistics, recent evidence, and state-change history.
+  aggregate statistics, recent evidence, and state-change history. Current state
+  and each transition retain the analyzer revision, reason, and eligible sample
+  count that produced them.
 - A cone read is a range scan of the catalog's own
   `(group_id, repository, package_path)` index, bounded on the package separator
   so that `a/bc` stays outside the `a/b` cone. There is no routing table, prefix

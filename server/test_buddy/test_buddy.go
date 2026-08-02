@@ -39,9 +39,10 @@ import (
 )
 
 const (
-	queryBatchSize        = 500
-	reportBatchSize       = 500
-	retainedResultIDLimit = 200
+	queryBatchSize          = 500
+	reportBatchSize         = 500
+	retainedResultIDLimit   = 200
+	defaultAnalyzerRevision = 1
 )
 
 var backendTarget = flag.String("test_buddy.backend", "", "Internal gRPC target for the TestBuddy service.")
@@ -237,7 +238,7 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	if err != nil {
 		return nil, err
 	}
-	analyzerConfig, err := s.analyzerConfig(ctx, groupID, report.RepositoryURL)
+	analyzerConfig, analyzerRevision, err := s.analyzerConfig(ctx, groupID, report.RepositoryURL)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +256,7 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	for _, results := range resultsByCase {
 		group.Go(func() error {
 			for _, result := range results {
-				if err := s.applyCase(groupCtx, groupID, result, analyzerConfig); err != nil {
+				if err := s.applyCase(groupCtx, groupID, result, analyzerConfig, analyzerRevision); err != nil {
 					return err
 				}
 			}
@@ -271,7 +272,7 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	for _, results := range resultsByTarget {
 		group.Go(func() error {
 			for _, result := range results {
-				if err := s.applyTarget(groupCtx, groupID, result, analyzerConfig); err != nil {
+				if err := s.applyTarget(groupCtx, groupID, result, analyzerConfig, analyzerRevision); err != nil {
 					return err
 				}
 			}
@@ -448,7 +449,7 @@ func analysisSamples(samples []retainedSample) []analyzer.Sample {
 	return out
 }
 
-func (s *Service) applyCase(ctx context.Context, groupID string, result *normalize.CaseResult, analyzerConfig *tbpb.TestAnalyzerConfig) error {
+func (s *Service) applyCase(ctx context.Context, groupID string, result *normalize.CaseResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		address := result.Address
 		targetLabel := address.Target().Label()
@@ -485,6 +486,9 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 		previousHealth := state.Health
 		state.Health = analysis.Health.String()
 		state.StateVersion++
+		state.AnalyzerRevision = analyzerRevision
+		state.AnalysisReason = string(analysis.Reason)
+		state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
 		switch resultInfo.GetOutcome() {
 		case tbpb.TestOutcome_TEST_OUTCOME_PASS:
 			state.PassCount++
@@ -508,12 +512,13 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			CaseName: address.CaseName, StateVersion: state.StateVersion,
 			PreviousHealth: previousHealth, Health: state.Health,
 			PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
-			EventTimeUsec: tx.NowFunc().UnixMicro(),
+			EventTimeUsec: tx.NowFunc().UnixMicro(), AnalyzerRevision: state.AnalyzerRevision,
+			AnalysisReason: state.AnalysisReason, EligibleSampleCount: state.EligibleSampleCount,
 		})
 	})
 }
 
-func (s *Service) applyTarget(ctx context.Context, groupID string, result *normalize.TargetResult, analyzerConfig *tbpb.TestAnalyzerConfig) error {
+func (s *Service) applyTarget(ctx context.Context, groupID string, result *normalize.TargetResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		address := result.Address
 		targetLabel := address.Label()
@@ -549,6 +554,9 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 		previousHealth := state.Health
 		state.Health = analysis.Health.String()
 		state.StateVersion++
+		state.AnalyzerRevision = analyzerRevision
+		state.AnalysisReason = string(analysis.Reason)
+		state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
 		switch resultInfo.GetOutcome() {
 		case tbpb.TestOutcome_TEST_OUTCOME_PASS:
 			state.PassCount++
@@ -571,7 +579,8 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 			GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
 			StateVersion: state.StateVersion, PreviousHealth: previousHealth, Health: state.Health,
 			PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
-			EventTimeUsec: tx.NowFunc().UnixMicro(),
+			EventTimeUsec: tx.NowFunc().UnixMicro(), AnalyzerRevision: state.AnalyzerRevision,
+			AnalysisReason: state.AnalysisReason, EligibleSampleCount: state.EligibleSampleCount,
 		})
 	})
 }
@@ -588,11 +597,11 @@ func (s *Service) GetTestAnalyzerConfig(ctx context.Context, req *tbpb.GetTestAn
 	if err != nil {
 		return nil, err
 	}
-	analyzerConfig, err := s.analyzerConfig(ctx, groupID, repository)
+	analyzerConfig, revision, err := s.analyzerConfig(ctx, groupID, repository)
 	if err != nil {
 		return nil, err
 	}
-	return &tbpb.GetTestAnalyzerConfigResponse{Config: analyzerConfig}, nil
+	return &tbpb.GetTestAnalyzerConfigResponse{Config: analyzerConfig, Revision: revision}, nil
 }
 
 func (s *Service) SetTestAnalyzerConfig(ctx context.Context, req *tbpb.SetTestAnalyzerConfigRequest) (*tbpb.SetTestAnalyzerConfigResponse, error) {
@@ -628,30 +637,30 @@ func (s *Service) SetTestAnalyzerConfig(ctx context.Context, req *tbpb.SetTestAn
 		Create(row).Error; err != nil {
 		return nil, err
 	}
-	return &tbpb.SetTestAnalyzerConfigResponse{Config: analyzerConfig}, nil
+	return &tbpb.SetTestAnalyzerConfigResponse{Config: analyzerConfig, Revision: row.Revision}, nil
 }
 
-func (s *Service) analyzerConfig(ctx context.Context, groupID, repository string) (*tbpb.TestAnalyzerConfig, error) {
+func (s *Service) analyzerConfig(ctx context.Context, groupID, repository string) (*tbpb.TestAnalyzerConfig, int64, error) {
 	row := &tables.TestAnalyzerConfig{}
 	err := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_analyzer_config").Raw(`
-		SELECT config
+		SELECT revision, config
 		FROM "TestAnalyzerConfigs"
 		WHERE group_id = ? AND repository = ?`,
 		groupID, repository).Take(row)
 	if db.IsRecordNotFound(err) {
-		return config.Default(), nil
+		return config.Default(), defaultAnalyzerRevision, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	analyzerConfig := &tbpb.TestAnalyzerConfig{}
 	if err := proto.Unmarshal(row.Config, analyzerConfig); err != nil {
-		return nil, status.InternalErrorf("decode test analyzer config: %s", err)
+		return nil, 0, status.InternalErrorf("decode test analyzer config: %s", err)
 	}
 	if err := config.Validate(analyzerConfig); err != nil {
-		return nil, status.InternalErrorf("invalid stored test analyzer config: %s", err)
+		return nil, 0, status.InternalErrorf("invalid stored test analyzer config: %s", err)
 	}
-	return analyzerConfig, nil
+	return analyzerConfig, row.Revision, nil
 }
 
 func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyService_GetTestsServer) error {
@@ -974,12 +983,15 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		return nil, err
 	}
 	type targetRow struct {
-		Health            string
-		RecentResults     []byte
-		PassCount         int64
-		FailCount         int64
-		TimeoutCount      int64
-		TotalDurationUsec int64
+		Health              string
+		RecentResults       []byte
+		PassCount           int64
+		FailCount           int64
+		TimeoutCount        int64
+		TotalDurationUsec   int64
+		AnalyzerRevision    int64
+		AnalysisReason      string
+		EligibleSampleCount int64
 	}
 	row := &targetRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_target").Raw(`
@@ -987,7 +999,10 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
-			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
+			COALESCE(s.total_duration_usec, 0) AS total_duration_usec,
+			COALESCE(s.analyzer_revision, 0) AS analyzer_revision,
+			COALESCE(s.analysis_reason, '') AS analysis_reason,
+			COALESCE(s.eligible_sample_count, 0) AS eligible_sample_count
 		FROM "TestTargets" AS tt
 		LEFT JOIN "TestTargetStates" AS s
 			ON s.group_id = tt.group_id AND s.repository = tt.repository
@@ -1005,6 +1020,8 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	rsp := &tbpb.GetTestTargetResponse{
 		Target: targetSummary(target, row.Health, row.PassCount, row.FailCount,
 			row.TimeoutCount, row.TotalDurationUsec),
+		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
+		EligibleSampleCount: row.EligibleSampleCount,
 	}
 	retained, err := decodeRetainedResults(row.RecentResults)
 	if err != nil {
@@ -1019,12 +1036,16 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		})
 	}
 	type transitionRow struct {
-		PreviousHealth string
-		Health         string
-		EventTimeUsec  int64
+		PreviousHealth      string
+		Health              string
+		EventTimeUsec       int64
+		AnalyzerRevision    int64
+		AnalysisReason      string
+		EligibleSampleCount int64
 	}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_target_transitions").Raw(`
-		SELECT previous_health, health, event_time_usec
+		SELECT previous_health, health, event_time_usec,
+			analyzer_revision, analysis_reason, eligible_sample_count
 		FROM "TestTargetStateChanges"
 		WHERE group_id = ? AND repository = ? AND target_label = ?
 		ORDER BY state_version DESC
@@ -1033,7 +1054,8 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	if err := db.ScanEach(rq, func(ctx context.Context, r *transitionRow) error {
 		rsp.Transitions = append(rsp.Transitions, &tbpb.TestHealthTransition{
 			PreviousHealth: health(r.PreviousHealth), Health: health(r.Health),
-			EventTimeUsec: r.EventTimeUsec,
+			EventTimeUsec: r.EventTimeUsec, AnalyzerRevision: r.AnalyzerRevision,
+			AnalysisReason: r.AnalysisReason, EligibleSampleCount: r.EligibleSampleCount,
 		})
 		return nil
 	}); err != nil {
@@ -1055,12 +1077,15 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		return nil, err
 	}
 	type caseRow struct {
-		Health            string
-		RecentResults     []byte
-		PassCount         int64
-		FailCount         int64
-		TimeoutCount      int64
-		TotalDurationUsec int64
+		Health              string
+		RecentResults       []byte
+		PassCount           int64
+		FailCount           int64
+		TimeoutCount        int64
+		TotalDurationUsec   int64
+		AnalyzerRevision    int64
+		AnalysisReason      string
+		EligibleSampleCount int64
 	}
 	row := &caseRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case").Raw(`
@@ -1068,7 +1093,10 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
-			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
+			COALESCE(s.total_duration_usec, 0) AS total_duration_usec,
+			COALESCE(s.analyzer_revision, 0) AS analyzer_revision,
+			COALESCE(s.analysis_reason, '') AS analysis_reason,
+			COALESCE(s.eligible_sample_count, 0) AS eligible_sample_count
 		FROM "TestCases" AS tc
 		LEFT JOIN "TestCaseStates" AS s
 			ON s.group_id = tc.group_id AND s.repository = tc.repository
@@ -1084,7 +1112,9 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		return nil, err
 	}
 	rsp := &tbpb.GetTestCaseResponse{
-		Test: caseSummary(testCase, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
+		Test:             caseSummary(testCase, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
+		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
+		EligibleSampleCount: row.EligibleSampleCount,
 	}
 	retained, err := decodeRetainedResults(row.RecentResults)
 	if err != nil {
@@ -1099,22 +1129,29 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		})
 	}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case_transitions").Raw(`
-		SELECT previous_health, health, event_time_usec
+		SELECT previous_health, health, event_time_usec,
+			analyzer_revision, analysis_reason, eligible_sample_count
 		FROM "TestCaseStateChanges"
 		WHERE group_id = ? AND repository = ? AND target_label = ? AND case_name = ?
 		ORDER BY state_version DESC
 		LIMIT 100`,
 		groupID, testCase.Repository, testCase.Target().Label(), testCase.CaseName)
 	type transitionRow struct {
-		PreviousHealth string
-		Health         string
-		EventTimeUsec  int64
+		PreviousHealth      string
+		Health              string
+		EventTimeUsec       int64
+		AnalyzerRevision    int64
+		AnalysisReason      string
+		EligibleSampleCount int64
 	}
 	err = db.ScanEach(rq, func(ctx context.Context, row *transitionRow) error {
 		rsp.Transitions = append(rsp.Transitions, &tbpb.TestHealthTransition{
-			PreviousHealth: health(row.PreviousHealth),
-			Health:         health(row.Health),
-			EventTimeUsec:  row.EventTimeUsec,
+			PreviousHealth:      health(row.PreviousHealth),
+			Health:              health(row.Health),
+			EventTimeUsec:       row.EventTimeUsec,
+			AnalyzerRevision:    row.AnalyzerRevision,
+			AnalysisReason:      row.AnalysisReason,
+			EligibleSampleCount: row.EligibleSampleCount,
 		})
 		return nil
 	})

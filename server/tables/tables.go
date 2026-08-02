@@ -738,13 +738,16 @@ type TestCaseState struct {
 	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
 	CaseName    string `gorm:"primaryKey;size:512;not null"`
 
-	Health            string `gorm:"size:32;not null"`
-	RecentResults     []byte `gorm:"size:max;not null"`
-	PassCount         int64
-	FailCount         int64
-	TimeoutCount      int64
-	TotalDurationUsec int64
-	StateVersion      int64 `gorm:"not null"`
+	Health              string `gorm:"size:32;not null"`
+	RecentResults       []byte `gorm:"size:max;not null"`
+	PassCount           int64
+	FailCount           int64
+	TimeoutCount        int64
+	TotalDurationUsec   int64
+	StateVersion        int64  `gorm:"not null"`
+	AnalyzerRevision    int64  `gorm:"not null"`
+	AnalysisReason      string `gorm:"size:64;not null"`
+	EligibleSampleCount int64  `gorm:"not null"`
 }
 
 func (*TestCaseState) TableName() string { return "TestCaseStates" }
@@ -756,13 +759,16 @@ type TestTargetState struct {
 	Repository  string `gorm:"primaryKey;size:512;not null"`
 	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
 
-	Health            string `gorm:"size:32;not null"`
-	RecentResults     []byte `gorm:"size:max;not null"`
-	PassCount         int64
-	FailCount         int64
-	TimeoutCount      int64
-	TotalDurationUsec int64
-	StateVersion      int64 `gorm:"not null"`
+	Health              string `gorm:"size:32;not null"`
+	RecentResults       []byte `gorm:"size:max;not null"`
+	PassCount           int64
+	FailCount           int64
+	TimeoutCount        int64
+	TotalDurationUsec   int64
+	StateVersion        int64  `gorm:"not null"`
+	AnalyzerRevision    int64  `gorm:"not null"`
+	AnalysisReason      string `gorm:"size:64;not null"`
+	EligibleSampleCount int64  `gorm:"not null"`
 }
 
 func (*TestTargetState) TableName() string { return "TestTargetStates" }
@@ -776,12 +782,15 @@ type TestCaseStateChange struct {
 	CaseName     string `gorm:"primaryKey;size:512;not null"`
 	StateVersion int64  `gorm:"primaryKey;autoIncrement:false;not null"`
 
-	PreviousHealth string `gorm:"size:32;not null"`
-	Health         string `gorm:"size:32;not null"`
-	PassCount      int64
-	FailCount      int64
-	TimeoutCount   int64
-	EventTimeUsec  int64 `gorm:"not null"`
+	PreviousHealth      string `gorm:"size:32;not null"`
+	Health              string `gorm:"size:32;not null"`
+	PassCount           int64
+	FailCount           int64
+	TimeoutCount        int64
+	EventTimeUsec       int64  `gorm:"not null"`
+	AnalyzerRevision    int64  `gorm:"not null"`
+	AnalysisReason      string `gorm:"size:64;not null"`
+	EligibleSampleCount int64  `gorm:"not null"`
 }
 
 func (*TestCaseStateChange) TableName() string { return "TestCaseStateChanges" }
@@ -794,12 +803,15 @@ type TestTargetStateChange struct {
 	TargetLabel  string `gorm:"primaryKey;size:1539;not null"`
 	StateVersion int64  `gorm:"primaryKey;autoIncrement:false;not null"`
 
-	PreviousHealth string `gorm:"size:32;not null"`
-	Health         string `gorm:"size:32;not null"`
-	PassCount      int64
-	FailCount      int64
-	TimeoutCount   int64
-	EventTimeUsec  int64 `gorm:"not null"`
+	PreviousHealth      string `gorm:"size:32;not null"`
+	Health              string `gorm:"size:32;not null"`
+	PassCount           int64
+	FailCount           int64
+	TimeoutCount        int64
+	EventTimeUsec       int64  `gorm:"not null"`
+	AnalyzerRevision    int64  `gorm:"not null"`
+	AnalysisReason      string `gorm:"size:64;not null"`
+	EligibleSampleCount int64  `gorm:"not null"`
 }
 
 func (*TestTargetStateChange) TableName() string { return "TestTargetStateChanges" }
