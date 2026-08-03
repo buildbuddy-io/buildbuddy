@@ -39,7 +39,7 @@ interface State {
 
 const genericSuggestions = ["How does remote execution work?", "How does BuildBuddy caching work?"];
 
-const invocationSuggestions = ["Why is this build slow?", "Why did this build fail?", "How can I improve this build?"];
+const invocationSuggestions = ["Fix this build.", "Why is this build slow?", "Why did this build fail?"];
 
 export default class AskBuildBuddyModal extends React.Component<Props, State> {
   state: State = {

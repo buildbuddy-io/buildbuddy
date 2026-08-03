@@ -51,12 +51,12 @@ const (
 const flakeUsage = `
 usage: bb detect flake <invocation-id-or-url> --target=<test-target> --test_filter=<pattern> [--n=100]
 
-Attempts to reproduce a flaky test using the effective Bazel flags from an
+Attempts to reproduce a flaky test using the explicit Bazel command from an
 existing BuildBuddy invocation. It progressively tries:
 
   1. The specified target and test filter with --runs_per_test=n.
   2. The specified target without a test filter with --runs_per_test=n.
-  3. The full original command up to n times, without --runs_per_test.
+  3. The full original command up to n times, without adding --runs_per_test.
 
 Each run disables test-result caching and Bazel's flaky-test retries.
 
@@ -79,39 +79,22 @@ var (
 	flakeAPITarget  = flakeFlags.String("buildbuddy_target", login.DefaultApiTarget, "BuildBuddy gRPC target used to fetch the invocation.")
 )
 
-// Options that identify an invocation, emit auxiliary files, or contain
-// credentials cannot safely be copied from an invocation to a local replay.
+// Options that identify an invocation or emit auxiliary files cannot safely be
+// copied to a new invocation. Redacted options are skipped separately below.
 var nonReplayableOptions = map[string]struct{}{
-	"bes_header":                      {},
 	"build_metadata":                  {},
 	"build_event_binary_file":         {},
 	"build_event_json_file":           {},
 	"build_event_text_file":           {},
 	"build_request_id":                {},
-	"client_cwd":                      {},
 	"execution_log_binary_file":       {},
 	"execution_log_compact_file":      {},
 	"execution_log_json_file":         {},
 	"experimental_execution_log_file": {},
-	"flaky_test_attempts":             {},
 	"invocation_id":                   {},
-	"isatty":                          {},
 	"memory_profile":                  {},
 	"profile":                         {},
-	"remote_cache_header":             {},
-	"remote_header":                   {},
-	"runs_per_test":                   {},
-	"test_filter":                     {},
-	"terminal_columns":                {},
 	"tool_invocation_id":              {},
-}
-
-var nonReplayableStartupOptions = map[string]struct{}{
-	"install_base":      {},
-	"install_md5":       {},
-	"lock_install_base": {},
-	"output_base":       {},
-	"output_user_root":  {},
 }
 
 type flakeCommandRunner interface {
@@ -170,16 +153,17 @@ const (
 )
 
 type flakeStrategy struct {
-	kind        FlakeStrategy
-	name        string
-	targets     []string
-	testFilter  string
-	runsPerTest int
-	attempts    int
+	kind               FlakeStrategy
+	name               string
+	targets            []string
+	testFilter         string
+	overrideTestFilter bool
+	runsPerTest        int
+	attempts           int
 }
 
 // FlakeOptions configures a remote flake detection run. The historical
-// invocation supplies the effective Bazel flags and runner type. If RepoConfig
+// invocation supplies the explicit Bazel command and runner type. If RepoConfig
 // is set, its current commit and patches are tested instead of the historical
 // checkout.
 type FlakeOptions struct {
@@ -572,7 +556,16 @@ func runFlakeDetectionOnOriginalRunner(
 			detectionResult.RunsPerTest = strategy.runsPerTest
 			detectionResult.MaxAttempts = strategy.attempts
 			detectionResult.ReproductionAttempt = remoteRunnerChildInvocationCount(result) - strategyIndex
-			detectionResult.ReproductionInvocationID = remoteRunnerFailingChildInvocationID(result)
+			if detectionResult.ReproductionAttempt < 1 {
+				return detectionResult, fmt.Errorf(
+					"remote detector invocation %s did not report a completed child Bazel invocation for the failing strategy",
+					runResponse.GetInvocationId(),
+				)
+			}
+			// Every strategy stops as soon as Bazel reports a test failure, so the
+			// last completed child is the invocation that reproduced the flake.
+			// ChildInvocationCompleted does not currently carry the Bazel exit code.
+			detectionResult.ReproductionInvocationID = remoteRunnerLastCompletedChildInvocationID(result)
 			if detectionResult.ReproductionInvocationID == "" {
 				return detectionResult, fmt.Errorf(
 					"remote detector invocation %s did not report the child Bazel invocation that reproduced the flake",
@@ -728,18 +721,18 @@ func remoteRunnerExitCodes(invocation *inpb.Invocation) []int {
 	return exitCodes
 }
 
-func remoteRunnerFailingChildInvocationID(invocation *inpb.Invocation) string {
+func remoteRunnerLastCompletedChildInvocationID(invocation *inpb.Invocation) string {
+	invocationID := ""
 	for _, event := range invocation.GetEvent() {
 		buildEvent := event.GetBuildEvent()
-		if buildEvent.GetChildInvocationCompleted().GetExitCode() != bazelTestFailureExitCode {
+		if buildEvent.GetChildInvocationCompleted() == nil {
 			continue
 		}
-		invocationID := buildEvent.GetId().GetChildInvocationCompleted().GetInvocationId()
-		if invocationID != "" {
-			return invocationID
+		if id := buildEvent.GetId().GetChildInvocationCompleted().GetInvocationId(); id != "" {
+			invocationID = id
 		}
 	}
-	return ""
+	return invocationID
 }
 
 func remoteRunnerChildInvocationCount(invocation *inpb.Invocation) int {
@@ -765,7 +758,12 @@ func remoteFlakeSteps(replay replayCommand, strategies []flakeStrategy) []*rnpb.
 			)
 		}
 		failureMessage := fmt.Sprintf("Flake reproduced using %s.", strategy.name)
-		command := remoteBazelCommand(replay.args(strategy.targets, strategy.testFilter, strategy.runsPerTest))
+		command := remoteBazelCommand(replay.args(
+			strategy.targets,
+			strategy.testFilter,
+			strategy.overrideTestFilter,
+			strategy.runsPerTest,
+		))
 		steps = append(steps, &rnpb.Step{
 			Run: remoteFlakeStep(command, strategy.attempts, successMessage, failureMessage),
 		})
@@ -778,6 +776,9 @@ func remoteBazelCommand(args []string) string {
 	if separatorIndex < 0 {
 		separatorIndex = len(args)
 	}
+	// The CI runner prepends its Bazel wrapper directory to PATH. Keep this as
+	// the bare `bazel` command so every attempt goes through that wrapper and is
+	// reported as a child invocation of the detector.
 	beforeTargets := append([]string{"bazel"}, args[:separatorIndex]...)
 	command := shlex.Quote(beforeTargets...)
 	// Credential flags are redacted from stored structured command lines. The
@@ -831,51 +832,22 @@ func parseFlakeInvocationID(value string) (string, error) {
 }
 
 func replayCommandFromInvocation(invocation *inpb.Invocation) (replayCommand, int, error) {
-	canonical := findCommandLine(invocation.GetStructuredCommandLine(), "canonical")
 	original := findCommandLine(invocation.GetStructuredCommandLine(), "original")
-	commandLine := canonical
-	if commandLine == nil {
-		commandLine = original
-	}
-	if commandLine == nil {
-		return replayCommand{}, 0, fmt.Errorf("invocation %s has no structured command line", invocation.GetInvocationId())
+	if original == nil {
+		return replayCommand{}, 0, fmt.Errorf("invocation %s has no explicit structured command line", invocation.GetInvocationId())
 	}
 
 	replay := replayCommand{command: invocation.GetCommand()}
 	skippedRedacted := 0
-	// Canonical startup sections include Bazel implementation details such as
-	// --install_md5 and --lock_install_base, which Bazel reports but does not
-	// accept as command-line flags. The original startup section contains only
-	// user-accepted syntax.
-	if original != nil {
-		for _, section := range original.GetSections() {
-			if !strings.Contains(strings.ToLower(section.GetSectionLabel()), "startup option") {
-				continue
-			}
-			var rcOptions []string
-			if canonical != nil {
-				rcOptions = []string{"bazelrc", "home_rc", "ignore_all_rc_files", "master_bazelrc", "system_rc", "workspace_rc"}
-			}
-			options, skipped := replayableOptions(section.GetOptionList().GetOption(), nonReplayableStartupOptions, rcOptions...)
-			replay.startupOptions = append(replay.startupOptions, options...)
-			skippedRedacted += skipped
-		}
-	}
-	// Canonical command options already contain the effective rc/config
-	// expansions. Disable rc loading so they are not applied a second time.
-	if canonical != nil {
-		replay.startupOptions = append(replay.startupOptions, "--ignore_all_rc_files")
-	}
-
-	for _, section := range commandLine.GetSections() {
+	for _, section := range original.GetSections() {
 		label := strings.ToLower(section.GetSectionLabel())
 		switch {
+		case strings.Contains(label, "startup option"):
+			options, skipped := replayableOptions(section.GetOptionList().GetOption(), nil)
+			replay.startupOptions = append(replay.startupOptions, options...)
+			skippedRedacted += skipped
 		case strings.Contains(label, "command option"):
-			var expansionOptions []string
-			if canonical != nil {
-				expansionOptions = []string{"config"}
-			}
-			options, skipped := replayableOptions(section.GetOptionList().GetOption(), nonReplayableOptions, expansionOptions...)
+			options, skipped := replayableOptions(section.GetOptionList().GetOption(), nonReplayableOptions)
 			replay.commandOptions = append(replay.commandOptions, options...)
 			skippedRedacted += skipped
 		case label == "command":
@@ -916,7 +888,7 @@ func findCommandLine(commandLines []*clpb.CommandLine, label string) *clpb.Comma
 	return nil
 }
 
-func replayableOptions(options []*clpb.Option, excluded map[string]struct{}, additionallyExcluded ...string) ([]string, int) {
+func replayableOptions(options []*clpb.Option, excluded map[string]struct{}) ([]string, int) {
 	var args []string
 	skippedRedacted := 0
 	for _, option := range options {
@@ -926,9 +898,6 @@ func replayableOptions(options []*clpb.Option, excluded map[string]struct{}, add
 			continue
 		}
 		if _, ok := excluded[option.GetOptionName()]; ok {
-			continue
-		}
-		if slices.Contains(additionallyExcluded, option.GetOptionName()) {
 			continue
 		}
 		parts, err := shlex.Split(combined)
@@ -960,7 +929,12 @@ func (c *flakeChecker) Run(ctx context.Context, replay replayCommand, target, te
 			)
 		}
 		for attempt := 1; attempt <= strategy.attempts; attempt++ {
-			args := replay.args(strategy.targets, strategy.testFilter, strategy.runsPerTest)
+			args := replay.args(
+				strategy.targets,
+				strategy.testFilter,
+				strategy.overrideTestFilter,
+				strategy.runsPerTest,
+			)
 			exitCode, err := c.runner.Run(ctx, "bazel", args...)
 			if err != nil {
 				return nil, fmt.Errorf("run Bazel using %s: %w", strategy.name, err)
@@ -982,26 +956,29 @@ func flakeStrategies(replay replayCommand, target, testFilter string, runs int) 
 	strategies := make([]flakeStrategy, 0, 3)
 	if testFilter != "" {
 		strategies = append(strategies, flakeStrategy{
-			kind:        FlakeStrategyFilteredTest,
-			name:        "the target and test filter",
-			targets:     []string{target},
-			testFilter:  testFilter,
-			runsPerTest: runs,
-			attempts:    1,
+			kind:               FlakeStrategyFilteredTest,
+			name:               "the target and test filter",
+			targets:            []string{target},
+			testFilter:         testFilter,
+			overrideTestFilter: true,
+			runsPerTest:        runs,
+			attempts:           1,
 		})
 	}
 	strategies = append(strategies, flakeStrategy{
-		kind:        FlakeStrategyWholeTarget,
-		name:        "the target without a test filter",
-		targets:     []string{target},
-		runsPerTest: runs,
-		attempts:    1,
+		kind:               FlakeStrategyWholeTarget,
+		name:               "the target without a test filter",
+		targets:            []string{target},
+		overrideTestFilter: true,
+		runsPerTest:        runs,
+		attempts:           1,
 	})
 	strategies = append(strategies, flakeStrategy{
-		kind:     FlakeStrategyFullCommand,
-		name:     "the full original command",
-		targets:  replay.targets,
-		attempts: runs,
+		kind:       FlakeStrategyFullCommand,
+		name:       "the full original command",
+		targets:    replay.targets,
+		testFilter: testFilter,
+		attempts:   runs,
 	})
 	return strategies
 }
@@ -1022,7 +999,7 @@ func flakeStrategyRunDescription(strategy flakeStrategy) string {
 	return fmt.Sprintf("up to %d separate Bazel invocations", strategy.attempts)
 }
 
-func (r replayCommand) args(targets []string, testFilter string, runsPerTest int) []string {
+func (r replayCommand) args(targets []string, testFilter string, overrideTestFilter bool, runsPerTest int) []string {
 	args := append([]string(nil), r.startupOptions...)
 	args = append(args, r.command)
 	args = append(args, r.commandOptions...)
@@ -1030,11 +1007,14 @@ func (r replayCommand) args(targets []string, testFilter string, runsPerTest int
 	// cached pass from an earlier attempt. Disable Bazel's own flaky-test
 	// retries so a failing attempt is observable by this detector.
 	args = append(args, "--nocache_test_results", "--flaky_test_attempts=1")
-	if testFilter != "" {
+	if overrideTestFilter {
 		args = append(args, "--test_filter="+testFilter)
 	}
 	if runsPerTest > 0 {
 		args = append(args, "--runs_per_test="+strconv.Itoa(runsPerTest))
+		if overrideTestFilter && testFilter != "" {
+			args = append(args, "--notest_keep_going")
+		}
 	}
 	args = append(args, "--")
 	args = append(args, targets...)

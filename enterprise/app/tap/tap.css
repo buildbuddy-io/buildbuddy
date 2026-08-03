@@ -585,3 +585,28 @@ SKIPPED = 13;
   padding-left: 0;
   border-left: none;
 }
+
+.tap .flake-sample {
+  position: relative;
+  display: flow-root;
+}
+
+.tap .flake-sample-actions {
+  position: absolute;
+  top: 56px;
+  right: 32px;
+  z-index: 1;
+}
+
+.tap .flake-sample > .card > .content {
+  padding-right: 112px;
+}
+
+.tap .fix-flake-button {
+  gap: 6px;
+}
+
+.tap .fix-flake-button svg {
+  width: 16px;
+  height: 16px;
+}

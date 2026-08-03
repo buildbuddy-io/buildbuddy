@@ -52,8 +52,10 @@ What it took to reproduce the flake:
 - --runs_per_test: %s
 - Reproduced on attempt: %d of %d
 
-The filtered and whole-target strategies add --runs_per_test. The full-command
-strategy instead repeats the original command in separate Bazel invocations.
+The filtered and whole-target strategies add --runs_per_test. The filtered
+strategy stops after the first failing run; the whole-target strategy finishes
+so the failure output shows whether this test or a different test failed. The
+full-command strategy instead repeats the original command in separate Bazel invocations.
 All strategies disable test-result caching and Bazel's flaky-test retries.
 These changes amplify the flake but are not an exact replay of the original CI
 invocation. Consider whether the repetitions changed concurrency, sharding,

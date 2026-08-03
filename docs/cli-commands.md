@@ -44,9 +44,11 @@ are forwarded to the selected agent.
 
 ### bb detect flake
 
-`bb detect flake` replays the effective Bazel flags from an existing BuildBuddy
+`bb detect flake` replays the explicit Bazel command from an existing BuildBuddy
 invocation and progressively broadens the test scope until it reproduces a
-flaky test. The detector recreates the original CI runner type by cloning the
+flaky test. Bazel reloads the checked-in rc files and expands the same explicit
+`--config` flags, rather than replaying canonical/internal flags. The detector
+recreates the original CI runner type by cloning the
 outer runner action's platform properties. Runner recycling is disabled for the
 detector so it cannot overwrite the original runner snapshot. The replayed
 Bazel commands are dispatched directly as steps on that runner. The outer
@@ -58,9 +60,12 @@ the original outer runner command.
 1. The specified target and `--test_filter` with `--runs_per_test=n`.
 2. The specified target without the filter with `--runs_per_test=n`.
 3. The entire original command in up to `n` separate Bazel invocations, without
-   `--runs_per_test`.
+   adding `--runs_per_test`.
 
-The first two policies run once with `--runs_per_test=n`. The final policy
+The first two policies run once with `--runs_per_test=n`. The filtered policy
+also uses `--notest_keep_going`, so Bazel stops after the first matching failure.
+The whole-target policy does not stop early, since a different test in the
+target could fail and its output needs to remain visible. The final policy
 preserves the original command shape and stops as soon as one of its repeated
 invocations fails. Every policy disables test-result caching and Bazel's
 flaky-test retries.

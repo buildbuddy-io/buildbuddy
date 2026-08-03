@@ -1,11 +1,14 @@
-import { Check, Copy, Target } from "lucide-react";
+import { Check, Copy, Sparkles, Target } from "lucide-react";
 import moment from "moment";
 import React from "react";
 import Banner from "../../../app/components/banner/banner";
+import { OutlinedButton } from "../../../app/components/button/button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
 import Link from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
+import error_service from "../../../app/errors/error_service";
 import format, { count } from "../../../app/format/format";
+import InvocationModel from "../../../app/invocation/invocation_model";
 import router from "../../../app/router/router";
 import rpc_service from "../../../app/service/rpc_service";
 import TargetFlakyTestCardComponent from "../../../app/target/target_flaky_test_card";
@@ -13,6 +16,9 @@ import { FlakyTargetSampleLogCardComponent } from "../../../app/target/target_te
 import { CancelablePromise } from "../../../app/util/async";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
+import { triggerRemoteRun, UI_CODEX_MODEL, UI_CODEX_REASONING_EFFORT } from "../../../app/util/remote_runner";
+import { quote } from "../../../app/util/shlex";
+import { invocation } from "../../../proto/invocation_ts_proto";
 import { target } from "../../../proto/target_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
 import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
@@ -336,6 +342,56 @@ export default class FlakesComponent extends React.Component<Props, State> {
     return `${val} ${this.renderPluralName(val, label)}`;
   }
 
+  async fixFlake(sample: target.FlakeSample, targetLabel: string) {
+    try {
+      const response = await rpc_service.service.getInvocation(
+        new invocation.GetInvocationRequest({
+          lookup: new invocation.InvocationLookup({ invocationId: sample.invocationId }),
+        })
+      );
+      if (!response.invocation.length) {
+        throw new Error(`Invocation ${sample.invocationId} was not found.`);
+      }
+
+      const command = [
+        "bb fix test",
+        "--agent=codex",
+        `--model=${UI_CODEX_MODEL}`,
+        `--effort=${UI_CODEX_REASONING_EFFORT}`,
+        '--buildbuddy_target="$BUILDBUDDY_API_TARGET"',
+        quote(sample.invocationId),
+        quote(targetLabel),
+      ].join(" ");
+      const platformProps = new Map<string, string>([
+        ["OSFamily", "darwin"],
+        ["Arch", "arm64"],
+        ["container-image", ""],
+      ]);
+      triggerRemoteRun(
+        new InvocationModel(response.invocation[0]),
+        command,
+        false /*autoOpenChild*/,
+        platformProps,
+        ["--disable_git_push=true", `--parent_invocation_id=${sample.invocationId}`],
+        false /*skipRepo*/,
+        `Fix flaky test ${targetLabel}`
+      );
+    } catch (error) {
+      error_service.handleError(error);
+    }
+  }
+
+  renderFixFlakeButton(sample: target.FlakeSample, targetLabel: string) {
+    return (
+      <OutlinedButton
+        className="fix-flake-button"
+        title="Reproduce this flake remotely, ask an agent to fix it, and verify the patch"
+        onClick={() => this.fixFlake(sample, targetLabel)}>
+        <Sparkles /> Fix
+      </OutlinedButton>
+    );
+  }
+
   renderFlakeSamples(targetLabel: string) {
     return (
       <div className="container flakes-list">
@@ -345,17 +401,24 @@ export default class FlakesComponent extends React.Component<Props, State> {
         )}
         {this.state.flakeSamples?.samples.map((s) => {
           const xmlFileUri = this.getFileUriFromFlakeSample(s, "test.xml");
+          const testXmlDoc = xmlFileUri ? this.state.flakeTestLogs.get(xmlFileUri) : undefined;
+          let sampleContents: React.ReactNode = null;
           if (!xmlFileUri) {
-            return <></>;
-          }
-          const testXmlDoc = this.state.flakeTestLogs.get(xmlFileUri);
-          if (!testXmlDoc) {
-            return <div className="loading"></div>;
+            sampleContents = (
+              <div className="card artifacts card-broken">
+                <div className="content">
+                  Invocation <Link href={router.getInvocationUrl(s.invocationId)}>{s.invocationId}</Link> did not
+                  upload a test.xml file.
+                </div>
+              </div>
+            );
+          } else if (!testXmlDoc) {
+            sampleContents = <div className="loading"></div>;
           } else if (testXmlDoc.errorMessage) {
             // Error messages will just be aggregated at the end.
-            return (
+            sampleContents = (
               <div className={"card artifacts card-broken"}>
-                <div>
+                <div className="content">
                   Failed to load test logs for a failure in invocation{" "}
                   <Link href={router.getInvocationUrl(s.invocationId)}>{s.invocationId}</Link>:{" "}
                   {testXmlDoc.errorMessage}
@@ -363,12 +426,13 @@ export default class FlakesComponent extends React.Component<Props, State> {
               </div>
             );
           } else if (testXmlDoc.testXmlDocument) {
-            return Array.from(testXmlDoc.testXmlDocument.getElementsByTagName("testsuite"))
+            sampleContents = Array.from(testXmlDoc.testXmlDocument.getElementsByTagName("testsuite"))
               .filter((testSuite) => testSuite.getElementsByTagName("testcase").length > 0)
               .sort((a, b) => +(b.getAttribute("failures") || 0) - +(a.getAttribute("failures") || 0))
-              .map((testSuite) => {
+              .map((testSuite, index) => {
                 return (
                   <TargetFlakyTestCardComponent
+                    key={`${testSuite.getAttribute("name")}-${index}`}
                     invocationId={s.invocationId}
                     invocationStartTimeUsec={+s.invocationStartTimeUsec}
                     target={targetLabel}
@@ -378,7 +442,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                 );
               });
           } else if (testXmlDoc.testLogString) {
-            return (
+            sampleContents = (
               <FlakyTargetSampleLogCardComponent
                 invocationId={s.invocationId}
                 invocationStartTimeUsec={+s.invocationStartTimeUsec}
@@ -388,6 +452,14 @@ export default class FlakesComponent extends React.Component<Props, State> {
                 dark={this.props.dark}></FlakyTargetSampleLogCardComponent>
             );
           }
+          return (
+            <div
+              className="flake-sample"
+              key={`${s.invocationId}-${xmlFileUri || s.event?.id?.testResult?.run || "sample"}`}>
+              <div className="flake-sample-actions">{this.renderFixFlakeButton(s, targetLabel)}</div>
+              {sampleContents}
+            </div>
+          );
         })}
         {this.state.flakeSamplesLoading && <div className="loading"></div>}
         {!this.state.flakeSamplesLoading && this.state.flakeSamples?.nextPageToken && (
