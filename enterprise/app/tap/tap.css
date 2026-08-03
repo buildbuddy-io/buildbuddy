@@ -264,7 +264,6 @@
   padding-bottom: 48px;
 }
 
-.test-buddy h1,
 .test-buddy h2 {
   margin-bottom: 8px;
 }
@@ -276,7 +275,7 @@
 .test-buddy-title-row {
   align-items: center;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
 }
 
 .test-buddy-title-actions {

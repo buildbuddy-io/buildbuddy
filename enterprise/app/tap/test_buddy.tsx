@@ -523,7 +523,6 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     return (
       <div className="container test-buddy">
         <div className="test-buddy-title-row">
-          <h1>TestBuddy</h1>
           <div className="test-buddy-title-actions">
             {this.renderHealthFilter()}
             <OutlinedButton
