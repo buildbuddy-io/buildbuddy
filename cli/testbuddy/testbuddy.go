@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +20,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -28,13 +31,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
+	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/junit"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/normalize"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var bazelTestOutputLayout = regexp.MustCompile(
@@ -54,6 +65,8 @@ var bazelTestOutputLayout = regexp.MustCompile(
 // normalization bounds every component — a failure message to 512 bytes and a
 // source URL to 2,048 — so an observation is kilobytes, not megabytes.
 const ReportRequestTargetBytes = 8 << 20
+
+const invocationReportConcurrency = 8
 
 // DiagnosticLog accumulates what the JUnit parser could not use, across every
 // file in one report.
@@ -217,7 +230,9 @@ var (
 		"source_url", "", "Observation URL; defaults to the most recent bb test invocation.")
 	reportSource = TestReportFlags.String(
 		"source", "monitor", "Observation source: presubmit, postsubmit, or monitor.")
-	reportTargetLabel = TestReportFlags.String("target_label", "", "Bazel target label; inferred from bazel-testlogs paths by default.")
+	reportTargetLabel  = TestReportFlags.String("target_label", "", "Bazel target label; inferred from bazel-testlogs paths by default.")
+	reportInvocationID = TestReportFlags.String("invocation_id", "", "BuildBuddy invocation whose remote test.xml outputs should be reported.")
+	reportAPITarget    = TestReportFlags.String("buildbuddy_target", "", "BuildBuddy gRPC API containing --invocation_id; defaults to the most recent BES backend.")
 
 	GetTestsFlags  = flag.NewFlagSet("get-tests", flag.ContinueOnError)
 	getTarget      = GetTestsFlags.String("target", "", "BuildBuddy gRPC target; defaults to grpc://127.0.0.1:1985.")
@@ -236,40 +251,9 @@ func HandleTestReport(args []string) (int, error) {
 		}
 		return 1, err
 	}
-	workspacePath, err := workspace.Path()
-	if err != nil {
-		return 1, err
-	}
-	commitSHA, workspaceDirty, err := WorkspaceRevision(workspacePath)
-	if err != nil {
-		return 1, err
-	}
-	repository, err := repositoryURL(workspacePath, *reportRepo)
-	if err != nil {
-		return 1, err
-	}
-	sourceURL, err := observationURL(*reportSourceURL)
-	if err != nil {
-		return 1, err
-	}
 	source, err := ParseObservationSource(*reportSource)
 	if err != nil {
 		return 1, err
-	}
-	metadata := ObservationMetadata{
-		SourceURL: sourceURL, Source: source,
-		CommitSHA: commitSHA, WorkspaceDirty: workspaceDirty,
-	}
-	inputs := TestReportFlags.Args()
-	if len(inputs) == 0 {
-		inputs = []string{"bazel-testlogs"}
-	}
-	paths, err := FindTestXMLFiles(inputs)
-	if err != nil {
-		return 1, err
-	}
-	if len(paths) == 0 {
-		return 1, status.InvalidArgumentError("the supplied paths contain no test.xml files")
 	}
 	target, err := backend(*reportTarget)
 	if err != nil {
@@ -289,51 +273,158 @@ func HandleTestReport(args []string) (int, error) {
 		return 1, err
 	}
 	defer stream.CloseSend()
-	batcher := NewReportBatcher(repository, stream.Send)
 	diagnostics := NewDiagnosticLog(func(line string) { log.Debug(line) })
-	for _, path := range paths {
-		targetLabel := *reportTargetLabel
-		if targetLabel == "" {
-			targetLabel, err = TargetLabelFromXMLPath(workspacePath, path)
+	var sourceURL string
+	reportDescription := ""
+	if *reportInvocationID != "" {
+		if TestReportFlags.NArg() != 0 || *reportTargetLabel != "" {
+			return 1, status.InvalidArgumentError(
+				"--invocation_id does not accept XML paths or --target_label")
+		}
+		apiTarget, err := download.ResolveTarget(*reportAPITarget)
+		if err != nil {
+			return 1, err
+		}
+		apiConn, err := grpc_client.DialSimple(apiTarget)
+		if err != nil {
+			return 1, err
+		}
+		defer apiConn.Close()
+		apiContext, err := authenticatedContext(context.Background(), apiTarget)
+		if err != nil {
+			return 1, err
+		}
+		apiClient := bbspb.NewBuildBuddyServiceClient(apiConn)
+		invocation, err := GetInvocationReportMetadata(apiContext, apiClient, *reportInvocationID)
+		if err != nil {
+			return 1, err
+		}
+		repository := invocation.Repository
+		if *reportRepo != "" {
+			repository = *reportRepo
+		}
+		if repository == "" {
+			return 1, status.FailedPreconditionError(
+				"invocation has no repository URL; pass --repo_url")
+		}
+		if invocation.CommitSHA == "" {
+			return 1, status.FailedPreconditionError("invocation has no commit SHA")
+		}
+		sourceURL, err = observationURL(*reportSourceURL, *reportInvocationID)
+		if err != nil {
+			return 1, err
+		}
+		metadata := ObservationMetadata{
+			SourceURL: sourceURL, Source: source, CommitSHA: invocation.CommitSHA,
+			WorkspaceDirty: invocation.WorkspaceDirty,
+		}
+		batcher := NewReportBatcher(repository, stream.Send)
+		stats, err := ForEachInvocationTestReport(
+			apiContext, apiClient, download.NewByteStreamDownloader(bspb.NewByteStreamClient(apiConn)),
+			*reportInvocationID, invocation.CreatedAtUsec,
+			func(remote *InvocationTestReport) error {
+				diagnostics.Add(remote.XMLURI, remote.TargetLabel, remote.Report)
+				targetObservation, caseObservations, err := ObservationsForParsedReport(
+					remote.TargetLabel, metadata, remote.Report, remote.Context)
+				if err != nil {
+					return err
+				}
+				if err := batcher.AddTargetObservation(targetObservation); err != nil {
+					return err
+				}
+				for _, observation := range caseObservations {
+					if err := batcher.AddCaseObservation(observation); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			return 1, err
+		}
+		if err := batcher.Flush(); err != nil {
+			return 1, err
+		}
+		reportDescription = fmt.Sprintf("%d test attempts (%d XML reports)",
+			stats.AttemptCount, stats.XMLCount)
+	} else {
+		workspacePath, err := workspace.Path()
+		if err != nil {
+			return 1, err
+		}
+		commitSHA, workspaceDirty, err := WorkspaceRevision(workspacePath)
+		if err != nil {
+			return 1, err
+		}
+		repository, err := repositoryURL(workspacePath, *reportRepo)
+		if err != nil {
+			return 1, err
+		}
+		sourceURL, err = observationURL(*reportSourceURL, "")
+		if err != nil {
+			return 1, err
+		}
+		metadata := ObservationMetadata{
+			SourceURL: sourceURL, Source: source,
+			CommitSHA: commitSHA, WorkspaceDirty: workspaceDirty,
+		}
+		inputs := TestReportFlags.Args()
+		if len(inputs) == 0 {
+			inputs = []string{"bazel-testlogs"}
+		}
+		paths, err := FindTestXMLFiles(inputs)
+		if err != nil {
+			return 1, err
+		}
+		if len(paths) == 0 {
+			return 1, status.InvalidArgumentError("the supplied paths contain no test.xml files")
+		}
+		batcher := NewReportBatcher(repository, stream.Send)
+		for _, path := range paths {
+			targetLabel := *reportTargetLabel
+			if targetLabel == "" {
+				targetLabel, err = TargetLabelFromXMLPath(workspacePath, path)
+				if err != nil {
+					return 1, err
+				}
+			}
+			file, err := os.Open(path)
 			if err != nil {
 				return 1, err
 			}
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			return 1, err
-		}
-		report, parseErr := junit.Parse(context.Background(), file, junit.Options{TargetLabel: targetLabel})
-		closeErr := file.Close()
-		if parseErr != nil {
-			return 1, parseErr
-		}
-		if closeErr != nil {
-			return 1, closeErr
-		}
-		diagnostics.Add(path, targetLabel, report)
-		targetObservation, caseObservations, err := ObservationsForReport(path, targetLabel, metadata, report)
-		if err != nil {
-			return 1, err
-		}
-		if err := batcher.AddTargetObservation(targetObservation); err != nil {
-			return 1, err
-		}
-		for _, observation := range caseObservations {
-			if err := batcher.AddCaseObservation(observation); err != nil {
+			report, parseErr := junit.Parse(context.Background(), file, junit.Options{TargetLabel: targetLabel})
+			closeErr := file.Close()
+			if parseErr != nil {
+				return 1, parseErr
+			}
+			if closeErr != nil {
+				return 1, closeErr
+			}
+			diagnostics.Add(path, targetLabel, report)
+			targetObservation, caseObservations, err := ObservationsForReport(path, targetLabel, metadata, report)
+			if err != nil {
 				return 1, err
 			}
+			if err := batcher.AddTargetObservation(targetObservation); err != nil {
+				return 1, err
+			}
+			for _, observation := range caseObservations {
+				if err := batcher.AddCaseObservation(observation); err != nil {
+					return 1, err
+				}
+			}
 		}
-	}
-	if err := batcher.Flush(); err != nil {
-		return 1, err
+		if err := batcher.Flush(); err != nil {
+			return 1, err
+		}
+		reportDescription = fmt.Sprintf("%d XML files", len(paths))
 	}
 	rsp, err := stream.CloseAndRecv()
 	if err != nil {
 		return 1, err
 	}
-	fmt.Printf("reported %d test results (%d rejected) from %d XML files\n",
-		rsp.GetAcceptedCount(), rsp.GetRejectedCount(), len(paths))
+	fmt.Printf("reported %d test results (%d rejected) from %s\n",
+		rsp.GetAcceptedCount(), rsp.GetRejectedCount(), reportDescription)
 	fmt.Printf("source %s\n", sourceURL)
 	if summary := diagnostics.Summary(); summary != "" {
 		fmt.Println(summary)
@@ -363,6 +454,282 @@ type ObservationMetadata struct {
 	Source         tbpb.TestObservationSource
 	CommitSHA      string
 	WorkspaceDirty bool
+}
+
+type ReportContext struct {
+	ExecutionContext   string
+	TargetOutcome      tbpb.TestOutcome
+	EventTimeUsec      int64
+	TargetDurationUsec int64
+	FailureMessage     string
+}
+
+type InvocationReportMetadata struct {
+	Repository     string
+	CommitSHA      string
+	WorkspaceDirty bool
+	CreatedAtUsec  int64
+}
+
+type InvocationTestReport struct {
+	TargetLabel string
+	XMLURI      string
+	Report      *junit.Report
+	Context     ReportContext
+}
+
+type InvocationReportStats struct {
+	AttemptCount int
+	XMLCount     int
+}
+
+type invocationTarget struct {
+	label  string
+	events []*bespb.BuildEvent
+}
+
+func GetInvocationReportMetadata(ctx context.Context, client bbspb.BuildBuddyServiceClient, invocationID string) (*InvocationReportMetadata, error) {
+	if invocationID == "" {
+		return nil, status.InvalidArgumentError("invocation ID is required")
+	}
+	rsp, err := client.GetInvocation(ctx, &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{InvocationId: invocationID},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(rsp.GetInvocation()) == 0 {
+		return nil, status.NotFoundErrorf("invocation %q was not found", invocationID)
+	}
+	invocation := rsp.GetInvocation()[0]
+	metadata := &InvocationReportMetadata{
+		Repository: invocation.GetRepoUrl(), CommitSHA: invocation.GetCommitSha(),
+		CreatedAtUsec: invocation.GetCreatedAtUsec(),
+	}
+	for _, event := range invocation.GetEvent() {
+		for _, item := range event.GetBuildEvent().GetWorkspaceStatus().GetItem() {
+			if item.GetKey() == "GIT_TREE_STATUS" && strings.EqualFold(item.GetValue(), "Modified") {
+				metadata.WorkspaceDirty = true
+			}
+		}
+	}
+	return metadata, nil
+}
+
+// ForEachInvocationTestReport downloads and parses the test reports attached
+// to a BuildBuddy invocation. Downloads are bounded and concurrent; visitor is
+// called serially so callers can write directly to a report stream.
+func ForEachInvocationTestReport(ctx context.Context, client bbspb.BuildBuddyServiceClient, downloader download.Downloader, invocationID string, fallbackEventTimeUsec int64, visitor func(*InvocationTestReport) error) (InvocationReportStats, error) {
+	if invocationID == "" {
+		return InvocationReportStats{}, status.InvalidArgumentError("invocation ID is required")
+	}
+	if visitor == nil {
+		return InvocationReportStats{}, status.InvalidArgumentError("visitor is required")
+	}
+	groupContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+	group, groupContext := errgroup.WithContext(groupContext)
+	jobs := make(chan invocationTarget)
+	results := make(chan *InvocationTestReport, invocationReportConcurrency)
+
+	group.Go(func() error {
+		defer close(jobs)
+		pageTokens := []string{""}
+		seenTokens := map[string]bool{"": true}
+		seenTargets := make(map[string]bool)
+		for len(pageTokens) > 0 {
+			pageToken := pageTokens[0]
+			pageTokens = pageTokens[1:]
+			rsp, err := client.GetTarget(groupContext, &trpb.GetTargetRequest{
+				InvocationId: invocationID, PageToken: pageToken, IncludeTestResultEvents: true,
+			})
+			if err != nil {
+				return err
+			}
+			for _, targetGroup := range rsp.GetTargetGroups() {
+				if !isTestTargetStatus(targetGroup.GetStatus()) {
+					continue
+				}
+				if token := targetGroup.GetNextPageToken(); token != "" && !seenTokens[token] {
+					seenTokens[token] = true
+					pageTokens = append(pageTokens, token)
+				}
+				for _, target := range targetGroup.GetTargets() {
+					label := target.GetMetadata().GetLabel()
+					if label == "" || seenTargets[label] {
+						continue
+					}
+					seenTargets[label] = true
+					select {
+					case jobs <- invocationTarget{label: label, events: target.GetTestResultEvents()}:
+					case <-groupContext.Done():
+						return groupContext.Err()
+					}
+				}
+			}
+		}
+		return nil
+	})
+	for range invocationReportConcurrency {
+		group.Go(func() error {
+			for job := range jobs {
+				events := job.events
+				if len(events) == 0 {
+					rsp, err := client.GetTarget(groupContext, &trpb.GetTargetRequest{
+						InvocationId: invocationID, TargetLabel: job.label,
+					})
+					if err != nil {
+						return err
+					}
+					for _, targetGroup := range rsp.GetTargetGroups() {
+						for _, target := range targetGroup.GetTargets() {
+							events = append(events, target.GetTestResultEvents()...)
+						}
+					}
+				}
+				for _, event := range events {
+					if event.GetId().GetTestResult() == nil || event.GetTestResult() == nil {
+						continue
+					}
+					report, err := invocationTestReport(
+						groupContext, downloader, invocationID, fallbackEventTimeUsec,
+						job.label, event)
+					if err != nil {
+						return err
+					}
+					select {
+					case results <- report:
+					case <-groupContext.Done():
+						return groupContext.Err()
+					}
+				}
+			}
+			return nil
+		})
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- group.Wait()
+		close(results)
+	}()
+
+	stats := InvocationReportStats{}
+	var visitorErr error
+	for report := range results {
+		stats.AttemptCount++
+		if report.XMLURI != "" {
+			stats.XMLCount++
+		}
+		if visitorErr == nil {
+			if err := visitor(report); err != nil {
+				visitorErr = err
+				cancel()
+			}
+		}
+	}
+	groupErr := <-done
+	if visitorErr != nil {
+		return stats, visitorErr
+	}
+	if groupErr != nil {
+		return stats, groupErr
+	}
+	return stats, nil
+}
+
+func isTestTargetStatus(targetStatus cmpb.Status) bool {
+	switch targetStatus {
+	case cmpb.Status_STATUS_UNSPECIFIED, cmpb.Status_BUILDING, cmpb.Status_BUILT,
+		cmpb.Status_FAILED_TO_BUILD, cmpb.Status_SKIPPED:
+		return false
+	default:
+		return true
+	}
+}
+
+func invocationTestReport(ctx context.Context, downloader download.Downloader, invocationID string, fallbackEventTimeUsec int64, targetLabel string, event *bespb.BuildEvent) (*InvocationTestReport, error) {
+	eventID := event.GetId().GetTestResult()
+	result := event.GetTestResult()
+	executionContext := observationID(invocationID, targetLabel,
+		eventID.GetConfiguration().GetId(), strconv.Itoa(int(eventID.GetRun())),
+		strconv.Itoa(int(eventID.GetShard())), strconv.Itoa(int(eventID.GetAttempt())))
+	eventTimeUsec := fallbackEventTimeUsec
+	if timestamp := result.GetTestAttemptStart(); timestamp != nil && timestamp.CheckValid() == nil {
+		eventTimeUsec = timestamp.AsTime().UnixMicro()
+	} else if result.GetTestAttemptStartMillisEpoch() > 0 {
+		eventTimeUsec = result.GetTestAttemptStartMillisEpoch() * 1_000
+	}
+	durationUsec := result.GetTestAttemptDurationMillis() * 1_000
+	if duration := result.GetTestAttemptDuration(); duration != nil && duration.CheckValid() == nil {
+		durationUsec = duration.AsDuration().Microseconds()
+	}
+	xmlURI := testXMLURI(result)
+	report := &junit.Report{}
+	if xmlURI != "" {
+		reader, writer := io.Pipe()
+		downloadDone := make(chan error, 1)
+		go func() {
+			err := downloader.GetBytestreamFile(ctx, xmlURI, writer)
+			_ = writer.CloseWithError(err)
+			downloadDone <- err
+		}()
+		parsed, parseErr := junit.Parse(ctx, reader, junit.Options{TargetLabel: targetLabel})
+		if parseErr != nil {
+			_ = reader.CloseWithError(parseErr)
+		}
+		downloadErr := <-downloadDone
+		if downloadErr != nil {
+			return nil, fmt.Errorf("download test.xml for %s: %w", targetLabel, downloadErr)
+		}
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse test.xml for %s: %w", targetLabel, parseErr)
+		}
+		report = parsed
+	}
+	return &InvocationTestReport{
+		TargetLabel: targetLabel, XMLURI: xmlURI, Report: report,
+		Context: ReportContext{
+			ExecutionContext: executionContext, TargetOutcome: bazelTestResultOutcome(result, xmlURI != ""),
+			EventTimeUsec: eventTimeUsec, TargetDurationUsec: durationUsec,
+			FailureMessage: truncateUTF8(result.GetStatusDetails(), normalize.MaxFailureMessageBytes),
+		},
+	}, nil
+}
+
+func testXMLURI(result *bespb.TestResult) string {
+	for _, output := range result.GetTestActionOutput() {
+		if output.GetName() == "test.xml" {
+			return output.GetUri()
+		}
+	}
+	return ""
+}
+
+func bazelTestResultOutcome(result *bespb.TestResult, hasXML bool) tbpb.TestOutcome {
+	switch result.GetStatus() {
+	case bespb.TestStatus_TIMEOUT:
+		return tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT
+	case bespb.TestStatus_NO_STATUS:
+		return tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
+	case bespb.TestStatus_PASSED, bespb.TestStatus_FLAKY:
+		return tbpb.TestOutcome_TEST_OUTCOME_PASS
+	default:
+		if hasXML {
+			return tbpb.TestOutcome_TEST_OUTCOME_PASS
+		}
+		return tbpb.TestOutcome_TEST_OUTCOME_FAIL
+	}
+}
+
+func truncateUTF8(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	value = value[:maxBytes]
+	for !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return value
 }
 
 func WorkspaceRevision(workspacePath string) (string, bool, error) {
@@ -401,20 +768,43 @@ func ObservationsForReport(xmlPath, targetLabel string, metadata ObservationMeta
 	if eventTimeUsec <= 0 {
 		return nil, nil, status.InvalidArgumentError("a positive report event time is required")
 	}
-	executionContext := observationContext(xmlPath)
+	return ObservationsForParsedReport(targetLabel, metadata, report, ReportContext{
+		ExecutionContext: observationContext(xmlPath), TargetOutcome: targetOutcome,
+		EventTimeUsec: eventTimeUsec,
+	})
+}
+
+func ObservationsForParsedReport(targetLabel string, metadata ObservationMetadata, report *junit.Report, reportContext ReportContext) (*tbpb.TestTargetObservation, []*tbpb.TestCaseObservation, error) {
+	if report == nil {
+		return nil, nil, status.InvalidArgumentError("parsed JUnit report is required")
+	}
+	eventTimeUsec := report.EventTimeUsec
+	if eventTimeUsec <= 0 {
+		eventTimeUsec = reportContext.EventTimeUsec
+	}
+	if eventTimeUsec <= 0 {
+		return nil, nil, status.InvalidArgumentError("a positive report event time is required")
+	}
+	durationUsec := report.DurationUsec
+	if durationUsec <= 0 {
+		durationUsec = reportContext.TargetDurationUsec
+	}
 	target := &tbpb.TestTargetObservation{
 		Identity: &tbpb.TestTargetIdentity{TargetLabel: targetLabel},
 		Observation: &tbpb.TestObservation{
-			Outcome: targetOutcome, DurationUsec: report.DurationUsec, SourceUrl: metadata.SourceURL,
+			Outcome: reportContext.TargetOutcome, DurationUsec: durationUsec, SourceUrl: metadata.SourceURL,
 			EventTimeUsec:  eventTimeUsec,
-			ObservationId:  observationID("target", metadata.SourceURL, targetLabel, executionContext),
+			ObservationId:  observationID("target", metadata.SourceURL, targetLabel, reportContext.ExecutionContext),
 			Source:         metadata.Source,
 			CommitSha:      metadata.CommitSHA,
 			WorkspaceDirty: metadata.WorkspaceDirty,
+			FailureMessage: reportContext.FailureMessage,
 		},
 	}
-	if targetOutcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
-		target.Observation.FailureMessage = "Bazel test target timed out"
+	if reportContext.TargetOutcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
+		if target.Observation.FailureMessage == "" {
+			target.Observation.FailureMessage = "Bazel test target timed out"
+		}
 		return target, nil, nil
 	}
 	if report.UnattributedFailure {
@@ -436,7 +826,7 @@ func ObservationsForReport(xmlPath, targetLabel string, metadata ObservationMeta
 				FailureMessage: testCase.FailureMessage, SourceUrl: metadata.SourceURL,
 				EventTimeUsec: caseEventTimeUsec,
 				ObservationId: observationID("case", metadata.SourceURL, targetLabel, testCase.CaseName,
-					executionContext, strconv.Itoa(testCase.OccurrenceIndex)),
+					reportContext.ExecutionContext, strconv.Itoa(testCase.OccurrenceIndex)),
 				Source:         metadata.Source,
 				CommitSha:      metadata.CommitSHA,
 				WorkspaceDirty: metadata.WorkspaceDirty,
@@ -775,13 +1165,17 @@ func repositoryURL(workspacePath, override string) (string, error) {
 	return repository, nil
 }
 
-func observationURL(override string) (string, error) {
+func observationURL(override, requestedInvocationID string) (string, error) {
 	if override != "" {
 		return override, nil
 	}
-	invocationID, err := flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
-	if err != nil {
-		return "", err
+	invocationID := requestedInvocationID
+	if invocationID == "" {
+		var err error
+		invocationID, err = flaghistory.GetPreviousFlag(flaghistory.InvocationIDFlagName)
+		if err != nil {
+			return "", err
+		}
 	}
 	base, err := flaghistory.GetPreviousFlag(flaghistory.BesResultsUrlFlagName)
 	if err != nil {
@@ -791,10 +1185,21 @@ func observationURL(override string) (string, error) {
 		return "", status.FailedPreconditionError(
 			"could not determine the most recent invocation URL; pass --source_url")
 	}
-	if strings.Contains(base, invocationID) {
-		return base, nil
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return "", status.FailedPreconditionError(
+			"could not determine the invocation URL; pass --source_url")
 	}
-	return base + invocationID, nil
+	const marker = "/invocation/"
+	if index := strings.Index(parsed.Path, marker); index >= 0 {
+		parsed.Path = parsed.Path[:index+len(marker)] + invocationID
+	} else {
+		parsed.Path = strings.TrimSuffix(parsed.Path, "/") + marker + invocationID
+	}
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String(), nil
 }
 
 func backend(override string) (string, error) {

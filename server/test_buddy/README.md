@@ -50,4 +50,7 @@ fast, queryable health state.
 
 `bb test-report` reads Bazel test output and reports it as monitor evidence by
 default; `--source=presubmit` and `--source=postsubmit` override that default.
+After `bb remote test`, pass its Bazel invocation ID as
+`bb test-report --invocation_id=<id>` to fetch and report remote `test.xml`
+artifacts directly, without a local `bazel-testlogs` tree.
 JUnit is only an input format and is not part of test identity.

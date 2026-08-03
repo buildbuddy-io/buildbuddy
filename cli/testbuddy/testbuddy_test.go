@@ -1,6 +1,7 @@
 package testbuddy_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,14 +12,43 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/util/download/downloadtest"
+	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/junit"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/normalize"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testbuddy"
 )
+
+type fakeBuildBuddyClient struct {
+	bbspb.BuildBuddyServiceClient
+	invocation *inpb.GetInvocationResponse
+	targets    map[string]*trpb.GetTargetResponse
+}
+
+func (f *fakeBuildBuddyClient) GetInvocation(ctx context.Context, req *inpb.GetInvocationRequest, opts ...grpc.CallOption) (*inpb.GetInvocationResponse, error) {
+	return f.invocation, nil
+}
+
+func (f *fakeBuildBuddyClient) GetTarget(ctx context.Context, req *trpb.GetTargetRequest, opts ...grpc.CallOption) (*trpb.GetTargetResponse, error) {
+	if req.GetTargetLabel() != "" {
+		return f.targets[req.GetTargetLabel()], nil
+	}
+	if !req.GetIncludeTestResultEvents() {
+		return nil, errors.New("result events were not requested")
+	}
+	return f.targets[req.GetPageToken()], nil
+}
 
 func observationMetadata(source tbpb.TestObservationSource) testbuddy.ObservationMetadata {
 	return testbuddy.ObservationMetadata{
@@ -289,6 +319,111 @@ func TestWorkspaceRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, wantCommit, commitSHA)
 	require.True(t, dirty)
+}
+
+func TestInvocationReportMetadata(t *testing.T) {
+	client := &fakeBuildBuddyClient{invocation: &inpb.GetInvocationResponse{
+		Invocation: []*inpb.Invocation{{
+			InvocationId: "invocation-one", RepoUrl: "https://github.com/acme/repo",
+			CommitSha: "abc123", CreatedAtUsec: 1_700_000,
+			Event: []*inpb.InvocationEvent{{BuildEvent: &bespb.BuildEvent{
+				Payload: &bespb.BuildEvent_WorkspaceStatus{WorkspaceStatus: &bespb.WorkspaceStatus{
+					Item: []*bespb.WorkspaceStatus_Item{{Key: "GIT_TREE_STATUS", Value: "Modified"}},
+				}},
+			}}},
+		}},
+	}}
+
+	metadata, err := testbuddy.GetInvocationReportMetadata(context.Background(), client, "invocation-one")
+	require.NoError(t, err)
+	require.Equal(t, "https://github.com/acme/repo", metadata.Repository)
+	require.Equal(t, "abc123", metadata.CommitSHA)
+	require.Equal(t, int64(1_700_000), metadata.CreatedAtUsec)
+	require.True(t, metadata.WorkspaceDirty)
+}
+
+func TestInvocationReportsArePagedDeduplicatedAndParsed(t *testing.T) {
+	const (
+		invocationID = "invocation-one"
+		targetOne    = "//pkg:one_test"
+		targetTwo    = "//pkg:two_test"
+		xmlURI       = "bytestream://cache/blobs/abc/123"
+	)
+	event := func(label, uri string, status bespb.TestStatus, run int32) *bespb.BuildEvent {
+		result := &bespb.TestResult{
+			Status: status, TestAttemptStart: timestamppb.New(time.Unix(1_700_000_000, 0)),
+			TestAttemptDuration: durationpb.New(2 * time.Second),
+		}
+		if uri != "" {
+			result.TestActionOutput = []*bespb.File{{
+				Name: "test.xml", File: &bespb.File_Uri{Uri: uri},
+			}}
+		}
+		return &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TestResult{
+				TestResult: &bespb.BuildEventId_TestResultId{
+					Label: label, Configuration: &bespb.BuildEventId_ConfigurationId{Id: "cfg"},
+					Run: run, Shard: 1, Attempt: 1,
+				},
+			}},
+			Payload: &bespb.BuildEvent_TestResult{TestResult: result},
+		}
+	}
+	passing := event(targetOne, xmlURI, bespb.TestStatus_PASSED, 1)
+	timeout := event(targetTwo, "", bespb.TestStatus_TIMEOUT, 1)
+	target := func(label string, events ...*bespb.BuildEvent) *trpb.Target {
+		return &trpb.Target{Metadata: &trpb.TargetMetadata{Label: label}, TestResultEvents: events}
+	}
+	client := &fakeBuildBuddyClient{targets: map[string]*trpb.GetTargetResponse{
+		"": {TargetGroups: []*trpb.TargetGroup{{
+			Status: cmpb.Status_PASSED, Targets: []*trpb.Target{target(targetOne, passing)}, NextPageToken: "next",
+		}}},
+		"next": {TargetGroups: []*trpb.TargetGroup{{
+			Status: cmpb.Status_TIMED_OUT, Targets: []*trpb.Target{target(targetOne), target(targetTwo)},
+		}}},
+		targetOne: {TargetGroups: []*trpb.TargetGroup{{
+			Status: cmpb.Status_PASSED, Targets: []*trpb.Target{target(targetOne, passing)},
+		}}},
+		targetTwo: {TargetGroups: []*trpb.TargetGroup{{
+			Status: cmpb.Status_TIMED_OUT, Targets: []*trpb.Target{target(targetTwo, timeout)},
+		}}},
+	}}
+	downloader := downloadtest.New().Add(xmlURI, []byte(
+		`<testsuite><testcase name="TestCaseName" time="0.25"/></testsuite>`))
+
+	var reports []*testbuddy.InvocationTestReport
+	stats, err := testbuddy.ForEachInvocationTestReport(
+		context.Background(), client, downloader, invocationID, 1_600_000,
+		func(report *testbuddy.InvocationTestReport) error {
+			reports = append(reports, report)
+			return nil
+		})
+	require.NoError(t, err)
+	require.Equal(t, testbuddy.InvocationReportStats{AttemptCount: 2, XMLCount: 1}, stats)
+	require.Len(t, reports, 2)
+	sort.Slice(reports, func(i, j int) bool { return reports[i].TargetLabel < reports[j].TargetLabel })
+
+	require.Equal(t, targetOne, reports[0].TargetLabel)
+	require.Equal(t, xmlURI, reports[0].XMLURI)
+	require.Len(t, reports[0].Report.Cases, 1)
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_PASS, reports[0].Context.TargetOutcome)
+	require.Equal(t, int64(2*time.Second/time.Microsecond), reports[0].Context.TargetDurationUsec)
+	require.Equal(t, time.Unix(1_700_000_000, 0).UnixMicro(), reports[0].Context.EventTimeUsec)
+
+	require.Equal(t, targetTwo, reports[1].TargetLabel)
+	require.Empty(t, reports[1].XMLURI)
+	require.Empty(t, reports[1].Report.Cases)
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, reports[1].Context.TargetOutcome)
+
+	metadata := observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR)
+	targetObservation, cases, err := testbuddy.ObservationsForParsedReport(
+		reports[0].TargetLabel, metadata, reports[0].Report, reports[0].Context)
+	require.NoError(t, err)
+	require.Equal(t, targetOne, targetObservation.GetIdentity().GetTargetLabel())
+	require.Equal(t, time.Unix(1_700_000_000, 0).UnixMicro(), targetObservation.GetObservation().GetEventTimeUsec())
+	require.Len(t, targetObservation.GetObservation().GetObservationId(), 64)
+	require.Len(t, cases, 1)
+	require.Equal(t, "TestCaseName", cases[0].GetIdentity().GetCaseName())
 }
 
 func TestReportBatcherKeepsMessagesWithinBudget(t *testing.T) {
