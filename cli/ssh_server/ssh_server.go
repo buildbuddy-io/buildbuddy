@@ -181,10 +181,13 @@ func loadOrCreateHostKey(path string) ([]byte, error) {
 }
 
 // connIdleTimeout closes connections whose client has stopped sending
-// traffic entirely — bb ssh sends keepalives every 15s, so only a dead
-// client (host asleep, network gone) goes quiet this long. Distinct from
-// --idle_timeout, which logs out live-but-inactive interactive sessions.
-const connIdleTimeout = time.Minute
+// traffic entirely — bb ssh sends keepalives every 15s (keepaliveInterval in
+// cli/ssh), so only a dead client (host asleep, network gone) goes quiet
+// this long. Sized with headroom for clients that don't send keepalives
+// (older bb versions, plain ssh): they stay connected as long as any
+// traffic flows within this window. Distinct from --idle_timeout, which
+// logs out live-but-inactive interactive sessions.
+const connIdleTimeout = 3 * time.Minute
 
 // activityReader resets an inactivity timer on every read that carries data.
 type activityReader struct {
@@ -229,13 +232,25 @@ func handleSession(s ssh.Session) {
 	// chatty program can't keep a session logged in, and neither do client
 	// keepalives. Plain command execution is exempt: builds legitimately run
 	// for a long time with no input at all.
+	//
+	// The logout callback only kills the child's process group; the session
+	// then unwinds through the normal path below (the copies unblock,
+	// cmd.Wait reports the kill, and the signal exit code maps to 255, so an
+	// interrupted `bb ssh -t <host> <cmd>` is distinguishable from success).
+	// The deferred Stop bounds a keystroke racing the logout: a re-armed
+	// timer is disarmed as the session unwinds, before it could fire again.
 	var logout *time.Timer
 	var input io.Reader = s
 	if *idleTimeout > 0 && (isPty || raw == "") {
+		eol := "\n"
+		if isPty {
+			eol = "\r\n"
+		}
 		logout = time.AfterFunc(*idleTimeout, func() {
-			fmt.Fprintf(s, "\r\nLogged out: no input for %s.\r\n", *idleTimeout)
-			s.Exit(0)
-			s.Close()
+			fmt.Fprintf(s, "%sLogged out: no input for %s.%s", eol, *idleTimeout, eol)
+			if p := cmd.Process; p != nil {
+				syscall.Kill(-p.Pid, syscall.SIGKILL)
+			}
 		})
 		defer logout.Stop()
 		input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
@@ -243,6 +258,10 @@ func handleSession(s ssh.Session) {
 
 	if isPty {
 		cmd.Env = append(os.Environ(), "TERM="+ptyReq.Term)
+		// pty.Start's Setsid puts the child in its own process group, which
+		// the logout timer addresses as -pid. A tmux server survives the
+		// kill: it daemonizes into a separate session, keeping any agents
+		// inside for reattach.
 		f, err := pty.Start(cmd)
 		if err != nil {
 			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
@@ -262,6 +281,11 @@ func handleSession(s ssh.Session) {
 		go io.Copy(f, input)
 		io.Copy(s, f)
 	} else {
+		if logout != nil {
+			// Give the shell its own process group so the logout timer can
+			// address it as -pid, like the pty path gets from Setsid.
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		}
 		cmd.Env = os.Environ()
 		cmd.Stdout = s
 		cmd.Stderr = s.Stderr()
@@ -275,7 +299,13 @@ func handleSession(s ssh.Session) {
 
 	if err := cmd.Wait(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			s.Exit(exitErr.ExitCode())
+			// ExitCode is -1 for a signaled process (including the logout
+			// kill); report 255 rather than -1 wrapping around on the wire.
+			if code := exitErr.ExitCode(); code >= 0 {
+				s.Exit(code)
+			} else {
+				s.Exit(255)
+			}
 			return
 		}
 		fmt.Fprintf(s.Stderr(), "wait for command: %v\n", err)

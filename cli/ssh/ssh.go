@@ -42,15 +42,17 @@ var (
 	network       = flags.String("network", "", "Network name (default is blank)")
 	apiKey        = flags.String("api_key", "", "Optionally override the API key with this value")
 	port          = flags.Int("p", 22, "SSH port to dial on the remote host")
-	user          = flags.String("l", "", "SSH login name (overrides user@host syntax)")
+	user          = flags.String("l", "", "SSH login name (used when the target has no user@ prefix)")
 	forceTTY      = flags.Bool("t", false, "Force pseudo-terminal allocation, e.g. to run an interactive program remotely")
 
 	usage string
 )
 
 // keepaliveInterval is how often the client pings the server over the SSH
-// transport. Well under the server's --idle_timeout (5m default), so live
-// connections are never reaped as idle.
+// transport. Well under the server's connection-level dead-client timeout
+// (connIdleTimeout in cli/ssh_server, 3m), so a live connection is never
+// reaped — though the server still logs out interactive sessions that go
+// --idle_timeout without user input; keepalives don't count as input.
 const keepaliveInterval = 15 * time.Second
 
 func init() {
@@ -59,6 +61,33 @@ func init() {
 	flags.SetOutput(&buf)
 	flags.PrintDefaults()
 	usage = buf.String()
+	// The buffer above only exists to build the usage string; route any
+	// later parse-error output to /dev/null (errors are returned instead).
+	flags.SetOutput(io.Discard)
+}
+
+// parseTarget splits a target argument — [user@]host, host:port, or a
+// bb-ssh:// URL — into its components. userFlag (-l) and portFlag (-p)
+// supply the defaults; a user@ prefix in the target takes precedence over
+// -l, and a port in the target takes precedence over -p.
+func parseTarget(target, userFlag string, portFlag int) (host, loginUser string, port int) {
+	loginUser = userFlag
+	if before, after, ok := strings.Cut(target, "@"); ok {
+		loginUser, target = before, after
+	}
+	port = portFlag
+	if u, err := url.Parse(target); err == nil && u.Scheme == "bb-ssh" {
+		target = u.Hostname()
+		if p, err := strconv.Atoi(u.Port()); err == nil {
+			port = p
+		}
+	} else if h, portStr, err := net.SplitHostPort(target); err == nil {
+		target = h
+		if p, err := strconv.Atoi(portStr); err == nil {
+			port = p
+		}
+	}
+	return target, loginUser, port
 }
 
 // resolveEndpoint resolves the hostname in a host:port endpoint string to an
@@ -84,7 +113,6 @@ func HandleSSH(args []string) (int, error) {
 	// first positional so that flags in the remote command, e.g.
 	// `bb ssh box claude --continue`, are passed through rather than
 	// interpreted by bb. `--` also terminates flag parsing, as usual.
-	flags.SetOutput(io.Discard)
 	if err := flags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
@@ -104,34 +132,15 @@ func HandleSSH(args []string) (int, error) {
 		return 1, nil
 	}
 
-	// Parse [user@]host from the first positional argument; any remaining
-	// arguments are joined as the remote command to execute.
-	target := positional[0]
-	var remoteCmd string
-	if len(positional) > 1 {
-		remoteCmd = strings.Join(positional[1:], " ")
-	}
-	loginUser := *user
-	if before, after, ok := strings.Cut(target, "@"); ok {
-		loginUser, target = before, after
-	}
+	// The first positional argument is the target; any remaining arguments
+	// are joined as the remote command to execute.
+	target, loginUser, dialPort := parseTarget(positional[0], *user, *port)
 	if loginUser == "" {
 		loginUser = os.Getenv("USER")
 	}
-
-	// Parse host and port from target, which may be a bb-ssh:// URL,
-	// a host:port string, or a bare hostname.
-	dialPort := *port
-	if u, err := url.Parse(target); err == nil && u.Scheme == "bb-ssh" {
-		target = u.Hostname()
-		if p, err := strconv.Atoi(u.Port()); err == nil {
-			dialPort = p
-		}
-	} else if host, portStr, err := net.SplitHostPort(target); err == nil {
-		target = host
-		if p, err := strconv.Atoi(portStr); err == nil {
-			dialPort = p
-		}
+	var remoteCmd string
+	if len(positional) > 1 {
+		remoteCmd = strings.Join(positional[1:], " ")
 	}
 
 	ctx := context.Background()
@@ -177,10 +186,7 @@ func HandleSSH(args []string) (int, error) {
 		return 1, status.WrapError(err, "connecting to gateway")
 	}
 	// Hold the stream open in the background for the lifetime of the SSH
-	// session; if it ends, the tunnel is (or is about to be) dead. gwLostErr
-	// is written before gwLost is closed, so it is safe to read after
-	// receiving from gwLost.
-	var gwLostErr error
+	// session; if it ends, the tunnel is (or is about to be) dead.
 	gwLost := make(chan struct{})
 	go func() {
 		for {
@@ -189,7 +195,7 @@ func HandleSSH(args []string) (int, error) {
 					// Normal local shutdown.
 					return
 				}
-				gwLostErr = err
+				log.Debugf("gateway stream ended: %v", err)
 				close(gwLost)
 				return
 			}
@@ -262,16 +268,15 @@ func HandleSSH(args []string) (int, error) {
 		}
 	}()
 
-	// Keepalives serve two purposes. They reset the server's idle timer, so a
-	// quiet session (user afk, agent thinking) is never reaped while this
-	// client is alive — the server's --idle_timeout only ends connections
-	// whose client has stopped responding. And because each request waits for
-	// a reply, they detect a dead transport (server suspended, network gone)
-	// within about one interval: the client is closed so the session below
-	// unblocks with a clean message instead of hanging indefinitely.
-	// connDeadErr is written before connDead is closed, so it is safe to read
-	// after receiving from connDead.
-	var connDeadErr error
+	// Keepalives are the traffic that keeps a live connection from being
+	// reaped by the server's connection-level dead-client timeout (they do
+	// NOT prevent --idle_timeout logout, which counts only user input). They
+	// also detect a dead transport (server suspended, network gone): the
+	// client is closed so the session below unblocks with a clean message
+	// instead of hanging indefinitely. Detection is not fast — SendRequest
+	// only fails once the netstack TCP layer gives up on the peer, which can
+	// take minutes without a RST — but it is what turns "hangs forever" into
+	// "eventually exits cleanly".
 	connDead := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(keepaliveInterval)
@@ -280,7 +285,7 @@ func HandleSSH(args []string) (int, error) {
 			select {
 			case <-ticker.C:
 				if _, _, err := client.SendRequest("keepalive@openssh.com", true, nil); err != nil {
-					connDeadErr = err
+					log.Debugf("keepalive failed: %v", err)
 					close(connDead)
 					client.Close()
 					return
@@ -360,15 +365,11 @@ func HandleSSH(args []string) (int, error) {
 
 	if remoteCmd != "" {
 		if err := session.Run(remoteCmd); err != nil {
-			if gwLostErr := chanError(gwLost, gwLostErr); gwLostErr != nil {
-				return 1, status.UnavailableErrorf("gateway connection lost: %s", gwLostErr)
+			if closed(gwLost) {
+				return 1, status.UnavailableError("gateway connection lost")
 			}
-			if kaErr := chanError(connDead, connDeadErr); kaErr != nil {
-				if rawRestore != nil {
-					rawRestore()
-					rawRestore = nil
-				}
-				return 1, status.UnavailableErrorf("connection to %s lost: no response from server (%s)", target, kaErr)
+			if closed(connDead) {
+				return 1, status.UnavailableErrorf("connection to %s lost: no response from server", target)
 			}
 			var exitErr *gossh.ExitError
 			if errors.As(err, &exitErr) {
@@ -383,7 +384,7 @@ func HandleSSH(args []string) (int, error) {
 	}
 
 	err = session.Wait()
-	if gwLostErr := chanError(gwLost, gwLostErr); gwLostErr != nil {
+	if closed(gwLost) {
 		// Restore the terminal before printing so the message lands at
 		// column 0 (the goroutine that noticed the loss can't print safely
 		// while the terminal is in raw mode).
@@ -391,15 +392,15 @@ func HandleSSH(args []string) (int, error) {
 			rawRestore()
 			rawRestore = nil
 		}
-		fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost: %v\n", target, gwLostErr)
+		fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost.\n", target)
 		return 1, nil
 	}
-	if kaErr := chanError(connDead, connDeadErr); kaErr != nil {
+	if closed(connDead) {
 		if rawRestore != nil {
 			rawRestore()
 			rawRestore = nil
 		}
-		fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server (%v).\n", target, kaErr)
+		fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server.\n", target)
 		return 1, nil
 	}
 	if err != nil {
@@ -411,7 +412,7 @@ func HandleSSH(args []string) (int, error) {
 		// shutdown closed the connection); fall through to print the close
 		// message.
 		var missingErr *gossh.ExitMissingError
-		if !errors.As(err, &missingErr) && err != io.EOF {
+		if !errors.As(err, &missingErr) && !errors.Is(err, io.EOF) {
 			return 1, err
 		}
 	}
@@ -424,13 +425,13 @@ func HandleSSH(args []string) (int, error) {
 	return 0, nil
 }
 
-// chanError returns err if ch (closed only after err is set) has fired, or
-// nil otherwise.
-func chanError(ch chan struct{}, err error) error {
+// closed reports whether ch has been closed. The underlying error, if any,
+// is logged at debug level by whoever closed the channel.
+func closed(ch chan struct{}) bool {
 	select {
 	case <-ch:
-		return err
+		return true
 	default:
-		return nil
+		return false
 	}
 }
