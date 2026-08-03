@@ -32,7 +32,9 @@ fast, queryable health state.
 - Failed observations receive a server-derived fingerprint that ignores common
   volatile values such as addresses and UUIDs. A repository stores one cluster
   per fingerprint; exact target and case reads count occurrences within that
-  subject's bounded evidence window. No model call runs while reporting.
+  subject's bounded evidence window. When enabled, the dedicated service uses
+  `gpt-5.4-nano` to asynchronously summarize each new cluster and suggest a fix;
+  no model call runs while reporting.
 - Reads never parse reports. Package-cone queries return failing, flaky, and
   timed-out subjects before healthy ones. Target rows expose target health and a
   separate rollup of their cases; case failures affect ordering but never change

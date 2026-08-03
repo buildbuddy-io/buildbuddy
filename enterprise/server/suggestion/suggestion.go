@@ -77,7 +77,7 @@ func (s *suggestionService) GetSuggestion(ctx context.Context, req *supb.GetSugg
 	if openai.IsConfigured() &&
 		(!s.MultipleProvidersConfigured() ||
 			(s.MultipleProvidersConfigured() && req.GetService() == supb.SuggestionService_OPENAI)) {
-		r, err = openaiRequest(prompt)
+		r, err = openaiRequest(ctx, prompt)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +118,7 @@ func (s *suggestionService) getErrorMessageForInvocation(ctx context.Context, in
 	return errorMessage, nil
 }
 
-func openaiRequest(input string) (string, error) {
+func openaiRequest(ctx context.Context, input string) (string, error) {
 	data := &openai.CompletionRequest{Model: *openai.Model, Messages: []openai.CompletionMessage{
 		openai.CompletionMessage{
 			Role:    "user",
@@ -126,7 +126,7 @@ func openaiRequest(input string) (string, error) {
 		},
 	}}
 
-	completionResponse, err := openai.GetCompletions(data)
+	completionResponse, err := openai.GetCompletions(ctx, data)
 	if err != nil {
 		return "", err
 	}

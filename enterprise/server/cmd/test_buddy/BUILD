@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/clientidentity",
         "//enterprise/server/remoteauth",
+        "//enterprise/server/test_buddy/failure_analysis",
         "//server/config",
         "//server/nullauth",
         "//server/real_environment",

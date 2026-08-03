@@ -146,6 +146,11 @@ message TestFailureCluster {
   string fingerprint = 1;
   string representative_message = 2;
   int64 occurrence_count = 3;
+  string category = 4;
+  string summary = 5;
+  string suggested_fix = 6;
+  string confidence = 7;
+  string model = 8;
 }
 
 message GetTestCaseRequest {

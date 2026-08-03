@@ -1,0 +1,4 @@
+test_buddy:
+  failure_analysis_enabled: true
+openai:
+  api_key: ${SECRET:BB_DEV_OPENAI_API_KEY}

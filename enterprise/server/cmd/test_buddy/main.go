@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test_buddy/failure_analysis"
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -70,6 +71,27 @@ func main() {
 		log.Fatalf("Error configuring database: %s", err)
 	}
 	env.SetDBHandle(database)
+	failureAnalysis, err := failure_analysis.NewConfigured(env)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	if failureAnalysis != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			failureAnalysis.Run(ctx)
+		}()
+		env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
+			cancel()
+			select {
+			case <-done:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}
 	for _, port := range []int{grpc_server.GRPCPort(), grpc_server.InternalGRPCPort()} {
 		server, err := grpc_server.New(env, port, false, grpc_server.GRPCServerConfig{})
 		if err != nil {

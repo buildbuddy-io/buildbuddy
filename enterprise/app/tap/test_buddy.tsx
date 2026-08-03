@@ -26,16 +26,19 @@ interface State {
   repository?: test_buddy.GetRepositoryHealthResponse;
   targets: test_buddy.TestTargetSummary[];
   selected?: test_buddy.GetTestTargetResponse;
+  selectedCase?: test_buddy.GetTestCaseResponse;
   selectedCases: test_buddy.TestCaseSummary[];
   dispositionMenu?: string;
   updatingDisposition?: string;
   loading: boolean;
+  loadingCase: boolean;
   loadingCases: boolean;
 }
 
 export default class TestBuddyComponent extends React.Component<Props, State> {
   private targetsStream?: Cancelable;
   private casesStream?: Cancelable;
+  private requestedCaseName = "";
 
   state: State = {
     packagePrefix: "",
@@ -46,6 +49,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     targets: [],
     selectedCases: [],
     loading: true,
+    loadingCase: false,
     loadingCases: false,
   };
 
@@ -64,7 +68,14 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
       this.loadTarget(this.props.targetLabel);
     } else {
       this.casesStream?.cancel();
-      this.setState({ selected: undefined, selectedCases: [], loadingCases: false });
+      this.requestedCaseName = "";
+      this.setState({
+        selected: undefined,
+        selectedCase: undefined,
+        selectedCases: [],
+        loadingCase: false,
+        loadingCases: false,
+      });
     }
   }
 
@@ -85,14 +96,17 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   private loadSelectedRepository() {
     this.targetsStream?.cancel();
     this.casesStream?.cancel();
+    this.requestedCaseName = "";
     this.setState({
       repository: undefined,
       packagePrefix: "",
       searchOpen: false,
       targets: [],
       selected: undefined,
+      selectedCase: undefined,
       selectedCases: [],
       loading: true,
+      loadingCase: false,
       loadingCases: false,
     });
     this.loadRepository();
@@ -159,7 +173,8 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
 
   private loadCases(target: test_buddy.TestTargetIdentity) {
     this.casesStream?.cancel();
-    this.setState({ selectedCases: [], loadingCases: true });
+    this.requestedCaseName = "";
+    this.setState({ selectedCase: undefined, selectedCases: [], loadingCase: false, loadingCases: true });
     this.casesStream = rpcService.testBuddyService.getTests(
       test_buddy.GetTestsRequest.create({
         repoUrl: this.props.repo,
@@ -174,6 +189,28 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
         complete: () => this.setState({ loadingCases: false }),
       }
     );
+  }
+
+  private loadCase(testCase: test_buddy.TestCaseSummary) {
+    const identity = testCase.identity;
+    if (!identity?.target?.targetLabel || !identity.caseName) return;
+    this.requestedCaseName = identity.caseName;
+    this.setState({ selectedCase: undefined, loadingCase: true });
+    rpcService.testBuddyService
+      .getTestCase(test_buddy.GetTestCaseRequest.create({ repoUrl: this.props.repo, identity }))
+      .then((selectedCase) => {
+        if (
+          this.props.targetLabel !== identity.target?.targetLabel ||
+          this.requestedCaseName !== identity.caseName
+        ) {
+          return;
+        }
+        this.setState({ selectedCase, loadingCase: false });
+      })
+      .catch((error) => {
+        this.setState({ loadingCase: false });
+        errorService.handleError(error);
+      });
   }
 
   private selectTarget(target: test_buddy.TestTargetSummary) {
@@ -435,7 +472,11 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           <tbody>
             {cases.map((testCase) => (
               <tr key={testCase.identity?.caseName}>
-                <td>{testCase.identity?.caseName}</td>
+                <td>
+                  <button className="test-buddy-target-link" onClick={() => this.loadCase(testCase)}>
+                    {testCase.identity?.caseName}
+                  </button>
+                </td>
                 <td>
                   <HealthLabel health={testCase.summary?.health} />
                 </td>
@@ -457,6 +498,9 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
         {!this.state.loadingCases && cases.length === 0 && (
           <div className="test-buddy-empty">No cases found.</div>
         )}
+        {this.state.loadingCase && <div className="test-buddy-empty">Loading case details…</div>}
+        {this.renderCaseDetail()}
+        {this.renderFailureModes(response.failureClusters, "Target failure modes")}
         <h3>Recent target observations</h3>
         <table className="test-buddy-table">
           <thead>
@@ -504,6 +548,69 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           </tbody>
         </table>
       </section>
+    );
+  }
+
+  private renderCaseDetail() {
+    const response = this.state.selectedCase;
+    const testCase = response?.test;
+    if (!response || !testCase) return null;
+    return (
+      <div className="test-buddy-case-detail">
+        {this.renderFailureModes(response.failureClusters, `Failure modes: ${testCase.identity?.caseName}`)}
+        <h3>Recent case observations</h3>
+        <table className="test-buddy-table">
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Outcome</th>
+              <th>Duration</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody>
+            {response.recentObservations.map((observation, index) => (
+              <tr key={`${observation.sourceUrl}-${index}`}>
+                <td>
+                  <a href={observation.sourceUrl}>View source</a>
+                </td>
+                <td>{outcomeName(observation.outcome)}</td>
+                <td>{format.durationUsec(observation.durationUsec)}</td>
+                <td>{observation.failureMessage}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  private renderFailureModes(clusters: test_buddy.TestFailureCluster[], title: string) {
+    if (!clusters.length) return null;
+    return (
+      <>
+        <h3>{title}</h3>
+        <table className="test-buddy-table">
+          <thead>
+            <tr>
+              <th>Occurrences</th>
+              <th>Category</th>
+              <th>Summary</th>
+              <th>Suggested fix</th>
+            </tr>
+          </thead>
+          <tbody>
+            {clusters.map((cluster) => (
+              <tr key={cluster.fingerprint}>
+                <td>{cluster.occurrenceCount.toString()}</td>
+                <td>{cluster.category || "Analysis pending"}</td>
+                <td>{cluster.summary || cluster.representativeMessage}</td>
+                <td>{cluster.suggestedFix || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </>
     );
   }
 

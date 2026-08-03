@@ -269,6 +269,27 @@ func TestFailureClustersAreSharedAndCountsAreSubjectLocal(t *testing.T) {
 	require.Len(t, caseDetail.GetFailureClusters(), 1)
 	require.Equal(t, fingerprint, caseDetail.GetFailureClusters()[0].GetFingerprint())
 	require.Equal(t, int64(2), caseDetail.GetFailureClusters()[0].GetOccurrenceCount())
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_set_failure_analysis").
+		Model(&tables.TestFailureCluster{}).
+		Where("repository = ? AND fingerprint = ?", repository, fingerprint).
+		Updates(map[string]any{
+			"analysis_prompt_version": int64(1), "analysis_model": "gpt-5.4-nano",
+			"analysis_category": "assertion", "analysis_summary": []byte("Assertion failed."),
+			"suggested_fix": []byte("Correct the expected value."), "analysis_confidence": "high",
+		}).Error)
+	caseDetail, err = service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: target}, CaseName: "TestCase",
+		},
+	})
+	require.NoError(t, err)
+	analysis := caseDetail.GetFailureClusters()[0]
+	require.Equal(t, "assertion", analysis.GetCategory())
+	require.Equal(t, "Assertion failed.", analysis.GetSummary())
+	require.Equal(t, "Correct the expected value.", analysis.GetSuggestedFix())
+	require.Equal(t, "high", analysis.GetConfidence())
+	require.Equal(t, "gpt-5.4-nano", analysis.GetModel())
 
 	targetDetail, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
 		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: target},

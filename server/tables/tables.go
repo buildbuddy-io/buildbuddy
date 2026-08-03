@@ -823,10 +823,19 @@ func (*TestTargetStateChange) TableName() string { return "TestTargetStateChange
 
 type TestFailureCluster struct {
 	Model
-	GroupID        string `gorm:"primaryKey;size:64;not null"`
-	Repository     string `gorm:"primaryKey;size:512;not null"`
-	Fingerprint    string `gorm:"primaryKey;size:64;not null"`
-	FailureMessage []byte `gorm:"size:512;not null"`
+	GroupID                    string `gorm:"primaryKey;size:64;not null"`
+	Repository                 string `gorm:"primaryKey;size:512;not null"`
+	Fingerprint                string `gorm:"primaryKey;size:64;not null"`
+	FailureMessage             []byte `gorm:"size:512;not null"`
+	AnalysisPromptVersion      int64  `gorm:"not null;index:test_failure_analysis_claim_idx,priority:1"`
+	NextAnalysisAttemptUsec    int64  `gorm:"not null;index:test_failure_analysis_claim_idx,priority:2"`
+	AnalysisLeaseExpiresAtUsec int64  `gorm:"not null;index:test_failure_analysis_claim_idx,priority:3"`
+	AnalysisLeaseToken         string `gorm:"size:32;not null"`
+	AnalysisModel              string `gorm:"size:64;not null"`
+	AnalysisCategory           string `gorm:"size:32;not null"`
+	AnalysisSummary            []byte `gorm:"size:512;not null"`
+	SuggestedFix               []byte `gorm:"size:1024;not null"`
+	AnalysisConfidence         string `gorm:"size:16;not null"`
 }
 
 func (*TestFailureCluster) TableName() string { return "TestFailureClusters" }

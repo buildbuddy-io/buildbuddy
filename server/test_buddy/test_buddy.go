@@ -407,7 +407,8 @@ func admitFailureClusters(ctx context.Context, database interfaces.DB, groupID s
 		}
 		clusters[fingerprint] = &tables.TestFailureCluster{
 			GroupID: groupID, Repository: report.RepositoryURL, Fingerprint: fingerprint,
-			FailureMessage: []byte(observation.GetFailureMessage()),
+			FailureMessage: []byte(observation.GetFailureMessage()), AnalysisSummary: []byte{},
+			SuggestedFix: []byte{},
 		}
 	}
 	for _, observation := range report.CaseObservations {
@@ -1754,12 +1755,18 @@ func (s *Service) failureClusters(ctx context.Context, groupID, repository strin
 		return nil, nil
 	}
 	type clusterRow struct {
-		Fingerprint    string
-		FailureMessage []byte
+		Fingerprint        string
+		FailureMessage     []byte
+		AnalysisModel      string
+		AnalysisCategory   string
+		AnalysisSummary    []byte
+		SuggestedFix       []byte
+		AnalysisConfidence string
 	}
 	rows := make(map[string]*clusterRow, len(order))
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_failure_clusters").Raw(`
-		SELECT fingerprint, failure_message
+		SELECT fingerprint, failure_message, analysis_model, analysis_category,
+			analysis_summary, suggested_fix, analysis_confidence
 		FROM "TestFailureClusters"
 		WHERE group_id = ? AND repository = ? AND fingerprint IN ?`,
 		groupID, repository, order)
@@ -1777,7 +1784,9 @@ func (s *Service) failureClusters(ctx context.Context, groupID, repository strin
 		}
 		clusters = append(clusters, &tbpb.TestFailureCluster{
 			Fingerprint: fingerprint, RepresentativeMessage: string(row.FailureMessage),
-			OccurrenceCount: counts[fingerprint],
+			OccurrenceCount: counts[fingerprint], Category: row.AnalysisCategory,
+			Summary: string(row.AnalysisSummary), SuggestedFix: string(row.SuggestedFix),
+			Confidence: row.AnalysisConfidence, Model: row.AnalysisModel,
 		})
 	}
 	return clusters, nil
