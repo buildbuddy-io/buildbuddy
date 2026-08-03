@@ -37,6 +37,7 @@ message TestObservation {
   TestObservationSource source = 7;
   string commit_sha = 8;
   bool workspace_dirty = 9;
+  string failure_fingerprint = 10;
 }
 
 message TestCaseObservation {
@@ -141,6 +142,12 @@ message TestHealthTransition {
   int64 eligible_sample_count = 6;
 }
 
+message TestFailureCluster {
+  string fingerprint = 1;
+  string representative_message = 2;
+  int64 occurrence_count = 3;
+}
+
 message GetTestCaseRequest {
   context.RequestContext request_context = 1;
   string repo_url = 2;
@@ -154,6 +161,7 @@ message GetTestCaseResponse {
   int64 analyzer_revision = 4;
   string analysis_reason = 5;
   int64 eligible_sample_count = 6;
+  repeated TestFailureCluster failure_clusters = 7;
 }
 
 message GetTestTargetRequest {
@@ -169,6 +177,7 @@ message GetTestTargetResponse {
   int64 analyzer_revision = 4;
   string analysis_reason = 5;
   int64 eligible_sample_count = 6;
+  repeated TestFailureCluster failure_clusters = 7;
 }
 
 message GetTestAnalyzerConfigRequest {

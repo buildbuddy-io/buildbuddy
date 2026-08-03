@@ -309,6 +309,9 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	if err := group.Wait(); err != nil {
 		return nil, err
 	}
+	if err := admitFailureClusters(ctx, s.env.GetDBHandle(), groupID, report); err != nil {
+		return nil, err
+	}
 	return &tbpb.ReportTestResultsResponse{
 		AcceptedCount: int32(len(report.CaseObservations) + len(report.TargetObservations)),
 		RejectedCount: int32(report.Rejected.Total()),
@@ -395,16 +398,49 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 	return nil
 }
 
+func admitFailureClusters(ctx context.Context, database interfaces.DB, groupID string, report *normalize.Report) error {
+	clusters := make(map[string]*tables.TestFailureCluster)
+	add := func(observation *tbpb.TestObservation) {
+		fingerprint := observation.GetFailureFingerprint()
+		if fingerprint == "" {
+			return
+		}
+		clusters[fingerprint] = &tables.TestFailureCluster{
+			GroupID: groupID, Repository: report.RepositoryURL, Fingerprint: fingerprint,
+			FailureMessage: []byte(observation.GetFailureMessage()),
+		}
+	}
+	for _, observation := range report.CaseObservations {
+		add(observation.Observation.GetObservation())
+	}
+	for _, observation := range report.TargetObservations {
+		add(observation.Observation.GetObservation())
+	}
+	rows := make([]*tables.TestFailureCluster, 0, len(clusters))
+	for _, cluster := range clusters {
+		rows = append(rows, cluster)
+	}
+	for start := 0; start < len(rows); start += reportBatchSize {
+		end := min(start+reportBatchSize, len(rows))
+		if err := database.GORM(ctx, "test_buddy_admit_failure_clusters").
+			Clauses(clause.OnConflict{DoNothing: true}).Create(rows[start:end]).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type retainedObservation struct {
-	Outcome        tbpb.TestOutcome           `json:"o"`
-	Source         tbpb.TestObservationSource `json:"s"`
-	CommitSHA      string                     `json:"c"`
-	WorkspaceDirty bool                       `json:"w,omitempty"`
-	DurationUsec   int64                      `json:"d,omitempty"`
-	FailureMessage string                     `json:"f,omitempty"`
-	SourceURL      string                     `json:"u"`
-	EventTimeUsec  int64                      `json:"t"`
-	ObservationID  string                     `json:"i"`
+	Outcome            tbpb.TestOutcome           `json:"o"`
+	Source             tbpb.TestObservationSource `json:"s"`
+	CommitSHA          string                     `json:"c"`
+	WorkspaceDirty     bool                       `json:"w,omitempty"`
+	DurationUsec       int64                      `json:"d,omitempty"`
+	FailureMessage     string                     `json:"f,omitempty"`
+	SourceURL          string                     `json:"u"`
+	EventTimeUsec      int64                      `json:"t"`
+	ObservationID      string                     `json:"i"`
+	FailureFingerprint string                     `json:"x,omitempty"`
 }
 
 type retainedObservationID struct {
@@ -445,6 +481,7 @@ func appendObservation(observations *retainedObservations, observation *tbpb.Tes
 		WorkspaceDirty: observation.GetWorkspaceDirty(), DurationUsec: observation.GetDurationUsec(),
 		FailureMessage: observation.GetFailureMessage(), SourceURL: observation.GetSourceUrl(),
 		EventTimeUsec: observation.GetEventTimeUsec(), ObservationID: observation.GetObservationId(),
+		FailureFingerprint: observation.GetFailureFingerprint(),
 	})
 	if extra := len(observations.Observations) - windowSize; extra > 0 {
 		observations.Observations = observations.Observations[extra:]
@@ -1552,7 +1589,12 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 			WorkspaceDirty: observation.WorkspaceDirty, DurationUsec: observation.DurationUsec,
 			FailureMessage: observation.FailureMessage, SourceUrl: observation.SourceURL,
 			EventTimeUsec: observation.EventTimeUsec, ObservationId: observation.ObservationID,
+			FailureFingerprint: observation.FailureFingerprint,
 		})
+	}
+	rsp.FailureClusters, err = s.failureClusters(ctx, groupID, target.Repository, retained.Observations)
+	if err != nil {
+		return nil, err
 	}
 	type transitionRow struct {
 		PreviousHealth      string
@@ -1655,7 +1697,12 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 			WorkspaceDirty: observation.WorkspaceDirty, DurationUsec: observation.DurationUsec,
 			FailureMessage: observation.FailureMessage, SourceUrl: observation.SourceURL,
 			EventTimeUsec: observation.EventTimeUsec, ObservationId: observation.ObservationID,
+			FailureFingerprint: observation.FailureFingerprint,
 		})
+	}
+	rsp.FailureClusters, err = s.failureClusters(ctx, groupID, testCase.Repository, retained.Observations)
+	if err != nil {
+		return nil, err
 	}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case_transitions").Raw(`
 		SELECT previous_health, health, event_time_usec,
@@ -1688,6 +1735,52 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		return nil, err
 	}
 	return rsp, nil
+}
+
+func (s *Service) failureClusters(ctx context.Context, groupID, repository string, observations []retainedObservation) ([]*tbpb.TestFailureCluster, error) {
+	counts := make(map[string]int64)
+	order := make([]string, 0)
+	for i := len(observations) - 1; i >= 0; i-- {
+		fingerprint := observations[i].FailureFingerprint
+		if fingerprint == "" {
+			continue
+		}
+		counts[fingerprint]++
+		if counts[fingerprint] == 1 {
+			order = append(order, fingerprint)
+		}
+	}
+	if len(order) == 0 {
+		return nil, nil
+	}
+	type clusterRow struct {
+		Fingerprint    string
+		FailureMessage []byte
+	}
+	rows := make(map[string]*clusterRow, len(order))
+	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_failure_clusters").Raw(`
+		SELECT fingerprint, failure_message
+		FROM "TestFailureClusters"
+		WHERE group_id = ? AND repository = ? AND fingerprint IN ?`,
+		groupID, repository, order)
+	if err := db.ScanEach(rq, func(ctx context.Context, row *clusterRow) error {
+		rows[row.Fingerprint] = row
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	clusters := make([]*tbpb.TestFailureCluster, 0, len(rows))
+	for _, fingerprint := range order {
+		row := rows[fingerprint]
+		if row == nil {
+			continue
+		}
+		clusters = append(clusters, &tbpb.TestFailureCluster{
+			Fingerprint: fingerprint, RepresentativeMessage: string(row.FailureMessage),
+			OccurrenceCount: counts[fingerprint],
+		})
+	}
+	return clusters, nil
 }
 
 func testSummary(healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64) *tbpb.TestSummary {

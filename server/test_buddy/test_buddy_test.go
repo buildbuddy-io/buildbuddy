@@ -233,6 +233,57 @@ func TestReportAndQueryTests(t *testing.T) {
 	require.NotEmpty(t, detail.GetTransitions())
 }
 
+func TestFailureClustersAreSharedAndCountsAreSubjectLocal(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	service := testbuddy.New(env)
+	repository := "https://github.com/acme/repo"
+	target := "//pkg:test"
+
+	first := caseObservation("case-1", target, "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10)
+	first.Observation.FailureMessage = "panic ツ at 0x1234 for 550e8400-e29b-41d4-a716-446655440000"
+	first.Observation.FailureFingerprint = "reporter-controlled"
+	second := caseObservation("case-2", target, "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 20)
+	second.Observation.FailureMessage = "panic ツ at 0x9999 for 123e4567-e89b-12d3-a456-426614174000"
+	targetFailure := targetObservation("target-1", target, tbpb.TestOutcome_TEST_OUTCOME_FAIL, 30)
+	targetFailure.Observation.FailureMessage = second.Observation.FailureMessage
+
+	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, CaseObservations: []*tbpb.TestCaseObservation{first, second},
+		TargetObservations: []*tbpb.TestTargetObservation{targetFailure},
+	})
+	require.NoError(t, err)
+
+	caseDetail, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: target}, CaseName: "TestCase",
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, caseDetail.GetRecentObservations(), 2)
+	fingerprint := caseDetail.GetRecentObservations()[0].GetFailureFingerprint()
+	require.NotEmpty(t, fingerprint)
+	require.NotEqual(t, "reporter-controlled", fingerprint)
+	require.Equal(t, fingerprint, caseDetail.GetRecentObservations()[1].GetFailureFingerprint())
+	require.Len(t, caseDetail.GetFailureClusters(), 1)
+	require.Equal(t, fingerprint, caseDetail.GetFailureClusters()[0].GetFingerprint())
+	require.Equal(t, int64(2), caseDetail.GetFailureClusters()[0].GetOccurrenceCount())
+
+	targetDetail, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: target},
+	})
+	require.NoError(t, err)
+	require.Len(t, targetDetail.GetFailureClusters(), 1)
+	require.Equal(t, fingerprint, targetDetail.GetFailureClusters()[0].GetFingerprint())
+	require.Equal(t, int64(1), targetDetail.GetFailureClusters()[0].GetOccurrenceCount())
+
+	var clusterCount int64
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_failure_cluster_count").
+		Model(&tables.TestFailureCluster{}).Count(&clusterCount).Error)
+	require.Equal(t, int64(1), clusterCount)
+}
+
 func TestExecutionDispositionControlsTestsToSkip(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))

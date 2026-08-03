@@ -821,6 +821,16 @@ type TestTargetStateChange struct {
 
 func (*TestTargetStateChange) TableName() string { return "TestTargetStateChanges" }
 
+type TestFailureCluster struct {
+	Model
+	GroupID        string `gorm:"primaryKey;size:64;not null"`
+	Repository     string `gorm:"primaryKey;size:512;not null"`
+	Fingerprint    string `gorm:"primaryKey;size:64;not null"`
+	FailureMessage []byte `gorm:"size:512;not null"`
+}
+
+func (*TestFailureCluster) TableName() string { return "TestFailureClusters" }
+
 const testBuddyTableOptions = "ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin"
 
 func TestBuddyTableNames() []string {
@@ -836,6 +846,7 @@ func testBuddyTables() []Table {
 		&TestRepositoryCatalog{}, &TestTarget{}, &TestCase{},
 		&TestPackageCoverage{}, &TestAnalyzerConfig{},
 		&TestCaseState{}, &TestTargetState{}, &TestCaseStateChange{}, &TestTargetStateChange{},
+		&TestFailureCluster{},
 	}
 }
 
@@ -1759,6 +1770,7 @@ func RegisterTables() {
 	registerTable("TJ", &TestCaseStateChange{})
 	registerTable("TK", &TestTargetStateChange{})
 	registerTable("TL", &TelemetryLog{})
+	registerTable("TM", &TestFailureCluster{})
 	registerTable("TO", &Token{})
 	registerTable("TS", &TargetStatus{})
 	registerTable("UA", &Usage{})

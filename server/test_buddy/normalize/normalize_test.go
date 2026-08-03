@@ -55,7 +55,34 @@ func TestNormalizeCaseAndTarget(t *testing.T) {
 		report.CaseObservations[0].Observation.GetObservation().GetSource())
 	assert.Equal(t, "abc123", report.CaseObservations[0].Observation.GetObservation().GetCommitSha())
 	assert.Equal(t, "got 1, want 2", report.CaseObservations[0].Observation.GetObservation().GetFailureMessage())
+	assert.NotEmpty(t, report.CaseObservations[0].Observation.GetObservation().GetFailureFingerprint())
 	assert.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, report.TargetObservations[0].Observation.GetObservation().GetOutcome())
+	assert.Empty(t, report.TargetObservations[0].Observation.GetObservation().GetFailureFingerprint())
+}
+
+func TestFailureFingerprintIsServerDerivedAndStable(t *testing.T) {
+	first := caseObservation(tbpb.TestOutcome_TEST_OUTCOME_FAIL)
+	first.Observation.FailureMessage = "\x1b[31mpanic at 0x1234 for 550e8400-e29b-41d4-a716-446655440000 digest 0123456789abcdef\nfailed"
+	first.Observation.FailureFingerprint = "reporter-controlled"
+	second := caseObservation(tbpb.TestOutcome_TEST_OUTCOME_FAIL)
+	second.Observation.ObservationId = "observation-2"
+	second.Observation.FailureMessage = "panic at 0x9999 for 123e4567-e89b-12d3-a456-426614174000 digest fedcba9876543210  failed"
+
+	report, err := normalize.Normalize(repository, []*tbpb.TestCaseObservation{first, second}, nil)
+	require.NoError(t, err)
+	require.Len(t, report.CaseObservations, 2)
+	firstFingerprint := report.CaseObservations[0].Observation.GetObservation().GetFailureFingerprint()
+	secondFingerprint := report.CaseObservations[1].Observation.GetObservation().GetFailureFingerprint()
+	assert.NotEmpty(t, firstFingerprint)
+	assert.NotEqual(t, "reporter-controlled", firstFingerprint)
+	assert.Equal(t, firstFingerprint, secondFingerprint)
+
+	passing := caseObservation(tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	passing.Observation.FailureMessage = "not evidence for a failure cluster"
+	passing.Observation.FailureFingerprint = "reporter-controlled"
+	report, err = normalize.Normalize(repository, []*tbpb.TestCaseObservation{passing}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, report.CaseObservations[0].Observation.GetObservation().GetFailureFingerprint())
 }
 
 func TestRepeatedObservationsArePreserved(t *testing.T) {

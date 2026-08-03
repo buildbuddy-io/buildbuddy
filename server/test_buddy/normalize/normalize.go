@@ -2,12 +2,23 @@
 package normalize
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/url"
+	"regexp"
+	"strings"
 
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"google.golang.org/protobuf/proto"
+)
+
+var (
+	ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
+	uuidPattern       = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	pointerPattern    = regexp.MustCompile(`(?i)\b0x[0-9a-f]+\b`)
+	longHexPattern    = regexp.MustCompile(`(?i)\b[0-9a-f]{16,}\b`)
 )
 
 const (
@@ -138,12 +149,13 @@ func (s *Session) normalizeCase(record *tbpb.TestCaseObservation) (*CaseObservat
 	address := identity.CaseAddress{
 		TargetAddress: target, CaseName: record.GetIdentity().GetCaseName(),
 	}
-	if err := validateObservation(record.GetObservation()); err != nil {
+	observation, err := normalizeObservation(record.GetObservation())
+	if err != nil {
 		return nil, err
 	}
 	return &CaseObservation{
 		Address:     address,
-		Observation: &tbpb.TestCaseObservation{Identity: address.Proto(), Observation: proto.Clone(record.GetObservation()).(*tbpb.TestObservation)},
+		Observation: &tbpb.TestCaseObservation{Identity: address.Proto(), Observation: observation},
 	}, nil
 }
 
@@ -155,12 +167,13 @@ func (s *Session) normalizeTarget(record *tbpb.TestTargetObservation) (*TargetOb
 	if err != nil {
 		return nil, err
 	}
-	if err := validateObservation(record.GetObservation()); err != nil {
+	observation, err := normalizeObservation(record.GetObservation())
+	if err != nil {
 		return nil, err
 	}
 	return &TargetObservation{
 		Address:     target,
-		Observation: &tbpb.TestTargetObservation{Identity: target.Proto(), Observation: proto.Clone(record.GetObservation()).(*tbpb.TestObservation)},
+		Observation: &tbpb.TestTargetObservation{Identity: target.Proto(), Observation: observation},
 	}, nil
 }
 
@@ -218,6 +231,27 @@ func validateObservation(observation *tbpb.TestObservation) error {
 		return status.InvalidArgumentError("source_url must be an absolute HTTP(S) URL")
 	}
 	return nil
+}
+
+func normalizeObservation(input *tbpb.TestObservation) (*tbpb.TestObservation, error) {
+	if err := validateObservation(input); err != nil {
+		return nil, err
+	}
+	observation := proto.Clone(input).(*tbpb.TestObservation)
+	observation.FailureFingerprint = ""
+	if observation.GetOutcome() == tbpb.TestOutcome_TEST_OUTCOME_FAIL {
+		normalized := strings.TrimSpace(observation.GetFailureMessage())
+		normalized = ansiEscapePattern.ReplaceAllString(normalized, "")
+		normalized = uuidPattern.ReplaceAllString(normalized, "<uuid>")
+		normalized = pointerPattern.ReplaceAllString(normalized, "<address>")
+		normalized = longHexPattern.ReplaceAllString(normalized, "<hex>")
+		normalized = strings.Join(strings.Fields(normalized), " ")
+		if normalized != "" {
+			digest := sha256.Sum256([]byte(normalized))
+			observation.FailureFingerprint = hex.EncodeToString(digest[:])
+		}
+	}
+	return observation, nil
 }
 
 func (r *Report) reject(kind RecordKind, index int, reason RejectionReason, err error) {

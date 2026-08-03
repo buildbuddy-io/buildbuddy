@@ -27,6 +27,7 @@ func TestBuddyTablesUseNaturalAddressKeys(t *testing.T) {
 		{&tables.TestCaseState{}, []string{"group_id", "repository", "target_label", "case_name"}},
 		{&tables.TestTargetStateChange{}, []string{"group_id", "repository", "target_label", "state_version"}},
 		{&tables.TestCaseStateChange{}, []string{"group_id", "repository", "target_label", "case_name", "state_version"}},
+		{&tables.TestFailureCluster{}, []string{"group_id", "repository", "fingerprint"}},
 	} {
 		parsed, err := schema.Parse(test.table, &sync.Map{}, schema.NamingStrategy{})
 		require.NoError(t, err)
@@ -64,6 +65,7 @@ func TestBuddyTableNames(t *testing.T) {
 		"TestTargetStates",
 		"TestCaseStateChanges",
 		"TestTargetStateChanges",
+		"TestFailureClusters",
 	}, tables.TestBuddyTableNames())
 }
 
