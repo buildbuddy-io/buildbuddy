@@ -207,6 +207,10 @@ message GetTargetRequest {
   // substring (case insensitive), and if any file names are matched then
   // restrict the file listing to just the matched files.
   string filter = 5;
+
+  // Include test-result events when listing test targets. By default these
+  // are expanded only for an exact target-label lookup.
+  bool include_test_result_events = 7;
 }
 
 message GetTargetResponse {
