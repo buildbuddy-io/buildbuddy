@@ -11,4 +11,5 @@ go_test(
     name = "failing_fixture_test",
     srcs = ["failing_fixture_test.go"],
     embed = [":failing_fixture"],
+    size = "medium",
 )

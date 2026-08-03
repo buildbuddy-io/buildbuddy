@@ -12,5 +12,4 @@ go_test(
     srcs = ["timeout_fixture_test.go"],
     embed = [":timeout_fixture"],
     size = "small",
-    timeout = "short",
 )
