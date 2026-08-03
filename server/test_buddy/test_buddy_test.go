@@ -679,6 +679,14 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 		tbpb.TestOutcome_TEST_OUTCOME_PASS,
 		tbpb.TestOutcome_TEST_OUTCOME_PASS,
 		tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	for i := 0; i < 5; i++ {
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			TestTargets: []*tbpb.TestTargetResult{targetResult(
+				fmt.Sprintf("target-timeout-%d", i), "//pkg:timeout", tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1_000)},
+		})
+		require.NoError(t, err)
+	}
 
 	cases := getTests(t, service, ctx, &tbpb.GetTestsRequest{RepoUrl: repository})
 	require.Len(t, cases, 3)
@@ -692,15 +700,17 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 		cases[2].GetSummary().GetHealth(),
 	})
 	targets := getTestTargets(t, service, ctx, &tbpb.GetTestTargetsRequest{RepoUrl: repository})
-	require.Len(t, targets, 3)
+	require.Len(t, targets, 4)
 	require.Equal(t, []tbpb.TestHealth{
 		tbpb.TestHealth_TEST_HEALTH_FAILING,
 		tbpb.TestHealth_TEST_HEALTH_FLAKY,
+		tbpb.TestHealth_TEST_HEALTH_TIMEOUT,
 		tbpb.TestHealth_TEST_HEALTH_HEALTHY,
 	}, []tbpb.TestHealth{
 		targets[0].GetSummary().GetHealth(),
 		targets[1].GetSummary().GetHealth(),
 		targets[2].GetSummary().GetHealth(),
+		targets[3].GetSummary().GetHealth(),
 	})
 }
 

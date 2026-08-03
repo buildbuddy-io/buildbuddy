@@ -27,8 +27,8 @@ queryable health state.
   a no-op while conflicting reuse is rejected.
 - Heavy processing runs in the dedicated TestBuddy service. BuildBuddy apps
   authenticate and proxy RPCs, keeping report work off the app serving path.
-- Reads never parse reports. Package-cone queries return failing, timed-out, and
-  flaky subjects before healthy ones; exact reads return current health,
+- Reads never parse reports. Package-cone queries return failing, flaky, and
+  timed-out subjects before healthy ones; exact reads return current health,
   aggregate statistics, recent evidence, and state-change history. Current state
   and each transition retain the analyzer revision, reason, and eligible sample
   count that produced them.

@@ -13,6 +13,7 @@ interface Props {
 
 interface State {
   packagePrefix: string;
+  healthFilter: test_buddy.TestHealth | "all";
   repository?: test_buddy.GetRepositoryHealthResponse;
   targets: test_buddy.TestTargetSummary[];
   selected?: test_buddy.GetTestTargetResponse;
@@ -27,6 +28,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
 
   state: State = {
     packagePrefix: "",
+    healthFilter: "all",
     targets: [],
     selectedCases: [],
     loading: true,
@@ -105,6 +107,37 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     router.navigateToQueryParam("target", target.identity.targetLabel);
   }
 
+  private renderHealthFilter() {
+    return (
+      <label className="test-buddy-health-filter">
+        Health
+        <select
+          value={this.state.healthFilter}
+          onChange={(event) => {
+            const value = event.target.value;
+            this.setState({
+              healthFilter: value === "all" ? "all" : (Number(value) as test_buddy.TestHealth),
+            });
+          }}>
+          <option value="all">All</option>
+          <option value={test_buddy.TestHealth.TEST_HEALTH_FAILING}>Failing</option>
+          <option value={test_buddy.TestHealth.TEST_HEALTH_FLAKY}>Flaky</option>
+          <option value={test_buddy.TestHealth.TEST_HEALTH_TIMEOUT}>Timed out</option>
+          <option value={test_buddy.TestHealth.TEST_HEALTH_HEALTHY}>Healthy</option>
+          <option value={test_buddy.TestHealth.TEST_HEALTH_INSUFFICIENT_DATA}>Insufficient data</option>
+          <option value={test_buddy.TestHealth.TEST_HEALTH_UNKNOWN}>Not reported</option>
+        </select>
+      </label>
+    );
+  }
+
+  private matchesHealth(summary?: test_buddy.TestSummary | null) {
+    return (
+      this.state.healthFilter === "all" ||
+      (summary?.health ?? test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) === this.state.healthFilter
+    );
+  }
+
   // The component navigates by target label, so the identity message is built
   // here rather than at each call site.
   private loadTarget(targetLabel: string) {
@@ -149,6 +182,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     const target = response?.target;
     if (!response || !target) return null;
     const summary = target.summary;
+    const cases = this.state.selectedCases.filter((testCase) => this.matchesHealth(testCase.summary));
     return (
       <section className="test-buddy-target-detail">
         <h2>{target.identity?.targetLabel}</h2>
@@ -161,6 +195,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           <Stat name="Timeouts" value={(summary?.timeoutCount ?? 0).toString()} />
         </div>
         <h3>Cases</h3>
+        {this.renderHealthFilter()}
         <table className="test-buddy-table">
           <thead>
             <tr>
@@ -174,7 +209,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             </tr>
           </thead>
           <tbody>
-            {this.state.selectedCases.map((testCase) => (
+            {cases.map((testCase) => (
               <tr key={testCase.identity?.caseName}>
                 <td>{testCase.identity?.caseName}</td>
                 <td>{healthName(testCase.summary?.health)}</td>
@@ -188,7 +223,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           </tbody>
         </table>
         {this.state.loadingCases && <div className="test-buddy-empty">Loading cases…</div>}
-        {!this.state.loadingCases && this.state.selectedCases.length === 0 && (
+        {!this.state.loadingCases && cases.length === 0 && (
           <div className="test-buddy-empty">No cases found.</div>
         )}
         <h3>Recent target results</h3>
@@ -239,6 +274,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
 
   render() {
     if (this.state.selected) return <div className="container test-buddy">{this.renderTarget()}</div>;
+    const targets = this.state.targets.filter((target) => this.matchesHealth(target.summary));
     return (
       <div className="container test-buddy">
         <h1>TestBuddy</h1>
@@ -259,6 +295,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             value={this.state.packagePrefix}
             onChange={(event) => this.setState({ packagePrefix: event.target.value })}
           />
+          {this.renderHealthFilter()}
           <button type="submit">Search</button>
         </form>
         <table className="test-buddy-table">
@@ -271,7 +308,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             </tr>
           </thead>
           <tbody>
-            {this.state.targets.map((target) => (
+            {targets.map((target) => (
               <tr key={target.identity?.targetLabel}>
                 <td>
                   <button className="test-buddy-target-link" onClick={() => this.selectTarget(target)}>
@@ -286,7 +323,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           </tbody>
         </table>
         {this.state.loading && <div className="test-buddy-empty">Loading targets…</div>}
-        {!this.state.loading && this.state.targets.length === 0 && (
+        {!this.state.loading && targets.length === 0 && (
           <div className="test-buddy-empty">No targets found.</div>
         )}
       </div>

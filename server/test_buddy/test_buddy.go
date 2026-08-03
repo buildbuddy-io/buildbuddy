@@ -700,8 +700,8 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 	}
 	args = append(args,
 		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
-		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
 		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
 		tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA.String(),
 		tbpb.TestHealth_TEST_HEALTH_HEALTHY.String(),
 	)
@@ -793,8 +793,8 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 	}
 	args = append(args,
 		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
-		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
 		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
 		tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA.String(),
 		tbpb.TestHealth_TEST_HEALTH_HEALTHY.String(),
 	)
