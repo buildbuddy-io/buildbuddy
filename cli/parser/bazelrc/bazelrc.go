@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/rc_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/google/shlex"
 )
@@ -20,22 +21,13 @@ import (
 const (
 	EnablePlatformSpecificConfigFlag = "enable_platform_specific_config"
 	workspacePrefix                  = `%workspace%/`
-
-	CommonPhase = "common"
-	AlwaysPhase = "always"
 )
 
 var (
-	unconditionalCommandPhases = set.Set[string]{
-		CommonPhase: {},
-		AlwaysPhase: {},
-	}
-
 	allPhases = set.FromSeq(
 		set.Union(
 			set.FromSeq(bazel_command.Commands().All()),
-			unconditionalCommandPhases,
-			set.From("startup"),
+			set.From(rc_util.CommonPhase, rc_util.AlwaysPhase, "startup"),
 		),
 	)
 
@@ -232,13 +224,6 @@ func GetBazelOS() string {
 	default:
 		return runtime.GOOS
 	}
-}
-
-// IsUnconditionalCommandPhase returns whether or not this is a phase that should always
-// be evaluated, regardless of the command.
-func IsUnconditionalCommandPhase(phase string) bool {
-	_, ok := unconditionalCommandPhases[phase]
-	return ok
 }
 
 // IsPhase returns whether or not this is a valid phase for a bazel rc line.

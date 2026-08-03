@@ -6,7 +6,6 @@ go_library(
     name = "bazel_command",
     srcs = ["bazel_command.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command",
-    visibility = ["//visibility:public"],
     deps = ["//server/util/lib/set"],
 )
 
