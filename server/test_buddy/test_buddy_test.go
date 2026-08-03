@@ -51,6 +51,21 @@ type getTestTargetsStream struct {
 	responses []*tbpb.GetTestTargetsResponse
 }
 
+type getTestsToSkipStream struct {
+	tbpb.TestBuddyService_GetTestsToSkipServer
+	ctx       context.Context
+	responses []*tbpb.GetTestsToSkipResponse
+}
+
+func (s *getTestsToSkipStream) Context() context.Context {
+	return s.ctx
+}
+
+func (s *getTestsToSkipStream) Send(response *tbpb.GetTestsToSkipResponse) error {
+	s.responses = append(s.responses, proto.Clone(response).(*tbpb.GetTestsToSkipResponse))
+	return nil
+}
+
 func (s *getTestTargetsStream) Context() context.Context {
 	return s.ctx
 }
@@ -139,6 +154,19 @@ func getTestTargets(t *testing.T, service *testbuddy.Service, ctx context.Contex
 	return targets
 }
 
+func getTestsToSkip(t *testing.T, service *testbuddy.Service, ctx context.Context, req *tbpb.GetTestsToSkipRequest) ([]*tbpb.TestTargetSummary, []*tbpb.TestCaseSummary) {
+	t.Helper()
+	stream := &getTestsToSkipStream{ctx: ctx}
+	require.NoError(t, service.GetTestsToSkip(req, stream))
+	var targets []*tbpb.TestTargetSummary
+	var testCases []*tbpb.TestCaseSummary
+	for _, response := range stream.responses {
+		targets = append(targets, response.GetTargets()...)
+		testCases = append(testCases, response.GetTestCases()...)
+	}
+	return targets, testCases
+}
+
 func TestReportAndQueryTests(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -196,6 +224,93 @@ func TestReportAndQueryTests(t *testing.T) {
 	require.Equal(t, int64(1_000_000), detail.GetRecentResults()[0].GetEventTimeUsec())
 	require.Equal(t, "m-middle-by-name", detail.GetRecentResults()[0].GetResultId())
 	require.NotEmpty(t, detail.GetTransitions())
+}
+
+func TestExecutionDispositionControlsTestsToSkip(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/repo"
+	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository,
+		TestTargets: []*tbpb.TestTargetResult{
+			targetResult("bad-target", "//pkg:bad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
+			targetResult("manual-target", "//pkg:manual", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
+			targetResult("outside-target", "//other:bad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 30),
+		},
+		TestCases: []*tbpb.TestCaseResult{
+			caseResult("bad-case", "//pkg:bad", "TestBad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
+			caseResult("manual-case", "//pkg:manual", "TestManual", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
+			caseResult("outside-case", "//other:bad", "TestBad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 30),
+		},
+	})
+	require.NoError(t, err)
+
+	setTarget := func(target string, disposition tbpb.TestExecutionDisposition) {
+		rsp, err := service.SetTestExecutionDisposition(ctx, &tbpb.SetTestExecutionDispositionRequest{
+			RepoUrl: repository,
+			Subject: &tbpb.SetTestExecutionDispositionRequest_Target{
+				Target: &tbpb.TestTargetIdentity{TargetLabel: target},
+			},
+			Disposition: disposition,
+		})
+		require.NoError(t, err)
+		require.Equal(t, disposition, rsp.GetDisposition())
+	}
+	setCase := func(target, name string, disposition tbpb.TestExecutionDisposition) {
+		rsp, err := service.SetTestExecutionDisposition(ctx, &tbpb.SetTestExecutionDispositionRequest{
+			RepoUrl: repository,
+			Subject: &tbpb.SetTestExecutionDispositionRequest_TestCase{
+				TestCase: &tbpb.TestCaseIdentity{
+					Target: &tbpb.TestTargetIdentity{TargetLabel: target}, CaseName: name,
+				},
+			},
+			Disposition: disposition,
+		})
+		require.NoError(t, err)
+		require.Equal(t, disposition, rsp.GetDisposition())
+	}
+
+	setTarget("//pkg:bad", tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_ENABLED)
+	setTarget("//pkg:manual", tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED)
+	setCase("//pkg:manual", "TestManual", tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED)
+	setCase("//pkg:manual", "TestManual", tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED)
+
+	targets, testCases := getTestsToSkip(t, service, ctx, &tbpb.GetTestsToSkipRequest{
+		RepoUrl: repository, PackagePrefix: "pkg",
+	})
+	require.Len(t, targets, 1)
+	require.Equal(t, "//pkg:manual", targets[0].GetIdentity().GetTargetLabel())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, targets[0].GetSummary().GetHealth())
+	require.Equal(t, tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED, targets[0].GetDisposition())
+	require.Len(t, testCases, 2)
+	require.Equal(t, "TestBad", testCases[0].GetIdentity().GetCaseName())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, testCases[0].GetSummary().GetHealth())
+	require.Equal(t, tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_AUTOMATIC, testCases[0].GetDisposition())
+	require.Equal(t, "TestManual", testCases[1].GetIdentity().GetCaseName())
+	require.Equal(t, tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED, testCases[1].GetDisposition())
+
+	targetDetail, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
+		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:bad"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, targetDetail.GetTarget().GetSummary().GetHealth())
+	require.Equal(t, tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_ENABLED, targetDetail.GetTarget().GetDisposition())
+	caseDetail, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository,
+		Identity: &tbpb.TestCaseIdentity{
+			Target: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:manual"}, CaseName: "TestManual",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED, caseDetail.GetTest().GetDisposition())
+
+	setCase("//pkg:bad", "TestBad", tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_ENABLED)
+	setCase("//pkg:manual", "TestManual", tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_AUTOMATIC)
+	targets, testCases = getTestsToSkip(t, service, ctx, &tbpb.GetTestsToSkipRequest{
+		RepoUrl: repository, PackagePrefix: "pkg",
+	})
+	require.Len(t, targets, 1)
+	require.Empty(t, testCases)
 }
 
 func TestRepositoriesAreGroupScopedAndOrderedByLatestReport(t *testing.T) {

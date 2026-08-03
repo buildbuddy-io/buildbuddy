@@ -48,6 +48,12 @@ enum TestHealth {
   TEST_HEALTH_FAILING = 5;
 }
 
+enum TestExecutionDisposition {
+  TEST_EXECUTION_DISPOSITION_AUTOMATIC = 0;
+  TEST_EXECUTION_DISPOSITION_ENABLED = 1;
+  TEST_EXECUTION_DISPOSITION_DISABLED = 2;
+}
+
 message LinearAnalyzer {
   int32 window_size = 1;
   int32 failure_threshold = 2;
@@ -90,6 +96,7 @@ message TestSummary {
 message TestCaseSummary {
   TestCaseIdentity identity = 1;
   TestSummary summary = 2;
+  TestExecutionDisposition disposition = 3;
 }
 
 message GetTestsResponse {
@@ -100,6 +107,7 @@ message TestTargetSummary {
   TestTargetIdentity identity = 1;
   TestSummary summary = 2;
   TestHealthSummary cases = 3;
+  TestExecutionDisposition disposition = 4;
 }
 
 message GetTestTargetsRequest {
@@ -210,6 +218,31 @@ message GetTestRepositoriesResponse {
   repeated TestRepository repositories = 1;
 }
 
+message SetTestExecutionDispositionRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  oneof subject {
+    TestTargetIdentity target = 3;
+    TestCaseIdentity test_case = 4;
+  }
+  TestExecutionDisposition disposition = 5;
+}
+
+message SetTestExecutionDispositionResponse {
+  TestExecutionDisposition disposition = 1;
+}
+
+message GetTestsToSkipRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  string package_prefix = 3;
+}
+
+message GetTestsToSkipResponse {
+  repeated TestTargetSummary targets = 1;
+  repeated TestCaseSummary test_cases = 2;
+}
+
 service TestBuddyService {
   rpc ReportTestResults(stream ReportTestResultsRequest)
       returns (ReportTestResultsResponse);
@@ -222,6 +255,10 @@ service TestBuddyService {
       returns (GetRepositoryHealthResponse);
   rpc GetTestRepositories(GetTestRepositoriesRequest)
       returns (GetTestRepositoriesResponse);
+  rpc SetTestExecutionDisposition(SetTestExecutionDispositionRequest)
+      returns (SetTestExecutionDispositionResponse);
+  rpc GetTestsToSkip(GetTestsToSkipRequest)
+      returns (stream GetTestsToSkipResponse);
   rpc GetTestAnalyzerConfig(GetTestAnalyzerConfigRequest)
       returns (GetTestAnalyzerConfigResponse);
   rpc SetTestAnalyzerConfig(SetTestAnalyzerConfigRequest)

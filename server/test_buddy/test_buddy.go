@@ -200,6 +200,29 @@ func (p *proxy) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetReques
 	return p.client.GetTestTarget(forwardAuth(ctx, p.authenticator), req)
 }
 
+func (p *proxy) SetTestExecutionDisposition(ctx context.Context, req *tbpb.SetTestExecutionDispositionRequest) (*tbpb.SetTestExecutionDispositionResponse, error) {
+	return p.client.SetTestExecutionDisposition(forwardAuth(ctx, p.authenticator), req)
+}
+
+func (p *proxy) GetTestsToSkip(req *tbpb.GetTestsToSkipRequest, stream tbpb.TestBuddyService_GetTestsToSkipServer) error {
+	client, err := p.client.GetTestsToSkip(forwardAuth(stream.Context(), p.authenticator), req)
+	if err != nil {
+		return err
+	}
+	for {
+		rsp, err := client.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(rsp); err != nil {
+			return err
+		}
+	}
+}
+
 func (p *proxy) GetRepositoryHealth(ctx context.Context, req *tbpb.GetRepositoryHealthRequest) (*tbpb.GetRepositoryHealthResponse, error) {
 	return p.client.GetRepositoryHealth(forwardAuth(ctx, p.authenticator), req)
 }
@@ -747,7 +770,7 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		tbpb.TestHealth_TEST_HEALTH_HEALTHY.String(),
 	)
 	query := fmt.Sprintf(`
-		SELECT tc.target_label, tc.case_name,
+		SELECT tc.target_label, tc.case_name, tc.disposition,
 			COALESCE(s.health, '%s') AS health,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
@@ -773,6 +796,7 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 	type row struct {
 		TargetLabel       string
 		CaseName          string
+		Disposition       int32
 		Health            string
 		PassCount         int64
 		FailCount         int64
@@ -794,7 +818,8 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 			identity.CaseAddress{
 				TargetAddress: target, CaseName: caseName,
 			},
-			r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec))
+			r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec,
+			r.Disposition))
 		if len(rsp.Tests) == queryBatchSize {
 			if err := stream.Send(rsp); err != nil {
 				return err
@@ -855,7 +880,7 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 	)
 	query := fmt.Sprintf(`
 		SELECT * FROM (
-		SELECT tt.target_label,
+		SELECT tt.target_label, tt.disposition,
 			COALESCE(s.health, ?) AS health,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
@@ -883,7 +908,7 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 			ON cs.group_id = tc.group_id AND cs.repository = tc.repository
 			AND cs.target_label = tc.target_label AND cs.case_name = tc.case_name
 		WHERE %s
-		GROUP BY tt.target_label, s.health, s.pass_count, s.fail_count,
+		GROUP BY tt.target_label, tt.disposition, s.health, s.pass_count, s.fail_count,
 			s.timeout_count, s.total_duration_usec
 		) AS target_health
 		ORDER BY CASE
@@ -900,6 +925,7 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 			target_label`, where)
 	type row struct {
 		TargetLabel               string
+		Disposition               int32
 		Health                    string
 		PassCount                 int64
 		FailCount                 int64
@@ -937,7 +963,8 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 			cases.MeanDurationUsec = r.CaseTotalDurationUsec / total
 		}
 		summary := targetSummary(
-			target, r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec)
+			target, r.Health, r.PassCount, r.FailCount, r.TimeoutCount,
+			r.TotalDurationUsec, r.Disposition)
 		summary.Cases = cases
 		rsp.Targets = append(rsp.Targets, summary)
 		if len(rsp.Targets) == queryBatchSize {
@@ -953,6 +980,239 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 	}
 	if len(rsp.Targets) > 0 {
 		return stream.Send(rsp)
+	}
+	return nil
+}
+
+func (s *Service) SetTestExecutionDisposition(ctx context.Context, req *tbpb.SetTestExecutionDispositionRequest) (*tbpb.SetTestExecutionDispositionResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentError("request is required")
+	}
+	if _, ok := tbpb.TestExecutionDisposition_name[int32(req.GetDisposition())]; !ok {
+		return nil, status.InvalidArgumentErrorf("unrecognized test execution disposition %d", req.GetDisposition())
+	}
+	groupID, err := s.groupID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.GetTarget() != nil {
+		target, err := identity.CanonicalizeTarget(req.GetRepoUrl(), req.GetTarget().GetTargetLabel())
+		if err != nil {
+			return nil, err
+		}
+		result := s.env.GetDBHandle().GORM(ctx, "test_buddy_set_target_disposition").
+			Model(&tables.TestTarget{}).
+			Where("group_id = ? AND repository = ? AND target_label = ?",
+				groupID, target.Repository, target.Label()).
+			Update("disposition", int32(req.GetDisposition()))
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			var count int64
+			err := s.env.GetDBHandle().GORM(ctx, "test_buddy_find_target_disposition").
+				Model(&tables.TestTarget{}).
+				Where("group_id = ? AND repository = ? AND target_label = ?",
+					groupID, target.Repository, target.Label()).Count(&count).Error
+			if err != nil {
+				return nil, err
+			}
+			if count == 0 {
+				return nil, status.NotFoundErrorf("test target %s was not found", target.String())
+			}
+		}
+	} else if req.GetTestCase() != nil {
+		testCase, err := identity.CaseAddressFromProto(req.GetRepoUrl(), req.GetTestCase())
+		if err != nil {
+			return nil, err
+		}
+		caseName, err := identity.CaseNameKey(testCase.CaseName)
+		if err != nil {
+			return nil, err
+		}
+		result := s.env.GetDBHandle().GORM(ctx, "test_buddy_set_case_disposition").
+			Model(&tables.TestCase{}).
+			Where("group_id = ? AND repository = ? AND target_label = ? AND case_name = ?",
+				groupID, testCase.Repository, testCase.Target().Label(), caseName).
+			Update("disposition", int32(req.GetDisposition()))
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			var count int64
+			err := s.env.GetDBHandle().GORM(ctx, "test_buddy_find_case_disposition").
+				Model(&tables.TestCase{}).
+				Where("group_id = ? AND repository = ? AND target_label = ? AND case_name = ?",
+					groupID, testCase.Repository, testCase.Target().Label(), caseName).Count(&count).Error
+			if err != nil {
+				return nil, err
+			}
+			if count == 0 {
+				return nil, status.NotFoundErrorf("test case %s was not found", testCase.String())
+			}
+		}
+	} else {
+		return nil, status.InvalidArgumentError("test target or case identity is required")
+	}
+	return &tbpb.SetTestExecutionDispositionResponse{Disposition: req.GetDisposition()}, nil
+}
+
+func (s *Service) GetTestsToSkip(req *tbpb.GetTestsToSkipRequest, stream tbpb.TestBuddyService_GetTestsToSkipServer) error {
+	if req == nil {
+		return status.InvalidArgumentError("request is required")
+	}
+	ctx := stream.Context()
+	groupID, err := s.groupID(ctx)
+	if err != nil {
+		return err
+	}
+	repository, err := identity.NormalizeRepositoryURL(req.GetRepoUrl())
+	if err != nil {
+		return err
+	}
+	packagePrefix, err := normalizePackagePrefix(req.GetPackagePrefix())
+	if err != nil {
+		return err
+	}
+
+	targetWhere := `tt.group_id = ? AND tt.repository = ?`
+	targetArgs := []any{tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), groupID, repository}
+	if packagePrefix != "" {
+		bound, boundArgs := conePackageBounds("tt.package_path", packagePrefix)
+		targetWhere += ` AND ` + bound
+		targetArgs = append(targetArgs, boundArgs...)
+	}
+	targetArgs = append(targetArgs,
+		int32(tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED),
+		int32(tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_AUTOMATIC),
+		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
+		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
+	)
+	targetQuery := fmt.Sprintf(`
+		SELECT tt.target_label, tt.disposition,
+			COALESCE(s.health, ?) AS health,
+			COALESCE(s.pass_count, 0) AS pass_count,
+			COALESCE(s.fail_count, 0) AS fail_count,
+			COALESCE(s.timeout_count, 0) AS timeout_count,
+			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
+		FROM "TestTargets" AS tt
+		LEFT JOIN "TestTargetStates" AS s
+			ON s.group_id = tt.group_id AND s.repository = tt.repository
+			AND s.target_label = tt.target_label
+		WHERE %s AND (tt.disposition = ? OR
+			(tt.disposition = ? AND s.health IN (?, ?, ?)))
+		ORDER BY tt.target_label`, targetWhere)
+	type targetRow struct {
+		TargetLabel       string
+		Disposition       int32
+		Health            string
+		PassCount         int64
+		FailCount         int64
+		TimeoutCount      int64
+		TotalDurationUsec int64
+	}
+	targetResponse := &tbpb.GetTestsToSkipResponse{
+		Targets: make([]*tbpb.TestTargetSummary, 0, queryBatchSize),
+	}
+	if err := db.ScanEach(
+		s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_targets_to_skip").Raw(targetQuery, targetArgs...),
+		func(ctx context.Context, row *targetRow) error {
+			target, err := identity.CanonicalizeTarget(repository, row.TargetLabel)
+			if err != nil {
+				return err
+			}
+			targetResponse.Targets = append(targetResponse.Targets, targetSummary(
+				target, row.Health, row.PassCount, row.FailCount, row.TimeoutCount,
+				row.TotalDurationUsec, row.Disposition))
+			if len(targetResponse.Targets) == queryBatchSize {
+				if err := stream.Send(targetResponse); err != nil {
+					return err
+				}
+				targetResponse = &tbpb.GetTestsToSkipResponse{
+					Targets: make([]*tbpb.TestTargetSummary, 0, queryBatchSize),
+				}
+			}
+			return nil
+		}); err != nil {
+		return err
+	}
+	if len(targetResponse.Targets) > 0 {
+		if err := stream.Send(targetResponse); err != nil {
+			return err
+		}
+	}
+
+	caseWhere := `tc.group_id = ? AND tc.repository = ?`
+	caseArgs := []any{tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), groupID, repository}
+	if packagePrefix != "" {
+		bound, boundArgs := conePackageBounds("tc.package_path", packagePrefix)
+		caseWhere += ` AND ` + bound
+		caseArgs = append(caseArgs, boundArgs...)
+	}
+	caseArgs = append(caseArgs,
+		int32(tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_DISABLED),
+		int32(tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_AUTOMATIC),
+		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
+		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
+	)
+	caseQuery := fmt.Sprintf(`
+		SELECT tc.target_label, tc.case_name, tc.disposition,
+			COALESCE(s.health, ?) AS health,
+			COALESCE(s.pass_count, 0) AS pass_count,
+			COALESCE(s.fail_count, 0) AS fail_count,
+			COALESCE(s.timeout_count, 0) AS timeout_count,
+			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
+		FROM "TestCases" AS tc
+		LEFT JOIN "TestCaseStates" AS s
+			ON s.group_id = tc.group_id AND s.repository = tc.repository
+			AND s.target_label = tc.target_label AND s.case_name = tc.case_name
+		WHERE %s AND (tc.disposition = ? OR
+			(tc.disposition = ? AND s.health IN (?, ?, ?)))
+		ORDER BY tc.target_label, tc.case_name`, caseWhere)
+	type caseRow struct {
+		TargetLabel       string
+		CaseName          string
+		Disposition       int32
+		Health            string
+		PassCount         int64
+		FailCount         int64
+		TimeoutCount      int64
+		TotalDurationUsec int64
+	}
+	caseResponse := &tbpb.GetTestsToSkipResponse{
+		TestCases: make([]*tbpb.TestCaseSummary, 0, queryBatchSize),
+	}
+	if err := db.ScanEach(
+		s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_cases_to_skip").Raw(caseQuery, caseArgs...),
+		func(ctx context.Context, row *caseRow) error {
+			target, err := identity.CanonicalizeTarget(repository, row.TargetLabel)
+			if err != nil {
+				return err
+			}
+			caseName, err := identity.CaseNameFromKey(row.CaseName)
+			if err != nil {
+				return err
+			}
+			caseResponse.TestCases = append(caseResponse.TestCases, caseSummary(
+				identity.CaseAddress{TargetAddress: target, CaseName: caseName},
+				row.Health, row.PassCount, row.FailCount, row.TimeoutCount,
+				row.TotalDurationUsec, row.Disposition))
+			if len(caseResponse.TestCases) == queryBatchSize {
+				if err := stream.Send(caseResponse); err != nil {
+					return err
+				}
+				caseResponse = &tbpb.GetTestsToSkipResponse{
+					TestCases: make([]*tbpb.TestCaseSummary, 0, queryBatchSize),
+				}
+			}
+			return nil
+		}); err != nil {
+		return err
+	}
+	if len(caseResponse.TestCases) > 0 {
+		return stream.Send(caseResponse)
 	}
 	return nil
 }
@@ -1112,6 +1372,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		return nil, err
 	}
 	type targetRow struct {
+		Disposition         int32
 		Health              string
 		RecentResults       []byte
 		PassCount           int64
@@ -1124,7 +1385,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	}
 	row := &targetRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_target").Raw(`
-		SELECT COALESCE(s.health, ?) AS health, s.recent_results,
+		SELECT tt.disposition, COALESCE(s.health, ?) AS health, s.recent_results,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -1148,7 +1409,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	}
 	rsp := &tbpb.GetTestTargetResponse{
 		Target: targetSummary(target, row.Health, row.PassCount, row.FailCount,
-			row.TimeoutCount, row.TotalDurationUsec),
+			row.TimeoutCount, row.TotalDurationUsec, row.Disposition),
 		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
 		EligibleSampleCount: row.EligibleSampleCount,
 	}
@@ -1210,6 +1471,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		return nil, err
 	}
 	type caseRow struct {
+		Disposition         int32
 		Health              string
 		RecentResults       []byte
 		PassCount           int64
@@ -1222,7 +1484,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	}
 	row := &caseRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case").Raw(`
-		SELECT COALESCE(s.health, ?) AS health, s.recent_results,
+		SELECT tc.disposition, COALESCE(s.health, ?) AS health, s.recent_results,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -1245,7 +1507,8 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		return nil, err
 	}
 	rsp := &tbpb.GetTestCaseResponse{
-		Test:             caseSummary(testCase, row.Health, row.PassCount, row.FailCount, row.TimeoutCount, row.TotalDurationUsec),
+		Test: caseSummary(testCase, row.Health, row.PassCount, row.FailCount,
+			row.TimeoutCount, row.TotalDurationUsec, row.Disposition),
 		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
 		EligibleSampleCount: row.EligibleSampleCount,
 	}
@@ -1307,18 +1570,27 @@ func testSummary(healthValue string, passCount, failCount, timeoutCount, totalDu
 	return result
 }
 
-func caseSummary(address identity.CaseAddress, healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64) *tbpb.TestCaseSummary {
+func caseSummary(address identity.CaseAddress, healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64, disposition int32) *tbpb.TestCaseSummary {
 	return &tbpb.TestCaseSummary{
-		Identity: identity.CaseProto(address),
-		Summary:  testSummary(healthValue, passCount, failCount, timeoutCount, totalDurationUsec),
+		Identity:    identity.CaseProto(address),
+		Summary:     testSummary(healthValue, passCount, failCount, timeoutCount, totalDurationUsec),
+		Disposition: testExecutionDisposition(disposition),
 	}
 }
 
-func targetSummary(address identity.TargetAddress, healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64) *tbpb.TestTargetSummary {
+func targetSummary(address identity.TargetAddress, healthValue string, passCount, failCount, timeoutCount, totalDurationUsec int64, disposition int32) *tbpb.TestTargetSummary {
 	return &tbpb.TestTargetSummary{
-		Identity: identity.TargetProto(address),
-		Summary:  testSummary(healthValue, passCount, failCount, timeoutCount, totalDurationUsec),
+		Identity:    identity.TargetProto(address),
+		Summary:     testSummary(healthValue, passCount, failCount, timeoutCount, totalDurationUsec),
+		Disposition: testExecutionDisposition(disposition),
 	}
+}
+
+func testExecutionDisposition(value int32) tbpb.TestExecutionDisposition {
+	if _, ok := tbpb.TestExecutionDisposition_name[value]; ok {
+		return tbpb.TestExecutionDisposition(value)
+	}
+	return tbpb.TestExecutionDisposition_TEST_EXECUTION_DISPOSITION_AUTOMATIC
 }
 
 func health(value string) tbpb.TestHealth {

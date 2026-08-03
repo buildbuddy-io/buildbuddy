@@ -531,7 +531,7 @@ function targetRow(target: test_buddy.TestTargetSummary) {
   return {
     health,
     passRate: caseSampleCount > 0 ? cases?.passRate ?? 0 : target.summary?.passRate ?? 0,
-    meanDurationUsec: caseSampleCount > 0 ? cases?.meanDurationUsec ?? 0 : target.summary?.meanDurationUsec ?? 0,
+    meanDurationUsec: Number(caseSampleCount > 0 ? cases?.meanDurationUsec ?? 0 : target.summary?.meanDurationUsec ?? 0),
   };
 }
 

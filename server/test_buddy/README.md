@@ -33,6 +33,10 @@ queryable health state.
   target state. Exact reads return current health, aggregate statistics, recent
   evidence, and state-change history. Current state and each transition retain
   the analyzer revision, reason, and eligible sample count that produced them.
+- Execution disposition is separate from observed health. Automatic follows
+  health, enabled forces a subject to run, and disabled forces it to be skipped.
+  The streamed cone query for tests to skip returns target and case identities
+  with their health summaries and dispositions, not names alone.
 - A cone read is a range scan of the catalog's own
   `(group_id, repository, package_path)` index, bounded on the package separator
   so that `a/bc` stays outside the `a/b` cone. There is no routing table, prefix
