@@ -55,6 +55,80 @@ var bazelTestOutputDirectory = regexp.MustCompile(
 // source URL to 2,048 — so a result is kilobytes, not megabytes.
 const ReportRequestTargetBytes = 8 << 20
 
+// DiagnosticLog accumulates what the JUnit parser could not use, across every
+// file in one report.
+//
+// The counts are split because a single total answers the wrong question. A
+// dropped case was never reported and is invisible downstream; an ignored field
+// means the case reported with one value missing. Only the first group is
+// "tests that did not report".
+//
+// detail is called once per diagnostic and may be nil. The CLI passes the debug
+// logger, which discards unless verbose, so the listing costs nothing to leave
+// wired up; the parser caps diagnostics per file, and anything past that cap is
+// counted in Truncated rather than silently lost.
+type DiagnosticLog struct {
+	Dropped   int
+	Ignored   int
+	Truncated int
+	detail    func(string)
+}
+
+func NewDiagnosticLog(detail func(string)) *DiagnosticLog {
+	return &DiagnosticLog{detail: detail}
+}
+
+func (l *DiagnosticLog) Add(xmlPath, targetLabel string, report *junit.Report) {
+	l.Truncated += report.DroppedDiagnostics
+	for _, diagnostic := range report.Diagnostics {
+		if diagnostic.Code.DropsCase() {
+			l.Dropped++
+		} else {
+			l.Ignored++
+		}
+		if l.detail != nil {
+			l.detail(diagnosticLine(xmlPath, targetLabel, diagnostic))
+		}
+	}
+	// The cap is per file, so an over-cap file still reports its own count.
+	if report.DroppedDiagnostics > 0 && l.detail != nil {
+		l.detail(fmt.Sprintf("%d more diagnostics in %s were not recorded (per-file cap)",
+			report.DroppedDiagnostics, xmlPath))
+	}
+}
+
+func diagnosticLine(xmlPath, targetLabel string, diagnostic junit.Diagnostic) string {
+	kind := "ignored field"
+	if diagnostic.Code.DropsCase() {
+		kind = "dropped case"
+	}
+	name := diagnostic.CaseName
+	if name == "" {
+		name = "<unnamed>"
+	}
+	where := xmlPath
+	if diagnostic.CaseIndex >= 0 {
+		where = fmt.Sprintf("%s case %d", xmlPath, diagnostic.CaseIndex)
+	}
+	return fmt.Sprintf("%s %s %q %s (%s)", kind, targetLabel, name, diagnostic.Code, where)
+}
+
+// Summary is the one line printed without verbose. It is empty when the parser
+// used everything.
+func (l *DiagnosticLog) Summary() string {
+	total := l.Dropped + l.Ignored
+	if total == 0 && l.Truncated == 0 {
+		return ""
+	}
+	summary := fmt.Sprintf("%d JUnit diagnostics: %d cases dropped, %d fields ignored",
+		total, l.Dropped, l.Ignored)
+	if l.Truncated > 0 {
+		summary += fmt.Sprintf(", %d beyond the per-file cap", l.Truncated)
+	}
+	// The flag is a bare boolean: "--verbose=1" is rejected by the parser.
+	return summary + "\nrerun with --verbose (or BB_VERBOSE=1) to list them"
+}
+
 // ReportBatcher packs results into client-stream messages that stay within
 // ReportRequestTargetBytes, sending each one as soon as it is full.
 //
@@ -195,7 +269,7 @@ func HandleTestReport(args []string) (int, error) {
 	}
 	defer stream.CloseSend()
 	batcher := NewReportBatcher(repository, stream.Send)
-	diagnostics := 0
+	diagnostics := NewDiagnosticLog(func(line string) { log.Debug(line) })
 	fallbackEventTimeUsec := time.Now().UnixMicro()
 	for _, path := range paths {
 		targetLabel := *reportTargetLabel
@@ -217,7 +291,7 @@ func HandleTestReport(args []string) (int, error) {
 		if closeErr != nil {
 			return 1, closeErr
 		}
-		diagnostics += report.DiagnosticCount
+		diagnostics.Add(path, targetLabel, report)
 		targetResult, testCases, err := ResultsForReport(
 			path, targetLabel, sourceURL, fallbackEventTimeUsec, report)
 		if err != nil {
@@ -242,8 +316,8 @@ func HandleTestReport(args []string) (int, error) {
 	fmt.Printf("reported %d test results (%d rejected) from %d XML files\n",
 		rsp.GetAcceptedCount(), rsp.GetRejectedCount(), len(paths))
 	fmt.Printf("source %s\n", sourceURL)
-	if diagnostics > 0 {
-		fmt.Printf("%d JUnit diagnostics were ignored\n", diagnostics)
+	if summary := diagnostics.Summary(); summary != "" {
+		fmt.Println(summary)
 	}
 	if rsp.GetAcceptedCount() == 0 {
 		return 1, nil

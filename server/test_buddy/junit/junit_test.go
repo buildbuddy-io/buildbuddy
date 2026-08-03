@@ -73,12 +73,28 @@ func TestInvalidCasesProduceDiagnostics(t *testing.T) {
 </testsuite>`)
 	assert.Equal(t, 3, report.EncounteredCases)
 	assert.Len(t, report.Cases, 2)
+	// A diagnostic carries the case name when there is one, so a report can say
+	// which test it is about rather than only how many were affected.
 	assert.Equal(t, []junit.Diagnostic{
 		{Code: junit.DiagnosticMissingName, CaseIndex: 0},
-		{Code: junit.DiagnosticInvalidDuration, CaseIndex: 1},
-		{Code: junit.DiagnosticUnknownStatus, CaseIndex: 2},
-		{Code: junit.DiagnosticInvalidTimestamp, CaseIndex: 2},
+		{Code: junit.DiagnosticInvalidDuration, CaseIndex: 1, CaseName: "bad-duration"},
+		{Code: junit.DiagnosticUnknownStatus, CaseIndex: 2, CaseName: "unknown"},
+		{Code: junit.DiagnosticInvalidTimestamp, CaseIndex: 2, CaseName: "unknown"},
 	}, report.Diagnostics)
+	// The first case was dropped; the other two reported with a field ignored.
+	assert.True(t, report.Diagnostics[0].Code.DropsCase())
+	for _, diagnostic := range report.Diagnostics[1:] {
+		assert.False(t, diagnostic.Code.DropsCase(), diagnostic.Code)
+	}
+}
+
+func TestUnusableCaseNameIsRetainedForDiagnosis(t *testing.T) {
+	report := parse(t, "<testsuite>\n  <testcase name=\"bad\tname\"/>\n</testsuite>")
+	assert.Empty(t, report.Cases)
+	require.Len(t, report.Diagnostics, 1)
+	// The name cannot be an address, but it is what a human will search for.
+	assert.Equal(t, junit.DiagnosticInvalidIdentity, report.Diagnostics[0].Code)
+	assert.Equal(t, "bad\tname", report.Diagnostics[0].CaseName)
 }
 
 func TestNestedSuiteTimestampIsInherited(t *testing.T) {

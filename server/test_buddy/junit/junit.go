@@ -51,9 +51,19 @@ const (
 	DiagnosticInvalidDisabled  DiagnosticCode = "invalid_disabled"
 )
 
+// Diagnostic records one thing the parser could not use. CaseName is empty
+// when the case had no usable name, which is the reason for the diagnostic.
 type Diagnostic struct {
 	Code      DiagnosticCode
 	CaseIndex int
+	CaseName  string
+}
+
+// DropsCase reports whether this diagnostic means the case was not reported at
+// all. A case needs a usable name to be addressable, so those two codes drop
+// it; the rest ignore one field and still report the case.
+func (c DiagnosticCode) DropsCase() bool {
+	return c == DiagnosticMissingName || c == DiagnosticInvalidIdentity
 }
 
 type Report struct {
@@ -269,12 +279,17 @@ func (p *parser) caseRecord(index int, state *caseState) (*normalize.CaseRecord,
 		return nil, []Diagnostic{{Code: DiagnosticMissingName, CaseIndex: index}}, nil
 	}
 	if err := identity.ValidateCaseName(state.name); err != nil {
-		return nil, []Diagnostic{{Code: DiagnosticInvalidIdentity, CaseIndex: index}}, nil
+		// The name is unusable as an address but still identifies the case to
+		// a human reading the XML, so it is worth carrying.
+		return nil, []Diagnostic{
+			{Code: DiagnosticInvalidIdentity, CaseIndex: index, CaseName: state.name},
+		}, nil
 	}
 	var diagnostics []Diagnostic
 	duration, err := durationUsec(state.time)
 	if err != nil {
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagnosticInvalidDuration, CaseIndex: index})
+		diagnostics = append(diagnostics,
+			Diagnostic{Code: DiagnosticInvalidDuration, CaseIndex: index, CaseName: state.name})
 	}
 	outcome, outcomeDiagnostics := state.outcome(index)
 	diagnostics = append(diagnostics, outcomeDiagnostics...)
@@ -282,7 +297,8 @@ func (p *parser) caseRecord(index int, state *caseState) (*normalize.CaseRecord,
 	if state.timestamp != "" {
 		parsed, err := eventTimeUsec(state.timestamp)
 		if err != nil {
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagnosticInvalidTimestamp, CaseIndex: index})
+			diagnostics = append(diagnostics,
+				Diagnostic{Code: DiagnosticInvalidTimestamp, CaseIndex: index, CaseName: state.name})
 		} else {
 			eventTime = parsed
 		}
@@ -307,7 +323,8 @@ func (s *caseState) outcome(index int) (tbpb.TestOutcome, []Diagnostic) {
 		outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
 	default:
 		outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
-		diagnostics = append(diagnostics, Diagnostic{Code: DiagnosticUnknownStatus, CaseIndex: index})
+		diagnostics = append(diagnostics,
+			Diagnostic{Code: DiagnosticUnknownStatus, CaseIndex: index, CaseName: s.name})
 	}
 	if s.disabled != "" {
 		switch strings.ToLower(strings.TrimSpace(s.disabled)) {
@@ -315,7 +332,8 @@ func (s *caseState) outcome(index int) (tbpb.TestOutcome, []Diagnostic) {
 			outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
 		case "false", "0", "no":
 		default:
-			diagnostics = append(diagnostics, Diagnostic{Code: DiagnosticInvalidDisabled, CaseIndex: index})
+			diagnostics = append(diagnostics,
+				Diagnostic{Code: DiagnosticInvalidDisabled, CaseIndex: index, CaseName: s.name})
 		}
 	}
 	switch {
