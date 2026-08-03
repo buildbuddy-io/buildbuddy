@@ -130,8 +130,18 @@ func TestEvictionColdestFirst(t *testing.T) {
 	for i := 1; i < n; i++ {
 		assert.LessOrEqual(t, got[i-1], got[i], "candidates not in ascending atime order")
 	}
+	seen := map[int64]bool{}
 	for _, atime := range got {
 		assert.True(t, written[atime], "candidate atime %d was never written", atime)
+		assert.False(t, seen[atime], "candidate atime %d offered twice", atime)
+		seen[atime] = true
+	}
+	// After a full sweep the loop must sleep (1h here) rather than restart at
+	// the front and re-enqueue candidates whose deletes are still in flight.
+	select {
+	case c := <-pu.deletes:
+		t.Fatalf("candidate re-offered after a full sweep: %q", c.keyBytes)
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 
@@ -213,22 +223,19 @@ func TestEvictionRespectsMinEvictionAge(t *testing.T) {
 	pu := newTestPU(t, db, 1<<40, time.Hour)
 	startEvictionLoopForTest(t, pu)
 
-	// Only the old record is offered; the fresh one never arrives. (The loop
-	// re-offers the old record repeatedly since nothing deletes it here.)
+	// Only the old record is offered, exactly once: the sweep stops at the
+	// age boundary and the loop then sleeps (1h here) instead of restarting
+	// at the front and re-enqueueing the in-flight candidate.
 	select {
 	case c := <-pu.deletes:
 		require.Equal(t, string(old), string(c.keyBytes))
 	case <-time.After(30 * time.Second):
 		t.Fatal("timed out waiting for the old record")
 	}
-	timeout := time.After(300 * time.Millisecond)
-	for {
-		select {
-		case c := <-pu.deletes:
-			require.Equal(t, string(old), string(c.keyBytes), "fresh record offered for eviction")
-		case <-timeout:
-			return
-		}
+	select {
+	case c := <-pu.deletes:
+		t.Fatalf("unexpected second candidate %q (fresh record, or in-flight re-offer)", c.keyBytes)
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

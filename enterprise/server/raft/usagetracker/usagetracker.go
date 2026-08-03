@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -81,6 +82,13 @@ var backfillCommitSizeBytes = 4 * 1024 * 1024
 // the backfill marker; incrementing it makes every store wipe and rebuild its
 // index on the next startup. The index is derived state, so a rebuild is
 // always safe -- bump this whenever the entry encoding changes.
+//
+// Rollout caution: the marker only records that a backfill completed, not
+// that the index has stayed complete since. Rolling back to a pre-index
+// binary and re-upgrading leaves records written during the rollback window
+// unindexed (and so unevictable) with no signal, because the marker still
+// matches. After such a rollback, delete the marker keys (or bump this
+// version) to force a rebuild.
 const atimeIndexVersion = byte(1)
 
 type Tracker struct {
@@ -163,7 +171,7 @@ type partitionUsage struct {
 	metrics metricSet
 }
 
-func (pu *partitionUsage) LocalSizeBytes() int64 {
+func (pu *partitionUsage) localSizeBytes() int64 {
 	db, err := pu.dbGetter.DB()
 	if err != nil {
 		log.Warningf("unable to get local size bytes for partition %q: %s", pu.part.ID, err)
@@ -176,7 +184,15 @@ func (pu *partitionUsage) LocalSizeBytes() int64 {
 		log.Warningf("unable to get local size bytes for partition %q: %s", pu.part.ID, err)
 		return 0
 	}
-	return int64(sizeBytes)
+	// The atime index consumes the partition's disk budget too; count it so
+	// usage (and therefore eviction pressure) reflects the true footprint.
+	idxStart, idxEnd := keys.AtimeIndexPartitionRange(pu.part.ID)
+	idxSizeBytes, err := db.EstimateDiskUsage(idxStart, idxEnd)
+	if err != nil {
+		log.Warningf("unable to get atime index size bytes for partition %q: %s", pu.part.ID, err)
+		return 0
+	}
+	return int64(sizeBytes + idxSizeBytes)
 }
 
 func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
@@ -186,7 +202,7 @@ func (pu *partitionUsage) updateLocalSizeBytes(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.Chan():
-			sizeBytes := pu.LocalSizeBytes()
+			sizeBytes := pu.localSizeBytes()
 			pu.mu.RLock()
 			pu.sizeBytes = sizeBytes
 			pu.mu.RUnlock()
@@ -417,7 +433,22 @@ func (pu *partitionUsage) startEviction(ctx context.Context) {
 		// the missing marker means the backfill is retried on next startup.
 		log.Errorf("partition %q: atime index backfill failed: %s", pu.part.ID, err)
 	}
-	pu.evictionLoop(ctx)
+	// evictionLoop returns non-nil only on storage errors (db acquisition or
+	// iterator failures), which may be transient. A dead loop means the
+	// partition grows without bound, so alert and retry with backoff rather
+	// than giving up for the process lifetime.
+	for ctx.Err() == nil {
+		err := pu.evictionLoop(ctx)
+		if err == nil {
+			return // context done
+		}
+		alert.UnexpectedEvent("raft_eviction_loop_failed", "partition %q: eviction loop failed (will retry): %s", pu.part.ID, err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-pu.clock.After(10 * time.Second):
+		}
+	}
 }
 
 // backfillAtimeIndex builds the partition's atime index from already-stored
@@ -494,6 +525,13 @@ func (pu *partitionUsage) backfillAtimeIndex(ctx context.Context) error {
 			lastLog = time.Now()
 		}
 	}
+	// A mid-scan iterator error (I/O, block checksum) makes Valid() return
+	// false just like normal exhaustion. Writing the marker after a truncated
+	// scan would permanently strand the unscanned records outside the index,
+	// so fail -- without the marker, the next startup rescans.
+	if err := iter.Error(); err != nil {
+		return err
+	}
 	if err := wb.Commit(pebble.NoSync); err != nil {
 		return err
 	}
@@ -540,7 +578,13 @@ func (pu *partitionUsage) evictionLoop(ctx context.Context) error {
 	}
 	defer db.Close()
 
-	limiter := rate.NewLimiter(rate.Limit(pu.evictionRateLimit), 1)
+	evictionRate := rate.Limit(pu.evictionRateLimit)
+	if pu.evictionRateLimit <= 0 {
+		// A zero-rate limiter blocks Wait forever, silently disabling
+		// eviction; treat non-positive as unlimited instead.
+		evictionRate = rate.Inf
+	}
+	limiter := rate.NewLimiter(evictionRate, 1)
 
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
@@ -557,14 +601,18 @@ func (pu *partitionUsage) evictionLoop(ctx context.Context) error {
 			}
 			continue
 		}
-		enqueued, nextResume, err := pu.sweepIndex(ctx, db, limiter, resumeKey, fileMetadata)
+		nextResume, err := pu.sweepIndex(ctx, db, limiter, resumeKey, fileMetadata)
 		if err != nil {
 			return err
 		}
 		resumeKey = nextResume
-		if enqueued == 0 && nextResume == nil {
-			// Over budget, but nothing is old enough to evict
-			// (min_eviction_age) or the index is empty.
+		if nextResume == nil {
+			// The sweep reached the age boundary or the index end: everything
+			// currently eligible has been enqueued. Sleep before the next
+			// front-to-back sweep so the delete pipeline can apply first --
+			// restarting immediately would re-enqueue in-flight candidates,
+			// and duplicate deletes "succeed" on NotFound, double-counting
+			// eviction metrics and the speculative usage decrement.
 			if !pu.samplerSleep(ctx) {
 				return nil
 			}
@@ -578,27 +626,31 @@ func (pu *partitionUsage) evictionLoop(ctx context.Context) error {
 // index is exhausted. Orphaned entries -- the record is gone or its atime
 // moved on (crash windows, cleared or removed ranges) -- are deleted in place;
 // the index is node-local derived state, so those deletes don't go through
-// raft. Returns the number of candidates enqueued and the key to resume the
-// next sweep from (nil if the sweep reached the age boundary or index end).
-func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, resumeKey []byte, fileMetadata *sgpb.FileMetadata) (int, []byte, error) {
+// raft.
+//
+// Returns the key to resume the next sweep from. It is non-nil only when the
+// sweep stopped with possibly-eligible entries still ahead (the budget check
+// tripped mid-sweep); nil means nothing further is actionable right now and
+// the caller should sleep before sweeping again from the front.
+func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, limiter *rate.Limiter, resumeKey []byte, fileMetadata *sgpb.FileMetadata) ([]byte, error) {
 	start, end := keys.AtimeIndexPartitionRange(pu.part.ID)
 	if resumeKey != nil && bytes.Compare(resumeKey, start) > 0 && bytes.Compare(resumeKey, end) < 0 {
 		start = resumeKey
 	}
 	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	if err != nil {
-		return 0, nil, err
+		return nil, err
 	}
 	defer iter.Close()
 
-	enqueued := 0
 	for valid := iter.First(); valid; valid = iter.Next() {
 		if ctx.Err() != nil {
-			return enqueued, nil, nil
+			return nil, nil
 		}
 		if pu.GlobalSizeBytes() <= pu.maxAllowedSizeBytes() {
-			// Below budget; resume after the current entry next time.
-			return enqueued, append(append([]byte(nil), iter.Key()...), 0), nil
+			// Below budget; resume at the current (unprocessed) entry if the
+			// budget check turns out to have been optimistic.
+			return append([]byte(nil), iter.Key()...), nil
 		}
 		_, atimeUsec, fileKey, err := keys.ParseAtimeIndexKey(iter.Key())
 		if err != nil {
@@ -611,7 +663,7 @@ func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, l
 		atime := time.UnixMicro(atimeUsec)
 		if pu.clock.Since(atime) < pu.minEvictionAge {
 			// Entries are atime-ordered: everything from here on is younger.
-			return enqueued, nil, nil
+			return nil, nil
 		}
 		// Verify the entry against the stored record; drop orphans in place.
 		fileMetadata.ResetVT()
@@ -621,28 +673,49 @@ func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, l
 			continue
 		}
 		if status.IsNotFoundError(err) || fileMetadata.GetLastAccessUsec() != atimeUsec {
-			if err := db.Delete(iter.Key(), pebble.NoSync); err != nil {
-				log.Warningf("failed to drop orphaned atime index entry %q: %s", iter.Key(), err)
+			entryKey := append([]byte(nil), iter.Key()...)
+			if err := db.Delete(entryKey, pebble.NoSync); err != nil {
+				log.Warningf("failed to drop orphaned atime index entry %q: %s", entryKey, err)
+				continue
+			}
+			// This delete is unsynchronized with the apply path, so it can
+			// race a concurrent re-write of the record at this exact atime
+			// (e.g. re-upload right after eviction) and remove the entry that
+			// write just created. Re-check and restore: the reverse mistake --
+			// restoring an entry for a record deleted inside this window --
+			// only creates an orphan, which is safe.
+			fileMetadata.ResetVT()
+			if err := pebble.GetProto(db, fileKey, fileMetadata); err == nil && fileMetadata.GetLastAccessUsec() == atimeUsec {
+				if err := db.Set(entryKey, nil, pebble.NoSync); err != nil {
+					log.Warningf("failed to restore atime index entry %q: %s", entryKey, err)
+				}
 			}
 			continue
 		}
 		if err := limiter.Wait(ctx); err != nil {
-			return enqueued, nil, nil // context cancelled
+			return nil, nil // context cancelled
 		}
 		candidate := &evictionCandidate{
-			keyBytes:        append([]byte(nil), fileKey...),
-			storageMetadata: fileMetadata.GetStorageMetadata(),
-			sizeBytes:       int64(proto.Size(fileMetadata)) + int64(len(fileKey)),
-			atime:           atime,
+			keyBytes: append([]byte(nil), fileKey...),
+			// Clone: fileMetadata is a pooled message reset on the next loop
+			// iteration, but the candidate outlives the sweep in the delete
+			// pipeline (and losing GcsMetadata there would orphan the blob).
+			storageMetadata: fileMetadata.GetStorageMetadata().CloneVT(),
+			// Include the index entry's bytes: LocalSizeBytes counts the
+			// index, so the speculative post-eviction decrement should too.
+			sizeBytes: int64(proto.Size(fileMetadata)) + int64(len(fileKey)) + int64(len(iter.Key())),
+			atime:     atime,
 		}
 		select {
 		case pu.deletes <- candidate:
-			enqueued++
 		case <-ctx.Done():
-			return enqueued, nil, nil
+			return nil, nil
 		}
 	}
-	return enqueued, nil, nil
+	if err := iter.Error(); err != nil {
+		return nil, err
+	}
+	return nil, nil
 }
 
 func (pu *partitionUsage) updateEvictionMetrics(candidates []*evictionCandidate) error {
@@ -1041,8 +1114,12 @@ func (ut *Tracker) TestingWaitForGC(ctx context.Context) error {
 			db.Flush()
 			start, end := keys.Range([]byte(pu.partitionKeyPrefix() + "/"))
 			db.Compact(start, end, false /*parallelize*/)
+			// LocalSizeBytes counts the atime index too; compact it so the
+			// estimate reflects settled sizes rather than tombstones.
+			idxStart, idxEnd := keys.AtimeIndexPartitionRange(pu.part.ID)
+			db.Compact(idxStart, idxEnd, false /*parallelize*/)
 			db.Close()
-			totalSizeBytes := pu.LocalSizeBytes()
+			totalSizeBytes := pu.localSizeBytes()
 			// Tests run a single node with a possibly-frozen fake clock, so
 			// gossip may never refresh the global usage view; inject the local
 			// size directly so the eviction loop sees it.

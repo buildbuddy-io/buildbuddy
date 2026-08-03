@@ -55,9 +55,9 @@ func exists(t *testing.T, db pebble.IPebbleDB, key []byte) bool {
 	return true
 }
 
-// RemoveData's index cleanup must drop exactly the index entries whose records
-// fall inside the removed span, and tolerate the meta range (no partition).
-func TestDeleteAtimeIndexEntriesInRange(t *testing.T) {
+// RemoveData's cleanup must delete exactly the records and index entries in
+// the removed span, and tolerate non-record keys (e.g. the meta range).
+func TestDeleteRangeDataAndAtimeIndexEntries(t *testing.T) {
 	dir := testfs.MakeTempDir(t)
 	db, err := pebble.Open(dir, "test", &pebblev1.Options{})
 	require.NoError(t, err)
@@ -77,16 +77,19 @@ func TestDeleteAtimeIndexEntriesInRange(t *testing.T) {
 	}
 
 	// Remove the span covering records 2..5 (bounds via their file keys).
-	require.NoError(t, deleteAtimeIndexEntriesInRange(db, recs[2].fileKey, recs[6].fileKey))
+	require.NoError(t, deleteRangeDataAndAtimeIndexEntries(db, recs[2].fileKey, recs[6].fileKey))
 
 	for i, r := range recs {
 		inSpan := i >= 2 && i < 6
 		require.Equal(t, !inSpan, exists(t, db, r.indexKey), "index entry %d", i)
-		// The records themselves are untouched (RemoveData's DeleteRange
-		// handles those separately).
-		require.True(t, exists(t, db, r.fileKey), "record %d", i)
+		require.Equal(t, !inSpan, exists(t, db, r.fileKey), "record %d", i)
 	}
 
-	// A non-data span (e.g. the meta range) is a no-op.
-	require.NoError(t, deleteAtimeIndexEntriesInRange(db, []byte{'\x02'}, []byte{'\x04'}))
+	// A span with no file records (e.g. the meta range) works and touches
+	// nothing outside it.
+	require.NoError(t, deleteRangeDataAndAtimeIndexEntries(db, []byte{'\x02'}, []byte{'\x04'}))
+	for i, r := range recs {
+		inSpan := i >= 2 && i < 6
+		require.Equal(t, !inSpan, exists(t, db, r.fileKey), "record %d after meta-span delete", i)
+	}
 }

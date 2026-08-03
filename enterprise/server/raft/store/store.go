@@ -1855,13 +1855,10 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 			return nil, err
 		}
 		defer db.Close()
-		// Drop the node-local atime-index entries for the range's records
-		// before the records themselves: the exact index key of each record is
-		// derived from its stored atime, so this needs the span data present.
-		if err := deleteAtimeIndexEntriesInRange(db, remoteRD.GetStart(), remoteRD.GetEnd()); err != nil {
-			return nil, status.InternalErrorf("failed to delete atime index entries of c%dn%d: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
-		}
-		if err = db.DeleteRange(remoteRD.GetStart(), remoteRD.GetEnd(), pebble.NoSync); err != nil {
+		// Delete the range's records together with their node-local
+		// atime-index entries (the entry keys are derived from the stored
+		// atimes, so this must read the span before deleting it).
+		if err := deleteRangeDataAndAtimeIndexEntries(db, remoteRD.GetStart(), remoteRD.GetEnd()); err != nil {
 			return nil, status.InternalErrorf("failed to delete data of c%dn%d from pebble: %w", req.GetRange().GetRangeId(), req.GetReplicaId(), err)
 		}
 
@@ -1884,24 +1881,21 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 	}, nil
 }
 
-// atimeIndexCleanupCommitSizeBytes is how large deleteAtimeIndexEntriesInRange
-// lets its delete batch grow before committing it. A removed range can hold
-// millions of records (one small index delete each), and pebble panics on
-// batches over ~4GB, so the cleanup commits in bounded chunks. Losing
-// atomicity across chunks is fine: the deletes are idempotent, and anything
-// missed after a crash is an orphan the eviction sweep drops. Var so tests can
-// exercise the chunking cheaply.
+// atimeIndexCleanupCommitSizeBytes is how large
+// deleteRangeDataAndAtimeIndexEntries lets its index-delete batch grow before
+// committing a chunk. A removed range can hold millions of records (one small
+// index delete each), and pebble panics on batches over ~4GB, so the cleanup
+// works in bounded chunks. Var so tests can exercise the chunking cheaply.
 var atimeIndexCleanupCommitSizeBytes = 4 * 1024 * 1024
 
-// deleteAtimeIndexEntriesInRange removes the node-local atime-index entries
-// for every file record in [start, end). Any entries it misses are dropped
-// lazily by the eviction scanner's orphan check.
-func deleteAtimeIndexEntriesInRange(db pebble.IPebbleDB, start, end []byte) error {
-	partID := keys.PartitionIDFromRangeStart(start)
-	if partID == "" {
-		// Not a data range (e.g. the meta range): no file records, no index.
-		return nil
-	}
+// deleteRangeDataAndAtimeIndexEntries deletes every record in [start, end)
+// along with its node-local atime-index entry, in bounded chunks. Within each
+// chunk the records are range-deleted BEFORE the index-entry batch commits: a
+// crash then leaves orphaned index entries, which the eviction sweep drops,
+// rather than live records missing from the index, which nothing would
+// repair. Entries this misses for any other reason are likewise dropped
+// lazily by the sweep.
+func deleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte) error {
 	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	if err != nil {
 		return err
@@ -1909,7 +1903,33 @@ func deleteAtimeIndexEntriesInRange(db pebble.IPebbleDB, start, end []byte) erro
 	defer iter.Close()
 	wb := db.NewBatch()
 	defer wb.Close()
+
+	chunkStart := start
+	commitChunk := func(chunkEnd []byte) error {
+		if err := db.DeleteRange(chunkStart, chunkEnd, pebble.NoSync); err != nil {
+			return err
+		}
+		if err := wb.Commit(pebble.NoSync); err != nil {
+			return err
+		}
+		wb.Reset()
+		chunkStart = chunkEnd
+		return nil
+	}
+
 	for iter.First(); iter.Valid(); iter.Next() {
+		if !bytes.HasPrefix(iter.Key(), []byte(filestore.PartitionDirectoryPrefix)) {
+			// Not a file record (e.g. meta-range keys); the chunk DeleteRange
+			// still removes it.
+			continue
+		}
+		// Derive the partition per key rather than from the range start:
+		// today a range never spans partitions, but this direction of the
+		// mapping matching addAtimeIndexEntry costs nothing.
+		partID := keys.PartitionIDFromRangeStart(iter.Key())
+		if partID == "" {
+			continue
+		}
 		md := &sgpb.FileMetadata{}
 		if err := proto.Unmarshal(iter.Value(), md); err != nil {
 			log.Warningf("skipping atime index cleanup for non-FileMetadata key %q: %s", iter.Key(), err)
@@ -1919,13 +1939,19 @@ func deleteAtimeIndexEntriesInRange(db pebble.IPebbleDB, start, end []byte) erro
 			return err
 		}
 		if wb.Len() >= atimeIndexCleanupCommitSizeBytes {
-			if err := wb.Commit(pebble.NoSync); err != nil {
+			// The iterator reads a consistent view, so deleting behind it is
+			// safe.
+			if err := commitChunk(keys.Key(iter.Key()).Next()); err != nil {
 				return err
 			}
-			wb.Reset()
 		}
 	}
-	return wb.Commit(pebble.NoSync)
+	// An iterator error ends the loop indistinguishably from exhaustion;
+	// don't delete the remainder of the span on a truncated scan.
+	if err := iter.Error(); err != nil {
+		return err
+	}
+	return commitChunk(end)
 }
 
 // SyncPropose makes a synchronous proposal (writes) on the Raft shard.

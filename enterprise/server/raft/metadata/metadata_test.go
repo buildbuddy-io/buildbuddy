@@ -561,7 +561,14 @@ func TestLRU(t *testing.T) {
 	// underestimate enough to skip eviction entirely.
 	digestSize := int64(10000)
 	numDigests := 25
-	maxSizeBytes := int64(math.Ceil(105000 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
+	// The eviction cutoff (90% of maxSizeBytes) is 108KB: big enough that the
+	// partition only exceeds it while the evictable records (18-24) are still
+	// present, and small enough that evicting them brings it back under.
+	// LocalSizeBytes counts the atime index as well as the records, so the
+	// cutoff includes a few KB of headroom for index entries; without it, the
+	// partition can sit just over the cutoff with nothing old enough to
+	// evict, and TestingWaitForGC times out.
+	maxSizeBytes := int64(math.Ceil(108000 * (1 / usagetracker.EvictionCutoffThreshold))) // account for .9 evictor cutoff
 
 	configs := getTestConfigs(t, 1)
 
