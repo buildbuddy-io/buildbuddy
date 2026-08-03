@@ -38,6 +38,119 @@ func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	assert.Equal(t, map[string]string{linkPath: targetDir}, dirs)
 }
 
+func TestConfigureGlobalProxyURLRewrites(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	ctx := t.Context()
+
+	// Existing non-proxy rewrites should not be removed when proxy settings are
+	// changed or disabled.
+	sshRewriteKey := "url.https://github.com/.insteadOf"
+	_, err := git(ctx, io.Discard, "config", "--global", sshRewriteKey, "git@github.com:")
+	require.Nil(t, err)
+
+	// HTTPS URLs should be routed through the configured proxy, while URLs
+	// already using the proxy prefix should remain unchanged.
+	proxyURL := "https://git-proxy.example.com/v1/"
+	require.NoError(t, configureGlobalProxyURLRewrites(ctx, proxyURL))
+	got, err := git(ctx, io.Discard, "ls-remote", "--get-url", "https://github.com/buildbuddy-io/buildbuddy")
+	require.Nil(t, err)
+	require.Equal(t, proxyURL+"github.com/buildbuddy-io/buildbuddy", got)
+	got, err = git(ctx, io.Discard, "ls-remote", "--get-url", proxyURL+"github.com/buildbuddy-io/buildbuddy")
+	require.Nil(t, err)
+	require.Equal(t, proxyURL+"github.com/buildbuddy-io/buildbuddy", got)
+
+	// Reconfiguring should replace the previous catch-all rule rather than
+	// leaving multiple proxies configured.
+	replacementProxyURL := "https://replacement-proxy.example.com/v1"
+	require.NoError(t, configureGlobalProxyURLRewrites(ctx, replacementProxyURL))
+	got, err = git(ctx, io.Discard, "ls-remote", "--get-url", "https://github.com/buildbuddy-io/buildbuddy")
+	require.Nil(t, err)
+	require.Equal(t, replacementProxyURL+"/github.com/buildbuddy-io/buildbuddy", got)
+
+	// An empty proxy URL should remove the catch-all and restore direct access.
+	require.NoError(t, configureGlobalProxyURLRewrites(ctx, ""))
+	got, err = git(ctx, io.Discard, "ls-remote", "--get-url", "https://github.com/buildbuddy-io/buildbuddy")
+	require.Nil(t, err)
+	require.Equal(t, "https://github.com/buildbuddy-io/buildbuddy", got)
+	got, err = git(ctx, io.Discard, "config", "--global", "--get", sshRewriteKey)
+	require.Nil(t, err)
+	require.Equal(t, "git@github.com:", got)
+}
+
+func TestConfigureGlobalCredentialHelperWithProxy(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(repoTokenEnvVarName, "test-token")
+	t.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", "/usr/local/bin/ci_runner")
+	flags.Set(t, "pushed_repo_url", "https://github.com/buildbuddy-io/buildbuddy")
+	flags.Set(t, "target_repo_url", "")
+	ctx := t.Context()
+	proxyURL := "https://git-proxy.example.com/v1/"
+
+	// Scope the helper to the rewritten repository path so credentials are not
+	// offered to other repositories routed through the same proxy.
+	require.NoError(t, configureGlobalCredentialHelper(ctx, proxyURL))
+	credentialURL := proxyURL + "github.com/buildbuddy-io/buildbuddy"
+	got, err := git(ctx, io.Discard, "config", "--global", "--get", "credential."+credentialURL+".helper")
+	require.Nil(t, err)
+	require.Contains(t, got, "--credential_helper_repo_url=https://github.com/buildbuddy-io/buildbuddy")
+	require.Contains(t, got, "--git_proxy="+proxyURL)
+
+	// Include the rewritten path in requests sent to the helper so it can map
+	// the request back to the upstream repository.
+	require.NoError(t, configureGlobalCredentialUseHTTPPath(ctx, proxyURL))
+	got, err = git(ctx, io.Discard, "config", "--global", "--get", "credential.https://git-proxy.example.com.useHttpPath")
+	require.Nil(t, err)
+	require.Equal(t, "true", got)
+}
+
+func TestHandleCredentialHelper(t *testing.T) {
+	t.Setenv(repoTokenEnvVarName, "test-token")
+	t.Setenv(repoUserEnvVarName, "test-user")
+
+	tests := []struct {
+		name       string
+		proxyURL   string
+		request    string
+		wantOutput string
+	}{
+		{
+			name:       "matching proxied repository",
+			proxyURL:   "https://git-proxy.example.com/v1/",
+			request:    "protocol=https\nhost=git-proxy.example.com\npath=v1/github.com/buildbuddy-io/buildbuddy\n\n",
+			wantOutput: "username=test-user\npassword=test-token\n",
+		},
+		{
+			name:     "different proxied repository",
+			proxyURL: "https://git-proxy.example.com/v1/",
+			request:  "protocol=https\nhost=git-proxy.example.com\npath=v1/github.com/other/repository\n\n",
+		},
+		{
+			name:     "different proxy",
+			proxyURL: "https://git-proxy.example.com/v1/",
+			request:  "protocol=https\nhost=other-proxy.example.com\npath=v1/github.com/buildbuddy-io/buildbuddy\n\n",
+		},
+		{
+			name:       "matching direct repository",
+			request:    "protocol=https\nhost=github.com\npath=buildbuddy-io/buildbuddy\n\n",
+			wantOutput: "username=test-user\npassword=test-token\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "credential_helper_repo_url", "https://github.com/buildbuddy-io/buildbuddy")
+			flags.Set(t, "git_proxy", test.proxyURL)
+
+			// Return credentials only after the helper maps the request back to the
+			// repository associated with REPO_TOKEN.
+			var output strings.Builder
+			err := handleCredentialHelper(strings.NewReader(test.request), &output, []string{"get"})
+			require.NoError(t, err)
+			require.Equal(t, test.wantOutput, output.String())
+		})
+	}
+}
+
 type stallingReadCloser struct {
 	ctx context.Context
 	io.ReadCloser

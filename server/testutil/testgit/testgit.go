@@ -19,11 +19,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
-	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/mockgitserver"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
 	"github.com/stretchr/testify/require"
+
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
 
 const (
@@ -197,7 +198,9 @@ func configure(t testing.TB, repoPath string) {
 type Server struct {
 	t              testing.TB
 	gitProjectRoot string
-	accessToken    string
+
+	// Global access token; works for any repo.
+	accessToken string
 
 	server *httptest.Server
 }
@@ -244,7 +247,8 @@ func (s *Server) RepoURL(owner, repo, accessToken string) string {
 	return u.String()
 }
 
-// AccessToken returns a token that grants access to all test repositories.
+// AccessToken returns the global access token that grants access to all
+// repositories.
 func (s *Server) AccessToken() string {
 	return s.accessToken
 }
@@ -267,6 +271,12 @@ func (s *Server) Push(owner, repo, accessToken, localPath string) {
 		export GIT_ASKPASS=/usr/bin/true
 		git -c credential.helper= push --set-upstream origin "$(git branch --show-current)"
 	`)
+}
+
+// SetDefaultBranch updates the symbolic HEAD of a repository on the server.
+func (s *Server) SetDefaultBranch(owner, repo, branch string) {
+	repoPath := filepath.Join(s.gitProjectRoot, owner, repo)
+	testshell.Run(s.t, repoPath, fmt.Sprintf("git symbolic-ref HEAD %q", "refs/heads/"+branch))
 }
 
 // FakeGitHubApp implements the github app interface for tests.

@@ -1,8 +1,10 @@
 package httpclient
 
 import (
+	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -36,6 +38,25 @@ func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
 	}
 }
 
+// ResolveHostIPs resolves host and returns only addresses permitted by the
+// HTTP client's private-network policy.
+func ResolveHostIPs(ctx context.Context, host string, allowedPrivateIPNets []*net.IPNet) ([]net.IP, error) {
+	resolvedIPs, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve host %q: %w", host, err)
+	}
+	allowedIPs := make([]net.IP, 0, len(resolvedIPs))
+	for _, ip := range resolvedIPs {
+		if isAllowedIP(ip, allowedPrivateIPNets) {
+			allowedIPs = append(allowedIPs, ip)
+		}
+	}
+	if len(allowedIPs) == 0 {
+		return nil, fmt.Errorf("host %q has no allowed IP addresses", host)
+	}
+	return allowedIPs, nil
+}
+
 type dialerControl = func(network, address string, conn syscall.RawConn) error
 
 func blockingDialerControl(allowed []*net.IPNet) dialerControl {
@@ -45,17 +66,22 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 			return err
 		}
 		ip := net.ParseIP(host)
-		for _, ipNet := range allowed {
-			if ipNet.Contains(ip) {
-				return nil
-			}
-		}
-		if (ip.IsLoopback() && !*allowLocalhost) || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		if !isAllowedIP(ip, allowed) {
 			log.Infof("Blocked Fetch for address %s", address)
 			return errors.New("IP address not allowed")
 		}
 		return nil
 	}
+}
+
+func isAllowedIP(ip net.IP, allowed []*net.IPNet) bool {
+	for _, ipNet := range allowed {
+		if ipNet.Contains(ip) {
+			return true
+		}
+	}
+	return ip != nil && !((ip.IsLoopback() && !*allowLocalhost) || ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast())
 }
 
 // verify that metricsTransport implements the RoundTripper interface

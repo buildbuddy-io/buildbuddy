@@ -32,6 +32,7 @@ const ExecutableName = "buildbuddy_ci_runner"
 const CLIBinaryName = "bb"
 const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
 const LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
+const GitProxyExperimentName = "remote_execution.ci_runner.git_proxy"
 const FreeTierTimeoutReason = "free_tier_limit"
 
 type RunnerTimeoutResult struct {

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "httpclient",
@@ -10,5 +10,14 @@ go_library(
         "//server/util/log",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_net//publicsuffix",
+    ],
+)
+
+go_test(
+    name = "httpclient_test",
+    srcs = ["httpclient_test.go"],
+    deps = [
+        ":httpclient",
+        "@com_github_stretchr_testify//require",
     ],
 )

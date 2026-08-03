@@ -47,6 +47,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -133,6 +134,11 @@ type Options struct {
 	// without having to explicitly configure access controls for each repo.
 	AccessToken string
 
+	// OwnerAccessTokens contains access tokens scoped to an owner, keyed by
+	// owner name. Each token grants full access to all repos under the
+	// corresponding owner.
+	OwnerAccessTokens map[string][]string
+
 	// LogWriter handles output from the git-http-backend CGI program.
 	//
 	// If nil, logs are written using log.Info. To explicitly ignore logs, use
@@ -167,7 +173,7 @@ func NewHandler(projectRoot string, opts Options) http.Handler {
 		gitHTTPBackendPath, gitHTTPBackendPathErr = findGitHTTPBackend()
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		remoteUser, ok := auth(w, r, projectRoot, opts.AccessToken)
+		remoteUser, ok := auth(w, r, projectRoot, opts.AccessToken, opts.OwnerAccessTokens)
 		if !ok {
 			return
 		}
@@ -216,7 +222,7 @@ func findGitHTTPBackend() (string, error) {
 // The second return value 'ok' indicates whether request processing should
 // proceed. If it is false, auth will have written an error response to
 // the response writer, and the caller should not perform further writes.
-func auth(w http.ResponseWriter, r *http.Request, gitProjectRoot, globalAccessToken string) (remoteUser *string, ok bool) {
+func auth(w http.ResponseWriter, r *http.Request, gitProjectRoot, globalAccessToken string, accessTokens map[string][]string) (remoteUser *string, ok bool) {
 	// git-receive-pack (e.g. git push) requires auth. If we don't set
 	// REMOTE_USER for git-receive-pack requests, then the request will be
 	// rejected by git-http-backend, returning an unstructured error message. So
@@ -229,10 +235,14 @@ func auth(w http.ResponseWriter, r *http.Request, gitProjectRoot, globalAccessTo
 		return nil, false
 	}
 
-	// If the basic auth password matches the global access token, skip
+	// If the basic auth password matches an applicable access token, skip
 	// repo-specific access controls.
+	allowedTokens := slices.Clone(accessTokens[owner])
 	if globalAccessToken != "" {
-		if _, token, ok := r.BasicAuth(); ok && token == globalAccessToken {
+		allowedTokens = append(allowedTokens, globalAccessToken)
+	}
+	if len(allowedTokens) > 0 {
+		if _, token, ok := r.BasicAuth(); ok && slices.Contains(allowedTokens, token) {
 			remoteUser = &owner
 			return remoteUser, true
 		}

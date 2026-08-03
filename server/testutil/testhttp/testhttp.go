@@ -1,9 +1,12 @@
+// Package testhttp provides HTTP test utilities.
 package testhttp
 
 import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"sync"
 	"testing"
@@ -91,4 +94,42 @@ func (c *RequestCounter) Reset() {
 	c.mu.Lock()
 	c.counts = map[string]int{}
 	c.mu.Unlock()
+}
+
+// Director selects the backend origin for an HTTP request.
+type Director func(req *http.Request) *url.URL
+
+// Proxy is an in-process HTTP reverse proxy for tests.
+type Proxy struct {
+	*httptest.Server
+
+	mu       sync.RWMutex
+	director Director
+}
+
+// StartProxy starts a test-scoped proxy using director to select a backend for
+// each request.
+func StartProxy(t *testing.T, director Director) *Proxy {
+	p := &Proxy{director: director}
+	p.Server = httptest.NewServer(&httputil.ReverseProxy{
+		Director: p.direct,
+	})
+	t.Cleanup(p.Close)
+	return p
+}
+
+func (p *Proxy) direct(req *http.Request) {
+	p.mu.RLock()
+	director := p.director
+	p.mu.RUnlock()
+	target := director(req)
+	req.URL.Scheme = target.Scheme
+	req.URL.Host = target.Host
+}
+
+// SetDirector changes how subsequent requests select a backend.
+func (p *Proxy) SetDirector(director Director) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.director = director
 }

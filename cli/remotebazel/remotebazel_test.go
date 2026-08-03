@@ -42,11 +42,24 @@ type scriptedBuildBuddyClient struct {
 	hooks     []func()
 }
 
-func (c *scriptedBuildBuddyClient) GetEventLogChunk(ctx context.Context, req *elpb.GetEventLogChunkRequest, opts ...grpc.CallOption) (*elpb.GetEventLogChunkResponse, error) {
+func (c *scriptedBuildBuddyClient) GetEventLog(ctx context.Context, req *elpb.GetEventLogChunkRequest, opts ...grpc.CallOption) (bbspb.BuildBuddyService_GetEventLogClient, error) {
+	return &scriptedEventLogStream{client: c}, nil
+}
+
+// scriptedEventLogStream streams the scripted responses, then ends the stream
+// with io.EOF like a real server-side stream would.
+type scriptedEventLogStream struct {
+	grpc.ClientStream
+
+	client *scriptedBuildBuddyClient
+}
+
+func (s *scriptedEventLogStream) Recv() (*elpb.GetEventLogChunkResponse, error) {
+	c := s.client
 	c.mu.Lock()
 	if len(c.responses) == 0 {
 		c.mu.Unlock()
-		return &elpb.GetEventLogChunkResponse{}, nil
+		return nil, io.EOF
 	}
 	response := c.responses[0]
 	c.responses = c.responses[1:]
@@ -421,6 +434,15 @@ func TestStreamLogs_TypedInputDoesNotCorruptOutput(t *testing.T) {
 		// Between the first and second log responses, type some input into the terminal.
 		waitForSignal(t, typeInputBeforeSecondResponse)
 		_, err := ptmx.Write([]byte("typed input\n"))
+		require.NoError(t, err)
+		// The kernel decides whether to echo the input when its line
+		// discipline processes the write, which can happen after streamLogs
+		// returns and restores echo. Reading the line back from the tty (in
+		// canonical mode, reads only complete once a full line has been
+		// processed) forces that decision to happen now, while echo is still
+		// disabled. os.Stdin is the slave side of the test pty here.
+		buf := make([]byte, 64)
+		_, err = os.Stdin.Read(buf)
 		require.NoError(t, err)
 		// Close the channel to signal the test to continue.
 		close(continueSecondResponse)

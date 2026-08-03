@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -167,7 +168,8 @@ var (
 	// Subcommands of the ci_runner.
 	// Go binaries are relatively large, so these are included as subcommands instead
 	// of separate scripts.
-	credentialHelper = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
+	credentialHelper        = flag.Bool("credential_helper", false, "Run in git credential helper mode. For internal usage only.")
+	credentialHelperRepoURL = flag.String("credential_helper_repo_url", "", "Repository URL handled by the credential helper. For internal usage only.")
 
 	// In order to ensure bazel commands point to the correct env (Ex. if the remote
 	// run was triggered in dev, it should point to the dev app), set --config=buildbuddy_bes_backend,
@@ -197,6 +199,7 @@ var (
 	prNumber              = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	patchURIs             = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
 	gitCleanExclude       = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from git clean while setting up the repo.")
+	gitProxy              = flag.String("git_proxy", "", "Pull-through git proxy URL prefix.")
 
 	// Flags to configure git fetch behavior
 	gitFetchFilters         = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to git fetch commands.")
@@ -211,10 +214,11 @@ var (
 
 	shutdownAndExit = flag.Bool("shutdown_and_exit", false, "If set, runs bazel shutdown with the configured bazel_command, and exits. No other commands are run.")
 
-	bazelCommand      = flag.String("bazel_command", "", "Bazel command to use.")
-	bazelStartupFlags = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
-	extraBazelArgs    = flag.String("extra_bazel_args", "", "Extra flags to pass to the bazel command. The value can include spaces and will be properly tokenized.")
-	debug             = flag.Bool("debug", false, "Print additional debug information in the action logs.")
+	bazelCommand                = flag.String("bazel_command", "", "Bazel command to use.")
+	bazelStartupFlags           = flag.String("bazel_startup_flags", "", "Startup flags to pass to bazel. The value can include spaces and will be properly tokenized.")
+	skipBazelWorkspaceLockCheck = flag.Bool("skip_bazel_workspace_lock_check", false, "Skip the bazel workspace lock check at the end of each run.")
+	extraBazelArgs              = flag.String("extra_bazel_args", "", "Extra flags to pass to the bazel command. The value can include spaces and will be properly tokenized.")
+	debug                       = flag.Bool("debug", false, "Print additional debug information in the action logs.")
 
 	ptyRows = flag.Int("pty_rows", 20, "Terminal height, in rows")
 	ptyCols = flag.Int("pty_cols", 114, "Terminal width, in columns")
@@ -2239,14 +2243,22 @@ func (ws *workspace) config(ctx context.Context) error {
 	// Set up global config (~/.gitconfig) but only on Linux for now since Linux
 	// workflows are isolated.
 	// TODO(bduffany): find a solution that works for Mac workflows too.
-	if !useSystemGitCredentials && runtime.GOOS == "linux" {
-		// SSH URL rewrites and git credential helper are used for external git
-		// deps fetched by bazel, so these need to be in the global config.
-		if err := configureGlobalURLRewrites(ctx); err != nil {
+	if runtime.GOOS == "linux" {
+		if err := configureGlobalProxyURLRewrites(ctx, *gitProxy); err != nil {
 			return err
 		}
-		if err := configureGlobalCredentialHelper(ctx); err != nil {
-			return err
+		if !useSystemGitCredentials {
+			// SSH URL rewrites and git credential helper are used for external git
+			// deps fetched by bazel, so these need to be in the global config.
+			if err := configureGlobalURLRewrites(ctx); err != nil {
+				return err
+			}
+			if err := configureGlobalCredentialHelper(ctx, *gitProxy); err != nil {
+				return err
+			}
+			if err := configureGlobalCredentialUseHTTPPath(ctx, *gitProxy); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -2267,7 +2279,8 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 
 	fetchURL := remoteURL
 	useSystemGitCredentials := os.Getenv("USE_SYSTEM_GIT_CREDENTIALS") == "1"
-	if !useSystemGitCredentials {
+	gitProxyEnabled := runtime.GOOS == "linux" && strings.TrimSpace(*gitProxy) != ""
+	if !useSystemGitCredentials && !gitProxyEnabled {
 		authURL, err := gitutil.AuthRepoURL(remoteURL, os.Getenv(repoUserEnvVarName), os.Getenv(repoTokenEnvVarName))
 		if err != nil {
 			return err
@@ -2820,25 +2833,68 @@ func getStructuredCommandLine() *clpb.CommandLine {
 	}
 }
 
-func configureGlobalCredentialHelper(ctx context.Context) error {
-	if !strings.HasPrefix(baseRepoURL(), "https://") {
+func configureGlobalCredentialHelper(ctx context.Context, proxyURL string) error {
+	repoURL := baseRepoURL()
+	if !strings.HasPrefix(repoURL, "https://") {
 		return nil
 	}
 	repoToken := os.Getenv(repoTokenEnvVarName)
 	if repoToken == "" {
 		return nil
 	}
-	u, err := url.Parse(baseRepoURL())
+	credentialURL, normalizedProxyURL, err := credentialConfigURL(repoURL, proxyURL)
 	if err != nil {
-		return nil // if URL is unparseable, do nothing
-	}
-	repoHostURL := fmt.Sprintf("https://%s", u.Host)
-	configKey := fmt.Sprintf("credential.%s.helper", repoHostURL)
-	configValue := fmt.Sprintf("!%s --credential_helper", os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"))
-	if _, err := git(ctx, io.Discard, "config", "--global", configKey, configValue); err != nil {
 		return err
 	}
+	configKey := fmt.Sprintf("credential.%s.helper", credentialURL)
+	configValue := fmt.Sprintf(
+		"!%s --credential_helper --credential_helper_repo_url=%s --git_proxy=%s",
+		toShellToken(os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH")),
+		toShellToken(repoURL),
+		toShellToken(normalizedProxyURL),
+	)
+	if _, err := git(ctx, io.Discard, "config", "--global", configKey, configValue); err != nil {
+		return fmt.Errorf("configure global Git credential helper: %w", err)
+	}
 	return nil
+}
+
+func configureGlobalCredentialUseHTTPPath(ctx context.Context, proxyURL string) error {
+	repoURL := baseRepoURL()
+	if !strings.HasPrefix(repoURL, "https://") || os.Getenv(repoTokenEnvVarName) == "" {
+		return nil
+	}
+	credentialURL, _, err := credentialConfigURL(repoURL, proxyURL)
+	if err != nil {
+		return err
+	}
+	u, err := url.Parse(credentialURL)
+	if err != nil {
+		return fmt.Errorf("parse Git credential URL: %w", err)
+	}
+	credentialOrigin := (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
+	configKey := fmt.Sprintf("credential.%s.useHttpPath", credentialOrigin)
+	if _, err := git(ctx, io.Discard, "config", "--global", configKey, "true"); err != nil {
+		return fmt.Errorf("configure Git credential HTTP path: %w", err)
+	}
+	return nil
+}
+
+func credentialConfigURL(repoURL, proxyURL string) (string, string, error) {
+	if _, err := url.ParseRequestURI(repoURL); err != nil {
+		return "", "", fmt.Errorf("parse repository URL: %w", err)
+	}
+	proxyURL = strings.TrimSpace(proxyURL)
+	if proxyURL == "" {
+		return repoURL, "", nil
+	}
+	if !strings.HasSuffix(proxyURL, "/") {
+		proxyURL += "/"
+	}
+	if _, err := url.ParseRequestURI(proxyURL); err != nil {
+		return "", "", fmt.Errorf("parse Git proxy URL: %w", err)
+	}
+	return proxyURL + strings.TrimPrefix(repoURL, "https://"), proxyURL, nil
 }
 
 // Replaces some known SSH git URLs with HTTPS equivalents, since we won't
@@ -2859,15 +2915,77 @@ func configureGlobalURLRewrites(ctx context.Context) error {
 	return nil
 }
 
-func runCredentialHelper() error {
-	// Do nothing with request details on stdin for now. We only configure the
-	// credential helper for the target repo URL, so the details should always
-	// match the target repo.
-	io.Copy(io.Discard, os.Stdin)
+func configureGlobalProxyURLRewrites(ctx context.Context, proxyURL string) error {
+	// Remove any previously configured HTTPS catch-all rewrite, in case we need
+	// to turn off the experiment in a pinch, and so that we can update the
+	// proxy URL if it changes
+	config, err := git(
+		ctx,
+		io.Discard,
+		"--no-pager",
+		"config",
+		"--global",
+		"--get-regexp",
+		`^url\..*\.insteadof$`,
+		`^https://$`,
+	)
+	if err != nil && getExitCode(err) != 1 {
+		return fmt.Errorf("list global Git proxy URL rewrites: %w", err)
+	}
+	for line := range strings.SplitSeq(config, "\n") {
+		if line == "" {
+			continue
+		}
+		configKey, _, ok := strings.Cut(line, " ")
+		if !ok {
+			return fmt.Errorf("parse global Git proxy URL rewrite %q", line)
+		}
+		if _, err := git(ctx, io.Discard, "config", "--global", "--unset-all", configKey); err != nil {
+			return fmt.Errorf("clear global Git proxy URL rewrite: %w", err)
+		}
+	}
 
-	cmd := flag.Args()[0]
+	proxyURL = strings.TrimSpace(proxyURL)
+	if proxyURL == "" {
+		return nil
+	}
+	if !strings.HasSuffix(proxyURL, "/") {
+		proxyURL += "/"
+	}
+	configKey := "url." + proxyURL + ".insteadOf"
+	// The identity rewrite is longer than the catch-all rewrite, so Git leaves
+	// direct mirror URLs unchanged rather than proxying them a second time.
+	if _, err := git(ctx, io.Discard, "config", "--global", "--replace-all", configKey, proxyURL); err != nil {
+		return fmt.Errorf("configure Git proxy identity rewrite: %w", err)
+	}
+	if _, err := git(ctx, io.Discard, "config", "--global", "--add", configKey, "https://"); err != nil {
+		return fmt.Errorf("configure global Git proxy URL rewrite: %w", err)
+	}
+	return nil
+}
+
+func runCredentialHelper() error {
+	return handleCredentialHelper(os.Stdin, os.Stdout, flag.Args())
+}
+
+func handleCredentialHelper(in io.Reader, out io.Writer, args []string) error {
+	if len(args) == 0 {
+		return errors.New("missing credential helper operation")
+	}
+	cmd := args[0]
 	switch cmd {
 	case "get":
+		matches, err := credentialRequestMatchesRepo(in, *credentialHelperRepoURL, *gitProxy)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			return nil
+		}
+		password := os.Getenv(repoTokenEnvVarName)
+		if password == "" {
+			return nil
+		}
 		username := os.Getenv(repoUserEnvVarName)
 		if username == "" {
 			// git requires a username from the cred helper but GitHub doesn't
@@ -2875,12 +2993,71 @@ func runCredentialHelper() error {
 			// set an arbitrary username.
 			username = "x-access-token"
 		}
-		fmt.Printf("username=%s\npassword=%s\n", username, os.Getenv(repoTokenEnvVarName))
+		fmt.Fprintf(out, "username=%s\npassword=%s\n", username, password)
 		return nil
 	default:
 		// Do nothing
 		return nil
 	}
+}
+
+func credentialRequestMatchesRepo(in io.Reader, repoURL, proxyURL string) (bool, error) {
+	request := make(map[string]string)
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			break
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return false, fmt.Errorf("parse Git credential attribute %q", line)
+		}
+		request[key] = value
+	}
+	if err := scanner.Err(); err != nil {
+		return false, fmt.Errorf("read Git credential request: %w", err)
+	}
+	protocol, host, requestPath := request["protocol"], request["host"], request["path"]
+	if protocol == "" || host == "" || requestPath == "" || repoURL == "" {
+		return false, nil
+	}
+
+	requestURL := &url.URL{
+		Scheme: protocol,
+		Host:   host,
+		Path:   "/" + strings.TrimPrefix(requestPath, "/"),
+	}
+	proxyURL = strings.TrimSpace(proxyURL)
+	if proxyURL != "" {
+		if !strings.HasSuffix(proxyURL, "/") {
+			proxyURL += "/"
+		}
+		proxy, err := url.Parse(proxyURL)
+		if err != nil {
+			return false, fmt.Errorf("parse Git proxy URL: %w", err)
+		}
+		if !strings.EqualFold(requestURL.Scheme, proxy.Scheme) || !strings.EqualFold(requestURL.Host, proxy.Host) {
+			return false, nil
+		}
+		proxyPath := strings.TrimSuffix(proxy.Path, "/") + "/"
+		upstreamPath, ok := strings.CutPrefix(requestURL.Path, proxyPath)
+		if !ok {
+			return false, nil
+		}
+		requestURL, err = url.Parse("https://" + upstreamPath)
+		if err != nil {
+			return false, fmt.Errorf("parse proxied Git credential URL: %w", err)
+		}
+	}
+
+	want, err := url.Parse(repoURL)
+	if err != nil {
+		return false, fmt.Errorf("parse credential helper repository URL: %w", err)
+	}
+	return strings.EqualFold(requestURL.Scheme, want.Scheme) &&
+		strings.EqualFold(requestURL.Host, want.Host) &&
+		strings.TrimSuffix(requestURL.Path, "/") == strings.TrimSuffix(want.Path, "/"), nil
 }
 
 func runBazelWrapper() error {
@@ -3015,6 +3192,10 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 // Creates a marker file that prevents the runner from being recycled if bazel
 // still has the workspace lock.
 func (ws *workspace) checkBazelWorkspaceLock(ctx context.Context) error {
+	if *skipBazelWorkspaceLockCheck {
+		return nil
+	}
+
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
 	if err != nil {
 		return fmt.Errorf("get bazel workspace path: %s", err)

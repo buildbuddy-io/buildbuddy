@@ -235,6 +235,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 		if bazelCommandOverride != "" {
 			args = append(args, "--bazel_command="+bazelCommandOverride)
 		}
+		args = append(args, "--git_proxy="+efp.String(ctx, ci_runner_util.GitProxyExperimentName, "", experiments.WithContext("workflow_action_name", "remote_bazel")))
 		args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, efp, experiments.WithContext("workflow_action_name", "remote_bazel"))...)
 	}
 	args = append(args, req.GetRunnerFlags()...)
@@ -572,7 +573,7 @@ func waitUntilInvocationExists(ctx context.Context, env environment.Env, executi
 			return ctx.Err()
 		case err := <-errCh:
 			return err
-		case <-time.After(1 * time.Second):
+		case <-time.After(50 * time.Millisecond): // DO NOT SUBMIT
 			if executing {
 				inv, err := invocationDB.LookupInvocation(ctx, invocationID)
 				if err == nil && (waitUntil == rnpb.WaitCondition_STARTED || waitUntil == rnpb.WaitCondition_UNKNOWN_CONDITION) {

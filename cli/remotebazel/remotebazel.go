@@ -101,6 +101,8 @@ var (
 	// pass github-related fields.
 	skipAutomaticCheckout = RemoteFlagset.Bool("skip_auto_checkout", false, "Whether to skip the automatic GitHub checkout steps on the remote runner.")
 	invocationIDFile      = RemoteFlagset.String("invocation_id_file", "", "If set, write the remote invocation ID to the file specified here.")
+
+	runnerExtraFlags = bbflag.New(RemoteFlagset, "runner_extra_flags", []string{}, "Extra flags to pass to the CI runner.")
 )
 
 func consoleCursorMoveUp(y int) {
@@ -681,7 +683,8 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		}()
 	}
 
-	// ID of the chunk we're requesting from the server.
+	// ID of the chunk the next streamed response corresponds to, mirroring the
+	// server's read cursor (see the comment at the bottom of the loop).
 	chunkID := ""
 	// ID of the live chunk currently drawn on the terminal.
 	liveChunkID := ""
@@ -726,20 +729,26 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		}
 	}
 
+	stream, err := bbClient.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: invocationID,
+		MinLines:     100,
+	})
+	if err != nil {
+		return status.WrapError(err, "get event log")
+	}
+
 	var chunks []logChunk
 	wasLive := false
 	for {
-		requestedChunkID := chunkID
-		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-			InvocationId: invocationID,
-			ChunkId:      chunkID,
-			MinLines:     100,
-		})
+		l, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
 			return status.WrapError(err, "get event log chunk")
 		}
 
-		chunks = append(chunks, logChunk{id: logChunkID(requestedChunkID, l), response: l})
+		chunks = append(chunks, logChunk{id: logChunkID(chunkID, l), response: l})
 		// If the current chunk was live but is no longer then delay redraw
 		// until the next chunk is retrieved. The "volatile" part of the
 		// chunk moves to the next chunk when a chunk is finalized. Without
@@ -754,14 +763,12 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		}
 		wasLive = l.GetLive()
 
-		if l.GetNextChunkId() == "" {
-			break
+		// The server does not echo back which chunk each streamed response is
+		// for, so mirror its cursor: it starts at the requested chunk ID and
+		// advances to NextChunkId after each response until the log ends.
+		if l.GetNextChunkId() != "" {
+			chunkID = l.GetNextChunkId()
 		}
-
-		if l.GetNextChunkId() == chunkID {
-			time.Sleep(1 * time.Second)
-		}
-		chunkID = l.GetNextChunkId()
 	}
 
 	// The final chunk's redraw may have been delayed (see above) if it
@@ -777,30 +784,29 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	defer resetTerminalStyles()
 
-	chunkID := ""
+	stream, err := bbClient.GetEventLog(ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: invocationID,
+		MinLines:     100,
+	})
+	if err != nil {
+		return status.WrapError(err, "get event log")
+	}
 
 	for {
-		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-			InvocationId: invocationID,
-			ChunkId:      chunkID,
-			MinLines:     100,
-		})
+		l, err := stream.Recv()
+		if err == io.EOF {
+			return nil
+		}
 		if err != nil {
 			return status.WrapError(err, "get event log chunk")
 		}
-
+		// Live chunks are still subject to change; only print each chunk once
+		// the server finalizes it, so lines are printed exactly once.
 		if l.GetLive() {
-			time.Sleep(1 * time.Second)
 			continue
 		}
 		os.Stdout.Write(l.GetBuffer())
-
-		if l.GetNextChunkId() == "" {
-			break
-		}
-		chunkID = l.GetNextChunkId()
 	}
-	return nil
 }
 
 func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
@@ -1073,7 +1079,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				Run: opts.Command,
 			},
 		},
-		RunnerFlags: []string{fmt.Sprintf("--skip_auto_checkout=%v", *skipAutomaticCheckout)},
+		RunnerFlags: append(
+			[]string{
+				fmt.Sprintf("--skip_auto_checkout=%v", *skipAutomaticCheckout),
+			},
+			(*runnerExtraFlags)...,
+		),
 	}
 
 	if *gitFetchDepth >= 0 {
