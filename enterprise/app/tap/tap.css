@@ -375,12 +375,6 @@
   background: var(--color-bg-secondary);
 }
 
-.test-buddy-case-health {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .test-buddy-health {
   font-weight: 600;
 }
