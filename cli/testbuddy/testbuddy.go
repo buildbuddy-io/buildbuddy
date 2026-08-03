@@ -277,7 +277,6 @@ func HandleTestReport(args []string) (int, error) {
 	defer stream.CloseSend()
 	batcher := NewReportBatcher(repository, stream.Send)
 	diagnostics := NewDiagnosticLog(func(line string) { log.Debug(line) })
-	fallbackEventTimeUsec := time.Now().UnixMicro()
 	for _, path := range paths {
 		targetLabel := *reportTargetLabel
 		if targetLabel == "" {
@@ -299,8 +298,7 @@ func HandleTestReport(args []string) (int, error) {
 			return 1, closeErr
 		}
 		diagnostics.Add(path, targetLabel, report)
-		targetResult, testCases, err := ResultsForReport(
-			path, targetLabel, sourceURL, fallbackEventTimeUsec, report)
+		targetResult, testCases, err := ResultsForReport(path, targetLabel, sourceURL, report)
 		if err != nil {
 			return 1, err
 		}
@@ -332,14 +330,18 @@ func HandleTestReport(args []string) (int, error) {
 	return 0, nil
 }
 
-func ResultsForReport(xmlPath, targetLabel, sourceURL string, fallbackEventTimeUsec int64, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
+func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
 	targetOutcome, err := BazelTargetOutcome(xmlPath)
 	if err != nil {
 		return nil, nil, err
 	}
 	eventTimeUsec := report.EventTimeUsec
 	if eventTimeUsec <= 0 {
-		eventTimeUsec = fallbackEventTimeUsec
+		info, err := os.Stat(xmlPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		eventTimeUsec = info.ModTime().UnixMicro()
 	}
 	if eventTimeUsec <= 0 {
 		return nil, nil, status.InvalidArgumentError("a positive report event time is required")

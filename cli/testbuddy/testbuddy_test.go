@@ -156,8 +156,9 @@ func TestBazelTargetOutcome(t *testing.T) {
 	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, outcome)
 
 	target, cases, err := testbuddy.ResultsForReport(
-		xmlPath, "//pkg:timeout_test", "https://app.buildbuddy.io/invocation/one", 1_700_000, &junit.Report{
-			DurationUsec: 1_000_000,
+		xmlPath, "//pkg:timeout_test", "https://app.buildbuddy.io/invocation/one", &junit.Report{
+			EventTimeUsec: 1_700_000,
+			DurationUsec:  1_000_000,
 			Cases: []normalize.CaseRecord{{
 				TargetLabel: "//pkg:timeout_test", CaseName: "TestTimeout",
 				Outcome: tbpb.TestOutcome_TEST_OUTCOME_FAIL,
@@ -173,7 +174,7 @@ func TestBazelTargetOutcome(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "test.log")))
 	target, cases, err = testbuddy.ResultsForReport(
 		xmlPath, "//pkg:harness_test", "https://app.buildbuddy.io/invocation/one",
-		1_700_000, &junit.Report{UnattributedFailure: true})
+		&junit.Report{EventTimeUsec: 1_700_000, UnattributedFailure: true})
 	require.NoError(t, err)
 	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetResult().GetOutcome())
 	require.Empty(t, cases)
@@ -190,10 +191,10 @@ func TestResultsForReportRetainsTimeAndStableIdentity(t *testing.T) {
 	pathA := filepath.Join(t.TempDir(), "bazel-testlogs/pkg/test/run_1_of_2/test.xml")
 	pathB := filepath.Join(t.TempDir(), "bazel-testlogs/pkg/test/run_1_of_2/test.xml")
 	targetA, casesA, err := testbuddy.ResultsForReport(
-		pathA, "//pkg:test", "https://app.buildbuddy.io/invocation/one", 3_000_000, report)
+		pathA, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
 	require.NoError(t, err)
 	targetB, casesB, err := testbuddy.ResultsForReport(
-		pathB, "//pkg:test", "https://app.buildbuddy.io/invocation/one", 3_000_000, report)
+		pathB, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
 	require.NoError(t, err)
 	require.Equal(t, targetA.GetResult().GetResultId(), targetB.GetResult().GetResultId())
 	require.Equal(t, int64(1_000_000), targetA.GetResult().GetEventTimeUsec())
@@ -201,6 +202,32 @@ func TestResultsForReportRetainsTimeAndStableIdentity(t *testing.T) {
 	require.NotEqual(t, casesA[0].GetResult().GetResultId(), casesA[1].GetResult().GetResultId())
 	require.Equal(t, int64(1_000_000), casesA[0].GetResult().GetEventTimeUsec())
 	require.Equal(t, int64(2_000_000), casesA[1].GetResult().GetEventTimeUsec())
+}
+
+func TestResultsForReportUsesStableFileTimeWhenJUnitHasNoTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	xmlPath := filepath.Join(dir, "test.xml")
+	require.NoError(t, os.WriteFile(xmlPath, []byte("<testsuite/>"), 0o644))
+	modified := time.Unix(1_700_000_000, 123_456_000)
+	require.NoError(t, os.Chtimes(xmlPath, modified, modified))
+	report := &junit.Report{Cases: []normalize.CaseRecord{{
+		TargetLabel: "//pkg:test", CaseName: "TestCase",
+		Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS,
+	}}}
+
+	targetA, casesA, err := testbuddy.ResultsForReport(
+		xmlPath, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
+	require.NoError(t, err)
+	targetB, casesB, err := testbuddy.ResultsForReport(
+		xmlPath, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
+	require.NoError(t, err)
+
+	require.True(t, proto.Equal(targetA, targetB))
+	require.Len(t, casesA, 1)
+	require.Len(t, casesB, 1)
+	require.True(t, proto.Equal(casesA[0], casesB[0]))
+	require.Equal(t, modified.UnixMicro(), targetA.GetResult().GetEventTimeUsec())
+	require.Equal(t, modified.UnixMicro(), casesA[0].GetResult().GetEventTimeUsec())
 }
 
 func TestReportBatcherKeepsMessagesWithinBudget(t *testing.T) {
