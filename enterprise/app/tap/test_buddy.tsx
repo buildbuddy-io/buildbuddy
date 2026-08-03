@@ -1,8 +1,9 @@
-import { Filter, Search, X } from "lucide-react";
+import { ChevronDown, Filter, Search, X } from "lucide-react";
 import React from "react";
 import { FilledButton, OutlinedButton } from "../../../app/components/button/button";
 import Checkbox from "../../../app/components/checkbox/checkbox";
-import Popup from "../../../app/components/popup/popup";
+import Menu, { MenuItem } from "../../../app/components/menu/menu";
+import Popup, { PopupContainer } from "../../../app/components/popup/popup";
 import Select from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
 import format from "../../../app/format/format";
@@ -26,6 +27,8 @@ interface State {
   targets: test_buddy.TestTargetSummary[];
   selected?: test_buddy.GetTestTargetResponse;
   selectedCases: test_buddy.TestCaseSummary[];
+  dispositionMenu?: string;
+  updatingDisposition?: string;
   loading: boolean;
   loadingCases: boolean;
 }
@@ -250,6 +253,108 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     );
   }
 
+  private renderDispositionControl(
+    key: string,
+    disposition: test_buddy.TestExecutionDisposition,
+    setDisposition: (disposition: test_buddy.TestExecutionDisposition) => void
+  ) {
+    const saving = this.state.updatingDisposition === key;
+    return (
+      <PopupContainer className="test-buddy-disposition">
+        <OutlinedButton
+          className="icon-text-button"
+          disabled={saving}
+          type="button"
+          onClick={() => this.setState({ dispositionMenu: key })}>
+          {saving ? "Saving…" : dispositionName(disposition)}
+          <ChevronDown />
+        </OutlinedButton>
+        <Popup
+          isOpen={this.state.dispositionMenu === key}
+          onRequestClose={() => this.setState({ dispositionMenu: undefined })}>
+          <Menu>
+            {[
+              test_buddy.TestExecutionDisposition.TEST_EXECUTION_DISPOSITION_AUTOMATIC,
+              test_buddy.TestExecutionDisposition.TEST_EXECUTION_DISPOSITION_ENABLED,
+              test_buddy.TestExecutionDisposition.TEST_EXECUTION_DISPOSITION_DISABLED,
+            ].map((value) => (
+              <MenuItem
+                disabled={value === disposition}
+                key={value}
+                onClick={() => setDisposition(value)}>
+                {dispositionName(value)}
+              </MenuItem>
+            ))}
+          </Menu>
+        </Popup>
+      </PopupContainer>
+    );
+  }
+
+  private setTargetDisposition(disposition: test_buddy.TestExecutionDisposition) {
+    const identity = this.state.selected?.target?.identity;
+    if (!identity?.targetLabel) return;
+    const key = "target";
+    this.setState({ dispositionMenu: undefined, updatingDisposition: key });
+    rpcService.testBuddyService
+      .setTestExecutionDisposition(
+        test_buddy.SetTestExecutionDispositionRequest.create({
+          repoUrl: this.props.repo,
+          target: identity,
+          disposition,
+        })
+      )
+      .then((response) =>
+        this.setState((state) => ({
+          selected:
+            state.selected?.target?.identity?.targetLabel === identity.targetLabel
+              ? test_buddy.GetTestTargetResponse.create({
+                  ...state.selected,
+                  target: test_buddy.TestTargetSummary.create({
+                    ...state.selected.target,
+                    disposition: response.disposition,
+                  }),
+                })
+              : state.selected,
+          updatingDisposition: state.updatingDisposition === key ? undefined : state.updatingDisposition,
+        }))
+      )
+      .catch((error) => {
+        this.setState({ updatingDisposition: undefined });
+        errorService.handleError(error);
+      });
+  }
+
+  private setCaseDisposition(testCase: test_buddy.TestCaseSummary, disposition: test_buddy.TestExecutionDisposition) {
+    const identity = testCase.identity;
+    if (!identity?.target?.targetLabel || !identity.caseName) return;
+    const key = `case:${identity.caseName}`;
+    this.setState({ dispositionMenu: undefined, updatingDisposition: key });
+    rpcService.testBuddyService
+      .setTestExecutionDisposition(
+        test_buddy.SetTestExecutionDispositionRequest.create({
+          repoUrl: this.props.repo,
+          testCase: identity,
+          disposition,
+        })
+      )
+      .then((response) =>
+        this.setState((state) => ({
+          selectedCases: state.selectedCases.map((candidate) =>
+            candidate.identity?.target?.targetLabel === identity.target?.targetLabel &&
+            candidate.identity?.caseName === identity.caseName
+              ? test_buddy.TestCaseSummary.create({ ...candidate, disposition: response.disposition })
+              : candidate
+          ),
+          updatingDisposition: state.updatingDisposition === key ? undefined : state.updatingDisposition,
+        }))
+      )
+      .catch((error) => {
+        this.setState({ updatingDisposition: undefined });
+        errorService.handleError(error);
+      });
+  }
+
   // The component navigates by target label, so the identity message is built
   // here rather than at each call site.
   private loadTarget(targetLabel: string) {
@@ -305,6 +410,12 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           <Stat name="Passes" value={(summary?.passCount ?? 0).toString()} />
           <Stat name="Failures" value={(summary?.failCount ?? 0).toString()} />
           <Stat name="Timeouts" value={(summary?.timeoutCount ?? 0).toString()} />
+          <div className="test-buddy-stat">
+            <div>Run policy</div>
+            {this.renderDispositionControl("target", target.disposition, (disposition) =>
+              this.setTargetDisposition(disposition)
+            )}
+          </div>
         </div>
         <h3>Cases</h3>
         {this.renderHealthFilter("Case health")}
@@ -318,6 +429,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
               <th>Pass</th>
               <th>Fail</th>
               <th>Timeout</th>
+              <th>Run policy</th>
             </tr>
           </thead>
           <tbody>
@@ -332,6 +444,11 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
                 <td>{(testCase.summary?.passCount ?? 0).toString()}</td>
                 <td>{(testCase.summary?.failCount ?? 0).toString()}</td>
                 <td>{(testCase.summary?.timeoutCount ?? 0).toString()}</td>
+                <td>
+                  {this.renderDispositionControl(`case:${testCase.identity?.caseName}`, testCase.disposition, (disposition) =>
+                    this.setCaseDisposition(testCase, disposition)
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -555,6 +672,12 @@ function healthRank(health: test_buddy.TestHealth) {
 
 function outcomeName(outcome: test_buddy.TestOutcome) {
   return test_buddy.TestOutcome[outcome].replace("TEST_OUTCOME_", "");
+}
+
+function dispositionName(disposition: test_buddy.TestExecutionDisposition) {
+  if (disposition === test_buddy.TestExecutionDisposition.TEST_EXECUTION_DISPOSITION_ENABLED) return "Always run";
+  if (disposition === test_buddy.TestExecutionDisposition.TEST_EXECUTION_DISPOSITION_DISABLED) return "Disabled";
+  return "Automatic";
 }
 
 function percent(value: number) {
