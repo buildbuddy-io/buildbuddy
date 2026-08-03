@@ -832,7 +832,8 @@ func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed
 	if err != nil {
 		return nil, err
 	}
-	return parsedArgs.ExpandConfigs(configs, defaultConfig)
+	return bazelrc.ExpandConfigs(parsedArgs, configs, defaultConfig)
+	// TODO(Maggie): Add bbrc config expansion here
 }
 
 // RCFilePolicy controls how sections of an rc file are parsed.
