@@ -666,15 +666,15 @@ func TestAnalyzerProvenance(t *testing.T) {
 	require.Equal(t, int64(3), healthy.GetEligibleSampleCount())
 	assertProvenance("consecutive_passes", 3, revision, healthy.GetTransitions()[0])
 
-	for i := 0; i < 5; i++ {
-		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl: repository,
-			TestTargets: []*tbpb.TestTargetResult{
-				targetResult(fmt.Sprintf("timeout-%d", i), "//pkg:timeout_test", tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1),
-			},
-		})
-		require.NoError(t, err)
+	timeouts := make([]*tbpb.TestTargetResult, 5)
+	for i := range timeouts {
+		timeouts[i] = targetResult(
+			fmt.Sprintf("timeout-%d", i), "//pkg:timeout_test", tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1)
 	}
+	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestTargets: timeouts,
+	})
+	require.NoError(t, err)
 	target, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
 		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:timeout_test"},
 	})
@@ -1041,7 +1041,8 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 
 func TestReportPreservesRepeatedCaseSamples(t *testing.T) {
 	ctx := context.Background()
-	service := testbuddy.New(testenv.GetTestEnv(t))
+	env := testenv.GetTestEnv(t)
+	service := testbuddy.New(env)
 	cases := make([]*tbpb.TestCaseResult, 100)
 	for i := range cases {
 		outcome := tbpb.TestOutcome_TEST_OUTCOME_PASS
@@ -1068,4 +1069,17 @@ func TestReportPreservesRepeatedCaseSamples(t *testing.T) {
 	require.Equal(t, int64(90), got.GetTest().GetSummary().GetPassCount())
 	require.Equal(t, int64(10), got.GetTest().GetSummary().GetFailCount())
 	require.Len(t, got.GetRecentResults(), 50)
+	require.Len(t, got.GetTransitions(), 2)
+
+	var catalogCount int64
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_case_count").
+		Model(&tables.TestCase{}).
+		Where("repository = ? AND target_label = ?", "https://github.com/acme/repo", "//a/b:unit_test").
+		Count(&catalogCount).Error)
+	require.Equal(t, int64(1), catalogCount)
+	state := &tables.TestCaseState{}
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_test_case_state").
+		Where("repository = ? AND target_label = ?", "https://github.com/acme/repo", "//a/b:unit_test").
+		Take(state).Error)
+	require.Equal(t, int64(100), state.StateVersion)
 }

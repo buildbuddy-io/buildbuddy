@@ -259,12 +259,7 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	}
 	for _, results := range resultsByCase {
 		group.Go(func() error {
-			for _, result := range results {
-				if err := s.applyCase(groupCtx, groupID, result, analyzerConfig, analyzerRevision); err != nil {
-					return err
-				}
-			}
-			return nil
+			return s.applyCases(groupCtx, groupID, results, analyzerConfig, analyzerRevision)
 		})
 	}
 	resultsByTarget := make(map[identity.TargetAddress][]*normalize.TargetResult)
@@ -275,12 +270,7 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	}
 	for _, results := range resultsByTarget {
 		group.Go(func() error {
-			for _, result := range results {
-				if err := s.applyTarget(groupCtx, groupID, result, analyzerConfig, analyzerRevision); err != nil {
-					return err
-				}
-			}
-			return nil
+			return s.applyTargets(groupCtx, groupID, results, analyzerConfig, analyzerRevision)
 		})
 	}
 	if err := group.Wait(); err != nil {
@@ -345,23 +335,27 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 			return err
 		}
 	}
-	for start := 0; start < len(report.CaseResults); start += reportBatchSize {
-		end := min(start+reportBatchSize, len(report.CaseResults))
-		cases := make([]*tables.TestCase, 0, end-start)
-		for _, result := range report.CaseResults[start:end] {
-			address := result.Address
-			caseName, err := identity.CaseNameKey(address.CaseName)
-			if err != nil {
-				return err
-			}
-			cases = append(cases, &tables.TestCase{
-				GroupID: groupID, Repository: repository, TargetLabel: address.Target().Label(),
-				CaseName: caseName, PackagePath: address.PackagePath,
-			})
+	cases := make(map[identity.CaseAddress]*tables.TestCase)
+	for _, result := range report.CaseResults {
+		address := result.Address
+		caseName, err := identity.CaseNameKey(address.CaseName)
+		if err != nil {
+			return err
 		}
+		cases[address] = &tables.TestCase{
+			GroupID: groupID, Repository: repository, TargetLabel: address.Target().Label(),
+			CaseName: caseName, PackagePath: address.PackagePath,
+		}
+	}
+	caseRows := make([]*tables.TestCase, 0, len(cases))
+	for _, testCase := range cases {
+		caseRows = append(caseRows, testCase)
+	}
+	for start := 0; start < len(caseRows); start += reportBatchSize {
+		end := min(start+reportBatchSize, len(caseRows))
 		if err := database.GORM(ctx, "test_buddy_admit_cases").
 			Clauses(clause.OnConflict{DoNothing: true}).
-			Create(cases).Error; err != nil {
+			Create(caseRows[start:end]).Error; err != nil {
 			return err
 		}
 	}
@@ -398,21 +392,17 @@ func decodeRetainedResults(encoded []byte) (*retainedResults, error) {
 	return results, nil
 }
 
-func appendSample(encoded []byte, result *tbpb.TestResult, windowSize int) (*retainedResults, []byte, bool, error) {
-	results, err := decodeRetainedResults(encoded)
-	if err != nil {
-		return nil, nil, false, err
-	}
+func appendSample(results *retainedResults, result *tbpb.TestResult, windowSize int) (bool, error) {
 	fingerprint := resultFingerprint(result)
 	for _, retained := range results.ResultIDs {
 		if retained.ID != result.GetResultId() {
 			continue
 		}
 		if retained.Fingerprint != fingerprint {
-			return nil, nil, false, status.FailedPreconditionErrorf(
+			return false, status.FailedPreconditionErrorf(
 				"result_id %q was reused with different content", result.GetResultId())
 		}
-		return results, encoded, true, nil
+		return true, nil
 	}
 	results.Samples = append(results.Samples, retainedSample{
 		Outcome: result.GetOutcome(), DurationUsec: result.GetDurationUsec(),
@@ -428,8 +418,7 @@ func appendSample(encoded []byte, result *tbpb.TestResult, windowSize int) (*ret
 	if extra := len(results.ResultIDs) - retainedResultIDLimit; extra > 0 {
 		results.ResultIDs = results.ResultIDs[extra:]
 	}
-	encoded, err = json.Marshal(results)
-	return results, encoded, false, err
+	return false, nil
 }
 
 func resultFingerprint(result *tbpb.TestResult) string {
@@ -457,9 +446,12 @@ func analysisSamples(samples []retainedSample) []analyzer.Sample {
 	return out
 }
 
-func (s *Service) applyCase(ctx context.Context, groupID string, result *normalize.CaseResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
+func (s *Service) applyCases(ctx context.Context, groupID string, results []*normalize.CaseResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
+	if len(results) == 0 {
+		return nil
+	}
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		address := result.Address
+		address := results[0].Address
 		targetLabel := address.Target().Label()
 		caseName, err := identity.CaseNameKey(address.CaseName)
 		if err != nil {
@@ -482,57 +474,77 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			query, groupID, address.Repository, targetLabel, caseName).Take(state); err != nil {
 			return err
 		}
-		resultInfo := result.Result.GetResult()
-		retained, encoded, duplicate, err := appendSample(
-			state.RecentResults, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+		retained, err := decodeRetainedResults(state.RecentResults)
 		if err != nil {
 			return err
 		}
-		if duplicate {
+		changes := make([]*tables.TestCaseStateChange, 0)
+		changed := false
+		for _, result := range results {
+			resultInfo := result.Result.GetResult()
+			duplicate, err := appendSample(retained, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+			if err != nil {
+				return err
+			}
+			if duplicate {
+				continue
+			}
+			changed = true
+			analysis, err := analyzer.Linear(analysisSamples(retained.Samples), analyzerConfig)
+			if err != nil {
+				return err
+			}
+			previousHealth := state.Health
+			state.Health = analysis.Health.String()
+			state.StateVersion++
+			state.AnalyzerRevision = analyzerRevision
+			state.AnalysisReason = string(analysis.Reason)
+			state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
+			switch resultInfo.GetOutcome() {
+			case tbpb.TestOutcome_TEST_OUTCOME_PASS:
+				state.PassCount++
+			case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
+				state.FailCount++
+			case tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
+				state.TimeoutCount++
+			default:
+				return status.InternalError("unknown outcome reached the analyzer")
+			}
+			state.TotalDurationUsec += resultInfo.GetDurationUsec()
+			if previousHealth != state.Health {
+				changes = append(changes, &tables.TestCaseStateChange{
+					GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
+					CaseName: caseName, StateVersion: state.StateVersion,
+					PreviousHealth: previousHealth, Health: state.Health,
+					PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
+					EventTimeUsec: tx.NowFunc().UnixMicro(), AnalyzerRevision: state.AnalyzerRevision,
+					AnalysisReason: state.AnalysisReason, EligibleSampleCount: state.EligibleSampleCount,
+				})
+			}
+		}
+		if !changed {
 			return nil
 		}
-		analysis, err := analyzer.Linear(analysisSamples(retained.Samples), analyzerConfig)
+		state.RecentResults, err = json.Marshal(retained)
 		if err != nil {
 			return err
 		}
-		previousHealth := state.Health
-		state.Health = analysis.Health.String()
-		state.StateVersion++
-		state.AnalyzerRevision = analyzerRevision
-		state.AnalysisReason = string(analysis.Reason)
-		state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
-		switch resultInfo.GetOutcome() {
-		case tbpb.TestOutcome_TEST_OUTCOME_PASS:
-			state.PassCount++
-		case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
-			state.FailCount++
-		case tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
-			state.TimeoutCount++
-		default:
-			return status.InternalError("unknown outcome reached the analyzer")
-		}
-		state.TotalDurationUsec += resultInfo.GetDurationUsec()
-		state.RecentResults = encoded
 		if err := tx.GORM(ctx, "test_buddy_update_case_state").Save(state).Error; err != nil {
 			return err
 		}
-		if previousHealth == state.Health {
+		if len(changes) == 0 {
 			return nil
 		}
-		return tx.NewQuery(ctx, "test_buddy_create_case_change").Create(&tables.TestCaseStateChange{
-			GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
-			CaseName: caseName, StateVersion: state.StateVersion,
-			PreviousHealth: previousHealth, Health: state.Health,
-			PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
-			EventTimeUsec: tx.NowFunc().UnixMicro(), AnalyzerRevision: state.AnalyzerRevision,
-			AnalysisReason: state.AnalysisReason, EligibleSampleCount: state.EligibleSampleCount,
-		})
+		return tx.NewQuery(ctx, "test_buddy_create_case_changes").Create(changes)
 	})
 }
 
-func (s *Service) applyTarget(ctx context.Context, groupID string, result *normalize.TargetResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
+func (s *Service) applyTargets(ctx context.Context, groupID string, results []*normalize.TargetResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
+	if len(results) == 0 {
+		return nil
+	}
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		address := result.Address
+		address := results[0].Address
 		targetLabel := address.Label()
 		if err := tx.GORM(ctx, "test_buddy_admit_target_state").
 			Clauses(clause.OnConflict{DoNothing: true}).
@@ -550,50 +562,67 @@ func (s *Service) applyTarget(ctx context.Context, groupID string, result *norma
 			query, groupID, address.Repository, targetLabel).Take(state); err != nil {
 			return err
 		}
-		resultInfo := result.Result.GetResult()
-		retained, encoded, duplicate, err := appendSample(
-			state.RecentResults, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+		retained, err := decodeRetainedResults(state.RecentResults)
 		if err != nil {
 			return err
 		}
-		if duplicate {
+		changes := make([]*tables.TestTargetStateChange, 0)
+		changed := false
+		for _, result := range results {
+			resultInfo := result.Result.GetResult()
+			duplicate, err := appendSample(retained, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+			if err != nil {
+				return err
+			}
+			if duplicate {
+				continue
+			}
+			changed = true
+			analysis, err := analyzer.LinearTarget(analysisSamples(retained.Samples), analyzerConfig)
+			if err != nil {
+				return err
+			}
+			previousHealth := state.Health
+			state.Health = analysis.Health.String()
+			state.StateVersion++
+			state.AnalyzerRevision = analyzerRevision
+			state.AnalysisReason = string(analysis.Reason)
+			state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
+			switch resultInfo.GetOutcome() {
+			case tbpb.TestOutcome_TEST_OUTCOME_PASS:
+				state.PassCount++
+			case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
+				state.FailCount++
+			case tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
+				state.TimeoutCount++
+			default:
+				return status.InternalError("unknown target outcome reached the analyzer")
+			}
+			state.TotalDurationUsec += resultInfo.GetDurationUsec()
+			if previousHealth != state.Health {
+				changes = append(changes, &tables.TestTargetStateChange{
+					GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
+					StateVersion: state.StateVersion, PreviousHealth: previousHealth, Health: state.Health,
+					PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
+					EventTimeUsec: tx.NowFunc().UnixMicro(), AnalyzerRevision: state.AnalyzerRevision,
+					AnalysisReason: state.AnalysisReason, EligibleSampleCount: state.EligibleSampleCount,
+				})
+			}
+		}
+		if !changed {
 			return nil
 		}
-		analysis, err := analyzer.LinearTarget(analysisSamples(retained.Samples), analyzerConfig)
+		state.RecentResults, err = json.Marshal(retained)
 		if err != nil {
 			return err
 		}
-		previousHealth := state.Health
-		state.Health = analysis.Health.String()
-		state.StateVersion++
-		state.AnalyzerRevision = analyzerRevision
-		state.AnalysisReason = string(analysis.Reason)
-		state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
-		switch resultInfo.GetOutcome() {
-		case tbpb.TestOutcome_TEST_OUTCOME_PASS:
-			state.PassCount++
-		case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
-			state.FailCount++
-		case tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT:
-			state.TimeoutCount++
-		default:
-			return status.InternalError("unknown target outcome reached the analyzer")
-		}
-		state.TotalDurationUsec += resultInfo.GetDurationUsec()
-		state.RecentResults = encoded
 		if err := tx.GORM(ctx, "test_buddy_update_target_state").Save(state).Error; err != nil {
 			return err
 		}
-		if previousHealth == state.Health {
+		if len(changes) == 0 {
 			return nil
 		}
-		return tx.NewQuery(ctx, "test_buddy_create_target_change").Create(&tables.TestTargetStateChange{
-			GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
-			StateVersion: state.StateVersion, PreviousHealth: previousHealth, Health: state.Health,
-			PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
-			EventTimeUsec: tx.NowFunc().UnixMicro(), AnalyzerRevision: state.AnalyzerRevision,
-			AnalysisReason: state.AnalysisReason, EligibleSampleCount: state.EligibleSampleCount,
-		})
+		return tx.NewQuery(ctx, "test_buddy_create_target_changes").Create(changes)
 	})
 }
 
