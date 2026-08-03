@@ -150,7 +150,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
       <span className={`logo test-buddy-logo ${hoverClass}`}>
         <img src="/image/logo_white.svg" className="test-buddy-logo-buildbuddy" />
         <span className="test-buddy-logo-testbuddy">
-          <img src="/image/test_buddy_logo.png" className="test-buddy-logo-artwork" />
+          <img src="/image/test_buddy_logo.svg" className="test-buddy-logo-artwork" />
         </span>
       </span>
     );
