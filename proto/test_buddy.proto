@@ -107,6 +107,7 @@ message TestCaseSummary {
   TestCaseIdentity identity = 1;
   TestSummary summary = 2;
   TestExecutionDisposition disposition = 3;
+  bool deleted = 4;
 }
 
 message GetTestsResponse {
@@ -118,6 +119,7 @@ message TestTargetSummary {
   TestSummary summary = 2;
   TestHealthSummary cases = 3;
   TestExecutionDisposition disposition = 4;
+  bool deleted = 5;
 }
 
 message GetTestTargetsRequest {
@@ -242,6 +244,20 @@ message SetTestExecutionDispositionResponse {
   TestExecutionDisposition disposition = 1;
 }
 
+message SetTestDeletedRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  oneof subject {
+    TestTargetIdentity target = 3;
+    TestCaseIdentity test_case = 4;
+  }
+  bool deleted = 5;
+}
+
+message SetTestDeletedResponse {
+  bool deleted = 1;
+}
+
 message GetTestsToSkipRequest {
   context.RequestContext request_context = 1;
   string repo_url = 2;
@@ -267,6 +283,7 @@ service TestBuddyService {
       returns (GetTestRepositoriesResponse);
   rpc SetTestExecutionDisposition(SetTestExecutionDispositionRequest)
       returns (SetTestExecutionDispositionResponse);
+  rpc SetTestDeleted(SetTestDeletedRequest) returns (SetTestDeletedResponse);
   rpc GetTestsToSkip(GetTestsToSkipRequest)
       returns (stream GetTestsToSkipResponse);
   rpc GetTestAnalyzerConfig(GetTestAnalyzerConfigRequest)

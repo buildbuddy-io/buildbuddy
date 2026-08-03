@@ -689,11 +689,12 @@ func (*TestRepositoryCatalog) TableName() string { return "TestRepositoryCatalog
 // TestTarget records one test target.
 type TestTarget struct {
 	Model
-	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_target_cone_idx,priority:1"`
-	Repository  string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:2"`
-	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
-	PackagePath string `gorm:"size:1024;not null;index:test_target_cone_idx,priority:3"`
-	Disposition int32  `gorm:"not null;default:0"`
+	GroupID       string `gorm:"primaryKey;size:64;not null;index:test_target_cone_idx,priority:1"`
+	Repository    string `gorm:"primaryKey;size:512;not null;index:test_target_cone_idx,priority:2"`
+	TargetLabel   string `gorm:"primaryKey;size:1539;not null"`
+	PackagePath   string `gorm:"size:1024;not null;index:test_target_cone_idx,priority:3"`
+	Disposition   int32  `gorm:"not null;default:0"`
+	DeletedAtUsec int64  `gorm:"not null;default:0"`
 }
 
 func (*TestTarget) TableName() string { return "TestTargets" }
@@ -701,12 +702,13 @@ func (*TestTarget) TableName() string { return "TestTargets" }
 // TestCase records one test case beneath a target.
 type TestCase struct {
 	Model
-	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_case_cone_idx,priority:1"`
-	Repository  string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:2"`
-	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
-	CaseName    string `gorm:"primaryKey;size:684;not null"`
-	PackagePath string `gorm:"size:1024;not null;index:test_case_cone_idx,priority:3"`
-	Disposition int32  `gorm:"not null;default:0"`
+	GroupID       string `gorm:"primaryKey;size:64;not null;index:test_case_cone_idx,priority:1"`
+	Repository    string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:2"`
+	TargetLabel   string `gorm:"primaryKey;size:1539;not null"`
+	CaseName      string `gorm:"primaryKey;size:684;not null"`
+	PackagePath   string `gorm:"size:1024;not null;index:test_case_cone_idx,priority:3"`
+	Disposition   int32  `gorm:"not null;default:0"`
+	DeletedAtUsec int64  `gorm:"not null;default:0"`
 }
 
 func (*TestCase) TableName() string { return "TestCases" }

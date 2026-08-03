@@ -320,6 +320,104 @@ func TestExecutionDispositionControlsTestsToSkip(t *testing.T) {
 	require.Empty(t, testCases)
 }
 
+func TestDeletedCatalogSubjectsAreHiddenAndObservationsRestoreThem(t *testing.T) {
+	ctx := context.Background()
+	service := testbuddy.New(testenv.GetTestEnv(t))
+	repository := "https://github.com/acme/deleted"
+	targetIdentity := &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"}
+	caseIdentity := &tbpb.TestCaseIdentity{Target: targetIdentity, CaseName: "TestCase"}
+	report := func(run string, includeTarget bool) {
+		req := &tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			CaseObservations: []*tbpb.TestCaseObservation{
+				caseObservation(run+"-case", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
+			},
+		}
+		if includeTarget {
+			req.TargetObservations = []*tbpb.TestTargetObservation{
+				targetObservation(run+"-target", "//pkg:test", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
+			}
+		}
+		_, err := reportTestResults(service, ctx, req)
+		require.NoError(t, err)
+	}
+	setTargetDeleted := func(deleted bool) {
+		rsp, err := service.SetTestDeleted(ctx, &tbpb.SetTestDeletedRequest{
+			RepoUrl: repository,
+			Subject: &tbpb.SetTestDeletedRequest_Target{Target: targetIdentity},
+			Deleted: deleted,
+		})
+		require.NoError(t, err)
+		require.Equal(t, deleted, rsp.GetDeleted())
+	}
+	setCaseDeleted := func(deleted bool) {
+		rsp, err := service.SetTestDeleted(ctx, &tbpb.SetTestDeletedRequest{
+			RepoUrl: repository,
+			Subject: &tbpb.SetTestDeletedRequest_TestCase{TestCase: caseIdentity},
+			Deleted: deleted,
+		})
+		require.NoError(t, err)
+		require.Equal(t, deleted, rsp.GetDeleted())
+	}
+
+	report("first", true)
+	before, err := service.GetRepositoryHealth(ctx, &tbpb.GetRepositoryHealthRequest{RepoUrl: repository})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), before.GetTargets().GetTotalCount())
+	require.Equal(t, int64(1), before.GetCases().GetTotalCount())
+
+	setTargetDeleted(true)
+	targetDetail, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
+		RepoUrl: repository, Identity: targetIdentity,
+	})
+	require.NoError(t, err)
+	require.True(t, targetDetail.GetTarget().GetDeleted())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, targetDetail.GetTarget().GetSummary().GetHealth())
+	require.NotEmpty(t, targetDetail.GetRecentObservations())
+	require.Empty(t, getTestTargets(t, service, ctx, &tbpb.GetTestTargetsRequest{RepoUrl: repository}))
+	require.Empty(t, getTests(t, service, ctx, &tbpb.GetTestsRequest{RepoUrl: repository}))
+	targetsToSkip, casesToSkip := getTestsToSkip(t, service, ctx, &tbpb.GetTestsToSkipRequest{RepoUrl: repository})
+	require.Empty(t, targetsToSkip)
+	require.Empty(t, casesToSkip)
+	afterDelete, err := service.GetRepositoryHealth(ctx, &tbpb.GetRepositoryHealthRequest{RepoUrl: repository})
+	require.NoError(t, err)
+	require.Zero(t, afterDelete.GetTargets().GetTotalCount())
+	require.Zero(t, afterDelete.GetCases().GetTotalCount())
+
+	setTargetDeleted(false)
+	require.Len(t, getTestTargets(t, service, ctx, &tbpb.GetTestTargetsRequest{RepoUrl: repository}), 1)
+	require.Len(t, getTests(t, service, ctx, &tbpb.GetTestsRequest{RepoUrl: repository}), 1)
+
+	setCaseDeleted(true)
+	caseDetail, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository, Identity: caseIdentity,
+	})
+	require.NoError(t, err)
+	require.True(t, caseDetail.GetTest().GetDeleted())
+	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_FAILING, caseDetail.GetTest().GetSummary().GetHealth())
+	require.Empty(t, getTests(t, service, ctx, &tbpb.GetTestsRequest{RepoUrl: repository}))
+	targets := getTestTargets(t, service, ctx, &tbpb.GetTestTargetsRequest{RepoUrl: repository})
+	require.Len(t, targets, 1)
+	require.Zero(t, targets[0].GetCases().GetTotalCount())
+
+	report("second", false)
+	caseDetail, err = service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository, Identity: caseIdentity,
+	})
+	require.NoError(t, err)
+	require.False(t, caseDetail.GetTest().GetDeleted())
+	require.Equal(t, int64(2), caseDetail.GetTest().GetSummary().GetFailCount())
+	require.Len(t, getTests(t, service, ctx, &tbpb.GetTestsRequest{RepoUrl: repository}), 1)
+
+	setTargetDeleted(true)
+	report("third", true)
+	targetDetail, err = service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
+		RepoUrl: repository, Identity: targetIdentity,
+	})
+	require.NoError(t, err)
+	require.False(t, targetDetail.GetTarget().GetDeleted())
+}
+
 func TestRepositoriesAreGroupScopedAndOrderedByLatestReport(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)

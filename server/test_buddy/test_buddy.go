@@ -98,6 +98,12 @@ func (c *repositoryHealthCache) store(key repositoryHealthCacheKey, response *tb
 	c.mu.Unlock()
 }
 
+func (c *repositoryHealthCache) invalidate(key repositoryHealthCacheKey) {
+	c.mu.Lock()
+	delete(c.entries, key)
+	c.mu.Unlock()
+}
+
 // Register builds the app's TestBuddy server — the local service, or a
 // proxy to the configured backend — and stores it on the environment so both
 // the gRPC servers and the browser proto-over-HTTP handlers serve the same
@@ -202,6 +208,10 @@ func (p *proxy) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetReques
 
 func (p *proxy) SetTestExecutionDisposition(ctx context.Context, req *tbpb.SetTestExecutionDispositionRequest) (*tbpb.SetTestExecutionDispositionResponse, error) {
 	return p.client.SetTestExecutionDisposition(forwardAuth(ctx, p.authenticator), req)
+}
+
+func (p *proxy) SetTestDeleted(ctx context.Context, req *tbpb.SetTestDeletedRequest) (*tbpb.SetTestDeletedResponse, error) {
+	return p.client.SetTestDeleted(forwardAuth(ctx, p.authenticator), req)
 }
 
 func (p *proxy) GetTestsToSkip(req *tbpb.GetTestsToSkipRequest, stream tbpb.TestBuddyService_GetTestsToSkipServer) error {
@@ -353,7 +363,7 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 	for start := 0; start < len(targetRows); start += reportBatchSize {
 		end := min(start+reportBatchSize, len(targetRows))
 		if err := database.GORM(ctx, "test_buddy_admit_targets").
-			Clauses(clause.OnConflict{DoNothing: true}).
+			Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"deleted_at_usec"})}).
 			Create(targetRows[start:end]).Error; err != nil {
 			return err
 		}
@@ -377,7 +387,7 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 	for start := 0; start < len(caseRows); start += reportBatchSize {
 		end := min(start+reportBatchSize, len(caseRows))
 		if err := database.GORM(ctx, "test_buddy_admit_cases").
-			Clauses(clause.OnConflict{DoNothing: true}).
+			Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"deleted_at_usec"})}).
 			Create(caseRows[start:end]).Error; err != nil {
 			return err
 		}
@@ -759,7 +769,7 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 	if packagePrefix != "" && req.GetTarget() != nil {
 		return status.InvalidArgumentError("package_prefix and target_label cannot both be set")
 	}
-	where := `tc.group_id = ? AND tc.repository = ?`
+	where := `tc.group_id = ? AND tc.repository = ? AND tc.deleted_at_usec = 0`
 	args := []any{groupID, repository}
 	if packagePrefix != "" {
 		bound, boundArgs := conePackageBounds("tc.package_path", packagePrefix)
@@ -789,6 +799,9 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 			COALESCE(s.timeout_count, 0) AS timeout_count,
 			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
 		FROM "TestCases" AS tc
+		INNER JOIN "TestTargets" AS tt
+			ON tt.group_id = tc.group_id AND tt.repository = tc.repository
+			AND tt.target_label = tc.target_label AND tt.deleted_at_usec = 0
 		LEFT JOIN "TestCaseStates" AS s
 			ON s.group_id = tc.group_id AND s.repository = tc.repository
 			AND s.target_label = tc.target_label AND s.case_name = tc.case_name
@@ -866,7 +879,7 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 	if err != nil {
 		return err
 	}
-	where := `tt.group_id = ? AND tt.repository = ?`
+	where := `tt.group_id = ? AND tt.repository = ? AND tt.deleted_at_usec = 0`
 	args := []any{groupID, repository}
 	if packagePrefix != "" {
 		bound, boundArgs := conePackageBounds("tt.package_path", packagePrefix)
@@ -915,7 +928,7 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 			AND s.target_label = tt.target_label
 		LEFT JOIN "TestCases" AS tc
 			ON tc.group_id = tt.group_id AND tc.repository = tt.repository
-			AND tc.target_label = tt.target_label
+			AND tc.target_label = tt.target_label AND tc.deleted_at_usec = 0
 		LEFT JOIN "TestCaseStates" AS cs
 			ON cs.group_id = tc.group_id AND cs.repository = tc.repository
 			AND cs.target_label = tc.target_label AND cs.case_name = tc.case_name
@@ -1069,6 +1082,84 @@ func (s *Service) SetTestExecutionDisposition(ctx context.Context, req *tbpb.Set
 	return &tbpb.SetTestExecutionDispositionResponse{Disposition: req.GetDisposition()}, nil
 }
 
+func (s *Service) SetTestDeleted(ctx context.Context, req *tbpb.SetTestDeletedRequest) (*tbpb.SetTestDeletedResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentError("request is required")
+	}
+	groupID, err := s.groupID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	deletedAtUsec := int64(0)
+	if req.GetDeleted() {
+		deletedAtUsec = s.env.GetDBHandle().NowFunc().UnixMicro()
+	}
+	repository := ""
+	if req.GetTarget() != nil {
+		target, err := identity.CanonicalizeTarget(req.GetRepoUrl(), req.GetTarget().GetTargetLabel())
+		if err != nil {
+			return nil, err
+		}
+		repository = target.Repository
+		result := s.env.GetDBHandle().GORM(ctx, "test_buddy_set_target_deleted").
+			Model(&tables.TestTarget{}).
+			Where("group_id = ? AND repository = ? AND target_label = ?",
+				groupID, target.Repository, target.Label()).
+			Update("deleted_at_usec", deletedAtUsec)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			var count int64
+			err := s.env.GetDBHandle().GORM(ctx, "test_buddy_find_target_deleted").
+				Model(&tables.TestTarget{}).
+				Where("group_id = ? AND repository = ? AND target_label = ?",
+					groupID, target.Repository, target.Label()).Count(&count).Error
+			if err != nil {
+				return nil, err
+			}
+			if count == 0 {
+				return nil, status.NotFoundErrorf("test target %s was not found", target.String())
+			}
+		}
+	} else if req.GetTestCase() != nil {
+		testCase, err := identity.CaseAddressFromProto(req.GetRepoUrl(), req.GetTestCase())
+		if err != nil {
+			return nil, err
+		}
+		repository = testCase.Repository
+		caseName, err := identity.CaseNameKey(testCase.CaseName)
+		if err != nil {
+			return nil, err
+		}
+		result := s.env.GetDBHandle().GORM(ctx, "test_buddy_set_case_deleted").
+			Model(&tables.TestCase{}).
+			Where("group_id = ? AND repository = ? AND target_label = ? AND case_name = ?",
+				groupID, testCase.Repository, testCase.Target().Label(), caseName).
+			Update("deleted_at_usec", deletedAtUsec)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			var count int64
+			err := s.env.GetDBHandle().GORM(ctx, "test_buddy_find_case_deleted").
+				Model(&tables.TestCase{}).
+				Where("group_id = ? AND repository = ? AND target_label = ? AND case_name = ?",
+					groupID, testCase.Repository, testCase.Target().Label(), caseName).Count(&count).Error
+			if err != nil {
+				return nil, err
+			}
+			if count == 0 {
+				return nil, status.NotFoundErrorf("test case %s was not found", testCase.String())
+			}
+		}
+	} else {
+		return nil, status.InvalidArgumentError("test target or case identity is required")
+	}
+	s.repositoryHealthCache.invalidate(repositoryHealthCacheKey{groupID: groupID, repository: repository})
+	return &tbpb.SetTestDeletedResponse{Deleted: req.GetDeleted()}, nil
+}
+
 func (s *Service) GetTestsToSkip(req *tbpb.GetTestsToSkipRequest, stream tbpb.TestBuddyService_GetTestsToSkipServer) error {
 	if req == nil {
 		return status.InvalidArgumentError("request is required")
@@ -1087,7 +1178,7 @@ func (s *Service) GetTestsToSkip(req *tbpb.GetTestsToSkipRequest, stream tbpb.Te
 		return err
 	}
 
-	targetWhere := `tt.group_id = ? AND tt.repository = ?`
+	targetWhere := `tt.group_id = ? AND tt.repository = ? AND tt.deleted_at_usec = 0`
 	targetArgs := []any{tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), groupID, repository}
 	if packagePrefix != "" {
 		bound, boundArgs := conePackageBounds("tt.package_path", packagePrefix)
@@ -1155,7 +1246,7 @@ func (s *Service) GetTestsToSkip(req *tbpb.GetTestsToSkipRequest, stream tbpb.Te
 		}
 	}
 
-	caseWhere := `tc.group_id = ? AND tc.repository = ?`
+	caseWhere := `tc.group_id = ? AND tc.repository = ? AND tc.deleted_at_usec = 0`
 	caseArgs := []any{tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), groupID, repository}
 	if packagePrefix != "" {
 		bound, boundArgs := conePackageBounds("tc.package_path", packagePrefix)
@@ -1177,6 +1268,9 @@ func (s *Service) GetTestsToSkip(req *tbpb.GetTestsToSkipRequest, stream tbpb.Te
 			COALESCE(s.timeout_count, 0) AS timeout_count,
 			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
 		FROM "TestCases" AS tc
+		INNER JOIN "TestTargets" AS tt
+			ON tt.group_id = tc.group_id AND tt.repository = tc.repository
+			AND tt.target_label = tc.target_label AND tt.deleted_at_usec = 0
 		LEFT JOIN "TestCaseStates" AS s
 			ON s.group_id = tc.group_id AND s.repository = tc.repository
 			AND s.target_label = tc.target_label AND s.case_name = tc.case_name
@@ -1304,6 +1398,15 @@ func (s *Service) queryRepositoryHealth(ctx context.Context, groupID, repository
 		if !target {
 			join += ` AND s.case_name = catalog.case_name`
 		}
+		extraWhere := ""
+		if !target {
+			extraWhere = ` AND EXISTS (
+				SELECT 1 FROM "TestTargets" AS target_catalog
+				WHERE target_catalog.group_id = catalog.group_id
+					AND target_catalog.repository = catalog.repository
+					AND target_catalog.target_label = catalog.target_label
+					AND target_catalog.deleted_at_usec = 0)`
+		}
 		query := fmt.Sprintf(`
 		SELECT COALESCE(s.health, '') AS health,
 			COUNT(*) AS subject_count,
@@ -1314,7 +1417,8 @@ func (s *Service) queryRepositoryHealth(ctx context.Context, groupID, repository
 		FROM "%s" AS catalog
 		LEFT JOIN "%s" AS s ON %s
 		WHERE catalog.group_id = ? AND catalog.repository = ?
-		GROUP BY s.health`, catalogTable, stateTable, join)
+			AND catalog.deleted_at_usec = 0%s
+		GROUP BY s.health`, catalogTable, stateTable, join, extraWhere)
 		type row struct {
 			Health            string
 			SubjectCount      int64
@@ -1366,7 +1470,16 @@ func (s *Service) queryRepositoryHealth(ctx context.Context, groupID, repository
 		return nil, err
 	}
 	if targets.GetTotalCount() == 0 && cases.GetTotalCount() == 0 {
-		return nil, status.NotFoundErrorf("repository %s was not found", repository)
+		var repositoryCount int64
+		if err := s.env.GetDBHandle().GORM(ctx, "test_buddy_find_repository_health_catalog").
+			Model(&tables.TestRepositoryCatalog{}).
+			Where("group_id = ? AND repository = ?", groupID, repository).
+			Count(&repositoryCount).Error; err != nil {
+			return nil, err
+		}
+		if repositoryCount == 0 {
+			return nil, status.NotFoundErrorf("repository %s was not found", repository)
+		}
 	}
 	return &tbpb.GetRepositoryHealthResponse{Targets: targets, Cases: cases}, nil
 }
@@ -1385,6 +1498,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	}
 	type targetRow struct {
 		Disposition         int32
+		DeletedAtUsec       int64
 		Health              string
 		RecentObservations  []byte
 		PassCount           int64
@@ -1397,7 +1511,8 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	}
 	row := &targetRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_target").Raw(`
-		SELECT tt.disposition, COALESCE(s.health, ?) AS health, s.recent_observations,
+		SELECT tt.disposition, tt.deleted_at_usec,
+			COALESCE(s.health, ?) AS health, s.recent_observations,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -1425,6 +1540,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
 		EligibleSampleCount: row.EligibleSampleCount,
 	}
+	rsp.Target.Deleted = row.DeletedAtUsec != 0
 	retained, err := decodeRetainedObservations(row.RecentObservations)
 	if err != nil {
 		return nil, err
@@ -1485,6 +1601,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	}
 	type caseRow struct {
 		Disposition         int32
+		DeletedAtUsec       int64
 		Health              string
 		RecentObservations  []byte
 		PassCount           int64
@@ -1497,7 +1614,8 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	}
 	row := &caseRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case").Raw(`
-		SELECT tc.disposition, COALESCE(s.health, ?) AS health, s.recent_observations,
+		SELECT tc.disposition, tc.deleted_at_usec,
+			COALESCE(s.health, ?) AS health, s.recent_observations,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -1525,6 +1643,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
 		EligibleSampleCount: row.EligibleSampleCount,
 	}
+	rsp.Test.Deleted = row.DeletedAtUsec != 0
 	retained, err := decodeRetainedObservations(row.RecentObservations)
 	if err != nil {
 		return nil, err

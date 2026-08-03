@@ -39,6 +39,10 @@ fast, queryable health state.
   health, enabled forces a subject to run, and disabled forces it to be skipped.
   The streamed cone query for tests to skip returns target and case identities
   with their health summaries and dispositions, not names alone.
+- Deletion is a reversible catalog tombstone, separate from health and
+  execution disposition. Deleted subjects stay available to exact
+  administrative reads but disappear from normal and skip queries; reporting
+  the same address restores it.
 - A cone read is a range scan of the catalog's own
   `(group_id, repository, package_path)` index, bounded on the package separator
   so that `a/bc` stays outside the `a/b` cone. There is no routing table, prefix
