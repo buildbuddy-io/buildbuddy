@@ -36,7 +36,7 @@ go_library(
 
 go_test(
     name = "usagetracker_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "usagetracker_benchmark_test.go",
         "usagetracker_test.go",
