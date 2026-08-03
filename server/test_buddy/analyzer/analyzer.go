@@ -1,4 +1,4 @@
-// Package analyzer classifies a test from recently processed results.
+// Package analyzer classifies a test from recently processed observations.
 package analyzer
 
 import (

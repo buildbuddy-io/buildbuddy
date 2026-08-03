@@ -27,26 +27,26 @@ enum TestObservationSource {
   TEST_OBSERVATION_SOURCE_MONITOR = 3;
 }
 
-message TestResult {
+message TestObservation {
   TestOutcome outcome = 1;
   int64 duration_usec = 2;
   string failure_message = 3;
   string source_url = 4;
   int64 event_time_usec = 5;
-  string result_id = 6;
+  string observation_id = 6;
   TestObservationSource source = 7;
   string commit_sha = 8;
   bool workspace_dirty = 9;
 }
 
-message TestCaseResult {
+message TestCaseObservation {
   TestCaseIdentity identity = 1;
-  TestResult result = 2;
+  TestObservation observation = 2;
 }
 
-message TestTargetResult {
+message TestTargetObservation {
   TestTargetIdentity identity = 1;
-  TestResult result = 2;
+  TestObservation observation = 2;
 }
 
 enum TestHealth {
@@ -78,8 +78,8 @@ message TestAnalyzerConfig {
 
 message ReportTestResultsRequest {
   string repo_url = 1;
-  repeated TestCaseResult test_cases = 2;
-  repeated TestTargetResult test_targets = 3;
+  repeated TestCaseObservation case_observations = 2;
+  repeated TestTargetObservation target_observations = 3;
 }
 
 message ReportTestResultsResponse {
@@ -147,7 +147,7 @@ message GetTestCaseRequest {
 
 message GetTestCaseResponse {
   TestCaseSummary test = 1;
-  repeated TestResult recent_results = 2;
+  repeated TestObservation recent_observations = 2;
   repeated TestHealthTransition transitions = 3;
   int64 analyzer_revision = 4;
   string analysis_reason = 5;
@@ -162,7 +162,7 @@ message GetTestTargetRequest {
 
 message GetTestTargetResponse {
   TestTargetSummary target = 1;
-  repeated TestResult recent_results = 2;
+  repeated TestObservation recent_observations = 2;
   repeated TestHealthTransition transitions = 3;
   int64 analyzer_revision = 4;
   string analysis_reason = 5;

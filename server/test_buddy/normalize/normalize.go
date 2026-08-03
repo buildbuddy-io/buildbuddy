@@ -1,4 +1,4 @@
-// Package normalize validates reported test results.
+// Package normalize validates reported test observations.
 package normalize
 
 import (
@@ -13,7 +13,7 @@ import (
 const (
 	MaxFailureMessageBytes = 512
 	MaxSourceURLBytes      = 2048
-	MaxResultIDBytes       = 128
+	MaxObservationIDBytes  = 128
 	MaxCommitSHABytes      = 128
 	MaxRetainedRejections  = 100
 )
@@ -42,14 +42,14 @@ type CaseRecord struct {
 	OccurrenceIndex int
 }
 
-type CaseResult struct {
-	Result  *tbpb.TestCaseResult
-	Address identity.CaseAddress
+type CaseObservation struct {
+	Observation *tbpb.TestCaseObservation
+	Address     identity.CaseAddress
 }
 
-type TargetResult struct {
-	Result  *tbpb.TestTargetResult
-	Address identity.TargetAddress
+type TargetObservation struct {
+	Observation *tbpb.TestTargetObservation
+	Address     identity.TargetAddress
 }
 
 type Rejection struct {
@@ -60,11 +60,11 @@ type Rejection struct {
 }
 
 type Report struct {
-	RepositoryURL string
-	CaseResults   []*CaseResult
-	TargetResults []*TargetResult
-	Rejections    []Rejection
-	Rejected      Counts
+	RepositoryURL      string
+	CaseObservations   []*CaseObservation
+	TargetObservations []*TargetObservation
+	Rejections         []Rejection
+	Rejected           Counts
 }
 
 type Counts struct {
@@ -95,7 +95,7 @@ func NewSession(repositoryURL string) (*Session, error) {
 	return &Session{repository: repository, targets: make(map[string]identity.TargetAddress)}, nil
 }
 
-func Normalize(repositoryURL string, cases []*tbpb.TestCaseResult, targets []*tbpb.TestTargetResult) (*Report, error) {
+func Normalize(repositoryURL string, cases []*tbpb.TestCaseObservation, targets []*tbpb.TestTargetObservation) (*Report, error) {
 	session, err := NewSession(repositoryURL)
 	if err != nil {
 		return nil, err
@@ -103,28 +103,28 @@ func Normalize(repositoryURL string, cases []*tbpb.TestCaseResult, targets []*tb
 	return session.Normalize(cases, targets), nil
 }
 
-func (s *Session) Normalize(cases []*tbpb.TestCaseResult, targets []*tbpb.TestTargetResult) *Report {
+func (s *Session) Normalize(cases []*tbpb.TestCaseObservation, targets []*tbpb.TestTargetObservation) *Report {
 	report := &Report{RepositoryURL: s.repository}
 	for i, record := range cases {
-		result, err := s.normalizeCase(record)
+		observation, err := s.normalizeCase(record)
 		if err != nil {
 			report.reject(RecordKindCase, i, RejectionInvalidContent, err)
 			continue
 		}
-		report.CaseResults = append(report.CaseResults, result)
+		report.CaseObservations = append(report.CaseObservations, observation)
 	}
 	for i, record := range targets {
-		result, err := s.normalizeTarget(record)
+		observation, err := s.normalizeTarget(record)
 		if err != nil {
 			report.reject(RecordKindTarget, i, RejectionInvalidContent, err)
 			continue
 		}
-		report.TargetResults = append(report.TargetResults, result)
+		report.TargetObservations = append(report.TargetObservations, observation)
 	}
 	return report
 }
 
-func (s *Session) normalizeCase(record *tbpb.TestCaseResult) (*CaseResult, error) {
+func (s *Session) normalizeCase(record *tbpb.TestCaseObservation) (*CaseObservation, error) {
 	if record.GetIdentity().GetTarget() == nil {
 		return nil, status.InvalidArgumentError("case identity is required")
 	}
@@ -138,16 +138,16 @@ func (s *Session) normalizeCase(record *tbpb.TestCaseResult) (*CaseResult, error
 	address := identity.CaseAddress{
 		TargetAddress: target, CaseName: record.GetIdentity().GetCaseName(),
 	}
-	if err := validateResult(record.GetResult()); err != nil {
+	if err := validateObservation(record.GetObservation()); err != nil {
 		return nil, err
 	}
-	return &CaseResult{
-		Address: address,
-		Result:  &tbpb.TestCaseResult{Identity: address.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
+	return &CaseObservation{
+		Address:     address,
+		Observation: &tbpb.TestCaseObservation{Identity: address.Proto(), Observation: proto.Clone(record.GetObservation()).(*tbpb.TestObservation)},
 	}, nil
 }
 
-func (s *Session) normalizeTarget(record *tbpb.TestTargetResult) (*TargetResult, error) {
+func (s *Session) normalizeTarget(record *tbpb.TestTargetObservation) (*TargetObservation, error) {
 	if record.GetIdentity() == nil {
 		return nil, status.InvalidArgumentError("target identity is required")
 	}
@@ -155,12 +155,12 @@ func (s *Session) normalizeTarget(record *tbpb.TestTargetResult) (*TargetResult,
 	if err != nil {
 		return nil, err
 	}
-	if err := validateResult(record.GetResult()); err != nil {
+	if err := validateObservation(record.GetObservation()); err != nil {
 		return nil, err
 	}
-	return &TargetResult{
-		Address: target,
-		Result:  &tbpb.TestTargetResult{Identity: target.Proto(), Result: proto.Clone(record.GetResult()).(*tbpb.TestResult)},
+	return &TargetObservation{
+		Address:     target,
+		Observation: &tbpb.TestTargetObservation{Identity: target.Proto(), Observation: proto.Clone(record.GetObservation()).(*tbpb.TestObservation)},
 	}, nil
 }
 
@@ -176,44 +176,44 @@ func (s *Session) target(label string) (identity.TargetAddress, error) {
 	return target, nil
 }
 
-func validateResult(result *tbpb.TestResult) error {
-	if result == nil {
-		return status.InvalidArgumentError("result is required")
+func validateObservation(observation *tbpb.TestObservation) error {
+	if observation == nil {
+		return status.InvalidArgumentError("observation is required")
 	}
-	if _, ok := tbpb.TestOutcome_name[int32(result.GetOutcome())]; !ok {
-		return status.InvalidArgumentErrorf("unrecognized outcome %d", result.GetOutcome())
+	if _, ok := tbpb.TestOutcome_name[int32(observation.GetOutcome())]; !ok {
+		return status.InvalidArgumentErrorf("unrecognized outcome %d", observation.GetOutcome())
 	}
-	if result.GetSource() == tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_UNKNOWN {
+	if observation.GetSource() == tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_UNKNOWN {
 		return status.InvalidArgumentError("source is required")
 	}
-	if _, ok := tbpb.TestObservationSource_name[int32(result.GetSource())]; !ok {
-		return status.InvalidArgumentErrorf("unrecognized source %d", result.GetSource())
+	if _, ok := tbpb.TestObservationSource_name[int32(observation.GetSource())]; !ok {
+		return status.InvalidArgumentErrorf("unrecognized source %d", observation.GetSource())
 	}
-	if result.GetCommitSha() == "" {
+	if observation.GetCommitSha() == "" {
 		return status.InvalidArgumentError("commit_sha is required")
 	}
-	if err := identity.ValidateBoundedString("commit SHA", result.GetCommitSha(), MaxCommitSHABytes); err != nil {
+	if err := identity.ValidateBoundedString("commit SHA", observation.GetCommitSha(), MaxCommitSHABytes); err != nil {
 		return err
 	}
-	if result.GetDurationUsec() < 0 {
+	if observation.GetDurationUsec() < 0 {
 		return status.InvalidArgumentError("duration_usec must not be negative")
 	}
-	if result.GetEventTimeUsec() <= 0 {
+	if observation.GetEventTimeUsec() <= 0 {
 		return status.InvalidArgumentError("event_time_usec must be greater than zero")
 	}
-	if result.GetResultId() == "" {
-		return status.InvalidArgumentError("result_id is required")
+	if observation.GetObservationId() == "" {
+		return status.InvalidArgumentError("observation_id is required")
 	}
-	if err := identity.ValidateBoundedString("result ID", result.GetResultId(), MaxResultIDBytes); err != nil {
+	if err := identity.ValidateBoundedString("observation ID", observation.GetObservationId(), MaxObservationIDBytes); err != nil {
 		return err
 	}
-	if err := identity.ValidateBoundedString("failure message", result.GetFailureMessage(), MaxFailureMessageBytes); err != nil {
+	if err := identity.ValidateBoundedString("failure message", observation.GetFailureMessage(), MaxFailureMessageBytes); err != nil {
 		return err
 	}
-	if err := identity.ValidateBoundedString("source URL", result.GetSourceUrl(), MaxSourceURLBytes); err != nil {
+	if err := identity.ValidateBoundedString("source URL", observation.GetSourceUrl(), MaxSourceURLBytes); err != nil {
 		return err
 	}
-	u, err := url.ParseRequestURI(result.GetSourceUrl())
+	u, err := url.ParseRequestURI(observation.GetSourceUrl())
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return status.InvalidArgumentError("source_url must be an absolute HTTP(S) URL")
 	}

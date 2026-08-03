@@ -1,4 +1,4 @@
-// Package junit parses JUnit XML into test case results.
+// Package junit parses JUnit XML into test case observations.
 package junit
 
 import (

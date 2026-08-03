@@ -119,28 +119,28 @@ func getTests(t *testing.T, service *testbuddy.Service, ctx context.Context, req
 	return tests
 }
 
-func caseResult(run, target, name string, outcome tbpb.TestOutcome, durationUsec int64) *tbpb.TestCaseResult {
-	return &tbpb.TestCaseResult{
+func caseObservation(run, target, name string, outcome tbpb.TestOutcome, durationUsec int64) *tbpb.TestCaseObservation {
+	return &tbpb.TestCaseObservation{
 		Identity: &tbpb.TestCaseIdentity{
 			Target: &tbpb.TestTargetIdentity{TargetLabel: target}, CaseName: name,
 		},
-		Result: &tbpb.TestResult{
+		Observation: &tbpb.TestObservation{
 			Outcome: outcome, DurationUsec: durationUsec,
 			SourceUrl:     "https://app.buildbuddy.io/invocation/" + run,
-			EventTimeUsec: 1_000_000, ResultId: run,
+			EventTimeUsec: 1_000_000, ObservationId: run,
 			Source:    tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
 			CommitSha: "abc123",
 		},
 	}
 }
 
-func targetResult(run, target string, outcome tbpb.TestOutcome, durationUsec int64) *tbpb.TestTargetResult {
-	return &tbpb.TestTargetResult{
+func targetObservation(run, target string, outcome tbpb.TestOutcome, durationUsec int64) *tbpb.TestTargetObservation {
+	return &tbpb.TestTargetObservation{
 		Identity: &tbpb.TestTargetIdentity{TargetLabel: target},
-		Result: &tbpb.TestResult{
+		Observation: &tbpb.TestObservation{
 			Outcome: outcome, DurationUsec: durationUsec,
 			SourceUrl:     "https://app.buildbuddy.io/invocation/" + run,
-			EventTimeUsec: 1_000_000, ResultId: run,
+			EventTimeUsec: 1_000_000, ObservationId: run,
 			Source:    tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
 			CommitSha: "abc123",
 		},
@@ -179,8 +179,8 @@ func TestReportAndQueryTests(t *testing.T) {
 
 	report := func(invocationID, target, name string, outcome tbpb.TestOutcome) *tbpb.ReportTestResultsResponse {
 		rsp, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl:   repository,
-			TestCases: []*tbpb.TestCaseResult{caseResult(invocationID, target, name, outcome, 1_000_000)},
+			RepoUrl:          repository,
+			CaseObservations: []*tbpb.TestCaseObservation{caseObservation(invocationID, target, name, outcome, 1_000_000)},
 		})
 		require.NoError(t, err)
 		return rsp
@@ -223,13 +223,13 @@ func TestReportAndQueryTests(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, got, detail.GetTest())
-	require.Len(t, detail.GetRecentResults(), 3)
+	require.Len(t, detail.GetRecentObservations(), 3)
 	require.Equal(t, tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
-		detail.GetRecentResults()[0].GetSource())
-	require.Equal(t, "abc123", detail.GetRecentResults()[0].GetCommitSha())
-	require.Equal(t, "https://app.buildbuddy.io/invocation/m-middle-by-name", detail.GetRecentResults()[0].GetSourceUrl())
-	require.Equal(t, int64(1_000_000), detail.GetRecentResults()[0].GetEventTimeUsec())
-	require.Equal(t, "m-middle-by-name", detail.GetRecentResults()[0].GetResultId())
+		detail.GetRecentObservations()[0].GetSource())
+	require.Equal(t, "abc123", detail.GetRecentObservations()[0].GetCommitSha())
+	require.Equal(t, "https://app.buildbuddy.io/invocation/m-middle-by-name", detail.GetRecentObservations()[0].GetSourceUrl())
+	require.Equal(t, int64(1_000_000), detail.GetRecentObservations()[0].GetEventTimeUsec())
+	require.Equal(t, "m-middle-by-name", detail.GetRecentObservations()[0].GetObservationId())
 	require.NotEmpty(t, detail.GetTransitions())
 }
 
@@ -239,15 +239,15 @@ func TestExecutionDispositionControlsTestsToSkip(t *testing.T) {
 	repository := "https://github.com/acme/repo"
 	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: repository,
-		TestTargets: []*tbpb.TestTargetResult{
-			targetResult("bad-target", "//pkg:bad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
-			targetResult("manual-target", "//pkg:manual", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
-			targetResult("outside-target", "//other:bad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 30),
+		TargetObservations: []*tbpb.TestTargetObservation{
+			targetObservation("bad-target", "//pkg:bad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
+			targetObservation("manual-target", "//pkg:manual", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
+			targetObservation("outside-target", "//other:bad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 30),
 		},
-		TestCases: []*tbpb.TestCaseResult{
-			caseResult("bad-case", "//pkg:bad", "TestBad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
-			caseResult("manual-case", "//pkg:manual", "TestManual", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
-			caseResult("outside-case", "//other:bad", "TestBad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 30),
+		CaseObservations: []*tbpb.TestCaseObservation{
+			caseObservation("bad-case", "//pkg:bad", "TestBad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 10),
+			caseObservation("manual-case", "//pkg:manual", "TestManual", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
+			caseObservation("outside-case", "//other:bad", "TestBad", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 30),
 		},
 	})
 	require.NoError(t, err)
@@ -331,7 +331,7 @@ func TestRepositoriesAreGroupScopedAndOrderedByLatestReport(t *testing.T) {
 	report := func(ctx context.Context, repository, run string) {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{caseResult(
+			CaseObservations: []*tbpb.TestCaseObservation{caseObservation(
 				run, "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1)},
 		})
 		require.NoError(t, err)
@@ -373,11 +373,11 @@ func TestUnicodeCaseNameRoundTripsThroughStorage(t *testing.T) {
 	service := testbuddy.New(env)
 	repository := "https://github.com/acme/repo"
 	caseName := "TestTruncateStringSlice/[ツ]/1"
-	result := caseResult("unicode-run", "//pkg:unit_test", caseName,
+	observation := caseObservation("unicode-run", "//pkg:unit_test", caseName,
 		tbpb.TestOutcome_TEST_OUTCOME_FAIL, 100)
 
 	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{result},
+		RepoUrl: repository, CaseObservations: []*tbpb.TestCaseObservation{observation},
 	})
 	require.NoError(t, err)
 
@@ -405,13 +405,13 @@ func TestUnicodeCaseNameRoundTripsThroughStorage(t *testing.T) {
 func TestReportProcessesCasesIndependently(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))
-	cases := make([]*tbpb.TestCaseResult, 32)
+	cases := make([]*tbpb.TestCaseObservation, 32)
 	for i := range cases {
-		cases[i] = caseResult("one-report", "//a/b:unit_test", fmt.Sprintf("TestCase%d", i),
+		cases[i] = caseObservation("one-report", "//a/b:unit_test", fmt.Sprintf("TestCase%d", i),
 			tbpb.TestOutcome_TEST_OUTCOME_PASS, 0)
 	}
 	rsp, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: "https://github.com/acme/repo", TestCases: cases,
+		RepoUrl: "https://github.com/acme/repo", CaseObservations: cases,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(len(cases)), rsp.GetAcceptedCount())
@@ -429,14 +429,14 @@ func TestReportAggregatesStreamedBatches(t *testing.T) {
 	rsp, err := reportTestResults(service, ctx,
 		&tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{
-				caseResult("run-1", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1),
+			CaseObservations: []*tbpb.TestCaseObservation{
+				caseObservation("run-1", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1),
 			},
 		},
 		&tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{
-				caseResult("run-2", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 1),
+			CaseObservations: []*tbpb.TestCaseObservation{
+				caseObservation("run-2", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 1),
 			},
 		},
 	)
@@ -459,11 +459,11 @@ func TestReportDeduplicatesRetransmissions(t *testing.T) {
 	repository := "https://github.com/acme/repo"
 	request := &tbpb.ReportTestResultsRequest{
 		RepoUrl: repository,
-		TestCases: []*tbpb.TestCaseResult{
-			caseResult("case-result", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 10),
+		CaseObservations: []*tbpb.TestCaseObservation{
+			caseObservation("case-observation", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 10),
 		},
-		TestTargets: []*tbpb.TestTargetResult{
-			targetResult("target-result", "//pkg:test", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
+		TargetObservations: []*tbpb.TestTargetObservation{
+			targetObservation("target-observation", "//pkg:test", tbpb.TestOutcome_TEST_OUTCOME_PASS, 20),
 		},
 	}
 	rsp, err := reportTestResults(service, ctx, request, proto.Clone(request).(*tbpb.ReportTestResultsRequest))
@@ -478,7 +478,7 @@ func TestReportDeduplicatesRetransmissions(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), testCase.GetTest().GetSummary().GetPassCount())
-	require.Len(t, testCase.GetRecentResults(), 1)
+	require.Len(t, testCase.GetRecentObservations(), 1)
 	require.Len(t, testCase.GetTransitions(), 1)
 
 	target, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
@@ -486,23 +486,23 @@ func TestReportDeduplicatesRetransmissions(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(1), target.GetTarget().GetSummary().GetPassCount())
-	require.Len(t, target.GetRecentResults(), 1)
+	require.Len(t, target.GetRecentObservations(), 1)
 	require.Len(t, target.GetTransitions(), 1)
 }
 
-func TestReportRejectsConflictingResultID(t *testing.T) {
+func TestReportRejectsConflictingObservationID(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))
 	repository := "https://github.com/acme/repo"
-	first := caseResult("result-1", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 10)
+	first := caseObservation("observation-1", "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 10)
 	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{first},
+		RepoUrl: repository, CaseObservations: []*tbpb.TestCaseObservation{first},
 	})
 	require.NoError(t, err)
-	conflict := proto.Clone(first).(*tbpb.TestCaseResult)
-	conflict.Result.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
+	conflict := proto.Clone(first).(*tbpb.TestCaseObservation)
+	conflict.Observation.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{conflict},
+		RepoUrl: repository, CaseObservations: []*tbpb.TestCaseObservation{conflict},
 	})
 	require.True(t, status.IsFailedPreconditionError(err), err)
 
@@ -517,26 +517,26 @@ func TestReportRejectsConflictingResultID(t *testing.T) {
 	require.Zero(t, got.GetTest().GetSummary().GetFailCount())
 }
 
-func TestResultIDDeduplicationIsBounded(t *testing.T) {
+func TestObservationIDDeduplicationIsBounded(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))
 	repository := "https://github.com/acme/repo"
-	const resultCount = 201
-	results := make([]*tbpb.TestCaseResult, resultCount)
-	for i := range results {
-		results[i] = caseResult(fmt.Sprintf("result-%03d", i), "//pkg:test", "TestCase",
+	const observationCount = 201
+	observations := make([]*tbpb.TestCaseObservation, observationCount)
+	for i := range observations {
+		observations[i] = caseObservation(fmt.Sprintf("observation-%03d", i), "//pkg:test", "TestCase",
 			tbpb.TestOutcome_TEST_OUTCOME_PASS, 1)
 	}
 	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: results,
+		RepoUrl: repository, CaseObservations: observations,
 	})
 	require.NoError(t, err)
 	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{proto.Clone(results[resultCount-1]).(*tbpb.TestCaseResult)},
+		RepoUrl: repository, CaseObservations: []*tbpb.TestCaseObservation{proto.Clone(observations[observationCount-1]).(*tbpb.TestCaseObservation)},
 	})
 	require.NoError(t, err)
 	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{proto.Clone(results[0]).(*tbpb.TestCaseResult)},
+		RepoUrl: repository, CaseObservations: []*tbpb.TestCaseObservation{proto.Clone(observations[0]).(*tbpb.TestCaseObservation)},
 	})
 	require.NoError(t, err)
 
@@ -547,8 +547,8 @@ func TestResultIDDeduplicationIsBounded(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.Equal(t, int64(resultCount+1), got.GetTest().GetSummary().GetPassCount())
-	require.Len(t, got.GetRecentResults(), 50)
+	require.Equal(t, int64(observationCount+1), got.GetTest().GetSummary().GetPassCount())
+	require.Len(t, got.GetRecentObservations(), 50)
 }
 
 func TestMaximumLengthAddress(t *testing.T) {
@@ -561,11 +561,11 @@ func TestMaximumLengthAddress(t *testing.T) {
 
 	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 		RepoUrl: repository,
-		TestCases: []*tbpb.TestCaseResult{
-			caseResult("long-address", target, caseName, tbpb.TestOutcome_TEST_OUTCOME_FAIL, 1),
+		CaseObservations: []*tbpb.TestCaseObservation{
+			caseObservation("long-address", target, caseName, tbpb.TestOutcome_TEST_OUTCOME_FAIL, 1),
 		},
-		TestTargets: []*tbpb.TestTargetResult{
-			targetResult("long-address", target, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1),
+		TargetObservations: []*tbpb.TestTargetObservation{
+			targetObservation("long-address", target, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1),
 		},
 	})
 	require.NoError(t, err)
@@ -585,15 +585,15 @@ func TestTargetStateIsIndependentFromCases(t *testing.T) {
 	target := "//a/b:unit_test"
 	reportTarget := func(invocationID string, outcome tbpb.TestOutcome) {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl:     repository,
-			TestTargets: []*tbpb.TestTargetResult{targetResult(invocationID, target, outcome, 1_000_000)},
+			RepoUrl:            repository,
+			TargetObservations: []*tbpb.TestTargetObservation{targetObservation(invocationID, target, outcome, 1_000_000)},
 		})
 		require.NoError(t, err)
 	}
 	reportCase := func(invocationID string, outcome tbpb.TestOutcome) {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-			RepoUrl:   repository,
-			TestCases: []*tbpb.TestCaseResult{caseResult(invocationID, target, "TestCase", outcome, 0)},
+			RepoUrl:          repository,
+			CaseObservations: []*tbpb.TestCaseObservation{caseObservation(invocationID, target, "TestCase", outcome, 0)},
 		})
 		require.NoError(t, err)
 	}
@@ -631,7 +631,7 @@ func TestTargetStateIsIndependentFromCases(t *testing.T) {
 	require.Equal(t, tbpb.TestHealth_TEST_HEALTH_TIMEOUT, targetDetail.GetTarget().GetSummary().GetHealth())
 	require.Equal(t, int64(5), targetDetail.GetTarget().GetSummary().GetTimeoutCount())
 	require.Equal(t, int64(0), targetDetail.GetTarget().GetSummary().GetFailCount())
-	require.Len(t, targetDetail.GetRecentResults(), 5)
+	require.Len(t, targetDetail.GetRecentObservations(), 5)
 	targetCases = getTests(t, service, ctx, &tbpb.GetTestsRequest{
 		RepoUrl: repository, Target: &tbpb.TestTargetIdentity{TargetLabel: target},
 	})
@@ -699,7 +699,7 @@ func TestAnalyzerConfigIsPerRepository(t *testing.T) {
 	reportFailure := func(repository string) {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{caseResult(
+			CaseObservations: []*tbpb.TestCaseObservation{caseObservation(
 				"failure", "//a/b:unit_test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_FAIL, 0)},
 		})
 		require.NoError(t, err)
@@ -742,8 +742,8 @@ func TestAnalyzerProvenance(t *testing.T) {
 	reportCase := func(run, name string, outcome tbpb.TestOutcome) {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{
-				caseResult(run, "//pkg:test", name, outcome, 1),
+			CaseObservations: []*tbpb.TestCaseObservation{
+				caseObservation(run, "//pkg:test", name, outcome, 1),
 			},
 		})
 		require.NoError(t, err)
@@ -788,13 +788,13 @@ func TestAnalyzerProvenance(t *testing.T) {
 	require.Equal(t, int64(3), healthy.GetEligibleSampleCount())
 	assertProvenance("consecutive_passes", 3, revision, healthy.GetTransitions()[0])
 
-	timeouts := make([]*tbpb.TestTargetResult, 5)
+	timeouts := make([]*tbpb.TestTargetObservation, 5)
 	for i := range timeouts {
-		timeouts[i] = targetResult(
+		timeouts[i] = targetObservation(
 			fmt.Sprintf("timeout-%d", i), "//pkg:timeout_test", tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1)
 	}
 	_, err = reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestTargets: timeouts,
+		RepoUrl: repository, TargetObservations: timeouts,
 	})
 	require.NoError(t, err)
 	target, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
@@ -815,7 +815,7 @@ func TestGetRepositoryHealth(t *testing.T) {
 	report := func(invocationID, name string, outcome tbpb.TestOutcome, durationUsec int64) {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{caseResult(
+			CaseObservations: []*tbpb.TestCaseObservation{caseObservation(
 				invocationID, "//a/b:unit_test", name, outcome, durationUsec)},
 		})
 		require.NoError(t, err)
@@ -868,9 +868,9 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 		for i, outcome := range outcomes {
 			_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 				RepoUrl: repository,
-				TestCases: []*tbpb.TestCaseResult{caseResult(
+				CaseObservations: []*tbpb.TestCaseObservation{caseObservation(
 					fmt.Sprintf("case-%s-%d", name, i), target, name, outcome, 1_000)},
-				TestTargets: []*tbpb.TestTargetResult{targetResult(
+				TargetObservations: []*tbpb.TestTargetObservation{targetObservation(
 					fmt.Sprintf("target-%s-%d", name, i), target, outcome, 1_000)},
 			})
 			require.NoError(t, err)
@@ -885,7 +885,7 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 	} {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{caseResult(
+			CaseObservations: []*tbpb.TestCaseObservation{caseObservation(
 				fmt.Sprintf("case-only-%d", i), "//pkg:case_flaky", "TestCaseFlaky", outcome, 1_000)},
 		})
 		require.NoError(t, err)
@@ -897,7 +897,7 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestTargets: []*tbpb.TestTargetResult{targetResult(
+			TargetObservations: []*tbpb.TestTargetObservation{targetObservation(
 				fmt.Sprintf("target-timeout-%d", i), "//pkg:timeout", tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, 1_000)},
 		})
 		require.NoError(t, err)
@@ -957,13 +957,13 @@ func TestConeBoundsFollowPackageComponents(t *testing.T) {
 	// whole path components disagree: "ab" starts with the characters of "a"
 	// and "a/bc" starts with those of "a/b", but neither is inside that cone.
 	packages := []string{"", "a", "ab", "a/b", "a/b2", "a/bc", "a/b/c"}
-	results := make([]*tbpb.TestCaseResult, 0, len(packages))
+	observations := make([]*tbpb.TestCaseObservation, 0, len(packages))
 	for _, pkg := range packages {
-		results = append(results, caseResult("one-run", "//"+pkg+":test", "TestCase",
+		observations = append(observations, caseObservation("one-run", "//"+pkg+":test", "TestCase",
 			tbpb.TestOutcome_TEST_OUTCOME_PASS, 1_000))
 	}
 	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: results,
+		RepoUrl: repository, CaseObservations: observations,
 	})
 	require.NoError(t, err)
 
@@ -1003,7 +1003,7 @@ func TestConeQueriesStreamAllResults(t *testing.T) {
 	service := testbuddy.New(testenv.GetTestEnv(t))
 	repository := "https://github.com/acme/large"
 	const caseCount = 1_050
-	cases := make([]*tbpb.TestCaseResult, caseCount)
+	cases := make([]*tbpb.TestCaseObservation, caseCount)
 	failingCount := int64(0)
 	for i := range cases {
 		outcome := tbpb.TestOutcome_TEST_OUTCOME_PASS
@@ -1011,11 +1011,11 @@ func TestConeQueriesStreamAllResults(t *testing.T) {
 			outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 			failingCount++
 		}
-		cases[i] = caseResult("one-big-run", fmt.Sprintf("//pkg/sub%d:test", i),
+		cases[i] = caseObservation("one-big-run", fmt.Sprintf("//pkg/sub%d:test", i),
 			fmt.Sprintf("TestCase%04d", i), outcome, 1_000)
 	}
 	reported, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: repository, TestCases: cases,
+		RepoUrl: repository, CaseObservations: cases,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(caseCount), reported.GetAcceptedCount())
@@ -1104,7 +1104,7 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 	for _, invocationID := range []string{"run-1", "run-2", "run-3"} {
 		require.NoError(t, reportStream.Send(&tbpb.ReportTestResultsRequest{
 			RepoUrl: repository,
-			TestCases: []*tbpb.TestCaseResult{caseResult(
+			CaseObservations: []*tbpb.TestCaseObservation{caseObservation(
 				invocationID, "//a/b:unit_test", "TestHealthy", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1_000_000)},
 		}))
 	}
@@ -1165,17 +1165,17 @@ func TestReportPreservesRepeatedCaseSamples(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
 	service := testbuddy.New(env)
-	cases := make([]*tbpb.TestCaseResult, 100)
+	cases := make([]*tbpb.TestCaseObservation, 100)
 	for i := range cases {
 		outcome := tbpb.TestOutcome_TEST_OUTCOME_PASS
 		if i%10 == 0 {
 			outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
 		}
-		cases[i] = caseResult("repeated-runs", "//a/b:unit_test", "TestRepeated", outcome, 0)
-		cases[i].Result.ResultId = fmt.Sprintf("repeated-run-%d", i)
+		cases[i] = caseObservation("repeated-runs", "//a/b:unit_test", "TestRepeated", outcome, 0)
+		cases[i].Observation.ObservationId = fmt.Sprintf("repeated-run-%d", i)
 	}
 	rsp, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
-		RepoUrl: "https://github.com/acme/repo", TestCases: cases,
+		RepoUrl: "https://github.com/acme/repo", CaseObservations: cases,
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(len(cases)), rsp.GetAcceptedCount())
@@ -1190,7 +1190,7 @@ func TestReportPreservesRepeatedCaseSamples(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(90), got.GetTest().GetSummary().GetPassCount())
 	require.Equal(t, int64(10), got.GetTest().GetSummary().GetFailCount())
-	require.Len(t, got.GetRecentResults(), 50)
+	require.Len(t, got.GetRecentObservations(), 50)
 	require.Len(t, got.GetTransitions(), 2)
 
 	var catalogCount int64

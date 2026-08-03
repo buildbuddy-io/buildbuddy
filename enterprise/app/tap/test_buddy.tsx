@@ -457,7 +457,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
         {!this.state.loadingCases && cases.length === 0 && (
           <div className="test-buddy-empty">No cases found.</div>
         )}
-        <h3>Recent target results</h3>
+        <h3>Recent target observations</h3>
         <table className="test-buddy-table">
           <thead>
             <tr>
@@ -468,14 +468,14 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             </tr>
           </thead>
           <tbody>
-            {response.recentResults.map((result, index) => (
-              <tr key={`${result.sourceUrl}-${index}`}>
+            {response.recentObservations.map((observation, index) => (
+              <tr key={`${observation.sourceUrl}-${index}`}>
                 <td>
-                  <a href={result.sourceUrl}>View result</a>
+                  <a href={observation.sourceUrl}>View source</a>
                 </td>
-                <td>{outcomeName(result.outcome)}</td>
-                <td>{format.durationUsec(result.durationUsec)}</td>
-                <td>{result.failureMessage}</td>
+                <td>{outcomeName(observation.outcome)}</td>
+                <td>{format.durationUsec(observation.durationUsec)}</td>
+                <td>{observation.failureMessage}</td>
               </tr>
             ))}
           </tbody>

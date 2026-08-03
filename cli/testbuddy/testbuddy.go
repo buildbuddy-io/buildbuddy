@@ -50,9 +50,9 @@ var bazelTestOutputLayout = regexp.MustCompile(
 // processes each message synchronously before reading the next.
 //
 // A report larger than the budget spans several messages; it is never
-// truncated. One result cannot exceed the budget on its own: normalization
-// bounds every component of a result — a failure message to 512 bytes and a
-// source URL to 2,048 — so a result is kilobytes, not megabytes.
+// truncated. One observation cannot exceed the budget on its own:
+// normalization bounds every component — a failure message to 512 bytes and a
+// source URL to 2,048 — so an observation is kilobytes, not megabytes.
 const ReportRequestTargetBytes = 8 << 20
 
 // DiagnosticLog accumulates what the JUnit parser could not use, across every
@@ -136,10 +136,10 @@ func (l *DiagnosticLog) Summary() string {
 	return summary + "\nrerun with --verbose (or BB_VERBOSE=1) to list them"
 }
 
-// ReportBatcher packs results into client-stream messages that stay within
+// ReportBatcher packs observations into client-stream messages that stay within
 // ReportRequestTargetBytes, sending each one as soon as it is full.
 //
-// Sizing is exact rather than estimated: a result contributes its own encoded
+// Sizing is exact rather than estimated: an observation contributes its encoded
 // size plus the tag and length prefix that carry it in the enclosing message,
 // which is what the receiver measures against its limit.
 type ReportBatcher struct {
@@ -162,10 +162,10 @@ func (b *ReportBatcher) reset() {
 	b.count = 0
 }
 
-// makeRoom flushes the pending message if result would push it over budget.
-// A result is never split, so an empty message always accepts one.
-func (b *ReportBatcher) makeRoom(field protowire.Number, result proto.Message) (int, error) {
-	wireSize := protowire.SizeTag(field) + protowire.SizeBytes(proto.Size(result))
+// makeRoom flushes the pending message if observation would push it over budget.
+// An observation is never split, so an empty message always accepts one.
+func (b *ReportBatcher) makeRoom(field protowire.Number, observation proto.Message) (int, error) {
+	wireSize := protowire.SizeTag(field) + protowire.SizeBytes(proto.Size(observation))
 	if b.count > 0 && b.size+wireSize > ReportRequestTargetBytes {
 		if err := b.Flush(); err != nil {
 			return 0, err
@@ -174,23 +174,23 @@ func (b *ReportBatcher) makeRoom(field protowire.Number, result proto.Message) (
 	return wireSize, nil
 }
 
-func (b *ReportBatcher) AddTarget(result *tbpb.TestTargetResult) error {
-	wireSize, err := b.makeRoom(3, result)
+func (b *ReportBatcher) AddTargetObservation(observation *tbpb.TestTargetObservation) error {
+	wireSize, err := b.makeRoom(3, observation)
 	if err != nil {
 		return err
 	}
-	b.batch.TestTargets = append(b.batch.TestTargets, result)
+	b.batch.TargetObservations = append(b.batch.TargetObservations, observation)
 	b.size += wireSize
 	b.count++
 	return nil
 }
 
-func (b *ReportBatcher) AddCase(result *tbpb.TestCaseResult) error {
-	wireSize, err := b.makeRoom(2, result)
+func (b *ReportBatcher) AddCaseObservation(observation *tbpb.TestCaseObservation) error {
+	wireSize, err := b.makeRoom(2, observation)
 	if err != nil {
 		return err
 	}
-	b.batch.TestCases = append(b.batch.TestCases, result)
+	b.batch.CaseObservations = append(b.batch.CaseObservations, observation)
 	b.size += wireSize
 	b.count++
 	return nil
@@ -214,7 +214,7 @@ var (
 	reportTarget    = TestReportFlags.String("target", "", "BuildBuddy gRPC target; defaults to grpc://127.0.0.1:1985.")
 	reportRepo      = TestReportFlags.String("repo_url", "", "Repository URL; defaults to git remote.origin.url.")
 	reportSourceURL = TestReportFlags.String(
-		"source_url", "", "Result URL; defaults to the most recent bb test invocation.")
+		"source_url", "", "Observation URL; defaults to the most recent bb test invocation.")
 	reportSource = TestReportFlags.String(
 		"source", "monitor", "Observation source: presubmit, postsubmit, or monitor.")
 	reportTargetLabel = TestReportFlags.String("target_label", "", "Bazel target label; inferred from bazel-testlogs paths by default.")
@@ -248,7 +248,7 @@ func HandleTestReport(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	sourceURL, err := resultURL(*reportSourceURL)
+	sourceURL, err := observationURL(*reportSourceURL)
 	if err != nil {
 		return 1, err
 	}
@@ -312,15 +312,15 @@ func HandleTestReport(args []string) (int, error) {
 			return 1, closeErr
 		}
 		diagnostics.Add(path, targetLabel, report)
-		targetResult, testCases, err := ResultsForReport(path, targetLabel, metadata, report)
+		targetObservation, caseObservations, err := ObservationsForReport(path, targetLabel, metadata, report)
 		if err != nil {
 			return 1, err
 		}
-		if err := batcher.AddTarget(targetResult); err != nil {
+		if err := batcher.AddTargetObservation(targetObservation); err != nil {
 			return 1, err
 		}
-		for _, testCase := range testCases {
-			if err := batcher.AddCase(testCase); err != nil {
+		for _, observation := range caseObservations {
+			if err := batcher.AddCaseObservation(observation); err != nil {
 				return 1, err
 			}
 		}
@@ -385,7 +385,7 @@ func WorkspaceRevision(workspacePath string) (string, bool, error) {
 	return commitSHA, len(output) > 0, nil
 }
 
-func ResultsForReport(xmlPath, targetLabel string, metadata ObservationMetadata, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
+func ObservationsForReport(xmlPath, targetLabel string, metadata ObservationMetadata, report *junit.Report) (*tbpb.TestTargetObservation, []*tbpb.TestCaseObservation, error) {
 	targetOutcome, err := BazelTargetOutcome(xmlPath)
 	if err != nil {
 		return nil, nil, err
@@ -401,41 +401,41 @@ func ResultsForReport(xmlPath, targetLabel string, metadata ObservationMetadata,
 	if eventTimeUsec <= 0 {
 		return nil, nil, status.InvalidArgumentError("a positive report event time is required")
 	}
-	executionContext := resultContext(xmlPath)
-	target := &tbpb.TestTargetResult{
+	executionContext := observationContext(xmlPath)
+	target := &tbpb.TestTargetObservation{
 		Identity: &tbpb.TestTargetIdentity{TargetLabel: targetLabel},
-		Result: &tbpb.TestResult{
+		Observation: &tbpb.TestObservation{
 			Outcome: targetOutcome, DurationUsec: report.DurationUsec, SourceUrl: metadata.SourceURL,
 			EventTimeUsec:  eventTimeUsec,
-			ResultId:       resultID("target", metadata.SourceURL, targetLabel, executionContext),
+			ObservationId:  observationID("target", metadata.SourceURL, targetLabel, executionContext),
 			Source:         metadata.Source,
 			CommitSha:      metadata.CommitSHA,
 			WorkspaceDirty: metadata.WorkspaceDirty,
 		},
 	}
 	if targetOutcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
-		target.Result.FailureMessage = "Bazel test target timed out"
+		target.Observation.FailureMessage = "Bazel test target timed out"
 		return target, nil, nil
 	}
 	if report.UnattributedFailure {
-		target.Result.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
-		target.Result.FailureMessage = "test target failed without an attributable test case"
+		target.Observation.Outcome = tbpb.TestOutcome_TEST_OUTCOME_FAIL
+		target.Observation.FailureMessage = "test target failed without an attributable test case"
 	}
-	testCases := make([]*tbpb.TestCaseResult, 0, len(report.Cases))
+	caseObservations := make([]*tbpb.TestCaseObservation, 0, len(report.Cases))
 	for _, testCase := range report.Cases {
 		caseEventTimeUsec := testCase.EventTimeUsec
 		if caseEventTimeUsec <= 0 {
 			caseEventTimeUsec = eventTimeUsec
 		}
-		testCases = append(testCases, &tbpb.TestCaseResult{
+		caseObservations = append(caseObservations, &tbpb.TestCaseObservation{
 			Identity: &tbpb.TestCaseIdentity{
 				Target: &tbpb.TestTargetIdentity{TargetLabel: testCase.TargetLabel}, CaseName: testCase.CaseName,
 			},
-			Result: &tbpb.TestResult{
+			Observation: &tbpb.TestObservation{
 				Outcome: testCase.Outcome, DurationUsec: testCase.DurationUsec,
 				FailureMessage: testCase.FailureMessage, SourceUrl: metadata.SourceURL,
 				EventTimeUsec: caseEventTimeUsec,
-				ResultId: resultID("case", metadata.SourceURL, targetLabel, testCase.CaseName,
+				ObservationId: observationID("case", metadata.SourceURL, targetLabel, testCase.CaseName,
 					executionContext, strconv.Itoa(testCase.OccurrenceIndex)),
 				Source:         metadata.Source,
 				CommitSha:      metadata.CommitSHA,
@@ -443,10 +443,10 @@ func ResultsForReport(xmlPath, targetLabel string, metadata ObservationMetadata,
 			},
 		})
 	}
-	return target, testCases, nil
+	return target, caseObservations, nil
 }
 
-func resultContext(path string) string {
+func observationContext(path string) string {
 	path = filepath.ToSlash(filepath.Clean(path))
 	for _, marker := range []string{"bazel-testlogs/", "testlogs/"} {
 		if index := strings.LastIndex(path, marker); index >= 0 {
@@ -456,7 +456,7 @@ func resultContext(path string) string {
 	return path
 }
 
-func resultID(parts ...string) string {
+func observationID(parts ...string) string {
 	h := sha256.New()
 	var size [8]byte
 	for _, part := range parts {
@@ -545,15 +545,15 @@ func HandleGetTests(args []string) (int, error) {
 			return 1, err
 		}
 		printSummary(rsp.GetTest())
-		fmt.Println("RECENT RESULTS")
-		fmt.Println("TYPE\tRESULT\tOUTCOME\tDURATION\tFAILURE")
-		for _, result := range rsp.GetRecentResults() {
+		fmt.Println("RECENT OBSERVATIONS")
+		fmt.Println("TYPE\tSOURCE\tOUTCOME\tDURATION\tFAILURE")
+		for _, observation := range rsp.GetRecentObservations() {
 			fmt.Printf("%s\t%s\t%s\t%s\t%s\n",
-				strings.TrimPrefix(result.GetSource().String(), "TEST_OBSERVATION_SOURCE_"),
-				result.GetSourceUrl(),
-				strings.TrimPrefix(result.GetOutcome().String(), "TEST_OUTCOME_"),
-				time.Duration(result.GetDurationUsec())*time.Microsecond,
-				result.GetFailureMessage())
+				strings.TrimPrefix(observation.GetSource().String(), "TEST_OBSERVATION_SOURCE_"),
+				observation.GetSourceUrl(),
+				strings.TrimPrefix(observation.GetOutcome().String(), "TEST_OUTCOME_"),
+				time.Duration(observation.GetDurationUsec())*time.Microsecond,
+				observation.GetFailureMessage())
 		}
 		fmt.Println("STATE CHANGES")
 		fmt.Println("TIME\tPREVIOUS\tCURRENT")
@@ -775,7 +775,7 @@ func repositoryURL(workspacePath, override string) (string, error) {
 	return repository, nil
 }
 
-func resultURL(override string) (string, error) {
+func observationURL(override string) (string, error) {
 	if override != "" {
 		return override, nil
 	}

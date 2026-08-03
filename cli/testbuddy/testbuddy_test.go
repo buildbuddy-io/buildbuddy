@@ -163,7 +163,7 @@ func TestBazelTargetOutcome(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, outcome)
 
-	target, cases, err := testbuddy.ResultsForReport(
+	target, cases, err := testbuddy.ObservationsForReport(
 		xmlPath, "//pkg:timeout_test",
 		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR), &junit.Report{
 			EventTimeUsec: 1_700_000,
@@ -174,23 +174,23 @@ func TestBazelTargetOutcome(t *testing.T) {
 			}},
 		})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, target.GetResult().GetOutcome())
-	require.Equal(t, int64(1_000_000), target.GetResult().GetDurationUsec())
-	require.Equal(t, int64(1_700_000), target.GetResult().GetEventTimeUsec())
-	require.Len(t, target.GetResult().GetResultId(), 64)
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, target.GetObservation().GetOutcome())
+	require.Equal(t, int64(1_000_000), target.GetObservation().GetDurationUsec())
+	require.Equal(t, int64(1_700_000), target.GetObservation().GetEventTimeUsec())
+	require.Len(t, target.GetObservation().GetObservationId(), 64)
 	require.Empty(t, cases)
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "test.log")))
-	target, cases, err = testbuddy.ResultsForReport(
+	target, cases, err = testbuddy.ObservationsForReport(
 		xmlPath, "//pkg:harness_test",
 		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR),
 		&junit.Report{EventTimeUsec: 1_700_000, UnattributedFailure: true})
 	require.NoError(t, err)
-	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetResult().GetOutcome())
+	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetObservation().GetOutcome())
 	require.Empty(t, cases)
 }
 
-func TestResultsForReportRetainsTimeAndStableIdentity(t *testing.T) {
+func TestObservationsForReportRetainsTimeAndStableIdentity(t *testing.T) {
 	report := &junit.Report{
 		EventTimeUsec: 1_000_000,
 		Cases: []normalize.CaseRecord{
@@ -200,26 +200,26 @@ func TestResultsForReportRetainsTimeAndStableIdentity(t *testing.T) {
 	}
 	pathA := filepath.Join(t.TempDir(), "bazel-testlogs/pkg/test/run_1_of_2/test.xml")
 	pathB := filepath.Join(t.TempDir(), "bazel-testlogs/pkg/test/run_1_of_2/test.xml")
-	targetA, casesA, err := testbuddy.ResultsForReport(
+	targetA, casesA, err := testbuddy.ObservationsForReport(
 		pathA, "//pkg:test",
 		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT), report)
 	require.NoError(t, err)
-	targetB, casesB, err := testbuddy.ResultsForReport(
+	targetB, casesB, err := testbuddy.ObservationsForReport(
 		pathB, "//pkg:test",
 		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT), report)
 	require.NoError(t, err)
-	require.Equal(t, targetA.GetResult().GetResultId(), targetB.GetResult().GetResultId())
-	require.Equal(t, int64(1_000_000), targetA.GetResult().GetEventTimeUsec())
-	require.Equal(t, tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT, targetA.GetResult().GetSource())
-	require.Equal(t, "abc123", targetA.GetResult().GetCommitSha())
-	require.False(t, targetA.GetResult().GetWorkspaceDirty())
-	require.Equal(t, casesA[0].GetResult().GetResultId(), casesB[0].GetResult().GetResultId())
-	require.NotEqual(t, casesA[0].GetResult().GetResultId(), casesA[1].GetResult().GetResultId())
-	require.Equal(t, int64(1_000_000), casesA[0].GetResult().GetEventTimeUsec())
-	require.Equal(t, int64(2_000_000), casesA[1].GetResult().GetEventTimeUsec())
+	require.Equal(t, targetA.GetObservation().GetObservationId(), targetB.GetObservation().GetObservationId())
+	require.Equal(t, int64(1_000_000), targetA.GetObservation().GetEventTimeUsec())
+	require.Equal(t, tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT, targetA.GetObservation().GetSource())
+	require.Equal(t, "abc123", targetA.GetObservation().GetCommitSha())
+	require.False(t, targetA.GetObservation().GetWorkspaceDirty())
+	require.Equal(t, casesA[0].GetObservation().GetObservationId(), casesB[0].GetObservation().GetObservationId())
+	require.NotEqual(t, casesA[0].GetObservation().GetObservationId(), casesA[1].GetObservation().GetObservationId())
+	require.Equal(t, int64(1_000_000), casesA[0].GetObservation().GetEventTimeUsec())
+	require.Equal(t, int64(2_000_000), casesA[1].GetObservation().GetEventTimeUsec())
 }
 
-func TestResultsForReportUsesStableFileTimeWhenJUnitHasNoTimestamp(t *testing.T) {
+func TestObservationsForReportUsesStableFileTimeWhenJUnitHasNoTimestamp(t *testing.T) {
 	dir := t.TempDir()
 	xmlPath := filepath.Join(dir, "test.xml")
 	require.NoError(t, os.WriteFile(xmlPath, []byte("<testsuite/>"), 0o644))
@@ -230,11 +230,11 @@ func TestResultsForReportUsesStableFileTimeWhenJUnitHasNoTimestamp(t *testing.T)
 		Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS,
 	}}}
 
-	targetA, casesA, err := testbuddy.ResultsForReport(
+	targetA, casesA, err := testbuddy.ObservationsForReport(
 		xmlPath, "//pkg:test",
 		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR), report)
 	require.NoError(t, err)
-	targetB, casesB, err := testbuddy.ResultsForReport(
+	targetB, casesB, err := testbuddy.ObservationsForReport(
 		xmlPath, "//pkg:test",
 		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR), report)
 	require.NoError(t, err)
@@ -243,8 +243,8 @@ func TestResultsForReportUsesStableFileTimeWhenJUnitHasNoTimestamp(t *testing.T)
 	require.Len(t, casesA, 1)
 	require.Len(t, casesB, 1)
 	require.True(t, proto.Equal(casesA[0], casesB[0]))
-	require.Equal(t, modified.UnixMicro(), targetA.GetResult().GetEventTimeUsec())
-	require.Equal(t, modified.UnixMicro(), casesA[0].GetResult().GetEventTimeUsec())
+	require.Equal(t, modified.UnixMicro(), targetA.GetObservation().GetEventTimeUsec())
+	require.Equal(t, modified.UnixMicro(), casesA[0].GetObservation().GetEventTimeUsec())
 }
 
 func TestParseObservationSource(t *testing.T) {
@@ -292,7 +292,7 @@ func TestWorkspaceRevision(t *testing.T) {
 }
 
 func TestReportBatcherKeepsMessagesWithinBudget(t *testing.T) {
-	// Enough results that no single message can hold them all.
+	// Enough observations that no single message can hold them all.
 	const caseCount = 40_000
 	var sent []*tbpb.ReportTestResultsRequest
 	batcher := testbuddy.NewReportBatcher("https://github.com/acme/repo",
@@ -300,25 +300,25 @@ func TestReportBatcherKeepsMessagesWithinBudget(t *testing.T) {
 			sent = append(sent, req)
 			return nil
 		})
-	require.NoError(t, batcher.AddTarget(&tbpb.TestTargetResult{
+	require.NoError(t, batcher.AddTargetObservation(&tbpb.TestTargetObservation{
 		Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
-		Result: &tbpb.TestResult{
-			Outcome:   tbpb.TestOutcome_TEST_OUTCOME_FAIL,
-			SourceUrl: "https://app.buildbuddy.io/invocation/one",
-			ResultId:  "target-result",
+		Observation: &tbpb.TestObservation{
+			Outcome:       tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+			SourceUrl:     "https://app.buildbuddy.io/invocation/one",
+			ObservationId: "target-observation",
 		},
 	}))
 	for i := range caseCount {
-		require.NoError(t, batcher.AddCase(&tbpb.TestCaseResult{
+		require.NoError(t, batcher.AddCaseObservation(&tbpb.TestCaseObservation{
 			Identity: &tbpb.TestCaseIdentity{
 				Target:   &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
 				CaseName: fmt.Sprintf("TestCase%05d", i),
 			},
-			Result: &tbpb.TestResult{
+			Observation: &tbpb.TestObservation{
 				Outcome:        tbpb.TestOutcome_TEST_OUTCOME_FAIL,
 				DurationUsec:   1_000,
 				SourceUrl:      "https://app.buildbuddy.io/invocation/one",
-				ResultId:       fmt.Sprintf("case-result-%05d", i),
+				ObservationId:  fmt.Sprintf("case-observation-%05d", i),
 				FailureMessage: strings.Repeat("f", normalize.MaxFailureMessageBytes),
 			},
 		}))
@@ -333,9 +333,9 @@ func TestReportBatcherKeepsMessagesWithinBudget(t *testing.T) {
 		require.LessOrEqual(t, proto.Size(req), testbuddy.ReportRequestTargetBytes)
 		// Every message must carry the repository; it is not sent once.
 		require.Equal(t, "https://github.com/acme/repo", req.GetRepoUrl())
-		seen += len(req.GetTestCases()) + len(req.GetTestTargets())
-		for _, result := range req.GetTestCases() {
-			caseNames[result.GetIdentity().GetCaseName()] = true
+		seen += len(req.GetCaseObservations()) + len(req.GetTargetObservations())
+		for _, observation := range req.GetCaseObservations() {
+			caseNames[observation.GetIdentity().GetCaseName()] = true
 		}
 	}
 	// Nothing is dropped and nothing is duplicated across the split.
@@ -355,22 +355,22 @@ func TestReportBatcherSendsOneMessageForASmallReport(t *testing.T) {
 			sent = append(sent, req)
 			return nil
 		})
-	require.NoError(t, batcher.AddTarget(&tbpb.TestTargetResult{
-		Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
-		Result:   &tbpb.TestResult{Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS},
+	require.NoError(t, batcher.AddTargetObservation(&tbpb.TestTargetObservation{
+		Identity:    &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
+		Observation: &tbpb.TestObservation{Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS},
 	}))
-	require.NoError(t, batcher.AddCase(&tbpb.TestCaseResult{
+	require.NoError(t, batcher.AddCaseObservation(&tbpb.TestCaseObservation{
 		Identity: &tbpb.TestCaseIdentity{
 			Target:   &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
 			CaseName: "TestCase",
 		},
-		Result: &tbpb.TestResult{Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS},
+		Observation: &tbpb.TestObservation{Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS},
 	}))
 	require.Empty(t, sent, "nothing is sent before the report is complete")
 	require.NoError(t, batcher.Flush())
 	require.Len(t, sent, 1)
-	require.Len(t, sent[0].GetTestTargets(), 1)
-	require.Len(t, sent[0].GetTestCases(), 1)
+	require.Len(t, sent[0].GetTargetObservations(), 1)
+	require.Len(t, sent[0].GetCaseObservations(), 1)
 }
 
 func TestReportBatcherReportsSendFailure(t *testing.T) {
@@ -378,9 +378,9 @@ func TestReportBatcherReportsSendFailure(t *testing.T) {
 		func(*tbpb.ReportTestResultsRequest) error {
 			return errors.New("stream closed")
 		})
-	require.NoError(t, batcher.AddTarget(&tbpb.TestTargetResult{
-		Identity: &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
-		Result:   &tbpb.TestResult{Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS},
+	require.NoError(t, batcher.AddTargetObservation(&tbpb.TestTargetObservation{
+		Identity:    &tbpb.TestTargetIdentity{TargetLabel: "//pkg:test"},
+		Observation: &tbpb.TestObservation{Outcome: tbpb.TestOutcome_TEST_OUTCOME_PASS},
 	}))
 	require.ErrorContains(t, batcher.Flush(), "stream closed")
 }

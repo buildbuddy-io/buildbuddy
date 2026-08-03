@@ -1,4 +1,4 @@
-// Package test_buddy implements synchronous test result reporting and reads.
+// Package test_buddy implements synchronous test observation reporting and reads.
 package test_buddy
 
 import (
@@ -39,10 +39,10 @@ import (
 )
 
 const (
-	queryBatchSize          = 500
-	reportBatchSize         = 500
-	retainedResultIDLimit   = 200
-	defaultAnalyzerRevision = 1
+	queryBatchSize             = 500
+	reportBatchSize            = 500
+	retainedObservationIDLimit = 200
+	defaultAnalyzerRevision    = 1
 )
 
 var backendTarget = flag.String("test_buddy.backend", "", "Internal gRPC target for the TestBuddy service.")
@@ -261,7 +261,7 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	if err != nil {
 		return nil, err
 	}
-	report, err := normalize.Normalize(req.GetRepoUrl(), req.GetTestCases(), req.GetTestTargets())
+	report, err := normalize.Normalize(req.GetRepoUrl(), req.GetCaseObservations(), req.GetTargetObservations())
 	if err != nil {
 		return nil, err
 	}
@@ -274,33 +274,33 @@ func (s *Service) reportTestResults(ctx context.Context, req *tbpb.ReportTestRes
 	}
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.SetLimit(max(1, runtime.GOMAXPROCS(0)))
-	resultsByCase := make(map[identity.CaseAddress][]*normalize.CaseResult)
-	for _, result := range report.CaseResults {
-		if analyzer.Eligible(analyzer.Sample{Outcome: result.Result.GetResult().GetOutcome()}) {
-			resultsByCase[result.Address] = append(resultsByCase[result.Address], result)
+	observationsByCase := make(map[identity.CaseAddress][]*normalize.CaseObservation)
+	for _, observation := range report.CaseObservations {
+		if analyzer.Eligible(analyzer.Sample{Outcome: observation.Observation.GetObservation().GetOutcome()}) {
+			observationsByCase[observation.Address] = append(observationsByCase[observation.Address], observation)
 		}
 	}
-	for _, results := range resultsByCase {
+	for _, observations := range observationsByCase {
 		group.Go(func() error {
-			return s.applyCases(groupCtx, groupID, results, analyzerConfig, analyzerRevision)
+			return s.applyCaseObservations(groupCtx, groupID, observations, analyzerConfig, analyzerRevision)
 		})
 	}
-	resultsByTarget := make(map[identity.TargetAddress][]*normalize.TargetResult)
-	for _, result := range report.TargetResults {
-		if analyzer.Eligible(analyzer.Sample{Outcome: result.Result.GetResult().GetOutcome()}) {
-			resultsByTarget[result.Address] = append(resultsByTarget[result.Address], result)
+	observationsByTarget := make(map[identity.TargetAddress][]*normalize.TargetObservation)
+	for _, observation := range report.TargetObservations {
+		if analyzer.Eligible(analyzer.Sample{Outcome: observation.Observation.GetObservation().GetOutcome()}) {
+			observationsByTarget[observation.Address] = append(observationsByTarget[observation.Address], observation)
 		}
 	}
-	for _, results := range resultsByTarget {
+	for _, observations := range observationsByTarget {
 		group.Go(func() error {
-			return s.applyTargets(groupCtx, groupID, results, analyzerConfig, analyzerRevision)
+			return s.applyTargetObservations(groupCtx, groupID, observations, analyzerConfig, analyzerRevision)
 		})
 	}
 	if err := group.Wait(); err != nil {
 		return nil, err
 	}
 	return &tbpb.ReportTestResultsResponse{
-		AcceptedCount: int32(len(report.CaseResults) + len(report.TargetResults)),
+		AcceptedCount: int32(len(report.CaseObservations) + len(report.TargetObservations)),
 		RejectedCount: int32(report.Rejected.Total()),
 	}, nil
 }
@@ -332,15 +332,15 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 		return err
 	}
 	targets := make(map[identity.TargetAddress]*tables.TestTarget)
-	for _, result := range report.CaseResults {
-		target := result.Address.Target()
+	for _, observation := range report.CaseObservations {
+		target := observation.Address.Target()
 		targets[target] = &tables.TestTarget{
 			GroupID: groupID, Repository: repository, TargetLabel: target.Label(),
 			PackagePath: target.PackagePath,
 		}
 	}
-	for _, result := range report.TargetResults {
-		target := result.Address
+	for _, observation := range report.TargetObservations {
+		target := observation.Address
 		targets[target] = &tables.TestTarget{
 			GroupID: groupID, Repository: repository, TargetLabel: target.Label(),
 			PackagePath: target.PackagePath,
@@ -359,8 +359,8 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 		}
 	}
 	cases := make(map[identity.CaseAddress]*tables.TestCase)
-	for _, result := range report.CaseResults {
-		address := result.Address
+	for _, observation := range report.CaseObservations {
+		address := observation.Address
 		caseName, err := identity.CaseNameKey(address.CaseName)
 		if err != nil {
 			return err
@@ -385,7 +385,7 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 	return nil
 }
 
-type retainedSample struct {
+type retainedObservation struct {
 	Outcome        tbpb.TestOutcome           `json:"o"`
 	Source         tbpb.TestObservationSource `json:"s"`
 	CommitSHA      string                     `json:"c"`
@@ -394,78 +394,78 @@ type retainedSample struct {
 	FailureMessage string                     `json:"f,omitempty"`
 	SourceURL      string                     `json:"u"`
 	EventTimeUsec  int64                      `json:"t"`
-	ResultID       string                     `json:"i"`
+	ObservationID  string                     `json:"i"`
 }
 
-type retainedResultID struct {
+type retainedObservationID struct {
 	ID          string `json:"i"`
 	Fingerprint string `json:"f"`
 }
 
-type retainedResults struct {
-	Samples   []retainedSample   `json:"s"`
-	ResultIDs []retainedResultID `json:"i"`
+type retainedObservations struct {
+	Observations   []retainedObservation   `json:"s"`
+	ObservationIDs []retainedObservationID `json:"i"`
 }
 
-func decodeRetainedResults(encoded []byte) (*retainedResults, error) {
+func decodeRetainedObservations(encoded []byte) (*retainedObservations, error) {
 	if len(encoded) == 0 {
-		return &retainedResults{}, nil
+		return &retainedObservations{}, nil
 	}
-	results := &retainedResults{}
-	if err := json.Unmarshal(encoded, results); err != nil {
-		return nil, status.InternalErrorf("decode recent test results: %s", err)
+	observations := &retainedObservations{}
+	if err := json.Unmarshal(encoded, observations); err != nil {
+		return nil, status.InternalErrorf("decode recent test observations: %s", err)
 	}
-	return results, nil
+	return observations, nil
 }
 
-func appendSample(results *retainedResults, result *tbpb.TestResult, windowSize int) (bool, error) {
-	fingerprint := resultFingerprint(result)
-	for _, retained := range results.ResultIDs {
-		if retained.ID != result.GetResultId() {
+func appendObservation(observations *retainedObservations, observation *tbpb.TestObservation, windowSize int) (bool, error) {
+	fingerprint := observationFingerprint(observation)
+	for _, retained := range observations.ObservationIDs {
+		if retained.ID != observation.GetObservationId() {
 			continue
 		}
 		if retained.Fingerprint != fingerprint {
 			return false, status.FailedPreconditionErrorf(
-				"result_id %q was reused with different content", result.GetResultId())
+				"observation_id %q was reused with different content", observation.GetObservationId())
 		}
 		return true, nil
 	}
-	results.Samples = append(results.Samples, retainedSample{
-		Outcome: result.GetOutcome(), Source: result.GetSource(), CommitSHA: result.GetCommitSha(),
-		WorkspaceDirty: result.GetWorkspaceDirty(), DurationUsec: result.GetDurationUsec(),
-		FailureMessage: result.GetFailureMessage(), SourceURL: result.GetSourceUrl(),
-		EventTimeUsec: result.GetEventTimeUsec(), ResultID: result.GetResultId(),
+	observations.Observations = append(observations.Observations, retainedObservation{
+		Outcome: observation.GetOutcome(), Source: observation.GetSource(), CommitSHA: observation.GetCommitSha(),
+		WorkspaceDirty: observation.GetWorkspaceDirty(), DurationUsec: observation.GetDurationUsec(),
+		FailureMessage: observation.GetFailureMessage(), SourceURL: observation.GetSourceUrl(),
+		EventTimeUsec: observation.GetEventTimeUsec(), ObservationID: observation.GetObservationId(),
 	})
-	if extra := len(results.Samples) - windowSize; extra > 0 {
-		results.Samples = results.Samples[extra:]
+	if extra := len(observations.Observations) - windowSize; extra > 0 {
+		observations.Observations = observations.Observations[extra:]
 	}
-	results.ResultIDs = append(results.ResultIDs, retainedResultID{
-		ID: result.GetResultId(), Fingerprint: fingerprint,
+	observations.ObservationIDs = append(observations.ObservationIDs, retainedObservationID{
+		ID: observation.GetObservationId(), Fingerprint: fingerprint,
 	})
-	if extra := len(results.ResultIDs) - retainedResultIDLimit; extra > 0 {
-		results.ResultIDs = results.ResultIDs[extra:]
+	if extra := len(observations.ObservationIDs) - retainedObservationIDLimit; extra > 0 {
+		observations.ObservationIDs = observations.ObservationIDs[extra:]
 	}
 	return false, nil
 }
 
-func resultFingerprint(result *tbpb.TestResult) string {
+func observationFingerprint(observation *tbpb.TestObservation) string {
 	h := sha256.New()
 	var encoded [8]byte
-	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetOutcome()))
+	binary.BigEndian.PutUint64(encoded[:], uint64(observation.GetOutcome()))
 	_, _ = h.Write(encoded[:])
-	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetDurationUsec()))
+	binary.BigEndian.PutUint64(encoded[:], uint64(observation.GetDurationUsec()))
 	_, _ = h.Write(encoded[:])
-	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetEventTimeUsec()))
+	binary.BigEndian.PutUint64(encoded[:], uint64(observation.GetEventTimeUsec()))
 	_, _ = h.Write(encoded[:])
-	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetSource()))
+	binary.BigEndian.PutUint64(encoded[:], uint64(observation.GetSource()))
 	_, _ = h.Write(encoded[:])
-	if result.GetWorkspaceDirty() {
+	if observation.GetWorkspaceDirty() {
 		encoded[0] = 1
 	} else {
 		encoded[0] = 0
 	}
 	_, _ = h.Write(encoded[:1])
-	for _, value := range []string{result.GetFailureMessage(), result.GetSourceUrl(), result.GetCommitSha()} {
+	for _, value := range []string{observation.GetFailureMessage(), observation.GetSourceUrl(), observation.GetCommitSha()} {
 		binary.BigEndian.PutUint64(encoded[:], uint64(len(value)))
 		_, _ = h.Write(encoded[:])
 		_, _ = io.WriteString(h, value)
@@ -473,20 +473,20 @@ func resultFingerprint(result *tbpb.TestResult) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func analysisSamples(samples []retainedSample) []analyzer.Sample {
-	out := make([]analyzer.Sample, 0, len(samples))
-	for _, sample := range samples {
-		out = append(out, analyzer.Sample{Outcome: sample.Outcome})
+func analysisSamples(observations []retainedObservation) []analyzer.Sample {
+	out := make([]analyzer.Sample, 0, len(observations))
+	for _, observation := range observations {
+		out = append(out, analyzer.Sample{Outcome: observation.Outcome})
 	}
 	return out
 }
 
-func (s *Service) applyCases(ctx context.Context, groupID string, results []*normalize.CaseResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
-	if len(results) == 0 {
+func (s *Service) applyCaseObservations(ctx context.Context, groupID string, observations []*normalize.CaseObservation, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
+	if len(observations) == 0 {
 		return nil
 	}
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		address := results[0].Address
+		address := observations[0].Address
 		targetLabel := address.Target().Label()
 		caseName, err := identity.CaseNameKey(address.CaseName)
 		if err != nil {
@@ -497,7 +497,7 @@ func (s *Service) applyCases(ctx context.Context, groupID string, results []*nor
 			Create(&tables.TestCaseState{
 				GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
 				CaseName: caseName, Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
-				RecentResults: []byte("{}"),
+				RecentObservations: []byte("{}"),
 			}).Error; err != nil {
 			return err
 		}
@@ -509,15 +509,15 @@ func (s *Service) applyCases(ctx context.Context, groupID string, results []*nor
 			query, groupID, address.Repository, targetLabel, caseName).Take(state); err != nil {
 			return err
 		}
-		retained, err := decodeRetainedResults(state.RecentResults)
+		retained, err := decodeRetainedObservations(state.RecentObservations)
 		if err != nil {
 			return err
 		}
 		changes := make([]*tables.TestCaseStateChange, 0)
 		changed := false
-		for _, result := range results {
-			resultInfo := result.Result.GetResult()
-			duplicate, err := appendSample(retained, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+		for _, observation := range observations {
+			observationInfo := observation.Observation.GetObservation()
+			duplicate, err := appendObservation(retained, observationInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
 			if err != nil {
 				return err
 			}
@@ -525,7 +525,7 @@ func (s *Service) applyCases(ctx context.Context, groupID string, results []*nor
 				continue
 			}
 			changed = true
-			analysis, err := analyzer.Linear(analysisSamples(retained.Samples), analyzerConfig)
+			analysis, err := analyzer.Linear(analysisSamples(retained.Observations), analyzerConfig)
 			if err != nil {
 				return err
 			}
@@ -535,7 +535,7 @@ func (s *Service) applyCases(ctx context.Context, groupID string, results []*nor
 			state.AnalyzerRevision = analyzerRevision
 			state.AnalysisReason = string(analysis.Reason)
 			state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
-			switch resultInfo.GetOutcome() {
+			switch observationInfo.GetOutcome() {
 			case tbpb.TestOutcome_TEST_OUTCOME_PASS:
 				state.PassCount++
 			case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
@@ -545,7 +545,7 @@ func (s *Service) applyCases(ctx context.Context, groupID string, results []*nor
 			default:
 				return status.InternalError("unknown outcome reached the analyzer")
 			}
-			state.TotalDurationUsec += resultInfo.GetDurationUsec()
+			state.TotalDurationUsec += observationInfo.GetDurationUsec()
 			if previousHealth != state.Health {
 				changes = append(changes, &tables.TestCaseStateChange{
 					GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
@@ -560,7 +560,7 @@ func (s *Service) applyCases(ctx context.Context, groupID string, results []*nor
 		if !changed {
 			return nil
 		}
-		state.RecentResults, err = json.Marshal(retained)
+		state.RecentObservations, err = json.Marshal(retained)
 		if err != nil {
 			return err
 		}
@@ -574,18 +574,18 @@ func (s *Service) applyCases(ctx context.Context, groupID string, results []*nor
 	})
 }
 
-func (s *Service) applyTargets(ctx context.Context, groupID string, results []*normalize.TargetResult, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
-	if len(results) == 0 {
+func (s *Service) applyTargetObservations(ctx context.Context, groupID string, observations []*normalize.TargetObservation, analyzerConfig *tbpb.TestAnalyzerConfig, analyzerRevision int64) error {
+	if len(observations) == 0 {
 		return nil
 	}
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
-		address := results[0].Address
+		address := observations[0].Address
 		targetLabel := address.Label()
 		if err := tx.GORM(ctx, "test_buddy_admit_target_state").
 			Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&tables.TestTargetState{
 				GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
-				Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), RecentResults: []byte("{}"),
+				Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), RecentObservations: []byte("{}"),
 			}).Error; err != nil {
 			return err
 		}
@@ -597,15 +597,15 @@ func (s *Service) applyTargets(ctx context.Context, groupID string, results []*n
 			query, groupID, address.Repository, targetLabel).Take(state); err != nil {
 			return err
 		}
-		retained, err := decodeRetainedResults(state.RecentResults)
+		retained, err := decodeRetainedObservations(state.RecentObservations)
 		if err != nil {
 			return err
 		}
 		changes := make([]*tables.TestTargetStateChange, 0)
 		changed := false
-		for _, result := range results {
-			resultInfo := result.Result.GetResult()
-			duplicate, err := appendSample(retained, resultInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
+		for _, observation := range observations {
+			observationInfo := observation.Observation.GetObservation()
+			duplicate, err := appendObservation(retained, observationInfo, int(analyzerConfig.GetLinear().GetWindowSize()))
 			if err != nil {
 				return err
 			}
@@ -613,7 +613,7 @@ func (s *Service) applyTargets(ctx context.Context, groupID string, results []*n
 				continue
 			}
 			changed = true
-			analysis, err := analyzer.LinearTarget(analysisSamples(retained.Samples), analyzerConfig)
+			analysis, err := analyzer.LinearTarget(analysisSamples(retained.Observations), analyzerConfig)
 			if err != nil {
 				return err
 			}
@@ -623,7 +623,7 @@ func (s *Service) applyTargets(ctx context.Context, groupID string, results []*n
 			state.AnalyzerRevision = analyzerRevision
 			state.AnalysisReason = string(analysis.Reason)
 			state.EligibleSampleCount = int64(analysis.Evidence.EligibleSamples)
-			switch resultInfo.GetOutcome() {
+			switch observationInfo.GetOutcome() {
 			case tbpb.TestOutcome_TEST_OUTCOME_PASS:
 				state.PassCount++
 			case tbpb.TestOutcome_TEST_OUTCOME_FAIL:
@@ -633,7 +633,7 @@ func (s *Service) applyTargets(ctx context.Context, groupID string, results []*n
 			default:
 				return status.InternalError("unknown target outcome reached the analyzer")
 			}
-			state.TotalDurationUsec += resultInfo.GetDurationUsec()
+			state.TotalDurationUsec += observationInfo.GetDurationUsec()
 			if previousHealth != state.Health {
 				changes = append(changes, &tables.TestTargetStateChange{
 					GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
@@ -647,7 +647,7 @@ func (s *Service) applyTargets(ctx context.Context, groupID string, results []*n
 		if !changed {
 			return nil
 		}
-		state.RecentResults, err = json.Marshal(retained)
+		state.RecentObservations, err = json.Marshal(retained)
 		if err != nil {
 			return err
 		}
@@ -1386,7 +1386,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	type targetRow struct {
 		Disposition         int32
 		Health              string
-		RecentResults       []byte
+		RecentObservations  []byte
 		PassCount           int64
 		FailCount           int64
 		TimeoutCount        int64
@@ -1397,7 +1397,7 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	}
 	row := &targetRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_target").Raw(`
-		SELECT tt.disposition, COALESCE(s.health, ?) AS health, s.recent_results,
+		SELECT tt.disposition, COALESCE(s.health, ?) AS health, s.recent_observations,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -1425,17 +1425,17 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
 		EligibleSampleCount: row.EligibleSampleCount,
 	}
-	retained, err := decodeRetainedResults(row.RecentResults)
+	retained, err := decodeRetainedObservations(row.RecentObservations)
 	if err != nil {
 		return nil, err
 	}
-	for i := len(retained.Samples) - 1; i >= 0; i-- {
-		sample := retained.Samples[i]
-		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
-			Outcome: sample.Outcome, Source: sample.Source, CommitSha: sample.CommitSHA,
-			WorkspaceDirty: sample.WorkspaceDirty, DurationUsec: sample.DurationUsec,
-			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
-			EventTimeUsec: sample.EventTimeUsec, ResultId: sample.ResultID,
+	for i := len(retained.Observations) - 1; i >= 0; i-- {
+		observation := retained.Observations[i]
+		rsp.RecentObservations = append(rsp.RecentObservations, &tbpb.TestObservation{
+			Outcome: observation.Outcome, Source: observation.Source, CommitSha: observation.CommitSHA,
+			WorkspaceDirty: observation.WorkspaceDirty, DurationUsec: observation.DurationUsec,
+			FailureMessage: observation.FailureMessage, SourceUrl: observation.SourceURL,
+			EventTimeUsec: observation.EventTimeUsec, ObservationId: observation.ObservationID,
 		})
 	}
 	type transitionRow struct {
@@ -1486,7 +1486,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	type caseRow struct {
 		Disposition         int32
 		Health              string
-		RecentResults       []byte
+		RecentObservations  []byte
 		PassCount           int64
 		FailCount           int64
 		TimeoutCount        int64
@@ -1497,7 +1497,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	}
 	row := &caseRow{}
 	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case").Raw(`
-		SELECT tc.disposition, COALESCE(s.health, ?) AS health, s.recent_results,
+		SELECT tc.disposition, COALESCE(s.health, ?) AS health, s.recent_observations,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
@@ -1525,17 +1525,17 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		AnalyzerRevision: row.AnalyzerRevision, AnalysisReason: row.AnalysisReason,
 		EligibleSampleCount: row.EligibleSampleCount,
 	}
-	retained, err := decodeRetainedResults(row.RecentResults)
+	retained, err := decodeRetainedObservations(row.RecentObservations)
 	if err != nil {
 		return nil, err
 	}
-	for i := len(retained.Samples) - 1; i >= 0; i-- {
-		sample := retained.Samples[i]
-		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
-			Outcome: sample.Outcome, Source: sample.Source, CommitSha: sample.CommitSHA,
-			WorkspaceDirty: sample.WorkspaceDirty, DurationUsec: sample.DurationUsec,
-			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
-			EventTimeUsec: sample.EventTimeUsec, ResultId: sample.ResultID,
+	for i := len(retained.Observations) - 1; i >= 0; i-- {
+		observation := retained.Observations[i]
+		rsp.RecentObservations = append(rsp.RecentObservations, &tbpb.TestObservation{
+			Outcome: observation.Outcome, Source: observation.Source, CommitSha: observation.CommitSHA,
+			WorkspaceDirty: observation.WorkspaceDirty, DurationUsec: observation.DurationUsec,
+			FailureMessage: observation.FailureMessage, SourceUrl: observation.SourceURL,
+			EventTimeUsec: observation.EventTimeUsec, ObservationId: observation.ObservationID,
 		})
 	}
 	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_case_transitions").Raw(`

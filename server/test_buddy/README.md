@@ -1,7 +1,7 @@
 # TestBuddy
 
-TestBuddy records target- and case-level results and projects them into fast,
-queryable health state.
+TestBuddy records target- and case-level observations and projects them into
+fast, queryable health state.
 
 ## Core design
 
@@ -22,10 +22,11 @@ queryable health state.
   independent transaction, and the RPC returns after every streamed batch has
   committed. There is no queue or report-wide transaction.
 - Each observation retains whether it came from presubmit, postsubmit, or a
-  monitor, the tested commit and dirty-checkout bit, its execution time, and a stable reporter-derived
-  result ID. Analysis still follows processing order. Current state keeps the
-  bounded evidence window plus 200 recent ID fingerprints, so an exact retry is
-  a no-op while conflicting reuse is rejected.
+  monitor, the tested commit and dirty-checkout bit, its execution time, and a
+  stable reporter-derived observation ID. Analysis still follows processing
+  order. Current state keeps the bounded evidence window plus 200 recent ID
+  fingerprints, so an exact retry is a no-op while conflicting reuse is
+  rejected.
 - Heavy processing runs in the dedicated TestBuddy service. BuildBuddy apps
   authenticate and proxy RPCs, keeping report work off the app serving path.
 - Reads never parse reports. Package-cone queries return failing, flaky, and
