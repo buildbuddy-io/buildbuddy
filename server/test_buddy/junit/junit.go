@@ -100,6 +100,9 @@ type caseState struct {
 	hasError       bool
 	hasSkipped     bool
 	failureMessage string
+	failureDepth   int
+	failureAttr    string
+	failureBody    []byte
 }
 
 func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
@@ -263,18 +266,25 @@ func (p *parser) parseCase(decoder *xml.Decoder, start xml.StartElement, startDe
 			switch token.Name.Local {
 			case "failure":
 				state.hasFailure = true
-				state.setFailureMessage(attribute(token, "message"))
+				state.startFailure(depth, attribute(token, "message"))
 			case "error":
 				state.hasError = true
-				state.setFailureMessage(attribute(token, "message"))
+				state.startFailure(depth, attribute(token, "message"))
 			case "skipped", "disabled":
 				state.hasSkipped = true
 			}
 		case xml.EndElement:
+			if depth == state.failureDepth {
+				state.finishFailure()
+			}
 			if depth == startDepth {
 				return p.caseRecord(index, &state)
 			}
 			depth--
+		case xml.CharData:
+			if state.failureDepth != 0 {
+				state.appendFailureBody(token)
+			}
 		}
 	}
 }
@@ -350,9 +360,36 @@ func (s *caseState) outcome(index int) (tbpb.TestOutcome, []Diagnostic) {
 	return outcome, diagnostics
 }
 
-func (s *caseState) setFailureMessage(message string) {
-	if s.failureMessage != "" || message == "" {
+func (s *caseState) startFailure(depth int, message string) {
+	if s.failureMessage != "" || s.failureDepth != 0 {
 		return
+	}
+	s.failureDepth = depth
+	s.failureAttr = message
+	s.failureBody = s.failureBody[:0]
+}
+
+func (s *caseState) appendFailureBody(body []byte) {
+	remaining := maxFailureMessageBytes - len(s.failureBody)
+	if remaining <= 0 {
+		return
+	}
+	if len(body) > remaining {
+		body = body[:remaining]
+		for !utf8.Valid(body) {
+			body = body[:len(body)-1]
+		}
+	}
+	s.failureBody = append(s.failureBody, body...)
+}
+
+func (s *caseState) finishFailure() {
+	message := strings.TrimSpace(s.failureAttr)
+	body := strings.TrimSpace(string(s.failureBody))
+	if message == "" {
+		message = body
+	} else if body != "" && body != message {
+		message += "\n" + body
 	}
 	if len(message) > maxFailureMessageBytes {
 		message = message[:maxFailureMessageBytes]
@@ -361,6 +398,9 @@ func (s *caseState) setFailureMessage(message string) {
 		}
 	}
 	s.failureMessage = message
+	s.failureDepth = 0
+	s.failureAttr = ""
+	s.failureBody = s.failureBody[:0]
 }
 
 func nonnegativeInt(raw string) (int, error) {

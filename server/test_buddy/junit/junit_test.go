@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/junit"
@@ -23,7 +24,7 @@ func parse(t *testing.T, xml string) *junit.Report {
 func TestParse(t *testing.T) {
 	report := parse(t, `<testsuite name="suite" time="1.5" failures="2" timestamp="2026-07-30T12:00:00Z">
   <testcase name="pass" classname="pkg.C" time="0.25"/>
-  <testcase name="fail" classname="pkg.C" timestamp="2026-07-30T12:00:01.123456Z"><failure message="got 1, want 2">ignored body</failure></testcase>
+  <testcase name="fail" classname="pkg.C" timestamp="2026-07-30T12:00:01.123456Z"><failure message="got 1, want 2">at pkg.C.fail(C.java:12)</failure></testcase>
   <testcase name="error" classname="pkg.C"><error message="panic"/></testcase>
   <testcase name="timeout" classname="pkg.C" status="timed_out"/>
   <testcase name="skip" classname="pkg.C"><skipped/></testcase>
@@ -41,7 +42,7 @@ func TestParse(t *testing.T) {
 	})
 	assert.Equal(t, `pass`, report.Cases[0].CaseName)
 	assert.Equal(t, int64(250_000), report.Cases[0].DurationUsec)
-	assert.Equal(t, "got 1, want 2", report.Cases[1].FailureMessage)
+	assert.Equal(t, "got 1, want 2\nat pkg.C.fail(C.java:12)", report.Cases[1].FailureMessage)
 	assert.Equal(t, "panic", report.Cases[2].FailureMessage)
 	assert.Equal(t, int64(1_500_000), report.DurationUsec)
 	assert.Equal(t, int64(1_785_412_800_000_000), report.EventTimeUsec)
@@ -131,11 +132,34 @@ func TestInvalidUTF8InFailureOutput(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, report.Cases, 1)
 	assert.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, report.Cases[0].Outcome)
-	assert.Equal(t, "Failed to build.", report.Cases[0].FailureMessage)
+	assert.Equal(t, "Failed to build.\npath/�_foo_latin1_�.txt", report.Cases[0].FailureMessage)
 	assert.Equal(t, []junit.Diagnostic{{Code: junit.DiagnosticInvalidUTF8, CaseIndex: -1}}, report.Diagnostics)
 
 	_, err = junit.Parse(context.Background(), bytes.NewReader([]byte("<testsuite>\xff")), junit.Options{TargetLabel: "//pkg:test"})
 	assert.True(t, status.IsInvalidArgumentError(err), err)
+}
+
+func TestFailureBody(t *testing.T) {
+	report := parse(t, `<testsuite>
+  <testcase name="attribute"><failure message="attribute only"/></testcase>
+  <testcase name="cdata"><failure><![CDATA[assertion failed
+at pkg.Test.run(Test.java:42)]]></failure></testcase>
+  <testcase name="markup"><error message="panic"><pre>first frame</pre><pre>second frame</pre></error></testcase>
+  <testcase name="duplicate"><failure message="same">same</failure></testcase>
+</testsuite>`)
+	require.Len(t, report.Cases, 4)
+	assert.Equal(t, "attribute only", report.Cases[0].FailureMessage)
+	assert.Equal(t, "assertion failed\nat pkg.Test.run(Test.java:42)", report.Cases[1].FailureMessage)
+	assert.Equal(t, "panic\nfirst framesecond frame", report.Cases[2].FailureMessage)
+	assert.Equal(t, "same", report.Cases[3].FailureMessage)
+}
+
+func TestFailureMessageIsBoundedAndValidUTF8(t *testing.T) {
+	report := parse(t, `<testsuite><testcase name="long"><failure message="prefix">`+strings.Repeat("a", 510)+`ツ</failure></testcase></testsuite>`)
+	require.Len(t, report.Cases, 1)
+	assert.Len(t, report.Cases[0].FailureMessage, 512)
+	assert.True(t, utf8.ValidString(report.Cases[0].FailureMessage))
+	assert.True(t, strings.HasPrefix(report.Cases[0].FailureMessage, "prefix\n"))
 }
 
 func TestUTF8AcrossReadBoundary(t *testing.T) {
