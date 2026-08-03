@@ -37,6 +37,40 @@ func TestCanonicalizeCase(t *testing.T) {
 	assert.Equal(t, got.CaseName, proto.GetCaseName())
 }
 
+func TestCaseNameStorageKey(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		wantEncoded bool
+	}{
+		{name: "TestCaseName"},
+		{name: "TestTruncateStringSlice/[ツ]/1", wantEncoded: true},
+		{name: "~literal-prefix", wantEncoded: true},
+		{name: strings.Repeat("🙂", identity.MaxCaseNameBytes/4), wantEncoded: true},
+	} {
+		key, err := identity.CaseNameKey(test.name)
+		require.NoError(t, err)
+		if test.wantEncoded {
+			assert.NotEqual(t, test.name, key)
+			assert.True(t, strings.HasPrefix(key, "~"))
+		} else {
+			assert.Equal(t, test.name, key)
+		}
+		assert.LessOrEqual(t, len(key), identity.MaxCaseNameKeyBytes)
+		got, err := identity.CaseNameFromKey(key)
+		require.NoError(t, err)
+		assert.Equal(t, test.name, got)
+	}
+
+	unicodeKey, err := identity.CaseNameKey("TestTruncateStringSlice/[ツ]/1")
+	require.NoError(t, err)
+	literalPrefixKey, err := identity.CaseNameKey(unicodeKey)
+	require.NoError(t, err)
+	assert.NotEqual(t, unicodeKey, literalPrefixKey)
+
+	_, err = identity.CaseNameFromKey("~not!base64")
+	assert.Error(t, err)
+}
+
 func TestCanonicalizeTargetLabel(t *testing.T) {
 	for input, want := range map[string]string{
 		"//pkg":         "//pkg:pkg",
@@ -83,6 +117,7 @@ func TestInvalidAddressesAreRejected(t *testing.T) {
 		{repository: "https://github.com/acme/repo", target: "@@repo+1.0//pkg:test", caseName: "Test"},
 		{repository: "https://github.com/acme/repo", target: "//pkg:test", caseName: ""},
 		{repository: "https://github.com/acme/repo", target: "//pkg:test", caseName: "Test\nNewline"},
+		{repository: "https://github.com/acme/repo", target: "//pkg:test", caseName: "Test\tTab"},
 	} {
 		_, err := identity.CanonicalizeCase(input.repository, input.target, input.caseName)
 		assert.Error(t, err, input)

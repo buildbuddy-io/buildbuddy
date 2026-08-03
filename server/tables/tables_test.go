@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/identity"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,6 +38,18 @@ func TestBuddyTablesUseNaturalAddressKeys(t *testing.T) {
 		assert.NotContains(t, primary, "test_case_id")
 		assert.NotContains(t, primary, "target_id")
 		assert.NotContains(t, primary, "repo_key")
+	}
+}
+
+func TestBuddyCaseKeyColumnsFitEncodedNames(t *testing.T) {
+	for _, table := range []any{
+		&tables.TestCase{}, &tables.TestCaseState{}, &tables.TestCaseStateChange{},
+	} {
+		parsed, err := schema.Parse(table, &sync.Map{}, schema.NamingStrategy{})
+		require.NoError(t, err)
+		field := parsed.LookUpField("CaseName")
+		require.NotNil(t, field)
+		assert.Equal(t, identity.MaxCaseNameKeyBytes, field.Size)
 	}
 }
 

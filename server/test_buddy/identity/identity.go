@@ -2,9 +2,11 @@
 package identity
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	gazellelabel "github.com/bazelbuild/bazel-gazelle/label"
@@ -19,7 +21,10 @@ const (
 	MaxTargetNameBytes    = 512
 	MaxTargetLabelBytes   = MaxPackagePathBytes + MaxTargetNameBytes + len("//:")
 	MaxCaseNameBytes      = 512
+	MaxCaseNameKeyBytes   = 1 + (MaxCaseNameBytes*8+5)/6
 )
+
+const encodedCaseNamePrefix = "~"
 
 type PackageAddress struct {
 	Repository  string
@@ -203,20 +208,74 @@ func ValidateCaseName(caseName string) error {
 	if caseName == "" {
 		return status.InvalidArgumentError("case name is required")
 	}
-	return validatePrintableASCII("case name", caseName, MaxCaseNameBytes)
+	if err := ValidateBoundedString("case name", caseName, MaxCaseNameBytes); err != nil {
+		return err
+	}
+	for _, r := range caseName {
+		if unicode.IsControl(r) {
+			return status.InvalidArgumentErrorf("case name contains control character %U", r)
+		}
+	}
+	return nil
+}
+
+func CaseNameKey(caseName string) (string, error) {
+	if err := ValidateCaseName(caseName); err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(caseName, encodedCaseNamePrefix) && isPrintableASCII(caseName) {
+		return caseName, nil
+	}
+	return encodedCaseNamePrefix + base64.RawURLEncoding.EncodeToString([]byte(caseName)), nil
+}
+
+func CaseNameFromKey(key string) (string, error) {
+	if !strings.HasPrefix(key, encodedCaseNamePrefix) {
+		if err := ValidateCaseName(key); err != nil {
+			return "", err
+		}
+		if !isPrintableASCII(key) {
+			return "", status.InternalError("unencoded case-name key is not printable ASCII")
+		}
+		return key, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimPrefix(key, encodedCaseNamePrefix))
+	if err != nil {
+		return "", status.InternalErrorf("decode case-name key: %s", err)
+	}
+	caseName := string(decoded)
+	canonical, err := CaseNameKey(caseName)
+	if err != nil {
+		return "", status.InternalErrorf("invalid decoded case-name key: %s", err)
+	}
+	if canonical != key {
+		return "", status.InternalError("case-name key is not canonical")
+	}
+	return caseName, nil
 }
 
 func validatePrintableASCII(name, value string, maxBytes int) error {
 	if err := ValidateBoundedString(name, value, maxBytes); err != nil {
 		return err
 	}
-	for i := 0; i < len(value); i++ {
-		if c := value[i]; c < 0x20 || c > 0x7e {
-			return status.InvalidArgumentErrorf(
-				"%s must be printable ASCII; byte %d is %#02x", name, i, c)
+	if !isPrintableASCII(value) {
+		for i := 0; i < len(value); i++ {
+			if c := value[i]; c < 0x20 || c > 0x7e {
+				return status.InvalidArgumentErrorf(
+					"%s must be printable ASCII; byte %d is %#02x", name, i, c)
+			}
 		}
 	}
 	return nil
+}
+
+func isPrintableASCII(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if c := value[i]; c < 0x20 || c > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func ValidateBoundedString(name, value string, maxBytes int) error {

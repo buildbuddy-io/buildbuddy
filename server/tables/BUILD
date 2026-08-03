@@ -36,6 +36,7 @@ go_test(
     tags = ["docker"],
     deps = [
         ":tables",
+        "//server/test_buddy/identity",
         "//server/testutil/testenv",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

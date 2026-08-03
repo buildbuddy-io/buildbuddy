@@ -346,9 +346,13 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 		cases := make([]*tables.TestCase, 0, end-start)
 		for _, result := range report.CaseResults[start:end] {
 			address := result.Address
+			caseName, err := identity.CaseNameKey(address.CaseName)
+			if err != nil {
+				return err
+			}
 			cases = append(cases, &tables.TestCase{
 				GroupID: groupID, Repository: repository, TargetLabel: address.Target().Label(),
-				CaseName: address.CaseName, PackagePath: address.PackagePath,
+				CaseName: caseName, PackagePath: address.PackagePath,
 			})
 		}
 		if err := database.GORM(ctx, "test_buddy_admit_cases").
@@ -453,11 +457,15 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 	return s.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
 		address := result.Address
 		targetLabel := address.Target().Label()
+		caseName, err := identity.CaseNameKey(address.CaseName)
+		if err != nil {
+			return err
+		}
 		if err := tx.GORM(ctx, "test_buddy_admit_state").
 			Clauses(clause.OnConflict{DoNothing: true}).
 			Create(&tables.TestCaseState{
 				GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
-				CaseName: address.CaseName, Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
+				CaseName: caseName, Health: tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
 				RecentResults: []byte("{}"),
 			}).Error; err != nil {
 			return err
@@ -467,7 +475,7 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 			WHERE group_id = ? AND repository = ? AND target_label = ? AND case_name = ?` +
 			s.env.GetDBHandle().SelectForUpdateModifier()
 		if err := tx.NewQuery(ctx, "test_buddy_lock_case_state").Raw(
-			query, groupID, address.Repository, targetLabel, address.CaseName).Take(state); err != nil {
+			query, groupID, address.Repository, targetLabel, caseName).Take(state); err != nil {
 			return err
 		}
 		resultInfo := result.Result.GetResult()
@@ -509,7 +517,7 @@ func (s *Service) applyCase(ctx context.Context, groupID string, result *normali
 		}
 		return tx.NewQuery(ctx, "test_buddy_create_case_change").Create(&tables.TestCaseStateChange{
 			GroupID: groupID, Repository: address.Repository, TargetLabel: targetLabel,
-			CaseName: address.CaseName, StateVersion: state.StateVersion,
+			CaseName: caseName, StateVersion: state.StateVersion,
 			PreviousHealth: previousHealth, Health: state.Health,
 			PassCount: state.PassCount, FailCount: state.FailCount, TimeoutCount: state.TimeoutCount,
 			EventTimeUsec: tx.NowFunc().UnixMicro(), AnalyzerRevision: state.AnalyzerRevision,
@@ -745,9 +753,13 @@ func (s *Service) GetTests(req *tbpb.GetTestsRequest, stream tbpb.TestBuddyServi
 		if err != nil {
 			return err
 		}
+		caseName, err := identity.CaseNameFromKey(r.CaseName)
+		if err != nil {
+			return err
+		}
 		rsp.Tests = append(rsp.Tests, caseSummary(
 			identity.CaseAddress{
-				TargetAddress: target, CaseName: r.CaseName,
+				TargetAddress: target, CaseName: caseName,
 			},
 			r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec))
 		if len(rsp.Tests) == queryBatchSize {
@@ -1131,6 +1143,10 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	if err != nil {
 		return nil, err
 	}
+	caseName, err := identity.CaseNameKey(testCase.CaseName)
+	if err != nil {
+		return nil, err
+	}
 	type caseRow struct {
 		Health              string
 		RecentResults       []byte
@@ -1159,7 +1175,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		WHERE tc.group_id = ? AND tc.repository = ?
 			AND tc.target_label = ? AND tc.case_name = ?`,
 		tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), groupID,
-		testCase.Repository, testCase.Target().Label(), testCase.CaseName).Take(row)
+		testCase.Repository, testCase.Target().Label(), caseName).Take(row)
 	if db.IsRecordNotFound(err) {
 		return nil, status.NotFoundErrorf("test case %s was not found", testCase.String())
 	}
@@ -1190,7 +1206,7 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 		WHERE group_id = ? AND repository = ? AND target_label = ? AND case_name = ?
 		ORDER BY state_version DESC
 		LIMIT 100`,
-		groupID, testCase.Repository, testCase.Target().Label(), testCase.CaseName)
+		groupID, testCase.Repository, testCase.Target().Label(), caseName)
 	type transitionRow struct {
 		PreviousHealth      string
 		Health              string

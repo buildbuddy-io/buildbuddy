@@ -58,10 +58,12 @@ func TestSubtestNameIsPreserved(t *testing.T) {
 	report := parse(t, `<testsuite>
 		<testcase name="TestCaseName" classname="go.package"/>
 		<testcase name="TestFirecrackerRunSimple/this test has spaces" classname="go.package"/>
+		<testcase name="TestTruncateStringSlice/[ツ]/1" classname="go.package"/>
 	</testsuite>`)
-	require.Len(t, report.Cases, 2)
+	require.Len(t, report.Cases, 3)
 	assert.Equal(t, `TestCaseName`, report.Cases[0].CaseName)
 	assert.Equal(t, `TestFirecrackerRunSimple/this test has spaces`, report.Cases[1].CaseName)
+	assert.Equal(t, `TestTruncateStringSlice/[ツ]/1`, report.Cases[2].CaseName)
 	assert.NotContains(t, report.Cases[1].CaseName, "\n")
 }
 

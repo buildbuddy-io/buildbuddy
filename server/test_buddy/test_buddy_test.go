@@ -198,6 +198,41 @@ func TestReportAndQueryTests(t *testing.T) {
 	require.NotEmpty(t, detail.GetTransitions())
 }
 
+func TestUnicodeCaseNameRoundTripsThroughStorage(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	service := testbuddy.New(env)
+	repository := "https://github.com/acme/repo"
+	caseName := "TestTruncateStringSlice/[ツ]/1"
+	result := caseResult("unicode-run", "//pkg:unit_test", caseName,
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL, 100)
+
+	_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+		RepoUrl: repository, TestCases: []*tbpb.TestCaseResult{result},
+	})
+	require.NoError(t, err)
+
+	tests := getTests(t, service, ctx, &tbpb.GetTestsRequest{RepoUrl: repository})
+	require.Len(t, tests, 1)
+	require.Equal(t, caseName, tests[0].GetIdentity().GetCaseName())
+	detail, err := service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
+		RepoUrl: repository, Identity: tests[0].GetIdentity(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, caseName, detail.GetTest().GetIdentity().GetCaseName())
+	require.Len(t, detail.GetTransitions(), 1)
+
+	var stored tables.TestCase
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_unicode_storage_key").
+		Where("repository = ? AND target_label = ?", repository, "//pkg:unit_test").
+		Take(&stored).Error)
+	require.NotEqual(t, caseName, stored.CaseName)
+	require.Equal(t, len(stored.CaseName), len([]byte(stored.CaseName)))
+	decoded, err := identity.CaseNameFromKey(stored.CaseName)
+	require.NoError(t, err)
+	require.Equal(t, caseName, decoded)
+}
+
 func TestReportProcessesCasesIndependently(t *testing.T) {
 	ctx := context.Background()
 	service := testbuddy.New(testenv.GetTestEnv(t))

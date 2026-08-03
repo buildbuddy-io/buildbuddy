@@ -658,8 +658,9 @@ func (ts *TargetStatus) TableName() string {
 //
 // # Why these columns are ascii_bin
 //
-// server/test_buddy/identity validates every address component as printable
-// ASCII with bounded lengths. Declaring these columns as ASCII makes the
+// server/test_buddy/identity validates every address component with bounded
+// lengths. Case names that are not ordinary printable ASCII are reversibly
+// encoded into an ASCII storage key. Declaring the key columns as ASCII makes the
 // composite keys affordable: MySQL sizes an index key from the declared
 // character set — one byte per character for ascii, four for utf8mb4 —
 // against a 3,072-byte ceiling.
@@ -702,7 +703,7 @@ type TestCase struct {
 	GroupID     string `gorm:"primaryKey;size:64;not null;index:test_case_cone_idx,priority:1"`
 	Repository  string `gorm:"primaryKey;size:512;not null;index:test_case_cone_idx,priority:2"`
 	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
-	CaseName    string `gorm:"primaryKey;size:512;not null"`
+	CaseName    string `gorm:"primaryKey;size:684;not null"`
 	PackagePath string `gorm:"size:1024;not null;index:test_case_cone_idx,priority:3"`
 }
 
@@ -736,7 +737,7 @@ type TestCaseState struct {
 	GroupID     string `gorm:"primaryKey;size:64;not null"`
 	Repository  string `gorm:"primaryKey;size:512;not null"`
 	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
-	CaseName    string `gorm:"primaryKey;size:512;not null"`
+	CaseName    string `gorm:"primaryKey;size:684;not null"`
 
 	Health              string `gorm:"size:32;not null"`
 	RecentResults       []byte `gorm:"size:max;not null"`
@@ -779,7 +780,7 @@ type TestCaseStateChange struct {
 	GroupID      string `gorm:"primaryKey;size:64;not null"`
 	Repository   string `gorm:"primaryKey;size:512;not null"`
 	TargetLabel  string `gorm:"primaryKey;size:1539;not null"`
-	CaseName     string `gorm:"primaryKey;size:512;not null"`
+	CaseName     string `gorm:"primaryKey;size:684;not null"`
 	StateVersion int64  `gorm:"primaryKey;autoIncrement:false;not null"`
 
 	PreviousHealth      string `gorm:"size:32;not null"`
