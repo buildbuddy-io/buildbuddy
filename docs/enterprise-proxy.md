@@ -38,18 +38,45 @@ This will return an IP address that you can ping to verify that your installatio
 
 ## Configuration
 
-You may want to configure your deployment's size by editing the number of replicas and the CPU and memory allocation for your pods:
+### Deployment topology and storage
+
+The Helm chart runs Cache Proxy replicas as a distributed cache. Consistent hashing assigns each cached artifact to an owning proxy pod. With the default replication factor of one, that pod stores the artifact's local copy and other proxies route reads and writes to it. The upstream BuildBuddy Remote Cache remains the authoritative copy.
+
+Use local SSD-backed storage for Cache Proxy data when possible. Proxy storage performance is generally less sensitive than executor scratch storage, but disk latency and throughput can still become bottlenecks under heavy cache traffic. Prefer fewer, larger proxies to reduce coordination and per-pod overhead, while retaining enough replicas for maintenance and failure tolerance.
+
+### Initial sizing
+
+As a starting point, size the proxy deployment relative to the executor capacity in the same cluster:
+
+| Resource | Executor-to-proxy ratio |
+| -------- | ----------------------- |
+| CPU      | 20:1 to 30:1            |
+| Memory   | 4:1 to 5:1              |
+
+For example, a cluster with 1,000 executor CPUs and 2 TB (approximately 1.82 TiB) of executor memory should start with approximately 33 to 50 proxy CPUs and 400 to 500 GB (approximately 373 to 466 GiB) of proxy memory, divided across the proxy replicas.
+
+One possible starting configuration for that example is:
 
 ```yaml title="values.yaml"
-replicas: 6
+replicas: 3
 resources:
   limits:
-    cpu: "8"
-    memory: "32Gi"
+    cpu: "16"
+    memory: "140Gi"
   requests:
-    cpu: "7"
-    memory: "30Gi"
+    cpu: "16"
+    memory: "140Gi"
 ```
+
+This allocates 48 CPUs and 420 GiB of memory across three Cache Proxy replicas.
+
+The example sets requests equal to limits so scheduler reservations match the sizing calculation. Clusters that intentionally overcommit CPU can lower the CPU requests separately.
+
+These ratios are rules of thumb rather than fixed requirements. Monitor proxy CPU, memory, disk utilization, cache hit rate, request latency, evictions, and upstream traffic, then tune the replica count and per-pod resources for your cache traffic and enabled features.
+
+### Scaling executors
+
+When Cache Proxies and executors run in the same cluster, the executor fleet can autoscale independently while the proxy fleet retains its local cache. Newly started executors can read cached artifacts over the cluster network instead of fetching those artifacts across clusters during scale-up.
 
 ## Usage
 

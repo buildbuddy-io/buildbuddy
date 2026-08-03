@@ -114,6 +114,8 @@ The default values support both memory hungry Java tests and CPU-intensive Tenso
 
 For a full overview of what can be configured via our enterprise Helm charts, see the [buildbuddy-enterprise values.yaml file](https://github.com/buildbuddy-io/buildbuddy-helm/blob/master/charts/buildbuddy-enterprise/values.yaml), and the [buildbuddy-executor values.yaml file](https://github.com/buildbuddy-io/buildbuddy-helm/blob/master/charts/buildbuddy-executor/values.yaml). Values for the executor deployment are nested in the `executor:` block of the buildbuddy-enterprise yaml file.
 
+If you deploy Cache Proxies alongside your executors, see the [Cache Proxy sizing, storage, and scaling guidance](enterprise-proxy.md#configuration).
+
 ## More configuration
 
 For more configuration options beyond RBE, like authentication and storage options, see our [configuration docs](config.md) and our [enterprise configuration guide](enterprise-config.md).
