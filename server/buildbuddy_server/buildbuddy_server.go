@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/execution_graph"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -63,6 +64,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	egapb "github.com/buildbuddy-io/buildbuddy/proto/execution_graph_analysis"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
@@ -2344,6 +2346,15 @@ func (s *BuildBuddyServer) GetCacheMetadata(ctx context.Context, req *capb.GetCa
 
 func (s *BuildBuddyServer) GetCacheScoreCard(ctx context.Context, req *capb.GetCacheScoreCardRequest) (*capb.GetCacheScoreCardResponse, error) {
 	return scorecard.GetCacheScoreCard(ctx, s.env, req)
+}
+
+func (s *BuildBuddyServer) GetExecutionGraphAnalysis(ctx context.Context, req *egapb.GetExecutionGraphAnalysisRequest) (*egapb.GetExecutionGraphAnalysisResponse, error) {
+	log.Infof("Getting graph analysis for invocation %q", req.GetInvocationId())
+	resp, err := execution_graph.GetExecutionGraphAnalysis(ctx, s.env, req)
+	if err != nil {
+		log.CtxErrorf(ctx, "Failed to get graph analysis: %v", err)
+	}
+	return resp, err
 }
 
 func (s *BuildBuddyServer) GetNamespace(ctx context.Context, req *qpb.GetNamespaceRequest) (*qpb.GetNamespaceResponse, error) {

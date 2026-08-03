@@ -216,6 +216,10 @@ message FrontendConfig {
 
   // Whether cache proxy keys can be created.
   bool cache_proxy_key_creation_enabled = 70;
+
+  // Whether the execution graph analysis tab is enabled on the invocation
+  // page.
+  bool execution_graph_analysis_enabled = 71;
 }
 
 message Region {

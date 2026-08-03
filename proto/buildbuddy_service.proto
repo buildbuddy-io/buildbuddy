@@ -7,6 +7,7 @@ import "proto/cache.proto";
 import "proto/cache_proxy.proto";
 import "proto/search.proto";
 import "proto/eventlog.proto";
+import "proto/execution_graph_analysis.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";
 import "proto/grp.proto";
@@ -140,6 +141,11 @@ service BuildBuddyService {
       returns (scheduler.GetExecutionNodesResponse);
   rpc SearchExecution(execution_stats.SearchExecutionRequest)
       returns (execution_stats.SearchExecutionResponse);
+
+  // Execution graph analysis API
+  rpc GetExecutionGraphAnalysis(
+      execution_graph_analysis.GetExecutionGraphAnalysisRequest)
+      returns (execution_graph_analysis.GetExecutionGraphAnalysisResponse);
 
   // Cache API
   rpc GetCacheScoreCard(cache.GetCacheScoreCardRequest)

@@ -705,6 +705,7 @@ proto_library(
         ":cache_proxy_proto",
         ":encryption_proto",
         ":eventlog_proto",
+        ":execution_graph_analysis_proto",
         ":execution_stats_proto",
         ":gcp_proto",
         ":github_proto",
@@ -817,6 +818,14 @@ proto_library(
     name = "execution_graph_proto",
     srcs = [
         "execution_graph.proto",
+    ],
+)
+
+proto_library(
+    name = "execution_graph_analysis_proto",
+    srcs = ["execution_graph_analysis.proto"],
+    deps = [
+        ":context_proto",
     ],
 )
 
@@ -1286,6 +1295,21 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "execution_graph_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_graph",
+    proto = ":execution_graph_proto",
+)
+
+go_proto_library(
+    name = "execution_graph_analysis_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/execution_graph_analysis",
+    proto = ":execution_graph_analysis_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
     name = "stat_filter_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/stat_filter",
     proto = ":stat_filter_proto",
@@ -1550,6 +1574,7 @@ go_proto_library(
         ":cache_proxy_go_proto",
         ":encryption_go_proto",
         ":eventlog_go_proto",
+        ":execution_graph_analysis_go_proto",
         ":execution_stats_go_proto",
         ":gcp_go_proto",
         ":github_go_proto",
@@ -2524,6 +2549,7 @@ ts_proto_library(
         ":cache_ts_proto",
         ":encryption_ts_proto",
         ":eventlog_ts_proto",
+        ":execution_graph_analysis_ts_proto",
         ":execution_stats_ts_proto",
         ":gcp_ts_proto",
         ":github_ts_proto",
@@ -2577,6 +2603,14 @@ ts_proto_library(
 ts_proto_library(
     name = "execution_graph_ts_proto",
     proto = ":execution_graph_proto",
+)
+
+ts_proto_library(
+    name = "execution_graph_analysis_ts_proto",
+    proto = ":execution_graph_analysis_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
 )
 
 ts_proto_library(

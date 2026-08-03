@@ -444,6 +444,28 @@ const (
 	// operator-controlled zone files, so cardinality is bounded. Named
 	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
 	DNSZoneLabel = "dns_zone"
+
+	// An execution graph analysis drag factor, such as "Queue",
+	// "Bazel overhead", a mnemonic, a rule class, or a Bazel target label.
+	// Only factors whose drag exceeds a fraction of the invocation duration
+	// are recorded, which bounds cardinality.
+	ExecutionGraphFactorLabel = "factor"
+
+	// The Bazel target label of an execution graph node. Only nodes whose
+	// drag exceeds a fraction of the invocation duration are recorded, which
+	// bounds cardinality.
+	ExecutionGraphTargetLabel = "target"
+
+	// The Bazel target label of the dependency side of an execution graph
+	// edge.
+	ExecutionGraphDependencyLabel = "dependency"
+
+	// The spawn mnemonic of an execution graph node, such as "GoCompilePkg".
+	ExecutionGraphMnemonicLabel = "mnemonic"
+
+	// Why an invocation was skipped by the execution graph analyzer:
+	// "no_graph_log" or "already_analyzed".
+	ExecutionGraphSkipReasonLabel = "reason"
 )
 
 // Label value constants
@@ -4552,6 +4574,127 @@ var (
 	// max by (dns_zone) (buildbuddy_dns_server_zone_serial)
 	//   !=
 	// min by (dns_zone) (buildbuddy_dns_server_zone_serial)
+	// ```
+
+	// ## Execution graph analysis metrics
+	//
+	// Recorded by the execution graph analysis worker when it analyzes a
+	// completed invocation's execution graph log. "Drag" is how much shorter
+	// the invocation's critical path would be if the factor / node / edge
+	// took zero time. Drags smaller than a fraction of the invocation
+	// duration are not recorded, to bound cardinality.
+
+	ExecutionGraphAnalyzedInvocations = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "analyzed_invocations",
+		Help:      "The number of invocations whose execution graph logs were analyzed.",
+	})
+
+	ExecutionGraphInvocationDurationMsec = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "invocation_duration_msec",
+		Help:      "The total duration of analyzed invocations, in **milliseconds**.",
+	})
+
+	ExecutionGraphFactorDragMsec = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "factor_drag_msec",
+		Help:      "The total drag of a **factor** (a timing component, overhead group, mnemonic, rule class, or target), in **milliseconds**.",
+	}, []string{
+		ExecutionGraphFactorLabel,
+	})
+
+	ExecutionGraphEdgeDragMsec = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "edge_drag_msec",
+		Help:      "The total drag of a dependency **edge**, in **milliseconds**.",
+	}, []string{
+		ExecutionGraphTargetLabel,
+		ExecutionGraphDependencyLabel,
+	})
+
+	ExecutionGraphNodeDragMsec = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "node_drag_msec",
+		Help:      "The total drag of an execution graph **node** (a spawn or action), in **milliseconds**.",
+	}, []string{
+		ExecutionGraphTargetLabel,
+		ExecutionGraphMnemonicLabel,
+	})
+
+	ExecutionGraphTargetDepDragMsec = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "target_dep_drag_msec",
+		Help:      "The total drag of removing every dependency **on a target** (how much shorter builds would be if no step had to wait for the target's steps), in **milliseconds**.",
+	}, []string{
+		ExecutionGraphTargetLabel,
+	})
+
+	ExecutionGraphAnalysisDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "analysis_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Millisecond, 10*time.Minute, 2),
+		Help:      "Time to analyze one invocation's execution graph (build event replay, log fetch, analysis, and storage), in **microseconds**.",
+	})
+
+	ExecutionGraphLogSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "log_size_bytes",
+		Buckets:   exponentialBucketRange(256, 1024*1024*1024, 4),
+		Help:      "Compressed size of analyzed execution graph logs, in **bytes**.",
+	})
+
+	ExecutionGraphAnalysisSizeBytes = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "analysis_size_bytes",
+		Buckets:   exponentialBucketRange(256, 1024*1024*1024, 4),
+		Help:      "Serialized size of stored execution graph analyses, in **bytes**.",
+	})
+
+	ExecutionGraphSkippedInvocations = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "skipped_invocations",
+		Help:      "The number of completed invocations the execution graph analyzer skipped without producing an analysis.",
+	}, []string{
+		ExecutionGraphSkipReasonLabel,
+	})
+
+	ExecutionGraphFailedInvocations = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "failed_invocations",
+		Help:      "The number of invocations the execution graph analyzer failed to process.",
+	})
+
+	ExecutionGraphWatermarkTimestampSeconds = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "execution_graph",
+		Name:      "watermark_timestamp_seconds",
+		Help:      "The execution graph analyzer's scan watermark, as a Unix timestamp in **seconds**. `time() - buildbuddy_execution_graph_watermark_timestamp_seconds` is how far behind the analyzer is.",
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # How much faster would the average build be without a given edge?
+	// sum by (target, dependency) (increase(buildbuddy_execution_graph_edge_drag_msec[1d]))
+	//   /
+	// sum(increase(buildbuddy_execution_graph_analyzed_invocations[1d]))
+	//
+	// # What fraction of total build time does a factor account for?
+	// sum by (factor) (increase(buildbuddy_execution_graph_factor_drag_msec[1d]))
+	//   /
+	// sum(increase(buildbuddy_execution_graph_invocation_duration_msec[1d]))
 	// ```
 )
 

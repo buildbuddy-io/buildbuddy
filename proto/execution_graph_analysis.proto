@@ -1,0 +1,224 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package execution_graph_analysis;
+
+// Analysis of a Bazel execution graph log (see proto/execution_graph.proto),
+// computed after an invocation completes: the critical path of the invocation
+// and the "drag" of nodes, edges, and factors — how much shorter the
+// invocation's longest dependency chain would be if the node / edge / factor
+// took zero time.
+
+// A single node in the analyzed graph. This mirrors the subset of
+// execution_graph.Node that consumers need, plus synthetic nodes the analyzer
+// adds for Bazel work outside of execution (startup, analysis, finalization).
+message Node {
+  // Unique identifier of this node within the analysis. Indexes of nodes
+  // parsed from the execution graph log are preserved; synthetic nodes get
+  // indexes after all real nodes. The index is an identifier, not a position:
+  // synthetic nodes that other nodes depend on (e.g. the analysis phase node)
+  // appear early in ExecutionGraphAnalysis.nodes despite their high indexes.
+  int32 index = 1;
+
+  string target_label = 2;
+
+  string mnemonic = 3;
+
+  string rule_class = 4;
+
+  string description = 5;
+
+  // Last '/'-separated component of execution_graph.Node.identifier.
+  string identifier = 6;
+
+  int64 start_timestamp_millis = 7;
+
+  int64 duration_millis = 8;
+
+  // Indexes of this node's direct dependencies. Dependencies always appear
+  // earlier in ExecutionGraphAnalysis.nodes than their dependents, but do NOT
+  // necessarily have smaller indexes: real root nodes depend on the synthetic
+  // analysis phase node, whose index is higher than every real node's.
+  repeated int32 dep_index = 9;
+
+  // Timing components (execution_graph.Metrics fields), keyed by component
+  // name ("queue", "setup", "parse", "fetch", "network", "process", "upload",
+  // "process_outputs", "other", "retry", "discover_inputs"). Zero-valued
+  // components are omitted. Components sum to duration_millis for nodes
+  // parsed from the log.
+  map<string, int64> component_millis = 10;
+
+  // True for nodes the analyzer synthesized from BES timing data rather than
+  // parsed from the log (e.g. the analysis phase node).
+  bool synthetic = 11;
+
+  // The spawn runner that ran this step (e.g. "remote"), if applicable.
+  string runner = 12;
+
+  // Details about the runner.
+  string runner_subtype = 13;
+
+  // The index of the earlier attempt that this node is a retry of (e.g. a
+  // flaky test attempt). The analyzer also records this as a dependency
+  // edge.
+  optional int32 retry_of_index = 14;
+}
+
+message CriticalPath {
+  // Node indexes along the path, in dependency order.
+  repeated int32 node_index = 1;
+
+  // Sum of node durations along the path. For a factor's new critical path,
+  // durations are taken with the factor's time removed.
+  int64 duration_millis = 2;
+}
+
+message NodeDrag {
+  int32 node_index = 1;
+
+  // How much shorter the critical path would be if this node took no time.
+  int64 drag_millis = 2;
+
+  // The critical path of the graph with this node's duration zeroed. Omitted
+  // for very long critical paths, to bound the analysis size.
+  CriticalPath new_critical_path = 3;
+}
+
+message EdgeDrag {
+  // The dependency (the earlier node).
+  int32 dep_index = 1;
+
+  // The dependent (the later node that waits on dep_index).
+  int32 node_index = 2;
+
+  // How much shorter the critical path would be if this dependency edge
+  // didn't exist.
+  int64 drag_millis = 3;
+
+  // The critical path of the graph without this edge. Omitted for very long
+  // critical paths, to bound the analysis size.
+  CriticalPath new_critical_path = 4;
+}
+
+enum FactorType {
+  UNKNOWN_FACTOR_TYPE = 0;
+
+  // A timing component summed across all nodes (e.g. "Queue", "Network").
+  COMPONENT = 1;
+
+  // Bazel- or RBE-attributed overhead component groups across all nodes.
+  OVERHEAD = 2;
+
+  // Process time of all actions with a given mnemonic.
+  MNEMONIC = 3;
+
+  // Process time of all actions with a given rule class.
+  RULE_CLASS = 4;
+
+  // Process time of all actions of a given target.
+  TARGET = 5;
+
+  // A synthetic phase node (e.g. "Analysis phase").
+  PHASE = 6;
+
+  // The full duration of all steps executed by a runner (e.g. "remote").
+  RUNNER = 7;
+
+  // The full duration of all steps executed by a runner subtype, named
+  // "<runner>/<subtype>". Rolls up to the RUNNER factor structurally, but
+  // drags are computed independently and are not additive.
+  RUNNER_SUBTYPE = 8;
+
+  // The full duration of test attempts that failed and were retried. The
+  // "Flaky Test" factor covers all such attempts; "Flaky Test/<target>"
+  // factors cover a single test target's failed attempts.
+  FLAKY_TEST = 9;
+}
+
+message FactorDrag {
+  // Human-readable factor name, e.g. "Queue", "Bazel overhead", "Genrule",
+  // "genrule rule", "//some:target", "Analysis phase".
+  string factor = 1;
+
+  FactorType type = 2;
+
+  // How much shorter the critical path would be if this factor took no time
+  // anywhere in the build.
+  int64 drag_millis = 3;
+
+  // The critical path of the graph with this factor's time removed.
+  CriticalPath new_critical_path = 4;
+
+  // Total time attributed to this factor, summed across all nodes.
+  int64 total_millis = 5;
+
+  // Time attributed to this factor on the (original) critical path's nodes.
+  // Drag can be smaller than this: removing the factor's time may hand the
+  // lead to a parallel branch.
+  int64 critical_path_millis = 6;
+}
+
+// The drag of removing every dependency ON a target: how much shorter the
+// critical path would be if no step had to wait for any of the target's
+// steps.
+message TargetDepDrag {
+  string target_label = 1;
+
+  int64 drag_millis = 2;
+
+  // The critical path of the graph without any edges out of the target's
+  // steps. Omitted for very long critical paths.
+  CriticalPath new_critical_path = 3;
+}
+
+message ExecutionGraphAnalysis {
+  // Version of the analyzer that produced this analysis.
+  int32 version = 1;
+
+  string invocation_id = 2;
+
+  // Total wall duration of the invocation.
+  int64 invocation_duration_millis = 3;
+
+  int32 num_nodes = 4;
+
+  int64 num_edges = 5;
+
+  CriticalPath critical_path = 6;
+
+  // Drag of each critical-path node, in path order. Nodes off the critical
+  // path always have zero drag and are omitted.
+  repeated NodeDrag node_drags = 7;
+
+  // Drag of each critical-path edge, in path order. Edges off the critical
+  // path always have zero drag and are omitted.
+  repeated EdgeDrag edge_drags = 8;
+
+  // Drag of each factor with non-zero attributed time, sorted by descending
+  // drag.
+  repeated FactorDrag factor_drags = 9;
+
+  // All analyzed nodes (including synthetic ones), topologically ordered:
+  // every node's dependencies precede it in this list (ordering by the index
+  // field does not have this property).
+  repeated Node nodes = 10;
+
+  int64 analyzed_at_usec = 11;
+
+  // Drag of removing all dependencies on a target, for targets on the
+  // critical path with non-zero drag, sorted by descending drag.
+  repeated TargetDepDrag target_dep_drags = 12;
+}
+
+message GetExecutionGraphAnalysisRequest {
+  context.RequestContext request_context = 1;
+
+  string invocation_id = 2;
+}
+
+message GetExecutionGraphAnalysisResponse {
+  context.ResponseContext response_context = 1;
+
+  ExecutionGraphAnalysis analysis = 2;
+}

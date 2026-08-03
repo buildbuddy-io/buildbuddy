@@ -370,6 +370,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error creating traffic stats handlers: %v", err)
 	}
+	log.Infof("VANJAAAAAAAAAAAAAAAAAAAAAA started graph analysis version 1")
 	libmain.StartAndRunServices(realEnv, grpc_server.GRPCServerConfig{
 		ExtraStatsHandlers:         []stats.Handler{trafficHandler},
 		PostAuthUnaryInterceptors:  []grpc.UnaryServerInterceptor{trafficHandler.UnaryInterceptor},

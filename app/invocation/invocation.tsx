@@ -39,6 +39,7 @@ import InvocationLogsModel from "./invocation_logs_model";
 import InvocationModel, { CI_RUNNER_ROLE } from "./invocation_model";
 import InvocationNotFoundComponent from "./invocation_not_found";
 import InvocationOverviewComponent from "./invocation_overview";
+import ExecutionGraphCardComponent from "./invocation_execution_graph_card";
 import QueryGraphCardComponent from "./invocation_query_graph_card";
 import RawLogsCardComponent from "./invocation_raw_logs_card";
 import SpawnCardComponent from "./invocation_spawn_card";
@@ -633,6 +634,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
             hasCoverage={this.state.model.hasCoverage()}
             hasSuggestions={suggestions.length > 0}
             hasExecutionLogs={this.state.model.getIsExecutionLogEnabled()}
+            executionGraphEnabled={capabilities.config.executionGraphAnalysisEnabled}
           />
 
           {(activeTab === "targets" ||
@@ -781,6 +783,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
           )}
 
           {activeTab === "fetches" && <FetchCardComponent model={this.state.model} />}
+
+          {activeTab === "graph" && capabilities.config.executionGraphAnalysisEnabled && (
+            <ExecutionGraphCardComponent model={this.state.model} />
+          )}
 
           {activeTab === "raw" && <RawLogsCardComponent model={this.state.model} pageSize={largePageSize} />}
         </div>

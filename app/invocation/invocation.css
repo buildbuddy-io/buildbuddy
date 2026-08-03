@@ -1726,3 +1726,384 @@ svg.invocation-query-graph .nodes rect {
 .invocation-compare-button-container-mini .invocation-menu-button {
   border: none;
 }
+
+
+/* Execution graph analysis tab */
+
+.execution-graph-tab .execution-graph-card {
+  display: flex;
+}
+
+.execution-graph-card .icon {
+  flex-shrink: 0;
+}
+
+.execution-graph-card .content {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.execution-graph-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.execution-graph-toggle {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.execution-graph-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  margin-top: 16px;
+}
+
+.execution-graph-summary .summary-value {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.execution-graph-summary .summary-label {
+  color: #888;
+  font-size: 13px;
+}
+
+/* Timeline */
+
+.execution-graph-scroll {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.execution-graph-gridline {
+  stroke: #eee;
+  stroke-width: 1;
+}
+
+.dark .execution-graph-gridline {
+  stroke: #3a3a3a;
+}
+
+.execution-graph-axis-label {
+  fill: #999;
+  font-size: 11px;
+}
+
+.execution-graph-row-label {
+  fill: #444;
+  font-size: 10px;
+  font-family: "Source Code Pro", monospace;
+}
+
+.execution-graph-row-label.on-path {
+  fill: #1c1c1c;
+  font-weight: 600;
+}
+
+.dark .execution-graph-row-label {
+  fill: #bbb;
+}
+
+.dark .execution-graph-row-label.on-path {
+  fill: #f0f0f0;
+}
+
+.execution-graph-row-sublabel {
+  fill: #999;
+  font-size: 8px;
+  font-family: "Source Code Pro", monospace;
+}
+
+.dark .execution-graph-row-sublabel {
+  fill: #888;
+}
+
+.execution-graph-bar {
+  fill: #bdbdbd;
+}
+
+.execution-graph-bar.on-path {
+  fill: #2196f3;
+}
+
+.execution-graph-bar.synthetic {
+  fill: #90a4ae;
+}
+
+.execution-graph-bar.on-path.synthetic {
+  fill: #64b5f6;
+}
+
+.dark .execution-graph-bar {
+  fill: #616161;
+}
+
+.dark .execution-graph-bar.on-path {
+  fill: #42a5f5;
+}
+
+.dark .execution-graph-bar.synthetic {
+  fill: #546e7a;
+}
+
+.dark .execution-graph-bar.on-path.synthetic {
+  fill: #90caf9;
+}
+
+/* Tables */
+
+.execution-graph-table {
+  margin-top: 16px;
+}
+
+.execution-graph-table-header,
+.execution-graph-table-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.dark .execution-graph-table-header,
+.dark .execution-graph-table-row {
+  border-bottom-color: #333;
+}
+
+.execution-graph-table-header {
+  color: #888;
+  font-size: 12px;
+  text-transform: uppercase;
+  align-items: center;
+  user-select: none;
+}
+
+.execution-graph-table .sortable-header {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.execution-graph-table .sortable-header:hover {
+  color: #444;
+}
+
+.dark .execution-graph-table .sortable-header:hover {
+  color: #ccc;
+}
+
+.execution-graph-table .sort-icon {
+  width: 12px;
+  height: 12px;
+}
+
+.execution-graph-table .col-index {
+  flex: 0 0 24px;
+  text-align: right;
+  color: #999;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.execution-graph-table .col-name {
+  flex: 2 1 260px;
+  min-width: 0;
+}
+
+.execution-graph-table .step-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Source Code Pro", monospace;
+  font-size: 12px;
+}
+
+.execution-graph-table .step-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #999;
+  font-size: 11px;
+}
+
+.dark .execution-graph-table .step-subtitle {
+  color: #888;
+}
+
+.execution-graph-table .col-type {
+  flex: 0 0 76px;
+  color: #888;
+  font-size: 12px;
+}
+
+.execution-graph-table .col-bar {
+  flex: 3 1 200px;
+  align-self: center;
+}
+
+.execution-graph-table .col-num {
+  flex: 0 0 72px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.execution-graph-table .col-num.wide {
+  flex-basis: 110px;
+}
+
+.execution-graph-table .col-num .newpath-toggle {
+  justify-content: flex-end;
+}
+
+.execution-graph-table .col-newpath {
+  flex: 0 0 130px;
+  font-size: 12px;
+}
+
+.execution-graph-table .newpath-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.execution-graph-table .newpath-toggle .chevron {
+  width: 14px;
+  height: 14px;
+}
+
+.execution-graph-expanded-path {
+  padding: 8px 0 16px 24px;
+  border-bottom: 1px solid #eee;
+}
+
+.dark .execution-graph-expanded-path {
+  border-bottom-color: #333;
+}
+
+.execution-graph-expanded-path .expanded-path-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+/* Composition (per-component) bars */
+
+.execution-graph-table .composition-bar {
+  display: flex;
+  gap: 1px;
+  height: 14px;
+  min-width: 3px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.execution-graph-table .composition-segment {
+  height: 100%;
+  min-width: 1px;
+}
+
+.comp-synthetic {
+  background: #90a4ae;
+}
+
+/* Component colors (light / dark pairs from the validated palette). */
+.comp-queue { background: #eda100; }
+.comp-setup { background: #1baf7a; }
+.comp-parse { background: #eb6834; }
+.comp-fetch { background: #4a3aa7; }
+.comp-network { background: #e34948; }
+.comp-process { background: #2a78d6; }
+.comp-upload { background: #e87ba4; }
+.comp-process_outputs { background: #008300; }
+.comp-retry { background: #b71c1c; }
+.comp-discover_inputs { background: #6d4c41; }
+.comp-other { background: #898781; }
+
+.dark .comp-queue { background: #c98500; }
+.dark .comp-setup { background: #199e70; }
+.dark .comp-parse { background: #d95926; }
+.dark .comp-fetch { background: #9085e9; }
+.dark .comp-network { background: #e66767; }
+.dark .comp-process { background: #3987e5; }
+.dark .comp-upload { background: #d55181; }
+.dark .comp-process_outputs { background: #008300; }
+.dark .comp-retry { background: #ef5350; }
+.dark .comp-discover_inputs { background: #a1887f; }
+.dark .comp-other { background: #898781; }
+
+/* Legend */
+
+.execution-graph-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 12px;
+  color: #888;
+  font-size: 12px;
+}
+
+.dark .execution-graph-legend {
+  color: #999;
+}
+
+.execution-graph-legend .legend-key {
+  display: inline-flex;
+  align-items: center;
+}
+
+.execution-graph-legend .legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 6px;
+}
+
+.execution-graph-table .col-runner {
+  flex: 0 0 110px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Source Code Pro", monospace;
+  font-size: 11px;
+  color: #666;
+}
+
+.dark .execution-graph-table .col-runner {
+  color: #aaa;
+}
+
+.execution-graph-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 24px;
+}
+
+.execution-graph-table .step-name.linked,
+.execution-graph-row-label.linked {
+  cursor: pointer;
+}
+
+.execution-graph-table .step-name.linked:hover,
+.execution-graph-row-label.linked:hover {
+  text-decoration: underline;
+}
+
+.execution-graph-table a.step-name.linked {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.execution-graph-table a.step-name.linked:hover {
+  text-decoration: underline;
+}

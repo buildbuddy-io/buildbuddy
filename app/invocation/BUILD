@@ -29,6 +29,7 @@ ts_library(
         "//app/invocation:invocation_details_card",
         "//app/invocation:invocation_error_card",
         "//app/invocation:invocation_exec_log_card",
+        "//app/invocation:invocation_execution_graph_card",
         "//app/invocation:invocation_fetch_card",
         "//app/invocation:invocation_file_card",
         "//app/invocation:invocation_filter",
@@ -843,6 +844,29 @@ ts_library(
         "//app/util:exit_codes",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "invocation_execution_graph_card",
+    srcs = ["invocation_execution_graph_card.tsx"],
+    deps = [
+        "//:node_modules/@types/long",
+        "//:node_modules/@types/react",
+        "//:node_modules/long",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/components/button",
+        "//app/components/link",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/format",
+        "//app/invocation:invocation_model",
+        "//app/router",
+        "//app/service:rpc_service",
+        "//app/util:errors",
+        "//proto:execution_graph_analysis_ts_proto",
     ],
 )
 
