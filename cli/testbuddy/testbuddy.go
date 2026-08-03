@@ -37,8 +37,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-var bazelTestOutputDirectory = regexp.MustCompile(
-	`^(?:run_[1-9][0-9]*_of_[1-9][0-9]*|shard_[1-9][0-9]*_of_[1-9][0-9]*(?:_run_[1-9][0-9]*_of_[1-9][0-9]*)?)$`,
+var bazelTestOutputLayout = regexp.MustCompile(
+	`^(?:run_[1-9][0-9]*_of_([1-9][0-9]*)|shard_[1-9][0-9]*_of_([1-9][0-9]*)(?:_run_[1-9][0-9]*_of_([1-9][0-9]*))?)$`,
 )
 
 // ReportRequestTargetBytes bounds one client-stream message.
@@ -243,7 +243,7 @@ func HandleTestReport(args []string) (int, error) {
 	if len(inputs) == 0 {
 		inputs = []string{"bazel-testlogs"}
 	}
-	paths, err := testXMLPaths(inputs)
+	paths, err := FindTestXMLFiles(inputs)
 	if err != nil {
 		return 1, err
 	}
@@ -561,7 +561,7 @@ func TargetLabelFromXMLPath(workspacePath, path string) (string, error) {
 	}
 	relative := strings.TrimSuffix(slashed[index+len(marker):], "/test.xml")
 	parts := strings.Split(relative, "/")
-	if len(parts) > 1 && bazelTestOutputDirectory.MatchString(parts[len(parts)-1]) {
+	if _, ok := testOutputLayout(parts[len(parts)-1]); len(parts) > 1 && ok {
 		parts = parts[:len(parts)-1]
 	}
 	if len(parts) == 0 || parts[len(parts)-1] == "" {
@@ -577,15 +577,47 @@ func TargetLabelFromXMLPath(workspacePath, path string) (string, error) {
 	return targetLabel, nil
 }
 
-func testXMLPaths(inputs []string) ([]string, error) {
-	paths := make(map[string]struct{})
+type testXMLLayout struct {
+	paths  map[string]struct{}
+	newest time.Time
+}
+
+func FindTestXMLFiles(inputs []string) ([]string, error) {
+	explicit := make(map[string]struct{})
+	layouts := make(map[string]map[string]*testXMLLayout)
+	addDiscovered := func(path string) error {
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		parent := filepath.Dir(path)
+		targetRoot := parent
+		layoutName := "direct"
+		if layout, ok := testOutputLayout(filepath.Base(parent)); ok {
+			targetRoot = filepath.Dir(parent)
+			layoutName = layout
+		}
+		if layouts[targetRoot] == nil {
+			layouts[targetRoot] = make(map[string]*testXMLLayout)
+		}
+		layout := layouts[targetRoot][layoutName]
+		if layout == nil {
+			layout = &testXMLLayout{paths: make(map[string]struct{})}
+			layouts[targetRoot][layoutName] = layout
+		}
+		layout.paths[path] = struct{}{}
+		if info.ModTime().After(layout.newest) {
+			layout.newest = info.ModTime()
+		}
+		return nil
+	}
 	for _, input := range inputs {
 		info, err := os.Stat(input)
 		if err != nil {
 			return nil, err
 		}
 		if !info.IsDir() {
-			paths[input] = struct{}{}
+			explicit[input] = struct{}{}
 			continue
 		}
 		root, err := filepath.EvalSymlinks(input)
@@ -597,12 +629,27 @@ func testXMLPaths(inputs []string) ([]string, error) {
 				return err
 			}
 			if !entry.IsDir() && entry.Name() == "test.xml" {
-				paths[path] = struct{}{}
+				return addDiscovered(path)
 			}
 			return nil
 		})
 		if err != nil {
 			return nil, err
+		}
+	}
+	paths := explicit
+	for _, targetLayouts := range layouts {
+		var selectedName string
+		var selected *testXMLLayout
+		for name, layout := range targetLayouts {
+			if selected == nil || layout.newest.After(selected.newest) ||
+				(layout.newest.Equal(selected.newest) && name < selectedName) {
+				selectedName = name
+				selected = layout
+			}
+		}
+		for path := range selected.paths {
+			paths[path] = struct{}{}
 		}
 	}
 	sorted := make([]string, 0, len(paths))
@@ -611,6 +658,21 @@ func testXMLPaths(inputs []string) ([]string, error) {
 	}
 	sort.Strings(sorted)
 	return sorted, nil
+}
+
+func testOutputLayout(directory string) (string, bool) {
+	match := bazelTestOutputLayout.FindStringSubmatch(directory)
+	if match == nil {
+		return "", false
+	}
+	if match[1] != "" {
+		return "runs:" + match[1], true
+	}
+	layout := "shards:" + match[2]
+	if match[3] != "" {
+		layout += ":runs:" + match[3]
+	}
+	return layout, true
 }
 
 func repositoryURL(workspacePath, override string) (string, error) {

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/test_buddy/junit"
@@ -49,6 +51,91 @@ func TestTargetLabelFromXMLPath(t *testing.T) {
 			require.Equal(t, test.label, label)
 		})
 	}
+}
+
+func TestXMLPathsSelectsTheMostRecentlyWrittenBazelLayout(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		olderLayout   []string
+		currentLayout []string
+	}{
+		{
+			name: "runs increased",
+			olderLayout: []string{
+				"run_1_of_3", "run_2_of_3", "run_3_of_3",
+			},
+			currentLayout: []string{
+				"run_1_of_5", "run_2_of_5", "run_3_of_5", "run_4_of_5", "run_5_of_5",
+			},
+		},
+		{
+			name: "runs decreased",
+			olderLayout: []string{
+				"run_1_of_5", "run_2_of_5", "run_3_of_5", "run_4_of_5", "run_5_of_5",
+			},
+			currentLayout: []string{
+				"run_1_of_3", "run_2_of_3", "run_3_of_3",
+			},
+		},
+		{
+			name: "shards and runs changed",
+			olderLayout: []string{
+				"shard_1_of_2_run_1_of_2", "shard_1_of_2_run_2_of_2",
+				"shard_2_of_2_run_1_of_2", "shard_2_of_2_run_2_of_2",
+			},
+			currentLayout: []string{
+				"shard_1_of_3_run_1_of_1", "shard_2_of_3_run_1_of_1", "shard_3_of_3_run_1_of_1",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "bazel-testlogs", "pkg", "unit_test")
+			older := time.Unix(1_000, 0)
+			current := older.Add(time.Minute)
+			write := func(layout string, modified time.Time) string {
+				path := filepath.Join(root, layout, "test.xml")
+				require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+				require.NoError(t, os.WriteFile(path, []byte("<testsuite/>"), 0o644))
+				require.NoError(t, os.Chtimes(path, modified, modified))
+				return path
+			}
+			for _, layout := range test.olderLayout {
+				write(layout, older)
+			}
+			want := make([]string, 0, len(test.currentLayout))
+			for _, layout := range test.currentLayout {
+				want = append(want, write(layout, current))
+			}
+			sort.Strings(want)
+
+			got, err := testbuddy.FindTestXMLFiles([]string{filepath.Dir(filepath.Dir(root))})
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		})
+	}
+}
+
+func TestXMLPathsSelectsDirectOutputWhenItIsNewest(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "bazel-testlogs", "pkg", "unit_test")
+	stale := filepath.Join(root, "run_1_of_2", "test.xml")
+	direct := filepath.Join(root, "test.xml")
+	for _, path := range []string{stale, direct} {
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("<testsuite/>"), 0o644))
+	}
+	older := time.Unix(1_000, 0)
+	require.NoError(t, os.Chtimes(stale, older, older))
+	require.NoError(t, os.Chtimes(direct, older.Add(time.Minute), older.Add(time.Minute)))
+
+	got, err := testbuddy.FindTestXMLFiles([]string{filepath.Dir(filepath.Dir(root))})
+	require.NoError(t, err)
+	require.Equal(t, []string{direct}, got)
+
+	// Explicit files remain explicit even if a directory scan would select a
+	// different layout.
+	got, err = testbuddy.FindTestXMLFiles([]string{stale})
+	require.NoError(t, err)
+	require.Equal(t, []string{stale}, got)
 }
 
 func TestBazelTargetOutcome(t *testing.T) {
