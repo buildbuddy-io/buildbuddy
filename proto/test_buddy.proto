@@ -99,6 +99,7 @@ message GetTestsResponse {
 message TestTargetSummary {
   TestTargetIdentity identity = 1;
   TestSummary summary = 2;
+  TestHealthSummary cases = 3;
 }
 
 message GetTestTargetsRequest {

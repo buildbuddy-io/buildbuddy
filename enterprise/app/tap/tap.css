@@ -369,6 +369,33 @@
   background: var(--color-bg-secondary);
 }
 
+.test-buddy-case-health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.test-buddy-health {
+  font-weight: 600;
+}
+
+.test-buddy-health.healthy {
+  color: var(--color-status-success);
+}
+
+.test-buddy-health.flaky {
+  color: var(--color-status-warning);
+}
+
+.test-buddy-health.failing,
+.test-buddy-health.timeout {
+  color: var(--color-status-error);
+}
+
+.test-buddy-health.neutral {
+  color: var(--color-text-secondary);
+}
+
 .test-buddy-empty {
   color: var(--color-text-secondary);
   padding: 32px 0;

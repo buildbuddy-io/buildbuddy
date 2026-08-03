@@ -675,6 +675,17 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 	report("//pkg:failing", "TestFailing", tbpb.TestOutcome_TEST_OUTCOME_FAIL)
 	report("//pkg:flaky", "TestFlaky",
 		tbpb.TestOutcome_TEST_OUTCOME_PASS, tbpb.TestOutcome_TEST_OUTCOME_FAIL)
+	for i, outcome := range []tbpb.TestOutcome{
+		tbpb.TestOutcome_TEST_OUTCOME_PASS,
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+	} {
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{caseResult(
+				fmt.Sprintf("case-only-%d", i), "//pkg:case_flaky", "TestCaseFlaky", outcome, 1_000)},
+		})
+		require.NoError(t, err)
+	}
 	report("//pkg:healthy", "TestHealthy",
 		tbpb.TestOutcome_TEST_OUTCOME_PASS,
 		tbpb.TestOutcome_TEST_OUTCOME_PASS,
@@ -689,21 +700,37 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 	}
 
 	cases := getTests(t, service, ctx, &tbpb.GetTestsRequest{RepoUrl: repository})
-	require.Len(t, cases, 3)
+	require.Len(t, cases, 4)
 	require.Equal(t, []tbpb.TestHealth{
 		tbpb.TestHealth_TEST_HEALTH_FAILING,
+		tbpb.TestHealth_TEST_HEALTH_FLAKY,
 		tbpb.TestHealth_TEST_HEALTH_FLAKY,
 		tbpb.TestHealth_TEST_HEALTH_HEALTHY,
 	}, []tbpb.TestHealth{
 		cases[0].GetSummary().GetHealth(),
 		cases[1].GetSummary().GetHealth(),
 		cases[2].GetSummary().GetHealth(),
+		cases[3].GetSummary().GetHealth(),
 	})
 	targets := getTestTargets(t, service, ctx, &tbpb.GetTestTargetsRequest{RepoUrl: repository})
-	require.Len(t, targets, 4)
+	require.Len(t, targets, 5)
+	require.Equal(t, []string{
+		"//pkg:failing",
+		"//pkg:flaky",
+		"//pkg:case_flaky",
+		"//pkg:timeout",
+		"//pkg:healthy",
+	}, []string{
+		targets[0].GetIdentity().GetTargetLabel(),
+		targets[1].GetIdentity().GetTargetLabel(),
+		targets[2].GetIdentity().GetTargetLabel(),
+		targets[3].GetIdentity().GetTargetLabel(),
+		targets[4].GetIdentity().GetTargetLabel(),
+	})
 	require.Equal(t, []tbpb.TestHealth{
 		tbpb.TestHealth_TEST_HEALTH_FAILING,
 		tbpb.TestHealth_TEST_HEALTH_FLAKY,
+		tbpb.TestHealth_TEST_HEALTH_UNKNOWN,
 		tbpb.TestHealth_TEST_HEALTH_TIMEOUT,
 		tbpb.TestHealth_TEST_HEALTH_HEALTHY,
 	}, []tbpb.TestHealth{
@@ -711,7 +738,10 @@ func TestConeOrdersHealthBySeverity(t *testing.T) {
 		targets[1].GetSummary().GetHealth(),
 		targets[2].GetSummary().GetHealth(),
 		targets[3].GetSummary().GetHealth(),
+		targets[4].GetSummary().GetHealth(),
 	})
+	require.Equal(t, int64(1), targets[2].GetCases().GetTotalCount())
+	require.Equal(t, int64(1), targets[2].GetCases().GetFlakyCount())
 }
 
 func TestConeBoundsFollowPackageComponents(t *testing.T) {

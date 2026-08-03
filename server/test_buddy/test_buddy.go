@@ -791,7 +791,17 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 		where += ` AND ` + bound
 		args = append(args, boundArgs...)
 	}
-	args = append(args,
+	queryArgs := []any{
+		tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
+		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
+		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
+		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
+		tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA.String(),
+		tbpb.TestHealth_TEST_HEALTH_HEALTHY.String(),
+		tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(),
+	}
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs,
 		tbpb.TestHealth_TEST_HEALTH_FAILING.String(),
 		tbpb.TestHealth_TEST_HEALTH_FLAKY.String(),
 		tbpb.TestHealth_TEST_HEALTH_TIMEOUT.String(),
@@ -799,47 +809,92 @@ func (s *Service) GetTestTargets(req *tbpb.GetTestTargetsRequest, stream tbpb.Te
 		tbpb.TestHealth_TEST_HEALTH_HEALTHY.String(),
 	)
 	query := fmt.Sprintf(`
+		SELECT * FROM (
 		SELECT tt.target_label,
-			COALESCE(s.health, '%s') AS health,
+			COALESCE(s.health, ?) AS health,
 			COALESCE(s.pass_count, 0) AS pass_count,
 			COALESCE(s.fail_count, 0) AS fail_count,
 			COALESCE(s.timeout_count, 0) AS timeout_count,
-			COALESCE(s.total_duration_usec, 0) AS total_duration_usec
+			COALESCE(s.total_duration_usec, 0) AS total_duration_usec,
+			COUNT(tc.case_name) AS case_total_count,
+			SUM(CASE WHEN tc.case_name IS NOT NULL AND cs.health = ? THEN 1 ELSE 0 END) AS case_failing_count,
+			SUM(CASE WHEN tc.case_name IS NOT NULL AND cs.health = ? THEN 1 ELSE 0 END) AS case_flaky_count,
+			SUM(CASE WHEN tc.case_name IS NOT NULL AND cs.health = ? THEN 1 ELSE 0 END) AS case_timed_out_count,
+			SUM(CASE WHEN tc.case_name IS NOT NULL AND cs.health = ? THEN 1 ELSE 0 END) AS case_insufficient_data_count,
+			SUM(CASE WHEN tc.case_name IS NOT NULL AND cs.health = ? THEN 1 ELSE 0 END) AS case_healthy_count,
+			SUM(CASE WHEN tc.case_name IS NOT NULL AND (cs.health IS NULL OR cs.health = ?) THEN 1 ELSE 0 END) AS case_unknown_count,
+			COALESCE(SUM(cs.pass_count), 0) AS case_pass_count,
+			COALESCE(SUM(cs.fail_count), 0) AS case_fail_count,
+			COALESCE(SUM(cs.timeout_count), 0) AS case_timeout_count,
+			COALESCE(SUM(cs.total_duration_usec), 0) AS case_total_duration_usec
 		FROM "TestTargets" AS tt
 		LEFT JOIN "TestTargetStates" AS s
 			ON s.group_id = tt.group_id AND s.repository = tt.repository
 			AND s.target_label = tt.target_label
+		LEFT JOIN "TestCases" AS tc
+			ON tc.group_id = tt.group_id AND tc.repository = tt.repository
+			AND tc.target_label = tt.target_label
+		LEFT JOIN "TestCaseStates" AS cs
+			ON cs.group_id = tc.group_id AND cs.repository = tc.repository
+			AND cs.target_label = tc.target_label AND cs.case_name = tc.case_name
 		WHERE %s
-		ORDER BY CASE s.health
-			WHEN ? THEN 0
-			WHEN ? THEN 1
-			WHEN ? THEN 2
-			WHEN ? THEN 3
-			WHEN ? THEN 4
+		GROUP BY tt.target_label, s.health, s.pass_count, s.fail_count,
+			s.timeout_count, s.total_duration_usec
+		) AS target_health
+		ORDER BY CASE
+			WHEN health = ? OR case_failing_count > 0 THEN 0
+			WHEN health = ? OR case_flaky_count > 0 THEN 1
+			WHEN health = ? OR case_timed_out_count > 0 THEN 2
+			WHEN health = ? OR case_insufficient_data_count > 0 THEN 3
+			WHEN health = ? OR case_healthy_count > 0 THEN 4
 			ELSE 5 END,
-			COALESCE(s.total_duration_usec * 1.0 /
-				NULLIF(s.pass_count + s.fail_count + s.timeout_count, 0), 0) DESC,
-			COALESCE(s.pass_count * 1.0 /
-				NULLIF(s.pass_count + s.fail_count + s.timeout_count, 0), 1) ASC,
-			tt.target_label`, tbpb.TestHealth_TEST_HEALTH_UNKNOWN.String(), where)
+			COALESCE(total_duration_usec * 1.0 /
+				NULLIF(pass_count + fail_count + timeout_count, 0), 0) DESC,
+			COALESCE(pass_count * 1.0 /
+				NULLIF(pass_count + fail_count + timeout_count, 0), 1) ASC,
+			target_label`, where)
 	type row struct {
-		TargetLabel       string
-		Health            string
-		PassCount         int64
-		FailCount         int64
-		TimeoutCount      int64
-		TotalDurationUsec int64
+		TargetLabel               string
+		Health                    string
+		PassCount                 int64
+		FailCount                 int64
+		TimeoutCount              int64
+		TotalDurationUsec         int64
+		CaseTotalCount            int64
+		CaseFailingCount          int64
+		CaseFlakyCount            int64
+		CaseTimedOutCount         int64
+		CaseInsufficientDataCount int64
+		CaseHealthyCount          int64
+		CaseUnknownCount          int64
+		CasePassCount             int64
+		CaseFailCount             int64
+		CaseTimeoutCount          int64
+		CaseTotalDurationUsec     int64
 	}
 	rsp := &tbpb.GetTestTargetsResponse{Targets: make([]*tbpb.TestTargetSummary, 0, queryBatchSize)}
-	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_targets").Raw(query, args...)
+	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_test_targets").Raw(query, queryArgs...)
 	err = db.ScanEach(rq, func(ctx context.Context, r *row) error {
 		target, err := identity.CanonicalizeTarget(repository, r.TargetLabel)
 		if err != nil {
 			return err
 		}
-		rsp.Targets = append(rsp.Targets, targetSummary(
-			target,
-			r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec))
+		cases := &tbpb.TestHealthSummary{
+			TotalCount: r.CaseTotalCount, FailingCount: r.CaseFailingCount,
+			FlakyCount: r.CaseFlakyCount, TimedOutCount: r.CaseTimedOutCount,
+			InsufficientDataCount: r.CaseInsufficientDataCount,
+			HealthyCount:          r.CaseHealthyCount, UnknownCount: r.CaseUnknownCount,
+			PassCount: r.CasePassCount, FailCount: r.CaseFailCount,
+			TimeoutCount: r.CaseTimeoutCount,
+		}
+		if total := cases.GetPassCount() + cases.GetFailCount() + cases.GetTimeoutCount(); total > 0 {
+			cases.PassRate = float64(cases.GetPassCount()) / float64(total)
+			cases.MeanDurationUsec = r.CaseTotalDurationUsec / total
+		}
+		summary := targetSummary(
+			target, r.Health, r.PassCount, r.FailCount, r.TimeoutCount, r.TotalDurationUsec)
+		summary.Cases = cases
+		rsp.Targets = append(rsp.Targets, summary)
 		if len(rsp.Targets) == queryBatchSize {
 			if err := stream.Send(rsp); err != nil {
 				return err

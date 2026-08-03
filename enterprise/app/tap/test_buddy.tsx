@@ -107,10 +107,10 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     router.navigateToQueryParam("target", target.identity.targetLabel);
   }
 
-  private renderHealthFilter() {
+  private renderHealthFilter(label = "Target or case health") {
     return (
       <label className="test-buddy-health-filter">
-        Health
+        {label}
         <select
           value={this.state.healthFilter}
           onChange={(event) => {
@@ -136,6 +136,20 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
       this.state.healthFilter === "all" ||
       (summary?.health ?? test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) === this.state.healthFilter
     );
+  }
+
+  private matchesTargetHealth(target: test_buddy.TestTargetSummary) {
+    const health = this.state.healthFilter;
+    if (health === "all" || target.summary?.health === health) return true;
+    const cases = target.cases;
+    if (!cases) return health === test_buddy.TestHealth.TEST_HEALTH_UNKNOWN;
+    if (health === test_buddy.TestHealth.TEST_HEALTH_FAILING) return Number(cases.failingCount) > 0;
+    if (health === test_buddy.TestHealth.TEST_HEALTH_FLAKY) return Number(cases.flakyCount) > 0;
+    if (health === test_buddy.TestHealth.TEST_HEALTH_TIMEOUT) return Number(cases.timedOutCount) > 0;
+    if (health === test_buddy.TestHealth.TEST_HEALTH_HEALTHY) return Number(cases.healthyCount) > 0;
+    if (health === test_buddy.TestHealth.TEST_HEALTH_INSUFFICIENT_DATA)
+      return Number(cases.insufficientDataCount) > 0;
+    return Number(cases.unknownCount) > 0;
   }
 
   // The component navigates by target label, so the identity message is built
@@ -187,7 +201,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
       <section className="test-buddy-target-detail">
         <h2>{target.identity?.targetLabel}</h2>
         <div className="test-buddy-stats">
-          <Stat name="Health" value={healthName(summary?.health)} />
+          <Stat name="Health" value={<HealthLabel health={summary?.health} />} />
           <Stat name="Pass rate" value={percent(summary?.passRate ?? 0)} />
           <Stat name="Mean duration" value={format.durationUsec(summary?.meanDurationUsec ?? 0)} />
           <Stat name="Passes" value={(summary?.passCount ?? 0).toString()} />
@@ -195,7 +209,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           <Stat name="Timeouts" value={(summary?.timeoutCount ?? 0).toString()} />
         </div>
         <h3>Cases</h3>
-        {this.renderHealthFilter()}
+        {this.renderHealthFilter("Case health")}
         <table className="test-buddy-table">
           <thead>
             <tr>
@@ -212,7 +226,9 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             {cases.map((testCase) => (
               <tr key={testCase.identity?.caseName}>
                 <td>{testCase.identity?.caseName}</td>
-                <td>{healthName(testCase.summary?.health)}</td>
+                <td>
+                  <HealthLabel health={testCase.summary?.health} />
+                </td>
                 <td>{percent(testCase.summary?.passRate ?? 0)}</td>
                 <td>{format.durationUsec(testCase.summary?.meanDurationUsec ?? 0)}</td>
                 <td>{(testCase.summary?.passCount ?? 0).toString()}</td>
@@ -262,8 +278,12 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             {response.transitions.map((transition, index) => (
               <tr key={`${transition.eventTimeUsec}-${index}`}>
                 <td>{new Date(Number(transition.eventTimeUsec) / 1_000).toLocaleString()}</td>
-                <td>{healthName(transition.previousHealth)}</td>
-                <td>{healthName(transition.health)}</td>
+                <td>
+                  <HealthLabel health={transition.previousHealth} />
+                </td>
+                <td>
+                  <HealthLabel health={transition.health} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -274,7 +294,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
 
   render() {
     if (this.state.selected) return <div className="container test-buddy">{this.renderTarget()}</div>;
-    const targets = this.state.targets.filter((target) => this.matchesHealth(target.summary));
+    const targets = this.state.targets.filter((target) => this.matchesTargetHealth(target));
     return (
       <div className="container test-buddy">
         <h1>TestBuddy</h1>
@@ -302,7 +322,8 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           <thead>
             <tr>
               <th>Target</th>
-              <th>Health</th>
+              <th>Target health</th>
+              <th>Case health</th>
               <th>Pass rate</th>
               <th>Mean duration</th>
             </tr>
@@ -315,7 +336,12 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
                     {target.identity?.targetLabel}
                   </button>
                 </td>
-                <td>{healthName(target.summary?.health)}</td>
+                <td>
+                  <HealthLabel health={target.summary?.health} />
+                </td>
+                <td>
+                  <CaseHealthLabels summary={target.cases} />
+                </td>
                 <td>{percent(target.summary?.passRate ?? 0)}</td>
                 <td>{format.durationUsec(target.summary?.meanDurationUsec ?? 0)}</td>
               </tr>
@@ -331,7 +357,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   }
 }
 
-function Stat({ name, value }: { name: string; value: string }) {
+function Stat({ name, value }: { name: string; value: React.ReactNode }) {
   return (
     <div className="test-buddy-stat">
       <div>{name}</div>
@@ -343,6 +369,42 @@ function Stat({ name, value }: { name: string; value: string }) {
 function healthName(health = test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) {
   if (health === test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) return "NOT REPORTED";
   return test_buddy.TestHealth[health].replace("TEST_HEALTH_", "");
+}
+
+function healthClass(health = test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) {
+  if (health === test_buddy.TestHealth.TEST_HEALTH_HEALTHY) return "healthy";
+  if (health === test_buddy.TestHealth.TEST_HEALTH_FLAKY) return "flaky";
+  if (health === test_buddy.TestHealth.TEST_HEALTH_FAILING) return "failing";
+  if (health === test_buddy.TestHealth.TEST_HEALTH_TIMEOUT) return "timeout";
+  return "neutral";
+}
+
+function HealthLabel({ health }: { health?: test_buddy.TestHealth }) {
+  return <span className={`test-buddy-health ${healthClass(health)}`}>{healthName(health)}</span>;
+}
+
+function CaseHealthLabels({ summary }: { summary?: test_buddy.TestHealthSummary | null }) {
+  if (!summary || Number(summary.totalCount) === 0)
+    return <span className="test-buddy-health neutral">NO CASES</span>;
+  const healthCounts = [
+    [summary.failingCount, test_buddy.TestHealth.TEST_HEALTH_FAILING],
+    [summary.flakyCount, test_buddy.TestHealth.TEST_HEALTH_FLAKY],
+    [summary.timedOutCount, test_buddy.TestHealth.TEST_HEALTH_TIMEOUT],
+    [summary.insufficientDataCount, test_buddy.TestHealth.TEST_HEALTH_INSUFFICIENT_DATA],
+    [summary.healthyCount, test_buddy.TestHealth.TEST_HEALTH_HEALTHY],
+    [summary.unknownCount, test_buddy.TestHealth.TEST_HEALTH_UNKNOWN],
+  ] as const;
+  return (
+    <div className="test-buddy-case-health">
+      {healthCounts
+        .filter(([count]) => Number(count) > 0)
+        .map(([count, health]) => (
+          <span className={`test-buddy-health ${healthClass(health)}`} key={health}>
+            {count.toString()} {healthName(health)}
+          </span>
+        ))}
+    </div>
+  );
 }
 
 function outcomeName(outcome: test_buddy.TestOutcome) {

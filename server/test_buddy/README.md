@@ -28,10 +28,11 @@ queryable health state.
 - Heavy processing runs in the dedicated TestBuddy service. BuildBuddy apps
   authenticate and proxy RPCs, keeping report work off the app serving path.
 - Reads never parse reports. Package-cone queries return failing, flaky, and
-  timed-out subjects before healthy ones; exact reads return current health,
-  aggregate statistics, recent evidence, and state-change history. Current state
-  and each transition retain the analyzer revision, reason, and eligible sample
-  count that produced them.
+  timed-out subjects before healthy ones. Target rows expose target health and a
+  separate rollup of their cases; case failures affect ordering but never change
+  target state. Exact reads return current health, aggregate statistics, recent
+  evidence, and state-change history. Current state and each transition retain
+  the analyzer revision, reason, and eligible sample count that produced them.
 - A cone read is a range scan of the catalog's own
   `(group_id, repository, package_path)` index, bounded on the package separator
   so that `a/bc` stays outside the `a/b` cone. There is no routing table, prefix
