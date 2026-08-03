@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/log",
+        "//cli/parser/bazel_command",
         "//server/util/lib/set",
         "@com_github_google_shlex//:shlex",
     ],

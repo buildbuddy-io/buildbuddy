@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/google/shlex"
 )
@@ -25,52 +26,6 @@ const (
 )
 
 var (
-	bazelCommands = set.Set[string]{
-		"analyze-profile":    {},
-		"aquery":             {},
-		"build":              {},
-		"canonicalize-flags": {},
-		"clean":              {},
-		"config":             {},
-		"coverage":           {},
-		"cquery":             {},
-		"dump":               {},
-		"fetch":              {},
-		"help":               {},
-		"info":               {},
-		"license":            {},
-		"mobile-install":     {},
-		"mod":                {},
-		"print_action":       {},
-		"query":              {},
-		"run":                {},
-		"shutdown":           {},
-		"sync":               {},
-		"test":               {},
-		"vendor":             {},
-		"version":            {},
-	}
-
-	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
-	// All commands inherit from "common".
-	parentCommand = map[string]string{
-		"aquery":             "build",
-		"canonicalize-flags": "build",
-		"clean":              "build",
-		"config":             "build",
-		"info":               "build",
-		"license":            "build",
-		"mobile-install":     "build",
-		"print_action":       "build",
-		"run":                "build",
-		"test":               "build",
-
-		"coverage": "test",
-		"cquery":   "test",
-		"fetch":    "test",
-		"vendor":   "test",
-	}
-
 	unconditionalCommandPhases = set.Set[string]{
 		CommonPhase: {},
 		AlwaysPhase: {},
@@ -78,7 +33,7 @@ var (
 
 	allPhases = set.FromSeq(
 		set.Union(
-			bazelCommands,
+			set.FromSeq(bazel_command.Commands().All()),
 			unconditionalCommandPhases,
 			set.From("startup"),
 		),
@@ -117,7 +72,7 @@ func GetPhases(command string) (out []string) {
 			break
 		}
 		out = append(out, command)
-		command = parentCommand[command]
+		command = bazel_command.Parent(command)
 	}
 	slices.Reverse(out)
 	return
@@ -277,23 +232,6 @@ func GetBazelOS() string {
 	default:
 		return runtime.GOOS
 	}
-}
-
-// BazelCommands returns a view of the set of bazel commands.
-func BazelCommands() set.View[string] {
-	return set.KeyView(bazelCommands)
-}
-
-// IsBazelCommand returns whether the given string is recognized as a bazel
-// command.
-func IsBazelCommand(command string) bool {
-	return bazelCommands.Contains(command)
-}
-
-// Parent returns the parent command of the given command, if one exists.
-func Parent(command string) (string, bool) {
-	parent, ok := parentCommand[command]
-	return parent, ok
 }
 
 // IsUnconditionalCommandPhase returns whether or not this is a phase that should always
