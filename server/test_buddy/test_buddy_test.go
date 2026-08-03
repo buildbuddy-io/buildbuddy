@@ -128,6 +128,8 @@ func caseResult(run, target, name string, outcome tbpb.TestOutcome, durationUsec
 			Outcome: outcome, DurationUsec: durationUsec,
 			SourceUrl:     "https://app.buildbuddy.io/invocation/" + run,
 			EventTimeUsec: 1_000_000, ResultId: run,
+			Source:    tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
+			CommitSha: "abc123",
 		},
 	}
 }
@@ -139,6 +141,8 @@ func targetResult(run, target string, outcome tbpb.TestOutcome, durationUsec int
 			Outcome: outcome, DurationUsec: durationUsec,
 			SourceUrl:     "https://app.buildbuddy.io/invocation/" + run,
 			EventTimeUsec: 1_000_000, ResultId: run,
+			Source:    tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
+			CommitSha: "abc123",
 		},
 	}
 }
@@ -220,6 +224,9 @@ func TestReportAndQueryTests(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, got, detail.GetTest())
 	require.Len(t, detail.GetRecentResults(), 3)
+	require.Equal(t, tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
+		detail.GetRecentResults()[0].GetSource())
+	require.Equal(t, "abc123", detail.GetRecentResults()[0].GetCommitSha())
 	require.Equal(t, "https://app.buildbuddy.io/invocation/m-middle-by-name", detail.GetRecentResults()[0].GetSourceUrl())
 	require.Equal(t, int64(1_000_000), detail.GetRecentResults()[0].GetEventTimeUsec())
 	require.Equal(t, "m-middle-by-name", detail.GetRecentResults()[0].GetResultId())

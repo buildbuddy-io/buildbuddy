@@ -21,7 +21,8 @@ queryable health state.
 - Reporting uses a bounded client stream. Each subject is updated in a small
   independent transaction, and the RPC returns after every streamed batch has
   committed. There is no queue or report-wide transaction.
-- Each observation retains its execution time and a stable reporter-derived
+- Each observation retains whether it came from presubmit, postsubmit, or a
+  monitor, the tested commit and dirty-checkout bit, its execution time, and a stable reporter-derived
   result ID. Analysis still follows processing order. Current state keeps the
   bounded evidence window plus 200 recent ID fingerprints, so an exact retry is
   a no-op while conflicting reuse is rejected.
@@ -42,5 +43,6 @@ queryable health state.
   so that `a/bc` stays outside the `a/b` cone. There is no routing table, prefix
   table, or hashed bucket: the package path a target already stores is the index.
 
-`bb test-report` reads Bazel test output and reports it. JUnit is only an input
-format and is not part of test identity.
+`bb test-report` reads Bazel test output and reports it as monitor evidence by
+default; `--source=presubmit` and `--source=postsubmit` override that default.
+JUnit is only an input format and is not part of test identity.

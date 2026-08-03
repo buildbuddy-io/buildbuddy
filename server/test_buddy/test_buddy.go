@@ -386,12 +386,15 @@ func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, r
 }
 
 type retainedSample struct {
-	Outcome        tbpb.TestOutcome `json:"o"`
-	DurationUsec   int64            `json:"d,omitempty"`
-	FailureMessage string           `json:"f,omitempty"`
-	SourceURL      string           `json:"u"`
-	EventTimeUsec  int64            `json:"t"`
-	ResultID       string           `json:"i"`
+	Outcome        tbpb.TestOutcome           `json:"o"`
+	Source         tbpb.TestObservationSource `json:"s"`
+	CommitSHA      string                     `json:"c"`
+	WorkspaceDirty bool                       `json:"w,omitempty"`
+	DurationUsec   int64                      `json:"d,omitempty"`
+	FailureMessage string                     `json:"f,omitempty"`
+	SourceURL      string                     `json:"u"`
+	EventTimeUsec  int64                      `json:"t"`
+	ResultID       string                     `json:"i"`
 }
 
 type retainedResultID struct {
@@ -428,7 +431,8 @@ func appendSample(results *retainedResults, result *tbpb.TestResult, windowSize 
 		return true, nil
 	}
 	results.Samples = append(results.Samples, retainedSample{
-		Outcome: result.GetOutcome(), DurationUsec: result.GetDurationUsec(),
+		Outcome: result.GetOutcome(), Source: result.GetSource(), CommitSHA: result.GetCommitSha(),
+		WorkspaceDirty: result.GetWorkspaceDirty(), DurationUsec: result.GetDurationUsec(),
 		FailureMessage: result.GetFailureMessage(), SourceURL: result.GetSourceUrl(),
 		EventTimeUsec: result.GetEventTimeUsec(), ResultID: result.GetResultId(),
 	})
@@ -453,7 +457,15 @@ func resultFingerprint(result *tbpb.TestResult) string {
 	_, _ = h.Write(encoded[:])
 	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetEventTimeUsec()))
 	_, _ = h.Write(encoded[:])
-	for _, value := range []string{result.GetFailureMessage(), result.GetSourceUrl()} {
+	binary.BigEndian.PutUint64(encoded[:], uint64(result.GetSource()))
+	_, _ = h.Write(encoded[:])
+	if result.GetWorkspaceDirty() {
+		encoded[0] = 1
+	} else {
+		encoded[0] = 0
+	}
+	_, _ = h.Write(encoded[:1])
+	for _, value := range []string{result.GetFailureMessage(), result.GetSourceUrl(), result.GetCommitSha()} {
 		binary.BigEndian.PutUint64(encoded[:], uint64(len(value)))
 		_, _ = h.Write(encoded[:])
 		_, _ = io.WriteString(h, value)
@@ -1420,7 +1432,8 @@ func (s *Service) GetTestTarget(ctx context.Context, req *tbpb.GetTestTargetRequ
 	for i := len(retained.Samples) - 1; i >= 0; i-- {
 		sample := retained.Samples[i]
 		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
-			Outcome: sample.Outcome, DurationUsec: sample.DurationUsec,
+			Outcome: sample.Outcome, Source: sample.Source, CommitSha: sample.CommitSHA,
+			WorkspaceDirty: sample.WorkspaceDirty, DurationUsec: sample.DurationUsec,
 			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
 			EventTimeUsec: sample.EventTimeUsec, ResultId: sample.ResultID,
 		})
@@ -1519,7 +1532,8 @@ func (s *Service) GetTestCase(ctx context.Context, req *tbpb.GetTestCaseRequest)
 	for i := len(retained.Samples) - 1; i >= 0; i-- {
 		sample := retained.Samples[i]
 		rsp.RecentResults = append(rsp.RecentResults, &tbpb.TestResult{
-			Outcome: sample.Outcome, DurationUsec: sample.DurationUsec,
+			Outcome: sample.Outcome, Source: sample.Source, CommitSha: sample.CommitSHA,
+			WorkspaceDirty: sample.WorkspaceDirty, DurationUsec: sample.DurationUsec,
 			FailureMessage: sample.FailureMessage, SourceUrl: sample.SourceURL,
 			EventTimeUsec: sample.EventTimeUsec, ResultId: sample.ResultID,
 		})

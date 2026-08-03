@@ -15,6 +15,8 @@ func testResult(outcome tbpb.TestOutcome) *tbpb.TestResult {
 	return &tbpb.TestResult{
 		Outcome: outcome, SourceUrl: "https://app.buildbuddy.io/invocation/one",
 		EventTimeUsec: 1_000_000, ResultId: "result-1",
+		Source:    tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
+		CommitSha: "abc123",
 	}
 }
 
@@ -49,6 +51,9 @@ func TestNormalizeCaseAndTarget(t *testing.T) {
 	assert.Equal(t, "https://app.buildbuddy.io/invocation/one", report.CaseResults[0].Result.GetResult().GetSourceUrl())
 	assert.Equal(t, int64(1_000_000), report.CaseResults[0].Result.GetResult().GetEventTimeUsec())
 	assert.Equal(t, "result-1", report.CaseResults[0].Result.GetResult().GetResultId())
+	assert.Equal(t, tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
+		report.CaseResults[0].Result.GetResult().GetSource())
+	assert.Equal(t, "abc123", report.CaseResults[0].Result.GetResult().GetCommitSha())
 	assert.Equal(t, "got 1, want 2", report.CaseResults[0].Result.GetResult().GetFailureMessage())
 	assert.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, report.TargetResults[0].Result.GetResult().GetOutcome())
 }
@@ -85,6 +90,18 @@ func TestValidation(t *testing.T) {
 
 	invalid := caseResult(tbpb.TestOutcome(99))
 	report, err := normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, report.Rejected.Cases)
+
+	invalid = caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	invalid.Result.Source = tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_UNKNOWN
+	report, err = normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, 1, report.Rejected.Cases)
+
+	invalid = caseResult(tbpb.TestOutcome_TEST_OUTCOME_PASS)
+	invalid.Result.CommitSha = ""
+	report, err = normalize.Normalize(repository, []*tbpb.TestCaseResult{invalid}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, report.Rejected.Cases)
 

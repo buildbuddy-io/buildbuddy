@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -18,6 +19,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/testbuddy"
 )
+
+func observationMetadata(source tbpb.TestObservationSource) testbuddy.ObservationMetadata {
+	return testbuddy.ObservationMetadata{
+		SourceURL: "https://app.buildbuddy.io/invocation/one", Source: source,
+		CommitSHA: "abc123",
+	}
+}
 
 func TestTargetLabelFromXMLPath(t *testing.T) {
 	for _, test := range []struct {
@@ -156,7 +164,8 @@ func TestBazelTargetOutcome(t *testing.T) {
 	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, outcome)
 
 	target, cases, err := testbuddy.ResultsForReport(
-		xmlPath, "//pkg:timeout_test", "https://app.buildbuddy.io/invocation/one", &junit.Report{
+		xmlPath, "//pkg:timeout_test",
+		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR), &junit.Report{
 			EventTimeUsec: 1_700_000,
 			DurationUsec:  1_000_000,
 			Cases: []normalize.CaseRecord{{
@@ -173,7 +182,8 @@ func TestBazelTargetOutcome(t *testing.T) {
 
 	require.NoError(t, os.Remove(filepath.Join(dir, "test.log")))
 	target, cases, err = testbuddy.ResultsForReport(
-		xmlPath, "//pkg:harness_test", "https://app.buildbuddy.io/invocation/one",
+		xmlPath, "//pkg:harness_test",
+		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR),
 		&junit.Report{EventTimeUsec: 1_700_000, UnattributedFailure: true})
 	require.NoError(t, err)
 	require.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, target.GetResult().GetOutcome())
@@ -191,13 +201,18 @@ func TestResultsForReportRetainsTimeAndStableIdentity(t *testing.T) {
 	pathA := filepath.Join(t.TempDir(), "bazel-testlogs/pkg/test/run_1_of_2/test.xml")
 	pathB := filepath.Join(t.TempDir(), "bazel-testlogs/pkg/test/run_1_of_2/test.xml")
 	targetA, casesA, err := testbuddy.ResultsForReport(
-		pathA, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
+		pathA, "//pkg:test",
+		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT), report)
 	require.NoError(t, err)
 	targetB, casesB, err := testbuddy.ResultsForReport(
-		pathB, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
+		pathB, "//pkg:test",
+		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT), report)
 	require.NoError(t, err)
 	require.Equal(t, targetA.GetResult().GetResultId(), targetB.GetResult().GetResultId())
 	require.Equal(t, int64(1_000_000), targetA.GetResult().GetEventTimeUsec())
+	require.Equal(t, tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT, targetA.GetResult().GetSource())
+	require.Equal(t, "abc123", targetA.GetResult().GetCommitSha())
+	require.False(t, targetA.GetResult().GetWorkspaceDirty())
 	require.Equal(t, casesA[0].GetResult().GetResultId(), casesB[0].GetResult().GetResultId())
 	require.NotEqual(t, casesA[0].GetResult().GetResultId(), casesA[1].GetResult().GetResultId())
 	require.Equal(t, int64(1_000_000), casesA[0].GetResult().GetEventTimeUsec())
@@ -216,10 +231,12 @@ func TestResultsForReportUsesStableFileTimeWhenJUnitHasNoTimestamp(t *testing.T)
 	}}}
 
 	targetA, casesA, err := testbuddy.ResultsForReport(
-		xmlPath, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
+		xmlPath, "//pkg:test",
+		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR), report)
 	require.NoError(t, err)
 	targetB, casesB, err := testbuddy.ResultsForReport(
-		xmlPath, "//pkg:test", "https://app.buildbuddy.io/invocation/one", report)
+		xmlPath, "//pkg:test",
+		observationMetadata(tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR), report)
 	require.NoError(t, err)
 
 	require.True(t, proto.Equal(targetA, targetB))
@@ -228,6 +245,50 @@ func TestResultsForReportUsesStableFileTimeWhenJUnitHasNoTimestamp(t *testing.T)
 	require.True(t, proto.Equal(casesA[0], casesB[0]))
 	require.Equal(t, modified.UnixMicro(), targetA.GetResult().GetEventTimeUsec())
 	require.Equal(t, modified.UnixMicro(), casesA[0].GetResult().GetEventTimeUsec())
+}
+
+func TestParseObservationSource(t *testing.T) {
+	require.Equal(t, "monitor", testbuddy.TestReportFlags.Lookup("source").DefValue)
+	for value, want := range map[string]tbpb.TestObservationSource{
+		"presubmit":  tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT,
+		"postsubmit": tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_POSTSUBMIT,
+		"monitor":    tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR,
+	} {
+		got, err := testbuddy.ParseObservationSource(value)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	}
+	_, err := testbuddy.ParseObservationSource("local")
+	require.ErrorContains(t, err, "presubmit, postsubmit, or monitor")
+}
+
+func TestWorkspaceRevision(t *testing.T) {
+	dir := t.TempDir()
+	run := func(args ...string) string {
+		command := exec.Command("git", args...)
+		command.Dir = dir
+		output, err := command.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		return strings.TrimSpace(string(output))
+	}
+	run("init")
+	run("config", "user.email", "test@example.com")
+	run("config", "user.name", "Test")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file"), []byte("one"), 0o644))
+	run("add", "file")
+	run("commit", "-m", "initial")
+	wantCommit := run("rev-parse", "HEAD")
+
+	commitSHA, dirty, err := testbuddy.WorkspaceRevision(dir)
+	require.NoError(t, err)
+	require.Equal(t, wantCommit, commitSHA)
+	require.False(t, dirty)
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "file"), []byte("two"), 0o644))
+	commitSHA, dirty, err = testbuddy.WorkspaceRevision(dir)
+	require.NoError(t, err)
+	require.Equal(t, wantCommit, commitSHA)
+	require.True(t, dirty)
 }
 
 func TestReportBatcherKeepsMessagesWithinBudget(t *testing.T) {

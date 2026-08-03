@@ -20,6 +20,13 @@ enum TestOutcome {
   TEST_OUTCOME_TIMEOUT = 3;
 }
 
+enum TestObservationSource {
+  TEST_OBSERVATION_SOURCE_UNKNOWN = 0;
+  TEST_OBSERVATION_SOURCE_PRESUBMIT = 1;
+  TEST_OBSERVATION_SOURCE_POSTSUBMIT = 2;
+  TEST_OBSERVATION_SOURCE_MONITOR = 3;
+}
+
 message TestResult {
   TestOutcome outcome = 1;
   int64 duration_usec = 2;
@@ -27,6 +34,9 @@ message TestResult {
   string source_url = 4;
   int64 event_time_usec = 5;
   string result_id = 6;
+  TestObservationSource source = 7;
+  string commit_sha = 8;
+  bool workspace_dirty = 9;
 }
 
 message TestCaseResult {

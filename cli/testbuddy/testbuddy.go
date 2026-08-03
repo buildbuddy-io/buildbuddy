@@ -215,6 +215,8 @@ var (
 	reportRepo      = TestReportFlags.String("repo_url", "", "Repository URL; defaults to git remote.origin.url.")
 	reportSourceURL = TestReportFlags.String(
 		"source_url", "", "Result URL; defaults to the most recent bb test invocation.")
+	reportSource = TestReportFlags.String(
+		"source", "monitor", "Observation source: presubmit, postsubmit, or monitor.")
 	reportTargetLabel = TestReportFlags.String("target_label", "", "Bazel target label; inferred from bazel-testlogs paths by default.")
 
 	GetTestsFlags  = flag.NewFlagSet("get-tests", flag.ContinueOnError)
@@ -238,6 +240,10 @@ func HandleTestReport(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	commitSHA, workspaceDirty, err := WorkspaceRevision(workspacePath)
+	if err != nil {
+		return 1, err
+	}
 	repository, err := repositoryURL(workspacePath, *reportRepo)
 	if err != nil {
 		return 1, err
@@ -245,6 +251,14 @@ func HandleTestReport(args []string) (int, error) {
 	sourceURL, err := resultURL(*reportSourceURL)
 	if err != nil {
 		return 1, err
+	}
+	source, err := ParseObservationSource(*reportSource)
+	if err != nil {
+		return 1, err
+	}
+	metadata := ObservationMetadata{
+		SourceURL: sourceURL, Source: source,
+		CommitSHA: commitSHA, WorkspaceDirty: workspaceDirty,
 	}
 	inputs := TestReportFlags.Args()
 	if len(inputs) == 0 {
@@ -298,7 +312,7 @@ func HandleTestReport(args []string) (int, error) {
 			return 1, closeErr
 		}
 		diagnostics.Add(path, targetLabel, report)
-		targetResult, testCases, err := ResultsForReport(path, targetLabel, sourceURL, report)
+		targetResult, testCases, err := ResultsForReport(path, targetLabel, metadata, report)
 		if err != nil {
 			return 1, err
 		}
@@ -330,7 +344,48 @@ func HandleTestReport(args []string) (int, error) {
 	return 0, nil
 }
 
-func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
+func ParseObservationSource(value string) (tbpb.TestObservationSource, error) {
+	switch strings.ToLower(value) {
+	case "presubmit":
+		return tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT, nil
+	case "postsubmit":
+		return tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_POSTSUBMIT, nil
+	case "monitor":
+		return tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_MONITOR, nil
+	default:
+		return tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_UNKNOWN,
+			status.InvalidArgumentError("--source must be presubmit, postsubmit, or monitor")
+	}
+}
+
+type ObservationMetadata struct {
+	SourceURL      string
+	Source         tbpb.TestObservationSource
+	CommitSHA      string
+	WorkspaceDirty bool
+}
+
+func WorkspaceRevision(workspacePath string) (string, bool, error) {
+	head := exec.Command("git", "rev-parse", "HEAD")
+	head.Dir = workspacePath
+	output, err := head.Output()
+	if err != nil {
+		return "", false, status.FailedPreconditionErrorf("could not read git HEAD: %s", err)
+	}
+	commitSHA := strings.TrimSpace(string(output))
+	if commitSHA == "" {
+		return "", false, status.FailedPreconditionError("git HEAD is empty")
+	}
+	statusCommand := exec.Command("git", "status", "--porcelain=v1", "--untracked-files=normal")
+	statusCommand.Dir = workspacePath
+	output, err = statusCommand.Output()
+	if err != nil {
+		return "", false, status.FailedPreconditionErrorf("could not inspect git status: %s", err)
+	}
+	return commitSHA, len(output) > 0, nil
+}
+
+func ResultsForReport(xmlPath, targetLabel string, metadata ObservationMetadata, report *junit.Report) (*tbpb.TestTargetResult, []*tbpb.TestCaseResult, error) {
 	targetOutcome, err := BazelTargetOutcome(xmlPath)
 	if err != nil {
 		return nil, nil, err
@@ -350,9 +405,12 @@ func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Repo
 	target := &tbpb.TestTargetResult{
 		Identity: &tbpb.TestTargetIdentity{TargetLabel: targetLabel},
 		Result: &tbpb.TestResult{
-			Outcome: targetOutcome, DurationUsec: report.DurationUsec, SourceUrl: sourceURL,
-			EventTimeUsec: eventTimeUsec,
-			ResultId:      resultID("target", sourceURL, targetLabel, executionContext),
+			Outcome: targetOutcome, DurationUsec: report.DurationUsec, SourceUrl: metadata.SourceURL,
+			EventTimeUsec:  eventTimeUsec,
+			ResultId:       resultID("target", metadata.SourceURL, targetLabel, executionContext),
+			Source:         metadata.Source,
+			CommitSha:      metadata.CommitSHA,
+			WorkspaceDirty: metadata.WorkspaceDirty,
 		},
 	}
 	if targetOutcome == tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT {
@@ -375,10 +433,13 @@ func ResultsForReport(xmlPath, targetLabel, sourceURL string, report *junit.Repo
 			},
 			Result: &tbpb.TestResult{
 				Outcome: testCase.Outcome, DurationUsec: testCase.DurationUsec,
-				FailureMessage: testCase.FailureMessage, SourceUrl: sourceURL,
+				FailureMessage: testCase.FailureMessage, SourceUrl: metadata.SourceURL,
 				EventTimeUsec: caseEventTimeUsec,
-				ResultId: resultID("case", sourceURL, targetLabel, testCase.CaseName,
+				ResultId: resultID("case", metadata.SourceURL, targetLabel, testCase.CaseName,
 					executionContext, strconv.Itoa(testCase.OccurrenceIndex)),
+				Source:         metadata.Source,
+				CommitSha:      metadata.CommitSHA,
+				WorkspaceDirty: metadata.WorkspaceDirty,
 			},
 		})
 	}
@@ -485,9 +546,10 @@ func HandleGetTests(args []string) (int, error) {
 		}
 		printSummary(rsp.GetTest())
 		fmt.Println("RECENT RESULTS")
-		fmt.Println("SOURCE\tOUTCOME\tDURATION\tFAILURE")
+		fmt.Println("TYPE\tRESULT\tOUTCOME\tDURATION\tFAILURE")
 		for _, result := range rsp.GetRecentResults() {
-			fmt.Printf("%s\t%s\t%s\t%s\n",
+			fmt.Printf("%s\t%s\t%s\t%s\t%s\n",
+				strings.TrimPrefix(result.GetSource().String(), "TEST_OBSERVATION_SOURCE_"),
 				result.GetSourceUrl(),
 				strings.TrimPrefix(result.GetOutcome().String(), "TEST_OUTCOME_"),
 				time.Duration(result.GetDurationUsec())*time.Microsecond,

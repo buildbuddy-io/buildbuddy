@@ -14,6 +14,7 @@ const (
 	MaxFailureMessageBytes = 512
 	MaxSourceURLBytes      = 2048
 	MaxResultIDBytes       = 128
+	MaxCommitSHABytes      = 128
 	MaxRetainedRejections  = 100
 )
 
@@ -181,6 +182,18 @@ func validateResult(result *tbpb.TestResult) error {
 	}
 	if _, ok := tbpb.TestOutcome_name[int32(result.GetOutcome())]; !ok {
 		return status.InvalidArgumentErrorf("unrecognized outcome %d", result.GetOutcome())
+	}
+	if result.GetSource() == tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_UNKNOWN {
+		return status.InvalidArgumentError("source is required")
+	}
+	if _, ok := tbpb.TestObservationSource_name[int32(result.GetSource())]; !ok {
+		return status.InvalidArgumentErrorf("unrecognized source %d", result.GetSource())
+	}
+	if result.GetCommitSha() == "" {
+		return status.InvalidArgumentError("commit_sha is required")
+	}
+	if err := identity.ValidateBoundedString("commit SHA", result.GetCommitSha(), MaxCommitSHABytes); err != nil {
+		return err
 	}
 	if result.GetDurationUsec() < 0 {
 		return status.InvalidArgumentError("duration_usec must not be negative")
