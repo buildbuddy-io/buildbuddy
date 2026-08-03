@@ -49,6 +49,7 @@ const (
 	DiagnosticInvalidTimestamp DiagnosticCode = "invalid_timestamp"
 	DiagnosticUnknownStatus    DiagnosticCode = "unknown_status"
 	DiagnosticInvalidDisabled  DiagnosticCode = "invalid_disabled"
+	DiagnosticInvalidUTF8      DiagnosticCode = "invalid_utf8"
 )
 
 // Diagnostic records one thing the parser could not use. CaseName is empty
@@ -119,7 +120,8 @@ func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
 		report: &Report{TargetLabel: targetLabel},
 	}
 	p.reader = &countingReader{r: io.LimitReader(&contextReader{ctx: ctx, r: r}, limits.MaxXMLBytes+1)}
-	decoder := xml.NewDecoder(p.reader)
+	utf8Reader := &utf8SanitizingReader{r: p.reader}
+	decoder := xml.NewDecoder(utf8Reader)
 	depth := 0
 	root := ""
 	for {
@@ -214,6 +216,9 @@ func Parse(ctx context.Context, r io.Reader, options Options) (*Report, error) {
 		}
 	}
 	p.report.UnattributedFailure = p.suiteFailures > attributedFailures
+	if utf8Reader.invalid {
+		p.addDiagnostic(Diagnostic{Code: DiagnosticInvalidUTF8, CaseIndex: -1})
+	}
 	p.report.DroppedDiagnostics = p.report.DiagnosticCount - len(p.report.Diagnostics)
 	return p.report, nil
 }
@@ -480,6 +485,78 @@ func (p *parser) malformedXMLError(err error) error {
 type countingReader struct {
 	r io.Reader
 	n int64
+}
+
+type utf8SanitizingReader struct {
+	r         io.Reader
+	input     [32 << 10]byte
+	carry     [utf8.UTFMax]byte
+	carryLen  int
+	output    []byte
+	sanitized []byte
+	err       error
+	invalid   bool
+}
+
+func (r *utf8SanitizingReader) Read(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	for len(r.output) == 0 && r.err == nil {
+		r.fill()
+	}
+	if len(r.output) == 0 {
+		return 0, r.err
+	}
+	n := copy(p, r.output)
+	r.output = r.output[n:]
+	return n, nil
+}
+
+func (r *utf8SanitizingReader) fill() {
+	copy(r.input[:], r.carry[:r.carryLen])
+	n, err := r.r.Read(r.input[r.carryLen:])
+	data := r.input[:r.carryLen+n]
+	r.carryLen = 0
+	if len(data) == 0 {
+		r.err = err
+		return
+	}
+	if n == 0 && err == nil {
+		r.carryLen = copy(r.carry[:], data)
+		return
+	}
+	r.err = err
+	if utf8.Valid(data) {
+		r.output = data
+		return
+	}
+	r.sanitized = r.sanitized[:0]
+	for len(data) > 0 {
+		if data[0] < utf8.RuneSelf {
+			i := 1
+			for i < len(data) && data[i] < utf8.RuneSelf {
+				i++
+			}
+			r.sanitized = append(r.sanitized, data[:i]...)
+			data = data[i:]
+			continue
+		}
+		if !utf8.FullRune(data) && err == nil {
+			r.carryLen = copy(r.carry[:], data)
+			break
+		}
+		runeValue, size := utf8.DecodeRune(data)
+		if runeValue == utf8.RuneError && size == 1 {
+			r.sanitized = utf8.AppendRune(r.sanitized, utf8.RuneError)
+			r.invalid = true
+			data = data[1:]
+			continue
+		}
+		r.sanitized = append(r.sanitized, data[:size]...)
+		data = data[size:]
+	}
+	r.output = r.sanitized
 }
 
 func (r *countingReader) Read(p []byte) (int, error) {

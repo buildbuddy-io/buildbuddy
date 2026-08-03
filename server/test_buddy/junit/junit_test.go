@@ -1,6 +1,7 @@
 package junit_test
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -122,6 +123,28 @@ func TestLimitsAndMalformedXML(t *testing.T) {
 
 	_, err = junit.Parse(context.Background(), strings.NewReader(`<testsuite><testcase name="unterminated">`), junit.Options{TargetLabel: "//pkg:test"})
 	assert.True(t, status.IsInvalidArgumentError(err), err)
+}
+
+func TestInvalidUTF8InFailureOutput(t *testing.T) {
+	xml := []byte("<testsuite errors=\"1\"><testcase name=\"non_utf8_filename\"><error message=\"Failed to build.\"><![CDATA[path/\xc4_foo_latin1_\xd6.txt]]></error></testcase></testsuite>")
+	report, err := junit.Parse(context.Background(), bytes.NewReader(xml), junit.Options{TargetLabel: "//pkg:test"})
+	require.NoError(t, err)
+	require.Len(t, report.Cases, 1)
+	assert.Equal(t, tbpb.TestOutcome_TEST_OUTCOME_FAIL, report.Cases[0].Outcome)
+	assert.Equal(t, "Failed to build.", report.Cases[0].FailureMessage)
+	assert.Equal(t, []junit.Diagnostic{{Code: junit.DiagnosticInvalidUTF8, CaseIndex: -1}}, report.Diagnostics)
+
+	_, err = junit.Parse(context.Background(), bytes.NewReader([]byte("<testsuite>\xff")), junit.Options{TargetLabel: "//pkg:test"})
+	assert.True(t, status.IsInvalidArgumentError(err), err)
+}
+
+func TestUTF8AcrossReadBoundary(t *testing.T) {
+	prefix := []byte(`<testsuite><testcase name="valid"><error><![CDATA[`)
+	xml := append(prefix, bytes.Repeat([]byte("x"), (32<<10)-len(prefix)-1)...)
+	xml = append(xml, []byte("ツ]]></error></testcase></testsuite>")...)
+	report, err := junit.Parse(context.Background(), bytes.NewReader(xml), junit.Options{TargetLabel: "//pkg:test"})
+	require.NoError(t, err)
+	assert.Empty(t, report.Diagnostics)
 }
 
 func TestCancellation(t *testing.T) {

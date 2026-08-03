@@ -306,14 +306,16 @@ func TestDiagnosticLogSeparatesDroppedCasesFromIgnoredFields(t *testing.T) {
 			{Code: junit.DiagnosticInvalidIdentity, CaseIndex: 5, CaseName: "Test\tTab"},
 			{Code: junit.DiagnosticInvalidDuration, CaseIndex: 6, CaseName: "TestSlow"},
 			{Code: junit.DiagnosticInvalidTimestamp, CaseIndex: -1},
+			{Code: junit.DiagnosticInvalidUTF8, CaseIndex: -1},
 		},
 	})
 
 	require.Equal(t, 2, diagnostics.Dropped)
 	require.Equal(t, 2, diagnostics.Ignored)
+	require.Equal(t, 1, diagnostics.Normalized)
 	require.Equal(t, 0, diagnostics.Truncated)
 
-	require.Len(t, lines, 4)
+	require.Len(t, lines, 5)
 	// A case with no usable name is still located by file and index.
 	require.Equal(t,
 		`dropped case //pkg:test "<unnamed>" missing_name (bazel-testlogs/pkg/test/test.xml case 4)`, lines[0])
@@ -325,9 +327,11 @@ func TestDiagnosticLogSeparatesDroppedCasesFromIgnoredFields(t *testing.T) {
 	// A file-level diagnostic belongs to no case, so it names no index.
 	require.Equal(t,
 		`ignored field //pkg:test "<unnamed>" invalid_timestamp (bazel-testlogs/pkg/test/test.xml)`, lines[3])
+	require.Equal(t,
+		`normalized report //pkg:test invalid_utf8 (bazel-testlogs/pkg/test/test.xml)`, lines[4])
 
 	summary := diagnostics.Summary()
-	require.Contains(t, summary, "4 JUnit diagnostics: 2 cases dropped, 2 fields ignored")
+	require.Contains(t, summary, "5 JUnit diagnostics: 2 cases dropped, 2 fields ignored, normalized reports: 1")
 	// The bb parser rejects "--verbose=1"; the flag is a bare boolean.
 	require.Contains(t, summary, "rerun with --verbose (or BB_VERBOSE=1) to list them")
 	require.NotContains(t, summary, "--verbose=1")
@@ -359,6 +363,7 @@ func TestDiagnosticCodesThatDropTheCase(t *testing.T) {
 		junit.DiagnosticInvalidTimestamp,
 		junit.DiagnosticUnknownStatus,
 		junit.DiagnosticInvalidDisabled,
+		junit.DiagnosticInvalidUTF8,
 	} {
 		require.False(t, code.DropsCase(), code)
 	}

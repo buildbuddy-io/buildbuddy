@@ -58,20 +58,19 @@ const ReportRequestTargetBytes = 8 << 20
 // DiagnosticLog accumulates what the JUnit parser could not use, across every
 // file in one report.
 //
-// The counts are split because a single total answers the wrong question. A
-// dropped case was never reported and is invisible downstream; an ignored field
-// means the case reported with one value missing. Only the first group is
-// "tests that did not report".
+// The counts distinguish dropped cases, ignored fields, and reports whose text
+// had to be normalized. Only dropped cases are invisible downstream.
 //
 // detail is called once per diagnostic and may be nil. The CLI passes the debug
 // logger, which discards unless verbose, so the listing costs nothing to leave
 // wired up; the parser caps diagnostics per file, and anything past that cap is
 // counted in Truncated rather than silently lost.
 type DiagnosticLog struct {
-	Dropped   int
-	Ignored   int
-	Truncated int
-	detail    func(string)
+	Dropped    int
+	Ignored    int
+	Normalized int
+	Truncated  int
+	detail     func(string)
 }
 
 func NewDiagnosticLog(detail func(string)) *DiagnosticLog {
@@ -81,7 +80,9 @@ func NewDiagnosticLog(detail func(string)) *DiagnosticLog {
 func (l *DiagnosticLog) Add(xmlPath, targetLabel string, report *junit.Report) {
 	l.Truncated += report.DroppedDiagnostics
 	for _, diagnostic := range report.Diagnostics {
-		if diagnostic.Code.DropsCase() {
+		if diagnostic.Code == junit.DiagnosticInvalidUTF8 {
+			l.Normalized++
+		} else if diagnostic.Code.DropsCase() {
 			l.Dropped++
 		} else {
 			l.Ignored++
@@ -98,6 +99,9 @@ func (l *DiagnosticLog) Add(xmlPath, targetLabel string, report *junit.Report) {
 }
 
 func diagnosticLine(xmlPath, targetLabel string, diagnostic junit.Diagnostic) string {
+	if diagnostic.Code == junit.DiagnosticInvalidUTF8 {
+		return fmt.Sprintf("normalized report %s %s (%s)", targetLabel, diagnostic.Code, xmlPath)
+	}
 	kind := "ignored field"
 	if diagnostic.Code.DropsCase() {
 		kind = "dropped case"
@@ -116,12 +120,15 @@ func diagnosticLine(xmlPath, targetLabel string, diagnostic junit.Diagnostic) st
 // Summary is the one line printed without verbose. It is empty when the parser
 // used everything.
 func (l *DiagnosticLog) Summary() string {
-	total := l.Dropped + l.Ignored
+	total := l.Dropped + l.Ignored + l.Normalized
 	if total == 0 && l.Truncated == 0 {
 		return ""
 	}
 	summary := fmt.Sprintf("%d JUnit diagnostics: %d cases dropped, %d fields ignored",
 		total, l.Dropped, l.Ignored)
+	if l.Normalized > 0 {
+		summary += fmt.Sprintf(", normalized reports: %d", l.Normalized)
+	}
 	if l.Truncated > 0 {
 		summary += fmt.Sprintf(", %d beyond the per-file cap", l.Truncated)
 	}
