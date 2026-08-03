@@ -709,7 +709,7 @@ func FindTestXMLFiles(inputs []string) ([]string, error) {
 		}
 	}
 	paths := explicit
-	for _, targetLayouts := range layouts {
+	for root, targetLayouts := range layouts {
 		var selectedName string
 		var selected *testXMLLayout
 		for name, layout := range targetLayouts {
@@ -718,6 +718,17 @@ func FindTestXMLFiles(inputs []string) ([]string, error) {
 				selectedName = name
 				selected = layout
 			}
+		}
+		if len(targetLayouts) > 1 {
+			ignored := make([]string, 0, len(targetLayouts)-1)
+			for name, layout := range targetLayouts {
+				if name != selectedName {
+					ignored = append(ignored, fmt.Sprintf("%s (%d files)", name, len(layout.paths)))
+				}
+			}
+			sort.Strings(ignored)
+			log.Debugf("selected %s (%d files) for %s; ignored older output: %s",
+				selectedName, len(selected.paths), root, strings.Join(ignored, ", "))
 		}
 		for path := range selected.paths {
 			paths[path] = struct{}{}
