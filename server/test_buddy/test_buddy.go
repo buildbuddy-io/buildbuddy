@@ -204,6 +204,10 @@ func (p *proxy) GetRepositoryHealth(ctx context.Context, req *tbpb.GetRepository
 	return p.client.GetRepositoryHealth(forwardAuth(ctx, p.authenticator), req)
 }
 
+func (p *proxy) GetTestRepositories(ctx context.Context, req *tbpb.GetTestRepositoriesRequest) (*tbpb.GetTestRepositoriesResponse, error) {
+	return p.client.GetTestRepositories(forwardAuth(ctx, p.authenticator), req)
+}
+
 func (p *proxy) GetTestAnalyzerConfig(ctx context.Context, req *tbpb.GetTestAnalyzerConfigRequest) (*tbpb.GetTestAnalyzerConfigResponse, error) {
 	return p.client.GetTestAnalyzerConfig(forwardAuth(ctx, p.authenticator), req)
 }
@@ -310,7 +314,7 @@ func (s *Service) ReportTestResults(stream tbpb.TestBuddyService_ReportTestResul
 func admitCatalog(ctx context.Context, database interfaces.DB, groupID string, report *normalize.Report) error {
 	repository := report.RepositoryURL
 	if err := database.GORM(ctx, "test_buddy_admit_repository").
-		Clauses(clause.OnConflict{DoNothing: true}).
+		Clauses(clause.OnConflict{DoUpdates: clause.AssignmentColumns([]string{"updated_at_usec"})}).
 		Create(&tables.TestRepositoryCatalog{GroupID: groupID, Repository: repository}).Error; err != nil {
 		return err
 	}
@@ -942,6 +946,35 @@ func (s *Service) GetRepositoryHealth(ctx context.Context, req *tbpb.GetReposito
 		return cached, nil
 	}
 	return s.refreshRepositoryHealth(ctx, key)
+}
+
+func (s *Service) GetTestRepositories(ctx context.Context, req *tbpb.GetTestRepositoriesRequest) (*tbpb.GetTestRepositoriesResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentError("request is required")
+	}
+	groupID, err := s.groupID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	type row struct {
+		Repository    string
+		UpdatedAtUsec int64
+	}
+	rsp := &tbpb.GetTestRepositoriesResponse{}
+	rq := s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_repositories").Raw(`
+		SELECT repository, updated_at_usec
+		FROM "TestRepositoryCatalogs"
+		WHERE group_id = ?
+		ORDER BY updated_at_usec DESC, repository`, groupID)
+	if err := db.ScanEach(rq, func(ctx context.Context, r *row) error {
+		rsp.Repositories = append(rsp.Repositories, &tbpb.TestRepository{
+			RepoUrl: r.Repository, LastReportedAtUsec: r.UpdatedAtUsec,
+		})
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return rsp, nil
 }
 
 func (s *Service) refreshRepositoryHealth(ctx context.Context, key repositoryHealthCacheKey) (*tbpb.GetRepositoryHealthResponse, error) {

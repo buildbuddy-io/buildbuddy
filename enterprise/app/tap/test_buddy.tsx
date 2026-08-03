@@ -1,4 +1,9 @@
+import { Filter, Search, X } from "lucide-react";
 import React from "react";
+import { FilledButton, OutlinedButton } from "../../../app/components/button/button";
+import Checkbox from "../../../app/components/checkbox/checkbox";
+import Popup from "../../../app/components/popup/popup";
+import Select from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
 import format from "../../../app/format/format";
 import router from "../../../app/router/router";
@@ -13,7 +18,10 @@ interface Props {
 
 interface State {
   packagePrefix: string;
-  healthFilter: test_buddy.TestHealth | "all";
+  searchOpen: boolean;
+  healthFilters: test_buddy.TestHealth[];
+  healthFilterOpen: boolean;
+  repositories: test_buddy.TestRepository[];
   repository?: test_buddy.GetRepositoryHealthResponse;
   targets: test_buddy.TestTargetSummary[];
   selected?: test_buddy.GetTestTargetResponse;
@@ -28,7 +36,10 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
 
   state: State = {
     packagePrefix: "",
-    healthFilter: "all",
+    searchOpen: false,
+    healthFilters: [],
+    healthFilterOpen: false,
+    repositories: [],
     targets: [],
     selectedCases: [],
     loading: true,
@@ -36,12 +47,15 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   };
 
   componentDidMount() {
-    this.loadRepository();
-    this.loadTargets();
-    if (this.props.targetLabel) this.loadTarget(this.props.targetLabel);
+    this.loadRepositories();
+    if (this.props.repo) this.loadSelectedRepository();
   }
 
   componentDidUpdate(previous: Props) {
+    if (previous.repo !== this.props.repo) {
+      if (this.props.repo) this.loadSelectedRepository();
+      return;
+    }
     if (previous.targetLabel === this.props.targetLabel) return;
     if (this.props.targetLabel) {
       this.loadTarget(this.props.targetLabel);
@@ -51,19 +65,76 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     }
   }
 
+  private loadRepositories() {
+    rpcService.testBuddyService
+      .getTestRepositories(test_buddy.GetTestRepositoriesRequest.create())
+      .then((response) => {
+        this.setState({ repositories: response.repositories });
+        if (!this.props.repo && response.repositories[0]?.repoUrl) {
+          this.selectRepository(response.repositories[0].repoUrl);
+        } else if (!this.props.repo) {
+          this.setState({ loading: false });
+        }
+      })
+      .catch((error) => errorService.handleError(error));
+  }
+
+  private loadSelectedRepository() {
+    this.targetsStream?.cancel();
+    this.casesStream?.cancel();
+    this.setState({
+      repository: undefined,
+      packagePrefix: "",
+      searchOpen: false,
+      targets: [],
+      selected: undefined,
+      selectedCases: [],
+      loading: true,
+      loadingCases: false,
+    });
+    this.loadRepository();
+    if (this.props.targetLabel) this.loadTarget(this.props.targetLabel);
+  }
+
+  private selectRepository(repository: string) {
+    router.navigateTo(`?repo=${encodeURIComponent(repository)}`);
+  }
+
   componentWillUnmount() {
     this.targetsStream?.cancel();
     this.casesStream?.cancel();
   }
 
   private loadRepository() {
+    const repositoryURL = this.props.repo;
     rpcService.testBuddyService
-      .getRepositoryHealth(test_buddy.GetRepositoryHealthRequest.create({ repoUrl: this.props.repo }))
-      .then((repository) => this.setState({ repository }))
-      .catch((error) => errorService.handleError(error));
+      .getRepositoryHealth(test_buddy.GetRepositoryHealthRequest.create({ repoUrl: repositoryURL }))
+      .then((repository) => {
+        if (this.props.repo !== repositoryURL) return;
+        const searchOnly = Number(repository.targets?.totalCount ?? 0) > repositoryTargetListLimit;
+        this.setState({ repository, searchOpen: searchOnly }, () => {
+          if (this.props.targetLabel) return;
+          if (searchOnly) {
+            this.setState({ loading: false });
+          } else {
+            this.loadTargets();
+          }
+        });
+      })
+      .catch((error) => {
+        this.setState({ loading: false });
+        errorService.handleError(error);
+      });
   }
 
   private loadTargets() {
+    if (
+      Number(this.state.repository?.targets?.totalCount ?? 0) > repositoryTargetListLimit &&
+      !this.state.packagePrefix.trim()
+    ) {
+      this.setState({ loading: false, targets: [] });
+      return;
+    }
     this.targetsStream?.cancel();
     this.casesStream?.cancel();
     this.setState({ loading: true, targets: [], selected: undefined, selectedCases: [], loadingCases: false });
@@ -108,48 +179,93 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   }
 
   private renderHealthFilter(label = "Target or case health") {
+    const options = [
+      test_buddy.TestHealth.TEST_HEALTH_FAILING,
+      test_buddy.TestHealth.TEST_HEALTH_FLAKY,
+      test_buddy.TestHealth.TEST_HEALTH_TIMEOUT,
+      test_buddy.TestHealth.TEST_HEALTH_HEALTHY,
+      test_buddy.TestHealth.TEST_HEALTH_INSUFFICIENT_DATA,
+      test_buddy.TestHealth.TEST_HEALTH_UNKNOWN,
+    ];
+    const filtering = this.state.healthFilters.length > 0;
     return (
-      <label className="test-buddy-health-filter">
-        {label}
-        <select
-          value={this.state.healthFilter}
-          onChange={(event) => {
-            const value = event.target.value;
-            this.setState({
-              healthFilter: value === "all" ? "all" : (Number(value) as test_buddy.TestHealth),
-            });
-          }}>
-          <option value="all">All</option>
-          <option value={test_buddy.TestHealth.TEST_HEALTH_FAILING}>Failing</option>
-          <option value={test_buddy.TestHealth.TEST_HEALTH_FLAKY}>Flaky</option>
-          <option value={test_buddy.TestHealth.TEST_HEALTH_TIMEOUT}>Timed out</option>
-          <option value={test_buddy.TestHealth.TEST_HEALTH_HEALTHY}>Healthy</option>
-          <option value={test_buddy.TestHealth.TEST_HEALTH_INSUFFICIENT_DATA}>Insufficient data</option>
-          <option value={test_buddy.TestHealth.TEST_HEALTH_UNKNOWN}>Not reported</option>
-        </select>
-      </label>
+      <div className={`global-filter test-buddy-health-filter ${filtering ? "is-filtering" : ""}`}>
+        {filtering && (
+          <FilledButton
+            className="square"
+            title="Clear health filters"
+            type="button"
+            onClick={() => this.setState({ healthFilters: [] })}>
+            <X className="white" />
+          </FilledButton>
+        )}
+        <div className="popup-wrapper">
+          <OutlinedButton
+            className={`filter-menu-button icon-text-button ${filtering ? "" : "square"}`}
+            title={label}
+            type="button"
+            onClick={() => this.setState({ healthFilterOpen: true })}>
+            <Filter />
+            {this.state.healthFilters.map((health) => (
+              <HealthLabel health={health} key={health} />
+            ))}
+          </OutlinedButton>
+          <Popup
+            anchor="center-right"
+            isOpen={this.state.healthFilterOpen}
+            onRequestClose={() => this.setState({ healthFilterOpen: false })}
+            className="filter-menu-popup">
+            <div className="option-group">
+              <div className="option-group-title">{label}</div>
+              <div className="option-group-options">
+                {options.map((health) => (
+                  <label key={health}>
+                    <Checkbox
+                      checked={this.state.healthFilters.includes(health)}
+                      onChange={() => this.toggleHealthFilter(health)}
+                    />
+                    <HealthLabel health={health} />
+                  </label>
+                ))}
+              </div>
+            </div>
+          </Popup>
+        </div>
+      </div>
     );
+  }
+
+  private toggleHealthFilter(health: test_buddy.TestHealth) {
+    this.setState((state) => ({
+      healthFilters: state.healthFilters.includes(health)
+        ? state.healthFilters.filter((value) => value !== health)
+        : [...state.healthFilters, health],
+    }));
   }
 
   private matchesHealth(summary?: test_buddy.TestSummary | null) {
     return (
-      this.state.healthFilter === "all" ||
-      (summary?.health ?? test_buddy.TestHealth.TEST_HEALTH_UNKNOWN) === this.state.healthFilter
+      this.state.healthFilters.length === 0 ||
+      this.state.healthFilters.includes(summary?.health ?? test_buddy.TestHealth.TEST_HEALTH_UNKNOWN)
     );
   }
 
   private matchesTargetHealth(target: test_buddy.TestTargetSummary) {
-    const health = this.state.healthFilter;
-    if (health === "all" || target.summary?.health === health) return true;
+    const filters = this.state.healthFilters;
+    if (filters.length === 0 || filters.includes(target.summary?.health ?? test_buddy.TestHealth.TEST_HEALTH_UNKNOWN)) {
+      return true;
+    }
     const cases = target.cases;
-    if (!cases) return health === test_buddy.TestHealth.TEST_HEALTH_UNKNOWN;
-    if (health === test_buddy.TestHealth.TEST_HEALTH_FAILING) return Number(cases.failingCount) > 0;
-    if (health === test_buddy.TestHealth.TEST_HEALTH_FLAKY) return Number(cases.flakyCount) > 0;
-    if (health === test_buddy.TestHealth.TEST_HEALTH_TIMEOUT) return Number(cases.timedOutCount) > 0;
-    if (health === test_buddy.TestHealth.TEST_HEALTH_HEALTHY) return Number(cases.healthyCount) > 0;
-    if (health === test_buddy.TestHealth.TEST_HEALTH_INSUFFICIENT_DATA)
-      return Number(cases.insufficientDataCount) > 0;
-    return Number(cases.unknownCount) > 0;
+    if (!cases) return filters.includes(test_buddy.TestHealth.TEST_HEALTH_UNKNOWN);
+    return filters.some((health) => {
+      if (health === test_buddy.TestHealth.TEST_HEALTH_FAILING) return Number(cases.failingCount) > 0;
+      if (health === test_buddy.TestHealth.TEST_HEALTH_FLAKY) return Number(cases.flakyCount) > 0;
+      if (health === test_buddy.TestHealth.TEST_HEALTH_TIMEOUT) return Number(cases.timedOutCount) > 0;
+      if (health === test_buddy.TestHealth.TEST_HEALTH_HEALTHY) return Number(cases.healthyCount) > 0;
+      if (health === test_buddy.TestHealth.TEST_HEALTH_INSUFFICIENT_DATA)
+        return Number(cases.insufficientDataCount) > 0;
+      return Number(cases.unknownCount) > 0;
+    });
   }
 
   // The component navigates by target label, so the identity message is built
@@ -295,35 +411,61 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   render() {
     if (this.state.selected) return <div className="container test-buddy">{this.renderTarget()}</div>;
     const targets = this.state.targets.filter((target) => this.matchesTargetHealth(target));
+    const searchOnly = Number(this.state.repository?.targets?.totalCount ?? 0) > repositoryTargetListLimit;
     return (
       <div className="container test-buddy">
-        <h1>TestBuddy</h1>
-        <div className="test-buddy-repo">{this.props.repo}</div>
+        <div className="test-buddy-title-row">
+          <h1>TestBuddy</h1>
+          <div className="test-buddy-title-actions">
+            {this.renderHealthFilter()}
+            <OutlinedButton
+              className="square"
+              title="Search tests by package or directory"
+              type="button"
+              onClick={() => this.setState((state) => ({ searchOpen: !state.searchOpen }))}>
+              <Search />
+            </OutlinedButton>
+          </div>
+        </div>
+        <label className="test-buddy-repo">
+          Repository
+          <Select value={this.props.repo} onChange={(event) => this.selectRepository(event.target.value)}>
+            {!this.props.repo && <option value="">No reported repositories</option>}
+            {this.state.repositories.map((repository) => (
+              <option value={repository.repoUrl} key={repository.repoUrl}>
+                {repository.repoUrl}
+              </option>
+            ))}
+          </Select>
+        </label>
         <div className="test-buddy-repository-summaries">
           {this.renderSummary("Targets", this.state.repository?.targets)}
           {this.renderSummary("Cases", this.state.repository?.cases)}
         </div>
-        <form
-          className="test-buddy-search"
-          onSubmit={(event) => {
-            event.preventDefault();
-            this.loadTargets();
-          }}>
-          <input
-            aria-label="Bazel package"
-            placeholder="Package or directory, for example server/test_buddy"
-            value={this.state.packagePrefix}
-            onChange={(event) => this.setState({ packagePrefix: event.target.value })}
-          />
-          {this.renderHealthFilter()}
-          <button type="submit">Search</button>
-        </form>
+        {this.state.searchOpen && (
+          <form
+            className="test-buddy-search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              this.loadTargets();
+            }}>
+            <input
+              aria-label="Bazel package"
+              placeholder="Package or directory, for example server/test_buddy"
+              value={this.state.packagePrefix}
+              onChange={(event) => this.setState({ packagePrefix: event.target.value })}
+            />
+            <button className="test-buddy-search-submit" type="submit">
+              Search
+            </button>
+          </form>
+        )}
         <table className="test-buddy-table">
           <thead>
             <tr>
               <th>Target</th>
-              <th>Target health</th>
               <th>Case health</th>
+              <th>Target health</th>
               <th>Pass rate</th>
               <th>Mean duration</th>
             </tr>
@@ -337,10 +479,10 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
                   </button>
                 </td>
                 <td>
-                  <HealthLabel health={target.summary?.health} />
+                  <CaseHealthLabels summary={target.cases} />
                 </td>
                 <td>
-                  <CaseHealthLabels summary={target.cases} />
+                  <HealthLabel health={target.summary?.health} />
                 </td>
                 <td>{percent(target.summary?.passRate ?? 0)}</td>
                 <td>{format.durationUsec(target.summary?.meanDurationUsec ?? 0)}</td>
@@ -349,13 +491,21 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           </tbody>
         </table>
         {this.state.loading && <div className="test-buddy-empty">Loading targets…</div>}
-        {!this.state.loading && targets.length === 0 && (
+        {!this.state.loading && searchOnly && !this.state.packagePrefix && targets.length === 0 && (
+          <div className="test-buddy-empty">
+            This repository has more than {repositoryTargetListLimit.toLocaleString()} test targets. Search by package
+            or directory to load a bounded cone.
+          </div>
+        )}
+        {!this.state.loading && targets.length === 0 && !(searchOnly && !this.state.packagePrefix) && (
           <div className="test-buddy-empty">No targets found.</div>
         )}
       </div>
     );
   }
 }
+
+const repositoryTargetListLimit = 100_000;
 
 function Stat({ name, value }: { name: string; value: React.ReactNode }) {
   return (

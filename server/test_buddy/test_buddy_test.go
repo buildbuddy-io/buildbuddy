@@ -198,6 +198,53 @@ func TestReportAndQueryTests(t *testing.T) {
 	require.NotEmpty(t, detail.GetTransitions())
 }
 
+func TestRepositoriesAreGroupScopedAndOrderedByLatestReport(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	users := testauth.TestUsers("user1", "group1", "user2", "group2")
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+	service := testbuddy.New(env)
+	group1 := testauth.WithAuthenticatedUserInfo(ctx, users["user1"])
+	group2 := testauth.WithAuthenticatedUserInfo(ctx, users["user2"])
+	report := func(ctx context.Context, repository, run string) {
+		_, err := reportTestResults(service, ctx, &tbpb.ReportTestResultsRequest{
+			RepoUrl: repository,
+			TestCases: []*tbpb.TestCaseResult{caseResult(
+				run, "//pkg:test", "TestCase", tbpb.TestOutcome_TEST_OUTCOME_PASS, 1)},
+		})
+		require.NoError(t, err)
+	}
+
+	report(group1, "https://github.com/acme/older", "older-run")
+	report(group1, "https://github.com/acme/newer", "newer-run")
+	report(group2, "https://github.com/acme/private", "private-run")
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_set_repository_times").
+		Model(&tables.TestRepositoryCatalog{}).
+		Where("group_id = ? AND repository = ?", "group1", "https://github.com/acme/older").
+		UpdateColumn("updated_at_usec", 1).Error)
+	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_set_repository_times").
+		Model(&tables.TestRepositoryCatalog{}).
+		Where("group_id = ? AND repository = ?", "group1", "https://github.com/acme/newer").
+		UpdateColumn("updated_at_usec", 2).Error)
+
+	got, err := service.GetTestRepositories(group1, &tbpb.GetTestRepositoriesRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"https://github.com/acme/newer", "https://github.com/acme/older",
+	}, []string{got.GetRepositories()[0].GetRepoUrl(), got.GetRepositories()[1].GetRepoUrl()})
+	require.Equal(t, int64(2), got.GetRepositories()[0].GetLastReportedAtUsec())
+
+	// Reporting the older repository again updates the catalog row rather than
+	// adding another row, so it becomes the first choice in the selector.
+	report(group1, "https://github.com/acme/older", "latest-run")
+	got, err = service.GetTestRepositories(group1, &tbpb.GetTestRepositoriesRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"https://github.com/acme/older", "https://github.com/acme/newer",
+	}, []string{got.GetRepositories()[0].GetRepoUrl(), got.GetRepositories()[1].GetRepoUrl()})
+	require.Len(t, got.GetRepositories(), 2)
+}
+
 func TestUnicodeCaseNameRoundTripsThroughStorage(t *testing.T) {
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -950,6 +997,12 @@ func TestBrowserTransportThroughAppProxy(t *testing.T) {
 	require.Equal(t, int64(1), health.GetCases().GetTotalCount())
 	require.Equal(t, int64(1), health.GetCases().GetHealthyCount())
 	require.Equal(t, int64(3), health.GetCases().GetPassCount())
+	repositoriesRsp := post("user1", "GetTestRepositories", &tbpb.GetTestRepositoriesRequest{})
+	require.Equal(t, http.StatusOK, repositoriesRsp.Code, repositoriesRsp.Body.String())
+	repositories := &tbpb.GetTestRepositoriesResponse{}
+	require.NoError(t, protojson.Unmarshal(repositoriesRsp.Body.Bytes(), repositories))
+	require.Len(t, repositories.GetRepositories(), 1)
+	require.Equal(t, repository, repositories.GetRepositories()[0].GetRepoUrl())
 
 	// An unauthenticated browser request is refused before reaching the RPC.
 	unauthenticated := post("", "GetRepositoryHealth", &tbpb.GetRepositoryHealthRequest{RepoUrl: repository})

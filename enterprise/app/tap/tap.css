@@ -273,8 +273,28 @@
   margin: 24px 0 12px;
 }
 
+.test-buddy-title-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.test-buddy-title-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
 .test-buddy-repo {
+  align-items: center;
   color: var(--color-text-secondary);
+  display: flex;
+  gap: 8px;
+  max-width: 640px;
+}
+
+.test-buddy-repo .select-wrapper {
+  flex: 1;
 }
 
 .test-buddy-repository-summaries {
@@ -323,21 +343,7 @@
   padding: 10px 12px;
 }
 
-.test-buddy-health-filter {
-  align-items: center;
-  display: flex;
-  gap: 8px;
-}
-
-.test-buddy-health-filter select {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--color-border-primary);
-  border-radius: 4px;
-  color: var(--color-text-primary);
-  padding: 9px 12px;
-}
-
-.test-buddy-search button,
+.test-buddy-search-submit,
 .test-buddy-target-link {
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);

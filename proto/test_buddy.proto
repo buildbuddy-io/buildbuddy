@@ -197,6 +197,19 @@ message GetRepositoryHealthResponse {
   TestHealthSummary cases = 2;
 }
 
+message GetTestRepositoriesRequest {
+  context.RequestContext request_context = 1;
+}
+
+message TestRepository {
+  string repo_url = 1;
+  int64 last_reported_at_usec = 2;
+}
+
+message GetTestRepositoriesResponse {
+  repeated TestRepository repositories = 1;
+}
+
 service TestBuddyService {
   rpc ReportTestResults(stream ReportTestResultsRequest)
       returns (ReportTestResultsResponse);
@@ -207,6 +220,8 @@ service TestBuddyService {
   rpc GetTestTarget(GetTestTargetRequest) returns (GetTestTargetResponse);
   rpc GetRepositoryHealth(GetRepositoryHealthRequest)
       returns (GetRepositoryHealthResponse);
+  rpc GetTestRepositories(GetTestRepositoriesRequest)
+      returns (GetTestRepositoriesResponse);
   rpc GetTestAnalyzerConfig(GetTestAnalyzerConfigRequest)
       returns (GetTestAnalyzerConfigResponse);
   rpc SetTestAnalyzerConfig(SetTestAnalyzerConfigRequest)

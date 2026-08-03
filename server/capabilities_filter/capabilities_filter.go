@@ -164,6 +164,7 @@ var (
 		testBuddyServicePrefix + "GetTestCase",
 		testBuddyServicePrefix + "GetTestTarget",
 		testBuddyServicePrefix + "GetRepositoryHealth",
+		testBuddyServicePrefix + "GetTestRepositories",
 		testBuddyServicePrefix + "GetTestAnalyzerConfig",
 		testBuddyServicePrefix + "ReportTestResults",
 	}

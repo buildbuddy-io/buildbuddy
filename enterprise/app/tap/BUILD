@@ -107,8 +107,13 @@ ts_library(
     srcs = ["test_buddy.tsx"],
     deps = [
         "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/components/button",
+        "//app/components/checkbox",
+        "//app/components/popup",
+        "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
         "//app/router",
