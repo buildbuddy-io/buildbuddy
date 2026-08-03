@@ -112,6 +112,7 @@ ts_library(
         "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/checkbox",
+        "//app/components/menu",
         "//app/components/popup",
         "//app/components/select",
         "//app/errors:error_service",
