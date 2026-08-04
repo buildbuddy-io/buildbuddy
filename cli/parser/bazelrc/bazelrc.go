@@ -234,14 +234,12 @@ func ExpandConfigs(
 	namedConfigs map[string]*parsed.Config,
 	defaultConfig *parsed.Config,
 ) (*parsed.OrderedArgs, error) {
-	policy := &parsed.ConfigExpansionPolicy{
-		FlagName:  "config",
-		GetPhases: GetPhases,
+	policy := &parsed.ConfigExpansionPolicy{FlagName: "config", GetPhases: GetPhases}
+	expanded, err := args.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, policy)
+	if err != nil {
+		return nil, err
 	}
-	policy.PostExpand = func(expanded *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
-		return expandPlatformSpecificConfig(expanded, namedConfigs, policy)
-	}
-	return args.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, policy)
+	return expandPlatformSpecificConfig(expanded, namedConfigs, policy)
 }
 
 // expandPlatformSpecificConfig replaces the last occurrence of
@@ -258,9 +256,9 @@ func expandPlatformSpecificConfig(
 	} else if v {
 		index := opts[len(opts)-1].Index
 		bazelOS := GetBazelOS()
-		if platformConfig, ok := namedConfigs[bazelOS]; ok {
+		if _, ok := namedConfigs[bazelOS]; ok {
 			phases := GetPhases(expanded.GetCommand())
-			expansion, err := platformConfig.AppendArgsForConfig(nil, namedConfigs, phases, []string{bazelOS}, true, policy)
+			expansion, err := parsed.ExpandNamedConfig(bazelOS, namedConfigs, phases, policy)
 			if err != nil {
 				return nil, err
 			}

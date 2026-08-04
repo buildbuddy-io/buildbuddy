@@ -77,10 +77,6 @@ func TestExpandConfigsWithPolicy(t *testing.T) {
 			require.Equal(t, "explain", command)
 			return []string{"common", "explain"}
 		},
-		PostExpand: func(args *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
-			args.Args = append(args.Args, &arguments.PositionalArgument{Value: "post-expanded"})
-			return args, nil
-		},
 	}
 	expanded, err := args.ExpandConfigsWithPolicy(
 		namedConfigs,
@@ -97,8 +93,6 @@ func TestExpandConfigsWithPolicy(t *testing.T) {
 		// The --bb_config=detailed flag should be expanded to --detailed_flag.
 		"--detailed_flag",
 		"invocation-id",
-		// The PostExpand function should've been called.
-		"post-expanded",
 	}, expanded.Format())
 }
 
