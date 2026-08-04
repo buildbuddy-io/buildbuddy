@@ -223,6 +223,18 @@ func loadOrCreateHostKey(path string) ([]byte, error) {
 // --idle_timeout, which logs out live-but-inactive interactive sessions.
 const connIdleTimeout = 3 * time.Minute
 
+// countedConn runs onClose exactly once, when the connection is closed.
+type countedConn struct {
+	net.Conn
+	once    sync.Once
+	onClose func()
+}
+
+func (c *countedConn) Close() error {
+	c.once.Do(c.onClose)
+	return c.Conn.Close()
+}
+
 // activityReader resets an inactivity timer on every read that carries data.
 type activityReader struct {
 	r     io.Reader
@@ -518,7 +530,24 @@ func HandleSSHServer(args []string) (int, error) {
 	// Build the SSH server. WireGuard membership is the auth boundary; no SSH
 	// credential checking is required. gliderlabs/ssh automatically sets
 	// NoClientAuth=true when no auth handlers are configured.
-	sshServer := &ssh.Server{IdleTimeout: connIdleTimeout}
+	forwards := &ssh.ForwardedTCPHandler{}
+	sshServer := &ssh.Server{
+		IdleTimeout: connIdleTimeout,
+		ChannelHandlers: map[string]ssh.ChannelHandler{
+			"session": ssh.DefaultSessionHandler,
+			// `bb ssh -L`: the box dials the destination and splices.
+			"direct-tcpip": ssh.DirectTCPIPHandler,
+		},
+		RequestHandlers: map[string]ssh.RequestHandler{
+			// `bb ssh -R`: the box listens and opens a channel per connection.
+			"tcpip-forward":        forwards.HandleSSHRequest,
+			"cancel-tcpip-forward": forwards.HandleSSHRequest,
+		},
+		// The WireGuard tunnel is the authentication boundary, and anyone
+		// forwarding a port here can already run commands here.
+		LocalPortForwardingCallback:   func(ssh.Context, string, uint32) bool { return true },
+		ReversePortForwardingCallback: func(ssh.Context, string, uint32) bool { return true },
+	}
 	hostKeyPath := *hostKeyFile
 	if hostKeyPath == "" {
 		cacheDir, err := os.UserCacheDir()
@@ -567,12 +596,14 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 
 	// Idle-shutdown: call sshServer.Shutdown once the grace period elapses with
-	// no active sessions. The timer starts immediately to cover the case where
-	// no client ever connects.
+	// no connected clients. The timer starts immediately to cover the case
+	// where no client ever connects. Connections are counted rather than
+	// sessions, so that a client holding only port forwards (bb ssh -N) keeps
+	// the VM alive, and a client whose command outlives it does not.
 	var (
-		mu             sync.Mutex
-		activeSessions int
-		idleTimer      *time.Timer
+		mu          sync.Mutex
+		activeConns int
+		idleTimer   *time.Timer
 	)
 	resetIdleTimer := func() {
 		// Must be called with mu held.
@@ -580,7 +611,7 @@ func HandleSSHServer(args []string) (int, error) {
 			idleTimer.Stop()
 		}
 		idleTimer = time.AfterFunc(*gracePeriod, func() {
-			log.Printf("No active sessions for %s; shutting down.", *gracePeriod)
+			log.Printf("No clients connected for %s; shutting down.", *gracePeriod)
 			shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			sshServer.Shutdown(shutCtx)
@@ -590,32 +621,23 @@ func HandleSSHServer(args []string) (int, error) {
 	resetIdleTimer()
 	mu.Unlock()
 
-	sshServer.Handler = func(s ssh.Session) {
+	sshServer.Handler = handleSession
+	sshServer.ConnCallback = func(_ ssh.Context, conn net.Conn) net.Conn {
 		mu.Lock()
 		if idleTimer != nil {
 			idleTimer.Stop()
 			idleTimer = nil
 		}
-		activeSessions++
+		activeConns++
 		mu.Unlock()
-		// Stop counting the session once the client is gone, rather than when
-		// its command finishes: a detached command must not hold the VM open,
-		// but reconnecting within the grace period still finds it running.
-		handlerDone := make(chan struct{})
-		defer close(handlerDone)
-		go func() {
-			select {
-			case <-s.Context().Done():
-			case <-handlerDone:
-			}
+		return &countedConn{Conn: conn, onClose: func() {
 			mu.Lock()
-			activeSessions--
-			if activeSessions == 0 {
+			activeConns--
+			if activeConns == 0 {
 				resetIdleTimer()
 			}
 			mu.Unlock()
-		}()
-		handleSession(s)
+		}}
 	}
 
 	// The gateway registration is leased to the Connect stream. If the stream

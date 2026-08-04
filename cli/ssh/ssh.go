@@ -44,9 +44,19 @@ var (
 	port          = flags.Int("p", 22, "SSH port to dial on the remote host")
 	user          = flags.String("l", "", "SSH login name (used when the target has no user@ prefix)")
 	forceTTY      = flags.Bool("t", false, "Force pseudo-terminal allocation, e.g. to run an interactive program remotely")
+	noCommand     = flags.Bool("N", false, "Do not run a remote command; useful when only forwarding ports")
+
+	localForwards  forwardSpecs
+	remoteForwards forwardSpecs
 
 	usage string
 )
+
+// forwardSpecs collects a repeatable port-forwarding flag.
+type forwardSpecs []string
+
+func (f *forwardSpecs) String() string     { return strings.Join(*f, ",") }
+func (f *forwardSpecs) Set(v string) error { *f = append(*f, v); return nil }
 
 // keepaliveInterval is how often the client pings the server over the SSH
 // transport. Well under the server's connection-level dead-client timeout
@@ -56,6 +66,9 @@ var (
 const keepaliveInterval = 15 * time.Second
 
 func init() {
+	flags.Var(&localForwards, "L", "Forward a port on this machine to one reachable from the box: [bind:]port:host:hostport (repeatable)")
+	flags.Var(&remoteForwards, "R", "Forward a port on the box to one reachable from this machine: [bind:]port:host:hostport (repeatable)")
+
 	var buf strings.Builder
 	fmt.Fprintf(&buf, "usage: bb %s [flags] [user@]<host> [command ...]\n\nConnect to an SSH server reachable via the BuildBuddy gateway.\n\nFlags:\n", flags.Name())
 	flags.SetOutput(&buf)
@@ -96,6 +109,79 @@ func parseTarget(target, userFlag string, portFlag int) (string, string, int) {
 		}
 	}
 	return target, loginUser, port
+}
+
+// parseForward parses an OpenSSH-style forward spec,
+// [bind_address:]port:host:hostport, into the address to listen on and the
+// address to dial. The bind address defaults to 127.0.0.1, so a forwarded
+// port is not exposed to the network. (OpenSSH defaults to every loopback
+// address, but net.Listen binds only the first address a name resolves to,
+// which would make the family served depend on the resolver.)
+func parseForward(spec string) (listen, dial string, err error) {
+	// Split on colons outside of brackets, which delimit IPv6 literals.
+	var parts []string
+	var cur strings.Builder
+	depth := 0
+	for _, r := range spec {
+		switch r {
+		case '[':
+			depth++
+		case ']':
+			if depth == 0 {
+				return "", "", status.InvalidArgumentErrorf("invalid forward %q: unbalanced brackets", spec)
+			}
+			depth--
+		case ':':
+			if depth == 0 {
+				parts = append(parts, cur.String())
+				cur.Reset()
+			} else {
+				cur.WriteRune(r)
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	parts = append(parts, cur.String())
+
+	bind := "127.0.0.1"
+	if len(parts) == 4 {
+		bind, parts = parts[0], parts[1:]
+	}
+	if len(parts) != 3 {
+		return "", "", status.InvalidArgumentErrorf("invalid forward %q: want [bind:]port:host:hostport", spec)
+	}
+	for _, p := range []string{parts[0], parts[2]} {
+		if n, err := strconv.Atoi(p); err != nil || n < 1 || n > 65535 {
+			return "", "", status.InvalidArgumentErrorf("invalid port %q in forward %q", p, spec)
+		}
+	}
+	if parts[1] == "" {
+		return "", "", status.InvalidArgumentErrorf("invalid forward %q: missing host", spec)
+	}
+	return net.JoinHostPort(bind, parts[0]), net.JoinHostPort(parts[1], parts[2]), nil
+}
+
+// forward accepts connections on ln and splices each one to a connection
+// opened by dial. It returns when ln is closed.
+func forward(ln net.Listener, dial func() (net.Conn, error), spec string) {
+	for {
+		in, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		go func() {
+			defer in.Close()
+			out, err := dial()
+			if err != nil {
+				log.Printf("Forward %s: %s", spec, err)
+				return
+			}
+			defer out.Close()
+			go io.Copy(out, in)
+			io.Copy(in, out)
+		}()
+	}
 }
 
 // resolveEndpoint resolves the hostname in a host:port endpoint string to an
@@ -303,6 +389,53 @@ func HandleSSH(args []string) (int, error) {
 			}
 		}
 	}()
+
+	// -L: listen here, dial from the box.
+	for _, spec := range localForwards {
+		listenAddr, dialAddr, err := parseForward(spec)
+		if err != nil {
+			return 1, err
+		}
+		ln, err := net.Listen("tcp", listenAddr)
+		if err != nil {
+			return 1, status.WrapErrorf(err, "listen for -L %s", spec)
+		}
+		defer ln.Close()
+		go forward(ln, func() (net.Conn, error) { return client.Dial("tcp", dialAddr) }, spec)
+	}
+	// -R: the box listens, we dial from here.
+	for _, spec := range remoteForwards {
+		listenAddr, dialAddr, err := parseForward(spec)
+		if err != nil {
+			return 1, err
+		}
+		ln, err := client.Listen("tcp", listenAddr)
+		if err != nil {
+			return 1, status.WrapErrorf(err, "listen on %s for -R %s", target, spec)
+		}
+		defer ln.Close()
+		go forward(ln, func() (net.Conn, error) { return net.Dial("tcp", dialAddr) }, spec)
+	}
+
+	if *noCommand {
+		if len(localForwards) == 0 && len(remoteForwards) == 0 {
+			log.Printf("-N was given with no port forwards; nothing to do")
+			return 1, nil
+		}
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+		defer signal.Stop(sigCh)
+		select {
+		case <-sigCh:
+			return 0, nil
+		case <-gwLost:
+			fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost.\n", target)
+			return 1, nil
+		case <-connDead:
+			fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server.\n", target)
+			return 1, nil
+		}
+	}
 
 	session, err := client.NewSession()
 	if err != nil {
