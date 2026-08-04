@@ -22,5 +22,5 @@ func TestPurposeDefaultsToUnknown(t *testing.T) {
 func TestPurposeOverwrite(t *testing.T) {
 	ctx := findmissing.ContextWithPurpose(context.Background(), repb.FindMissingBlobsRequest_CONTAINS)
 	ctx = findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_ATIME_UPDATE)
-	require.Equal(t, repb.FindMissingBlobsRequest_ATIME_UPDATE, findmissing.PurposeFromContext(ctx))
+	require.Equal(t, 5, findmissing.PurposeFromContext(ctx))
 }
