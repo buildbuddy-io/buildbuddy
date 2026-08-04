@@ -124,6 +124,33 @@ func init() {
 	usage = buf.String()
 }
 
+// setHostname renames the VM after the box so shell prompts and logs
+// identify it. No-op outside a remote action: this command also runs on
+// developer machines, which must not be renamed. The box image runs as a
+// non-root user with passwordless sudo. Best effort: failures are cosmetic.
+func setHostname(name string) {
+	if name == "" || os.Getenv(remoteActionEnvVar) == "" {
+		return
+	}
+	if h, err := os.Hostname(); err == nil && h == name {
+		return // already set, e.g. on a resumed VM
+	}
+	// Add the name to /etc/hosts first so that it stays resolvable, which
+	// sudo warns about otherwise. The leading newline covers an image whose
+	// /etc/hosts has no trailing one.
+	hosts := exec.Command("sudo", "-n", "tee", "-a", "/etc/hosts")
+	hosts.Stdin = strings.NewReader(fmt.Sprintf("\n127.0.0.1 %s\n", name))
+	if err := hosts.Run(); err != nil {
+		log.Debugf("add %s to /etc/hosts: %v", name, err)
+	}
+	if err := syscall.Sethostname([]byte(name)); err == nil {
+		return
+	}
+	if out, err := exec.Command("sudo", "-n", "hostname", name).CombinedOutput(); err != nil {
+		log.Debugf("set hostname to %s: %v: %s", name, err, out)
+	}
+}
+
 func getShell() string {
 	if *shellPath != "" {
 		return *shellPath
@@ -326,6 +353,8 @@ func HandleSSHServer(args []string) (int, error) {
 	defer grpcConn.Close()
 
 	gwClient := gwsvcpb.NewGatewayServiceClient(grpcConn)
+
+	setHostname(name)
 
 	sid := *sessionID
 	if sid == "" {
