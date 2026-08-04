@@ -95,7 +95,7 @@ const (
 	executorNewestVersionCacheTTL = 5 * time.Minute
 
 	// Message attached to upgrade prompts returned by GetExecutionNodes.
-	upgradePromptMessage = "One or more of your executors are running an outdated version. The newest available version is %s."
+	upgradePromptMessage = "Oh Buddy! One or more of your executors are running an outdated version. The newest available version is %s."
 
 	// The maximum number of times a task may be re-enqueued.
 	maxTaskAttemptCount = 5
