@@ -67,24 +67,32 @@ func init() {
 }
 
 // parseTarget splits a target argument — [user@]host, host:port, or a
-// bb-ssh:// URL — into its components. userFlag (-l) and portFlag (-p)
-// supply the defaults; a user@ prefix in the target takes precedence over
-// -l, and a port in the target takes precedence over -p.
-func parseTarget(target, userFlag string, portFlag int) (host, loginUser string, port int) {
-	loginUser = userFlag
-	if before, after, ok := strings.Cut(target, "@"); ok {
-		loginUser, target = before, after
-	}
-	port = portFlag
+// bb-ssh://[user@]host URL — into host, login user, and port. userFlag (-l)
+// and portFlag (-p) supply the defaults; user and port in the target take
+// precedence.
+func parseTarget(target, userFlag string, portFlag int) (string, string, int) {
+	loginUser := userFlag
+	port := portFlag
+	// Try the URL form first: cutting at "@" before parsing would mangle
+	// bb-ssh://user@host into user "bb-ssh://user".
 	if u, err := url.Parse(target); err == nil && u.Scheme == "bb-ssh" {
-		target = u.Hostname()
+		if name := u.User.Username(); name != "" {
+			loginUser = name
+		}
 		if p, err := strconv.Atoi(u.Port()); err == nil {
 			port = p
 		}
-	} else if h, portStr, err := net.SplitHostPort(target); err == nil {
-		target = h
+		return u.Hostname(), loginUser, port
+	}
+	if before, after, ok := strings.Cut(target, "@"); ok {
+		loginUser, target = before, after
+	}
+	// Only honor a :port suffix when the port is numeric; otherwise keep the
+	// whole string as the host so the resulting dial error names it, rather
+	// than silently connecting to the default port.
+	if h, portStr, err := net.SplitHostPort(target); err == nil {
 		if p, err := strconv.Atoi(portStr); err == nil {
-			port = p
+			target, port = h, p
 		}
 	}
 	return target, loginUser, port
