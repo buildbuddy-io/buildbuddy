@@ -143,9 +143,6 @@ func setHostname(name string) {
 	if err := hosts.Run(); err != nil {
 		log.Debugf("add %s to /etc/hosts: %v", name, err)
 	}
-	if err := syscall.Sethostname([]byte(name)); err == nil {
-		return
-	}
 	if out, err := exec.Command("sudo", "-n", "hostname", name).CombinedOutput(); err != nil {
 		log.Debugf("set hostname to %s: %v: %s", name, err, out)
 	}
