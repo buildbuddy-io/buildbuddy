@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -204,6 +205,18 @@ func (a *activityReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// killGroup kills cmd's process group. Process.Kill fails once cmd.Wait has
+// reaped, and an unreaped pid can't be recycled, so it guards the group kill
+// against signaling an unrelated group.
+func killGroup(cmd *exec.Cmd) {
+	if err := cmd.Process.Kill(); err != nil {
+		return
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		log.Debugf("logout kill: %v", err)
+	}
+}
+
 func setWinsize(f *os.File, w, h int) {
 	syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCSWINSZ),
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
@@ -227,19 +240,16 @@ func handleSession(s ssh.Session) {
 	}
 	defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
 
-	// When cmd's stdin/stdout are not *os.Files (the non-pty path), os/exec
-	// copies them through pipes and Wait blocks until the copiers finish — a
-	// copier parked on a read from the session would otherwise hold Wait
-	// hostage after the process exits (e.g. after an idle logout kill).
-	// WaitDelay force-closes the pipes shortly after process exit.
+	// Bound Wait when a grandchild inherits the non-pty stdout/stderr pipes
+	// and outlives the child.
 	cmd.WaitDelay = 5 * time.Second
 
-	// Interactive sessions (anything with a PTY, or a shell with no command)
-	// are logged out after --idle_timeout without user input. Input means
-	// keystrokes or terminal resizes — program output doesn't count, so a
-	// chatty program can't keep a session logged in, and neither do client
-	// keepalives. Plain command execution is exempt: builds legitimately run
-	// for a long time with no input at all.
+	// Interactive sessions (a PTY, or a shell with no command) are logged
+	// out after --idle_timeout without user input; program output and client
+	// keepalives don't count, and plain command execution is exempt.
+	// cmd.Process.Kill is a no-op once cmd.Wait has reaped, so a logout
+	// racing the command's own exit can't signal an unrelated process.
+	var logout *time.Timer
 	if isPty {
 		cmd.Env = append(os.Environ(), "TERM="+ptyReq.Term)
 		f, err := pty.Start(cmd)
@@ -250,19 +260,16 @@ func handleSession(s ssh.Session) {
 		}
 		defer f.Close()
 
-		var logout *time.Timer
 		var input io.Reader = s
 		if *idleTimeout > 0 {
-			pid := cmd.Process.Pid
 			logout = time.AfterFunc(*idleTimeout, func() {
 				fmt.Fprintf(s, "\r\nLogged out: no input for %s.\r\n", *idleTimeout)
-				// Killing the group unwinds the session through the normal
-				// exit path below.
-				if err := syscall.Kill(-pid, syscall.SIGKILL); err != nil {
-					log.Debugf("logout kill: %v", err)
-				}
+				// Closing the pty unblocks the copy below; killing the group
+				// takes the shell's children with it. A tmux server survives:
+				// it daemonizes into its own session.
+				f.Close()
+				killGroup(cmd)
 			})
-			// Stop disarms the timer as the session unwinds.
 			defer logout.Stop()
 			input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
 		}
@@ -278,30 +285,48 @@ func handleSession(s ssh.Session) {
 		go io.Copy(f, input)
 		io.Copy(s, f)
 	} else {
-		var input io.Reader = s
-		if *idleTimeout > 0 && raw == "" {
-			logout := time.AfterFunc(*idleTimeout, func() {
-				fmt.Fprintf(s, "\nLogged out: no input for %s.\n", *idleTimeout)
-				// Closing the session EOFs the shell's stdin; the shell
-				// exits and cmd.Wait below returns (WaitDelay bounds the
-				// pipe copiers).
-				s.Close()
-			})
-			defer logout.Stop()
-			input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
-		}
+		wantLogout := *idleTimeout > 0 && raw == ""
 		cmd.Env = os.Environ()
 		cmd.Stdout = s
 		cmd.Stderr = s.Stderr()
-		cmd.Stdin = input
+		if wantLogout {
+			// Without a pty there is no Setsid; give the shell its own group
+			// so the logout kill reaches its children and not the server.
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		}
+		// Pump stdin through a real pipe ourselves: handing the session to
+		// os/exec would add a copier goroutine that cmd.Wait must join but
+		// that can block forever reading from the session (WaitDelay cannot
+		// interrupt reads from a non-File).
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
+			s.Exit(1)
+			return
+		}
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
 			s.Exit(1)
 			return
 		}
+		var input io.Reader = s
+		if wantLogout {
+			logout = time.AfterFunc(*idleTimeout, func() {
+				fmt.Fprintf(s, "\nLogged out: no input for %s.\n", *idleTimeout)
+				killGroup(cmd)
+			})
+			defer logout.Stop()
+			input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
+		}
+		go func() {
+			io.Copy(stdin, input)
+			stdin.Close()
+		}()
 	}
 
-	if err := cmd.Wait(); err != nil {
+	// ErrWaitDelay means the process exited cleanly but a pipe copier was
+	// still blocked (e.g. a client holding stdin open); treat as success.
+	if err := cmd.Wait(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			// ExitCode is -1 for a signaled process (including the logout
 			// kill); report 255 rather than -1 wrapping around on the wire.
