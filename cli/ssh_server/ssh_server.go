@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -181,10 +182,14 @@ func loadOrCreateHostKey(path string) ([]byte, error) {
 }
 
 // connIdleTimeout closes connections whose client has stopped sending
-// traffic entirely — bb ssh sends keepalives every 15s, so only a dead
-// client (host asleep, network gone) goes quiet this long. Distinct from
+// traffic entirely — bb ssh sends keepalives every 15s (keepaliveInterval in
+// cli/ssh), so only a dead client (host asleep, network gone) goes quiet
+// this long. Clients that don't send keepalives (older bb versions, plain
+// ssh) stay connected only as long as some traffic flows within this
+// window: if they sit completely silent, they are dropped here at 3m and
+// never reach the (5m default) --idle_timeout logout banner. Distinct from
 // --idle_timeout, which logs out live-but-inactive interactive sessions.
-const connIdleTimeout = time.Minute
+const connIdleTimeout = 3 * time.Minute
 
 // activityReader resets an inactivity timer on every read that carries data.
 type activityReader struct {
@@ -198,6 +203,18 @@ func (a *activityReader) Read(p []byte) (int, error) {
 		a.reset()
 	}
 	return n, err
+}
+
+// killGroup kills cmd's process group. Process.Kill fails once cmd.Wait has
+// reaped, and an unreaped pid can't be recycled, so it guards the group kill
+// against signaling an unrelated group.
+func killGroup(cmd *exec.Cmd) {
+	if err := cmd.Process.Kill(); err != nil {
+		return
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		log.Debugf("logout kill: %v", err)
+	}
 }
 
 func setWinsize(f *os.File, w, h int) {
@@ -223,24 +240,16 @@ func handleSession(s ssh.Session) {
 	}
 	defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
 
-	// Interactive sessions (anything with a PTY, or a shell with no command)
-	// are logged out after --idle_timeout without user input. Input means
-	// keystrokes or terminal resizes — program output doesn't count, so a
-	// chatty program can't keep a session logged in, and neither do client
-	// keepalives. Plain command execution is exempt: builds legitimately run
-	// for a long time with no input at all.
-	var logout *time.Timer
-	var input io.Reader = s
-	if *idleTimeout > 0 && (isPty || raw == "") {
-		logout = time.AfterFunc(*idleTimeout, func() {
-			fmt.Fprintf(s, "\r\nLogged out: no input for %s.\r\n", *idleTimeout)
-			s.Exit(0)
-			s.Close()
-		})
-		defer logout.Stop()
-		input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
-	}
+	// Bound Wait when a grandchild inherits the non-pty stdout/stderr pipes
+	// and outlives the child.
+	cmd.WaitDelay = 5 * time.Second
 
+	// Interactive sessions (a PTY, or a shell with no command) are logged
+	// out after --idle_timeout without user input; program output and client
+	// keepalives don't count, and plain command execution is exempt.
+	// cmd.Process.Kill is a no-op once cmd.Wait has reaped, so a logout
+	// racing the command's own exit can't signal an unrelated process.
+	var logout *time.Timer
 	if isPty {
 		cmd.Env = append(os.Environ(), "TERM="+ptyReq.Term)
 		f, err := pty.Start(cmd)
@@ -250,6 +259,20 @@ func handleSession(s ssh.Session) {
 			return
 		}
 		defer f.Close()
+
+		var input io.Reader = s
+		if *idleTimeout > 0 {
+			logout = time.AfterFunc(*idleTimeout, func() {
+				fmt.Fprintf(s, "\r\nLogged out: no input for %s.\r\n", *idleTimeout)
+				// Closing the pty unblocks the copy below; killing the group
+				// takes the shell's children with it. A tmux server survives:
+				// it daemonizes into its own session.
+				f.Close()
+				killGroup(cmd)
+			})
+			defer logout.Stop()
+			input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
+		}
 		setWinsize(f, ptyReq.Window.Width, ptyReq.Window.Height)
 		go func() {
 			for win := range winCh {
@@ -262,20 +285,56 @@ func handleSession(s ssh.Session) {
 		go io.Copy(f, input)
 		io.Copy(s, f)
 	} else {
+		wantLogout := *idleTimeout > 0 && raw == ""
 		cmd.Env = os.Environ()
 		cmd.Stdout = s
 		cmd.Stderr = s.Stderr()
-		cmd.Stdin = input
+		if wantLogout {
+			// Without a pty there is no Setsid; give the shell its own group
+			// so the logout kill reaches its children and not the server.
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		}
+		// Pump stdin through a real pipe ourselves: handing the session to
+		// os/exec would add a copier goroutine that cmd.Wait must join but
+		// that can block forever reading from the session (WaitDelay cannot
+		// interrupt reads from a non-File).
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
+			s.Exit(1)
+			return
+		}
 		if err := cmd.Start(); err != nil {
 			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
 			s.Exit(1)
 			return
 		}
+		var input io.Reader = s
+		if wantLogout {
+			logout = time.AfterFunc(*idleTimeout, func() {
+				fmt.Fprintf(s, "\nLogged out: no input for %s.\n", *idleTimeout)
+				killGroup(cmd)
+			})
+			defer logout.Stop()
+			input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
+		}
+		go func() {
+			io.Copy(stdin, input)
+			stdin.Close()
+		}()
 	}
 
-	if err := cmd.Wait(); err != nil {
+	// ErrWaitDelay means the process exited cleanly but a pipe copier was
+	// still blocked (e.g. a client holding stdin open); treat as success.
+	if err := cmd.Wait(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			s.Exit(exitErr.ExitCode())
+			// ExitCode is -1 for a signaled process (including the logout
+			// kill); report 255 rather than -1 wrapping around on the wire.
+			if code := exitErr.ExitCode(); code >= 0 {
+				s.Exit(code)
+			} else {
+				s.Exit(255)
+			}
 			return
 		}
 		fmt.Fprintf(s.Stderr(), "wait for command: %v\n", err)
@@ -498,7 +557,16 @@ func HandleSSHServer(args []string) (int, error) {
 		}
 		activeSessions++
 		mu.Unlock()
-		defer func() {
+		// Stop counting the session once the client is gone, rather than when
+		// its command finishes: a detached command must not hold the VM open,
+		// but reconnecting within the grace period still finds it running.
+		handlerDone := make(chan struct{})
+		defer close(handlerDone)
+		go func() {
+			select {
+			case <-s.Context().Done():
+			case <-handlerDone:
+			}
 			mu.Lock()
 			activeSessions--
 			if activeSessions == 0 {

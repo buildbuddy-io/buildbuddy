@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "ssh",
@@ -25,3 +25,10 @@ go_library(
 )
 
 package(default_visibility = ["//cli:__subpackages__"])
+
+go_test(
+    name = "ssh_test",
+    srcs = ["ssh_test.go"],
+    embed = [":ssh"],
+    deps = ["@com_github_stretchr_testify//require"],
+)
