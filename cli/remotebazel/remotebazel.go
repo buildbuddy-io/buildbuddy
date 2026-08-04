@@ -665,6 +665,80 @@ func logChunkID(requestedChunkID string, response *elpb.GetEventLogChunkResponse
 	return requestedChunkID
 }
 
+// logStream tails an invocation's log via the streaming GetEventLog API,
+// transparently reconnecting when the stream is dropped by a transient error
+// (e.g. the app restarting during a deploy).
+type logStream struct {
+	ctx          context.Context
+	client       bbspb.BuildBuddyServiceClient
+	invocationID string
+
+	stream bbspb.BuildBuddyService_GetEventLogClient
+	// ID of the chunk the next received response corresponds to, mirroring
+	// the server's read cursor. Responses do not identify their chunk, and
+	// reconnects resume reading from this chunk.
+	// TODO: this could be simplified if the server returned a chunk ID
+	// with each response.
+	chunkID string
+}
+
+func openLogStream(ctx context.Context, client bbspb.BuildBuddyServiceClient, invocationID string) (*logStream, error) {
+	s := &logStream{ctx: ctx, client: client, invocationID: invocationID}
+	if err := s.connect(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *logStream) connect() error {
+	stream, err := s.client.GetEventLog(s.ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: s.invocationID,
+		ChunkId:      s.chunkID,
+		MinLines:     100,
+	})
+	if err != nil {
+		return err
+	}
+	s.stream = stream
+	return nil
+}
+
+// Recv returns the next log chunk response along with the ID of the chunk it
+// corresponds to. It returns io.EOF once the end of the log is reached.
+func (s *logStream) Recv() (string, *elpb.GetEventLogChunkResponse, error) {
+	l, err := retry.Do(s.ctx, &retry.Options{
+		InitialBackoff:        500 * time.Millisecond,
+		MaxBackoff:            10 * time.Second,
+		Multiplier:            2,
+		MaxRetries:            10,
+		DontLogFailedAttempts: true,
+	}, func(ctx context.Context) (*elpb.GetEventLogChunkResponse, error) {
+		l, err := s.stream.Recv()
+		if err == nil {
+			return l, nil
+		}
+		if err == io.EOF || !status.IsUnavailableError(err) {
+			return nil, retry.NonRetryableError(err)
+		}
+		log.Debugf("Log stream interrupted, reconnecting: %s", err)
+		// Reconnect so the next attempt reads from the new stream. If
+		// reconnecting fails, stay on the broken stream: its next Recv
+		// returns the same error, consuming another retry attempt.
+		if err := s.connect(); err != nil {
+			log.Debugf("Log stream reconnect failed: %s", err)
+		}
+		return nil, err
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	chunkID := s.chunkID
+	if l.GetNextChunkId() != "" {
+		s.chunkID = l.GetNextChunkId()
+	}
+	return chunkID, l, nil
+}
+
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
@@ -681,8 +755,6 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		}()
 	}
 
-	// ID of the chunk we're requesting from the server.
-	chunkID := ""
 	// ID of the live chunk currently drawn on the terminal.
 	liveChunkID := ""
 	// Buffer of lines currently printed to the terminal, kept so redraws do
@@ -690,6 +762,12 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 	var liveLines []string
 
 	drawChunk := func(chunk logChunk) {
+		// Skip empty responses, which the server sends while waiting for log
+		// chunks to be written. Drawing one would print a spurious blank row,
+		// since splitLogBuffer returns one empty row for an empty buffer.
+		if len(chunk.response.GetBuffer()) == 0 {
+			return
+		}
 		logLines := splitLogBuffer(chunk.response.GetBuffer())
 		// Index of the log to start printing from. If earlier lines are
 		// already on screen, do not print them again.
@@ -726,17 +804,21 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		}
 	}
 
+	stream, err := openLogStream(ctx, bbClient, invocationID)
+	if err != nil {
+		return status.WrapError(err, "get event log")
+	}
+
+	// Chunks received but not yet drawn (see comment below re. flicker)
 	var chunks []logChunk
 	wasLive := false
 	for {
-		requestedChunkID := chunkID
-		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-			InvocationId: invocationID,
-			ChunkId:      chunkID,
-			MinLines:     100,
-		})
+		requestedChunkID, l, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return status.WrapError(err, "get event log chunk")
+			return status.WrapError(err, "read log stream")
 		}
 
 		chunks = append(chunks, logChunk{id: logChunkID(requestedChunkID, l), response: l})
@@ -746,22 +828,14 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 		// the delay, we would print the chunk without the volatile portion
 		// which will look like a "flicker" once the volatile portion is
 		// printed again.
-		if !wasLive || l.GetLive() {
+		delayRedraw := wasLive && !l.GetLive()
+		if !delayRedraw {
 			for _, chunk := range chunks {
 				drawChunk(chunk)
 			}
 			chunks = nil
 		}
 		wasLive = l.GetLive()
-
-		if l.GetNextChunkId() == "" {
-			break
-		}
-
-		if l.GetNextChunkId() == chunkID {
-			time.Sleep(1 * time.Second)
-		}
-		chunkID = l.GetNextChunkId()
 	}
 
 	// The final chunk's redraw may have been delayed (see above) if it
@@ -773,34 +847,31 @@ func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, inv
 	return nil
 }
 
-// printLogs prints the logs with real-time streaming updates disabled
+// printLogs prints logs for non-interactive mode, where we can't redraw the
+// live chunk. Each chunk is printed only when it is finalized.
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	defer resetTerminalStyles()
 
-	chunkID := ""
+	stream, err := openLogStream(ctx, bbClient, invocationID)
+	if err != nil {
+		return status.WrapError(err, "get event log")
+	}
 
 	for {
-		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-			InvocationId: invocationID,
-			ChunkId:      chunkID,
-			MinLines:     100,
-		})
-		if err != nil {
-			return status.WrapError(err, "get event log chunk")
+		_, l, err := stream.Recv()
+		if err == io.EOF {
+			return nil
 		}
-
+		if err != nil {
+			return status.WrapError(err, "read log stream")
+		}
+		// Live chunks are still subject to change; only print each chunk once
+		// the server finalizes it, so lines are printed exactly once.
 		if l.GetLive() {
-			time.Sleep(1 * time.Second)
 			continue
 		}
 		os.Stdout.Write(l.GetBuffer())
-
-		if l.GetNextChunkId() == "" {
-			break
-		}
-		chunkID = l.GetNextChunkId()
 	}
-	return nil
 }
 
 func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
