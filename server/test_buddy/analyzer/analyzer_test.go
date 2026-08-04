@@ -47,17 +47,29 @@ func TestLinearDistinguishesFailingFromFlaky(t *testing.T) {
 }
 
 func TestLinearClassifiesHealthyAndInsufficient(t *testing.T) {
-	healthy, err := analyzer.Linear(samples(
-		tbpb.TestOutcome_TEST_OUTCOME_PASS,
-		tbpb.TestOutcome_TEST_OUTCOME_PASS,
-		tbpb.TestOutcome_TEST_OUTCOME_PASS,
-	), config.Default())
+	healthy, err := analyzer.Linear(samples(tbpb.TestOutcome_TEST_OUTCOME_PASS), config.Default())
 	require.NoError(t, err)
 	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_HEALTHY, healthy.Health)
+	assert.Equal(t, analyzer.ReasonAllPasses, healthy.Reason)
 
 	insufficient, err := analyzer.Linear(nil, config.Default())
 	require.NoError(t, err)
 	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, insufficient.Health)
+}
+
+func TestLinearRecoversBelowThresholdMixedEvidence(t *testing.T) {
+	cfg := &tbpb.TestAnalyzerConfig{Analyzer: &tbpb.TestAnalyzerConfig_Linear{Linear: &tbpb.LinearAnalyzer{
+		WindowSize: 50, FailureThreshold: 2, TargetTimeoutThreshold: 5,
+	}}}
+	result, err := analyzer.Linear(samples(
+		tbpb.TestOutcome_TEST_OUTCOME_FAIL,
+		tbpb.TestOutcome_TEST_OUTCOME_PASS,
+		tbpb.TestOutcome_TEST_OUTCOME_PASS,
+		tbpb.TestOutcome_TEST_OUTCOME_PASS,
+	), cfg)
+	require.NoError(t, err)
+	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_HEALTHY, result.Health)
+	assert.Equal(t, analyzer.ReasonConsecutivePasses, result.Reason)
 }
 
 func TestTimeoutCountsAsFailure(t *testing.T) {
@@ -109,6 +121,6 @@ func TestUnknownOutcomesAreIgnored(t *testing.T) {
 	window[0].Outcome = tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
 	result, err := analyzer.Linear(window, config.Default())
 	require.NoError(t, err)
-	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_INSUFFICIENT_DATA, result.Health)
+	assert.Equal(t, tbpb.TestHealth_TEST_HEALTH_HEALTHY, result.Health)
 	assert.Equal(t, 1, result.Evidence.Ineligible)
 }

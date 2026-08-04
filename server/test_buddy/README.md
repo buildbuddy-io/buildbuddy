@@ -15,9 +15,10 @@ fast, queryable health state.
 - Health uses a configurable per-repository window, defaulting to the 50 most
   recently processed samples. Once the failure threshold is met, a mixed
   pass/fail window is flaky while an all-failure window is failing. Target
-  timeouts use a separate default
-  threshold of five and produce a distinct timeout state. Three consecutive
-  passes make a subject healthy once failure evidence has left the window.
+  timeouts use a separate default threshold of five and produce a distinct
+  timeout state. A non-empty all-pass window is healthy immediately; three
+  consecutive passes recover mixed evidence that remains below its configured
+  failure threshold.
 - Reporting uses a bounded client stream. Each subject is updated in a small
   independent transaction, and the RPC returns after every streamed batch has
   committed. There is no queue or report-wide transaction.

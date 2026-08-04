@@ -17,6 +17,7 @@ const (
 	ReasonAllFailures       Reason = "all_failures"
 	ReasonFailuresInWindow  Reason = "failures_in_window"
 	ReasonTimeoutsInWindow  Reason = "timeouts_in_window"
+	ReasonAllPasses         Reason = "all_passes"
 	ReasonConsecutivePasses Reason = "consecutive_passes"
 	ReasonUncertain         Reason = "uncertain"
 )
@@ -82,6 +83,9 @@ func linear(samples []Sample, cfg *tbpb.TestAnalyzerConfig, target bool) (Result
 	case target && evidence.Timeouts >= int(linear.GetTargetTimeoutThreshold()):
 		result.Health = tbpb.TestHealth_TEST_HEALTH_TIMEOUT
 		result.Reason = ReasonTimeoutsInWindow
+	case evidence.Failures == 0:
+		result.Health = tbpb.TestHealth_TEST_HEALTH_HEALTHY
+		result.Reason = ReasonAllPasses
 	case evidence.ConsecutivePasses >= min(3, int(linear.GetWindowSize())):
 		result.Health = tbpb.TestHealth_TEST_HEALTH_HEALTHY
 		result.Reason = ReasonConsecutivePasses
