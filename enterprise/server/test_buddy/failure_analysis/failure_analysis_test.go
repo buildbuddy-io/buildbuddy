@@ -74,7 +74,7 @@ func TestWorkersLeaseEachClusterOnce(t *testing.T) {
 		entered: make(chan struct{}, 1), release: make(chan struct{}),
 		analysis: &failure_analysis.Analysis{
 			Category: "assertion", Summary: "The assertion failed.", SuggestedFix: "Correct the expected value.",
-			Confidence: "high", Model: "gpt-5.4-nano",
+			Confidence: "high", Model: "gpt-5.6-luna",
 		},
 	}
 	firstResult := make(chan error, 1)
@@ -97,7 +97,7 @@ func TestWorkersLeaseEachClusterOnce(t *testing.T) {
 	require.NoError(t, <-firstResult)
 	cluster := readCluster(t, env, "fingerprint")
 	require.Equal(t, int64(2), cluster.AnalysisPromptVersion)
-	require.Equal(t, "gpt-5.4-nano", cluster.AnalysisModel)
+	require.Equal(t, "gpt-5.6-luna", cluster.AnalysisModel)
 	require.Equal(t, "assertion", cluster.AnalysisCategory)
 	require.Equal(t, "The assertion failed.", string(cluster.AnalysisSummary))
 	require.Equal(t, "Correct the expected value.", string(cluster.SuggestedFix))
@@ -122,7 +122,7 @@ func TestFailedAnalysisIsReleasedForRetry(t *testing.T) {
 	require.False(t, worked)
 }
 
-func TestConfiguredWorkerUsesNanoResponsesAPI(t *testing.T) {
+func TestConfiguredWorkerUsesLunaResponsesAPI(t *testing.T) {
 	requests := make(chan map[string]any, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request map[string]any
@@ -136,7 +136,7 @@ func TestConfiguredWorkerUsesNanoResponsesAPI(t *testing.T) {
 	}))
 	defer server.Close()
 	testflags.Set(t, "test_buddy.failure_analysis_enabled", true)
-	testflags.Set(t, "test_buddy.failure_analysis_model", "gpt-5.4-nano")
+	testflags.Set(t, "test_buddy.failure_analysis_model", "gpt-5.6-luna")
 	testflags.Set(t, "openai.api_key", "test-key")
 	testflags.Set(t, "openai.responses_endpoint", server.URL)
 
@@ -150,7 +150,7 @@ func TestConfiguredWorkerUsesNanoResponsesAPI(t *testing.T) {
 	require.True(t, worked)
 
 	request := <-requests
-	require.Equal(t, "gpt-5.4-nano", request["model"])
+	require.Equal(t, "gpt-5.6-luna", request["model"])
 	require.Equal(t, false, request["store"])
 	inputs := request["input"].([]any)
 	require.Len(t, inputs, 2)

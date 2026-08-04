@@ -277,7 +277,7 @@ func TestFailureClustersAreSharedAndCountsAreSubjectLocal(t *testing.T) {
 		Model(&tables.TestFailureCluster{}).
 		Where("repository = ? AND fingerprint = ?", repository, fingerprint).
 		Updates(map[string]any{
-			"analysis_prompt_version": int64(1), "analysis_model": "gpt-5.4-nano",
+			"analysis_prompt_version": int64(1), "analysis_model": "gpt-5.6-luna",
 			"analysis_category": "assertion", "analysis_summary": []byte("Assertion failed."),
 			"suggested_fix": []byte("Correct the expected value."), "analysis_confidence": "high",
 		}).Error)
@@ -297,7 +297,7 @@ func TestFailureClustersAreSharedAndCountsAreSubjectLocal(t *testing.T) {
 	require.Equal(t, "Assertion failed.", analysis.GetSummary())
 	require.Equal(t, "Correct the expected value.", analysis.GetSuggestedFix())
 	require.Equal(t, "high", analysis.GetConfidence())
-	require.Equal(t, "gpt-5.4-nano", analysis.GetModel())
+	require.Equal(t, "gpt-5.6-luna", analysis.GetModel())
 
 	targetDetail, err := service.GetTestTarget(ctx, &tbpb.GetTestTargetRequest{
 		RepoUrl: repository, Identity: &tbpb.TestTargetIdentity{TargetLabel: target},

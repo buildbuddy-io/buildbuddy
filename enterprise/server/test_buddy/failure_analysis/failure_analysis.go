@@ -19,7 +19,7 @@ import (
 )
 
 var enabled = flag.Bool("test_buddy.failure_analysis_enabled", false, "Enable asynchronous AI analysis of TestBuddy failure clusters.")
-var model = flag.String("test_buddy.failure_analysis_model", "gpt-5.4-nano", "OpenAI model used to analyze TestBuddy failure clusters.")
+var model = flag.String("test_buddy.failure_analysis_model", "gpt-5.6-luna", "OpenAI model used to analyze TestBuddy failure clusters.")
 
 const promptVersion = 2
 
