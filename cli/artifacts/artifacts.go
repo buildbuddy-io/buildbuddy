@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 
 	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
@@ -88,7 +89,7 @@ func PrintDownloaded(downloaded []string) {
 	if len(downloaded) == 0 {
 		return
 	}
-	fmt.Println("Downloaded remote artifacts:")
+	fmt.Printf("%sDownloaded remote artifacts:\n", terminal.Esc(90))
 	cwd, _ := os.Getwd()
 	for _, artifactPath := range downloaded {
 		displayPath, err := filepath.Rel(cwd, artifactPath)
@@ -97,6 +98,7 @@ func PrintDownloaded(downloaded []string) {
 		}
 		fmt.Printf("  %s\n", displayPath)
 	}
+	fmt.Print(terminal.Esc())
 }
 
 func findDownloadableArtifacts(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]downloadableArtifact, error) {

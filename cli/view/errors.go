@@ -11,18 +11,23 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
 
+	cmnpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	fdpb "github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 )
 
 const sandboxDebugMessage = "Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging"
 
 var fileNamePattern = regexp.MustCompile(`([^\s:]+:\d+:\d+)`)
+var failedBuildTargetPattern = regexp.MustCompile(`(?m)^Target (\S+) failed to build\r?$`)
 
 type invocationError struct {
 	action       *bespb.ActionExecuted
+	actionID     *bespb.BuildEventId_ActionCompletedId
+	targetLabel  string
 	actionStderr string
 	actionStdout string
 	aborted      *bespb.BuildEvent
@@ -41,7 +46,9 @@ func ViewErrors(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, dow
 		return -1, fmt.Errorf("invocation %s not found", invocationID)
 	}
 
-	errors := collectInvocationErrors(resp.GetInvocation()[0])
+	invocation := resp.GetInvocation()[0]
+	errors := collectInvocationErrors(invocation)
+	populateFailedActionTargetLabels(ctx, bbClient, invocationID, invocation.GetConsoleBuffer(), errors)
 	for _, invocationError := range errors {
 		if invocationError.action == nil {
 			continue
@@ -64,9 +71,18 @@ func collectInvocationErrors(invocation *inpb.Invocation) []*invocationError {
 
 	// InvocationModel keeps only the first action carrying a FailureDetail.
 	for _, event := range invocation.GetEvent() {
-		action := event.GetBuildEvent().GetAction()
+		buildEvent := event.GetBuildEvent()
+		action := buildEvent.GetAction()
 		if action.GetFailureDetail().GetMessage() != "" {
-			errors = append(errors, &invocationError{action: action})
+			targetLabel := buildEvent.GetId().GetActionCompleted().GetLabel()
+			if targetLabel == "" {
+				targetLabel = action.GetLabel()
+			}
+			errors = append(errors, &invocationError{
+				action:      action,
+				actionID:    buildEvent.GetId().GetActionCompleted(),
+				targetLabel: targetLabel,
+			})
 			break
 		}
 	}
@@ -96,6 +112,102 @@ func collectInvocationErrors(invocation *inpb.Invocation) []*invocationError {
 	return errors
 }
 
+func populateFailedActionTargetLabels(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID, consoleBuffer string, errors []*invocationError) {
+	for _, invocationError := range errors {
+		if invocationError.action == nil || invocationError.targetLabel != "" {
+			continue
+		}
+		targetLabel, err := failedBuildTargetLabel(ctx, bbClient, invocationID, invocationError.actionID)
+		if err != nil {
+			log.Debugf("Failed to find target for failed action: %s", err)
+		}
+		if targetLabel == "" {
+			targetLabel = failedBuildTargetFromConsole(consoleBuffer)
+		}
+		invocationError.targetLabel = targetLabel
+	}
+}
+
+func failedBuildTargetFromConsole(consoleBuffer string) string {
+	match := failedBuildTargetPattern.FindStringSubmatch(consoleBuffer)
+	if len(match) < 2 {
+		return ""
+	}
+	return match[1]
+}
+
+func failedBuildTargetLabel(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string, failedActionID *bespb.BuildEventId_ActionCompletedId) (string, error) {
+	status := cmnpb.Status_FAILED_TO_BUILD
+	pageToken := ""
+	var failedTargets []*trpb.Target
+	for {
+		resp, err := bbClient.GetTarget(ctx, &trpb.GetTargetRequest{
+			InvocationId: invocationID,
+			Status:       &status,
+			PageToken:    pageToken,
+		})
+		if err != nil {
+			return "", err
+		}
+		nextPageToken := ""
+		for _, group := range resp.GetTargetGroups() {
+			failedTargets = append(failedTargets, group.GetTargets()...)
+			if group.GetNextPageToken() != "" {
+				nextPageToken = group.GetNextPageToken()
+			}
+		}
+		if nextPageToken == "" {
+			break
+		}
+		pageToken = nextPageToken
+	}
+	if len(failedTargets) == 0 {
+		return "", nil
+	}
+	if len(failedTargets) == 1 {
+		return failedTargets[0].GetMetadata().GetLabel(), nil
+	}
+
+	for _, failedTarget := range failedTargets {
+		label := failedTarget.GetMetadata().GetLabel()
+		resp, err := bbClient.GetTarget(ctx, &trpb.GetTargetRequest{
+			InvocationId: invocationID,
+			TargetLabel:  label,
+		})
+		if err != nil {
+			return "", err
+		}
+		for _, group := range resp.GetTargetGroups() {
+			for _, target := range group.GetTargets() {
+				for _, actionEvent := range target.GetActionEvents() {
+					if sameActionCompletedID(failedActionID, actionEvent.GetId().GetActionCompleted()) {
+						return label, nil
+					}
+				}
+			}
+		}
+	}
+	for _, failedTarget := range failedTargets {
+		if failedTarget.GetRootCause() {
+			return failedTarget.GetMetadata().GetLabel(), nil
+		}
+	}
+	return failedTargets[0].GetMetadata().GetLabel(), nil
+}
+
+func sameActionCompletedID(a, b *bespb.BuildEventId_ActionCompletedId) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	if a.GetPrimaryOutput() != "" || b.GetPrimaryOutput() != "" {
+		return a.GetPrimaryOutput() == b.GetPrimaryOutput() &&
+			a.GetConfiguration().GetId() == b.GetConfiguration().GetId()
+	}
+	return a.GetLabel() != "" &&
+		a.GetLabel() == b.GetLabel() &&
+		a.GetConfiguration().GetId() == b.GetConfiguration().GetId()
+}
+
 func downloadActionOutput(ctx context.Context, downloader download.Downloader, uri, outputType string) string {
 	if uri == "" {
 		return ""
@@ -123,7 +235,10 @@ func formatInvocationErrors(errors []*invocationError) string {
 		}
 		if action := invocationError.action; action != nil {
 			if action.GetFailureDetail() != nil {
-				lines = append(lines, errorPrefix+formatFailureDescription(action.GetFailureDetail()))
+				lines = append(lines, errorPrefix+joinNonEmpty([]string{
+					invocationError.targetLabel,
+					formatFailureDescription(action.GetFailureDetail()),
+				}, ": "))
 			}
 			if invocationError.actionStderr != "" {
 				lines = append(lines, "\x1b[1m"+invocationError.actionStderr+"\x1b[m")

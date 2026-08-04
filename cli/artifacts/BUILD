@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/artifacts",
     visibility = ["//visibility:public"],
     deps = [
+        "//cli/terminal",
         "//cli/util/download",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",

@@ -932,7 +932,8 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		}
 		relArtifacts = append(relArtifacts, "  "+rp)
 	}
-	fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
+	fmt.Printf("%sDownloaded artifacts:\n%s%s\n",
+		terminal.Esc(90), strings.Join(relArtifacts, "\n"), terminal.Esc())
 	return mainLocalArtifacts, nil
 }
 
@@ -1503,7 +1504,26 @@ func handleRemoteDownload(args []string) (int, error) {
 		return 0, nil
 	}
 	artifacts.PrintDownloaded(downloaded)
+	printAskBuildBuddyPatchHint(downloaded)
 	return 0, nil
+}
+
+func printAskBuildBuddyPatchHint(downloaded []string) {
+	const patchName = "ask-buildbuddy.patch"
+
+	cwd, _ := os.Getwd()
+	for _, artifactPath := range downloaded {
+		if filepath.Base(artifactPath) != patchName {
+			continue
+		}
+		displayPath, err := filepath.Rel(cwd, artifactPath)
+		if err != nil {
+			displayPath = artifactPath
+		}
+		log.Printf("\n%sINFO:%s%s Apply the Ask BuildBuddy patch to your local git repo with: %s%s",
+			terminal.Esc(32), terminal.Esc(), terminal.Esc(30),
+			shlex.Quote("git", "apply", displayPath), terminal.Esc())
+	}
 }
 
 func parseArgs(commandLineArgs []string) ([]string, []string, error) {
