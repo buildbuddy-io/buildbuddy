@@ -2018,7 +2018,7 @@ func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore
 
 // readBufSize returns the buffer size to allocate to hold the full contents
 // of r, whose stored metadata is md.
-func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) int64 {
+func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata, reader io.Reader) int64 {
 	// If the requested compression matches the stored compression, the data is
 	// returned as stored, so the stored size from the file metadata is the
 	// right buffer size. Otherwise the data is compressed or decompressed while
@@ -2029,10 +2029,10 @@ func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) i
 	} else {
 		bufSize = int64(digest.SafeBufferSize(r, maxReadBufferSize))
 	}
-	// Non-inline reads go through Buffer.ReadFrom, which needs MinRead spare
-	// capacity to detect EOF without growing the buffer. Inline reads copy
-	// directly via bytes.Reader.WriteTo and don't need the pad.
-	if r.GetDigest().GetSizeBytes() >= p.maxInlineFileSizeBytes {
+	// WriteTo allows copying without a second read to get EOF. Without that
+	// bytes.Buffer.ReadFrom will allocate an extra bytes.MinRead unless we
+	// oversize it.
+	if _, ok := reader.(io.WriterTo); !ok {
 		bufSize += bytes.MinRead
 	}
 	return bufSize
@@ -2066,7 +2066,7 @@ func (p *PebbleCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName)
 		return nil, nil, err
 	}
 	defer rc.Close()
-	buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
+	buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
 	_, err = io.Copy(buf, rc)
 	if err != nil {
 		return nil, nil, err
@@ -2100,32 +2100,41 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 		return nil, err
 	}
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(10)
-	for _, r := range resources {
+	maxGoroutines := 10
+	var next atomic.Int64
+	for range min(maxGoroutines, len(resources)) {
 		eg.Go(func() error {
-			rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
-			if err != nil {
-				if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			for {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				i := int(next.Add(1)) - 1
+				if i >= len(resources) {
 					return nil
 				}
-				return err
+				r := resources[i]
+				rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
+				if err != nil {
+					if status.IsNotFoundError(err) || os.IsNotExist(err) {
+						continue
+					}
+					return err
+				}
+				buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
+				_, copyErr := io.Copy(buf, rc)
+				closeErr := rc.Close()
+				if copyErr != nil {
+					log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
+					continue
+				}
+				if closeErr != nil {
+					log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
+					continue
+				}
+				mu.Lock()
+				foundMap[r.GetDigest()] = buf.Bytes()
+				mu.Unlock()
 			}
-
-			buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
-			_, copyErr := io.Copy(buf, rc)
-			closeErr := rc.Close()
-			if copyErr != nil {
-				log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
-				return nil
-			}
-			if closeErr != nil {
-				log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
-				return nil
-			}
-			mu.Lock()
-			foundMap[r.GetDigest()] = buf.Bytes()
-			mu.Unlock()
-			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
