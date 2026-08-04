@@ -58,3 +58,38 @@ func TestFlagParsingDoubleDash(t *testing.T) {
 	require.NoError(t, flags.Parse([]string{"--", "-weird-host", "echo", "hi"}))
 	require.Equal(t, []string{"-weird-host", "echo", "hi"}, flags.Args())
 }
+
+func TestParseForward(t *testing.T) {
+	tests := []struct {
+		name       string
+		spec       string
+		wantListen string
+		wantDial   string
+		wantErr    bool
+	}{
+		{name: "port host hostport", spec: "8080:localhost:80", wantListen: "127.0.0.1:8080", wantDial: "localhost:80"},
+		{name: "explicit bind", spec: "0.0.0.0:8080:localhost:80", wantListen: "0.0.0.0:8080", wantDial: "localhost:80"},
+		{name: "ipv6 dial host", spec: "8080:[::1]:80", wantListen: "127.0.0.1:8080", wantDial: "[::1]:80"},
+		{name: "ipv6 bind", spec: "[::1]:8080:localhost:80", wantListen: "[::1]:8080", wantDial: "localhost:80"},
+		{name: "too few parts", spec: "8080:localhost", wantErr: true},
+		{name: "too many parts", spec: "a:b:8080:localhost:80", wantErr: true},
+		{name: "non-numeric listen port", spec: "http:localhost:80", wantErr: true},
+		{name: "non-numeric dial port", spec: "8080:localhost:http", wantErr: true},
+		{name: "port zero", spec: "0:localhost:80", wantErr: true},
+		{name: "port out of range", spec: "8080:localhost:65536", wantErr: true},
+		{name: "missing host", spec: "8080::80", wantErr: true},
+		{name: "unbalanced brackets", spec: "8080:]::1[:80", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			listen, dial, err := parseForward(tc.spec)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.wantListen, listen)
+			require.Equal(t, tc.wantDial, dial)
+		})
+	}
+}
