@@ -125,6 +125,38 @@ func init() {
 	usage = buf.String()
 }
 
+// setHostname renames the VM after the box so shell prompts and logs
+// identify it. No-op outside a remote action: this command also runs on
+// developer machines, which must not be renamed. The box image runs as a
+// non-root user with passwordless sudo. Best effort: failures are cosmetic.
+func setHostname(name string) {
+	if name == "" || os.Getenv(remoteActionEnvVar) == "" {
+		return
+	}
+	// `bb box create` validates the name, but this command can also be run
+	// directly, and the name reaches both sethostname(2) and an /etc/hosts
+	// line.
+	if len(name) > 64 || strings.ContainsAny(name, " \t\n#") {
+		log.Debugf("not renaming to invalid hostname %q", name)
+		return
+	}
+	if h, err := os.Hostname(); err == nil && h == name {
+		return // already set, e.g. on a resumed VM
+	}
+	if out, err := exec.Command("sudo", "-n", "hostname", name).CombinedOutput(); err != nil {
+		log.Debugf("set hostname to %s: %v: %s", name, err, out)
+		return
+	}
+	// Keep the new name resolvable, which sudo warns about otherwise. Only
+	// after the rename succeeded, so a failure leaves no stray entry. The
+	// leading newline covers an /etc/hosts written without a trailing one.
+	hosts := exec.Command("sudo", "-n", "tee", "-a", "/etc/hosts")
+	hosts.Stdin = strings.NewReader(fmt.Sprintf("\n127.0.0.1 %s\n", name))
+	if out, err := hosts.CombinedOutput(); err != nil {
+		log.Debugf("add %s to /etc/hosts: %v: %s", name, err, out)
+	}
+}
+
 func getShell() string {
 	if *shellPath != "" {
 		return *shellPath
@@ -386,6 +418,15 @@ func HandleSSHServer(args []string) (int, error) {
 
 	gwClient := gwsvcpb.NewGatewayServiceClient(grpcConn)
 
+	// Renaming shells out to sudo; overlap it with gateway and tunnel setup
+	// rather than adding to startup latency. Waited on before serving, since
+	// shells read the hostname when they start.
+	hostnameDone := make(chan struct{})
+	go func() {
+		defer close(hostnameDone)
+		setHostname(name)
+	}()
+
 	sid := *sessionID
 	if sid == "" {
 		sid = uuid.New()
@@ -613,6 +654,8 @@ func HandleSSHServer(args []string) (int, error) {
 		defer cancel()
 		sshServer.Shutdown(shutCtx)
 	}()
+
+	<-hostnameDone
 
 	if err := sshServer.Serve(listener); err != nil && err != ssh.ErrServerClosed {
 		return 1, status.WrapError(err, "ssh server")

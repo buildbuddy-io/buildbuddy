@@ -283,6 +283,10 @@ func handleCreate(args []string) (int, error) {
 			{Name: "BUILDBUDDY_API_KEY", Value: key},
 			{Name: "HOME", Value: "/home/buildbuddy"},
 			{Name: "USER", Value: "buildbuddy"},
+			// The action is given no PATH, leaving processes that don't
+			// supply their own default (anything but a shell) unable to find
+			// system binaries.
+			{Name: "PATH", Value: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 			// Tells bb ssh-server that it is running inside a remote
 			// action, where writing executor marker files (e.g. the
 			// do-not-recycle marker) to the working directory is
