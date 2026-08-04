@@ -557,7 +557,16 @@ func HandleSSHServer(args []string) (int, error) {
 		}
 		activeSessions++
 		mu.Unlock()
-		defer func() {
+		// Stop counting the session once the client is gone, rather than when
+		// its command finishes: a detached command must not hold the VM open,
+		// but reconnecting within the grace period still finds it running.
+		handlerDone := make(chan struct{})
+		defer close(handlerDone)
+		go func() {
+			select {
+			case <-s.Context().Done():
+			case <-handlerDone:
+			}
 			mu.Lock()
 			activeSessions--
 			if activeSessions == 0 {
