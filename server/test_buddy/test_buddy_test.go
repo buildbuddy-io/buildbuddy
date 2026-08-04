@@ -269,6 +269,10 @@ func TestFailureClustersAreSharedAndCountsAreSubjectLocal(t *testing.T) {
 	require.Len(t, caseDetail.GetFailureClusters(), 1)
 	require.Equal(t, fingerprint, caseDetail.GetFailureClusters()[0].GetFingerprint())
 	require.Equal(t, int64(2), caseDetail.GetFailureClusters()[0].GetOccurrenceCount())
+	progress, err := service.GetFailureAnalysisProgress(ctx, &tbpb.GetFailureAnalysisProgressRequest{RepoUrl: repository})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), progress.GetTotalCount())
+	require.Zero(t, progress.GetCompletedCount())
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_buddy_set_failure_analysis").
 		Model(&tables.TestFailureCluster{}).
 		Where("repository = ? AND fingerprint = ?", repository, fingerprint).
@@ -277,6 +281,10 @@ func TestFailureClustersAreSharedAndCountsAreSubjectLocal(t *testing.T) {
 			"analysis_category": "assertion", "analysis_summary": []byte("Assertion failed."),
 			"suggested_fix": []byte("Correct the expected value."), "analysis_confidence": "high",
 		}).Error)
+	progress, err = service.GetFailureAnalysisProgress(ctx, &tbpb.GetFailureAnalysisProgressRequest{RepoUrl: repository})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), progress.GetTotalCount())
+	require.Equal(t, int64(1), progress.GetCompletedCount())
 	caseDetail, err = service.GetTestCase(ctx, &tbpb.GetTestCaseRequest{
 		RepoUrl: repository,
 		Identity: &tbpb.TestCaseIdentity{

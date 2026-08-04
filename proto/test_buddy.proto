@@ -231,6 +231,16 @@ message GetRepositoryHealthResponse {
   TestHealthSummary cases = 2;
 }
 
+message GetFailureAnalysisProgressRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+}
+
+message GetFailureAnalysisProgressResponse {
+  int64 total_count = 1;
+  int64 completed_count = 2;
+}
+
 message GetTestRepositoriesRequest {
   context.RequestContext request_context = 1;
 }
@@ -293,6 +303,8 @@ service TestBuddyService {
   rpc GetTestTarget(GetTestTargetRequest) returns (GetTestTargetResponse);
   rpc GetRepositoryHealth(GetRepositoryHealthRequest)
       returns (GetRepositoryHealthResponse);
+  rpc GetFailureAnalysisProgress(GetFailureAnalysisProgressRequest)
+      returns (GetFailureAnalysisProgressResponse);
   rpc GetTestRepositories(GetTestRepositoriesRequest)
       returns (GetTestRepositoriesResponse);
   rpc SetTestExecutionDisposition(SetTestExecutionDispositionRequest)

@@ -34,7 +34,9 @@ fast, queryable health state.
   per fingerprint; exact target and case reads count occurrences within that
   subject's bounded evidence window. When enabled, the dedicated service uses
   `gpt-5.4-nano` to asynchronously summarize each new cluster and suggest a fix;
-  no model call runs while reporting.
+  no model call runs while reporting. The versioned category list and guidance
+  live together in the classifier, and the UI polls a lightweight per-repository
+  completed/total count while analysis is in progress.
 - Reads never parse reports. Package-cone queries return failing, flaky, and
   timed-out subjects before healthy ones. Target rows expose target health and a
   separate rollup of their cases; case failures affect ordering but never change

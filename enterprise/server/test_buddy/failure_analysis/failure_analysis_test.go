@@ -96,7 +96,7 @@ func TestWorkersLeaseEachClusterOnce(t *testing.T) {
 	close(firstClassifier.release)
 	require.NoError(t, <-firstResult)
 	cluster := readCluster(t, env, "fingerprint")
-	require.Equal(t, int64(1), cluster.AnalysisPromptVersion)
+	require.Equal(t, int64(2), cluster.AnalysisPromptVersion)
 	require.Equal(t, "gpt-5.4-nano", cluster.AnalysisModel)
 	require.Equal(t, "assertion", cluster.AnalysisCategory)
 	require.Equal(t, "The assertion failed.", string(cluster.AnalysisSummary))
@@ -132,7 +132,7 @@ func TestConfiguredWorkerUsesNanoResponsesAPI(t *testing.T) {
 		}
 		requests <- request
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"category\":\"assertion\",\"summary\":\"The assertion failed.\",\"suggested_fix\":\"Correct the expected value.\",\"confidence\":\"high\"}"}]}]}`))
+		_, _ = w.Write([]byte(`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"{\"category\":\"network\",\"summary\":\"The connection was reset.\",\"suggested_fix\":\"Make the transport deterministic.\",\"confidence\":\"high\"}"}]}]}`))
 	}))
 	defer server.Close()
 	testflags.Set(t, "test_buddy.failure_analysis_enabled", true)
@@ -155,9 +155,16 @@ func TestConfiguredWorkerUsesNanoResponsesAPI(t *testing.T) {
 	inputs := request["input"].([]any)
 	require.Len(t, inputs, 2)
 	require.Equal(t, "developer", inputs[0].(map[string]any)["role"])
+	require.Contains(t, inputs[0].(map[string]any)["content"], "sandbox means sandbox, namespace, mount")
 	require.Equal(t, "user", inputs[1].(map[string]any)["role"])
 	require.Equal(t, "expected true, got false", inputs[1].(map[string]any)["content"])
 	format := request["text"].(map[string]any)["format"].(map[string]any)
 	require.Equal(t, "json_schema", format["type"])
 	require.Equal(t, true, format["strict"])
+	schema := format["schema"].(map[string]any)
+	properties := schema["properties"].(map[string]any)
+	require.ElementsMatch(t,
+		[]any{"assertion", "configuration", "crash", "data_race", "dependency", "filesystem", "map_ordering", "network", "resource_exhaustion", "sandbox", "shared_state", "timing", "unknown"},
+		properties["category"].(map[string]any)["enum"])
+	require.Equal(t, "network", readCluster(t, env, "openai").AnalysisCategory)
 }

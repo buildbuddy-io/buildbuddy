@@ -24,6 +24,7 @@ interface State {
   healthFilterOpen: boolean;
   repositories: test_buddy.TestRepository[];
   repository?: test_buddy.GetRepositoryHealthResponse;
+  failureAnalysisProgress?: test_buddy.GetFailureAnalysisProgressResponse;
   targets: test_buddy.TestTargetSummary[];
   selected?: test_buddy.GetTestTargetResponse;
   selectedCase?: test_buddy.GetTestCaseResponse;
@@ -38,6 +39,7 @@ interface State {
 export default class TestBuddyComponent extends React.Component<Props, State> {
   private targetsStream?: Cancelable;
   private casesStream?: Cancelable;
+  private failureAnalysisTimeout?: number;
   private requestedCaseName = "";
 
   state: State = {
@@ -99,6 +101,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     this.requestedCaseName = "";
     this.setState({
       repository: undefined,
+      failureAnalysisProgress: undefined,
       packagePrefix: "",
       searchOpen: false,
       targets: [],
@@ -110,6 +113,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
       loadingCases: false,
     });
     this.loadRepository();
+    this.loadFailureAnalysisProgress();
     if (this.props.targetLabel) this.loadTarget(this.props.targetLabel);
   }
 
@@ -120,6 +124,27 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
   componentWillUnmount() {
     this.targetsStream?.cancel();
     this.casesStream?.cancel();
+    window.clearTimeout(this.failureAnalysisTimeout);
+  }
+
+  private loadFailureAnalysisProgress() {
+    window.clearTimeout(this.failureAnalysisTimeout);
+    const repositoryURL = this.props.repo;
+    rpcService.testBuddyService
+      .getFailureAnalysisProgress(test_buddy.GetFailureAnalysisProgressRequest.create({ repoUrl: repositoryURL }))
+      .then((failureAnalysisProgress) => {
+        if (this.props.repo !== repositoryURL) return;
+        this.setState({ failureAnalysisProgress });
+        const incomplete = Number(failureAnalysisProgress.completedCount) < Number(failureAnalysisProgress.totalCount);
+        this.failureAnalysisTimeout = window.setTimeout(
+          () => this.loadFailureAnalysisProgress(),
+          incomplete ? 2_000 : 10_000
+        );
+      })
+      .catch(() => {
+        if (this.props.repo !== repositoryURL) return;
+        this.failureAnalysisTimeout = window.setTimeout(() => this.loadFailureAnalysisProgress(), 10_000);
+      });
   }
 
   private loadRepository() {
@@ -199,10 +224,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     rpcService.testBuddyService
       .getTestCase(test_buddy.GetTestCaseRequest.create({ repoUrl: this.props.repo, identity }))
       .then((selectedCase) => {
-        if (
-          this.props.targetLabel !== identity.target?.targetLabel ||
-          this.requestedCaseName !== identity.caseName
-        ) {
+        if (this.props.targetLabel !== identity.target?.targetLabel || this.requestedCaseName !== identity.caseName) {
           return;
         }
         this.setState({ selectedCase, loadingCase: false });
@@ -315,10 +337,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
               test_buddy.TestExecutionDisposition.TEST_EXECUTION_DISPOSITION_ENABLED,
               test_buddy.TestExecutionDisposition.TEST_EXECUTION_DISPOSITION_DISABLED,
             ].map((value) => (
-              <MenuItem
-                disabled={value === disposition}
-                key={value}
-                onClick={() => setDisposition(value)}>
+              <MenuItem disabled={value === disposition} key={value} onClick={() => setDisposition(value)}>
                 {dispositionName(value)}
               </MenuItem>
             ))}
@@ -486,8 +505,10 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
                 <td>{(testCase.summary?.failCount ?? 0).toString()}</td>
                 <td>{(testCase.summary?.timeoutCount ?? 0).toString()}</td>
                 <td>
-                  {this.renderDispositionControl(`case:${testCase.identity?.caseName}`, testCase.disposition, (disposition) =>
-                    this.setCaseDisposition(testCase, disposition)
+                  {this.renderDispositionControl(
+                    `case:${testCase.identity?.caseName}`,
+                    testCase.disposition,
+                    (disposition) => this.setCaseDisposition(testCase, disposition)
                   )}
                 </td>
               </tr>
@@ -495,9 +516,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
           </tbody>
         </table>
         {this.state.loadingCases && <div className="test-buddy-empty">Loading cases…</div>}
-        {!this.state.loadingCases && cases.length === 0 && (
-          <div className="test-buddy-empty">No cases found.</div>
-        )}
+        {!this.state.loadingCases && cases.length === 0 && <div className="test-buddy-empty">No cases found.</div>}
         {this.state.loadingCase && <div className="test-buddy-empty">Loading case details…</div>}
         {this.renderCaseDetail()}
         {this.renderFailureModes(response.failureClusters, "Target failure modes")}
@@ -603,7 +622,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             {clusters.map((cluster) => (
               <tr key={cluster.fingerprint}>
                 <td>{cluster.occurrenceCount.toString()}</td>
-                <td>{cluster.category || "Analysis pending"}</td>
+                <td>{failureCategoryName(cluster.category)}</td>
                 <td>{cluster.summary || cluster.representativeMessage}</td>
                 <td>{cluster.suggestedFix || "—"}</td>
               </tr>
@@ -614,8 +633,36 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
     );
   }
 
+  private renderFailureAnalysisProgress() {
+    const progress = this.state.failureAnalysisProgress;
+    if (!progress || Number(progress.totalCount) === 0) return null;
+    const complete = Number(progress.completedCount) === Number(progress.totalCount);
+    return (
+      <div className="test-buddy-analysis-progress">
+        <div>
+          <strong>Failure analysis</strong>
+          <span>
+            {progress.completedCount.toString()} of {progress.totalCount.toString()} failure modes analyzed
+          </span>
+        </div>
+        <progress
+          aria-label="Failure analysis progress"
+          max={Number(progress.totalCount)}
+          value={Number(progress.completedCount)}
+        />
+        {!complete && <span>Analyzing failures…</span>}
+      </div>
+    );
+  }
+
   render() {
-    if (this.state.selected) return <div className="container test-buddy">{this.renderTarget()}</div>;
+    if (this.state.selected)
+      return (
+        <div className="container test-buddy">
+          {this.renderFailureAnalysisProgress()}
+          {this.renderTarget()}
+        </div>
+      );
     const targets = this.state.targets
       .map((target) => ({ target, row: targetRow(target) }))
       .filter(({ row }) => this.state.healthFilters.length === 0 || this.state.healthFilters.includes(row.health))
@@ -652,6 +699,7 @@ export default class TestBuddyComponent extends React.Component<Props, State> {
             ))}
           </Select>
         </label>
+        {this.renderFailureAnalysisProgress()}
         <div className="test-buddy-repository-summaries">
           {this.renderSummary("Targets", this.state.repository?.targets)}
           {this.renderSummary("Cases", this.state.repository?.cases)}
@@ -750,11 +798,14 @@ function targetRow(target: test_buddy.TestTargetSummary) {
   const cases = target.cases;
   const caseHealth = caseRollupHealth(cases);
   const health = healthRank(caseHealth) < healthRank(targetHealth) ? caseHealth : targetHealth;
-  const caseSampleCount = Number(cases?.passCount ?? 0) + Number(cases?.failCount ?? 0) + Number(cases?.timeoutCount ?? 0);
+  const caseSampleCount =
+    Number(cases?.passCount ?? 0) + Number(cases?.failCount ?? 0) + Number(cases?.timeoutCount ?? 0);
   return {
     health,
-    passRate: caseSampleCount > 0 ? cases?.passRate ?? 0 : target.summary?.passRate ?? 0,
-    meanDurationUsec: Number(caseSampleCount > 0 ? cases?.meanDurationUsec ?? 0 : target.summary?.meanDurationUsec ?? 0),
+    passRate: caseSampleCount > 0 ? (cases?.passRate ?? 0) : (target.summary?.passRate ?? 0),
+    meanDurationUsec: Number(
+      caseSampleCount > 0 ? (cases?.meanDurationUsec ?? 0) : (target.summary?.meanDurationUsec ?? 0)
+    ),
   };
 }
 
@@ -778,6 +829,21 @@ function healthRank(health: test_buddy.TestHealth) {
 
 function outcomeName(outcome: test_buddy.TestOutcome) {
   return test_buddy.TestOutcome[outcome].replace("TEST_OUTCOME_", "");
+}
+
+function failureCategoryName(category: string) {
+  const names: Record<string, string> = {
+    data_race: "Data race",
+    map_ordering: "Map ordering",
+    network: "Network issue",
+    sandbox: "Sandbox issue",
+    shared_state: "Shared state",
+    timing: "Timing",
+  };
+  return (
+    names[category] ||
+    (category ? category[0].toUpperCase() + category.slice(1).replaceAll("_", " ") : "Analysis pending")
+  );
 }
 
 function dispositionName(disposition: test_buddy.TestExecutionDisposition) {

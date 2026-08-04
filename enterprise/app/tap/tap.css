@@ -296,6 +296,29 @@
   flex: 1;
 }
 
+.test-buddy-analysis-progress {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.test-buddy-analysis-progress div {
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+}
+
+.test-buddy-analysis-progress span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.test-buddy-analysis-progress progress {
+  flex: 1;
+  max-width: 480px;
+}
+
 .test-buddy-repository-summaries {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));

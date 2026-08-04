@@ -237,6 +237,10 @@ func (p *proxy) GetRepositoryHealth(ctx context.Context, req *tbpb.GetRepository
 	return p.client.GetRepositoryHealth(forwardAuth(ctx, p.authenticator), req)
 }
 
+func (p *proxy) GetFailureAnalysisProgress(ctx context.Context, req *tbpb.GetFailureAnalysisProgressRequest) (*tbpb.GetFailureAnalysisProgressResponse, error) {
+	return p.client.GetFailureAnalysisProgress(forwardAuth(ctx, p.authenticator), req)
+}
+
 func (p *proxy) GetTestRepositories(ctx context.Context, req *tbpb.GetTestRepositoriesRequest) (*tbpb.GetTestRepositoriesResponse, error) {
 	return p.client.GetTestRepositories(forwardAuth(ctx, p.authenticator), req)
 }
@@ -1379,6 +1383,36 @@ func (s *Service) GetRepositoryHealth(ctx context.Context, req *tbpb.GetReposito
 		return cached, nil
 	}
 	return s.refreshRepositoryHealth(ctx, key)
+}
+
+func (s *Service) GetFailureAnalysisProgress(ctx context.Context, req *tbpb.GetFailureAnalysisProgressRequest) (*tbpb.GetFailureAnalysisProgressResponse, error) {
+	if req == nil {
+		return nil, status.InvalidArgumentError("request is required")
+	}
+	groupID, err := s.groupID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	repository, err := identity.NormalizeRepositoryURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	type row struct {
+		TotalCount     int64
+		CompletedCount int64
+	}
+	result := &row{}
+	err = s.env.GetDBHandle().NewQuery(ctx, "test_buddy_get_failure_analysis_progress").Raw(`
+		SELECT COUNT(*) AS total_count,
+			COALESCE(SUM(CASE WHEN analysis_prompt_version > 0 THEN 1 ELSE 0 END), 0) AS completed_count
+		FROM "TestFailureClusters"
+		WHERE group_id = ? AND repository = ?`, groupID, repository).Take(result)
+	if err != nil {
+		return nil, err
+	}
+	return &tbpb.GetFailureAnalysisProgressResponse{
+		TotalCount: result.TotalCount, CompletedCount: result.CompletedCount,
+	}, nil
 }
 
 func (s *Service) GetTestRepositories(ctx context.Context, req *tbpb.GetTestRepositoriesRequest) (*tbpb.GetTestRepositoriesResponse, error) {
