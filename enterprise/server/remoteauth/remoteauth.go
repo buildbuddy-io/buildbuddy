@@ -50,6 +50,10 @@ var (
 	getKeysTimeout      = flag.Duration("auth.remote.get_keys_timeout", 10*time.Second, "Timeout for GetPublicKeys RPCs.")
 )
 
+func Configured() bool {
+	return *target != ""
+}
+
 func Register(env *real_environment.RealEnv) error {
 	conn, err := grpc_client.DialInternalWithoutPooling(env, *target)
 	if err != nil {

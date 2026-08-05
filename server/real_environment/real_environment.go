@@ -19,6 +19,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -99,6 +100,8 @@ type RealEnv struct {
 	listenAddr                           string
 	buildbuddyServer                     interfaces.BuildBuddyServer
 	buildBuddyServiceClient              bbspb.BuildBuddyServiceClient
+	testBuddyServiceClient               tbpb.TestBuddyServiceClient
+	testBuddyServiceServer               tbpb.TestBuddyServiceServer
 	cacheServer                          cspb.CacheServer
 	cacheClient                          cspb.CacheClient
 	localCacheClient                     cspb.CacheClient
@@ -560,6 +563,22 @@ func (r *RealEnv) GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient {
 }
 func (r *RealEnv) SetBuildBuddyServiceClient(bb bbspb.BuildBuddyServiceClient) {
 	r.buildBuddyServiceClient = bb
+}
+
+func (r *RealEnv) GetTestBuddyServiceClient() tbpb.TestBuddyServiceClient {
+	return r.testBuddyServiceClient
+}
+
+func (r *RealEnv) SetTestBuddyServiceClient(client tbpb.TestBuddyServiceClient) {
+	r.testBuddyServiceClient = client
+}
+
+func (r *RealEnv) GetTestBuddyServiceServer() tbpb.TestBuddyServiceServer {
+	return r.testBuddyServiceServer
+}
+
+func (r *RealEnv) SetTestBuddyServiceServer(server tbpb.TestBuddyServiceServer) {
+	r.testBuddyServiceServer = server
 }
 
 func (r *RealEnv) GetCacheServer() cspb.CacheServer {
