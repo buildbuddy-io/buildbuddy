@@ -50,8 +50,8 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 				return nil
 			}
 		}
-		if (ip.IsLoopback() && !*allowLocalhost) || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
-			log.Infof("Blocked Fetch for address %s", address)
+		if (!ip.IsGlobalUnicast() || ip.IsPrivate()) && !(ip.IsLoopback() && *allowLocalhost) {
+			log.Infof("Dialer control blocked address %s", address)
 			return errors.New("IP address not allowed")
 		}
 		return nil
