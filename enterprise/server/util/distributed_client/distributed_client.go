@@ -13,6 +13,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -30,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
@@ -558,6 +560,9 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	// Pebble rejects offset/limit when the request matches the stored compressor,
 	// so skip the rewrite on the partial-read path.
 	decompress := offset == 0 && limit == 0 && c.shouldReadCompressed(r)
+	// The resource the caller actually asked for, captured before any
+	// transport-only compressor rewrite below.
+	requested := r
 	if decompress {
 		r = r.CloneVT()
 		r.Compressor = repb.Compressor_ZSTD
@@ -572,14 +577,66 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		return nil, err
 	}
 	rc, err := newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
-	if err != nil || !decompress {
-		return rc, err
+	if err != nil {
+		return nil, err
+	}
+
+	// The server provided a reference. Dereference it.
+	if rc.rsp.GetReference() != nil {
+		// Closing the stream (done below) returns the reference proto to the
+		// pool, but we need the reference for later, so clone it.
+		ref := rc.rsp.GetReference().CloneVT()
+		if err := rc.Close(); err != nil {
+			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
+		}
+
+		// Confirm the provided reference matches what was requested.
+		fr := ref.GetMetadata().GetFileRecord()
+		frd := fr.GetDigest()
+		if frd.GetHash() != r.GetDigest().GetHash() ||
+			frd.GetSizeBytes() != r.GetDigest().GetSizeBytes() ||
+			fr.GetDigestFunction() != r.GetDigestFunction() ||
+			fr.GetIsolation().GetCacheType() != r.GetCacheType() ||
+			fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
+			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d (cache type %s, instance %q), but %s/%d (cache type %s, instance %q) was requested",
+				peer,
+				frd.GetHash(), frd.GetSizeBytes(), fr.GetIsolation().GetCacheType(), fr.GetIsolation().GetRemoteInstanceName(),
+				r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), r.GetCacheType(), r.GetInstanceName())
+		}
+
+		refCache, ok := c.cache.(interfaces.ReferenceCache)
+		if !ok {
+			return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
+		}
+
+		// Dereference reconciles the stored compressor with the requested one,
+		// so pass the caller's original resource, not the transport-rewritten
+		// one, and return its reader directly.
+		recordReadResponseMetrics("reference", r)
+		return refCache.Dereference(ctx, ref, requested, offset, limit)
+	}
+
+	if !decompress {
+		recordReadResponseMetrics("bytes", r)
+		return rc, nil
 	}
 	dr, err := compression.NewZstdDecompressingReader(rc)
 	if err != nil {
 		rc.Close()
+		return nil, err
 	}
-	return dr, err
+	recordReadResponseMetrics("bytes", r)
+	return dr, nil
+}
+
+// recordReadResponseMetrics records that a peer read's payload was received
+// as responseType ("reference" or "bytes"), attributing the requested
+// digest's size to it.
+func recordReadResponseMetrics(responseType string, r *rspb.ResourceName) {
+	metrics.DistributedCacheReadResponseCount.With(
+		prometheus.Labels{metrics.DistributedCacheReadResponseType: responseType}).Inc()
+	metrics.DistributedCacheReadResponseSizeBytes.With(
+		prometheus.Labels{metrics.DistributedCacheReadResponseType: responseType}).Add(float64(r.GetDigest().GetSizeBytes()))
 }
 
 type distributedCacheReader struct {
