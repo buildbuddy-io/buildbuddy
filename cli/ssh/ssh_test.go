@@ -1,7 +1,10 @@
 package ssh
 
 import (
+	"io"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -91,5 +94,50 @@ func TestParseForward(t *testing.T) {
 			require.Equal(t, tc.wantListen, listen)
 			require.Equal(t, tc.wantDial, dial)
 		})
+	}
+}
+
+// TestForwardPropagatesEOF pins the half-close behavior that request/response
+// protocols depend on: after the client half-closes, the far end must see EOF
+// (so it can reply), and the reply must arrive in full.
+func TestForwardPropagatesEOF(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	// The "far end" reads until EOF, then writes a reply and closes.
+	served := make(chan struct{})
+	dial := func() (net.Conn, error) {
+		ours, theirs := net.Pipe()
+		go func() {
+			defer close(served)
+			defer theirs.Close()
+			req, err := io.ReadAll(theirs)
+			if err == nil {
+				theirs.Write([]byte("reply-to:" + string(req)))
+			}
+		}()
+		return ours, nil
+	}
+	go forward(ln, dial, "test")
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	defer c.Close()
+
+	_, err = c.Write([]byte("ping"))
+	require.NoError(t, err)
+	// Half-close: without EOF propagation the far end's ReadAll never returns
+	// and this test times out.
+	require.NoError(t, c.(*net.TCPConn).CloseWrite())
+
+	got, err := io.ReadAll(c)
+	require.NoError(t, err)
+	require.Equal(t, "reply-to:ping", string(got), "reply should arrive complete")
+
+	select {
+	case <-served:
+	case <-time.After(5 * time.Second):
+		t.Fatal("far end never observed EOF")
 	}
 }

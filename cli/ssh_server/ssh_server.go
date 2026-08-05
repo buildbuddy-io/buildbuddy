@@ -611,6 +611,15 @@ func HandleSSHServer(args []string) (int, error) {
 			idleTimer.Stop()
 		}
 		idleTimer = time.AfterFunc(*gracePeriod, func() {
+			// Re-check under the lock: a client that connects just as the
+			// timer fires stops an already-fired timer, and shutting down
+			// would tear the tunnel out from under it.
+			mu.Lock()
+			idle := activeConns == 0
+			mu.Unlock()
+			if !idle {
+				return
+			}
 			log.Printf("No clients connected for %s; shutting down.", *gracePeriod)
 			shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()

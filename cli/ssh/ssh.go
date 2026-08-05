@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -147,6 +148,12 @@ func parseForward(spec string) (listen, dial string, err error) {
 	bind := "127.0.0.1"
 	if len(parts) == 4 {
 		bind, parts = parts[0], parts[1:]
+		// An empty bind means "all addresses" to OpenSSH, but only behind
+		// GatewayPorts; keep the loopback default and require an explicit
+		// 0.0.0.0 to expose the port.
+		if bind == "" {
+			bind = "127.0.0.1"
+		}
 	}
 	if len(parts) != 3 {
 		return "", "", status.InvalidArgumentErrorf("invalid forward %q: want [bind:]port:host:hostport", spec)
@@ -162,6 +169,47 @@ func parseForward(spec string) (listen, dial string, err error) {
 	return net.JoinHostPort(bind, parts[0]), net.JoinHostPort(parts[1], parts[2]), nil
 }
 
+// forwardAddrs is a forward spec resolved into the addresses it needs.
+type forwardAddrs struct{ listen, dial, spec string }
+
+// parseForwards resolves every spec up front, so a typo fails before any
+// connection setup rather than after the gateway and SSH handshakes.
+func parseForwards(specs []string) ([]forwardAddrs, error) {
+	out := make([]forwardAddrs, 0, len(specs))
+	for _, spec := range specs {
+		listen, dial, err := parseForward(spec)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, forwardAddrs{listen: listen, dial: dial, spec: spec})
+	}
+	return out, nil
+}
+
+// closeWriter is implemented by both ends of a forward — *net.TCPConn and the
+// SSH channel behind client.Dial/client.Listen — and lets one side signal EOF
+// without tearing down the other direction.
+type closeWriter interface{ CloseWrite() error }
+
+// splice copies in both directions until each is done, propagating EOF from
+// each side as it finishes. Protocols that delimit a request by half-closing
+// (HTTP/1.0 without a length, git-upload-pack, `cat req | nc`) hang without
+// that, and closing before both copies finish truncates the response.
+func splice(a, b net.Conn) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	cp := func(dst, src net.Conn) {
+		defer wg.Done()
+		io.Copy(dst, src)
+		if cw, ok := dst.(closeWriter); ok {
+			cw.CloseWrite()
+		}
+	}
+	go cp(a, b)
+	cp(b, a)
+	wg.Wait()
+}
+
 // forward accepts connections on ln and splices each one to a connection
 // opened by dial. It returns when ln is closed.
 func forward(ln net.Listener, dial func() (net.Conn, error), spec string) {
@@ -174,12 +222,13 @@ func forward(ln net.Listener, dial func() (net.Conn, error), spec string) {
 			defer in.Close()
 			out, err := dial()
 			if err != nil {
-				log.Printf("Forward %s: %s", spec, err)
+				// \r\n: a forward can fail while an interactive session has
+				// the terminal in raw mode.
+				fmt.Fprintf(os.Stderr, "Forward %s: %s\r\n", spec, err)
 				return
 			}
 			defer out.Close()
-			go io.Copy(out, in)
-			io.Copy(in, out)
+			splice(in, out)
 		}()
 	}
 }
@@ -224,6 +273,17 @@ func HandleSSH(args []string) (int, error) {
 	if len(positional) < 1 {
 		log.Print(usage)
 		return 1, nil
+	}
+
+	// Resolve forward specs before connecting, so a typo doesn't cost a
+	// gateway registration and two handshakes first.
+	locals, err := parseForwards(localForwards)
+	if err != nil {
+		return 1, err
+	}
+	remotes, err := parseForwards(remoteForwards)
+	if err != nil {
+		return 1, err
 	}
 
 	// The first positional argument is the target; any remaining arguments
@@ -391,34 +451,26 @@ func HandleSSH(args []string) (int, error) {
 	}()
 
 	// -L: listen here, dial from the box.
-	for _, spec := range localForwards {
-		listenAddr, dialAddr, err := parseForward(spec)
+	for _, f := range locals {
+		ln, err := net.Listen("tcp", f.listen)
 		if err != nil {
-			return 1, err
-		}
-		ln, err := net.Listen("tcp", listenAddr)
-		if err != nil {
-			return 1, status.WrapErrorf(err, "listen for -L %s", spec)
+			return 1, status.WrapErrorf(err, "listen for -L %s", f.spec)
 		}
 		defer ln.Close()
-		go forward(ln, func() (net.Conn, error) { return client.Dial("tcp", dialAddr) }, spec)
+		go forward(ln, func() (net.Conn, error) { return client.Dial("tcp", f.dial) }, f.spec)
 	}
 	// -R: the box listens, we dial from here.
-	for _, spec := range remoteForwards {
-		listenAddr, dialAddr, err := parseForward(spec)
+	for _, f := range remotes {
+		ln, err := client.Listen("tcp", f.listen)
 		if err != nil {
-			return 1, err
-		}
-		ln, err := client.Listen("tcp", listenAddr)
-		if err != nil {
-			return 1, status.WrapErrorf(err, "listen on %s for -R %s", target, spec)
+			return 1, status.WrapErrorf(err, "listen on %s for -R %s", target, f.spec)
 		}
 		defer ln.Close()
-		go forward(ln, func() (net.Conn, error) { return net.Dial("tcp", dialAddr) }, spec)
+		go forward(ln, func() (net.Conn, error) { return net.Dial("tcp", f.dial) }, f.spec)
 	}
 
 	if *noCommand {
-		if len(localForwards) == 0 && len(remoteForwards) == 0 {
+		if len(locals) == 0 && len(remotes) == 0 {
 			log.Printf("-N was given with no port forwards; nothing to do")
 			return 1, nil
 		}
