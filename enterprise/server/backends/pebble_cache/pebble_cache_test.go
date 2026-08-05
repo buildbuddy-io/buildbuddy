@@ -56,6 +56,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -2952,6 +2953,7 @@ func TestGetReference(t *testing.T) {
 		MaxSizeBytes:           int64(1_000_000), // 1MB
 		Clock:                  clock,
 		FileStorer:             fileStorer,
+		GCSBlobstore:           mockGCS,
 		MaxInlineFileSizeBytes: 10,
 		MinGCSFileSizeBytes:    &minGCSFileSize,
 		GCSTTLDays:             &gcsTTLDays,
@@ -3725,4 +3727,223 @@ func TestPebbleGCSWriteFaults(t *testing.T) {
 			expectContentNotFound(t, ctx, c, rn)
 		})
 	}
+}
+
+func TestDereference(t *testing.T) {
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+	// Disables auto-zstd so blobs are stored (and dereferenced) as IDENTITY.
+	var minAutoZstd int64 = 1 << 30
+	// Forces auto-zstd so blobs are stored as ZSTD.
+	var alwaysAutoZstd int64 = 1
+
+	newGCSBackedCache := func(t *testing.T, te *testenv.TestEnv, minBytesAutoZstdCompression int64) (*pebble_cache.PebbleCache, filestore.PebbleGCSStorage) {
+		clock := clockwork.NewFakeClock()
+		mockGCS := mockgcs.New(clock)
+		require.NoError(t, mockGCS.SetBucketCustomTimeTTL(context.Background(), gcsTTLDays))
+		fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"))
+		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+			RootDirectory:               testfs.MakeTempDir(t),
+			MaxSizeBytes:                int64(1_000_000),
+			Clock:                       clock,
+			FileStorer:                  fileStorer,
+			GCSBlobstore:                mockGCS,
+			MaxInlineFileSizeBytes:      1,
+			MinGCSFileSizeBytes:         &minGCSFileSize,
+			GCSTTLDays:                  &gcsTTLDays,
+			MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
+		})
+		require.NoError(t, err)
+		require.NoError(t, pc.Start())
+		t.Cleanup(func() { pc.Stop() })
+		return pc, mockGCS
+	}
+
+	t.Run("no shared storage backing", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+			RootDirectory: testfs.MakeTempDir(t),
+			MaxSizeBytes:  int64(1_000_000),
+		})
+		require.NoError(t, err)
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		_, err = pc.Dereference(context.Background(), &refpb.Reference{}, rn, 0, 0)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+	})
+
+	t.Run("dereference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.GetReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_IDENTITY, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		rc, err := pc.Dereference(ctx, ref, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf, got)
+
+		// Ranged reads apply offset/limit to the stored stream.
+		rc, err = pc.Dereference(ctx, ref, rn, 5, 10)
+		require.NoError(t, err)
+		got, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf[5:15], got)
+	})
+
+	t.Run("zstd stored, identity requested", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, alwaysAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.GetReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_ZSTD, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		rc, err := pc.Dereference(ctx, ref, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf, got)
+
+		// Ranged reads apply offset/limit to the decompressed stream.
+		rc, err = pc.Dereference(ctx, ref, rn, 5, 10)
+		require.NoError(t, err)
+		got, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf[5:15], got)
+	})
+
+	t.Run("identity stored, zstd requested", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.GetReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_IDENTITY, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		rnZstd := rn.CloneVT()
+		rnZstd.Compressor = repb.Compressor_ZSTD
+		rc, err := pc.Dereference(ctx, ref, rnZstd, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		decompressed, err := compression.DecompressZstd(nil, got)
+		require.NoError(t, err)
+		require.Equal(t, buf, decompressed)
+	})
+
+	t.Run("ranged zstd passthrough is rejected", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, alwaysAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.GetReference(ctx, rn)
+		require.NoError(t, err)
+
+		rnZstd := rn.CloneVT()
+		rnZstd.Compressor = repb.Compressor_ZSTD
+		_, err = pc.Dereference(ctx, ref, rnZstd, 5, 10)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+	})
+
+	t.Run("malformed reference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		_, err := pc.Dereference(ctx, &refpb.Reference{}, rn, 0, 0)
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("missing blob", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, mockGCS := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.GetReference(ctx, rn)
+		require.NoError(t, err)
+
+		// Delete the backing blob out from under the reference.
+		blobName := ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()
+		require.NotEmpty(t, blobName)
+		require.NoError(t, mockGCS.DeleteBlob(ctx, blobName))
+
+		_, err = pc.Dereference(ctx, ref, rn, 0, 0)
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+
+	t.Run("encrypted", func(t *testing.T) {
+		te, kmsDir := getCrypterEnv(t)
+		userID := "US123"
+		groupID := "GR123"
+		groupKeyID := "EK123"
+		user := testauth.User(userID, groupID)
+		user.CacheEncryptionEnabled = true
+		users := map[string]interfaces.UserInfo{userID: user}
+		auther := testauth.NewTestAuthenticator(t, users)
+		te.SetAuthenticator(auther)
+		ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+		key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+		require.NoError(t, te.GetDBHandle().NewQuery(ctx, "create_key").Create(key))
+		require.NoError(t, te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion))
+
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.GetReference(ctx, rn)
+		require.NoError(t, err)
+		// The reference must carry the encryption metadata needed to
+		// decrypt, and dereferencing must return the decrypted bytes.
+		require.NotNil(t, ref.GetMetadata().GetEncryptionMetadata())
+
+		rc, err := pc.Dereference(ctx, ref, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf, got)
+
+		// Ranged reads apply offset/limit to the decrypted stream.
+		rc, err = pc.Dereference(ctx, ref, rn, 5, 10)
+		require.NoError(t, err)
+		got, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf[5:15], got)
+	})
 }
