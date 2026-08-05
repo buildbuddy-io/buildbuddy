@@ -90,7 +90,7 @@ func waitForHandshake(dev *device.Device, timeout time.Duration) error {
 }
 
 // remoteActionEnvVar signals that this process is running inside a remote
-// action. It is set by `bb box create` on the action's environment (and
+// action. It is set by `bb box` on the action's environment (and
 // inherited through bb record).
 const remoteActionEnvVar = "BUILDBUDDY_REMOTE_ACTION"
 
@@ -133,7 +133,7 @@ func setHostname(name string) {
 	if name == "" || os.Getenv(remoteActionEnvVar) == "" {
 		return
 	}
-	// `bb box create` validates the name, but this command can also be run
+	// `bb box` validates the name, but this command can also be run
 	// directly, and the name reaches both sethostname(2) and an /etc/hosts
 	// line.
 	if len(name) > 64 || strings.ContainsAny(name, " \t\n#") {

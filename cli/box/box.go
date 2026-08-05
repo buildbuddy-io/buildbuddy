@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
+	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -30,6 +31,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	petname "github.com/dustinkirkland/golang-petname"
+	"golang.org/x/term"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -67,18 +70,19 @@ const (
 	defaultImage = platform.DockerPrefix + platform.Box24_04Image
 
 	// githubReleaseURL is the download URL for the linux/amd64 bb binary,
-	// used when box create is run from a non-linux-amd64 host.
+	// used when bb box is run from a non-linux-amd64 host.
 	githubReleaseURL = "https://github.com/buildbuddy-io/bazel/releases/download/%s/bazel-%s-linux-x86_64"
 
 	usage = `
-usage: bb box create [options] [name]
+usage: bb box [options] [name] [command...]
        bb box list [options]
 
-create: Starts an SSH server inside a remote Firecracker VM. Once the VM is
-running, prints the command to connect via SSH.
+Starts a remote Firecracker VM running an SSH server and opens a session in
+it. Anything after the name is run in the box instead of a login shell.
 
-If a name is given, the runner is recycled after the session ends so that the
-next invocation resumes the same VM. Without a name the VM is ephemeral.
+Boxes are recycled after the session ends, so running bb box with the same
+name again resumes the same VM, and a box that is still running is connected
+to rather than started again. A box with no name given is assigned one.
 
 list: Lists your group's connected peers: boxes (with their names) and
 transient clients like bb ssh sessions (identified by session ID only).
@@ -92,13 +96,20 @@ transient clients like bb ssh sessions (identified by session ID only).
 var boxNameRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 
 var (
-	createFlags = flag.NewFlagSet("box create", flag.ContinueOnError)
+	createFlags = flag.NewFlagSet("box", flag.ContinueOnError)
 	Flags       = createFlags
 
 	imageFlag   = createFlags.String("image", defaultImage, "Container image for the VM")
 	gracePeriod = createFlags.Duration("grace_period", 1*time.Minute, "How long the VM stays alive after all SSH connections close (max 5m)")
 	idleTimeout = createFlags.Duration("idle_timeout", 5*time.Minute, "Log out interactive SSH sessions after this duration without user input (max 5m)")
 	trace       = createFlags.Bool("trace", false, "Force server-side tracing for this box's execution and print the execution ID")
+
+	detach    = createFlags.Bool("detach", false, "Print the connect command instead of opening a session (the default when stdin is not a terminal)")
+	forceTTY  = createFlags.Bool("t", false, "Force pseudo-terminal allocation for a command run in the box")
+	noCommand = createFlags.Bool("N", false, "Do not run a command in the box; useful when only forwarding ports")
+
+	localForwards  = flag.New(createFlags, "L", []string{}, "Forward a port on this machine to one reachable from the box: [bind:]port:host:hostport (repeatable)")
+	remoteForwards = flag.New(createFlags, "R", []string{}, "Forward a port on the box to one reachable from this machine: [bind:]port:host:hostport (repeatable)")
 
 	targetFlag              = createFlags.String("remote_executor", login.DefaultApiTarget, "Remote executor gRPC target")
 	gatewayFlag, apiKeyFlag = registerGatewayFlags(createFlags)
@@ -115,29 +126,37 @@ func registerGatewayFlags(fs *flag.FlagSet) (gateway, apiKey *string) {
 	return gateway, apiKey
 }
 
+// reservedNames are the `bb box` subcommands, which therefore cannot be used
+// as box names: `bb box list` has to mean "list boxes", not "attach to the box
+// called list".
+var reservedNames = map[string]bool{"create": true, "list": true, "help": true}
+
 func HandleBox(args []string) (int, error) {
-	if len(args) == 0 || args[0] == "help" {
-		log.Print(usage)
-		createFlags.SetOutput(os.Stderr)
-		createFlags.PrintDefaults()
-		return 1, nil
+	// `bb box [flags] [name] [command...]` is the primary form; the
+	// subcommands are recognized only as the first argument, so flags must
+	// precede the name (as with ssh's `ssh [options] destination [command]`).
+	if len(args) > 0 {
+		switch args[0] {
+		case "help":
+			log.Print(usage)
+			createFlags.SetOutput(os.Stderr)
+			createFlags.PrintDefaults()
+			return 1, nil
+		case "create":
+			return handleCreate(args[1:])
+		case "list":
+			return handleList(args[1:])
+		}
 	}
-	switch args[0] {
-	case "create":
-		return handleCreate(args[1:])
-	case "list":
-		return handleList(args[1:])
-	default:
-		log.Printf("unknown box subcommand %q", args[0])
-		log.Print(usage)
-		createFlags.SetOutput(os.Stderr)
-		createFlags.PrintDefaults()
-		return 1, nil
-	}
+	return handleCreate(args)
 }
 
 func handleCreate(args []string) (int, error) {
-	if err := arg.ParseFlagSet(createFlags, args); err != nil {
+	// Plain Parse (rather than arg.ParseFlagSet) so parsing stops at the box
+	// name: everything after it belongs to the remote command, including its
+	// own flags.
+	createFlags.SetOutput(io.Discard)
+	if err := createFlags.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
 			createFlags.SetOutput(os.Stderr)
@@ -154,9 +173,9 @@ func handleCreate(args []string) (int, error) {
 		*idleTimeout = maxIdleTimeout
 	}
 
-	// Determine the name. If the user didn't provide one, the VM will
-	// be ephemeral (no runner recycling).
-	var boxName string
+	// Anything after the name is a command to run in the box instead of a
+	// shell. A box with no name given is assigned a generated one below.
+	var boxName, remoteCmd string
 	if positional := createFlags.Args(); len(positional) > 0 {
 		boxName = positional[0]
 		// The name is used as a runner recycling key, an output path
@@ -166,8 +185,18 @@ func handleCreate(args []string) (int, error) {
 			log.Printf("Invalid box name %q: names must start with an alphanumeric character and contain only alphanumerics, '_', '.', or '-' (max 64 characters)", boxName)
 			return 1, nil
 		}
+		if reservedNames[boxName] {
+			log.Printf("Invalid box name %q: it names a `bb box` subcommand", boxName)
+			return 1, nil
+		}
+		remoteCmd = ssh.JoinRemoteCommand(positional[1:])
 	}
-	recycleable := boxName != ""
+
+	// Forwards live in this process, so they cannot outlive it.
+	if *detach && (len(*localForwards) > 0 || len(*remoteForwards) > 0) {
+		log.Printf("--detach cannot be combined with -L/-R: the forwards would close as this command exits (use -N to hold them open)")
+		return 1, nil
+	}
 
 	// Resolve API key.
 	key := *apiKeyFlag
@@ -180,6 +209,30 @@ func handleCreate(args []string) (int, error) {
 	}
 
 	ctx := context.Background()
+	gwCtx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
+
+	// The gateway is dialed up front for readiness detection below, and to
+	// check whether this box is already running.
+	gwConn, err := grpc_client.DialSimple(*gatewayFlag)
+	if err != nil {
+		return -1, fmt.Errorf("dialing gateway: %w", err)
+	}
+	defer gwConn.Close()
+	gwClient := gwsvcpb.NewGatewayServiceClient(gwConn)
+
+	peers, err := listPeers(gwCtx, gwClient)
+	if err != nil {
+		return -1, fmt.Errorf("listing boxes: %w", err)
+	}
+	if boxName == "" {
+		boxName = generateName(peers)
+		log.Printf("Starting box %q", boxName)
+	} else if p := findPeer(peers, boxName); p != nil {
+		// A box registers with the gateway for as long as it is running, so a
+		// name found here is live: attach to it rather than starting a second
+		// VM (which would fail on the duplicate name anyway).
+		return attach(p, key, remoteCmd)
+	}
 
 	// Get a linux/amd64 bb binary to use as the action input.
 	bbPath, cleanupBB, err := getBBBinary(ctx)
@@ -214,36 +267,34 @@ func handleCreate(args []string) (int, error) {
 		"container-image=" + ensureDockerPrefix(*imageFlag),
 		platform.DockerUserPropertyName + "=buildbuddy",
 	}
-	if recycleable {
-		execProps = append(execProps,
-			"recycle-runner=true",
-			platform.RunnerRecyclingKey+"="+boxName,
-			// Give the executor that last ran this box a head start when
-			// scheduling, so that resumes hit its warm local snapshot. (The
-			// server caps this via remote_execution.max_scheduling_delay.)
-			platform.RunnerRecyclingMaxWaitPropertyName+"=5s",
-			// By default, firecracker only saves a snapshot for non-CI
-			// actions if none exists yet, which would freeze the box's state
-			// at its first session. Always save so that changes made in each
-			// session persist to the next one.
-			platform.SnapshotSavePolicyPropertyName+"="+platform.AlwaysSaveSnapshot,
-			// The always-save policy above only covers the remote snapshot:
-			// the local manifest on a warm executor can lag one session
-			// behind, and the default read policy prefers it, which would
-			// roll the box back a session. Always read the newest (remote)
-			// manifest instead. Chunks referenced by it that are already in
-			// the executor's filecache are still reused, so most of the
-			// warm-start benefit is retained.
-			platform.SnapshotReadPolicyPropertyName+"="+platform.AlwaysReadNewestSnapshot,
-		)
-	}
+	execProps = append(execProps,
+		"recycle-runner=true",
+		platform.RunnerRecyclingKey+"="+boxName,
+		// Give the executor that last ran this box a head start when
+		// scheduling, so that resumes hit its warm local snapshot. (The
+		// server caps this via remote_execution.max_scheduling_delay.)
+		platform.RunnerRecyclingMaxWaitPropertyName+"=5s",
+		// By default, firecracker only saves a snapshot for non-CI
+		// actions if none exists yet, which would freeze the box's state
+		// at its first session. Always save so that changes made in each
+		// session persist to the next one.
+		platform.SnapshotSavePolicyPropertyName+"="+platform.AlwaysSaveSnapshot,
+		// The always-save policy above only covers the remote snapshot:
+		// the local manifest on a warm executor can lag one session
+		// behind, and the default read policy prefers it, which would
+		// roll the box back a session. Always read the newest (remote)
+		// manifest instead. Chunks referenced by it that are already in
+		// the executor's filecache are still reused, so most of the
+		// warm-start benefit is retained.
+		platform.SnapshotReadPolicyPropertyName+"="+platform.AlwaysReadNewestSnapshot,
+	)
 	plat, err := rexec.MakePlatform(execProps...)
 	if err != nil {
 		return -1, fmt.Errorf("building platform: %w", err)
 	}
 
 	// Pre-generate the invocation ID so that bb record inside the VM
-	// publishes to a known invocation that box create can poll.
+	// publishes to a known invocation that bb box can poll.
 	iid := uuid.New()
 	log.Printf("Box: https://app.buildbuddy.io/invocation/%s", iid)
 
@@ -260,9 +311,7 @@ func handleCreate(args []string) (int, error) {
 		fmt.Sprintf("--grace_period=%s", gracePeriod.String()),
 		fmt.Sprintf("--idle_timeout=%s", idleTimeout.String()),
 	}
-	if boxName != "" {
-		cmdArgs = append(cmdArgs, boxName)
-	}
+	cmdArgs = append(cmdArgs, boxName)
 
 	cmd := &repb.Command{
 		Arguments: cmdArgs,
@@ -284,14 +333,12 @@ func handleCreate(args []string) (int, error) {
 		},
 		Platform: plat,
 	}
-	if recycleable {
-		// Declare a stable output path per box name. This activates the
-		// scheduler's affinity routing (which routes on the first output
-		// path), so that resumes prefer the executor holding the warm local
-		// snapshot. The path is never actually produced by the action, which
-		// is fine.
-		cmd.OutputPaths = []string{"bb-box/" + boxName}
-	}
+	// Declare a stable output path per box name. This activates the
+	// scheduler's affinity routing (which routes on the first output path), so
+	// that resumes prefer the executor holding the warm local snapshot. The
+	// path is never actually produced by the action, which is fine.
+	cmd.OutputPaths = []string{"bb-box/" + boxName}
+
 	// Build the input root — just the bb binary — from its real path, rather
 	// than staging a copy in a temp dir.
 	inputRootDigest, err := uploadInputRoot(ctx, env, bbPath)
@@ -311,44 +358,102 @@ func handleCreate(args []string) (int, error) {
 
 	bbClient := bbspb.NewBuildBuddyServiceClient(conn)
 
-	// Dial the gateway for readiness detection: the box is ready the moment
-	// its peer registration (matched by session ID) appears in List.
-	gwConn, err := grpc_client.DialSimple(*gatewayFlag)
-	if err != nil {
-		return -1, fmt.Errorf("dialing gateway: %w", err)
-	}
-	defer gwConn.Close()
-	gwClient := gwsvcpb.NewGatewayServiceClient(gwConn)
-
 	// If a named box's snapshot disappears between the executor's initial
 	// existence check and the VM load (e.g. local filecache eviction), the
 	// action fails with a SNAPSHOT_NOT_FOUND error. Retry once: on the next
 	// attempt the executor re-checks for the snapshot, misses, and does a
 	// normal cold boot. The failed attempt never ran the command inside the
 	// VM, so the same action and invocation ID can be reused.
-	var code int
+	var peer *gwpb.Peer
 	r := retry.New(ctx, &retry.Options{MaxRetries: 2})
 	for r.Next() {
-		code, err = startAndAwaitReady(ctx, env, arn, bbClient, gwClient, iid)
+		peer, err = startAndAwaitReady(ctx, env, arn, bbClient, gwClient, iid)
 		if err != nil && error_util.IsSnapshotNotFoundError(err) {
 			log.Printf("Box snapshot is no longer available; starting a fresh VM... (%s)", err)
 			continue
 		}
 		break
 	}
-	return code, err
+	if err != nil {
+		return -1, err
+	}
+
+	return attach(peer, key, remoteCmd)
+}
+
+// attach connects to a ready box, or prints how to connect if this process
+// can't usefully hold an interactive session.
+func attach(peer *gwpb.Peer, key, remoteCmd string) (int, error) {
+	nameOrIP := peer.GetName()
+	if nameOrIP == "" {
+		nameOrIP = peer.GetIp()
+	}
+	// Attaching an interactive shell only makes sense with a terminal, so
+	// without one behave as --detach and print how to connect.
+	if *detach || (remoteCmd == "" && !*noCommand && !term.IsTerminal(int(os.Stdin.Fd()))) {
+		fmt.Printf("Box %q is ready.\n", nameOrIP)
+		fmt.Printf("  Address: %s\n", peer.GetIp())
+		fmt.Printf("  Connect: bb ssh %s\n", nameOrIP)
+		return 0, nil
+	}
+	// The caller's context carries the API key; ssh.Run adds its own, so give
+	// it a clean context.
+	return ssh.Run(context.Background(), ssh.Options{
+		Gateway:        *gatewayFlag,
+		APIKey:         key,
+		Host:           nameOrIP,
+		Command:        remoteCmd,
+		ForceTTY:       *forceTTY,
+		NoCommand:      *noCommand,
+		LocalForwards:  *localForwards,
+		RemoteForwards: *remoteForwards,
+	})
+}
+
+// listPeers returns the gateway's registrations for this group: running boxes
+// and transient clients.
+func listPeers(ctx context.Context, gwClient gwsvcpb.GatewayServiceClient) ([]*gwpb.Peer, error) {
+	rsp, err := gwClient.List(ctx, &gwpb.ListRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return rsp.GetPeers(), nil
+}
+
+func findPeer(peers []*gwpb.Peer, name string) *gwpb.Peer {
+	for _, p := range peers {
+		if p.GetName() == name {
+			return p
+		}
+	}
+	return nil
+}
+
+// generateName names an unnamed box after a pet, avoiding the names of boxes
+// that are currently running.
+func generateName(peers []*gwpb.Peer) string {
+	taken := make(map[string]bool, len(peers))
+	for _, p := range peers {
+		taken[p.GetName()] = true
+	}
+	for i := 0; i < 10; i++ {
+		if name := petname.Generate(2, "-"); !taken[name] {
+			return name
+		}
+	}
+	return petname.Generate(3, "-")
 }
 
 // startAndAwaitReady starts the box action and polls the gateway until the
 // VM's peer registration appears (matched by session ID, which is the
 // invocation ID), or the action fails.
-func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.ResourceName, bbClient bbspb.BuildBuddyServiceClient, gwClient gwsvcpb.GatewayServiceClient, iid string) (int, error) {
+func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.ResourceName, bbClient bbspb.BuildBuddyServiceClient, gwClient gwsvcpb.GatewayServiceClient, iid string) (*gwpb.Peer, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	stream, err := rexec.Start(ctx, env, arn, rexec.WithSkipCacheLookup(true))
 	if err != nil {
-		return -1, fmt.Errorf("starting action: %w", err)
+		return nil, fmt.Errorf("starting action: %w", err)
 	}
 
 	// Watch the operation stream for failures and cancel the context so the
@@ -405,23 +510,12 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 
 	select {
 	case err := <-streamErrCh:
-		return -1, err
+		return nil, err
 	case p := <-readyCh:
-		nameOrIP := p.GetName()
-		if nameOrIP == "" {
-			nameOrIP = p.GetIp()
-		}
-		fmt.Printf("Box %q is ready.\n", nameOrIP)
-		fmt.Printf("  Address: %s\n", p.GetIp())
-		fmt.Printf("  Connect: bb ssh %s\n", nameOrIP)
-		return 0, nil
+		return p, nil
 	}
 }
 
-// waitForPeer waits until a peer whose session ID matches the box's
-// invocation ID appears with a completed WireGuard handshake — i.e. the
-// moment the tunnel is actually usable, not just requested — using the
-// gateway's streaming Watch RPC.
 func waitForPeer(ctx context.Context, gwClient gwsvcpb.GatewayServiceClient, sessionID string) (*gwpb.Peer, error) {
 	stream, err := gwClient.Watch(ctx, &gwpb.WatchRequest{SessionId: sessionID})
 	if err != nil {

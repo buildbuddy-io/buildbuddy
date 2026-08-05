@@ -154,3 +154,23 @@ func TestForwardPropagatesEOF(t *testing.T) {
 		t.Fatal("far end never observed EOF")
 	}
 }
+
+// TestJoinRemoteCommand covers the "--" separator, which flag parsing does not
+// consume because it stops at the target.
+func TestJoinRemoteCommand(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{args: nil, want: ""},
+		{args: []string{"make", "tests"}, want: "make tests"},
+		{args: []string{"--", "make", "tests"}, want: "make tests"},
+		{args: []string{"--"}, want: ""},
+		// Only the leading separator is dropped; the rest is the command.
+		{args: []string{"--", "ls", "--", "x"}, want: "ls -- x"},
+		{args: []string{"echo", "--"}, want: "echo --"},
+	}
+	for _, tc := range tests {
+		require.Equal(t, tc.want, JoinRemoteCommand(tc.args))
+	}
+}
