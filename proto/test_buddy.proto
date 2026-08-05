@@ -1,0 +1,305 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package test_buddy;
+
+message TestTargetIdentity {
+  string target_label = 1;
+}
+
+message TestCaseIdentity {
+  TestTargetIdentity target = 1;
+  string case_name = 2;
+}
+
+enum TestOutcome {
+  TEST_OUTCOME_UNKNOWN = 0;
+  TEST_OUTCOME_PASS = 1;
+  TEST_OUTCOME_FAIL = 2;
+  TEST_OUTCOME_TIMEOUT = 3;
+}
+
+enum TestObservationSource {
+  TEST_OBSERVATION_SOURCE_UNKNOWN = 0;
+  TEST_OBSERVATION_SOURCE_PRESUBMIT = 1;
+  TEST_OBSERVATION_SOURCE_POSTSUBMIT = 2;
+  TEST_OBSERVATION_SOURCE_MONITOR = 3;
+}
+
+message TestObservation {
+  TestOutcome outcome = 1;
+  int64 duration_usec = 2;
+  string failure_message = 3;
+  string source_url = 4;
+  int64 event_time_usec = 5;
+  string observation_id = 6;
+  TestObservationSource source = 7;
+  string commit_sha = 8;
+  bool workspace_dirty = 9;
+}
+
+message TestCaseObservation {
+  TestCaseIdentity identity = 1;
+  TestObservation observation = 2;
+}
+
+message TestTargetObservation {
+  TestTargetIdentity identity = 1;
+  TestObservation observation = 2;
+}
+
+enum TestHealth {
+  TEST_HEALTH_UNKNOWN = 0;
+  TEST_HEALTH_INSUFFICIENT_DATA = 1;
+  TEST_HEALTH_HEALTHY = 2;
+  TEST_HEALTH_FLAKY = 3;
+  TEST_HEALTH_TIMEOUT = 4;
+  TEST_HEALTH_FAILING = 5;
+}
+
+enum TestExecutionDisposition {
+  TEST_EXECUTION_DISPOSITION_AUTOMATIC = 0;
+  TEST_EXECUTION_DISPOSITION_ENABLED = 1;
+  TEST_EXECUTION_DISPOSITION_DISABLED = 2;
+}
+
+message LinearAnalyzer {
+  int32 window_size = 1;
+  int32 failure_threshold = 2;
+  int32 target_timeout_threshold = 3;
+}
+
+message TestAnalyzerConfig {
+  oneof analyzer {
+    LinearAnalyzer linear = 1;
+  }
+}
+
+message ReportTestResultsRequest {
+  string repo_url = 1;
+  repeated TestCaseObservation case_observations = 2;
+  repeated TestTargetObservation target_observations = 3;
+}
+
+message ReportTestResultsResponse {
+  int32 accepted_count = 1;
+  int32 rejected_count = 2;
+}
+
+message GetTestsRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  string package_prefix = 3;
+  TestTargetIdentity target = 4;
+}
+
+message TestSummary {
+  TestHealth health = 1;
+  int64 pass_count = 2;
+  int64 fail_count = 3;
+  int64 timeout_count = 4;
+  int64 mean_duration_usec = 5;
+  double pass_rate = 6;
+}
+
+message TestCaseSummary {
+  TestCaseIdentity identity = 1;
+  TestSummary summary = 2;
+  TestExecutionDisposition disposition = 3;
+  bool deleted = 4;
+}
+
+message GetTestsResponse {
+  repeated TestCaseSummary tests = 1;
+}
+
+message TestTargetSummary {
+  TestTargetIdentity identity = 1;
+  TestSummary summary = 2;
+  TestHealthSummary cases = 3;
+  TestExecutionDisposition disposition = 4;
+  bool deleted = 5;
+}
+
+enum TestTargetSort {
+  TEST_TARGET_SORT_HEALTH = 0;
+  TEST_TARGET_SORT_PASS_RATE = 1;
+  TEST_TARGET_SORT_MEAN_DURATION = 2;
+}
+
+message GetTestTargetsRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  string package_prefix = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+  repeated TestHealth health_filter = 6;
+  TestTargetSort sort = 7;
+  bool descending = 8;
+}
+
+message GetTestTargetsResponse {
+  repeated TestTargetSummary targets = 1;
+  string next_page_token = 2;
+}
+
+message TestHealthTransition {
+  TestHealth previous_health = 1;
+  TestHealth health = 2;
+  int64 event_time_usec = 3;
+  int64 analyzer_revision = 4;
+  string analysis_reason = 5;
+  int64 eligible_sample_count = 6;
+}
+
+message GetTestCaseRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  TestCaseIdentity identity = 3;
+}
+
+message GetTestCaseResponse {
+  TestCaseSummary test = 1;
+  repeated TestObservation recent_observations = 2;
+  repeated TestHealthTransition transitions = 3;
+  int64 analyzer_revision = 4;
+  string analysis_reason = 5;
+  int64 eligible_sample_count = 6;
+}
+
+message GetTestTargetRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  TestTargetIdentity identity = 3;
+}
+
+message GetTestTargetResponse {
+  TestTargetSummary target = 1;
+  repeated TestObservation recent_observations = 2;
+  repeated TestHealthTransition transitions = 3;
+  int64 analyzer_revision = 4;
+  string analysis_reason = 5;
+  int64 eligible_sample_count = 6;
+  repeated TestCaseObservation recent_case_failures = 7;
+}
+
+message GetTestAnalyzerConfigRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+}
+
+message GetTestAnalyzerConfigResponse {
+  TestAnalyzerConfig config = 1;
+  int64 revision = 2;
+}
+
+message SetTestAnalyzerConfigRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  TestAnalyzerConfig config = 3;
+}
+
+message SetTestAnalyzerConfigResponse {
+  TestAnalyzerConfig config = 1;
+  int64 revision = 2;
+}
+
+message GetRepositoryHealthRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+}
+
+message TestHealthSummary {
+  int64 total_count = 1;
+  int64 healthy_count = 2;
+  int64 flaky_count = 3;
+  int64 insufficient_data_count = 4;
+  int64 unknown_count = 5;
+  int64 pass_count = 6;
+  int64 fail_count = 7;
+  int64 timeout_count = 8;
+  double pass_rate = 9;
+  int64 mean_duration_usec = 10;
+  int64 timed_out_count = 11;
+  int64 failing_count = 12;
+}
+
+message GetRepositoryHealthResponse {
+  TestHealthSummary targets = 1;
+  TestHealthSummary cases = 2;
+}
+
+message GetTestRepositoriesRequest {
+  context.RequestContext request_context = 1;
+}
+
+message TestRepository {
+  string repo_url = 1;
+  int64 last_reported_at_usec = 2;
+}
+
+message GetTestRepositoriesResponse {
+  repeated TestRepository repositories = 1;
+}
+
+message SetTestExecutionDispositionRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  oneof subject {
+    TestTargetIdentity target = 3;
+    TestCaseIdentity test_case = 4;
+  }
+  TestExecutionDisposition disposition = 5;
+}
+
+message SetTestExecutionDispositionResponse {
+  TestExecutionDisposition disposition = 1;
+}
+
+message SetTestDeletedRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  oneof subject {
+    TestTargetIdentity target = 3;
+    TestCaseIdentity test_case = 4;
+  }
+  bool deleted = 5;
+}
+
+message SetTestDeletedResponse {
+  bool deleted = 1;
+}
+
+message GetTestsToSkipRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  string package_prefix = 3;
+}
+
+message GetTestsToSkipResponse {
+  repeated TestTargetSummary targets = 1;
+  repeated TestCaseSummary test_cases = 2;
+}
+
+service TestBuddyService {
+  rpc ReportTestResults(stream ReportTestResultsRequest)
+      returns (ReportTestResultsResponse);
+  rpc GetTests(GetTestsRequest) returns (stream GetTestsResponse);
+  rpc GetTestTargets(GetTestTargetsRequest) returns (GetTestTargetsResponse);
+  rpc GetTestCase(GetTestCaseRequest) returns (GetTestCaseResponse);
+  rpc GetTestTarget(GetTestTargetRequest) returns (GetTestTargetResponse);
+  rpc GetRepositoryHealth(GetRepositoryHealthRequest)
+      returns (GetRepositoryHealthResponse);
+  rpc GetTestRepositories(GetTestRepositoriesRequest)
+      returns (GetTestRepositoriesResponse);
+  rpc SetTestExecutionDisposition(SetTestExecutionDispositionRequest)
+      returns (SetTestExecutionDispositionResponse);
+  rpc SetTestDeleted(SetTestDeletedRequest) returns (SetTestDeletedResponse);
+  rpc GetTestsToSkip(GetTestsToSkipRequest)
+      returns (stream GetTestsToSkipResponse);
+  rpc GetTestAnalyzerConfig(GetTestAnalyzerConfigRequest)
+      returns (GetTestAnalyzerConfigResponse);
+  rpc SetTestAnalyzerConfig(SetTestAnalyzerConfigRequest)
+      returns (SetTestAnalyzerConfigResponse);
+}
