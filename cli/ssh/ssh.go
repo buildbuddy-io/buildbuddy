@@ -268,11 +268,11 @@ func HandleSSH(args []string) (int, error) {
 
 	// Resolve forward specs before connecting, so a typo doesn't cost a
 	// gateway registration and two handshakes first.
-	locals, err := parseForwards(localForwards)
+	locals, err := parseForwards(*localForwards)
 	if err != nil {
 		return 1, err
 	}
-	remotes, err := parseForwards(remoteForwards)
+	remotes, err := parseForwards(*remoteForwards)
 	if err != nil {
 		return 1, err
 	}
@@ -442,8 +442,8 @@ func HandleSSH(args []string) (int, error) {
 	}()
 
 	// -L: listen here, dial from the box.
-	for _, spec := range *localForwards {
-		listenAddr, dialAddr, err := parseForward(spec)
+	for _, f := range locals {
+		ln, err := net.Listen("tcp", f.listen)
 		if err != nil {
 			return 1, status.WrapErrorf(err, "listen for -L %s", f.spec)
 		}
@@ -451,8 +451,8 @@ func HandleSSH(args []string) (int, error) {
 		go forward(ln, func() (net.Conn, error) { return client.Dial("tcp", f.dial) }, f.spec)
 	}
 	// -R: the box listens, we dial from here.
-	for _, spec := range *remoteForwards {
-		listenAddr, dialAddr, err := parseForward(spec)
+	for _, f := range remotes {
+		ln, err := client.Listen("tcp", f.listen)
 		if err != nil {
 			return 1, status.WrapErrorf(err, "listen on %s for -R %s", target, f.spec)
 		}
@@ -461,7 +461,7 @@ func HandleSSH(args []string) (int, error) {
 	}
 
 	if *noCommand {
-		if len(*localForwards) == 0 && len(*remoteForwards) == 0 {
+		if len(locals) == 0 && len(remotes) == 0 {
 			log.Printf("-N was given with no port forwards; nothing to do")
 			return 1, nil
 		}
