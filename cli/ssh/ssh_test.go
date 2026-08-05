@@ -72,6 +72,9 @@ func TestParseForward(t *testing.T) {
 	}{
 		{name: "port host hostport", spec: "8080:localhost:80", wantListen: "127.0.0.1:8080", wantDial: "localhost:80"},
 		{name: "explicit bind", spec: "0.0.0.0:8080:localhost:80", wantListen: "0.0.0.0:8080", wantDial: "localhost:80"},
+		// Empty bind means "all interfaces" to OpenSSH; we keep loopback so a
+		// forward is never exposed to the network without asking.
+		{name: "empty bind stays loopback", spec: ":8080:localhost:80", wantListen: "127.0.0.1:8080", wantDial: "localhost:80"},
 		{name: "ipv6 dial host", spec: "8080:[::1]:80", wantListen: "127.0.0.1:8080", wantDial: "[::1]:80"},
 		{name: "ipv6 bind", spec: "[::1]:8080:localhost:80", wantListen: "[::1]:8080", wantDial: "localhost:80"},
 		{name: "too few parts", spec: "8080:localhost", wantErr: true},
@@ -105,20 +108,27 @@ func TestForwardPropagatesEOF(t *testing.T) {
 	require.NoError(t, err)
 	defer ln.Close()
 
-	// The "far end" reads until EOF, then writes a reply and closes.
+	// The "far end" reads until EOF, then writes a reply and closes. It has to
+	// be a real TCP conn: net.Pipe satisfies net.Conn but has no CloseWrite,
+	// so a half-close could never reach it.
+	far, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer far.Close()
 	served := make(chan struct{})
-	dial := func() (net.Conn, error) {
-		ours, theirs := net.Pipe()
-		go func() {
-			defer close(served)
-			defer theirs.Close()
-			req, err := io.ReadAll(theirs)
-			if err == nil {
-				theirs.Write([]byte("reply-to:" + string(req)))
-			}
-		}()
-		return ours, nil
-	}
+	go func() {
+		defer close(served)
+		c, err := far.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		req, err := io.ReadAll(c)
+		if err == nil {
+			c.Write([]byte("reply-to:" + string(req)))
+		}
+	}()
+
+	dial := func() (net.Conn, error) { return net.Dial("tcp", far.Addr().String()) }
 	go forward(ln, dial, "test")
 
 	c, err := net.Dial("tcp", ln.Addr().String())
