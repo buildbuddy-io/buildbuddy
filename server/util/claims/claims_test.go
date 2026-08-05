@@ -3,6 +3,7 @@ package claims_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -512,6 +513,22 @@ func TestClaimsFromContext_ReparseNoError(t *testing.T) {
 	parsedClaims, err := claims.ClaimsFromContext(ctx)
 	require.NoError(t, err)
 	requireClaimsEqual(t, c, parsedClaims)
+}
+
+func TestClaimsFromContext_ReparseCacheUsesCurrentKey(t *testing.T) {
+	flags.Set(t, "auth.reparse_jwts", true)
+	flags.Set(t, "auth.jwt_claims_cache_ttl", time.Minute)
+
+	c := &claims.Claims{UserID: "US123"}
+	ctx := contextWithUnverifiedJWT(c)
+
+	parsedClaims, err := claims.ClaimsFromContext(ctx)
+	require.NoError(t, err)
+	requireClaimsEqual(t, c, parsedClaims)
+
+	flags.Set(t, "auth.jwt_key", "different-key")
+	_, err = claims.ClaimsFromContext(ctx)
+	require.Error(t, err)
 }
 
 func TestParseClaims_ES256_RejectsHS256(t *testing.T) {

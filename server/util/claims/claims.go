@@ -3,7 +3,9 @@ package claims
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -65,6 +67,10 @@ var (
 	es256PublicKeys []string = []string{}
 
 	reparseLog = log.NamedSubLogger("reparse-jwt").EveryDuration(time.Minute)
+
+	defaultClaimsParserMu  sync.Mutex
+	defaultClaimsParser    *ClaimsParser
+	defaultClaimsParserTTL time.Duration
 )
 
 func Init() error {
@@ -227,17 +233,19 @@ func (c *Claims) IsCustomerSSO() bool {
 }
 
 func parseClaims(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, error) {
-	c, method, err := parseClaimsInternal(ctx, token, keyProvider)
+	method := "unknown"
+	keys, err := keyProvider(ctx)
+	if err != nil {
+		metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
+		return nil, err
+	}
+	c, method, err := parseClaimsWithKeys(ctx, token, keys)
 	metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
 	return c, err
 }
 
-func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvider) (*Claims, string, error) {
+func parseClaimsWithKeys(ctx context.Context, token string, keys []VerificationKey) (*Claims, string, error) {
 	method := "unknown"
-	keys, err := keyProvider(ctx)
-	if err != nil {
-		return nil, method, err
-	}
 	if len(keys) == 0 {
 		alert.CtxUnexpectedEvent(ctx, "No JWT keys", "No keys available for parsing claims")
 		return nil, method, status.InternalError("no keys available for parsing claims")
@@ -504,7 +512,11 @@ func ClaimsFromContext(ctx context.Context) (*Claims, error) {
 				caller = fmt.Sprintf("%s:%d", file, line)
 			}
 			reparseLog.CtxDebugf(ctx, "Reparsing JWT (caller: %s)", caller)
-			claims, err := parseClaims(ctx, tokenString, DefaultKeyProvider)
+			parser, err := defaultParser()
+			if err != nil {
+				return nil, err
+			}
+			claims, err := parser.Parse(ctx, tokenString)
 			if err != nil {
 				return nil, err
 			}
@@ -615,6 +627,21 @@ type ClaimsParser struct {
 	keyProvider KeyProvider
 }
 
+func defaultParser() (*ClaimsParser, error) {
+	defaultClaimsParserMu.Lock()
+	defer defaultClaimsParserMu.Unlock()
+	if defaultClaimsParser != nil && defaultClaimsParserTTL == *claimsCacheTTL {
+		return defaultClaimsParser, nil
+	}
+	parser, err := NewClaimsParser(DefaultKeyProvider)
+	if err != nil {
+		return nil, err
+	}
+	defaultClaimsParser = parser
+	defaultClaimsParserTTL = *claimsCacheTTL
+	return parser, nil
+}
+
 func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
 	if *claimsCacheTTL <= 0 {
 		return &ClaimsParser{ttl: 0, keyProvider: keyProvider, lru: nil}, nil
@@ -631,13 +658,34 @@ func NewClaimsParser(keyProvider KeyProvider) (*ClaimsParser, error) {
 	return &ClaimsParser{ttl: *claimsCacheTTL, keyProvider: keyProvider, lru: lru}, nil
 }
 
+func claimsParserCacheKey(token string, keys []VerificationKey) string {
+	h := sha256.New()
+	_, _ = h.Write([]byte(token))
+	_, _ = h.Write([]byte{0})
+	for _, key := range keys {
+		_, _ = h.Write([]byte(key.SigningMethod.Alg()))
+		_, _ = h.Write([]byte{0})
+		_, _ = h.Write([]byte(key.Key))
+		_, _ = h.Write([]byte{0})
+	}
+	return token + "\x00" + hex.EncodeToString(h.Sum(nil))
+}
+
 func (c *ClaimsParser) Parse(ctx context.Context, token string) (*Claims, error) {
+	keys, err := c.keyProvider(ctx)
+	if err != nil {
+		metrics.JWTVerificationCount.WithLabelValues("unknown", status.MetricsLabel(err)).Add(1)
+		return nil, err
+	}
 	if c.ttl <= 0 {
-		return parseClaims(ctx, token, c.keyProvider)
+		claims, method, err := parseClaimsWithKeys(ctx, token, keys)
+		metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
+		return claims, err
 	}
 
+	cacheKey := claimsParserCacheKey(token, keys)
 	c.mu.Lock()
-	v, ok := c.lru.Get(token)
+	v, ok := c.lru.Get(cacheKey)
 	c.mu.Unlock()
 
 	if ok {
@@ -646,13 +694,14 @@ func (c *ClaimsParser) Parse(ctx context.Context, token string) (*Claims, error)
 		}
 	}
 
-	claims, err := parseClaims(ctx, token, c.keyProvider)
+	claims, method, err := parseClaimsWithKeys(ctx, token, keys)
+	metrics.JWTVerificationCount.WithLabelValues(method, status.MetricsLabel(err)).Add(1)
 	if err != nil {
 		return nil, err
 	}
 
 	c.mu.Lock()
-	c.lru.Add(token, claims)
+	c.lru.Add(cacheKey, claims)
 	c.mu.Unlock()
 
 	return claims, nil
