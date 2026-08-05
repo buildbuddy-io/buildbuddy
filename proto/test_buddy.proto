@@ -1,0 +1,164 @@
+syntax = "proto3";
+
+import "proto/context.proto";
+
+package test_buddy;
+
+// WARNING: EXPERIMENTAL. NO COMPATIBILITY GUARANTEES. THIS API MAY MUTATE
+// WITHOUT NOTICE.
+
+// Identity within the repository named by the enclosing request. A target has
+// an empty case_name.
+message TestIdentity {
+  string target_label = 1;
+  string case_name = 2;
+}
+
+enum TestOutcome {
+  TEST_OUTCOME_UNKNOWN = 0;
+  TEST_OUTCOME_PASS = 1;
+  TEST_OUTCOME_FAIL = 2;
+  TEST_OUTCOME_TIMEOUT = 3;
+  TEST_OUTCOME_BROKEN = 4;
+}
+
+enum TestObservationSource {
+  TEST_OBSERVATION_SOURCE_UNKNOWN = 0;
+  TEST_OBSERVATION_SOURCE_MONITOR = 1;
+}
+
+message TestObservation {
+  TestIdentity identity = 1;
+  TestOutcome outcome = 2;
+  int64 duration_usec = 3;
+  string failure_message = 4;
+  int64 event_time_usec = 5;
+  string idempotency_token = 6;
+}
+
+enum TestHealth {
+  TEST_HEALTH_UNKNOWN = 0;
+  TEST_HEALTH_INSUFFICIENT_DATA = 1;
+  TEST_HEALTH_HEALTHY = 2;
+  TEST_HEALTH_FLAKY = 3;
+  TEST_HEALTH_FAILING = 4;
+}
+
+enum TestExecutionDisposition {
+  TEST_EXECUTION_DISPOSITION_AUTOMATIC = 0;
+  TEST_EXECUTION_DISPOSITION_ENABLED = 1;
+  TEST_EXECUTION_DISPOSITION_DISABLED = 2;
+}
+
+message TestAnalyzerConfig {
+  int32 window_size = 1;
+  int32 failure_count_threshold = 2;
+  int32 timeout_count_threshold = 3;
+}
+
+message Test {
+  TestIdentity identity = 1;
+  TestHealth health = 2;
+  TestExecutionDisposition disposition = 3;
+  int64 pass_count = 4;
+  int64 fail_count = 5;
+  int64 timeout_count = 6;
+  int64 broken_count = 7;
+  int64 mean_duration_usec = 8;
+  double pass_rate = 9;
+  int64 analyzer_revision = 10;
+  string analysis_reason = 11;
+  int64 eligible_sample_count = 12;
+}
+
+message ReportTestResultsRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  TestObservationSource source = 3;
+  string source_url = 4;
+  string commit_sha = 5;
+  repeated TestObservation observations = 6;
+}
+
+message TestObservationRejection {
+  TestIdentity identity = 1;
+  string idempotency_token = 2;
+  string message = 3;
+}
+
+message ReportTestResultsResponse {
+  context.ResponseContext response_context = 1;
+  int64 accepted_count = 2;
+  int64 rejected_count = 3;
+  repeated TestObservationRejection rejection_samples = 4;
+}
+
+message TestFilter {
+  repeated TestHealth health = 1;
+  repeated TestExecutionDisposition disposition = 2;
+  bool skip_eligible_only = 3;
+}
+
+message GetTestsRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  // An unset scope or empty package_prefix selects the repository root.
+  oneof scope {
+    string package_prefix = 3;
+    TestIdentity identity = 4;
+  }
+  TestFilter filter = 5;
+}
+
+message GetTestsResponse {
+  context.ResponseContext response_context = 1;
+  repeated Test tests = 2;
+}
+
+message SetTestExecutionDispositionRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  TestIdentity identity = 3;
+  TestExecutionDisposition disposition = 4;
+}
+
+message SetTestExecutionDispositionResponse {
+  context.ResponseContext response_context = 1;
+  Test test = 2;
+}
+
+message GetTestAnalyzerConfigRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+}
+
+message GetTestAnalyzerConfigResponse {
+  context.ResponseContext response_context = 1;
+  TestAnalyzerConfig config = 2;
+  int64 revision = 3;
+}
+
+message SetTestAnalyzerConfigRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  TestAnalyzerConfig config = 3;
+  int64 expected_revision = 4;
+}
+
+message SetTestAnalyzerConfigResponse {
+  context.ResponseContext response_context = 1;
+  TestAnalyzerConfig config = 2;
+  int64 revision = 3;
+}
+
+service TestBuddyService {
+  rpc ReportTestResults(stream ReportTestResultsRequest)
+      returns (ReportTestResultsResponse);
+  rpc GetTests(GetTestsRequest) returns (stream GetTestsResponse);
+  rpc SetTestExecutionDisposition(SetTestExecutionDispositionRequest)
+      returns (SetTestExecutionDispositionResponse);
+  rpc GetTestAnalyzerConfig(GetTestAnalyzerConfigRequest)
+      returns (GetTestAnalyzerConfigResponse);
+  rpc SetTestAnalyzerConfig(SetTestAnalyzerConfigRequest)
+      returns (SetTestAnalyzerConfigResponse);
+}
