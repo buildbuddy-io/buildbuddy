@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -23,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/version"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -188,17 +188,6 @@ func handleCreate(args []string) (int, error) {
 	}
 	defer cleanupBB()
 
-	// Build the input root: a temp directory containing just the bb binary.
-	inputDir, err := os.MkdirTemp("", "bb-box-input-*")
-	if err != nil {
-		return -1, err
-	}
-	defer os.RemoveAll(inputDir)
-
-	if err := copyFile(bbPath, filepath.Join(inputDir, "bb"), 0755); err != nil {
-		return -1, fmt.Errorf("staging bb binary: %w", err)
-	}
-
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
 	if *trace {
 		// Force server-side OTel sampling for every RPC in this session,
@@ -303,12 +292,19 @@ func handleCreate(args []string) (int, error) {
 		// is fine.
 		cmd.OutputPaths = []string{"bb-box/" + boxName}
 	}
+	// Build the input root — just the bb binary — from its real path, rather
+	// than staging a copy in a temp dir.
+	inputRootDigest, err := uploadInputRoot(ctx, env, bbPath)
+	if err != nil {
+		return -1, fmt.Errorf("uploading bb binary: %w", err)
+	}
 	action := &repb.Action{
-		DoNotCache: true,
-		Timeout:    durationpb.New(actionTimeout),
+		DoNotCache:      true,
+		Timeout:         durationpb.New(actionTimeout),
+		InputRootDigest: inputRootDigest,
 	}
 
-	arn, err := rexec.Prepare(ctx, env, remoteInstanceName, digestFunction, action, cmd, inputDir)
+	arn, err := rexec.Prepare(ctx, env, remoteInstanceName, digestFunction, action, cmd, "" /*=inputRootDir*/)
 	if err != nil {
 		return -1, fmt.Errorf("preparing action: %w", err)
 	}
@@ -608,18 +604,22 @@ func getBBBinary(ctx context.Context) (path string, cleanup func(), err error) {
 	return f.Name(), cleanup, nil
 }
 
-// copyFile copies src to dst with the given file mode.
-func copyFile(src, dst string, mode os.FileMode) error {
-	in, err := os.Open(src)
+// uploadInputRoot uploads the bb binary at the given path and returns a digest of an
+// input root containing it, executable, as "bb".
+func uploadInputRoot(ctx context.Context, env environment.Env, path string) (*repb.Digest, error) {
+	ul := cachetools.NewBatchCASUploader(ctx, env, remoteInstanceName, digestFunction, nil /*=chunkingParams*/)
+	d, err := ul.UploadFile(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	root, err := ul.UploadProto(&repb.Directory{
+		Files: []*repb.FileNode{{Name: "bb", Digest: d, IsExecutable: true}},
+	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	if err := ul.Wait(); err != nil {
+		return nil, err
+	}
+	return root, nil
 }

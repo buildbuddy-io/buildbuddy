@@ -19,6 +19,7 @@ go_library(
         "//proto:resource_go_proto",
         "//server/environment",
         "//server/real_environment",
+        "//server/remote_cache/cachetools",
         "//server/util/error_util",
         "//server/util/flag",
         "//server/util/grpc_client",

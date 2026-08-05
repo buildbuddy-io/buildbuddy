@@ -3,7 +3,6 @@ package record
 import (
 	"bufio"
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -16,7 +15,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -35,6 +36,9 @@ var (
 	besBackend   = flags.String("bes_backend", "remote.buildbuddy.io", "BuildBuddy BES backend target")
 	resultsURL   = flags.String("results_url", "https://app.buildbuddy.io", "BuildBuddy results URL")
 	invocationID = flags.String("invocation_id", "", "Invocation ID to use (auto-generated if not specified)")
+	// Tags are indexed on the invocation, so it can be found later with a
+	// SearchInvocation query.
+	tags = flag.New(flags, "tag", []string{}, "Tag to set on the invocation (repeatable, or comma-separated)")
 
 	usage = `
 usage: bb record [options] <command> [args...]
@@ -68,6 +72,16 @@ func HandleRecord(args []string) (int, error) {
 	if len(cmdArgs) == 0 {
 		log.Print("error: must provide a command to execute")
 		log.Print(usage)
+		return 1, nil
+	}
+
+	// Validate with the server's own parser: a tag list the server rejects
+	// fails the whole BES stream, and since publish errors are only logged at
+	// debug level, the invocation would be quietly broken while the command
+	// still exited 0.
+	joined := strings.Join(*tags, ",")
+	if _, err := invocation_format.SplitAndTrimAndDedupeTags(joined, true /*=validate*/); err != nil {
+		log.Printf("Invalid --tag list: %s (%d characters, max 255)", status.Message(err), len(joined))
 		return 1, nil
 	}
 
@@ -119,7 +133,7 @@ func record(cmdArgs []string) (int, error) {
 		log.Warnf("Failed to publish structured command line: %s", err)
 	}
 
-	if err := publisher.Publish(buildMetadataEvent()); err != nil {
+	if err := publisher.Publish(buildMetadataEvent(*tags)); err != nil {
 		log.Warnf("Failed to publish build metadata: %s", err)
 	}
 
@@ -272,16 +286,20 @@ func structuredCommandLineEvent(cmdArgs []string) *bespb.BuildEvent {
 	}
 }
 
-func buildMetadataEvent() *bespb.BuildEvent {
+func buildMetadataEvent(tags []string) *bespb.BuildEvent {
+	metadata := map[string]string{"ROLE": "RECORD"}
+	if len(tags) > 0 {
+		// The server splits this on commas and indexes each tag on the
+		// invocation. The joined list is limited to 255 characters.
+		metadata["TAGS"] = strings.Join(tags, ",")
+	}
 	return &bespb.BuildEvent{
 		Id: &bespb.BuildEventId{
 			Id: &bespb.BuildEventId_BuildMetadata{},
 		},
 		Payload: &bespb.BuildEvent_BuildMetadata{
 			BuildMetadata: &bespb.BuildMetadata{
-				Metadata: map[string]string{
-					"ROLE": "RECORD",
-				},
+				Metadata: metadata,
 			},
 		},
 	}

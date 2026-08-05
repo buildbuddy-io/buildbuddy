@@ -47,17 +47,11 @@ var (
 	forceTTY      = flags.Bool("t", false, "Force pseudo-terminal allocation, e.g. to run an interactive program remotely")
 	noCommand     = flags.Bool("N", false, "Do not run a remote command; useful when only forwarding ports")
 
-	localForwards  forwardSpecs
-	remoteForwards forwardSpecs
+	localForwards  = flag.New(flags, "L", []string{}, "Forward a port on this machine to one reachable from the box: [bind:]port:host:hostport (repeatable)")
+	remoteForwards = flag.New(flags, "R", []string{}, "Forward a port on the box to one reachable from this machine: [bind:]port:host:hostport (repeatable)")
 
 	usage string
 )
-
-// forwardSpecs collects a repeatable port-forwarding flag.
-type forwardSpecs []string
-
-func (f *forwardSpecs) String() string     { return strings.Join(*f, ",") }
-func (f *forwardSpecs) Set(v string) error { *f = append(*f, v); return nil }
 
 // keepaliveInterval is how often the client pings the server over the SSH
 // transport. Well under the server's connection-level dead-client timeout
@@ -67,9 +61,6 @@ func (f *forwardSpecs) Set(v string) error { *f = append(*f, v); return nil }
 const keepaliveInterval = 15 * time.Second
 
 func init() {
-	flags.Var(&localForwards, "L", "Forward a port on this machine to one reachable from the box: [bind:]port:host:hostport (repeatable)")
-	flags.Var(&remoteForwards, "R", "Forward a port on the box to one reachable from this machine: [bind:]port:host:hostport (repeatable)")
-
 	var buf strings.Builder
 	fmt.Fprintf(&buf, "usage: bb %s [flags] [user@]<host> [command ...]\n\nConnect to an SSH server reachable via the BuildBuddy gateway.\n\nFlags:\n", flags.Name())
 	flags.SetOutput(&buf)
@@ -451,8 +442,8 @@ func HandleSSH(args []string) (int, error) {
 	}()
 
 	// -L: listen here, dial from the box.
-	for _, f := range locals {
-		ln, err := net.Listen("tcp", f.listen)
+	for _, spec := range *localForwards {
+		listenAddr, dialAddr, err := parseForward(spec)
 		if err != nil {
 			return 1, status.WrapErrorf(err, "listen for -L %s", f.spec)
 		}
@@ -460,8 +451,8 @@ func HandleSSH(args []string) (int, error) {
 		go forward(ln, func() (net.Conn, error) { return client.Dial("tcp", f.dial) }, f.spec)
 	}
 	// -R: the box listens, we dial from here.
-	for _, f := range remotes {
-		ln, err := client.Listen("tcp", f.listen)
+	for _, spec := range *remoteForwards {
+		listenAddr, dialAddr, err := parseForward(spec)
 		if err != nil {
 			return 1, status.WrapErrorf(err, "listen on %s for -R %s", target, f.spec)
 		}
@@ -470,7 +461,7 @@ func HandleSSH(args []string) (int, error) {
 	}
 
 	if *noCommand {
-		if len(locals) == 0 && len(remotes) == 0 {
+		if len(*localForwards) == 0 && len(*remoteForwards) == 0 {
 			log.Printf("-N was given with no port forwards; nothing to do")
 			return 1, nil
 		}
