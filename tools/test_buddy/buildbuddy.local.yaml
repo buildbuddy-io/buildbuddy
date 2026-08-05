@@ -1,0 +1,21 @@
+app:
+  log_error_stack_traces: true
+  streaming_http_enabled: true
+  invocation_log_streaming_enabled: true
+  build_buddy_url: "${TB_APP_URL}"
+  no_default_user_group: true
+  create_group_per_user: true
+  add_user_to_domain_group: true
+storage:
+  ttl_seconds: 86400
+  disk:
+    root_directory: /tmp/${USER}_buildbuddy
+  enable_chunked_event_logs: true
+  tempdir: /tmp/${USER}
+cache:
+  max_size_bytes: 1000000000
+  disk:
+    root_directory: /tmp/${USER}-buildbuddy-cache
+auth:
+  enable_anonymous_usage: true
+  enable_self_auth: true
