@@ -18,6 +18,7 @@ import (
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -102,6 +103,8 @@ type Env interface {
 	GetListenAddr() string
 	GetBuildBuddyServer() interfaces.BuildBuddyServer
 	GetBuildBuddyServiceClient() bbspb.BuildBuddyServiceClient
+	GetTestBuddyServiceClient() tbpb.TestBuddyServiceClient
+	GetTestBuddyServiceServer() tbpb.TestBuddyServiceServer
 	GetSSLService() interfaces.SSLService
 	GetBuildEventServer() pepb.PublishBuildEventServer
 	GetGitHubStatusService() interfaces.GitHubStatusService

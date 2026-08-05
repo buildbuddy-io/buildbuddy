@@ -37,6 +37,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
 
@@ -53,6 +54,8 @@ var (
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
 	apiHTTPPrefix           = "/api/v1/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
+	testBuddyHTTPPrefix     = "/rpc/TestBuddyService/"
+	testBuddyServicePrefix  = "/" + tbpb.TestBuddyService_ServiceDesc.ServiceName + "/"
 )
 
 func getContentSecurityPolicyHeaderValue(nonce string) string {
@@ -301,6 +304,8 @@ func parseProtoletRPCName(next http.Handler) http.Handler {
 			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, buildBuddyServicePrefix+strings.TrimPrefix(r.URL.Path, buildBuddyHTTPPrefix)))
 		case strings.HasPrefix(r.URL.Path, apiHTTPPrefix):
 			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, apiServicePrefix+strings.TrimPrefix(r.URL.Path, apiHTTPPrefix)))
+		case strings.HasPrefix(r.URL.Path, testBuddyHTTPPrefix):
+			r = r.WithContext(context.WithValue(r.Context(), rpcNameContextKey, testBuddyServicePrefix+strings.TrimPrefix(r.URL.Path, testBuddyHTTPPrefix)))
 		}
 		next.ServeHTTP(w, r)
 	})

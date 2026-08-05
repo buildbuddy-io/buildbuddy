@@ -10,12 +10,16 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/accumulator"
+	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	testbuddy "github.com/buildbuddy-io/buildbuddy/server/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
@@ -34,6 +38,7 @@ var (
 
 const (
 	writeTestTargetStatusesTimeout = 15 * time.Second
+	testBuddyTargetReportTimeout   = 5 * time.Minute
 )
 
 type targetClosure func(event *build_event_stream.BuildEvent)
@@ -61,6 +66,7 @@ type target struct {
 	targetType     cmpb.TargetType
 	testSize       build_event_stream.TestSize
 	buildSuccess   bool
+	hasTestXML     bool
 }
 
 func md5Int64(text string) int64 {
@@ -100,6 +106,12 @@ func (t *target) updateFromEvent(event *build_event_stream.BuildEvent) {
 		t.state = targetStateCompleted
 	case *build_event_stream.BuildEvent_TestResult:
 		t.cached = p.TestResult.GetCachedLocally() || p.TestResult.GetExecutionInfo().GetCachedRemotely()
+		for _, output := range p.TestResult.GetTestActionOutput() {
+			if output.GetName() == "test.xml" {
+				t.hasTestXML = true
+				break
+			}
+		}
 		t.state = targetStateResult
 	case *build_event_stream.BuildEvent_TestSummary:
 		ts := p.TestSummary
@@ -163,6 +175,7 @@ type TargetTracker struct {
 	buildEventAccumulator accumulator.Accumulator
 	targets               map[string]*target
 	errGroup              *errgroup.Group
+	workspaceDirty        bool
 }
 
 func NewTargetTracker(env environment.Env, buildEventAccumulator accumulator.Accumulator) *TargetTracker {
@@ -384,21 +397,90 @@ func (t *TargetTracker) writeTestTargetStatusesToOLAPDB(ctx context.Context, per
 	return err
 }
 
+func testBuddySource(branch string) tbpb.TestObservationSource {
+	branch = strings.TrimPrefix(branch, "refs/heads/")
+	if branch == "main" || branch == "master" {
+		return tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_POSTSUBMIT
+	}
+	return tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT
+}
+
+func testBuddyOutcome(status build_event_stream.TestStatus, hasTestXML bool) tbpb.TestOutcome {
+	switch status {
+	case build_event_stream.TestStatus_NO_STATUS:
+		return tbpb.TestOutcome_TEST_OUTCOME_UNKNOWN
+	case build_event_stream.TestStatus_PASSED:
+		return tbpb.TestOutcome_TEST_OUTCOME_PASS
+	case build_event_stream.TestStatus_TIMEOUT:
+		return tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT
+	default:
+		if hasTestXML {
+			return tbpb.TestOutcome_TEST_OUTCOME_PASS
+		}
+		return tbpb.TestOutcome_TEST_OUTCOME_FAIL
+	}
+}
+
+func (t *TargetTracker) writeTestBuddyTargetObservations(ctx context.Context) error {
+	if t.env.GetTestBuddyServiceClient() == nil {
+		return nil
+	}
+	invocation := t.buildEventAccumulator.Invocation()
+	if invocation == nil || invocation.GetRepoUrl() == "" || invocation.GetCommitSha() == "" {
+		return nil
+	}
+	eventTime := t.buildEventAccumulator.StartTime()
+	if eventTime.IsZero() && invocation.GetCreatedAtUsec() > 0 {
+		eventTime = time.UnixMicro(invocation.GetCreatedAtUsec())
+	}
+	if eventTime.IsZero() {
+		return nil
+	}
+	sourceURL := build_buddy_url.WithPath("/invocation/" + t.invocationID()).String()
+	source := testBuddySource(invocation.GetBranchName())
+	observations := make([]*tbpb.TestTargetObservation, 0, len(t.targets))
+	for _, target := range t.targets {
+		if !isTest(target) || target.overallStatus == build_event_stream.TestStatus_NO_STATUS {
+			continue
+		}
+		observedAt := target.firstStartTime
+		if observedAt.IsZero() {
+			observedAt = eventTime
+		}
+		observations = append(observations, &tbpb.TestTargetObservation{
+			Identity: &tbpb.TestTargetIdentity{TargetLabel: target.label},
+			Observation: &tbpb.TestObservation{
+				Outcome:        testBuddyOutcome(target.overallStatus, target.hasTestXML),
+				DurationUsec:   target.totalDuration.Microseconds(),
+				SourceUrl:      sourceURL,
+				EventTimeUsec:  observedAt.UnixMicro(),
+				ObservationId:  hash.Strings("testbuddy-bes-target-v1", t.invocationID(), target.label),
+				Source:         source,
+				CommitSha:      invocation.GetCommitSha(),
+				WorkspaceDirty: t.workspaceDirty,
+			},
+		})
+	}
+	ctx, cancel := background.ExtendContextForFinalization(ctx, testBuddyTargetReportTimeout)
+	defer cancel()
+	return testbuddy.ReportTargetObservations(ctx, t.env, invocation.GetRepoUrl(), observations)
+}
+
 func (t *TargetTracker) TrackTargetsForEvent(ctx context.Context, event *build_event_stream.BuildEvent) {
-	if !*enableTargetTracking {
+	if !*enableTargetTracking && t.env.GetTestBuddyServiceClient() == nil {
 		return
 	}
 	// Depending on the event type we will either:
 	//  - read the set of targets for this repo
 	//  - update the set of targets for this repo
 	//  - write statuses for the targets at this invocation
-	switch event.Payload.(type) {
+	switch p := event.Payload.(type) {
 	case *build_event_stream.BuildEvent_Expanded:
 		t.handleExpandedEvent(event)
 	case *build_event_stream.BuildEvent_Configured:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_WorkspaceStatus:
-		t.handleWorkspaceStatusEvent(ctx)
+		t.handleWorkspaceStatusEvent(ctx, p.WorkspaceStatus)
 	case *build_event_stream.BuildEvent_Completed:
 		t.handleEvent(event)
 	case *build_event_stream.BuildEvent_TestResult:
@@ -430,7 +512,13 @@ func (t *TargetTracker) handleExpandedEvent(event *build_event_stream.BuildEvent
 	}
 }
 
-func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context) {
+func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context, workspaceStatus *build_event_stream.WorkspaceStatus) {
+	for _, item := range workspaceStatus.GetItem() {
+		if item.GetKey() == "GIT_TREE_STATUS" && strings.EqualFold(item.GetValue(), "Modified") {
+			t.workspaceDirty = true
+			break
+		}
+	}
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, t.invocationID())
 	if !t.testTargetsInAtLeastState(targetStateConfigured) {
 		// This should not happen, but it seems it can happen with certain targets.
@@ -449,6 +537,9 @@ func (t *TargetTracker) handleWorkspaceStatusEvent(ctx context.Context) {
 	}
 	if t.buildEventAccumulator.DisableTargetTracking() {
 		log.CtxDebugf(ctx, "Not tracking targets for %q because DISABLE_TARGET_TRACKING is set", t.invocationID())
+		return
+	}
+	if !*enableTargetTracking {
 		return
 	}
 	permissions, err := t.permissionsFromContext(ctx)
@@ -480,20 +571,26 @@ func (t *TargetTracker) handleLastEvent(ctx context.Context) {
 		log.CtxDebugf(ctx, "Not tracking targets for %q because it's not authenticated: %s", t.invocationID(), err.Error())
 		return
 	}
-	if t.errGroup == nil {
-		log.CtxWarningf(ctx, "Not tracking target statuses for %q because targets were not reported", t.invocationID())
-		return
+	if *enableTargetTracking {
+		legacyTargetsReady := true
+		if t.errGroup == nil {
+			log.CtxWarningf(ctx, "Not tracking target statuses for %q because targets were not reported", t.invocationID())
+			legacyTargetsReady = false
+		} else if err := t.errGroup.Wait(); err != nil {
+			log.CtxWarningf(ctx, "Error getting %q targets: %s", t.invocationID(), err.Error())
+			legacyTargetsReady = false
+		}
+		if legacyTargetsReady {
+			if err := t.writeTestTargetStatuses(ctx, permissions); err != nil {
+				log.CtxDebugf(ctx, "Error writing %q target statuses: %s", t.invocationID(), err.Error())
+			}
+			if err := t.writeTestTargetStatusesToOLAPDB(ctx, permissions); err != nil {
+				log.CtxErrorf(ctx, "Error writing %q target statuses: %s", t.invocationID(), err.Error())
+			}
+		}
 	}
-	// Synchronization point: make sure that all targets were read (or written).
-	if err := t.errGroup.Wait(); err != nil {
-		log.CtxWarningf(ctx, "Error getting %q targets: %s", t.invocationID(), err.Error())
-		return
-	}
-	if err := t.writeTestTargetStatuses(ctx, permissions); err != nil {
-		log.CtxDebugf(ctx, "Error writing %q target statuses: %s", t.invocationID(), err.Error())
-	}
-	if err := t.writeTestTargetStatusesToOLAPDB(ctx, permissions); err != nil {
-		log.CtxErrorf(ctx, "Error writing %q target statuses: %s", t.invocationID(), err.Error())
+	if err := t.writeTestBuddyTargetObservations(ctx); err != nil {
+		log.CtxWarningf(ctx, "Error reporting %q target observations to TestBuddy: %s", t.invocationID(), err.Error())
 	}
 }
 

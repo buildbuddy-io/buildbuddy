@@ -239,9 +239,9 @@ func GetTarget(ctx context.Context, env environment.Env, inv *inpb.Invocation, i
 				target.Files = filesForLabel(idx, label, req.GetFilter())
 				totalFileCount += len(target.Files)
 			}
-			// Expand TestResult events only when fetching a single label and
-			// if requesting the test status.
-			if req.GetTargetLabel() != "" && isTestStatus {
+			// TestResult events are normally expanded only for one target. A
+			// caller may opt into them for a paginated test-target listing.
+			if isTestStatus && (req.GetTargetLabel() != "" || req.GetIncludeTestResultEvents()) {
 				target.TestResultEvents = idx.TestResultEventsByLabel[label]
 			}
 			// When fetching a single label, expand Action events matching

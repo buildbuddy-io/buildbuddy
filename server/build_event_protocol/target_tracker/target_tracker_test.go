@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/target_tracker"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	cmpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -32,6 +34,34 @@ type Row struct {
 	RepoURL    string
 	Role       string
 	Command    string
+}
+
+type reportStream struct {
+	grpc.ClientStream
+	requests []*tbpb.ReportTestResultsRequest
+}
+
+func (s *reportStream) Send(req *tbpb.ReportTestResultsRequest) error {
+	s.requests = append(s.requests, req)
+	return nil
+}
+
+func (s *reportStream) CloseAndRecv() (*tbpb.ReportTestResultsResponse, error) {
+	count := 0
+	for _, req := range s.requests {
+		count += len(req.GetTargetObservations()) + len(req.GetCaseObservations())
+	}
+	return &tbpb.ReportTestResultsResponse{AcceptedCount: int32(count)}, nil
+}
+
+type testBuddyClient struct {
+	tbpb.TestBuddyServiceClient
+	stream *reportStream
+}
+
+func (c *testBuddyClient) ReportTestResults(context.Context, ...grpc.CallOption) (grpc.ClientStreamingClient[tbpb.ReportTestResultsRequest, tbpb.ReportTestResultsResponse], error) {
+	c.stream = &reportStream{}
+	return c.stream, nil
 }
 
 func targetConfiguredId(label string) *build_event_stream.BuildEventId {
@@ -90,6 +120,7 @@ type fakeAccumulator struct {
 	repoURL      string
 	invocationID string
 	commitSHA    string
+	branchName   string
 }
 
 func (a *fakeAccumulator) Invocation() *inpb.Invocation {
@@ -99,6 +130,7 @@ func (a *fakeAccumulator) Invocation() *inpb.Invocation {
 		RepoUrl:      a.repoURL,
 		InvocationId: a.invocationID,
 		CommitSha:    a.commitSHA,
+		BranchName:   a.branchName,
 	}
 }
 
@@ -145,6 +177,92 @@ func newFakeAccumulator(t *testing.T, testInvocationID string) *fakeAccumulator 
 		role:         "CI",
 		repoURL:      "bb/foo",
 		commitSHA:    "abcdef",
+		branchName:   "main",
+	}
+}
+
+func TestReportsCITargetObservationsToTestBuddy(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		role        string
+		branch      string
+		status      build_event_stream.TestStatus
+		testXML     bool
+		wantSource  tbpb.TestObservationSource
+		wantOutcome tbpb.TestOutcome
+		wantCount   int
+	}{
+		{name: "main", role: "CI", branch: "main", status: build_event_stream.TestStatus_FAILED, testXML: true, wantSource: tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_POSTSUBMIT, wantOutcome: tbpb.TestOutcome_TEST_OUTCOME_PASS, wantCount: 1},
+		{name: "feature", role: "CI", branch: "feature", status: build_event_stream.TestStatus_TIMEOUT, wantSource: tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_PRESUBMIT, wantOutcome: tbpb.TestOutcome_TEST_OUTCOME_TIMEOUT, wantCount: 1},
+		{name: "harness failure", role: "CI", branch: "main", status: build_event_stream.TestStatus_FAILED, wantSource: tbpb.TestObservationSource_TEST_OBSERVATION_SOURCE_POSTSUBMIT, wantOutcome: tbpb.TestOutcome_TEST_OUTCOME_FAIL, wantCount: 1},
+		{name: "non CI", role: "", branch: "main", wantCount: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+			te.SetAuthenticator(authenticator)
+			client := &testBuddyClient{}
+			te.SetTestBuddyServiceClient(client)
+			flags.Set(t, "app.enable_target_tracking", false)
+			flags.Set(t, "app.enable_write_test_target_statuses_to_olap_db", false)
+			ctx, err := authenticator.WithAuthenticatedUser(context.Background(), "USER1")
+			require.NoError(t, err)
+			invocationID := uuid.NewString()
+			accumulator := newFakeAccumulator(t, invocationID)
+			accumulator.role = test.role
+			accumulator.branchName = test.branch
+			tracker := target_tracker.NewTargetTracker(te, accumulator)
+			for _, event := range []*build_event_stream.BuildEvent{
+				{
+					Children: []*build_event_stream.BuildEventId{targetConfiguredId("//pkg:test")},
+					Payload:  &build_event_stream.BuildEvent_Expanded{},
+				},
+				{
+					Id: targetConfiguredId("//pkg:test"),
+					Payload: &build_event_stream.BuildEvent_Configured{Configured: &build_event_stream.TargetConfigured{
+						TargetKind: "go_test rule", TestSize: build_event_stream.TestSize_SMALL,
+					}},
+				},
+				{Payload: &build_event_stream.BuildEvent_WorkspaceStatus{WorkspaceStatus: &build_event_stream.WorkspaceStatus{
+					Item: []*build_event_stream.WorkspaceStatus_Item{{Key: "GIT_TREE_STATUS", Value: "Modified"}},
+				}}},
+				{
+					Id: testResultId("//pkg:test"),
+					Payload: &build_event_stream.BuildEvent_TestResult{TestResult: &build_event_stream.TestResult{
+						Status: test.status,
+					}},
+				},
+				{
+					Id: testSummaryId("//pkg:test"),
+					Payload: &build_event_stream.BuildEvent_TestSummary{TestSummary: &build_event_stream.TestSummary{
+						OverallStatus:        test.status,
+						FirstStartTimeMillis: 1_000, TotalRunDurationMillis: 2_000,
+					}},
+				},
+				{LastMessage: true},
+			} {
+				if result := event.GetTestResult(); result != nil && test.testXML {
+					result.TestActionOutput = []*build_event_stream.File{{Name: "test.xml"}}
+				}
+				tracker.TrackTargetsForEvent(ctx, event)
+			}
+			if test.wantCount == 0 {
+				require.Nil(t, client.stream)
+				return
+			}
+			require.NotNil(t, client.stream)
+			require.Len(t, client.stream.requests, 1)
+			require.Equal(t, "bb/foo", client.stream.requests[0].GetRepoUrl())
+			require.Len(t, client.stream.requests[0].GetTargetObservations(), test.wantCount)
+			observation := client.stream.requests[0].GetTargetObservations()[0]
+			require.Equal(t, "//pkg:test", observation.GetIdentity().GetTargetLabel())
+			require.Equal(t, test.wantOutcome, observation.GetObservation().GetOutcome())
+			require.Equal(t, test.wantSource, observation.GetObservation().GetSource())
+			require.Equal(t, "abcdef", observation.GetObservation().GetCommitSha())
+			require.True(t, observation.GetObservation().GetWorkspaceDirty())
+			require.Contains(t, observation.GetObservation().GetSourceUrl(), "/invocation/"+invocationID)
+			require.NotEmpty(t, observation.GetObservation().GetObservationId())
+		})
 	}
 }
 
