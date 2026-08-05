@@ -202,7 +202,7 @@ func splice(a, b net.Conn) {
 		defer wg.Done()
 		io.Copy(dst, src)
 		if cw, ok := dst.(closeWriter); ok {
-			cw.CloseWrite()
+			_ = cw.CloseWrite()
 		}
 	}
 	go cp(a, b)
