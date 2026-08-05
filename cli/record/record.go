@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_publisher"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -71,6 +72,16 @@ func HandleRecord(args []string) (int, error) {
 	if len(cmdArgs) == 0 {
 		log.Print("error: must provide a command to execute")
 		log.Print(usage)
+		return 1, nil
+	}
+
+	// Validate with the server's own parser: a tag list the server rejects
+	// fails the whole BES stream, and since publish errors are only logged at
+	// debug level, the invocation would be quietly broken while the command
+	// still exited 0.
+	joined := strings.Join(*tags, ",")
+	if _, err := invocation_format.SplitAndTrimAndDedupeTags(joined, true /*=validate*/); err != nil {
+		log.Printf("Invalid --tag list: %s (%d characters, max 255)", status.Message(err), len(joined))
 		return 1, nil
 	}
 

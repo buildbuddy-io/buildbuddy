@@ -14,6 +14,7 @@ go_library(
         "//proto:build_events_go_proto",
         "//proto:command_line_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//server/build_event_protocol/invocation_format",
         "//server/build_event_publisher",
         "//server/util/flag",
         "//server/util/grpc_client",
