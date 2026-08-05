@@ -179,18 +179,130 @@ plugins:
 
 func TestInstall_ToUserConfig_CreateNewConfig(t *testing.T) {
 	_, home := setup(t)
-	testfs.MakeDirAll(t, home, "test-plugin")
+	testfs.MakeDirAll(t, home, ".config/buildbuddy/test-plugin")
 
 	exitCode, err := HandleInstall([]string{"--path=./test-plugin", "--user"})
 
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 
-	config := testfs.ReadFileAsString(t, home, "buildbuddy.yaml")
+	config := testfs.ReadFileAsString(t, home, ".config/buildbuddy/bb.yaml")
 	expectedConfig := `plugins:
   - path: ./test-plugin
 `
 	require.Equal(t, expectedConfig, config)
+	_, err = os.Stat(filepath.Join(home, "buildbuddy.yaml"))
+	require.True(t, os.IsNotExist(err), "expected ~/buildbuddy.yaml not to be created, stat err=%v", err)
+}
+
+func TestGetConfiguredPlugins_PrefersXDGConfigHomeOverHome(t *testing.T) {
+	ws, home := setup(t)
+	xdg := testfs.MakeDirAll(t, filepath.Dir(home), "xdg")
+	setTestXDGConfigHome(t, xdg)
+	testfs.WriteAllFileContents(t, home, map[string]string{
+		"home-only/.empty": "",
+		"buildbuddy.yaml": `
+plugins:
+  - path: ./home-only
+`,
+	})
+	testfs.WriteAllFileContents(t, xdg, map[string]string{
+		"buildbuddy/xdg-only/.empty": "",
+		"buildbuddy/bb.yaml": `
+plugins:
+  - path: ./xdg-only
+`,
+	})
+
+	plugins, err := getConfiguredPlugins(ws)
+
+	require.NoError(t, err)
+	var ids []string
+	for _, p := range plugins {
+		id, err := p.VersionedID()
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	require.Equal(t, []string{filepath.Join(xdg, "buildbuddy", "xdg-only")}, ids)
+}
+
+func TestGetConfiguredPlugins_FallsBackToHomeWhenXDGConfigMissing(t *testing.T) {
+	ws, home := setup(t)
+	xdg := testfs.MakeDirAll(t, filepath.Dir(home), "xdg")
+	setTestXDGConfigHome(t, xdg)
+	testfs.WriteAllFileContents(t, home, map[string]string{
+		"home-only/.empty": "",
+		"buildbuddy.yaml": `
+plugins:
+  - path: ./home-only
+`,
+	})
+
+	plugins, err := getConfiguredPlugins(ws)
+
+	require.NoError(t, err)
+	var ids []string
+	for _, p := range plugins {
+		id, err := p.VersionedID()
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	require.Equal(t, []string{filepath.Join(home, "home-only")}, ids)
+}
+
+func TestGetConfiguredPlugins_DefaultsXDGConfigHomeToDotConfig(t *testing.T) {
+	ws, home := setup(t)
+	// Leave XDG_CONFIG_HOME unset; loader should default to ~/.config.
+	testfs.WriteAllFileContents(t, home, map[string]string{
+		".config/buildbuddy/dot-config-only/.empty": "",
+		".config/buildbuddy/bb.yaml": `
+plugins:
+  - path: ./dot-config-only
+`,
+	})
+
+	plugins, err := getConfiguredPlugins(ws)
+
+	require.NoError(t, err)
+	var ids []string
+	for _, p := range plugins {
+		id, err := p.VersionedID()
+		require.NoError(t, err)
+		ids = append(ids, id)
+	}
+	require.Equal(t, []string{filepath.Join(home, ".config", "buildbuddy", "dot-config-only")}, ids)
+}
+
+func TestInstall_ToUserConfig_PreferExistingXDGConfig(t *testing.T) {
+	_, home := setup(t)
+	xdg := testfs.MakeDirAll(t, filepath.Dir(home), "xdg")
+	setTestXDGConfigHome(t, xdg)
+	testfs.MakeDirAll(t, xdg, "buildbuddy/test-plugin")
+	testfs.WriteAllFileContents(t, xdg, map[string]string{"buildbuddy/bb.yaml": ""})
+
+	exitCode, err := HandleInstall([]string{"--path=./test-plugin", "--user"})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	require.Equal(t, "plugins:\n  - path: ./test-plugin\n", testfs.ReadFileAsString(t, xdg, "buildbuddy/bb.yaml"))
+	_, err = os.Stat(filepath.Join(home, "buildbuddy.yaml"))
+	require.True(t, os.IsNotExist(err), "expected ~/buildbuddy.yaml not to be created, stat err=%v", err)
+}
+
+func TestInstall_ToUserConfig_WriteToExistingXDGConfigWhenHomeConfigExists(t *testing.T) {
+	_, home := setup(t)
+	xdg := testfs.MakeDirAll(t, filepath.Dir(home), "xdg")
+	setTestXDGConfigHome(t, xdg)
+	testfs.MakeDirAll(t, xdg, "buildbuddy/test-plugin")
+	testfs.WriteAllFileContents(t, home, map[string]string{"buildbuddy.yaml": ""})
+	testfs.WriteAllFileContents(t, xdg, map[string]string{"buildbuddy/bb.yaml": ""})
+
+	exitCode, err := HandleInstall([]string{"--path=./test-plugin", "--user"})
+
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+	require.Empty(t, testfs.ReadFileAsString(t, home, "buildbuddy.yaml"))
+	require.Equal(t, "plugins:\n  - path: ./test-plugin\n", testfs.ReadFileAsString(t, xdg, "buildbuddy/bb.yaml"))
 }
 
 func TestParsePluginSpec(t *testing.T) {
@@ -452,6 +564,7 @@ func setup(t *testing.T) (ws, home string) {
 	home = testfs.MakeDirAll(t, root, "home")
 
 	setTestHomeDir(t, home)
+	setTestXDGConfigHome(t, "")
 	setTestWorkDir(t, ws)
 	workspace.SetForTest(t, ws)
 
@@ -474,5 +587,21 @@ func setTestHomeDir(t *testing.T, path string) {
 	t.Cleanup(func() {
 		err := os.Setenv("HOME", original)
 		require.NoError(t, err)
+	})
+}
+
+func setTestXDGConfigHome(t *testing.T, path string) {
+	original, hadOriginal := os.LookupEnv("XDG_CONFIG_HOME")
+	if path == "" {
+		require.NoError(t, os.Unsetenv("XDG_CONFIG_HOME"))
+	} else {
+		require.NoError(t, os.Setenv("XDG_CONFIG_HOME", path))
+	}
+	t.Cleanup(func() {
+		if hadOriginal {
+			require.NoError(t, os.Setenv("XDG_CONFIG_HOME", original))
+		} else {
+			require.NoError(t, os.Unsetenv("XDG_CONFIG_HOME"))
+		}
 	})
 }
