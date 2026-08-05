@@ -144,15 +144,9 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 			LastModifyUsec:  now.UnixMicro(),
 			LastAccessUsec:  now.UnixMicro(),
 		}
-		protoBytes, err := proto.Marshal(md)
-		if err != nil {
-			return err
-		}
-		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   fileMetadataKey,
-				Value: protoBytes,
-			},
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+			Key:          fileMetadataKey,
+			FileMetadata: md,
 		}))
 		entries := []dbsm.Entry{entry}
 		writeRsp, err := r.Update(entries)
@@ -283,6 +277,67 @@ func TestReplicaDirectReadWrite(t *testing.T) {
 	rsp, err := directRead(t, repl, []byte("key-name"))
 	require.NoError(t, err)
 	require.Equal(t, val, rsp.GetKv().GetValue())
+}
+
+// The generic KV writers must refuse file-record keys: records must be written
+// through SetRequest (and mutated via UpdateAtime/Delete) so validation and any
+// state derived from record writes can rely on those paths being exhaustive.
+func TestDirectWriteRefusesFileRecordKeys(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		require.NoError(t, repl.Close())
+	})
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	fileRecord := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   rspb.CacheType_CAS,
+			PartitionId: "default",
+			GroupId:     interfaces.AuthAnonymousUser,
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	fs := filestore.New()
+	key, err := fs.PebbleKey(fileRecord)
+	require.NoError(t, err)
+	fileMetadataKey, err := key.Bytes(filestore.Version5)
+	require.NoError(t, err)
+
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: fileMetadataKey, Value: []byte("unindexed")},
+	}))
+	writeRsp, err := repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponse(writeRsp[0].Result.Data).AnyError()
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+
+	// CAS is the same generic writer and must refuse too. rbuilder already
+	// rejects CAS on splittable keys client-side, so hand-roll the batch to
+	// prove the apply-path guard holds for callers that bypass rbuilder.
+	casBatch, err := proto.Marshal(&rfpb.BatchCmdRequest{
+		Union: []*rfpb.RequestUnion{{Value: &rfpb.RequestUnion_Cas{
+			Cas: &rfpb.CASRequest{
+				Kv: &rfpb.KV{Key: fileMetadataKey, Value: []byte("unindexed")},
+			},
+		}}},
+	})
+	require.NoError(t, err)
+	casRsp, err := repl.Update([]dbsm.Entry{{Cmd: casBatch, Index: 3}})
+	require.NoError(t, err)
+	err = rbuilder.NewBatchResponse(casRsp[0].Result.Data).AnyError()
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
+
+	// Neither write may have landed.
+	_, err = directRead(t, repl, fileMetadataKey)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
 }
 
 func TestReplicaIncrementSnapshotRestore(t *testing.T) {
@@ -1316,15 +1371,11 @@ func TestFileWriteAndFind(t *testing.T) {
 	require.NoError(t, err)
 	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
-	val, err := proto.Marshal(md)
-	require.NoError(t, err)
 
-	// Do a DirectWrite.
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   fileMetadataKey,
-			Value: val,
-		},
+	// Write the record.
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+		Key:          fileMetadataKey,
+		FileMetadata: md,
 	}))
 	entries := []dbsm.Entry{entry}
 	writeRsp, err := repl.Update(entries)
@@ -1384,11 +1435,10 @@ func TestFileFindZeroLengthReportsAbsent(t *testing.T) {
 	require.NoError(t, err)
 	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
-	val, err := proto.Marshal(md)
-	require.NoError(t, err)
 
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{Key: fileMetadataKey, Value: val},
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+		Key:          fileMetadataKey,
+		FileMetadata: md,
 	}))
 	_, err = repl.Update([]dbsm.Entry{entry})
 	require.NoError(t, err)
@@ -2163,15 +2213,11 @@ func TestUpdateATime(t *testing.T) {
 	require.NoError(t, err)
 	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
-	val, err := proto.Marshal(md)
-	require.NoError(t, err)
 
 	// Write the initial file metadata
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   fileMetadataKey,
-			Value: val,
-		},
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+		Key:          fileMetadataKey,
+		FileMetadata: md,
 	}))
 	entries := []dbsm.Entry{entry}
 	writeRsp, err := repl.Update(entries)
@@ -2268,14 +2314,10 @@ func TestUpdateATimeGCSCustomTime(t *testing.T) {
 	require.NoError(t, err)
 	fileMetadataKey, err := key.Bytes(filestore.Version5)
 	require.NoError(t, err)
-	val, err := proto.Marshal(md)
-	require.NoError(t, err)
 
-	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   fileMetadataKey,
-			Value: val,
-		},
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+		Key:          fileMetadataKey,
+		FileMetadata: md,
 	}))
 	writeRsp, err := repl.Update([]dbsm.Entry{entry})
 	require.NoError(t, err)
