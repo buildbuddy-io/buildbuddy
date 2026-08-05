@@ -229,6 +229,7 @@ gazelle_python_manifest(
 # gazelle:resolve go github.com/bazelbuild/bazel-gazelle/rule @bazel_gazelle//rule
 # gazelle:resolve go github.com/bazelbuild/rules_go/go/runfiles @io_bazel_rules_go//go/runfiles
 # gazelle:resolve go github.com/bazelbuild/rules_go/go/tools/bazel @io_bazel_rules_go//go/tools/bazel
+# gazelle:resolve go github.com/bazel-contrib/bazel-gazelle/v2/label @bazel_gazelle//v2/label
 gazelle(
     name = "gazelle",
     gazelle = ":bb_gazelle_binary",
