@@ -26,6 +26,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -62,6 +63,8 @@ var (
 	spanSystem = flag.Bool("system", false, "scan: the system span (\\x03, txn/session/partition).")
 	partition  = flag.String("partition", "", "scan: cache-data keys for this partition id (e.g. PT1).")
 	rangeID    = flag.Uint64("range", 0, "scan: keys within this range id.")
+	scanStart  = flag.String("start", "", "scan: explicit start key (key spec); scans to --end or the end of the keyspace.")
+	scanEnd    = flag.String("end", "", "scan: explicit end key (key spec), exclusive.")
 )
 
 func main() {
@@ -78,10 +81,23 @@ func main() {
 	// the subcommand (the first positional), so re-parse the args that follow
 	// it; otherwise `scan --meta --limit 50` and similar are ignored.
 	cmd := args[0]
-	if err := flag.CommandLine.Parse(args[1:]); err != nil {
-		os.Exit(2)
+	// Parse flags that appear after the subcommand, allowing them to be
+	// interspersed with positionals (stdlib flag stops at the first positional,
+	// so loop, pulling positionals out one at a time). This makes both
+	// `scan --max 1 txn` and `scan txn --max 1` work.
+	var rest []string
+	remaining := args[1:]
+	for len(remaining) > 0 {
+		if err := flag.CommandLine.Parse(remaining); err != nil {
+			os.Exit(2)
+		}
+		remaining = flag.CommandLine.Args()
+		if len(remaining) == 0 {
+			break
+		}
+		rest = append(rest, remaining[0])
+		remaining = remaining[1:]
 	}
-	rest := flag.CommandLine.Args()
 
 	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker("mdcli"))
 	if err := clientidentity.Register(env); err != nil {
@@ -95,6 +111,12 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
+
+	// NHID->pod names are only shown by the topology commands.
+	switch cmd {
+	case "ranges", "meta", "range", "lease", "leases", "which":
+		loadRegistry(ctx, client)
+	}
 
 	if err := run(ctx, client, cmd, rest); err != nil {
 		log.Fatalf("%s: %s", cmd, err)
@@ -220,6 +242,18 @@ func runScan(ctx context.Context, client rfspb.ApiClient, args []string) error {
 // or a positional key prefix.
 func scanSpan(ctx context.Context, client rfspb.ApiClient, args []string) (start, end []byte, err error) {
 	switch {
+	case *scanStart != "" || *scanEnd != "":
+		if *scanStart != "" {
+			if start, err = parseKey(*scanStart); err != nil {
+				return nil, nil, err
+			}
+		}
+		if *scanEnd != "" {
+			if end, err = parseKey(*scanEnd); err != nil {
+				return nil, nil, err
+			}
+		}
+		return start, end, nil
 	case *spanMeta:
 		return constants.MetaRangePrefix, constants.SystemPrefix, nil
 	case *spanSystem:
@@ -241,7 +275,7 @@ func scanSpan(ctx context.Context, client rfspb.ApiClient, args []string) (start
 		}
 		return prefix, prefixEnd(prefix), nil
 	default:
-		return nil, nil, fmt.Errorf("scan needs a span: a key prefix, or one of --local/--meta/--system/--partition/--range")
+		return nil, nil, fmt.Errorf("scan needs a span: a key prefix, or one of --start/--end/--meta/--system/--partition/--range")
 	}
 }
 
@@ -269,14 +303,17 @@ func runRange(ctx context.Context, client rfspb.ApiClient, id uint64) error {
 	fmt.Printf("range:      %d (generation %d)\n", id, rd.GetGeneration())
 	fmt.Printf("span:       %s .. %s\n", renderKey(rd.GetStart()), renderKey(rd.GetEnd()))
 	leaderID := rsp.GetLeader().GetLeaderId()
-	fmt.Printf("responder:  %s (NHID; has_lease=%t)\n", rsp.GetNhid(), rsp.GetHasLease())
+	fmt.Printf("responder NHID: %s (has_lease=%t)\n", renderNHID(rsp.GetNhid()), rsp.GetHasLease())
 	fmt.Printf("leader:     replica %d, NHID %s (term %d, valid=%t)\n",
-		leaderID, orUnknown(replicaNHID(rsp, leaderID)),
+		leaderID, orUnknown(renderNHID(replicaNHID(rsp, leaderID))),
 		rsp.GetLeader().GetTerm(), rsp.GetLeader().GetValid())
-	fmt.Printf("replicas:   %s\n", replicaNHIDs(rd))
+	fmt.Printf("replicas (descriptor): %s\n", replicaNHIDs(rd))
 	if m := rsp.GetMembership(); m != nil {
-		fmt.Printf("voters:     %d, non-voters: %d, witnesses: %d\n",
-			len(m.GetVoters()), len(m.GetNonVoters()), len(m.GetWitnesses()))
+		fmt.Printf("membership:\n")
+		fmt.Printf("  voters:     %s\n", fmtReplicas(m.GetVoters()))
+		fmt.Printf("  non-voters: %s\n", fmtReplicas(m.GetNonVoters()))
+		fmt.Printf("  witnesses:  %s\n", fmtReplicas(m.GetWitnesses()))
+		fmt.Printf("  removed:    %s\n", fmtReplicaIDs(m.GetRemoved()))
 	}
 	return nil
 }
@@ -290,9 +327,9 @@ func runLease(ctx context.Context, client rfspb.ApiClient, id uint64) error {
 	leaderID := rsp.GetLeader().GetLeaderId()
 	fmt.Printf("range %d [%s .. %s]\n", id, renderKey(rd.GetStart()), renderKey(rd.GetEnd()))
 	fmt.Printf("  leader:         replica %d, NHID %s (term %d, valid=%t)\n",
-		leaderID, orUnknown(replicaNHID(rsp, leaderID)),
+		leaderID, orUnknown(renderNHID(replicaNHID(rsp, leaderID))),
 		rsp.GetLeader().GetTerm(), rsp.GetLeader().GetValid())
-	fmt.Printf("  responder NHID: %s (has_lease=%t)\n", rsp.GetNhid(), rsp.GetHasLease())
+	fmt.Printf("  responder NHID: %s (has_lease=%t)\n", renderNHID(rsp.GetNhid()), rsp.GetHasLease())
 	return nil
 }
 
@@ -301,15 +338,17 @@ func runLeases(ctx context.Context, client rfspb.ApiClient) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%-8s %-12s %s\n", "RANGE", "LEADER", "SPAN")
+	fmt.Printf("%-8s %-8s %-20s %s\n", "RANGE", "LEADER", "LEADER-POD", "SPAN")
 	for _, rd := range rds {
 		rsp, err := client.GetRangeDebugInfo(ctx, &rfpb.GetRangeDebugInfoRequest{RangeId: rd.GetRangeId()})
 		if err != nil {
-			fmt.Printf("%-8d %-12s %s\n", rd.GetRangeId(), "ERR: "+err.Error(), renderKey(rd.GetStart()))
+			fmt.Printf("%-8d %-8s %-20s %s\n", rd.GetRangeId(), "ERR", "", err.Error())
 			continue
 		}
-		fmt.Printf("%-8d replica %-4d %s .. %s\n",
-			rd.GetRangeId(), rsp.GetLeader().GetLeaderId(),
+		leaderID := rsp.GetLeader().GetLeaderId()
+		pod := orUnknown(nodePods[replicaNHID(rsp, leaderID)])
+		fmt.Printf("%-8d r%-7d %-20s %s .. %s\n",
+			rd.GetRangeId(), leaderID, pod,
 			renderKey(rd.GetStart()), renderKey(rd.GetEnd()))
 	}
 	return nil
@@ -476,11 +515,31 @@ func isPrintable(b []byte) bool {
 }
 
 func replicaNHIDs(rd *rfpb.RangeDescriptor) string {
-	var nhids []string
-	for _, r := range rd.GetReplicas() {
-		nhids = append(nhids, fmt.Sprintf("r%d@%s", r.GetReplicaId(), r.GetNhid()))
+	return fmtReplicas(rd.GetReplicas())
+}
+
+// fmtReplicas renders replica descriptors as "r<id>@<nhid>, ..." or "(none)".
+func fmtReplicas(rs []*rfpb.ReplicaDescriptor) string {
+	if len(rs) == 0 {
+		return "(none)"
 	}
-	return strings.Join(nhids, ",")
+	out := make([]string, 0, len(rs))
+	for _, r := range rs {
+		out = append(out, fmt.Sprintf("r%d@%s", r.GetReplicaId(), renderNHID(r.GetNhid())))
+	}
+	return strings.Join(out, ", ")
+}
+
+// fmtReplicaIDs renders replica ids as "r<id>, ..." or "(none)".
+func fmtReplicaIDs(ids []uint64) string {
+	if len(ids) == 0 {
+		return "(none)"
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, fmt.Sprintf("r%d", id))
+	}
+	return strings.Join(out, ", ")
 }
 
 // replicaNHID resolves a replica id to its NHID using the response's range
@@ -509,6 +568,52 @@ func orUnknown(s string) string {
 		return "?"
 	}
 	return s
+}
+
+// nodePods maps NHID -> pod name (e.g. "metadata-server-2"), populated once
+// from the registry. Best-effort: empty if the registry is unavailable.
+var nodePods = map[string]string{}
+
+// loadRegistry populates nodePods from GetRegistry, deriving each node's pod
+// name from its advertised address.
+func loadRegistry(ctx context.Context, client rfspb.ApiClient) {
+	rsp, err := client.GetRegistry(ctx, &rfpb.GetRegistryRequest{})
+	if err != nil {
+		return
+	}
+	for _, c := range rsp.GetConnections() {
+		if p := podName(c.GetGrpcAddress()); p != "" {
+			nodePods[c.GetNhid()] = p
+		} else if p := podName(c.GetRaftAddress()); p != "" {
+			nodePods[c.GetNhid()] = p
+		}
+	}
+}
+
+// podName extracts a pod name from an advertised address: the first DNS label
+// of the host (metadata-server-2.headless...:4772 -> metadata-server-2).
+// Returns "" for IP addresses (e.g. local dev), which have no pod name.
+func podName(addr string) string {
+	host := addr
+	if i := strings.LastIndex(host, ":"); i >= 0 {
+		host = host[:i]
+	}
+	if host == "" || net.ParseIP(host) != nil {
+		return ""
+	}
+	label, _, _ := strings.Cut(host, ".")
+	return label
+}
+
+// renderNHID annotates an NHID with its pod name when known.
+func renderNHID(nhid string) string {
+	if nhid == "" {
+		return ""
+	}
+	if p := nodePods[nhid]; p != "" {
+		return fmt.Sprintf("%s (%s)", nhid, p)
+	}
+	return nhid
 }
 
 func inRange(key []byte, rd *rfpb.RangeDescriptor) bool {
@@ -541,8 +646,8 @@ Usage:
 
 Commands:
   get <key>        Read one key (raw KV). Value decoded by keyspace when possible.
-  scan <span>      Scan a key span. Span: a key prefix, or --meta/--system/
-                   --partition PT1/--range <id>.
+  scan <span>      Scan a key span. Span: a key prefix, --start/--end <keyspec>,
+                   or --meta/--system/--partition PT1/--range <id>.
   ranges | meta    List all range descriptors (decodes the meta range).
   range <id>       Show one range: descriptor, lease holder, leader, membership.
   lease <id>       Show the lease/leader for one range (terse).
