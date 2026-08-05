@@ -10,6 +10,7 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/printlog/compact",
+        "//cli/printlog/detect",
         "//proto:remote_execution_go_proto",
         "//proto:remote_execution_log_go_proto",
         "//server/util/proto",
