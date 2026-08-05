@@ -1,7 +1,10 @@
 package ssh
 
 import (
+	"io"
+	"net"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -69,6 +72,9 @@ func TestParseForward(t *testing.T) {
 	}{
 		{name: "port host hostport", spec: "8080:localhost:80", wantListen: "127.0.0.1:8080", wantDial: "localhost:80"},
 		{name: "explicit bind", spec: "0.0.0.0:8080:localhost:80", wantListen: "0.0.0.0:8080", wantDial: "localhost:80"},
+		// Empty bind means "all interfaces" to OpenSSH; we keep loopback so a
+		// forward is never exposed to the network without asking.
+		{name: "empty bind stays loopback", spec: ":8080:localhost:80", wantListen: "127.0.0.1:8080", wantDial: "localhost:80"},
 		{name: "ipv6 dial host", spec: "8080:[::1]:80", wantListen: "127.0.0.1:8080", wantDial: "[::1]:80"},
 		{name: "ipv6 bind", spec: "[::1]:8080:localhost:80", wantListen: "[::1]:8080", wantDial: "localhost:80"},
 		{name: "too few parts", spec: "8080:localhost", wantErr: true},
@@ -91,5 +97,60 @@ func TestParseForward(t *testing.T) {
 			require.Equal(t, tc.wantListen, listen)
 			require.Equal(t, tc.wantDial, dial)
 		})
+	}
+}
+
+// TestForwardPropagatesEOF pins the half-close behavior that request/response
+// protocols depend on: after the client half-closes, the far end must see EOF
+// (so it can reply), and the reply must arrive in full.
+func TestForwardPropagatesEOF(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	// The "far end" reads until EOF, then writes a reply and closes. It has to
+	// be a real TCP conn: net.Pipe satisfies net.Conn but has no CloseWrite,
+	// so a half-close could never reach it.
+	far, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer far.Close()
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		c, err := far.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		req, err := io.ReadAll(c)
+		if err == nil {
+			c.Write([]byte("reply-to:" + string(req)))
+		}
+	}()
+
+	dial := func() (net.Conn, error) { return net.Dial("tcp", far.Addr().String()) }
+	go forward(ln, dial, "test")
+
+	c, err := net.Dial("tcp", ln.Addr().String())
+	require.NoError(t, err)
+	defer c.Close()
+
+	_, err = c.Write([]byte("ping"))
+	require.NoError(t, err)
+	// Half-close: without EOF propagation the far end's ReadAll never returns
+	// and this test times out.
+	require.NoError(t, c.(*net.TCPConn).CloseWrite())
+
+	// Without the deadline a missing half-close hangs this read until the
+	// package timeout, reporting a goroutine dump instead of a real failure.
+	require.NoError(t, c.SetReadDeadline(time.Now().Add(5*time.Second)))
+	got, err := io.ReadAll(c)
+	require.NoError(t, err, "reply should arrive before the deadline")
+	require.Equal(t, "reply-to:ping", string(got), "reply should arrive complete")
+
+	select {
+	case <-served:
+	case <-time.After(5 * time.Second):
+		t.Fatal("far end never observed EOF")
 	}
 }
