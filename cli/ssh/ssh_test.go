@@ -141,8 +141,11 @@ func TestForwardPropagatesEOF(t *testing.T) {
 	// and this test times out.
 	require.NoError(t, c.(*net.TCPConn).CloseWrite())
 
+	// Without the deadline a missing half-close hangs this read until the
+	// package timeout, reporting a goroutine dump instead of a real failure.
+	require.NoError(t, c.SetReadDeadline(time.Now().Add(5*time.Second)))
 	got, err := io.ReadAll(c)
-	require.NoError(t, err)
+	require.NoError(t, err, "reply should arrive before the deadline")
 	require.Equal(t, "reply-to:ping", string(got), "reply should arrive complete")
 
 	select {

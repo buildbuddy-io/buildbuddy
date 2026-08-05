@@ -613,14 +613,18 @@ func HandleSSHServer(args []string) (int, error) {
 		var t *time.Timer
 		t = time.AfterFunc(*gracePeriod, func() {
 			mu.Lock()
-			defer mu.Unlock()
 			// Stop doesn't unschedule a timer that already fired, so this
 			// callback may belong to a grace period that has been superseded
 			// by a client connecting and disconnecting again.
 			if idleTimer != t || activeConns != 0 {
+				mu.Unlock()
 				return
 			}
 			idleTimer = nil
+			// Released before Shutdown: it waits for connections to drain,
+			// and both connection callbacks take this lock.
+			mu.Unlock()
+
 			log.Printf("No clients connected for %s; shutting down.", *gracePeriod)
 			shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
