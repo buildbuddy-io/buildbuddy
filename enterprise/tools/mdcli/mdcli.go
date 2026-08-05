@@ -121,6 +121,15 @@ func run(ctx context.Context, client rfspb.ApiClient, cmd string, args []string)
 			return fmt.Errorf("invalid range id %q: %s", args[0], err)
 		}
 		return runRange(ctx, client, id)
+	case "lease":
+		if len(args) != 1 {
+			return fmt.Errorf("usage: lease <id>")
+		}
+		id, err := strconv.ParseUint(args[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid range id %q: %s", args[0], err)
+		}
+		return runLease(ctx, client, id)
 	case "leases":
 		return runLeases(ctx, client)
 	case "which":
@@ -259,14 +268,31 @@ func runRange(ctx context.Context, client rfspb.ApiClient, id uint64) error {
 	rd := rsp.GetRangeDescriptor()
 	fmt.Printf("range:      %d (generation %d)\n", id, rd.GetGeneration())
 	fmt.Printf("span:       %s .. %s\n", renderKey(rd.GetStart()), renderKey(rd.GetEnd()))
-	fmt.Printf("responder:  %s (has_lease=%t)\n", rsp.GetNhid(), rsp.GetHasLease())
-	fmt.Printf("leader:     replica %d (term %d, valid=%t)\n",
-		rsp.GetLeader().GetLeaderId(), rsp.GetLeader().GetTerm(), rsp.GetLeader().GetValid())
+	leaderID := rsp.GetLeader().GetLeaderId()
+	fmt.Printf("responder:  %s (NHID; has_lease=%t)\n", rsp.GetNhid(), rsp.GetHasLease())
+	fmt.Printf("leader:     replica %d, NHID %s (term %d, valid=%t)\n",
+		leaderID, orUnknown(replicaNHID(rsp, leaderID)),
+		rsp.GetLeader().GetTerm(), rsp.GetLeader().GetValid())
 	fmt.Printf("replicas:   %s\n", replicaNHIDs(rd))
 	if m := rsp.GetMembership(); m != nil {
 		fmt.Printf("voters:     %d, non-voters: %d, witnesses: %d\n",
 			len(m.GetVoters()), len(m.GetNonVoters()), len(m.GetWitnesses()))
 	}
+	return nil
+}
+
+func runLease(ctx context.Context, client rfspb.ApiClient, id uint64) error {
+	rsp, err := client.GetRangeDebugInfo(ctx, &rfpb.GetRangeDebugInfoRequest{RangeId: id})
+	if err != nil {
+		return err
+	}
+	rd := rsp.GetRangeDescriptor()
+	leaderID := rsp.GetLeader().GetLeaderId()
+	fmt.Printf("range %d [%s .. %s]\n", id, renderKey(rd.GetStart()), renderKey(rd.GetEnd()))
+	fmt.Printf("  leader:         replica %d, NHID %s (term %d, valid=%t)\n",
+		leaderID, orUnknown(replicaNHID(rsp, leaderID)),
+		rsp.GetLeader().GetTerm(), rsp.GetLeader().GetValid())
+	fmt.Printf("  responder NHID: %s (has_lease=%t)\n", rsp.GetNhid(), rsp.GetHasLease())
 	return nil
 }
 
@@ -457,6 +483,34 @@ func replicaNHIDs(rd *rfpb.RangeDescriptor) string {
 	return strings.Join(nhids, ",")
 }
 
+// replicaNHID resolves a replica id to its NHID using the response's range
+// descriptor, falling back to live membership. Returns "" if not found.
+func replicaNHID(rsp *rfpb.GetRangeDebugInfoResponse, replicaID uint64) string {
+	if replicaID == 0 {
+		return ""
+	}
+	for _, r := range rsp.GetRangeDescriptor().GetReplicas() {
+		if r.GetReplicaId() == replicaID {
+			return r.GetNhid()
+		}
+	}
+	if m := rsp.GetMembership(); m != nil {
+		for _, r := range append(m.GetVoters(), m.GetNonVoters()...) {
+			if r.GetReplicaId() == replicaID {
+				return r.GetNhid()
+			}
+		}
+	}
+	return ""
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "?"
+	}
+	return s
+}
+
 func inRange(key []byte, rd *rfpb.RangeDescriptor) bool {
 	if bytes.Compare(key, rd.GetStart()) < 0 {
 		return false
@@ -491,6 +545,7 @@ Commands:
                    --partition PT1/--range <id>.
   ranges | meta    List all range descriptors (decodes the meta range).
   range <id>       Show one range: descriptor, lease holder, leader, membership.
+  lease <id>       Show the lease/leader for one range (terse).
   leases           List every range with its current leader.
   which <key>      Show which range owns a key.
   partitions       List partition descriptors.

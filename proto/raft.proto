@@ -762,6 +762,10 @@ message RaftLeaderInfo {
 
 message GetRangeDebugInfoRequest {
   uint64 range_id = 1;
+
+  // If set, do not forward to another replica when this node does not host the
+  // range; answer locally or fail. Bounds forwarding to a single hop.
+  bool skip_forward = 2;
 }
 
 message GetRangeDebugInfoResponse {

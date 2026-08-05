@@ -607,6 +607,17 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 	}
 }
 func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
+	// GetRangeDebugInfo reads node-local raft state (leader/lease/membership),
+	// so it only works on a node that hosts the range. If this node doesn't,
+	// forward to a replica that does, so a caller connected to any single node
+	// (e.g. mdcli) can get debug info for any range. SkipForward bounds this to
+	// one hop.
+	if _, err := s.GetReplica(req.GetRangeId()); err != nil {
+		if req.GetSkipForward() {
+			return nil, err
+		}
+		return s.forwardGetRangeDebugInfo(ctx, req)
+	}
 	leaderID, term, valid, _ := s.nodeHost.GetLeaderID(req.GetRangeId())
 	lastReplicaIDKey := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", req.GetRangeId())))
 	lastReplicaIDBytes, err := s.sender.DirectRead(ctx, lastReplicaIDKey)
@@ -665,6 +676,42 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 	}
 	rsp.Membership = membershipRsp
 	return rsp, nil
+}
+
+// forwardGetRangeDebugInfo forwards a GetRangeDebugInfo request to a replica
+// that hosts the range, for when the local node does not. It looks the range's
+// replicas up from the meta range and sets SkipForward so the target answers
+// locally rather than forwarding again.
+func (s *Store) forwardGetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
+	rds, err := s.sender.LookupRangeDescriptorsByIDs(ctx, []uint64{req.GetRangeId()})
+	if err != nil {
+		return nil, status.WrapErrorf(err, "failed to look up range %d in meta range", req.GetRangeId())
+	}
+	if len(rds) == 0 {
+		return nil, status.NotFoundErrorf("range %d not found", req.GetRangeId())
+	}
+	fwd := &rfpb.GetRangeDebugInfoRequest{RangeId: req.GetRangeId(), SkipForward: true}
+	var lastErr error
+	for _, replica := range rds[0].GetReplicas() {
+		if replica.GetNhid() == s.NHID() {
+			continue
+		}
+		c, err := s.apiClient.GetForReplica(ctx, replica)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		rsp, err := c.GetRangeDebugInfo(ctx, fwd)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return rsp, nil
+	}
+	if lastErr == nil {
+		lastErr = status.NotFoundErrorf("no reachable replica hosts range %d", req.GetRangeId())
+	}
+	return nil, status.WrapErrorf(lastErr, "failed to get debug info for range %d from any replica", req.GetRangeId())
 }
 
 // DebugGet reads a single raw key through the Sender, so the caller needs no
