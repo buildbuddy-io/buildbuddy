@@ -667,6 +667,113 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 	return rsp, nil
 }
 
+// DebugGet reads a single raw key through the Sender, so the caller needs no
+// routing state. Used by the mdcli debug tool.
+func (s *Store) DebugGet(ctx context.Context, req *rfpb.DebugGetRequest) (*rfpb.DebugGetResponse, error) {
+	buf, err := s.sender.DirectRead(ctx, req.GetKey())
+	if err != nil {
+		return nil, err
+	}
+	return &rfpb.DebugGetResponse{
+		Kv: &rfpb.KV{
+			Key:   req.GetKey(),
+			Value: buf,
+		},
+	}, nil
+}
+
+const (
+	// defaultDebugScanPageSize bounds a DebugScan page when the caller passes
+	// no (or a non-positive) limit, so a scan never buffers a whole range.
+	defaultDebugScanPageSize = 1000
+	// maxDebugScanPageSize caps the per-page result count regardless of the
+	// requested limit.
+	maxDebugScanPageSize = 10000
+)
+
+// DebugScan does a forward, paginated raw key scan over [start, end) through
+// the Sender. Each call is bounded to the range that owns `start`; the returned
+// next_start cursor steps across range boundaries so repeated calls walk the
+// whole span. Reads are linearizable, matching DebugGet, so scan and get
+// present a consistent view. Used by the mdcli debug tool.
+func (s *Store) DebugScan(ctx context.Context, req *rfpb.DebugScanRequest) (*rfpb.DebugScanResponse, error) {
+	start := req.GetStart()
+	if len(start) == 0 {
+		// Empty start means "from the beginning of the routable keyspace",
+		// which is the meta range; LookupRangeDescriptor rejects an empty key.
+		start = constants.MetaRangePrefix
+	}
+	end := req.GetEnd()
+
+	limit := req.GetLimit()
+	if limit <= 0 {
+		limit = defaultDebugScanPageSize
+	}
+	if limit > maxDebugScanPageSize {
+		limit = maxDebugScanPageSize
+	}
+
+	// Bound the scan to the range that owns `start` so a single routed read
+	// stays within one range's keyspace. skipCache=true so the range end comes
+	// from a fresh descriptor: a stale cached descriptor from before a split
+	// would make the cursor jump past a newly-created range. This is
+	// best-effort — a split racing this call can still skip keys, which is
+	// acceptable for a browse tool.
+	rd, err := s.sender.LookupRangeDescriptor(ctx, start, true /*=skipCache*/)
+	if err != nil {
+		return nil, status.WrapErrorf(err, "failed to look up range for key %q", start)
+	}
+	rangeEnd := rd.GetEnd()
+	// rangeEnd bounds the current range; boundedByRange is true when the range
+	// ends before the caller's end (or the caller has no end).
+	boundedByRange := len(rangeEnd) > 0 && (len(end) == 0 || bytes.Compare(rangeEnd, end) < 0)
+	scanEnd := end
+	if boundedByRange {
+		scanEnd = rangeEnd
+	}
+
+	// Fetch one extra KV beyond the page so we can tell whether the range has
+	// more keys past this page without an empty round-trip at the range
+	// boundary.
+	scanReq := &rfpb.ScanRequest{
+		Start:    start,
+		End:      scanEnd,
+		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+		Limit:    limit + 1,
+	}
+	batch, err := rbuilder.NewBatchBuilder().Add(scanReq).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.sender.SyncRead(ctx, start, batch)
+	if err != nil {
+		return nil, err
+	}
+	scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp).ScanResponse(0)
+	if err != nil {
+		return nil, err
+	}
+	kvs := scanRsp.GetKvs()
+
+	// Compute the cursor. If we got the extra KV, the range has more keys past
+	// this page: trim to the page size and continue just past the last returned
+	// key (Next() == SEEKGT). Otherwise this range is exhausted for
+	// [start, scanEnd): step to the range end, unless the caller's end is
+	// reached.
+	var nextStart []byte
+	if int64(len(kvs)) > limit {
+		kvs = kvs[:limit]
+		nextStart = keys.Key(kvs[len(kvs)-1].GetKey()).Next()
+	} else if boundedByRange {
+		nextStart = rangeEnd
+	}
+
+	return &rfpb.DebugScanResponse{
+		Kvs:       kvs,
+		NextStart: nextStart,
+	}, nil
+}
+
 func (s *Store) AdminUpdateDescriptor(ctx context.Context, req *rfpb.AdminUpdateDescriptorRequest) (*rfpb.AdminUpdateDescriptorResponse, error) {
 	if rangeChange := req.GetRangeDescriptorChange(); rangeChange != nil {
 		oldDesc := rangeChange.GetOldDescriptor()

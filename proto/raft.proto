@@ -790,3 +790,31 @@ message AdminUpdateDescriptorRequest {
 }
 
 message AdminUpdateDescriptorResponse {}
+
+// DebugGet reads a single raw key. Used by the mdcli debug tool.
+message DebugGetRequest {
+  bytes key = 1;
+}
+
+message DebugGetResponse {
+  KV kv = 1;
+}
+
+// DebugScan does a forward, paginated raw key scan over [start, end).
+// Used by the mdcli debug tool.
+message DebugScanRequest {
+  bytes start = 1;
+  bytes end = 2;
+
+  // The maximum number of KVs to return per page. If <= 0, a server default is
+  // used; the server also caps the page size.
+  int64 limit = 3;
+}
+
+message DebugScanResponse {
+  repeated KV kvs = 1;
+
+  // Cursor to pass as `start` on the next call to continue the scan. Empty
+  // when the scan is exhausted.
+  bytes next_start = 2;
+}
