@@ -29,6 +29,7 @@ go_library(
         "//cli/search",
         "//cli/ssh",
         "//cli/ssh_server",
+        "//cli/testbuddy",
         "//cli/ui",
         "//cli/update",
         "//cli/upload",

@@ -71,8 +71,14 @@ func StartupDebug(start time.Time) {
 // We template this top support different types of Option slices; for example,
 // []*parsed.IndexedOption
 func Configure[T options.Option](bbOpts []T) {
+	// Seed with the enum variant, not a bool: with no --verbose on the command
+	// line the accumulator is never written, so it must end up empty. Seeding
+	// with false instead made GetBool succeed and passed "0" to log.Configure,
+	// which then treated verbosity as explicitly set and never consulted
+	// BB_VERBOSE. An actual --verbose still wins, because SetBool and SetEnum
+	// each clear the other.
 	verbose, err := options.AccumulateValues[T](
-		*options.NewBoolOrEnum(false),
+		*options.NewBoolOrEnum(""),
 		seq.Filter(bbOpts, options.NameFilter[T](logoptdef.Verbose.Name())),
 	)
 	if err != nil {
