@@ -48,6 +48,67 @@
   transform: scaleX(-1);
 }
 
+.sidebar .test-buddy-logo {
+  position: relative;
+  display: block;
+  width: 216px;
+  overflow: hidden;
+  transform-origin: center;
+  animation: test-buddy-logo-flip 600ms ease-in-out;
+}
+
+.test-buddy-logo-buildbuddy,
+.test-buddy-logo-testbuddy {
+  position: absolute;
+  inset: 0;
+}
+
+.test-buddy-logo-buildbuddy {
+  height: 100%;
+  animation: test-buddy-logo-hide-buildbuddy 600ms both;
+}
+
+.test-buddy-logo-testbuddy {
+  animation: test-buddy-logo-show-testbuddy 600ms both;
+}
+
+.test-buddy-logo-artwork {
+  height: 100%;
+  width: auto;
+}
+
+@keyframes test-buddy-logo-flip {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes test-buddy-logo-hide-buildbuddy {
+  0%,
+  49.999% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes test-buddy-logo-show-testbuddy {
+  0%,
+  49.999% {
+    opacity: 0;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
+}
+
 .sidebar .sidebar-header {
   height: 36px;
   margin-bottom: 24px;
@@ -128,6 +189,12 @@
   .sidebar.collapsed .logo {
     height: 30px;
     margin-left: -6px;
+  }
+
+  .sidebar.collapsed .test-buddy-logo-artwork {
+    width: 190px;
+    left: -7px;
+    top: -16px;
   }
 
   .sidebar.collapsed .sidebar-header:after {
