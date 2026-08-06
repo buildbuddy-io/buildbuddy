@@ -192,9 +192,8 @@ func handleCreate(args []string) (int, error) {
 		remoteCmd = ssh.JoinRemoteCommand(positional[1:])
 	}
 
-	// Forwards live in this process, so they cannot outlive it.
-	if *detach && (len(*localForwards) > 0 || len(*remoteForwards) > 0) {
-		log.Printf("--detach cannot be combined with -L/-R: the forwards would close as this command exits (use -N to hold them open)")
+	if err := checkDetachConflicts(remoteCmd); err != nil {
+		log.Print(err.Error())
 		return 1, nil
 	}
 
@@ -231,6 +230,9 @@ func handleCreate(args []string) (int, error) {
 		// A box registers with the gateway for as long as it is running, so a
 		// name found here is live: attach to it rather than starting a second
 		// VM (which would fail on the duplicate name anyway).
+		if dropped := vmFlagsSet(); len(dropped) > 0 {
+			log.Printf("Box %q is already running; ignoring %s (they only apply when starting a VM)", boxName, strings.Join(dropped, ", "))
+		}
 		return attach(p, key, remoteCmd)
 	}
 
@@ -377,6 +379,9 @@ func handleCreate(args []string) (int, error) {
 	if err != nil {
 		return -1, err
 	}
+	if peer == nil {
+		return -1, fmt.Errorf("box never became ready")
+	}
 
 	return attach(peer, key, remoteCmd)
 }
@@ -437,11 +442,41 @@ func generateName(peers []*gwpb.Peer) string {
 		taken[p.GetName()] = true
 	}
 	for i := 0; i < 10; i++ {
-		if name := petname.Generate(2, "-"); !taken[name] {
+		if name := petname.Generate(3, "-"); !taken[name] {
 			return name
 		}
 	}
-	return petname.Generate(3, "-")
+	return petname.Generate(4, "-")
+}
+
+// checkDetachConflicts reports flag combinations that --detach cannot honor.
+func checkDetachConflicts(remoteCmd string) error {
+	if !*detach {
+		return nil
+	}
+	// Forwards live in this process, so they cannot outlive it.
+	if len(*localForwards) > 0 || len(*remoteForwards) > 0 {
+		return fmt.Errorf("--detach cannot be combined with -L/-R: the forwards would close as this command exits (use -N to hold them open)")
+	}
+	// Detaching returns as soon as the box is ready, so a command would never
+	// run — and its exit code would be reported as success.
+	if remoteCmd != "" {
+		return fmt.Errorf("--detach cannot be combined with a command: the command would never run (start the box detached, then `bb box %s`)", "<name> <command>")
+	}
+	return nil
+}
+
+// vmFlagsSet returns the explicitly-set flags that only take effect when a VM
+// is started, so attaching to a running box can say what it ignored.
+func vmFlagsSet() []string {
+	var set []string
+	createFlags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "image", "grace_period", "idle_timeout":
+			set = append(set, "--"+f.Name)
+		}
+	})
+	return set
 }
 
 // startAndAwaitReady starts the box action and polls the gateway until the

@@ -53,3 +53,18 @@ func TestGenerateName(t *testing.T) {
 		require.NotEqual(t, name, generateName(taken))
 	}
 }
+
+func TestCheckDetachConflicts(t *testing.T) {
+	t.Cleanup(func() { *detach = false; *localForwards = nil })
+
+	*detach = false
+	require.NoError(t, checkDetachConflicts("make test"))
+
+	*detach = true
+	require.NoError(t, checkDetachConflicts(""))
+	// A command would never run, and the exit code would look like success.
+	require.Error(t, checkDetachConflicts("make test"))
+
+	*localForwards = []string{"8080:localhost:8080"}
+	require.Error(t, checkDetachConflicts(""))
+}
