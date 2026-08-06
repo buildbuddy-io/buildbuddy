@@ -236,11 +236,7 @@ func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface,
 		if err != nil {
 			return "", false, fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
 		}
-		sel, err := labelSelectorString(rs.Spec.Selector)
-		if err != nil {
-			return "", false, fmt.Errorf("ReplicaSet %s: %w", controllerRef.Name, err)
-		}
-		return sel, true, nil
+		return appLabelSelectorString(rs.Spec.Selector), true, nil
 
 	case "StatefulSet":
 		ss, err := client.AppsV1().StatefulSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
@@ -258,16 +254,23 @@ func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface,
 	}
 }
 
-// labelSelectorString converts a controller's pod selector into a list/watch
-// selector string for discovering peer pods. pod-template-hash is dropped
-// because it is unique to each ReplicaSet revision of a Deployment, and peers
-// from all revisions should be discovered (e.g. during a rolling update).
+// appLabelSelectorString returns an "app"-label selector for ReplicaSet-managed
+// pods. Only the app label is used because the full ReplicaSet selector
+// includes pod-template-hash, which is unique to each Deployment revision and
+// would hide peers from other revisions during a rolling update.
+func appLabelSelectorString(sel *metav1.LabelSelector) string {
+	if sel == nil {
+		return ""
+	}
+	return "app=" + sel.MatchLabels["app"]
+}
+
+// labelSelectorString converts a StatefulSet's pod selector into a list/watch
+// selector string for discovering peer pods.
 func labelSelectorString(sel *metav1.LabelSelector) (string, error) {
 	if sel == nil {
 		return "", fmt.Errorf("controller has no pod selector")
 	}
-	sel = sel.DeepCopy()
-	delete(sel.MatchLabels, "pod-template-hash")
 	s, err := metav1.LabelSelectorAsSelector(sel)
 	if err != nil {
 		return "", fmt.Errorf("invalid controller pod selector: %w", err)

@@ -496,6 +496,39 @@ func TestNodeKeyPodReplaced(t *testing.T) {
 	require.Equal(t, map[string]string{"node-a": "10.0.0.99:7999"}, peers)
 }
 
+func TestAppLabelSelectorString(t *testing.T) {
+	tests := []struct {
+		name string
+		sel  *metav1.LabelSelector
+		want string
+	}{
+		{
+			name: "nil",
+			sel:  nil,
+			want: "",
+		},
+		{
+			name: "single label",
+			sel:  &metav1.LabelSelector{MatchLabels: map[string]string{"app": "cache"}},
+			want: "app=cache",
+		},
+		{
+			name: "only app label used",
+			sel: &metav1.LabelSelector{MatchLabels: map[string]string{
+				"app":               "cache",
+				"pod-template-hash": "abc123",
+			}},
+			want: "app=cache",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := appLabelSelectorString(tc.sel)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestLabelSelectorString(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -514,14 +547,6 @@ func TestLabelSelectorString(t *testing.T) {
 			want: "app=cache",
 		},
 		{
-			name: "pod-template-hash dropped",
-			sel: &metav1.LabelSelector{MatchLabels: map[string]string{
-				"app":               "cache",
-				"pod-template-hash": "abc123",
-			}},
-			want: "app=cache",
-		},
-		{
 			name: "no app label",
 			sel: &metav1.LabelSelector{MatchLabels: map[string]string{
 				"app.kubernetes.io/name":     "buildbuddy-enterprise",
@@ -530,8 +555,8 @@ func TestLabelSelectorString(t *testing.T) {
 			want: "app.kubernetes.io/instance=release,app.kubernetes.io/name=buildbuddy-enterprise",
 		},
 		{
-			name:    "only pod-template-hash",
-			sel:     &metav1.LabelSelector{MatchLabels: map[string]string{"pod-template-hash": "abc123"}},
+			name:    "empty selector",
+			sel:     &metav1.LabelSelector{},
 			wantErr: true,
 		},
 	}
