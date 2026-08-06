@@ -236,25 +236,46 @@ func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface,
 		if err != nil {
 			return "", false, fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(rs.Spec.Selector), true, nil
+		sel, err := labelSelectorString(rs.Spec.Selector)
+		if err != nil {
+			return "", false, fmt.Errorf("ReplicaSet %s: %w", controllerRef.Name, err)
+		}
+		return sel, true, nil
 
 	case "StatefulSet":
 		ss, err := client.AppsV1().StatefulSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
 		if err != nil {
 			return "", false, fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(ss.Spec.Selector), false, nil
+		sel, err := labelSelectorString(ss.Spec.Selector)
+		if err != nil {
+			return "", false, fmt.Errorf("StatefulSet %s: %w", controllerRef.Name, err)
+		}
+		return sel, false, nil
 
 	default:
 		return "", false, fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
 	}
 }
 
-func labelSelectorString(sel *metav1.LabelSelector) string {
+// labelSelectorString converts a controller's pod selector into a list/watch
+// selector string for discovering peer pods. pod-template-hash is dropped
+// because it is unique to each ReplicaSet revision of a Deployment, and peers
+// from all revisions should be discovered (e.g. during a rolling update).
+func labelSelectorString(sel *metav1.LabelSelector) (string, error) {
 	if sel == nil {
-		return ""
+		return "", fmt.Errorf("controller has no pod selector")
 	}
-	return "app=" + sel.MatchLabels["app"]
+	sel = sel.DeepCopy()
+	delete(sel.MatchLabels, "pod-template-hash")
+	s, err := metav1.LabelSelectorAsSelector(sel)
+	if err != nil {
+		return "", fmt.Errorf("invalid controller pod selector: %w", err)
+	}
+	if s.Empty() {
+		return "", fmt.Errorf("controller pod selector is empty")
+	}
+	return s.String(), nil
 }
 
 // processEvents handles watch events until the channel closes or an

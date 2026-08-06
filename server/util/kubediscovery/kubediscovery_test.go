@@ -498,14 +498,15 @@ func TestNodeKeyPodReplaced(t *testing.T) {
 
 func TestLabelSelectorString(t *testing.T) {
 	tests := []struct {
-		name string
-		sel  *metav1.LabelSelector
-		want string
+		name    string
+		sel     *metav1.LabelSelector
+		want    string
+		wantErr bool
 	}{
 		{
-			name: "nil",
-			sel:  nil,
-			want: "",
+			name:    "nil",
+			sel:     nil,
+			wantErr: true,
 		},
 		{
 			name: "single label",
@@ -513,17 +514,35 @@ func TestLabelSelectorString(t *testing.T) {
 			want: "app=cache",
 		},
 		{
-			name: "only app label used",
+			name: "pod-template-hash dropped",
 			sel: &metav1.LabelSelector{MatchLabels: map[string]string{
 				"app":               "cache",
 				"pod-template-hash": "abc123",
 			}},
 			want: "app=cache",
 		},
+		{
+			name: "no app label",
+			sel: &metav1.LabelSelector{MatchLabels: map[string]string{
+				"app.kubernetes.io/name":     "buildbuddy-enterprise",
+				"app.kubernetes.io/instance": "release",
+			}},
+			want: "app.kubernetes.io/instance=release,app.kubernetes.io/name=buildbuddy-enterprise",
+		},
+		{
+			name:    "only pod-template-hash",
+			sel:     &metav1.LabelSelector{MatchLabels: map[string]string{"pod-template-hash": "abc123"}},
+			wantErr: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := labelSelectorString(tc.sel)
+			got, err := labelSelectorString(tc.sel)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 		})
 	}
