@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -325,6 +327,72 @@ func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_PUBLIC, invocation.ReadPermission)
+}
+
+func TestAnonymousBuildBlackhole(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_builds", true)
+
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/))
+	testInvocationID := uuid.New().String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1)
+	require.NoError(t, channel.HandleEvent(request))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 2)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	inv, err := build_event_handler.LookupInvocation(te, context.Background(), testInvocationID)
+	require.NoError(t, err)
+	require.Equal(t, inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS, inv.GetInvocationStatus())
+	require.Empty(t, inv.GetEvent())
+
+	rsp, err := te.GetBuildBuddyServer().GetInvocation(context.Background(), &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{InvocationId: testInvocationID},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetInvocation(), 1)
+	require.Equal(t, inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS, rsp.GetInvocation()[0].GetInvocationStatus())
+}
+
+func TestAnonymousBuildBlackhole_AnonymousUsageDisabled(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_builds", true)
+
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(false /*anonymousUsageEnabled*/))
+	testInvocationID := uuid.New().String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.True(t, status.IsPermissionDeniedError(err), "expected anonymous build to fail, got %v", err)
+}
+
+func TestAnonymousBuildBlackhole_InvalidAPIKeyStillFails(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_builds", true)
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	auth.NullAuthenticator = nullauth.NewNullAuthenticator(false /*anonymousUsageEnabled*/)
+	te.SetAuthenticator(auth)
+	testInvocationID := uuid.New().String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=INVALID'"), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.True(t, status.IsUnauthenticatedError(err), "expected invalid API key to fail, got %v", err)
 }
 
 func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {
