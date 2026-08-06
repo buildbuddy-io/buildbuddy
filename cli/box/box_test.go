@@ -12,7 +12,9 @@ import (
 // `bb box mybox claude --continue` pass --continue to the remote command
 // rather than parsing it as a bb flag.
 func TestFlagParsingStopsAtFirstPositional(t *testing.T) {
-	t.Cleanup(func() { createFlags.Set("t", "false") })
+	// Parsing leaves both flag values and residual args on the package-level
+	// flagset; reparsing nothing clears the args.
+	t.Cleanup(func() { createFlags.Set("t", "false"); createFlags.Parse(nil) })
 	require.NoError(t, createFlags.Parse([]string{"-t", "mybox", "claude", "--continue", "-N"}))
 	require.Equal(t, []string{"mybox", "claude", "--continue", "-N"}, createFlags.Args())
 	require.True(t, *forceTTY)
