@@ -458,12 +458,13 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		localBranchExistsRemotely bool
 		localCommitExistsRemotely bool
 		unpushedLocalCommit       bool
-		detachedHead              bool
-		detachedHeadMoved         bool
 
 		expectedBranch  string
 		expectedCommit  string
 		expectedPatches []string
+
+		detachedHead      bool
+		detachedHeadMoved bool
 	}
 
 	testCases := []testCase{
