@@ -230,9 +230,6 @@ func handleCreate(args []string) (int, error) {
 		// A box registers with the gateway for as long as it is running, so a
 		// name found here is live: attach to it rather than starting a second
 		// VM (which would fail on the duplicate name anyway).
-		if dropped := vmFlagsSet(); len(dropped) > 0 {
-			log.Printf("Box %q is already running; ignoring %s (they only apply when starting a VM)", boxName, strings.Join(dropped, ", "))
-		}
 		return attach(p, key, remoteCmd)
 	}
 
@@ -464,19 +461,6 @@ func checkDetachConflicts(remoteCmd string) error {
 		return fmt.Errorf("--detach cannot be combined with a command: the command would never run (start the box detached, then `bb box %s`)", "<name> <command>")
 	}
 	return nil
-}
-
-// vmFlagsSet returns the explicitly-set flags that only take effect when a VM
-// is started, so attaching to a running box can say what it ignored.
-func vmFlagsSet() []string {
-	var set []string
-	createFlags.Visit(func(f *flag.Flag) {
-		switch f.Name {
-		case "image", "grace_period", "idle_timeout":
-			set = append(set, "--"+f.Name)
-		}
-	})
-	return set
 }
 
 // startAndAwaitReady starts the box action and polls the gateway until the
