@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:buildbuddy_service_go_proto",
         "//proto:capability_go_proto",
+        "//proto:test_buddy_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/environment",
         "//server/util/capabilities",
@@ -25,6 +26,7 @@ go_test(
         "//proto:buildbuddy_service_go_proto",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
+        "//proto:test_buddy_go_proto",
         "//proto/api/v1:api_v1_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

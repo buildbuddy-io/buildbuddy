@@ -19,9 +19,41 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/event_index"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
+
+func TestGetTargetCanIncludeResultEventsInListing(t *testing.T) {
+	const label = "//pkg:test"
+	resultEvent := &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_TestResult{
+			TestResult: &bespb.BuildEventId_TestResultId{Label: label},
+		}},
+		Payload: &bespb.BuildEvent_TestResult{TestResult: &bespb.TestResult{
+			Status: bespb.TestStatus_PASSED,
+		}},
+	}
+	idx := event_index.New()
+	testTarget := &trpb.Target{
+		Metadata: &trpb.TargetMetadata{Label: label}, Status: common.Status_PASSED,
+	}
+	idx.TestTargetByLabel[label] = testTarget
+	idx.TargetsByStatus[common.Status_PASSED] = []*trpb.Target{testTarget}
+	idx.TestResultEventsByLabel[label] = []*bespb.BuildEvent{resultEvent}
+	invocation := &inpb.Invocation{InvocationId: "invocation-one"}
+
+	withoutEvents, err := target.GetTarget(
+		context.Background(), nil, invocation, idx, &trpb.GetTargetRequest{})
+	require.NoError(t, err)
+	require.Empty(t, withoutEvents.GetTargetGroups()[1].GetTargets()[0].GetTestResultEvents())
+
+	withEvents, err := target.GetTarget(context.Background(), nil, invocation, idx,
+		&trpb.GetTargetRequest{IncludeTestResultEvents: true})
+	require.NoError(t, err)
+	require.Len(t, withEvents.GetTargetGroups()[1].GetTargets()[0].GetTestResultEvents(), 1)
+}
 
 func TestGetTargetHistory(t *testing.T) {
 	flags.Set(t, "testenv.reuse_server", true)

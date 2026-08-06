@@ -16,11 +16,13 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	tbpb "github.com/buildbuddy-io/buildbuddy/proto/test_buddy"
 )
 
 var (
 	buildBuddyServicePrefix = "/" + bbspb.BuildBuddyService_ServiceDesc.ServiceName + "/"
 	apiServicePrefix        = "/" + apipb.ApiService_ServiceDesc.ServiceName + "/"
+	testBuddyServicePrefix  = "/" + tbpb.TestBuddyService_ServiceDesc.ServiceName + "/"
 )
 
 func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
@@ -33,16 +35,20 @@ func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 	for i := 0; i < apiServiceType.NumMethod(); i++ {
 		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+apiServiceType.Method(i).Name)
 	}
+	testBuddyServiceType := reflect.TypeOf((*tbpb.TestBuddyServiceServer)(nil)).Elem()
+	for i := 0; i < testBuddyServiceType.NumMethod(); i++ {
+		serviceMethodNames = append(serviceMethodNames, testBuddyServicePrefix+testBuddyServiceType.Method(i).Name)
+	}
 
 	allDefinedMethods := capabilities_filter.AllRPCsForTestOnly()
 
 	assert.Subset(
 		t, allDefinedMethods, serviceMethodNames,
-		"All BuildBuddyService and ApiService RPCs should be added to one of the lists in capabilities_filter.go",
+		"All BuildBuddyService, ApiService, and TestBuddyService RPCs should be added to one of the lists in capabilities_filter.go",
 	)
 	assert.Subset(
 		t, serviceMethodNames, allDefinedMethods,
-		"All RPCs listed in capabilities_filter.go should be valid BuildBuddyService or ApiService RPCs. "+
+		"All RPCs listed in capabilities_filter.go should be valid BuildBuddyService, ApiService, or TestBuddyService RPCs. "+
 			"(check for typos, or if you deleted an RPC, remove it from capabilities_filter.go)",
 	)
 }
