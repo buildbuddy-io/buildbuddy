@@ -42,5 +42,8 @@ go_test(
     name = "box_test",
     srcs = ["box_test.go"],
     embed = [":box"],
-    deps = ["@com_github_stretchr_testify//require"],
+    deps = [
+        "//proto:gateway_go_proto",
+        "@com_github_stretchr_testify//require",
+    ],
 )
