@@ -85,6 +85,7 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/docker/go-units v0.5.0
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
+	github.com/dustinkirkland/golang-petname v0.0.0-20260215035315-f0c533e9ce9b
 	github.com/elastic/gosigar v0.14.4-0.20250606160555-44388520074d
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-20241028184712-f74f43bb036d
 	github.com/fsnotify/fsnotify v1.9.0

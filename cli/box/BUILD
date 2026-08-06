@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -10,6 +10,7 @@ go_library(
         "//cli/arg",
         "//cli/log",
         "//cli/login",
+        "//cli/ssh",
         "//cli/version",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
@@ -27,10 +28,22 @@ go_library(
         "//server/util/retry",
         "//server/util/rexec",
         "//server/util/uuid",
+        "@com_github_dustinkirkland_golang_petname//:golang-petname",
         "@land_charm_lipgloss_v2//:lipgloss",
         "@land_charm_lipgloss_v2//table",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/durationpb",
+        "@org_golang_x_term//:term",
+    ],
+)
+
+go_test(
+    name = "box_test",
+    srcs = ["box_test.go"],
+    embed = [":box"],
+    deps = [
+        "//proto:gateway_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )

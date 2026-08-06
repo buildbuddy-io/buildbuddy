@@ -75,6 +75,17 @@ func init() {
 // bb-ssh://[user@]host URL — into host, login user, and port. userFlag (-l)
 // and portFlag (-p) supply the defaults; user and port in the target take
 // precedence.
+// JoinRemoteCommand joins the arguments following the target into a command
+// for the remote shell. Flag parsing stops at the target, so a "--" separator
+// reaches us as an ordinary argument; drop it rather than passing it to the
+// shell, which would reject it as an invalid option.
+func JoinRemoteCommand(args []string) string {
+	if len(args) > 0 && args[0] == "--" {
+		args = args[1:]
+	}
+	return strings.Join(args, " ")
+}
+
 func parseTarget(target, userFlag string, portFlag int) (string, string, int) {
 	loginUser := userFlag
 	port := portFlag
@@ -266,32 +277,70 @@ func HandleSSH(args []string) (int, error) {
 		return 1, nil
 	}
 
-	// Resolve forward specs before connecting, so a typo doesn't cost a
-	// gateway registration and two handshakes first.
-	locals, err := parseForwards(*localForwards)
-	if err != nil {
-		return 1, err
-	}
-	remotes, err := parseForwards(*remoteForwards)
-	if err != nil {
-		return 1, err
-	}
-
 	// The first positional argument is the target; any remaining arguments
 	// are joined as the remote command to execute.
-	target, loginUser, dialPort := parseTarget(positional[0], *user, *port)
-	if loginUser == "" {
-		loginUser = os.Getenv("USER")
+	host, loginUser, dialPort := parseTarget(positional[0], *user, *port)
+	remoteCmd := JoinRemoteCommand(positional[1:])
+
+	return Run(context.Background(), Options{
+		Gateway:        *gatewayTarget,
+		APIKey:         *apiKey,
+		Network:        *network,
+		Host:           host,
+		User:           loginUser,
+		Port:           dialPort,
+		Command:        remoteCmd,
+		ForceTTY:       *forceTTY,
+		NoCommand:      *noCommand,
+		LocalForwards:  *localForwards,
+		RemoteForwards: *remoteForwards,
+	})
+}
+
+// Options configures a single SSH session over the BuildBuddy gateway.
+type Options struct {
+	Gateway string // gateway gRPC target
+	APIKey  string // read from the login config when empty
+	Network string // gateway network name
+
+	Host string // peer name or tunnel IP
+	User string // login name; defaults to $USER
+	Port int    // defaults to 22
+
+	Command  string    // empty runs an interactive shell
+	ForceTTY bool      // request a PTY even when running a command
+	Stdin    io.Reader // command stdin; defaults to this process's stdin
+
+	LocalForwards  []string // -L specs
+	RemoteForwards []string // -R specs
+	NoCommand      bool     // hold forwards open without running anything
+}
+
+// Run opens one SSH session over the gateway and returns its exit code.
+func Run(ctx context.Context, opts Options) (int, error) {
+	if opts.User == "" {
+		opts.User = os.Getenv("USER")
 	}
-	var remoteCmd string
-	if len(positional) > 1 {
-		remoteCmd = strings.Join(positional[1:], " ")
+	if opts.Port == 0 {
+		opts.Port = 22
 	}
 
-	ctx := context.Background()
-	if *apiKey != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
-	} else if key, err := login.GetAPIKey(); err == nil && key != "" {
+	// Resolve forward specs before connecting, so a typo doesn't cost a
+	// gateway registration and two handshakes first.
+	locals, err := parseForwards(opts.LocalForwards)
+	if err != nil {
+		return 1, err
+	}
+	remotes, err := parseForwards(opts.RemoteForwards)
+	if err != nil {
+		return 1, err
+	}
+
+	key := opts.APIKey
+	if key == "" {
+		key, _ = login.GetAPIKey()
+	}
+	if key != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
 	}
 
@@ -302,7 +351,7 @@ func HandleSSH(args []string) (int, error) {
 	}
 
 	// Register with the gateway.
-	grpcConn, err := grpc_client.DialSimple(*gatewayTarget)
+	grpcConn, err := grpc_client.DialSimple(opts.Gateway)
 	if err != nil {
 		return 1, status.WrapError(err, "dialing gateway")
 	}
@@ -316,7 +365,7 @@ func HandleSSH(args []string) (int, error) {
 	connectCtx, cancelConnect := context.WithCancel(ctx)
 	defer cancelConnect()
 	stream, err := gwClient.Connect(connectCtx, &gwpb.ConnectRequest{
-		NetworkName: *network,
+		NetworkName: opts.Network,
 		PublicKey:   privKey.PublicKey().Hex(),
 		SessionId:   uuid.New(),
 	})
@@ -379,14 +428,14 @@ func HandleSSH(args []string) (int, error) {
 	defer dev.Close()
 
 	// Dial the SSH server through the WireGuard tunnel.
-	addr := net.JoinHostPort(target, fmt.Sprintf("%d", dialPort))
+	addr := net.JoinHostPort(opts.Host, fmt.Sprintf("%d", opts.Port))
 	tcpConn, err := tnet.Dial("tcp", addr)
 	if err != nil {
 		return 1, status.WrapError(err, "dialing ssh server")
 	}
 
 	sshConfig := &gossh.ClientConfig{
-		User: loginUser,
+		User: opts.User,
 		// Host key verification is intentionally skipped: the WireGuard tunnel
 		// provides mutual authentication (only a peer that registered the correct
 		// public key with the gateway can receive traffic), so the SSH layer does
@@ -454,13 +503,13 @@ func HandleSSH(args []string) (int, error) {
 	for _, f := range remotes {
 		ln, err := client.Listen("tcp", f.listen)
 		if err != nil {
-			return 1, status.WrapErrorf(err, "listen on %s for -R %s", target, f.spec)
+			return 1, status.WrapErrorf(err, "listen on %s for -R %s", opts.Host, f.spec)
 		}
 		defer ln.Close()
 		go forward(ln, func() (net.Conn, error) { return net.Dial("tcp", f.dial) }, f.spec)
 	}
 
-	if *noCommand {
+	if opts.NoCommand {
 		if len(locals) == 0 && len(remotes) == 0 {
 			log.Printf("-N was given with no port forwards; nothing to do")
 			return 1, nil
@@ -472,10 +521,10 @@ func HandleSSH(args []string) (int, error) {
 		case <-sigCh:
 			return 0, nil
 		case <-gwLost:
-			fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost.\n", target)
+			fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost.\n", opts.Host)
 			return 1, nil
 		case <-connDead:
-			fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server.\n", target)
+			fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server.\n", opts.Host)
 			return 1, nil
 		}
 	}
@@ -492,7 +541,10 @@ func HandleSSH(args []string) (int, error) {
 	// piped (e.g. echo data | bb ssh host cat) — a program that doesn't read
 	// stdin shouldn't steal keystrokes typed while it runs. Interactive
 	// sessions and -t commands always get stdin.
-	if remoteCmd == "" || *forceTTY || !term.IsTerminal(int(os.Stdin.Fd())) {
+	switch {
+	case opts.Stdin != nil:
+		session.Stdin = opts.Stdin
+	case opts.Command == "" || opts.ForceTTY || !term.IsTerminal(int(os.Stdin.Fd())):
 		session.Stdin = os.Stdin
 	}
 
@@ -508,8 +560,8 @@ func HandleSSH(args []string) (int, error) {
 
 	// Request a PTY for interactive sessions (no explicit remote command) and
 	// for remote commands run with -t, matching standard ssh behaviour.
-	wantPTY := remoteCmd == "" || *forceTTY
-	if *forceTTY && !term.IsTerminal(int(os.Stdin.Fd())) {
+	wantPTY := opts.Command == "" || opts.ForceTTY
+	if opts.ForceTTY && !term.IsTerminal(int(os.Stdin.Fd())) {
 		fmt.Fprintln(os.Stderr, "Pseudo-terminal will not be allocated because stdin is not a terminal.")
 	}
 	if wantPTY && term.IsTerminal(int(os.Stdin.Fd())) {
@@ -547,13 +599,13 @@ func HandleSSH(args []string) (int, error) {
 		}()
 	}
 
-	if remoteCmd != "" {
-		if err := session.Run(remoteCmd); err != nil {
+	if opts.Command != "" {
+		if err := session.Run(opts.Command); err != nil {
 			if closed(gwLost) {
 				return 1, status.UnavailableError("gateway connection lost")
 			}
 			if closed(connDead) {
-				return 1, status.UnavailableErrorf("connection to %s lost: no response from server", target)
+				return 1, status.UnavailableErrorf("connection to %s lost: no response from server", opts.Host)
 			}
 			var exitErr *gossh.ExitError
 			if errors.As(err, &exitErr) {
@@ -576,7 +628,7 @@ func HandleSSH(args []string) (int, error) {
 			rawRestore()
 			rawRestore = nil
 		}
-		fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost.\n", target)
+		fmt.Fprintf(os.Stderr, "Connection to %s closed: gateway connection lost.\n", opts.Host)
 		return 1, nil
 	}
 	if closed(connDead) {
@@ -584,7 +636,7 @@ func HandleSSH(args []string) (int, error) {
 			rawRestore()
 			rawRestore = nil
 		}
-		fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server.\n", target)
+		fmt.Fprintf(os.Stderr, "Connection to %s closed: no response from server.\n", opts.Host)
 		return 1, nil
 	}
 	if err != nil {
@@ -605,7 +657,7 @@ func HandleSSH(args []string) (int, error) {
 		rawRestore()
 		rawRestore = nil // prevent double-restore from the deferred call
 	}
-	fmt.Fprintf(os.Stderr, "Connection to %s closed.\n", target)
+	fmt.Fprintf(os.Stderr, "Connection to %s closed.\n", opts.Host)
 	return 0, nil
 }
 
