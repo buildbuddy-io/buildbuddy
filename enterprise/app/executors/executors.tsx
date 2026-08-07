@@ -1,4 +1,4 @@
-import { BarChart2, Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
+import { BarChart2, Cpu, Globe, Hash, Laptop, ListChevronsDownUp, ListChevronsUpDown, LucideIcon } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
@@ -18,6 +18,7 @@ import { scheduler } from "../../../proto/scheduler_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { encodeEffectivePoolUrlParam, encodeMetricUrlParam } from "../trends/common";
 import ExecutorCardComponent from "./executor_card";
+import { OutlinedButton } from "../../../app/components/button/button";
 
 enum FetchType {
   Executors,
@@ -388,23 +389,22 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     router.navigateTo(`/executors/${tabId}`);
   }
 
-  onClickViewMode(viewMode: ViewMode) {
-    this.setState({ viewMode });
+  toggleViewMode() {
+    this.setState({ viewMode: this.state.viewMode === "summary" ? "details" : "summary" });
   }
 
   renderViewModeToggle() {
     return (
       <div className="view-mode-toggle">
-        <div
-          className={`tab ${this.state.viewMode === "summary" ? "selected" : ""}`}
-          onClick={this.onClickViewMode.bind(this, "summary")}>
-          Summary
-        </div>
-        <div
-          className={`tab ${this.state.viewMode === "details" ? "selected" : ""}`}
-          onClick={this.onClickViewMode.bind(this, "details")}>
-          Details
-        </div>
+        {this.state.viewMode === "summary" ? (
+          <OutlinedButton className="icon-button" title="Show details" onClick={() => this.toggleViewMode()}>
+            <ListChevronsUpDown />
+          </OutlinedButton>
+        ) : (
+          <OutlinedButton className="icon-button" title="Hide details" onClick={() => this.toggleViewMode()}>
+            <ListChevronsDownUp />
+          </OutlinedButton>
+        )}
       </div>
     );
   }

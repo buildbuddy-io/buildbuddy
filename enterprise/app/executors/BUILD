@@ -16,6 +16,7 @@ ts_library(
         "//app/auth:auth_service",
         "//app/components/banner",
         "//app/components/breadcrumbs",
+        "//app/components/button",
         "//app/components/button:link_button",
         "//app/components/link",
         "//app/components/select",
