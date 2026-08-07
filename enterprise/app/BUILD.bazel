@@ -51,7 +51,7 @@ genrule(
         "//enterprise/app/sidekick/buildfile:buildfile.css",
         "//enterprise/app/sidekick/module:module.css",
         "//enterprise/app/tap:tap.css",
-        "//enterprise/app/targetdata:targetdata.css",
+        "//enterprise/app/targets:single_target.css",
         "//enterprise/app/targets:targets.css",
         "//enterprise/app/trends:trends.css",
         "//enterprise/app/usage:usage.css",

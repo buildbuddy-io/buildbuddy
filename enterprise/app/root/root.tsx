@@ -27,7 +27,7 @@ import SettingsComponent from "../settings/settings";
 import ShortcutsComponent from "../shortcuts/shortcuts";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
-import TargetDataComponent from "../targetdata/targetdata";
+import TargetDataComponent from "../targets/single_target";
 import TargetsComponent from "../targets/targets";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
