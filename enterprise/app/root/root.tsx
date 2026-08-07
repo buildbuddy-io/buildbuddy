@@ -27,7 +27,7 @@ import SettingsComponent from "../settings/settings";
 import ShortcutsComponent from "../shortcuts/shortcuts";
 import SidebarComponent from "../sidebar/sidebar";
 import TapComponent from "../tap/tap";
-import TargetDataComponent from "../targets/single_target";
+import SingleTargetComponent from "../targets/single_target";
 import TargetsComponent from "../targets/targets";
 import TrendsComponent from "../trends/trends";
 import UsageComponent from "../usage/usage";
@@ -239,9 +239,12 @@ export default class EnterpriseRootComponent extends React.Component {
     // The targets list and the per-target detail page share the "/targets/"
     // prefix; the detail page is distinguished by the presence of a "target"
     // query param (e.g. "/targets/?target=//foo:bar").
-    let targetData =
-      this.state.user && this.state.path.startsWith("/targets") && Boolean(this.state.search.get("target"));
-    let targets = this.state.user && this.state.path.startsWith("/targets") && !targetData;
+    let singleTarget =
+      this.state.user &&
+      this.state.path.startsWith("/targets") &&
+      Boolean(this.state.search.get("target")) &&
+      Boolean(capabilities.config.singleTargetStatsEnabled);
+    let targets = this.state.user && this.state.path.startsWith("/targets") && !singleTarget;
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
@@ -263,7 +266,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !orgAccessDenied &&
       !trends &&
       !targets &&
-      !targetData &&
+      !singleTarget &&
       !usage &&
       !executors &&
       !cacheProxies &&
@@ -433,8 +436,8 @@ export default class EnterpriseRootComponent extends React.Component {
                     </Suspense>
                   )}
                   {targets && this.state.user && <TargetsComponent user={this.state.user} search={this.state.search} />}
-                  {targetData && this.state.user && (
-                    <TargetDataComponent user={this.state.user} search={this.state.search} />
+                  {singleTarget && this.state.user && (
+                    <SingleTargetComponent user={this.state.user} search={this.state.search} />
                   )}
                   {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
                   {auditLogs && this.state.user && (

@@ -235,7 +235,7 @@ class Router {
     this.navigateTo(Path.targetsPath);
   }
 
-  navigateToTargetData(target: string) {
+  navigateToSingleTarget(target: string) {
     this.navigateTo(Path.targetsPath + "?target=" + encodeURIComponent(target));
   }
 

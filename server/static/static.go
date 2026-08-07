@@ -246,6 +246,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		config.FlipLogoOnHover = efp.Boolean(ctx, "flip-logo-on-hover", false /*=default*/)
 		// Global experiments can be handled here, but experiments that are user or group specific
 		// should be included in the experiments field of GetUserResponse instead.
+		config.SingleTargetStatsEnabled = efp.Boolean(ctx, "single-target-stats", false /*=default*/) && env.GetOLAPDBHandle() != nil
 	}
 
 	configJSON, err := protojson.Marshal(&config)

@@ -37,6 +37,7 @@ ts_library(
         "//:node_modules/recharts",
         "//:node_modules/tslib",
         "//app/auth:user",
+        "//app/capabilities",
         "//app/components/button",
         "//app/components/filter_input",
         "//app/components/select",

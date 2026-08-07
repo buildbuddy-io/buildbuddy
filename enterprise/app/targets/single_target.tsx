@@ -143,7 +143,7 @@ const DURATION_P50_COLUMN = "duration_p50";
 const CPU_P50_COLUMN = "cpu_p50";
 const MEMORY_P50_COLUMN = "memory_p50";
 
-export default class TargetDataComponent extends React.Component<Props, State> {
+export default class SingleTargetComponent extends React.Component<Props, State> {
   state: State = {
     loading: false,
     filters: {},
