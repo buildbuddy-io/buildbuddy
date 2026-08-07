@@ -837,23 +837,12 @@ func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArg
 }
 
 func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		log.Debugf("Could not determine home dir for .bbrc: %s", err)
-	}
-	parsedArgs, err = p.expandBBrc(parsedArgs, ws, homeDir)
+	// TODO(Maggie): Add bbrc config expansion here
+	configs, defaultConfig, err := p.consumeAndParseRCFiles(parsedArgs, ws)
 	if err != nil {
 		return nil, err
 	}
-	return p.expandBazelrc(parsedArgs, ws, homeDir)
-}
-
-func (p *Parser) expandBazelrc(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
-	configs, defaultConfig, err := p.consumeAndParseRCFiles(args, workspaceDir)
-	if err != nil {
-		return nil, err
-	}
-	return bazelrc.ExpandConfigs(args, configs, defaultConfig)
+	return bazelrc.ExpandConfigs(parsedArgs, configs, defaultConfig)
 }
 
 func (p *Parser) expandBBrc(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
