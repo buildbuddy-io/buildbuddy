@@ -34,10 +34,12 @@ import (
 	petname "github.com/dustinkirkland/golang-petname"
 	"golang.org/x/term"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -84,9 +86,12 @@ Boxes are recycled after the session ends, so running bb box with the same
 name again resumes the same VM, and a box that is still running is connected
 to rather than started again. A box with no name given is assigned one.
 
+Passing --run_from_snapshot resumes the VM from an existing snapshot.
+The snapshot key is a JSON object that can be obtained from the "Execution metadata"
+section of a previous invocation's Execution page.
+
 list: Lists your group's connected peers: boxes (with their names) and
 transient clients like bb ssh sessions (identified by session ID only).
-
 `
 )
 
@@ -110,6 +115,11 @@ var (
 
 	localForwards  = flag.New(createFlags, "L", []string{}, "Forward a port on this machine to one reachable from the box: [bind:]port:host:hostport (repeatable)")
 	remoteForwards = flag.New(createFlags, "R", []string{}, "Forward a port on the box to one reachable from this machine: [bind:]port:host:hostport (repeatable)")
+
+	// From a shell, pass the JSON in single quotes.
+	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
+	runFromSnapshot = createFlags.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from.")
+	runnerExecProps = flag.New(createFlags, "runner_exec_properties", []string{}, "Exec properties that apply to the remote runner. Key-value pairs should be separated by '=' (for example, --runner_exec_properties=Pool=my-pool). Can be specified more than once.")
 
 	targetFlag              = createFlags.String("remote_executor", login.DefaultApiTarget, "Remote executor gRPC target")
 	gatewayFlag, apiKeyFlag = registerGatewayFlags(createFlags)
@@ -171,6 +181,13 @@ func handleCreate(args []string) (int, error) {
 	}
 	if *idleTimeout > maxIdleTimeout {
 		*idleTimeout = maxIdleTimeout
+	}
+
+	// If a specific snapshot key is provided, check that it's valid JSON.
+	if *runFromSnapshot != "" {
+		if err := protojson.Unmarshal([]byte(*runFromSnapshot), &fcpb.SnapshotKey{}); err != nil {
+			return -1, fmt.Errorf("parsing --run_from_snapshot: %w", err)
+		}
 	}
 
 	// Anything after the name is a command to run in the box instead of a
@@ -287,6 +304,11 @@ func handleCreate(args []string) (int, error) {
 		// warm-start benefit is retained.
 		platform.SnapshotReadPolicyPropertyName+"="+platform.AlwaysReadNewestSnapshot,
 	)
+	if *runFromSnapshot != "" {
+		execProps = append(execProps, platform.SnapshotKeyOverridePropertyName+"="+*runFromSnapshot)
+	}
+	// Explicitly supplied runner exec properties override the command's defaults.
+	execProps = append(execProps, (*runnerExecProps)...)
 	plat, err := rexec.MakePlatform(execProps...)
 	if err != nil {
 		return -1, fmt.Errorf("building platform: %w", err)
