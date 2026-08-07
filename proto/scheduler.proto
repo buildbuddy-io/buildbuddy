@@ -378,7 +378,16 @@ message SchedulingMetadata {
 message RoutingConfig {
   // If set, the task will be scheduled only on nodes matching this hostname
   // pattern within the pool.
+  //
+  // This filter applies in addition to the labels filter, if both are set.
   string hostname_pattern = 1;
+
+  // If set, the task will be scheduled only on nodes whose labels contain every
+  // entry in this map with a matching value.
+  //
+  // This filter applies in addition to the hostname_pattern filter, if both are
+  // set.
+  map<string, string> labels = 3;
 
   // If true, and the routing requirements cannot be satisfied, behave as though
   // the routing config was not specified at all.
