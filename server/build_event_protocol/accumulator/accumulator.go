@@ -3,7 +3,7 @@ package accumulator
 import (
 	"context"
 	"net/url"
-	"regexp"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -42,7 +42,6 @@ var (
 		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
 		"COMMIT_STATUS_LABEL":             commitStatusLabelFieldName,
 	}
-	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
 
 type Accumulator interface {
@@ -118,20 +117,18 @@ func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
 		if file.GetName() == "" {
 			continue
 		}
-		if m := bytestreamURIPattern.FindStringSubmatch(file.GetUri()); len(m) >= 1 {
-			digestHash := m[1]
-			v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
+		uri, err := url.Parse(file.GetUri())
+		if err != nil || uri.Scheme != "bytestream" {
+			continue
 		}
+		rn, err := digest.ParseDownloadResourceName(strings.TrimPrefix(uri.Path, "/"))
+		if err != nil {
+			continue
+		}
+		digestHash := rn.GetDigest().GetHash()
+		v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
 		// Special case: check for kythe output files.
 		if file.GetName() == KytheOutputName {
-			uri, err := url.Parse(file.GetUri())
-			if err != nil {
-				continue
-			}
-			rn, err := digest.ParseDownloadResourceName(uri.Path)
-			if err != nil {
-				continue
-			}
 			v.kytheSSTableResourceName = rn.ToProto()
 		}
 	}
