@@ -876,6 +876,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 			outFile = filepath.Join(outFile, p)
 		}
 		outFile = filepath.Join(outFile, f.GetName())
+		log.Debugf("Downloading output %q to %q with mode %s", f.GetName(), outFile, mode)
 		if err := downloadFile(ctx, bsClient, r, outFile, mode); err != nil {
 			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
@@ -939,21 +940,25 @@ func findExecutableOutput(outputs []string, outputBaseDir, executablePath string
 	return "", fmt.Errorf("run executable %q not found among downloaded artifacts", executablePath)
 }
 
-// envWithRunfilesDir ensures a locally-run target (build-remotely-run-locally) resolves
-// runfiles from the downloaded runfiles directory. The runfiles manifest contains absolute paths from the
-// remote runner, and inherited runfiles variables may refer to the bb binary's
-// own runfiles, so remove those settings and explicitly set the runfiles directory.
-func envWithRunfilesDir(env []string, runfilesDir string) []string {
-	filteredEnv := make([]string, 0, len(env)+1)
+// envForLocalRun ensures a locally-run target (build-remotely-run-locally)
+// resolves runfiles from the downloaded runfiles directory and sees the local
+// Bazel workspace. The runfiles manifest contains absolute paths from the
+// remote runner, and inherited runfiles and workspace variables may refer to
+// the bb binary's own environment, so replace them with local values.
+func envForLocalRun(env []string, runfilesDir, workspaceDir string) []string {
+	filteredEnv := make([]string, 0, len(env)+2)
 	for _, entry := range env {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "PYTHON_RUNFILES", "JAVA_RUNFILES":
+		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "PYTHON_RUNFILES", "JAVA_RUNFILES", "BUILD_WORKSPACE_DIRECTORY":
 			continue
 		}
 		filteredEnv = append(filteredEnv, entry)
 	}
-	return append(filteredEnv, "RUNFILES_DIR="+runfilesDir)
+	return append(filteredEnv,
+		"RUNFILES_DIR="+runfilesDir,
+		"BUILD_WORKSPACE_DIRECTORY="+workspaceDir,
+	)
 }
 
 // removeRunfilesManifests removes runfile manifests whose absolute paths refer to the
@@ -1224,6 +1229,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
+				workspaceDir, err := filepath.Abs(outputsBaseDir)
+				if err != nil {
+					return 1, fmt.Errorf("compute absolute workspace directory: %w", err)
+				}
 				binPath, err := findExecutableOutput(outputs, outputsBaseDir, executablePath)
 				if err != nil {
 					return 1, err
@@ -1261,9 +1270,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				log.Debugf("Executing %q with arguments %s", absBinPath, execArgs)
 				cmd := exec.CommandContext(ctx, absBinPath, execArgs...)
 				cmd.Dir = runfilesWorkDir
-				cmd.Env = envWithRunfilesDir(os.Environ(), runfilesDir)
+				cmd.Env = envForLocalRun(os.Environ(), runfilesDir, workspaceDir)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
+				log.Printf("Running downloaded executable %q locally (working directory %q)", absBinPath, runfilesWorkDir)
 				err = cmd.Run()
 				if e, ok := err.(*exec.ExitError); ok {
 					return e.ExitCode(), nil
@@ -1537,21 +1547,33 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 		"--config=buildbuddy_bes_results_url",
 		"--config=buildbuddy_remote_cache",
 	}
+	var requiredArgs []string
 
 	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
 	bazelCmd := bazelArgsStruct.GetCommand()
 	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
-		extraArgs = append(extraArgs, "--remote_upload_local_results")
+		requiredArgs = append(requiredArgs,
+			"--remote_upload_local_results",
+			// Ensure locally generated outputs, including symlink targets, are uploaded to the cache.
+			"--remote_build_event_upload=all",
+		)
 	}
 	// To support building the target on the remote runner and running it locally,
 	// have Bazel write out a run script using the --script_path flag so we can
 	// extract run options (i.e. args, runfile information) from the generated run script.
 	if !*runRemotely && bazelCmd == "run" {
-		extraArgs = append(extraArgs, runScriptPathFlag)
+		requiredArgs = append(requiredArgs, runScriptPathFlag)
 	}
 	for _, extraArg := range extraArgs {
 		if err := bazelArgsStruct.Prepend(extraArg); err != nil {
 			return nil, nil, fmt.Errorf("add remote bazel arg: %w", err)
+		}
+	}
+	// These flags are required for fetching or locally running outputs, so append
+	// them after user flags and config expansions to ensure they take precedence.
+	for _, requiredArg := range requiredArgs {
+		if err := bazelArgsStruct.Append(requiredArg); err != nil {
+			return nil, nil, fmt.Errorf("add required remote bazel arg: %w", err)
 		}
 	}
 
