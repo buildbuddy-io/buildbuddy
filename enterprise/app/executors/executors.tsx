@@ -1,4 +1,4 @@
-import { BarChart2, Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
+import { BarChart2, Cpu, Globe, Hash, Laptop, ListChevronsDownUp, ListChevronsUpDown, LucideIcon } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
@@ -18,6 +18,7 @@ import { scheduler } from "../../../proto/scheduler_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { encodeEffectivePoolUrlParam, encodeMetricUrlParam } from "../trends/common";
 import ExecutorCardComponent from "./executor_card";
+import { OutlinedButton } from "../../../app/components/button/button";
 
 enum FetchType {
   Executors,
@@ -143,6 +144,10 @@ class ExecutorSetup extends React.Component<ExecutorSetupProps> {
 
 interface ExecutorsListProps {
   regions: { name: string; response: scheduler.GetExecutionNodesResponse }[];
+  details: boolean;
+  // Rendered at the right edge of the first pool's heading row. Used when the
+  // page has no tab row to hang the summary/details toggle off of.
+  toggle?: React.ReactNode;
 }
 
 class ExecutorsList extends React.Component<ExecutorsListProps> {
@@ -168,7 +173,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
         <div className="executor-cards">
           {keys
             .map((key) => executorsByPool.get(key))
-            .map((executors) => {
+            .map((executors, index) => {
               if (!executors || executors.length == 0) {
                 return null;
               }
@@ -182,14 +187,14 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
               );
               return (
                 <>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <div className="executor-pool-header">
                     <h2>{poolName}</h2>
                     <Link
                       className="executor-history-button history-button"
-                      style={{ marginTop: "32px" }}
                       href={`/trends/?d=${encodeURIComponent(poolUrlParam)}&ddMetric=${metricUrlParam}#drilldown`}>
                       <BarChart2 /> View executions
                     </Link>
+                    {index === 0 && this.props.toggle}
                   </div>
                   <div className="executor-details">
                     {executors[0].region && (
@@ -221,6 +226,7 @@ class ExecutorsList extends React.Component<ExecutorsListProps> {
                           node={node.executor.node}
                           isDefault={node.executor.isDefault}
                           lastCheckInTime={node.executor.lastCheckInTime}
+                          details={this.props.details}
                         />
                       )
                   )}
@@ -252,6 +258,8 @@ interface Props {
   path: string;
 }
 
+type ViewMode = "summary" | "details";
+
 interface State {
   userOwnedExecutorsSupported: boolean;
   regions: { name: string; response: scheduler.GetExecutionNodesResponse }[];
@@ -259,6 +267,7 @@ interface State {
   loading: FetchType[];
   schedulerUri: string;
   error: BuildBuddyError | null;
+  viewMode: ViewMode;
 }
 
 export default class ExecutorsComponent extends React.Component<Props, State> {
@@ -269,6 +278,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     loading: [],
     schedulerUri: "",
     error: null,
+    viewMode: "summary",
   };
 
   subscription?: Subscription;
@@ -379,6 +389,26 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     router.navigateTo(`/executors/${tabId}`);
   }
 
+  toggleViewMode() {
+    this.setState({ viewMode: this.state.viewMode === "summary" ? "details" : "summary" });
+  }
+
+  renderViewModeToggle() {
+    return (
+      <div className="view-mode-toggle">
+        {this.state.viewMode === "summary" ? (
+          <OutlinedButton className="icon-button" title="Show details" onClick={() => this.toggleViewMode()}>
+            <ListChevronsUpDown />
+          </OutlinedButton>
+        ) : (
+          <OutlinedButton className="icon-button" title="Hide details" onClick={() => this.toggleViewMode()}>
+            <ListChevronsDownUp />
+          </OutlinedButton>
+        )}
+      </div>
+    );
+  }
+
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
   renderWithGroupOwnedExecutorsEnabled() {
     const allNodes = this.state.regions.flatMap((r) => r.response.executor);
@@ -398,6 +428,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
             onClick={this.onClickTab.bind(this, "setup")}>
             Setup
           </div>
+          {activeTab === "status" && allNodes.length > 0 && this.renderViewModeToggle()}
         </div>
         {activeTab === "status" && (
           <>
@@ -414,7 +445,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
                 </div>
               </Banner>
             )}
-            <ExecutorsList regions={this.state.regions} />
+            <ExecutorsList regions={this.state.regions} details={this.state.viewMode === "details"} />
             {!allNodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
                 <h1>No self-hosted executors are connected.</h1>
@@ -459,7 +490,15 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         </div>
       );
     } else {
-      return <ExecutorsList regions={this.state.regions} />;
+      // There's no tab row here to hang the toggle off of, so it rides along
+      // with the first pool's heading instead.
+      return (
+        <ExecutorsList
+          regions={this.state.regions}
+          details={this.state.viewMode === "details"}
+          toggle={this.renderViewModeToggle()}
+        />
+      );
     }
   }
 
