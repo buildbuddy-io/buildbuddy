@@ -195,6 +195,10 @@ func (dc *DirectClient) Unlink(ctx context.Context, in *vfspb.UnlinkRequest, opt
 	return dc.s.Unlink(ctx, in)
 }
 
+func (dc *DirectClient) Forget(ctx context.Context, in *vfspb.ForgetRequest, opts ...grpc.CallOption) (*vfspb.ForgetResponse, error) {
+	return dc.s.Forget(ctx, in)
+}
+
 func (dc *DirectClient) GetLk(ctx context.Context, in *vfspb.GetLkRequest, opts ...grpc.CallOption) (*vfspb.GetLkResponse, error) {
 	return dc.s.GetLk(ctx, in)
 }
@@ -1075,7 +1079,7 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	if backingFile != "" {
 		f, err := os.OpenFile(backingFile, int(request.GetFlags()), os.FileMode(request.GetFlags()))
 		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "Open %d could not open file %q: %s", request.GetId(), backingFile, err)
+			log.CtxWarningf(p.taskCtx(), "Open could not open ino %d backing file %q: %s", node.id, backingFile, err)
 			return nil, syscallErrStatus(err)
 		}
 		openedFile = f
@@ -1084,22 +1088,22 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		tf := p.treeFetcher
 		p.mu.Unlock()
 		if tf == nil {
-			log.CtxWarningf(p.taskCtx(), "Open %d could not open file because tree fetcher is not set", request.GetId())
+			log.CtxWarningf(p.taskCtx(), "Open could not open ino %d CAS file at path %q because tree fetcher is not set", node.id, node.Path())
 			return nil, syscallErrStatus(syscall.EIO)
 		}
 		err = tf.Fetch(p.taskCtx(), node.fileNode)
 		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from cache: %s", node.Path(), err)
+			log.CtxWarningf(p.taskCtx(), "Open ino %d path %q could not fetch file from cache: %s", node.id, node.Path(), err)
 			return nil, err
 		}
 		f, err := p.env.GetFileCache().Open(p.taskCtx(), node.fileNode)
 		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "Open %q could not open file from file cache: %s", node.Path(), err)
+			log.CtxWarningf(p.taskCtx(), "Open ino %d path %q could not open file from file cache: %s", node.id, node.Path(), err)
 			return nil, err
 		}
 		openedFile = f
 	} else {
-		log.CtxWarningf(p.taskCtx(), "Open called on an unlinked node %q", node.Path())
+		log.CtxWarningf(p.taskCtx(), "Open ino %d path %q called on an unlinked inode", node.id, node.Path())
 		return nil, syscallErrStatus(syscall.EINVAL)
 	}
 
@@ -1338,7 +1342,6 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	if err != nil {
 		return nil, err
 	}
-
 	newParentNode, err := p.lookupNode(request.GetNewParentId())
 	if err != nil {
 		return nil, err
@@ -1481,21 +1484,11 @@ func unlink(parentNode *fsNode, childNode *fsNode, childName string) error {
 	childNode.attrs = updateAttr(childNode.attrs, func(attr *vfspb.Attrs) {
 		attr.Nlink--
 	})
-	if childNode.backingPath != "" && childNode.attrs.Nlink == 0 {
-		err := os.Remove(childNode.backingPath)
-		if err != nil {
-			childNode.mu.Unlock()
-			return syscallErrStatus(err)
-		}
-		childNode.backingPath = ""
-		childNode.server.mu.Lock()
-		childNode.server.blocks -= childNode.server.statBlocksToFSBlocks(childNode.attrs.Blocks)
-		childNode.server.mu.Unlock()
-	}
 	childNode.mu.Unlock()
 
 	parentNode.mu.Lock()
 	if _, ok := parentNode.children[childName]; !ok {
+		parentNode.mu.Unlock()
 		return syscallErrStatus(syscall.ENOENT)
 	}
 	delete(parentNode.children, childName)
@@ -1512,6 +1505,33 @@ func (p *Server) Unlink(ctx context.Context, request *vfspb.UnlinkRequest) (*vfs
 		return nil, err
 	}
 	return &vfspb.UnlinkResponse{}, nil
+}
+
+func (p *Server) Forget(ctx context.Context, request *vfspb.ForgetRequest) (*vfspb.ForgetResponse, error) {
+	node, err := p.lookupNode(request.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	// If the node doesn't have a real backing file, then there's nothing to do.
+	if node.backingPath != "" {
+		return &vfspb.ForgetResponse{}, nil
+	}
+	// If the node still has links then we need to leave the backing file in place.
+	if node.attrs.Nlink > 0 {
+		return &vfspb.ForgetResponse{}, nil
+	}
+	if err := os.Remove(node.backingPath); err != nil {
+		log.Warningf("could not remove backing file %q for inode %d: %s", node.backingPath, node.id, err)
+	}
+	node.backingPath = ""
+	node.server.mu.Lock()
+	node.server.blocks -= node.server.statBlocksToFSBlocks(node.attrs.Blocks)
+	node.server.mu.Unlock()
+
+	return &vfspb.ForgetResponse{}, nil
 }
 
 func (p *Server) getLockFD(handleID uint64) (int, error) {

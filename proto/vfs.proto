@@ -289,6 +289,12 @@ message UnlinkRequest {
 
 message UnlinkResponse {}
 
+message ForgetRequest {
+  uint64 id = 1;
+}
+
+message ForgetResponse {}
+
 message FileLock {
   uint64 start = 1;
   uint64 end = 2;
@@ -386,4 +392,6 @@ service FileSystem {
   rpc GetLk(GetLkRequest) returns (GetLkResponse);
   rpc SetLk(SetLkRequest) returns (SetLkResponse);
   rpc SetLkw(SetLkRequest) returns (SetLkResponse);
+
+  rpc Forget(ForgetRequest) returns (ForgetResponse);
 }
