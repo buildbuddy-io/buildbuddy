@@ -1,6 +1,7 @@
 package distributed_client
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,6 +38,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -51,6 +53,11 @@ const (
 	// should be slightly smaller than 2^N, to allow for proto and gRPC
 	// overhead.
 	writeBufSizeBytes = 512 * 1000 // 512 KB
+
+	// Reference verification outcomes.
+	VerificationSuccess = "success"
+	VerificationFailure = "failure"
+	VerificationError   = "error"
 )
 
 var (
@@ -581,14 +588,10 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		return nil, err
 	}
 
-	// The server provided a reference. Dereference it.
 	if rc.rsp.GetReference() != nil {
-		// Closing the stream (done below) returns the reference proto to the
-		// pool, but we need the reference for later, so clone it.
+		// Fetching more messages from the stream or closing it returns the
+		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
-		if err := rc.Close(); err != nil {
-			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
-		}
 
 		// Confirm the provided reference matches what was requested.
 		fr := ref.GetMetadata().GetFileRecord()
@@ -598,22 +601,46 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 			fr.GetDigestFunction() != r.GetDigestFunction() ||
 			fr.GetIsolation().GetCacheType() != r.GetCacheType() ||
 			fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
+			rc.Close()
 			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d (cache type %s, instance %q), but %s/%d (cache type %s, instance %q) was requested",
 				peer,
 				frd.GetHash(), frd.GetSizeBytes(), fr.GetIsolation().GetCacheType(), fr.GetIsolation().GetRemoteInstanceName(),
 				r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), r.GetCacheType(), r.GetInstanceName())
 		}
 
-		refCache, ok := c.cache.(interfaces.ReferenceCache)
-		if !ok {
-			return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
+		// If the server is also streaming the data, serve those bytes to the
+		// caller and verify that dereferencing the reference produces the
+		// same stream. This lets us verify references end-to-end while the
+		// byte stream remains the source of truth.
+		if rc.moreData() {
+			byteReader := io.ReadCloser(rc)
+			if decompress {
+				dr, err := compression.NewZstdDecompressingReader(rc)
+				if err != nil {
+					rc.Close()
+					return nil, err
+				}
+				byteReader = dr
+			}
+			recordReadResponseMetrics("bytes", r)
+			refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
+			if err != nil {
+				// Verification is best-effort: the byte stream is
+				// authoritative, so log and serve it.
+				c.log.Warningf("Cannot verify reference for %q from peer %q: %s", ResourceIsolationString(r), peer, err)
+				metrics.DistributedCacheReferenceVerificationCount.With(
+					prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+				return byteReader, nil
+			}
+			return NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer), nil
 		}
 
-		// Dereference reconciles the stored compressor with the requested one,
-		// so pass the caller's original resource, not the transport-rewritten
-		// one, and return its reader directly.
+		// The reference is the whole response: dereference it.
+		if err := rc.Close(); err != nil {
+			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
+		}
 		recordReadResponseMetrics("reference", r)
-		return refCache.Dereference(ctx, ref, requested, offset, limit)
+		return c.dereference(ctx, peer, ref, requested, offset, limit)
 	}
 
 	if !decompress {
@@ -637,6 +664,109 @@ func recordReadResponseMetrics(responseType string, r *rspb.ResourceName) {
 		prometheus.Labels{metrics.DistributedCacheReadResponseType: responseType}).Inc()
 	metrics.DistributedCacheReadResponseSizeBytes.With(
 		prometheus.Labels{metrics.DistributedCacheReadResponseType: responseType}).Add(float64(r.GetDigest().GetSizeBytes()))
+}
+
+func (c *Proxy) dereference(ctx context.Context, peer string, ref *refpb.Reference, requested *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	refCache, ok := c.cache.(interfaces.ReferenceCache)
+	if !ok {
+		return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
+	}
+	return refCache.Dereference(ctx, ref, requested, offset, limit)
+}
+
+// verifyingReadCloser serves bytes from primary while reading the same number
+// of bytes from secondary and comparing the two streams. It logs the outcome
+// and records a metric for analysis.
+type verifyingReadCloser struct {
+	primary   io.ReadCloser
+	secondary io.ReadCloser
+	log       log.Logger
+	resource  *rspb.ResourceName
+	peer      string
+
+	scratch  []byte
+	compared int64
+	done     bool
+}
+
+func NewVerifyingReadCloser(primary, secondary io.ReadCloser, log log.Logger, r *rspb.ResourceName, peer string) io.ReadCloser {
+	return &verifyingReadCloser{
+		primary:   primary,
+		secondary: secondary,
+		log:       log,
+		resource:  r,
+		peer:      peer,
+	}
+}
+
+func (v *verifyingReadCloser) verify(p []byte) {
+	if v.done {
+		return
+	}
+	if len(p) > cap(v.scratch) {
+		v.scratch = make([]byte, len(p))
+	}
+	scratch := v.scratch[:len(p)]
+	if _, err := io.ReadFull(v.secondary, scratch); err != nil {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes ended early at offset %d", v.compared))
+		} else {
+			v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+		}
+		return
+	}
+	if !bytes.Equal(p, scratch) {
+		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes differ from streamed bytes at offset %d", v.compared))
+		return
+	}
+	v.compared += int64(len(p))
+}
+
+func (v *verifyingReadCloser) verifyEOF() {
+	if v.done {
+		return
+	}
+	var b [1]byte
+	n, err := v.secondary.Read(b[:])
+	switch {
+	case n == 0 && err == io.EOF:
+		v.report(VerificationSuccess, nil)
+	case n != 0 || err == nil:
+		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes continue past streamed bytes at offset %d", v.compared))
+	default:
+		v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+	}
+}
+
+func (v *verifyingReadCloser) report(verificationStatus string, err error) {
+	v.done = true
+	switch verificationStatus {
+	case VerificationFailure:
+		v.log.Errorf("Reference verification failed for %q from peer %q: %s", ResourceIsolationString(v.resource), v.peer, err)
+	case VerificationError:
+		v.log.Warningf("Reference verification error for %q from peer %q: %s", ResourceIsolationString(v.resource), v.peer, err)
+	}
+	metrics.DistributedCacheReferenceVerificationCount.With(
+		prometheus.Labels{metrics.VerificationOutcomeLabel: verificationStatus}).Inc()
+}
+
+func (v *verifyingReadCloser) Read(p []byte) (int, error) {
+	n, err := v.primary.Read(p)
+	if n > 0 {
+		v.verify(p[:n])
+	}
+	if err == io.EOF {
+		v.verifyEOF()
+	}
+	return n, err
+}
+
+func (v *verifyingReadCloser) Close() error {
+	err := v.primary.Close()
+	if serr := v.secondary.Close(); err == nil {
+		err = serr
+	}
+	return err
 }
 
 type distributedCacheReader struct {
