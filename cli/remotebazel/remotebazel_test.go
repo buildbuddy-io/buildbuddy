@@ -20,8 +20,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
 	"github.com/creack/pty"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -37,30 +39,52 @@ func init() {
 type scriptedBuildBuddyClient struct {
 	bbspb.BuildBuddyServiceClient
 
-	mu        sync.Mutex
-	responses []*elpb.GetEventLogChunkResponse
-	hooks     []func()
+	mu sync.Mutex
+	// Results returned from successive Recv calls, shared across all streams
+	// the client returns; once exhausted, Recv returns io.EOF.
+	script []scriptedRecv
+	// ChunkId of each GetEventLog request: the initial request, plus the
+	// chunk each reconnect resumed from.
+	requestedChunkIDs []string
 }
 
-func (c *scriptedBuildBuddyClient) GetEventLogChunk(ctx context.Context, req *elpb.GetEventLogChunkRequest, opts ...grpc.CallOption) (*elpb.GetEventLogChunkResponse, error) {
+type scriptedRecv struct {
+	rsp *elpb.GetEventLogChunkResponse
+	err error
+	// If set, hook runs before the result is returned.
+	hook func()
+}
+
+func (c *scriptedBuildBuddyClient) GetEventLog(ctx context.Context, req *elpb.GetEventLogChunkRequest, opts ...grpc.CallOption) (bbspb.BuildBuddyService_GetEventLogClient, error) {
 	c.mu.Lock()
-	if len(c.responses) == 0 {
+	defer c.mu.Unlock()
+	c.requestedChunkIDs = append(c.requestedChunkIDs, req.GetChunkId())
+	return &scriptedEventLogStream{client: c}, nil
+}
+
+// scriptedEventLogStream returns the scripted results, then ends the stream
+// with io.EOF like a real server-side stream would.
+type scriptedEventLogStream struct {
+	grpc.ClientStream
+
+	client *scriptedBuildBuddyClient
+}
+
+func (s *scriptedEventLogStream) Recv() (*elpb.GetEventLogChunkResponse, error) {
+	c := s.client
+	c.mu.Lock()
+	if len(c.script) == 0 {
 		c.mu.Unlock()
-		return &elpb.GetEventLogChunkResponse{}, nil
+		return nil, io.EOF
 	}
-	response := c.responses[0]
-	c.responses = c.responses[1:]
-	var hook func()
-	if len(c.hooks) > 0 {
-		hook = c.hooks[0]
-		c.hooks = c.hooks[1:]
-	}
+	next := c.script[0]
+	c.script = c.script[1:]
 	c.mu.Unlock()
 
-	if hook != nil {
-		hook()
+	if next.hook != nil {
+		next.hook()
 	}
-	return response, nil
+	return next.rsp, next.err
 }
 
 func TestParseRemoteCliFlags(t *testing.T) {
@@ -331,41 +355,34 @@ func TestLiveLogUpdate(t *testing.T) {
 }
 
 func TestStreamLogs_TerminalClearDoesNotReplayStableLogs(t *testing.T) {
-	clearScreenBeforeSecondResponse := make(chan struct{})
-	continueSecondResponse := make(chan struct{})
 	client := &scriptedBuildBuddyClient{
-		responses: []*elpb.GetEventLogChunkResponse{
-			{
+		script: []scriptedRecv{
+			{rsp: &elpb.GetEventLogChunkResponse{
 				Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 1\n"),
 				NextChunkId: "0001",
 				Live:        true,
-			},
+			}},
 			{
-				Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\n"),
-				NextChunkId: "0001",
-				Live:        true,
+				rsp: &elpb.GetEventLogChunkResponse{
+					Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\n"),
+					NextChunkId: "0001",
+					Live:        true,
+				},
+				// Clear the terminal, as a user might mid-build. Duplicate
+				// logs should not be reprinted afterwards. The hook runs on
+				// the drawing goroutine, so the clear lands after the first
+				// response is drawn and before the second one is.
+				hook: func() {
+					_, _ = os.Stdout.Write([]byte("\x1b[2J\x1b[H"))
+				},
 			},
-			{
+			{rsp: &elpb.GetEventLogChunkResponse{
 				Buffer: []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\nDone.\n"),
-			},
-		},
-		hooks: []func(){
-			nil,
-			func() {
-				close(clearScreenBeforeSecondResponse)
-				<-continueSecondResponse
-			},
+			}},
 		},
 	}
 
-	raw, rendered := runStreamLogsWithPTY(t, client, func(ptmx *os.File) {
-		// Clear the terminal before the second log response is streamed.
-		// Duplicate logs should not be reprinted.
-		waitForSignal(t, clearScreenBeforeSecondResponse)
-		_, err := os.Stdout.Write([]byte("\x1b[2J\x1b[H"))
-		require.NoError(t, err)
-		close(continueSecondResponse)
-	})
+	raw, rendered := runStreamLogsWithPTY(t, client, nil)
 
 	// On failure, dump the captured output.
 	t.Cleanup(func() {
@@ -390,40 +407,55 @@ func TestStreamLogs_TerminalClearDoesNotReplayStableLogs(t *testing.T) {
 }
 
 func TestStreamLogs_TypedInputDoesNotCorruptOutput(t *testing.T) {
-	typeInputBeforeSecondResponse := make(chan struct{})
-	continueSecondResponse := make(chan struct{})
+	var ptmx *os.File
 	client := &scriptedBuildBuddyClient{
-		responses: []*elpb.GetEventLogChunkResponse{
-			{
+		script: []scriptedRecv{
+			{rsp: &elpb.GetEventLogChunkResponse{
 				Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 1\n"),
 				NextChunkId: "0001",
 				Live:        true,
-			},
+			}},
 			{
-				Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\n"),
-				NextChunkId: "0001",
-				Live:        true,
+				rsp: &elpb.GetEventLogChunkResponse{
+					Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\n"),
+					NextChunkId: "0001",
+					Live:        true,
+				},
+				// Type input into the terminal, as a user might mid-build.
+				hook: func() {
+					_, err := ptmx.Write([]byte("typed input\n"))
+					if !assert.NoError(t, err) {
+						return
+					}
+					// Read the line back to force the kernel's echo decision
+					// to happen now, while echo is still disabled. Otherwise
+					// it may process the input only after streamLogs restores
+					// echo.
+					readBack := make(chan string, 1)
+					go func() {
+						buf := make([]byte, 64)
+						n, _ := os.Stdin.Read(buf)
+						readBack <- string(buf[:n])
+					}()
+					select {
+					case line := <-readBack:
+						// The read should return the typed line, confirming
+						// the line discipline consumed it rather than the read
+						// returning early on some other input.
+						assert.Equal(t, "typed input\n", line)
+					case <-time.After(10 * time.Second):
+						t.Error("timed out reading typed input back from the tty")
+					}
+				},
 			},
-			{
+			{rsp: &elpb.GetEventLogChunkResponse{
 				Buffer: []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\nDone.\n"),
-			},
-		},
-		hooks: []func(){
-			nil,
-			func() {
-				close(typeInputBeforeSecondResponse)
-				<-continueSecondResponse
-			},
+			}},
 		},
 	}
 
-	_, rendered := runStreamLogsWithPTY(t, client, func(ptmx *os.File) {
-		// Between the first and second log responses, type some input into the terminal.
-		waitForSignal(t, typeInputBeforeSecondResponse)
-		_, err := ptmx.Write([]byte("typed input\n"))
-		require.NoError(t, err)
-		// Close the channel to signal the test to continue.
-		close(continueSecondResponse)
+	_, rendered := runStreamLogsWithPTY(t, client, func(p *os.File) {
+		ptmx = p
 	})
 
 	// On failure, dump the captured output.
@@ -441,6 +473,102 @@ func TestStreamLogs_TypedInputDoesNotCorruptOutput(t *testing.T) {
 	require.Equal(t, 1, strings.Count(rendered, "Setup completed."))
 	require.Equal(t, 1, strings.Count(rendered, "Analyzing: 2"))
 	require.Equal(t, 1, strings.Count(rendered, "Done."))
+}
+
+func TestStreamLogs_ReconnectsAfterTransientStreamError(t *testing.T) {
+	client := &scriptedBuildBuddyClient{
+		script: []scriptedRecv{
+			// Serve a live chunk with some in-progress output.
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer:      []byte("Applied patch cleanly.\nAnalyzing: 1\n"),
+				NextChunkId: "0001",
+				Live:        true,
+			}},
+			// Drop the stream with a retryable error, as when the app
+			// restarts during a deploy. streamLogs should reconnect instead
+			// of returning the error, which would cancel the remote run.
+			{err: status.UnavailableError("connection reset by peer")},
+			// After the reconnect, re-serve the live chunk from the start,
+			// now with fresh progress.
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer:      []byte("Applied patch cleanly.\nAnalyzing: 2\n"),
+				NextChunkId: "0001",
+				Live:        true,
+			}},
+			// Finalize the chunk and end the log.
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer: []byte("Applied patch cleanly.\nAnalyzing: 2\nDone.\n"),
+			}},
+		},
+	}
+
+	_, rendered := runStreamLogsWithPTY(t, client, nil)
+
+	// On failure, dump the captured output.
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("rendered logs:\n%s\x1b[0m", rendered)
+		}
+	})
+
+	// The reconnect should resume from the live chunk rather than restarting
+	// the log from the beginning.
+	require.Equal(t, []string{"", "0001"}, client.requestedChunkIDs)
+
+	// The re-served chunk should be deduplicated against what was already
+	// drawn: stable lines appear exactly once, and the stale progress line is
+	// replaced by the fresh one.
+	require.Equal(t, 1, strings.Count(rendered, "Applied patch cleanly."))
+	require.Equal(t, 1, strings.Count(rendered, "Analyzing: 2"))
+	require.Equal(t, 1, strings.Count(rendered, "Done."))
+	require.NotContains(t, rendered, "Analyzing: 1")
+}
+
+func TestPrintLogs(t *testing.T) {
+	client := &scriptedBuildBuddyClient{
+		script: []scriptedRecv{
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer:      []byte("Analyzing: 1\n"),
+				NextChunkId: "0001",
+				Live:        true,
+			}},
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer:      []byte("Analyzing: 2\nBuilding.\n"),
+				NextChunkId: "0002",
+			}},
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer: []byte("Done.\n"),
+			}},
+		},
+	}
+
+	out, err := runPrintLogsWithCapturedStdout(t, client)
+
+	require.NoError(t, err)
+	// Analyzing: 1 should not get printed because it was
+	// a live chunk that was overwritten.
+	require.Equal(t, "Analyzing: 2\nBuilding.\nDone.\n", out)
+}
+
+func TestPrintLogs_ReturnsStreamError(t *testing.T) {
+	client := &scriptedBuildBuddyClient{
+		script: []scriptedRecv{
+			// Serve a finalized chunk, which should be printed.
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer:      []byte("Analyzing: 1\n"),
+				NextChunkId: "0001",
+			}},
+			// Fail the stream with a non-retryable error. printLogs should
+			// return the error rather than treating it as a clean end of
+			// the log.
+			{err: status.NotFoundError("invocation not found")},
+		},
+	}
+
+	out, err := runPrintLogsWithCapturedStdout(t, client)
+
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+	require.Equal(t, "Analyzing: 1\n", out)
 }
 
 func TestGitConfig_BranchAndSha(t *testing.T) {
@@ -859,9 +987,12 @@ func TestGetRemoteRunnerTarget(t *testing.T) {
 }
 
 // Helper to run the streamLogs function with a test terminal.
+// The setup callback, if set, receives the pty master before log streaming
+// starts; script hooks can capture it to interact with the terminal
+// mid-stream.
 // The first output is the exact output captured from the terminal, including ANSI escape sequences.
 // The second output is the rendered output, with ANSI escape sequences removed.
-func runStreamLogsWithPTY(t *testing.T, client bbspb.BuildBuddyServiceClient, whileRunning func(ptmx *os.File)) (string, string) {
+func runStreamLogsWithPTY(t *testing.T, client bbspb.BuildBuddyServiceClient, setup func(ptmx *os.File)) (string, string) {
 	// This helper swaps the process-global os.Stdin/os.Stdout, so the test must
 	// not run in parallel. t.Setenv makes the testing package panic if
 	// t.Parallel() is ever called on this test (in either order), enforcing
@@ -890,13 +1021,14 @@ func runStreamLogsWithPTY(t *testing.T, client bbspb.BuildBuddyServiceClient, wh
 		_, _ = io.Copy(output, ptmx)
 	}()
 
+	if setup != nil {
+		setup(ptmx)
+	}
+
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- streamLogs(context.Background(), client, "test-invocation-id")
 	}()
-	if whileRunning != nil {
-		whileRunning(ptmx)
-	}
 	err = <-errCh
 	require.NoError(t, err)
 
@@ -913,10 +1045,19 @@ func runStreamLogsWithPTY(t *testing.T, client bbspb.BuildBuddyServiceClient, wh
 	return raw, rendered
 }
 
-func waitForSignal(t *testing.T, ch <-chan struct{}) {
-	select {
-	case <-ch:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for streamLogs test signal")
-	}
+// Helper to run the printLogs function with os.Stdout captured, returning the
+// captured output and the error returned by printLogs.
+func runPrintLogsWithCapturedStdout(t *testing.T, client bbspb.BuildBuddyServiceClient) (string, error) {
+	r, w, err := os.Pipe()
+	require.NoError(t, err)
+	oldStdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	printErr := printLogs(t.Context(), client, "test-invocation-id")
+
+	require.NoError(t, w.Close())
+	out, err := io.ReadAll(r)
+	require.NoError(t, err)
+	return string(out), printErr
 }
