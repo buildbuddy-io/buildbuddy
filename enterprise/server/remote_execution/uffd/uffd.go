@@ -114,10 +114,12 @@ type setupMessage struct {
 
 type faultResolver interface {
 	// copy performs a UFFDIO_COPY ioctl. On return, c.Copy holds the number of
-	// bytes copied, or a non-zero errno if no bytes were copied.
+	// bytes copied, or a negative errno if no bytes were copied. The returned
+	// errno can be EAGAIN even if c.Copy reports partial progress.
 	copy(uffd uintptr, c *uffdioCopy) syscall.Errno
 	// zeropage performs a UFFDIO_ZEROPAGE ioctl. On return, z.Zeropage holds the
-	// number of bytes zeroed, or a non-zero errno if no bytes were zeroed.
+	// number of bytes zeroed, or a negative errno if no bytes were zeroed. The
+	// returned errno can be EAGAIN even if z.Zeropage reports partial progress.
 	zeropage(uffd uintptr, z *uffdIoZeropage) syscall.Errno
 }
 
@@ -520,17 +522,20 @@ func (h *Handler) copyZeroes(uffd uintptr, faultingAddress uintptr, mapping *Gue
 		},
 	}
 	errno := h.faultResolver.zeropage(uffd, &zeroIO)
+	// If there's no progress, Zeropage can be a negative errno.
+	zeroed := max(zeroIO.Zeropage, 0)
+	if zeroed > int64(zeroIO.Range.Len) || zeroed%int64(pageSize) != 0 {
+		return status.InternalErrorf("UFFDIO_ZEROPAGE reported invalid progress: zeroed %d of %d bytes", zeroed, zeroIO.Range.Len)
+	}
 
 	// The Zeropage field contains the number of bytes actually zeroed. Only
 	// unmark the pages that were actually zeroed.
 	addr := faultingAddress
-	for ; addr < faultingAddress+uintptr(zeroIO.Zeropage); addr += pageSize {
+	for zeroEnd := faultingAddress + uintptr(zeroed); addr < zeroEnd; addr += pageSize {
 		delete(h.removedAddresses, int64(addr))
 	}
 
-	// EEXIST is returned if the last page attempted to be zeroed was already mapped.
-	// This should not happen with the current single-threaded UFFD handler, but this check is defensive.
-	// Remove it from removedAddresses and no further action is needed.
+	// EEXIST means the faulting page is already populated. Treat the fault as resolved.
 	if errno == unix.EEXIST {
 		delete(h.removedAddresses, int64(addr))
 		return nil
@@ -676,6 +681,10 @@ func (h *Handler) resolvePageFault(uffd uintptr, faultingRegion uint64, src uint
 	errno := h.faultResolver.copy(uffd, &copyData)
 	// On failure, Copy contains a negative errno instead of a byte count.
 	copied := max(copyData.Copy, 0)
+	pageSize := int64(os.Getpagesize())
+	if copied > int64(size) || copied%pageSize != 0 {
+		return 0, status.InternalErrorf("UFFDIO_COPY reported invalid progress: copied %d of %d bytes", copied, size)
+	}
 	if errno != 0 {
 		return copied, wrapErrno(errno, "UFFDIO_COPY failed")
 	}
