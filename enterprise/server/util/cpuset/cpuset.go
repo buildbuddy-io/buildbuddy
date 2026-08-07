@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -30,6 +31,18 @@ const (
 	// leasers forget to close their leases.
 	MaxNumLeases = 1000
 )
+
+func Register(env *real_environment.RealEnv) error {
+	if !*cpuLeaserEnable {
+		return nil
+	}
+	leaser, err := NewLeaser(LeaserOpts{})
+	if err != nil {
+		return err
+	}
+	env.SetCPULeaser(leaser)
+	return nil
+}
 
 // Compile-time check that cpuLeaser implements the interface.
 var _ interfaces.CPULeaser = (*CPULeaser)(nil)
@@ -232,10 +245,6 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 	}
 
 	numCPUs := computeNumCPUs(milliCPU, !options.disableOverhead)
-	// If the CPU leaser is disabled; return all CPUs.
-	if !*cpuLeaserEnable {
-		numCPUs = len(l.cpus)
-	}
 
 	// Put all CPUs in a priority queue.
 	pq := priority_queue.New[CPUInfo]()
@@ -278,31 +287,28 @@ func (l *CPULeaser) Acquire(milliCPU int64, taskID string, opts ...any) (int, []
 		}
 	}
 
-	// If the CPULeaser is enabled, actually track the lease.
-	if *cpuLeaserEnable {
-		if len(l.leases) >= MaxNumLeases {
-			droppedLease := l.leases[0]
-			l.leases = l.leases[1:]
-			for _, processor := range droppedLease.cpus {
-				l.load[processor] -= 1
-			}
-			if *warnAboutLeaks {
-				alert.UnexpectedEvent("cpu_leaser_leak", "Acquire() handle leak at %s!", droppedLease.location)
-			}
-		}
-
-		lease := lease{
-			taskID: taskID,
-			cpus:   leaseSet,
+	if len(l.leases) >= MaxNumLeases {
+		droppedLease := l.leases[0]
+		l.leases = l.leases[1:]
+		for _, processor := range droppedLease.cpus {
+			l.load[processor] -= 1
 		}
 		if *warnAboutLeaks {
-			if _, file, no, ok := runtime.Caller(1); ok {
-				lease.location = fmt.Sprintf("%s:%d", file, no)
-			}
+			alert.UnexpectedEvent("cpu_leaser_leak", "Acquire() handle leak at %s!", droppedLease.location)
 		}
-
-		l.leases = append(l.leases, lease)
 	}
+
+	lease := lease{
+		taskID: taskID,
+		cpus:   leaseSet,
+	}
+	if *warnAboutLeaks {
+		if _, file, no, ok := runtime.Caller(1); ok {
+			lease.location = fmt.Sprintf("%s:%d", file, no)
+		}
+	}
+
+	l.leases = append(l.leases, lease)
 
 	log.Debugf("Leased %s to task: %q (%d milliCPU)", Format(leaseSet...), taskID, milliCPU)
 	return selectedNode, leaseSet, func() {
