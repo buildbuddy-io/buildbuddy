@@ -159,6 +159,7 @@ func TestVMNewMemoryMonitorReadsCgroupLimit(t *testing.T) {
 	require.NoError(t, err)
 	cgroupMonitor, ok := monitor.(*cgroupMemoryMonitor)
 	require.True(t, ok, "expected a cgroup memory monitor, got %T", monitor)
+	require.Equal(t, cgroupDir, cgroupMonitor.dir)
 	require.Equal(t, int64(536870912), cgroupMonitor.limitBytes)
 }
 
@@ -171,7 +172,7 @@ func TestVMNewMemoryMonitorUsesEffectiveLimitFromAncestors(t *testing.T) {
 
 	// Give the parent cgroup a smaller memory limit than the child. The
 	// kernel enforces the parent limit on the child's memory usage, so the
-	// monitor should use the parent limit as the effective limit.
+	// monitor should measure the parent cgroup against the parent limit.
 	require.NoError(t, os.WriteFile(filepath.Join(parentDir, "memory.max"), []byte("268435456"), 0))
 	require.NoError(t, os.WriteFile(filepath.Join(childDir, "memory.max"), []byte("536870912"), 0))
 
@@ -179,7 +180,98 @@ func TestVMNewMemoryMonitorUsesEffectiveLimitFromAncestors(t *testing.T) {
 	require.NoError(t, err)
 	cgroupMonitor, ok := monitor.(*cgroupMemoryMonitor)
 	require.True(t, ok, "expected a cgroup memory monitor, got %T", monitor)
+	require.Equal(t, parentDir, cgroupMonitor.dir)
 	require.Equal(t, int64(268435456), cgroupMonitor.limitBytes)
+}
+
+func TestVMNewMemoryMonitorPrefersOutermostCgroupWithEqualLimit(t *testing.T) {
+	parentDir := setupTestCgroup(t)
+	childDir := filepath.Join(parentDir, "child")
+	require.NoError(t, os.Mkdir(childDir, 0755))
+	t.Cleanup(func() { require.NoError(t, os.Remove(childDir)) })
+	require.NoError(t, cgroup.EnableController(childDir, "memory"))
+
+	// Set the same memory limit on the parent and the child. Either limit is
+	// equally binding, but memory that siblings charge to the parent counts
+	// against it, so the monitor should measure the parent cgroup to see that
+	// usage.
+	require.NoError(t, os.WriteFile(filepath.Join(parentDir, "memory.max"), []byte("268435456"), 0))
+	require.NoError(t, os.WriteFile(filepath.Join(childDir, "memory.max"), []byte("268435456"), 0))
+
+	monitor, err := NewMemoryMonitor(filepath.Join(filepath.Base(parentDir), "child"))
+	require.NoError(t, err)
+	cgroupMonitor, ok := monitor.(*cgroupMemoryMonitor)
+	require.True(t, ok, "expected a cgroup memory monitor, got %T", monitor)
+	require.Equal(t, parentDir, cgroupMonitor.dir)
+	require.Equal(t, int64(268435456), cgroupMonitor.limitBytes)
+}
+
+func TestVMKillerMeasuresUsageFromLimitedAncestor(t *testing.T) {
+	parentDir := setupTestCgroup(t)
+	require.NoError(t, os.WriteFile(filepath.Join(parentDir, "memory.max"), []byte("268435456"), 0))
+	ctx := t.Context()
+
+	flags.Set(t, "executor.oom_killer.enabled", true)
+	flags.Set(t, "executor.oom_killer.poll_interval", 100*time.Millisecond)
+	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
+	flags.Set(t, "executor.enable_oci", true)
+
+	// Fill 150MB of the limited hierarchy from a child cgroup writing to a
+	// shared tmpfs, then remove the child. The pages remain charged to the
+	// hierarchy while the file exists.
+	//
+	// This simulates what happens when a tmpfs-based executor restarts - the
+	// filecache usage stays attributed to the kubepods.slice cgroup, but is not
+	// attributed to the new executor's cgroup.
+	mnt := filepath.Join(t.TempDir(), "tmpfs")
+	require.NoError(t, os.Mkdir(mnt, 0755))
+	require.NoError(t, unix.Mount("tmpfs", mnt, "tmpfs", 0, "size=256m"))
+	t.Cleanup(func() { require.NoError(t, unix.Unmount(mnt, 0)) })
+	writerDir := filepath.Join(parentDir, "writer")
+	require.NoError(t, os.Mkdir(writerDir, 0755))
+	cmd, _ := startBashInCgroup(t, writerDir, fmt.Sprintf("dd if=/dev/zero of=%s/f bs=1M count=150", mnt))
+	require.NoError(t, cmd.Wait())
+	cleanupCgroup(t, writerDir)
+
+	// Start the monitor from a separate child with no local memory limit. The
+	// monitor should enforce the parent's limit using the parent's usage.
+	childDir := filepath.Join(parentDir, "child")
+	require.NoError(t, os.Mkdir(childDir, 0755))
+	t.Cleanup(func() { cleanupCgroup(t, childDir) })
+	require.NoError(t, cgroup.EnableController(childDir, "memory"))
+	monitor, err := NewMemoryMonitor(filepath.Join(filepath.Base(parentDir), "child"))
+	require.NoError(t, err)
+	cgroupMonitor, ok := monitor.(*cgroupMemoryMonitor)
+	require.True(t, ok, "expected a cgroup memory monitor, got %T", monitor)
+	require.Equal(t, parentDir, cgroupMonitor.dir)
+	require.Equal(t, int64(268435456), cgroupMonitor.limitBytes)
+	oomKiller, err := New(ctx, monitor)
+	require.NoError(t, err)
+	task := &vmTestTask{killed: make(chan error, 1)}
+	unregister := oomKiller.Register(ctx, task)
+	defer unregister()
+
+	// Write another 90MB to the tmpfs from the monitored child. tmpfs pages
+	// are charged once as they are written, so unlike building up the data in
+	// a shell variable, this cannot transiently overshoot and trip the kernel
+	// OOM killer. The combined 240MB usage crosses the 90% kill threshold
+	// (230MB) but stays under memory.max (256MB), so only the userspace killer
+	// fires, even though the child's local usage stays below half of the
+	// effective limit.
+	_, stdin := startBashInCgroup(t, childDir, fmt.Sprintf("dd if=/dev/zero of=%s/g bs=1M count=90 && read -r _", mnt))
+	defer stdin.Close()
+	select {
+	case err := <-task.killed:
+		require.True(t, oom.IsError(err), "expected an OOM error but got %s", err)
+	case <-time.After(60 * time.Second):
+		t.Fatal("task was not killed by the OOM killer")
+	}
+	// The child's usage is bounded by its 90MB tmpfs file, so it stays below
+	// half of the 256MB limit no matter when we sample it. This confirms the
+	// kill was driven by the parent hierarchy's usage, not the child's.
+	childUsageBytes, err := cgroup.ReadMemoryCurrent(childDir)
+	require.NoError(t, err)
+	require.Less(t, childUsageBytes, cgroupMonitor.limitBytes/2)
 }
 
 func TestVMNewMemoryMonitorAtRealRootUsesSystemMemory(t *testing.T) {
@@ -201,21 +293,23 @@ func setupTestCgroup(t *testing.T) string {
 	}
 	dir := filepath.Join(cgroup.RootPath, "oomkiller-test-"+uuid.New())
 	require.NoError(t, os.Mkdir(dir, 0755))
-	t.Cleanup(func() {
-		// Kill anything still running in the cgroup. Removal fails until the
-		// kernel has finished tearing down the cgroup, so retry briefly.
-		_ = os.WriteFile(filepath.Join(dir, "cgroup.kill"), []byte("1"), 0)
-		var err error
-		for range 100 {
-			if err = os.Remove(dir); err == nil {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		t.Errorf("remove test cgroup: %s", err)
-	})
+	t.Cleanup(func() { cleanupCgroup(t, dir) })
 	require.NoError(t, cgroup.EnableController(dir, "memory"))
 	return dir
+}
+
+func cleanupCgroup(t *testing.T, path string) {
+	// cgroup.kill returns before all processes have finished exiting, so retry
+	// removal while the kernel finishes tearing down the cgroup.
+	_ = os.WriteFile(filepath.Join(path, "cgroup.kill"), []byte("1"), 0)
+	var err error
+	for range 100 {
+		if err = os.Remove(path); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("remove cgroup %q failed with %s", path, err)
 }
 
 // startBashInCgroup starts a bash script in the given cgroup. The script only

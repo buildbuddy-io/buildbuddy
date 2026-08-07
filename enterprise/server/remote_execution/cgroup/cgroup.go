@@ -470,13 +470,18 @@ func ReadMemoryMax(dir string) (*int64, error) {
 }
 
 // ReadEffectiveMemoryLimit returns the smallest "memory.max" limit in effect
-// for the cgroup at the given absolute path, taking ancestor cgroup limits
-// into account. It returns nil if neither the cgroup nor any of its ancestors
-// sets a limit. The walk includes the cgroupfs root: the real cgroup v2 root
-// has no memory.max file and is treated as unlimited, but under a cgroup
-// namespace the root directory is a non-root cgroup on the host, and any
-// limit set on it applies.
-func ReadEffectiveMemoryLimit(dir string) (*int64, error) {
+// for the cgroup at the given absolute path and the absolute path of the
+// cgroup setting that limit, taking ancestor cgroup limits into account. It
+// returns an empty path and nil limit if neither the cgroup nor any of its
+// ancestors sets a limit. When the same smallest limit is set at multiple
+// levels, it returns the outermost such cgroup, because memory charged to an
+// ancestor by siblings counts against the shared limit and should be included
+// when the returned cgroup's usage is measured. The walk includes the cgroupfs
+// root. The real cgroup v2 root has no memory.max file and is treated as
+// unlimited, but under a cgroup namespace the root directory is a non-root
+// cgroup on the host, and any limit set on it applies.
+func ReadEffectiveMemoryLimit(dir string) (string, *int64, error) {
+	var limitCgroupPath string
 	var limit *int64
 	for dir = filepath.Clean(dir); dir == RootPath || strings.HasPrefix(dir, RootPath+string(os.PathSeparator)); dir = ParentPath(dir) {
 		v, err := ReadMemoryMax(dir)
@@ -484,16 +489,17 @@ func ReadEffectiveMemoryLimit(dir string) (*int64, error) {
 			if dir == RootPath && os.IsNotExist(err) {
 				break
 			}
-			return nil, err
+			return "", nil, err
 		}
-		if v != nil && (limit == nil || *v < *limit) {
+		if v != nil && (limit == nil || *v <= *limit) {
+			limitCgroupPath = dir
 			limit = v
 		}
 		if dir == RootPath {
 			break
 		}
 	}
-	return limit, nil
+	return limitCgroupPath, limit, nil
 }
 
 // ReadMemoryStatField reads the given field from the "memory.stat" file under
