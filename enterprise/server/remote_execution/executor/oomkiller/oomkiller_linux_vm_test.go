@@ -184,6 +184,28 @@ func TestVMNewMemoryMonitorUsesEffectiveLimitFromAncestors(t *testing.T) {
 	require.Equal(t, int64(268435456), cgroupMonitor.limitBytes)
 }
 
+func TestVMNewMemoryMonitorPrefersOutermostCgroupWithEqualLimit(t *testing.T) {
+	parentDir := setupTestCgroup(t)
+	childDir := filepath.Join(parentDir, "child")
+	require.NoError(t, os.Mkdir(childDir, 0755))
+	t.Cleanup(func() { require.NoError(t, os.Remove(childDir)) })
+	require.NoError(t, cgroup.EnableController(childDir, "memory"))
+
+	// Set the same memory limit on the parent and the child. Either limit is
+	// equally binding, but memory that siblings charge to the parent counts
+	// against it, so the monitor should measure the parent cgroup to see that
+	// usage.
+	require.NoError(t, os.WriteFile(filepath.Join(parentDir, "memory.max"), []byte("268435456"), 0))
+	require.NoError(t, os.WriteFile(filepath.Join(childDir, "memory.max"), []byte("268435456"), 0))
+
+	monitor, err := NewMemoryMonitor(filepath.Join(filepath.Base(parentDir), "child"))
+	require.NoError(t, err)
+	cgroupMonitor, ok := monitor.(*cgroupMemoryMonitor)
+	require.True(t, ok, "expected a cgroup memory monitor, got %T", monitor)
+	require.Equal(t, parentDir, cgroupMonitor.dir)
+	require.Equal(t, int64(268435456), cgroupMonitor.limitBytes)
+}
+
 func TestVMKillerMeasuresUsageFromLimitedAncestor(t *testing.T) {
 	parentDir := setupTestCgroup(t)
 	require.NoError(t, os.WriteFile(filepath.Join(parentDir, "memory.max"), []byte("268435456"), 0))
@@ -194,8 +216,8 @@ func TestVMKillerMeasuresUsageFromLimitedAncestor(t *testing.T) {
 	flags.Set(t, "executor.oom_killer.memory_usage_threshold", 0.9)
 	flags.Set(t, "executor.enable_oci", true)
 
-	// Fill roughly half of the limited hierarchy from a child cgroup writing to
-	// a shared tmpfs, then remove the child. The pages remain charged to the
+	// Fill 150MB of the limited hierarchy from a child cgroup writing to a
+	// shared tmpfs, then remove the child. The pages remain charged to the
 	// hierarchy while the file exists.
 	//
 	// This simulates what happens when a tmpfs-based executor restarts - the
@@ -207,9 +229,9 @@ func TestVMKillerMeasuresUsageFromLimitedAncestor(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, unix.Unmount(mnt, 0)) })
 	writerDir := filepath.Join(parentDir, "writer")
 	require.NoError(t, os.Mkdir(writerDir, 0755))
-	cmd, _ := startBashInCgroup(t, writerDir, fmt.Sprintf("dd if=/dev/zero of=%s/f bs=1M count=120", mnt))
+	cmd, _ := startBashInCgroup(t, writerDir, fmt.Sprintf("dd if=/dev/zero of=%s/f bs=1M count=150", mnt))
 	require.NoError(t, cmd.Wait())
-	require.NoError(t, os.Remove(writerDir))
+	cleanupCgroup(t, writerDir)
 
 	// Start the monitor from a separate child with no local memory limit. The
 	// monitor should enforce the parent's limit using the parent's usage.
@@ -229,10 +251,14 @@ func TestVMKillerMeasuresUsageFromLimitedAncestor(t *testing.T) {
 	unregister := oomKiller.Register(ctx, task)
 	defer unregister()
 
-	// Allocate roughly the other half of the parent's limit in the child. The
-	// combined usage should trigger the killer even though the child's local
-	// usage remains below half of the effective limit.
-	_, stdin := startBashInCgroup(t, childDir, `data=$(head -c 120000000 /dev/zero | tr '\0' x) && read -r _`)
+	// Write another 90MB to the tmpfs from the monitored child. tmpfs pages
+	// are charged once as they are written, so unlike building up the data in
+	// a shell variable, this cannot transiently overshoot and trip the kernel
+	// OOM killer. The combined 240MB usage crosses the 90% kill threshold
+	// (230MB) but stays under memory.max (256MB), so only the userspace killer
+	// fires, even though the child's local usage stays below half of the
+	// effective limit.
+	_, stdin := startBashInCgroup(t, childDir, fmt.Sprintf("dd if=/dev/zero of=%s/g bs=1M count=90 && read -r _", mnt))
 	defer stdin.Close()
 	select {
 	case err := <-task.killed:
@@ -240,6 +266,9 @@ func TestVMKillerMeasuresUsageFromLimitedAncestor(t *testing.T) {
 	case <-time.After(60 * time.Second):
 		t.Fatal("task was not killed by the OOM killer")
 	}
+	// The child's usage is bounded by its 90MB tmpfs file, so it stays below
+	// half of the 256MB limit no matter when we sample it. This confirms the
+	// kill was driven by the parent hierarchy's usage, not the child's.
 	childUsageBytes, err := cgroup.ReadMemoryCurrent(childDir)
 	require.NoError(t, err)
 	require.Less(t, childUsageBytes, cgroupMonitor.limitBytes/2)

@@ -474,10 +474,12 @@ func ReadMemoryMax(dir string) (*int64, error) {
 // cgroup setting that limit, taking ancestor cgroup limits into account. It
 // returns an empty path and nil limit if neither the cgroup nor any of its
 // ancestors sets a limit. When the same smallest limit is set at multiple
-// levels, it returns the cgroup nearest to the given path. The walk includes
-// the cgroupfs root. The real cgroup v2 root has no memory.max file and is
-// treated as unlimited, but under a cgroup namespace the root directory is a
-// non-root cgroup on the host, and any limit set on it applies.
+// levels, it returns the outermost such cgroup, because memory charged to an
+// ancestor by siblings counts against the shared limit and should be included
+// when the returned cgroup's usage is measured. The walk includes the cgroupfs
+// root. The real cgroup v2 root has no memory.max file and is treated as
+// unlimited, but under a cgroup namespace the root directory is a non-root
+// cgroup on the host, and any limit set on it applies.
 func ReadEffectiveMemoryLimit(dir string) (string, *int64, error) {
 	var limitCgroupPath string
 	var limit *int64
@@ -489,7 +491,7 @@ func ReadEffectiveMemoryLimit(dir string) (string, *int64, error) {
 			}
 			return "", nil, err
 		}
-		if v != nil && (limit == nil || *v < *limit) {
+		if v != nil && (limit == nil || *v <= *limit) {
 			limitCgroupPath = dir
 			limit = v
 		}
