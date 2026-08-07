@@ -43,7 +43,7 @@ func NewMemoryMonitor(cgroupPath string) (MemoryMonitor, error) {
 		log.Infof("Executor cgroup does not have the memory controller enabled; the OOM killer will measure system memory usage.")
 		return newSystemMemoryMonitor()
 	}
-	limitBytes, err := cgroup.ReadEffectiveMemoryLimit(dir)
+	limitCgroupPath, limitBytes, err := cgroup.ReadEffectiveMemoryLimit(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read cgroup memory limit: %w", err)
 	}
@@ -51,9 +51,9 @@ func NewMemoryMonitor(cgroupPath string) (MemoryMonitor, error) {
 		log.Infof("Executor cgroup has no memory limit; the OOM killer will measure system memory usage.")
 		return newSystemMemoryMonitor()
 	}
-	log.Infof("Executor OOM killer is measuring memory usage of cgroup %q with effective memory limit %d bytes", cgroupPath, *limitBytes)
+	log.Infof("Executor OOM killer is measuring memory usage of cgroup %q with effective memory limit %d bytes", limitCgroupPath, *limitBytes)
 	return &cgroupMemoryMonitor{
-		dir:        dir,
+		dir:        limitCgroupPath,
 		limitBytes: *limitBytes,
 	}, nil
 }

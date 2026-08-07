@@ -1,7 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-# Keep gazelle from merging the VM test into the oomkiller_test target.
-# gazelle:exclude oomkiller_linux_vm_test.go
+# Keep tests in separate targets so the VM test can retain its runner properties.
+# gazelle:go_test file
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -34,10 +34,7 @@ go_library(
 
 go_test(
     name = "oomkiller_test",
-    srcs = [
-        "oomkiller_linux_test.go",
-        "oomkiller_test.go",
-    ],
+    srcs = ["oomkiller_test.go"],
     embed = [":oomkiller"],
     # TODO: enable this test on macOS once bare isolation type is supported.
     target_compatible_with = ["@platforms//os:linux"],
@@ -55,7 +52,7 @@ go_test(
 # host.
 go_test(
     name = "oomkiller_linux_vm_test",
-    srcs = ["oomkiller_linux_vm_test.go"],  # keep
+    srcs = ["oomkiller_linux_vm_test.go"],
     embed = [":oomkiller"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
@@ -63,14 +60,29 @@ go_test(
     },
     tags = ["docker"],
     target_compatible_with = ["@platforms//os:linux"],
-    deps = [
-        # keep
-        "//enterprise/server/remote_execution/cgroup",
-        "//enterprise/server/remote_execution/oom",
-        "//proto:remote_execution_go_proto",
-        "//server/util/testing/flags",
-        "//server/util/uuid",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_x_sys//unix",
-    ],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/cgroup",
+            "//enterprise/server/remote_execution/oom",
+            "//proto:remote_execution_go_proto",
+            "//server/util/testing/flags",
+            "//server/util/uuid",
+            "@com_github_stretchr_testify//require",
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+go_test(
+    name = "oomkiller_linux_test",
+    srcs = ["oomkiller_linux_test.go"],
+    embed = [":oomkiller"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_stretchr_testify//require",
+        ],
+        "//conditions:default": [],
+    }),
 )
