@@ -6,7 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
@@ -72,6 +75,96 @@ func TestNegativeStarlarkFlagWithValue(t *testing.T) {
 			assert.Equal(t, test.Expanded, expandedArgs.Format())
 		})
 	}
+}
+
+func TestParseBBRCFiles(t *testing.T) {
+	previousCommandsByName := cli_command.CommandsByName
+	cli_command.CommandsByName = map[string]*cli_command.Command{
+		"explain": {Name: "explain"},
+	}
+	t.Cleanup(func() {
+		cli_command.CommandsByName = previousCommandsByName
+	})
+
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `
+always --always_flag
+common --common_flag
+build --build_flag
+run --run_flag
+explain --explain_flag
+run:detailed --detailed_flag --bb_config=nested
+build:nested --nested_flag
+`,
+	})
+
+	p := NewParser(
+		[]*options.Definition{
+			bbrc.NewConfigOptionDefinition("run", "explain"),
+			options.NewDefinition("always_flag", options.WithNegative(), options.WithSupportFor("run", "explain")),
+			options.NewDefinition("common_flag", options.WithNegative(), options.WithSupportFor("run", "explain")),
+			options.NewDefinition("build_flag", options.WithNegative(), options.WithSupportFor("build")),
+			options.NewDefinition("run_flag", options.WithNegative(), options.WithSupportFor("run")),
+			options.NewDefinition("explain_flag", options.WithNegative(), options.WithSupportFor("explain")),
+			options.NewDefinition("detailed_flag", options.WithNegative(), options.WithSupportFor("run")),
+			options.NewDefinition("nested_flag", options.WithNegative(), options.WithSupportFor("build")),
+		},
+		[]string{"run", "explain"},
+		nil,
+	)
+	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+	require.NoError(t, err)
+
+	runArgs, err := p.ParseArgs([]string{"run", "--bb_config=detailed", "//:target"})
+	require.NoError(t, err)
+	expandedRunArgs, err := runArgs.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, bbrc.NewConfigExpansionPolicy())
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"run",
+		"--always_flag",
+		"--common_flag",
+		"--build_flag",
+		"--run_flag",
+		"--detailed_flag",
+		"--nested_flag",
+		"//:target",
+	}, expandedRunArgs.Format())
+
+	explainArgs, err := p.ParseArgs([]string{"explain", "invocation-id"})
+	require.NoError(t, err)
+	expandedExplainArgs, err := explainArgs.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, bbrc.NewConfigExpansionPolicy())
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"explain",
+		"--always_flag",
+		"--common_flag",
+		"--explain_flag",
+		"invocation-id",
+	}, expandedExplainArgs.Format())
+}
+
+func TestParseBBRCFiles_CircularConfigReference(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `
+run:a --bb_config=b
+run:b --bb_config=a
+`,
+	})
+
+	p := NewParser(
+		[]*options.Definition{bbrc.NewConfigOptionDefinition("run")},
+		[]string{"run"},
+		nil,
+	)
+	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{"run", "--bb_config=a"})
+	require.NoError(t, err)
+
+	_, err = args.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, bbrc.NewConfigExpansionPolicy())
+	require.ErrorContains(t, err, "circular --bb_config reference detected: a -> b -> a")
 }
 
 func TestParseBazelrc_Simple(t *testing.T) {
