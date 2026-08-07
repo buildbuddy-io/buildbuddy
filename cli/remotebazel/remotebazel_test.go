@@ -754,6 +754,9 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 
 	bazelArgs, execArgs, err := parseArgs([]string{
 		"run",
+		"--noremote_upload_local_results",
+		"--remote_build_event_upload=minimal",
+		"--script_path=/tmp/custom-run-script.sh",
 		"@bazel-diff//cli:bazel-diff",
 		"generate-hashes",
 		"--",
@@ -775,6 +778,7 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 		"buildbuddy_remote_cache",
 	}, arg.GetMulti(forwardedBazelArgs, "config"))
 	require.Contains(t, forwardedBazelArgs, "--remote_upload_local_results")
+	require.Equal(t, "minimal", arg.Get(forwardedBazelArgs, "remote_build_event_upload"))
 	require.Equal(t,
 		"$BUILDBUDDY_CI_RUNNER_ROOT_DIR/bazel-run-scripts/run.sh",
 		arg.Get(forwardedBazelArgs, "script_path"),
@@ -791,12 +795,14 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 	)
 }
 
-func TestEnvWithRunfilesDir(t *testing.T) {
+func TestEnvForLocalRun(t *testing.T) {
 	env := []string{
 		"PATH=/usr/bin",
 		"RUNFILES_DIR=/old/runfiles",
 		"RUNFILES_MANIFEST_FILE=/old/MANIFEST",
 		"RUNFILES_MANIFEST_ONLY=1",
+		"BUILD_WORKSPACE_DIRECTORY=/old/workspace",
+		"BUILD_WORKING_DIRECTORY=/old/working-directory",
 		"USER=test",
 	}
 
@@ -804,7 +810,9 @@ func TestEnvWithRunfilesDir(t *testing.T) {
 		"PATH=/usr/bin",
 		"USER=test",
 		"RUNFILES_DIR=/new/runfiles",
-	}, envWithRunfilesDir(env, "/new/runfiles"))
+		"BUILD_WORKSPACE_DIRECTORY=/new/workspace",
+		"BUILD_WORKING_DIRECTORY=/new/working-directory",
+	}, envForLocalRun(env, "/new/runfiles", "/new/workspace", "/new/working-directory"))
 }
 
 func TestQuoteRemoteBazelArgs_RunScriptEnvVarExpanded(t *testing.T) {
