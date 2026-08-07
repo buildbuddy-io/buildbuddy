@@ -125,6 +125,219 @@ func TestTaskRouter_RankNodes_RoutesByHostID(t *testing.T) {
 	requireNonSequential(t, ranked[1:])
 }
 
+func TestTaskRouter_RankNodes_RecycledRunnerRouting(t *testing.T) {
+	// Mark a non-CI recycled-runner task (like a `bb box` VM) complete by
+	// executor 1.
+
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-key", Value: "my-box"},
+			},
+		},
+		Arguments: []string{"./bb", "ssh-server"},
+	}
+	instanceName := "bb-devbox"
+
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+
+	nodes := sequentiallyNumberedNodes(100)
+
+	// The task should be routed back to executor 1, even though it has no
+	// output paths (so affinity routing does not apply) and is not a CI
+	// command.
+
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+
+	requireSameExecutionNodes(t, nodes, ranked)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+	requireNonSequential(t, ranked[1:])
+
+	// A task with a different recycling key should not be routed to executor 1.
+
+	otherCmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-key", Value: "other-box"},
+			},
+		},
+		Arguments: []string{"./bb", "ssh-server"},
+	}
+
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, otherCmd, instanceName)
+}
+
+func TestTaskRouter_RecycledRunnerRouting_CIRunnerRouterTakesPrecedence(t *testing.T) {
+	// A CI command that also sets a runner-recycling-key should route via the
+	// ciRunnerRouter (which routes on git branch info), not the
+	// recycledRunnerRouter.
+
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+
+	mainBranchCmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "runner-recycling-key", Value: "my-ci-runner"},
+			{Name: "workflow-id", Value: "WF1"},
+		}},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GIT_BRANCH", Value: "main"},
+		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
+	}
+	router.MarkSucceeded(ctx, nil, mainBranchCmd, instanceName, executorHostID1)
+
+	// Runs on the same branch should be routed to executor 1.
+	ranked := router.RankNodes(ctx, nil, mainBranchCmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+
+	// Runs on a different branch with the same recycling key should not be
+	// routed to executor 1. The recycledRunnerRouter ignores git branch info,
+	// so if it (incorrectly) took precedence over the ciRunnerRouter, this
+	// would still route to executor 1.
+	prBranchCmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "runner-recycling-key", Value: "my-ci-runner"},
+			{Name: "workflow-id", Value: "WF1"},
+		}},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GIT_BRANCH", Value: "my-cool-pr"},
+		},
+		Arguments: []string{"./buildbuddy_ci_runner"},
+	}
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, prBranchCmd, instanceName)
+}
+
+func TestTaskRouter_RecycledRunnerRouting_AffinityRouterTakesPrecedence(t *testing.T) {
+	// A recycled-runner task that declares outputs should route via the
+	// affinityRouter (keyed on the first output), not the
+	// recycledRunnerRouter: many actions (e.g. test targets) can share one
+	// recycling key, and routing them all by that key alone would funnel them
+	// onto a single host.
+
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+
+	cmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "runner-recycling-key", Value: "shared-key"},
+		}},
+		OutputPaths: []string{"/bazel-out/foo.a"},
+	}
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+
+	// The same action should be routed to executor 1.
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+
+	// An action with the same platform (including the same recycling key) but
+	// a different first output should not be routed to executor 1. The
+	// recycledRunnerRouter ignores outputs, so if it (incorrectly) took
+	// precedence over the affinityRouter, this would still route to
+	// executor 1.
+	otherOutputCmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "runner-recycling-key", Value: "shared-key"},
+		}},
+		OutputPaths: []string{"/bazel-out/bar.a"},
+	}
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, otherOutputCmd, instanceName)
+}
+
+func TestTaskRouter_RecycledRunnerRouting_SurvivesTaskFailure(t *testing.T) {
+	// A task exiting non-zero (e.g. a `bb box` session that ends with a
+	// failing command) says nothing about the health of the runner snapshot
+	// on the executor, so MarkFailed should not remove the routing entry.
+
+	env := newTestEnv(t)
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "bb-devbox"
+
+	cmd := &repb.Command{
+		Platform: &repb.Platform{
+			Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: "runner-recycling-key", Value: "my-box"},
+			},
+		},
+		Arguments: []string{"./bb", "ssh-server"},
+	}
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+	router.MarkFailed(ctx, nil, cmd, instanceName, executorHostID1)
+
+	// Executor 1 should still be preferred.
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+}
+
+func TestTaskRouter_RecycledRunnerRouting_PersistentWorkerRouterTakesPrecedence(t *testing.T) {
+	// When the persistent worker router is enabled, a task with both a
+	// persistent worker key and a runner-recycling-key should use the
+	// persistent worker router (128-entry history list with pop-on-read)
+	// rather than the recycledRunnerRouter's single sticky entry.
+
+	env := newTestEnv(t)
+
+	testProvider := openfeatureTesting.NewTestProvider()
+	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.persistent_worker_router_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants: map[string]any{
+				"enabled":  true,
+				"disabled": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	defer testProvider.Cleanup()
+	fp, err := experiments.NewFlagProvider("test" /*=client*/)
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	router := newTaskRouter(t, env)
+	ctx := withAuthUser(t, context.Background(), env, "US1")
+	nodes := sequentiallyNumberedNodes(100)
+	instanceName := "test-instance"
+
+	cmd := &repb.Command{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "persistentWorkerKey", Value: "PW123"},
+			{Name: "recycle-runner", Value: "true"},
+			{Name: "runner-recycling-key", Value: "my-workers"},
+		}},
+	}
+	router.MarkSucceeded(ctx, nil, cmd, instanceName, executorHostID1)
+
+	// The first ranking should prefer executor 1 (one pooled runner) and pop
+	// the history entry.
+	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
+	require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+
+	// With the entry popped, executor 1 should no longer always be preferred.
+	// The recycledRunnerRouter never pops, so if it (incorrectly) took
+	// precedence over the persistentWorkerRouter, executor 1 would keep being
+	// ranked first.
+	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, cmd, instanceName)
+}
+
 func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
