@@ -803,7 +803,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 	return nil
 }
 
-func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
+func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
 		return fmt.Errorf("create output dir for %q: %w", outFile, err)
 	}
@@ -814,6 +814,9 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 	defer out.Close()
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
 		return status.WrapError(err, "download blob")
+	}
+	if err := out.Chmod(mode); err != nil {
+		return fmt.Errorf("set permissions on output file %q: %w", outFile, err)
 	}
 	return nil
 }
@@ -859,11 +862,11 @@ func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
 
 // TODO(vadim): add interactive progress bar for downloads
 // TODO(vadim): parallelize downloads
-func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
+func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, runfiles []*bespb.Runfile, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
 	bsClient := env.GetByteStreamClient()
 
 	var mainLocalArtifacts []string
-	download := func(f *bespb.File) (string, error) {
+	download := func(f *bespb.File, mode os.FileMode) (string, error) {
 		r, err := bytestreamURIToResourceName(f.GetUri())
 		if err != nil {
 			return "", fmt.Errorf("resolve output uri for %q: %w", f.GetName(), err)
@@ -873,22 +876,26 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 			outFile = filepath.Join(outFile, p)
 		}
 		outFile = filepath.Join(outFile, f.GetName())
-		if err := downloadFile(ctx, bsClient, r, outFile); err != nil {
+		if err := downloadFile(ctx, bsClient, r, outFile, mode); err != nil {
 			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
 		return outFile, nil
 	}
 	for _, f := range mainOutputs {
-		outFile, err := download(f)
+		outFile, err := download(f, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("download main output %q: %w", f.GetName(), err)
 		}
 		mainLocalArtifacts = append(mainLocalArtifacts, outFile)
 	}
-	// Supporting outputs (i.e. runtime files) are downloaded but not displayed to the user.
-	for _, f := range supportingOutputs {
-		if _, err := download(f); err != nil {
-			return nil, fmt.Errorf("download supporting output %q: %w", f.GetName(), err)
+	// Runfiles are downloaded but not displayed to the user.
+	for _, rf := range runfiles {
+		mode := os.FileMode(0644)
+		if rf.GetIsExecutable() {
+			mode = 0755
+		}
+		if _, err := download(rf.GetFile(), mode); err != nil {
+			return nil, fmt.Errorf("download runfile %q: %w", rf.GetFile().GetName(), err)
 		}
 	}
 	for _, d := range supportingDirs {
@@ -1178,7 +1185,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	childIID := ""
 	runfilesRoot := ""
-	var runfiles []*bespb.File
+	var runfiles []*bespb.Runfile
 	var runfileDirectories []*bespb.Tree
 	var defaultRunArgs []string
 	executablePath := ""
@@ -1189,7 +1196,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if opts.RunOutputLocally {
 			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
 				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
-				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
+				runfiles = rta.RunTargetAnalyzed.GetRunfileEntries()
 				runfileDirectories = rta.RunTargetAnalyzed.GetRunfileDirectories()
 				defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
 				executablePath = rta.RunTargetAnalyzed.GetExecutablePath()
