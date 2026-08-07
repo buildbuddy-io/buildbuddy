@@ -76,6 +76,10 @@ func GetCurrent() (string, error) {
 	return path, nil
 }
 
+// SetupControllers lists the cgroup controllers that Setup may write settings
+// for.
+var SetupControllers = []string{"cpu", "cpuset", "io", "memory", "pids"}
+
 // Setup configures the cgroup at the given path with the given settings.
 // Any settings for cgroup controllers that aren't enabled are ignored.
 // IO limits are applied to the given block device, if specified.
@@ -94,104 +98,37 @@ func Setup(ctx context.Context, path string, s *scpb.CgroupSettings, blockDevice
 	for name, value := range m {
 		controller, _, _ := strings.Cut(name, ".")
 		if !enabledControllers[controller] {
-			// Attempt to enable the controller if it's not already enabled.
-			if err := EnableController(path, controller); err != nil {
-				log.CtxWarningf(ctx, "Failed to enable cgroup controller %q for cgroup %q: %s", controller, path, err)
-				continue
-			}
-			enabledControllers[controller] = true
+			// Note: we expect all needed controllers to be enabled at
+			// executor startup.
+			continue
 		}
 		settingFilePath := filepath.Join(path, name)
-		if err := os.WriteFile(settingFilePath, []byte(value), 0); err != nil {
-			logSetupPermissionDeniedDiagnostics(ctx, path, name, value, err)
+		if err := writeFile(settingFilePath, []byte(value)); err != nil {
 			return fmt.Errorf("write %q to cgroup file %q: %w", value, name, err)
 		}
 	}
 	return nil
 }
 
-func logSetupPermissionDeniedDiagnostics(ctx context.Context, path, settingName, settingValue string, writeErr error) {
-	if !errors.Is(writeErr, fs.ErrPermission) && !errors.Is(writeErr, syscall.EPERM) && !errors.Is(writeErr, syscall.EACCES) {
-		return
-	}
-	settingPath := filepath.Join(path, settingName)
-	parent := ParentPath(path)
-	grandparent := ParentPath(parent)
-	currentCgroup, currentCgroupErr := GetCurrent()
-	currentCgroupInfo := currentCgroup
-	if currentCgroupErr != nil {
-		currentCgroupInfo = fmt.Sprintf("<%s>", currentCgroupErr)
-	}
-
-	fields := []string{
-		fmt.Sprintf("setting=%q", settingName),
-		fmt.Sprintf("value=%q", settingValue),
-		fmt.Sprintf("file=%q", settingPath),
-		fmt.Sprintf("path=%q", path),
-		fmt.Sprintf("parent=%q", parent),
-		fmt.Sprintf("grandparent=%q", grandparent),
-		fmt.Sprintf("uid=%d euid=%d gid=%d egid=%d", os.Getuid(), os.Geteuid(), os.Getgid(), os.Getegid()),
-		fmt.Sprintf("self_cgroup=%q", currentCgroupInfo),
-		describePath(path),
-		describePath(parent),
-		describePath(grandparent),
-		describeFile(settingPath),
-		describeCgroupFiles(path),
-		describeCgroupFiles(parent),
-		describeCgroupFiles(grandparent),
-	}
-
-	log.CtxWarningf(ctx, "cgroup write permission diagnostics: %s", strings.Join(fields, " | "))
-}
-
-func describePath(path string) string {
-	fi, err := os.Stat(path)
+// writeFile writes a cgroup interface file.
+//
+// Unlike os.WriteFile, it opens the file without O_CREAT: cgroupfs does not
+// support creating files, and an O_CREAT open of a missing interface file (e.g.
+// for a controller that is not yet enabled) fails with a misleading EACCES
+// instead of ENOENT.
+func writeFile(path string, value []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0)
 	if err != nil {
-		return fmt.Sprintf("stat(%q):<%s>", path, err)
+		return err
 	}
-	stat, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Sprintf("stat(%q):mode=%s", path, fi.Mode().String())
+	n, err := f.Write(value)
+	if err == nil && n < len(value) {
+		err = io.ErrShortWrite
 	}
-	return fmt.Sprintf("stat(%q):mode=%s uid=%d gid=%d", path, fi.Mode().String(), stat.Uid, stat.Gid)
-}
-
-func describeFile(path string) string {
-	fi, err := os.Stat(path)
-	if err != nil {
-		return fmt.Sprintf("file(%q):<%s>", path, err)
+	if closeErr := f.Close(); closeErr != nil && err == nil {
+		err = closeErr
 	}
-	stat, ok := fi.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fmt.Sprintf("file(%q):mode=%s", path, fi.Mode().String())
-	}
-	return fmt.Sprintf("file(%q):mode=%s uid=%d gid=%d", path, fi.Mode().String(), stat.Uid, stat.Gid)
-}
-
-func describeCgroupFiles(path string) string {
-	files := []string{"cgroup.type", "cgroup.controllers", "cgroup.subtree_control", "cgroup.procs"}
-	var parts []string
-	for _, name := range files {
-		value, err := readTrimmedCgroupValue(filepath.Join(path, name))
-		if err != nil {
-			parts = append(parts, fmt.Sprintf("%s:<%s>", name, err))
-			continue
-		}
-		parts = append(parts, fmt.Sprintf("%s:%q", name, value))
-	}
-	return fmt.Sprintf("cgroup(%q){%s}", path, strings.Join(parts, ", "))
-}
-
-func readTrimmedCgroupValue(path string) (string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	s := strings.TrimSpace(string(b))
-	if len(s) > 200 {
-		s = s[:200] + "...(truncated)"
-	}
-	return s, nil
+	return err
 }
 
 // EnabledControllers returns the controllers enabled for the cgroup at the
@@ -267,7 +204,7 @@ func WriteSubtreeControl(path string, settings map[string]bool) error {
 		strs = append(strs, statusPrefix+controller)
 	}
 	b := []byte(strings.Join(strs, " "))
-	return os.WriteFile(filepath.Join(path, "cgroup.subtree_control"), b, 0)
+	return writeFile(filepath.Join(path, "cgroup.subtree_control"), b)
 }
 
 // DelegateControllers reads the currently enabled controllers for the given
