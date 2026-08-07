@@ -349,9 +349,9 @@ func TestCancel(t *testing.T) {
 		_, runErr := remotebazel.Run(
 			ctxWithCancel,
 			remotebazel.RunOpts{
-				Server:            bbServer.GRPCAddress(),
-				Command:           "echo STARTING && sleep 2147483647",
-				WorkspaceFilePath: wsFilePath,
+				Server:               bbServer.GRPCAddress(),
+				Command:              "echo STARTING && sleep 2147483647",
+				AbsLocalWorkspaceDir: filepath.Dir(wsFilePath),
 			}, repoConfig)
 		runErrCh <- runErr
 	}()
