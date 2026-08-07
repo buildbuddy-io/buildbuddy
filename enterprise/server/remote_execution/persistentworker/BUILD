@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -24,4 +24,10 @@ go_library(
         "@org_golang_google_protobuf//encoding/protojson",
         "@org_golang_google_protobuf//encoding/protowire",
     ],
+)
+
+go_test(
+    name = "persistentworker_test",
+    srcs = ["persistentworker_test.go"],
+    embed = [":persistentworker"],
 )
