@@ -60,6 +60,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usagelimits"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/dsingleflight"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/redisutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/trafficstats"
@@ -241,6 +242,9 @@ func main() {
 		log.Fatalf("%v", err)
 	}
 	if err := usage.RegisterTracker(realEnv); err != nil {
+		log.Fatalf("%v", err)
+	}
+	if err := usagelimits.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
 
