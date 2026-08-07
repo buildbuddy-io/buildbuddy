@@ -795,8 +795,7 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 
 // ResolveArgs removes all rc-file options from the args, appends an
 // `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs using the default parser, and expands all config options (as
-// well as any `enable_platform_specific_config` option, if one exists) using
+// into Configs using the default parser, and expands all config options using
 // those configs, and returns the result.
 func ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
@@ -828,11 +827,12 @@ func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArg
 }
 
 func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
+	// TODO(Maggie): Add bbrc config expansion here
 	configs, defaultConfig, err := p.consumeAndParseRCFiles(parsedArgs, ws)
 	if err != nil {
 		return nil, err
 	}
-	return parsedArgs.ExpandConfigs(configs, defaultConfig)
+	return bazelrc.ExpandConfigs(parsedArgs, configs, defaultConfig)
 }
 
 // RCFilePolicy controls how sections of an rc file are parsed.

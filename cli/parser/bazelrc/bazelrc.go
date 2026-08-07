@@ -13,6 +13,8 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/rc_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/google/shlex"
@@ -224,6 +226,49 @@ func GetBazelOS() string {
 	default:
 		return runtime.GOOS
 	}
+}
+
+// ExpandConfigs expands .bazelrc --config flags.
+func ExpandConfigs(
+	args *parsed.OrderedArgs,
+	namedConfigs map[string]*parsed.Config,
+	defaultConfig *parsed.Config,
+) (*parsed.OrderedArgs, error) {
+	policy := &parsed.ConfigExpansionPolicy{FlagName: "config", GetPhases: GetPhases}
+	expanded, err := args.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, policy)
+	if err != nil {
+		return nil, err
+	}
+	return expandPlatformSpecificConfig(expanded, namedConfigs, policy)
+}
+
+// expandPlatformSpecificConfig replaces the last occurrence of
+// --enable_platform_specific_config with --config=<bazelOS>, so long as the
+// last occurrence evaluates to true.
+func expandPlatformSpecificConfig(
+	expanded *parsed.OrderedArgs,
+	namedConfigs map[string]*parsed.Config,
+	policy *parsed.ConfigExpansionPolicy,
+) (*parsed.OrderedArgs, error) {
+	opts := expanded.RemoveCommandOptions(EnablePlatformSpecificConfigFlag)
+	if v, err := options.AccumulateValues[*parsed.IndexedOption](false, opts); err != nil {
+		return nil, fmt.Errorf("failed to get value from %q option: %s", EnablePlatformSpecificConfigFlag, err)
+	} else if v {
+		index := opts[len(opts)-1].Index
+		bazelOS := GetBazelOS()
+		if _, ok := namedConfigs[bazelOS]; ok {
+			phases := GetPhases(expanded.GetCommand())
+			expansion, err := parsed.ExpandNamedConfig(bazelOS, namedConfigs, phases, policy)
+			if err != nil {
+				return nil, err
+			}
+			expanded.Args = slices.Insert(expanded.Args, index, expansion...)
+			// Remove all occurrences of the enable platform-specific config flag
+			// that may have been added when expanding the platform-specific config.
+			expanded.RemoveCommandOptions(EnablePlatformSpecificConfigFlag)
+		}
+	}
+	return expanded, nil
 }
 
 // IsPhase returns whether or not this is a valid phase for a bazel rc line.
