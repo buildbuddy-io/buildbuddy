@@ -201,9 +201,18 @@ func (t *taskQueue) Enqueue(ctx context.Context, req *scpb.EnqueueTaskReservatio
 		EnqueueTaskReservationRequest: req,
 		WorkerQueuedTimestamp:         enqueuedAt,
 	}
+	// Break priority ties using the time at which the task was first enqueued
+	// on the app, so that a task that gets re-enqueued on another executor
+	// keeps its place in line instead of starting over at the back of the
+	// queue. Fall back to the local enqueue time if the app didn't set the
+	// queued timestamp.
+	queuedTimestamp := enqueuedAt
+	if ts := req.GetSchedulingMetadata().GetQueuedTimestamp(); ts != nil {
+		queuedTimestamp = ts.AsTime()
+	}
 	// Using negative priority here, since the remote execution API specifies
 	// that tasks with lower priority values should be scheduled first.
-	pq.Push(qt, -float64(req.GetSchedulingMetadata().GetPriority()))
+	pq.PushWithTime(qt, -float64(req.GetSchedulingMetadata().GetPriority()), queuedTimestamp)
 	t.taskIDs[req.GetTaskId()] = struct{}{}
 	metrics.RemoteExecutionQueueLength.With(prometheus.Labels{metrics.GroupID: taskGroupID}).Set(float64(pq.Len()))
 	if req.GetSchedulingMetadata().GetTrackQueuedTaskSize() {
