@@ -30,4 +30,11 @@ go_test(
     name = "persistentworker_test",
     srcs = ["persistentworker_test.go"],
     embed = [":persistentworker"],
+    deps = [
+        "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/workspace",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "@com_github_stretchr_testify//require",
+    ],
 )
