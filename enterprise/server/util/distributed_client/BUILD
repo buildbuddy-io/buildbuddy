@@ -9,6 +9,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:distributed_cache_go_proto",
+        "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/environment",
@@ -43,6 +44,7 @@ go_test(
     srcs = ["distributed_client_test.go"],
     deps = [
         ":distributed_client",
+        "//enterprise/server/experiments",
         "//proto:distributed_cache_go_proto",
         "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
@@ -62,8 +64,11 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_docker_go_units//:go-units",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

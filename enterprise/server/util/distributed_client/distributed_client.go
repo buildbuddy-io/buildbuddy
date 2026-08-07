@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/reflection"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -316,6 +317,24 @@ func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.
 	return rsp, nil
 }
 
+// referenceReadMode returns whether Read should send the client a reference
+// to the blob's location in shared storage, and whether it should stream the
+// blob's bytes, based on the reference-read experiments. Sending both lets
+// the client verify the reference against the authoritative byte stream.
+func (c *Proxy) referenceReadMode(ctx context.Context) (sendReference bool, sendBytes bool) {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false, true
+	}
+	if fp.Boolean(ctx, "distributed_cache.verify_gcs_references", false) {
+		return true, true
+	}
+	if fp.Boolean(ctx, "distributed_cache.read_gcs_references", false) {
+		return true, false
+	}
+	return false, true
+}
+
 func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
 	ctx, err := c.readWriteContext(stream.Context())
 	if err != nil {
@@ -323,12 +342,44 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	}
 	up, _ := prefix.UserPrefixFromContext(ctx)
 	rn := req.GetResource()
+
+	sendReference, sendBytes := c.referenceReadMode(ctx)
+	var ref *refpb.Reference
+	if refCache, ok := c.cache.(interfaces.ReferenceCache); ok {
+		if sendReference {
+			if r, err := refCache.GetReference(ctx, rn); err == nil {
+				ref = r
+			}
+		}
+		// If no reference was minted, just stream the bytes.
+		if ref == nil {
+			sendBytes = true
+		}
+	}
+
+	if ref != nil && !sendBytes {
+		if err := stream.Send(&dcpb.ReadResponse{Reference: ref}); err != nil {
+			return err
+		}
+		c.log.Debugf("Read(%q) succeeded by reference (user prefix: %s)", ResourceIsolationString(rn), up)
+		return nil
+	}
+
 	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
 	if err != nil {
 		c.log.Debugf("Read(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
 		return err
 	}
 	defer reader.Close()
+
+	// In verification mode, only send the reference once the byte reader has
+	// been opened successfully, so a missing blob surfaces to the client the
+	// same way it does today.
+	if ref != nil {
+		if err := stream.Send(&dcpb.ReadResponse{Reference: ref}); err != nil {
+			return err
+		}
+	}
 
 	bufSize := int64(digest.SafeBufferSize(rn, *config.ReadBufSizeBytes))
 	copyBuf := c.bufPool.Get(bufSize)
