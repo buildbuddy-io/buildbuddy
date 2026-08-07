@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
@@ -527,7 +528,7 @@ func (p *Subparser) parseLongNameOption(optName string) (options.Option, error) 
 		if strings.HasPrefix(optName, prefix) {
 			// This is a new starlark definition; let's hang on to it.
 			d := options.NewStarlarkOptionDefinition(optName)
-			d.AddSupportedCommand(slices.Collect(bazelrc.BazelCommands().All())...)
+			d.AddSupportedCommand(slices.Collect(bazel_command.Commands().All())...)
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
 			p.ForceAdd(d)
@@ -1033,7 +1034,7 @@ func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir s
 // bazel command, even though "build" is the argument to --output_base.
 func GetBazelCommandAndIndex(args []string) (string, int) {
 	for i, a := range args {
-		if bazelrc.IsBazelCommand(a) {
+		if bazel_command.IsCommand(a) {
 			return a, i
 		}
 	}

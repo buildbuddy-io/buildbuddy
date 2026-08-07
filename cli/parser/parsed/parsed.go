@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/rc_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 )
@@ -884,9 +885,9 @@ func appendExpansion(
 		case options.Option:
 			// For the unconditional phases, only append the arg if it's supported by
 			// the command.
-			if bazelrc.IsUnconditionalCommandPhase(phase) && !a.Supports(phases[len(phases)-1]) {
-				if phase == bazelrc.AlwaysPhase {
-					log.Warnf("Inherited '%s' options: %v", bazelrc.AlwaysPhase, arguments.FormatAll(toExpand))
+			if rc_util.IsUnconditionalCommandPhase(phase) && !a.Supports(phases[len(phases)-1]) {
+				if phase == rc_util.AlwaysPhase {
+					log.Warnf("Inherited '%s' options: %v", rc_util.AlwaysPhase, arguments.FormatAll(toExpand))
 					return nil, fmt.Errorf("%[1]s :: Unrecognized option %[1]s", a.Format()[0])
 				}
 				// TODO(zoey): return an error here if the option does not support any

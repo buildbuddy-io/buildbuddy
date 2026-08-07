@@ -14,7 +14,7 @@ go_library(
         "//cli/explain",
         "//cli/log",
         "//cli/login",
-        "//cli/parser/bazelrc",
+        "//cli/parser/bazel_command",
         "//proto:buildbuddy_service_go_proto",
         "//proto:notification_go_proto",
         "//proto:spawn_diff_go_proto",

@@ -10,7 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options/flag_form"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
@@ -153,7 +153,7 @@ func (d *Definition) SupportedCommands() iter.Seq[string] {
 }
 
 func (d *Definition) Supports(command string) bool {
-	for cmd, ok := command, true; ok; cmd, ok = bazelrc.Parent(cmd) {
+	for cmd := command; cmd != ""; cmd = bazel_command.Parent(cmd) {
 		if d.supportedCommands.Contains(cmd) {
 			return true
 		}
