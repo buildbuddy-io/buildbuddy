@@ -43,6 +43,7 @@ go_test(
         "//cli/parser/bbrc",
         "//cli/parser/options",
         "//cli/parser/test_data",
+        "//cli/workspace",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

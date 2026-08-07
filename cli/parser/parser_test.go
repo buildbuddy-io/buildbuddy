@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -118,7 +119,7 @@ build:nested --nested_flag
 
 	runArgs, err := p.ParseArgs([]string{"run", "--bb_config=detailed", "//:target"})
 	require.NoError(t, err)
-	expandedRunArgs, err := runArgs.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, bbrc.NewConfigExpansionPolicy())
+	expandedRunArgs, err := bbrc.ExpandConfigs(runArgs, namedConfigs, defaultConfig)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"run",
@@ -133,7 +134,7 @@ build:nested --nested_flag
 
 	explainArgs, err := p.ParseArgs([]string{"explain", "invocation-id"})
 	require.NoError(t, err)
-	expandedExplainArgs, err := explainArgs.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, bbrc.NewConfigExpansionPolicy())
+	expandedExplainArgs, err := bbrc.ExpandConfigs(explainArgs, namedConfigs, defaultConfig)
 	require.NoError(t, err)
 	assert.Equal(t, []string{
 		"explain",
@@ -163,8 +164,44 @@ run:b --bb_config=a
 	args, err := p.ParseArgs([]string{"run", "--bb_config=a"})
 	require.NoError(t, err)
 
-	_, err = args.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, bbrc.NewConfigExpansionPolicy())
+	_, err = bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
 	require.ErrorContains(t, err, "circular --bb_config reference detected: a -> b -> a")
+}
+
+func TestParseBBRCFiles_WorkspaceAndHomeConfigs(t *testing.T) {
+	p, err := GetParser()
+	require.NoError(t, err)
+	workspaceDir := testfs.MakeTempDir(t)
+	homeDir := testfs.MakeTempDir(t)
+	workspace.SetForTest(t, workspaceDir)
+	t.Setenv("HOME", homeDir)
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": `
+run --stream_run_logs
+run:ci --bb_config=nested
+run:nested --on_stream_run_logs_failure=warn
+`,
+	})
+	testfs.WriteAllFileContents(t, homeDir, map[string]string{
+		".bbrc": `
+run --nostream_run_logs
+run:ci --on_stream_run_logs_failure=fail
+`,
+	})
+
+	args, err := p.ParseArgs([]string{"run", "//:target", "--bb_config=ci"})
+	require.NoError(t, err)
+	args, err = p.ResolveArgs(args)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"--ignore_all_rc_files",
+		"run",
+		"--stream_run_logs",
+		"--nostream_run_logs",
+		"//:target",
+		"--on_stream_run_logs_failure=warn",
+		"--on_stream_run_logs_failure=fail",
+	}, args.Format())
 }
 
 func TestParseBazelrc_Simple(t *testing.T) {

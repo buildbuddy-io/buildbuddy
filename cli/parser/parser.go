@@ -75,6 +75,9 @@ var (
 					log.Warnf("Error initializing command-line parser when adding bb-specific definition for '%s': %s", name, err)
 				}
 			}
+			parser.ForceAddOptionDefinition(bbrc.NewConfigOptionDefinition(
+				slices.Collect(parser.StartupOptionParser.Subcommands.All())...,
+			))
 			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
 			return parser, nil
 		},
@@ -834,12 +837,42 @@ func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArg
 }
 
 func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
-	// TODO(Maggie): Add bbrc config expansion here
-	configs, defaultConfig, err := p.consumeAndParseRCFiles(parsedArgs, ws)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Debugf("Could not determine home dir for .bbrc: %s", err)
+	}
+	parsedArgs, err = p.expandBBrc(parsedArgs, ws, homeDir)
 	if err != nil {
 		return nil, err
 	}
-	return bazelrc.ExpandConfigs(parsedArgs, configs, defaultConfig)
+	return p.expandBazelrc(parsedArgs, ws, homeDir)
+}
+
+func (p *Parser) expandBazelrc(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
+	configs, defaultConfig, err := p.consumeAndParseRCFiles(args, workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	return bazelrc.ExpandConfigs(args, configs, defaultConfig)
+}
+
+func (p *Parser) expandBBrc(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
+	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(workspaceDir, bbrcFilePaths(workspaceDir, homeDir)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse .bbrc file: %s", err)
+	}
+	return bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
+}
+
+func bbrcFilePaths(workspaceDir, homeDir string) []string {
+	var paths []string
+	if workspaceDir != "" {
+		paths = append(paths, filepath.Join(workspaceDir, bbrc.FileName))
+	}
+	if homeDir != "" {
+		paths = append(paths, filepath.Join(homeDir, bbrc.FileName))
+	}
+	return paths
 }
 
 // RCFilePolicy controls how sections of an rc file are parsed.
