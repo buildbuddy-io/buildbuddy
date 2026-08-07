@@ -140,9 +140,16 @@ type RunOpts struct {
 	// Whether the remotely built target should be fetched and run locally.
 	RunOutputLocally bool
 	// If RunOutputLocally=true, execution arguments for running the target locally.
-	ExecArgs          []string
-	WorkingDirectory  string
-	WorkspaceFilePath string
+	ExecArgs []string
+
+	// RelativeWorkspaceDir is the Bazel workspace directory relative to the Git repository root (applies to both the remote runner and the local machine).
+	// This is a relative path so that the remote runner can navigate to it, despite having a different absolute filesystem path.
+	RelativeWorkspaceDir string
+	// AbsLocalWorkspaceDir is the absolute path to the Bazel workspace on the local machine.
+	AbsLocalWorkspaceDir string
+	// AbsLocalWorkingDirectory is the absolute path from which the user invoked the CLI on the local machine.
+	// This can be different from AbsWorkspaceDir if the CLI was invoked from a subdirectory.
+	AbsLocalWorkingDirectory string
 }
 
 type gitRemote struct {
@@ -945,12 +952,12 @@ func findExecutableOutput(outputs []string, outputBaseDir, executablePath string
 // Bazel workspace. The runfiles manifest contains absolute paths from the
 // remote runner, and inherited runfiles and workspace variables may refer to
 // the bb binary's own environment, so replace them with local values.
-func envForLocalRun(env []string, runfilesDir, workspaceDir string) []string {
-	filteredEnv := make([]string, 0, len(env)+2)
+func envForLocalRun(env []string, runfilesDir, workspaceDir, workingDir string) []string {
+	filteredEnv := make([]string, 0, len(env)+3)
 	for _, entry := range env {
 		name, _, _ := strings.Cut(entry, "=")
 		switch name {
-		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "PYTHON_RUNFILES", "JAVA_RUNFILES", "BUILD_WORKSPACE_DIRECTORY":
+		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "PYTHON_RUNFILES", "JAVA_RUNFILES", "BUILD_WORKSPACE_DIRECTORY", "BUILD_WORKING_DIRECTORY":
 			continue
 		}
 		filteredEnv = append(filteredEnv, entry)
@@ -958,6 +965,7 @@ func envForLocalRun(env []string, runfilesDir, workspaceDir string) []string {
 	return append(filteredEnv,
 		"RUNFILES_DIR="+runfilesDir,
 		"BUILD_WORKSPACE_DIRECTORY="+workspaceDir,
+		"BUILD_WORKING_DIRECTORY="+workingDir,
 	)
 }
 
@@ -1097,7 +1105,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	req := &rnpb.RunRequest{
 		Name:             opts.Name,
-		WorkingDirectory: opts.WorkingDirectory,
+		WorkingDirectory: opts.RelativeWorkspaceDir,
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -1223,16 +1231,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			if err != nil {
 				return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
 			}
-			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
+			outputsBaseDir := opts.AbsLocalWorkspaceDir
 			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
 				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
-				workspaceDir, err := filepath.Abs(outputsBaseDir)
-				if err != nil {
-					return 1, fmt.Errorf("compute absolute workspace directory: %w", err)
-				}
 				binPath, err := findExecutableOutput(outputs, outputsBaseDir, executablePath)
 				if err != nil {
 					return 1, err
@@ -1267,13 +1271,12 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
 				execArgs = append(execArgs, opts.ExecArgs...)
-				log.Debugf("Executing %q with arguments %s", absBinPath, execArgs)
+				log.Printf("Running downloaded executable %q locally (working directory %q)", absBinPath, runfilesWorkDir)
 				cmd := exec.CommandContext(ctx, absBinPath, execArgs...)
 				cmd.Dir = runfilesWorkDir
-				cmd.Env = envForLocalRun(os.Environ(), runfilesDir, workspaceDir)
+				cmd.Env = envForLocalRun(os.Environ(), runfilesDir, opts.AbsLocalWorkspaceDir, opts.AbsLocalWorkingDirectory)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
-				log.Printf("Running downloaded executable %q locally (working directory %q)", absBinPath, runfilesWorkDir)
 				err = cmd.Run()
 				if e, ok := err.(*exec.ExitError); ok {
 					return e.ExitCode(), nil
@@ -1444,6 +1447,10 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	if err != nil {
 		return 1, status.WrapError(err, "determine working directory")
 	}
+	localWorkingDirectory, err := os.Getwd()
+	if err != nil {
+		return 1, status.WrapError(err, "determine local working directory")
+	}
 
 	cmd := ""
 	remoteRunName := "remote run"
@@ -1497,14 +1504,15 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 
 	exitCode, err := Run(ctx, RunOpts{
-		Server:            runner,
-		Name:              remoteRunName,
-		Command:           cmd,
-		RunOutputLocally:  runOutputLocally,
-		ExecArgs:          localExecArgs,
-		WorkingDirectory:  workingDirectory,
-		FetchOutputs:      fetchOutputs,
-		WorkspaceFilePath: wsFilePath,
+		Server:                   runner,
+		Name:                     remoteRunName,
+		Command:                  cmd,
+		RunOutputLocally:         runOutputLocally,
+		ExecArgs:                 localExecArgs,
+		RelativeWorkspaceDir:     workingDirectory,
+		FetchOutputs:             fetchOutputs,
+		AbsLocalWorkspaceDir:     filepath.Dir(wsFilePath),
+		AbsLocalWorkingDirectory: localWorkingDirectory,
 	}, repoConfig)
 	if err != nil && strings.Contains(err.Error(), "context canceled") {
 		return exitCode, nil
