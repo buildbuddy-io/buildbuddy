@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -327,6 +329,119 @@ func TestSendHeartbeat_RefreshesConfiguredFlags(t *testing.T) {
 	assert.Contains(t, stream.sent[1].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
 }
 
+func TestSendHeartbeat_SendsConfiguredFlagsOnlyWhenChanged(t *testing.T) {
+	stream := &fakeHeartbeatStream{}
+	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
+
+	flags.Set(t, "cache_proxy.app_target", "grpcs://app.example.com")
+	refreshConfiguredFlags()
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+
+	require.Len(t, stream.sent, 2)
+	assert.Contains(t, stream.sent[0].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://app.example.com")
+	assert.Empty(t, stream.sent[1].GetNode().GetConfiguredFlags())
+}
+
+// recordingStream is a heartbeat stream that records requests sent by the
+// streamHeartbeats goroutine while the test goroutine inspects them.
+type recordingStream struct {
+	cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient
+
+	mu   sync.Mutex
+	sent []*cppb.RegisterCacheProxyRequest
+}
+
+func (s *recordingStream) Send(req *cppb.RegisterCacheProxyRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Clone: sendHeartbeat mutates the shared node between sends.
+	s.sent = append(s.sent, proto.Clone(req).(*cppb.RegisterCacheProxyRequest))
+	return nil
+}
+
+func (s *recordingStream) CloseAndRecv() (*cppb.RegisterCacheProxyResponse, error) {
+	return &cppb.RegisterCacheProxyResponse{}, nil
+}
+
+// counts returns how many requests were sent and how many of those reported
+// configured flags.
+func (s *recordingStream) counts() (sent int, withFlags int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, req := range s.sent {
+		if len(req.GetNode().GetConfiguredFlags()) > 0 {
+			withFlags++
+		}
+	}
+	return len(s.sent), withFlags
+}
+
+type recordingClient struct {
+	cppb.CacheProxyRegistryClient
+	stream *recordingStream
+}
+
+func (c *recordingClient) RegisterAndStreamHeartbeat(ctx context.Context, opts ...grpc.CallOption) (cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, error) {
+	return c.stream, nil
+}
+
+// The app can lose its copy of a proxy's flags (a Redis flush, say) while the
+// heartbeat stream stays up, so they're re-reported periodically rather than
+// only when they change.
+func TestStreamHeartbeats_ResendsConfiguredFlagsPeriodically(t *testing.T) {
+	fakeClock := clockwork.NewFakeClock()
+	prevClock := clock
+	clock = fakeClock
+	t.Cleanup(func() { clock = prevClock })
+
+	flags.Set(t, "cache_proxy.app_target", "grpcs://app.example.com")
+	refreshConfiguredFlags()
+
+	stream := &recordingStream{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- streamHeartbeats(ctx, make(chan struct{}), &recordingClient{stream: stream},
+			&cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
+	}()
+
+	// Wait for the heartbeat and resend tickers to be registered with the
+	// clock before advancing it, so no tick is missed.
+	require.NoError(t, fakeClock.BlockUntilContext(ctx, 2))
+
+	// The initial heartbeat carries the flags; heartbeats before the resend
+	// interval elapses don't.
+	fakeClock.Advance(heartbeatInterval)
+	waitForSends(t, stream, 2)
+	_, withFlags := stream.counts()
+	require.Equal(t, 1, withFlags, "only the initial heartbeat should report flags")
+
+	// Once the resend interval elapses they go out again.
+	fakeClock.Advance(configuredFlagsResendInterval)
+	require.Eventually(t, func() bool {
+		fakeClock.Advance(heartbeatInterval)
+		_, withFlags := stream.counts()
+		return withFlags == 2
+	}, 5*time.Second, time.Millisecond, "flags should have been re-reported")
+
+	cancel()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("streamHeartbeats did not return after context cancel")
+	}
+}
+
+func waitForSends(t *testing.T, stream *recordingStream, n int) {
+	require.Eventually(t, func() bool {
+		sent, _ := stream.counts()
+		return sent >= n
+	}, 5*time.Second, time.Millisecond, "expected %d heartbeats", n)
+}
+
 func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 	stream := &fakeHeartbeatStream{}
 	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
@@ -343,6 +458,10 @@ func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 
 	for i := 0; i < iterations; i++ {
 		flags.Set(t, "cache_proxy.app_target", fmt.Sprintf("grpcs://app-%d.example.com", i))
+		// Re-snapshot the flags like config.OnReload does after each reload.
+		// Without this the sending goroutine reports the flags once and then
+		// short-circuits, never touching the cache while it's being written.
+		refreshConfiguredFlags()
 	}
 	<-done
 

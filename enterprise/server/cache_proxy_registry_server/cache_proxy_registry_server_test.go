@@ -427,6 +427,42 @@ func TestInsertOrUpdateProxy_StatisticsOverwritten(t *testing.T) {
 	assert.Equal(t, int64(20), got.GetCasReadHits())
 }
 
+// Proxies only report their configured flags when the flags change, so the
+// registry has to hang onto them across subsequent heartbeats.
+func TestInsertOrUpdateProxy_ConfiguredFlagsPersist(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+	ctx := context.Background()
+	authCtx := claims.AuthContextWithJWT(ctx, user.(*claims.Claims), nil)
+	getProxy := func() *cppb.GetCacheProxiesResponse_CacheProxy {
+		resp, err := s.GetCacheProxies(authCtx, &cppb.GetCacheProxiesRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+		})
+		require.NoError(t, err)
+		require.Len(t, resp.GetCacheProxy(), 1)
+		return resp.GetCacheProxy()[0]
+	}
+
+	configuredFlags := []string{"--cache_proxy.app_target=grpcs://app.example.com", "--cache_proxy.api_key=<redacted>"}
+	require.NoError(t, s.insertOrUpdateProxy(ctx, testGroupID, &cppb.CacheProxyNode{
+		Host: "h", ProxyId: "id", ConfiguredFlags: configuredFlags,
+	}, nil))
+	assert.Equal(t, configuredFlags, getProxy().GetNode().GetConfiguredFlags())
+
+	require.NoError(t, s.insertOrUpdateProxy(ctx, testGroupID, &cppb.CacheProxyNode{
+		Host: "h", ProxyId: "id",
+	}, nil))
+	assert.Equal(t, configuredFlags, getProxy().GetNode().GetConfiguredFlags())
+
+	// Once the proxy is dropped from the registry its flags go with it, so a
+	// proxy that comes back doesn't inherit stale flags.
+	require.NoError(t, s.removeProxy(ctx, testGroupID, "id"))
+	require.NoError(t, s.insertOrUpdateProxy(ctx, testGroupID, &cppb.CacheProxyNode{
+		Host: "h", ProxyId: "id",
+	}, nil))
+	assert.Empty(t, getProxy().GetNode().GetConfiguredFlags())
+}
+
 func startGRPCRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*CacheProxyRegistryServer, cppb.CacheProxyRegistryClient) {
 	s, env := newServer(t, users)
 

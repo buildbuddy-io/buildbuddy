@@ -2,6 +2,7 @@ package scheduler_server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
@@ -856,8 +857,18 @@ func (k *nodePoolKey) redisKeySuffix() string {
 	return key + fmt.Sprintf("%s-%s-%s", k.os, k.arch, k.pool)
 }
 
+// redisConfiguredFlagsKey returns the key of the hash holding the registration
+// information about executors registered in the pool stored at poolRedisKey.
 func (k *nodePoolKey) redisPoolKey() string {
 	return "executorPool/" + k.redisKeySuffix()
+}
+
+// redisConfiguredFlagsKey returns the key of the hash holding the configured
+// flags of the executors registered in the pool stored at poolRedisKey. Flags
+// are keyed by executor ID, but stored separately to support intermittent
+// updates.
+func redisConfiguredFlagsKey(poolRedisKey string) string {
+	return poolRedisKey + "/configuredFlags"
 }
 
 func (k *nodePoolKey) redisUnclaimedTasksKey() string {
@@ -906,7 +917,11 @@ func (np *nodePool) fetchExecutionNodes(ctx context.Context) ([]*executionNode, 
 
 		if time.Since(node.GetLastPingTime().AsTime()) > executorMaxRegistrationStaleness {
 			log.Infof("Removing stale executor %q from pool %+v", id, np.key)
-			if err := np.rdb.HDel(ctx, np.key.redisPoolKey(), id).Err(); err != nil {
+			poolRedisKey := np.key.redisPoolKey()
+			pipe := np.rdb.Pipeline()
+			pipe.HDel(ctx, poolRedisKey, id)
+			pipe.HDel(ctx, redisConfiguredFlagsKey(poolRedisKey), id)
+			if _, err := pipe.Exec(ctx); err != nil {
 				log.Warningf("could not remove stale executor: %s", err)
 			}
 			continue
@@ -1509,7 +1524,13 @@ func (s *SchedulerServer) deleteNode(ctx context.Context, node *scpb.ExecutionNo
 	if err := s.checkPreconditions(node); err != nil {
 		return err
 	}
-	return s.rdb.HDel(ctx, poolKey.redisPoolKey(), node.GetExecutorId()).Err()
+	poolRedisKey := poolKey.redisPoolKey()
+	flagsRedisKey := redisConfiguredFlagsKey(poolRedisKey)
+	pipe := s.rdb.Pipeline()
+	pipe.HDel(ctx, poolRedisKey, node.GetExecutorId())
+	pipe.HDel(ctx, flagsRedisKey, node.GetExecutorId())
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *executorHandle, node *scpb.ExecutionNode) error {
@@ -1558,6 +1579,19 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 
 	groupID := executorHandle.GroupID()
 
+	// To reduce traffic, executors don't report flags every heartbeat. Save
+	// them under a separate key so they can be updated when provided.
+	var flags []byte
+	if len(node.GetConfiguredFlags()) > 0 {
+		f, err := json.Marshal(node.GetConfiguredFlags())
+		if err != nil {
+			return err
+		}
+		flags = f
+		node = proto.Clone(node).(*scpb.ExecutionNode)
+		node.ConfiguredFlags = nil
+	}
+
 	r := &scpb.RegisteredExecutionNode{
 		Registration:      node,
 		SchedulerHostPort: s.ownHostPort,
@@ -1570,9 +1604,12 @@ func (s *SchedulerServer) insertOrUpdateNode(ctx context.Context, executorHandle
 		return err
 	}
 
-	pipe := s.rdb.TxPipeline()
+	pipe := s.rdb.Pipeline()
 	poolRedisKey := poolKey.redisPoolKey()
 	pipe.HSet(ctx, poolRedisKey, node.GetExecutorId(), b)
+	if flags != nil {
+		pipe.HSet(ctx, redisConfiguredFlagsKey(poolRedisKey), node.GetExecutorId(), flags)
+	}
 	pipe.SAdd(ctx, s.redisKeyForExecutorPools(groupID), poolRedisKey)
 	_, err = pipe.Exec(ctx)
 	return err
@@ -2793,7 +2830,11 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 		if err != nil {
 			return nil, err
 		}
-		for _, data := range executors {
+		allConfiguredFlags, err := s.rdb.HGetAll(ctx, redisConfiguredFlagsKey(k)).Result()
+		if err != nil {
+			return nil, err
+		}
+		for id, data := range executors {
 			registeredNode := &scpb.RegisteredExecutionNode{}
 			if err := proto.Unmarshal([]byte(data), registeredNode); err != nil {
 				return nil, err
@@ -2802,6 +2843,15 @@ func (s *SchedulerServer) getRegisteredExecutionNodesFromRedis(ctx context.Conte
 			err := perms.AuthorizeRead(user, registeredNode.GetAcl())
 			if err != nil {
 				continue
+			}
+			if flagData, ok := allConfiguredFlags[id]; ok && registeredNode.GetRegistration() != nil {
+				var flags []string
+				if err := json.Unmarshal([]byte(flagData), &flags); err != nil {
+					// Flags are cosmetic; don't fail the whole response.
+					log.CtxWarningf(ctx, "could not parse configured flags for executor %q: %s", id, err)
+				} else {
+					registeredNode.Registration.ConfiguredFlags = flags
+				}
 			}
 			registeredNodes = append(registeredNodes, registeredNode)
 		}
