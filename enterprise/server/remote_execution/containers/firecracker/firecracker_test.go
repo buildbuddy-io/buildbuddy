@@ -916,6 +916,172 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 	}
 }
 
+func TestFirecracker_LocalSnapshotSharing_SavePolicy(t *testing.T) {
+	tests := []struct {
+		name               string
+		branch             string
+		snapshotSavePolicy string
+	}{
+		{
+			name:               "Always save - on main",
+			branch:             "main",
+			snapshotSavePolicy: platform.AlwaysSaveSnapshot,
+		},
+		{
+			name:               "Always save - on feature branch",
+			branch:             "pr-branch",
+			snapshotSavePolicy: platform.AlwaysSaveSnapshot,
+		},
+		{
+			name:               "Only save first non-default snapshot - on main",
+			branch:             "main",
+			snapshotSavePolicy: platform.OnlySaveFirstNonDefaultSnapshot,
+		},
+		{
+			name:               "Only save first non-default snapshot - on feature branch",
+			branch:             "pr-branch",
+			snapshotSavePolicy: platform.OnlySaveFirstNonDefaultSnapshot,
+		},
+		{
+			name:               "Only save non-default snapshot if no snapshots available - on main",
+			branch:             "main",
+			snapshotSavePolicy: platform.OnlySaveNonDefaultSnapshotIfNoneAvailable,
+		},
+		{
+			name:               "Only save non-default snapshot if no snapshots available - on feature branch",
+			branch:             "pr-branch",
+			snapshotSavePolicy: platform.OnlySaveNonDefaultSnapshotIfNoneAvailable,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			rootDir := testfs.MakeTempDir(t)
+			cfg := getExecutorConfig(t)
+
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+			filecacheRoot := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			env.SetFileCache(fc)
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(t, err)
+				}
+			})
+
+			instanceName := "test-instance-name"
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					// Note: platform must match in order to share snapshots
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+						{Name: platform.SnapshotSavePolicyPropertyName, Value: tc.snapshotSavePolicy},
+						{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+						{Name: "GIT_BRANCH", Value: tc.branch},
+					},
+				},
+				ExecuteRequest: &repb.ExecuteRequest{
+					InstanceName: instanceName,
+				},
+			}
+
+			runAndSnapshotVM := func(workDir string, stringToLog string, expectedOutput string, snapshotKeyOverride *fcpb.SnapshotKey, task *repb.ExecutionTask) *interfaces.CommandResult {
+				opts := firecracker.ContainerOpts{
+					ContainerImage:         busyboxImage,
+					ActionWorkingDirectory: workDir,
+					VMConfiguration: &fcpb.VMConfiguration{
+						NumCpus:           1,
+						MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+						NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+						ScratchDiskSizeMb: 100,
+					},
+					ExecutorConfig:      cfg,
+					OverrideSnapshotKey: snapshotKeyOverride,
+				}
+				vm, err := firecracker.NewContainer(ctx, env, task, opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+				err = vm.Create(ctx, workDir)
+				require.NoError(t, err)
+				cmd := appendToLog(stringToLog)
+				res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, expectedOutput, string(res.Stdout))
+				require.NotEmpty(t, res.VMMetadata.GetSnapshotId())
+				err = vm.Pause(ctx)
+				require.NoError(t, err)
+
+				return res
+			}
+
+			// Create a snapshot for the default branch.
+			mainTask := task.CloneVT()
+			mainTask.Command.EnvironmentVariables = []*repb.Command_EnvironmentVariable{
+				{
+					Name:  "GIT_BRANCH",
+					Value: "main",
+				},
+			}
+			mainWorkDir := testfs.MakeDirAll(t, rootDir, "work")
+			res := runAndSnapshotVM(mainWorkDir, "Main", "Main\n", nil, mainTask)
+			assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
+
+			// Create a snapshot on the branch specified by the test case.
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			res = runAndSnapshotVM(workDir, "Test Branch 1", "Main\nTest Branch 1\n", nil, task)
+			baseSnapshotId := res.VMMetadata.GetSnapshotId()
+			assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
+
+			// Start a VM from the snapshot.
+			var expectedOutput string
+			var expectedVersionNumber int64
+			if tc.branch == "main" || tc.snapshotSavePolicy == platform.AlwaysSaveSnapshot {
+				expectedOutput = "Main\nTest Branch 1\nTest Branch 3\n"
+				expectedVersionNumber = 2
+			} else if tc.snapshotSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
+				expectedOutput = "Main\nTest Branch 1\nTest Branch 3\n"
+				expectedVersionNumber = 2
+			} else if tc.snapshotSavePolicy == platform.OnlySaveNonDefaultSnapshotIfNoneAvailable {
+				expectedOutput = "Main\nTest Branch 3\n"
+				expectedVersionNumber = 1
+			}
+			workDir2 := testfs.MakeDirAll(t, rootDir, "work2")
+			res = runAndSnapshotVM(workDir2, "Test Branch 3", expectedOutput, nil, task)
+			assert.Equal(t, expectedVersionNumber, res.VMMetadata.GetSavedSnapshotVersionNumber())
+
+			if tc.snapshotSavePolicy != platform.OnlySaveNonDefaultSnapshotIfNoneAvailable {
+				// Should still be able to start from the original snapshot if we use
+				// a snapshot key containing the original VM's snapshot ID.
+				// Note that when using a snapshot ID as the key, we only include the
+				// snapshot_id and instance_name fields.
+				// The log should contain data written to the original snapshot
+				// and the current VM, but not from any of the other VMs, including the master
+				// snapshot
+				workDirForkOriginalSnapshot := testfs.MakeDirAll(t, rootDir, "work-fork-og-snapshot")
+				originalSnapshotKey := &fcpb.SnapshotKey{
+					InstanceName: instanceName,
+					SnapshotId:   baseSnapshotId,
+				}
+				res = runAndSnapshotVM(workDirForkOriginalSnapshot, "Fork from original vm", "Main\nTest Branch 1\nFork from original vm\n", originalSnapshotKey, task)
+				assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
+			}
+		})
+	}
+}
+
 func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
@@ -943,7 +1109,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *test
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
 				// Only a snapshot it none exists
-				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.OnlySaveNonDefaultSnapshotIfNoneAvailable},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.OnlySaveFirstNonDefaultSnapshot},
 			}},
 			// Use ci_runner so it supports remote snapshots
 			Arguments: []string{"./buildbuddy_ci_runner"},
@@ -1159,13 +1325,6 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			baseSnapshotId := res.VMMetadata.GetSnapshotId()
 			assert.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
 
-			// Start a VM from the snapshot. Artifacts should be stored locally in the filecache.
-			// The log should contain data written to the original snapshot
-			// and the current VM.
-			workDirForkLocalFetch := testfs.MakeDirAll(t, rootDir, "work-fork-local-fetch")
-			res = runAndSnapshotVM(workDirForkLocalFetch, "Test Branch 2", "Main\nTest Branch 1\nTest Branch 2\n", nil, task)
-			assert.Equal(t, int64(2), res.VMMetadata.GetSavedSnapshotVersionNumber())
-
 			// Clear the local filecache. Vms should still be able to unpause the snapshot
 			// by pulling artifacts from the remote cache
 			err = os.RemoveAll(filecacheRoot)
@@ -1180,8 +1339,8 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 			var expectedOutput string
 			var expectedVersionNumber int64
 			if tc.branch == "main" || tc.snapshotSavePolicy == platform.AlwaysSaveSnapshot {
-				expectedOutput = "Main\nTest Branch 1\nTest Branch 2\nTest Branch 3\n"
-				expectedVersionNumber = 3
+				expectedOutput = "Main\nTest Branch 1\nTest Branch 3\n"
+				expectedVersionNumber = 2
 			} else if tc.snapshotSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
 				expectedOutput = "Main\nTest Branch 1\nTest Branch 3\n"
 				expectedVersionNumber = 2
@@ -1800,6 +1959,7 @@ func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
 			Arguments: []string{"./buildbuddy_ci_runner"},
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.OnlySaveFirstNonDefaultSnapshot},
 			}},
 			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 				{
@@ -1820,6 +1980,7 @@ func TestFirecracker_SnapshotSharing_MergeQueueBranches(t *testing.T) {
 			Arguments: []string{"./buildbuddy_ci_runner"},
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.OnlySaveFirstNonDefaultSnapshot},
 			}},
 			EnvironmentVariables: []*repb.Command_EnvironmentVariable{
 				{
