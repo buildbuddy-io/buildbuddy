@@ -2,7 +2,7 @@ import { getHiddenSeriesAfterLegendClick } from "./chart_series";
 
 describe("getHiddenSeriesAfterLegendClick", () => {
   function expectHiddenSeries(actual: ReadonlySet<number>, expected: number[]) {
-    expect([...actual].sort()).toEqual(expected);
+    expect([...actual].sort((a, b) => a - b)).toEqual(expected);
   }
 
   it("isolates a series on regular click when all series are visible", () => {

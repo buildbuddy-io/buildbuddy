@@ -175,7 +175,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     return !Boolean(this.state.refAreaLeft);
   }
 
-  renderDataSeries(ds: ChartDataSeries, index: number): JSX.Element {
+  renderDataSeries(ds: ChartDataSeries, seriesIndex: number): JSX.Element {
     const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
     if (ds.isLine) {
       return (
@@ -186,7 +186,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
-          hide={this.state.hiddenSeries.has(index)}
+          hide={this.state.hiddenSeries.has(seriesIndex)}
           stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
         />
       );
@@ -201,13 +201,13 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         name={ds.name}
         dataKey={ds.extractValue}
         isAnimationActive={false}
-        hide={this.state.hiddenSeries.has(index)}
+        hide={this.state.hiddenSeries.has(seriesIndex)}
         stackId={ds.stackId}
         fill={getResolvedColor(color)}>
-        {this.props.data.map((date, index) => (
+        {this.props.data.map((date, datumIndex) => (
           <Cell
             cursor={ds.onClick ? "pointer" : "default"}
-            key={`cell-${index}`}
+            key={`cell-${datumIndex}`}
             onClick={!this.props.onZoomSelection && ds.onClick ? ds.onClick.bind(this, date) : undefined}
           />
         ))}
