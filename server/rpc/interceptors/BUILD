@@ -15,6 +15,7 @@ go_library(
         "//server/util/bazel_request",
         "//server/util/claims",
         "//server/util/clientip",
+        "//server/util/cpusampler",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/request_context",

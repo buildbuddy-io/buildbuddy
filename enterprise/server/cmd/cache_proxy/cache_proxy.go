@@ -44,6 +44,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/channelz_metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cpusampler"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -151,6 +152,8 @@ func main() {
 	if err := ssl.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+
+	cpusampler.Start(env)
 
 	// Start and register internal servers first because the external proxy
 	// services rely on the internal servers.

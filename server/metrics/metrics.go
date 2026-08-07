@@ -404,6 +404,11 @@ const (
 
 	GRPCMethodLabel = "grpc_method"
 
+	// The gRPC service name, e.g.
+	// "build.bazel.remote.execution.v2.ContentAddressableStorage". Matches
+	// the grpc_service label on the grpc_server_* metrics.
+	GRPCServiceLabel = "grpc_service"
+
 	// The direction of an HTTP/2 flow-control window relative to the local
 	// endpoint: `remote` (the window for data we send) or `local` (the window
 	// for data we receive).
@@ -4583,6 +4588,64 @@ var (
 	// max by (dns_zone) (buildbuddy_dns_server_zone_serial)
 	//   !=
 	// min by (dns_zone) (buildbuddy_dns_server_zone_serial)
+	// ```
+
+	// ## CPU sampler metrics
+	//
+	// These metrics attribute app CPU usage to individual gRPC methods using
+	// pprof labels and duty-cycled CPU profiling windows. See
+	// server/util/cpusampler.
+
+	CPUSamplerSampledCPUNanos = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cpu_sampler",
+		Name:      "sampled_cpu_nanos",
+		Help:      "On-CPU time observed during CPU profiling windows, in **CPU-nanoseconds**, attributed via pprof labels to the gRPC service and method on whose behalf it was spent. Label values match the grpc_server_* metrics, so this joins against request counts. Samples not attributable to any RPC are recorded under the `[unattributed]` label values.",
+	}, []string{
+		GRPCServiceLabel,
+		GRPCMethodLabel,
+	})
+
+	CPUSamplerSampledCPUNanosPerGroup = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cpu_sampler",
+		Name:      "sampled_cpu_nanos_per_group",
+		Help:      "On-CPU time observed during CPU profiling windows, in **CPU-nanoseconds**, attributed via pprof labels to the group on whose behalf it was spent. Samples not attributable to any group are recorded under the `[unattributed]` label value. Note: GC assist CPU is attributed to the allocating goroutine's group, but dedicated GC worker CPU lands in `[unattributed]`, so allocation-heavy groups are somewhat under-counted.",
+	}, []string{
+		GroupID,
+	})
+
+	CPUSamplerProfiledWallTimeSeconds = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cpu_sampler",
+		Name:      "profiled_wall_time_seconds",
+		Help:      "Total wall-clock time during which the CPU sampler's profiler was running, in **seconds**. Because profiling is duty-cycled, divide sampled_cpu_nanos rates by this rate to extrapolate actual CPU usage.",
+	})
+
+	CPUSamplerSkippedCycles = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "cpu_sampler",
+		Name:      "skipped_cycles",
+		Help:      "Number of profiling cycles the CPU sampler skipped, most commonly because the CPU profiler was already in use (e.g. an ad-hoc /debug/pprof/profile scrape). Persistent growth (with profiled_wall_time_seconds flatlining) means something is holding the profiler and CPU attribution data is not being collected.",
+	})
+
+	// #### Examples
+	//
+	// ```promql
+	// # Estimated CPU cores consumed by each gRPC method, extrapolated from
+	// # the sampled profiling windows. (avg() computes the per-instance duty
+	// # cycle across the instances exporting the metric.)
+	// sum by (grpc_service, grpc_method) (rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m])) * 1e-9
+	//   / scalar(avg(rate(buildbuddy_cpu_sampler_profiled_wall_time_seconds[10m])))
+	//
+	// # Fraction of profiled CPU time spent on each gRPC method.
+	// sum by (grpc_service, grpc_method) (rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m]))
+	//   / scalar(sum(rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m])))
+	//
+	// # Average CPU cost per request, by method (labels join grpc_server_handled_total).
+	// sum by (grpc_service, grpc_method) (rate(buildbuddy_cpu_sampler_sampled_cpu_nanos[10m]))
+	//   / sum by (grpc_service, grpc_method) (rate(grpc_server_handled_total[10m]))
+	//   / scalar(avg(rate(buildbuddy_cpu_sampler_profiled_wall_time_seconds[10m])))
 	// ```
 )
 

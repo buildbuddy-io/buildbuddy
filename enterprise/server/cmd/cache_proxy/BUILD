@@ -51,6 +51,7 @@ go_library(
         "//server/ssl",
         "//server/usage/sku",
         "//server/util/channelz_metrics",
+        "//server/util/cpusampler",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
