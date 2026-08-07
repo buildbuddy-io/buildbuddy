@@ -61,6 +61,13 @@ import InvocationModel from "./invocation_model";
 type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
+/**
+ * Size of the compact execution log above which we don't auto-load the log.
+ * This is the zstd-compressed size, and we unpack the decompressed log as JS
+ * objects, so the required browser memory can be much larger than this.
+ */
+const LARGE_EXECUTION_LOG_THRESHOLD_BYTES = 10e6;
+
 const executionDownloadsPageSize = 100;
 
 interface InputFileReference {
@@ -113,6 +120,10 @@ interface State {
   executionDownloads: cache.ExecutionDownload[];
   executionDownloadsLoading: boolean;
   executionDownloadsNextPageToken: string;
+
+  isExecutionLogLoading: boolean;
+  allowLoadingLargeExecutionLog: boolean;
+  executionLogError?: BuildBuddyError;
 }
 
 interface ServerLog {
@@ -138,6 +149,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     executionDownloads: [],
     executionDownloadsLoading: false,
     executionDownloadsNextPageToken: "",
+    isExecutionLogLoading: false,
+    allowLoadingLargeExecutionLog: false,
   };
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
@@ -176,16 +189,33 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
   }
 
+  getExecutionLogSize() {
+    const executionLogFileUri = this.props.model.getExecutionLogFileUri();
+    const sizeSegment = executionLogFileUri?.split("/").pop();
+    return sizeSegment ? Number(sizeSegment) : undefined;
+  }
+
+  isExecutionLogTooLarge() {
+    if (this.state.allowLoadingLargeExecutionLog) return false;
+    return (this.getExecutionLogSize() ?? 0) > LARGE_EXECUTION_LOG_THRESHOLD_BYTES;
+  }
+
   fetchSpawnMetrics() {
+    this.setState({ isExecutionLogLoading: true });
     const actionDigestParam = this.props.search.get("actionDigest");
-    if (!actionDigestParam || !this.props.model.hasExecutionLog() || this.getExecutionId()) {
-      this.setState({ measuredMemoryPeakBytes: undefined });
+    if (
+      !actionDigestParam ||
+      !this.props.model.hasExecutionLog() ||
+      this.getExecutionId() ||
+      this.isExecutionLogTooLarge()
+    ) {
+      this.setState({ isExecutionLogLoading: false, measuredMemoryPeakBytes: undefined });
       return;
     }
 
     const actionDigest = parseActionDigest(actionDigestParam);
     if (!actionDigest) {
-      this.setState({ measuredMemoryPeakBytes: undefined });
+      this.setState({ isExecutionLogLoading: false, measuredMemoryPeakBytes: undefined });
       return;
     }
 
@@ -206,7 +236,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
           measuredMemoryPeakBytes: Number(spawn?.spawn?.metrics?.measuredMemoryPeakBytes || 0) || undefined,
         });
       })
-      .catch((e) => console.error("Failed to fetch execution log:", e));
+      .catch((e) => {
+        this.setState({ executionLogError: BuildBuddyError.parse(e) });
+      })
+      .finally(() => {
+        this.setState({ isExecutionLogLoading: false });
+      });
   }
 
   fetchAction() {
@@ -1460,6 +1495,40 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   private renderSpawnResourceUsage() {
     if (this.getExecutionId()) return null;
+
+    if (this.state.isExecutionLogLoading) {
+      return (
+        <>
+          <div className="metadata-title">Resource usage</div>
+          <Spinner />
+        </>
+      );
+    }
+    if (this.state.executionLogError) {
+      return (
+        <>
+          <div className="metadata-title">Resource usage</div>
+          <div className="error-text">Failed to load execution log: {this.state.executionLogError}</div>
+        </>
+      );
+    }
+    if (this.isExecutionLogTooLarge()) {
+      return (
+        <>
+          <div className="metadata-title">Resource usage</div>
+          <div>
+            <TextLink
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                this.setState({ allowLoadingLargeExecutionLog: true }, () => this.fetchSpawnMetrics());
+              }}>
+              Load execution log ({format.bytesIEC(this.getExecutionLogSize() ?? 0)})
+            </TextLink>
+          </div>
+        </>
+      );
+    }
 
     const measuredMemoryPeakBytes = this.state.measuredMemoryPeakBytes;
     if (!measuredMemoryPeakBytes || measuredMemoryPeakBytes <= 0) return null;
