@@ -898,7 +898,9 @@ func (fs *fileStorer) DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetad
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
 	err := fs.gcs.DeleteBlob(ctx, b.GetBlobName())
-	log.Debugf("Deleted gcs blob: %q with err: %s", b.GetBlobName(), err)
+	if err != nil {
+		log.Debugf("Failed to delete gcs blob %q: %s", b.GetBlobName(), err)
+	}
 	return err
 }
 
@@ -907,7 +909,9 @@ func (fs *fileStorer) UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetada
 		return status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
 	err := fs.gcs.UpdateCustomTime(ctx, b.GetBlobName(), t)
-	log.Debugf("Updated gcs blob: %q atime to %d with err: %s", b.GetBlobName(), t.UnixMicro(), err)
+	if err != nil {
+		log.Debugf("Failed to update gcs blob %q atime to %d: %s", b.GetBlobName(), t.UnixMicro(), err)
+	}
 	return err
 }
 
