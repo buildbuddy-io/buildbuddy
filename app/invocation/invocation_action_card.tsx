@@ -47,7 +47,7 @@ import { Cancelable, CancelablePromise, default as rpcService } from "../service
 import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/compact_trace";
 import TraceViewer from "../trace/trace_viewer";
-import { digestToString, parseActionDigest } from "../util/cache";
+import { digestToString, isBytestreamURL, parseActionDigest, parseBytestreamURL } from "../util/cache";
 import { copyToClipboard } from "../util/clipboard";
 import { BuildBuddyError, HTTPStatusError } from "../util/errors";
 import { MessageClass, timestampToDate } from "../util/proto";
@@ -123,7 +123,7 @@ interface State {
 
   isExecutionLogLoading: boolean;
   allowLoadingLargeExecutionLog: boolean;
-  executionLogError?: BuildBuddyError;
+  executionLogError?: any;
 }
 
 interface ServerLog {
@@ -155,6 +155,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
   private treeShaToChildrenPromiseMap = new Map<string, Promise<TreeNode[]>>();
+
+  private executionLogFetch?: CancelablePromise;
 
   componentDidMount() {
     this.fetchAction();
@@ -190,9 +192,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   getExecutionLogSize() {
-    const executionLogFileUri = this.props.model.getExecutionLogFileUri();
-    const sizeSegment = executionLogFileUri?.split("/").pop();
-    return sizeSegment ? Number(sizeSegment) : undefined;
+    const uri = this.props.model.getExecutionLogFileUri();
+    return isBytestreamURL(uri) ? Number(parseBytestreamURL(uri).digest.sizeBytes) : undefined;
   }
 
   isExecutionLogTooLarge() {
@@ -201,7 +202,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
   }
 
   fetchSpawnMetrics() {
-    this.setState({ isExecutionLogLoading: true });
+    this.executionLogFetch?.cancel();
+    this.setState({ isExecutionLogLoading: true, executionLogError: undefined, measuredMemoryPeakBytes: undefined });
     const actionDigestParam = this.props.search.get("actionDigest");
     if (
       !actionDigestParam ||
@@ -209,24 +211,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.getExecutionId() ||
       this.isExecutionLogTooLarge()
     ) {
-      this.setState({ isExecutionLogLoading: false, measuredMemoryPeakBytes: undefined });
+      this.setState({ isExecutionLogLoading: false });
       return;
     }
 
     const actionDigest = parseActionDigest(actionDigestParam);
     if (!actionDigest) {
-      this.setState({ isExecutionLogLoading: false, measuredMemoryPeakBytes: undefined });
+      this.setState({ isExecutionLogLoading: false });
       return;
     }
 
     const model = this.props.model;
     const actionDigestString = digestToString(actionDigest);
     const actionDigestHasSize = actionDigestParam.includes("/");
-    model
-      .getExecutionLog()
+    this.executionLogFetch = new CancelablePromise(model.getExecutionLog())
       .then((log) => {
-        if (this.props.model !== model || this.props.search.get("actionDigest") !== actionDigestParam) return;
-
         const spawn = log.find((entry) => {
           const spawnDigest = entry.spawn?.digest;
           if (!spawnDigest || spawnDigest.hash !== actionDigest.hash) return false;
@@ -236,12 +235,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
           measuredMemoryPeakBytes: Number(spawn?.spawn?.metrics?.measuredMemoryPeakBytes || 0) || undefined,
         });
       })
-      .catch((e) => {
-        this.setState({ executionLogError: BuildBuddyError.parse(e) });
-      })
-      .finally(() => {
-        this.setState({ isExecutionLogLoading: false });
-      });
+      .catch((e) => this.setState({ executionLogError: e }))
+      .finally(() => this.setState({ isExecutionLogLoading: false }));
   }
 
   fetchAction() {
@@ -1508,7 +1503,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       return (
         <>
           <div className="metadata-title">Resource usage</div>
-          <div className="error-text">Failed to load execution log: {this.state.executionLogError}</div>
+          <div className="error-text">Failed to load execution log: {String(this.state.executionLogError)}</div>
         </>
       );
     }
