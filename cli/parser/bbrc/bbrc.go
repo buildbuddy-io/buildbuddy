@@ -16,6 +16,7 @@ const (
 func NewConfigOptionDefinition(commands ...string) *options.Definition {
 	return options.NewDefinition(
 		ConfigFlagName,
+		options.WithMulti(),
 		options.WithRequiresValue(),
 		options.WithSupportFor(commands...),
 	)

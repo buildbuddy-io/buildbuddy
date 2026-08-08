@@ -845,7 +845,7 @@ func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed
 	return bazelrc.ExpandConfigs(parsedArgs, configs, defaultConfig)
 }
 
-func (p *Parser) expandBBrc(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
+func (p *Parser) expandBBRC(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
 	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(workspaceDir, bbrcFilePaths(workspaceDir, homeDir)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse .bbrc file: %s", err)
@@ -889,13 +889,7 @@ func (p *Parser) ParseBBRCFiles(workspaceDir string, filePaths ...string) (map[s
 			_, isBBCommand := cli_command.CommandsByName[phase]
 			return bazelrc.IsPhase(phase) || isBBCommand
 		},
-		ParsePhase: func(phase string, tokens []string) ([]arguments.Argument, error) {
-			parsedArgs, err := p.ParseArgsForCommand(tokens, phase)
-			if err != nil {
-				return nil, err
-			}
-			return parsedArgs.Args, nil
-		},
+		ParsePhase: p.ParseConfig,
 	}, filePaths...)
 }
 

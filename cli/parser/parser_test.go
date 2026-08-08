@@ -167,6 +167,68 @@ run:b --bb_config=a
 	require.ErrorContains(t, err, "circular --bb_config reference detected: a -> b -> a")
 }
 
+func TestParseBBRCFiles_RejectsInvalidStartupOptions(t *testing.T) {
+	p, err := GetParser()
+	require.NoError(t, err)
+
+	for _, test := range []struct {
+		name        string
+		contents    string
+		errorString string
+	}{
+		{
+			name:     "RCFileControlFlag",
+			contents: "startup --ignore_all_rc_files",
+		},
+		{
+			name:     "NonStartupArgument",
+			contents: "startup run",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				".bbrc": test.contents,
+			})
+
+			_, _, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+			require.ErrorContains(t, err, test.errorString)
+		})
+	}
+}
+
+func TestParseBBRCFiles_MultipleConfigs(t *testing.T) {
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `
+run:first --first_flag
+run:second --second_flag
+`,
+	})
+
+	p := NewParser(
+		[]*options.Definition{
+			bbrc.NewConfigOptionDefinition("run"),
+			options.NewDefinition("first_flag", options.WithNegative(), options.WithSupportFor("run")),
+			options.NewDefinition("second_flag", options.WithNegative(), options.WithSupportFor("run")),
+		},
+		[]string{"run"},
+		nil,
+	)
+	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{"run", "--bb_config=first", "--bb_config=second", "//:target"})
+	require.NoError(t, err)
+
+	// Canonicalization should retain every --bb_config rather than treating the
+	// later flag as an override of the earlier one.
+	args, err = p.ParseArgs(args.Canonicalized().Format())
+	require.NoError(t, err)
+	expanded, err := bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
+	require.NoError(t, err)
+	require.Equal(t, []string{"run", "--first_flag", "--second_flag", "//:target"}, expanded.Format())
+}
+
 func TestParseBazelrc_Simple(t *testing.T) {
 	for _, test := range []struct {
 		Name     string
