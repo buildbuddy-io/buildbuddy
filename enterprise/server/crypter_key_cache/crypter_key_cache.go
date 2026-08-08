@@ -257,6 +257,14 @@ func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cache
 }
 
 func (c *KeyCache) refreshKey(ctx context.Context, ck CacheKey, cacheError bool) (*crypter.DerivedKey, error) {
+	// Bail out if the caller is already done. The singleflight detaches
+	// cancellation from the caller's ctx, so an already-canceled caller would
+	// otherwise kick off a refresh and then race between observing that
+	// refresh's result and its own ctx error.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	v, _, err := c.sf.Do(ctx, ck.String(), func(ctx context.Context) (*crypter.DerivedKey, error) {
 		metrics.EncryptionKeyRefreshCount.Inc()
 		k, err := c.refreshKeyWithRetries(ctx, ck, cacheError)
