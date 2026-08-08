@@ -889,13 +889,7 @@ func (p *Parser) ParseBBRCFiles(workspaceDir string, filePaths ...string) (map[s
 			_, isBBCommand := cli_command.CommandsByName[phase]
 			return bazelrc.IsPhase(phase) || isBBCommand
 		},
-		ParsePhase: func(phase string, tokens []string) ([]arguments.Argument, error) {
-			parsedArgs, err := p.ParseArgsForCommand(tokens, phase)
-			if err != nil {
-				return nil, err
-			}
-			return parsedArgs.Args, nil
-		},
+		ParsePhase: p.ParseConfig,
 	}, filePaths...)
 }
 
