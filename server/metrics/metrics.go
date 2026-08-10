@@ -449,6 +449,10 @@ const (
 	// operator-controlled zone files, so cardinality is bounded. Named
 	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
 	DNSZoneLabel = "dns_zone"
+
+	// The outcome of a verification operation. One of: ["success", "failure",
+	// "error"]
+	VerificationOutcomeLabel = "outcome"
 )
 
 // Label value constants
@@ -1041,6 +1045,20 @@ var (
 		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes.",
 	}, []string{
 		DistributedCacheReadResponseType,
+	})
+
+	// DistributedCacheReferenceVerificationCount counts verifications of
+	// references received alongside streamed bytes on distributed cache
+	// reads, by outcome: "success" (the dereferenced bytes matched the
+	// streamed bytes through EOF), "failure" (the two streams diverged), or
+	// "error" (verification could not be run or completed).
+	DistributedCacheReferenceVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_reference_verification_count",
+		Help:      "Count of reference verifications on distributed cache reads, by outcome.",
+	}, []string{
+		VerificationOutcomeLabel,
 	})
 
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
