@@ -972,7 +972,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if err != nil {
 			return nil, err
 		}
-		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, platform.IsCICommand(command, platform.GetProto(action, command)))
+		isCIRunner := platform.IsCIRunner(command, platform.GetProto(action, command))
+		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, /*shouldExchangeToken=*/isCIRunner)
 		if err != nil {
 			return nil, err
 		}

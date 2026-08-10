@@ -425,7 +425,7 @@ type ciRunnerRouter struct {
 func (*ciRunnerRouter) Applies(_ context.Context, params routingParams) bool {
 	// TODO: pass parsed platform into routingParams and avoid manual parsing
 	// here.
-	return platform.IsCICommand(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, "recycle-runner"))
+	return platform.IsCIRunner(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, "recycle-runner"))
 }
 
 func (c *ciRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
@@ -471,7 +471,7 @@ func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	// For workflow tasks, route using git branch name so that when re-running the
 	// workflow multiple times using the same branch, the runs are more likely
 	// to hit an executor with a warmer snapshot cache.
-	if platform.IsCICommand(params.cmd, params.platform) {
+	if platform.IsCIRunner(params.cmd, params.platform) {
 		envVarNames := []string{"GIT_BRANCH"}
 		if *defaultBranchRoutingEnabled {
 			envVarNames = append(envVarNames, "GIT_BASE_BRANCH", "GIT_REPO_DEFAULT_BRANCH")
