@@ -89,10 +89,12 @@ func singleUserGroup(u *tables.User) (*tables.Group, error) {
 	}
 
 	return &tables.Group{
-		GroupID: strings.Replace(u.UserID, "US", "GR", 1),
-		UserID:  u.UserID,
-		Name:    name,
-		Status:  defaultSingleGroupStatus,
+		GroupID:            strings.Replace(u.UserID, "US", "GR", 1),
+		UserID:             u.UserID,
+		Name:               name,
+		Status:             defaultSingleGroupStatus,
+		CreatedByIP:        u.CreatedByIP,
+		CreatedByUserAgent: u.CreatedByUserAgent,
 	}, nil
 }
 
