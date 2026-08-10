@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -49,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
@@ -489,6 +491,8 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	if err := s.env.GetAuthenticator().FillUser(ctx, tu); err != nil {
 		return nil, err
 	}
+	tu.CreatedByIP = clientip.Get(ctx)
+	tu.CreatedByUserAgent = useragent.Get(ctx)
 	if err := userDB.InsertUser(ctx, tu); err != nil {
 		return nil, err
 	}
@@ -651,6 +655,8 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		CodeSearchEnabled:           req.GetCodeSearchEnabled(),
 		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
+		CreatedByIP:                 clientip.Get(ctx),
+		CreatedByUserAgent:          useragent.Get(ctx),
 	}
 
 	// For groups created using an API Key allow the SAML IDP Metadata URL

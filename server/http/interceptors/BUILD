@@ -23,6 +23,7 @@ go_library(
         "//server/util/region",
         "//server/util/request_context",
         "//server/util/subdomain",
+        "//server/util/useragent",
         "//server/util/uuid",
         "@com_github_prometheus_client_golang//prometheus",
     ],
