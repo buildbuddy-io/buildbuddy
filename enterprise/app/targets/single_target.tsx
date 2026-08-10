@@ -493,6 +493,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           </>
         ),
         color: COLORS[i % COLORS.length],
+        dot: true,
       });
       cpuSeries.push({
         name: "cpu" + i,
@@ -505,6 +506,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           </>
         ),
         color: COLORS[i % COLORS.length],
+        dot: true,
       });
       memorySeries.push({
         name: "memory" + i,
@@ -517,6 +519,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           </>
         ),
         color: COLORS[i % COLORS.length],
+        dot: true,
       });
 
       i++;
@@ -539,6 +542,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           formatHoverXAxisLabel={(startTimeUsec) =>
             moment(startTimeUsec / 1000).format("dddd, MMMM Do YYYY, h:mm:ss a")
           }
+          hideLegend={true}
         />
         <TrendsChartComponent
           title="CPU usage"
@@ -553,6 +557,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           formatHoverXAxisLabel={(startTimeUsec) =>
             moment(startTimeUsec / 1000).format("dddd, MMMM Do YYYY, h:mm:ss a")
           }
+          hideLegend={true}
         />
         <TrendsChartComponent
           title="Peak memory usage"
@@ -567,6 +572,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           formatHoverXAxisLabel={(startTimeUsec) =>
             moment(startTimeUsec / 1000).format("dddd, MMMM Do YYYY, h:mm:ss a")
           }
+          hideLegend={true}
         />
       </>
     );

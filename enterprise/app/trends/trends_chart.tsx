@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  Legend,
   Line,
   ReferenceArea,
   ResponsiveContainer,
@@ -25,6 +26,7 @@ export interface ChartDataSeries {
   usesSecondaryAxis?: boolean;
   stackId?: string;
   color?: ChartColor;
+  dot?: boolean;
 }
 
 interface ChartYAxis {
@@ -44,6 +46,7 @@ interface Props {
   dataSeries: ChartDataSeries[];
   primaryYAxis: ChartYAxis;
   secondaryYAxis?: ChartYAxis;
+  hideLegend?: boolean;
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
@@ -168,7 +171,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           activeDot={{ pointerEvents: "none" }}
           yAxisId={axis}
           name={ds.name}
-          dot={true}
+          dot={ds.dot}
           dataKey={ds.extractValue}
           isAnimationActive={false}
           connectNulls={true}
@@ -216,7 +219,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
-            {/* <Legend /> */}
+            {!this.props.hideLegend && <Legend />}
             <XAxis
               type="number"
               domain={["dataMin", "dataMax"]}
