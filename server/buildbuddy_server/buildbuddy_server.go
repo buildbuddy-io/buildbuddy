@@ -96,13 +96,16 @@ import (
 )
 
 var (
-	disableCertConfig              = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
-	paginateInvocations            = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
-	restrictMultiGroupToEnterprise = flag.Bool("app.restrict_multi_group_to_enterprise", false, "If true, only enterprise accounts can create multiple organizations.", flag.Internal)
+	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
 )
 
-// When enabled, propagates "blocked" status across users/groups.
-const propagateGroupBlocksExperiment = "app.propagate_group_blocks"
+const (
+	// When enabled, propagates "blocked" status across users/groups.
+	propagateGroupBlocksExperiment = "app.propagate_group_blocks"
+
+	maxGroupsPerUserExperiment = "app.max_groups_per_user"
+)
 
 const (
 	bytestreamProtocolPrefix  = "bytestream://"
@@ -575,33 +578,40 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 }
 
 func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp interfaces.ExperimentFlagProvider, u interfaces.UserInfo) (*tables.User, error) {
-	if efp == nil || !efp.Boolean(ctx, propagateGroupBlocksExperiment, false /*=default*/) {
+	isEnterprise := !(u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS)
+	if isEnterprise || efp == nil {
+		return nil, nil
+	}
+	propagateGroupBlocks := efp.Boolean(ctx, propagateGroupBlocksExperiment, false /*=default*/)
+	maxGroupsPerUser := efp.Int64(ctx, maxGroupsPerUserExperiment, 0)
+	if !propagateGroupBlocks && maxGroupsPerUser == 0 {
 		return nil, nil
 	}
 
 	if u.GetUserID() == "" {
-		// Org-level API keys have no user, so the key's own group is the only
-		// membership that matters. Its status is already on the claims.
-		if u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS {
-			return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
-		}
-		return nil, nil
+		return nil, status.PermissionDeniedError("Creating organizations is not supported through the API. Please continue in our UI.")
 	}
 
 	user, err := userDB.GetUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// No memberships means a new signup creating their first org.
-	blocked := len(user.Groups) > 0
-	for _, gr := range user.Groups {
-		if gr.Group.Status != grpb.Group_BLOCKED_GROUP_STATUS {
-			blocked = false
-			break
+	if propagateGroupBlocks {
+		// No memberships means a new signup creating their first org.
+		blocked := len(user.Groups) > 0
+		for _, gr := range user.Groups {
+			if gr.Group.Status != grpb.Group_BLOCKED_GROUP_STATUS {
+				blocked = false
+				break
+			}
+		}
+		if blocked {
+			return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
 		}
 	}
-	if blocked {
-		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
+
+	if maxGroupsPerUser > 0 && int64(len(user.Groups)) >= maxGroupsPerUser {
+		return nil, status.PermissionDeniedErrorf("This user has reached the non-enterprise organization limit. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
 	}
 	return user, nil
 }
@@ -615,10 +625,6 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	if err != nil {
 		return nil, err
 	}
-	if *restrictMultiGroupToEnterprise && (u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS) {
-		return nil, status.PermissionDeniedError("An enterprise account is required to create multiple organizations. Please contact support@buildbuddy.io if you need multiple organizations.")
-	}
-
 	groupName := strings.TrimSpace(req.GetName())
 	if len(groupName) == 0 {
 		return nil, status.InvalidArgumentError("Group name cannot be empty")

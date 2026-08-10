@@ -4,10 +4,12 @@ package buildbuddy_server_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -15,9 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,6 +32,32 @@ import (
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
+
+const (
+	maxGroupsPerUserExperiment     = "app.max_groups_per_user"
+	propagateGroupBlocksExperiment = "app.propagate_group_blocks"
+)
+
+func configureCreateGroupExperiments(t *testing.T, env *testenv.TestEnv, maxGroups int64, propagateGroupBlocks bool) {
+	provider := openfeatureTesting.NewTestProvider()
+	provider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		maxGroupsPerUserExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "configured",
+			Variants:       map[string]any{"configured": int(maxGroups)},
+		},
+		propagateGroupBlocksExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "configured",
+			Variants:       map[string]any{"configured": propagateGroupBlocks},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	t.Cleanup(provider.Cleanup)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+}
 
 func authUserCtx(ctx context.Context, env environment.Env, t *testing.T, userID string) context.Context {
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
@@ -50,7 +82,6 @@ func TestCreateGroup(t *testing.T) {
 
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
-	flags.Set(t, "app.restrict_multi_group_to_enterprise", true)
 
 	err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
 	require.NoError(t, err)
@@ -114,17 +145,63 @@ func TestCreateGroup(t *testing.T) {
 	require.False(t, g.IsParent)
 }
 
-func TestCreateGroup_StatusRestrictions(t *testing.T) {
+func TestCreateGroup_Allowed(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		status      grpb.Group_GroupStatus
-		shouldAllow bool
+		name            string
+		maxGroups       int
+		groupStatus     grpb.Group_GroupStatus
+		existingGroups  int
+		orgAPIKey       bool
+		propagateBlocks bool
+		expectDenied    bool
 	}{
-		{"FreeTier", grpb.Group_FREE_TIER_GROUP_STATUS, false},
-		{"Blocked", grpb.Group_BLOCKED_GROUP_STATUS, false},
-		{"Unknown", grpb.Group_UNKNOWN_GROUP_STATUS, true},
-		{"EnterpriseTrial", grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS, true},
-		{"Enterprise", grpb.Group_ENTERPRISE_GROUP_STATUS, true},
+		{
+			name:           "limit_disabled",
+			maxGroups:      0,
+			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
+			existingGroups: 2,
+		},
+		{
+			name:           "free_user_below_limit",
+			maxGroups:      2,
+			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
+			existingGroups: 1,
+		},
+		{
+			name:           "free_user_at_limit",
+			maxGroups:      2,
+			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
+			existingGroups: 2,
+			expectDenied:   true,
+		},
+		{
+			name:            "blocked_user_below_limit",
+			maxGroups:       2,
+			groupStatus:     grpb.Group_BLOCKED_GROUP_STATUS,
+			existingGroups:  1,
+			propagateBlocks: true,
+			expectDenied:    true,
+		},
+		{
+			name:           "enterprise_user_not_limited",
+			maxGroups:      2,
+			groupStatus:    grpb.Group_ENTERPRISE_GROUP_STATUS,
+			existingGroups: 2,
+		},
+		{
+			name:           "enterprise_trial_user_not_limited",
+			maxGroups:      2,
+			groupStatus:    grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			existingGroups: 2,
+		},
+		{
+			name:           "non_enterprise_org_api_key_denied",
+			maxGroups:      5,
+			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
+			existingGroups: 1,
+			orgAPIKey:      true,
+			expectDenied:   true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			te := enterprise_testenv.New(t)
@@ -135,13 +212,11 @@ func TestCreateGroup_StatusRestrictions(t *testing.T) {
 
 			flags.Set(t, "app.create_group_per_user", true)
 			flags.Set(t, "app.no_default_user_group", true)
-			flags.Set(t, "app.restrict_multi_group_to_enterprise", true)
-
 			err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
 			require.NoError(t, err)
 			userCtx := authUserCtx(ctx, te, t, "US1")
 			group := getGroup(t, userCtx, te).Group
-			group.URLIdentifier = "test-group"
+			group.URLIdentifier = "initial-group"
 			_, err = te.GetUserDB().UpdateGroup(userCtx, &group)
 			require.NoError(t, err)
 
@@ -156,30 +231,56 @@ func TestCreateGroup_StatusRestrictions(t *testing.T) {
 			})
 			require.NoError(t, err)
 			userCtx = authUserCtx(ctx, te, t, "US1")
-			err = te.GetUserDB().UpdateGroupStatus(userCtx, group.GroupID, tc.status)
+			err = te.GetUserDB().UpdateGroupStatus(userCtx, group.GroupID, tc.groupStatus)
 			require.NoError(t, err)
+			userCtx = authUserCtx(ctx, te, t, "US1")
 
-			adminKey, err := te.GetAuthDB().CreateAPIKey(
-				userCtx, group.GroupID, "admin",
-				[]cappb.Capability{cappb.Capability_ORG_ADMIN},
-				0, /*=expiresIn*/
-				false /*=visibleToDevelopers*/)
+			for i := 1; i < tc.existingGroups; i++ {
+				_, err := te.GetUserDB().CreateGroup(userCtx, &tables.Group{
+					Name:          fmt.Sprintf("Existing group %d", i),
+					URLIdentifier: fmt.Sprintf("existing-group-%d", i),
+				})
+				require.NoError(t, err)
+				userCtx = authUserCtx(ctx, te, t, "US1")
+			}
+			user, err := te.GetUserDB().GetUser(userCtx)
 			require.NoError(t, err)
-			adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
+			require.Len(t, user.Groups, tc.existingGroups)
 
+			configureCreateGroupExperiments(t, te, int64(tc.maxGroups), tc.propagateBlocks)
 			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 			require.NoError(t, err)
 
-			_, err = server.CreateGroup(adminKeyCtx, &grpb.CreateGroupRequest{
-				Name:          "test",
-				UrlIdentifier: "test",
-			})
-			if tc.shouldAllow {
+			requestCtx := userCtx
+			if tc.orgAPIKey {
+				adminKey, err := te.GetAuthDB().CreateAPIKey(
+					userCtx, group.GroupID, "admin",
+					[]cappb.Capability{cappb.Capability_ORG_ADMIN},
+					0, /*=expiresIn*/
+					false /*=visibleToDevelopers*/)
 				require.NoError(t, err)
-			} else {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), "enterprise account is required")
+				requestCtx = te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
 			}
+			rsp, err := server.CreateGroup(requestCtx, &grpb.CreateGroupRequest{
+				Name:          "My Org",
+				UrlIdentifier: "my-org",
+			})
+
+			if tc.expectDenied {
+				require.Error(t, err)
+				require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %s", err)
+			} else {
+				require.NoError(t, err)
+				require.NotEmpty(t, rsp.GetId())
+			}
+
+			user, err = te.GetUserDB().GetUser(userCtx)
+			require.NoError(t, err)
+			expectedGroups := tc.existingGroups
+			if !tc.expectDenied {
+				expectedGroups++
+			}
+			require.Len(t, user.Groups, expectedGroups)
 		})
 	}
 }
