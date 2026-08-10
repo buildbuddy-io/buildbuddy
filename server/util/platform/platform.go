@@ -863,8 +863,11 @@ func IsRecyclingEnabled(task *repb.ExecutionTask) bool {
 // AllowsRemoteSnapshots returns whether the given task may use remote
 // snapshots. This is true if the `allow-remote-snapshots` platform property is
 // set, and for CI runner commands, which have always been allowed to use them.
-func AllowsRemoteSnapshots(cmd *repb.Command, platform *repb.Platform) bool {
-	return IsTrue(FindValue(platform, allowRemoteSnapshotsPropertyName)) || IsCIRunner(cmd, platform)
+func AllowsRemoteSnapshots(task *repb.ExecutionTask) bool {
+	if IsTrue(FindEffectiveValue(task, allowRemoteSnapshotsPropertyName)) {
+		return true
+	}
+	return IsCIRunner(task.GetCommand(), GetProto(task.GetAction(), task.GetCommand()))
 }
 
 // IsCIRunner returns whether the given command is either a BuildBuddy workflow

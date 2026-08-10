@@ -265,6 +265,7 @@ func handleCreate(args []string) (int, error) {
 		"network=external",
 		"container-image=" + ensureDockerPrefix(*imageFlag),
 		platform.DockerUserPropertyName + "=buildbuddy",
+		"allow-remote-snapshots=true",
 	}
 	execProps = append(execProps,
 		"recycle-runner=true",
