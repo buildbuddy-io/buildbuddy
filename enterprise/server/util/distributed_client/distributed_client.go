@@ -66,6 +66,7 @@ type Proxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
+	readRefLogger         log.Logger
 	bufPool               *bytebufferpool.VariableSizePool
 	mu                    *sync.Mutex
 	server                *grpc.Server
@@ -78,13 +79,15 @@ type Proxy struct {
 }
 
 func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
+	logger := log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr))
 	proxy := &Proxy{
-		env:        env,
-		cache:      c,
-		log:        log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr)),
-		bufPool:    bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
-		listenAddr: listenAddr,
-		mu:         &sync.Mutex{},
+		env:           env,
+		cache:         c,
+		log:           logger,
+		readRefLogger: logger.EveryN(100),
+		bufPool:       bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
+		listenAddr:    listenAddr,
+		mu:            &sync.Mutex{},
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
@@ -361,7 +364,7 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 		if err := stream.Send(&dcpb.ReadResponse{Reference: ref}); err != nil {
 			return err
 		}
-		c.log.Debugf("Read(%q) succeeded by reference (user prefix: %s)", ResourceIsolationString(rn), up)
+		c.readRefLogger.Debugf("Read(%q) succeeded by reference (user prefix: %s)", ResourceIsolationString(rn), up)
 		return nil
 	}
 
