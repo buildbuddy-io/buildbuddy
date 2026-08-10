@@ -209,6 +209,25 @@ func RecordReadMetrics(typeLabel string, startTime time.Time, size int, err erro
 	}).Observe(float64(size))
 }
 
+func RecordCloneMetrics(typeLabel string, startTime time.Time, size int, err error) {
+	duration := time.Since(startTime)
+	metrics.BlobstoreCloneCount.With(prometheus.Labels{
+		metrics.StatusLabel:        gstatus.Code(err).String(),
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Inc()
+	// Don't track duration or size if there's an error, but do track
+	// count (above) so we can measure failure rates.
+	if err != nil {
+		return
+	}
+	metrics.BlobstoreCloneDurationUsec.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(duration.Microseconds()))
+	metrics.BlobstoreCloneSizeBytes.With(prometheus.Labels{
+		metrics.BlobstoreTypeLabel: typeLabel,
+	}).Observe(float64(size))
+}
+
 func RecordDeleteMetrics(typeLabel string, startTime time.Time, err error) {
 	duration := time.Since(startTime)
 	metrics.BlobstoreDeleteCount.With(prometheus.Labels{
