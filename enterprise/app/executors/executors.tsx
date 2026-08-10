@@ -1,4 +1,4 @@
-import { BarChart2, Cpu, Globe, Hash, Laptop, ListChevronsDownUp, ListChevronsUpDown, LucideIcon } from "lucide-react";
+import { BarChart2, Cpu, Globe, Hash, Laptop, LucideIcon } from "lucide-react";
 import React from "react";
 import { Subscription } from "rxjs";
 import { User } from "../../../app/auth/auth_service";
@@ -8,6 +8,7 @@ import LinkButton from "../../../app/components/button/link_button";
 import Link, { TextLink } from "../../../app/components/link/link";
 import Select, { Option } from "../../../app/components/select/select";
 import UpgradePrompt, { mostUrgent } from "../../../app/components/upgrade/upgrade";
+import ViewModeToggle, { ViewMode } from "../../../app/components/view_mode_toggle/view_mode_toggle";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
@@ -18,7 +19,6 @@ import { scheduler } from "../../../proto/scheduler_ts_proto";
 import { stat_filter } from "../../../proto/stat_filter_ts_proto";
 import { encodeEffectivePoolUrlParam, encodeMetricUrlParam } from "../trends/common";
 import ExecutorCardComponent from "./executor_card";
-import { OutlinedButton } from "../../../app/components/button/button";
 
 enum FetchType {
   Executors,
@@ -258,8 +258,6 @@ interface Props {
   path: string;
 }
 
-type ViewMode = "summary" | "details";
-
 interface State {
   userOwnedExecutorsSupported: boolean;
   regions: { name: string; response: scheduler.GetExecutionNodesResponse }[];
@@ -389,24 +387,12 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
     router.navigateTo(`/executors/${tabId}`);
   }
 
-  toggleViewMode() {
-    this.setState({ viewMode: this.state.viewMode === "summary" ? "details" : "summary" });
+  onChangeViewMode(viewMode: ViewMode) {
+    this.setState({ viewMode });
   }
 
   renderViewModeToggle() {
-    return (
-      <div className="view-mode-toggle">
-        {this.state.viewMode === "summary" ? (
-          <OutlinedButton className="icon-button" title="Show details" onClick={() => this.toggleViewMode()}>
-            <ListChevronsUpDown />
-          </OutlinedButton>
-        ) : (
-          <OutlinedButton className="icon-button" title="Hide details" onClick={() => this.toggleViewMode()}>
-            <ListChevronsDownUp />
-          </OutlinedButton>
-        )}
-      </div>
-    );
+    return <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />;
   }
 
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).

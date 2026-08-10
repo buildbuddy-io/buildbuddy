@@ -5,19 +5,6 @@
   font-weight: 700;
 }
 
-/* Push the summary/details toggle to the right edge of the tabs row. */
-.executors-page .view-mode-toggle {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-}
-
-/* The tabs are taller than the pool heading they sit next to, so don't let
- * their vertical margins stretch that row. */
-.executors-page .executor-pool-header .view-mode-toggle .tab {
-  margin-top: 0;
-}
-
 .executors-page .executor-section {
   display: flex;
 }

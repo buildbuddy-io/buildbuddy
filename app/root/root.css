@@ -342,6 +342,20 @@ button {
   color: var(--color-tab-selected-text);
 }
 
+/** Summary/details toggle **/
+
+.view-mode-toggle {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+/* Tabs carry a margin-top that shifts them down within the centered row, so
+ * match it here to keep the toggle on the tabs' visual center. */
+.tabs > .view-mode-toggle {
+  margin-top: 8px;
+}
+
 /** Runs **/
 
 .runs {
