@@ -82,24 +82,6 @@ func writeRecord(t *testing.T, ctx context.Context, s *sender.Sender, r *testRec
 	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
 }
 
-// verifyRecordValue asserts that the record at key holds data inline.
-func verifyRecordValue(t *testing.T, ctx context.Context, s *sender.Sender, key, data []byte) {
-	t.Helper()
-	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-		Key: key,
-	}).ToProto()
-	require.NoError(t, err)
-	readRsp, err := s.SyncRead(ctx, key, readReq)
-	require.NoError(t, err)
-	readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
-	require.NoError(t, readBatch.AnyError())
-	directRead, err := readBatch.DirectReadResponse(0)
-	require.NoError(t, err)
-	md := &sgpb.FileMetadata{}
-	require.NoError(t, proto.Unmarshal(directRead.GetKv().GetValue(), md))
-	require.Equal(t, data, md.GetStorageMetadata().GetInlineMetadata().GetData())
-}
-
 func TestCommitPreparedTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
 	store := sf.NewStore(t, testutil.StoreOptions{})
@@ -556,7 +538,7 @@ func setupPendingRollbackTxnForRecovery(
 	return ctx, s1, tc, txnProto, txnRecord, rec.key, metaKey
 }
 
-func verifyDirectReadValue(t *testing.T, ctx context.Context, s *sender.Sender, key, value []byte) {
+func directReadValue(t *testing.T, ctx context.Context, s *sender.Sender, key []byte) []byte {
 	t.Helper()
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: key,
@@ -568,7 +550,14 @@ func verifyDirectReadValue(t *testing.T, ctx context.Context, s *sender.Sender, 
 	require.NoError(t, readBatch.AnyError())
 	directRead, err := readBatch.DirectReadResponse(0)
 	require.NoError(t, err)
-	require.Equal(t, value, directRead.GetKv().GetValue())
+	return directRead.GetKv().GetValue()
+}
+
+func verifyRecordValue(t *testing.T, ctx context.Context, s *sender.Sender, key, data []byte) {
+	t.Helper()
+	md := &sgpb.FileMetadata{}
+	require.NoError(t, proto.Unmarshal(directReadValue(t, ctx, s, key), md))
+	require.Equal(t, data, md.GetStorageMetadata().GetInlineMetadata().GetData())
 }
 
 func verifyDirectReadNotFound(t *testing.T, ctx context.Context, s *sender.Sender, key []byte) {
@@ -818,7 +807,7 @@ func TestStalePendingJanitorHelpsCommit(t *testing.T) {
 
 	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
 	verifyRecordValue(t, ctx, s1.Sender(), rec.key, []byte("after"))
-	verifyDirectReadValue(t, ctx, s1.Sender(), metaKey, []byte("committed"))
+	require.Equal(t, []byte("committed"), directReadValue(t, ctx, s1.Sender(), metaKey))
 }
 
 func TestRollbackNotFoundPreventsLatePrepare(t *testing.T) {
