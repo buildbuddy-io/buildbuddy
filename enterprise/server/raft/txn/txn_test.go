@@ -59,8 +59,7 @@ func newTestRecord(t testing.TB) *testRecord {
 	return &testRecord{key: key, fr: fr}
 }
 
-// setRequest returns a SetRequest storing data inline in the record, so tests
-// can distinguish written states the way raw DirectWrite values used to.
+// setRequest returns a SetRequest storing data inline in the record.
 func (r *testRecord) setRequest(data []byte) *rfpb.SetRequest {
 	return &rfpb.SetRequest{
 		Key: r.key,
