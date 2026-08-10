@@ -35,6 +35,7 @@ go_test(
     tags = ["block-network"],
     deps = [
         ":txn",
+        "//enterprise/server/filestore",
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/keys",
         "//enterprise/server/raft/logger",
@@ -42,6 +43,9 @@ go_test(
         "//enterprise/server/raft/sender",
         "//enterprise/server/raft/testutil",
         "//proto:raft_go_proto",
+        "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
+        "//server/testutil/testdigest",
         "//server/util/grpc_server",
         "//server/util/proto",
         "//server/util/status",
