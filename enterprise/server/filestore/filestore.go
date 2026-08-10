@@ -858,21 +858,28 @@ func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
 	}
 }
 
+func blobName(appName string, fileRecord *sgpb.FileRecord) (string, error) {
+	blobNameBytes, err := blobKey(appName, fileRecord)
+	if err != nil {
+		return "", err
+	}
+	salt, err := random.RandomString(5)
+	if err != nil {
+		return "", err
+	}
+	return string(blobNameBytes) + "-" + salt, nil
+}
+
 func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	blobNameBytes, err := blobKey(fs.appName, fileRecord)
+	blobName, err := blobName(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
 	}
-	salt, err := random.RandomString(5)
-	if err != nil {
-		return nil, err
-	}
-	blobName := string(blobNameBytes) + "-" + salt
 
 	estimatedSize := fileRecord.GetDigest().GetSizeBytes()
 	if fileRecord.GetCompressor() != repb.Compressor_IDENTITY {
@@ -904,15 +911,10 @@ func (fs *fileStorer) CloneBlob(ctx context.Context, src *sgpb.StorageMetadata_G
 	}
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	blobNameBytes, err := blobKey(fs.appName, fileRecord)
+	blobName, err := blobName(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
 	}
-	salt, err := random.RandomString(5)
-	if err != nil {
-		return nil, err
-	}
-	blobName := string(blobNameBytes) + "-" + salt
 	customTime := fs.clock.Now()
 	if err := fs.gcs.CloneBlob(ctx, src.GetBlobName(), blobName, customTime); err != nil {
 		return nil, err

@@ -2129,6 +2129,41 @@ var (
 		BlobstoreTypeLabel,
 	})
 
+	BlobstoreCloneCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "clone_count",
+		Help:      "Number of files cloned (copied storage-side, without the bytes leaving the blobstore).",
+	}, []string{
+		StatusLabel,
+		BlobstoreTypeLabel,
+	})
+
+	// ```promql
+	// # Bytes cloned per second (these bytes never leave the blobstore)
+	// sum(rate(buildbuddy_blobstore_clone_size_bytes[5m]))
+	// ```
+
+	BlobstoreCloneSizeBytes = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "clone_size_bytes",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of bytes cloned per file.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
+	BlobstoreCloneDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "blobstore",
+		Name:      "clone_duration_usec",
+		Buckets:   coarseMicrosecondToHour,
+		Help:      "Duration per blobstore file clone, in **microseconds**.",
+	}, []string{
+		BlobstoreTypeLabel,
+	})
+
 	BlobstoreDeleteCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "blobstore",

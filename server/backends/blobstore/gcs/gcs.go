@@ -545,12 +545,15 @@ func (g *GCSBlobStore) CloneBlob(ctx context.Context, srcBlobName, dstBlobName s
 	if errors.Is(err, storage.ErrObjectNotExist) {
 		err = status.NotFoundError(err.Error())
 	}
-	var n int
-	if attrs != nil {
-		n = int(attrs.Size)
-	}
-	util.RecordWriteMetrics(g.metricLabel, start, n, err)
+	util.RecordCloneMetrics(g.metricLabel, start, bytesCloned(attrs), err)
 	return err
+}
+
+func bytesCloned(attrs *storage.ObjectAttrs) int {
+	if attrs == nil {
+		return 0
+	}
+	return int(attrs.Size)
 }
 
 // http.StatusTooManyRequests and status.ResourceExhaustedError can be returned
