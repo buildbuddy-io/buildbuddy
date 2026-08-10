@@ -574,6 +574,7 @@ type Store interface {
 
 	BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error)
 	BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	CloneBlob(ctx context.Context, src *sgpb.StorageMetadata_GCSMetadata, fileRecord *sgpb.FileRecord) (*sgpb.StorageMetadata, error)
 	DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error
 	UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error
 
@@ -585,6 +586,7 @@ type PebbleGCSStorage interface {
 	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
 	Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error)
 	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error)
+	CloneBlob(ctx context.Context, srcBlobName, dstBlobName string, customTime time.Time) error
 	DeleteBlob(ctx context.Context, blobName string) error
 	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
 }
@@ -890,6 +892,36 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		blobName:             string(blobName),
 		customTime:           customTime,
 		digest:               fileRecord.GetDigest(),
+	}, nil
+}
+
+// CloneBlob server-side-copies the blob referenced by src to a new blob owned
+// by this app, named for fileRecord, and returns storage metadata describing
+// the new blob.
+func (fs *fileStorer) CloneBlob(ctx context.Context, src *sgpb.StorageMetadata_GCSMetadata, fileRecord *sgpb.FileRecord) (*sgpb.StorageMetadata, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	blobNameBytes, err := blobKey(fs.appName, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	salt, err := random.RandomString(5)
+	if err != nil {
+		return nil, err
+	}
+	blobName := string(blobNameBytes) + "-" + salt
+	customTime := fs.clock.Now()
+	if err := fs.gcs.CloneBlob(ctx, src.GetBlobName(), blobName, customTime); err != nil {
+		return nil, err
+	}
+	return &sgpb.StorageMetadata{
+		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+			BlobName:           blobName,
+			LastCustomTimeUsec: customTime.UnixMicro(),
+		},
 	}, nil
 }
 
