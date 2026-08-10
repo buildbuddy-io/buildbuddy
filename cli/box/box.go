@@ -64,10 +64,9 @@ const (
 	// producers (hosted runners, workflows).
 	remoteInstanceName = "bb-devbox/box"
 
-	// defaultImage is the container image used for box VMs: the workflows
-	// image plus coding agents (claude, codex) and tmux. Firecracker
-	// executors warm it on startup (see runner.WarmupConfigs).
-	defaultImage = platform.DockerPrefix + platform.Box24_04Image
+	// defaultImage is the container image used for box VMs. This image is
+	// pinned by digest and is likely already cached on BuildBuddy executors.
+	defaultImage = platform.DockerPrefix + platform.Ubuntu22_04Image
 
 	// githubReleaseURL is the download URL for the linux/amd64 bb binary,
 	// used when bb box is run from a non-linux-amd64 host.
