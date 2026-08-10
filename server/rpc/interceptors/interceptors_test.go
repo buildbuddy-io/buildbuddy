@@ -18,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -28,12 +30,14 @@ import (
 
 type pingServer struct {
 	lastClientIP   string
+	lastSubdomain  string
 	lastIncomingMD metadata.MD
 	lastOutgoingMD metadata.MD
 }
 
 func (p *pingServer) Ping(ctx context.Context, req *pspb.PingRequest) (*pspb.PingResponse, error) {
 	p.lastClientIP = clientip.Get(ctx)
+	p.lastSubdomain = subdomain.Get(ctx)
 	p.lastIncomingMD, _ = metadata.FromIncomingContext(ctx)
 	p.lastOutgoingMD, _ = metadata.FromOutgoingContext(ctx)
 	return &pspb.PingResponse{
@@ -347,6 +351,99 @@ func TestTrustedClientIPInterceptor(t *testing.T) {
 			assert.Equal(t, tc.wantIP, ps.lastClientIP)
 		})
 	}
+}
+
+func TestTrustedSubdomainInterceptor(t *testing.T) {
+	const assertedSubdomain = "acme"
+
+	for _, tc := range []struct {
+		name string
+		// clientIdentity is sent in the client-identity header; "" sends none.
+		clientIdentity string
+		wantSubdomain  string
+	}{
+		{
+			name:           "proxy identity may assert subdomain",
+			clientIdentity: interfaces.ClientIdentityGRPCProxy,
+			wantSubdomain:  assertedSubdomain,
+		},
+		{
+			name:           "app identity may not assert subdomain",
+			clientIdentity: interfaces.ClientIdentityApp,
+			wantSubdomain:  "",
+		},
+		{
+			name:           "cache-proxy identity may not assert subdomain",
+			clientIdentity: interfaces.ClientIdentityCacheProxy,
+			wantSubdomain:  "",
+		},
+		{
+			name:           "untrusted caller without identity may not assert subdomain",
+			clientIdentity: "",
+			wantSubdomain:  "",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "app.enable_subdomain_matching", true)
+			listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+			env := testenv.GetTestEnv(t)
+			env.SetClientIdentityService(&fakeClientIdentityService{})
+
+			grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+			ps := &pingServer{}
+			pspb.RegisterApiServer(grpcServer, ps)
+
+			lis, err := net.Listen("tcp", listenAddr)
+			require.NoError(t, err)
+			go func() { grpcServer.Serve(lis) }()
+			t.Cleanup(grpcServer.Stop)
+
+			conn, err := grpc.Dial(listenAddr, grpc.WithInsecure())
+			require.NoError(t, err)
+			t.Cleanup(func() { conn.Close() })
+
+			ctx := metadata.AppendToOutgoingContext(context.Background(), subdomain.HeaderName, assertedSubdomain)
+			if tc.clientIdentity != "" {
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, tc.clientIdentity)
+			}
+			_, err = pspb.NewApiClient(conn).Ping(ctx, &pspb.PingRequest{Tag: 123})
+			require.NoError(t, err)
+
+			assert.Equal(t, tc.wantSubdomain, ps.lastSubdomain)
+		})
+	}
+}
+
+// TestSubdomainInterceptorIgnoresHeaderWhenMatchingDisabled verifies that a
+// trusted proxy can't turn on subdomain restrictions for a server that has
+// subdomain matching disabled.
+func TestSubdomainInterceptorIgnoresHeaderWhenMatchingDisabled(t *testing.T) {
+	flags.Set(t, "app.enable_subdomain_matching", false)
+	listenAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+
+	env := testenv.GetTestEnv(t)
+	env.SetClientIdentityService(&fakeClientIdentityService{})
+
+	grpcServer := grpc.NewServer(grpc_server.CommonGRPCServerOptions(env)...)
+	ps := &pingServer{}
+	pspb.RegisterApiServer(grpcServer, ps)
+
+	lis, err := net.Listen("tcp", listenAddr)
+	require.NoError(t, err)
+	go func() { grpcServer.Serve(lis) }()
+	t.Cleanup(grpcServer.Stop)
+
+	conn, err := grpc.Dial(listenAddr, grpc.WithInsecure())
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+
+	ctx := metadata.AppendToOutgoingContext(context.Background(), subdomain.HeaderName, "acme")
+	ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, interfaces.ClientIdentityGRPCProxy)
+	_, err = pspb.NewApiClient(conn).Ping(ctx, &pspb.PingRequest{Tag: 123})
+	require.NoError(t, err)
+
+	assert.Equal(t, "", ps.lastSubdomain)
 }
 
 func TestInternalHeadersAreStrippedBeforePropagation(t *testing.T) {

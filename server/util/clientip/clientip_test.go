@@ -2,8 +2,10 @@ package clientip_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -88,4 +90,8 @@ func TestTrustHeaderOverridesTrustedPeers(t *testing.T) {
 	ctx, ok := clientip.SetFromXForwardedForHeader(context.Background(), "1.2.3.4", "11.1.2.3")
 	require.True(t, ok)
 	require.Equal(t, "1.2.3.4", clientip.Get(ctx))
+}
+
+func TestHeaderIsInternal(t *testing.T) {
+	require.True(t, strings.HasPrefix(clientip.HeaderName, authutil.InternalHeaderPrefix))
 }
