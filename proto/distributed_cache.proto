@@ -29,7 +29,7 @@ message ReadResponse {
   reference.Reference reference = 2;
 }
 
-// Next Tag: 10
+// Next Tag: 11
 message WriteRequest {
   option (vtproto.mempool) = true;
   reserved 1, 2, 6;
@@ -48,6 +48,17 @@ message WriteRequest {
   // If set, this write carries no data bytes. The data should be retrieved
   // using the provided reference.
   reference.Reference reference = 9;
+
+  // If true, the provided reference must be cloned by the server that handles
+  // this request. Because eviction is not synchronized across distributed cache
+  // peers, each peer must store its own copy of data in GCS to coordinate
+  // eviction between its pebble cache and GCS. This means that if writes are
+  // done using references, at most one of the distributed cache peers may
+  // assume ownership of the reference that is written. The other peers must
+  // clone the reference to obtain their own copy. This bit is set by the
+  // distributed cache coordinator (the pod serving the client's write) to
+  // indicate which peers must clone the provided reference.
+  bool reference_must_be_cloned = 10;
 }
 
 message WriteResponse {

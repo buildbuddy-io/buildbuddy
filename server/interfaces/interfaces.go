@@ -329,7 +329,21 @@ type StoppableCache interface {
 // A Cache implementation that supports reading and writing refpb.References.
 type ReferenceCache interface {
 	Cache
+
+	// Reads the provided resource from the cache and returns a reference to it.
+	// The provided reference can be dereferenced into an io.ReadCloser using
+	// Dereference(). This function returns a NotFound error if the requested
+	// resource does not exist as a reference in the cache. In this case, the
+	// caller should try reading it directly from the Cache via Get(), Reader(),
+	// or similar.
 	GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error)
+
+	// Converts a refpb.Reference into an io.ReadCloser serving the resource
+	// named by r. The stored blob is decrypted and transcoded as needed so the
+	// returned bytes use r's compressor, with offset and limit interpreted in
+	// uncompressed bytes. The reference must come from GetReference() from an
+	// identically-configured ReferenceCache, or dereferencing will fail.
+	Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error)
 }
 
 type PooledByteStreamClient interface {

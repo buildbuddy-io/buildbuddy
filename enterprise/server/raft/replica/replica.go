@@ -771,8 +771,22 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 	return sm.lastAppliedIndex, nil
 }
 
+// checkNotFileRecordKey refuses generic KV writes to file-record keys. File
+// records must be written through SetRequest (and mutated via UpdateAtime /
+// Delete): those paths validate the key and value, and state derived from
+// record writes relies on them being the only writers of record keyspace.
+func (sm *Replica) checkNotFileRecordKey(key []byte) error {
+	if keys.PartitionIDFromRangeStart(key) != "" {
+		return status.InvalidArgumentErrorf("[%s] cannot direct write file-record key %q; use SetRequest instead", sm.name(), key)
+	}
+	return nil
+}
+
 func (sm *Replica) directWrite(wb pebble.Batch, req *rfpb.DirectWriteRequest) (*rfpb.DirectWriteResponse, error) {
 	kv := req.GetKv()
+	if err := sm.checkNotFileRecordKey(kv.GetKey()); err != nil {
+		return nil, err
+	}
 	err := sm.rangeCheckedSet(wb, kv.Key, kv.Value)
 	return &rfpb.DirectWriteResponse{}, err
 }
@@ -830,6 +844,9 @@ func (sm *Replica) increment(wb pebble.Batch, req *rfpb.IncrementRequest) (*rfpb
 
 func (sm *Replica) cas(wb pebble.Batch, req *rfpb.CASRequest) (*rfpb.CASResponse, error) {
 	kv := req.GetKv()
+	if err := sm.checkNotFileRecordKey(kv.GetKey()); err != nil {
+		return nil, err
+	}
 	var buf []byte
 	var err error
 	buf, err = sm.lookup(wb, kv.GetKey())

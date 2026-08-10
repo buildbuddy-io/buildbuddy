@@ -185,6 +185,14 @@ func (a *githubAuthenticator) FillUser(ctx context.Context, user *tables.User) e
 	}
 	user.Email = t.Profile.Email
 	user.ImageURL = t.Profile.AvatarURL
+	if t.Profile.CreatedAt != "" {
+		createdAt, err := time.Parse(time.RFC3339, t.Profile.CreatedAt)
+		if err != nil {
+			log.Warningf("Could not parse GitHub account creation time %q: %s", t.Profile.CreatedAt, err)
+		} else {
+			user.ProviderAccountCreatedAtUsec = createdAt.UnixMicro()
+		}
+	}
 
 	return nil
 }

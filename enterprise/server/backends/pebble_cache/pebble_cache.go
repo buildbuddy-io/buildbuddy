@@ -231,6 +231,7 @@ type Options struct {
 	// atime update.
 	GCSAtimeUpdateThreshold *time.Duration
 	FileStorer              filestore.Store
+	GCSBlobstore            filestore.PebbleGCSStorage
 }
 
 type sizeUpdate struct {
@@ -314,6 +315,7 @@ type PebbleCache struct {
 	minGCSFileSizeBytes     int64
 	gcsTTLDays              int64
 	gcsAtimeUpdateThreshold time.Duration
+	gcsBlobstore            filestore.PebbleGCSStorage
 
 	metrics struct {
 		compressedBlobSizeWrite   prometheus.Counter
@@ -653,6 +655,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		clock = clockwork.NewRealClock()
 	}
 
+	gcsBlobstore := opts.GCSBlobstore
 	fileStorer := opts.FileStorer
 	if fileStorer == nil {
 		filestoreOpts := make([]filestore.Option, 0)
@@ -661,7 +664,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			// will already compress blobs before storing them, so we don't
 			// want the gcs lib to attempt to compress them too.
 			ctx := env.GetServerContext()
-			gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			var err error
+			gcsBlobstore, err = gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
 			if err != nil {
 				return nil, err
 			}
@@ -725,6 +729,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
 		gcsAtimeUpdateThreshold:     *opts.GCSAtimeUpdateThreshold,
+		gcsBlobstore:                gcsBlobstore,
 		fileStorer:                  fileStorer,
 	}
 	zstdLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name, metrics.CompressionType: "zstd"}
@@ -2018,7 +2023,7 @@ func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore
 
 // readBufSize returns the buffer size to allocate to hold the full contents
 // of r, whose stored metadata is md.
-func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) int64 {
+func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata, reader io.Reader) int64 {
 	// If the requested compression matches the stored compression, the data is
 	// returned as stored, so the stored size from the file metadata is the
 	// right buffer size. Otherwise the data is compressed or decompressed while
@@ -2029,10 +2034,10 @@ func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata) i
 	} else {
 		bufSize = int64(digest.SafeBufferSize(r, maxReadBufferSize))
 	}
-	// Non-inline reads go through Buffer.ReadFrom, which needs MinRead spare
-	// capacity to detect EOF without growing the buffer. Inline reads copy
-	// directly via bytes.Reader.WriteTo and don't need the pad.
-	if r.GetDigest().GetSizeBytes() >= p.maxInlineFileSizeBytes {
+	// WriteTo allows copying without a second read to get EOF. Without that
+	// bytes.Buffer.ReadFrom will allocate an extra bytes.MinRead unless we
+	// oversize it.
+	if _, ok := reader.(io.WriterTo); !ok {
 		bufSize += bytes.MinRead
 	}
 	return bufSize
@@ -2066,7 +2071,7 @@ func (p *PebbleCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName)
 		return nil, nil, err
 	}
 	defer rc.Close()
-	buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
+	buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
 	_, err = io.Copy(buf, rc)
 	if err != nil {
 		return nil, nil, err
@@ -2100,32 +2105,41 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 		return nil, err
 	}
 	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(10)
-	for _, r := range resources {
+	maxGoroutines := 10
+	var next atomic.Int64
+	for range min(maxGoroutines, len(resources)) {
 		eg.Go(func() error {
-			rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
-			if err != nil {
-				if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			for {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				i := int(next.Add(1)) - 1
+				if i >= len(resources) {
 					return nil
 				}
-				return err
+				r := resources[i]
+				rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
+				if err != nil {
+					if status.IsNotFoundError(err) || os.IsNotExist(err) {
+						continue
+					}
+					return err
+				}
+				buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
+				_, copyErr := io.Copy(buf, rc)
+				closeErr := rc.Close()
+				if copyErr != nil {
+					log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
+					continue
+				}
+				if closeErr != nil {
+					log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
+					continue
+				}
+				mu.Lock()
+				foundMap[r.GetDigest()] = buf.Bytes()
+				mu.Unlock()
 			}
-
-			buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md)))
-			_, copyErr := io.Copy(buf, rc)
-			closeErr := rc.Close()
-			if copyErr != nil {
-				log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
-				return nil
-			}
-			if closeErr != nil {
-				log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
-				return nil
-			}
-			mu.Lock()
-			foundMap[r.GetDigest()] = buf.Bytes()
-			mu.Unlock()
-			return nil
 		})
 	}
 	if err := eg.Wait(); err != nil {
@@ -2137,6 +2151,10 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 func (p *PebbleCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
+
+	if p.gcsBlobstore == nil {
+		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot dereference")
+	}
 
 	db, err := p.leaser.DB()
 	if err != nil {
@@ -2189,6 +2207,36 @@ func (p *PebbleCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*
 	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
 
 	return &refpb.Reference{Metadata: md}, nil
+}
+
+func (p *PebbleCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if p.gcsBlobstore == nil {
+		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot dereference")
+	}
+
+	md := ref.GetMetadata()
+	sm := md.GetStorageMetadata()
+	if sm.GetGcsMetadata().GetBlobName() == "" {
+		return nil, status.InvalidArgumentError("malformed reference (empty blob name)")
+	}
+	// References are peer-supplied, and readerForMetadata routes on the
+	// storage metadata type — file metadata first — so a reference carrying
+	// anything besides GCS metadata must be rejected, or a crafted reference
+	// could read local files.
+	if sm.GetFileMetadata() != nil || sm.GetInlineMetadata() != nil {
+		return nil, status.InvalidArgumentError("malformed reference (non-GCS storage metadata)")
+	}
+	if err := p.checkFileMetadata(md); err != nil {
+		return nil, err
+	}
+	rc, err := p.readerForMetadata(ctx, r, md, offset, limit)
+	if err != nil && (status.IsNotFoundError(err) || os.IsNotExist(err)) {
+		// This is the metadata mismatch that reader() heals by deleting the
+		// metadata record, but the record backing this reference lives on the
+		// peer that minted it, so it cannot be fixed from here.
+		log.Warningf("[%s] Blob %q referenced by a peer was not found in shared storage; the referencing peer may have a dangling metadata record (md: %+v): %s", p.name, sm.GetGcsMetadata().GetBlobName(), md, err)
+	}
+	return rc, err
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
@@ -3216,21 +3264,27 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 }
 
 func deleteDirIfEmptyAndOld(dir string) error {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
 	di, err := os.Stat(dir)
 	if err != nil {
 		return err
 	}
-
-	if len(files) != 0 || time.Since(di.ModTime()) < *dirDeletionDelay {
-		// dir was not empty or was too young
+	if time.Since(di.ModTime()) < *dirDeletionDelay {
+		// dir is too young
 		return nil
 	}
 
-	return os.Remove(dir)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	if len(files) != 0 {
+		// dir is not empty
+		return nil
+	}
+
+	err = os.Remove(dir)
+	log.Infof("Deleted dir: %q; err: %v", dir, err)
+	return err
 }
 
 func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, groupID string, lastModifyUsec int64, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
@@ -3378,35 +3432,63 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 		return nil, nil, err
 	}
 
+	if err := p.checkFileMetadata(fileMetadata); err != nil {
+		return nil, nil, err
+	}
+	reader, err := p.readerForMetadata(ctx, r, fileMetadata, uncompressedOffset, uncompressedLimit)
+	if err != nil {
+		if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			unlockFn := p.locker.Lock(key.LockID())
+			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
+			unlockFn()
+		}
+		return nil, nil, err
+	}
+	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
+	return reader, fileMetadata, nil
+}
+
+// checkFileMetadata returns a NotFound error if the blob described by md
+// cannot be served by this cache, without consulting storage. Callers must
+// call it before readerForMetadata: it guarantees the crypter exists for
+// encrypted metadata, and it keeps these misses out of readerForMetadata's
+// error space so a NotFound from that function means the storage object
+// itself is missing (which reader() relies on for metadata self-healing).
+func (p *PebbleCache) checkFileMetadata(md *sgpb.FileMetadata) error {
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
-	if fileMetadata.GetStoredSizeBytes() == 0 {
-		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, fileMetadata)
-		return nil, nil, status.NotFoundError("object not found (zero-length)")
+	if md.GetStoredSizeBytes() == 0 {
+		log.Infof("Ignoring zero-length file. md: %+v", md)
+		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
-	if gcsMetadata := fileMetadata.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
-			return nil, nil, status.NotFoundError("backing object may have expired")
+			return status.NotFoundError("backing object may have expired")
 		}
 	}
+	if md.GetEncryptionMetadata() != nil && p.env.GetCrypter() == nil {
+		return status.NotFoundError("decryption key not available")
+	}
+	return nil
+}
 
+// readerForMetadata returns a reader serving the blob described by md,
+// decrypted and transcoded as needed so the returned bytes use r's requested
+// compressor; uncompressedOffset/uncompressedLimit are interpreted in
+// uncompressed bytes.
+func (p *PebbleCache) readerForMetadata(ctx context.Context, r *rspb.ResourceName, fileMetadata *sgpb.FileMetadata, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
 	requestedCompression := r.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
 	if requestedCompression == cachedCompression &&
 		requestedCompression != repb.Compressor_IDENTITY &&
 		(uncompressedOffset != 0 || uncompressedLimit != 0) {
-		return nil, nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
+		return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
 	}
 
-	shouldDecrypt := fileMetadata.EncryptionMetadata != nil
-	if shouldDecrypt {
-		if encryption == nil {
-			return nil, nil, status.NotFoundError("decryption key not available")
-		}
-	}
+	shouldDecrypt := fileMetadata.GetEncryptionMetadata() != nil
 
 	// If the data is stored uncompressed/unencrypted, we can use the offset/limit directly
 	// otherwise we need to decompress/decrypt first.
@@ -3422,21 +3504,15 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 
 	reader, err := p.fileStorer.NewReader(ctx, p.blobDirectory, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
-		if status.IsNotFoundError(err) || os.IsNotExist(err) {
-			unlockFn := p.locker.Lock(key.LockID())
-			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
-			unlockFn()
-		}
-		return nil, nil, err
+		return nil, err
 	}
-	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
 
 	if !rawStorage {
 		if shouldDecrypt {
 			d, err := p.env.GetCrypter().NewDecryptor(ctx, fileMetadata.GetFileRecord().GetDigest(), reader, fileMetadata.GetEncryptionMetadata())
 			if err != nil {
 				_ = reader.Close()
-				return nil, nil, status.UnavailableErrorf("decryptor not available: %s", err)
+				return nil, status.UnavailableErrorf("decryptor not available: %s", err)
 			}
 			reader = d
 		}
@@ -3444,14 +3520,14 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 			dr, err := compression.NewZstdDecompressingReader(reader)
 			if err != nil {
 				_ = reader.Close()
-				return nil, nil, err
+				return nil, err
 			}
 			reader = dr
 		}
 		if uncompressedOffset != 0 {
 			if _, err := io.CopyN(io.Discard, reader, uncompressedOffset); err != nil {
 				_ = reader.Close()
-				return nil, nil, err
+				return nil, err
 			}
 		}
 		if uncompressedLimit != 0 {
@@ -3464,12 +3540,13 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 
 		zr, err := compression.NewZstdCompressingReader(reader, p.bufferPool, int64(bufSize))
 		if err != nil {
-			return nil, nil, err
+			_ = reader.Close()
+			return nil, err
 		}
-		return zr, fileMetadata, nil
+		return zr, nil
 	}
 
-	return reader, fileMetadata, nil
+	return reader, nil
 }
 
 func (p *PebbleCache) Start() error {

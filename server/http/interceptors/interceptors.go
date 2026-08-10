@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -358,6 +359,13 @@ func ClientIP(next http.Handler) http.Handler {
 	})
 }
 
+func ClientUserAgent(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := useragent.SetFromHeader(r.Context(), r.Header.Get(useragent.HTTPHeader))
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 func Subdomain(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r.WithContext(subdomain.SetHost(r.Context(), r.Host)))
@@ -561,6 +569,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		LogRequest,
 		RequestID,
 		ClientIP,
+		ClientUserAgent,
 		Subdomain,
 		region.CORS,
 		RecoverAndAlert,

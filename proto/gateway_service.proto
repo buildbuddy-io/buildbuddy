@@ -34,4 +34,11 @@ service GatewayService {
   // Returns the set of currently connected peers owned by the user associated
   // with the provided authentication credentials.
   rpc List(ListRequest) returns (ListResponse);
+
+  // Watch streams the state of the peer connection with the requested
+  // session_id within the caller's group. A message is sent when the peer
+  // first appears (which may be after the watch starts) and whenever its
+  // state changes, e.g. when its first WireGuard handshake completes. If a
+  // previously-reported peer deregisters, the stream ends with NOT_FOUND.
+  rpc Watch(WatchRequest) returns (stream WatchResponse);
 }

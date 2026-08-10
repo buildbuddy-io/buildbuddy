@@ -1,6 +1,6 @@
 module github.com/buildbuddy-io/buildbuddy
 
-go 1.26.4
+go 1.26.5
 
 // Device Manager
 tool gitlab.com/arm-research/smarter/smarter-device-manager
@@ -61,10 +61,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.97.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.10
 	github.com/aws/smithy-go v1.24.3
-	github.com/bazelbuild/bazel-gazelle v0.51.3
+	github.com/bazelbuild/bazel-gazelle v0.52.2
 	github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d
 	github.com/bazelbuild/buildtools v0.0.0-20260211083412-859bfffeef82
-	github.com/bazelbuild/rules_go v0.61.0
+	github.com/bazelbuild/rules_go v0.62.0
 	github.com/bazelbuild/rules_webtesting v0.2.1-0.20250911195827-e09c04b7d4d1
 	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
 	github.com/beevik/etree v1.6.0
@@ -85,6 +85,7 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/docker/go-units v0.5.0
 	github.com/dop251/goja v0.0.0-20230626124041-ba8a63e79201
+	github.com/dustinkirkland/golang-petname v0.0.0-20260215035315-f0c533e9ce9b
 	github.com/elastic/gosigar v0.14.4-0.20250606160555-44388520074d
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-20241028184712-f74f43bb036d
 	github.com/fsnotify/fsnotify v1.9.0

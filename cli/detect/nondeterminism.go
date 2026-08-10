@@ -18,7 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/explain"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -181,7 +181,7 @@ func parseBazelCommand(command string) (*arg.BazelArgs, error) {
 		return nil, fmt.Errorf("parse Bazel command: %w", err)
 	}
 	bazelCommand := bazelArgs.GetCommand()
-	if !bazelrc.IsBazelCommand(bazelCommand) {
+	if !bazel_command.IsCommand(bazelCommand) {
 		return nil, fmt.Errorf("expected a Bazel command like build or test, got %q", bazelCommand)
 	}
 	return bazelArgs, nil

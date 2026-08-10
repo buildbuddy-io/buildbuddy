@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -30,10 +31,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -43,8 +46,10 @@ import (
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
@@ -111,6 +116,156 @@ func (s *fakeUsageService) DeleteUsageAlertingRule(ctx context.Context, req *usa
 
 func (s *fakeUsageService) GetAlertsEnabled() bool {
 	return true
+}
+
+// fakeUserDB implements only the handful of UserDB methods that CreateGroup
+// touches; the embedded interface panics on anything else.
+type fakeUserDB struct {
+	interfaces.UserDB
+
+	user *tables.User
+
+	getUserCalls int
+	createdGroup *tables.Group
+}
+
+func (d *fakeUserDB) GetUser(ctx context.Context) (*tables.User, error) {
+	d.getUserCalls++
+	if d.user == nil {
+		return nil, status.NotFoundError("no such user")
+	}
+	return d.user, nil
+}
+
+func (d *fakeUserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error) {
+	return &tables.Group{GroupID: groupID}, nil
+}
+
+func (d *fakeUserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, error) {
+	d.createdGroup = g
+	return "GRNEW", nil
+}
+
+type fakeExperimentFlagProvider struct {
+	interfaces.ExperimentFlagProvider
+
+	flags map[string]bool
+}
+
+func (p *fakeExperimentFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
+	if v, ok := p.flags[flagName]; ok {
+		return v
+	}
+	return defaultValue
+}
+
+func groupRole(groupID string, groupStatus grpb.Group_GroupStatus) *tables.GroupRole {
+	return &tables.GroupRole{Group: tables.Group{GroupID: groupID, Status: groupStatus}}
+}
+
+// userClaims returns claims for a browser-authenticated user.
+func userClaims(userID, groupID string) *claims.Claims {
+	return testauth.User(userID, groupID)
+}
+
+// orgAPIKeyClaims returns claims for an org-level API key, which has no
+// associated user but does carry the key group's status.
+func orgAPIKeyClaims(groupID string, groupStatus grpb.Group_GroupStatus) *claims.Claims {
+	c := testauth.User("" /*=userID*/, groupID)
+	c.Capabilities = []cappb.Capability{cappb.Capability_ORG_ADMIN}
+	c.GroupStatus = groupStatus
+	return c
+}
+
+func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		experimentEnabled bool
+		claims            *claims.Claims
+		// user is what the fake UserDB returns; nil means the DB has no such user.
+		user         *tables.User
+		expectDenied bool
+	}{
+		{
+			name:              "user_all_groups_blocked_denied",
+			experimentEnabled: true,
+			claims:            userClaims(user1, group1),
+			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
+				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
+				groupRole(group2, grpb.Group_BLOCKED_GROUP_STATUS),
+			}},
+			expectDenied: true,
+		},
+		{
+			name:              "user_one_group_not_blocked_allowed",
+			experimentEnabled: true,
+			claims:            userClaims(user1, group1),
+			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
+				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
+				groupRole(group2, grpb.Group_FREE_TIER_GROUP_STATUS),
+			}},
+			expectDenied: false,
+		},
+		{
+			name:              "user_with_no_groups_allowed",
+			experimentEnabled: true,
+			claims:            userClaims(user1, group1),
+			user:              &tables.User{UserID: user1},
+			expectDenied:      false,
+		},
+		{
+			name:              "org_api_key_blocked_group_denied",
+			experimentEnabled: true,
+			claims:            orgAPIKeyClaims(group1, grpb.Group_BLOCKED_GROUP_STATUS),
+			expectDenied:      true,
+		},
+		{
+			name:              "org_api_key_unblocked_group_allowed",
+			experimentEnabled: true,
+			claims:            orgAPIKeyClaims(group1, grpb.Group_ENTERPRISE_GROUP_STATUS),
+			expectDenied:      false,
+		},
+		{
+			name:              "experiment_disabled_user_all_groups_blocked_allowed",
+			experimentEnabled: false,
+			claims:            userClaims(user1, group1),
+			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
+				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
+			}},
+			expectDenied: false,
+		},
+		{
+			name:              "experiment_disabled_org_api_key_blocked_group_allowed",
+			experimentEnabled: false,
+			claims:            orgAPIKeyClaims(group1, grpb.Group_BLOCKED_GROUP_STATUS),
+			expectDenied:      false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			te.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+			udb := &fakeUserDB{user: tc.user}
+			te.SetUserDB(udb)
+			te.SetExperimentFlagProvider(&fakeExperimentFlagProvider{
+				flags: map[string]bool{"app.propagate_group_blocks": tc.experimentEnabled},
+			})
+			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+			require.NoError(t, err)
+
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), tc.claims)
+			rsp, err := server.CreateGroup(ctx, &grpb.CreateGroupRequest{Name: "My Org"})
+
+			if tc.expectDenied {
+				require.Error(t, err)
+				require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %s", err)
+				require.Nil(t, udb.createdGroup, "group should not have been created")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "GRNEW", rsp.GetId())
+			require.NotNil(t, udb.createdGroup)
+		})
+	}
 }
 
 func createInvocationForTesting(te environment.Env, user string) (string, error) {

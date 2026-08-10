@@ -321,6 +321,11 @@ const (
 	// Distributed cache operation name, such as "FindMissing" or "Get".
 	DistributedCacheOperation = "op"
 
+	// How a distributed cache read's payload was received:
+	// "reference" (a pointer to the blob in shared storage) or
+	// "bytes" (the blob's bytes, streamed inline).
+	DistributedCacheReadResponseType = "response_type"
+
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
 	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
 	CASOperation = "op"
@@ -444,6 +449,10 @@ const (
 	// operator-controlled zone files, so cardinality is bounded. Named
 	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
 	DNSZoneLabel = "dns_zone"
+
+	// The outcome of a verification operation. One of: ["success", "failure",
+	// "error"]
+	VerificationOutcomeLabel = "outcome"
 )
 
 // Label value constants
@@ -1010,6 +1019,46 @@ var (
 	}, []string{
 		GroupID,
 		StatusLabel,
+	})
+
+	// DistributedCacheReadResponseCount counts distributed cache peer reads
+	// by whether the payload was received as a reference to shared storage or
+	// as inline bytes.
+	DistributedCacheReadResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_read_response_count",
+		Help:      "Count of distributed cache peer reads, by whether the payload was received as a reference or as inline bytes.",
+	}, []string{
+		DistributedCacheReadResponseType,
+	})
+
+	// DistributedCacheReadResponseSizeBytes totals the sizes of the blobs
+	// read from peers, by whether the payload was received as a reference to
+	// shared storage or as inline bytes. Sizes are the requested digest's
+	// (uncompressed) size, recorded when the read is opened, so ranged reads
+	// count the full blob size rather than the exact bytes transferred.
+	DistributedCacheReadResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_read_response_size_bytes",
+		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes.",
+	}, []string{
+		DistributedCacheReadResponseType,
+	})
+
+	// DistributedCacheReferenceVerificationCount counts verifications of
+	// references received alongside streamed bytes on distributed cache
+	// reads, by outcome: "success" (the dereferenced bytes matched the
+	// streamed bytes through EOF), "failure" (the two streams diverged), or
+	// "error" (verification could not be run or completed).
+	DistributedCacheReferenceVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_reference_verification_count",
+		Help:      "Count of reference verifications on distributed cache reads, by outcome.",
+	}, []string{
+		VerificationOutcomeLabel,
 	})
 
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{

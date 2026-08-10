@@ -18,8 +18,11 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/hostid"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -30,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
@@ -74,6 +78,11 @@ var (
 	// maxLabels labels.
 	maxLabels   = 20
 	maxLabelLen = 50
+
+	// Caching for parsed command-line flags, to avoid racing against config
+	// reparsing logic in config.go.
+	registerReloadHookOnce sync.Once
+	configuredFlagsCache   atomic.Pointer[[]string]
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -110,6 +119,12 @@ func Register(env *real_environment.RealEnv) error {
 		}
 		trimmedLabels[key] = val
 	}
+	// Register the config-reload hook and parse the current flags.
+	registerReloadHookOnce.Do(func() {
+		config.OnReload(refreshConfiguredFlags)
+	})
+	refreshConfiguredFlags()
+
 	log.Infof("Registering Cache Proxy %s on host %q", proxyID, hostname)
 	node := &cppb.CacheProxyNode{
 		Host:                 hostname,
@@ -146,6 +161,11 @@ func Register(env *real_environment.RealEnv) error {
 		run(ctx, shutdownCh, env, *appTarget, *apiKey, node)
 	}()
 	return nil
+}
+
+func refreshConfiguredFlags() {
+	flags := redact.GetConfiguredFlags()
+	configuredFlagsCache.Store(&flags)
 }
 
 func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
@@ -317,6 +337,11 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 // has already terminated (io.EOF), it drains the trailer via CloseAndRecv to
 // surface the real status (PermissionDenied, etc.) instead of a bare EOF.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
+	if node := req.GetNode(); node != nil {
+		if flags := configuredFlagsCache.Load(); flags != nil {
+			node.ConfiguredFlags = *flags
+		}
+	}
 	err := stream.Send(req)
 	if err == io.EOF {
 		if _, recvErr := stream.CloseAndRecv(); recvErr != nil {

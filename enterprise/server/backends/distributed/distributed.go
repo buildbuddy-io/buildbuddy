@@ -250,7 +250,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
-				return int64(len(v.data) + 8)
+				return int64(cap(v.data) + 8)
 			},
 			ThreadSafe: true,
 			TTL:        *lookasideCacheTTL,

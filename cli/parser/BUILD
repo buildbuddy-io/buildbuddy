@@ -13,6 +13,7 @@ go_library(
         "//cli/log",
         "//cli/log/option_definitions",
         "//cli/parser/arguments",
+        "//cli/parser/bazel_command",
         "//cli/parser/bazelrc",
         "//cli/parser/options",
         "//cli/parser/parsed",

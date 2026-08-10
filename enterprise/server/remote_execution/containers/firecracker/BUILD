@@ -70,6 +70,7 @@ go_library(
         "//server/util/log",
         "//server/util/networking",
         "//server/util/platform",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/stretchr/testify/require"
 	"golang.zx2c4.com/wireguard/conn"
@@ -36,6 +37,7 @@ type tunnelPeer struct {
 	net          *netstack.Net
 	addr         netip.Addr
 	assignedName string
+	sessionID    string
 }
 
 // sessionCounter generates unique session IDs for e2e peers: the gateway
@@ -52,6 +54,12 @@ var sessionCounter atomic.Int64
 // gateway to initiate one.
 func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkName, peerName string) tunnelPeer {
 	t.Helper()
+	sessionID := fmt.Sprintf("e2e-session-%d", sessionCounter.Add(1))
+	return registerAndConnectWithSessionID(t, gw, ctx, networkName, peerName, sessionID)
+}
+
+func registerAndConnectWithSessionID(t testing.TB, gw *Gateway, ctx context.Context, networkName, peerName, sessionID string) tunnelPeer {
+	t.Helper()
 	privKey, err := wgkeys.GeneratePrivateKey()
 	require.NoError(t, err)
 
@@ -59,7 +67,7 @@ func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkN
 		NetworkName: networkName,
 		PeerName:    peerName,
 		PublicKey:   privKey.PublicKey().Hex(),
-		SessionId:   fmt.Sprintf("e2e-session-%d", sessionCounter.Add(1)),
+		SessionId:   sessionID,
 	})
 
 	addr := netip.MustParseAddr(resp.GetAssignedIp())
@@ -88,7 +96,47 @@ func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkN
 
 	// Peer names are unique under Connect, so the assigned name is always
 	// the requested name.
-	return tunnelPeer{net: tnet, addr: addr, assignedName: peerName}
+	return tunnelPeer{net: tnet, addr: addr, assignedName: peerName, sessionID: sessionID}
+}
+
+// TestEndToEnd_WatchReportsHandshake verifies that a Watch stream reports the
+// watched peer's first completed WireGuard handshake. The fallback poll is
+// set long so events can only arrive via push — the registration broadcast
+// or the device-logger wake, whichever the handshake's timing exercises —
+// never the poll.
+func TestEndToEnd_WatchReportsHandshake(t *testing.T) {
+	flags.Set(t, "gateway.watch_fallback_poll_interval", time.Minute)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	// Watch before the peer exists so the stream observes the full
+	// lifecycle: registration first, then the handshake.
+	sessionID := fmt.Sprintf("e2e-session-%d", sessionCounter.Add(1))
+	stream, cancelWatch, _ := startWatch(t, gw, ctx, sessionID)
+	defer cancelWatch()
+
+	registerAndConnectWithSessionID(t, gw, ctx, "net1", "peer-a", sessionID)
+
+	// The peer's persistent keepalive triggers the handshake; the watch must
+	// eventually report a peer with a handshake time.
+	deadline := time.After(30 * time.Second)
+	for {
+		select {
+		case rsp := <-stream.responses:
+			if rsp.GetPeer() == nil {
+				continue // heartbeat
+			}
+			require.Equal(t, sessionID, rsp.GetPeer().GetSessionId())
+			if rsp.GetPeer().GetLastHandshakeTime() != nil {
+				return
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for Watch to report a completed handshake")
+		}
+	}
 }
 
 // TestEndToEnd_PeersCanCommunicate verifies that two peers in the same network

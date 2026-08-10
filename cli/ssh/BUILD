@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "ssh",
@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/ssh",
     visibility = ["//visibility:public"],
     deps = [
-        "//cli/arg",
         "//cli/log",
         "//cli/login",
         "//proto:gateway_go_proto",
@@ -14,6 +13,7 @@ go_library(
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/status",
+        "//server/util/uuid",
         "//server/util/wgkeys",
         "@com_zx2c4_golang_wireguard//conn",
         "@com_zx2c4_golang_wireguard//device",
@@ -25,3 +25,10 @@ go_library(
 )
 
 package(default_visibility = ["//cli:__subpackages__"])
+
+go_test(
+    name = "ssh_test",
+    srcs = ["ssh_test.go"],
+    embed = [":ssh"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

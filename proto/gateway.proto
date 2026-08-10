@@ -106,9 +106,11 @@ message DeregisterResponse {}
 
 message ListRequest {}
 
-// Peer describes a single named peer currently registered with the gateway.
+// Peer describes a single peer currently registered with the gateway.
 message Peer {
-  // The name of this peer. Can be reached via "bb ssh <name>".
+  // The name of this peer. Can be reached via "bb ssh <name>". Empty for
+  // peers that registered without a name (e.g. transient bb ssh clients);
+  // those are reachable by IP only.
   string name = 1;
 
   // The IP address assigned to the peer within the tunnel.
@@ -130,4 +132,19 @@ message ListResponse {
   // The peers currently connected to the gateway that are owned by the user
   // authenticated for the ListRequest.
   repeated Peer peers = 1;
+}
+
+message WatchRequest {
+  // Required. The session ID of the peer connection to watch (see
+  // ConnectRequest.session_id).
+  string session_id = 1;
+}
+
+// WatchResponse messages are streamed by the Watch RPC, one per observed
+// state change of the watched peer. While the watched peer is quiet the
+// stream also carries periodic empty heartbeat messages; clients should
+// ignore messages with no peer.
+message WatchResponse {
+  // The watched peer's current state. Unset in heartbeat messages.
+  Peer peer = 1;
 }

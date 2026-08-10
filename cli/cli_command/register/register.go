@@ -63,7 +63,7 @@ func register() {
 		},
 		{
 			Name:    "box",
-			Help:    "Manages remote Firecracker VM boxes.",
+			Help:    "Starts a remote Firecracker VM box and opens a session in it.",
 			Handler: box.HandleBox,
 			Flags:   box.Flags,
 		},

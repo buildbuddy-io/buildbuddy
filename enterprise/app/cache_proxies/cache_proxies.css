@@ -5,13 +5,6 @@
   font-weight: 700;
 }
 
-/* Push the summary/details toggle to the right edge of the tabs row. */
-.cache-proxies-page .view-mode-toggle {
-  display: flex;
-  align-items: center;
-  margin-left: auto;
-}
-
 .cache-proxies-page .cache-proxy-section {
   display: flex;
 }
@@ -166,4 +159,9 @@
 
 .cache-proxies-page .cache-stat {
   font-weight: 600;
+}
+
+.cache-proxies-page .cache-proxy-configured-flags {
+  font-family: monospace;
+  overflow-wrap: anywhere;
 }

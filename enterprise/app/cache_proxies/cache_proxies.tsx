@@ -5,6 +5,7 @@ import { User } from "../../../app/auth/auth_service";
 import Breadcrumbs from "../../../app/components/breadcrumbs/breadcrumbs";
 import LinkButton from "../../../app/components/button/link_button";
 import UpgradePrompt, { mostUrgent } from "../../../app/components/upgrade/upgrade";
+import ViewModeToggle, { ViewMode } from "../../../app/components/view_mode_toggle/view_mode_toggle";
 import router from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import { BuildBuddyError } from "../../../app/util/errors";
@@ -160,8 +161,6 @@ type RegionalCacheProxyResponse = {
   response: cache_proxy.GetCacheProxiesResponse;
 };
 
-type ViewMode = "summary" | "details";
-
 interface State {
   regions: RegionalCacheProxyResponse[];
   proxyKeys: api_key.IApiKey[];
@@ -261,7 +260,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
     router.navigateTo(`/cache-proxies/${tabId}`);
   }
 
-  onClickViewMode(viewMode: ViewMode) {
+  onChangeViewMode(viewMode: ViewMode) {
     this.setState({ viewMode });
   }
 
@@ -321,18 +320,7 @@ export default class CacheProxiesComponent extends React.Component<Props, State>
                     Setup
                   </div>
                   {activeTab === "status" && hasProxies && (
-                    <div className="view-mode-toggle">
-                      <div
-                        className={`tab ${this.state.viewMode === "summary" ? "selected" : ""}`}
-                        onClick={this.onClickViewMode.bind(this, "summary")}>
-                        Summary
-                      </div>
-                      <div
-                        className={`tab ${this.state.viewMode === "details" ? "selected" : ""}`}
-                        onClick={this.onClickViewMode.bind(this, "details")}>
-                        Details
-                      </div>
-                    </div>
+                    <ViewModeToggle viewMode={this.state.viewMode} onChange={this.onChangeViewMode.bind(this)} />
                   )}
                 </div>
                 {activeTab === "status" && (
