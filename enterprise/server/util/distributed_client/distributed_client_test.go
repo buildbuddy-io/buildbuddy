@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -29,8 +30,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/docker/go-units"
 	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	dcpb "github.com/buildbuddy-io/buildbuddy/proto/distributed_cache"
@@ -1565,5 +1569,141 @@ func TestRemoteReadReference(t *testing.T) {
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+}
+
+// serverReferenceCache implements interfaces.ReferenceCache, returning canned
+// references for configured digests.
+type serverReferenceCache struct {
+	interfaces.Cache
+	refs map[string]*refpb.Reference
+}
+
+func (c *serverReferenceCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+	if ref, ok := c.refs[r.GetDigest().GetHash()]; ok {
+		return ref, nil
+	}
+	return nil, status.NotFoundError("no reference available")
+}
+
+// Dereference is unused by the read server, but the server only offers
+// references if its cache implements the full interfaces.ReferenceCache.
+func (c *serverReferenceCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
+func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferences bool, verifyReferences bool) {
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"distributed_cache.read_gcs_references": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": readReferences},
+		},
+		"distributed_cache.verify_gcs_references": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": verifyReferences},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+	// Restore the no-experiment-provider state when the (sub)test finishes,
+	// so tests do not depend on their ordering. Note that openfeature's
+	// provider is process-global state, so tests that use this helper must
+	// not run in parallel.
+	t.Cleanup(func() {
+		te.SetExperimentFlagProvider(nil)
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+}
+
+// readRawResponses reads rn from peer with a raw gRPC client, returning any
+// received reference and the concatenated data bytes.
+func readRawResponses(t *testing.T, peer string, rn *rspb.ResourceName) (*refpb.Reference, []byte) {
+	t.Helper()
+	conn, err := grpc.NewClient(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := dcpb.NewDistributedCacheClient(conn)
+	stream, err := client.Read(context.Background(), &dcpb.ReadRequest{Resource: rn})
+	require.NoError(t, err)
+	var ref *refpb.Reference
+	var data []byte
+	for {
+		rsp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		if rsp.GetReference() != nil {
+			require.Nil(t, ref, "server sent more than one reference")
+			require.Empty(t, data, "server sent a reference after data")
+			ref = rsp.GetReference()
+		}
+		data = append(data, rsp.GetData()...)
+	}
+	return ref, data
+}
+
+func TestReadReferenceExperiments(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	noRefRN, noRefBuf := testdigest.RandomCASResourceBuf(t, 100)
+	expectedRef := &refpb.Reference{
+		Metadata: &sgpb.FileMetadata{
+			FileRecord: &sgpb.FileRecord{Digest: rn.GetDigest()},
+			StorageMetadata: &sgpb.StorageMetadata{
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: "blobs/test-blob"},
+			},
+		},
+	}
+	cache := &serverReferenceCache{
+		Cache: te.GetCache(),
+		refs:  map[string]*refpb.Reference{rn.GetDigest().GetHash(): expectedRef},
+	}
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, cache, peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
+	require.NoError(t, te.GetCache().Set(ctx, noRefRN, noRefBuf))
+
+	t.Run("no experiment provider", func(t *testing.T) {
+		ref, data := readRawResponses(t, peer, rn)
+		require.Nil(t, ref)
+		require.Equal(t, buf, data)
+	})
+
+	t.Run("experiments off", func(t *testing.T) {
+		setReferenceReadExperiments(t, te, false, false)
+		ref, data := readRawResponses(t, peer, rn)
+		require.Nil(t, ref)
+		require.Equal(t, buf, data)
+	})
+
+	t.Run("verify flag sends reference and bytes", func(t *testing.T) {
+		setReferenceReadExperiments(t, te, false, true)
+		ref, data := readRawResponses(t, peer, rn)
+		require.Empty(t, cmp.Diff(expectedRef, ref, protocmp.Transform()))
+		require.Equal(t, buf, data)
+	})
+
+	t.Run("read flag sends reference only", func(t *testing.T) {
+		setReferenceReadExperiments(t, te, true, false)
+		ref, data := readRawResponses(t, peer, rn)
+		require.Empty(t, cmp.Diff(expectedRef, ref, protocmp.Transform()))
+		require.Empty(t, data)
+	})
+
+	t.Run("read flag falls back to bytes when no reference can be minted", func(t *testing.T) {
+		setReferenceReadExperiments(t, te, true, false)
+		ref, data := readRawResponses(t, peer, noRefRN)
+		require.Nil(t, ref)
+		require.Equal(t, noRefBuf, data)
 	})
 }
