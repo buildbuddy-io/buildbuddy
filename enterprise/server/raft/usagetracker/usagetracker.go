@@ -156,6 +156,7 @@ type metricSet struct {
 	cacheNumEvictions        prometheus.Counter
 	cacheBytesEvicted        prometheus.Counter
 	atimeIndexRepairs        prometheus.Counter
+	atimeIndexOrphansDropped prometheus.Counter
 	atimeIndexSweepSeek      prometheus.Observer
 
 	evictionGCSChanSize prometheus.Gauge
@@ -948,11 +949,17 @@ func (pu *partitionUsage) sweepIndex(ctx context.Context, db pebble.IPebbleDB, l
 			// restoring an entry for a record deleted inside this window --
 			// only creates an orphan, which is safe. If we fail to restore the
 			// index, verifyAtimeIndexPass will fix it.
+			restored := false
 			fileMetadata.ResetVT()
 			if err := pebble.GetProto(db, fileKey, fileMetadata); err == nil && fileMetadata.GetLastAccessUsec() == atimeUsec {
 				if err := db.Set(entryKey, nil, pebble.NoSync); err != nil {
 					log.Warningf("failed to restore atime index entry %q: %s", entryKey, err)
+				} else {
+					restored = true
 				}
+			}
+			if !restored {
+				pu.metrics.atimeIndexOrphansDropped.Inc()
 			}
 			continue
 		}
@@ -1058,6 +1065,7 @@ func New(sender *sender.Sender, dbGetter pebble.Leaser, gossipManager interfaces
 			cacheBytesEvicted:           metrics.DiskCacheBytesEvicted.With(lbls),
 			evictionGCSChanSize:         metrics.RaftEvictionGCSChanSize.With(partitionLabel),
 			atimeIndexRepairs:           metrics.RaftAtimeIndexMissingEntriesRepaired.With(partitionLabel),
+			atimeIndexOrphansDropped:    metrics.RaftAtimeIndexOrphansDropped.With(partitionLabel),
 			atimeIndexSweepSeek:         metrics.RaftAtimeIndexSweepSeekDurationUsec.With(partitionLabel),
 		}
 		u := &partitionUsage{
