@@ -197,7 +197,7 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		defer t.keepLease(ctx)
-		log.CtxInfof(ctx, "Worker leased task: %q", t.taskID)
+		log.CtxDebugf(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	t.cancelFunc = cancel
@@ -216,7 +216,7 @@ func (t *TaskLease) closed() bool {
 func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	log.CtxInfof(ctx, "Closing task lease")
+	log.CtxDebugf(ctx, "Closing task lease")
 	if t.closed() {
 		log.CtxInfof(ctx, "Lease was already closed. Short-circuiting.")
 		return
@@ -271,6 +271,6 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 			log.CtxInfof(ctx, "Successfully re-enqueued task")
 		}
 	} else {
-		log.CtxInfof(ctx, "Task lease closed cleanly")
+		log.CtxDebugf(ctx, "Task lease closed cleanly")
 	}
 }

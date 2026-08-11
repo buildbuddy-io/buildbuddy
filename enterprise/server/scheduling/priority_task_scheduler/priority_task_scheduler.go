@@ -539,7 +539,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 			// yet.
 			return
 		}
-		log.CtxInfof(ctx, "Added task %+v to pq.", req)
+		log.CtxDebugf(ctx, "Added task %+v to pq.", req)
 		// Wake up the scheduling loop so that it can run the task if there are
 		// enough resources available.
 		q.checkQueueSignal <- struct{}{}
@@ -914,7 +914,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
-	log.CtxInfof(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
+	log.CtxDebugf(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
 	q.trackTask(reservation.EnqueueTaskReservationRequest, &cancel)
 
@@ -933,7 +933,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 		if err != nil {
 			// NotFound means the task is already claimed.
 			if status.IsNotFoundError(err) {
-				log.CtxInfof(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
+				log.CtxDebugf(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
 			} else {
 				log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
 			}

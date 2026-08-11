@@ -1337,7 +1337,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		p.pendingRemovals.Done()
 	}
 
-	log.CtxInfof(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
+	log.CtxDebugf(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
 	return r, nil
 }
 
