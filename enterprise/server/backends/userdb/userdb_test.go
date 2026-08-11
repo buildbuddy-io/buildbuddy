@@ -317,10 +317,11 @@ func TestGetUserWithOwnedGroups(t *testing.T) {
 	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, user.Groups[0].Group.Status)
 
 	for _, group := range []*tables.Group{
-		{GroupID: "GR-OTHER-USER", UserID: "US2", Status: grpb.Group_FREE_TIER_GROUP_STATUS},
-		{GroupID: "GR-OWNED-ENTERPRISE", UserID: "US1", Status: grpb.Group_ENTERPRISE_GROUP_STATUS},
-		{GroupID: "GR-OWNED-TRIAL", UserID: "US1", Status: grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS},
-		{GroupID: "GR-OWNED-BLOCKED", UserID: "US1", Status: grpb.Group_BLOCKED_GROUP_STATUS},
+		// A group for a different user should not be returned.
+		{GroupID: "GR00000000000000000001", UserID: "US2", Status: grpb.Group_FREE_TIER_GROUP_STATUS},
+		{GroupID: "GR00000000000000000002", UserID: "US1", Status: grpb.Group_ENTERPRISE_GROUP_STATUS},
+		{GroupID: "GR00000000000000000003", UserID: "US1", Status: grpb.Group_UNKNOWN_GROUP_STATUS},
+		{GroupID: "GR00000000000000000004", UserID: "US1", Status: grpb.Group_BLOCKED_GROUP_STATUS},
 	} {
 		err := env.GetDBHandle().NewQuery(ctx, "userdb_test_insert_group").Create(group)
 		require.NoError(t, err)

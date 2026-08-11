@@ -612,7 +612,7 @@ func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp inter
 	}
 
 	if maxGroupsPerUser > 0 && ownedNonEnterpriseGroupCount >= maxGroupsPerUser {
-		return nil, status.PermissionDeniedErrorf("This user has reached the non-enterprise organization limit. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
+		return nil, status.PermissionDeniedError("You've reached the limit on non-enterprise organizations. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
 	}
 	return user, nil
 }

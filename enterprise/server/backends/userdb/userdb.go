@@ -1126,6 +1126,7 @@ func (d *UserDB) GetUserWithOwnedGroups(ctx context.Context) (*tables.User, erro
 		FROM "Users" AS u
 		LEFT JOIN "Groups" AS g ON g.user_id = u.user_id
 		WHERE u.user_id = ?
+		ORDER BY g.group_id
 	`, u.GetUserID())
 	rows, err := db.ScanAll(rq, &userOwnedGroup{})
 	if err != nil {
@@ -1141,9 +1142,6 @@ func (d *UserDB) GetUserWithOwnedGroups(ctx context.Context) (*tables.User, erro
 			user.Groups = append(user.Groups, &tables.GroupRole{Group: *row.Group})
 		}
 	}
-	slices.SortFunc(user.Groups, func(a, b *tables.GroupRole) int {
-		return strings.Compare(a.Group.GroupID, b.Group.GroupID)
-	})
 	return user, nil
 }
 
