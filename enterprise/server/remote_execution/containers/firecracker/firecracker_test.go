@@ -1698,7 +1698,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 	run("A", "2", 1) // Should resume from previous, and increment the counter
 }
 
-func TestFirecracker_RemoteSnapshotSharing_DevboxInstanceName(t *testing.T) {
+func TestFirecracker_RemoteSnapshotSharing_Devbox(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1725,6 +1725,7 @@ func TestFirecracker_RemoteSnapshotSharing_DevboxInstanceName(t *testing.T) {
 			Arguments: []string{"sh"},
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
+				{Name: "allow-remote-snapshots", Value: "true"},
 			}},
 		},
 	}

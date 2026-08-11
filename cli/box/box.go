@@ -264,6 +264,7 @@ func handleCreate(args []string) (int, error) {
 		"network=external",
 		"container-image=" + ensureDockerPrefix(*imageFlag),
 		platform.DockerUserPropertyName + "=buildbuddy",
+		platform.AllowRemoteSnapshotsPropertyName + "=true",
 	}
 	execProps = append(execProps,
 		"recycle-runner=true",
@@ -272,10 +273,6 @@ func handleCreate(args []string) (int, error) {
 		// scheduling, so that resumes hit its warm local snapshot. (The
 		// server caps this via remote_execution.max_scheduling_delay.)
 		platform.RunnerRecyclingMaxWaitPropertyName+"=5s",
-		// By default, firecracker only saves a snapshot for non-CI
-		// actions if none exists yet, which would freeze the box's state
-		// at its first session. Always save so that changes made in each
-		// session persist to the next one.
 		platform.SnapshotSavePolicyPropertyName+"="+platform.AlwaysSaveSnapshot,
 		// The always-save policy above only covers the remote snapshot:
 		// the local manifest on a warm executor can lag one session

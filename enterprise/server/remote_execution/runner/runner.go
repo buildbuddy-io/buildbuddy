@@ -337,7 +337,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if platform.IsCICommand(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
+	if platform.IsCIRunner(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
 		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
 		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
 			return err

@@ -824,9 +824,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	isCICommand := platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
-	isDevboxCommand := strings.HasPrefix(task.GetExecuteRequest().GetInstanceName(), snaputil.DevboxPartitionPrefix)
-	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (isCICommand || isDevboxCommand || *forceRemoteSnapshotting)
+	allowsRemoteSnapshots := platform.AllowsRemoteSnapshots(task)
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (allowsRemoteSnapshots || *forceRemoteSnapshotting)
 	if span.IsRecording() {
 		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
 	}
@@ -1209,7 +1208,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 		return false
 	}
 	// For RBE actions, we don't save another snapshot if one already exists.
-	if c.createFromSnapshot && !platform.IsCICommand(c.task.GetCommand(), platform.GetProto(c.task.GetAction(), c.task.GetCommand())) {
+	if c.createFromSnapshot && !platform.AllowsRemoteSnapshots(c.task) {
 		return false
 	}
 
