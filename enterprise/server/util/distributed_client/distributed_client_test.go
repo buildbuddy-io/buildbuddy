@@ -1451,6 +1451,12 @@ func (c *fakeReferenceCache) Dereference(ctx context.Context, ref *refpb.Referen
 	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
+// WriteReference is unused on the read path, but the client only dereferences
+// if its cache implements the full interfaces.ReferenceCache.
+func (c *fakeReferenceCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	return status.UnimplementedError("not implemented")
+}
+
 func (c *fakeReferenceCache) LastDereference() (*rspb.ResourceName, int64, int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -1592,10 +1598,16 @@ func TestRemoteReadReference(t *testing.T) {
 }
 
 // serverReferenceCache implements interfaces.ReferenceCache, returning canned
-// references for configured digests.
+// references for configured digests and recording accepted reference writes.
 type serverReferenceCache struct {
 	interfaces.Cache
 	refs map[string]*refpb.Reference
+
+	mu            sync.Mutex
+	writtenRef    *refpb.Reference
+	writtenRN     *rspb.ResourceName
+	writtenCloned bool
+	writeRefErr   error
 }
 
 func (c *serverReferenceCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
@@ -1609,6 +1621,25 @@ func (c *serverReferenceCache) GetReference(ctx context.Context, r *rspb.Resourc
 // references if its cache implements the full interfaces.ReferenceCache.
 func (c *serverReferenceCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	return nil, status.UnimplementedError("not implemented")
+}
+
+func (c *serverReferenceCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.writeRefErr != nil {
+		return c.writeRefErr
+	}
+	// The server pools WriteRequest protos, so clone anything retained.
+	c.writtenRef = ref.CloneVT()
+	c.writtenRN = r.CloneVT()
+	c.writtenCloned = mustClone
+	return nil
+}
+
+func (c *serverReferenceCache) lastWriteReference() (*refpb.Reference, *rspb.ResourceName, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.writtenRef, c.writtenRN, c.writtenCloned
 }
 
 func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferences bool, verifyReferences bool) {
@@ -1724,6 +1755,162 @@ func TestReadReferenceExperiments(t *testing.T) {
 		ref, data := readRawResponses(t, peer, noRefRN)
 		require.Nil(t, ref)
 		require.Equal(t, noRefBuf, data)
+	})
+}
+
+// writeRawRequests writes the given requests to peer with a raw gRPC client
+// and returns the server's response.
+func writeRawRequests(t *testing.T, peer string, reqs []*dcpb.WriteRequest) (*dcpb.WriteResponse, error) {
+	t.Helper()
+	conn, err := grpc.NewClient(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := dcpb.NewDistributedCacheClient(conn)
+	stream, err := client.Write(context.Background())
+	require.NoError(t, err)
+	for _, req := range reqs {
+		require.NoError(t, stream.Send(req))
+	}
+	return stream.CloseAndRecv()
+}
+
+func TestWriteReferenceAccept(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	ref := makeReference(rn, "blobs/test-blob", repb.Compressor_IDENTITY)
+	ref.Metadata.StoredSizeBytes = 42
+
+	cache := &serverReferenceCache{Cache: te.GetCache()}
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, cache, peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+
+	t.Run("accepted", func(t *testing.T) {
+		rsp, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
+			Resource:    rn,
+			Reference:   ref,
+			FinishWrite: true,
+		}})
+		require.NoError(t, err)
+		require.Equal(t, int64(42), rsp.GetCommittedSize())
+		gotRef, gotRN, gotCloned := cache.lastWriteReference()
+		require.Empty(t, cmp.Diff(ref, gotRef, protocmp.Transform()))
+		require.Empty(t, cmp.Diff(rn, gotRN, protocmp.Transform()))
+		require.False(t, gotCloned)
+	})
+
+	t.Run("must-be-cloned bit is passed through", func(t *testing.T) {
+		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
+			Resource:              rn,
+			Reference:             ref,
+			ReferenceMustBeCloned: true,
+			FinishWrite:           true,
+		}})
+		require.NoError(t, err)
+		_, _, gotCloned := cache.lastWriteReference()
+		require.True(t, gotCloned)
+	})
+
+	t.Run("hinted handoff callback fires", func(t *testing.T) {
+		var mu sync.Mutex
+		var handoffPeer string
+		var handoffRN *rspb.ResourceName
+		c.SetHintedHandoffCallbackFunc(func(ctx context.Context, peer string, r *rspb.ResourceName) {
+			mu.Lock()
+			defer mu.Unlock()
+			handoffPeer = peer
+			handoffRN = r
+		})
+		t.Cleanup(func() { c.SetHintedHandoffCallbackFunc(nil) })
+		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
+			Resource:    rn,
+			Reference:   ref,
+			HandoffPeer: "some-peer",
+			FinishWrite: true,
+		}})
+		require.NoError(t, err)
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, "some-peer", handoffPeer)
+		require.Empty(t, cmp.Diff(rn, handoffRN, protocmp.Transform()))
+	})
+
+	t.Run("cache write errors are returned", func(t *testing.T) {
+		cache.mu.Lock()
+		cache.writeRefErr = status.NotFoundError("backing object may have expired")
+		cache.mu.Unlock()
+		t.Cleanup(func() {
+			cache.mu.Lock()
+			cache.writeRefErr = nil
+			cache.mu.Unlock()
+		})
+		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
+			Resource:    rn,
+			Reference:   ref,
+			FinishWrite: true,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+
+	t.Run("missing finish_write is rejected", func(t *testing.T) {
+		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
+			Resource:  rn,
+			Reference: ref,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("reference with data bytes is rejected", func(t *testing.T) {
+		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
+			Resource:    rn,
+			Reference:   ref,
+			Data:        buf,
+			FinishWrite: true,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("reference after data bytes is rejected", func(t *testing.T) {
+		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
+			{Resource: rn, Data: buf[:50]},
+			{Resource: rn, Reference: ref, FinishWrite: true},
+		})
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("existing CAS digest still dedupes", func(t *testing.T) {
+		existingRN, existingBuf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, te.GetCache().Set(ctx, existingRN, existingBuf))
+		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
+			Resource:           existingRN,
+			Reference:          makeReference(existingRN, "blobs/other-blob", repb.Compressor_IDENTITY),
+			CheckAlreadyExists: true,
+			FinishWrite:        true,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExistsError, got %s", err)
+	})
+
+	t.Run("cache that cannot accept references is rejected", func(t *testing.T) {
+		plainPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		plain := distributed_client.New(te, te.GetCache(), plainPeer)
+		require.NoError(t, plain.StartListening())
+		waitUntilServerIsAlive(plainPeer)
+		_, err := writeRawRequests(t, plainPeer, []*dcpb.WriteRequest{{
+			Resource:    rn,
+			Reference:   ref,
+			FinishWrite: true,
+		}})
+		require.Error(t, err)
+		require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got %s", err)
 	})
 }
 

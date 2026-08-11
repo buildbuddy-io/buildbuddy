@@ -344,6 +344,12 @@ type ReferenceCache interface {
 	// uncompressed bytes. The reference must come from GetReference() from an
 	// identically-configured ReferenceCache, or dereferencing will fail.
 	Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error)
+
+	// Stores the resource named by r using the provided reference to a blob
+	// in shared storage instead of a byte stream. If mustClone is true, the
+	// cache first makes its own copy of the referenced blob and stores the
+	// copy; otherwise it takes ownership of the referenced blob directly.
+	WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error
 }
 
 type PooledByteStreamClient interface {

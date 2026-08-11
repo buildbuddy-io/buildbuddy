@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -3945,5 +3946,237 @@ func TestDereference(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, rc.Close())
 		require.Equal(t, buf[5:15], got)
+	})
+}
+
+func TestWriteReference(t *testing.T) {
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+	// Disables auto-zstd so blobs are stored as IDENTITY.
+	var minAutoZstd int64 = 1 << 30
+	// Forces auto-zstd so blobs are stored as ZSTD.
+	var alwaysAutoZstd int64 = 1
+
+	// setup builds two caches sharing one mock GCS bucket, standing in for two
+	// distributed cache peers backed by the same shared storage.
+	setup := func(t *testing.T, te *testenv.TestEnv, minBytesAutoZstdCompression int64) (*pebble_cache.PebbleCache, *pebble_cache.PebbleCache, *clockwork.FakeClock) {
+		clock := clockwork.NewFakeClock()
+		mockGCS := mockgcs.New(clock)
+		require.NoError(t, mockGCS.SetBucketCustomTimeTTL(context.Background(), gcsTTLDays))
+		newCache := func(appName string) *pebble_cache.PebbleCache {
+			fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, appName), filestore.WithClock(clock))
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+				RootDirectory:               testfs.MakeTempDir(t),
+				MaxSizeBytes:                int64(1_000_000),
+				Clock:                       clock,
+				FileStorer:                  fileStorer,
+				GCSBlobstore:                mockGCS,
+				MaxInlineFileSizeBytes:      1,
+				MinGCSFileSizeBytes:         &minGCSFileSize,
+				GCSTTLDays:                  &gcsTTLDays,
+				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
+			})
+			require.NoError(t, err)
+			require.NoError(t, pc.Start())
+			t.Cleanup(func() { pc.Stop() })
+			return pc
+		}
+		return newCache("app-src"), newCache("app-dst"), clock
+	}
+
+	blobName := func(ref *refpb.Reference) string {
+		return ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()
+	}
+
+	t.Run("take ownership", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.GetReference(ctx, rn)
+		require.NoError(t, err)
+
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+
+		// The accepting cache points directly at the referenced blob.
+		dstRef, err := dst.GetReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, blobName(ref), blobName(dstRef))
+	})
+
+	t.Run("take ownership refreshes the blob TTL", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, clock := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.GetReference(ctx, rn)
+		require.NoError(t, err)
+
+		// Accept the reference when the blob has burned most of its 24h TTL.
+		clock.Advance(20 * time.Hour)
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
+
+		// Taking ownership stamped a fresh custom time, so the entry stays
+		// readable past the blob's original deletion horizon.
+		clock.Advance(20 * time.Hour)
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("clone", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.GetReference(ctx, rn)
+		require.NoError(t, err)
+
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+
+		// The accepting cache stored its own copy of the blob; the source
+		// cache's blob is untouched.
+		dstRef, err := dst.GetReference(ctx, rn)
+		require.NoError(t, err)
+		require.NotEqual(t, blobName(ref), blobName(dstRef))
+		require.True(t, strings.HasPrefix(blobName(dstRef), "app-dst/"), "unexpected blob name %q", blobName(dstRef))
+		got, err = src.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("zstd stored blob", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, alwaysAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.GetReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_ZSTD, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		// The stored compressor travels with the reference, so reads through
+		// the accepting cache decompress transparently.
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("digest mismatch", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.GetReference(ctx, rn)
+		require.NoError(t, err)
+
+		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		err = dst.WriteReference(ctx, ref, otherRN, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("malformed reference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		_, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		err := dst.WriteReference(ctx, &refpb.Reference{}, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("expired reference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, clock := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.GetReference(ctx, rn)
+		require.NoError(t, err)
+
+		// Once the referenced blob is past its GCS lifecycle TTL, it may be
+		// deleted at any moment, so accepting the reference is not safe.
+		clock.Advance(25 * time.Hour)
+		err = dst.WriteReference(ctx, ref, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+
+	t.Run("encryption state mismatch", func(t *testing.T) {
+		te, kmsDir := getCrypterEnv(t)
+		userID := "US123"
+		groupID := "GR123"
+		groupKeyID := "EK123"
+		user := testauth.User(userID, groupID)
+		user.CacheEncryptionEnabled = true
+		users := map[string]interfaces.UserInfo{userID: user}
+		auther := testauth.NewTestAuthenticator(t, users)
+		te.SetAuthenticator(auther)
+		encCtx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+		key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+		require.NoError(t, te.GetDBHandle().NewQuery(encCtx, "create_key").Create(key))
+		require.NoError(t, te.GetDBHandle().NewQuery(encCtx, "create_key_version").Create(keyVersion))
+
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		// Mint a reference from an unencrypted write.
+		anonCtx := getAnonContext(t, te)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(anonCtx, rn, buf))
+		ref, err := src.GetReference(anonCtx, rn)
+		require.NoError(t, err)
+		require.Nil(t, ref.GetMetadata().GetEncryptionMetadata())
+
+		// Accepting it under a context with active encryption would store a
+		// record whose encryption metadata cannot match the pebble key; it
+		// must be rejected before anything is stored.
+		err = dst.WriteReference(encCtx, ref, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+		exists, err := dst.Contains(encCtx, rn)
+		require.NoError(t, err)
+		require.False(t, exists)
+	})
+
+	t.Run("no shared storage backing", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+			RootDirectory: testfs.MakeTempDir(t),
+			MaxSizeBytes:  int64(1_000_000),
+		})
+		require.NoError(t, err)
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		err = pc.WriteReference(context.Background(), &refpb.Reference{}, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
 	})
 }
