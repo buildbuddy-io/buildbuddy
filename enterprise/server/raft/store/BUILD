@@ -83,7 +83,11 @@ go_test(
 
 go_test(
     name = "store_test",
-    srcs = ["store_test.go"],
+    srcs = [
+        "store_internal_test.go",
+        "store_test.go",
+    ],
+    embed = [":store"],
     exec_properties = {
         "test.EstimatedComputeUnits": "10",
         "test.workload-isolation-type": "firecracker",
@@ -103,13 +107,17 @@ go_test(
         "//enterprise/server/raft/testutil",
         "//enterprise/server/util/pebble",
         "//proto:raft_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//proto:resource_go_proto",
         "//proto:storage_go_proto",
         "//server/testutil/testdigest",
+        "//server/testutil/testfs",
         "//server/util/disk",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_cockroachdb_pebble//:pebble",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_lni_dragonboat_v4//:dragonboat",
         "@com_github_stretchr_testify//require",
