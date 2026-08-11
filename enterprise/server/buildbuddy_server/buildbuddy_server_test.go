@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -150,57 +151,65 @@ func TestCreateGroup_Allowed(t *testing.T) {
 		name            string
 		maxGroups       int
 		groupStatus     grpb.Group_GroupStatus
-		existingGroups  int
+		ownedGroups     int
+		invitedGroups   int
 		orgAPIKey       bool
 		propagateBlocks bool
 		expectDenied    bool
 	}{
 		{
-			name:           "limit_disabled",
-			maxGroups:      0,
-			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
-			existingGroups: 2,
+			name:        "limit_disabled",
+			maxGroups:   0,
+			groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+			ownedGroups: 2,
 		},
 		{
-			name:           "free_user_below_limit",
-			maxGroups:      2,
-			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
-			existingGroups: 1,
+			name:        "free_user_below_limit",
+			maxGroups:   2,
+			groupStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+			ownedGroups: 1,
 		},
 		{
-			name:           "free_user_at_limit",
-			maxGroups:      2,
-			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
-			existingGroups: 2,
-			expectDenied:   true,
+			name:          "invited_groups_do_not_count_toward_limit",
+			maxGroups:     2,
+			groupStatus:   grpb.Group_FREE_TIER_GROUP_STATUS,
+			ownedGroups:   1,
+			invitedGroups: 2,
+		},
+		{
+			name:         "free_user_at_limit",
+			maxGroups:    2,
+			groupStatus:  grpb.Group_FREE_TIER_GROUP_STATUS,
+			ownedGroups:  2,
+			expectDenied: true,
 		},
 		{
 			name:            "blocked_user_below_limit",
 			maxGroups:       2,
 			groupStatus:     grpb.Group_BLOCKED_GROUP_STATUS,
-			existingGroups:  1,
+			ownedGroups:     1,
 			propagateBlocks: true,
 			expectDenied:    true,
 		},
 		{
-			name:           "enterprise_user_not_limited",
-			maxGroups:      2,
-			groupStatus:    grpb.Group_ENTERPRISE_GROUP_STATUS,
-			existingGroups: 2,
+			name:        "enterprise_user_not_limited",
+			maxGroups:   2,
+			groupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
+			ownedGroups: 2,
 		},
 		{
-			name:           "enterprise_trial_user_not_limited",
-			maxGroups:      2,
-			groupStatus:    grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
-			existingGroups: 2,
+			name:        "enterprise_trial_user_not_limited",
+			maxGroups:   2,
+			groupStatus: grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			ownedGroups: 2,
 		},
 		{
-			name:           "non_enterprise_org_api_key_denied",
-			maxGroups:      5,
-			groupStatus:    grpb.Group_FREE_TIER_GROUP_STATUS,
-			existingGroups: 1,
-			orgAPIKey:      true,
-			expectDenied:   true,
+			name:         "non_enterprise_org_api_key_denied",
+			maxGroups:    5,
+			groupStatus:  grpb.Group_FREE_TIER_GROUP_STATUS,
+			ownedGroups:  1,
+			orgAPIKey:    true,
+			expectDenied: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -235,17 +244,44 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			require.NoError(t, err)
 			userCtx = authUserCtx(ctx, te, t, "US1")
 
-			for i := 1; i < tc.existingGroups; i++ {
+			for i := 1; i < tc.ownedGroups; i++ {
 				_, err := te.GetUserDB().CreateGroup(userCtx, &tables.Group{
 					Name:          fmt.Sprintf("Existing group %d", i),
 					URLIdentifier: fmt.Sprintf("existing-group-%d", i),
+					UserID:        "US1",
 				})
 				require.NoError(t, err)
 				userCtx = authUserCtx(ctx, te, t, "US1")
 			}
+
+			if tc.invitedGroups > 0 {
+				err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US2", SubID: "US2SubID"})
+				require.NoError(t, err)
+				otherUserCtx := authUserCtx(ctx, te, t, "US2")
+				otherGroupIDs := []string{getGroup(t, otherUserCtx, te).Group.GroupID}
+				for i := 1; i < tc.invitedGroups; i++ {
+					groupID, err := te.GetUserDB().CreateGroup(otherUserCtx, &tables.Group{
+						Name:          fmt.Sprintf("Inviting group %d", i),
+						URLIdentifier: fmt.Sprintf("inviting-group-%d", i),
+						UserID:        "US2",
+					})
+					require.NoError(t, err)
+					otherGroupIDs = append(otherGroupIDs, groupID)
+				}
+				for _, groupID := range otherGroupIDs {
+					groupCtx := requestcontext.ContextWithProtoRequestContext(ctx, &ctxpb.RequestContext{GroupId: groupID})
+					groupCtx = authUserCtx(groupCtx, te, t, "US2")
+					err := te.GetUserDB().UpdateGroupUsers(groupCtx, groupID, []*grpb.UpdateGroupUsersRequest_Update{{
+						UserId:           &uidpb.UserId{Id: "US1"},
+						MembershipAction: grpb.UpdateGroupUsersRequest_Update_ADD,
+					}})
+					require.NoError(t, err)
+				}
+				userCtx = authUserCtx(ctx, te, t, "US1")
+			}
 			user, err := te.GetUserDB().GetUser(userCtx)
 			require.NoError(t, err)
-			require.Len(t, user.Groups, tc.existingGroups)
+			require.Len(t, user.Groups, tc.ownedGroups+tc.invitedGroups)
 
 			configureCreateGroupExperiments(t, te, int64(tc.maxGroups), tc.propagateBlocks)
 			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
@@ -276,7 +312,7 @@ func TestCreateGroup_Allowed(t *testing.T) {
 
 			user, err = te.GetUserDB().GetUser(userCtx)
 			require.NoError(t, err)
-			expectedGroups := tc.existingGroups
+			expectedGroups := tc.ownedGroups + tc.invitedGroups
 			if !tc.expectDenied {
 				expectedGroups++
 			}

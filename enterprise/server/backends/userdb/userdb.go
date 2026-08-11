@@ -79,6 +79,11 @@ type userGroupMembership struct {
 	*MemberRole
 }
 
+type userOwnedGroup struct {
+	tables.User
+	*tables.Group
+}
+
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
 	name := "My Organization"
 	if u.Email != "" {
@@ -1103,6 +1108,43 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		return nil, errUserNotFound
 	}
 	return d.getUserByUserID(ctx, d.h, u.GetUserID(), &interfaces.GetUserOpts{})
+}
+
+// GetUserWithOwnedGroups returns the user with all the groups they created.
+// This differs from GetUser, which returns all groups the user is a member of.
+func (d *UserDB) GetUserWithOwnedGroups(ctx context.Context) (*tables.User, error) {
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if u.GetUserID() == "" {
+		return nil, errUserNotFound
+	}
+
+	rq := d.h.NewQuery(ctx, "userdb_get_user_with_owned_groups").Raw(`
+		SELECT u.*, g.*
+		FROM "Users" AS u
+		LEFT JOIN "Groups" AS g ON g.user_id = u.user_id
+		WHERE u.user_id = ?
+	`, u.GetUserID())
+	rows, err := db.ScanAll(rq, &userOwnedGroup{})
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, errUserNotFound
+	}
+
+	user := &rows[0].User
+	for _, row := range rows {
+		if row.Group != nil {
+			user.Groups = append(user.Groups, &tables.GroupRole{Group: *row.Group})
+		}
+	}
+	slices.SortFunc(user.Groups, func(a, b *tables.GroupRole) int {
+		return strings.Compare(a.Group.GroupID, b.Group.GroupID)
+	})
+	return user, nil
 }
 
 // getUserOpts specifies query criteria.

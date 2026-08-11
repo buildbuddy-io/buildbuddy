@@ -578,7 +578,7 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 }
 
 func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp interfaces.ExperimentFlagProvider, u interfaces.UserInfo) (*tables.User, error) {
-	isEnterprise := !(u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS)
+	isEnterprise := u.GetGroupStatus() == grpb.Group_ENTERPRISE_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS
 	if isEnterprise || efp == nil {
 		return nil, nil
 	}
@@ -592,25 +592,26 @@ func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp inter
 		return nil, status.PermissionDeniedError("Creating organizations is not supported through the API. Please continue in our UI.")
 	}
 
-	user, err := userDB.GetUser(ctx)
+	user, err := userDB.GetUserWithOwnedGroups(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if propagateGroupBlocks {
-		// No memberships means a new signup creating their first org.
-		blocked := len(user.Groups) > 0
-		for _, gr := range user.Groups {
-			if gr.Group.Status != grpb.Group_BLOCKED_GROUP_STATUS {
-				blocked = false
-				break
-			}
+	// No owned groups means the user is creating their first org.
+	allOwnedGroupsBlocked := len(user.Groups) > 0
+	ownedNonEnterpriseGroupCount := int64(0)
+	for _, gr := range user.Groups {
+		if gr.Group.Status != grpb.Group_BLOCKED_GROUP_STATUS {
+			allOwnedGroupsBlocked = false
 		}
-		if blocked {
-			return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
+		if gr.Group.Status != grpb.Group_ENTERPRISE_GROUP_STATUS && gr.Group.Status != grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS {
+			ownedNonEnterpriseGroupCount++
 		}
 	}
+	if propagateGroupBlocks && allOwnedGroupsBlocked {
+		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
+	}
 
-	if maxGroupsPerUser > 0 && int64(len(user.Groups)) >= maxGroupsPerUser {
+	if maxGroupsPerUser > 0 && ownedNonEnterpriseGroupCount >= maxGroupsPerUser {
 		return nil, status.PermissionDeniedErrorf("This user has reached the non-enterprise organization limit. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
 	}
 	return user, nil

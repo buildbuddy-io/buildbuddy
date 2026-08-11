@@ -302,6 +302,41 @@ func TestCreateUser_Cloud_CreatesSelfOwnedGroup(t *testing.T) {
 	require.Equal(t, grpb.Group_ADMIN_ROLE, groupUser.Role, "users should be admins of their self-owned group")
 }
 
+func TestGetUserWithOwnedGroups(t *testing.T) {
+	env := newTestEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	ctx := context.Background()
+
+	createUser(t, ctx, env, "US1", "org1.io")
+	userCtx := authUserCtx(ctx, env, t, "US1")
+
+	user, err := env.GetUserDB().GetUserWithOwnedGroups(userCtx)
+	require.NoError(t, err)
+	require.Len(t, user.Groups, 1)
+	require.Equal(t, grpb.Group_FREE_TIER_GROUP_STATUS, user.Groups[0].Group.Status)
+
+	for _, group := range []*tables.Group{
+		{GroupID: "GR-OTHER-USER", UserID: "US2", Status: grpb.Group_FREE_TIER_GROUP_STATUS},
+		{GroupID: "GR-OWNED-ENTERPRISE", UserID: "US1", Status: grpb.Group_ENTERPRISE_GROUP_STATUS},
+		{GroupID: "GR-OWNED-TRIAL", UserID: "US1", Status: grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS},
+		{GroupID: "GR-OWNED-BLOCKED", UserID: "US1", Status: grpb.Group_BLOCKED_GROUP_STATUS},
+	} {
+		err := env.GetDBHandle().NewQuery(ctx, "userdb_test_insert_group").Create(group)
+		require.NoError(t, err)
+	}
+
+	user, err = env.GetUserDB().GetUserWithOwnedGroups(userCtx)
+	require.NoError(t, err)
+	require.Len(t, user.Groups, 4)
+	groupIDs := make([]string, 0, len(user.Groups))
+	for _, gr := range user.Groups {
+		require.Equal(t, "US1", gr.Group.UserID)
+		groupIDs = append(groupIDs, gr.Group.GroupID)
+	}
+	require.True(t, slices.IsSorted(groupIDs))
+}
+
 func TestCreateUser_Cloud_JoinsOnlyDomainGroup(t *testing.T) {
 	env := newTestEnv(t)
 	flags.Set(t, "app.add_user_to_domain_group", true)
