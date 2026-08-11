@@ -2209,23 +2209,25 @@ func (p *PebbleCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*
 	return &refpb.Reference{Metadata: md}, nil
 }
 
+func validateReference(ref *refpb.Reference) error {
+	sm := ref.GetMetadata().GetStorageMetadata()
+	if sm.GetGcsMetadata().GetBlobName() == "" {
+		return status.InvalidArgumentError("malformed reference (empty blob name)")
+	}
+	if sm.GetFileMetadata() != nil || sm.GetInlineMetadata() != nil {
+		return status.InvalidArgumentError("malformed reference (non-GCS storage metadata)")
+	}
+	return nil
+}
+
 func (p *PebbleCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	if p.gcsBlobstore == nil {
 		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot dereference")
 	}
-
+	if err := validateReference(ref); err != nil {
+		return nil, err
+	}
 	md := ref.GetMetadata()
-	sm := md.GetStorageMetadata()
-	if sm.GetGcsMetadata().GetBlobName() == "" {
-		return nil, status.InvalidArgumentError("malformed reference (empty blob name)")
-	}
-	// References are peer-supplied, and readerForMetadata routes on the
-	// storage metadata type — file metadata first — so a reference carrying
-	// anything besides GCS metadata must be rejected, or a crafted reference
-	// could read local files.
-	if sm.GetFileMetadata() != nil || sm.GetInlineMetadata() != nil {
-		return nil, status.InvalidArgumentError("malformed reference (non-GCS storage metadata)")
-	}
 	if err := p.checkFileMetadata(md); err != nil {
 		return nil, err
 	}
@@ -2234,9 +2236,85 @@ func (p *PebbleCache) Dereference(ctx context.Context, ref *refpb.Reference, r *
 		// This is the metadata mismatch that reader() heals by deleting the
 		// metadata record, but the record backing this reference lives on the
 		// peer that minted it, so it cannot be fixed from here.
-		log.Warningf("[%s] Blob %q referenced by a peer was not found in shared storage; the referencing peer may have a dangling metadata record (md: %+v): %s", p.name, sm.GetGcsMetadata().GetBlobName(), md, err)
+		log.Warningf("[%s] Blob %q referenced by a peer was not found in shared storage; the referencing peer may have a dangling metadata record (md: %+v): %s", p.name, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName(), md, err)
 	}
 	return rc, err
+}
+
+func (p *PebbleCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if p.gcsBlobstore == nil {
+		return status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot write references")
+	}
+	if err := validateReference(ref); err != nil {
+		return err
+	}
+	refMD := ref.GetMetadata()
+	if err := p.checkFileMetadata(refMD); err != nil {
+		return err
+	}
+	refDigest := refMD.GetFileRecord().GetDigest()
+	if refDigest.GetHash() != r.GetDigest().GetHash() || refDigest.GetSizeBytes() != r.GetDigest().GetSizeBytes() {
+		return status.InvalidArgumentErrorf("reference digest %s does not match written resource digest %s", digest.String(refDigest), digest.String(r.GetDigest()))
+	}
+
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return err
+	}
+	// Ensure the encryption key the blob was written with matches this cache's
+	// current encryption key, to protect against edge cases around enabling or
+	// disabling encryption , or rotating encryption keys.
+	if refMD.GetEncryptionMetadata().GetEncryptionKeyId() != encryption.GetKeyId() {
+		return status.FailedPreconditionErrorf("reference encryption key %q does not match the active encryption key %q", refMD.GetEncryptionMetadata().GetEncryptionKeyId(), encryption.GetKeyId())
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return err
+	}
+	// The referenced blob keeps the encoding chosen by the cache that minted
+	// the reference, which may differ from the compressor on the wire
+	// resource.
+	fileRecord.Compressor = refMD.GetFileRecord().GetCompressor()
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return err
+	}
+
+	storageMD := refMD.GetStorageMetadata().CloneVT()
+	if mustClone {
+		storageMD, err = p.fileStorer.CloneBlob(ctx, refMD.GetStorageMetadata().GetGcsMetadata(), fileRecord)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Assuming ownership makes this record responsible for the blob's
+		// lifecycle, so update the blob's atime, like a clone or write would.
+		t := p.clock.Now()
+		if err := p.fileStorer.UpdateBlobAtime(ctx, storageMD.GetGcsMetadata(), t); err != nil {
+			return err
+		}
+		storageMD.GetGcsMetadata().LastCustomTimeUsec = t.UnixMicro()
+	}
+
+	now := p.clock.Now().UnixMicro()
+	md := &sgpb.FileMetadata{
+		FileRecord:         fileRecord,
+		StorageMetadata:    storageMD,
+		EncryptionMetadata: refMD.GetEncryptionMetadata().CloneVT(),
+		StoredSizeBytes:    refMD.GetStoredSizeBytes(),
+		LastAccessUsec:     now,
+		LastModifyUsec:     now,
+	}
+	return p.writeMetadata(ctx, db, key, md)
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {

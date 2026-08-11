@@ -73,6 +73,7 @@ type Proxy struct {
 	cache                 interfaces.Cache
 	log                   log.Logger
 	readRefLogger         log.Logger
+	writeRefLogger        log.Logger
 	bufPool               *bytebufferpool.VariableSizePool
 	mu                    *sync.Mutex
 	server                *grpc.Server
@@ -87,13 +88,14 @@ type Proxy struct {
 func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 	logger := log.NamedSubLogger(fmt.Sprintf("Proxy(%s)", listenAddr))
 	proxy := &Proxy{
-		env:           env,
-		cache:         c,
-		log:           logger,
-		readRefLogger: logger.EveryN(100),
-		bufPool:       bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
-		listenAddr:    listenAddr,
-		mu:            &sync.Mutex{},
+		env:            env,
+		cache:          c,
+		log:            logger,
+		readRefLogger:  logger.EveryN(100),
+		writeRefLogger: logger.EveryN(100),
+		bufPool:        bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
+		listenAddr:     listenAddr,
+		mu:             &sync.Mutex{},
 		// server goes here
 		clients: make(map[string]*grpc_client.ClientConnPool),
 	}
@@ -444,6 +446,9 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
 			}
+			if req.GetReference() != nil {
+				return c.writeReference(ctx, stream, req, up)
+			}
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -451,6 +456,8 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			}
 			defer wc.Close()
 			writeCloser = wc
+		} else if req.GetReference() != nil {
+			return status.InvalidArgumentError("unexpected reference after data bytes")
 		}
 		n, err := writeCloser.Write(req.GetData())
 		if err != nil {
@@ -461,18 +468,44 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
-			if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
-				// Because the hinted handoff callback might hold on to `rn` in
-				// a queue, and we're pooling WriteRequest protos, clone it.
-				c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), rn.CloneVT())
-			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
-			return stream.SendAndClose(&dcpb.WriteResponse{
-				CommittedSize: bytesWritten,
-			})
+			return c.finishWrite(ctx, stream, req, bytesWritten)
 		}
 	}
 	return nil
+}
+
+// writeReference handles a write request that carries a reference to a blob
+// in shared storage instead of data bytes.
+func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, userPrefix string) error {
+	rn := req.GetResource()
+	if !req.GetFinishWrite() {
+		return status.InvalidArgumentError("a write carrying a reference must be a single message with finish_write set")
+	}
+	if len(req.GetData()) > 0 {
+		return status.InvalidArgumentError("a write carrying a reference must not carry data bytes")
+	}
+	refCache, ok := c.cache.(interfaces.ReferenceCache)
+	if !ok {
+		return status.UnimplementedErrorf("the local cache (%T) cannot accept references", c.cache)
+	}
+	if err := refCache.WriteReference(ctx, req.GetReference(), rn, req.GetReferenceMustBeCloned()); err != nil {
+		c.log.Warningf("Write(%q) by reference failed (user prefix: %s), err: %s", ResourceIsolationString(rn), userPrefix, err)
+		return err
+	}
+	c.writeRefLogger.Debugf("Write(%q) succeeded by reference (user prefix: %s)", ResourceIsolationString(rn), userPrefix)
+	return c.finishWrite(ctx, stream, req, req.GetReference().GetMetadata().GetStoredSizeBytes())
+}
+
+func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
+	if req.GetHandoffPeer() != "" && c.hintedHandoffCallback != nil {
+		// Because the hinted handoff callback might hold on to the resource
+		// in a queue, and we're pooling WriteRequest protos, clone it.
+		c.hintedHandoffCallback(ctx, req.GetHandoffPeer(), req.GetResource().CloneVT())
+	}
+	return stream.SendAndClose(&dcpb.WriteResponse{
+		CommittedSize: committedSize,
+	})
 }
 
 func (c *Proxy) Heartbeat(ctx context.Context, req *dcpb.HeartbeatRequest) (*dcpb.HeartbeatResponse, error) {
