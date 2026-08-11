@@ -662,12 +662,15 @@ func TestBuildRemotelyRunLocally_ExecutableRunfile(t *testing.T) {
 		"BUILD": `
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 
+# Even though bazel does not upload the targets to the cache,
+# the CI runner should still upload them.
 genrule(
     name = "generated_script",
     srcs = ["main.sh"],
     outs = ["main-generated.sh"],
     cmd = "cp $< $@",
     executable = True,
+    tags = ["no-remote-cache"],
 )
 
 genrule(
@@ -675,6 +678,7 @@ genrule(
     srcs = ["helper.sh"],
     outs = ["helper-generated.sh"],
     cmd = "cp $< $@ && chmod +x $@",
+    tags = ["no-remote-cache"],
 )
 
 sh_binary(
@@ -705,6 +709,7 @@ echo "Hello from an executable runfile!"
 		"--run_remotely=0",
 		"run",
 		":main",
+		"--remote_build_event_upload=minimal",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 	require.Contains(t, output, "Hello from an executable runfile!")
 }
