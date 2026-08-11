@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"iter"
 	"maps"
 	"os"
 	"path/filepath"
@@ -152,7 +151,7 @@ type Parser struct {
 	CommandOptionParser *Subparser
 }
 
-func NewParser[D options.Defined](optionDefinitions iter.Seq[D], commands []string, aliases map[string]string) *Parser {
+func NewParser[D options.Defined](optionDefinitions []D, commands []string, aliases map[string]string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
 			ByName:              map[string]options.Defined{},
@@ -167,7 +166,7 @@ func NewParser[D options.Defined](optionDefinitions iter.Seq[D], commands []stri
 			UnconditionalPhases: set.FromSeq(rc_util.UnconditionalCommandPhases()),
 		},
 	}
-	for d := range optionDefinitions {
+	for _, d := range optionDefinitions {
 		p.AddOptionDefinition(d)
 	}
 	return p
@@ -182,7 +181,7 @@ func GetNativeParser() *Parser {
 		aliases[alias] = command.Name
 	}
 	return NewParser(
-		slices.Values(definitions),
+		definitions,
 		slices.Collect(maps.Keys(cli_command.CommandsByName)),
 		aliases,
 	)
@@ -282,7 +281,7 @@ func GetHelpParser() (*Parser, error) {
 	aliases := maps.Clone(bazelParser.StartupOptionParser.Aliases)
 	maps.Insert(aliases, maps.All(nativeParser.StartupOptionParser.Aliases))
 
-	return NewParser(slices.Values(option_definitions), commands, aliases), nil
+	return NewParser(option_definitions, commands, aliases), nil
 }
 
 // GetBazelParser can parse bazel options, bb CLI native options, and plugin
@@ -597,6 +596,25 @@ func (p *Subparser) ParseOption(opt string) (option options.Option, err error) {
 	return nil, nil
 }
 
+func (p *Subparser) ResolveExpansion(opt options.Option) (options.Option, error) {
+	deferred, ok := opt.(*options.DeferredOption)
+	if !ok {
+		// only resolve deferred options.
+		return opt, nil
+	}
+	resolved, err := p.ParseOption(deferred.GetValue())
+	if err != nil {
+		return nil, err
+	}
+	if resolved == nil {
+		return nil, fmt.Errorf("Encountered positional argument '%s' while resolving expansion option.", deferred.GetValue())
+	}
+	if resolved.PluginID() == options.UnknownBuiltinPluginID {
+		return nil, fmt.Errorf("Encountered unknown option '%s' while resolving expansion option.", deferred.Name())
+	}
+	return resolved, nil
+}
+
 // DecodeHelpFlagsAsProto takes the output of `bazel help flags-as-proto` and
 // returns the FlagCollection proto message it encodes.
 func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
@@ -618,44 +636,21 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // GenerateParser takes a FlagCollection proto message, converts it into
 // OptionDefinitions, places each option definition into subparsers corresponding
 // to the commands it supports, and returns the resulting parser.
-func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
-	log.Printf("Generating parser...")
+func GenerateParser(flagCollection *bfpb.FlagCollection) (*Parser, error) {
+	definitions := []*options.Definition{}
 	expansionDefinitions := []*options.Definition{}
-	p := NewParser(
-		seq.Fmap(
-			flagCollection.FlagInfos,
-			func(info *bfpb.FlagInfo) options.Defined {
-				d := options.DefinitionFrom(info)
-				if _, ok := options.NilOptionFrom(d).(*options.ExpansionOption); ok {
-					expansionDefinitions = append(expansionDefinitions, d)
-				}
-				return d
-			},
-		),
-		nil,
-		nil,
-	)
+	for _, info := range flagCollection.FlagInfos {
+		d := options.DefinitionFrom(info)
+		if _, ok := options.NilOptionFrom(d).(*options.ExpansionOption); ok {
+			expansionDefinitions = append(expansionDefinitions, d)
+		}
+		definitions = append(definitions, d)
+	}
+	p := NewParser(definitions, nil, nil)
 	for _, d := range expansionDefinitions {
-		log.Printf("Resolving expansion of %s...", d.Name())
 		d.ResolveExpansion(
-			func(opt options.Option) (options.Option, error) {
-				log.Printf("Resolving %s...", opt.GetValue())
-				resolved, err := p.CommandOptionParser.ParseOption(opt.GetValue())
-				if err != nil {
-					log.Warnf("Error: %s.", err)
-					return nil, err
-				}
-				if resolved == nil {
-					return nil, fmt.Errorf("Encountered positional argument '%s' while resolving expansion options for '%s'.", opt.GetValue(), d.Name())
-				}
-				if resolved.PluginID() == options.UnknownBuiltinPluginID {
-					return nil, fmt.Errorf("Encountered unknown option '%s' while resolving expansion options for '%s'.", opt.Name(), d.Name())
-				}
-				log.Printf("Done.")
-				return resolved, nil
-			},
+			p.CommandOptionParser.ResolveExpansion,
 		)
-		log.Printf("Done.")
 	}
 	return p, nil
 }
