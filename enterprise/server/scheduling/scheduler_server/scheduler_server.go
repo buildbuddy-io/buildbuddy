@@ -2116,8 +2116,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			LeaseDurationSeconds: int64(s.leaseDuration.Seconds()),
 		}
 		if !claimed {
-			// Logging cost (2026-08-11): suppressing this routine lease attempt at
-			// the default INFO threshold is estimated to save ~$188/day.
 			log.CtxDebugf(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
 			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
@@ -2181,8 +2179,6 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			err := s.deleteClaimedTask(ctx, taskID)
 			if err == nil {
 				claimed = false
-				// Logging cost (2026-08-11): suppressing this routine finalization at
-				// the default INFO threshold is estimated to save ~$56/day.
 				log.CtxDebugf(ctx, "LeaseTask task %q successfully finalized by %q", taskID, executorID)
 			} else {
 				log.CtxWarningf(ctx, "Could not delete claimed task %q: %s", taskID, err)
@@ -2362,8 +2358,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
-	// Logging cost (2026-08-11): suppressing this routine reservation event at
-	// the default INFO threshold is estimated to save ~$254/day.
 	log.CtxDebugf(ctx, "Enqueueing task reservations, pool_key=%+v", key)
 
 	nodeBalancer := s.getOrCreatePool(key)
@@ -2387,8 +2381,6 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	startTime := time.Now()
 	var successfulReservations []string
 	defer func() {
-		// Logging cost (2026-08-11): suppressing this routine timing event at
-		// the default INFO threshold is estimated to save ~$275/day.
 		log.CtxDebugf(ctx, "Enqueue task reservations took %s. Reservations: [%s]",
 			time.Since(startTime), strings.Join(successfulReservations, ", "))
 	}()

@@ -1349,8 +1349,6 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 	resp, err := s.splitBlob(ctx, req)
 	if err != nil {
 		if status.IsNotFoundError(err) {
-			// Logging cost (2026-08-11): suppressing expected cache misses at the
-			// default INFO threshold is estimated to save ~$63/day.
 			log.CtxDebugf(ctx, "SplitBlob failed: %v", err)
 		} else {
 			log.CtxWarningf(ctx, "SplitBlob failed: %v", err)

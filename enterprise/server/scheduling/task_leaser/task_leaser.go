@@ -197,8 +197,6 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		defer t.keepLease(ctx)
-		// Logging cost (2026-08-11): suppressing this routine lease event at the
-		// default INFO threshold is estimated to save ~$51/day.
 		log.CtxDebugf(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)
@@ -218,8 +216,6 @@ func (t *TaskLease) closed() bool {
 func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	// Logging cost (2026-08-11): suppressing this routine lease event at the
-	// default INFO threshold is estimated to save ~$45/day.
 	log.CtxDebugf(ctx, "Closing task lease")
 	if t.closed() {
 		log.CtxInfof(ctx, "Lease was already closed. Short-circuiting.")
@@ -275,8 +271,6 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 			log.CtxInfof(ctx, "Successfully re-enqueued task")
 		}
 	} else {
-		// Logging cost (2026-08-11): suppressing this routine lease event at the
-		// default INFO threshold is estimated to save ~$41/day.
 		log.CtxDebugf(ctx, "Task lease closed cleanly")
 	}
 }

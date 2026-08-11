@@ -1050,8 +1050,6 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
 	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
-	// Logging cost (2026-08-11): suppressing this routine CPU allocation event
-	// at the default INFO threshold is estimated to save ~$45/day.
 	log.CtxDebugf(ctx, "Lease %s granted %+v cpus on node %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)

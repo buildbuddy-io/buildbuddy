@@ -616,8 +616,6 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			if err := s.executionCollector.AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
-				// Logging cost (2026-08-11): suppressing this routine event at the
-				// default INFO threshold is estimated to save ~$82/day.
 				log.CtxDebugf(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
 		} else if s.env.GetOLAPDBHandle() != nil {
@@ -1124,8 +1122,6 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// Check if there's already an identical action pending execution that this request can be merged into.
 	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.New {
-		// Logging cost (2026-08-11): suppressing this routine event at the
-		// default INFO threshold is estimated to save ~$72/day.
 		log.CtxDebugf(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 
 		// Check CPU time quota before dispatching execution.
@@ -1145,8 +1141,6 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			return err
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
-		// Logging cost (2026-08-11): suppressing this routine event at the
-		// default INFO threshold is estimated to save ~$82/day.
 		log.CtxDebugf(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "new")
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
@@ -1206,8 +1200,6 @@ func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunni
 	// Log only on stage transitions or if it's been a while since we last
 	// logged.
 	if stage != e.lastStage || time.Since(e.lastLogTime) > 30*time.Second {
-		// Logging cost (2026-08-11): suppressing this routine stage update at
-		// the default INFO threshold is estimated to save ~$227/day.
 		log.CtxDebugf(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
 		e.lastLogTime = time.Now()
 	}
@@ -1251,8 +1243,6 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 }
 
 func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
-	// Logging cost (2026-08-11): suppressing this routine event at the
-	// default INFO threshold is estimated to save ~$86/day.
 	log.CtxDebugf(ctx, "WaitExecution called for: %q", req.GetName())
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
 	if err != nil {
