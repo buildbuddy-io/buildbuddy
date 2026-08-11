@@ -8,12 +8,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 
 	pebblev1 "github.com/cockroachdb/pebble"
 
@@ -70,9 +74,13 @@ func newTestPU(t *testing.T, db pebble.IPebbleDB, globalSizeBytes int64, minEvic
 		nodes:    map[string]*nodePartitionUsage{"n1": {sizeBytes: globalSizeBytes}},
 		deletes:  make(chan *evictionCandidate, 128),
 
-		evictionRateLimit:    1_000_000_000, // don't rate-limit unit tests
-		samplerSleepDuration: time.Hour,
-		minEvictionAge:       minEvictionAge,
+		evictionRateLimit: 1_000_000_000, // don't rate-limit unit tests
+		idleSleepDuration: time.Hour,
+		minEvictionAge:    minEvictionAge,
+
+		metrics: metricSet{
+			atimeIndexSweepSeek: metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
+		},
 	}
 }
 
@@ -286,6 +294,91 @@ drain:
 	}
 }
 
+// A sweep that reaches the age boundary while the partition stays over budget
+// must keep its cursor rather than restarting from the front: the candidates
+// it already enqueued have deletes still in flight (never applied here, since
+// no delete pipeline runs), and a front restart would re-enqueue all of them.
+// Regression test for
+// https://github.com/buildbuddy-io/buildbuddy/pull/12877#discussion_r3678539378.
+func TestNoReEnqueueWhileDeletesInFlight(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(dir, "test", &pebblev1.Options{})
+	require.NoError(t, err)
+
+	const n = 20
+	for i := 0; i < n; i++ {
+		writeRecord(t, db, time.Now().Add(-2*time.Hour).UnixMicro(), true /*=withIndex*/)
+	}
+	// One fresh record so the sweep stops at the age boundary.
+	writeRecord(t, db, time.Now().UnixMicro(), true /*=withIndex*/)
+	require.NoError(t, db.Flush())
+
+	pu := newTestPU(t, db, 1<<40, time.Hour)
+	// Disable sleeping so the loop spins: a front-restarting loop would
+	// re-offer the same candidates many times within the test window.
+	pu.idleSleepDuration = 0
+	startEvictionLoopForTest(t, pu)
+
+	seen := map[string]int{}
+	total := 0
+	deadline := time.After(1 * time.Second)
+drain:
+	for {
+		select {
+		case c := <-pu.deletes:
+			seen[string(c.keyBytes)]++
+			total++
+		case <-deadline:
+			break drain
+		}
+	}
+	require.Equal(t, n, total, "each eligible record must be offered exactly once")
+	for key, count := range seen {
+		require.Equal(t, 1, count, "candidate %q re-enqueued", key)
+	}
+}
+
+// Index state of partitions no longer in the config -- entries (including
+// orphans the hard-delete flow can't derive from records) and the backfill
+// marker -- must be wiped at startup; configured partitions' state stays.
+func TestCleanupStaleAtimeIndexState(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(dir, "test", &pebblev1.Options{})
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Configured partition: a record with its entry, plus the marker.
+	fooKey := writeRecord(t, db, 1_000_000, true /*=withIndex*/)
+	fooEntry := keys.AtimeIndexKey("FOO", 1_000_000, fooKey)
+	fooMarker := keys.AtimeIndexBackfillMarkerKey("FOO")
+	require.NoError(t, db.Set(fooMarker, []byte{atimeIndexVersion}, &pebblev1.WriteOptions{}))
+
+	// Stale partition: orphaned entries (no records) plus a marker.
+	goneEntry := keys.AtimeIndexKey("GONE", 1_000_000, []byte("PTGONE/orphan"))
+	goneMarker := keys.AtimeIndexBackfillMarkerKey("GONE")
+	require.NoError(t, db.Set(goneEntry, nil, &pebblev1.WriteOptions{}))
+	require.NoError(t, db.Set(goneMarker, []byte{atimeIndexVersion}, &pebblev1.WriteOptions{}))
+
+	// Stale partition with a marker but no entries.
+	emptyMarker := keys.AtimeIndexBackfillMarkerKey("EMPTY")
+	require.NoError(t, db.Set(emptyMarker, []byte{atimeIndexVersion}, &pebblev1.WriteOptions{}))
+
+	require.NoError(t, cleanupStaleAtimeIndexState(db, set.From("FOO")))
+
+	for _, k := range [][]byte{fooEntry, fooMarker} {
+		_, closer, err := db.Get(k)
+		require.NoError(t, err, "configured partition state %q must survive", k)
+		closer.Close()
+	}
+	for _, k := range [][]byte{goneEntry, goneMarker, emptyMarker} {
+		_, closer, err := db.Get(k)
+		if err == nil {
+			closer.Close()
+		}
+		require.ErrorIs(t, err, pebblev1.ErrNotFound, "stale state %q must be removed", k)
+	}
+}
+
 // backfillAtimeIndex must create entries for pre-existing records exactly
 // once: the completion marker makes later startups skip the scan.
 func TestBackfill(t *testing.T) {
@@ -354,4 +447,53 @@ func TestBackfill(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []byte{atimeIndexVersion}, val)
 	closer.Close()
+}
+
+// The background verifier must repair exactly the records whose index entry is
+// missing (the violation that would otherwise leave a record permanently
+// unevictable), and must not touch consistent records or sweep-owned orphans.
+func TestAtimeIndexVerifierRepairsMissingEntries(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	db, err := pebble.Open(dir, "test", &pebblev1.Options{})
+	require.NoError(t, err)
+
+	// Normal records: entry present.
+	for i := 0; i < 5; i++ {
+		writeRecord(t, db, int64(1_000_000+i), true /*=withIndex*/)
+	}
+	// The violation: a record with no index entry.
+	missingKey := writeRecord(t, db, 2_000_000, false /*=withIndex*/)
+	// Decoy: a consistent record that also has a stale orphan entry at an old
+	// atime. The verifier must leave the orphan alone (dropping orphans is the
+	// sweep's job) and must not count the record as needing repair.
+	decoyKey := writeRecord(t, db, 3_000_000, true /*=withIndex*/)
+	orphanEntry := keys.AtimeIndexKey("FOO", 2_999_999, decoyKey)
+	require.NoError(t, db.Set(orphanEntry, nil, &pebblev1.WriteOptions{}))
+	require.NoError(t, db.Flush())
+
+	pu := newTestPU(t, db, 0, time.Hour)
+	pu.metrics.atimeIndexRepairs = metrics.RaftAtimeIndexMissingEntriesRepaired.With(prometheus.Labels{metrics.PartitionID: "FOO"})
+
+	// Force the pass to reopen its iterator every few records, so chunk
+	// boundaries are exercised.
+	prev := verifyChunkRecords
+	verifyChunkRecords = 2
+	defer func() { verifyChunkRecords = prev }()
+
+	limiter := rate.NewLimiter(rate.Inf, 1)
+	repaired, err := pu.verifyAtimeIndexPass(context.Background(), limiter)
+	require.NoError(t, err)
+	require.Equal(t, 1, repaired)
+
+	// The missing entry now exists, and the orphan was left in place.
+	for _, k := range [][]byte{keys.AtimeIndexKey("FOO", 2_000_000, missingKey), orphanEntry} {
+		_, closer, err := db.Get(k)
+		require.NoError(t, err, "index entry %q missing after verify pass", k)
+		closer.Close()
+	}
+
+	// A second pass finds nothing to do.
+	repaired, err = pu.verifyAtimeIndexPass(context.Background(), limiter)
+	require.NoError(t, err)
+	require.Equal(t, 0, repaired)
 }

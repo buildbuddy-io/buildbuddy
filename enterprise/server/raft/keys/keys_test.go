@@ -36,6 +36,24 @@ func TestAtimeIndexKey(t *testing.T) {
 	assert.True(t, bytes.Compare(start, k) <= 0 && bytes.Compare(k, end) < 0)
 	other := keys.AtimeIndexKey("fop", 12345678, fileKey)
 	assert.False(t, bytes.Compare(start, other) <= 0 && bytes.Compare(other, end) < 0)
+	// The case a separator-delimited range must actually guard against is a
+	// partition ID that extends another as a prefix: "foobar" stays outside
+	// "foo"'s bounds only because the trailing '/' (0x2f) sorts below the
+	// extension's next byte.
+	ext := keys.AtimeIndexKey("foobar", 12345678, fileKey)
+	assert.False(t, bytes.Compare(start, ext) <= 0 && bytes.Compare(ext, end) < 0)
+
+	// A negative atime is clamped to zero: encoded as uint64 it would sort
+	// after every valid entry (breaking "byte order equals time order"),
+	// making its record unreachable by the age-bounded eviction sweep.
+	neg := keys.AtimeIndexKey("foo", -5, fileKey)
+	part, atime, fk, err = keys.ParseAtimeIndexKey(neg)
+	require.NoError(t, err)
+	assert.Equal(t, "foo", part)
+	assert.Equal(t, int64(0), atime)
+	assert.Equal(t, fileKey, fk)
+	assert.Negative(t, bytes.Compare(neg, older), "clamped entry must sort first")
+	assert.True(t, bytes.Compare(start, neg) <= 0 && bytes.Compare(neg, end) < 0)
 
 	// Non-index keys don't parse.
 	_, _, _, err = keys.ParseAtimeIndexKey([]byte("PTfoo/abcd"))

@@ -1889,12 +1889,13 @@ func (s *Store) RemoveData(ctx context.Context, req *rfpb.RemoveDataRequest) (*r
 var atimeIndexCleanupCommitSizeBytes = 4 * 1024 * 1024
 
 // deleteRangeDataAndAtimeIndexEntries deletes every record in [start, end)
-// along with its node-local atime-index entry, in bounded chunks. Within each
-// chunk the records are range-deleted BEFORE the index-entry batch commits: a
-// crash then leaves orphaned index entries, which the eviction sweep drops,
-// rather than live records missing from the index, which nothing would
-// repair. Entries this misses for any other reason are likewise dropped
-// lazily by the sweep.
+// along with its node-local atime-index entry, in bounded chunks. Mutating
+// the index outside raft is fine here: it is per-node derived state, not
+// range data (see keys.AtimeIndexPrefix). Within each chunk the records are
+// range-deleted BEFORE the index-entry batch commits: a crash then leaves
+// orphaned index entries, which the eviction sweep drops, rather than live
+// records missing from the index, which nothing would repair. Entries this
+// misses for any other reason are likewise dropped lazily by the sweep.
 func deleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte) error {
 	iter, err := db.NewIter(&pebble.IterOptions{LowerBound: start, UpperBound: end})
 	if err != nil {
@@ -1903,6 +1904,9 @@ func deleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte)
 	defer iter.Close()
 	wb := db.NewBatch()
 	defer wb.Close()
+
+	md := sgpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
 
 	chunkStart := start
 	commitChunk := func(chunkEnd []byte) error {
@@ -1930,8 +1934,8 @@ func deleteRangeDataAndAtimeIndexEntries(db pebble.IPebbleDB, start, end []byte)
 		if partID == "" {
 			continue
 		}
-		md := &sgpb.FileMetadata{}
-		if err := proto.Unmarshal(iter.Value(), md); err != nil {
+		md.ResetVT()
+		if err := md.UnmarshalVT(iter.Value()); err != nil {
 			log.Warningf("skipping atime index cleanup for non-FileMetadata key %q: %s", iter.Key(), err)
 			continue
 		}

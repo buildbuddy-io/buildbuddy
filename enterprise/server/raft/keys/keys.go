@@ -59,12 +59,33 @@ func Range(key []byte) ([]byte, []byte) {
 // range span, snapshot stream, split, or replica clear. Each replica's apply
 // path derives one entry per file record hosted on this node; entries sort by
 // (partition, access time) so the eviction scanner reads coldest-first.
+//
+// Ownership: the index is derived, per-node state -- not replicated state --
+// so it is legitimately mutated both by the replica state machine (which
+// writes entries in the same batch as the record, keeping the pair atomic)
+// and directly, outside raft, by node-local maintenance: the usagetracker
+// sweep drops orphaned entries and backfills/verifies the index, and the
+// store deletes entries when removing a replica's data. Going through raft
+// for those would be the wrong layer: each node's entry set differs (it
+// depends on local recovery history), so there is no replicated truth to
+// agree on. Correctness rests on the index being orphan-tolerant (a stale
+// entry is skipped and dropped; record deletes carry a MatchAtime guard) and
+// on missing entries being repaired by the verifier.
 var AtimeIndexPrefix = []byte{'\x01', 'a', 't', 'i', 'd', 'x', '/'}
 
 // AtimeIndexKey returns the eviction-index key for a file record:
 // AtimeIndexPrefix + partitionID + '/' + atimeUsec (8-byte big-endian, so byte
 // order equals time order) + '/' + fileKey.
 func AtimeIndexKey(partitionID string, atimeUsec int64, fileKey []byte) []byte {
+	if atimeUsec < 0 {
+		// A negative atime encoded as uint64 would sort after every valid
+		// entry while parsing back as ancient, so the sweep (which stops at
+		// the age boundary) would never reach it and the record could never
+		// be evicted. Clamp to zero: malformed atimes sort first and are
+		// evicted first. Entry writes and deletes both come through here, so
+		// the clamped key stays symmetric.
+		atimeUsec = 0
+	}
 	k := make([]byte, 0, len(AtimeIndexPrefix)+len(partitionID)+1+8+1+len(fileKey))
 	k = append(k, AtimeIndexPrefix...)
 	k = append(k, partitionID...)
