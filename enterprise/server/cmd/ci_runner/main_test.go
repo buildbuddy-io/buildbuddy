@@ -84,10 +84,12 @@ func TestCollectRunfiles_ResolvesFileSymlinks(t *testing.T) {
 	for _, f := range files {
 		filesByPath[f.logicalPath] = f
 	}
+	resolvedTargetPath, err := filepath.EvalSymlinks(targetPath)
+	require.NoError(t, err)
 	for _, logicalPath := range []string{firstLink, secondLink} {
 		f := filesByPath[logicalPath]
 		require.NotNil(t, f)
-		require.Equal(t, targetPath, f.physicalPath)
+		require.Equal(t, resolvedTargetPath, f.physicalPath)
 		require.True(t, f.isExecutable)
 		require.NotNil(t, f.digest)
 	}

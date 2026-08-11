@@ -862,10 +862,11 @@ func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
 
 // TODO(vadim): add interactive progress bar for downloads
 // TODO(vadim): parallelize downloads
-func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, runfiles []*bespb.Runfile, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
+func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, runfiles []*bespb.Runfile, supportingDirs []*bespb.Tree, outputBaseDir string) (map[string]struct{}, error) {
 	bsClient := env.GetByteStreamClient()
 
 	var mainLocalArtifacts []string
+	downloadedFiles := make(map[string]struct{})
 	download := func(f *bespb.File, mode os.FileMode) (string, error) {
 		r, err := bytestreamURIToResourceName(f.GetUri())
 		if err != nil {
@@ -879,6 +880,7 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		if err := downloadFile(ctx, bsClient, r, outFile, mode); err != nil {
 			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
+		downloadedFiles[filepath.Clean(outFile)] = struct{}{}
 		return outFile, nil
 	}
 	for _, f := range mainOutputs {
@@ -928,7 +930,25 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 	if len(relArtifacts) > 0 {
 		fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
 	}
-	return mainLocalArtifacts, nil
+	return downloadedFiles, nil
+}
+
+func downloadedExecutablePath(downloadedFiles map[string]struct{}, outputBaseDir, executablePath string) (string, error) {
+	if executablePath == "" {
+		return "", fmt.Errorf("run executable path is empty")
+	}
+	binPath := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, executablePath)
+	if _, ok := downloadedFiles[filepath.Clean(binPath)]; !ok {
+		return "", fmt.Errorf("run executable %q was not downloaded", executablePath)
+	}
+	info, err := os.Lstat(binPath)
+	if err != nil {
+		return "", fmt.Errorf("locate downloaded executable %q: %w", binPath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("downloaded executable %q is not a regular file", binPath)
+	}
+	return binPath, nil
 }
 
 // envWithRunfilesDir ensures a locally-run target (build-remotely-run-locally) resolves
@@ -1218,14 +1238,14 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				}
 			}
 			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-			_, err = downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+			downloadedFiles, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
 				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
-				binPath := filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, executablePath)
-				if _, err := os.Stat(binPath); err != nil {
-					return 1, fmt.Errorf("locate downloaded executable %q: %w", binPath, err)
+				binPath, err := downloadedExecutablePath(downloadedFiles, outputsBaseDir, executablePath)
+				if err != nil {
+					return 1, err
 				}
 				absBinPath, err := filepath.Abs(binPath)
 				if err != nil {

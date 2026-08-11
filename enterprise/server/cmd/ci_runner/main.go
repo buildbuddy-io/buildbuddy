@@ -1456,6 +1456,12 @@ type runfile struct {
 func collectRunfiles(runfilesDir string) ([]*runfile, map[string]string, error) {
 	var runfiles []*runfile
 	dirsToUpload := make(map[string]string)
+	if _, err := os.Stat(runfilesDir); err != nil {
+		if os.IsNotExist(err) {
+			return runfiles, dirsToUpload, nil
+		}
+		return nil, nil, status.UnknownErrorf("could not setup runtime files: %s", err)
+	}
 	err := filepath.WalkDir(runfilesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1497,10 +1503,10 @@ func collectRunfiles(runfilesDir string) ([]*runfile, map[string]string, error) 
 		})
 		return nil
 	})
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return nil, nil, status.UnknownErrorf("could not setup runtime files: %s", err)
 	}
-	return runfiles, dirsToUpload, err
+	return runfiles, dirsToUpload, nil
 }
 
 func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir, executablePath string) ([]*bespb.File, []*bespb.Tree, []*bespb.Runfile, error) {
