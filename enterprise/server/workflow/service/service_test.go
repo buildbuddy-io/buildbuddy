@@ -1277,6 +1277,62 @@ actions:
 	require.Zero(t, scheduled.LeaseExpiresUsec)
 }
 
+func TestScheduledWorkflow_SharesInstanceNameWithWebhookEvent(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
+	authCtx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	runBBServer(ctx, t, te)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      pull_request:
+        branches: [ "*" ]
+      schedule:
+        crons: ["0 * * * *"]
+`,
+	}
+
+	now := threePM
+	te.SetClock(clockwork.NewFakeClockAt(now))
+	// Scheduled workflows have normalize repo URLs (no ".git" suffix).
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "test",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Test",
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	require.NoError(t, te.GetWorkflowService().RunScheduledWorkflows(t.Context()))
+	scheduledRequest := execClient.NextExecuteRequest().Payload
+
+	// GitHub webhook payloads use clone URLs, which include a ".git" suffix.
+	cloneURL := repoURL + ".git"
+	wd := &interfaces.WebhookData{
+		EventName:               "pull_request",
+		PushedRepoURL:           cloneURL,
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		TargetRepoURL:           cloneURL,
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "main",
+	}
+	require.NoError(t, te.GetWorkflowService().HandleRepositoryEvent(authCtx, repo, wd, "faketoken"))
+	pullRequest := execClient.NextExecuteRequest().Payload
+
+	// Scheduled workflows and webhook events should share the same instance name so runners can be shared.
+	require.Equal(t, scheduledRequest.GetInstanceName(), pullRequest.GetInstanceName())
+}
+
 func TestScheduledWorkflow(t *testing.T) {
 	ctx := context.Background()
 	te := newTestEnv(t)
