@@ -1618,7 +1618,7 @@ func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferenc
 			DefaultVariant: "on",
 			Variants:       map[string]any{"on": readReferences},
 		},
-		"distributed_cache.verify_gcs_references": {
+		"distributed_cache.verify_read_gcs_references": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "on",
 			Variants:       map[string]any{"on": verifyReferences},
