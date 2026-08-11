@@ -3,7 +3,6 @@ package options
 import (
 	"flag"
 	"fmt"
-	"iter"
 	"reflect"
 	"slices"
 	"strings"
@@ -70,6 +69,7 @@ type Defined interface {
 	HasNegative() bool
 	RequiresValue() bool
 	HasSupportedCommands() bool
+	SupportedCommands() set.View[string]
 	Supports(string) bool
 	PluginID() string
 }
@@ -142,14 +142,8 @@ func (d *Definition) HasSupportedCommands() bool {
 	return len(d.supportedCommands) != 0
 }
 
-func (d *Definition) SupportedCommands() iter.Seq[string] {
-	return func(yield func(string) bool) {
-		for k := range d.supportedCommands {
-			if !yield(k) {
-				return
-			}
-		}
-	}
+func (d *Definition) SupportedCommands() set.View[string] {
+	return d.supportedCommands
 }
 
 func (d *Definition) Supports(command string) bool {
@@ -190,7 +184,10 @@ func WithPluginID(pluginID string) DefinitionOpt {
 
 func WithSupportFor(commands ...string) DefinitionOpt {
 	return func(d *Definition) {
-		d.AddSupportedCommand(commands...)
+		if d.supportedCommands == nil {
+			d.supportedCommands = make(set.Set[string], len(commands))
+		}
+		d.supportedCommands.AddSeq(slices.Values(commands))
 	}
 }
 
@@ -310,9 +307,8 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 		multi:             info.GetAllowsMultiple(),
 		hasNegative:       info.GetHasNegativeFlag(),
 		requiresValue:     info.GetRequiresValue(),
-		supportedCommands: make(set.Set[string], len(info.GetCommands())),
+		supportedCommands: set.From(info.GetCommands()...),
 	}
-	d.AddSupportedCommand(info.GetCommands()...)
 	return d
 }
 
@@ -330,8 +326,6 @@ type Option interface {
 	ExpectsValue() bool
 	ClearValue()
 	SetValue(string)
-	GetDefinition() *Definition
-	SetDefinition(*Definition)
 	UseName()
 	UseShortName()
 	UseOldName()
@@ -522,14 +516,6 @@ type RequiredValueOption struct {
 	Joined bool
 }
 
-func (o *RequiredValueOption) GetDefinition() *Definition {
-	return o.Definition
-}
-
-func (o *RequiredValueOption) SetDefinition(d *Definition) {
-	o.Definition = d
-}
-
 func (o *RequiredValueOption) HasValue() bool {
 	return o.Value != nil
 }
@@ -592,14 +578,6 @@ type BoolOrEnumOption struct {
 
 	// The string Value of this option, if any
 	Value *string
-}
-
-func (o *BoolOrEnumOption) GetDefinition() *Definition {
-	return o.Definition
-}
-
-func (o *BoolOrEnumOption) SetDefinition(d *Definition) {
-	o.Definition = d
 }
 
 func (o *BoolOrEnumOption) HasValue() bool {
@@ -723,14 +701,6 @@ type ExpansionOption struct {
 	*optionBase
 }
 
-func (o *ExpansionOption) GetDefinition() *Definition {
-	return o.Definition
-}
-
-func (o *ExpansionOption) SetDefinition(d *Definition) {
-	o.Definition = d
-}
-
 func (_ *ExpansionOption) HasValue() bool {
 	return false
 }
@@ -773,11 +743,27 @@ func (o *ExpansionOption) BoolLike() BoolLike {
 // be misspellings of known options by users.
 type UnknownOption struct {
 	Option
+	AssumedSupport set.Set[string]
 }
 
 func (o *UnknownOption) Normalized() Option {
 	// do not normalize unknown options.
 	return o
+}
+
+func (o *UnknownOption) Supports(command string) bool {
+	return o.AssumedSupport.Contains(command) || o.Option.Supports(command)
+}
+
+func (o *UnknownOption) HasSupportedCommands() bool {
+	return o.AssumedSupport.Len()|o.SupportedCommands().Len() != 0
+}
+
+func (o *UnknownOption) AssumeSupportFor(command string) {
+	if o.AssumedSupport == nil {
+		o.AssumedSupport = make(set.Set[string], 1)
+	}
+	o.AssumedSupport.Add(command)
 }
 
 func Canonicalize(opts []Option) []Option {
@@ -796,12 +782,13 @@ func Canonicalize(opts []Option) []Option {
 	return canonical
 }
 
-func NewStarlarkOptionDefinition(optName string) *Definition {
+func NewStarlarkOptionDefinition(optName string, supportedCommands set.Set[string]) *Definition {
 	return &Definition{
-		name:        strings.TrimPrefix(optName, "no"),
-		multi:       true,
-		hasNegative: true,
-		pluginID:    StarlarkBuiltinPluginID,
+		name:              strings.TrimPrefix(optName, "no"),
+		multi:             true,
+		hasNegative:       true,
+		pluginID:          StarlarkBuiltinPluginID,
+		supportedCommands: supportedCommands,
 	}
 }
 
