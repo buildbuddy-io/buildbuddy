@@ -925,18 +925,10 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		}
 		relArtifacts = append(relArtifacts, "  "+rp)
 	}
-	fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
-	return mainLocalArtifacts, nil
-}
-
-func findExecutableOutput(outputs []string, outputBaseDir, executablePath string) (string, error) {
-	expectedPath := filepath.Clean(filepath.Join(outputBaseDir, BuildBuddyArtifactDir, executablePath))
-	for _, output := range outputs {
-		if filepath.Clean(output) == expectedPath {
-			return output, nil
-		}
+	if len(relArtifacts) > 0 {
+		fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
 	}
-	return "", fmt.Errorf("run executable %q not found among downloaded artifacts", executablePath)
+	return mainLocalArtifacts, nil
 }
 
 // envWithRunfilesDir ensures a locally-run target (build-remotely-run-locally) resolves
@@ -1214,19 +1206,26 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
-			if err != nil {
-				return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
+			// For build-remotely run-locally, the main output is the executable and will be included
+			// by the ci_runner in the runfiles entries, so doesn't need to be explicitly downloaded as a
+			// `mainOutput`. (Even though the executable's path is not
+			// within the runfiles directory, we do this to ensure it is always uploaded to the cache).
+			var mainOutputs []*bespb.File
+			if !opts.RunOutputLocally {
+				mainOutputs, err = lookupBazelInvocationOutputs(ctx, bbClient, childIID)
+				if err != nil {
+					return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
+				}
 			}
 			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+			_, err = downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
 				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
-				binPath, err := findExecutableOutput(outputs, outputsBaseDir, executablePath)
-				if err != nil {
-					return 1, err
+				binPath := filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, executablePath)
+				if _, err := os.Stat(binPath); err != nil {
+					return 1, fmt.Errorf("locate downloaded executable %q: %w", binPath, err)
 				}
 				absBinPath, err := filepath.Abs(binPath)
 				if err != nil {
