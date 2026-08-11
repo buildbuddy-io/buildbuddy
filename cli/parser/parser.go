@@ -425,8 +425,9 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 		}
 		if command != "" {
 			if !p.Permissive && !option.Supports(command) && !p.UnconditionalPhases.Contains(command) {
-				if option.PluginID() == options.UnknownBuiltinPluginID {
+				if unknown, ok := option.(*options.UnknownOption); ok {
 					// If this is an unknown option, assume it's supported by this command.
+					unknown.AssumeSupportFor(command)
 				} else {
 					return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support phase '%s'", token, command)
 				}
