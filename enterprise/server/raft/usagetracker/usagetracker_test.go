@@ -79,7 +79,8 @@ func newTestPU(t *testing.T, db pebble.IPebbleDB, globalSizeBytes int64, minEvic
 		minEvictionAge:    minEvictionAge,
 
 		metrics: metricSet{
-			atimeIndexSweepSeek: metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
+			atimeIndexSweepSeek:      metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
+			atimeIndexOrphansDropped: metrics.RaftAtimeIndexOrphansDropped.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
 		},
 	}
 }

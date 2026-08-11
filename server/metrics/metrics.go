@@ -3328,6 +3328,15 @@ var (
 		PartitionID,
 	})
 
+	RaftAtimeIndexOrphansDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_index_orphans_dropped",
+		Help:      "Orphaned atime-index entries (record gone or atime moved on) dropped in place by the eviction sweep. Orphans are an expected byproduct of snapshot recovery, crash windows, and backfill/verifier races -- this counts the healing, not a fault; the dangerous direction is atime_index_missing_entries_repaired.",
+	}, []string{
+		PartitionID,
+	})
+
 	RaftAtimeIndexSweepSeekDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",

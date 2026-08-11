@@ -69,7 +69,8 @@ func BenchmarkEvictionCandidateDiscovery(b *testing.B) {
 					minEvictionAge:    time.Hour,
 
 					metrics: metricSet{
-						atimeIndexSweepSeek: metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
+						atimeIndexSweepSeek:      metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
+						atimeIndexOrphansDropped: metrics.RaftAtimeIndexOrphansDropped.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
 					},
 				}
 				ctx, cancel := context.WithCancel(context.Background())
