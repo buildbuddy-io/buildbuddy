@@ -2131,9 +2131,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 				return err
 			}
 
-			// Logging cost (2026-08-11): suppressing this routine claim event at
-			// the default INFO threshold is estimated to save ~$61/day.
-			log.CtxDebugf(ctx, "LeaseTask task successfully claimed by executor %q", executorID)
+			log.CtxInfof(ctx, "LeaseTask task successfully claimed by executor %q", executorID)
 
 			key := nodePoolKey{
 				os:      task.metadata.GetOs(),
