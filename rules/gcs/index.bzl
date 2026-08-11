@@ -47,7 +47,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         **kwargs
     )
 
-    # Generate a .push_only rule for uploading without a later apply phase.
+    # Generate a .push_only rule for uploading to GCS.
     native.genrule(
         name = name + ".push_only",
         srcs = srcs,
