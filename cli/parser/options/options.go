@@ -75,7 +75,6 @@ type Defined interface {
 	HasSupportedCommands() bool
 	SupportedCommands() set.View[string]
 	Supports(string) bool
-	AddSupportedCommand(commands ...string)
 	PluginID() string
 }
 
@@ -150,13 +149,10 @@ func (d *Definition) HasExpansion() bool {
 }
 
 func (d *Definition) Expansion() iter.Seq[Option] {
-	return func(yield func(Option) bool) {
-		for _, o := range d.expansion {
-			if !yield(o.Clone()) {
-				return
-			}
-		}
-	}
+	return seq.Fmap(
+		d.expansion,
+		func(o Option) Option { return o.Clone() },
+	)
 }
 
 // ResolveExpansion lets us resolve the options in the expansion. These are
@@ -192,13 +188,6 @@ func (d *Definition) Supports(command string) bool {
 	return false
 }
 
-func (d *Definition) AddSupportedCommand(commands ...string) {
-	if d.supportedCommands == nil {
-		d.supportedCommands = make(set.Set[string], len(commands))
-	}
-	d.supportedCommands.AddSeq(slices.Values(commands))
-}
-
 func (d *Definition) PluginID() string {
 	return d.pluginID
 }
@@ -223,7 +212,10 @@ func WithPluginID(pluginID string) DefinitionOpt {
 
 func WithSupportFor(commands ...string) DefinitionOpt {
 	return func(d *Definition) {
-		d.AddSupportedCommand(commands...)
+		if d.supportedCommands == nil {
+			d.supportedCommands = make(set.Set[string], len(commands))
+		}
+		d.supportedCommands.AddSeq(slices.Values(commands))
 	}
 }
 
@@ -366,7 +358,6 @@ type Option interface {
 	ExpectsValue() bool
 	ClearValue()
 	SetValue(string)
-	GetDefinition() Defined
 	UseName()
 	UseShortName()
 	UseOldName()
@@ -487,14 +478,6 @@ func (o *optionBase) UsesOldName() bool {
 // for the option.
 func (o *optionBase) UsesShortName() bool {
 	return o.ShortName() != "" && o.Form == flag_form.ShortName
-}
-
-func (o *optionBase) GetDefinition() Defined {
-	return o.Defined
-}
-
-func (o *optionBase) SetDefinition(d Defined) {
-	o.Defined = d
 }
 
 // Returns a formatted version of the option.
@@ -784,6 +767,10 @@ func (_ *starlarkOption) Supports(command string) bool {
 	return command != "startup"
 }
 
+type Expandable interface {
+	Expand() iter.Seq[Option]
+}
+
 // ExpansionOption is used to represent an option that expands to other options.
 // These options cannot take values and are not interpreted as booleans (true or
 // false).
@@ -838,11 +825,50 @@ func (o *ExpansionOption) Expand() iter.Seq[Option] {
 	return o.Expansion()
 }
 
+func ExpandAll[S seq.Sequenceable[Option]](options S) iter.Seq[Option] {
+	// The set of options, formatted as strings for hashing reasons, that are
+	// being recursively expanded. In normal circumstances, we should expect the
+	// expansion options not to expand to other expansion options, but there is no
+	// specification prohibiting this, so we need this set to protect against
+	// circular references resulting in stack overflow.
+	expanding := make(set.Set[string], 1)
+
+	// The option sequence we are currently expanding inside the closure.
+	optionSequence := seq.Sequence[Option](options)
+
+	// The function closure that actually does the work of expanding. We must
+	// define it prior to intializing it because we use it recursively.
+	var expanded iter.Seq[Option]
+	expanded = func(yield func(Option) bool) {
+		for opt := range optionSequence {
+			if e, ok := opt.(Expandable); ok {
+				s := strings.Join(opt.Format(), " ")
+				if expanding.Contains(s) {
+					log.Debugf("Encountered circular reference when expanding '%s', skipping...", s)
+					continue
+				}
+				expanding.Add(s)
+				optionSequence = e.Expand()
+				for opt := range expanded {
+					if !yield(opt) {
+						return
+					}
+				}
+				expanding.Remove(s)
+			} else if !yield(opt) {
+				return
+			}
+		}
+	}
+	return expanded
+}
+
 // UnknownOption is used to represent an option that lacks a predetermined
 // option definition. These are assumed to be plugin options, but they may also
 // be misspellings of known options by users.
 type UnknownOption struct {
 	Option
+	AssumedSupport set.Set[string]
 }
 
 func (o *UnknownOption) Clone() Option {
@@ -854,6 +880,21 @@ func (o *UnknownOption) Clone() Option {
 func (o *UnknownOption) Normalized() Option {
 	// do not normalize unknown options.
 	return o
+}
+
+func (o *UnknownOption) Supports(command string) bool {
+	return o.AssumedSupport.Contains(command) || o.Option.Supports(command)
+}
+
+func (o *UnknownOption) HasSupportedCommands() bool {
+	return o.AssumedSupport.Len()|o.SupportedCommands().Len() != 0
+}
+
+func (o *UnknownOption) AssumeSupportFor(command string) {
+	if o.AssumedSupport == nil {
+		o.AssumedSupport = make(set.Set[string], 1)
+	}
+	o.AssumedSupport.Add(command)
 }
 
 // DeferredOption is an option we declined to parse when encountering it, as we
@@ -903,7 +944,6 @@ func (o *DeferredOption) SupportedCommands() set.View[string] {
 func (o *DeferredOption) Supports(command string) bool {
 	return (&Definition{}).Supports(command)
 }
-func (o *DeferredOption) AddSupportedCommand(commands ...string) {}
 func (o *DeferredOption) PluginID() string {
 	return (&Definition{}).PluginID()
 }
@@ -918,11 +958,6 @@ func (o *DeferredOption) ClearValue() {
 }
 func (o *DeferredOption) SetValue(value string) {
 	o.PositionalArgument.Value = value
-}
-func (o *DeferredOption) GetDefinition() Defined {
-	return &Definition{}
-}
-func (o *DeferredOption) SetDefinition(Defined) {
 }
 func (o *DeferredOption) UseName()      {}
 func (o *DeferredOption) UseShortName() {}
@@ -953,16 +988,21 @@ func Defer(value string) Option {
 
 func Canonicalize(opts []Option) []Option {
 	lastOptionIndex := map[string]int{}
-	for i, opt := range opts {
+	i := 0
+	for opt := range ExpandAll(opts) {
 		lastOptionIndex[opt.Name()] = i
+		i++
 	}
 	// Accumulate only the last instance of a given option
-	canonical := make([]Option, 0, len(lastOptionIndex))
-	for i, opt := range opts {
+	canonical := make([]Option, 0, i)
+	i = 0
+	for opt := range ExpandAll(opts) {
 		if !opt.Multi() && lastOptionIndex[opt.Name()] > i {
+			i++
 			continue
 		}
 		canonical = append(canonical, opt.Normalized())
+		i++
 	}
 	return canonical
 }

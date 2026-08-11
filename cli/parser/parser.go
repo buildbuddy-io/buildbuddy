@@ -619,6 +619,7 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // OptionDefinitions, places each option definition into subparsers corresponding
 // to the commands it supports, and returns the resulting parser.
 func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
+	log.Printf("Generating parser...")
 	expansionDefinitions := []*options.Definition{}
 	p := NewParser(
 		seq.Fmap(
@@ -635,10 +636,13 @@ func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...
 		nil,
 	)
 	for _, d := range expansionDefinitions {
+		log.Printf("Resolving expansion of %s...", d.Name())
 		d.ResolveExpansion(
 			func(opt options.Option) (options.Option, error) {
+				log.Printf("Resolving %s...", opt.GetValue())
 				resolved, err := p.CommandOptionParser.ParseOption(opt.GetValue())
 				if err != nil {
+					log.Warnf("Error: %s.", err)
 					return nil, err
 				}
 				if resolved == nil {
@@ -647,9 +651,11 @@ func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...
 				if resolved.PluginID() == options.UnknownBuiltinPluginID {
 					return nil, fmt.Errorf("Encountered unknown option '%s' while resolving expansion options for '%s'.", opt.Name(), d.Name())
 				}
+				log.Printf("Done.")
 				return resolved, nil
 			},
 		)
+		log.Printf("Done.")
 	}
 	return p, nil
 }
