@@ -357,7 +357,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		mbps := (float64(txInfo.BytesTransferred) / float64(1e6)) / float64(txInfo.TransferDuration.Seconds())
 		span.SetAttributes(attribute.Int64("file_count", txInfo.FileCount))
 		span.SetAttributes(attribute.Int64("bytes_transferred", txInfo.BytesTransferred))
-		log.CtxInfof(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
+		// Logging cost (2026-08-11): suppressing this routine transfer summary at
+		// the default INFO threshold is estimated to save ~$54/day.
+		log.CtxDebugf(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 
 	// Now that the input tree is setup, remove any unwanted inputs.

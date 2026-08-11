@@ -1337,7 +1337,9 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		p.pendingRemovals.Done()
 	}
 
-	log.CtxInfof(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
+	// Logging cost (2026-08-11): suppressing this routine runner lifecycle event
+	// at the default INFO threshold is estimated to save ~$49/day.
+	log.CtxDebugf(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
 	return r, nil
 }
 

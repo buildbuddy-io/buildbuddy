@@ -1348,7 +1348,13 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	resp, err := s.splitBlob(ctx, req)
 	if err != nil {
-		log.CtxInfof(ctx, "SplitBlob failed: %v", err)
+		if status.IsNotFoundError(err) {
+			// Logging cost (2026-08-11): suppressing expected cache misses at the
+			// default INFO threshold is estimated to save ~$63/day.
+			log.CtxDebugf(ctx, "SplitBlob failed: %v", err)
+		} else {
+			log.CtxWarningf(ctx, "SplitBlob failed: %v", err)
+		}
 	}
 	return resp, err
 }

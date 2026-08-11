@@ -3423,7 +3423,9 @@ func (c *FirecrackerContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
 	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.vmConfig.NumCpus*1000, leaseID, cpuset.WithNoOverhead())
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
+	// Logging cost (2026-08-11): suppressing this routine CPU allocation event
+	// at the default INFO threshold is estimated to save ~$2/day.
+	log.CtxDebugf(ctx, "Lease %s granted %+v cpus on numa node: %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 	c.cgroupSettings.NumaNode = pointer(int32(numaNode))
