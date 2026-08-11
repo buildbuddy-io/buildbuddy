@@ -1442,60 +1442,29 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	return missing, nil
 }
 
-// The first reader with a non-empty value will be returned. If all potential
-// peers for the digest are exhausted, then return a NotFoundError.
-//
-// This is like setting READ_CONSISTENCY = ONE.
-//
-// Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64, metricsLabel string) (io.ReadCloser, error) {
-	ps := c.readPeers(rn)
-	lookups := 0
-	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		lookups++
-		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
-		if err == nil {
-			c.backfillPeers(ctx, c.getBackfillOrders(rn, ps))
-			metrics.DistributedCachePeerLookups.WithLabelValues(
-				metricsLabel,
-				metrics.HitStatusLabel,
-			).Observe(float64(lookups))
-			return r, err
-		}
-		if status.IsNotFoundError(err) {
-			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
-			continue
-		}
-		c.log.CtxDebugf(ctx, "Reader(%q) error on peer %s: %s", distributed_client.ResourceIsolationString(rn), peer, err)
-
-		// Some other error -- mark this peer as failed and try the next one.
-		ps.MarkPeerAsFailed(peer)
-
-	}
-	metrics.DistributedCachePeerLookups.WithLabelValues(
-		metricsLabel,
-		metrics.MissStatusLabel,
-	).Observe(float64(lookups))
-	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
-	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
-}
-
-// Below, in Get(), this value is the max initial allocatable buffer size.
-// Set it somewhat conservatively so that we're not DOSed by someone crafting
-// remote_instance_names that match this just to use memory.
-const maxInitialByteBufferSize = (1024 * 1024 * 4)
-
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
-	r, err := c.distributedReader(ctx, rn, 0, 0, "Get" /*=metricsLabel*/)
-	if err != nil {
-		return nil, err
+	if data, found := c.getLookasideEntry(ctx, rn); found {
+		return data, nil
 	}
-	defer r.Close()
+	readThroughCacheable := c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(rn)
+	if readThroughCacheable {
+		data, err := c.local.Get(ctx, rn)
+		if err == nil {
+			c.addLookasideEntry(ctx, rn, data)
+			return data, nil
+		}
+	}
 
-	bufSize := digest.SafeBufferSize(rn, maxInitialByteBufferSize)
-	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
-	_, err = io.Copy(buf, r)
-	return buf.Bytes(), err
+	data, _, err := c.getWithMetadata(ctx, rn, "Get" /*=metricsLabel*/)
+	if err == nil {
+		c.addLookasideEntry(ctx, rn, data)
+		if readThroughCacheable {
+			if err := c.local.Set(ctx, rn, data); err != nil {
+				c.log.CtxDebugf(ctx, "Error writing to local read-through cache: %s", err)
+			}
+		}
+	}
+	return data, err
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1787,8 +1756,33 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return nil
 }
 
-func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, r, uncompressedOffset, limit, "Reader" /*=metricsLabel*/)
+// The first reader with a non-empty value will be returned. If all potential
+// peers for the digest are exhausted, then return a NotFoundError.
+//
+// This is like setting READ_CONSISTENCY = ONE.
+//
+// Values found on a non-primary replica will be backfilled to the primary.
+func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	ps := c.readPeers(rn)
+	lookups := 0
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
+		r, err := c.remoteReader(ctx, peer, rn, uncompressedOffset, limit)
+		if err == nil {
+			c.backfillPeers(ctx, c.getBackfillOrders(rn, ps))
+			metrics.DistributedCachePeerLookups.WithLabelValues("Reader", metrics.HitStatusLabel).Observe(float64(lookups))
+			return r, err
+		}
+		if status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
+			continue
+		}
+		c.log.CtxDebugf(ctx, "Reader(%q) error on peer %s: %s", distributed_client.ResourceIsolationString(rn), peer, err)
+		ps.MarkPeerAsFailed(peer)
+	}
+	metrics.DistributedCachePeerLookups.WithLabelValues("Reader", metrics.MissStatusLabel).Observe(float64(lookups))
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
+	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

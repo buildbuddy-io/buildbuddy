@@ -3426,6 +3426,7 @@ type Op int
 const (
 	Read Op = iota
 	Get
+	GetWithMetadata
 	GetMulti
 	Write
 	Set
@@ -3442,6 +3443,8 @@ func (o Op) String() string {
 		return "READ"
 	case Get:
 		return "GET"
+	case GetWithMetadata:
+		return "GET_WITH_METADATA"
 	case GetMulti:
 		return "GET_MULTI"
 	case Write:
@@ -3514,6 +3517,10 @@ func (t *tracedCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 func (t *tracedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	t.addOps(Get, r)
 	return t.Cache.Get(ctx, r)
+}
+func (t *tracedCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	t.addOps(GetWithMetadata, r)
+	return t.Cache.GetWithMetadata(ctx, r)
 }
 func (t *tracedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	t.addOps(GetMulti, resources...)
