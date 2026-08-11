@@ -7,9 +7,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	pebblev1 "github.com/cockroachdb/pebble"
@@ -62,9 +64,13 @@ func BenchmarkEvictionCandidateDiscovery(b *testing.B) {
 					nodes:   map[string]*nodePartitionUsage{"n1": {sizeBytes: 1 << 40}},
 					deletes: make(chan *evictionCandidate, 128),
 
-					evictionRateLimit:    1_000_000_000,
-					samplerSleepDuration: time.Hour,
-					minEvictionAge:       time.Hour,
+					evictionRateLimit: 1_000_000_000,
+					idleSleepDuration: time.Hour,
+					minEvictionAge:    time.Hour,
+
+					metrics: metricSet{
+						atimeIndexSweepSeek: metrics.RaftAtimeIndexSweepSeekDurationUsec.With(prometheus.Labels{metrics.PartitionID: "FOO"}),
+					},
 				}
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan struct{})

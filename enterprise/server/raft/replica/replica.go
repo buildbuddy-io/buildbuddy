@@ -800,7 +800,8 @@ func (sm *Replica) Open(stopc <-chan struct{}) (uint64, error) {
 // checkNotFileRecordKey refuses generic KV writes to file-record keys. File
 // records must be written through SetRequest (and mutated via UpdateAtime /
 // Delete): those paths validate the key and value, and state derived from
-// record writes relies on them being the only writers of record keyspace.
+// record writes -- the atime eviction index, see addAtimeIndexEntry -- relies
+// on them being the only writers of record keyspace.
 func (sm *Replica) checkNotFileRecordKey(key []byte) error {
 	if keys.PartitionIDFromRangeStart(key) != "" {
 		return status.InvalidArgumentErrorf("[%s] cannot direct write file-record key %q; use SetRequest instead", sm.name(), key)
@@ -1193,6 +1194,13 @@ func (sm *Replica) get(db ReplicaReader, req *rfpb.GetRequest) (*rfpb.GetRespons
 // keyspace and are deliberately NOT routed through rangeCheckedSet /
 // replicaLocalKey: the index is derived, per-node state, not range data.
 // A failed index write is a local storage failure, so it is returned as fatal.
+//
+// Callers must be exhaustive: a file record stored without going through
+// these helpers has no index entry, making it invisible to the eviction
+// sweep and unevictable forever. That is why checkNotFileRecordKey bars the
+// generic KV mutators (directWrite, cas) from record keyspace, leaving Set /
+// UpdateAtime / Delete and snapshot recovery as its only writers -- all of
+// which maintain the index.
 func addAtimeIndexEntry(wb pebble.Batch, fileKey []byte, atimeUsec int64) error {
 	partID := keys.PartitionIDFromRangeStart(fileKey)
 	if partID == "" {
@@ -2192,6 +2200,9 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 	wb := db.NewBatch()
 	defer wb.Close()
 
+	md := sgpb.FileMetadataFromVTPool()
+	defer md.ReturnToVTPool()
+
 	readBuf := bufio.NewReader(r)
 
 	var lastAppliedIndexValue []byte
@@ -2250,8 +2261,8 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 		// since the index is per-node derived state and isn't part of the
 		// snapshot stream. Local/meta keys never carry the "PT" prefix.
 		if bytes.HasPrefix(kv.Key, []byte(filestore.PartitionDirectoryPrefix)) {
-			md := &sgpb.FileMetadata{}
-			if err := proto.Unmarshal(kv.Value, md); err != nil {
+			md.ResetVT()
+			if err := md.UnmarshalVT(kv.Value); err != nil {
 				sm.log.Warningf("snapshot data KV %q is not a FileMetadata; skipping atime index entry: %s", kv.Key, err)
 			} else if err := addAtimeIndexEntry(wb, kv.Key, md.GetLastAccessUsec()); err != nil {
 				return err
