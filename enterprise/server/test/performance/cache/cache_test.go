@@ -372,7 +372,7 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 	ddc := getDistributedCache(b, te, dc, 0)
 	pc := getPebbleCache(b, te)
 	dpc := getDistributedCache(b, te, pc, 0)
-	lpc := getDistributedCache(b, te, getPebbleCache(b, te), 100_000)
+	// lpc := getDistributedCache(b, te, getPebbleCache(b, te), 100_000)
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
@@ -381,7 +381,7 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 		{ddc, "DistDisk"},
 		{getPebbleCache(b, te), "LocalPebble"},
 		{dpc, "DistPebble"},
-		{lpc, "LookasideDistPebble"},
+		// {lpc, "LookasideDistPebble"},
 		{getMetaCache(b, te), "Meta"},
 		{getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), "LocalMigration"},
 		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), 0), "DistMigration"},
