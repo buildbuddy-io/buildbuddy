@@ -161,8 +161,8 @@ common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
 common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
 # Set the minimum OS version for macOS binaries
-common:macos --macos_minimum_os=12.0
-common:macos --host_macos_minimum_os=12.0
+common --macos_minimum_os=12.0
+common --host_macos_minimum_os=12.0
 
 # Silence noise about -lm -lm which has no functional downside
 #
