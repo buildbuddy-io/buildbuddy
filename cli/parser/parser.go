@@ -987,6 +987,9 @@ func (p *Subparser) MakeOption(optionName string, value *string) (option options
 	}
 	if value != nil {
 		option.SetValue(*value)
+		if !option.HasValue() {
+			return nil, fmt.Errorf("Failed to set value %s for option %s.", *value, optionName)
+		}
 	}
 	if option.ExpectsValue() {
 		return nil, fmt.Errorf("Required value option %s must have a value, but none was provided.", optionName)
