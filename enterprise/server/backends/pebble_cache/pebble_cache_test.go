@@ -2937,7 +2937,7 @@ func TestGCSBlobStorage(t *testing.T) {
 	}
 }
 
-func TestGetReference(t *testing.T) {
+func TestReadReference(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	clock := clockwork.NewFakeClock()
@@ -2968,7 +2968,7 @@ func TestGetReference(t *testing.T) {
 	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
 	require.NoError(t, pc.Set(ctx, gcsRN, gcsBuf))
 
-	ref, err := pc.GetReference(ctx, gcsRN)
+	ref, err := pc.ReadReference(ctx, gcsRN)
 	require.NoError(t, err)
 	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
 	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
@@ -2991,23 +2991,23 @@ func TestGetReference(t *testing.T) {
 	// they have no reference.
 	inlineRN, inlineBuf := testdigest.RandomCASResourceBuf(t, 1)
 	require.NoError(t, pc.Set(ctx, inlineRN, inlineBuf))
-	_, err = pc.GetReference(ctx, inlineRN)
+	_, err = pc.ReadReference(ctx, inlineRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 
 	diskRN, diskBuf := testdigest.RandomCASResourceBuf(t, 50)
 	require.NoError(t, pc.Set(ctx, diskRN, diskBuf))
-	_, err = pc.GetReference(ctx, diskRN)
+	_, err = pc.ReadReference(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 
 	// Missing resources have no reference either.
 	missingRN, _ := testdigest.RandomCASResourceBuf(t, 100)
-	_, err = pc.GetReference(ctx, missingRN)
+	_, err = pc.ReadReference(ctx, missingRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 
 	// Once the backing object is past its GCS lifecycle TTL, stop handing out
 	// references to it.
 	clock.Advance(25 * time.Hour)
-	_, err = pc.GetReference(ctx, gcsRN)
+	_, err = pc.ReadReference(ctx, gcsRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 }
 
@@ -3782,7 +3782,7 @@ func TestDereference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, pc.Set(ctx, rn, buf))
-		ref, err := pc.GetReference(ctx, rn)
+		ref, err := pc.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, repb.Compressor_IDENTITY, ref.GetMetadata().GetFileRecord().GetCompressor())
 
@@ -3810,7 +3810,7 @@ func TestDereference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, pc.Set(ctx, rn, buf))
-		ref, err := pc.GetReference(ctx, rn)
+		ref, err := pc.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, repb.Compressor_ZSTD, ref.GetMetadata().GetFileRecord().GetCompressor())
 
@@ -3838,7 +3838,7 @@ func TestDereference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, pc.Set(ctx, rn, buf))
-		ref, err := pc.GetReference(ctx, rn)
+		ref, err := pc.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, repb.Compressor_IDENTITY, ref.GetMetadata().GetFileRecord().GetCompressor())
 
@@ -3862,7 +3862,7 @@ func TestDereference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, pc.Set(ctx, rn, buf))
-		ref, err := pc.GetReference(ctx, rn)
+		ref, err := pc.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
 		rnZstd := rn.CloneVT()
@@ -3892,7 +3892,7 @@ func TestDereference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, pc.Set(ctx, rn, buf))
-		ref, err := pc.GetReference(ctx, rn)
+		ref, err := pc.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
 		// Delete the backing blob out from under the reference.
@@ -3926,7 +3926,7 @@ func TestDereference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, pc.Set(ctx, rn, buf))
-		ref, err := pc.GetReference(ctx, rn)
+		ref, err := pc.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		// The reference must carry the encryption metadata needed to
 		// decrypt, and dereferencing must return the decrypted bytes.
@@ -3996,7 +3996,7 @@ func TestWriteReference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, src.Set(ctx, rn, buf))
-		ref, err := src.GetReference(ctx, rn)
+		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
@@ -4005,7 +4005,7 @@ func TestWriteReference(t *testing.T) {
 		require.Equal(t, buf, got)
 
 		// The accepting cache points directly at the referenced blob.
-		dstRef, err := dst.GetReference(ctx, rn)
+		dstRef, err := dst.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, blobName(ref), blobName(dstRef))
 	})
@@ -4018,7 +4018,7 @@ func TestWriteReference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, src.Set(ctx, rn, buf))
-		ref, err := src.GetReference(ctx, rn)
+		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
 		// Accept the reference when the blob has burned most of its 24h TTL.
@@ -4041,7 +4041,7 @@ func TestWriteReference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, src.Set(ctx, rn, buf))
-		ref, err := src.GetReference(ctx, rn)
+		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
@@ -4051,7 +4051,7 @@ func TestWriteReference(t *testing.T) {
 
 		// The accepting cache stored its own copy of the blob; the source
 		// cache's blob is untouched.
-		dstRef, err := dst.GetReference(ctx, rn)
+		dstRef, err := dst.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.NotEqual(t, blobName(ref), blobName(dstRef))
 		require.True(t, strings.HasPrefix(blobName(dstRef), "app-dst/"), "unexpected blob name %q", blobName(dstRef))
@@ -4068,7 +4068,7 @@ func TestWriteReference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, src.Set(ctx, rn, buf))
-		ref, err := src.GetReference(ctx, rn)
+		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, repb.Compressor_ZSTD, ref.GetMetadata().GetFileRecord().GetCompressor())
 
@@ -4088,7 +4088,7 @@ func TestWriteReference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, src.Set(ctx, rn, buf))
-		ref, err := src.GetReference(ctx, rn)
+		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
 		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
@@ -4117,7 +4117,7 @@ func TestWriteReference(t *testing.T) {
 
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, src.Set(ctx, rn, buf))
-		ref, err := src.GetReference(ctx, rn)
+		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
 		// Once the referenced blob is past its GCS lifecycle TTL, it may be
@@ -4151,7 +4151,7 @@ func TestWriteReference(t *testing.T) {
 		anonCtx := getAnonContext(t, te)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, src.Set(anonCtx, rn, buf))
-		ref, err := src.GetReference(anonCtx, rn)
+		ref, err := src.ReadReference(anonCtx, rn)
 		require.NoError(t, err)
 		require.Nil(t, ref.GetMetadata().GetEncryptionMetadata())
 

@@ -1423,7 +1423,7 @@ type fakeReferenceCache struct {
 	lastLimit    int64
 }
 
-func (c *fakeReferenceCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+func (c *fakeReferenceCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
 
@@ -1611,7 +1611,7 @@ type serverReferenceCache struct {
 	writeRefErr   error
 }
 
-func (c *serverReferenceCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+func (c *serverReferenceCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
 	if ref, ok := c.refs[r.GetDigest().GetHash()]; ok {
 		return ref, nil
 	}

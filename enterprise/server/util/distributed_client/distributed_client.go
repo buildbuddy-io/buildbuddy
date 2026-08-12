@@ -368,7 +368,7 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	var ref *refpb.Reference
 	if refCache, ok := c.cache.(interfaces.ReferenceCache); ok {
 		if sendReference {
-			if r, err := refCache.GetReference(ctx, rn); err == nil {
+			if r, err := refCache.ReadReference(ctx, rn); err == nil {
 				ref = r
 			}
 		}
