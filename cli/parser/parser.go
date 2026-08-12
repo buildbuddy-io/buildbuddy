@@ -931,6 +931,17 @@ func (p *Parser) ParseConfig(phase string, tokens []string) ([]arguments.Argumen
 				return nil, fmt.Errorf("Unknown startup option: '%s'", o.Arg().Format()[0])
 			}
 		}
+	} else {
+		for _, arg := range parsedArgs.Args {
+			if !rc_util.IsUnconditionalCommandPhase(phase) {
+				if unknown, ok := arg.(*options.UnknownOption); ok {
+					// Assume unknown options in the bazelrc are supported by the command
+					// and its children.
+					unknown.AssumeSupportFor(phase)
+					unknown.AssumeSupportForSeq(bazel_command.Children(phase))
+				}
+			}
+		}
 	}
 	return parsedArgs.Args, nil
 }

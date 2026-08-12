@@ -1,6 +1,12 @@
 package bazel_command
 
-import "github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
+import (
+	"iter"
+	"maps"
+
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
+)
 
 var (
 	commands = set.Set[string]{
@@ -48,6 +54,18 @@ var (
 		"fetch":    "test",
 		"vendor":   "test",
 	}
+
+	childrenByCommand = seq.Accumulate(
+		maps.Keys(parentByCommand),
+		map[string]set.Set[string]{},
+		func(m map[string]set.Set[string], child string) map[string]set.Set[string] {
+			if m[parentByCommand[child]] == nil {
+				m[parentByCommand[child]] = set.Set[string]{}
+			}
+			m[parentByCommand[child]].Add(child)
+			return m
+		},
+	)
 )
 
 // Commands returns a read-only view of all recognized Bazel commands.
@@ -64,4 +82,23 @@ func IsCommand(command string) bool {
 // if command has no parent.
 func Parent(command string) string {
 	return parentByCommand[command]
+}
+
+// Children returns all commands that inherit from the command, even indirectly.
+func Children(command string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		stack := []string{command}
+		for len(stack) != 0 {
+			parent := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if children, ok := childrenByCommand[parent]; ok {
+				for child := range children {
+					if !yield(child) {
+						return
+					}
+					stack = append(stack, child)
+				}
+			}
+		}
+	}
 }

@@ -3,6 +3,7 @@ package options
 import (
 	"flag"
 	"fmt"
+	"iter"
 	"reflect"
 	"slices"
 	"strings"
@@ -751,19 +752,32 @@ func (o *UnknownOption) Normalized() Option {
 	return o
 }
 
+func (o *UnknownOption) SupportedCommands() set.View[string] {
+	return set.FromSeq(set.Union(set.View[string](o.AssumedSupport), o.Option.SupportedCommands()))
+}
+
+func (o *UnknownOption) HasSupportedCommands() bool {
+	return o.AssumedSupport.Len()|o.Option.SupportedCommands().Len() != 0
+}
+
 func (o *UnknownOption) Supports(command string) bool {
 	return o.AssumedSupport.Contains(command) || o.Option.Supports(command)
 }
 
-func (o *UnknownOption) HasSupportedCommands() bool {
-	return o.AssumedSupport.Len()|o.SupportedCommands().Len() != 0
+func (o *UnknownOption) AssumeSupportFor(commands ...string) {
+	if o.AssumedSupport == nil {
+		o.AssumedSupport = set.From(commands...)
+	} else {
+		o.AssumedSupport.Add(commands...)
+	}
 }
 
-func (o *UnknownOption) AssumeSupportFor(command string) {
+func (o *UnknownOption) AssumeSupportForSeq(commands iter.Seq[string]) {
 	if o.AssumedSupport == nil {
-		o.AssumedSupport = make(set.Set[string], 1)
+		o.AssumedSupport = set.FromSeq(commands)
+	} else {
+		o.AssumedSupport.AddSeq(commands)
 	}
-	o.AssumedSupport.Add(command)
 }
 
 func Canonicalize(opts []Option) []Option {

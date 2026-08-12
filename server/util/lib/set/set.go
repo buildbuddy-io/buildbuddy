@@ -57,8 +57,10 @@ func (s mapView[E, V]) All() iter.Seq[E] {
 
 // Add adds the provided element to the set if it is not yet a member of the
 // set.
-func (s Set[E]) Add(e E) {
-	s[e] = nothing{}
+func (s Set[E]) Add(es ...E) {
+	for _, e := range es {
+		s[e] = nothing{}
+	}
 }
 
 // AddSeq takes a sequence of elements and, for each element, adds it if it is
