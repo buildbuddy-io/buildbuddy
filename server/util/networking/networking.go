@@ -189,32 +189,34 @@ func DeleteNetNamespaces(ctx context.Context) error {
 	if len(output) == 0 {
 		return nil
 	}
-	var lastErr error
-	deleted := 0
+	var staleNamespaces []string
 	for ns := range strings.SplitSeq(output, "\n") {
 		// Sometimes the output contains spaces, like
-		//     bb-executor-1
-		//     bb-executor-2
-		//     3fe4313e-eb76-4b6d-9d61-53caf12b87e6 (id: 344)
-		//     2ab15e85-d1c3-47bc-ad40-74e2941157a4 (id: 332)
+		//     bb-executor-1 (id: 344)
 		// So we get just the first column here.
 		fields := strings.Fields(ns)
-		if len(fields) > 0 {
-			ns = fields[0]
-		}
-		if !strings.HasPrefix(ns, netNamespacePrefix) {
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], netNamespacePrefix) {
 			continue
 		}
+		staleNamespaces = append(staleNamespaces, fields[0])
+	}
+	if len(staleNamespaces) == 0 {
+		return nil
+	}
+	// These namespaces were left behind by a previous executor that exited
+	// without cleaning up, so warn even though they're about to be deleted.
+	log.CtxWarningf(ctx, "Found %d leftover executor net namespace(s) at startup; deleting them.", len(staleNamespaces))
+	var lastErr error
+	deleted := 0
+	for _, ns := range staleNamespaces {
 		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
 			lastErr = err
 			continue
 		}
 		deleted++
 	}
-	if deleted > 0 {
-		// These are namespaces left behind by a previous executor that exited
-		// without cleaning up, so their presence is worth surfacing.
-		log.CtxInfof(ctx, "Deleted %d leftover executor net namespace(s).", deleted)
+	if deleted < len(staleNamespaces) {
+		log.CtxWarningf(ctx, "Deleted only %d of %d leftover executor net namespace(s).", deleted, len(staleNamespaces))
 	}
 	return lastErr
 }
@@ -342,35 +344,105 @@ func findStaleVeths(ctx context.Context, ipWithCIDR string) ([]string, error) {
 	return staleDevs, nil
 }
 
-// checkForStaleVeths logs any existing veth devices which already have the
-// given IP address assigned, and deletes them if
-// --executor.cleanup_stale_veth_devices is enabled.
+// assignHostNetwork reserves a host IP range for a task network, checking each
+// candidate range for stale veth devices before handing it out.
 //
 // Detection runs unconditionally so that leaked networking state shows up in
-// logs even when cleanup is disabled. Deletion stays behind the flag because it
-// mutates host networking state.
+// logs even when cleanup is disabled. If --executor.cleanup_stale_veth_devices
+// is enabled, conflicting devices are deleted and the range is used. Otherwise
+// the range is quarantined: it is skipped without being unlocked, so neither
+// this executor nor (via the flock) other executors on the host can be handed
+// a range whose return traffic would be routed to the stale device. A
+// quarantined range stays unusable until the stale device disappears and the
+// executor restarts, which trades a /30 for not blackholing a task's traffic.
 //
 // networkSource describes where the network being set up came from ("new" or
-// "pooled"), and is included in the log message.
-func checkForStaleVeths(ctx context.Context, ipWithCIDR, networkSource string) {
-	staleDevs, err := findStaleVeths(ctx, ipWithCIDR)
-	if err != nil {
-		log.CtxWarningf(ctx, "Failed to check for stale veth devices with IP %s: %s", ipWithCIDR, err)
-		return
-	}
-	if len(staleDevs) == 0 {
-		return
-	}
-	if !*cleanupStaleVethDevices {
-		log.CtxWarningf(ctx, "%s network: IP %s is already assigned to existing veth device(s) %v (likely from a process that was killed without cleanup). Traffic for this network may be misrouted. Set --executor.cleanup_stale_veth_devices to delete these devices.", networkSource, ipWithCIDR, staleDevs)
-		return
-	}
-	log.CtxWarningf(ctx, "%s network: cleaning up stale veth device(s) %v with IP %s (likely from a process that was killed without cleanup)", networkSource, staleDevs, ipWithCIDR)
-	for _, staleDev := range staleDevs {
-		if err := runCommand(ctx, "ip", "link", "delete", staleDev); err != nil {
-			log.CtxWarningf(ctx, "Failed to delete stale veth device %q: %s", staleDev, err)
+// "pooled"), and is included in the log messages.
+func assignHostNetwork(ctx context.Context, networkSource string) (*HostNet, error) {
+	for {
+		network, err := hostNetAllocator.Get()
+		if err != nil {
+			return nil, err
 		}
+		ipWithCIDR := network.HostIPWithCIDR()
+		staleDevs, err := findStaleVeths(ctx, ipWithCIDR)
+		if err != nil {
+			// A scan failure is much more likely to be benign than the range
+			// is to be conflicted, so hand out the range anyway.
+			log.CtxWarningf(ctx, "Failed to check for stale veth devices with IP %s: %s", ipWithCIDR, err)
+			return network, nil
+		}
+		if len(staleDevs) == 0 {
+			return network, nil
+		}
+		if !*cleanupStaleVethDevices {
+			log.CtxWarningf(ctx, "%s network: IP %s is already assigned to existing veth device(s) %v (likely from a process that was killed without cleanup). Quarantining this range and reserving another; set --executor.cleanup_stale_veth_devices to delete stale devices instead.", networkSource, ipWithCIDR, staleDevs)
+			continue
+		}
+		log.CtxWarningf(ctx, "%s network: cleaning up stale veth device(s) %v with IP %s (likely from a process that was killed without cleanup)", networkSource, staleDevs, ipWithCIDR)
+		deleted := true
+		for _, staleDev := range staleDevs {
+			if err := runCommand(ctx, "ip", "link", "delete", staleDev); err != nil {
+				log.CtxWarningf(ctx, "Failed to delete stale veth device %q: %s", staleDev, err)
+				deleted = false
+			}
+		}
+		if deleted {
+			return network, nil
+		}
+		// The conflicting device couldn't be removed, so quarantine this range
+		// and try the next one.
 	}
+}
+
+// checkVethRoute verifies that return traffic to the namespaced end of a veth
+// pair will be routed through the expected host device. A stale veth left by a
+// killed executor process can install the same connected route and silently
+// blackhole return traffic to the task, including DNS responses. Stale veths
+// are detected before a range is handed out (see assignHostNetwork), so this
+// is a backstop that measures the kernel's actual routing decision.
+func checkVethRoute(ctx context.Context, veth *vethPair) {
+	if veth.network == nil {
+		log.CtxWarningf(ctx, "Network route check failed: cannot check veth route without an assigned network")
+		return
+	}
+
+	expectedLink, err := netlink.LinkByName(veth.hostDevice)
+	if err != nil {
+		log.CtxWarningf(ctx, "Network route check failed: could not look up expected host device %q: %s", veth.hostDevice, err)
+		return
+	}
+
+	guestIP := net.ParseIP(veth.network.NamespacedIP())
+	routes, err := netlink.RouteGet(guestIP)
+	if err != nil {
+		log.CtxWarningf(ctx, "Network route check failed: could not resolve host route to guest IP %s via expected device %q: %s", guestIP, veth.hostDevice, err)
+		return
+	}
+	if len(routes) == 0 {
+		log.CtxWarningf(ctx, "Network route check failed: no host route found to guest IP %s via expected device %q", guestIP, veth.hostDevice)
+		return
+	}
+
+	actualRoute := routes[0]
+	if actualRoute.LinkIndex == expectedLink.Attrs().Index {
+		return
+	}
+
+	actualDevice := fmt.Sprintf("ifindex-%d", actualRoute.LinkIndex)
+	if actualLink, err := netlink.LinkByIndex(actualRoute.LinkIndex); err == nil {
+		actualDevice = actualLink.Attrs().Name
+	}
+	log.CtxWarningf(
+		ctx,
+		"Network route conflict: host route to guest IP %s uses device %q (ifindex %d), expected device %q (ifindex %d); route: %+v",
+		guestIP,
+		actualDevice,
+		actualRoute.LinkIndex,
+		veth.hostDevice,
+		expectedLink.Attrs().Index,
+		actualRoute,
+	)
 }
 
 // createRandomVethPair attempts to create a veth pair with random names, the
@@ -492,17 +564,15 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 		}
 	}()
 
-	// Assign a new IP before returning the network from the pool.
-	network, err := hostNetAllocator.Get()
+	// Assign a new IP before returning the network from the pool, skipping any
+	// ranges held by stale veth devices from killed processes, since those
+	// would cause routing conflicts.
+	network, err := assignHostNetwork(ctx, "pooled")
 	if err != nil {
 		log.CtxWarningf(ctx, "Failed to allocate new IP range for pooled network: %s", err)
 		return zero
 	}
 	n.getVethPair().network = network
-
-	// Check for stale veths before assigning the new IP, since orphaned devices
-	// from killed processes would cause routing conflicts.
-	checkForStaleVeths(ctx, network.HostIPWithCIDR(), "pooled")
 
 	// Assign IPs to the host and namespaced side, and create the default route
 	// in the namespace.
@@ -518,6 +588,7 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 		log.CtxWarningf(ctx, "Failed to set up default route in namespace: %s", err)
 		return zero
 	}
+	checkVethRoute(ctx, n.getVethPair())
 
 	// Record a new baseline for network stats, so that the stats reported for
 	// the action only reflect the accumulated stats relative to the baseline.
@@ -810,8 +881,10 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 
 	vp := &vethPair{netns: netns}
 
-	// Reserve an IP range for the veth pair.
-	vp.network, err = hostNetAllocator.Get()
+	// Reserve an IP range for the veth pair, skipping any ranges held by stale
+	// veth devices from killed processes, since those would cause routing
+	// conflicts.
+	vp.network, err = assignHostNetwork(ctx, "new")
 	if err != nil {
 		return nil, status.WrapError(err, "assign host network to VM")
 	}
@@ -824,13 +897,6 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 		}
 		return nil
 	})
-
-	// Check for stale veth devices from previous processes that were killed
-	// without cleanup (e.g. SIGKILL). The flock on the IP range is released
-	// when the process dies, but the kernel-level veth pairs and routes
-	// persist. If these aren't cleaned up, return traffic will be routed to a
-	// stale veth instead of ours, breaking connectivity.
-	checkForStaleVeths(ctx, vp.network.HostIPWithCIDR(), "new")
 
 	// Create a veth pair with randomly generated names.
 	vp.namespacedDevice, vp.hostDevice, err = createRandomVethPair(ctx, netns)
@@ -869,6 +935,7 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
 	}
+	checkVethRoute(ctx, vp)
 
 	if IsSecondaryNetworkEnabled() {
 		err = runCommand(ctx, "ip", "rule", "add", "from", vp.network.NamespacedIP(), "lookup", routingTableName)
