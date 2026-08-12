@@ -625,6 +625,12 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 		if err := eg.Wait(); err != nil {
 			return err
 		}
+		// The append order above depends on goroutine return order, so sort the
+		// children to keep the serialized root TreeCache (and thus its digest)
+		// deterministic for identical trees.
+		slices.SortFunc(rootCache.TreeCacheChildren, func(a *rspb.ResourceName, b *rspb.ResourceName) int {
+			return strings.Compare(a.GetDigest().GetHash(), b.GetDigest().GetHash())
+		})
 	}
 
 	buf, err := proto.Marshal(rootCache)
