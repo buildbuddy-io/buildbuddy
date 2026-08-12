@@ -143,10 +143,16 @@ func moveTiniToExecutorCgroup(executorCgroupPath string) error {
 }
 
 func setupNetworking(rootContext context.Context) {
+	// Report any networking state left behind by a previous executor before
+	// cleaning it up, so that leaks are still visible in the logs.
+	networking.LogLeftoverTaskDevices(rootContext)
+
 	// Clean up net namespaces in case vestiges remain from a previous executor.
 	if !networking.PreserveExistingNetNamespaces() {
 		if err := networking.DeleteNetNamespaces(rootContext); err != nil {
-			log.Debugf("Error cleaning up old net namespaces:  %s", err)
+			// Leftover namespaces hold onto veth devices and task IPs, so a
+			// failure here can cause routing conflicts later on.
+			log.Warningf("Error cleaning up old net namespaces: %s", err)
 		}
 	}
 	if err := networking.Configure(rootContext); err != nil {

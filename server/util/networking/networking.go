@@ -190,6 +190,7 @@ func DeleteNetNamespaces(ctx context.Context) error {
 		return nil
 	}
 	var lastErr error
+	deleted := 0
 	for ns := range strings.SplitSeq(output, "\n") {
 		// Sometimes the output contains spaces, like
 		//     bb-executor-1
@@ -206,9 +207,55 @@ func DeleteNetNamespaces(ctx context.Context) error {
 		}
 		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
 			lastErr = err
+			continue
 		}
+		deleted++
+	}
+	if deleted > 0 {
+		// These are namespaces left behind by a previous executor that exited
+		// without cleaning up, so their presence is worth surfacing.
+		log.CtxInfof(ctx, "Deleted %d leftover executor net namespace(s).", deleted)
 	}
 	return lastErr
+}
+
+// LogLeftoverTaskDevices logs any veth devices in the root net namespace which
+// hold an IP from the task IP range.
+//
+// This is intended to be called at executor startup, before any leftover
+// namespaces are deleted: at that point this executor has not created any
+// networks yet, so anything found was left behind by a process that exited
+// without cleaning up. Note that on hosts running multiple executors, devices
+// found here may instead belong to a live sibling executor.
+func LogLeftoverTaskDevices(ctx context.Context) {
+	prefix, err := netip.ParsePrefix(*taskIPRange)
+	if err != nil {
+		// Configure() reports invalid task IP ranges.
+		return
+	}
+	// One address dump, filtered in a single pass - see findStaleVeths.
+	addrs, err := netlink.AddrList(nil /*=link*/, netlink.FAMILY_V4)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to list addresses when checking for leftover task network devices: %s", err)
+		return
+	}
+	var leftover []string
+	for _, addr := range addrs {
+		ip, ok := netip.AddrFromSlice(addr.IP.To4())
+		if !ok || !prefix.Contains(ip) {
+			continue
+		}
+		link, err := netlink.LinkByIndex(addr.LinkIndex)
+		if err != nil || link.Type() != "veth" {
+			continue
+		}
+		leftover = append(leftover, fmt.Sprintf("%s(%s)", link.Attrs().Name, ip))
+	}
+	if len(leftover) == 0 {
+		log.CtxInfof(ctx, "No leftover task network devices found in range %s.", *taskIPRange)
+		return
+	}
+	log.CtxWarningf(ctx, "Found %d leftover veth device(s) holding task IPs at startup: %v. These were likely leaked by a process that exited without cleaning up (or belong to another executor running on this host).", len(leftover), leftover)
 }
 
 // Namespace represents a network namespace that has been created.
@@ -253,41 +300,77 @@ func randomVethName(prefix string) (string, error) {
 	return prefix + suffix, nil
 }
 
-// cleanupStaleVeths removes any existing veth devices that have the given IP
-// address assigned. This handles the case where a previous process was killed
-// without cleanup (e.g. SIGKILL), leaving orphaned veth devices with stale
-// routes that would cause routing conflicts with newly created veth pairs.
-func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
-	links, err := netlink.LinkList()
-	if err != nil {
-		return status.WrapError(err, "list links")
-	}
+// findStaleVeths returns the names of any existing veth devices that already
+// have the given IP address assigned. This detects the case where a previous
+// process was killed without cleanup (e.g. SIGKILL): the flock on the IP range
+// is released when the process dies, but the kernel-level veth devices and
+// their routes persist, so a newly created veth pair can end up sharing an IP
+// with an orphan and having its return traffic misrouted.
+func findStaleVeths(ctx context.Context, ipWithCIDR string) ([]string, error) {
 	targetIP, _, err := net.ParseCIDR(ipWithCIDR)
 	if err != nil {
-		return status.WrapError(err, "parse target IP")
+		return nil, status.WrapError(err, "parse target IP")
 	}
-	for _, link := range links {
+	// Dump all addresses once, rather than once per device. netlink.AddrList
+	// applies its link filter client-side, so passing a link would issue a
+	// full address dump for every device on the host - quadratic in the number
+	// of veth devices, and therefore slowest on exactly the hosts that have
+	// leaked the most. Task IPs are always IPv4, so only IPv4 is dumped here.
+	addrs, err := netlink.AddrList(nil /*=link*/, netlink.FAMILY_V4)
+	if err != nil {
+		return nil, status.WrapError(err, "list addresses")
+	}
+	var staleDevs []string
+	for _, addr := range addrs {
+		if !addr.IP.Equal(targetIP) {
+			continue
+		}
+		// Resolve the link only for addresses that actually conflict, to keep
+		// the common (no-conflict) case down to a single netlink round trip.
+		link, err := netlink.LinkByIndex(addr.LinkIndex)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to look up device with index %d holding IP %s: %s", addr.LinkIndex, targetIP, err)
+			continue
+		}
 		// Only consider veth devices to avoid accidentally deleting
 		// non-veth interfaces that happen to share the same IP.
 		if link.Type() != "veth" {
 			continue
 		}
-		addrs, err := netlink.AddrList(link, 0 /* FAMILY_ALL */)
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			if addr.IP.Equal(targetIP) {
-				staleDev := link.Attrs().Name
-				log.CtxWarningf(ctx, "Cleaning up stale veth device %q with IP %s (likely from a killed process)", staleDev, targetIP)
-				if err := runCommand(ctx, "ip", "link", "delete", staleDev); err != nil {
-					log.CtxWarningf(ctx, "Failed to delete stale veth device %q: %s", staleDev, err)
-				}
-				break // inner loop: each link has one matching addr at most
-			}
+		staleDevs = append(staleDevs, link.Attrs().Name)
+	}
+	return staleDevs, nil
+}
+
+// checkForStaleVeths logs any existing veth devices which already have the
+// given IP address assigned, and deletes them if
+// --executor.cleanup_stale_veth_devices is enabled.
+//
+// Detection runs unconditionally so that leaked networking state shows up in
+// logs even when cleanup is disabled. Deletion stays behind the flag because it
+// mutates host networking state.
+//
+// networkSource describes where the network being set up came from ("new" or
+// "pooled"), and is included in the log message.
+func checkForStaleVeths(ctx context.Context, ipWithCIDR, networkSource string) {
+	staleDevs, err := findStaleVeths(ctx, ipWithCIDR)
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to check for stale veth devices with IP %s: %s", ipWithCIDR, err)
+		return
+	}
+	if len(staleDevs) == 0 {
+		return
+	}
+	if !*cleanupStaleVethDevices {
+		log.CtxWarningf(ctx, "%s network: IP %s is already assigned to existing veth device(s) %v (likely from a process that was killed without cleanup). Traffic for this network may be misrouted. Set --executor.cleanup_stale_veth_devices to delete these devices.", networkSource, ipWithCIDR, staleDevs)
+		return
+	}
+	log.CtxWarningf(ctx, "%s network: cleaning up stale veth device(s) %v with IP %s (likely from a process that was killed without cleanup)", networkSource, staleDevs, ipWithCIDR)
+	for _, staleDev := range staleDevs {
+		if err := runCommand(ctx, "ip", "link", "delete", staleDev); err != nil {
+			log.CtxWarningf(ctx, "Failed to delete stale veth device %q: %s", staleDev, err)
 		}
 	}
-	return nil
 }
 
 // createRandomVethPair attempts to create a veth pair with random names, the
@@ -417,13 +500,9 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 	}
 	n.getVethPair().network = network
 
-	// Clean up stale veths before assigning the new IP, to avoid routing
-	// conflicts with orphaned devices from killed processes.
-	if *cleanupStaleVethDevices {
-		if err := cleanupStaleVeths(ctx, network.HostIPWithCIDR()); err != nil {
-			log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", network.HostIPWithCIDR(), err)
-		}
-	}
+	// Check for stale veths before assigning the new IP, since orphaned devices
+	// from killed processes would cause routing conflicts.
+	checkForStaleVeths(ctx, network.HostIPWithCIDR(), "pooled")
 
 	// Assign IPs to the host and namespaced side, and create the default route
 	// in the namespace.
@@ -746,16 +825,12 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 		return nil
 	})
 
-	// Clean up any stale veth devices from previous processes that were
-	// killed without cleanup (e.g. SIGKILL). The flock on the IP range is
-	// released when the process dies, but the kernel-level veth pairs and
-	// routes persist. If we don't clean these up, return traffic will be
-	// routed to a stale veth instead of ours, breaking connectivity.
-	if *cleanupStaleVethDevices {
-		if err := cleanupStaleVeths(ctx, vp.network.HostIPWithCIDR()); err != nil {
-			log.CtxWarningf(ctx, "Error during stale veth cleanup for %s: %s", vp.network.HostIPWithCIDR(), err)
-		}
-	}
+	// Check for stale veth devices from previous processes that were killed
+	// without cleanup (e.g. SIGKILL). The flock on the IP range is released
+	// when the process dies, but the kernel-level veth pairs and routes
+	// persist. If these aren't cleaned up, return traffic will be routed to a
+	// stale veth instead of ours, breaking connectivity.
+	checkForStaleVeths(ctx, vp.network.HostIPWithCIDR(), "new")
 
 	// Create a veth pair with randomly generated names.
 	vp.namespacedDevice, vp.hostDevice, err = createRandomVethPair(ctx, netns)
