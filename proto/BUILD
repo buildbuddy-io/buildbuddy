@@ -255,6 +255,7 @@ proto_library(
         ":remote_execution_proto",
         ":scheduler_proto",
         ":stat_filter_proto",
+        ":stats_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/longrunning:operations_proto",
@@ -1154,6 +1155,7 @@ go_proto_library(
         ":resource_go_proto",
         ":scheduler_go_proto",
         ":stat_filter_go_proto",
+        ":stats_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
@@ -2043,6 +2045,7 @@ ts_proto_library(
         ":remote_execution_ts_proto",
         ":scheduler_ts_proto",
         ":stat_filter_ts_proto",
+        ":stats_ts_proto",
         ":timestamp_ts_proto",
     ],
 )

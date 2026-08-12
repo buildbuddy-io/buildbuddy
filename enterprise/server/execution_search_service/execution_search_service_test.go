@@ -21,6 +21,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
@@ -420,7 +421,10 @@ func TestGetExecutionTimeline(t *testing.T) {
 	exid4 := makeExecutionID(actionDigest4)
 
 	const target = "//server/util/timeline:timeline"
-	testTimestampUsec := time.Now().UnixMicro()
+	// Anchor the test data to midday UTC so that both executions always land
+	// in the same 1-day aggregation bucket.
+	testDayStartUsec := time.Now().UTC().Truncate(24 * time.Hour).UnixMicro()
+	testTimestampUsec := testDayStartUsec + (12 * time.Hour).Microseconds()
 
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -431,46 +435,50 @@ func TestGetExecutionTimeline(t *testing.T) {
 		// Two executions for the requested target/group, inserted out of
 		// start-time order to verify ordering by start_time_usec.
 		{
-			GroupID:                  "GR1",
-			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
-			TargetLabel:              target,
-			Command:                  "build",
-			Stage:                    int64(repb.ExecutionStage_COMPLETED),
-			WorkerStartTimestampUsec: testTimestampUsec + 1000000,
-			CPUNanos:                 2000000000,
-			PeakMemoryBytes:          512 * 1024 * 1024,
-			CreatedAtUsec:            testTimestampUsec + 1000,
-			UpdatedAtUsec:            testTimestampUsec + 1000,
+			GroupID:                      "GR1",
+			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:                  target,
+			Command:                      "build",
+			Stage:                        int64(repb.ExecutionStage_COMPLETED),
+			WorkerStartTimestampUsec:     testTimestampUsec + 1000000,
+			WorkerCompletedTimestampUsec: testTimestampUsec + 5000000,
+			CPUNanos:                     2000000000,
+			PeakMemoryBytes:              512 * 1024 * 1024,
+			CreatedAtUsec:                testTimestampUsec + 1000,
+			UpdatedAtUsec:                testTimestampUsec + 1000,
 		},
 		{
-			GroupID:                  "GR1",
-			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
-			TargetLabel:              target,
-			Command:                  "test",
-			Stage:                    int64(repb.ExecutionStage_COMPLETED),
-			WorkerStartTimestampUsec: testTimestampUsec,
-			CPUNanos:                 1000000000,
-			PeakMemoryBytes:          256 * 1024 * 1024,
-			CreatedAtUsec:            testTimestampUsec,
-			UpdatedAtUsec:            testTimestampUsec,
+			GroupID:                      "GR1",
+			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:                  target,
+			Command:                      "test",
+			Stage:                        int64(repb.ExecutionStage_COMPLETED),
+			WorkerStartTimestampUsec:     testTimestampUsec,
+			WorkerCompletedTimestampUsec: testTimestampUsec + 2000000,
+			CPUNanos:                     1000000000,
+			PeakMemoryBytes:              256 * 1024 * 1024,
+			CreatedAtUsec:                testTimestampUsec,
+			UpdatedAtUsec:                testTimestampUsec,
 		},
 		// Same group, different target - should be excluded.
 		{
-			GroupID:                  "GR1",
-			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
-			TargetLabel:              "//server/util/other:other",
-			WorkerStartTimestampUsec: testTimestampUsec,
-			CreatedAtUsec:            testTimestampUsec + 2000,
-			UpdatedAtUsec:            testTimestampUsec + 2000,
+			GroupID:                      "GR1",
+			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:                  "//server/util/other:other",
+			WorkerStartTimestampUsec:     testTimestampUsec,
+			WorkerCompletedTimestampUsec: testTimestampUsec + 1000000,
+			CreatedAtUsec:                testTimestampUsec + 2000,
+			UpdatedAtUsec:                testTimestampUsec + 2000,
 		},
 		// Matching target but a different group - should be excluded.
 		{
-			GroupID:                  "GR2",
-			InvocationUUID:           strings.ReplaceAll(uuid.New(), "-", ""),
-			TargetLabel:              target,
-			WorkerStartTimestampUsec: testTimestampUsec,
-			CreatedAtUsec:            testTimestampUsec + 3000,
-			UpdatedAtUsec:            testTimestampUsec + 3000,
+			GroupID:                      "GR2",
+			InvocationUUID:               strings.ReplaceAll(uuid.New(), "-", ""),
+			TargetLabel:                  target,
+			WorkerStartTimestampUsec:     testTimestampUsec,
+			WorkerCompletedTimestampUsec: testTimestampUsec + 1000000,
+			CreatedAtUsec:                testTimestampUsec + 3000,
+			UpdatedAtUsec:                testTimestampUsec + 3000,
 		},
 	}
 	executionIDs := []string{exid1, exid2, exid3, exid4}
@@ -489,15 +497,40 @@ func TestGetExecutionTimeline(t *testing.T) {
 		Target: target,
 	})
 	require.NoError(t, err)
-	require.Len(t, rsp.Execution, 2, "should only return GR1 executions for the requested target")
+	// Both executions share an (empty) output path, mnemonic, os, and arch, so
+	// they are grouped into a single timeline.
+	require.Len(t, rsp.Timelines, 1, "should only return GR1 executions for the requested target")
+	timeline := rsp.Timelines[0]
+	require.Len(t, timeline.Execution, 2)
 
 	// Results should be ordered by start_time_usec ascending.
-	assert.Equal(t, testTimestampUsec, rsp.Execution[0].StartTimeUsec)
-	assert.Equal(t, int64(1000000000), rsp.Execution[0].CpuNanos)
-	assert.Equal(t, int64(256*1024*1024), rsp.Execution[0].PeakMemoryBytes)
-	assert.Equal(t, testTimestampUsec+1000000, rsp.Execution[1].StartTimeUsec)
-	assert.Equal(t, int64(2000000000), rsp.Execution[1].CpuNanos)
-	assert.Equal(t, int64(512*1024*1024), rsp.Execution[1].PeakMemoryBytes)
+	assert.Equal(t, testTimestampUsec, timeline.Execution[0].StartTimeUsec)
+	assert.Equal(t, int64(2000000), timeline.Execution[0].DurationUsec)
+	assert.Equal(t, int64(1000000000), timeline.Execution[0].CpuNanos)
+	assert.Equal(t, int64(256*1024*1024), timeline.Execution[0].PeakMemoryBytes)
+	assert.Equal(t, testTimestampUsec+1000000, timeline.Execution[1].StartTimeUsec)
+	assert.Equal(t, int64(4000000), timeline.Execution[1].DurationUsec)
+	assert.Equal(t, int64(2000000000), timeline.Execution[1].CpuNanos)
+	assert.Equal(t, int64(512*1024*1024), timeline.Execution[1].PeakMemoryBytes)
+
+	// With finer time buckets disabled (the default), stats are aggregated
+	// into 1-day buckets.
+	assert.Equal(t, stpb.IntervalType_INTERVAL_TYPE_DAY, rsp.GetInterval().GetType())
+	assert.Equal(t, int64(1), rsp.GetInterval().GetCount())
+
+	// Both executions land in the same 1-day bucket, so the bucket's summary
+	// matches the overall timeline summary.
+	require.Len(t, timeline.AggregatedStats, 1)
+	bucket := timeline.AggregatedStats[0]
+	assert.Equal(t, testDayStartUsec, bucket.GetBucketStartTimeUsec())
+	assert.Equal(t, int64(6000000), bucket.GetSummary().GetDurationUsecTotal())
+	assert.Equal(t, int64(2000000), bucket.GetSummary().GetDurationUsecP50())
+	assert.Equal(t, int64(4000000), bucket.GetSummary().GetDurationUsecP90())
+	assert.Equal(t, int64(3000000000), bucket.GetSummary().GetCpuNanosTotal())
+	assert.Equal(t, int64(1000000000), bucket.GetSummary().GetCpuNanosP50())
+	assert.Equal(t, int64(2000000000), bucket.GetSummary().GetCpuNanosP90())
+	assert.Equal(t, int64(256*1024*1024), bucket.GetSummary().GetPeakMemoryP50())
+	assert.Equal(t, int64(512*1024*1024), bucket.GetSummary().GetPeakMemoryP90())
 
 	// The shared ExecutionQuery filters should apply.
 	rsp, err = service.GetExecutionTimeline(testCtx, &espb.GetExecutionTimelineRequest{
@@ -505,8 +538,9 @@ func TestGetExecutionTimeline(t *testing.T) {
 		Query:  &espb.ExecutionQuery{Command: "test"},
 	})
 	require.NoError(t, err)
-	require.Len(t, rsp.Execution, 1)
-	assert.Equal(t, testTimestampUsec, rsp.Execution[0].StartTimeUsec)
+	require.Len(t, rsp.Timelines, 1)
+	require.Len(t, rsp.Timelines[0].Execution, 1)
+	assert.Equal(t, testTimestampUsec, rsp.Timelines[0].Execution[0].StartTimeUsec)
 }
 
 func TestGetExecutionTimeline_RequiresTarget(t *testing.T) {

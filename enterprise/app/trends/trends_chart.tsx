@@ -171,7 +171,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           activeDot={{ pointerEvents: "none" }}
           yAxisId={axis}
           name={ds.name}
-          dot={ds.dot}
+          dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
           connectNulls={true}

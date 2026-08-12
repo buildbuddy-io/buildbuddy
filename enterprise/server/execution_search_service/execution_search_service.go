@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"maps"
 	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
@@ -246,6 +250,67 @@ func (s *ExecutionSearchService) addExecutionQueryFilters(q *query_builder.Query
 	return nil
 }
 
+// executionTimelineInterval returns the stats bucket size and timezone to use
+// for a timeline covering the time range in `query`, mirroring the interval
+// selection that invocation_stat_service performs for the GetTrend RPC: the
+// bucket size is chosen to keep the response under ~50 intervals for the
+// queried date range, falling back to 1-day buckets when finer time buckets
+// are disabled.
+func executionTimelineInterval(query *expb.ExecutionQuery, timezone string) (invocation_stat_service.StatInterval, *time.Location) {
+	endTime := time.Now()
+	if end := query.GetUpdatedBefore(); end.IsValid() {
+		endTime = end.AsTime()
+	}
+	startTime := endTime.Add(-invocation_stat_service.ONE_WEEK)
+	if start := query.GetUpdatedAfter(); start.IsValid() {
+		startTime = start.AsTime()
+	}
+
+	location, err := time.LoadLocation(timezone)
+	if err != nil || location.String() == time.Local.String() {
+		location = time.UTC
+	}
+
+	interval := invocation_stat_service.StatInterval1Day
+	if invocation_stat_service.FinerTimeBucketsEnabled() {
+		interval = invocation_stat_service.ComputeTrendsInterval(endTime.Sub(startTime))
+	}
+	return interval, location
+}
+
+// bucketStartUsec returns the inclusive start time of the aggregation bucket
+// containing tsUsec.  Buckets are `interval` long and aligned to the start of
+// the day in `loc`, matching the toStartOfInterval bucketing that the OLAP DB
+// performs for trends queries.
+func bucketStartUsec(tsUsec int64, interval invocation_stat_service.StatInterval, loc *time.Location) int64 {
+	t := time.UnixMicro(tsUsec).In(loc)
+	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
+	d := interval.Duration()
+	if d >= 24*time.Hour {
+		return dayStart.UnixMicro()
+	}
+	return dayStart.Add(t.Sub(dayStart).Truncate(d)).UnixMicro()
+}
+
+// aggregateTimeline groups a single timeline's executions into time buckets
+// and summarizes each bucket, for rendering when there are too many
+// executions to usefully show individually.
+func aggregateTimeline(executions []*expb.ExecutionTimelineEntry, interval invocation_stat_service.StatInterval, loc *time.Location) []*expb.AggregatedExecutionTimelineEntry {
+	bucketed := make(map[int64][]*expb.ExecutionTimelineEntry)
+	for _, ex := range executions {
+		start := bucketStartUsec(ex.GetStartTimeUsec(), interval, loc)
+		bucketed[start] = append(bucketed[start], ex)
+	}
+	aggregated := make([]*expb.AggregatedExecutionTimelineEntry, 0, len(bucketed))
+	for _, start := range slices.Sorted(maps.Keys(bucketed)) {
+		aggregated = append(aggregated, &expb.AggregatedExecutionTimelineEntry{
+			BucketStartTimeUsec: start,
+			Summary:             summarizeTimeline(bucketed[start]),
+		})
+	}
+	return aggregated
+}
+
 func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *expb.GetExecutionTimelineRequest) (*expb.GetExecutionTimelineResponse, error) {
 	if s.oh == nil {
 		return nil, status.UnavailableError("An OLAP DB is required to search executions.")
@@ -297,7 +362,9 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 		groupedExecutions[k] = append(groupedExecutions[k], ex)
 	}
 
+	interval, location := executionTimelineInterval(req.GetQuery(), req.GetRequestContext().GetTimezone())
 	rsp := &expb.GetExecutionTimelineResponse{
+		Interval:  interval.IntervalProto(),
 		Timelines: make([]*expb.ExecutionTimeline, 0, len(groupedExecutions)),
 	}
 	for _, tl := range groupedExecutions {
@@ -321,13 +388,14 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 			}
 		}
 		rsp.Timelines = append(rsp.Timelines, &expb.ExecutionTimeline{
-			OutputPath: cleanedOutput,
-			Mnemonic:   tl[0].ActionMnemonic,
-			Os:         tl[0].OS,
-			Arch:       tl[0].Arch,
-			Shard:      shard,
-			Summary:    summarizeTimeline(executions),
-			Execution:  executions,
+			OutputPath:      cleanedOutput,
+			Mnemonic:        tl[0].ActionMnemonic,
+			Os:              tl[0].OS,
+			Arch:            tl[0].Arch,
+			Shard:           shard,
+			Summary:         summarizeTimeline(executions),
+			Execution:       executions,
+			AggregatedStats: aggregateTimeline(executions, interval, location),
 		})
 	}
 	return rsp, nil

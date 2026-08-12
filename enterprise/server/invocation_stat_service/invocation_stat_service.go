@@ -36,7 +36,7 @@ var (
 	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
-	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", true, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
 	targetTrendsEnabled            = flag.Bool("app.enable_target_trends", true, "Enables GetTargetTrends, which returns execution data aggregated by Bazel target.")
 )
 
@@ -181,10 +181,12 @@ type trendTimeSettings struct {
 	location *time.Location
 }
 
+// ComputeTrendsInterval returns the stats bucket size to use for a response
+// covering a time range of the given duration.
 // These values are currently set to keep us under ~50 intervals in a response.
 // We need to make some visual improvements to cache charts so that they're
 // easier to read with lots of small intervals before we can do more than this.
-func computeTrendsInterval(d time.Duration) StatInterval {
+func ComputeTrendsInterval(d time.Duration) StatInterval {
 	if d <= 3*time.Hour {
 		return StatInterval5Minutes
 	}
@@ -226,7 +228,7 @@ func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezo
 	if !i.finerTimeBucketsEnabled() {
 		interval = StatInterval1Day
 	} else {
-		interval = computeTrendsInterval(endTime.Sub(startTime))
+		interval = ComputeTrendsInterval(endTime.Sub(startTime))
 	}
 
 	return &trendTimeSettings{
@@ -1632,7 +1634,13 @@ func (i *InvocationStatService) isOLAPDBEnabled() bool {
 }
 
 func (i *InvocationStatService) finerTimeBucketsEnabled() bool {
-	return i.isOLAPDBEnabled() && *finerTimeBuckets
+	return i.isOLAPDBEnabled() && FinerTimeBucketsEnabled()
+}
+
+// FinerTimeBucketsEnabled returns whether responses with time-bucketed stats
+// should use buckets sized to the query's date range instead of 1-day buckets.
+func FinerTimeBucketsEnabled() bool {
+	return *finerTimeBuckets
 }
 
 func (i *InvocationStatService) isInvocationPercentilesEnabled() bool {

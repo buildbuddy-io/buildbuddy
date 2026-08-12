@@ -10,6 +10,7 @@ import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
 import "proto/scheduler.proto";
 import "proto/stat_filter.proto";
+import "proto/stats.proto";
 
 package execution_stats;
 
@@ -412,6 +413,11 @@ message ExecutionTimelineEntry {
   // big.
 }
 
+message AggregatedExecutionTimelineEntry {
+  int64 bucket_start_time_usec = 1;
+  ExecutionTimelineSummary summary = 2;
+}
+
 message ExecutionTimelineSummary {
   int64 duration_usec_total = 1;
   int64 duration_usec_p50 = 2;
@@ -432,10 +438,15 @@ message ExecutionTimeline {
 
   ExecutionTimelineSummary summary = 6;
   repeated ExecutionTimelineEntry execution = 7;
+  repeated AggregatedExecutionTimelineEntry aggregated_stats = 8;
 }
 
 message GetExecutionTimelineResponse {
   context.ResponseContext response_context = 1;
+
+  // This StatsInterval defines the buckets in the aggregated_stats of each
+  // timeline.
+  stats.StatsInterval interval = 3;
 
   // One `ExecutionTimelineEntry` for each execution that matched the target
   // and query in the request, ordered by start_time_usec - we are basically

@@ -7,9 +7,12 @@ import errorService from "../../../app/errors/error_service";
 import * as format from "../../../app/format/format";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { computeDiffs } from "../../../app/util/diff";
+import * as proto from "../../../app/util/proto";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
+import { stats } from "../../../proto/stats_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
 import TrendsChartComponent, { ChartColor, ChartDataSeries } from "../trends/trends_chart";
+import { computeTimeKeys } from "../trends/common";
 
 const MICROSECONDS_PER_SECOND = 1e6;
 
@@ -455,16 +458,30 @@ export default class SingleTargetComponent extends React.Component<Props, State>
     );
   }
 
-  private renderTimelineCharts(timelines: execution_stats.ExecutionTimeline[]): React.ReactNode {
-    const startTimes: number[] = [];
+  private renderTimelineCharts(
+    interval: stats.StatsInterval,
+    domain: [Date, Date],
+    timelines: execution_stats.ExecutionTimeline[]
+  ): React.ReactNode {
+    let startTimes: number[] = [];
     const durationSeries: ChartDataSeries[] = [];
     const cpuSeries: ChartDataSeries[] = [];
     const memorySeries: ChartDataSeries[] = [];
     let i = 0;
+
+    console.log(interval);
+    console.log(domain);
+
+    let { timeKeys, ticks } = computeTimeKeys(interval, domain);
+    timeKeys = timeKeys.map((v) => v * 1000);
+    ticks = ticks.map((v) => v * 1000);
+    console.log(timeKeys);
+    console.log(ticks);
+
     for (const timeline of timelines) {
       // X-axis values are the execution start times (in microseconds), and each
       // maps to its duration so the line series can extract it.
-      startTimes.push(...timeline.execution.map((e) => +(e.startTimeUsec ?? 0)));
+      startTimes.push(...timeline.aggregatedStats.map((e) => +(e.bucketStartTimeUsec ?? 0)));
       const durationByStartTime = new Map<number, number>();
       const memoryByStartTime = new Map<number, number>();
       const cpuByStartTime = new Map<number, number>();
@@ -474,10 +491,10 @@ export default class SingleTargetComponent extends React.Component<Props, State>
         endOfPath = "..." + endOfPath.slice(lastSlash);
       }
       const endOfPathElement = () => <div>{endOfPath}</div>;
-      for (const e of timeline.execution) {
-        durationByStartTime.set(+(e.startTimeUsec ?? 0), +(e.durationUsec ?? 0));
-        memoryByStartTime.set(+(e.startTimeUsec ?? 0), +(e.peakMemoryBytes ?? 0));
-        cpuByStartTime.set(+(e.startTimeUsec ?? 0), +(e.cpuNanos ?? 0));
+      for (const e of timeline.aggregatedStats) {
+        durationByStartTime.set(+(e.bucketStartTimeUsec ?? 0), +(e.summary?.durationUsecP50 ?? 0));
+        memoryByStartTime.set(+(e.bucketStartTimeUsec ?? 0), +(e.summary?.peakMemoryP50 ?? 0));
+        cpuByStartTime.set(+(e.bucketStartTimeUsec ?? 0), +(e.summary?.cpuNanosP50 ?? 0));
       }
       durationSeries.push({
         name: "duration" + i,
@@ -493,7 +510,6 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           </>
         ),
         color: COLORS[i % COLORS.length],
-        dot: true,
       });
       cpuSeries.push({
         name: "cpu" + i,
@@ -506,7 +522,6 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           </>
         ),
         color: COLORS[i % COLORS.length],
-        dot: true,
       });
       memorySeries.push({
         name: "memory" + i,
@@ -519,20 +534,22 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           </>
         ),
         color: COLORS[i % COLORS.length],
-        dot: true,
       });
 
       i++;
     }
 
+    startTimes = [...new Set(startTimes)];
     startTimes.sort();
+    console.log("and");
+    console.log(startTimes);
 
     return (
       <>
         <TrendsChartComponent
           title="Execution duration"
-          data={startTimes}
-          ticks={[]}
+          data={timeKeys}
+          ticks={ticks}
           dataSeries={durationSeries}
           primaryYAxis={{
             formatTickValue: format.durationSec,
@@ -546,8 +563,8 @@ export default class SingleTargetComponent extends React.Component<Props, State>
         />
         <TrendsChartComponent
           title="CPU usage"
-          data={startTimes}
-          ticks={[]}
+          data={timeKeys}
+          ticks={ticks}
           dataSeries={cpuSeries}
           primaryYAxis={{
             formatTickValue: (value) => format.durationMillis(value / 1e6),
@@ -561,8 +578,8 @@ export default class SingleTargetComponent extends React.Component<Props, State>
         />
         <TrendsChartComponent
           title="Peak memory usage"
-          data={startTimes}
-          ticks={[]}
+          data={timeKeys}
+          ticks={ticks}
           dataSeries={memorySeries}
           primaryYAxis={{
             formatTickValue: (value) => format.bytes(value),
@@ -579,6 +596,11 @@ export default class SingleTargetComponent extends React.Component<Props, State>
   }
 
   render(): React.ReactNode {
+    const p = getProtoFilterParams(this.props.search);
+    const domain: [Date, Date] = [
+      proto.timestampToDate(p.updatedAfter!),
+      p.updatedBefore ? proto.timestampToDate(p.updatedBefore) : new Date(),
+    ];
     return (
       <div className="target-data">
         <div className="container">
@@ -586,7 +608,12 @@ export default class SingleTargetComponent extends React.Component<Props, State>
             <div className="target-data-title">{this.getPageTitle()}</div>
           </div>
           {this.state.timeline && this.renderMatchingActionsCard(this.state.timeline)}
-          {this.state.timeline && this.renderTimelineCharts(this.getFilteredTimelines(this.state.timeline))}
+          {this.state.timeline &&
+            this.renderTimelineCharts(
+              this.state.timeline.interval!,
+              domain,
+              this.getFilteredTimelines(this.state.timeline)
+            )}
         </div>
       </div>
     );

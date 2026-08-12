@@ -22,9 +22,12 @@ ts_library(
         "//app/format",
         "//app/service:rpc_service",
         "//app/util:diff",
+        "//app/util:proto",
         "//enterprise/app/filter:filter_util",
+        "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_chart",
         "//proto:execution_stats_ts_proto",
+        "//proto:stats_ts_proto",
     ],
 )
 
