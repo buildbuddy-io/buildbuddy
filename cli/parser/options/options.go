@@ -157,13 +157,6 @@ func (d *Definition) Supports(command string) bool {
 	return false
 }
 
-func (d *Definition) AddSupportedCommand(commands ...string) {
-	if d.supportedCommands == nil {
-		d.supportedCommands = make(set.Set[string], 1)
-	}
-	d.supportedCommands.AddSeq(slices.Values(commands))
-}
-
 func (d *Definition) PluginID() string {
 	return d.pluginID
 }
