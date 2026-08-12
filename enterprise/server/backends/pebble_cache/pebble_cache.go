@@ -2096,51 +2096,72 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	}
 	defer db.Close()
 
-	var mu sync.Mutex
-	foundMap := make(map[*repb.Digest][]byte, len(resources))
-
 	groupID := p.userGroupID(ctx)
 	encryption, err := p.activeEncryption(ctx)
 	if err != nil {
 		return nil, err
 	}
-	eg, ctx := errgroup.WithContext(ctx)
-	maxGoroutines := 10
+
 	var next atomic.Int64
-	for range min(maxGoroutines, len(resources)) {
-		eg.Go(func() error {
-			for {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				i := int(next.Add(1)) - 1
-				if i >= len(resources) {
-					return nil
-				}
-				r := resources[i]
-				rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
-				if err != nil {
-					if status.IsNotFoundError(err) || os.IsNotExist(err) {
-						continue
-					}
-					return err
-				}
-				buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
-				_, copyErr := io.Copy(buf, rc)
-				closeErr := rc.Close()
-				if copyErr != nil {
-					log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
-					continue
-				}
-				if closeErr != nil {
-					log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
-					continue
-				}
-				mu.Lock()
-				foundMap[r.GetDigest()] = buf.Bytes()
-				mu.Unlock()
+	var mu sync.Mutex
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	handleBatch := func() error {
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-		})
+			i := int(next.Add(1)) - 1
+			if i >= len(resources) {
+				return nil
+			}
+			r := resources[i]
+			rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
+			if err != nil {
+				if status.IsNotFoundError(err) || os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
+			_, copyErr := io.Copy(buf, rc)
+			closeErr := rc.Close()
+			if copyErr != nil {
+				log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
+				continue
+			}
+			if closeErr != nil {
+				log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
+				continue
+			}
+			mu.Lock()
+			foundMap[r.GetDigest()] = buf.Bytes()
+			mu.Unlock()
+		}
+	}
+
+	// Inline resources don't need 1 goroutine per resource. sqrt(inline count)
+	// goroutines seems to be fastest.
+	inlineResources := 0
+	for _, rn := range resources {
+		if rn.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
+			inlineResources++
+		}
+	}
+	// Add 1 goroutine per non-inline resource, since they can be slow.
+	maxGoroutines := min(10, int(math.Sqrt(float64(inlineResources)))+(len(resources)-inlineResources))
+	if maxGoroutines <= 1 {
+		// Don't start goroutines if we don't have to.
+		if err := handleBatch(); err != nil {
+			return nil, err
+		}
+		return foundMap, nil
+	}
+
+	// Make sure to set the ctx used inside handleBatch (don't shadow it).
+	var eg *errgroup.Group
+	eg, ctx = errgroup.WithContext(ctx)
+	for range maxGoroutines {
+		eg.Go(handleBatch)
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
