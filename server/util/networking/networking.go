@@ -297,32 +297,37 @@ func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
 // pair will be routed through the expected host device. A stale veth left by a
 // killed executor process can install the same connected route and silently
 // blackhole return traffic to the task, including DNS responses.
-func checkVethRoute(ctx context.Context, veth *vethPair) {
+//
+// It returns false only when a conflict is positively detected: the host route
+// to the guest IP resolves to a different device. If the check itself cannot
+// be completed, it logs a warning and returns true, so that callers don't
+// discard networks over a failed check.
+func checkVethRoute(ctx context.Context, veth *vethPair) bool {
 	if veth.network == nil {
 		log.CtxWarningf(ctx, "Network route check failed: cannot check veth route without an assigned network")
-		return
+		return true
 	}
 
 	expectedLink, err := netlink.LinkByName(veth.hostDevice)
 	if err != nil {
 		log.CtxWarningf(ctx, "Network route check failed: could not look up expected host device %q: %s", veth.hostDevice, err)
-		return
+		return true
 	}
 
 	guestIP := net.ParseIP(veth.network.NamespacedIP())
 	routes, err := netlink.RouteGet(guestIP)
 	if err != nil {
-		log.CtxWarningf(ctx, "Network route check failed: could not resolve host route to guest IP %s via expected device %q: %s", guestIP, veth.hostDevice, err)
-		return
+		log.CtxWarningf(ctx, "Network route check failed: could not resolve host route to guest IP %s (expected device %q): %s", guestIP, veth.hostDevice, err)
+		return true
 	}
 	if len(routes) == 0 {
-		log.CtxWarningf(ctx, "Network route check failed: no host route found to guest IP %s via expected device %q", guestIP, veth.hostDevice)
-		return
+		log.CtxWarningf(ctx, "Network route check failed: no host route found to guest IP %s (expected device %q)", guestIP, veth.hostDevice)
+		return true
 	}
 
 	actualRoute := routes[0]
 	if actualRoute.LinkIndex == expectedLink.Attrs().Index {
-		return
+		return true
 	}
 
 	actualDevice := fmt.Sprintf("ifindex-%d", actualRoute.LinkIndex)
@@ -339,6 +344,7 @@ func checkVethRoute(ctx context.Context, veth *vethPair) {
 		expectedLink.Attrs().Index,
 		actualRoute,
 	)
+	return false
 }
 
 // createRandomVethPair attempts to create a veth pair with random names, the
@@ -437,7 +443,8 @@ func NewVMNetworkPool(sizeLimit int) *VMNetworkPool {
 }
 
 // Get returns a pooled veth pair, or nil if there are no pooled veth pairs
-// available.
+// available or the pooled network could not be set up in a usable state (in
+// which case it is destroyed rather than returned).
 func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 	var zero T
 
@@ -490,7 +497,14 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 		log.CtxWarningf(ctx, "Failed to set up default route in namespace: %s", err)
 		return zero
 	}
-	checkVethRoute(ctx, n.getVethPair())
+	// Don't hand out a network whose return traffic would be routed to another
+	// device (e.g. a stale veth left by a killed executor). Returning zero
+	// destroys this network via the deferred cleanup, and callers fall back to
+	// creating a fresh network on the next IP range.
+	if !checkVethRoute(ctx, n.getVethPair()) {
+		log.CtxWarningf(ctx, "Discarding pooled network %s due to route conflict", network.HostIPWithCIDR())
+		return zero
+	}
 
 	// Record a new baseline for network stats, so that the stats reported for
 	// the action only reflect the accumulated stats relative to the baseline.
@@ -846,7 +860,9 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
 	}
-	checkVethRoute(ctx, vp)
+	// Log-only here: failing would fail the task outright, and unlike the pool
+	// path there is no cheaper network to fall back to.
+	_ = checkVethRoute(ctx, vp)
 
 	if IsSecondaryNetworkEnabled() {
 		err = runCommand(ctx, "ip", "rule", "add", "from", vp.network.NamespacedIP(), "lookup", routingTableName)

@@ -41,6 +41,7 @@ go_test(
         ":networking",
         "//server/testutil/testnetworking",
         "//server/testutil/testshell",
+        "//server/util/lockingbuffer",
         "//server/util/testing/flags",
         "@com_github_rs_zerolog//:zerolog",
         "@com_github_rs_zerolog//log",

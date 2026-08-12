@@ -19,6 +19,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testnetworking"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/rs/zerolog"
@@ -235,62 +236,100 @@ func TestContainerNetworkPool(t *testing.T) {
 
 func TestDeleteNetNamespaces_LogsStaleResources(t *testing.T) {
 	testnetworking.Setup(t)
-	previousLogger := zerologlog.Logger
-	var logBuffer bytes.Buffer
-	zerologlog.Logger = zerolog.New(&logBuffer).Level(zerolog.WarnLevel)
-	t.Cleanup(func() {
-		zerologlog.Logger = previousLogger
-	})
+	logBuffer := captureWarnLogs(t)
 
 	suffix := rand.Intn(1 << 20)
 	netNamespace := fmt.Sprintf("bb-executor-test-%05x", suffix)
 	runIP(t, "netns", "add", netNamespace)
 	t.Cleanup(func() {
-		_ = exec.Command("ip", "netns", "delete", netNamespace).Run()
+		_ = ipCommand("netns", "delete", netNamespace).Run()
 	})
 
 	require.NoError(t, networking.DeleteNetNamespaces(context.Background()))
 	assert.Contains(t, logBuffer.String(), "Stale executor network resources detected at startup: namespaces=")
-	output, err := exec.Command("ip", "netns", "list").CombinedOutput()
+	output, err := ipCommand("netns", "list").CombinedOutput()
 	require.NoError(t, err, "%s", output)
 	assert.NotContains(t, string(output), netNamespace)
 }
 
-func TestContainerNetworkPool_LogsRouteConflict(t *testing.T) {
-	flags.Set(t, "executor.task_ip_range", "198.18.0.0/16")
-	flags.Set(t, "executor.cleanup_stale_veth_devices", false)
-	testnetworking.Setup(t)
+func TestContainerNetworkPool_StaleVethRoute(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		cleanupStaleDevices bool
+	}{
+		{name: "warns_when_cleanup_disabled", cleanupStaleDevices: false},
+		{name: "cleans_up_when_cleanup_enabled", cleanupStaleDevices: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.task_ip_range", "198.18.0.0/16")
+			flags.Set(t, "executor.cleanup_stale_veth_devices", test.cleanupStaleDevices)
+			testnetworking.Setup(t)
+			logBuffer := captureWarnLogs(t)
+
+			ctx := context.Background()
+			pool := networking.NewContainerNetworkPool(1)
+			t.Cleanup(func() {
+				require.NoError(t, pool.Shutdown(context.Background()))
+			})
+
+			cn, err := networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
+			require.NoError(t, err)
+			require.True(t, pool.Add(ctx, cn), "add network to pool")
+
+			// The network above was created with the allocator's first host IP,
+			// .5/30. The allocator hands out ranges round-robin and releasing a
+			// range does not rewind the cursor, so Get below assigns the next
+			// range, .13/30 (see TestHostNetAllocator). Leave a veth holding
+			// that address behind, simulating an executor killed before network
+			// cleanup.
+			staleDevice := createStaleVeth(t, "198.18.0.13/30")
+
+			cn = pool.Get(ctx)
+
+			if test.cleanupStaleDevices {
+				require.NotNil(t, cn, "take network from pool")
+				t.Cleanup(func() {
+					require.NoError(t, cn.Cleanup(context.Background()))
+				})
+				assert.Contains(t, logBuffer.String(), "Cleaning up stale veth device")
+				assert.Contains(t, logBuffer.String(), staleDevice)
+				assert.NotContains(t, logBuffer.String(), "Network route conflict:")
+				output, err := ipCommand("link", "show", staleDevice).CombinedOutput()
+				assert.Error(t, err, "stale device should have been deleted: %s", output)
+				// Return traffic reaches the namespace: if the stale veth still
+				// owned the host route, the ping replies would be blackholed.
+				netnsExec(t, cn.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
+			} else {
+				// The pooled network's return route is hijacked by the stale
+				// veth, so Get destroys the network instead of handing it out.
+				require.Nil(t, cn, "conflicted network should not be handed out")
+				assert.Contains(t, logBuffer.String(), "Network route conflict:")
+				assert.Contains(t, logBuffer.String(), staleDevice)
+				assert.Contains(t, logBuffer.String(), "Discarding pooled network")
+
+				// Callers treat nil as a pool miss and create a fresh network,
+				// which gets the next IP range and working connectivity.
+				fresh, err := networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					require.NoError(t, fresh.Cleanup(context.Background()))
+				})
+				netnsExec(t, fresh.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
+			}
+		})
+	}
+}
+
+// captureWarnLogs redirects global logging at WARN level and above to the
+// returned buffer until the test ends.
+func captureWarnLogs(t *testing.T) *lockingbuffer.LockingBuffer {
 	previousLogger := zerologlog.Logger
-	var logBuffer bytes.Buffer
-	zerologlog.Logger = zerolog.New(&logBuffer).Level(zerolog.WarnLevel)
+	buf := lockingbuffer.New()
+	zerologlog.Logger = zerolog.New(buf).Level(zerolog.WarnLevel)
 	t.Cleanup(func() {
 		zerologlog.Logger = previousLogger
 	})
-
-	ctx := context.Background()
-	pool := networking.NewContainerNetworkPool(1)
-	t.Cleanup(func() {
-		require.NoError(t, pool.Shutdown(context.Background()))
-	})
-
-	cn, err := networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
-	require.NoError(t, err)
-	require.True(t, pool.Add(ctx, cn), "add network to pool")
-
-	// The first allocation uses .5/30. Returning it to the pool releases that
-	// range, and the next allocation uses .13/30. Leave a veth with that next
-	// address behind, simulating an executor killed before network cleanup.
-	staleDevice := createStaleVeth(t, "198.18.0.13/30")
-
-	cn = pool.Get(ctx)
-	require.NotNil(t, cn, "take network from pool")
-	t.Cleanup(func() {
-		require.NoError(t, cn.Cleanup(context.Background()))
-	})
-
-	assert.Contains(t, logBuffer.String(), "Network route conflict:")
-	assert.Contains(t, logBuffer.String(), staleDevice)
-	assert.Contains(t, logBuffer.String(), cn.HostDevice())
+	return buf
 }
 
 func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
@@ -302,8 +341,8 @@ func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
 
 	runIP(t, "netns", "add", netNamespace)
 	t.Cleanup(func() {
-		_ = exec.Command("ip", "link", "delete", hostDevice).Run()
-		_ = exec.Command("ip", "netns", "delete", netNamespace).Run()
+		_ = ipCommand("link", "delete", hostDevice).Run()
+		_ = ipCommand("netns", "delete", netNamespace).Run()
 	})
 	runIP(t, "link", "add", hostDevice, "type", "veth", "peer", "name", peerDevice)
 	runIP(t, "link", "set", peerDevice, "netns", netNamespace)
@@ -313,9 +352,19 @@ func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
 	return hostDevice
 }
 
+// ipCommand returns a command that runs `ip` with the given arguments, using
+// sudo if not running as root (the same setup testnetworking.Setup probes
+// for).
+func ipCommand(args ...string) *exec.Cmd {
+	if os.Getuid() != 0 {
+		return exec.Command("sudo", append([]string{"--non-interactive", "ip"}, args...)...)
+	}
+	return exec.Command("ip", args...)
+}
+
 func runIP(t *testing.T, args ...string) {
 	t.Helper()
-	output, err := exec.Command("ip", args...).CombinedOutput()
+	output, err := ipCommand(args...).CombinedOutput()
 	require.NoError(t, err, "ip %s: %s", strings.Join(args, " "), output)
 }
 
