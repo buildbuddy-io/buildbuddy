@@ -133,6 +133,12 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 	if err != nil {
 		return nil, err
 	}
+	connected := false
+	defer func() {
+		if !connected {
+			_ = conn.Close()
+		}
+	}()
 
 	// https://github.com/firecracker-microvm/firecracker/blob/main/docs/vsock.md#host-initiated-connections
 	fcConnectString := fmt.Sprintf("CONNECT %d\n", port)
@@ -156,6 +162,7 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 		return nil, status.InternalErrorf("HostDial failed: didn't receive 'OK' after CONNECT, got %q", rsp)
 	}
 	conn.SetReadDeadline(time.Time{})
+	connected = true
 	return conn, nil
 }
 
