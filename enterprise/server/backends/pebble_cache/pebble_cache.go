@@ -2140,7 +2140,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	}
 
 	// Inline resources don't need 1 goroutine per resource. sqrt(inline count)
-	// goroutines seems to be fastests.
+	// goroutines seems to be fastest.
 	inlineResources := 0
 	for _, rn := range resources {
 		if rn.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
