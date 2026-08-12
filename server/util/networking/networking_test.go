@@ -21,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/rs/zerolog"
+	zerologlog "github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -229,6 +231,92 @@ func TestContainerNetworkPool(t *testing.T) {
 	require.NotNil(t, cn, "take from pool")
 
 	netnsExec(t, cn.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
+}
+
+func TestDeleteNetNamespaces_LogsStaleResources(t *testing.T) {
+	testnetworking.Setup(t)
+	previousLogger := zerologlog.Logger
+	var logBuffer bytes.Buffer
+	zerologlog.Logger = zerolog.New(&logBuffer).Level(zerolog.WarnLevel)
+	t.Cleanup(func() {
+		zerologlog.Logger = previousLogger
+	})
+
+	suffix := rand.Intn(1 << 20)
+	netNamespace := fmt.Sprintf("bb-executor-test-%05x", suffix)
+	runIP(t, "netns", "add", netNamespace)
+	t.Cleanup(func() {
+		_ = exec.Command("ip", "netns", "delete", netNamespace).Run()
+	})
+
+	require.NoError(t, networking.DeleteNetNamespaces(context.Background()))
+	assert.Contains(t, logBuffer.String(), "Stale executor network resources detected at startup: namespaces=")
+	output, err := exec.Command("ip", "netns", "list").CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	assert.NotContains(t, string(output), netNamespace)
+}
+
+func TestContainerNetworkPool_LogsRouteConflict(t *testing.T) {
+	flags.Set(t, "executor.task_ip_range", "198.18.0.0/16")
+	flags.Set(t, "executor.cleanup_stale_veth_devices", false)
+	testnetworking.Setup(t)
+	previousLogger := zerologlog.Logger
+	var logBuffer bytes.Buffer
+	zerologlog.Logger = zerolog.New(&logBuffer).Level(zerolog.WarnLevel)
+	t.Cleanup(func() {
+		zerologlog.Logger = previousLogger
+	})
+
+	ctx := context.Background()
+	pool := networking.NewContainerNetworkPool(1)
+	t.Cleanup(func() {
+		require.NoError(t, pool.Shutdown(context.Background()))
+	})
+
+	cn, err := networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
+	require.NoError(t, err)
+	require.True(t, pool.Add(ctx, cn), "add network to pool")
+
+	// The first allocation uses .5/30. Returning it to the pool releases that
+	// range, and the next allocation uses .13/30. Leave a veth with that next
+	// address behind, simulating an executor killed before network cleanup.
+	staleDevice := createStaleVeth(t, "198.18.0.13/30")
+
+	cn = pool.Get(ctx)
+	require.NotNil(t, cn, "take network from pool")
+	t.Cleanup(func() {
+		require.NoError(t, cn.Cleanup(context.Background()))
+	})
+
+	assert.Contains(t, logBuffer.String(), "Network route conflict:")
+	assert.Contains(t, logBuffer.String(), staleDevice)
+	assert.Contains(t, logBuffer.String(), cn.HostDevice())
+}
+
+func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
+	t.Helper()
+	suffix := rand.Intn(1 << 20)
+	hostDevice := fmt.Sprintf("vsh%05x", suffix)
+	peerDevice := fmt.Sprintf("vsp%05x", suffix)
+	netNamespace := fmt.Sprintf("bb-stale-%05x", suffix)
+
+	runIP(t, "netns", "add", netNamespace)
+	t.Cleanup(func() {
+		_ = exec.Command("ip", "link", "delete", hostDevice).Run()
+		_ = exec.Command("ip", "netns", "delete", netNamespace).Run()
+	})
+	runIP(t, "link", "add", hostDevice, "type", "veth", "peer", "name", peerDevice)
+	runIP(t, "link", "set", peerDevice, "netns", netNamespace)
+	runIP(t, "addr", "add", hostIPWithCIDR, "dev", hostDevice)
+	runIP(t, "link", "set", hostDevice, "up")
+	runIP(t, "netns", "exec", netNamespace, "ip", "link", "set", peerDevice, "up")
+	return hostDevice
+}
+
+func runIP(t *testing.T, args ...string) {
+	t.Helper()
+	output, err := exec.Command("ip", args...).CombinedOutput()
+	require.NoError(t, err, "ip %s: %s", strings.Join(args, " "), output)
 }
 
 func TestNetworkStats(t *testing.T) {
