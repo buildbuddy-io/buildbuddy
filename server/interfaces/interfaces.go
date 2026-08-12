@@ -330,6 +330,15 @@ type StoppableCache interface {
 type ReferenceCache interface {
 	Cache
 
+	// Creates a reference to the resource named by r from the bytes read from
+	// reader by writing them to shared storage, without writing r as an entry
+	// in this cache (so that the created reference can be claimed by another
+	// cache). The returned reference can be dereferenced with Dereference() or
+	// stored with WriteReference() by an identically-configured ReferenceCache;
+	// no cache owns the staged blob until a cache stores the reference, and at
+	// most one may do so without cloning.
+	CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error)
+
 	// Reads the provided resource from the cache and returns a reference to it.
 	// The provided reference can be dereferenced into an io.ReadCloser using
 	// Dereference(). This function returns a NotFound error if the requested

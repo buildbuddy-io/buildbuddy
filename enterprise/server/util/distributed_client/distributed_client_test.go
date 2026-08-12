@@ -1427,6 +1427,10 @@ func (c *fakeReferenceCache) ReadReference(ctx context.Context, r *rspb.Resource
 	return nil, status.UnimplementedError("not implemented")
 }
 
+func (c *fakeReferenceCache) CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error) {
+	return nil, status.UnimplementedError("not implemented")
+}
+
 func (c *fakeReferenceCache) SupportsCompressor(compressor repb.Compressor_Value) bool {
 	return compressor == repb.Compressor_IDENTITY || compressor == repb.Compressor_ZSTD
 }
@@ -1616,6 +1620,10 @@ func (c *serverReferenceCache) ReadReference(ctx context.Context, r *rspb.Resour
 		return ref, nil
 	}
 	return nil, status.NotFoundError("no reference available")
+}
+
+func (c *serverReferenceCache) CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error) {
+	return nil, status.UnimplementedError("not implemented")
 }
 
 // Dereference serves the configured blob bytes, standing in for shared

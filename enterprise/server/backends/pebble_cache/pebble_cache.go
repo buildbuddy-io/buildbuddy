@@ -2234,6 +2234,49 @@ func (p *PebbleCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (
 	return &refpb.Reference{Metadata: md}, nil
 }
 
+func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error) {
+	if p.gcsBlobstore == nil {
+		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot create references")
+	}
+	if !p.storesInGCS(r.GetDigest().GetSizeBytes()) {
+		return nil, status.NotFoundErrorf("resource %s is too small for shared storage", r.GetDigest().GetHash())
+	}
+
+	r, shouldCompress := p.autoZstdResource(r)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return nil, err
+	}
+	bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	// Commit only captures the blob's metadata instead of registering it in
+	// this cache.
+	var md *sgpb.FileMetadata
+	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, nil, func(m *sgpb.FileMetadata) error {
+		md = m
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	defer wc.Close()
+
+	if _, err := io.Copy(wc, reader); err != nil {
+		return nil, err
+	}
+	if err := wc.Commit(); err != nil {
+		return nil, err
+	}
+	return &refpb.Reference{Metadata: md}, nil
+}
+
 func validateReference(ref *refpb.Reference) error {
 	sm := ref.GetMetadata().GetStorageMetadata()
 	if sm.GetGcsMetadata().GetBlobName() == "" {
@@ -2590,18 +2633,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 			attribute.String("digest_hash", r.GetDigest().GetHash()),
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
-	// If data is not already compressed, return a writer that will compress it before writing
-	// Only compress data over a given size for more optimal compression ratios
-	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
-	if shouldCompress {
-		r = &rspb.ResourceName{
-			Digest:         r.GetDigest(),
-			DigestFunction: r.GetDigestFunction(),
-			InstanceName:   r.GetInstanceName(),
-			Compressor:     repb.Compressor_ZSTD,
-			CacheType:      r.GetCacheType(),
-		}
-	}
+	r, shouldCompress := p.autoZstdResource(r)
 
 	encryption, err := p.activeEncryption(ctx)
 	if err != nil {
@@ -2619,17 +2651,31 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress)
 }
 
-// newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write
-// will:
-// (1) compress the data if shouldCompress is true; and then
-// (2) encrypt the data if encryption is enabled
-// (3) write the data using input wcm's Write method.
-// On Commit, it will write the metadata for fileRecord.
+func (p *PebbleCache) autoZstdResource(r *rspb.ResourceName) (*rspb.ResourceName, bool) {
+	if r.GetCompressor() != repb.Compressor_IDENTITY || r.GetDigest().GetSizeBytes() < p.minBytesAutoZstdCompression {
+		return r, false
+	}
+	return &rspb.ResourceName{
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+		InstanceName:   r.GetInstanceName(),
+		Compressor:     repb.Compressor_ZSTD,
+		CacheType:      r.GetCacheType(),
+	}, true
+}
+
+func (p *PebbleCache) storesInGCS(sizeBytes int64) bool {
+	return sizeBytes >= p.maxInlineFileSizeBytes && sizeBytes >= p.minGCSFileSizeBytes
+}
+
+// newWrappedWriter returns an interfaces.CommittedWriteCloser that writes
+// data to the storage tier appropriate for fileRecord and, on Commit, writes
+// the metadata for fileRecord.
 func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
 	var wcm interfaces.MetadataWriteCloser
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-	} else if fileRecord.GetDigest().GetSizeBytes() >= p.minGCSFileSizeBytes {
+	} else if p.storesInGCS(fileRecord.GetDigest().GetSizeBytes()) {
 		bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
 		if err != nil {
 			return nil, err
@@ -2648,10 +2694,21 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	if err != nil {
 		return nil, err
 	}
+	return p.wrapWriter(ctx, fileRecord, wcm, shouldCompress, db.Close, func(md *sgpb.FileMetadata) error {
+		return p.writeMetadata(ctx, db, key, md)
+	})
+}
 
+// wrapWriter wraps wcm in the storage-independent layers of the write path:
+// a commit hook that assembles the written blob's metadata and hands it to
+// commitFn, encryption (if enabled), and compression (if shouldCompress).
+// closeFn, if non-nil, is called when the returned writer is closed.
+func (p *PebbleCache) wrapWriter(ctx context.Context, fileRecord *sgpb.FileRecord, wcm interfaces.MetadataWriteCloser, shouldCompress bool, closeFn func() error, commitFn func(md *sgpb.FileMetadata) error) (interfaces.CommittedWriteCloser, error) {
 	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
-	cwc.SetCloseFn(db.Close)
+	if closeFn != nil {
+		cwc.SetCloseFn(closeFn)
+	}
 	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := p.clock.Now().UnixMicro()
 		md := &sgpb.FileMetadata{
@@ -2663,11 +2720,11 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 			LastModifyUsec:     now,
 		}
 		if bytesWritten == 0 {
-			log.Infof("Rejecting zero-length write. Key %q, md: %+v", key, md)
+			log.Infof("Rejecting zero-length write. md: %+v", md)
 			return status.UnavailableError("zero-length writes are not allowed")
 		}
 
-		return p.writeMetadata(ctx, db, key, md)
+		return commitFn(md)
 	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
