@@ -595,7 +595,11 @@ type UserDB interface {
 	// an error if no registered user was found. It requires that a
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
+	// It returns all groups the user is a member of.
 	GetUser(ctx context.Context) (*tables.User, error)
+	// GetUserWithOwnedGroups returns the authenticated user with only groups
+	// created by that user.
+	GetUserWithOwnedGroups(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *GetUserOpts) (*tables.User, error)

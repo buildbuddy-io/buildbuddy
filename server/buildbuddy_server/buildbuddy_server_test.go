@@ -125,16 +125,29 @@ type fakeUserDB struct {
 
 	user *tables.User
 
-	getUserCalls int
 	createdGroup *tables.Group
 }
 
 func (d *fakeUserDB) GetUser(ctx context.Context) (*tables.User, error) {
-	d.getUserCalls++
 	if d.user == nil {
 		return nil, status.NotFoundError("no such user")
 	}
 	return d.user, nil
+}
+
+func (d *fakeUserDB) GetUserWithOwnedGroups(ctx context.Context) (*tables.User, error) {
+	user, err := d.GetUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ownedUser := *user
+	ownedUser.Groups = nil
+	for _, gr := range user.Groups {
+		if gr.Group.UserID == user.UserID {
+			ownedUser.Groups = append(ownedUser.Groups, gr)
+		}
+	}
+	return &ownedUser, nil
 }
 
 func (d *fakeUserDB) GetGroupByID(ctx context.Context, groupID string) (*tables.Group, error) {
@@ -149,18 +162,30 @@ func (d *fakeUserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, 
 type fakeExperimentFlagProvider struct {
 	interfaces.ExperimentFlagProvider
 
-	flags map[string]bool
+	booleanFlags map[string]bool
+	int64Flags   map[string]int64
 }
 
 func (p *fakeExperimentFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
-	if v, ok := p.flags[flagName]; ok {
+	if v, ok := p.booleanFlags[flagName]; ok {
+		return v
+	}
+	return defaultValue
+}
+
+func (p *fakeExperimentFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
+	if v, ok := p.int64Flags[flagName]; ok {
 		return v
 	}
 	return defaultValue
 }
 
 func groupRole(groupID string, groupStatus grpb.Group_GroupStatus) *tables.GroupRole {
-	return &tables.GroupRole{Group: tables.Group{GroupID: groupID, Status: groupStatus}}
+	return groupRoleOwnedBy(groupID, user1, groupStatus)
+}
+
+func groupRoleOwnedBy(groupID, ownerID string, groupStatus grpb.Group_GroupStatus) *tables.GroupRole {
+	return &tables.GroupRole{Group: tables.Group{GroupID: groupID, UserID: ownerID, Status: groupStatus}}
 }
 
 // userClaims returns claims for a browser-authenticated user.
@@ -207,6 +232,25 @@ func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
 			expectDenied: false,
 		},
 		{
+			name:              "user_owned_group_blocked_and_invited_group_unblocked_denied",
+			experimentEnabled: true,
+			claims:            userClaims(user1, group1),
+			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
+				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
+				groupRoleOwnedBy(group2, user2, grpb.Group_FREE_TIER_GROUP_STATUS),
+			}},
+			expectDenied: true,
+		},
+		{
+			name:              "user_only_invited_to_blocked_group_allowed",
+			experimentEnabled: true,
+			claims:            userClaims(user1, group1),
+			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
+				groupRoleOwnedBy(group1, user2, grpb.Group_BLOCKED_GROUP_STATUS),
+			}},
+			expectDenied: false,
+		},
+		{
 			name:              "user_with_no_groups_allowed",
 			experimentEnabled: true,
 			claims:            userClaims(user1, group1),
@@ -247,7 +291,7 @@ func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
 			udb := &fakeUserDB{user: tc.user}
 			te.SetUserDB(udb)
 			te.SetExperimentFlagProvider(&fakeExperimentFlagProvider{
-				flags: map[string]bool{"app.propagate_group_blocks": tc.experimentEnabled},
+				booleanFlags: map[string]bool{"app.propagate_group_blocks": tc.experimentEnabled},
 			})
 			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 			require.NoError(t, err)
