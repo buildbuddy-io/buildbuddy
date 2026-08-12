@@ -653,6 +653,134 @@ func (ts *TargetStatus) TableName() string {
 	return "TargetStatuses"
 }
 
+// TestBuddy stores every target and case as a test. An empty CaseName means
+// the row is for a target. A non-empty CaseName means the row is for a case.
+// Each row has its own health, analyzer state, and execution disposition.
+// The UI may group cases under a target, but storage does not aggregate them.
+//
+// The primary key is group, repository, target label, and case name. It
+// supports one-row test lookups and range scans for a target and its cases.
+// PackagePath supports directory cone queries.
+//
+// MySQL uses binary comparison for test identity. Repository URLs and target
+// labels use ascii_bin. Case names use UTF-8 bytes in a binary column. This
+// preserves case-sensitive identity and keeps the key within MySQL's limit.
+
+// TestRepositoryCatalog records a repository that has reported tests.
+type TestRepositoryCatalog struct {
+	Model
+	GroupID    string `gorm:"primaryKey;size:64;not null"`
+	Repository string `gorm:"primaryKey;size:512;not null"`
+}
+
+func (*TestRepositoryCatalog) TableName() string { return "TestRepositoryCatalogs" }
+
+// Test stores identity and execution disposition.
+type Test struct {
+	Model
+	GroupID       string `gorm:"primaryKey;size:64;not null;index:test_cone_idx,priority:1"`
+	Repository    string `gorm:"primaryKey;size:512;not null;index:test_cone_idx,priority:2"`
+	TargetLabel   string `gorm:"primaryKey;size:1539;not null"`
+	CaseName      []byte `gorm:"primaryKey;size:512;not null"`
+	PackagePath   string `gorm:"size:1024;not null;index:test_cone_idx,priority:3"`
+	Disposition   int32  `gorm:"not null;default:0"`
+	DeletedAtUsec int64  `gorm:"not null;default:0"`
+}
+
+func (*Test) TableName() string { return "Tests" }
+
+// TestPackageCoverage records the latest coverage fraction for a Bazel package.
+type TestPackageCoverage struct {
+	Model
+	GroupID          string  `gorm:"primaryKey;size:64;not null"`
+	Repository       string  `gorm:"primaryKey;size:512;not null"`
+	PackagePath      string  `gorm:"primaryKey;size:1024;not null"`
+	CoverageFraction float64 `gorm:"not null"`
+}
+
+func (*TestPackageCoverage) TableName() string { return "TestPackageCoverages" }
+
+// TestAnalyzerConfig is the analyzer configuration for one repository in a
+// group.
+type TestAnalyzerConfig struct {
+	Model
+	GroupID    string `gorm:"primaryKey;size:64;not null"`
+	Repository string `gorm:"primaryKey;size:512;not null"`
+	Revision   int64  `gorm:"not null"`
+	// Config contains a serialized test_buddy.TestAnalyzerConfig.
+	Config []byte `gorm:"size:max;not null"`
+}
+
+func (*TestAnalyzerConfig) TableName() string { return "TestAnalyzerConfigs" }
+
+// TestState stores the current health and analyzer window for one test.
+type TestState struct {
+	Model
+	GroupID     string `gorm:"primaryKey;size:64;not null"`
+	Repository  string `gorm:"primaryKey;size:512;not null"`
+	TargetLabel string `gorm:"primaryKey;size:1539;not null"`
+	CaseName    []byte `gorm:"primaryKey;size:512;not null"`
+
+	Health              string `gorm:"size:32;not null"`
+	RecentObservations  []byte `gorm:"size:max;not null"`
+	PassCount           int64
+	FailCount           int64
+	TimeoutCount        int64
+	BrokenCount         int64
+	TotalDurationUsec   int64
+	StateVersion        int64  `gorm:"not null"`
+	AnalyzerRevision    int64  `gorm:"not null"`
+	AnalysisReason      string `gorm:"size:64;not null"`
+	EligibleSampleCount int64  `gorm:"not null"`
+}
+
+func (*TestState) TableName() string { return "TestStates" }
+
+// TestStateChange records one health transition for one test.
+type TestStateChange struct {
+	Model
+	GroupID      string `gorm:"primaryKey;size:64;not null"`
+	Repository   string `gorm:"primaryKey;size:512;not null"`
+	TargetLabel  string `gorm:"primaryKey;size:1539;not null"`
+	CaseName     []byte `gorm:"primaryKey;size:512;not null"`
+	StateVersion int64  `gorm:"primaryKey;autoIncrement:false;not null"`
+
+	PreviousHealth      string `gorm:"size:32;not null"`
+	Health              string `gorm:"size:32;not null"`
+	PassCount           int64
+	FailCount           int64
+	TimeoutCount        int64
+	BrokenCount         int64
+	TransitionTimeUsec  int64  `gorm:"not null"`
+	AnalyzerRevision    int64  `gorm:"not null"`
+	AnalysisReason      string `gorm:"size:64;not null"`
+	EligibleSampleCount int64  `gorm:"not null"`
+}
+
+func (*TestStateChange) TableName() string { return "TestStateChanges" }
+
+const testBuddyTableOptions = "ENGINE=InnoDB DEFAULT CHARSET=ascii COLLATE=ascii_bin"
+
+func testBuddyTables() []Table {
+	return []Table{
+		&TestRepositoryCatalog{}, &Test{},
+		&TestPackageCoverage{}, &TestAnalyzerConfig{},
+		&TestState{}, &TestStateChange{},
+	}
+}
+
+func createTestBuddyTables(db *gorm.DB) error {
+	for _, table := range testBuddyTables() {
+		if db.Migrator().HasTable(table) {
+			continue
+		}
+		if err := db.Set("gorm:table_options", " "+testBuddyTableOptions).Migrator().CreateTable(table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GitHubAppInstallation represents a BuildBuddy GitHub App installation linked
 // to an organization.
 //
@@ -1047,6 +1175,16 @@ func PreAutoMigrate(db *gorm.DB) ([]PostAutoMigrateLogic, error) {
 	postMigrate := make([]PostAutoMigrateLogic, 0)
 
 	m := db.Migrator()
+
+	// GORM creates indexes in the CREATE TABLE statement, so changing the
+	// charset after AutoMigrate is too late: MySQL has already rejected the
+	// composite keys as too wide. Pre-creating these tables also establishes
+	// binary comparison before any addresses are written.
+	if db.Dialector.Name() == mysqlDialect {
+		if err := createTestBuddyTables(db); err != nil {
+			return nil, err
+		}
+	}
 
 	// Initialize UserGroups.membership_status to 1 if the column doesn't exist.
 	if m.HasTable("UserGroups") && !m.HasColumn(&UserGroup{}, "membership_status") {
@@ -1538,6 +1676,12 @@ func RegisterTables() {
 	registerTable("SK", &Secret{})
 	registerTable("SR", &ScheduledRun{})
 	registerTable("TA", &Target{})
+	registerTable("TC", &Test{})
+	registerTable("TD", &TestPackageCoverage{})
+	registerTable("TF", &TestRepositoryCatalog{})
+	registerTable("TG", &TestState{})
+	registerTable("TI", &TestAnalyzerConfig{})
+	registerTable("TJ", &TestStateChange{})
 	registerTable("TL", &TelemetryLog{})
 	registerTable("TO", &Token{})
 	registerTable("TS", &TargetStatus{})
