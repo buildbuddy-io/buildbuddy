@@ -5,9 +5,9 @@ import (
 	"context"
 	"io"
 	"os"
-	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
@@ -129,6 +129,7 @@ func GetOptionsFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig
 		PartitionMappings:           cfg.PartitionMappings,
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
 		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
+		MaxReadGoroutines:           cfg.MaxReadGoroutines,
 		MaxWriteGoroutines:          cfg.MaxWriteGoroutines,
 		GCSBucket:                   cfg.GCSConfig.Bucket,
 		GCSCredentials:              cfg.GCSConfig.Credentials,
@@ -669,47 +670,73 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		md       *sgpb.FileMetadata
 	}
 	hits := make([]resourceMetadata, 0, len(resources))
+	nonInlineCount := 0
 	for i, r := range resources {
-		if mds[i].GetFileRecord() == nil {
+		md := mds[i]
+		if md.GetFileRecord() == nil {
 			// Missing metadata, skip
 			continue
 		}
-		hits = append(hits, resourceMetadata{resource: r, md: mds[i]})
+		hits = append(hits, resourceMetadata{resource: r, md: md})
+		if md.GetStorageMetadata().GetInlineMetadata() == nil {
+			nonInlineCount++
+		}
 	}
 
+	var next atomic.Int64
 	var foundMu sync.Mutex
 	foundMap := make(map[*repb.Digest][]byte, len(hits))
-	eg, ctx := errgroup.WithContext(ctx)
-	numChunks := c.opts.MaxReadGoroutines
-	chunkSize := max(1, (len(hits)+numChunks-1)/numChunks)
-	for chunk := range slices.Chunk(hits, chunkSize) {
-		eg.Go(func() error {
-			for _, hit := range chunk {
-				r := hit.resource
-				rc, err := c.reader(ctx, hit.md, r, 0, 0, encryption)
-				if err != nil {
-					if status.IsNotFoundError(err) || os.IsNotExist(err) {
-						continue
-					}
-					return err
-				}
-				buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md, rc)))
-				_, copyErr := io.Copy(buf, rc)
-				closeErr := rc.Close()
-				if copyErr != nil {
-					log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
-					continue
-				}
-				if closeErr != nil {
-					log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
-					continue
-				}
-				foundMu.Lock()
-				foundMap[r.GetDigest()] = buf.Bytes()
-				foundMu.Unlock()
+	handleBatch := func() error {
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			return nil
-		})
+			i := int(next.Add(1)) - 1
+			if i >= len(hits) {
+				return nil
+			}
+			hit := hits[i]
+			r := hit.resource
+			rc, err := c.reader(ctx, hit.md, r, 0, 0, encryption)
+			if err != nil {
+				if status.IsNotFoundError(err) || os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md, rc)))
+			_, copyErr := io.Copy(buf, rc)
+			closeErr := rc.Close()
+			if copyErr != nil {
+				log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
+				continue
+			}
+			if closeErr != nil {
+				log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
+				continue
+			}
+			foundMu.Lock()
+			foundMap[r.GetDigest()] = buf.Bytes()
+			foundMu.Unlock()
+		}
+	}
+
+	// Add 1 goroutine per non-inline resource, since they can be slow. The
+	// inline blobs don't require any more I/O.
+	maxGoroutines := min(c.opts.MaxReadGoroutines, nonInlineCount)
+	if maxGoroutines <= 1 {
+		// Don't start goroutines if we don't have to.
+		if err := handleBatch(); err != nil {
+			return nil, err
+		}
+		return foundMap, nil
+	}
+
+	// Make sure to set the ctx used inside handleBatch (don't shadow it).
+	var eg *errgroup.Group
+	eg, ctx = errgroup.WithContext(ctx)
+	for range maxGoroutines {
+		eg.Go(handleBatch)
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
