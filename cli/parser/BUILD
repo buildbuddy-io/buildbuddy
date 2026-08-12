@@ -15,6 +15,7 @@ go_library(
         "//cli/parser/arguments",
         "//cli/parser/bazel_command",
         "//cli/parser/bazelrc",
+        "//cli/parser/bbrc",
         "//cli/parser/options",
         "//cli/parser/parsed",
         "//cli/shortcuts",
@@ -37,7 +38,10 @@ go_test(
     srcs = ["parser_test.go"],
     embed = [":parser"],
     deps = [
+        "//cli/cli_command",
         "//cli/log",
+        "//cli/parser/bbrc",
+        "//cli/parser/options",
         "//cli/parser/test_data",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
@@ -74,6 +75,9 @@ var (
 					log.Warnf("Error initializing command-line parser when adding bb-specific definition for '%s': %s", name, err)
 				}
 			}
+			parser.ForceAddOptionDefinition(bbrc.NewConfigOptionDefinition(
+				slices.Collect(parser.StartupOptionParser.Subcommands.All())...,
+			))
 			parser.StartupOptionParser.Aliases = shortcuts.Shortcuts
 			return parser, nil
 		},
@@ -175,11 +179,17 @@ func GetNativeParser() *Parser {
 	for alias, command := range cli_command.Aliases {
 		aliases[alias] = command.Name
 	}
-	return NewParser(
+	p := NewParser(
 		definitions,
 		slices.Collect(maps.Keys(cli_command.CommandsByName)),
 		aliases,
 	)
+	commands := slices.Concat(
+		slices.Collect(bazel_command.Commands().All()),
+		slices.Collect(p.StartupOptionParser.Subcommands.All()),
+	)
+	p.ForceAddOptionDefinition(bbrc.NewConfigOptionDefinition(commands...))
+	return p
 }
 
 // GetBBParserForCommand returns a parser for the BB-specific flags associated
@@ -835,6 +845,25 @@ func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed
 	return bazelrc.ExpandConfigs(parsedArgs, configs, defaultConfig)
 }
 
+func (p *Parser) expandBBRC(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
+	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(workspaceDir, bbrcFilePaths(workspaceDir, homeDir)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse .bbrc file: %s", err)
+	}
+	return bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
+}
+
+func bbrcFilePaths(workspaceDir, homeDir string) []string {
+	var paths []string
+	if workspaceDir != "" {
+		paths = append(paths, filepath.Join(workspaceDir, bbrc.FileName))
+	}
+	if homeDir != "" {
+		paths = append(paths, filepath.Join(homeDir, bbrc.FileName))
+	}
+	return paths
+}
+
 // RCFilePolicy controls how sections of an rc file are parsed.
 type RCFilePolicy struct {
 	// IsPhase checks whether a phase name is valid.
@@ -848,6 +877,18 @@ type RCFilePolicy struct {
 func (p *Parser) ParseBazelrcFiles(workspaceDir string, filePaths ...string) (map[string]*parsed.Config, *parsed.Config, error) {
 	return p.ParseRCFilesWithPolicy(workspaceDir, RCFilePolicy{
 		IsPhase:    bazelrc.IsPhase,
+		ParsePhase: p.ParseConfig,
+	}, filePaths...)
+}
+
+// ParseBBRCFiles parses BuildBuddy rc files and returns the named configs and
+// default (unnamed) config they define.
+func (p *Parser) ParseBBRCFiles(workspaceDir string, filePaths ...string) (map[string]*parsed.Config, *parsed.Config, error) {
+	return p.ParseRCFilesWithPolicy(workspaceDir, RCFilePolicy{
+		IsPhase: func(phase string) bool {
+			_, isBBCommand := cli_command.CommandsByName[phase]
+			return bazelrc.IsPhase(phase) || isBBCommand
+		},
 		ParsePhase: p.ParseConfig,
 	}, filePaths...)
 }
