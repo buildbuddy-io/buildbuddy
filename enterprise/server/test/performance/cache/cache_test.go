@@ -324,8 +324,8 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	}
 }
 
-func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes, rspb.CacheType_CAS)
+func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, batchSize int, b *testing.B) {
+	digestBufs := makeDigests(b, batchSize, digestSizeBytes, rspb.CacheType_CAS)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
@@ -372,7 +372,7 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 	ddc := getDistributedCache(b, te, dc, 0)
 	pc := getPebbleCache(b, te)
 	dpc := getDistributedCache(b, te, pc, 0)
-	lpc := getDistributedCache(b, te, getPebbleCache(b, te), 100_000)
+	// lpc := getDistributedCache(b, te, getPebbleCache(b, te), 100_000)
 
 	time.Sleep(100 * time.Millisecond)
 	caches := []*namedCache{
@@ -381,7 +381,7 @@ func getAllCaches(b *testing.B, te environment.Env) []*namedCache {
 		{ddc, "DistDisk"},
 		{getPebbleCache(b, te), "LocalPebble"},
 		{dpc, "DistPebble"},
-		{lpc, "LookasideDistPebble"},
+		// {lpc, "LookasideDistPebble"},
 		{getMetaCache(b, te), "Meta"},
 		{getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), "LocalMigration"},
 		{getDistributedCache(b, te, getMigrationCache(b, te, getPebbleCache(b, te), getPebbleCache(b, te)), 0), "DistMigration"},
@@ -441,16 +441,19 @@ func BenchmarkGetSingle(b *testing.B) {
 }
 
 func BenchmarkGetMulti(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{100, 10000}
+	batchSizes := []int{1, 2, 3, 5, 10, 25, 50, 100, 500}
 	te := getTestEnv(b)
 	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkGetMulti(ctx, cache, size, b)
-			})
+			for _, batchSize := range batchSizes {
+				name := fmt.Sprintf("%s%d/batch%d", cache.Name, size, batchSize)
+				b.Run(name, func(b *testing.B) {
+					benchmarkGetMulti(ctx, cache, size, batchSize, b)
+				})
+			}
 		}
 	}
 }
