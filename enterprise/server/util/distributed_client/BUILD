@@ -19,6 +19,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/resources",
         "//server/util/authutil",
+        "//server/util/background",
         "//server/util/bytebufferpool",
         "//server/util/compression",
         "//server/util/findmissing",
