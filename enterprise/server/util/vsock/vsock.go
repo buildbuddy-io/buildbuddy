@@ -178,11 +178,11 @@ func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.
 	// These params are tuned for a fast-reconnect to the vmexec server
 	// running inside the VM.
 	backoffConfig := backoff.Config{
-               BaseDelay:  10 * time.Millisecond,
-               Multiplier: 1,
-               Jitter:     .2,
-               MaxDelay:   20 * time.Millisecond,
-        }
+		BaseDelay:  10 * time.Millisecond,
+		Multiplier: 1,
+		Jitter:     0.2,
+		MaxDelay:   10 * time.Millisecond,
+	}
 	connectParams := grpc.ConnectParams{
 		Backoff:           backoffConfig,
 		MinConnectTimeout: 10 * time.Second,
