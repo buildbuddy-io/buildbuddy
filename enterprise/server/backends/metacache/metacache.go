@@ -129,6 +129,7 @@ func GetOptionsFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig
 		PartitionMappings:           cfg.PartitionMappings,
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
 		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
+		MaxReadGoroutines:           cfg.MaxReadGoroutines,
 		MaxWriteGoroutines:          cfg.MaxWriteGoroutines,
 		GCSBucket:                   cfg.GCSConfig.Bucket,
 		GCSCredentials:              cfg.GCSConfig.Credentials,
@@ -722,7 +723,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 
 	// Add 1 goroutine per non-inline resource, since they can be slow. The
 	// inline blobs don't require any more I/O.
-	maxGoroutines := min(10, nonInlineCount)
+	maxGoroutines := min(c.opts.MaxReadGoroutines, nonInlineCount)
 	if maxGoroutines <= 1 {
 		// Don't start goroutines if we don't have to.
 		if err := handleBatch(); err != nil {
