@@ -2036,8 +2036,12 @@ func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata, r
 	}
 	// WriteTo allows copying without a second read to get EOF. Without that
 	// bytes.Buffer.ReadFrom will allocate an extra bytes.MinRead unless we
-	// oversize it.
-	if _, ok := reader.(io.WriterTo); !ok {
+	// oversize it. *os.File advertises WriterTo (for sendfile support), but
+	// writing to a bytes.Buffer it falls back to bytes.Buffer.ReadFrom, which
+	// also needs the extra room.
+	_, isFile := reader.(*os.File)
+	_, isWriterTo := reader.(io.WriterTo)
+	if isFile || !isWriterTo {
 		bufSize += bytes.MinRead
 	}
 	return bufSize
