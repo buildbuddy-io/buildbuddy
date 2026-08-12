@@ -2173,7 +2173,7 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	return foundMap, nil
 }
 
-func (p *PebbleCache) GetReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+func (p *PebbleCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
