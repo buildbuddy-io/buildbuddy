@@ -26,10 +26,10 @@ const (
 var (
 	signingKey                 = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
 	additionalVerificationKeys = flag.Slice("app.client_identity.additional_verification_keys", []string{}, "Additional keys accepted when verifying identity JWTs, tried after the signing key. Used to keep old and new keys trusted simultaneously during key rotation.", flag.Secret)
-	client     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
-	origin     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
-	expiration = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
-	required   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
+	client                     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
+	origin                     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
+	expiration                 = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
+	required                   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
 )
 
 type cachedHeader struct {
