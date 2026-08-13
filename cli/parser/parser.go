@@ -669,7 +669,7 @@ func (p *Parser) canonicalizeArgs(args []string) ([]string, error) {
 			return args, nil
 		}
 	}
-	parsedArgs, err := ParseArgs(args)
+	parsedArgs, err := p.ParseArgs(args)
 	if err != nil {
 		return nil, err
 	}
