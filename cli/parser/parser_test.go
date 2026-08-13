@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
@@ -116,6 +117,125 @@ func TestParseBazelrc_Simple(t *testing.T) {
 
 func TestParseBazelrc_Complex(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
+
+	flagCollection, err := bazelHelp()
+	require.NoError(t, err)
+
+	p, err := GenerateParser(flagCollection)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"startup_flag_1",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("startup"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"explicit_startup_flag",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("startup"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"build_flag_1",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("build"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"explicit_flag",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("build"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"build_config_foo_multi_1",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("build"),
+			options.WithNegative(),
+			options.WithMulti(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"build_config_foo_multi_2",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("build"),
+			options.WithNegative(),
+			options.WithMulti(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"build_config_forward_ref_flag",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("build"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"build_config_bar_flag",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("build"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"build_config_foo_flag",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("build"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"invalid_common_flag_1",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("invalid"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
+	err = p.AddOptionDefinition(
+		options.NewDefinition(
+			"invalid_common_flag_2",
+			options.WithPluginID("//builtin/test"),
+			options.WithSupportFor("invalid"),
+			options.WithNegative(),
+		),
+	)
+	require.NoError(t, err)
+
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"WORKSPACE": "",
 		"import.bazelrc": `
@@ -372,9 +492,9 @@ try-import %workspace%/NONEXISTENT.bazelrc
 		},
 	} {
 		t.Run(fmt.Sprintf("%v", tc.args), func(t *testing.T) {
-			parsedArgs, err := ParseArgs(tc.args)
+			parsedArgs, err := p.ParseArgs(tc.args)
 			require.NoError(t, err)
-			expandedArgs, err := resolveArgs(parsedArgs, ws)
+			expandedArgs, err := p.resolveArgs(parsedArgs, ws)
 
 			if tc.errorContents != nil {
 				for _, ec := range tc.errorContents {
@@ -509,6 +629,14 @@ func TestParseBazelrc_DedupesBazelrcFilesInArgs(t *testing.T) {
 func TestCanonicalizeArgs(t *testing.T) {
 	// Use some args that look like bazel commands but are actually
 	// specifying flag values.
+
+	flagCollection, err := bazelHelp()
+	require.NoError(t, err)
+
+	p, err := GenerateParser(flagCollection)
+	require.NoError(t, err)
+	p = p.AsPermissive()
+
 	testcases := []struct {
 		name     string
 		input    []string
@@ -653,8 +781,6 @@ func TestCanonicalizeArgs(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := GetParser()
-			require.NoError(t, err)
 			canonicalArgs, err := p.canonicalizeArgs(tc.input)
 
 			require.NoError(t, err)

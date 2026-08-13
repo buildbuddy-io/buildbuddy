@@ -40,6 +40,7 @@ go_test(
     embed = [":parser"],
     deps = [
         "//cli/log",
+        "//cli/parser/options",
         "//cli/parser/test_data",
         "//server/testutil/testfs",
         "@com_github_stretchr_testify//assert",

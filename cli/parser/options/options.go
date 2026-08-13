@@ -70,7 +70,6 @@ type Defined interface {
 	HasNegative() bool
 	RequiresValue() bool
 	HasSupportedCommands() bool
-	SupportedCommands() set.View[string]
 	Supports(string) bool
 	PluginID() string
 }
@@ -153,7 +152,6 @@ func (d *Definition) Supports(command string) bool {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -745,16 +743,20 @@ func (o *UnknownOption) Normalized() Option {
 	return o
 }
 
-func (o *UnknownOption) SupportedCommands() set.View[string] {
-	return set.FromSeq(set.Union(set.View[string](o.AssumedSupport), o.Option.SupportedCommands()))
-}
-
 func (o *UnknownOption) HasSupportedCommands() bool {
-	return o.AssumedSupport.Len()|o.Option.SupportedCommands().Len() != 0
+	return o.AssumedSupport.Len() != 0 || o.Option.HasSupportedCommands()
 }
 
 func (o *UnknownOption) Supports(command string) bool {
-	return o.AssumedSupport.Contains(command) || o.Option.Supports(command)
+	if o.Option.Supports(command) {
+		return true
+	}
+	for cmd := command; cmd != ""; cmd = bazel_command.Parent(cmd) {
+		if o.AssumedSupport.Contains(cmd) {
+			return true
+		}
+	}
+	return false
 }
 
 func (o *UnknownOption) AssumeSupportFor(commands ...string) {

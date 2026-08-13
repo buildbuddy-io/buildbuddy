@@ -541,10 +541,9 @@ func (a *OrderedArgs) prependOption(option options.Option, commandIndex int) (in
 	}
 	if !option.Supports(command) {
 		return commandIndex, fmt.Errorf(
-			"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+			"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.",
 			option.Name(),
 			command,
-			slices.Collect(option.SupportedCommands().All()),
 		)
 	}
 	a.Args = slices.Insert(a.Args, commandIndex+1, arguments.Argument(option))
@@ -673,10 +672,9 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 		return startupOptionInsertIndex, commandOptionInsertIndex, nil
 	}
 	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf(
-		"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+		"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.",
 		option.Name(),
 		command,
-		slices.Collect(option.SupportedCommands().All()),
 	)
 }
 
@@ -1074,10 +1072,9 @@ func (a *PartitionedArgs) Prepend(opts ...options.Option) error {
 			a.CommandOptions = append([]options.Option{opt}, a.CommandOptions...)
 		default:
 			return fmt.Errorf(
-				"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+				"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.",
 				opt.Name(),
 				*a.Command,
-				slices.Collect(opt.SupportedCommands().All()),
 			)
 		}
 	}
@@ -1120,10 +1117,9 @@ func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 				a.CommandOptions = append(a.CommandOptions, arg)
 			default:
 				return fmt.Errorf(
-					"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+					"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.",
 					arg.Name(),
 					*a.Command,
-					slices.Collect(arg.SupportedCommands().All()),
 				)
 
 			}
