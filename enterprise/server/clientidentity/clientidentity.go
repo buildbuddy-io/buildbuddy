@@ -204,17 +204,17 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 	var verifyErr error
 	for _, key := range s.verificationKeys {
 		c := &claims{}
-		if _, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (interface{}, error) {
+		_, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (interface{}, error) {
 			return key, nil
-		}); err != nil {
-			// A signature mismatch is expected for all but the key that signed
-			// the token, so prefer reporting any other failure (e.g. expiry).
-			if verifyErr == nil || !errors.Is(err, jwt.ErrTokenSignatureInvalid) {
-				verifyErr = err
-			}
-			continue
+		})
+		if err == nil {
+			return context.WithValue(ctx, validatedIdentityContextKey, &c.ClientIdentity), nil
 		}
-		return context.WithValue(ctx, validatedIdentityContextKey, &c.ClientIdentity), nil
+		// A signature mismatch is expected for all but the key that signed
+		// the token, so prefer reporting any other failure (e.g. expiry).
+		if verifyErr == nil || !errors.Is(err, jwt.ErrTokenSignatureInvalid) {
+			verifyErr = err
+		}
 	}
 	return ctx, status.PermissionDeniedErrorf("invalid identity header: %s", verifyErr)
 }
