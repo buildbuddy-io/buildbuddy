@@ -181,6 +181,14 @@ func TestParseBBRCFiles_RejectsInvalidStartupOptions(t *testing.T) {
 			contents: "startup --ignore_all_rc_files",
 		},
 		{
+			name:     "BBRCFileControlFlag",
+			contents: "startup --bbrc=other.bbrc",
+		},
+		{
+			name:     "IgnoreAllBBRCFilesControlFlag",
+			contents: "startup --ignore_all_bb_rc_files",
+		},
+		{
 			name:     "NonStartupArgument",
 			contents: "startup run",
 		},
@@ -195,6 +203,90 @@ func TestParseBBRCFiles_RejectsInvalidStartupOptions(t *testing.T) {
 			require.ErrorContains(t, err, test.errorString)
 		})
 	}
+}
+
+func TestConsumeBBRCFileOptions(t *testing.T) {
+	p, err := GetParser()
+	require.NoError(t, err)
+
+	args, err := p.ParseArgs([]string{
+		"--bbrc=first.bbrc",
+		"--bbrc", "missing.bbrc",
+		"--bbrc=last.bbrc",
+		"run",
+	})
+	require.NoError(t, err)
+
+	// Canonicalization must preserve all explicit files and their order.
+	args, err = p.ParseArgs(args.Canonicalized().Format())
+	require.NoError(t, err)
+	paths, err := consumeBBRCFileOptions(args, "/workspace", "/home/user")
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"/workspace/.bbrc",
+		"/home/user/.bbrc",
+		"first.bbrc",
+		"missing.bbrc",
+		"last.bbrc",
+	}, paths)
+	require.Empty(t, args.GetStartupOptionsByName(bbrc.FileFlagName))
+}
+
+func TestConsumeBBRCFileOptions_DevNullStopsExplicitFiles(t *testing.T) {
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{
+		"--bbrc=first.bbrc",
+		"--bbrc=/dev/null",
+		"--bbrc=ignored.bbrc",
+		"run",
+	})
+	require.NoError(t, err)
+
+	paths, err := consumeBBRCFileOptions(args, "/workspace", "/home/user")
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"/workspace/.bbrc",
+		"/home/user/.bbrc",
+		"first.bbrc",
+	}, paths)
+}
+
+func TestConsumeBBRCFileOptions_IgnoreAll(t *testing.T) {
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{
+		"--bbrc=explicit.bbrc",
+		"--ignore_all_bb_rc_files",
+		"run",
+	})
+	require.NoError(t, err)
+
+	paths, err := consumeBBRCFileOptions(args, "/workspace", "/home/user")
+	require.NoError(t, err)
+	require.Empty(t, paths)
+	require.Empty(t, args.GetStartupOptionsByName(bbrc.FileFlagName))
+	require.Empty(t, args.GetStartupOptionsByName(bbrc.IgnoreAllRCFilesFlagName))
+}
+
+func TestConsumeBBRCFileOptions_IgnoreAllLastValueWins(t *testing.T) {
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{
+		"--ignore_all_bb_rc_files",
+		"--noignore_all_bb_rc_files",
+		"--bbrc=explicit.bbrc",
+		"run",
+	})
+	require.NoError(t, err)
+
+	paths, err := consumeBBRCFileOptions(args, "/workspace", "/home/user")
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"/workspace/.bbrc",
+		"/home/user/.bbrc",
+		"explicit.bbrc",
+	}, paths)
 }
 
 func TestParseBBRCFiles_MultipleConfigs(t *testing.T) {

@@ -44,6 +44,10 @@ import (
 
 var (
 	nativeDefinitions = map[string]*options.Definition{
+		// Adds an explicit bbrc file.
+		bbrc.FileFlagName: bbrc.NewFileOptionDefinition(),
+		// Disables all bbrc files.
+		bbrc.IgnoreAllRCFilesFlagName: bbrc.NewIgnoreAllRCFilesOptionDefinition(),
 		// Set to print debug output for the bb CLI.
 		logoptdef.Verbose.Name(): logoptdef.Verbose,
 		// Reinvokes the CLI as a subprocess on changes to source files.
@@ -864,6 +868,33 @@ func bbrcFilePaths(workspaceDir, homeDir string) []string {
 	return paths
 }
 
+// consumeBBRCFileOptions removes --bbrc options and returns the BuildBuddy rc
+// files in increasing precedence order.
+func consumeBBRCFileOptions(args *parsed.OrderedArgs, workspaceDir, homeDir string) ([]string, error) {
+	ignoreAll, err := options.AccumulateValues[*parsed.IndexedOption](
+		false,
+		args.RemoveStartupOptions(bbrc.IgnoreAllRCFilesFlagName),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get value from %q: %s", bbrc.IgnoreAllRCFilesFlagName, err)
+	}
+	if ignoreAll {
+		args.RemoveStartupOptions(bbrc.FileFlagName)
+		return nil, nil
+	}
+
+	paths := bbrcFilePaths(workspaceDir, homeDir)
+	for _, indexedOption := range args.RemoveStartupOptions(bbrc.FileFlagName) {
+		path := indexedOption.GetValue()
+		if path == "/dev/null" {
+			// Match --bazelrc: /dev/null stops processing later explicit files.
+			break
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
 // RCFilePolicy controls how sections of an rc file are parsed.
 type RCFilePolicy struct {
 	// IsPhase checks whether a phase name is valid.
@@ -965,8 +996,12 @@ func (p *Parser) ParseConfig(phase string, tokens []string) ([]arguments.Argumen
 		for _, o := range parsed.Classify(parsedArgs.Args) {
 			switch o := o.(type) {
 			case *parsed.StartupOption:
-				if _, ok := bazelrc.StartupFlagNoRc[o.Name()]; ok {
-					return nil, fmt.Errorf("Can't specify %s in the .bazelrc file.", o.Name())
+				// Disallow sections like `startup --bazelrc=another.bazelrc --bbrc=another.bbrc`
+				// which try to change which rc files are loaded after file loading has already started.
+				// This matches Bazel's behavior of disallowing rc-selection flags inside rc files.
+				_, isBazelrcFlag := bazelrc.StartupFlagNoRc[o.Name()]
+				if isBazelrcFlag || o.Name() == bbrc.FileFlagName || o.Name() == bbrc.IgnoreAllRCFilesFlagName {
+					return nil, fmt.Errorf("Can't specify %s in an .rc file.", o.Name())
 				}
 			default:
 				return nil, fmt.Errorf("Unknown startup option: '%s'", o.Arg().Format()[0])
