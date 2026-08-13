@@ -101,9 +101,6 @@ var (
 )
 
 const (
-	// When enabled, propagates "blocked" status across users/groups.
-	propagateGroupBlocksExperiment = "app.propagate_group_blocks"
-
 	maxGroupsPerUserExperiment = "app.max_groups_per_user"
 )
 
@@ -582,11 +579,7 @@ func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp inter
 	if isEnterprise || efp == nil {
 		return nil, nil
 	}
-	propagateGroupBlocks := efp.Boolean(ctx, propagateGroupBlocksExperiment, false /*=default*/)
 	maxGroupsPerUser := efp.Int64(ctx, maxGroupsPerUserExperiment, 0)
-	if !propagateGroupBlocks && maxGroupsPerUser == 0 {
-		return nil, nil
-	}
 
 	if u.GetUserID() == "" {
 		return nil, status.PermissionDeniedError("Creating organizations is not supported through the API. Please continue in our UI.")
@@ -607,7 +600,7 @@ func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp inter
 			ownedNonEnterpriseGroupCount++
 		}
 	}
-	if propagateGroupBlocks && allOwnedGroupsBlocked {
+	if allOwnedGroupsBlocked {
 		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
 	}
 
