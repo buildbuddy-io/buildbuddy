@@ -541,6 +541,62 @@ func TestUserPrefixIsolatesGroups(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err), "group B must not see group A's AC entry; got: %v", err)
 }
 
+// TestActionCacheKeyPrefixIsolatesEntries confirms that a group's action cache
+// key prefix namespaces its AC entries: entries written under one prefix are
+// not visible under another, while the CAS blobs they reference stay shared.
+func TestActionCacheKeyPrefixIsolatesEntries(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+
+	clientConn := runACServer(ctx, t, te)
+	acClient := repb.NewActionCacheClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	caps := []cappb.Capability{cappb.Capability_CACHE_WRITE}
+	unprefixedCtx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+		UserID: "US-A", GroupID: "GR-A", AllowedGroups: []string{"GR-A"},
+		Capabilities: caps,
+	})
+	prefixedCtx := testauth.WithAuthenticatedUserInfo(ctx, &claims.Claims{
+		UserID: "US-A", GroupID: "GR-A", AllowedGroups: []string{"GR-A"},
+		Capabilities: caps, ActionCacheKeyPrefix: "v2",
+	})
+
+	payloadDigest, err := cachetools.UploadBlobToCAS(unprefixedCtx, bsClient, "", repb.DigestFunction_SHA256, []byte("action output"))
+	require.NoError(t, err)
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1024}
+	updateReq := &repb.UpdateActionResultRequest{
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult: &repb.ActionResult{
+			OutputFiles: []*repb.OutputFile{{Path: "f", Digest: payloadDigest}},
+		},
+	}
+	_, err = acClient.UpdateActionResult(unprefixedCtx, updateReq)
+	require.NoError(t, err)
+
+	getReq := &repb.GetActionResultRequest{ActionDigest: actionDigest, DigestFunction: repb.DigestFunction_SHA256}
+	_, err = acClient.GetActionResult(unprefixedCtx, getReq)
+	require.NoError(t, err, "entry must be visible under the prefix it was written with")
+
+	_, err = acClient.GetActionResult(prefixedCtx, getReq)
+	require.True(t, status.IsNotFoundError(err), "entry must not be visible under a different prefix; got: %v", err)
+
+	// A write under the prefix creates a separate entry, and validating it
+	// finds the CAS blob uploaded before the prefix was set: CAS entries are
+	// content addressed and must remain shared across prefixes.
+	_, err = acClient.UpdateActionResult(prefixedCtx, updateReq)
+	require.NoError(t, err)
+	rsp, err := acClient.GetActionResult(prefixedCtx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, payloadDigest.GetHash(), rsp.GetOutputFiles()[0].GetDigest().GetHash())
+
+	// The original entry is untouched.
+	_, err = acClient.GetActionResult(unprefixedCtx, getReq)
+	require.NoError(t, err)
+}
+
 func runACServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {

@@ -187,6 +187,7 @@ type apiKeyGroup struct {
 	Capabilities           int32
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
+	ActionCacheKeyPrefix   string
 	EnforceIPRules         bool
 	Impersonation          bool
 	Status                 int32
@@ -224,6 +225,10 @@ func (g *apiKeyGroup) GetCacheEncryptionEnabled() bool {
 	return g.CacheEncryptionEnabled
 }
 
+func (g *apiKeyGroup) GetActionCacheKeyPrefix() string {
+	return g.ActionCacheKeyPrefix
+}
+
 func (g *apiKeyGroup) GetEnforceIPRules() bool {
 	return g.EnforceIPRules
 }
@@ -247,6 +252,7 @@ type apiKeyGroupRow struct {
 
 	UseGroupOwnedExecutors bool
 	CacheEncryptionEnabled bool
+	ActionCacheKeyPrefix   string
 	EnforceIPRules         bool
 	IsParent               bool
 	GroupStatus            int32 `gorm:"column:group_status"`
@@ -265,6 +271,7 @@ func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
 		Capabilities:           r.Capabilities,
 		UseGroupOwnedExecutors: r.UseGroupOwnedExecutors,
 		CacheEncryptionEnabled: r.CacheEncryptionEnabled,
+		ActionCacheKeyPrefix:   r.ActionCacheKeyPrefix,
 		EnforceIPRules:         r.EnforceIPRules,
 		Impersonation:          r.Impersonation,
 		Status:                 r.GroupStatus,
@@ -648,6 +655,7 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 			%s AS user_list_membership_role,
 			g.use_group_owned_executors,
 			g.cache_encryption_enabled,
+			g.action_cache_key_prefix,
 			g.enforce_ip_rules,
 			g.is_parent,
 			g.status AS group_status

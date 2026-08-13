@@ -724,6 +724,28 @@ func BenchmarkParseDownloadString(b *testing.B) {
 	}
 }
 
+func TestPrefixedACInstanceName(t *testing.T) {
+	assert.Equal(t, "foo", digest.PrefixedACInstanceName("", "foo"))
+	assert.Equal(t, "", digest.PrefixedACInstanceName("", ""))
+
+	// A prefixed name must differ from the unprefixed one, from names built
+	// with other prefixes, and from an unprefixed name that happens to start
+	// with the same segment.
+	prefixed := digest.PrefixedACInstanceName("v1", "foo")
+	assert.NotEqual(t, "foo", prefixed)
+	assert.NotEqual(t, prefixed, digest.PrefixedACInstanceName("v2", "foo"))
+	assert.NotEqual(t, prefixed, digest.PrefixedACInstanceName("", "v1/foo"))
+	assert.True(t, strings.HasSuffix(prefixed, "/foo"), "got %q", prefixed)
+
+	// The prefix only namespaces the instance name; the digest is untouched.
+	d := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 100}
+	rn := digest.NewPrefixedACResourceName("v1", d, "foo", repb.DigestFunction_SHA256)
+	assert.Equal(t, d.GetHash(), rn.GetDigest().GetHash())
+	assert.Equal(t, rspb.CacheType_AC, rn.GetCacheType())
+	assert.Equal(t, prefixed, rn.GetInstanceName())
+	assert.NoError(t, rn.Validate())
+}
+
 func BenchmarkDigestCompute(b *testing.B) {
 	for _, size := range []int64{1, 10, 100, 1000, 10_000, 100_000} {
 		for _, df := range []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3} {

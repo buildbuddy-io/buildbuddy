@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -678,7 +679,8 @@ func (s *APIServer) DeleteFile(ctx context.Context, req *apipb.DeleteFileRequest
 
 	parsedACRN, err := digest.ParseActionCacheResourceName(urlStr)
 	if err == nil {
-		resourceName = digest.NewResourceName(parsedACRN.GetDigest(), parsedACRN.GetInstanceName(), rspb.CacheType_AC, parsedACRN.GetDigestFunction()).ToProto()
+		keyPrefix := authutil.ActionCacheKeyPrefix(ctx, s.env.GetAuthenticator())
+		resourceName = digest.NewPrefixedACResourceName(keyPrefix, parsedACRN.GetDigest(), parsedACRN.GetInstanceName(), parsedACRN.GetDigestFunction()).ToProto()
 	} else {
 		parsedCASRN, err := digest.ParseDownloadResourceName(urlStr)
 		if err != nil {

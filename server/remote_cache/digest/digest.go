@@ -20,6 +20,7 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -44,9 +45,16 @@ const (
 	downloadResourceName
 
 	TreeCacheRemoteInstanceName = "_bb_treecache_"
+
+	// acKeyPrefixMarker namespaces action cache key prefixes, so that a
+	// prefixed key can never collide with an unprefixed key whose remote
+	// instance name happens to start with the same prefix.
+	acKeyPrefixMarker = "_bb_acprefix_"
 )
 
 var (
+	systemInstanceName = flag.String("action_cache.system_instance_name", "", "The system instance name for the remote cache. Can be used to perform system-wide invalidation/rotation of the action cache.")
+
 	knownDigestFunctions = []repb.DigestFunction_Value{
 		repb.DigestFunction_SHA256,
 		repb.DigestFunction_SHA384,
@@ -142,6 +150,36 @@ func NewCASResourceName(d *repb.Digest, instanceName string, digestFunction repb
 
 func NewACResourceName(d *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) *ACResourceName {
 	return &ACResourceName{*NewResourceName(d, instanceName, rspb.CacheType_AC, digestFunction)}
+}
+
+// PrefixedACInstanceName returns the remote instance name that should be used
+// to key action cache entries for a group whose action cache key prefix is
+// keyPrefix, taking the server-wide system instance name into account as well.
+// Either prefix may be empty, in which case instanceName is returned unchanged.
+//
+// AC keys incorporate the remote instance name, so prepending a prefix there
+// namespaces a group's action cache. Setting or changing a group's prefix
+// leaves its existing entries unreachable, which effectively invalidates the
+// group's action cache. CAS entries are unaffected: they are content
+// addressed, and must remain shared across prefixes.
+func PrefixedACInstanceName(keyPrefix, instanceName string) string {
+	prefix := *systemInstanceName
+	if keyPrefix != "" {
+		if prefix != "" {
+			prefix += "_"
+		}
+		prefix += keyPrefix
+	}
+	if prefix == "" {
+		return instanceName
+	}
+	return acKeyPrefixMarker + prefix + "/" + instanceName
+}
+
+// NewPrefixedACResourceName is like NewACResourceName, but namespaces the entry
+// under the given action cache key prefix. See PrefixedACInstanceName.
+func NewPrefixedACResourceName(keyPrefix string, d *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) *ACResourceName {
+	return NewACResourceName(d, PrefixedACInstanceName(keyPrefix, instanceName), digestFunction)
 }
 
 func (r *ResourceName) CheckCAS() (*CASResourceName, error) {

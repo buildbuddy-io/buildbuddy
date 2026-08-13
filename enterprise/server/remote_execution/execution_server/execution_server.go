@@ -650,7 +650,8 @@ func (s *ExecutionServer) flushAndRecordUsage(ctx context.Context, taskID string
 // N.B. This should only be used if the calling code has already ensured the
 // action is valid and may be returned.
 func (s *ExecutionServer) getUnvalidatedActionResult(ctx context.Context, r *digest.CASResourceName) (*repb.ActionResult, error) {
-	cacheResource := digest.NewACResourceName(r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
+	keyPrefix := authutil.ActionCacheKeyPrefix(ctx, s.env.GetAuthenticator())
+	cacheResource := digest.NewPrefixedACResourceName(keyPrefix, r.GetDigest(), r.GetInstanceName(), r.GetDigestFunction())
 	data, err := s.cache.Get(ctx, cacheResource.ToProto())
 	if err != nil {
 		if status.IsNotFoundError(err) {

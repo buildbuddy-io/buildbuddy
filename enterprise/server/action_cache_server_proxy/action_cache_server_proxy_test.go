@@ -145,7 +145,7 @@ func (c *localOnlyCache) put(r *rspb.ResourceName, data []byte, mtime int64) {
 }
 
 func seedLocalActionResult(t *testing.T, cache *localOnlyCache, req *repb.GetActionResultRequest, result *repb.ActionResult, mtime int64) *digest.ACResourceName {
-	localKey, err := getACKeyForGetActionResultRequest(req)
+	localKey, err := getACKeyForGetActionResultRequest("" /*=keyPrefix*/, req)
 	require.NoError(t, err)
 	casDigest, err := digest.ComputeForMessage(result, req.GetDigestFunction())
 	require.NoError(t, err)

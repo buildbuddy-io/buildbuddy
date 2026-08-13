@@ -139,6 +139,10 @@ type UserInfo interface {
 	HasCapability(cappb.Capability) bool
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
+	// GetActionCacheKeyPrefix returns the group-level prefix that is prepended
+	// to the group's action cache keys, or "" if the group has none
+	// configured.
+	GetActionCacheKeyPrefix() string
 	GetEnforceIPRules() bool
 	GetGroupStatus() grpb.Group_GroupStatus
 	// IsCustomerSSO indicates whether the user logged in via a customer SSO integration (SAML/OIDC).
@@ -508,6 +512,7 @@ type APIKeyGroup interface {
 	GetChildGroupIDs() []string
 	GetUseGroupOwnedExecutors() bool
 	GetCacheEncryptionEnabled() bool
+	GetActionCacheKeyPrefix() string
 	GetEnforceIPRules() bool
 	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus

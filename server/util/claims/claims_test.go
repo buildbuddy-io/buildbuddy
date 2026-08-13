@@ -102,6 +102,7 @@ type fakeAPIKeyGroup struct {
 	childGroupIDs          []string
 	useGroupOwnedExecutors bool
 	cacheEncryptionEnabled bool
+	actionCacheKeyPrefix   string
 	enforceIPRules         bool
 	impersonation          bool
 	groupStatus            grpb.Group_GroupStatus
@@ -133,6 +134,10 @@ func (f *fakeAPIKeyGroup) GetUseGroupOwnedExecutors() bool {
 
 func (f *fakeAPIKeyGroup) GetCacheEncryptionEnabled() bool {
 	return f.cacheEncryptionEnabled
+}
+
+func (f *fakeAPIKeyGroup) GetActionCacheKeyPrefix() string {
+	return f.actionCacheKeyPrefix
 }
 
 func (f *fakeAPIKeyGroup) GetEnforceIPRules() bool {

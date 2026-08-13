@@ -267,8 +267,7 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if req.ActionDigest == nil {
 		return nil, status.InvalidArgumentError("ActionDigest is a required field")
 	}
-	rn := digest.NewACResourceName(req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
-	if err := rn.Validate(); err != nil {
+	if err := digest.Validate(req.GetActionDigest(), req.GetDigestFunction()); err != nil {
 		return nil, err
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
@@ -278,6 +277,8 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
+	keyPrefix := authutil.ActionCacheKeyPrefix(ctx, s.env.GetAuthenticator())
+	rn := digest.NewPrefixedACResourceName(keyPrefix, req.GetActionDigest(), req.GetInstanceName(), req.GetDigestFunction())
 
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
 	// Fetch the "ActionResult" object which enumerates all the files in the action.
@@ -321,8 +322,7 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	if req.ActionResult == nil {
 		return nil, status.InvalidArgumentError("ActionResult is a required field")
 	}
-	rn := digest.NewResourceName(req.GetActionDigest(), req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
-	if err := rn.Validate(); err != nil {
+	if err := digest.Validate(req.GetActionDigest(), req.GetDigestFunction()); err != nil {
 		return nil, err
 	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
@@ -347,7 +347,8 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, rm)
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
-	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+	keyPrefix := authutil.ActionCacheKeyPrefix(ctx, s.env.GetAuthenticator())
+	acResource := digest.NewPrefixedACResourceName(keyPrefix, d, req.GetInstanceName(), req.GetDigestFunction())
 	uploadTracker := ht.TrackUpload(d)
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131

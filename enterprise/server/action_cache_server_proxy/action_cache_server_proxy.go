@@ -71,7 +71,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 	}, nil
 }
 
-func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
+func getACKeyForGetActionResultRequest(keyPrefix string, req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
 	hashBytes, err := proto.Marshal(req)
 	if err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*diges
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction()), nil
+	return digest.NewPrefixedACResourceName(keyPrefix, d, req.GetInstanceName(), req.GetDigestFunction()), nil
 }
 
 func isDefaultGetActionResultRequest(req *repb.GetActionResultRequest) bool {
@@ -276,7 +276,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	var localKey *digest.ACResourceName
 	ttl := s.actionCacheTTL(ctx)
 	if *cacheActionResults {
-		localKey, err = getACKeyForGetActionResultRequest(req)
+		localKey, err = getACKeyForGetActionResultRequest(authutil.ActionCacheKeyPrefix(ctx, s.authenticator), req)
 		if err != nil {
 			return nil, err
 		}
@@ -420,7 +420,8 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 				ActionDigest:   req.GetActionDigest(),
 				DigestFunction: req.GetDigestFunction(),
 			}
-			if localKey, keyErr := getACKeyForGetActionResultRequest(getReq); keyErr == nil {
+			keyPrefix := authutil.ActionCacheKeyPrefix(ctx, s.authenticator)
+			if localKey, keyErr := getACKeyForGetActionResultRequest(keyPrefix, getReq); keyErr == nil {
 				actionResult := resp
 				if resp.GetExecutionMetadata().GetUsageStats().GetTimeline() != nil {
 					// Default GetActionResult omits timeline data.

@@ -155,6 +155,7 @@ type Claims struct {
 	Capabilities           []cappb.Capability            `json:"capabilities"`
 	UseGroupOwnedExecutors bool                          `json:"use_group_owned_executors,omitempty"`
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
+	ActionCacheKeyPrefix   string                        `json:"action_cache_key_prefix,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
 	GroupStatus            grpb.Group_GroupStatus        `json:"group_status,omitempty"`
 	// TODO(vadim): remove this field
@@ -214,6 +215,10 @@ func (c *Claims) GetUseGroupOwnedExecutors() bool {
 
 func (c *Claims) GetCacheEncryptionEnabled() bool {
 	return c.CacheEncryptionEnabled
+}
+
+func (c *Claims) GetActionCacheKeyPrefix() string {
+	return c.ActionCacheKeyPrefix
 }
 
 func (c *Claims) GetEnforceIPRules() bool {
@@ -326,6 +331,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		Capabilities:               capabilities.FromInt(akg.GetCapabilities()),
 		UseGroupOwnedExecutors:     akg.GetUseGroupOwnedExecutors(),
 		CacheEncryptionEnabled:     akg.GetCacheEncryptionEnabled(),
+		ActionCacheKeyPrefix:       akg.GetActionCacheKeyPrefix(),
 		EnforceIPRules:             akg.GetEnforceIPRules(),
 		Impersonating:              akg.IsImpersonating(),
 		GroupStatus:                akg.GetGroupStatus(),
@@ -407,6 +413,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	allowedGroups := make([]string, 0, len(u.Groups))
 	groupMemberships := make([]*interfaces.GroupMembership, 0, len(u.Groups))
 	cacheEncryptionEnabled := false
+	actionCacheKeyPrefix := ""
 	enforceIPRules := false
 	groupStatus := grpb.Group_UNKNOWN_GROUP_STATUS
 	var capabilities []cappb.Capability
@@ -419,6 +426,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 		if g.Group.GroupID == effectiveGroup {
 			// TODO: move these fields into u.GroupMemberships
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
+			actionCacheKeyPrefix = g.Group.ActionCacheKeyPrefix
 			enforceIPRules = g.Group.EnforceIPRules
 			groupStatus = g.Group.Status
 			capabilities = g.Capabilities
@@ -431,6 +439,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 		AllowedGroups:          allowedGroups,
 		Capabilities:           capabilities,
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
+		ActionCacheKeyPrefix:   actionCacheKeyPrefix,
 		EnforceIPRules:         enforceIPRules,
 		GroupStatus:            groupStatus,
 	}, nil

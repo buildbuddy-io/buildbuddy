@@ -214,6 +214,17 @@ func EncryptionEnabled(ctx context.Context, authenticator interfaces.Authenticat
 	return u.GetCacheEncryptionEnabled()
 }
 
+// ActionCacheKeyPrefix returns the prefix that should be prepended to the
+// authenticated group's action cache keys, or "" if the group has no prefix
+// configured (or the request is unauthenticated).
+func ActionCacheKeyPrefix(ctx context.Context, authenticator interfaces.Authenticator) string {
+	u, err := authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		return ""
+	}
+	return u.GetActionCacheKeyPrefix()
+}
+
 // Returns a context derived from the provided context that has the
 // client-supplied parsed and cached for retrieval using GetAuthHeaders.
 func ContextWithCachedAuthHeaders(ctx context.Context, authenticator interfaces.Authenticator) context.Context {

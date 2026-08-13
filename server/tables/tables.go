@@ -256,6 +256,11 @@ type Group struct {
 	CacheEncryptionEnabled bool `gorm:"not null;default:0"`
 	EnforceIPRules         bool `gorm:"not null;default:0"`
 
+	// If non-empty, this value is prepended to the group's action cache keys.
+	// Changing it effectively invalidates the group's action cache, since
+	// existing entries are no longer reachable.
+	ActionCacheKeyPrefix string `gorm:"not null;default:''"`
+
 	// The SAML IDP Metadata URL for this group.
 	SamlIdpMetadataUrl string `gorm:"index:group_saml_idp_metadata_url_idx"`
 
