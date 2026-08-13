@@ -185,12 +185,9 @@ func DeleteNetNamespaces(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	output := strings.TrimSpace(string(b))
-	if len(output) == 0 {
-		return nil
-	}
-	var staleNamespaces []string
-	for ns := range strings.SplitSeq(output, "\n") {
+	var lastErr error
+	found, deleted := 0, 0
+	for ns := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		// Sometimes the output contains spaces, like
 		//     bb-executor-1 (id: 344)
 		// So we get just the first column here.
@@ -198,22 +195,16 @@ func DeleteNetNamespaces(ctx context.Context) error {
 		if len(fields) == 0 || !strings.HasPrefix(fields[0], netNamespacePrefix) {
 			continue
 		}
-		staleNamespaces = append(staleNamespaces, fields[0])
-	}
-	if len(staleNamespaces) == 0 {
-		return nil
-	}
-
-	var lastErr error
-	deleted := 0
-	for _, ns := range staleNamespaces {
-		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
+		found++
+		if _, err := sudoCommand(ctx, "ip", "netns", "delete", fields[0]); err != nil {
 			lastErr = err
 			continue
 		}
 		deleted++
 	}
-	log.CtxWarningf(ctx, "Stale executor network resources detected at startup: namespaces=%d cleanup_succeeded=%d cleanup_failed=%d", len(staleNamespaces), deleted, len(staleNamespaces)-deleted)
+	if found > 0 {
+		log.CtxWarningf(ctx, "Cleaned up %d of %d stale executor network namespaces left by a previous process.", deleted, found)
+	}
 	return lastErr
 }
 
@@ -296,12 +287,16 @@ func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
 	return nil
 }
 
-// checkVethRoute verifies that return traffic to the namespaced end of a veth
+// checkVethRoute checks whether return traffic to the namespaced end of a veth
 // pair will be routed through the expected host device. A stale veth left by a
 // killed executor process can install the same connected route and silently
 // blackhole return traffic to the task, including DNS responses.
+//
+// This is a diagnostic only: it logs what it finds and never fails the network
+// setup. Actually removing the conflicting device is gated behind
+// --executor.cleanup_stale_veth_devices.
 func checkVethRoute(ctx context.Context, veth *vethPair) {
-	if veth.network == nil {
+	if veth == nil || veth.network == nil {
 		log.CtxWarningf(ctx, "Network route check failed: cannot check veth route without an assigned network")
 		return
 	}
@@ -334,7 +329,9 @@ func checkVethRoute(ctx context.Context, veth *vethPair) {
 	}
 	log.CtxWarningf(
 		ctx,
-		"Network route conflict: host route to guest IP %s uses device %q (ifindex %d), expected device %q (ifindex %d); route: %+v",
+		"Network route conflict: host route to guest IP %s uses device %q (ifindex %d), expected device %q (ifindex %d); route: %+v. "+
+			"This usually means a killed process left a veth behind holding the same IP range; "+
+			"--executor.cleanup_stale_veth_devices deletes such devices before the range is reused.",
 		guestIP,
 		actualDevice,
 		actualRoute.LinkIndex,

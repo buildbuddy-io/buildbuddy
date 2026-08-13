@@ -259,28 +259,17 @@ fi
 exec "$@"
 `), 0o755))
 	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
-
-	previousLogger := zerologlog.Logger
-	var logBuffer bytes.Buffer
-	zerologlog.Logger = zerolog.New(&logBuffer).Level(zerolog.WarnLevel)
-	t.Cleanup(func() {
-		zerologlog.Logger = previousLogger
-	})
+	logs := captureWarnings(t)
 
 	require.Error(t, networking.DeleteNetNamespaces(context.Background()))
-	assert.Contains(t, logBuffer.String(), "Stale executor network resources detected at startup: namespaces=2 cleanup_succeeded=1 cleanup_failed=1")
+	assert.Contains(t, logs.String(), "Cleaned up 1 of 2 stale executor network namespaces")
 }
 
 func TestContainerNetworkPool_LogsRouteConflict(t *testing.T) {
 	flags.Set(t, "executor.task_ip_range", "198.18.0.0/16")
 	flags.Set(t, "executor.cleanup_stale_veth_devices", false)
 	testnetworking.Setup(t)
-	previousLogger := zerologlog.Logger
-	var logBuffer bytes.Buffer
-	zerologlog.Logger = zerolog.New(&logBuffer).Level(zerolog.WarnLevel)
-	t.Cleanup(func() {
-		zerologlog.Logger = previousLogger
-	})
+	logs := captureWarnings(t)
 
 	ctx := context.Background()
 	pool := networking.NewContainerNetworkPool(1)
@@ -292,9 +281,10 @@ func TestContainerNetworkPool_LogsRouteConflict(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, pool.Add(ctx, cn), "add network to pool")
 
-	// The first allocation uses .5/30. Returning it to the pool releases that
-	// range, and the next allocation uses .13/30. Leave a veth with that next
-	// address behind, simulating an executor killed before network cleanup.
+	// The allocator hands out /30s in order and doesn't rewind when one is
+	// released, so the pooled network (which took .5/30) will be reassigned
+	// .13/30 on the way out of the pool. Leave a veth holding that address
+	// behind, simulating an executor killed before network cleanup.
 	staleDevice := createStaleVeth(t, "198.18.0.13/30")
 
 	cn = pool.Get(ctx)
@@ -303,9 +293,22 @@ func TestContainerNetworkPool_LogsRouteConflict(t *testing.T) {
 		require.NoError(t, cn.Cleanup(context.Background()))
 	})
 
-	assert.Contains(t, logBuffer.String(), "Network route conflict:")
-	assert.Contains(t, logBuffer.String(), staleDevice)
-	assert.Contains(t, logBuffer.String(), cn.HostDevice())
+	assert.Contains(t, logs.String(), "Network route conflict:")
+	assert.Contains(t, logs.String(), staleDevice)
+	assert.Contains(t, logs.String(), cn.HostDevice())
+}
+
+// captureWarnings redirects warning-level logs to a buffer for the duration of
+// the test.
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	previousLogger := zerologlog.Logger
+	zerologlog.Logger = zerolog.New(buf).Level(zerolog.WarnLevel)
+	t.Cleanup(func() {
+		zerologlog.Logger = previousLogger
+	})
+	return buf
 }
 
 func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
@@ -317,8 +320,8 @@ func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
 
 	runIP(t, "netns", "add", netNamespace)
 	t.Cleanup(func() {
-		_ = exec.Command("ip", "link", "delete", hostDevice).Run()
-		_ = exec.Command("ip", "netns", "delete", netNamespace).Run()
+		_ = ipCommand("link", "delete", hostDevice).Run()
+		_ = ipCommand("netns", "delete", netNamespace).Run()
 	})
 	runIP(t, "link", "add", hostDevice, "type", "veth", "peer", "name", peerDevice)
 	runIP(t, "link", "set", peerDevice, "netns", netNamespace)
@@ -330,8 +333,18 @@ func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
 
 func runIP(t *testing.T, args ...string) {
 	t.Helper()
-	output, err := exec.Command("ip", args...).CombinedOutput()
+	output, err := ipCommand(args...).CombinedOutput()
 	require.NoError(t, err, "ip %s: %s", strings.Join(args, " "), output)
+}
+
+// ipCommand builds an 'ip' invocation, prepending sudo when not running as
+// root. testnetworking.Setup only guarantees passwordless sudo, not root.
+func ipCommand(args ...string) *exec.Cmd {
+	args = append([]string{"ip"}, args...)
+	if os.Getuid() != 0 {
+		args = append([]string{"sudo", "--non-interactive"}, args...)
+	}
+	return exec.Command(args[0], args[1:]...)
 }
 
 func TestNetworkStats(t *testing.T) {
