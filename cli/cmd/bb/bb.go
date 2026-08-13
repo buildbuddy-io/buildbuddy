@@ -183,8 +183,7 @@ func run() (exitCode int, err error) {
 // were a bazel command, for example), the args are returned untouched, the
 // options will be nil, and the command will be nil.
 func interpretAsBBCliCommand(args []string) ([]options.Option, *cli_command.Command, []string) {
-	p := parser.GetNativeParser().StartupOptionParser
-	p.Permissive = true
+	p := parser.GetNativeParser().AsPermissive().StartupOptionParser
 	opts, argIndex, err := p.ParseOptions(args, "startup")
 	if err != nil {
 		log.Warnf("Error parsing global options: %s", err)
@@ -209,8 +208,9 @@ func interpretAsHelpCommand(args []string) (*parsed.OrderedArgs, error) {
 	if err != nil {
 		return nil, err
 	}
-	helpParser.CommandOptionParser.Permissive = true
-	helpArgs, err := helpParser.ParseArgs(args)
+
+	permissiveHelpParser := helpParser.AsPermissive()
+	helpArgs, err := permissiveHelpParser.ParseArgs(args)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +230,6 @@ func interpretAsHelpCommand(args []string) (*parsed.OrderedArgs, error) {
 		if i == -1 {
 			i = len(helpArgs.Args)
 		}
-		helpParser.CommandOptionParser.Permissive = false
 		reparsed, err := helpParser.ParseArgs(
 			(&parsed.OrderedArgs{
 				Args: append(
