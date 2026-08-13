@@ -64,11 +64,9 @@ const (
 	// the write stream that spawned it completes.
 	referenceVerificationTimeout = 1 * time.Minute
 
-	// maxDecompressBufSizeBytes caps the initial buffer allocated to hold a
-	// decompressed peer response. Digest sizes are client-supplied and, for
-	// AC resources, unrelated to the stored payload size, so don't allocate
-	// them up front; the buffer still grows as needed for legitimately larger
-	// payloads.
+	// maxDecompressBufSizeBytes caps the initial buffer allocated for a
+	// decompressed peer response, since digest sizes are client-supplied.
+	// The buffer grows as needed.
 	maxDecompressBufSizeBytes = 4 * 1024 * 1024
 )
 
