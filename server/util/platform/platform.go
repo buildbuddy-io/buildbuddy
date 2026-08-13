@@ -9,6 +9,7 @@ package platform
 import (
 	"context"
 	"encoding/base64"
+	"math"
 	"regexp"
 	"slices"
 	"strconv"
@@ -187,9 +188,13 @@ const (
 	// `resource_set` and in "resources:"-prefixed exec properties. Bazel
 	// measures "cpu" in cores and "memory" in MiB.
 	//
+	// Since these are interpreted as task size estimates, they cannot also be
+	// used as custom resource names; executors warn if they are registered as
+	// such.
+	//
 	// https://github.com/bazelbuild/bazel/blob/d2c57c67d49e051a5e7b2feb457c00b4ca531267/src/main/java/com/google/devtools/build/lib/actions/ResourceSet.java#L45-L46
-	bazelCPUResourceName    = "cpu"
-	bazelMemoryResourceName = "memory"
+	BazelCPUResourceName    = "cpu"
+	BazelMemoryResourceName = "memory"
 
 // If you add a container type, also add it to KnownContainerTypes
 )
@@ -499,23 +504,30 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	var customResources []*scpb.CustomResource
 	var bazelMilliCPU, bazelMemoryBytes int64
 	for k, v := range m {
-		if after, ok := strings.CutPrefix(k, customResourcePrefix); ok {
-			name := after
-			value, err := strconv.ParseFloat(v, 32)
+		if name, ok := strings.CutPrefix(k, customResourcePrefix); ok {
+			value, err := strconv.ParseFloat(v, 64)
 			if err != nil {
-				return nil, status.InvalidArgumentErrorf("parse execution property %q: value is not a valid float32", k)
+				return nil, status.InvalidArgumentErrorf("parse execution property %q: value is not a valid float", k)
+			}
+			if math.IsNaN(value) {
+				continue
 			}
 			switch name {
-			case bazelCPUResourceName:
-				bazelMilliCPU = int64(value * 1000)
+			case BazelCPUResourceName:
+				if value > 0 {
+					bazelMilliCPU = int64(math.Round(value * 1000))
+				}
 				continue
-			case bazelMemoryResourceName:
-				bazelMemoryBytes = int64(value * 1024 * 1024)
+			case BazelMemoryResourceName:
+				if value > 0 {
+					bazelMemoryBytes = int64(math.Round(value * 1024 * 1024))
+				}
 				continue
 			}
 			customResources = append(customResources, &scpb.CustomResource{
-				Name:  name,
-				Value: float32(value),
+				Name: name,
+				// Clamp rather than letting the conversion produce ±Inf.
+				Value: float32(min(max(value, -math.MaxFloat32), math.MaxFloat32)),
 			})
 		}
 	}

@@ -302,6 +302,24 @@ func TestParse_BazelResourceProperties(t *testing.T) {
 	}}, p.CustomResources, protocmp.Transform()))
 }
 
+func TestParse_BazelResourceProperties_UnusableValuesIgnored(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "resources:cpu", Value: "-1"},
+		{Name: "resources:memory", Value: "0"},
+		{Name: "resources:gpu", Value: "NaN"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	p, err := ParseProperties(task)
+	require.NoError(t, err)
+
+	// Values that can't produce a usable estimate are treated as unset rather
+	// than yielding a negative, zero or NaN task size, and a NaN custom
+	// resource is dropped instead of being sent to the scheduler.
+	assert.Equal(t, int64(0), p.EstimatedMilliCPU)
+	assert.Equal(t, int64(0), p.EstimatedMemoryBytes)
+	assert.Empty(t, p.CustomResources)
+}
+
 func TestParse_BazelResourceProperties_ExplicitEstimatesWin(t *testing.T) {
 	props := []*repb.Platform_Property{
 		{Name: "resources:cpu", Value: "4"},
