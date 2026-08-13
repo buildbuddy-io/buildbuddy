@@ -36,12 +36,14 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if disable_caching:
         util_options += " -h 'Cache-Control:no-store'"
 
+    upload_cmd = "echo \"%s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix)
+
     # Generate an .apply rule for uploading.
     native.genrule(
         name = name + ".apply",
         srcs = srcs,
         outs = [name + ".apply.out"],
-        cmd = "echo \"%s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
+        cmd = upload_cmd,
         local = 1,
         executable = 1,
         **kwargs
@@ -52,7 +54,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".push_only",
         srcs = srcs,
         outs = [name + ".push_only.out"],
-        cmd = "echo \"%s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
+        cmd = upload_cmd,
         local = 1,
         executable = 1,
         **kwargs
