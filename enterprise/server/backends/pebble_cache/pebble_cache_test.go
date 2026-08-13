@@ -3011,6 +3011,70 @@ func TestReadReference(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 }
 
+func TestCreateReference(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 100
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		GCSBlobstore:           mockGCS,
+		MaxInlineFileSizeBytes: 10,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Blobs at or above minGCSFileSize are staged in GCS and referenceable.
+	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
+	ref, err := pc.CreateReference(ctx, gcsRN, bytes.NewReader(gcsBuf))
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
+	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
+
+	// The blob is only staged, not written to the cache.
+	_, err = pc.Get(ctx, gcsRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+	_, err = pc.ReadReference(ctx, gcsRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// The reference dereferences back to the written bytes.
+	rc, err := pc.Dereference(ctx, ref, gcsRN, 0, 0)
+	require.NoError(t, err)
+	defer rc.Close()
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Equal(t, gcsBuf, got)
+
+	// A cache that stores the reference takes ownership of the staged blob,
+	// and the blob becomes readable from it.
+	require.NoError(t, pc.WriteReference(ctx, ref, gcsRN, false /*=mustClone*/))
+	got, err = pc.Get(ctx, gcsRN)
+	require.NoError(t, err)
+	require.Equal(t, gcsBuf, got)
+
+	// Blobs below minGCSFileSize cannot be referenced, and nothing is
+	// written anywhere for them.
+	diskRN, diskBuf := testdigest.RandomCASResourceBuf(t, 50)
+	_, err = pc.CreateReference(ctx, diskRN, bytes.NewReader(diskBuf))
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+	_, err = pc.Get(ctx, diskRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+}
+
 func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
