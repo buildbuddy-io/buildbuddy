@@ -304,6 +304,71 @@ func TestReadWrite_Compression(t *testing.T) {
 	}
 }
 
+// compressorRecordingCache wraps a CompressionCache and records the
+// compressor of each GetWithMetadata request it serves.
+type compressorRecordingCache struct {
+	*testcompression.CompressionCache
+	mu          sync.Mutex
+	compressors []repb.Compressor_Value
+}
+
+func (c *compressorRecordingCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	c.mu.Lock()
+	c.compressors = append(c.compressors, r.GetCompressor())
+	c.mu.Unlock()
+	return c.CompressionCache.GetWithMetadata(ctx, r)
+}
+
+// TestGetWithMetadata_Compression verifies that GetWithMetadata transfers
+// large blobs between peers zstd-compressed, like Reader and GetMulti do.
+func TestGetWithMetadata_Compression(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	config := Options{
+		ReplicationFactor:            1,
+		Nodes:                        []string{peer},
+		DisableLocalLookup:           true,
+		EnableLocalCompressionLookup: true,
+		ListenAddr:                   peer,
+	}
+	base := &compressorRecordingCache{CompressionCache: &testcompression.CompressionCache{Cache: env.GetCache()}}
+	dc := startNewDCache(t, env, config, base)
+	waitForReady(t, peer)
+
+	// Write an entry bigger than 100 bytes (the peer-to-peer compression
+	// threshold).
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	require.NoError(t, dc.Set(ctx, rn, buf))
+
+	// An IDENTITY read above the threshold should be fetched from the peer as
+	// ZSTD and decompressed locally, without mutating the caller's resource.
+	data, md, err := dc.GetWithMetadata(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+	require.NotNil(t, md)
+	require.Equal(t, repb.Compressor_IDENTITY, rn.GetCompressor())
+	require.Equal(t, []repb.Compressor_Value{repb.Compressor_ZSTD}, base.compressors)
+
+	// A ZSTD read is served as-is: compressed data, no transport rewrite
+	// needed.
+	zstdRN := rn.CloneVT()
+	zstdRN.Compressor = repb.Compressor_ZSTD
+	data, _, err = dc.GetWithMetadata(ctx, zstdRN)
+	require.NoError(t, err)
+	decompressed, err := compression.DecompressZstd(nil, data)
+	require.NoError(t, err)
+	require.Equal(t, buf, decompressed)
+	require.Equal(t, []repb.Compressor_Value{repb.Compressor_ZSTD, repb.Compressor_ZSTD}, base.compressors)
+
+	// An IDENTITY read at or below the threshold is fetched uncompressed.
+	smallRN, smallBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, dc.Set(ctx, smallRN, smallBuf))
+	data, _, err = dc.GetWithMetadata(ctx, smallRN)
+	require.NoError(t, err)
+	require.Equal(t, smallBuf, data)
+	require.Equal(t, []repb.Compressor_Value{repb.Compressor_ZSTD, repb.Compressor_ZSTD, repb.Compressor_IDENTITY}, base.compressors)
+}
+
 func TestContains(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)

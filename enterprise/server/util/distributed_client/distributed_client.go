@@ -626,12 +626,26 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	if err != nil {
 		return nil, nil, err
 	}
+	// Fetch compressed data over the wire and decompress it locally, like
+	// RemoteReader and RemoteGetMulti do.
+	decompress := c.shouldReadCompressed(r)
+	if decompress {
+		r = r.CloneVT()
+		r.Compressor = repb.Compressor_ZSTD
+	}
 	rsp, err := client.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: r})
 	if err != nil {
 		return nil, nil, err
 	}
+	data := rsp.GetData()
+	if decompress {
+		data, err = compression.DecompressZstd(make([]byte, r.GetDigest().GetSizeBytes()), data)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	md := rsp.GetMetadata()
-	return rsp.GetData(), &interfaces.CacheMetadata{
+	return data, &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
 		DigestSizeBytes:    md.GetDigestSizeBytes(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
