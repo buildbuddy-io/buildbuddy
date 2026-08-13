@@ -133,15 +133,13 @@ message ReportTestResultsResponse {
 message GetTestsOptions {
   repeated TestHealth health = 1;
   repeated TestExecutionDisposition disposition = 2;
-  bool skip_eligible_only = 3;
-
   // An unset scope or empty package_prefix selects the repository root.
   oneof scope {
-    string package_prefix = 4;
+    string package_prefix = 3;
 
     // A target identity selects the target and its cases. A case identity
     // selects only that case.
-    TestIdentity identity = 5;
+    TestIdentity identity = 4;
   }
 }
 
