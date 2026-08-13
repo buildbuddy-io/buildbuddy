@@ -109,11 +109,13 @@ message GetWithMetadataRequest {
 message GetWithMetadataResponse {
   bytes data = 1;
   MetadataResponse metadata = 2;
+  reference.Reference reference = 3;
 }
 
 message KV {
   Key key = 1;
   bytes value = 2;
+  reference.Reference reference = 3;
 }
 
 message GetMultiRequest {
