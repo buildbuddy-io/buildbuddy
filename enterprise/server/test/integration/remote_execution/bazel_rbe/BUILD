@@ -13,6 +13,7 @@ go_test(
         "//server/metrics",
         "//server/testutil/testbazel",
         "//server/testutil/testmetrics",
+        "//server/util/authutil",
         "//server/util/bazel",
         "//server/util/status",
         "//server/util/testing/flags",
