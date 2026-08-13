@@ -114,17 +114,27 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 	return ctx
 }
 
+func clientIsGRPCProxy(env environment.Env, ctx context.Context) bool {
+	cis := env.GetClientIdentityService()
+	if cis == nil {
+		return false
+	}
+	si, err := cis.IdentityFromContext(ctx)
+	if err != nil || si == nil {
+		return false
+	}
+	return si.Client == interfaces.ClientIdentityGRPCProxy
+}
+
 func addClientIPToContext(ctx context.Context, env environment.Env) context.Context {
 	// Use the gRPC proxy-supplied client IP if it is provided and the caller
 	// is trusted, as verified by its clientidentity.
-	if cis := env.GetClientIdentityService(); cis != nil {
-		if si, err := cis.IdentityFromContext(ctx); err == nil && si != nil && si.Client == interfaces.ClientIdentityGRPCProxy {
-			// Require exactly one value: a trusted proxy sets a single header.
-			if hdrs := metadata.ValueFromIncomingContext(ctx, clientip.HeaderName); len(hdrs) == 1 {
-				return context.WithValue(ctx, clientip.ContextKey, hdrs[0])
-			} else if len(hdrs) > 1 {
-				log.CtxWarningf(ctx, "Multiple %q headers present in request from trusted proxy; ignoring", clientip.HeaderName)
-			}
+	if clientIsGRPCProxy(env, ctx) {
+		// Require exactly one value: a trusted proxy sets a single header.
+		if hdrs := metadata.ValueFromIncomingContext(ctx, clientip.HeaderName); len(hdrs) == 1 {
+			return context.WithValue(ctx, clientip.ContextKey, hdrs[0])
+		} else if len(hdrs) > 1 {
+			log.CtxWarningf(ctx, "Multiple %q headers present in request from trusted proxy; ignoring", clientip.HeaderName)
 		}
 	}
 
@@ -170,7 +180,16 @@ func addPeerIPToContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-func addSubdomainToContext(ctx context.Context) context.Context {
+func addSubdomainToContext(ctx context.Context, env environment.Env) context.Context {
+	// Use internal-header-provided subdomains from trusted callers.
+	if clientIsGRPCProxy(env, ctx) {
+		if hdrs := metadata.ValueFromIncomingContext(ctx, subdomain.HeaderName); len(hdrs) == 1 {
+			return subdomain.SetResolved(ctx, hdrs[0])
+		} else if len(hdrs) > 1 {
+			log.CtxWarningf(ctx, "Multiple %q headers present in request from trusted proxy; ignoring", subdomain.HeaderName)
+		}
+	}
+
 	hdrs := metadata.ValueFromIncomingContext(ctx, ":authority")
 	if len(hdrs) == 0 {
 		return ctx
@@ -386,8 +405,10 @@ func clientIPStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 
 // subdomainStreamServerInterceptor adds customer subdomain information to the
 // context.
-func subdomainStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(addSubdomainToContext)
+func subdomainStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(func(ctx context.Context) context.Context {
+		return addSubdomainToContext(ctx, env)
+	})
 }
 
 // clientIPUnaryInterceptor is a server interceptor that inserts the client IP
@@ -400,8 +421,10 @@ func clientIPUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 
 // subdomainUnaryServerInterceptor adds customer subdomain information to the
 // context.
-func subdomainUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(addSubdomainToContext)
+func subdomainUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(func(ctx context.Context) context.Context {
+		return addSubdomainToContext(ctx, env)
+	})
 }
 
 func addInvocationIdToLog(ctx context.Context) context.Context {
@@ -666,7 +689,7 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		identityUnaryServerInterceptor(env),
 		stripInternalHeadersUnaryServerInterceptor(env),
 		clientIPUnaryServerInterceptor(env),
-		subdomainUnaryServerInterceptor(),
+		subdomainUnaryServerInterceptor(env),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
@@ -694,7 +717,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		identityStreamServerInterceptor(env),
 		stripInternalHeadersStreamServerInterceptor(env),
 		clientIPStreamServerInterceptor(env),
-		subdomainStreamServerInterceptor(),
+		subdomainStreamServerInterceptor(env),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),

@@ -14,7 +14,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/urlutil"
 )
 
-const key = "subdomain"
+const (
+	key = "subdomain"
+
+	// HeaderName is the gRPC metadata key a trusted forwarding proxy uses to
+	// assert the subdomain the original request was addressed to. It is an
+	// internal header, so it is stripped when sent by an untrusted caller.
+	HeaderName = "x-buildbuddy-internal-subdomain"
+)
 
 var (
 	enableSubdomainMatching = flag.Bool("app.enable_subdomain_matching", false, "If true, request subdomain will be taken into account when determining what request restrictions should be applied.")
@@ -46,6 +53,13 @@ func SetHost(ctx context.Context, host string) context.Context {
 
 func Context(ctx context.Context, subdomain string) context.Context {
 	return context.WithValue(ctx, key, subdomain)
+}
+
+func SetResolved(ctx context.Context, subdomain string) context.Context {
+	if !*enableSubdomainMatching || subdomain == "" {
+		return ctx
+	}
+	return Context(ctx, subdomain)
 }
 
 // Get returns the subdomain restriction that should be applied or an empty
