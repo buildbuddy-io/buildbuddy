@@ -528,7 +528,9 @@ func (a *OrderedArgs) prependOption(option options.Option, commandIndex int) (in
 		// If this is an unknown option with no listed supported commands, assume it
 		// supports this command (or "startup" in the rare case that no command was
 		// provided.
-		option.GetDefinition().AddSupportedCommand(command)
+		if unknownOption, ok := option.(*options.UnknownOption); ok {
+			unknownOption.AssumeSupportFor(command)
+		}
 	}
 	if option.Supports("startup") {
 		a.Args = slices.Insert(a.Args, 0, arguments.Argument(option))
@@ -538,7 +540,12 @@ func (a *OrderedArgs) prependOption(option options.Option, commandIndex int) (in
 		return commandIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and no command was provided.", option.Name())
 	}
 	if !option.Supports(command) {
-		return commandIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
+		return commandIndex, fmt.Errorf(
+			"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+			option.Name(),
+			command,
+			slices.Collect(option.SupportedCommands().All()),
+		)
 	}
 	a.Args = slices.Insert(a.Args, commandIndex+1, arguments.Argument(option))
 	return commandIndex, nil
@@ -635,7 +642,9 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 		// If this is an unknown option with no listed supported commands, assume it
 		// supports this command (or "startup" in the rare case that no command was
 		// provided.
-		option.GetDefinition().AddSupportedCommand(command)
+		if unknownOption, ok := option.(*options.UnknownOption); ok {
+			unknownOption.AssumeSupportFor(command)
+		}
 	}
 	if option.Supports("startup") {
 		a.Args = slices.Insert(a.Args, startupOptionInsertIndex, arguments.Argument(option))
@@ -663,7 +672,12 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 		commandOptionInsertIndex += 1
 		return startupOptionInsertIndex, commandOptionInsertIndex, nil
 	}
-	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", option.Name(), command)
+	return startupOptionInsertIndex, commandOptionInsertIndex, fmt.Errorf(
+		"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+		option.Name(),
+		command,
+		slices.Collect(option.SupportedCommands().All()),
+	)
 }
 
 // ConsumeRCFileOptions removes all rc-file related options from the provided
@@ -1047,7 +1061,9 @@ func (a *PartitionedArgs) Prepend(opts ...options.Option) error {
 			if a.Command != nil {
 				command = *a.Command
 			}
-			opt.GetDefinition().AddSupportedCommand(command)
+			if unknownOption, ok := opt.(*options.UnknownOption); ok {
+				unknownOption.AssumeSupportFor(command)
+			}
 		}
 		switch {
 		case opt.Supports("startup"):
@@ -1057,7 +1073,12 @@ func (a *PartitionedArgs) Prepend(opts ...options.Option) error {
 		case opt.Supports(*a.Command):
 			a.CommandOptions = append([]options.Option{opt}, a.CommandOptions...)
 		default:
-			return fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", opt.Name(), *a.Command)
+			return fmt.Errorf(
+				"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+				opt.Name(),
+				*a.Command,
+				slices.Collect(opt.SupportedCommands().All()),
+			)
 		}
 	}
 	return nil
@@ -1086,7 +1107,9 @@ func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 				if a.Command != nil {
 					command = *a.Command
 				}
-				arg.GetDefinition().AddSupportedCommand(command)
+				if unknownOption, ok := arg.(*options.UnknownOption); ok {
+					unknownOption.AssumeSupportFor(command)
+				}
 			}
 			switch {
 			case arg.Supports("startup"):
@@ -1096,7 +1119,12 @@ func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 			case arg.Supports(*a.Command):
 				a.CommandOptions = append(a.CommandOptions, arg)
 			default:
-				return fmt.Errorf("Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it.", arg.Name(), *a.Command)
+				return fmt.Errorf(
+					"Failed to append Option: option '%s' is not a startup option and the command '%s' does not support it. Supported commands: %v",
+					arg.Name(),
+					*a.Command,
+					slices.Collect(arg.SupportedCommands().All()),
+				)
 
 			}
 		}

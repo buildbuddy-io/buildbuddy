@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -525,7 +526,7 @@ try-import %workspace%/NONEXISTENT.bazelrc
 			},
 		},
 	} {
-		t.Run("", func(t *testing.T) {
+		t.Run(fmt.Sprintf("%v", tc.args), func(t *testing.T) {
 			parsedArgs, err := ParseArgs(tc.args)
 			require.NoError(t, err)
 			expandedArgs, err := resolveArgs(parsedArgs, ws)

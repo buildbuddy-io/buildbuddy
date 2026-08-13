@@ -24,11 +24,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/rc_util"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -97,8 +99,9 @@ type Subparser struct {
 	ByName      map[string]*options.Definition
 	ByShortName map[string]*options.Definition
 
-	Subcommands set.Set[string]
-	Aliases     map[string]string
+	Subcommands         set.Set[string]
+	UnconditionalPhases set.Set[string]
+	Aliases             map[string]string
 
 	// Permissive specifies whether or not to error out when parsing an option
 	// that does not support the current command.
@@ -155,14 +158,16 @@ type Parser struct {
 func NewParser(optionDefinitions []*options.Definition, commands []string, aliases map[string]string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
-			ByName:      map[string]*options.Definition{},
-			ByShortName: map[string]*options.Definition{},
-			Subcommands: set.From(commands...),
-			Aliases:     aliases,
+			ByName:              map[string]*options.Definition{},
+			ByShortName:         map[string]*options.Definition{},
+			Subcommands:         set.From(commands...),
+			Aliases:             aliases,
+			UnconditionalPhases: set.From("startup"),
 		},
 		CommandOptionParser: &Subparser{
-			ByName:      map[string]*options.Definition{},
-			ByShortName: map[string]*options.Definition{},
+			ByName:              map[string]*options.Definition{},
+			ByShortName:         map[string]*options.Definition{},
+			UnconditionalPhases: set.FromSeq(rc_util.UnconditionalCommandPhases()),
 		},
 	}
 	for _, d := range optionDefinitions {
@@ -314,25 +319,19 @@ func (p *Parser) addOptionDefinitionImpl(d *options.Definition, force bool) erro
 			}
 		}
 	}
-	addedToCommonParser := false
-	for cmd := range d.SupportedCommands() {
-		if cmd != "startup" {
-			p.StartupOptionParser.Subcommands.Add(cmd)
-			if !addedToCommonParser {
-				// non-startup flags support the "common" and "always" bazelrc classifiers
-				d.AddSupportedCommand("common")
-				d.AddSupportedCommand("always")
-				if force {
-					p.CommandOptionParser.ForceAdd(d)
-				} else {
-					if err := p.CommandOptionParser.Add(d); err != nil {
-						return err
-					}
-				}
-				addedToCommonParser = true
+	notStartup := func(e string) bool { return e != "startup" }
+	if seq.Any(d.SupportedCommands().All(), notStartup) {
+		if force {
+			p.CommandOptionParser.ForceAdd(d)
+		} else {
+			if err := p.CommandOptionParser.Add(d); err != nil {
+				return err
 			}
 		}
 	}
+	p.StartupOptionParser.Subcommands.AddSeq(
+		seq.Filter(d.SupportedCommands().All(), notStartup),
+	)
 	return nil
 }
 
@@ -435,11 +434,13 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 			return parsedOptions, i, nil
 		}
 		if command != "" {
-			if option.PluginID() == options.UnknownBuiltinPluginID {
-				// If this is an unknown option, assume it's supported by this command.
-				option.GetDefinition().AddSupportedCommand(command)
-			} else if !p.Permissive && !option.Supports(command) {
-				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support command '%s'", token, command)
+			if !p.Permissive && !option.Supports(command) && !p.UnconditionalPhases.Contains(command) {
+				if unknown, ok := option.(*options.UnknownOption); ok {
+					// If this is an unknown option, assume it's supported by this command.
+					unknown.AssumeSupportFor(command)
+				} else {
+					return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support phase '%s'", token, command)
+				}
 			}
 		}
 		parsedOptions = append(parsedOptions, option)
@@ -537,8 +538,7 @@ func (p *Subparser) parseLongNameOption(optName string) (options.Option, error) 
 	for prefix := range options.StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
 			// This is a new starlark definition; let's hang on to it.
-			d := options.NewStarlarkOptionDefinition(optName)
-			d.AddSupportedCommand(slices.Collect(bazel_command.Commands().All())...)
+			d := options.NewStarlarkOptionDefinition(optName, set.FromSeq(bazel_command.Commands().All()))
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
 			p.ForceAdd(d)
@@ -972,6 +972,17 @@ func (p *Parser) ParseConfig(phase string, tokens []string) ([]arguments.Argumen
 				return nil, fmt.Errorf("Unknown startup option: '%s'", o.Arg().Format()[0])
 			}
 		}
+	} else {
+		for _, arg := range parsedArgs.Args {
+			if !rc_util.IsUnconditionalCommandPhase(phase) {
+				if unknown, ok := arg.(*options.UnknownOption); ok {
+					// Assume unknown options in the bazelrc are supported by the command
+					// and its children.
+					unknown.AssumeSupportFor(phase)
+					unknown.AssumeSupportForSeq(bazel_command.Children(phase))
+				}
+			}
+		}
 	}
 	return parsedArgs.Args, nil
 }
@@ -1015,14 +1026,16 @@ func (p *Subparser) MakeOption(optionName string, value *string) (option options
 			return nil, err
 		}
 	}
-	option, err = options.NewOption(optionName, value, option.GetDefinition())
-	if err != nil {
-		return nil, err
+	if value != nil {
+		option.SetValue(*value)
+		if !option.HasValue() {
+			return nil, fmt.Errorf("Failed to set value %s for option %s.", *value, optionName)
+		}
 	}
 	if option.ExpectsValue() {
 		return nil, fmt.Errorf("Required value option %s must have a value, but none was provided.", optionName)
 	}
-	return option, nil
+	return option.Normalized(), nil
 }
 
 // ConsumeAndParseRCFiles removes all rc-file related options from the provided
