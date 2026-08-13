@@ -24,12 +24,12 @@ const (
 )
 
 var (
-	signingKey                 = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
-	additionalVerificationKeys = flag.Slice("app.client_identity.additional_verification_keys", []string{}, "Additional keys accepted when verifying identity JWTs, tried after the signing key. Used to keep old and new keys trusted simultaneously during key rotation.", flag.Secret)
-	client                     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
-	origin                     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
-	expiration                 = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
-	required                   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
+	signingKey                = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
+	additionalVerificationKey = flag.String("app.client_identity.additional_verification_key", "", "An additional key accepted when verifying identity JWTs. Used to keep old and new keys trusted simultaneously during key rotation.", flag.Secret)
+	client                    = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
+	origin                    = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
+	expiration                = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
+	required                  = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
 )
 
 type cachedHeader struct {
@@ -89,8 +89,8 @@ func (c *headerCache) Get(si *interfaces.ClientIdentity) (string, error) {
 
 type Service struct {
 	signingKey []byte
-	// verificationKeys holds the signing key followed by any additional
-	// verification keys; incoming JWTs are accepted if any key verifies them.
+	// verificationKeys holds the signing key followed by the optional additional
+	// verification key; incoming JWTs are accepted if either key verifies them.
 	verificationKeys [][]byte
 
 	clock clockwork.Clock
@@ -103,11 +103,8 @@ func New(clock clockwork.Clock) (*Service, error) {
 		return nil, status.InvalidArgumentError("ClientIdentityService requires a signing key")
 	}
 	verificationKeys := [][]byte{[]byte(*signingKey)}
-	for _, k := range *additionalVerificationKeys {
-		if k == "" {
-			continue
-		}
-		verificationKeys = append(verificationKeys, []byte(k))
+	if *additionalVerificationKey != "" {
+		verificationKeys = append(verificationKeys, []byte(*additionalVerificationKey))
 	}
 	s := &Service{
 		signingKey:       []byte(*signingKey),
@@ -210,10 +207,10 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 		if err == nil {
 			return context.WithValue(ctx, validatedIdentityContextKey, &c.ClientIdentity), nil
 		}
-		// A signature mismatch is expected for all but the key that signed
-		// the token, so prefer reporting any other failure (e.g. expiry).
-		if verifyErr == nil || !errors.Is(err, jwt.ErrTokenSignatureInvalid) {
-			verifyErr = err
+		verifyErr = err
+		// Only a signature mismatch can be resolved by trying another key.
+		if !errors.Is(err, jwt.ErrTokenSignatureInvalid) {
+			break
 		}
 	}
 	return ctx, status.PermissionDeniedErrorf("invalid identity header: %s", verifyErr)

@@ -135,27 +135,26 @@ func TestRequired(t *testing.T) {
 	require.Error(t, err)
 }
 
-func newServiceWithKeys(t testing.TB, clock clockwork.Clock, signingKey string, additionalKeys ...string) *clientidentity.Service {
+func newServiceWithKeys(t testing.TB, clock clockwork.Clock, signingKey, additionalVerificationKey string) *clientidentity.Service {
 	flags.Set(t, "app.client_identity.key", signingKey)
-	flags.Set(t, "app.client_identity.additional_verification_keys", additionalKeys)
+	flags.Set(t, "app.client_identity.additional_verification_key", additionalVerificationKey)
 	si, err := clientidentity.New(clock)
 	require.NoError(t, err)
 	return si
 }
 
-func TestAdditionalVerificationKeys(t *testing.T) {
+func TestAdditionalVerificationKey(t *testing.T) {
 	clock := clockwork.NewFakeClock()
-	oldKey, err := random.RandomString(16)
-	require.NoError(t, err)
-	newKey, err := random.RandomString(16)
-	require.NoError(t, err)
+	// Commas are preserved in both key flags.
+	oldKey := "old,key"
+	newKey := "new,key"
 
-	oldSigner := newServiceWithKeys(t, clock, string(oldKey))
-	newSigner := newServiceWithKeys(t, clock, string(newKey))
+	oldSigner := newServiceWithKeys(t, clock, oldKey, "")
+	newSigner := newServiceWithKeys(t, clock, newKey, "")
 	// Rotation phase 1: still signing with the old key, new key trusted.
-	oldSignerTrustingNew := newServiceWithKeys(t, clock, string(oldKey), string(newKey))
+	oldSignerTrustingNew := newServiceWithKeys(t, clock, oldKey, newKey)
 	// Rotation phase 2: signing with the new key, old key still trusted.
-	newSignerTrustingOld := newServiceWithKeys(t, clock, string(newKey), string(oldKey))
+	newSignerTrustingOld := newServiceWithKeys(t, clock, newKey, oldKey)
 
 	identity := &interfaces.ClientIdentity{Origin: "internal", Client: "app"}
 	oldSignedHeader, err := oldSigner.NewIdentityHeader(identity, clientidentity.DefaultExpiration)
@@ -193,7 +192,7 @@ func TestAdditionalVerificationKeys(t *testing.T) {
 	}
 }
 
-func TestAdditionalVerificationKeys_RejectsUnknownKey(t *testing.T) {
+func TestAdditionalVerificationKey_RejectsUnknownKey(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	keys := make([]string, 3)
 	for i := range keys {
@@ -202,7 +201,7 @@ func TestAdditionalVerificationKeys_RejectsUnknownKey(t *testing.T) {
 		keys[i] = string(k)
 	}
 
-	unknownSigner := newServiceWithKeys(t, clock, keys[2])
+	unknownSigner := newServiceWithKeys(t, clock, keys[2], "")
 	header, err := unknownSigner.NewIdentityHeader(&interfaces.ClientIdentity{Origin: "internal", Client: "app"}, clientidentity.DefaultExpiration)
 	require.NoError(t, err)
 
@@ -213,7 +212,7 @@ func TestAdditionalVerificationKeys_RejectsUnknownKey(t *testing.T) {
 	require.True(t, status.IsPermissionDeniedError(err))
 }
 
-func TestAdditionalVerificationKeys_ExpiredTokenReportsExpiry(t *testing.T) {
+func TestAdditionalVerificationKey_ExpiredTokenReportsExpiry(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	jwt.TimeFunc = func() time.Time {
 		return clock.Now()
@@ -227,7 +226,7 @@ func TestAdditionalVerificationKeys_ExpiredTokenReportsExpiry(t *testing.T) {
 	newKey, err := random.RandomString(16)
 	require.NoError(t, err)
 
-	oldSigner := newServiceWithKeys(t, clock, string(oldKey))
+	oldSigner := newServiceWithKeys(t, clock, string(oldKey), "")
 	header, err := oldSigner.NewIdentityHeader(&interfaces.ClientIdentity{Origin: "internal", Client: "app"}, clientidentity.DefaultExpiration)
 	require.NoError(t, err)
 
