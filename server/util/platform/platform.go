@@ -183,6 +183,14 @@ const (
 	// Property name prefix indicating a custom resource assignment.
 	customResourcePrefix = "resources:"
 
+	// Names that Bazel uses for its two built-in resources, both in an action's
+	// `resource_set` and in "resources:"-prefixed exec properties. Bazel
+	// measures "cpu" in cores and "memory" in MiB.
+	//
+	// https://github.com/bazelbuild/bazel/blob/d2c57c67d49e051a5e7b2feb457c00b4ca531267/src/main/java/com/google/devtools/build/lib/actions/ResourceSet.java#L45-L46
+	bazelCPUResourceName    = "cpu"
+	bazelMemoryResourceName = "memory"
+
 // If you add a container type, also add it to KnownContainerTypes
 )
 
@@ -483,14 +491,27 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		return nil, err
 	}
 
-	// Parse custom resources
+	// Parse custom resources.
+	//
+	// Bazel actions can be annotated with "resources:"-prefixed exec properties, which mention both custom resources
+	// and the well-known resources "cpu" and "memory". The former are controlled by the user and affect scheduling, the
+	// latter are used as resource estimates.
 	var customResources []*scpb.CustomResource
+	var bazelMilliCPU, bazelMemoryBytes int64
 	for k, v := range m {
 		if after, ok := strings.CutPrefix(k, customResourcePrefix); ok {
 			name := after
 			value, err := strconv.ParseFloat(v, 32)
 			if err != nil {
 				return nil, status.InvalidArgumentErrorf("parse execution property %q: value is not a valid float32", k)
+			}
+			switch name {
+			case bazelCPUResourceName:
+				bazelMilliCPU = int64(value * 1000)
+				continue
+			case bazelMemoryResourceName:
+				bazelMemoryBytes = int64(value * 1024 * 1024)
+				continue
 			}
 			customResources = append(customResources, &scpb.CustomResource{
 				Name:  name,
@@ -552,8 +573,8 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		PoolType:                  poolType,
 		OriginalPool:              stringProp(m, originalPoolPropertyName, ""),
 		EstimatedComputeUnits:     float64Prop(m, EstimatedComputeUnitsPropertyName, 0),
-		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, 0),
-		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, 0),
+		EstimatedMemoryBytes:      iecBytesProp(m, EstimatedMemoryPropertyName, bazelMemoryBytes),
+		EstimatedMilliCPU:         milliCPUProp(m, EstimatedCPUPropertyName, bazelMilliCPU),
 		EstimatedFreeDiskBytes:    iecBytesProp(m, EstimatedFreeDiskPropertyName, 0),
 		CustomResources:           customResources,
 		ContainerImage:            stringProp(m, containerImagePropertyName, ""),
