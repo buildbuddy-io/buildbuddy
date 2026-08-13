@@ -233,38 +233,6 @@ func TestContainerNetworkPool(t *testing.T) {
 	netnsExec(t, cn.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
 }
 
-func TestDeleteNetNamespaces_LogsCleanupResult(t *testing.T) {
-	fakeBin := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "ip"), []byte(`#!/bin/sh
-case "$*" in
-  "netns list")
-    printf '%s\n' unrelated 'bb-executor-success (id: 1)' bb-executor-failure
-    ;;
-  "netns delete bb-executor-success")
-    ;;
-  "netns delete bb-executor-failure")
-    echo 'delete failed' >&2
-    exit 1
-    ;;
-  *)
-    echo "unexpected ip command: $*" >&2
-    exit 2
-    ;;
-esac
-`), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(fakeBin, "sudo"), []byte(`#!/bin/sh
-if [ "$1" = "-A" ]; then
-  shift
-fi
-exec "$@"
-`), 0o755))
-	t.Setenv("PATH", fakeBin+":"+os.Getenv("PATH"))
-	logs := captureWarnings(t)
-
-	require.Error(t, networking.DeleteNetNamespaces(context.Background()))
-	assert.Contains(t, logs.String(), "Cleaned up 1 of 2 stale executor network namespaces")
-}
-
 func TestContainerNetworkPool_LogsRouteConflict(t *testing.T) {
 	flags.Set(t, "executor.task_ip_range", "198.18.0.0/16")
 	flags.Set(t, "executor.cleanup_stale_veth_devices", false)

@@ -293,8 +293,7 @@ func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
 // blackhole return traffic to the task, including DNS responses.
 //
 // This is a diagnostic only: it logs what it finds and never fails the network
-// setup. Actually removing the conflicting device is gated behind
-// --executor.cleanup_stale_veth_devices.
+// setup.
 func checkVethRoute(ctx context.Context, veth *vethPair) {
 	if veth == nil || veth.network == nil {
 		log.CtxWarningf(ctx, "Network route check failed: cannot check veth route without an assigned network")
@@ -329,9 +328,7 @@ func checkVethRoute(ctx context.Context, veth *vethPair) {
 	}
 	log.CtxWarningf(
 		ctx,
-		"Network route conflict: host route to guest IP %s uses device %q (ifindex %d), expected device %q (ifindex %d); route: %+v. "+
-			"This usually means a killed process left a veth behind holding the same IP range; "+
-			"--executor.cleanup_stale_veth_devices deletes such devices before the range is reused.",
+		"Network route conflict: host route to guest IP %s uses device %q (ifindex %d), expected device %q (ifindex %d); route: %+v",
 		guestIP,
 		actualDevice,
 		actualRoute.LinkIndex,
