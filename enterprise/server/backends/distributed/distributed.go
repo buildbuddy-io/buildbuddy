@@ -1130,6 +1130,8 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	//	  we shouldn't either, since the blob might never be read from this node.
 	// 2) A Get/Read call, which would have already written to those caches if
 	//    appropriate.
+	// 3) A GetWithMetadata call, which doesn't write to those caches, so as
+	//    with FindMissing/Contains, we shouldn't either.
 	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
