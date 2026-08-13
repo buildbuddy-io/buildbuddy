@@ -187,6 +187,106 @@ func TestBasicReadWrite(t *testing.T) {
 	}, peerLookupMetrics)
 }
 
+func TestGetPeerLookupMetrics(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	for i := 0; i < 10; i++ {
+		// Do a write, then Get and GetWithMetadata it back through each node.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, distributedCaches[i%3].Set(ctx, rn, buf))
+		for _, distributedCache := range distributedCaches {
+			data, err := distributedCache.Get(ctx, rn)
+			require.NoError(t, err)
+			require.Equal(t, buf, data)
+
+			data, md, err := distributedCache.GetWithMetadata(ctx, rn)
+			require.NoError(t, err)
+			require.Equal(t, buf, data)
+			require.NotNil(t, md)
+		}
+
+		// Get and GetWithMetadata a digest that was never written.
+		missingRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		for _, distributedCache := range distributedCaches {
+			_, err := distributedCache.Get(ctx, missingRN)
+			require.True(t, status.IsNotFoundError(err))
+
+			_, _, err = distributedCache.GetWithMetadata(ctx, missingRN)
+			require.True(t, status.IsNotFoundError(err))
+		}
+	}
+
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	assert.Equal(t, []testmetrics.HistogramValues{
+		{
+			Labels: map[string]string{
+				"op":                       "Get",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+			},
+			// For each of the 10 objects, we did a Get on all 3 distributed
+			// caches, which should have done only 1 lookup each (every peer
+			// has a replica).
+			Buckets: map[float64]uint64{1: 30},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "GetWithMetadata",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+			},
+			Buckets: map[float64]uint64{1: 30},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "Get",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+			},
+			// Each missing digest requires exhausting all 3 peers
+			// (replication factor), on each of the 3 distributed caches, for
+			// each of the 10 missing objects.
+			Buckets: map[float64]uint64{3: 30},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "GetWithMetadata",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+			},
+			Buckets: map[float64]uint64{3: 30},
+		},
+	}, peerLookupMetrics)
+}
+
 func TestReadPeers_FewerNodesThanReplicationFactor(t *testing.T) {
 	env, _, _ := getEnvAuthAndCtx(t)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -854,6 +954,78 @@ func TestBackfillContinuesWhenOnePeerFails(t *testing.T) {
 	require.False(t, exists, "blob should not have been written to the failing peer")
 }
 
+// TestBackfillViaGet verifies that Get and GetWithMetadata backfill
+// more-preferred peers that were missing the digest, like Reader does.
+func TestBackfillViaGet(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	_ = startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	baseCaches := map[string]interfaces.Cache{
+		peer1: memoryCache1,
+		peer2: memoryCache2,
+		peer3: memoryCache3,
+	}
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, dc1.Set(ctx, rn, buf))
+
+	// Delete the digest from the most-preferred peer so the read hits a
+	// less-preferred replica, making the most-preferred peer a backfill
+	// target.
+	preferredPeer := dc1.readPeers(rn).GetNextPeer()
+	require.NoError(t, baseCaches[preferredPeer].Delete(ctx, rn))
+
+	// backfillPeers blocks until copies finish, so the assertions below are
+	// deterministic.
+	data, err := dc1.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+
+	exists, err := baseCaches[preferredPeer].Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "Get did not backfill the most-preferred peer")
+
+	// Same again via GetWithMetadata.
+	require.NoError(t, baseCaches[preferredPeer].Delete(ctx, rn))
+
+	data, _, err = dc1.GetWithMetadata(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+
+	exists, err = baseCaches[preferredPeer].Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "GetWithMetadata did not backfill the most-preferred peer")
+}
+
 func TestCopyFileDoesNotMutateResourceNameCompressor(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
@@ -1107,6 +1279,7 @@ func TestFindMissing(t *testing.T) {
 
 func TestGetMulti(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -1165,8 +1338,16 @@ func TestGetMulti(t *testing.T) {
 		}
 	}
 
+	// Generate some more digests, but don't write them to the cache.
+	resourcesNotWritten := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 70; i++ {
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		resourcesNotWritten = append(resourcesNotWritten, rn)
+	}
+	allResources := append(resourcesWritten, resourcesNotWritten...)
+
 	for _, distributedCache := range distributedCaches {
-		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
 		assert.Nil(t, err)
 		for _, r := range resourcesWritten {
 			d := r.GetDigest()
@@ -1174,7 +1355,35 @@ func TestGetMulti(t *testing.T) {
 			assert.True(t, ok)
 			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
 		}
+		for _, r := range resourcesNotWritten {
+			_, ok := gotMap[r.GetDigest()]
+			assert.False(t, ok)
+		}
 	}
+
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	assert.Equal(t, []testmetrics.HistogramValues{
+		{
+			Labels: map[string]string{
+				"op":                       "GetMulti",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+			},
+			// Each hit only requires 1 peer lookup, and we did 3 GetMulti
+			// calls (loop count above) * 100 hits for each call (number of
+			// digests written).
+			Buckets: map[float64]uint64{1: 300},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "GetMulti",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+			},
+			// Each miss should result in 3 peer lookups (replication factor),
+			// and we did 3 GetMulti calls (loop count above) * 70 misses each
+			// (number of digests not written).
+			Buckets: map[float64]uint64{3: 210},
+		},
+	}, peerLookupMetrics)
 }
 
 func TestHintedHandoff(t *testing.T) {
