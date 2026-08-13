@@ -23,11 +23,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/rc_util"
 	"github.com/buildbuddy-io/buildbuddy/cli/shortcuts"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -78,6 +80,15 @@ var (
 			return parser, nil
 		},
 	)
+	permissiveParserOnce = sync.OnceValues(
+		func() (*Parser, error) {
+			p, err := generateParserOnce()
+			if err != nil {
+				return nil, err
+			}
+			return p.AsPermissive(), nil
+		},
+	)
 )
 
 // Set the help text that encodes the bazel flags collection proto to the given
@@ -90,15 +101,20 @@ func SetBazelHelpForTesting(encodedProto string) {
 
 // Subparser is a parser that recognizes one set of options, optionally followed by a subcommand.
 type Subparser struct {
+	// Name of parser for logging purposes.
+	Name        string
 	ByName      map[string]*options.Definition
 	ByShortName map[string]*options.Definition
 
-	Subcommands set.Set[string]
-	Aliases     map[string]string
+	Subcommands         set.Set[string]
+	UnconditionalPhases set.Set[string]
+	Aliases             map[string]string
 
 	// Permissive specifies whether or not to error out when parsing an option
 	// that does not support the current command.
 	Permissive bool
+
+	SupportsStarlarkFlags bool
 }
 
 func (m *Subparser) ForceAdd(d *options.Definition) {
@@ -151,20 +167,36 @@ type Parser struct {
 func NewParser(optionDefinitions []*options.Definition, commands []string, aliases map[string]string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
+			Name:        "startup parser",
 			ByName:      map[string]*options.Definition{},
 			ByShortName: map[string]*options.Definition{},
 			Subcommands: set.From(commands...),
 			Aliases:     aliases,
 		},
 		CommandOptionParser: &Subparser{
-			ByName:      map[string]*options.Definition{},
-			ByShortName: map[string]*options.Definition{},
+			Name:                  "command parser",
+			ByName:                map[string]*options.Definition{},
+			ByShortName:           map[string]*options.Definition{},
+			UnconditionalPhases:   set.FromSeq(rc_util.UnconditionalCommandPhases()),
+			SupportsStarlarkFlags: true,
 		},
 	}
 	for _, d := range optionDefinitions {
 		p.AddOptionDefinition(d)
 	}
 	return p
+}
+
+// AsPermissive returns a parser with shallow copies of this parser's
+// subparsers with the `Permissive` flags.
+func (p *Parser) AsPermissive() *Parser {
+	permissive := &Parser{
+		StartupOptionParser: new(*p.StartupOptionParser),
+		CommandOptionParser: new(*p.CommandOptionParser),
+	}
+	permissive.StartupOptionParser.Permissive = true
+	permissive.CommandOptionParser.Permissive = true
+	return permissive
 }
 
 // GetNativeParser returns a lightweight parser for commands and flags implemented
@@ -411,8 +443,7 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 	var parsedOptions []options.Option
 	// Iterate through the args, looking for a terminating token.
 	for i := 0; i < len(args); {
-		token := args[i]
-		if token == "--" {
+		if args[i] == "--" {
 			// POSIX-specified (and bazel-supported) delimiter to end option parsing
 			return parsedOptions, i, nil
 		}
@@ -425,11 +456,20 @@ func (p *Subparser) ParseOptions(args []string, command string) ([]options.Optio
 			return parsedOptions, i, nil
 		}
 		if command != "" {
-			if option.PluginID() == options.UnknownBuiltinPluginID {
-				// If this is an unknown option, assume it's supported by this command.
-				option.GetDefinition().AddSupportedCommand(command)
-			} else if !p.Permissive && !option.Supports(command) {
-				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' does not support command '%s'", token, command)
+			if unknown, ok := option.(*options.UnknownOption); ok {
+				// TODO(zoey): prevent unknown options from successfully parsing if we
+				// are not parsing permissively. This requires re-working how the arg
+				// lib works and actually registering all plugin options, but it is the
+				// goal.
+				// if !p.Permissive {
+				//   return nil, 0, fmt.Errorf("failed to parse options: unknown '%s' option '%s'.", command, unknown.Format()[0])
+				// }
+				if !p.UnconditionalPhases.Contains(command) {
+					// If this is an unknown option, assume it's supported by this command.
+					unknown.AssumeSupportFor(command)
+				}
+			} else if !p.Permissive && !option.Supports(command) && !p.UnconditionalPhases.Contains(command) {
+				return nil, 0, fmt.Errorf("failed to parse options: Option '%s' is not a '%s' option.", option.Format()[0], command)
 			}
 		}
 		parsedOptions = append(parsedOptions, option)
@@ -526,9 +566,11 @@ func (p *Subparser) parseLongNameOption(optName string) (options.Option, error) 
 
 	for prefix := range options.StarlarkSkippedPrefixes {
 		if strings.HasPrefix(optName, prefix) {
+			if !p.SupportsStarlarkFlags {
+				return nil, fmt.Errorf("%s encountered starlark flag %s while parsing, but does not support starlark flags.", p.Name, optName)
+			}
 			// This is a new starlark definition; let's hang on to it.
-			d := options.NewStarlarkOptionDefinition(optName)
-			d.AddSupportedCommand(slices.Collect(bazel_command.Commands().All())...)
+			d := options.NewStarlarkOptionDefinition(optName, set.FromSeq(bazel_command.Commands().All()))
 			// No need to check if this option already exists since we never reach
 			// this code if it does.
 			p.ForceAdd(d)
@@ -630,6 +672,10 @@ func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...
 
 func GetParser() (*Parser, error) {
 	return generateParserOnce()
+}
+
+func GetPermissiveParser() (*Parser, error) {
+	return permissiveParserOnce()
 }
 
 func CanonicalizeArgs(args []string) ([]string, error) {
