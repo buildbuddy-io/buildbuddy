@@ -21,6 +21,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/rs/zerolog"
+	zerologlog "github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -229,6 +231,88 @@ func TestContainerNetworkPool(t *testing.T) {
 	require.NotNil(t, cn, "take from pool")
 
 	netnsExec(t, cn.NamespacePath(), `ping -c 1 -W 3 8.8.8.8`)
+}
+
+func TestContainerNetworkPool_LogsRouteConflict(t *testing.T) {
+	flags.Set(t, "executor.task_ip_range", "198.18.0.0/16")
+	flags.Set(t, "executor.cleanup_stale_veth_devices", false)
+	testnetworking.Setup(t)
+	logs := captureWarnings(t)
+
+	ctx := context.Background()
+	pool := networking.NewContainerNetworkPool(1)
+	t.Cleanup(func() {
+		require.NoError(t, pool.Shutdown(context.Background()))
+	})
+
+	cn, err := networking.CreateContainerNetwork(ctx, false /*=loopbackOnly*/)
+	require.NoError(t, err)
+	require.True(t, pool.Add(ctx, cn), "add network to pool")
+
+	// The allocator hands out /30s in order and doesn't rewind when one is
+	// released, so the pooled network (which took .5/30) will be reassigned
+	// .13/30 on the way out of the pool. Leave a veth holding that address
+	// behind, simulating an executor killed before network cleanup.
+	staleDevice := createStaleVeth(t, "198.18.0.13/30")
+
+	cn = pool.Get(ctx)
+	require.NotNil(t, cn, "take network from pool")
+	t.Cleanup(func() {
+		require.NoError(t, cn.Cleanup(context.Background()))
+	})
+
+	assert.Contains(t, logs.String(), "Network route conflict:")
+	assert.Contains(t, logs.String(), staleDevice)
+	assert.Contains(t, logs.String(), cn.HostDevice())
+}
+
+// captureWarnings redirects warning-level logs to a buffer for the duration of
+// the test.
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	buf := &bytes.Buffer{}
+	previousLogger := zerologlog.Logger
+	zerologlog.Logger = zerolog.New(buf).Level(zerolog.WarnLevel)
+	t.Cleanup(func() {
+		zerologlog.Logger = previousLogger
+	})
+	return buf
+}
+
+func createStaleVeth(t *testing.T, hostIPWithCIDR string) string {
+	t.Helper()
+	suffix := rand.Intn(1 << 20)
+	hostDevice := fmt.Sprintf("vsh%05x", suffix)
+	peerDevice := fmt.Sprintf("vsp%05x", suffix)
+	netNamespace := fmt.Sprintf("bb-stale-%05x", suffix)
+
+	runIP(t, "netns", "add", netNamespace)
+	t.Cleanup(func() {
+		_ = ipCommand("link", "delete", hostDevice).Run()
+		_ = ipCommand("netns", "delete", netNamespace).Run()
+	})
+	runIP(t, "link", "add", hostDevice, "type", "veth", "peer", "name", peerDevice)
+	runIP(t, "link", "set", peerDevice, "netns", netNamespace)
+	runIP(t, "addr", "add", hostIPWithCIDR, "dev", hostDevice)
+	runIP(t, "link", "set", hostDevice, "up")
+	runIP(t, "netns", "exec", netNamespace, "ip", "link", "set", peerDevice, "up")
+	return hostDevice
+}
+
+func runIP(t *testing.T, args ...string) {
+	t.Helper()
+	output, err := ipCommand(args...).CombinedOutput()
+	require.NoError(t, err, "ip %s: %s", strings.Join(args, " "), output)
+}
+
+// ipCommand builds an 'ip' invocation, prepending sudo when not running as
+// root. testnetworking.Setup only guarantees passwordless sudo, not root.
+func ipCommand(args ...string) *exec.Cmd {
+	args = append([]string{"ip"}, args...)
+	if os.Getuid() != 0 {
+		args = append([]string{"sudo", "--non-interactive"}, args...)
+	}
+	return exec.Command(args[0], args[1:]...)
 }
 
 func TestNetworkStats(t *testing.T) {
