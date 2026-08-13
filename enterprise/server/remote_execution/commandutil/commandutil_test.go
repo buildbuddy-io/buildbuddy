@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -41,6 +42,20 @@ time.sleep(%f)
 func runSh(ctx context.Context, script string) *interfaces.CommandResult {
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", script}}
 	return commandutil.Run(ctx, cmd, ".", nil /*=statsListener*/, &interfaces.Stdio{})
+}
+
+func echoCommand(msg string) *repb.Command {
+	if runtime.GOOS == "windows" {
+		return &repb.Command{Arguments: []string{"powershell", "-Command", fmt.Sprintf("Write-Output '%s'", msg)}}
+	}
+	return &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf("printf '%s\\n'", msg)}}
+}
+
+func printAndSleepCommand(msg string, sleepSeconds int) *repb.Command {
+	if runtime.GOOS == "windows" {
+		return &repb.Command{Arguments: []string{"powershell", "-Command", fmt.Sprintf("Write-Host -NoNewline '%s'; Start-Sleep -Seconds %d", msg, sleepSeconds)}}
+	}
+	return &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf("printf '%s' && sleep %d", msg, sleepSeconds)}}
 }
 
 func nopStatsListener(*repb.UsageStats) {}
@@ -124,4 +139,41 @@ func TestLimitStdOutErrWriter(t *testing.T) {
 			assert.Equal(t, tt.wantOut, buf.String())
 		})
 	}
+}
+
+func TestCommandWithOutputLimit(t *testing.T) {
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+	ctx := context.Background()
+
+	// Command succeeds when within limit
+	result := commandutil.Run(ctx, echoCommand("hello"), ".", nil, &interfaces.Stdio{})
+	assert.Equal(t, 0, result.ExitCode)
+	assert.NoError(t, result.Error)
+
+	// Command fails when exceeding limit
+	result = commandutil.Run(ctx, echoCommand("this is too long"), ".", nil, &interfaces.Stdio{})
+	assert.Equal(t, commandutil.NoExitCode, result.ExitCode)
+	assert.Error(t, result.Error)
+	assert.True(t, status.IsResourceExhaustedError(result.Error), "expected resource exhausted error, got: %v", result.Error)
+	assert.Contains(t, result.Error.Error(), "stdout/stderr output size limit exceeded")
+
+	// Command succeeds when exceeding limit if DisableOutputLimits is set
+	result = commandutil.Run(ctx, echoCommand("this is too long"), ".", nil, &interfaces.Stdio{DisableOutputLimits: true})
+	assert.Equal(t, 0, result.ExitCode)
+	assert.NoError(t, result.Error)
+}
+
+func TestCommandWithOutputLimit_LongRunningCommand(t *testing.T) {
+	flags.Set(t, "executor.stdouterr_max_size_bytes", 10)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Reproduce the original regression: overflow stdout immediately, then
+	// keep the process alive long enough that the runner must interrupt it.
+	result := commandutil.Run(ctx, printAndSleepCommand("12345678901234567890", 30), ".", nil, &interfaces.Stdio{})
+
+	assert.Equal(t, commandutil.NoExitCode, result.ExitCode)
+	require.Error(t, result.Error)
+	assert.True(t, status.IsResourceExhaustedError(result.Error), "expected resource exhausted error, got: %v", result.Error)
+	assert.Nil(t, ctx.Err(), "expected command to fail before the context deadline, got: %v", ctx.Err())
 }
