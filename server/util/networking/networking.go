@@ -185,14 +185,7 @@ func DeleteNetNamespaces(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return deleteNetNamespaces(ctx, string(b), func(ns string) error {
-		_, err := sudoCommand(ctx, "ip", "netns", "delete", ns)
-		return err
-	})
-}
-
-func deleteNetNamespaces(ctx context.Context, output string, deleteNetNamespace func(string) error) error {
-	output = strings.TrimSpace(output)
+	output := strings.TrimSpace(string(b))
 	if len(output) == 0 {
 		return nil
 	}
@@ -214,7 +207,7 @@ func deleteNetNamespaces(ctx context.Context, output string, deleteNetNamespace 
 	var lastErr error
 	deleted := 0
 	for _, ns := range staleNamespaces {
-		if err := deleteNetNamespace(ns); err != nil {
+		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
 			lastErr = err
 			continue
 		}
