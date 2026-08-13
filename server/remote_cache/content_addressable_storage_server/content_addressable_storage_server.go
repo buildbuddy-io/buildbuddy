@@ -631,6 +631,7 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 		slices.SortFunc(rootCache.TreeCacheChildren, func(a *rspb.ResourceName, b *rspb.ResourceName) int {
 			return strings.Compare(a.GetDigest().GetHash(), b.GetDigest().GetHash())
 		})
+		rootCache.TreeCacheChildren = slices.CompactFunc(rootCache.TreeCacheChildren, dedupeResourceProtos)
 	}
 
 	buf, err := proto.Marshal(rootCache)
@@ -814,7 +815,11 @@ func compareSubtrees(a *digest.ResourceName, b *digest.ResourceName) int {
 	}
 }
 
-func dedupeSubtrees(a *digest.ResourceName, b *digest.ResourceName) bool {
+func dedupeResources(a *digest.ResourceName, b *digest.ResourceName) bool {
+	return a.GetDigest().GetHash() == b.GetDigest().GetHash() && a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes()
+}
+
+func dedupeResourceProtos(a *rspb.ResourceName, b *rspb.ResourceName) bool {
 	return a.GetDigest().GetHash() == b.GetDigest().GetHash() && a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes()
 }
 
@@ -1039,7 +1044,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if len(result.cachedSubtrees) > 0 {
 		// Sort and dedupe cached subtrees in case we ever want to cache this response somewhere.
 		slices.SortFunc(result.cachedSubtrees, compareSubtrees)
-		result.cachedSubtrees = slices.CompactFunc(result.cachedSubtrees, dedupeSubtrees)
+		result.cachedSubtrees = slices.CompactFunc(result.cachedSubtrees, dedupeResources)
 		rsp.Subtrees = make([]*repb.SubtreeResourceName, 0, len(result.cachedSubtrees))
 		for _, st := range result.cachedSubtrees {
 			rsp.Subtrees = append(rsp.Subtrees, &repb.SubtreeResourceName{
