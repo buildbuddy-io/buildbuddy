@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -142,13 +143,18 @@ func ctxWithResolvedClientIP(ip string) context.Context {
 	return context.WithValue(context.Background(), clientip.ContextKey, ip)
 }
 
-func TestCtxWithClientIP(t *testing.T) {
+func ctxWithResolvedSubdomain(sd string) context.Context {
+	return subdomain.Context(context.Background(), sd)
+}
+
+func TestCtxForBackend(t *testing.T) {
 	const clientIP = "1.2.3.4"
+	const sd = "acme"
 	const identity = "signed-grpc-proxy-header"
 
 	t.Run("attaches client IP and identity", func(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
-		ctx, err := ctxWithClientIP(ctxWithResolvedClientIP(clientIP), cis)
+		ctx, err := ctxForBackend(ctxWithResolvedClientIP(clientIP), cis)
 		require.NoError(t, err)
 
 		md, ok := metadata.FromOutgoingContext(ctx)
@@ -159,22 +165,62 @@ func TestCtxWithClientIP(t *testing.T) {
 		require.Equal(t, interfaces.ClientIdentityGRPCProxy, cis.lastClient)
 	})
 
-	t.Run("no client IP attaches nothing", func(t *testing.T) {
+	t.Run("attaches subdomain and identity", func(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
-		ctx, err := ctxWithClientIP(context.Background(), cis)
+		ctx, err := ctxForBackend(ctxWithResolvedSubdomain(sd), cis)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{sd}, md.Get(subdomain.HeaderName))
+		// The subdomain alone is enough to warrant attesting as grpc-proxy;
+		// the backend only honors the header from that identity.
+		require.Equal(t, []string{identity}, md.Get(authutil.ClientIdentityHeaderName))
+		require.Equal(t, interfaces.ClientIdentityGRPCProxy, cis.lastClient)
+	})
+
+	t.Run("nothing resolved attaches nothing", func(t *testing.T) {
+		cis := &fakeIdentityService{header: identity}
+		ctx, err := ctxForBackend(context.Background(), cis)
 		require.NoError(t, err)
 
 		if md, ok := metadata.FromOutgoingContext(ctx); ok {
 			require.Empty(t, md.Get(clientip.HeaderName))
+			require.Empty(t, md.Get(subdomain.HeaderName))
 			require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
 		}
+	})
+
+	t.Run("client-supplied subdomain header is overwritten with the resolved subdomain", func(t *testing.T) {
+		cis := &fakeIdentityService{header: identity}
+		// Simulate a caller pre-setting the subdomain header to a subdomain
+		// their API key would match, to slip past the backend's check.
+		ctx := metadata.NewIncomingContext(ctxWithResolvedSubdomain(sd), metadata.Pairs(subdomain.HeaderName, "attacker"))
+		ctx, err := ctxForBackend(ctx, cis)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Equal(t, []string{sd}, md.Get(subdomain.HeaderName))
+	})
+
+	t.Run("client-supplied subdomain is stripped when none is resolved", func(t *testing.T) {
+		cis := &fakeIdentityService{header: identity}
+		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(subdomain.HeaderName, "attacker"))
+		ctx, err := ctxForBackend(ctx, cis)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Empty(t, md.Get(subdomain.HeaderName))
+		require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
 	})
 
 	t.Run("client-supplied client IP header is overwritten with the resolved IP", func(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
 		// Simulate an attacker pre-setting the client-IP header to a spoofed value.
 		ctx := metadata.NewIncomingContext(ctxWithResolvedClientIP(clientIP), metadata.Pairs(clientip.HeaderName, "9.9.9.9"))
-		ctx, err := ctxWithClientIP(ctx, cis)
+		ctx, err := ctxForBackend(ctx, cis)
 		require.NoError(t, err)
 
 		md, ok := metadata.FromOutgoingContext(ctx)
@@ -188,7 +234,7 @@ func TestCtxWithClientIP(t *testing.T) {
 		cis := &fakeIdentityService{header: identity}
 		// Spoofed header present, but the proxy resolved no client IP of its own.
 		ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(clientip.HeaderName, "9.9.9.9"))
-		ctx, err := ctxWithClientIP(ctx, cis)
+		ctx, err := ctxForBackend(ctx, cis)
 		require.NoError(t, err)
 
 		md, ok := metadata.FromOutgoingContext(ctx)
@@ -197,8 +243,23 @@ func TestCtxWithClientIP(t *testing.T) {
 		require.Empty(t, md.Get(authutil.ClientIdentityHeaderName))
 	})
 
+	t.Run("client-supplied internal headers are stripped, other headers are preserved", func(t *testing.T) {
+		cis := &fakeIdentityService{header: identity}
+		ctx := metadata.NewIncomingContext(ctxWithResolvedClientIP(clientIP), metadata.Pairs(
+			authutil.InternalHeaderPrefix+"future-signal", "attacker",
+			"x-test-client-header", "keep-me",
+		))
+		ctx, err := ctxForBackend(ctx, cis)
+		require.NoError(t, err)
+
+		md, ok := metadata.FromOutgoingContext(ctx)
+		require.True(t, ok)
+		require.Empty(t, md.Get(authutil.InternalHeaderPrefix+"future-signal"))
+		require.Equal(t, []string{"keep-me"}, md.Get("x-test-client-header"))
+	})
+
 	t.Run("nil identity service sets IP without identity", func(t *testing.T) {
-		ctx, err := ctxWithClientIP(ctxWithResolvedClientIP(clientIP), nil)
+		ctx, err := ctxForBackend(ctxWithResolvedClientIP(clientIP), nil)
 		require.NoError(t, err)
 
 		md, ok := metadata.FromOutgoingContext(ctx)
@@ -214,7 +275,7 @@ func TestCtxWithClientIP(t *testing.T) {
 		// the proxy must not clobber it with its own grpc-proxy identity.
 		const callerIdentity = "workflow-identity"
 		ctx := metadata.NewIncomingContext(ctxWithResolvedClientIP(clientIP), metadata.Pairs(authutil.ClientIdentityHeaderName, callerIdentity))
-		ctx, err := ctxWithClientIP(ctx, cis)
+		ctx, err := ctxForBackend(ctx, cis)
 		require.NoError(t, err)
 
 		md, ok := metadata.FromOutgoingContext(ctx)
