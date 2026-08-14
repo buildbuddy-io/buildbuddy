@@ -3,6 +3,8 @@ package view_test
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download/downloadtest"
@@ -131,6 +133,42 @@ func TestViewFilteredTestOutput_ExplicitTargetNoFilterPrintsAllFailures(t *testi
 	// An empty filter prints every failed case, but not the passing case.
 	require.Contains(t, out, "expected 1 got 2")
 	require.Contains(t, out, "panic: boom")
+}
+
+func TestViewFilteredTestOutput_LargeReportPreservesAllFailures(t *testing.T) {
+	var xml strings.Builder
+	xml.WriteString(`<testsuite name="large">`)
+	for i := 0; i < 150; i++ {
+		fmt.Fprintf(&xml, `<testcase name="Case%d"><failure message="failure %d"/></testcase>`, i, i)
+	}
+	xml.WriteString(`</testsuite>`)
+	event := failedTestEvent(targetLabel, testXMLURI, bespb.TestStatus_FAILED, 0, 0)
+	bb := getTargetClient(targetLabel, event)
+	dl := downloadtest.New().Add(testXMLURI, []byte(xml.String()))
+
+	var out bytes.Buffer
+	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &out, invocationID, []string{targetLabel}, "")
+
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+	require.Contains(t, out.String(), "failure 149")
+}
+
+func TestViewFilteredTestOutput_ToleratesLegacyMalformedAndInvalidText(t *testing.T) {
+	xml := []byte(`<testsuite><testcase name="legacy"><failure message="one & two">`)
+	xml = append(xml, bytes.Repeat([]byte{0xff}, 100)...)
+	xml = append(xml, []byte(`</failure></testcase></testsuite>`)...)
+	event := failedTestEvent(targetLabel, testXMLURI, bespb.TestStatus_FAILED, 0, 0)
+	bb := getTargetClient(targetLabel, event)
+	dl := downloadtest.New().Add(testXMLURI, xml)
+
+	var out bytes.Buffer
+	code, err := view.ViewFilteredTestOutput(context.Background(), bb, dl, &out, invocationID, []string{targetLabel}, "")
+
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+	require.Contains(t, out.String(), "one & two")
+	require.Contains(t, out.String(), "�")
 }
 
 func TestViewFilteredTestOutput_MultipleTargets(t *testing.T) {
