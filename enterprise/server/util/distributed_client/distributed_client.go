@@ -63,6 +63,11 @@ const (
 	// How long an async write-reference verification may keep running after
 	// the write stream that spawned it completes.
 	referenceVerificationTimeout = 1 * time.Minute
+
+	// maxDecompressBufSizeBytes caps the initial buffer allocated for a
+	// decompressed peer response, since digest sizes are client-supplied.
+	// The buffer grows as needed.
+	maxDecompressBufSizeBytes = 4 * 1024 * 1024
 )
 
 var (
@@ -626,12 +631,26 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	if err != nil {
 		return nil, nil, err
 	}
+	// Fetch compressed data over the wire and decompress it locally, like
+	// RemoteReader and RemoteGetMulti do.
+	decompress := c.shouldReadCompressed(r)
+	if decompress {
+		r = r.CloneVT()
+		r.Compressor = repb.Compressor_ZSTD
+	}
 	rsp, err := client.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: r})
 	if err != nil {
 		return nil, nil, err
 	}
+	data := rsp.GetData()
+	if decompress {
+		data, err = compression.DecompressZstd(make([]byte, 0, digest.SafeBufferSize(r, maxDecompressBufSizeBytes)), data)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	md := rsp.GetMetadata()
-	return rsp.GetData(), &interfaces.CacheMetadata{
+	return data, &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
 		DigestSizeBytes:    md.GetDigestSizeBytes(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
@@ -682,10 +701,10 @@ func (c *Proxy) RemoteDelete(ctx context.Context, peer string, r *rspb.ResourceN
 
 func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	req := &dcpb.GetMultiRequest{}
-	hashDigests := make(map[string]*repb.Digest, len(resources))
+	hashResources := make(map[string]*rspb.ResourceName, len(resources))
 	compressedHashes := make(set.Set[string], len(resources))
 	for _, r := range resources {
-		hashDigests[r.GetDigest().GetHash()] = r.GetDigest()
+		hashResources[r.GetDigest().GetHash()] = r
 		if c.shouldReadCompressed(r) {
 			r = r.CloneVT()
 			r.Compressor = repb.Compressor_ZSTD
@@ -703,13 +722,14 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 	}
 	resultMap := make(map[*repb.Digest][]byte, len(rsp.GetKeyValue()))
 	for _, keyValue := range rsp.GetKeyValue() {
-		d, ok := hashDigests[keyValue.GetKey().GetKey()]
+		rn, ok := hashResources[keyValue.GetKey().GetKey()]
 		if !ok {
 			continue
 		}
+		d := rn.GetDigest()
 		buf := keyValue.GetValue()
 		if compressedHashes.Contains(d.GetHash()) {
-			buf, err = compression.DecompressZstd(make([]byte, d.GetSizeBytes()), buf)
+			buf, err = compression.DecompressZstd(make([]byte, 0, digest.SafeBufferSize(rn, maxDecompressBufSizeBytes)), buf)
 			if err != nil {
 				return nil, err
 			}

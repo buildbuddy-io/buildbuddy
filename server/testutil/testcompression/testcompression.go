@@ -32,6 +32,20 @@ func (c *CompressionCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byt
 	return cachedDataWithCompression, nil
 }
 
+func (c *CompressionCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	data, md, err := c.Cache.GetWithMetadata(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cachedDataWithCompression, err := dataWithCompression(r, data)
+	if err != nil {
+		return nil, nil, status.InternalErrorf("Could not get data for compression %v for %s: %s", r.GetCompressor(), r.GetDigest(), err)
+	}
+
+	return cachedDataWithCompression, md, nil
+}
+
 func (c *CompressionCache) Reader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	buf, err := c.Get(ctx, rn)
 	if err != nil {
