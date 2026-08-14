@@ -317,6 +317,14 @@ func handleCreate(args []string) (int, error) {
 	iid := uuid.New()
 	log.Printf("Box: https://app.buildbuddy.io/invocation/%s", iid)
 
+	ctx, err = bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionMnemonic:   "BuildBuddyBox",
+	})
+	if err != nil {
+		return 0, status.WrapError(err, "add request metadata to ctx")
+	}
+
 	cmdArgs := []string{
 		"./bb", "record",
 		"--invocation_id=" + iid,
@@ -490,13 +498,6 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	ctx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
-		ToolInvocationId: iid,
-		ActionMnemonic:   "BuildBuddyBox",
-	})
-	if err != nil {
-		return nil, status.WrapError(err, "add request metadata to ctx")
-	}
 	stream, err := rexec.Start(ctx, env, arn, rexec.WithSkipCacheLookup(true))
 	if err != nil {
 		return nil, fmt.Errorf("starting action: %w", err)
