@@ -251,6 +251,13 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 	return rsp, rsp.GetExecutionMetadata(), int64(proto.Size(rsp)), nil
 }
 
+func GetPrefix(ctx context.Context, efp interfaces.ExperimentFlagProvider) string {
+	if efp == nil {
+		return ""
+	}
+	return efp.String(ctx, "cache.action_cache_instance_name_prefix", "")
+}
+
 // Retrieve a cached execution result.
 //
 // Implementations SHOULD ensure that any blobs referenced from the
@@ -277,6 +284,9 @@ func (s *ActionCacheServer) GetActionResult(ctx context.Context, req *repb.GetAc
 	}
 	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
+	}
+	if prefix := GetPrefix(ctx, s.env.GetExperimentFlagProvider()); prefix != "" {
+		rn = digest.NewACResourceName(rn.GetDigest(), prefix+rn.GetInstanceName(), rn.GetDigestFunction())
 	}
 
 	ht := s.env.GetHitTrackerFactory().NewACHitTracker(ctx, bazel_request.GetRequestMetadata(ctx))
@@ -348,6 +358,9 @@ func (s *ActionCacheServer) UpdateActionResult(ctx context.Context, req *repb.Up
 	ht.SetExecutedActionMetadata(req.GetActionResult().GetExecutionMetadata())
 	d := req.GetActionDigest()
 	acResource := digest.NewResourceName(d, req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+	if prefix := GetPrefix(ctx, s.env.GetExperimentFlagProvider()); prefix != "" {
+		acResource = digest.NewResourceName(d, prefix+req.GetInstanceName(), rspb.CacheType_AC, req.GetDigestFunction())
+	}
 	uploadTracker := ht.TrackUpload(d)
 
 	// Context: https://github.com/bazelbuild/remote-apis/pull/131

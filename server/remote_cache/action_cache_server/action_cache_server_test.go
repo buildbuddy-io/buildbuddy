@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -29,6 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -539,6 +542,51 @@ func TestUserPrefixIsolatesGroups(t *testing.T) {
 
 	_, err = acClient.GetActionResult(ctxB, getReq)
 	require.True(t, status.IsNotFoundError(err), "group B must not see group A's AC entry; got: %v", err)
+}
+
+func TestActionCacheInstanceNamePrefixInvalidatesEntries(t *testing.T) {
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.action_cache_instance_name_prefix": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants:       map[string]any{"default": "v1"},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), provider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+	te.SetExperimentFlagProvider(fp)
+	server, err := action_cache_server.NewActionCacheServer(te)
+	require.NoError(t, err)
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{
+		UserID:        "US-A",
+		GroupID:       "GR-A",
+		AllowedGroups: []string{"GR-A"},
+		Capabilities:  []cappb.Capability{cappb.Capability_CACHE_WRITE},
+	})
+
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1024}
+	getReq := &repb.GetActionResultRequest{ActionDigest: actionDigest, DigestFunction: repb.DigestFunction_SHA256}
+	cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	unprefixedRN := digest.NewResourceName(actionDigest, "", rspb.CacheType_AC, repb.DigestFunction_SHA256)
+	data, err := proto.Marshal(&repb.ActionResult{})
+	require.NoError(t, err)
+	require.NoError(t, te.GetCache().Set(cacheCtx, unprefixedRN.ToProto(), data))
+
+	_, err = server.GetActionResult(ctx, getReq)
+	require.True(t, status.IsNotFoundError(err), "setting an instance name prefix should invalidate the unprefixed entry; got: %v", err)
+	_, err = server.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{},
+	})
+	require.NoError(t, err)
+	_, err = server.GetActionResult(ctx, getReq)
+	require.NoError(t, err, "the prefixed entry should be readable")
 }
 
 func runACServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *grpc.ClientConn {
