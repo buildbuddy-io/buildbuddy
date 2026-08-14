@@ -135,6 +135,113 @@ func TestRequired(t *testing.T) {
 	require.Error(t, err)
 }
 
+func newServiceWithKeys(t testing.TB, clock clockwork.Clock, signingKey, additionalVerificationKey string) *clientidentity.Service {
+	flags.Set(t, "app.client_identity.key", signingKey)
+	flags.Set(t, "app.client_identity.additional_verification_key", additionalVerificationKey)
+	si, err := clientidentity.New(clock)
+	require.NoError(t, err)
+	return si
+}
+
+func TestAdditionalVerificationKey(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	// Commas are preserved in both key flags.
+	oldKey := "old,key"
+	newKey := "new,key"
+
+	oldSigner := newServiceWithKeys(t, clock, oldKey, "")
+	newSigner := newServiceWithKeys(t, clock, newKey, "")
+	// Rotation phase 1: still signing with the old key, new key trusted.
+	oldSignerTrustingNew := newServiceWithKeys(t, clock, oldKey, newKey)
+	// Rotation phase 2: signing with the new key, old key still trusted.
+	newSignerTrustingOld := newServiceWithKeys(t, clock, newKey, oldKey)
+
+	identity := &interfaces.ClientIdentity{Origin: "internal", Client: "app"}
+	oldSignedHeader, err := oldSigner.NewIdentityHeader(identity, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+	newSignedHeader, err := newSigner.NewIdentityHeader(identity, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name        string
+		verifier    *clientidentity.Service
+		header      string
+		expectValid bool
+	}{
+		{name: "phase1_accepts_old_signed", verifier: oldSignerTrustingNew, header: oldSignedHeader, expectValid: true},
+		{name: "phase1_accepts_new_signed", verifier: oldSignerTrustingNew, header: newSignedHeader, expectValid: true},
+		{name: "phase2_accepts_old_signed", verifier: newSignerTrustingOld, header: oldSignedHeader, expectValid: true},
+		{name: "phase2_accepts_new_signed", verifier: newSignerTrustingOld, header: newSignedHeader, expectValid: true},
+		{name: "old_only_rejects_new_signed", verifier: oldSigner, header: newSignedHeader, expectValid: false},
+		{name: "new_only_rejects_old_signed", verifier: newSigner, header: oldSignedHeader, expectValid: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, tc.header))
+			ctx, err := tc.verifier.ValidateIncomingIdentity(ctx)
+			if !tc.expectValid {
+				require.Error(t, err)
+				require.True(t, status.IsPermissionDeniedError(err))
+				return
+			}
+			require.NoError(t, err)
+			si, err := tc.verifier.IdentityFromContext(ctx)
+			require.NoError(t, err)
+			require.Equal(t, identity.Origin, si.Origin)
+			require.Equal(t, identity.Client, si.Client)
+		})
+	}
+}
+
+func TestAdditionalVerificationKey_RejectsUnknownKey(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	keys := make([]string, 3)
+	for i := range keys {
+		k, err := random.RandomString(16)
+		require.NoError(t, err)
+		keys[i] = string(k)
+	}
+
+	unknownSigner := newServiceWithKeys(t, clock, keys[2], "")
+	header, err := unknownSigner.NewIdentityHeader(&interfaces.ClientIdentity{Origin: "internal", Client: "app"}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	verifier := newServiceWithKeys(t, clock, keys[0], keys[1])
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+	_, err = verifier.ValidateIncomingIdentity(ctx)
+	require.Error(t, err)
+	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestAdditionalVerificationKey_ExpiredTokenReportsExpiry(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	jwt.TimeFunc = func() time.Time {
+		return clock.Now()
+	}
+	t.Cleanup(func() {
+		jwt.TimeFunc = time.Now
+	})
+
+	oldKey, err := random.RandomString(16)
+	require.NoError(t, err)
+	newKey, err := random.RandomString(16)
+	require.NoError(t, err)
+
+	oldSigner := newServiceWithKeys(t, clock, string(oldKey), "")
+	header, err := oldSigner.NewIdentityHeader(&interfaces.ClientIdentity{Origin: "internal", Client: "app"}, clientidentity.DefaultExpiration)
+	require.NoError(t, err)
+
+	clock.Advance(clientidentity.DefaultExpiration + time.Second)
+
+	// The expired token was signed with a trusted (additional) key; the error
+	// should surface the expiry rather than a signature mismatch from the
+	// other keys that were tried.
+	verifier := newServiceWithKeys(t, clock, string(newKey), string(oldKey))
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(authutil.ClientIdentityHeaderName, header))
+	_, err = verifier.ValidateIncomingIdentity(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expired")
+}
+
 func TestClearIdentity(t *testing.T) {
 	clock := clockwork.NewFakeClock()
 	sis := newService(t, clock)
