@@ -2,14 +2,18 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
@@ -38,6 +43,7 @@ import (
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -55,17 +61,35 @@ var (
 	// TODO: Figure out the latest attempt number automatically.
 	attemptNumber = flag.Int("attempt", 1, "Invocation attempt number.")
 
-	copyArtifacts = flag.Bool("copy_artifacts", false, "Copy blobstore-persisted invocation artifacts to the cache target. This is required to view test logs, timing profile, and other files in the build event stream.")
+	copyArtifacts              = flag.Bool("copy_artifacts", false, "Copy blobstore-persisted invocation artifacts to the cache target. This is required to view test logs, timing profile, and other files in the build event stream.")
+	copyErrorTrackingArtifacts = flag.Bool("copy_error_tracking_artifacts", false, "Copy only URI-backed failed-test and failed-action diagnostics from a remote invocation into the destination cache.")
+	sourceBaseURL              = flag.String("source_base_url", "", "HTTP base URL used to fetch remote error-tracking artifacts, such as https://buildbuddy.buildbuddy.io.")
+	sourceInvocationID         = flag.String("source_invocation_id", "", "Remote invocation ID used to authorize artifact downloads when replaying a raw JSON file.")
+	sourceAPIKeyFile           = flag.String("source_api_key_file", "", "Mode-0600 file containing the source server API key. The key is never passed on the command line.")
+	destinationArtifactHost    = flag.String("destination_artifact_host", "", "Host to write into copied bytestream URIs; must match the destination server cache_api_url host.")
+	eventTimeUsec              = flag.Int64("event_time_usec", 0, "If positive, use this timestamp for every replayed event. Useful for preserving approximate invocation chronology from raw JSON exports.")
 
-	metadataOverride arrayFlags
+	metadataOverride    arrayFlags
+	sourceArtifactHosts arrayFlags
 
 	// Note: you will also need to configure a blobstore.
 
-	apiKeyRegex = regexp.MustCompile(`x-buildbuddy-api-key=([[:alnum:]]+)`)
+	apiKeyRegex = regexp.MustCompile(`(?i)x-buildbuddy-api-key(?:=|\s+)[^\s'\"]+`)
+)
+
+const (
+	maxImportedActionOutputBytes  = 4 << 10
+	maxImportedTestLogBytes       = 4 << 10
+	maxImportedTestXMLBytes       = 1 << 20
+	maxImportedArtifactBytes      = 8 << 20
+	maxImportedRedactionLookahead = 64 << 10
+	maxImportedArtifactCandidates = 1024
+	maxImportedArtifactRequests   = 256
 )
 
 func init() {
 	flag.Var(&metadataOverride, "metadata_override", "Array of build metadata values to override")
+	flag.Var(&sourceArtifactHosts, "source_artifact_host", "Allowed bytestream artifact host. Set once per expected source cache host.")
 }
 
 type arrayFlags []string
@@ -84,6 +108,339 @@ func getUUID() string {
 		log.Fatalf("Error making UUID: %s", err.Error())
 	}
 	return u.String()
+}
+
+type errorTrackingArtifactCandidate struct {
+	file        *espb.File
+	maxBytes    int64
+	mayTruncate bool
+}
+
+func isRemoteBytestreamFile(file *espb.File) bool {
+	u, err := url.Parse(file.GetUri())
+	return err == nil && u.Scheme == "bytestream" && u.Host != ""
+}
+
+func errorTrackingArtifactCandidates(event *espb.BuildEvent) []errorTrackingArtifactCandidate {
+	return slices.DeleteFunc(errorTrackingArtifactCandidatesIncludingInline(event), func(candidate errorTrackingArtifactCandidate) bool {
+		return !isRemoteBytestreamFile(candidate.file)
+	})
+}
+
+func errorTrackingArtifactCandidatesIncludingInline(event *espb.BuildEvent) []errorTrackingArtifactCandidate {
+	var candidates []errorTrackingArtifactCandidate
+	switch payload := event.GetPayload().(type) {
+	case *espb.BuildEvent_Action:
+		if payload.Action.GetSuccess() {
+			return nil
+		}
+		for _, file := range []*espb.File{payload.Action.GetStderr(), payload.Action.GetStdout()} {
+			if file != nil {
+				candidates = append(candidates, errorTrackingArtifactCandidate{
+					file: file, maxBytes: maxImportedActionOutputBytes, mayTruncate: true,
+				})
+			}
+		}
+	case *espb.BuildEvent_TestResult:
+		status := payload.TestResult.GetStatus()
+		if status == espb.TestStatus_PASSED || status == espb.TestStatus_FLAKY || status == espb.TestStatus_NO_STATUS {
+			return nil
+		}
+		for _, file := range payload.TestResult.GetTestActionOutput() {
+			switch path.Base(file.GetName()) {
+			case "test.xml":
+				candidates = append(candidates, errorTrackingArtifactCandidate{
+					file: file, maxBytes: maxImportedTestXMLBytes,
+				})
+			case "test.log":
+				candidates = append(candidates, errorTrackingArtifactCandidate{
+					file: file, maxBytes: maxImportedTestLogBytes, mayTruncate: true,
+				})
+			}
+		}
+	}
+	return candidates
+}
+
+func redactArtifactText(b []byte, sourceAPIKey string, xmlSafe bool) []byte {
+	redacted := redact.RedactTextWithValues(string(b), []string{sourceAPIKey})
+	if xmlSafe {
+		redacted = strings.ReplaceAll(redacted, "<REDACTED>", "[REDACTED]")
+	}
+	return []byte(redacted)
+}
+
+func redactInlineErrorTrackingArtifacts(event *espb.BuildEvent, sourceAPIKey string) {
+	for _, candidate := range errorTrackingArtifactCandidatesIncludingInline(event) {
+		contents, ok := candidate.file.GetFile().(*espb.File_Contents)
+		if !ok {
+			continue
+		}
+		b := contents.Contents
+		if int64(len(b)) > candidate.maxBytes {
+			if !candidate.mayTruncate {
+				contents.Contents = nil
+				continue
+			}
+			b = b[:min(int64(len(b)), candidate.maxBytes+maxImportedRedactionLookahead)]
+		}
+		b = redactArtifactText(b, sourceAPIKey, path.Base(candidate.file.GetName()) == "test.xml")
+		if int64(len(b)) > candidate.maxBytes {
+			if !candidate.mayTruncate {
+				contents.Contents = nil
+				continue
+			}
+			b = b[:candidate.maxBytes]
+		}
+		contents.Contents = b
+	}
+}
+
+func scrubStartedAPIKey(optionsDescription, replacementAPIKey string) string {
+	replacement := "x-buildbuddy-api-key=<REDACTED>"
+	if replacementAPIKey != "" {
+		replacement = "x-buildbuddy-api-key=" + replacementAPIKey
+	}
+	return apiKeyRegex.ReplaceAllString(optionsDescription, replacement)
+}
+
+type errorTrackingArtifactImporter struct {
+	client              *http.Client
+	sourceBaseURL       *url.URL
+	sourceArtifactHosts map[string]struct{}
+	sourceInvocationID  string
+	sourceAPIKey        string
+	destinationHost     string
+	upload              func(context.Context, string, repb.DigestFunction_Value, []byte) error
+	importedBytes       int64
+	consideredArtifacts int
+	requestedArtifacts  int
+	importedArtifacts   int
+	truncatedArtifacts  int
+	missingArtifacts    int
+	rejectedArtifacts   int
+}
+
+func parseSourceBaseURL(rawURL string) (*url.URL, error) {
+	baseURL, err := url.Parse(rawURL)
+	if err != nil || baseURL.Host == "" || baseURL.User != nil || baseURL.RawQuery != "" || baseURL.Fragment != "" {
+		return nil, status.InvalidArgumentError("source_base_url must be an absolute HTTPS URL without credentials, query, or fragment")
+	}
+	if baseURL.Scheme == "https" {
+		return baseURL, nil
+	}
+	hostname := baseURL.Hostname()
+	isLoopback := hostname == "localhost"
+	if ip := net.ParseIP(hostname); ip != nil {
+		isLoopback = ip.IsLoopback()
+	}
+	if baseURL.Scheme != "http" || !isLoopback {
+		return nil, status.InvalidArgumentError("source_base_url must use HTTPS; HTTP is allowed only for loopback test servers")
+	}
+	return baseURL, nil
+}
+
+func parseSourceArtifactHosts(hosts []string) (map[string]struct{}, error) {
+	allowed := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		u, err := url.Parse("bytestream://" + host)
+		if err != nil || u.Host != host || u.Hostname() == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+			return nil, status.InvalidArgumentErrorf("source_artifact_host %q must contain only a host and optional port", host)
+		}
+		allowed[host] = struct{}{}
+	}
+	if len(allowed) == 0 {
+		return nil, status.InvalidArgumentError("at least one source_artifact_host is required")
+	}
+	return allowed, nil
+}
+
+func newSourceHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func redactRemoteReplayEvent(ctx context.Context, redactor *redact.StreamingRedactor, sourceAPIKey string, event *espb.BuildEvent) error {
+	redactionContext := context.WithValue(ctx, "x-buildbuddy-api-key", sourceAPIKey)
+	if err := redactor.RedactAPIKeysWithSlowRegexp(redactionContext, event); err != nil {
+		return fmt.Errorf("redact API keys: %w", err)
+	}
+	if err := redactor.RedactMetadata(event); err != nil {
+		return fmt.Errorf("redact metadata: %w", err)
+	}
+	return nil
+}
+
+func newErrorTrackingArtifactImporter(dst bspb.ByteStreamClient) (*errorTrackingArtifactImporter, error) {
+	if *sourceBaseURL == "" || *sourceInvocationID == "" || *sourceAPIKeyFile == "" || *destinationArtifactHost == "" {
+		return nil, status.InvalidArgumentError("copy_error_tracking_artifacts requires source_base_url, source_invocation_id, source_api_key_file, and destination_artifact_host")
+	}
+	baseURL, err := parseSourceBaseURL(*sourceBaseURL)
+	if err != nil {
+		return nil, err
+	}
+	allowedHosts, err := parseSourceArtifactHosts(sourceArtifactHosts)
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(*destinationArtifactHost, "://") || strings.ContainsAny(*destinationArtifactHost, "/?#") {
+		return nil, status.InvalidArgumentError("destination_artifact_host must contain only a host and optional port")
+	}
+	info, err := os.Stat(*sourceAPIKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("stat source API key file: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return nil, status.PermissionDeniedError("source_api_key_file must not be accessible by group or other users")
+	}
+	keyBytes, err := os.ReadFile(*sourceAPIKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("read source API key file: %w", err)
+	}
+	key := strings.TrimSpace(string(keyBytes))
+	if key == "" {
+		return nil, status.InvalidArgumentError("source_api_key_file is empty")
+	}
+	return &errorTrackingArtifactImporter{
+		client:              newSourceHTTPClient(),
+		sourceBaseURL:       baseURL,
+		sourceArtifactHosts: allowedHosts,
+		sourceInvocationID:  *sourceInvocationID,
+		sourceAPIKey:        key,
+		destinationHost:     *destinationArtifactHost,
+		upload: func(ctx context.Context, instanceName string, digestFunction repb.DigestFunction_Value, b []byte) error {
+			_, err := cachetools.UploadBlobToCAS(ctx, dst, instanceName, digestFunction, b)
+			return err
+		},
+	}, nil
+}
+
+func (i *errorTrackingArtifactImporter) importCandidate(ctx context.Context, candidate errorTrackingArtifactCandidate) error {
+	if i.consideredArtifacts >= maxImportedArtifactCandidates {
+		i.rejectedArtifacts++
+		return status.ResourceExhaustedError("per-invocation artifact candidate budget exhausted")
+	}
+	i.consideredArtifacts++
+	if i.importedBytes >= maxImportedArtifactBytes {
+		i.rejectedArtifacts++
+		return status.ResourceExhaustedError("per-invocation imported artifact budget exhausted")
+	}
+	parsedURI, err := url.Parse(candidate.file.GetUri())
+	if err != nil || parsedURI.Scheme != "bytestream" || parsedURI.Host == "" {
+		i.rejectedArtifacts++
+		return status.InvalidArgumentError("artifact is not an absolute bytestream URI")
+	}
+	if _, ok := i.sourceArtifactHosts[parsedURI.Host]; !ok {
+		i.rejectedArtifacts++
+		return status.PermissionDeniedErrorf("artifact host %q is not an allowed source_artifact_host", parsedURI.Host)
+	}
+	originalResource, err := digest.ParseDownloadResourceName(parsedURI.Path)
+	if err != nil {
+		i.rejectedArtifacts++
+		return fmt.Errorf("parse artifact resource name: %w", err)
+	}
+	if originalResource.GetCompressor() != repb.Compressor_IDENTITY {
+		i.rejectedArtifacts++
+		return status.UnimplementedError("compressed source artifacts are not supported")
+	}
+	limit := min(candidate.maxBytes, int64(maxImportedArtifactBytes)-i.importedBytes)
+	if limit <= 0 {
+		i.rejectedArtifacts++
+		return status.ResourceExhaustedError("per-invocation imported artifact budget exhausted")
+	}
+	if !candidate.mayTruncate && originalResource.GetDigest().GetSizeBytes() > limit {
+		i.rejectedArtifacts++
+		return status.ResourceExhaustedError("artifact exceeds import limit")
+	}
+	downloadURL := *i.sourceBaseURL
+	downloadURL.Path = "/file/download"
+	query := downloadURL.Query()
+	query.Set("invocation_id", i.sourceInvocationID)
+	query.Set("bytestream_url", candidate.file.GetUri())
+	downloadURL.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("x-buildbuddy-api-key", i.sourceAPIKey)
+	if i.requestedArtifacts >= maxImportedArtifactRequests {
+		i.rejectedArtifacts++
+		return status.ResourceExhaustedError("per-invocation artifact request budget exhausted")
+	}
+	i.requestedArtifacts++
+	response, err := i.client.Do(req)
+	if err != nil {
+		i.missingArtifacts++
+		return fmt.Errorf("download source artifact: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		i.missingArtifacts++
+		return status.UnavailableErrorf("source artifact download returned HTTP %d", response.StatusCode)
+	}
+	readLimit := limit + maxImportedRedactionLookahead
+	b, err := io.ReadAll(io.LimitReader(response.Body, readLimit+1))
+	if err != nil {
+		return fmt.Errorf("read source artifact: %w", err)
+	}
+	responseOverflow := int64(len(b)) > readLimit
+	if responseOverflow {
+		b = b[:readLimit]
+	}
+	declaredSize := originalResource.GetDigest().GetSizeBytes()
+	if !responseOverflow && int64(len(b)) != declaredSize {
+		i.rejectedArtifacts++
+		return status.DataLossError("downloaded artifact size does not match its declared digest")
+	}
+	if responseOverflow && declaredSize <= readLimit {
+		i.rejectedArtifacts++
+		return status.DataLossError("downloaded artifact exceeds its declared size")
+	}
+	sourceTruncated := declaredSize > limit
+	if sourceTruncated && !candidate.mayTruncate {
+		i.rejectedArtifacts++
+		return status.ResourceExhaustedError("artifact exceeds import limit")
+	}
+	if !responseOverflow {
+		sourceDigest, err := digest.Compute(bytes.NewReader(b), originalResource.GetDigestFunction())
+		if err != nil {
+			return fmt.Errorf("compute source artifact digest: %w", err)
+		}
+		if sourceDigest.GetHash() != originalResource.GetDigest().GetHash() || sourceDigest.GetSizeBytes() != originalResource.GetDigest().GetSizeBytes() {
+			i.rejectedArtifacts++
+			return status.DataLossError("downloaded artifact does not match its declared digest")
+		}
+	}
+	truncated := sourceTruncated
+	b = redactArtifactText(b, i.sourceAPIKey, path.Base(candidate.file.GetName()) == "test.xml")
+	if int64(len(b)) > limit {
+		if !candidate.mayTruncate {
+			i.rejectedArtifacts++
+			return status.ResourceExhaustedError("redacted artifact exceeds import limit")
+		}
+		b = b[:limit]
+		truncated = true
+	}
+	if truncated {
+		i.truncatedArtifacts++
+	}
+	localDigest, err := digest.Compute(bytes.NewReader(b), originalResource.GetDigestFunction())
+	if err != nil {
+		return fmt.Errorf("compute imported artifact digest: %w", err)
+	}
+	localResource := digest.NewCASResourceName(localDigest, originalResource.GetInstanceName(), originalResource.GetDigestFunction())
+	if err := i.upload(ctx, localResource.GetInstanceName(), localResource.GetDigestFunction(), b); err != nil {
+		return fmt.Errorf("upload imported artifact: %w", err)
+	}
+	localURI := &url.URL{Scheme: "bytestream", Host: i.destinationHost, Path: "/" + localResource.DownloadString()}
+	candidate.file.File = &espb.File_Uri{Uri: localURI.String()}
+	i.importedArtifacts++
+	i.importedBytes += int64(len(b))
+	return nil
 }
 
 func main() {
@@ -112,6 +469,9 @@ func main() {
 	}
 	if sourceFlagCount > 1 {
 		log.Fatalf("Cannot set more than one event source flag. Pick one between invocation_id and build_event_json_file and raw_json_file")
+	}
+	if *copyArtifacts && *copyErrorTrackingArtifacts {
+		log.Fatalf("copy_artifacts and copy_error_tracking_artifacts are mutually exclusive")
 	}
 
 	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker(""))
@@ -156,6 +516,17 @@ func main() {
 		cacheConn = c
 	}
 	bytestreamClient := bspb.NewByteStreamClient(cacheConn)
+	var errorArtifactImporter *errorTrackingArtifactImporter
+	if *copyErrorTrackingArtifacts {
+		errorArtifactImporter, err = newErrorTrackingArtifactImporter(bytestreamClient)
+		if err != nil {
+			log.Fatalf("Configure error-tracking artifact importer: %s", err)
+		}
+	}
+	var replayRedactor *redact.StreamingRedactor
+	if errorArtifactImporter != nil {
+		replayRedactor = redact.NewStreamingRedactor()
+	}
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
@@ -198,13 +569,10 @@ func main() {
 				io.WriteString(os.Stdout, p.Progress.GetStdout())
 			}
 		case *espb.BuildEvent_Started:
-			if *apiKey != "" {
-				// Overwrite API key in the started event options with the one set via
-				// flag.
-				p.Started.OptionsDescription = apiKeyRegex.ReplaceAllLiteralString(
-					p.Started.OptionsDescription,
-					"x-buildbuddy-api-key="+*apiKey,
-				)
+			// Never carry source credentials into a replay. If the destination
+			// explicitly requires an API key, substitute only that key.
+			if replayRedactor == nil {
+				p.Started.OptionsDescription = scrubStartedAPIKey(p.Started.OptionsDescription, *apiKey)
 			}
 		case *espb.BuildEvent_BuildMetadata:
 			for _, override := range metadataOverride {
@@ -214,6 +582,12 @@ func main() {
 				}
 				p.BuildMetadata.Metadata[parts[0]] = parts[1]
 			}
+		}
+		if replayRedactor != nil {
+			if err := redactRemoteReplayEvent(ctx, replayRedactor, errorArtifactImporter.sourceAPIKey, buildEvent); err != nil {
+				log.Fatalf("Redact remotely replayed event: %s", err)
+			}
+			redactInlineErrorTrackingArtifacts(buildEvent, errorArtifactImporter.sourceAPIKey)
 		}
 
 		if *copyArtifacts {
@@ -231,17 +605,28 @@ func main() {
 				log.Infof("Copied persisted artifact %q", f.GetUri())
 			}
 		}
+		if errorArtifactImporter != nil {
+			for _, candidate := range errorTrackingArtifactCandidates(buildEvent) {
+				if err := errorArtifactImporter.importCandidate(ctx, candidate); err != nil {
+					log.Warningf("Could not import error-tracking artifact %q: %s", candidate.file.GetName(), err)
+				}
+			}
+		}
 
 		a := &anypb.Any{}
 		if err := a.MarshalFrom(buildEvent); err != nil {
 			log.Fatalf("Error marshaling bazel event to any: %s", err.Error())
+		}
+		eventTime := ie.GetEventTime()
+		if *eventTimeUsec > 0 {
+			eventTime = timestamppb.New(time.UnixMicro(*eventTimeUsec))
 		}
 		req := pepb.PublishBuildToolEventStreamRequest{
 			OrderedBuildEvent: &pepb.OrderedBuildEvent{
 				StreamId:       streamID,
 				SequenceNumber: sequenceNum,
 				Event: &bepb.BuildEvent{
-					EventTime: ie.GetEventTime(),
+					EventTime: eventTime,
 					Event:     &bepb.BuildEvent_BazelEvent{BazelEvent: a},
 				},
 			},
@@ -250,12 +635,22 @@ func main() {
 			log.Fatalf("Error sending event on stream: %s", err.Error())
 		}
 	}
+	if errorArtifactImporter != nil {
+		log.Infof(
+			"Imported %d error-tracking artifacts (%d bytes, %d truncated, %d missing, %d rejected)",
+			errorArtifactImporter.importedArtifacts,
+			errorArtifactImporter.importedBytes,
+			errorArtifactImporter.truncatedArtifacts,
+			errorArtifactImporter.missingArtifacts,
+			errorArtifactImporter.rejectedArtifacts,
+		)
+	}
 
 	// Fetch invocation log chunks from the original invocation and replay them
 	// as synthetic progress events. Note: if we're using a
 	// build_event_json_file, we have the original progress events and can
 	// replay them directly.
-	if *buildEventJSONFile == "" {
+	if *invocationID != "" {
 		logsBlobstorePrefix := eventlog.GetEventLogPathFromInvocationIdAndAttempt(*invocationID, uint64(*attemptNumber))
 		log.Infof("Fetching log chunks from %s_*", logsBlobstorePrefix)
 		chunks := chunkstore.New(bs, &chunkstore.ChunkstoreOptions{})
