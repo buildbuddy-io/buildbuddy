@@ -6,8 +6,8 @@ on:
       - master
 
 jobs:
-  build:
-    name: Build + Test Windows executor
+  validate-amd64:
+    name: Build + Test Windows executor (amd64)
     runs-on: windows-2025
     if: "!contains(github.event.head_commit.message, 'ci skip')"
     steps:
@@ -99,7 +99,7 @@ jobs:
       #     }
       #     exit 1
 
-      - name: Build & test
+      - name: Build executor
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Because "startup" options could not be assigned to different configs in .bazelrc, we are adding them directly here.
@@ -122,14 +122,16 @@ jobs:
                    @authArgs `
                    -- `
                    //enterprise/server/cmd/executor:executor
-          bazelisk --output_user_root=C:/0 `
-                   --windows_enable_symlinks `
-                   build `
-                   --config=untrusted-ci-windows `
-                   --platforms=@io_bazel_rules_go//go/toolchain:windows_386 `
-                   @authArgs `
-                   -- `
-                   //enterprise/server/cmd/executor:executor
+
+      - name: Run tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $authArgs = @()
+          $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
+          if ($apiKey) {
+            $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
+          }
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
                    test `
@@ -160,3 +162,44 @@ jobs:
       #              @authArgs `
       #              -- `
       #              //server/util/fastcopy:fastcopy_benchmark_test
+
+  validate-386:
+    name: Build Windows executor (386)
+    runs-on: windows-2025
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build executor
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $authArgs = @()
+          $apiKey = '${{ secrets.BUILDBUDDY_ORG_API_KEY }}'
+          if ($apiKey) {
+            $authArgs = @("--remote_header=x-buildbuddy-api-key=$apiKey")
+          }
+          bazelisk --output_user_root=C:/0 `
+                   --windows_enable_symlinks `
+                   build `
+                   --config=untrusted-ci-windows `
+                   --platforms=@io_bazel_rules_go//go/toolchain:windows_386 `
+                   @authArgs `
+                   -- `
+                   //enterprise/server/cmd/executor:executor
+
+  summary:
+    name: Windows executor validation summary
+    runs-on: ubuntu-latest
+    if: ${{ always() && !contains(github.event.head_commit.message, 'ci skip') }}
+    needs:
+      - validate-amd64
+      - validate-386
+    steps:
+      - name: Check job results
+        run: |
+          echo "amd64 validation result: ${{ needs.validate-amd64.result }}"
+          echo "386 validation result: ${{ needs.validate-386.result }}"
+          test "${{ needs.validate-amd64.result }}" = "success"
+          test "${{ needs.validate-386.result }}" = "success"
