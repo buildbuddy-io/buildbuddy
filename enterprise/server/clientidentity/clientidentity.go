@@ -208,8 +208,11 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 			return context.WithValue(ctx, validatedIdentityContextKey, &c.ClientIdentity), nil
 		}
 		verifyErr = err
+		castErr, ok := verifyErr.(*jwt.ValidationError)
+		isValidationSignatureErr := ok && castErr.Is(jwt.ErrTokenSignatureInvalid)
+		isJwtSignatureErr := errors.Is(err, jwt.ErrTokenSignatureInvalid)
 		// Only a signature mismatch can be resolved by trying another key.
-		if !errors.Is(err, jwt.ErrTokenSignatureInvalid) {
+		if !isValidationSignatureErr && !isJwtSignatureErr {
 			break
 		}
 	}
