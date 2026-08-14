@@ -130,6 +130,9 @@ go_test(
         "bbRunfilePath": "$(rlocationpath :bb)",
     },
     deps = [
+        "//cli/cli_command",
+        "//cli/cli_command/register",
+        "//cli/workspace",
         "//server/testutil/testfs",
         "@com_github_creack_pty//:pty",
         "@com_github_stretchr_testify//require",

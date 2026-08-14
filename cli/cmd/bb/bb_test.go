@@ -10,12 +10,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
+	register_cli_commands "github.com/buildbuddy-io/buildbuddy/cli/cli_command/register"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/creack/pty"
 	"github.com/stretchr/testify/require"
 )
 
 var bbRunfilePath string
+
+func TestResolveBBCliCommandArgs(t *testing.T) {
+	register_cli_commands.Register()
+	workspaceDir := testfs.MakeTempDir(t)
+	workspace.SetForTest(t, workspaceDir)
+	t.Setenv("HOME", testfs.MakeTempDir(t))
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": `
+remote --os=linux
+remote:ci --arch=amd64
+`,
+	})
+
+	command := cli_command.GetCommand("remote")
+	require.NotNil(t, command)
+	_, args, err := resolveBBCliCommandArgs(
+		[]string{"remote", "--bb_config=ci", "build", "//..."},
+		command,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{"--os=linux", "--arch=amd64", "build", "//..."}, args)
+}
 
 func TestStartupDoesNotQueryTerminal(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)

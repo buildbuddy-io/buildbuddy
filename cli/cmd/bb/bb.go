@@ -135,13 +135,15 @@ func run() (exitCode int, err error) {
 	// the command.
 	// This is to shortcut the startup-time of the bazel client / server if they
 	// do not need to be run.
-	if opts, command, args := interpretAsBBCliCommand(os.Args[1:]); command != nil && command.Name != "help" {
+	if _, command, _ := interpretAsBBCliCommand(os.Args[1:]); command != nil && command.Name != "help" {
 		// Let the help parser handle a help command; otherwise, let's handle the
 		// CLI command.
+		opts, args, err := resolveBBCliCommandArgs(os.Args[1:], command)
+		if err != nil {
+			return -1, err
+		}
 		Configure(opts)
 		StartupDebug(start)
-		// If the first argument is a cli command, trim it from `args`
-		args = args[1:]
 		return command.Handler(args)
 	}
 
@@ -206,6 +208,28 @@ func interpretAsBBCliCommand(args []string) ([]options.Option, *cli_command.Comm
 		return opts, command, args[argIndex:]
 	}
 	return nil, nil, args
+}
+
+// resolveBBCliCommandArgs expands bbrc settings for bb CLI specific commands.
+// These commands skip the BazelArgs resolution step, so we need to expand the bbrc settings here.
+func resolveBBCliCommandArgs(args []string, command *cli_command.Command) ([]options.Option, []string, error) {
+	p, err := parser.GetBBParserForCommand(command.Name)
+	if err != nil {
+		return nil, nil, err
+	}
+	parsedArgs, err := p.ParseArgs(args)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolvedArgs, err := p.ResolveBBArgs(parsedArgs)
+	if err != nil {
+		return nil, nil, err
+	}
+	commandIndex, _ := parsed.Find[*parsed.Command](resolvedArgs.Args)
+	if commandIndex == -1 {
+		return nil, nil, status.InvalidArgumentError("missing bb command")
+	}
+	return resolvedArgs.GetStartupOptions(), arguments.FormatAll(resolvedArgs.Args[commandIndex+1:]), nil
 }
 
 func interpretAsHelpCommand(args []string) (*parsed.OrderedArgs, error) {
