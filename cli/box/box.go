@@ -24,12 +24,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	petname "github.com/dustinkirkland/golang-petname"
 	"golang.org/x/term"
@@ -488,6 +490,13 @@ func startAndAwaitReady(ctx context.Context, env environment.Env, arn *rspb.Reso
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	ctx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionMnemonic:   "BuildBuddyBox",
+	})
+	if err != nil {
+		return nil, status.WrapError(err, "add request metadata to ctx")
+	}
 	stream, err := rexec.Start(ctx, env, arn, rexec.WithSkipCacheLookup(true))
 	if err != nil {
 		return nil, fmt.Errorf("starting action: %w", err)
