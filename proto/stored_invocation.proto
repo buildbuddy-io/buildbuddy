@@ -17,6 +17,10 @@ message StoredInvocation {
   int64 invocation_status = 10;
   bool success = 11;
   string tags = 12;
+
+  // Durable primary-row identity used to keep derived OLAP data from separate
+  // invocations that reused the same invocation_id from being correlated.
+  string error_tracking_incarnation = 13;
 }
 
 // Proto representation of tables.InvocationExecution. Only used in backends.

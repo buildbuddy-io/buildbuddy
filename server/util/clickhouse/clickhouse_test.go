@@ -60,6 +60,7 @@ func TestExecutionIDRoundTripThroughClickHouseSchema(t *testing.T) {
 }
 
 func TestExecutionFromProto(t *testing.T) {
+	const invocationIncarnation = "durable-incarnation"
 	executionID := digest.NewCASResourceName(
 		&repb.Digest{
 			Hash:      "072d9dd55aacaa829d7d1cc9ec8c4b5180ef49acac4a3c2f3ca16a3db134982d",
@@ -114,7 +115,9 @@ func TestExecutionFromProto(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			// Convert the stored execution as the ClickHouse flush path does.
-			execution, err := clickhouse.ExecutionFromProto(testCase.in, nil)
+			execution, err := clickhouse.ExecutionFromProto(testCase.in, &sipb.StoredInvocation{
+				ErrorTrackingIncarnation: invocationIncarnation,
+			})
 			require.NoError(t, err)
 
 			// The row should preserve direct proto fields while also parsing
@@ -126,6 +129,7 @@ func TestExecutionFromProto(t *testing.T) {
 			require.Equal(t, testCase.want.TestSize, execution.TestSize)
 			require.Equal(t, testCase.want.TestShardIndex, execution.TestShardIndex)
 			require.Equal(t, testCase.want.TestTotalShards, execution.TestTotalShards)
+			require.Equal(t, invocationIncarnation, execution.InvocationIncarnation)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}

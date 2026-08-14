@@ -2,8 +2,12 @@ package build_event_handler_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/backends/chunkstore"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/error_tracking"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -20,7 +25,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testusage"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -31,13 +38,17 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	bspb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	fdpb "github.com/buildbuddy-io/buildbuddy/proto/failure_details"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
+	zipb "github.com/buildbuddy-io/buildbuddy/proto/zip"
 )
 
 func streamRequest(anyEvent *anypb.Any, iid string, sequenceNumer int64) *pepb.PublishBuildToolEventStreamRequest {
@@ -1004,6 +1015,698 @@ func TestGitFetchStatsFlushedToOLAPDB(t *testing.T) {
 	assert.Equal(t, int64(9_000_000), inv.GitFetchTotalBytes)
 	assert.Equal(t, (3 * time.Second).Microseconds(), inv.GitFetchDurationUsec)
 	assert.Equal(t, int64(2), inv.GitFetchRetryCount)
+}
+
+func TestStatsFlushDoesNotHoldPrimaryDBLock(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	flushStarted := make(chan struct{})
+	releaseFlush := make(chan struct{})
+	defer close(releaseFlush)
+	olapDB.SetBeforeInvocationFlush(func() {
+		close(flushStarted)
+		<-releaseFlush
+	})
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	require.NoError(t, channel.HandleEvent(streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), testInvocationID, 2)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 3)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	select {
+	case <-flushStarted:
+	case <-time.After(30 * time.Second):
+		require.FailNow(t, "timed out waiting for OLAP invocation flush")
+	}
+	deleteDone := make(chan error, 1)
+	go func() {
+		deleteDone <- te.GetInvocationDB().DeleteInvocation(context.Background(), testInvocationID)
+	}()
+	select {
+	case err := <-deleteDone:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "primary DB delete blocked on OLAP invocation flush")
+	}
+}
+
+func TestBESErrorOccurrencesDisabledByDefault(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	require.NoError(t, channel.HandleEvent(streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), testInvocationID, 2)))
+	failedAction := &bspb.BuildEvent{
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_ActionCompleted{ActionCompleted: &bspb.BuildEventId_ActionCompletedId{Label: "//pkg:target"}}},
+		Payload: &bspb.BuildEvent_Action{Action: &bspb.ActionExecuted{
+			Success: false,
+			Type:    "GoCompilePkg",
+			Stderr:  &bspb.File{Name: "stderr", File: &bspb.File_Contents{Contents: []byte("compile failed")}},
+		}},
+	}
+	failedActionAny := &anypb.Any{}
+	require.NoError(t, failedActionAny.MarshalFrom(failedAction))
+	require.NoError(t, channel.HandleEvent(streamRequest(failedActionAny, testInvocationID, 3)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 4)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	require.Eventually(t, func() bool {
+		return olapDB.GetFlushedInvocation(testInvocationID) != nil
+	}, 30*time.Second, 50*time.Millisecond)
+	require.Empty(t, olapDB.GetErrorOccurrences())
+}
+
+func enableErrorTracking(t *testing.T) {
+	flags.Set(t, "app.error_tracking_enabled", true)
+}
+
+func TestBESErrorOccurrencesFlushedToOLAPDB(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	require.NoError(t, channel.HandleEvent(streamRequest(workspaceStatusEvent("COMMIT_SHA", "abc123"), testInvocationID, 2)))
+	failedAction := &bspb.BuildEvent{
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_ActionCompleted{ActionCompleted: &bspb.BuildEventId_ActionCompletedId{Label: "//pkg:target"}}},
+		Payload: &bspb.BuildEvent_Action{Action: &bspb.ActionExecuted{Success: false, Type: "GoCompilePkg", ExitCode: 1,
+			Stderr:        &bspb.File{Name: "stderr", File: &bspb.File_Uri{Uri: "bytestream://attacker.invalid/blobs/deadbeef/123"}},
+			Stdout:        &bspb.File{Name: "stdout", File: &bspb.File_Contents{Contents: []byte("server/pkg/file.go:42:7: undefined: compileThing\nfetch https://user:secret@example.com/source")}},
+			FailureDetail: &fdpb.FailureDetail{Message: "compile process 123 failed", Category: &fdpb.FailureDetail_Spawn{Spawn: &fdpb.Spawn{Code: fdpb.Spawn_NON_ZERO_EXIT}}}}},
+	}
+	failedActionAny := &anypb.Any{}
+	require.NoError(t, failedActionAny.MarshalFrom(failedAction))
+	require.NoError(t, channel.HandleEvent(streamRequest(failedActionAny, testInvocationID, 3)))
+	require.NoError(t, channel.HandleEvent(streamRequest(failedActionAny, testInvocationID, 4)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 5)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 1 }, 30*time.Second, 50*time.Millisecond)
+	occurrence := olapDB.GetErrorOccurrences()[0]
+	require.Equal(t, "GROUP1", occurrence.GroupID)
+	require.Equal(t, "USER1", occurrence.UserID)
+	require.Zero(t, occurrence.Perms)
+	acl := olapDB.GetErrorInvocationACL(testInvocationID)
+	require.NotNil(t, acl)
+	require.Equal(t, int32(perms.GROUP_READ|perms.GROUP_WRITE), acl.Perms)
+	require.Equal(t, testInvocationID, occurrence.InvocationID)
+	require.Equal(t, strings.ToLower(strings.ReplaceAll(testInvocationID, "-", "")), occurrence.InvocationUUID)
+	require.Equal(t, "//pkg:target", occurrence.TargetLabel)
+	require.Equal(t, "server/pkg/file.go:42:7: undefined: compileThing\nfetch https://user:<REDACTED>@example.com/source", occurrence.Message)
+	require.Equal(t, error_tracking.ActionFingerprintVersion, occurrence.FingerprintVersion)
+	require.Equal(t, "action_output", occurrence.FingerprintSource)
+	require.Equal(t, "high", occurrence.FingerprintConfidence)
+	require.NotContains(t, occurrence.Message, "secret")
+	require.Equal(t, "abc123", occurrence.CommitSHA)
+}
+
+func TestBESTestXMLProducesOneOccurrencePerFailedCase(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	xml := `<testsuite name="checkout"><testcase classname="CardTest" name="Checkout"><failure message="Failed">aggregate failure</failure></testcase>` +
+		`<testcase classname="CardTest" name="Checkout/expired"><failure type="AssertionError" message="expected active">` +
+		`checkout_test.py:42: expected active; fetch https://user:secret@example.com/result</failure></testcase>` +
+		`<testcase classname="CardTest" name="Checkout/declined"><error type="RuntimeError" message="gateway unavailable">stack.py:81</error></testcase></testsuite>`
+	testRequest := streamRequest(testResultEvent(t, "//checkout:test", "cfg-a", 2, 3, 4, bspb.TestStatus_FAILED,
+		&bspb.File{Name: "bazel-testlogs/checkout/test.xml", File: &bspb.File_Contents{Contents: []byte(xml)}}), testInvocationID, 2)
+	testRequest.OrderedBuildEvent.Event.EventTime = timestamppb.New(time.Now().Add(365 * 24 * time.Hour))
+	require.NoError(t, channel.HandleEvent(testRequest))
+	require.NoError(t, channel.HandleEvent(streamRequest(testSummaryEvent(t, "//checkout:test", "cfg-a", bspb.TestStatus_FAILED), testInvocationID, 3)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 4)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 2 }, 30*time.Second, 50*time.Millisecond)
+	occurrences := olapDB.GetErrorOccurrences()
+	require.ElementsMatch(t, []string{"Checkout/expired", "Checkout/declined"}, []string{occurrences[0].TestName, occurrences[1].TestName})
+	for _, occurrence := range occurrences {
+		require.Equal(t, error_tracking.TestFingerprintVersion, occurrence.FingerprintVersion)
+		require.Equal(t, "test_xml", occurrence.FingerprintSource)
+		require.Equal(t, "high", occurrence.FingerprintConfidence)
+		require.Equal(t, "checkout", occurrence.TestSuite)
+		require.Equal(t, "CardTest", occurrence.TestClass)
+		require.Equal(t, int32(2), occurrence.TestRun)
+		require.Equal(t, int32(3), occurrence.TestShard)
+		require.Equal(t, int32(4), occurrence.TestAttempt)
+		require.True(t, occurrence.TestCachedLocally)
+		require.True(t, occurrence.TestCachedRemotely)
+		require.Equal(t, "remote", occurrence.TestStrategy)
+		require.NotContains(t, occurrence.Message, "secret")
+		require.Less(t, occurrence.EventTimeUsec, time.Now().Add(time.Hour).UnixMicro())
+	}
+}
+
+func TestBESTestAttemptBudgetPreservesLaterDistinctFailure(t *testing.T) {
+	enableErrorTracking(t)
+	const attemptBudget = 100
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	flakyXML := &bspb.File{Name: "test.xml", File: &bspb.File_Contents{Contents: []byte(`<testsuite><testcase name="retry"><failure message="not ready"/></testcase></testsuite>`)}}
+	for attempt := int32(1); attempt <= attemptBudget; attempt++ {
+		require.NoError(t, channel.HandleEvent(streamRequest(testResultEvent(t, "//pkg:flaky_test", "cfg-flaky", 1, 0, attempt, bspb.TestStatus_FAILED, flakyXML), testInvocationID, int64(attempt)+1)))
+	}
+	terminalXML := &bspb.File{Name: "test.xml", File: &bspb.File_Contents{Contents: []byte(`<testsuite><testcase name="terminal"><failure message="terminal root"/></testcase></testsuite>`)}}
+	sequence := int64(attemptBudget) + 2
+	require.NoError(t, channel.HandleEvent(streamRequest(testResultEvent(t, "//pkg:terminal_test", "cfg-terminal", 1, 0, 1, bspb.TestStatus_FAILED, terminalXML), testInvocationID, sequence)))
+	require.NoError(t, channel.HandleEvent(streamRequest(testSummaryEvent(t, "//pkg:flaky_test", "cfg-flaky", bspb.TestStatus_FLAKY), testInvocationID, sequence+1)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, sequence+2)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 1 }, 30*time.Second, 50*time.Millisecond)
+	require.Equal(t, "//pkg:terminal_test", olapDB.GetErrorOccurrences()[0].TargetLabel)
+}
+
+func TestBESTestFinalFlakySummarySuppressesFailedAttempts(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	xml := `<testsuite name="suite"><testcase classname="C" name="flaky"><failure message="first attempt failed"/></testcase></testsuite>`
+	require.NoError(t, channel.HandleEvent(streamRequest(testResultEvent(t, "//pkg:flaky_test", "cfg-a", 1, 0, 1, bspb.TestStatus_FAILED,
+		&bspb.File{Name: "test.xml", File: &bspb.File_Contents{Contents: []byte(xml)}}), testInvocationID, 2)))
+	terminalXML := `<testsuite name="suite"><testcase classname="C" name="terminal"><failure message="terminal failure"/></testcase></testsuite>`
+	require.NoError(t, channel.HandleEvent(streamRequest(testResultEvent(t, "//pkg:flaky_test", "cfg-b", 1, 0, 1, bspb.TestStatus_FAILED,
+		&bspb.File{Name: "test.xml", File: &bspb.File_Contents{Contents: []byte(terminalXML)}}), testInvocationID, 3)))
+	require.NoError(t, channel.HandleEvent(streamRequest(testSummaryEvent(t, "//pkg:flaky_test", "cfg-a", bspb.TestStatus_FLAKY), testInvocationID, 4)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 5)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 1 }, 30*time.Second, 50*time.Millisecond)
+	require.Equal(t, "terminal", olapDB.GetErrorOccurrences()[0].TestName)
+}
+
+func TestBESTestArtifactFailuresUseTargetScopedFallback(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	artifacts := map[string]*bspb.File{
+		"//pkg:malformed_test": {Name: "test.xml", File: &bspb.File_Contents{Contents: []byte(`<testsuite><testcase>`)}},
+		"//pkg:oversized_test": {Name: "test.xml", File: &bspb.File_Contents{Contents: []byte(strings.Repeat("x", (1<<20)+1))}},
+		"//pkg:foreign_test":   {Name: "test.xml", File: &bspb.File_Uri{Uri: "bytestream://attacker.invalid/blobs/deadbeef/123"}},
+	}
+	sequenceNumber := int64(2)
+	for target, testXML := range artifacts {
+		testLog := &bspb.File{Name: "test.log", File: &bspb.File_Contents{Contents: []byte("runner failed; https://user:secret@example.com/log")}}
+		require.NoError(t, channel.HandleEvent(streamRequest(testResultEvent(t, target, "cfg-a", 1, 0, 1, bspb.TestStatus_FAILED, testXML, testLog), testInvocationID, sequenceNumber)))
+		sequenceNumber++
+	}
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, sequenceNumber)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 3 }, 30*time.Second, 50*time.Millisecond)
+	fingerprints := make(map[string]struct{})
+	for _, occurrence := range olapDB.GetErrorOccurrences() {
+		require.Equal(t, error_tracking.TestFallbackFingerprintVersion, occurrence.FingerprintVersion)
+		require.Equal(t, "test_result_fallback", occurrence.FingerprintSource)
+		require.Equal(t, "low", occurrence.FingerprintConfidence)
+		require.NotContains(t, occurrence.Message, "secret")
+		fingerprints[occurrence.Fingerprint] = struct{}{}
+	}
+	require.Len(t, fingerprints, 3)
+}
+
+type blockingPooledByteStreamClient struct{}
+
+func (*blockingPooledByteStreamClient) StreamBytestreamFile(ctx context.Context, _ *url.URL, _ io.Writer) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (*blockingPooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, _ *url.URL, _, _ int64, _ io.Writer) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (*blockingPooledByteStreamClient) FetchBytestreamZipManifest(context.Context, *url.URL) (*zipb.Manifest, error) {
+	return nil, nil
+}
+
+func (*blockingPooledByteStreamClient) StreamSingleFileFromBytestreamZip(context.Context, *url.URL, *zipb.ManifestEntry, io.Writer) error {
+	return nil
+}
+
+type controlledPooledByteStreamClient struct {
+	started  chan struct{}
+	release  chan struct{}
+	contents []byte
+	once     sync.Once
+}
+
+func (c *controlledPooledByteStreamClient) StreamBytestreamFile(ctx context.Context, _ *url.URL, w io.Writer) error {
+	return c.StreamBytestreamFileChunk(ctx, nil, 0, 0, w)
+}
+
+func (c *controlledPooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, _ *url.URL, _, _ int64, w io.Writer) error {
+	c.once.Do(func() { close(c.started) })
+	select {
+	case <-c.release:
+		_, err := w.Write(c.contents)
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (*controlledPooledByteStreamClient) FetchBytestreamZipManifest(context.Context, *url.URL) (*zipb.Manifest, error) {
+	return nil, nil
+}
+
+func (*controlledPooledByteStreamClient) StreamSingleFileFromBytestreamZip(context.Context, *url.URL, *zipb.ManifestEntry, io.Writer) error {
+	return nil
+}
+
+func TestBESTestArtifactFetchTimeoutFallsBack(t *testing.T) {
+	enableErrorTracking(t)
+	cacheURL, err := url.Parse("grpc://test.invalid:1985")
+	require.NoError(t, err)
+	flags.Set(t, "app.cache_api_url", *cacheURL)
+	te := testenv.GetTestEnv(t)
+	te.SetPooledByteStreamClient(&blockingPooledByteStreamClient{})
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	testXML := &bspb.File{Name: "test.xml", File: &bspb.File_Uri{Uri: "bytestream://test.invalid:1985/blobs/deadbeef/123"}}
+	testLog := &bspb.File{Name: "test.log", File: &bspb.File_Contents{Contents: []byte("runner timed out")}}
+	require.NoError(t, channel.HandleEvent(streamRequest(testResultEvent(t, "//pkg:timeout_test", "cfg-a", 1, 0, 1, bspb.TestStatus_TIMEOUT, testXML, testLog), testInvocationID, 2)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 3)))
+
+	started := time.Now()
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+	require.Less(t, time.Since(started), time.Second, "artifact fetches must not delay BES finalization acknowledgements")
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 1 }, 30*time.Second, 50*time.Millisecond)
+	occurrence := olapDB.GetErrorOccurrences()[0]
+	require.Equal(t, error_tracking.TestFallbackFingerprintVersion, occurrence.FingerprintVersion)
+	require.Equal(t, "runner timed out", occurrence.Message)
+}
+
+func testResultEvent(t *testing.T, target, configurationID string, run, shard, attempt int32, status bspb.TestStatus, outputs ...*bspb.File) *anypb.Any {
+	t.Helper()
+	event := &bspb.BuildEvent{
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_TestResult{TestResult: &bspb.BuildEventId_TestResultId{
+			Label: target, Configuration: &bspb.BuildEventId_ConfigurationId{Id: configurationID}, Run: run, Shard: shard, Attempt: attempt,
+		}}},
+		Payload: &bspb.BuildEvent_TestResult{TestResult: &bspb.TestResult{
+			Status: status, StatusDetails: "test runner failed", TestActionOutput: outputs, CachedLocally: true,
+			ExecutionInfo: &bspb.TestResult_ExecutionInfo{ExitCode: 1, CachedRemotely: true, Strategy: "remote"},
+		}},
+	}
+	result := &anypb.Any{}
+	require.NoError(t, result.MarshalFrom(event))
+	return result
+}
+
+func testSummaryEvent(t *testing.T, target, configurationID string, status bspb.TestStatus) *anypb.Any {
+	t.Helper()
+	event := &bspb.BuildEvent{
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_TestSummary{TestSummary: &bspb.BuildEventId_TestSummaryId{
+			Label: target, Configuration: &bspb.BuildEventId_ConfigurationId{Id: configurationID},
+		}}},
+		Payload: &bspb.BuildEvent_TestSummary{TestSummary: &bspb.TestSummary{OverallStatus: status}},
+	}
+	result := &anypb.Any{}
+	require.NoError(t, result.MarshalFrom(event))
+	return result
+}
+
+func TestBESErrorCandidateBufferKeepsLaterDistinctFailure(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+	testInvocationID := strings.ToUpper(uuid.New().String())
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	makeFailedAction := func(label, message string) *anypb.Any {
+		event := &bspb.BuildEvent{
+			Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_ActionCompleted{ActionCompleted: &bspb.BuildEventId_ActionCompletedId{Label: label}}},
+			Payload: &bspb.BuildEvent_Action{Action: &bspb.ActionExecuted{
+				Success: false, Type: "GoCompilePkg", ExitCode: 1,
+				Stderr:        &bspb.File{Name: "stderr", File: &bspb.File_Contents{Contents: []byte(message)}},
+				FailureDetail: &fdpb.FailureDetail{Message: message, Category: &fdpb.FailureDetail_Spawn{Spawn: &fdpb.Spawn{Code: fdpb.Spawn_NON_ZERO_EXIT}}},
+			}},
+		}
+		result := &anypb.Any{}
+		require.NoError(t, result.MarshalFrom(event))
+		return result
+	}
+	duplicate := makeFailedAction("//pkg:duplicate", "pkg/duplicate.go:10:2: undefined: repeated")
+	for sequenceNumber := int64(2); sequenceNumber <= int64(error_tracking.MaxOccurrencesPerInvocation)+1; sequenceNumber++ {
+		require.NoError(t, channel.HandleEvent(streamRequest(duplicate, testInvocationID, sequenceNumber)))
+	}
+	distinctSequenceNumber := int64(error_tracking.MaxOccurrencesPerInvocation) + 2
+	require.NoError(t, channel.HandleEvent(streamRequest(makeFailedAction("//pkg:distinct", "pkg/distinct.go:20:4: undefined: laterRoot"), testInvocationID, distinctSequenceNumber)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, distinctSequenceNumber+1)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 2 }, 30*time.Second, 50*time.Millisecond)
+	messages := []string{olapDB.GetErrorOccurrences()[0].Message, olapDB.GetErrorOccurrences()[1].Message}
+	require.ElementsMatch(t, []string{"pkg/duplicate.go:10:2: undefined: repeated", "pkg/distinct.go:20:4: undefined: laterRoot"}, messages)
+}
+
+func TestBESErrorFlushWaitsForACLSync(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
+	require.NoError(t, err)
+	require.NoError(t, te.GetDBHandle().GORM(ctx, "insert_error_tracking_group").Create(&tables.Group{
+		GroupID: "GROUP1", UserID: "USER1", SharingEnabled: true,
+	}).Error)
+
+	syncStarted := make(chan struct{})
+	releaseSync := make(chan struct{})
+	var syncCalls atomic.Int32
+	olapDB := testolapdb.NewHandle()
+	olapDB.SetBeforeErrorACLUpdate(func() {
+		if syncCalls.Add(1) == 1 {
+			close(syncStarted)
+			<-releaseSync
+		}
+	})
+	te.SetOLAPDBHandle(olapDB)
+
+	testInvocationID := uuid.New().String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	failedAction := &bspb.BuildEvent{
+		Id:      &bspb.BuildEventId{Id: &bspb.BuildEventId_ActionCompleted{ActionCompleted: &bspb.BuildEventId_ActionCompletedId{Label: "//pkg:target"}}},
+		Payload: &bspb.BuildEvent_Action{Action: &bspb.ActionExecuted{Success: false, Type: "GoCompilePkg", ExitCode: 1}},
+	}
+	failedActionAny := &anypb.Any{}
+	require.NoError(t, failedActionAny.MarshalFrom(failedAction))
+	require.NoError(t, channel.HandleEvent(streamRequest(failedActionAny, testInvocationID, 2)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 3)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+	select {
+	case <-syncStarted:
+	case <-time.After(30 * time.Second):
+		close(releaseSync)
+		require.FailNow(t, "timed out waiting for error ACL synchronization")
+	}
+
+	require.Empty(t, olapDB.GetErrorOccurrences())
+
+	user, err := auth.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	updateDone := make(chan error, 1)
+	go func() {
+		ownerOnly := perms.ToACLProto(&uidpb.UserId{Id: "USER1"}, "GROUP1", perms.OWNER_READ|perms.OWNER_WRITE)
+		updateDone <- te.GetInvocationDB().UpdateInvocationACL(ctx, &user, testInvocationID, ownerOnly)
+	}()
+	select {
+	case err := <-updateDone:
+		require.Failf(t, "ACL update raced past the serialized visibility grant", "err: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseSync)
+	require.NoError(t, <-updateDone)
+	require.Eventually(t, func() bool {
+		acl := olapDB.GetErrorInvocationACL(testInvocationID)
+		return len(olapDB.GetErrorOccurrences()) == 1 && acl != nil && acl.Perms == perms.OWNER_READ|perms.OWNER_WRITE
+	}, 30*time.Second, 50*time.Millisecond)
+}
+
+func TestBESErrorFlushSerializesConcurrentACLUpdateOnSQLite(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
+	require.NoError(t, err)
+	require.NoError(t, te.GetDBHandle().GORM(ctx, "insert_error_tracking_group").Create(&tables.Group{
+		GroupID: "GROUP1", UserID: "USER1", SharingEnabled: true,
+	}).Error)
+
+	flushStarted := make(chan struct{})
+	releaseFlush := make(chan struct{})
+	olapDB := testolapdb.NewHandle()
+	olapDB.SetBeforeErrorFlush(func() {
+		close(flushStarted)
+		<-releaseFlush
+	})
+	te.SetOLAPDBHandle(olapDB)
+
+	testInvocationID := uuid.New().String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	failedAction := &bspb.BuildEvent{
+		Id:      &bspb.BuildEventId{Id: &bspb.BuildEventId_ActionCompleted{ActionCompleted: &bspb.BuildEventId_ActionCompletedId{Label: "//pkg:target"}}},
+		Payload: &bspb.BuildEvent_Action{Action: &bspb.ActionExecuted{Success: false, Type: "GoCompilePkg", ExitCode: 1}},
+	}
+	failedActionAny := &anypb.Any{}
+	require.NoError(t, failedActionAny.MarshalFrom(failedAction))
+	require.NoError(t, channel.HandleEvent(streamRequest(failedActionAny, testInvocationID, 2)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 3)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+	select {
+	case <-flushStarted:
+	case <-time.After(30 * time.Second):
+		require.FailNow(t, "timed out waiting for error flush")
+	}
+
+	user, err := auth.AuthenticatedUser(ctx)
+	require.NoError(t, err)
+	updateDone := make(chan error, 1)
+	updateStarted := make(chan struct{})
+	go func() {
+		close(updateStarted)
+		ownerOnly := perms.ToACLProto(&uidpb.UserId{Id: "USER1"}, "GROUP1", perms.OWNER_READ|perms.OWNER_WRITE)
+		updateDone <- te.GetInvocationDB().UpdateInvocationACL(ctx, &user, testInvocationID, ownerOnly)
+	}()
+	<-updateStarted
+	select {
+	case err := <-updateDone:
+		require.Failf(t, "ACL update raced past the serialized occurrence insert", "err: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(releaseFlush)
+	require.NoError(t, <-updateDone)
+	require.Eventually(t, func() bool {
+		acl := olapDB.GetErrorInvocationACL(testInvocationID)
+		return len(olapDB.GetErrorOccurrences()) == 1 && acl != nil && acl.Perms == perms.OWNER_READ|perms.OWNER_WRITE
+	}, 30*time.Second, 50*time.Millisecond)
+}
+
+func TestBESErrorFlushRejectsStaleTaskAfterInvocationIDReuse(t *testing.T) {
+	enableErrorTracking(t)
+	cacheURL, err := url.Parse("grpc://test.invalid:1985")
+	require.NoError(t, err)
+	flags.Set(t, "app.cache_api_url", *cacheURL)
+
+	te := testenv.GetTestEnv(t)
+	fixedNow := time.Unix(1_800_000_000, 123_000)
+	te.GetDBHandle().SetNowFunc(func() time.Time { return fixedNow })
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
+	te.SetAuthenticator(auth)
+	artifactClient := &controlledPooledByteStreamClient{
+		started: make(chan struct{}), release: make(chan struct{}),
+		contents: []byte(`<testsuite><testcase name="old failure"><failure message="stale diagnostic"/></testcase></testsuite>`),
+	}
+	te.SetPooledByteStreamClient(artifactClient)
+	olapDB := testolapdb.NewHandle()
+	te.SetOLAPDBHandle(olapDB)
+
+	testInvocationID := uuid.New().String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	testXML := &bspb.File{Name: "test.xml", File: &bspb.File_Uri{Uri: "bytestream://test.invalid:1985/blobs/deadbeef/123"}}
+	require.NoError(t, channel.HandleEvent(streamRequest(testResultEvent(t, "//pkg:old_test", "cfg", 1, 0, 1, bspb.TestStatus_FAILED, testXML), testInvocationID, 2)))
+	require.NoError(t, channel.HandleEvent(streamRequest(testSummaryEvent(t, "//pkg:old_test", "cfg", bspb.TestStatus_FAILED), testInvocationID, 3)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 4)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	select {
+	case <-artifactClient.started:
+	case <-time.After(30 * time.Second):
+		require.FailNow(t, "timed out waiting for the queued artifact loader")
+	}
+	oldCtx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
+	require.NoError(t, err)
+	oldInvocation, err := te.GetInvocationDB().LookupInvocation(oldCtx, testInvocationID)
+	require.NoError(t, err)
+	require.NoError(t, te.GetInvocationDB().DeleteInvocation(oldCtx, testInvocationID))
+	newCtx, err := auth.WithAuthenticatedUser(context.Background(), "USER2")
+	require.NoError(t, err)
+	replacement := &tables.Invocation{InvocationID: testInvocationID}
+	created, err := te.GetInvocationDB().CreateInvocation(newCtx, replacement)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, oldInvocation.CreatedAtUsec, replacement.CreatedAtUsec)
+	require.NotEqual(t, oldInvocation.ErrorTrackingIncarnation, replacement.ErrorTrackingIncarnation)
+	close(artifactClient.release)
+
+	require.Never(t, func() bool { return olapDB.GetFlushedInvocation(testInvocationID) != nil }, 500*time.Millisecond, 50*time.Millisecond)
+	require.Empty(t, olapDB.GetErrorOccurrences())
+	require.Nil(t, olapDB.GetErrorInvocationACL(testInvocationID))
+}
+
+func TestBESLiveChannelRejectsUpdatesAfterInvocationIDReuse(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1", "USER2", "GROUP2"))
+	te.SetAuthenticator(auth)
+	testInvocationID := uuid.New().String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_BuildMetadata{}), testInvocationID, 1)))
+	oldCtx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
+	require.NoError(t, err)
+	require.NoError(t, te.GetInvocationDB().DeleteInvocation(oldCtx, testInvocationID))
+	newCtx, err := auth.WithAuthenticatedUser(context.Background(), "USER2")
+	require.NoError(t, err)
+	replacement := &tables.Invocation{InvocationID: testInvocationID, Pattern: "//replacement"}
+	created, err := te.GetInvocationDB().CreateInvocation(newCtx, replacement)
+	require.NoError(t, err)
+	require.True(t, created)
+
+	err = channel.HandleEvent(streamRequest(buildMetadataEvent(map[string]string{
+		"PATTERN":    "//stale",
+		"REPO_URL":   "https://example.com/old/private.git",
+		"VISIBILITY": "PUBLIC",
+	}), testInvocationID, 2))
+	require.Error(t, err)
+	require.True(t, status.IsCanceledError(err))
+
+	var got tables.Invocation
+	require.NoError(t, te.GetDBHandle().NewQuery(context.Background(), "get_replacement_after_stale_live_update").Raw(
+		`SELECT pattern, repo_url, perms, error_tracking_incarnation FROM "Invocations" WHERE invocation_id = ?`, testInvocationID,
+	).Take(&got))
+	require.Equal(t, "//replacement", got.Pattern)
+	require.Empty(t, got.RepoURL)
+	require.Zero(t, got.Perms&perms.OTHERS_READ)
+	require.Equal(t, replacement.ErrorTrackingIncarnation, got.ErrorTrackingIncarnation)
+}
+
+func TestBESErrorAmbiguousOLAPWriteStillTombstonesOnDelete(t *testing.T) {
+	enableErrorTracking(t)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	olapDB := testolapdb.NewHandle()
+	olapDB.SetErrorFlushError(errors.New("ambiguous insert timeout"))
+	te.SetOLAPDBHandle(olapDB)
+
+	testInvocationID := uuid.New().String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+	require.NoError(t, channel.HandleEvent(streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'", &bspb.BuildEventId_WorkspaceStatus{}), testInvocationID, 1)))
+	failedAction := &bspb.BuildEvent{
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_ActionCompleted{ActionCompleted: &bspb.BuildEventId_ActionCompletedId{Label: "//pkg:target"}}},
+		Payload: &bspb.BuildEvent_Action{Action: &bspb.ActionExecuted{
+			Success: false, Type: "GoCompilePkg", ExitCode: 1,
+			Stderr: &bspb.File{Name: "stderr", File: &bspb.File_Contents{Contents: []byte("pkg/file.go:12:3: undefined: missing")}},
+		}},
+	}
+	failedActionAny := &anypb.Any{}
+	require.NoError(t, failedActionAny.MarshalFrom(failedAction))
+	require.NoError(t, channel.HandleEvent(streamRequest(failedActionAny, testInvocationID, 2)))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 3)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+	require.Eventually(t, func() bool { return len(olapDB.GetErrorOccurrences()) == 1 }, 30*time.Second, 50*time.Millisecond)
+
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), "USER1")
+	require.NoError(t, err)
+	invocation, err := te.GetInvocationDB().LookupInvocation(ctx, testInvocationID)
+	require.NoError(t, err)
+	require.Equal(t, error_tracking.ErrorOccurrencesPresent, invocation.ErrorOccurrencesState)
+	require.NoError(t, te.GetInvocationDB().DeleteInvocation(ctx, testInvocationID))
+	acl := olapDB.GetErrorInvocationACL(testInvocationID)
+	require.NotNil(t, acl)
+	require.True(t, acl.Deleted)
+	require.Zero(t, acl.Perms)
 }
 
 func TestUnfinishedFinalizeWithCanceledContext(t *testing.T) {

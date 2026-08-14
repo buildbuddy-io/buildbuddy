@@ -121,6 +121,9 @@ type Invocation struct {
 	UploadThroughputBytesPerSecond int64
 	ActionCount                    int64
 	Perms                          int32 `gorm:"index:perms;default:NULL"`
+	ErrorACLVersion                int64
+	ErrorOccurrencesState          int32
+	ErrorTrackingIncarnation       string
 	CreatedWithCapabilities        int32
 	RedactionFlags                 int32 `gorm:"default:NULL"`
 	InvocationStatus               int64 `gorm:"index:invocation_status_idx"`

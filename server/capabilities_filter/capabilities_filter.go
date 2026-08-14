@@ -117,6 +117,7 @@ var (
 		buildBuddyServicePrefix + "GetDailyTargetStats",
 		buildBuddyServicePrefix + "GetTargetFlakeSamples",
 		buildBuddyServicePrefix + "GetInvocationFilterSuggestions",
+		buildBuddyServicePrefix + "GetErrorGroups",
 		// Workflow configuration and history (read-only).
 		buildBuddyServicePrefix + "GetWorkflows",
 		buildBuddyServicePrefix + "GetRepos",

@@ -21,6 +21,7 @@ go_library(
         "//server/util/log",
         "//server/util/retry",
         "//server/util/status",
+        "//server/util/uuid",
         "@com_github_clickhouse_clickhouse_go_v2//:clickhouse-go",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_gorm_driver_clickhouse//:clickhouse",

@@ -18,9 +18,123 @@ import (
 )
 
 type Handle struct {
-	executionIDsByInvID sync.Map // map of invocationID => a slice of execution IDs
-	invIDs              sync.Map // map of invocationID => struct{}
-	invocationsByInvID  sync.Map // map of invocationID => *tables.Invocation
+	executionIDsByInvID   sync.Map // map of invocationID => a slice of execution IDs
+	invIDs                sync.Map // map of invocationID => struct{}
+	invocationsByInvID    sync.Map // map of invocationID => *tables.Invocation
+	errorOccurrencesMu    sync.Mutex
+	errorOccurrences      []*schema.ErrorOccurrence
+	errorInvocationACLs   map[string]*schema.ErrorInvocationACL
+	beforeInvocationFlush func()
+	beforeErrorFlush      func()
+	beforeErrorACLUpdate  func()
+	errorFlushErr         error
+	maxErrorACLVersionErr error
+	nextErrorACLUpdateErr error
+}
+
+func (h *Handle) FlushErrorOccurrences(ctx context.Context, entries []*schema.ErrorOccurrence) error {
+	if h.beforeErrorFlush != nil {
+		h.beforeErrorFlush()
+	}
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	h.errorOccurrences = append(h.errorOccurrences, entries...)
+	return h.errorFlushErr
+}
+
+func (h *Handle) SetBeforeErrorFlush(hook func()) {
+	h.beforeErrorFlush = hook
+}
+
+func (h *Handle) SetBeforeInvocationFlush(hook func()) {
+	h.beforeInvocationFlush = hook
+}
+
+func (h *Handle) SetErrorFlushError(err error) {
+	h.errorFlushErr = err
+}
+
+func (h *Handle) SetBeforeErrorACLUpdate(hook func()) {
+	h.beforeErrorACLUpdate = hook
+}
+
+// SetNextErrorACLUpdateError makes the next ACL flush persist the supplied
+// entry and then return err, simulating an ambiguous ClickHouse timeout.
+func (h *Handle) SetNextErrorACLUpdateError(err error) {
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	h.nextErrorACLUpdateErr = err
+}
+
+func (h *Handle) GetErrorOccurrences() []*schema.ErrorOccurrence {
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	return append([]*schema.ErrorOccurrence(nil), h.errorOccurrences...)
+}
+
+func (h *Handle) FlushErrorInvocationACL(ctx context.Context, entry *schema.ErrorInvocationACL) error {
+	if h.beforeErrorACLUpdate != nil {
+		h.beforeErrorACLUpdate()
+	}
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	if h.errorInvocationACLs == nil {
+		h.errorInvocationACLs = make(map[string]*schema.ErrorInvocationACL)
+	}
+	if current := h.errorInvocationACLs[entry.InvocationID]; current == nil || current.ACLVersion <= entry.ACLVersion {
+		copy := *entry
+		h.errorInvocationACLs[entry.InvocationID] = &copy
+	}
+	err := h.nextErrorACLUpdateErr
+	h.nextErrorACLUpdateErr = nil
+	return err
+}
+
+func (h *Handle) GetErrorInvocationACL(invocationID string) *schema.ErrorInvocationACL {
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	entry := h.errorInvocationACLs[invocationID]
+	if entry == nil {
+		return nil
+	}
+	copy := *entry
+	return &copy
+}
+
+func (h *Handle) GetMaxErrorInvocationACLVersion(ctx context.Context, groupID, invocationID string) (int64, error) {
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	if h.maxErrorACLVersionErr != nil {
+		return 0, h.maxErrorACLVersionErr
+	}
+	entry := h.errorInvocationACLs[invocationID]
+	if entry == nil || entry.GroupID != groupID {
+		return 0, nil
+	}
+	return entry.ACLVersion, nil
+}
+
+func (h *Handle) SetMaxErrorInvocationACLVersionError(err error) {
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	h.maxErrorACLVersionErr = err
+}
+
+func (h *Handle) ResetErrorTrackingInvocation(ctx context.Context, groupID, invocationID, currentIncarnation string) error {
+	h.errorOccurrencesMu.Lock()
+	defer h.errorOccurrencesMu.Unlock()
+	filtered := h.errorOccurrences[:0]
+	for _, occurrence := range h.errorOccurrences {
+		if occurrence.GroupID != groupID || occurrence.InvocationID != invocationID {
+			filtered = append(filtered, occurrence)
+		}
+	}
+	h.errorOccurrences = filtered
+	delete(h.errorInvocationACLs, invocationID)
+	h.executionIDsByInvID.Delete(invocationID)
+	h.invIDs.Delete(invocationID)
+	h.invocationsByInvID.Delete(invocationID)
+	return nil
 }
 
 func (h *Handle) DialectName() string {
@@ -54,6 +168,9 @@ func (h *Handle) DateFromUsecTimestamp(fieldNmae string, timezoneOffsetMinutes i
 }
 
 func (h *Handle) FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error {
+	if h.beforeInvocationFlush != nil {
+		h.beforeInvocationFlush()
+	}
 	h.invIDs.LoadOrStore(ti.InvocationID, struct{}{})
 	h.invocationsByInvID.Store(ti.InvocationID, ti)
 	return nil

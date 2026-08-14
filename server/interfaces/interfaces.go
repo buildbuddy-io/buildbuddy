@@ -363,6 +363,7 @@ type ReferenceCache interface {
 
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
+	StreamBytestreamFileChunk(ctx context.Context, url *url.URL, offset, limit int64, writer io.Writer) error
 	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
 	StreamSingleFileFromBytestreamZip(ctx context.Context, url *url.URL, entry *zipb.ManifestEntry, out io.Writer) error
 }
@@ -473,6 +474,10 @@ type OLAPDBHandle interface {
 
 	DateFromUsecTimestamp(fieldName string, timezoneOffsetMinutes int32) string
 	FlushInvocationStats(ctx context.Context, ti *tables.Invocation) error
+	FlushErrorOccurrences(ctx context.Context, entries []*schema.ErrorOccurrence) error
+	FlushErrorInvocationACL(ctx context.Context, entry *schema.ErrorInvocationACL) error
+	GetMaxErrorInvocationACLVersion(ctx context.Context, groupID, invocationID string) (int64, error)
+	ResetErrorTrackingInvocation(ctx context.Context, groupID, invocationID, currentIncarnation string) error
 	FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvocation, executions []*repb.StoredExecution) error
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error

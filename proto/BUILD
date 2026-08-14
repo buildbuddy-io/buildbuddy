@@ -86,6 +86,12 @@ proto_library(
 )
 
 proto_library(
+    name = "error_tracking_proto",
+    srcs = ["error_tracking.proto"],
+    deps = [":context_proto"],
+)
+
+proto_library(
     name = "stardoc_output_proto",
     srcs = ["stardoc_output.proto"],
 )
@@ -704,6 +710,7 @@ proto_library(
         ":cache_proto",
         ":cache_proxy_proto",
         ":encryption_proto",
+        ":error_tracking_proto",
         ":eventlog_proto",
         ":execution_stats_proto",
         ":gcp_proto",
@@ -1549,6 +1556,7 @@ go_proto_library(
         ":cache_go_proto",
         ":cache_proxy_go_proto",
         ":encryption_go_proto",
+        ":error_tracking_go_proto",
         ":eventlog_go_proto",
         ":execution_stats_go_proto",
         ":gcp_go_proto",
@@ -1575,6 +1583,13 @@ go_proto_library(
         ":workspace_go_proto",
         ":zip_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "error_tracking_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/error_tracking",
+    proto = ":error_tracking_proto",
+    deps = [":context_go_proto"],
 )
 
 go_proto_library(
@@ -2523,6 +2538,7 @@ ts_proto_library(
         ":cache_proxy_ts_proto",
         ":cache_ts_proto",
         ":encryption_ts_proto",
+        ":error_tracking_ts_proto",
         ":eventlog_ts_proto",
         ":execution_stats_ts_proto",
         ":gcp_ts_proto",
@@ -2548,6 +2564,12 @@ ts_proto_library(
         ":workspace_ts_proto",
         ":zip_ts_proto",
     ],
+)
+
+ts_proto_library(
+    name = "error_tracking_ts_proto",
+    proto = ":error_tracking_proto",
+    deps = [":context_ts_proto"],
 )
 
 ts_proto_library(

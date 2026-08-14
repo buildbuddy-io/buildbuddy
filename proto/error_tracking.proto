@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package error_tracking;
+
+import "proto/context.proto";
+
+enum ErrorGroupSort {
+  ERROR_GROUP_SORT_UNKNOWN = 0;
+  ERROR_GROUP_SORT_LAST_SEEN = 1;
+  ERROR_GROUP_SORT_AFFECTED_BUILDS = 2;
+  ERROR_GROUP_SORT_RECENT_FREQUENCY = 3;
+}
+
+enum ErrorOrigin {
+  ERROR_ORIGIN_UNKNOWN = 0;
+
+  // A Bazel invocation not created by BuildBuddy Workflows.
+  ERROR_ORIGIN_BAZEL = 1;
+
+  // The outer BuildBuddy Workflow orchestration invocation.
+  ERROR_ORIGIN_WORKFLOW = 2;
+
+  // An actual Bazel invocation launched by a BuildBuddy Workflow.
+  ERROR_ORIGIN_WORKFLOW_BAZEL_CHILD = 3;
+}
+
+message GetErrorGroupsRequest {
+  context.RequestContext request_context = 1;
+  int64 start_time_usec = 2;
+  int64 end_time_usec = 3;
+  string query = 4;
+  string fingerprint = 5;
+  int32 page_size = 6;
+  string page_token = 7;
+  ErrorGroupSort sort = 8;
+  ErrorOrigin origin = 9;
+}
+
+message RelatedExecution {
+  string execution_id = 1;
+  string target_label = 2;
+  string action_mnemonic = 3;
+  int32 status_code = 4;
+  string status_message = 5;
+  int32 exit_code = 6;
+}
+
+message ErrorOccurrence {
+  string invocation_id = 1;
+  int64 event_time_usec = 2;
+  string error_type = 3;
+  string message = 4;
+  string target_label = 5;
+  string action_mnemonic = 6;
+  int32 exit_code = 7;
+  string repo_url = 8;
+  string branch_name = 9;
+  string commit_sha = 10;
+  string command = 11;
+  string user = 12;
+  repeated RelatedExecution related_executions = 13;
+  string fingerprint_version = 14;
+  string fingerprint_source = 15;
+  string fingerprint_confidence = 16;
+  string test_suite = 17;
+  string test_class = 18;
+  string test_name = 19;
+  string test_failure_kind = 20;
+  string test_failure_type = 21;
+  int32 test_run = 22;
+  int32 test_shard = 23;
+  int32 test_attempt = 24;
+  bool test_cached_locally = 25;
+  bool test_cached_remotely = 26;
+  string test_strategy = 27;
+  ErrorOrigin origin = 28;
+  string run_id = 29;
+  string parent_run_id = 30;
+  string invocation_pattern = 31;
+}
+
+message ErrorFrequencyBucket {
+  int64 start_time_usec = 1;
+  int64 end_time_usec = 2;
+  int64 affected_invocation_count = 3;
+}
+
+message ErrorGroup {
+  string fingerprint = 1;
+  string error_type = 2;
+  string sample_message = 3;
+  int64 occurrence_count = 4;
+  int64 first_seen_usec = 5;
+  int64 last_seen_usec = 6;
+  repeated ErrorOccurrence occurrences = 7;
+  string sample_target_label = 8;
+  string sample_action_mnemonic = 9;
+  string fingerprint_version = 10;
+  string fingerprint_source = 11;
+  string fingerprint_confidence = 12;
+  string sample_test_suite = 13;
+  string sample_test_class = 14;
+  string sample_test_name = 15;
+  string sample_test_failure_kind = 16;
+  string sample_test_failure_type = 17;
+  repeated ErrorFrequencyBucket frequency_buckets = 18;
+  ErrorOrigin origin = 19;
+  string sample_invocation_pattern = 20;
+}
+
+message GetErrorGroupsResponse {
+  repeated ErrorGroup groups = 1;
+  context.ResponseContext response_context = 2;
+  string next_page_token = 3;
+}
