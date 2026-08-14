@@ -308,6 +308,90 @@ func TestConsumeBBRCFileOptions_IgnoreAllLastValueWins(t *testing.T) {
 	}, paths)
 }
 
+func TestResolveArgs_ExpandsBBRCBeforeBazelRC(t *testing.T) {
+	workspaceDir := testfs.MakeTempDir(t)
+	homeDir := testfs.MakeTempDir(t)
+	explicitBBRC := filepath.Join(testfs.MakeTempDir(t), "explicit.bbrc")
+	t.Setenv("HOME", homeDir)
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": `
+run --stream_run_logs
+run:ci --on_stream_run_logs_failure=warn
+`,
+		".bazelrc": `
+run:bazel --build_metadata=BAZEL
+`,
+	})
+	testfs.WriteAllFileContents(t, homeDir, map[string]string{
+		".bbrc": `
+run --nostream_run_logs
+run:ci --on_stream_run_logs_failure=ignore
+`,
+	})
+	require.NoError(t, os.WriteFile(explicitBBRC, []byte(`
+run:ci --on_stream_run_logs_failure=fail
+`), 0644))
+
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{
+		"--bbrc=" + explicitBBRC,
+		"run",
+		"//:target",
+		"--bb_config=ci",
+		"--config=bazel",
+	})
+	require.NoError(t, err)
+	args, err = p.resolveArgs(args, workspaceDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"--ignore_all_rc_files",
+		"run",
+		"--stream_run_logs",
+		"--nostream_run_logs",
+		"//:target",
+		"--on_stream_run_logs_failure=warn",
+		"--on_stream_run_logs_failure=ignore",
+		"--on_stream_run_logs_failure=fail",
+		"--build_metadata=BAZEL",
+	}, args.Format())
+}
+
+func TestResolveArgs_BBRCRejectsBazelFlags(t *testing.T) {
+	workspaceDir := testfs.MakeTempDir(t)
+	t.Setenv("HOME", testfs.MakeTempDir(t))
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": "run --build_metadata=NOT_ALLOWED",
+	})
+
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{"run", "//:target"})
+	require.NoError(t, err)
+	_, err = p.resolveArgs(args, workspaceDir)
+	require.ErrorContains(t, err, "build_metadata")
+}
+
+func TestResolveArgs_IgnoreAllBBRCFiles(t *testing.T) {
+	workspaceDir := testfs.MakeTempDir(t)
+	homeDir := testfs.MakeTempDir(t)
+	t.Setenv("HOME", homeDir)
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": "run --stream_run_logs",
+	})
+	testfs.WriteAllFileContents(t, homeDir, map[string]string{
+		".bbrc": "run --nostream_run_logs",
+	})
+
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{"--ignore_all_bb_rc_files", "run", "//:target"})
+	require.NoError(t, err)
+	args, err = p.resolveArgs(args, workspaceDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"--ignore_all_rc_files", "run", "//:target"}, args.Format())
+}
+
 func TestParseBBRCFiles_MultipleConfigs(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
