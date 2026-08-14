@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"bytes"
+	stdlog "log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -211,8 +213,7 @@ func TestConsumeBBRCFileOptions(t *testing.T) {
 
 	args, err := p.ParseArgs([]string{
 		"--bbrc=first.bbrc",
-		"--bbrc", "missing.bbrc",
-		"--bbrc=last.bbrc",
+		"--bbrc", "last.bbrc",
 		"run",
 	})
 	require.NoError(t, err)
@@ -226,10 +227,28 @@ func TestConsumeBBRCFileOptions(t *testing.T) {
 		"/workspace/.bbrc",
 		"/home/user/.bbrc",
 		"first.bbrc",
-		"missing.bbrc",
 		"last.bbrc",
 	}, paths)
 	require.Empty(t, args.GetStartupOptionsByName(bbrc.FileFlagName))
+}
+
+func TestConsumeBBRCFileOptions_WarnsForMissingBBRC(t *testing.T) {
+	p, err := GetParser()
+	require.NoError(t, err)
+	missingPath := filepath.Join(t.TempDir(), "missing.bbrc")
+	args, err := p.ParseArgs([]string{"--bbrc=" + missingPath, "run"})
+	require.NoError(t, err)
+
+	var logs bytes.Buffer
+	previousWriter := stdlog.Writer()
+	stdlog.SetOutput(&logs)
+	t.Cleanup(func() { stdlog.SetOutput(previousWriter) })
+
+	paths, err := consumeBBRCFileOptions(args, "", "")
+	require.NoError(t, err)
+	require.Equal(t, []string{missingPath}, paths)
+	require.Contains(t, logs.String(), "Could not find --bbrc file")
+	require.Contains(t, logs.String(), missingPath)
 }
 
 func TestConsumeBBRCFileOptions_DevNullStopsExplicitFiles(t *testing.T) {
