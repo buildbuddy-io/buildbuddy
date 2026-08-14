@@ -180,8 +180,8 @@ func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.
 	backoffConfig := backoff.Config{
 		BaseDelay:  4 * time.Millisecond,
 		Multiplier: 1.15,
-		Jitter:     0.01,
-		MaxDelay:   500 * time.Millisecond,
+		Jitter:     0.10,
+		MaxDelay:   2 * time.Second,
 	}
 	connectParams := grpc.ConnectParams{
 		Backoff:           backoffConfig,
