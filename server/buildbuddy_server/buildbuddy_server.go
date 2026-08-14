@@ -26,7 +26,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/error_tracking"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -64,6 +66,7 @@ import (
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	enpb "github.com/buildbuddy-io/buildbuddy/proto/encryption"
+	etpb "github.com/buildbuddy-io/buildbuddy/proto/error_tracking"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	gcpb "github.com/buildbuddy-io/buildbuddy/proto/gcp"
@@ -1598,6 +1601,13 @@ func (s *BuildBuddyServer) GetTrend(ctx context.Context, req *stpb.GetTrendReque
 		return iss.GetTrend(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
+}
+
+func (s *BuildBuddyServer) GetErrorGroups(ctx context.Context, req *etpb.GetErrorGroupsRequest) (*etpb.GetErrorGroupsResponse, error) {
+	if !*features.ErrorTrackingEnabled {
+		return nil, status.UnimplementedError("Error tracking is not enabled")
+	}
+	return error_tracking.GetErrorGroups(ctx, s.env, req)
 }
 
 func (s *BuildBuddyServer) GetStatHeatmap(ctx context.Context, req *stpb.GetStatHeatmapRequest) (*stpb.GetStatHeatmapResponse, error) {

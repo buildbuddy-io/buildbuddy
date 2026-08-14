@@ -34,6 +34,11 @@ var (
 	enablePoolCache           = flag.Bool("grpc_client.enable_pool_cache", true, "Whether or not to enable the connection pool cache.")
 )
 
+// Transport fallback is transactional only for small bounded reads. Larger
+// reads include compressed ZIP entries and must remain streaming rather than
+// being materialized in server memory.
+const maxTransactionalStreamBytes = 8 << 20
+
 type pooledByteStreamClient struct {
 	env         environment.Env
 	connMutex   sync.Mutex
@@ -170,7 +175,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 			grpcPort = strconv.Itoa(p)
 		}
 		localURL.Host = "localhost:" + grpcPort
-		err := p.streamFromUrl(ctx, localURL, false, offset, limit, writer)
+		err := p.streamFromURLAttempt(ctx, localURL, false, offset, limit, writer)
 		if err == nil {
 			return nil
 		}
@@ -180,7 +185,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 	// If the local cache did not work, maybe a remote cache is being used.
 	// Try to connect to that, first over grpcs.
 	if allErrs != nil || p.env.GetCache() == nil {
-		err := p.streamFromUrl(ctx, url, true, offset, limit, writer)
+		err := p.streamFromURLAttempt(ctx, url, true, offset, limit, writer)
 		if err == nil {
 			return nil
 		}
@@ -189,7 +194,7 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 
 	// If that didn't work, try plain old grpc.
 	if !*restrictBytestreamDialing {
-		err := p.streamFromUrl(ctx, url, false, offset, limit, writer)
+		err := p.streamFromURLAttempt(ctx, url, false, offset, limit, writer)
 		if err == nil {
 			return nil
 		}
@@ -202,6 +207,53 @@ func (p *pooledByteStreamClient) StreamBytestreamFileChunk(ctx context.Context, 
 		log.Warningf("Error byte-streaming from %q: %s", stripUser(url), allErrs)
 	}
 	return status.UnavailableErrorf("failed to read byte stream resource %q", stripUser(url))
+}
+
+// streamFromURLAttempt keeps bounded reads transactional across transport
+// fallbacks. A failed local or TLS attempt may have written a partial response;
+// publishing only a successful attempt prevents those bytes from being
+// prepended to the next retry. Unbounded full-file streams retain the existing
+// streaming behavior to avoid buffering arbitrarily large artifacts.
+func (p *pooledByteStreamClient) streamFromURLAttempt(ctx context.Context, u *url.URL, grpcs bool, offset, limit int64, dst io.Writer) error {
+	if !shouldBufferStreamAttempt(limit) {
+		return p.streamFromUrl(ctx, u, grpcs, offset, limit, dst)
+	}
+	return commitBoundedStreamAttempt(limit, dst, func(w io.Writer) error {
+		return p.streamFromUrl(ctx, u, grpcs, offset, limit, w)
+	})
+}
+
+func shouldBufferStreamAttempt(limit int64) bool {
+	return limit > 0 && limit <= maxTransactionalStreamBytes
+}
+
+func commitBoundedStreamAttempt(limit int64, dst io.Writer, stream func(io.Writer) error) error {
+	w := &hardLimitBuffer{maxBytes: limit}
+	if err := stream(w); err != nil {
+		return err
+	}
+	n, err := dst.Write(w.Bytes())
+	if err == nil && n != w.Len() {
+		return io.ErrShortWrite
+	}
+	return err
+}
+
+type hardLimitBuffer struct {
+	bytes.Buffer
+	maxBytes int64
+}
+
+func (w *hardLimitBuffer) Write(p []byte) (int, error) {
+	remaining := w.maxBytes - int64(w.Len())
+	if remaining <= 0 {
+		return 0, status.ResourceExhaustedError("byte stream exceeded requested read limit")
+	}
+	if int64(len(p)) > remaining {
+		n, _ := w.Buffer.Write(p[:remaining])
+		return n, status.ResourceExhaustedError("byte stream exceeded requested read limit")
+	}
+	return w.Buffer.Write(p)
 }
 
 func stripUser(u *url.URL) *url.URL {

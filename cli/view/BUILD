@@ -22,6 +22,7 @@ go_library(
         "//proto:target_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/util/grpc_client",
+        "//server/util/junit",
         "//server/util/status",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",

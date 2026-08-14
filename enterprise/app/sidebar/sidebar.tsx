@@ -1,6 +1,7 @@
 import {
   BarChart2,
   BookOpen,
+  Bug,
   Cloud,
   Code,
   Fingerprint,
@@ -67,6 +68,10 @@ export default class SidebarComponent extends React.Component<Props, State> {
 
   isTargetsSelected() {
     return this.props.path.startsWith("/targets/");
+  }
+
+  isErrorTrackingSelected() {
+    return this.props.path.startsWith("/errors/");
   }
 
   isExecutorsSelected() {
@@ -178,6 +183,12 @@ export default class SidebarComponent extends React.Component<Props, State> {
             <SidebarLink selected={this.isTargetsSelected()} href={Path.targetsPath} title="Targets">
               <Target />
               <span className="sidebar-item-text">Targets</span>
+            </SidebarLink>
+          )}
+          {capabilities.config.errorTrackingEnabled && (
+            <SidebarLink selected={this.isErrorTrackingSelected()} href={Path.errorTrackingPath} title="Errors">
+              <Bug />
+              <span className="sidebar-item-text">Errors</span>
             </SidebarLink>
           )}
           {capabilities.test && (

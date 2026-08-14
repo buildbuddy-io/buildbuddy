@@ -94,6 +94,7 @@ var (
 		"/compare/",
 		"/cli-login/",
 		"/docs/",
+		"/errors/",
 		"/history/",
 		"/invocation/",
 		"/join/",

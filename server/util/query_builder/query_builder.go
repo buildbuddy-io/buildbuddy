@@ -46,16 +46,18 @@ func (j *joinClause) Build() (string, []interface{}) {
 }
 
 type Query struct {
-	limit        *int64
-	offset       *int64
-	orderBy      string
-	groupBy      string
-	baseQuery    string
-	arguments    []interface{}
-	whereClauses []string
-	joinClauses  []joinClause
-	fromClause   *Query
-	ascending    bool
+	limit         *int64
+	offset        *int64
+	orderBy       string
+	groupBy       string
+	baseQuery     string
+	arguments     []interface{}
+	whereClauses  []string
+	havingClauses []string
+	havingArgs    []interface{}
+	joinClauses   []joinClause
+	fromClause    *Query
+	ascending     bool
 }
 
 func NewQuery(baseQuery string) *Query {
@@ -79,6 +81,13 @@ func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
 	clause = pad(clause)
 	q.whereClauses = append(q.whereClauses, clause)
 	q.arguments = append(q.arguments, args...)
+	return q
+}
+
+func (q *Query) AddHavingClause(clause string, args ...interface{}) *Query {
+	clause = pad(clause)
+	q.havingClauses = append(q.havingClauses, clause)
+	q.havingArgs = append(q.havingArgs, args...)
 	return q
 }
 
@@ -156,6 +165,13 @@ func (q *Query) Build() (string, []interface{}) {
 	if q.groupBy != "" {
 		fullQuery.WriteString(pad(groupBySQLPhrase) + pad(q.groupBy))
 	}
+	if len(q.havingClauses) > 0 {
+		clauses := make([]string, 0, len(q.havingClauses))
+		for _, c := range q.havingClauses {
+			clauses = append(clauses, " ("+c+") ")
+		}
+		fullQuery.WriteString(" HAVING " + strings.Join(clauses, andQueryJoiner))
+	}
 	if q.orderBy != "" {
 		fullQuery.WriteString(pad(orderBySQLPhrase) + pad(q.orderBy))
 		if q.ascending {
@@ -170,7 +186,7 @@ func (q *Query) Build() (string, []interface{}) {
 	if q.offset != nil {
 		fullQuery.WriteString(pad(offsetSQLKeyword) + pad(fmt.Sprintf("%d", *q.offset)))
 	}
-	return fullQuery.String(), q.arguments
+	return fullQuery.String(), append(q.arguments, q.havingArgs...)
 }
 
 type OrClauses struct {

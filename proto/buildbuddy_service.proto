@@ -9,6 +9,7 @@ import "proto/search.proto";
 import "proto/eventlog.proto";
 import "proto/execution_stats.proto";
 import "proto/encryption.proto";
+import "proto/error_tracking.proto";
 import "proto/grp.proto";
 import "proto/index.proto";
 import "proto/invocation.proto";
@@ -54,6 +55,10 @@ service BuildBuddyService {
   rpc GetInvocationFilterSuggestions(
       invocation.GetInvocationFilterSuggestionsRequest)
       returns (invocation.GetInvocationFilterSuggestionsResponse);
+
+  // BES-derived error tracking API.
+  rpc GetErrorGroups(error_tracking.GetErrorGroupsRequest)
+      returns (error_tracking.GetErrorGroupsResponse);
 
   // Fancy build stat breakdowns.
   rpc GetTrend(stats.GetTrendRequest) returns (stats.GetTrendResponse);

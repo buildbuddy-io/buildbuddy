@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	uuidutil "github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -227,6 +229,7 @@ type InsertOpt func(*insertOpts)
 type insertOpts struct {
 	asyncBusyTimeoutMinMs int
 	asyncBusyTimeoutMaxMs int
+	settings              map[string]any
 }
 
 func defaultInsertOpts() *insertOpts {
@@ -251,35 +254,45 @@ func withAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
 	}
 }
 
+func withInsertSettings(settings map[string]any) InsertOpt {
+	return func(o *insertOpts) {
+		o.settings = settings
+	}
+}
+
 func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}, opts ...InsertOpt) error {
 	o := defaultInsertOpts()
 	o.apply(opts...)
 	retrier := retry.DefaultWithContext(ctx)
 	var lastError error
+	settings := maps.Clone(o.settings)
 	if *asyncInsert {
 		// Useful links about async inserts in ClickHouse:
 		// https://clickhouse.com/docs/optimize/asynchronous-inserts
 		// https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse
 		// https://altinity.com/blog/using-async-inserts-for-peak-data-loading-rates-in-clickhouse
 		// https://clickhouse.com/docs/integrations/go#async-insert-1
-		ctx = clickhouse.Context(
-			ctx,
-			clickhouse.WithAsync(true),
-			clickhouse.WithSettings(map[string]any{
-				// These two should be implied by WithAsync(true), but if we
-				// want to set other settings below, we need to set them here.
-				// WithAsync(true) should be unnecessary when setting these, but
-				// the clickhouse-go code takes a slightly different path if
-				// it's used.
-				"async_insert":          1,
-				"wait_for_async_insert": 1,
+		if settings == nil {
+			settings = make(map[string]any)
+		}
+		maps.Copy(settings, map[string]any{
+			// These two should be implied by WithAsync(true), but if we
+			// want to set other settings below, we need to set them here.
+			// WithAsync(true) should be unnecessary when setting these, but
+			// the clickhouse-go code takes a slightly different path if
+			// it's used.
+			"async_insert":          1,
+			"wait_for_async_insert": 1,
 
-				"async_insert_deduplicate":         1,
-				"wait_for_async_insert_timeout":    30, // In seconds. Default is 120.
-				"async_insert_busy_timeout_min_ms": o.asyncBusyTimeoutMinMs,
-				"async_insert_busy_timeout_max_ms": o.asyncBusyTimeoutMaxMs,
-			}),
-		)
+			"async_insert_deduplicate":         1,
+			"wait_for_async_insert_timeout":    30, // In seconds. Default is 120.
+			"async_insert_busy_timeout_min_ms": o.asyncBusyTimeoutMinMs,
+			"async_insert_busy_timeout_max_ms": o.asyncBusyTimeoutMaxMs,
+		})
+		ctx = clickhouse.Context(ctx, clickhouse.WithAsync(true))
+	}
+	if len(settings) > 0 {
+		ctx = clickhouse.Context(ctx, clickhouse.WithSettings(settings))
 	}
 	queryName := fmt.Sprintf("INSERT INTO '%v'", tableName)
 	for retrier.Next() {
@@ -330,6 +343,66 @@ func (h *DBHandle) FlushInvocationStats(ctx context.Context, ti *tables.Invocati
 	return nil
 }
 
+func (h *DBHandle) FlushErrorOccurrences(ctx context.Context, entries []*schema.ErrorOccurrence) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	if err := h.insertWithRetrier(ctx, (&schema.ErrorOccurrence{}).TableName(), len(entries), &entries); err != nil {
+		return status.UnavailableErrorf("failed to insert %d error occurrences: %s", len(entries), err)
+	}
+	return nil
+}
+
+func (h *DBHandle) FlushErrorInvocationACL(ctx context.Context, entry *schema.ErrorInvocationACL) error {
+	var opts []InsertOpt
+	if schema.DataReplicationEnabled() {
+		opts = append(opts, withInsertSettings(map[string]any{
+			"insert_quorum":          "auto",
+			"insert_quorum_parallel": 0,
+		}))
+	}
+	if err := h.insertWithRetrier(ctx, entry.TableName(), 1, entry, opts...); err != nil {
+		return status.UnavailableErrorf("failed to insert error invocation ACL for %q: %s", entry.InvocationID, err)
+	}
+	return nil
+}
+
+func (h *DBHandle) GetMaxErrorInvocationACLVersion(ctx context.Context, groupID, invocationID string) (int64, error) {
+	if schema.DataReplicationEnabled() {
+		ctx = clickhouse.Context(ctx, clickhouse.WithSettings(map[string]any{"select_sequential_consistency": 1}))
+	}
+	var row struct{ ACLVersion int64 }
+	err := h.NewQuery(ctx, "get_max_error_invocation_acl_version").Raw(`
+		SELECT max(acl_version) AS acl_version
+		FROM ErrorInvocationACLs
+		WHERE group_id = ? AND invocation_id = ?`, groupID, invocationID).Take(&row)
+	return row.ACLVersion, err
+}
+
+func (h *DBHandle) ResetErrorTrackingInvocation(ctx context.Context, groupID, invocationID, currentIncarnation string) error {
+	ctx = clickhouse.Context(ctx, clickhouse.WithSettings(map[string]any{"mutations_sync": 2}))
+	invocationUUID, err := uuidutil.StringToBytes(invocationID)
+	if err != nil {
+		return err
+	}
+	if err := h.NewQuery(ctx, "reset_error_tracking_occurrences").Raw(
+		`ALTER TABLE ErrorOccurrences DELETE WHERE group_id = ? AND invocation_id = ?`, groupID, invocationID,
+	).Exec().Error; err != nil {
+		return err
+	}
+	if err := h.NewQuery(ctx, "reset_error_tracking_executions").Raw(
+		`ALTER TABLE Executions DELETE WHERE group_id = ? AND invocation_uuid = ? AND invocation_incarnation != ?`,
+		groupID, hex.EncodeToString(invocationUUID), currentIncarnation,
+	).Exec().Error; err != nil {
+		return err
+	}
+	// Delete the ACL marker last. If an earlier mutation fails, the retained
+	// higher generation causes the next replacement flush to retry this reset.
+	return h.NewQuery(ctx, "reset_error_tracking_acl").Raw(
+		`ALTER TABLE ErrorInvocationACLs DELETE WHERE group_id = ? AND invocation_id = ?`, groupID, invocationID,
+	).Exec().Error
+}
+
 // FillExecutionResourceFieldsFromExecutionID populates the split columns
 // (InstanceName, ExecutionUUID, Compressor, DigestFunction, ActionDigestHash,
 // ActionDigestSize) on out by parsing executionID. Returns
@@ -371,6 +444,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		GroupID:                            in.GetGroupId(),
 		UpdatedAtUsec:                      in.GetUpdatedAtUsec(),
 		InvocationUUID:                     in.GetInvocationUuid(),
+		InvocationIncarnation:              inv.GetErrorTrackingIncarnation(),
 		CreatedAtUsec:                      in.GetCreatedAtUsec(),
 		UserID:                             in.GetUserId(),
 		Worker:                             in.GetWorker(),

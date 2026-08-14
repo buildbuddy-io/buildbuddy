@@ -19,6 +19,14 @@ func TestSchemaInSync(t *testing.T) {
 		primaryDBTable  interface{}
 	}{
 		{
+			clickhouseTable: &ErrorOccurrence{},
+			primaryDBTable:  nil,
+		},
+		{
+			clickhouseTable: &ErrorInvocationACL{},
+			primaryDBTable:  nil,
+		},
+		{
 			clickhouseTable: &Invocation{},
 			primaryDBTable:  tables.Invocation{},
 		},
@@ -98,6 +106,11 @@ func TestSchemaInSync(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestErrorOccurrenceRetention(t *testing.T) {
+	assert.Contains(t, (&ErrorOccurrence{}).TableOptions(""), "INTERVAL 45 DAY DELETE")
+	assert.Contains(t, (&ErrorInvocationACL{}).TableOptions(""), "INTERVAL 90 DAY DELETE")
 }
 
 var NonStandardInvocationCopyFields = []string{

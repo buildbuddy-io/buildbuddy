@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/acl"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	"github.com/buildbuddy-io/buildbuddy/proto/error_tracking"
 	"github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_kvstore"
@@ -63,6 +64,15 @@ const (
 	user2  = "USER2"
 	group2 = "GROUP2"
 )
+
+func TestGetErrorGroupsDisabledByDefault(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	_, err = server.GetErrorGroups(context.Background(), &error_tracking.GetErrorGroupsRequest{})
+	require.True(t, status.IsUnimplementedError(err), "expected Unimplemented, got %s", err)
+}
 
 type fakeCASServer struct {
 	repb.UnimplementedContentAddressableStorageServer

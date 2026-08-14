@@ -755,10 +755,14 @@ func (r *StreamingRedactor) RedactMetadata(event *bespb.BuildEvent) error {
 	case *bespb.BuildEvent_Completed:
 		{
 			p.Completed.DirectoryOutput = stripURLSecretsFromFiles(p.Completed.DirectoryOutput)
+			if p.Completed.FailureDetail != nil {
+				p.Completed.FailureDetail.Message = RedactText(p.Completed.FailureDetail.Message)
+			}
 		}
 	case *bespb.BuildEvent_TestResult:
 		{
 			p.TestResult.TestActionOutput = stripURLSecretsFromFiles(p.TestResult.TestActionOutput)
+			p.TestResult.StatusDetails = RedactText(p.TestResult.StatusDetails)
 		}
 	case *bespb.BuildEvent_TestSummary:
 		{

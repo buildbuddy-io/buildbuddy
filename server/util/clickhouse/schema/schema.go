@@ -28,6 +28,8 @@ var (
 	clusterName            = flag.String("olap_database.cluster_name", "{cluster}", "The cluster name of the database")
 )
 
+func DataReplicationEnabled() bool { return *dataReplicationEnabled }
+
 const (
 	projectionCommits = "projection_commits"
 )
@@ -62,12 +64,89 @@ type View interface {
 func getAllTables() []Table {
 	tbls := []Table{
 		&Invocation{},
+		&ErrorOccurrence{},
+		&ErrorInvocationACL{},
 		&Execution{},
 		&TestTargetStatus{},
 		&AuditLog{},
 		&RawUsage{},
 	}
 	return tbls
+}
+
+// ErrorOccurrence is a bounded, structured failure extracted from BES.
+type ErrorOccurrence struct {
+	GroupID               string `gorm:"codec:ZSTD(1)"`
+	UserID                string `gorm:"codec:ZSTD(1)"`
+	Perms                 int32  `gorm:"codec:T64,ZSTD(1)"`
+	Fingerprint           string `gorm:"codec:ZSTD(1)"`
+	EventTimeUsec         int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	InvocationUUID        string `gorm:"codec:ZSTD(1)"`
+	InvocationID          string `gorm:"codec:ZSTD(1)"`
+	InvocationIncarnation string `gorm:"codec:ZSTD(1)"`
+	Attempt               uint64 `gorm:"codec:T64,ZSTD(1)"`
+	SequenceNumber        int64  `gorm:"codec:T64,ZSTD(1)"`
+	ErrorType             string `gorm:"type:LowCardinality(String)"`
+	Message               string `gorm:"codec:ZSTD(1)"`
+	TargetLabel           string `gorm:"codec:ZSTD(1)"`
+	ActionMnemonic        string `gorm:"type:LowCardinality(String)"`
+	ExitCode              int32  `gorm:"codec:T64,ZSTD(1)"`
+	FingerprintVersion    string `gorm:"type:LowCardinality(String)"`
+	FingerprintSource     string `gorm:"type:LowCardinality(String)"`
+	FingerprintConfidence string `gorm:"type:LowCardinality(String)"`
+	TestSuite             string `gorm:"codec:ZSTD(1)"`
+	TestClass             string `gorm:"codec:ZSTD(1)"`
+	TestName              string `gorm:"codec:ZSTD(1)"`
+	TestFailureKind       string `gorm:"type:LowCardinality(String)"`
+	TestFailureType       string `gorm:"codec:ZSTD(1)"`
+	TestRun               int32  `gorm:"codec:T64,ZSTD(1)"`
+	TestShard             int32  `gorm:"codec:T64,ZSTD(1)"`
+	TestAttempt           int32  `gorm:"codec:T64,ZSTD(1)"`
+	TestCachedLocally     bool
+	TestCachedRemotely    bool
+	TestStrategy          string `gorm:"type:LowCardinality(String)"`
+	Origin                int32  `gorm:"codec:T64,ZSTD(1)"`
+	RunID                 string `gorm:"codec:ZSTD(1)"`
+	ParentRunID           string `gorm:"codec:ZSTD(1)"`
+	InvocationPattern     string `gorm:"codec:ZSTD(1)"`
+	RepoURL               string `gorm:"codec:ZSTD(1)"`
+	BranchName            string `gorm:"codec:ZSTD(1)"`
+	CommitSHA             string `gorm:"codec:ZSTD(1)"`
+	Command               string `gorm:"type:LowCardinality(String)"`
+	User                  string `gorm:"codec:ZSTD(1)"`
+}
+
+func (e *ErrorOccurrence) ExcludedFields() []string   { return nil }
+func (e *ErrorOccurrence) AdditionalFields() []string { return nil }
+func (e *ErrorOccurrence) TableName() string          { return "ErrorOccurrences" }
+func (e *ErrorOccurrence) TableOptions(clickhouseVersion string) string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, fingerprint, event_time_usec, invocation_uuid, attempt, sequence_number)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(event_time_usec, 1000000), 'UTC'))" +
+		" TTL toDateTime(intDiv(event_time_usec, 1000000), 'UTC') + INTERVAL 45 DAY DELETE"
+}
+
+// ErrorInvocationACL is an append-only visibility stream for error rows. ACL
+// changes use increasing generations, with an even pre-commit state followed
+// by an odd committed state. Queries select the greatest ACLVersion per
+// invocation so delayed BES writers cannot override newer restrictions or
+// deletion tombstones.
+type ErrorInvocationACL struct {
+	GroupID       string `gorm:"codec:ZSTD(1)"`
+	InvocationID  string `gorm:"codec:ZSTD(1)"`
+	UserID        string `gorm:"codec:ZSTD(1)"`
+	Perms         int32  `gorm:"codec:T64,ZSTD(1)"`
+	ACLVersion    int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
+	Deleted       bool
+	UpdatedAtUsec int64 `gorm:"codec:DoubleDelta,ZSTD(1)"`
+}
+
+func (a *ErrorInvocationACL) ExcludedFields() []string   { return nil }
+func (a *ErrorInvocationACL) AdditionalFields() []string { return nil }
+func (a *ErrorInvocationACL) TableName() string          { return "ErrorInvocationACLs" }
+func (a *ErrorInvocationACL) TableOptions(clickhouseVersion string) string {
+	return fmt.Sprintf("ENGINE=%s ORDER BY (group_id, invocation_id, acl_version)", getEngine()) +
+		" PARTITION BY toYYYYMM(toDateTime(intDiv(updated_at_usec, 1000000), 'UTC'))" +
+		" TTL toDateTime(intDiv(updated_at_usec, 1000000), 'UTC') + INTERVAL 90 DAY DELETE"
 }
 
 func getAllViews() []View {
@@ -152,6 +231,9 @@ func (i *Invocation) ExcludedFields() []string {
 		"RedactionFlags",
 		"CreatedWithCapabilities",
 		"Perms",
+		"ErrorACLVersion",
+		"ErrorOccurrencesState",
+		"ErrorTrackingIncarnation",
 	}
 }
 
@@ -175,6 +257,10 @@ type Execution struct {
 	GroupID        string `gorm:"codec:ZSTD(1)"`
 	UpdatedAtUsec  int64  `gorm:"codec:DoubleDelta,ZSTD(1)"`
 	InvocationUUID string `gorm:"codec:ZSTD(1)"`
+	// InvocationIncarnation disambiguates reused invocation IDs for error
+	// correlation. Legacy rows have the empty incarnation and remain mutually
+	// comparable.
+	InvocationIncarnation string `gorm:"codec:ZSTD(1)"`
 
 	// Resource-name components split out of execution_id.
 	// ActionDigest holds raw hash bytes (incompressible) — default codec.
@@ -346,6 +432,7 @@ func (e *Execution) ExcludedFields() []string {
 func (e *Execution) AdditionalFields() []string {
 	return []string{
 		"InvocationUUID",
+		"InvocationIncarnation",
 		"InstanceName",
 		"ExecutionUUID",
 		"Compressor",
@@ -760,6 +847,12 @@ func RunMigrations(gdb *gorm.DB) error {
 			return err
 		}
 	}
+	// ACL states outlive the 45-day occurrence retention window, including
+	// delayed in-memory BES finalization, but are eventually removed so ordinary
+	// invocation cleanup cannot create permanent OLAP state.
+	if err := ensureErrorInvocationACLTTL(gdb); err != nil {
+		return err
+	}
 	for _, v := range getAllViews() {
 		if err := ensureView(gdb, v); err != nil {
 			return status.WrapErrorf(err, "ensure view %q", v.ViewName())
@@ -774,6 +867,11 @@ func RunMigrations(gdb *gorm.DB) error {
 		return status.InternalErrorf("failed to add projection %q: %s", projectionCommits, err)
 	}
 	return nil
+}
+
+func ensureErrorInvocationACLTTL(gdb *gorm.DB) error {
+	stmt := fmt.Sprintf("ALTER TABLE %s %s MODIFY TTL toDateTime(intDiv(updated_at_usec, 1000000), 'UTC') + INTERVAL 90 DAY DELETE", (&ErrorInvocationACL{}).TableName(), getTableClusterOption())
+	return status.WrapError(gdb.Exec(stmt).Error, "ensure error invocation ACL table TTL")
 }
 
 func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {

@@ -238,6 +238,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		DefaultLoginSlug:                       *defaultLoginSlug,
 		ReadOnlyGithubAppEnabled:               env.GetGitHubAppService() != nil && env.GetGitHubAppService().IsReadOnlyAppEnabled(),
 		TargetsPageEnabled:                     *targetsPageEnabled && env.GetOLAPDBHandle() != nil,
+		ErrorTrackingEnabled:                   *features.ErrorTrackingEnabled && env.GetOLAPDBHandle() != nil,
 		UserListsUiEnabled:                     *userListsUIEnabled,
 		DarkModeEnabled:                        *darkModeEnabled,
 	}

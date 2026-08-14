@@ -1,10 +1,13 @@
 package build_event_handler
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"net/url"
 	"path"
@@ -12,7 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -25,7 +31,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/cache_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/error_tracking"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/features"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
@@ -38,7 +46,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/junit"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -73,7 +83,21 @@ import (
 )
 
 const (
-	defaultChunkFileSizeBytes = 1000 * 100 // 100KB
+	defaultChunkFileSizeBytes    = 1000 * 100 // 100KB
+	maxTestAttemptsPerInvocation = 100
+	maxTestXMLBytes              = 1 << 20
+	maxTestArtifactBytes         = 8 << 20
+	maxQueuedErrorBytes          = 64 << 20
+	maxLiveErrorBytes            = 64 << 20
+	liveErrorStreamReservation   = 16 << 20
+	maxTestLogBytes              = 4 << 10
+	maxArtifactURIBytes          = 2 << 10
+	maxArtifactNameBytes         = 512
+	maxTestTargetBytes           = 1024
+	maxTestConfigurationBytes    = 512
+	maxTestStatusDetailsBytes    = 4 << 10
+	maxTestStrategyBytes         = 128
+	testArtifactFetchTimeout     = 2 * time.Second
 
 	// How many workers to spin up for writing cache stats to the DB.
 	numStatsRecorderWorkers = 8
@@ -131,6 +155,7 @@ type BuildEventHandler struct {
 	webhookNotifier  *webhookNotifier
 	openChannels     *sync.WaitGroup
 	cancelFnsByInvID sync.Map // map of string invocationID => context.CancelFunc
+	liveErrorBytes   atomic.Int64
 
 	mu           sync.Mutex
 	shuttingDown bool
@@ -195,14 +220,18 @@ func (b *BuildEventHandler) OpenChannel(ctx context.Context, iid string) (interf
 		collector:      b.env.GetMetricsCollector(),
 		apiTargetMap:   api_common.NewTargetMap( /* TargetSelector */ nil),
 
-		hasReceivedEventWithOptions: false,
-		hasReceivedStartedEvent:     false,
-		bufferedEvents:              make([]*inpb.InvocationEvent, 0),
-		requestedTerminalColumns:    eventlog.DefaultTerminalLineLength,
-		logWriter:                   nil,
-		onClose:                     onClose,
-		attempt:                     1,
-		groupIDForMetrics:           getGroupIDForMetrics(ctx, b.env),
+		hasReceivedEventWithOptions:      false,
+		hasReceivedStartedEvent:          false,
+		bufferedEvents:                   make([]*inpb.InvocationEvent, 0),
+		requestedTerminalColumns:         eventlog.DefaultTerminalLineLength,
+		logWriter:                        nil,
+		onClose:                          onClose,
+		attempt:                          1,
+		groupIDForMetrics:                getGroupIDForMetrics(ctx, b.env),
+		errorOccurrenceFingerprintCounts: make(map[string]int),
+		errorOutputFiles:                 make(map[*schema.ErrorOccurrence]*build_event_stream.File),
+		testSummaries:                    make(map[testTargetKey]build_event_stream.TestStatus),
+		liveErrorBytes:                   &b.liveErrorBytes,
 	}, nil
 }
 
@@ -233,9 +262,10 @@ func (b *BuildEventHandler) Stop() {
 // to it. It should only be used for background tasks that need access to the
 // JWT after the build event stream is already closed.
 type invocationInfo struct {
-	id      string
-	jwt     string
-	attempt uint64
+	id          string
+	jwt         string
+	attempt     uint64
+	incarnation string
 }
 
 // recordStatsTask contains the info needed to record the stats for an
@@ -254,9 +284,12 @@ type recordStatsTask struct {
 	// Git fetch stats reported by the remote runner, if any. These are stored
 	// only in the OLAP DB, so they are carried here rather than read back from
 	// the primary DB at flush time.
-	gitFetchTotalBytes   int64
-	gitFetchDurationUsec int64
-	gitFetchRetryCount   int64
+	gitFetchTotalBytes    int64
+	gitFetchDurationUsec  int64
+	gitFetchRetryCount    int64
+	errorOccurrences      []*schema.ErrorOccurrence
+	errorOccurrenceLoader func(context.Context) []*schema.ErrorOccurrence
+	errorOccurrenceBytes  int64
 }
 
 // statsRecorder listens for finalized invocations and copies cache stats from
@@ -270,9 +303,10 @@ type statsRecorder struct {
 	onStatsRecorded chan<- *invocationInfo
 	eg              errgroup.Group
 
-	mu      sync.Mutex // protects(tasks, stopped)
-	tasks   chan *recordStatsTask
-	stopped bool
+	mu               sync.Mutex // protects(tasks, stopped, queuedErrorBytes)
+	tasks            chan *recordStatsTask
+	queuedErrorBytes int64
+	stopped          bool
 }
 
 func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStatsRecorded chan<- *invocationInfo) *statsRecorder {
@@ -286,7 +320,7 @@ func newStatsRecorder(env environment.Env, openChannels *sync.WaitGroup, onStats
 
 // Enqueue enqueues a task for the given invocation's stats to be recorded
 // once they are available.
-func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEValues) {
+func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEValues, invocationIncarnation string, errorOccurrenceLoader func(context.Context) []*schema.ErrorOccurrence, errorOccurrenceBytes int64) {
 	persist := &PersistArtifacts{}
 	if !*disablePersistArtifacts {
 		persist.URIs = slices.Concat(
@@ -308,12 +342,18 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 			invocation.GetInvocationId())
 		return
 	}
+	if errorOccurrenceBytes > 0 && r.queuedErrorBytes+errorOccurrenceBytes > maxQueuedErrorBytes {
+		alert.UnexpectedEvent("error_tracking_queue_byte_budget_exceeded", "Dropping error artifact work for invocation %q because the global queue byte budget is full.", invocation.GetInvocationId())
+		errorOccurrenceLoader = nil
+		errorOccurrenceBytes = 0
+	}
 	jwt := r.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx)
 	req := &recordStatsTask{
 		invocationInfo: &invocationInfo{
-			id:      invocation.GetInvocationId(),
-			attempt: invocation.GetAttempt(),
-			jwt:     jwt,
+			id:          invocation.GetInvocationId(),
+			attempt:     invocation.GetAttempt(),
+			jwt:         jwt,
+			incarnation: invocationIncarnation,
 		},
 		createdAt:                time.Now(),
 		files:                    beValues.OutputFiles(),
@@ -323,9 +363,12 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 		gitFetchTotalBytes:       beValues.GitFetchTotalBytes(),
 		gitFetchDurationUsec:     beValues.GitFetchDuration().Microseconds(),
 		gitFetchRetryCount:       beValues.GitFetchRetryCount(),
+		errorOccurrenceLoader:    errorOccurrenceLoader,
+		errorOccurrenceBytes:     errorOccurrenceBytes,
 	}
 	select {
 	case r.tasks <- req:
+		r.queuedErrorBytes += errorOccurrenceBytes
 		break
 	default:
 		alert.UnexpectedEvent(
@@ -348,35 +391,69 @@ func (r *statsRecorder) Start() {
 	}
 }
 
-func (r *statsRecorder) lookupInvocation(ctx context.Context, ij *invocationInfo) (*tables.Invocation, error) {
-	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
-	return r.env.GetInvocationDB().LookupInvocation(ctx, ij.id)
-}
-
 func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, task *recordStatsTask) error {
 	if r.env.GetOLAPDBHandle() == nil || !*writeToOLAPDBEnabled {
 		return nil
 	}
-	inv, err := r.lookupInvocation(ctx, task.invocationInfo)
+	inv, matched, err := r.currentInvocation(ctx, task)
 	if err != nil {
-		return status.InternalErrorf("failed to look up invocation for invocation id %q: %s", task.invocationInfo.id, err)
+		return err
+	}
+	if !matched {
+		log.CtxWarningf(ctx, "Skipped stale invocation and execution stats for a deleted or replaced invocation")
+		return nil
 	}
 	// Git fetch stats are stored only in the OLAP DB, so they are carried on
 	// the task instead of being read back from the primary DB.
 	inv.GitFetchTotalBytes = task.gitFetchTotalBytes
 	inv.GitFetchDurationUsec = task.gitFetchDurationUsec
 	inv.GitFetchRetryCount = task.gitFetchRetryCount
-
-	err = r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv)
-	if err != nil {
+	if err := r.env.GetOLAPDBHandle().FlushInvocationStats(ctx, inv); err != nil {
 		return err
 	}
 	// Temporary logging for debugging clickhouse missing data.
 	log.CtxInfo(ctx, "Successfully wrote invocation to clickhouse")
+	if *features.ErrorTrackingEnabled && len(task.errorOccurrences) > 0 {
+		// Recheck the immutable primary-row creation identity and keep the row
+		// locked through ACL publication and occurrence insertion. This prevents
+		// delayed work from an invocation whose ID was deleted and reused from
+		// being published under the replacement invocation's ACL.
+		if matched, err := error_tracking.FlushErrorOccurrencesWithPrimary(ctx, r.env, inv.InvocationID, task.incarnation, task.errorOccurrences); err != nil {
+			log.CtxWarningf(ctx, "Failed to synchronize and flush BES error occurrences; skipping occurrences: %s", err)
+		} else if !matched {
+			log.CtxWarningf(ctx, "Skipped stale BES error occurrences for a deleted or replaced invocation")
+		}
+	}
 
 	if r.env.GetExecutionCollector() == nil {
 		return nil
 	}
+	inv, matched, err = r.currentInvocation(ctx, task)
+	if err != nil {
+		return err
+	}
+	if !matched {
+		log.CtxWarningf(ctx, "Skipped stale execution stats for a deleted or replaced invocation")
+		return nil
+	}
+	return r.flushExecutionsToOLAPDB(ctx, inv)
+}
+
+func (r *statsRecorder) currentInvocation(ctx context.Context, task *recordStatsTask) (*tables.Invocation, bool, error) {
+	inv := &tables.Invocation{}
+	err := r.env.GetDBHandle().NewQuery(ctx, "stats_recorder_get_invocation_incarnation").Raw(
+		`SELECT * FROM "Invocations" WHERE invocation_id = ? AND error_tracking_incarnation = ?`, task.id, task.incarnation,
+	).Take(inv)
+	if db.IsRecordNotFound(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return inv, true, nil
+}
+
+func (r *statsRecorder) flushExecutionsToOLAPDB(ctx context.Context, inv *tables.Invocation) error {
 	const batchSize = 50_000
 	var startIndex int64 = 0
 	var endIndex int64 = batchSize - 1
@@ -402,7 +479,7 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, task *
 	// complete Executions into clickhouse directly, in case the PublishOperation
 	// is received after the Invocation is complete.
 	storedInv := toStoredInvocation(inv)
-	if err = r.env.GetExecutionCollector().AddInvocation(ctx, storedInv); err != nil {
+	if err := r.env.GetExecutionCollector().AddInvocation(ctx, storedInv); err != nil {
 		log.CtxErrorf(ctx, "failed to write the complete Invocation to redis: %s", err)
 	} else {
 		log.CtxInfo(ctx, "Successfully wrote invocation to redis")
@@ -453,6 +530,9 @@ func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, ij *invocationI
 }
 
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
+	r.mu.Lock()
+	r.queuedErrorBytes -= task.errorOccurrenceBytes
+	r.mu.Unlock()
 	start := time.Now()
 	defer func() {
 		metrics.StatsRecorderDuration.Observe(float64(time.Since(start).Microseconds()))
@@ -462,13 +542,27 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	// finalized, rather than relative to now. Otherwise each worker would be
 	// unnecessarily throttled.
 	time.Sleep(time.Until(task.createdAt.Add(*cacheStatsFinalizationDelay)))
-	ti := &tables.Invocation{InvocationID: task.invocationInfo.id, Attempt: task.invocationInfo.attempt}
+	ti := &tables.Invocation{
+		InvocationID:             task.invocationInfo.id,
+		Attempt:                  task.invocationInfo.attempt,
+		ErrorTrackingIncarnation: task.invocationInfo.incarnation,
+	}
 	ctx = log.EnrichContext(ctx, log.InvocationIDKey, task.invocationInfo.id)
 	if stats := hit_tracker.CollectCacheStats(ctx, r.env, task.invocationInfo.id); stats != nil {
 		fillInvocationFromCacheStats(stats, ti)
 	} else {
 		log.CtxInfo(ctx, "cache stats is not available.")
 	}
+	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
+	if err != nil {
+		log.CtxErrorf(ctx, "Failed to write cache stats to primaryDB: %s", err)
+		return
+	}
+	if !updated {
+		log.CtxWarningf(ctx, "Attempt %d of invocation pre-empted by a more recent attempt or invocation incarnation; skipping stale stats task.", task.invocationInfo.attempt)
+		return
+	}
+
 	if sc := hit_tracker.ScoreCard(ctx, r.env, task.invocationInfo.id); sc != nil {
 		scorecard.FillBESMetadata(sc, task.files)
 		if err := scorecard.Write(ctx, r.env, task.invocationInfo.id, task.invocationInfo.attempt, sc); err != nil {
@@ -480,13 +574,13 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		log.CtxWarningf(ctx, "Failed to ingest kythe sst: %s", err)
 	}
 
-	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)
-	if err != nil {
-		log.CtxErrorf(ctx, "Failed to write cache stats to primaryDB: %s", err)
-	}
-
 	if task.invocationStatus == inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS {
 		// only flush complete invocation to clickhouse.
+		if *features.ErrorTrackingEnabled && task.errorOccurrenceLoader != nil && r.env.GetOLAPDBHandle() != nil && *writeToOLAPDBEnabled {
+			artifactCtx := r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, task.invocationInfo.jwt)
+			task.errorOccurrences = task.errorOccurrenceLoader(artifactCtx)
+			task.errorOccurrenceLoader = nil
+		}
 		err = r.flushInvocationStatsToOLAPDB(ctx, task)
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to flush stats to clickhouse: %s", err)
@@ -498,13 +592,6 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	// the DB (since we won't retry the flush and we don't need these stats
 	// for any other purpose).
 	hit_tracker.CleanupCacheStats(ctx, r.env, task.invocationInfo.id)
-	if !updated {
-		log.CtxWarningf(ctx, "Attempt %d of invocation pre-empted by more recent attempt, no cache stats flushed.", task.invocationInfo.attempt)
-		// Don't notify the webhook; the more recent attempt should trigger
-		// the notification when it is finalized.
-		return
-	}
-
 	// Once cache stats are populated, notify the onStatsRecorded channel in
 	// a non-blocking fashion.
 	select {
@@ -854,6 +941,16 @@ type EventChannel struct {
 	onClose                          func()
 	attempt                          uint64
 	groupIDForMetrics                string
+	errorOccurrences                 []*schema.ErrorOccurrence
+	errorOccurrenceFingerprintCounts map[string]int
+	errorOutputFiles                 map[*schema.ErrorOccurrence]*build_event_stream.File
+	testAttempts                     []*testAttempt
+	testSummaries                    map[testTargetKey]build_event_stream.TestStatus
+	testArtifactBytes                int
+	invocationIncarnation            string
+	liveErrorBytes                   *atomic.Int64
+	errorTrackingReserved            bool
+	errorTrackingBudgetRejected      bool
 
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
@@ -865,12 +962,65 @@ type EventChannel struct {
 	lastDBUpdateTime time.Time
 }
 
+type testTargetKey struct {
+	targetLabel     string
+	configurationID string
+}
+
+type testAttempt struct {
+	key            testTargetKey
+	run            int32
+	shard          int32
+	attempt        int32
+	status         build_event_stream.TestStatus
+	statusDetails  string
+	cachedLocally  bool
+	cachedRemotely bool
+	strategy       string
+	exitCode       int32
+	sequenceNumber int64
+	eventTimeUsec  int64
+	testXML        *build_event_stream.File
+	testLog        *build_event_stream.File
+	artifactBytes  int
+}
+
 func (e *EventChannel) Context() context.Context {
 	return e.ctx
 }
 
 func (e *EventChannel) Close() {
+	e.releaseErrorTrackingReservation()
 	e.onClose()
+}
+
+func (e *EventChannel) reserveErrorTracking() bool {
+	if e.errorTrackingReserved {
+		return true
+	}
+	if e.errorTrackingBudgetRejected || e.liveErrorBytes == nil {
+		return false
+	}
+	for {
+		used := e.liveErrorBytes.Load()
+		if used+liveErrorStreamReservation > maxLiveErrorBytes {
+			e.errorTrackingBudgetRejected = true
+			alert.UnexpectedEvent("error_tracking_live_byte_budget_exceeded", "Dropping error tracking collection for a live BES stream because the global live-state byte budget is full.")
+			return false
+		}
+		if e.liveErrorBytes.CompareAndSwap(used, used+liveErrorStreamReservation) {
+			e.errorTrackingReserved = true
+			return true
+		}
+	}
+}
+
+func (e *EventChannel) releaseErrorTrackingReservation() {
+	if !e.errorTrackingReserved || e.liveErrorBytes == nil {
+		return
+	}
+	e.liveErrorBytes.Add(-liveErrorStreamReservation)
+	e.errorTrackingReserved = false
 }
 
 func (e *EventChannel) FinalizeInvocation(iid string) error {
@@ -945,9 +1095,143 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 		e.statusReporter.ReportDisconnect(ctx)
 	}
 
-	e.statsRecorder.Enqueue(ctx, e.beValues)
+	var errorOccurrenceLoader func(context.Context) []*schema.ErrorOccurrence
+	var errorOccurrenceBytes int64
+	if *features.ErrorTrackingEnabled {
+		errorFinalizer := e.snapshotErrorFinalizer()
+		errorOccurrenceLoader = func(backgroundCtx context.Context) []*schema.ErrorOccurrence {
+			return errorFinalizer.finalizeErrorOccurrences(backgroundCtx, iid)
+		}
+		errorOccurrenceBytes = errorFinalizer.retainedErrorBytes()
+	}
+	e.statsRecorder.Enqueue(ctx, e.beValues, e.invocationIncarnation, errorOccurrenceLoader, errorOccurrenceBytes)
 	log.CtxInfof(ctx, "Finalized invocation in primary DB and enqueued for stats recording (status: %s)", invocation.GetInvocationStatus())
 	return nil
+}
+
+// snapshotErrorFinalizer copies only the bounded error-tracking state needed
+// by the stats worker. Artifact reads must not delay BES acknowledgements.
+func (e *EventChannel) snapshotErrorFinalizer() *EventChannel {
+	// Only final user-visible candidates need to cross the queue boundary. This
+	// caps retained diagnostics at roughly 400 KiB per queued invocation rather
+	// than retaining the raw 1,000-occurrence collection buffer.
+	rootCandidates := error_tracking.RootOccurrences(e.errorOccurrences)
+	candidates := make([]*schema.ErrorOccurrence, 0, min(len(rootCandidates), error_tracking.MaxOccurrencesPerInvocation))
+	selected := make(map[*schema.ErrorOccurrence]struct{}, error_tracking.MaxOccurrencesPerInvocation)
+	seenFingerprints := make(map[string]struct{}, error_tracking.MaxOccurrencesPerInvocation)
+	// Preserve one representative of every already-distinct fingerprint before
+	// spending the remaining budget on URI-backed candidates whose provisional
+	// fingerprints may change after enrichment.
+	for _, occurrence := range rootCandidates {
+		if _, ok := seenFingerprints[occurrence.Fingerprint]; ok {
+			continue
+		}
+		seenFingerprints[occurrence.Fingerprint] = struct{}{}
+		candidates = append(candidates, occurrence)
+		selected[occurrence] = struct{}{}
+		if len(candidates) == error_tracking.MaxOccurrencesPerInvocation {
+			break
+		}
+	}
+	for _, occurrence := range rootCandidates {
+		if len(candidates) == error_tracking.MaxOccurrencesPerInvocation {
+			break
+		}
+		if _, ok := selected[occurrence]; ok || e.errorOutputFiles[occurrence] == nil {
+			continue
+		}
+		candidates = append(candidates, occurrence)
+		selected[occurrence] = struct{}{}
+	}
+	occurrences := make([]*schema.ErrorOccurrence, 0, len(candidates))
+	outputFiles := make(map[*schema.ErrorOccurrence]*build_event_stream.File, len(candidates))
+	fingerprintCounts := make(map[string]int, len(candidates))
+	remainingArtifactBytes := maxTestArtifactBytes
+	for _, occurrence := range candidates {
+		clone := *occurrence
+		occurrences = append(occurrences, &clone)
+		fingerprintCounts[clone.Fingerprint]++
+		if file := e.errorOutputFiles[occurrence]; file != nil {
+			if retained := cloneQueuedTestArtifact(file, maxTestLogBytes, &remainingArtifactBytes); retained.GetUri() != "" || len(retained.GetContents()) > 0 {
+				outputFiles[&clone] = retained
+			}
+		}
+	}
+	testAttempts := make([]*testAttempt, 0, len(e.testAttempts))
+	for _, attempt := range e.testAttempts {
+		clone := *attempt
+		clone.testXML = cloneQueuedTestArtifact(attempt.testXML, maxTestXMLBytes, &remainingArtifactBytes)
+		clone.testLog = cloneQueuedTestArtifact(attempt.testLog, maxTestLogBytes, &remainingArtifactBytes)
+		testAttempts = append(testAttempts, &clone)
+	}
+	return &EventChannel{
+		env:                              e.env,
+		attempt:                          e.attempt,
+		errorOccurrences:                 occurrences,
+		errorOccurrenceFingerprintCounts: fingerprintCounts,
+		errorOutputFiles:                 outputFiles,
+		testAttempts:                     testAttempts,
+		testSummaries:                    maps.Clone(e.testSummaries),
+		testArtifactBytes:                maxTestArtifactBytes - remainingArtifactBytes,
+	}
+}
+
+func (e *EventChannel) retainedErrorBytes() int64 {
+	bytes := int64(e.testArtifactBytes)
+	for _, occurrence := range e.errorOccurrences {
+		bytes += int64(len(occurrence.Message) + len(occurrence.ErrorType) + len(occurrence.TargetLabel) + len(occurrence.ActionMnemonic))
+	}
+	for _, attempt := range e.testAttempts {
+		bytes += int64(len(attempt.key.targetLabel) + len(attempt.key.configurationID) + len(attempt.statusDetails) + len(attempt.strategy))
+	}
+	return bytes
+}
+
+func cloneQueuedTestArtifact(file *build_event_stream.File, perArtifactLimit int, remainingBytes *int) *build_event_stream.File {
+	if file == nil {
+		return nil
+	}
+	clone := &build_event_stream.File{}
+	clone.Name = retainArtifactString(file.GetName(), maxArtifactNameBytes, remainingBytes)
+	if uri := file.GetUri(); uri != "" {
+		if retained := retainArtifactString(uri, maxArtifactURIBytes, remainingBytes); retained != "" {
+			clone.File = &build_event_stream.File_Uri{Uri: retained}
+		}
+		return clone
+	}
+	contents := file.GetContents()
+	if len(contents) == 0 || *remainingBytes <= 0 {
+		return clone
+	}
+	retained := min(len(contents), perArtifactLimit+1, *remainingBytes)
+	clone.File = &build_event_stream.File_Contents{Contents: append([]byte(nil), contents[:retained]...)}
+	*remainingBytes -= retained
+	return clone
+}
+
+func retainArtifactString(value string, perValueLimit int, remainingBytes *int) string {
+	if value == "" || *remainingBytes <= 0 {
+		return ""
+	}
+	retained := min(len(value), perValueLimit, *remainingBytes)
+	value = boundUTF8(value, retained)
+	*remainingBytes -= len(value)
+	return value
+}
+
+func (e *EventChannel) finalizeErrorOccurrences(ctx context.Context, invocationID string) []*schema.ErrorOccurrence {
+	ctx, cancel := context.WithTimeout(ctx, testArtifactFetchTimeout)
+	defer cancel()
+	e.enrichErrorOccurrences(ctx)
+	for _, occurrence := range e.testErrorOccurrences(ctx, invocationID) {
+		e.addErrorOccurrence(occurrence, nil)
+	}
+	rootOccurrences := error_tracking.RootOccurrences(e.errorOccurrences)
+	uniqueOccurrences := error_tracking.DeduplicateOccurrences(rootOccurrences)
+	if len(uniqueOccurrences) > error_tracking.MaxOccurrencesPerInvocation {
+		uniqueOccurrences = uniqueOccurrences[:error_tracking.MaxOccurrencesPerInvocation]
+	}
+	return uniqueOccurrences
 }
 
 func fillInvocationFromCacheStats(cacheStats *capb.CacheStats, ti *tables.Invocation) {
@@ -1134,6 +1418,7 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		}
 		e.lastDBUpdateTime = e.env.GetClock().Now()
 		e.attempt = ti.Attempt
+		e.invocationIncarnation = ti.ErrorTrackingIncarnation
 		e.ctx = log.EnrichContext(e.ctx, "invocation_attempt", fmt.Sprintf("%d", e.attempt))
 		log.CtxInfof(e.ctx, "Created invocation %q, attempt %d", ti.InvocationID, ti.Attempt)
 		chunkFileSizeBytes := *chunkFileSizeBytes
@@ -1240,6 +1525,33 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	if err := e.beValues.AddEvent(event.GetBuildEvent()); err != nil {
 		return err
 	}
+	eventTimeUsec := time.Now().UnixMicro()
+	if event.GetEventTime() != nil {
+		eventTimeUsec = event.GetEventTime().AsTime().UnixMicro()
+	}
+	bazelEvent := event.GetBuildEvent()
+	if *features.ErrorTrackingEnabled {
+		switch bazelEvent.GetPayload().(type) {
+		case *build_event_stream.BuildEvent_TestResult:
+			if result := bazelEvent.GetTestResult(); result != nil && result.GetStatus() != build_event_stream.TestStatus_PASSED && result.GetStatus() != build_event_stream.TestStatus_FLAKY && result.GetStatus() != build_event_stream.TestStatus_NO_STATUS && e.reserveErrorTracking() {
+				e.collectTestAttempt(bazelEvent, event.GetSequenceNumber(), eventTimeUsec)
+			}
+		case *build_event_stream.BuildEvent_TestSummary:
+			if e.errorTrackingReserved {
+				e.collectTestSummary(bazelEvent)
+			}
+		default:
+			occurrence := error_tracking.ExtractOccurrence(bazelEvent, iid, e.attempt, event.GetSequenceNumber(), eventTimeUsec)
+			if occurrence != nil && e.reserveErrorTracking() {
+				output, file := errorOutput(bazelEvent)
+				error_tracking.EnrichOccurrence(occurrence, sanitizeErrorOutput(output))
+				if output != "" {
+					file = nil
+				}
+				e.addErrorOccurrence(occurrence, file)
+			}
+		}
+	}
 
 	switch p := event.GetBuildEvent().GetPayload().(type) {
 	case *build_event_stream.BuildEvent_StructuredCommandLine:
@@ -1335,7 +1647,11 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	// got disconnected.
 	updatePeriod := e.env.GetInvocationDB().GetInvocationReconnectWindow() / 2
 	if e.env.GetClock().Since(e.lastDBUpdateTime) >= updatePeriod {
-		ti := &tables.Invocation{InvocationID: iid, Attempt: e.attempt}
+		ti := &tables.Invocation{
+			InvocationID:             iid,
+			Attempt:                  e.attempt,
+			ErrorTrackingIncarnation: e.invocationIncarnation,
+		}
 		if updated, err := e.env.GetInvocationDB().UpdateInvocation(e.ctx, ti); err != nil {
 			log.CtxErrorf(e.ctx, "Error updating invocation row while streaming events: %s", err)
 			return status.UnavailableErrorf("write periodic metadata update: %s", err)
@@ -1348,6 +1664,503 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 	}
 
 	return nil
+}
+
+func errorOutput(event *build_event_stream.BuildEvent) (string, *build_event_stream.File) {
+	var candidates []*build_event_stream.File
+	switch payload := event.GetPayload().(type) {
+	case *build_event_stream.BuildEvent_Action:
+		candidates = []*build_event_stream.File{payload.Action.GetStderr(), payload.Action.GetStdout()}
+	case *build_event_stream.BuildEvent_TestResult:
+		for _, file := range payload.TestResult.GetTestActionOutput() {
+			if strings.HasSuffix(file.GetName(), "test.log") {
+				candidates = append(candidates, file)
+			}
+		}
+	}
+	for _, file := range candidates {
+		if len(file.GetContents()) > 0 {
+			contents := file.GetContents()
+			// Inline action output is client-controlled and processed synchronously
+			// on the BES stream. Bound it before conversion, UTF-8 repair, redaction,
+			// and fingerprinting. Invalid UTF-8 may expand during repair, but this
+			// keeps that expansion bounded by a small multiple of MaxMessageBytes.
+			contents = contents[:min(len(contents), error_tracking.MaxMessageBytes)]
+			return string(contents), nil
+		}
+	}
+	for _, file := range candidates {
+		if file.GetUri() != "" {
+			return "", file
+		}
+	}
+	return "", nil
+}
+
+func (e *EventChannel) collectTestAttempt(event *build_event_stream.BuildEvent, sequenceNumber, eventTimeUsec int64) {
+	id := event.GetId().GetTestResult()
+	result := event.GetTestResult()
+	if id == nil || result == nil {
+		return
+	}
+	status := result.GetStatus()
+	if status == build_event_stream.TestStatus_PASSED || status == build_event_stream.TestStatus_FLAKY || status == build_event_stream.TestStatus_NO_STATUS {
+		return
+	}
+	attempt := &testAttempt{
+		key: testTargetKey{
+			targetLabel:     retainTestMetadata(id.GetLabel(), maxTestTargetBytes),
+			configurationID: retainTestMetadata(id.GetConfiguration().GetId(), maxTestConfigurationBytes),
+		},
+		run:            id.GetRun(),
+		shard:          id.GetShard(),
+		attempt:        id.GetAttempt(),
+		status:         status,
+		statusDetails:  retainTestMetadata(result.GetStatusDetails(), maxTestStatusDetailsBytes),
+		cachedLocally:  result.GetCachedLocally(),
+		cachedRemotely: result.GetExecutionInfo().GetCachedRemotely(),
+		strategy:       retainTestMetadata(result.GetExecutionInfo().GetStrategy(), maxTestStrategyBytes),
+		exitCode:       result.GetExecutionInfo().GetExitCode(),
+		sequenceNumber: sequenceNumber,
+		eventTimeUsec:  eventTimeUsec,
+	}
+	replaceIndex := -1
+	if len(e.testAttempts) >= maxTestAttemptsPerInvocation {
+		// Preserve a later distinct terminal candidate by replacing an older
+		// duplicate attempt from the same target/configuration family.
+		counts := make(map[testTargetKey]int, len(e.testAttempts))
+		for _, existing := range e.testAttempts {
+			counts[existing.key]++
+		}
+		for i, existing := range e.testAttempts {
+			if counts[existing.key] > 1 {
+				replaceIndex = i
+				break
+			}
+		}
+		if replaceIndex == -1 {
+			// Decide the drop before cloning or charging any unretained artifact.
+			return
+		}
+		e.testArtifactBytes = max(0, e.testArtifactBytes-e.testAttempts[replaceIndex].artifactBytes)
+	}
+	for _, file := range result.GetTestActionOutput() {
+		remainingBytes := maxTestArtifactBytes - e.testArtifactBytes
+		switch path.Base(file.GetName()) {
+		case "test.xml":
+			if attempt.testXML == nil {
+				attempt.testXML = cloneQueuedTestArtifact(file, maxTestXMLBytes, &remainingBytes)
+				attempt.artifactBytes += retainedArtifactBytes(attempt.testXML)
+			}
+		case "test.log":
+			if attempt.testLog == nil {
+				attempt.testLog = cloneQueuedTestArtifact(file, maxTestLogBytes, &remainingBytes)
+				attempt.artifactBytes += retainedArtifactBytes(attempt.testLog)
+			}
+		}
+		e.testArtifactBytes = maxTestArtifactBytes - remainingBytes
+	}
+	if replaceIndex >= 0 {
+		e.testAttempts[replaceIndex] = attempt
+		return
+	}
+	e.testAttempts = append(e.testAttempts, attempt)
+}
+
+func (e *EventChannel) collectTestSummary(event *build_event_stream.BuildEvent) {
+	id := event.GetId().GetTestSummary()
+	summary := event.GetTestSummary()
+	if id == nil || summary == nil {
+		return
+	}
+	key := testTargetKey{
+		targetLabel:     retainTestMetadata(id.GetLabel(), maxTestTargetBytes),
+		configurationID: retainTestMetadata(id.GetConfiguration().GetId(), maxTestConfigurationBytes),
+	}
+	finalStatus := summary.GetOverallStatus()
+	if finalStatus == build_event_stream.TestStatus_PASSED || finalStatus == build_event_stream.TestStatus_FLAKY {
+		retained := e.testAttempts[:0]
+		for _, attempt := range e.testAttempts {
+			if attempt.key == key {
+				e.testArtifactBytes = max(0, e.testArtifactBytes-attempt.artifactBytes)
+				continue
+			}
+			retained = append(retained, attempt)
+		}
+		e.testAttempts = retained
+		delete(e.testSummaries, key)
+		return
+	}
+	for _, attempt := range e.testAttempts {
+		if attempt.key == key {
+			e.testSummaries[key] = finalStatus
+			return
+		}
+	}
+}
+
+func retainTestMetadata(value string, maxBytes int) string {
+	return strings.Clone(boundUTF8(value, maxBytes))
+}
+
+type testArtifacts struct {
+	xml []byte
+	log []byte
+}
+
+func (e *EventChannel) testErrorOccurrences(ctx context.Context, invocationID string) []*schema.ErrorOccurrence {
+	if len(e.testAttempts) == 0 {
+		return nil
+	}
+	cacheURL, _ := url.Parse(cache_api_url.String())
+	fetchCtx, cancel := context.WithTimeout(ctx, testArtifactFetchTimeout)
+	defer cancel()
+
+	artifacts := make([]testArtifacts, len(e.testAttempts))
+	var aggregateBytes atomic.Int64
+	group, groupCtx := errgroup.WithContext(fetchCtx)
+	group.SetLimit(8)
+	for i, attempt := range e.testAttempts {
+		finalStatus, ok := e.testSummaries[attempt.key]
+		if ok && (finalStatus == build_event_stream.TestStatus_PASSED || finalStatus == build_event_stream.TestStatus_FLAKY) {
+			continue
+		}
+		group.Go(func() error {
+			artifacts[i].xml, _ = e.readTestArtifact(groupCtx, cacheURL, attempt.testXML, maxTestXMLBytes, false, &aggregateBytes)
+			artifacts[i].log, _ = e.readTestArtifact(groupCtx, cacheURL, attempt.testLog, maxTestLogBytes, true, &aggregateBytes)
+			return nil
+		})
+	}
+	_ = group.Wait()
+
+	var occurrences []*schema.ErrorOccurrence
+	limits := junit.DefaultLimits()
+	limits.MaxInputBytes = maxTestXMLBytes
+	for i, attempt := range e.testAttempts {
+		finalStatus := attempt.status
+		if status, ok := e.testSummaries[attempt.key]; ok {
+			if status == build_event_stream.TestStatus_PASSED || status == build_event_stream.TestStatus_FLAKY {
+				continue
+			}
+			finalStatus = status
+		}
+		cases, err := junit.Parse(bytes.NewReader(artifacts[i].xml), limits)
+		if (err == nil || errors.Is(err, junit.ErrResultLimit)) && len(cases) > 0 {
+			for _, testCase := range leafFailedTestCases(cases) {
+				for _, failure := range testCase.Failures {
+					fingerprintFailure := error_tracking.TestFailure{
+						TargetLabel: attempt.key.targetLabel,
+						SuiteName:   testCase.SuiteName,
+						ClassName:   testCase.ClassName,
+						TestName:    testCase.Name,
+						Kind:        failure.Kind,
+						Type:        failure.Type,
+						Message:     sanitizeErrorOutput(failure.Message),
+						Body:        sanitizeErrorOutput(failure.Body),
+					}
+					fingerprint, _ := error_tracking.TestFailureFingerprint(fingerprintFailure)
+					message := boundedTestMessage(fingerprintFailure.Message, fingerprintFailure.Body)
+					if message == "" {
+						message = boundedTestMessage(testCase.Name, failure.Type, failure.Kind)
+					}
+					occurrences = append(occurrences, e.newTestOccurrence(invocationID, attempt, &schema.ErrorOccurrence{
+						Fingerprint:           fingerprint,
+						ErrorType:             "test/" + finalStatus.String() + "/" + failure.Kind,
+						Message:               message,
+						FingerprintVersion:    error_tracking.TestFingerprintVersion,
+						FingerprintSource:     "test_xml",
+						FingerprintConfidence: "high",
+						TestSuite:             boundUTF8(testCase.SuiteName, 1024),
+						TestClass:             boundUTF8(testCase.ClassName, 1024),
+						TestName:              boundUTF8(testCase.Name, 1024),
+						TestFailureKind:       boundUTF8(failure.Kind, 64),
+						TestFailureType:       boundUTF8(failure.Type, 1024),
+					}))
+				}
+			}
+			continue
+		}
+
+		message := boundedTestMessage(string(artifacts[i].log))
+		if message == "" {
+			message = boundedTestMessage(attempt.statusDetails)
+		}
+		if message == "" {
+			message = fmt.Sprintf("test %s finished with status %s", attempt.key.targetLabel, finalStatus)
+		}
+		fingerprint, _ := error_tracking.TestFallbackFingerprint(attempt.key.targetLabel, finalStatus.String(), message)
+		occurrences = append(occurrences, e.newTestOccurrence(invocationID, attempt, &schema.ErrorOccurrence{
+			Fingerprint:           fingerprint,
+			ErrorType:             "test/" + finalStatus.String(),
+			Message:               message,
+			FingerprintVersion:    error_tracking.TestFallbackFingerprintVersion,
+			FingerprintSource:     "test_result_fallback",
+			FingerprintConfidence: "low",
+		}))
+	}
+	return occurrences
+}
+
+// Some runners (notably rules_go) report a generic failed parent testcase in
+// addition to its failed subtests. Keep a parent with its own diagnostic, but
+// suppress a generic aggregate so one underlying assertion is not presented as
+// both a parent issue and a child issue.
+func leafFailedTestCases(cases []junit.TestCase) []junit.TestCase {
+	result := make([]junit.TestCase, 0, len(cases))
+	for i, candidate := range cases {
+		hasFailedChild := false
+		for j, other := range cases {
+			if i == j || candidate.SuiteName != other.SuiteName || candidate.ClassName != other.ClassName {
+				continue
+			}
+			if candidate.Name != "" && strings.HasPrefix(other.Name, candidate.Name+"/") {
+				hasFailedChild = true
+				break
+			}
+		}
+		if hasFailedChild && isGenericAggregateFailure(candidate.Failures) {
+			continue
+		}
+		result = append(result, candidate)
+	}
+	return result
+}
+
+func isGenericAggregateFailure(failures []junit.Failure) bool {
+	if len(failures) == 0 {
+		return false
+	}
+	for _, failure := range failures {
+		if !isGenericAggregateText(failure.Message) || !isGenericAggregateText(failure.Body) {
+			return false
+		}
+		failureType := strings.Trim(strings.ToLower(strings.TrimSpace(failure.Type)), ".:")
+		if failureType != "" && failureType != "failure" && failureType != "error" {
+			return false
+		}
+	}
+	return true
+}
+
+func isGenericAggregateText(value string) bool {
+	value = strings.Trim(strings.ToLower(strings.TrimSpace(value)), ".:")
+	switch value {
+	case "", "failed", "failure", "aggregate failed", "aggregate failure", "test failed", "test failure":
+		return true
+	default:
+		return false
+	}
+}
+
+func (e *EventChannel) newTestOccurrence(invocationID string, attempt *testAttempt, occurrence *schema.ErrorOccurrence) *schema.ErrorOccurrence {
+	occurrence.EventTimeUsec = error_tracking.ClampEventTimeUsec(attempt.eventTimeUsec)
+	occurrence.InvocationID = invocationID
+	occurrence.Attempt = e.attempt
+	occurrence.SequenceNumber = attempt.sequenceNumber
+	occurrence.TargetLabel = boundUTF8(attempt.key.targetLabel, 1024)
+	occurrence.ExitCode = attempt.exitCode
+	occurrence.TestRun = attempt.run
+	occurrence.TestShard = attempt.shard
+	occurrence.TestAttempt = attempt.attempt
+	occurrence.TestCachedLocally = attempt.cachedLocally
+	occurrence.TestCachedRemotely = attempt.cachedRemotely
+	occurrence.TestStrategy = boundUTF8(attempt.strategy, 128)
+	return occurrence
+}
+
+func (e *EventChannel) readTestArtifact(ctx context.Context, cacheURL *url.URL, file *build_event_stream.File, maxBytes int64, truncate bool, aggregateBytes *atomic.Int64) ([]byte, error) {
+	if file == nil {
+		return nil, status.NotFoundError("test artifact not present")
+	}
+	limit := maxBytes
+	if !truncate {
+		limit++
+	}
+	w := &boundedArtifactWriter{maxBytes: limit, aggregateBytes: aggregateBytes}
+	if contents := file.GetContents(); len(contents) > 0 {
+		if _, err := w.Write(contents); err != nil && !truncate {
+			return nil, err
+		}
+	} else {
+		u, err := url.Parse(file.GetUri())
+		if err != nil || u.Scheme != "bytestream" || cacheURL == nil || cacheURL.Host == "" || u.Host != cacheURL.Host || e.env.GetPooledByteStreamClient() == nil {
+			return nil, status.InvalidArgumentError("invalid test artifact URI")
+		}
+		if err := e.env.GetPooledByteStreamClient().StreamBytestreamFileChunk(ctx, u, 0, limit, w); err != nil && !(truncate && len(w.buf) > 0) {
+			return nil, err
+		}
+	}
+	if !truncate && int64(len(w.buf)) > maxBytes {
+		return nil, status.ResourceExhaustedError("test artifact exceeds size limit")
+	}
+	return w.buf, nil
+}
+
+type boundedArtifactWriter struct {
+	buf            []byte
+	maxBytes       int64
+	aggregateBytes *atomic.Int64
+}
+
+func (w *boundedArtifactWriter) Write(p []byte) (int, error) {
+	remaining := w.maxBytes - int64(len(w.buf))
+	if remaining <= 0 {
+		return 0, status.ResourceExhaustedError("test artifact exceeds size limit")
+	}
+	n := int64(len(p))
+	if n > remaining {
+		n = remaining
+	}
+	for {
+		used := w.aggregateBytes.Load()
+		available := int64(maxTestArtifactBytes) - used
+		if available <= 0 {
+			return 0, status.ResourceExhaustedError("test artifacts exceed aggregate size limit")
+		}
+		if n > available {
+			n = available
+		}
+		if w.aggregateBytes.CompareAndSwap(used, used+n) {
+			break
+		}
+	}
+	w.buf = append(w.buf, p[:n]...)
+	if int64(len(p)) > n {
+		return int(n), status.ResourceExhaustedError("test artifact exceeds size limit")
+	}
+	return int(n), nil
+}
+
+func boundedTestMessage(parts ...string) string {
+	nonBlank := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			nonBlank = append(nonBlank, part)
+		}
+	}
+	return boundUTF8(sanitizeErrorOutput(strings.Join(nonBlank, "\n")), error_tracking.MaxMessageBytes)
+}
+
+func boundUTF8(value string, maxBytes int) string {
+	value = strings.ToValidUTF8(value, "\uFFFD")
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := maxBytes
+	for end > 0 && !utf8.ValidString(value[:end]) {
+		end--
+	}
+	return value[:end]
+}
+
+func (e *EventChannel) addErrorOccurrence(occurrence *schema.ErrorOccurrence, file *build_event_stream.File) {
+	if len(e.errorOccurrences) < error_tracking.MaxRawOccurrencesPerInvocation {
+		e.errorOccurrences = append(e.errorOccurrences, occurrence)
+		e.errorOccurrenceFingerprintCounts[occurrence.Fingerprint]++
+		if file = e.retainErrorOutputFile(file); file != nil {
+			e.errorOutputFiles[occurrence] = file
+		}
+		return
+	}
+
+	// Once the raw candidate budget is full, replace an older duplicate so a
+	// repeated cascade cannot hide a later distinct root. URI-backed diagnostics
+	// have only a provisional fingerprint here, so replacing the oldest duplicate
+	// even when the incoming provisional fingerprint matches keeps recent output
+	// candidates available for enrichment at finalization.
+	replaceIndex := -1
+	for i, existing := range e.errorOccurrences {
+		if e.errorOccurrenceFingerprintCounts[existing.Fingerprint] > 1 {
+			replaceIndex = i
+			break
+		}
+	}
+	// Preserve terminal failures even in the pathological case where the raw
+	// budget already contains only unique candidates.
+	if replaceIndex == -1 && isTerminalErrorOccurrence(occurrence) {
+		for i, existing := range e.errorOccurrences {
+			if !isTerminalErrorOccurrence(existing) {
+				replaceIndex = i
+				break
+			}
+		}
+	}
+	if replaceIndex == -1 {
+		return
+	}
+	replaced := e.errorOccurrences[replaceIndex]
+	e.testArtifactBytes = max(0, e.testArtifactBytes-retainedArtifactBytes(e.errorOutputFiles[replaced]))
+	delete(e.errorOutputFiles, replaced)
+	e.errorOccurrenceFingerprintCounts[replaced.Fingerprint]--
+	e.errorOccurrences[replaceIndex] = occurrence
+	e.errorOccurrenceFingerprintCounts[occurrence.Fingerprint]++
+	if file = e.retainErrorOutputFile(file); file != nil {
+		e.errorOutputFiles[occurrence] = file
+	}
+}
+
+func (e *EventChannel) retainErrorOutputFile(file *build_event_stream.File) *build_event_stream.File {
+	if file == nil {
+		return nil
+	}
+	remainingBytes := maxTestArtifactBytes - e.testArtifactBytes
+	retained := cloneQueuedTestArtifact(file, maxTestLogBytes, &remainingBytes)
+	e.testArtifactBytes = maxTestArtifactBytes - remainingBytes
+	if retained.GetUri() == "" && len(retained.GetContents()) == 0 {
+		return nil
+	}
+	return retained
+}
+
+func retainedArtifactBytes(file *build_event_stream.File) int {
+	if file == nil {
+		return 0
+	}
+	return len(file.GetName()) + len(file.GetUri()) + len(file.GetContents())
+}
+
+func isTerminalErrorOccurrence(occurrence *schema.ErrorOccurrence) bool {
+	return strings.HasPrefix(occurrence.ErrorType, "build/") || strings.HasPrefix(occurrence.ErrorType, "aborted/")
+}
+
+func sanitizeErrorOutput(output string) string {
+	output = strings.ToValidUTF8(output, "\uFFFD")
+	output = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\r' && r != '\t' {
+			return -1
+		}
+		return r
+	}, output)
+	return redact.RedactText(output)
+}
+
+func (e *EventChannel) enrichErrorOccurrences(ctx context.Context) {
+	if len(e.errorOutputFiles) == 0 || e.env.GetPooledByteStreamClient() == nil {
+		return
+	}
+	cacheURL, err := url.Parse(cache_api_url.String())
+	if err != nil || cacheURL.Host == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(8)
+	for occurrence, file := range e.errorOutputFiles {
+		group.Go(func() error {
+			u, err := url.Parse(file.GetUri())
+			if err != nil || u.Scheme != "bytestream" || u.Host != cacheURL.Host {
+				return nil
+			}
+			var output bytes.Buffer
+			if err := e.env.GetPooledByteStreamClient().StreamBytestreamFileChunk(groupCtx, u, 0, error_tracking.MaxMessageBytes, &output); err != nil {
+				return nil
+			}
+			error_tracking.EnrichOccurrence(occurrence, sanitizeErrorOutput(output.String()))
+			return nil
+		})
+	}
+	_ = group.Wait()
 }
 
 func shouldFlushImmediately(bazelBuildEvent *build_event_stream.BuildEvent) bool {
@@ -1706,6 +2519,7 @@ func (e *EventChannel) tableInvocationFromProto(p *inpb.Invocation, blobID strin
 
 	i := &tables.Invocation{}
 	i.InvocationID = p.GetInvocationId() // Required.
+	i.ErrorTrackingIncarnation = e.invocationIncarnation
 	i.InvocationUUID = uuid
 	i.Success = p.GetSuccess()
 	i.User = p.GetUser()
@@ -1763,18 +2577,19 @@ func GetStreamIdFromInvocationIdAndAttempt(iid string, attempt uint64) string {
 
 func toStoredInvocation(inv *tables.Invocation) *sipb.StoredInvocation {
 	return &sipb.StoredInvocation{
-		InvocationId:     inv.InvocationID,
-		User:             inv.User,
-		Host:             inv.Host,
-		Pattern:          inv.Pattern,
-		Role:             inv.Role,
-		BranchName:       inv.BranchName,
-		CommitSha:        inv.CommitSHA,
-		RepoUrl:          inv.RepoURL,
-		Command:          inv.Command,
-		InvocationStatus: inv.InvocationStatus,
-		Success:          inv.Success,
-		Tags:             inv.Tags,
+		InvocationId:             inv.InvocationID,
+		User:                     inv.User,
+		Host:                     inv.Host,
+		Pattern:                  inv.Pattern,
+		Role:                     inv.Role,
+		BranchName:               inv.BranchName,
+		CommitSha:                inv.CommitSHA,
+		RepoUrl:                  inv.RepoURL,
+		Command:                  inv.Command,
+		InvocationStatus:         inv.InvocationStatus,
+		Success:                  inv.Success,
+		Tags:                     inv.Tags,
+		ErrorTrackingIncarnation: inv.ErrorTrackingIncarnation,
 	}
 }
 

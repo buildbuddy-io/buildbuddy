@@ -153,6 +153,28 @@ func TestRedactPasswordsInURLs(t *testing.T) {
 			}}},
 		},
 		{
+			name: "redact passwords in target failure detail message",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Failed to load https://username:targetsecret@example.com/package",
+				},
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Completed{Completed: &bespb.TargetComplete{
+				FailureDetail: &fdpb.FailureDetail{
+					Message: "Failed to load https://username:<REDACTED>@example.com/package",
+				},
+			}}},
+		},
+		{
+			name: "redact passwords in test status details",
+			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestResult{TestResult: &bespb.TestResult{
+				StatusDetails: "Failed to load https://username:testsecret@example.com/package",
+			}}},
+			expected: &bespb.BuildEvent{Payload: &bespb.BuildEvent_TestResult{TestResult: &bespb.TestResult{
+				StatusDetails: "Failed to load https://username:<REDACTED>@example.com/package",
+			}}},
+		},
+		{
 			name: "redact passwords in urls in action failure detail message",
 			event: &bespb.BuildEvent{Payload: &bespb.BuildEvent_Action{Action: &bespb.ActionExecuted{
 				FailureDetail: &fdpb.FailureDetail{

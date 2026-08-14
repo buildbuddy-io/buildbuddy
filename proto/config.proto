@@ -208,6 +208,9 @@ message FrontendConfig {
   // enabled.
   optional bool group_membership_requests_enabled = 67;
 
+  // Whether the BES-derived error tracking UI is enabled.
+  bool error_tracking_enabled = 71;
+
   // Whether usage alerts are enabled.
   bool usage_alerts_enabled = 68;
 

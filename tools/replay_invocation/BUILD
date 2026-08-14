@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "replay_invocation_lib",
@@ -10,6 +10,7 @@ go_library(
         "//proto:build_events_go_proto",
         "//proto:invocation_go_proto",
         "//proto:publish_build_event_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/backends/blobstore",
         "//server/backends/chunkstore",
         "//server/build_event_protocol/accumulator",
@@ -24,6 +25,7 @@ go_library(
         "//server/util/log",
         "//server/util/proto",
         "//server/util/protofile",
+        "//server/util/redact",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
@@ -38,4 +40,17 @@ go_binary(
     name = "replay_invocation",
     embed = [":replay_invocation_lib"],
     visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "replay_invocation_test",
+    srcs = ["replay_invocation_test.go"],
+    embed = [":replay_invocation_lib"],
+    deps = [
+        "//proto:build_event_stream_go_proto",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
+        "//server/util/junit",
+        "//server/util/redact",
+    ],
 )

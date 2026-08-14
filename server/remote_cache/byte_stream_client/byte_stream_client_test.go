@@ -23,6 +23,38 @@ var (
 	tooManyFilesRunfilePath string
 )
 
+func TestCommitBoundedStreamAttemptDiscardsPartialFailure(t *testing.T) {
+	var dst bytes.Buffer
+	require.Error(t, commitBoundedStreamAttempt(16, &dst, func(w io.Writer) error {
+		_, err := w.Write([]byte("partial"))
+		require.NoError(t, err)
+		return io.ErrUnexpectedEOF
+	}))
+	require.Empty(t, dst.Bytes())
+
+	require.NoError(t, commitBoundedStreamAttempt(16, &dst, func(w io.Writer) error {
+		_, err := w.Write([]byte("complete"))
+		return err
+	}))
+	require.Equal(t, "complete", dst.String())
+}
+
+func TestCommitBoundedStreamAttemptRejectsOverrun(t *testing.T) {
+	var dst bytes.Buffer
+	err := commitBoundedStreamAttempt(4, &dst, func(w io.Writer) error {
+		_, err := w.Write([]byte("oversized"))
+		return err
+	})
+	require.Error(t, err)
+	require.Empty(t, dst.Bytes())
+}
+
+func TestTransactionalStreamBufferBoundDoesNotCoverLargeZIPEntries(t *testing.T) {
+	require.True(t, shouldBufferStreamAttempt(maxTransactionalStreamBytes))
+	require.False(t, shouldBufferStreamAttempt(maxTransactionalStreamBytes+1))
+	require.False(t, shouldBufferStreamAttempt(0))
+}
+
 func TestManifest_SomeFilesZip(t *testing.T) {
 	expected := &zipb.Manifest{
 		Entry: []*zipb.ManifestEntry{

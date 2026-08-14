@@ -174,3 +174,23 @@ func TestWhereInClause(t *testing.T) {
 	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
 	assert.Equal(t, []interface{}{1, 2, 3, 4}, qArgs)
 }
+
+func TestHavingClause(t *testing.T) {
+	q := query_builder.NewQuery("SELECT a, count(*) AS n FROM t")
+	// Add HAVING first to verify argument order still follows SQL clause order.
+	q.AddHavingClause("n > ?", 10)
+	q.AddWhereClause("a != ?", "hidden")
+	q.SetGroupBy("a")
+	q.SetOrderBy("n", false)
+
+	qStr, qArgs := q.Build()
+	expectedQueryStr := `
+		SELECT a, count(*) AS n FROM t
+		WHERE (a != ?)
+		GROUP BY a
+		HAVING (n > ?)
+		ORDER BY n DESC
+	`
+	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
+	assert.Equal(t, []interface{}{"hidden", 10}, qArgs)
+}
