@@ -47,6 +47,7 @@ import CacheProxiesComponent from "../cache_proxies/cache_proxies";
 import CliLoginComponent from "../cli_login/cli_login";
 import CodeSearchComponent from "../codesearch/codesearch";
 import ExecutorsComponent from "../executors/executors";
+import ErrorTrackingComponent from "../error_tracking/error_tracking";
 import OrgAccessDeniedComponent from "../org/org_access_denied";
 
 interface State {
@@ -71,6 +72,7 @@ capabilities.register("BuildBuddy Enterprise", true, [
   Path.settingsPath,
   Path.trendsPath,
   Path.targetsPath,
+  Path.errorTrackingPath,
   Path.executorsPath,
   Path.cacheProxiesPath,
   Path.tapPath,
@@ -236,6 +238,7 @@ export default class EnterpriseRootComponent extends React.Component {
     let orgAccessDenied = this.state.user && this.state.path === Path.orgAccessDeniedPath;
     let trends = this.state.user && this.state.path.startsWith("/trends");
     let targets = this.state.user && this.state.path.startsWith("/targets");
+    let errorTracking = this.state.user && this.state.path.startsWith("/errors");
     let usage = this.state.user && this.state.path.startsWith("/usage/");
     let auditLogs = this.state.user && this.state.path.startsWith("/audit-logs/");
     let executors = this.state.user && this.state.path.startsWith("/executors");
@@ -257,6 +260,7 @@ export default class EnterpriseRootComponent extends React.Component {
       !orgAccessDenied &&
       !trends &&
       !targets &&
+      !errorTracking &&
       !usage &&
       !executors &&
       !cacheProxies &&
@@ -426,6 +430,12 @@ export default class EnterpriseRootComponent extends React.Component {
                     </Suspense>
                   )}
                   {targets && this.state.user && <TargetsComponent user={this.state.user} search={this.state.search} />}
+                  {errorTracking && this.state.user && (
+                    <ErrorTrackingComponent
+                      search={this.state.search}
+                      enabled={capabilities.config.errorTrackingEnabled}
+                    />
+                  )}
                   {usage && this.state.user && <UsageComponent path={this.state.path} user={this.state.user} />}
                   {auditLogs && this.state.user && (
                     <AuditLogsComponent user={this.state.user} search={this.state.search} />

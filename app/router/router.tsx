@@ -235,6 +235,10 @@ class Router {
     this.navigateTo(Path.targetsPath);
   }
 
+  navigateToErrorTracking() {
+    this.navigateTo(Path.errorTrackingPath);
+  }
+
   navigateToTrends() {
     this.navigateTo(Path.trendsPath);
   }
@@ -666,6 +670,7 @@ export class Path {
   static reviewsPath = "/reviews/";
   static codesearchPath = "/search/";
   static targetsPath = "/targets/";
+  static errorTrackingPath = "/errors/";
 }
 
 export type TrendsChartId = "builds" | "duration" | "cache" | "cas" | "savings" | "build_time";
@@ -695,6 +700,7 @@ function getUnavailableMessage(matchedPath: string) {
     case Path.settingsPath:
     case Path.trendsPath:
     case Path.targetsPath:
+    case Path.errorTrackingPath:
     case Path.executorsPath:
     case Path.cacheProxiesPath:
     case Path.tapPath:

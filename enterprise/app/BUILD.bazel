@@ -35,6 +35,7 @@ genrule(
         "//enterprise/app/auditlogs:auditlogs.css",
         "//enterprise/app/cli_login:cli_login.css",
         "//enterprise/app/encryption:encryption.css",
+        "//enterprise/app/error_tracking:error_tracking.css",
         "//enterprise/app/history:history.css",
         "//enterprise/app/iprules:iprules.css",
         "//enterprise/app/org:org.css",

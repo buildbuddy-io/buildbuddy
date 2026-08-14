@@ -39,6 +39,7 @@ ts_library(
         "//enterprise/app/code",
         "//enterprise/app/code:code_v2",
         "//enterprise/app/codesearch",
+        "//enterprise/app/error_tracking",
         "//enterprise/app/executors",
         "//enterprise/app/group_search",
         "//enterprise/app/history",
