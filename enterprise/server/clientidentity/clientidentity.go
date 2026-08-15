@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/jonboulle/clockwork"
@@ -106,6 +107,7 @@ func New(clock clockwork.Clock) (*Service, error) {
 	if *additionalVerificationKey != "" {
 		verificationKeys = append(verificationKeys, []byte(*additionalVerificationKey))
 	}
+	log.Debugf("Client identity signing key is %d bytes; additional verification key is %d bytes", len(*signingKey), len(*additionalVerificationKey))
 	s := &Service{
 		signingKey:       []byte(*signingKey),
 		verificationKeys: verificationKeys,

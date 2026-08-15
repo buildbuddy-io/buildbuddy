@@ -12,6 +12,7 @@ go_library(
         "//server/real_environment",
         "//server/util/authutil",
         "//server/util/flag",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_jonboulle_clockwork//:clockwork",
