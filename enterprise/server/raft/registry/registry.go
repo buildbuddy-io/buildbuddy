@@ -249,14 +249,7 @@ func (s *StaticRegistry) LookupByNHID(nhid string) (*rfpb.ConnectionInfo, error)
 }
 
 // ResolveGRPC returns the gRPC address and the connection key of the specified node.
-func (n *StaticRegistry) ResolveGRPC(ctx context.Context, nhid string) (returnedAddr string, returnedErr error) {
-	ctx, spn := tracing.StartNamedSpan(ctx, "registry.StaticRegistry.ResolveGRPC") // nolint:SA4006
-
-	defer func() {
-		tracing.RecordErrorToSpan(spn, returnedErr)
-		spn.End()
-	}()
-
+func (n *StaticRegistry) ResolveGRPC(ctx context.Context, nhid string) (string, error) {
 	if a, ok := n.targetAddresses.Load(nhid); ok {
 		grpcAddr := a.(addresses).grpc
 		return grpcAddr, nil
@@ -560,12 +553,7 @@ func (d *DynamicNodeRegistry) Lookup(ctx context.Context, rangeID uint64, replic
 }
 
 // ResolveGRPC returns the gRPC address and the connection key of the specified node.
-func (d *DynamicNodeRegistry) ResolveGRPC(ctx context.Context, nhid string) (addr string, returnedErr error) {
-	ctx, spn := tracing.StartNamedSpan(ctx, "registry.DynamicNodeRegistry.ResolveGRPC") // nolint:SA4006
-	defer func() {
-		tracing.RecordErrorToSpan(spn, returnedErr)
-		spn.End()
-	}()
+func (d *DynamicNodeRegistry) ResolveGRPC(ctx context.Context, nhid string) (string, error) {
 	g, err := d.sReg.ResolveGRPC(ctx, nhid)
 	if strings.HasPrefix(status.Message(err), targetAddressUnknownErrorMsg) {
 		req := &rfpb.RegistryQueryRequest{

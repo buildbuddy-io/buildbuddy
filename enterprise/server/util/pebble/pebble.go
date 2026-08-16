@@ -758,6 +758,8 @@ func (mc *MetricsCollector) UpdateMetrics(m *Metrics, om Metrics, cacheName stri
 	}
 	metrics.PebbleCachePebbleBlockCacheRequestsCount.With(hitLabel).Add(float64(m.BlockCache.Hits - om.BlockCache.Hits))
 	metrics.PebbleCachePebbleBlockCacheRequestsCount.With(missLabel).Add(float64(m.BlockCache.Misses - om.BlockCache.Misses))
+	metrics.PebbleCachePebbleTableCacheRequestsCount.With(hitLabel).Add(float64(m.TableCache.Hits - om.TableCache.Hits))
+	metrics.PebbleCachePebbleTableCacheRequestsCount.With(missLabel).Add(float64(m.TableCache.Misses - om.TableCache.Misses))
 
 	// Write Stall metrics
 	count, dur := mc.WriteStallStats()

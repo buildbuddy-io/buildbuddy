@@ -33,13 +33,13 @@ import (
 	mrand "math/rand/v2"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -795,13 +795,6 @@ func (c *ociContainer) Create(ctx context.Context, workDir string) error {
 
 func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	args := []string{"exec", "--cwd=" + filepath.Join(c.execrootPath, cmd.GetWorkingDirectory())}
-	// Respect command env. Note, when setting any --env vars at all, it
-	// completely overrides the env from the bundle, rather than just adding
-	// to it. So we specify the complete env here, including the base env,
-	// image env, and command env.
-	for _, e := range baseEnv {
-		args = append(args, "--env="+e)
-	}
 	if c.lockedImage == nil {
 		return commandutil.ErrorResult(status.UnavailableError("exec called before pulling image"))
 	}
@@ -811,11 +804,14 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 	}
 	args = append(args, fmt.Sprintf("--user=%d:%d", user.UID, user.GID))
 
+	commandEnv := cmd.GetEnvironmentVariables()
 	cmd, err = withImageConfig(cmd, c.lockedImage.Image)
 	if err != nil {
 		return commandutil.ErrorResult(status.UnavailableErrorf("apply image config: %s", err))
 	}
-	for _, e := range cmd.GetEnvironmentVariables() {
+	// The bundle already contains the base and image environments. Pass only
+	// command env here; crun merges it with the bundle env and gives it precedence.
+	for _, e := range commandEnv {
 		args = append(args, fmt.Sprintf("--env=%s=%s", e.GetName(), e.GetValue()))
 	}
 	args = append(args, c.cid)
@@ -959,7 +955,7 @@ func (c *ociContainer) cleanupNetwork(ctx context.Context) error {
 }
 
 func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	return c.stats.TaskStats(), nil
+	return c.stats.BasicTaskStats(), nil
 }
 
 // Instruments an OCI runtime call with monitor() to ensure that resource usage
@@ -1054,7 +1050,7 @@ func (c *ociContainer) setupCgroup(ctx context.Context) error {
 	// Lease CPUs for task execution, and set cleanup function.
 	leaseID := uuid.New()
 	numaNode, leasedCPUs, cleanupFunc := c.env.GetCPULeaser().Acquire(c.milliCPU, leaseID)
-	log.CtxInfof(ctx, "Lease %s granted %+v cpus on node %d", leaseID, leasedCPUs, numaNode)
+	log.CtxDebugf(ctx, "Lease %s granted %+v cpus on node %d", leaseID, leasedCPUs, numaNode)
 	c.releaseCPUs = cleanupFunc
 	c.cgroupSettings.CpusetCpus = toInt32s(leasedCPUs)
 	c.cgroupSettings.NumaNode = proto.Int32(int32(numaNode))

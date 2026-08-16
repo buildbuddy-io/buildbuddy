@@ -60,7 +60,7 @@ export default class FlakyTargetChipComponent extends React.Component<Props, Sta
       const href = `${Path.tapPath}?${params}#flakes`;
       return (
         <OutlinedLinkButton href={href} title={title} className="flaky-target-chip">
-          <HelpCircle className="icon orange" /> Recently flaky
+          <HelpCircle className="orange" /> Recently flaky
         </OutlinedLinkButton>
       );
     }

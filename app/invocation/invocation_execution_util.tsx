@@ -13,10 +13,10 @@ const GRPC_STATUS_LABEL_BY_CODE: Record<number, string> = Object.fromEntries(
 );
 
 const STATUSES_BY_STAGE: Record<number, ExecutionStatus> = {
-  [ExecutionStage.Value.UNKNOWN]: { name: "Starting", icon: <RotateCw className="icon blue rotating" /> },
-  [ExecutionStage.Value.CACHE_CHECK]: { name: "Cache check", icon: <Package className="icon brown" /> },
-  [ExecutionStage.Value.QUEUED]: { name: "Queued", icon: <Clock className="icon" /> },
-  [ExecutionStage.Value.EXECUTING]: { name: "Executing", icon: <RotateCw className="icon blue rotating" /> },
+  [ExecutionStage.Value.UNKNOWN]: { name: "Starting", icon: <RotateCw className="blue rotating" /> },
+  [ExecutionStage.Value.CACHE_CHECK]: { name: "Cache check", icon: <Package className="brown" /> },
+  [ExecutionStage.Value.QUEUED]: { name: "Queued", icon: <Clock /> },
+  [ExecutionStage.Value.EXECUTING]: { name: "Executing", icon: <RotateCw className="blue rotating" /> },
   // COMPLETED is not included here because it depends on the gRPC status and exit code.
 };
 
@@ -33,16 +33,16 @@ export function getExecutionStatus(execution: execution_stats.Execution): Execut
         name: `Error (${
           execution.status?.code ? GRPC_STATUS_LABEL_BY_CODE[execution.status.code] || "UNKNOWN" : "UNKNOWN"
         })`,
-        icon: <AlertCircle className="icon red" />,
+        icon: <AlertCircle className="red" />,
       };
     }
     if (execution.exitCode !== 0) {
       return {
         name: `Failed (exit code ${execution.exitCode})`,
-        icon: <XCircle className="icon red" />,
+        icon: <XCircle className="red" />,
       };
     }
-    return { name: "Succeeded", icon: <CheckCircle className="icon green" /> };
+    return { name: "Succeeded", icon: <CheckCircle className="green" /> };
   }
 
   return STATUSES_BY_STAGE[execution.stage];

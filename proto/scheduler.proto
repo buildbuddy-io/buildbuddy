@@ -6,6 +6,7 @@ import "google/protobuf/timestamp.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
 import "proto/trace.proto";
+import "proto/upgrade.proto";
 
 package scheduler;
 
@@ -545,6 +546,17 @@ message ExecutionNode {
   // Ex. 7000
   int64 assignable_milli_cpu = 4;
 
+  // Assignable disk bytes in remote execution node, for task workspaces
+  // (buildroots). Derived from the capacity of the filesystem holding the build
+  // root, scaled by executor.disk_capacity_ratio, or set explicitly via
+  // executor.disk_bytes.
+  //
+  // A value of 0 means the executor could not report a disk capacity (e.g. an
+  // older executor, or failed detection), and disk must not be used as a
+  // scheduling constraint for this node.
+  // Ex. 107374182400
+  int64 assignable_disk_bytes = 24;
+
   // Assignable custom resources.
   repeated CustomResource assignable_custom_resources = 11;
 
@@ -591,8 +603,8 @@ message ExecutionNode {
   // The Xcode versions installed on this executor.
   repeated string xcode_versions = 16;
 
-  // The Xcode SDKs installed on this executor.
-  repeated string xcode_sdks = 17;
+  reserved 17;
+  reserved "xcode_sdks";
 
   // Whether the executor supports proactive task cancellation, which allows
   // cancelling queued requests for tasks that have already been completed by
@@ -611,6 +623,14 @@ message ExecutionNode {
 
   // Optional set of key-value labels identifying this executor.
   map<string, string> labels = 22;
+
+  // The Xcode Simulator runtimes installed on this executor.
+  repeated string xcode_simulator_runtimes = 23;
+
+  // The flags this executor was configured with (via the command line or
+  // config file), in "--name=value" form. Only flags set to non-default
+  // values are included, and the values of secret flags are redacted.
+  repeated string configured_flags = 25;
 }
 
 message GetExecutionNodesRequest {
@@ -633,6 +653,8 @@ message GetExecutionNodesResponse {
   }
 
   bool user_owned_executors_supported = 3;
+
+  upgrade.Prompt upgrade_prompt = 4;
 }
 
 // Persisted information about connected executors.

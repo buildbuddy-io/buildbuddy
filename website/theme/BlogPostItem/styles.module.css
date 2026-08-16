@@ -1,7 +1,8 @@
 h1,
 .blogPostTitle {
   font-size: 64px;
-  line-height: 72px;
+  line-height: 1.1em;
+  max-width: 80%;
   text-wrap: pretty;
 }
 
@@ -12,8 +13,8 @@ h1,
 }
 
 h1 {
-  font-size: 48px;
-  font-weight: 700;
+  font-size: 64px;
+  font-weight: 800;
   letter-spacing: -0.04em;
 }
 

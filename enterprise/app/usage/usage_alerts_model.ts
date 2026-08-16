@@ -108,6 +108,16 @@ export const USAGE_ALERTING_METRICS: UsageAlertingMetricMetadata[] = [
     label: "Linux CPU duration (Workflows)",
     unit: "duration_nanos",
   },
+  {
+    metric: UsageAlertingMetric.TOTAL_CUSTOMER_PROXY_DOWNLOAD_SIZE_BYTES,
+    label: "Total bytes downloaded from cache (Customer-managed proxy)",
+    unit: "bytes",
+  },
+  {
+    metric: UsageAlertingMetric.TOTAL_CUSTOMER_PROXY_UPLOAD_SIZE_BYTES,
+    label: "Total bytes uploaded to cache (Customer-managed proxy)",
+    unit: "bytes",
+  },
 ];
 
 export function usageAlertingMetricMetadata(metric?: UsageAlertingMetric): UsageAlertingMetricMetadata | undefined {

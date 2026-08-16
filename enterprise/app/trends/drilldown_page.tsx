@@ -31,6 +31,7 @@ import {
   encodeMetricUrlParam,
   encodeTargetLabelUrlParam,
   encodeWorkerUrlParam,
+  isSummableMetric,
   renderMetricValue,
   renderTotalValue,
 } from "./common";
@@ -40,6 +41,7 @@ const DD_SELECTED_METRIC_URL_PARAM: string = "ddMetric";
 const DD_SELECTED_AREA_URL_PARAM = "ddSelection";
 const DD_ZOOM_URL_PARAM: string = "ddZoom";
 const DD_SCALE_URL_PARAM: string = "ddScale";
+const DD_COLOR_URL_PARAM: string = "ddColor";
 const EMPTY_LABEL = "(empty)";
 
 function convertMetricUrlParam(param: string): MetricOption | undefined {
@@ -167,6 +169,12 @@ const METRIC_OPTIONS: MetricOption[] = [
     name: "Action cache misses",
     metric: stat_filter.Metric.create({
       invocation: stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC,
+    }),
+  },
+  {
+    name: "Action cache hits",
+    metric: stat_filter.Metric.create({
+      invocation: stat_filter.InvocationMetricType.ACTION_CACHE_HITS_INVOCATION_METRIC,
     }),
   },
   {
@@ -479,19 +487,23 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   componentDidUpdate(prevProps: Props) {
-    if (this.props.search != prevProps.search) {
-      const prevSearchWithoutSelection = new URLSearchParams(prevProps.search);
-      prevSearchWithoutSelection.delete(DD_SELECTED_AREA_URL_PARAM);
-      prevSearchWithoutSelection.sort();
+    const prevSearch = new URLSearchParams(prevProps.search);
+    prevSearch.delete(DD_COLOR_URL_PARAM);
+    prevSearch.sort();
 
-      const newSearchWithoutSelection = new URLSearchParams(this.props.search);
-      newSearchWithoutSelection.delete(DD_SELECTED_AREA_URL_PARAM);
-      newSearchWithoutSelection.sort();
+    const newSearch = new URLSearchParams(this.props.search);
+    newSearch.delete(DD_COLOR_URL_PARAM);
+    newSearch.sort();
+
+    if (newSearch.toString() != prevSearch.toString()) {
       this.selectedMetric =
         convertMetricUrlParam(this.props.search.get(DD_SELECTED_METRIC_URL_PARAM) || "") || METRIC_OPTIONS[0];
       this.currentHeatmapSelection = decodeHeatmapSelection(this.props.search.get(DD_SELECTED_AREA_URL_PARAM) || "");
       this.currentZoomFilters = decodeHeatmapSelection(this.props.search.get(DD_ZOOM_URL_PARAM) || "");
-      if (prevSearchWithoutSelection.toString() != newSearchWithoutSelection.toString()) {
+
+      prevSearch.delete(DD_SELECTED_AREA_URL_PARAM);
+      newSearch.delete(DD_SELECTED_AREA_URL_PARAM);
+      if (newSearch.toString() != prevSearch.toString()) {
         this.fetch();
       }
       this.fetchDrilldowns();
@@ -518,6 +530,14 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return this.props.search.get(DD_SCALE_URL_PARAM) === "log";
   }
 
+  canColorByTotal(): boolean {
+    return isSummableMetric(this.selectedMetric.metric);
+  }
+
+  colorByTotal(): boolean {
+    return this.canColorByTotal() && this.props.search.get(DD_COLOR_URL_PARAM) === "total";
+  }
+
   handleScaleChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const newScale = e.target.value;
     if ((newScale === "log") === this.isLogScale()) {
@@ -529,6 +549,13 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       ...Object.fromEntries(this.props.search.entries()),
       [DD_SCALE_URL_PARAM]: newScale,
       [DD_SELECTED_AREA_URL_PARAM]: "",
+    });
+  }
+
+  handleColorModeChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    router.updateParams({
+      ...Object.fromEntries(this.props.search.entries()),
+      [DD_COLOR_URL_PARAM]: e.target.value === "total" ? "total" : "",
     });
   }
 
@@ -638,11 +665,26 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
         this.navigateDimensionBarClick(encodeExitCodeUrlParam(originalLabel));
         return;
+      case stats.DrilldownType.OS_DRILLDOWN_TYPE:
+        this.navigateGenericFilterBarClick(`os:"${originalLabel}"`);
+        return;
+      case stats.DrilldownType.ARCH_DRILLDOWN_TYPE:
+        this.navigateGenericFilterBarClick(`arch:"${originalLabel}"`);
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
         return;
     }
+  }
+
+  navigateGenericFilterBarClick(newParam: string) {
+    let result = this.props.search.get("sq") ?? "";
+    if (result) {
+      result += " ";
+    }
+    result += newParam;
+    this.navigateForBarClick("sq", result);
   }
 
   navigateDimensionBarClick(newParam: string) {
@@ -682,6 +724,10 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "pool (execution)";
       case stats.DrilldownType.EXIT_CODE_DRILLDOWN_TYPE:
         return "exit code (execution)";
+      case stats.DrilldownType.ARCH_DRILLDOWN_TYPE:
+        return "arch (execution)";
+      case stats.DrilldownType.OS_DRILLDOWN_TYPE:
+        return "os (execution)";
       default:
         return "???";
     }
@@ -795,7 +841,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
 
     return (
       <div className="drilldown-page-zoom-summary zoomed">
-        <ZoomIn className="icon"></ZoomIn>
+        <ZoomIn></ZoomIn>
         {this.currentZoomFilters && (
           <div className="drilldown-page-zoom-filters">
             <div className="drilldown-page-zoom-filter-attr">
@@ -810,7 +856,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
           className="square drilldown-page-zoom-button"
           title={"Clear zoom"}
           onClick={() => this.handleClearZoom()}>
-          <X className="icon white" />
+          <X className="white" />
         </FilledButton>
       </div>
     );
@@ -941,6 +987,15 @@ export default class DrilldownPageComponent extends React.Component<Props, State
               <Option value="linear">Linear scale</Option>
               <Option value="log">Log scale</Option>
             </Select>
+            <Select
+              className="drilldown-page-select"
+              onChange={this.handleColorModeChange.bind(this)}
+              value={this.colorByTotal() ? "total" : "frequency"}>
+              <Option value="frequency">Color by frequency</Option>
+              <Option value="total" disabled={!this.canColorByTotal()}>
+                Color by total
+              </Option>
+            </Select>
             {this.renderZoomChip()}
           </div>
         </div>
@@ -956,6 +1011,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                 )}
                 <HeatmapComponent
                   heatmapData={this.state.heatmapData || stats.GetStatHeatmapResponse.create({})}
+                  colorByTotal={this.colorByTotal()}
                   logScale={this.isLogScale()}
                   metricBucketFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)}
                   metricBucketName={this.selectedMetric.name}

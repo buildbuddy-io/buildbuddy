@@ -10,6 +10,7 @@ go_library(
     deps = [
         "//enterprise/server/raft/client",
         "//enterprise/server/raft/events",
+        "//enterprise/server/raft/keys",
         "//enterprise/server/raft/listener",
         "//enterprise/server/raft/nodeliveness",
         "//enterprise/server/raft/rangelease",

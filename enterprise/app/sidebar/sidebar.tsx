@@ -7,7 +7,6 @@ import {
   Gauge,
   GitBranch,
   GitCommit,
-  Github,
   HardDrive,
   LayoutGrid,
   List,
@@ -28,6 +27,7 @@ import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Link, { LinkProps } from "../../../app/components/link/link";
+import { Github } from "../../../app/icons/github_lucide";
 import router, { Path } from "../../../app/router/router";
 import rpcService from "../../../app/service/rpc_service";
 import OrgPicker from "../org_picker/org_picker";
@@ -155,14 +155,14 @@ export default class SidebarComponent extends React.Component<Props, State> {
         </div>
         <div className="sidebar-body">
           <SidebarLink selected={this.isHomeSelected()} href={Path.home} title="All builds">
-            <List className="icon" />
+            <List />
             <span className="sidebar-item-text">All builds</span>
           </SidebarLink>
           <SidebarLink
             selected={this.isTrendsSelected() && this.props.tab != "#drilldown"}
             href={Path.trendsPath}
             title="Trends">
-            <BarChart2 className="icon" />
+            <BarChart2 />
             <span className="sidebar-item-text">Trends</span>
           </SidebarLink>
           {capabilities.config.trendsHeatmapEnabled && (
@@ -170,13 +170,13 @@ export default class SidebarComponent extends React.Component<Props, State> {
               selected={this.isTrendsSelected() && this.props.tab == "#drilldown"}
               href={Path.trendsPath + "#drilldown"}
               title="Drilldown">
-              <ZoomIn className="icon" />
+              <ZoomIn />
               <span className="sidebar-item-text">Drilldown</span>
             </SidebarLink>
           )}
           {capabilities.config.targetsPageEnabled && (
             <SidebarLink selected={this.isTargetsSelected()} href={Path.targetsPath} title="Targets">
-              <Target className="icon" />
+              <Target />
               <span className="sidebar-item-text">Targets</span>
             </SidebarLink>
           )}
@@ -185,7 +185,7 @@ export default class SidebarComponent extends React.Component<Props, State> {
               selected={this.isTapSelected() && this.props.tab != "#flakes"}
               href={Path.tapPath}
               title="Tests">
-              <LayoutGrid className="icon" />
+              <LayoutGrid />
               <span className="sidebar-item-text">Tests</span>
             </SidebarLink>
           )}
@@ -194,90 +194,90 @@ export default class SidebarComponent extends React.Component<Props, State> {
               selected={this.isTapSelected() && this.props.tab == "#flakes"}
               href={Path.tapPath + "#flakes"}
               title="Flakes">
-              <Snowflake className="icon" />
+              <Snowflake />
               <span className="sidebar-item-text">Flakes</span>
             </SidebarLink>
           )}
           <SidebarLink selected={this.isUsersSelected()} href="/#users" title="Users">
-            <Users className="icon" />
+            <Users />
             <span className="sidebar-item-text">Users</span>
           </SidebarLink>
           <SidebarLink selected={this.isReposSelected()} href="/#repos" title="Repos">
-            <Github className="icon" />
+            <Github />
             <span className="sidebar-item-text">Repos</span>
           </SidebarLink>
           <SidebarLink selected={this.isBranchesSelected()} href="/#branches" title="Branches">
-            <GitBranch className="icon" />
+            <GitBranch />
             <span className="sidebar-item-text">Branches</span>
           </SidebarLink>
           <SidebarLink selected={this.isCommitsSelected()} href="/#commits" title="Commits">
-            <GitCommit className="icon" />
+            <GitCommit />
             <span className="sidebar-item-text">Commits</span>
           </SidebarLink>
           <SidebarLink selected={this.isHostsSelected()} href="/#hosts" title="Hosts">
-            <HardDrive className="icon" />
+            <HardDrive />
             <span className="sidebar-item-text">Hosts</span>
           </SidebarLink>
           {router.canAccessExecutorsPage(this.props.user) && (
             <SidebarLink selected={this.isExecutorsSelected()} href={Path.executorsPath} title="Executors">
-              <Cloud className="icon" />
+              <Cloud />
               <span className="sidebar-item-text">Executors</span>
             </SidebarLink>
           )}
           {router.canAccessCacheProxiesPage(this.props.user) && (
             <SidebarLink selected={this.isCacheProxiesSelected()} href={Path.cacheProxiesPath} title="Cache Proxies">
-              <Network className="icon" />
+              <Network />
               <span className="sidebar-item-text">Cache Proxies</span>
             </SidebarLink>
           )}
           {router.canAccessWorkflowsPage() && (
             <SidebarLink selected={this.isWorkflowsSelected()} href={Path.workflowsPath} title="Workflows">
-              <PlayCircle className="icon" />
+              <PlayCircle />
               <span className="sidebar-item-text">Workflows</span>
             </SidebarLink>
           )}
           {capabilities.code && (
             <SidebarLink selected={this.isCodeSelected()} href={Path.codePath} title="Code">
-              <Code className="icon" />
+              <Code />
               <span className="sidebar-item-text">Code</span>
             </SidebarLink>
           )}
           {capabilities.config.codeReviewEnabled && (
             <SidebarLink selected={this.isReviewsSelected()} href={Path.reviewsPath} title="Review">
-              <MessageCircle className="icon" />
+              <MessageCircle />
               <span className="sidebar-item-text">Reviews</span>
             </SidebarLink>
           )}
           {capabilities.config.codeSearchEnabled && router.canAccessCodeSearchPage(this.props.user) && (
             <SidebarLink selected={this.isCodeSearchSelected()} href={Path.codesearchPath} title="Search">
-              <SearchCode className="icon" />
+              <SearchCode />
               <span className="sidebar-item-text">Search</span>
             </SidebarLink>
           )}
           <SidebarLink selected={this.isSetupSelected()} href={Path.setupPath} title="Quickstart">
-            <Terminal className="icon" />
+            <Terminal />
             <span className="sidebar-item-text">Quickstart</span>
           </SidebarLink>
 
           <SidebarLink selected={this.isSettingsSelected()} href={Path.settingsPath} title="Settings">
-            <Sliders className="icon" />
+            <Sliders />
             <span className="sidebar-item-text">Settings</span>
           </SidebarLink>
 
           {router.canAccessUsagePage(this.props.user) && (
             <SidebarLink selected={this.isUsageSelected()} href={Path.usagePath} title="Usage">
-              <Gauge className="icon" />
+              <Gauge />
               <span className="sidebar-item-text">Usage</span>
             </SidebarLink>
           )}
           {router.canAccessAuditLogsPage(this.props.user) && capabilities.config.auditLogsUiEnabled && (
             <SidebarLink selected={this.isAuditLogsSelected()} href={Path.auditLogsPath} title="Audit logs">
-              <Fingerprint className="icon" />
+              <Fingerprint />
               <span className="sidebar-item-text">Audit logs</span>
             </SidebarLink>
           )}
           <a className="sidebar-item" href="https://www.buildbuddy.io/docs/" target="_blank" title="Docs">
-            <BookOpen className="icon" />
+            <BookOpen />
             <span className="sidebar-item-text">Docs</span>
           </a>
           <div

@@ -17,6 +17,7 @@ go_library(
         "//proto:buildbuddy_service_go_proto",
         "//proto:command_line_go_proto",
         "//proto:execution_stats_go_proto",
+        "//proto:publish_build_event_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/build_event_publisher",
         "//server/nullauth",

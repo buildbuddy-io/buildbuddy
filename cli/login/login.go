@@ -33,6 +33,7 @@ const (
 	apiKeyRepoSetting = "api-key"
 	apiKeyHeader      = "remote_header=x-buildbuddy-api-key"
 	DefaultApiTarget  = "grpcs://remote.buildbuddy.io"
+	DefaultHTTPTarget = "https://app.buildbuddy.io"
 )
 
 var (
@@ -45,7 +46,7 @@ var (
 	noLaunchBrowser  = flags.Bool("no_launch_browser", false, "Never launch a browser window from this script.")
 	promptForBrowser = flags.Bool("prompt_for_browser", false, "Prompt before opening the browser. Has no effect if -no_launch_browser is set.")
 
-	loginURL  = flags.String("url", "https://app.buildbuddy.io", "Web URL for user to login")
+	loginURL  = flags.String("url", DefaultHTTPTarget, "Web URL for user to login")
 	apiTarget = flags.String("target", DefaultApiTarget, "BuildBuddy gRPC target")
 
 	usage = `

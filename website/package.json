@@ -40,10 +40,11 @@
       "last 1 safari version"
     ]
   },
+  "packageManager": "pnpm@11.8.0",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "11.7.0",
+      "version": "11.8.0",
       "onFail": "download"
     }
   }

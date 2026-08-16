@@ -19,6 +19,7 @@ go_library(
         "@com_google_cloud_go_storage//:storage",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@org_golang_google_api//googleapi",
+        "@org_golang_google_api//iterator",
         "@org_golang_google_api//option",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

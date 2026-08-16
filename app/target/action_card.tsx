@@ -110,7 +110,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
             className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${
               action?.success ? "card-success" : "card-failure"
             }`}>
-            <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+            <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
               {!this.state.cacheEnabled && (
                 <>
@@ -145,7 +145,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
         {action?.stdout?.uri && (
           <div className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")}`}>
-            <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+            <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
               {!this.state.cacheEnabled && (
                 <>
@@ -179,7 +179,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
 
         {(action?.failureDetail?.message?.length ?? 0) > 0 && (
           <div className={`card ${this.props.dark ? "dark" : "light-terminal"}`}>
-            <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+            <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
             <div className="content">
               <TerminalComponent
                 title={<div className="title">Failure Message</div>}
@@ -191,7 +191,7 @@ export default class ActionCardComponent extends React.Component<Props, State> {
         )}
 
         <div className={`card ${action?.success ? "card-success" : "card-failure"}`}>
-          <PlayCircle className="icon" />
+          <PlayCircle />
           <div className="content">
             <div className="title">{action?.label}</div>
             <div className="test-subtitle">

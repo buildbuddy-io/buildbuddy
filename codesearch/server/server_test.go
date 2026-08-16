@@ -468,4 +468,3 @@ func TestIncrementalIndexIgnoresUnparsableGoMod(t *testing.T) {
 	assert.Equal(t, "github.com/example/repo", storedModulePath(t, ctx, server, repo),
 		"an unparsable go.mod must not wipe the stored module path")
 }
-

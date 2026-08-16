@@ -149,10 +149,10 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(up{region=\"${region}\", job=\"cache-proxy\"})",
+              "expr": "sum by (job) (up{region=\"${region}\", job=~\"cache-proxy.*\"})",
               "hide": false,
               "interval": "",
-              "legendFormat": "Up",
+              "legendFormat": "{{job}} up",
               "queryType": "randomWalk",
               "refId": "A"
             },
@@ -173,10 +173,10 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=\"cache-proxy-autoscaler\"}",
+              "expr": "sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{region=\"${region}\", horizontalpodautoscaler=~\"cache-proxy.*autoscaler\"})",
               "hide": false,
               "instant": false,
-              "legendFormat": "Autoscaler target",
+              "legendFormat": "{{horizontalpodautoscaler}} target",
               "range": true,
               "refId": "C"
             }
@@ -273,7 +273,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (version, commit) (buildbuddy_version{region=\"${region}\", job=\"cache-proxy\"})",
+              "expr": "sum by (version, commit) (buildbuddy_version{region=\"${region}\", job=~\"cache-proxy.*\"})",
               "hide": false,
               "interval": "",
               "legendFormat": "{{version}} ({{commit}})",
@@ -373,7 +373,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\", job=\"cache-proxy\"} == 0)) by (pod_name, health_check_name)",
+              "expr": "sum(1 - (buildbuddy_health_check_status{region=\"${region}\", job=~\"cache-proxy.*\"} == 0)) by (pod_name, health_check_name)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -471,7 +471,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "sum(increase(kube_pod_container_status_restarts_total{region=\"${region}\", job=\"cache-proxy\"}[1m])) by (pod, container, exported_namespace) > 0",
+              "expr": "sum(increase(kube_pod_container_status_restarts_total{region=\"${region}\", job=~\"cache-proxy.*\"}[1m])) by (pod, container, exported_namespace) > 0",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -1275,7 +1275,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
+              "expr": "sum by (status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=~\"cache-proxy.*\"}[$window]))",
               "hide": false,
               "instant": false,
               "legendFormat": "{{status}}",
@@ -1387,7 +1387,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum by (le, status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=\"cache-proxy\"}[$window])))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, status) (rate(buildbuddy_proxy_remote_hit_tracker_requests_bucket{region=\"${region}\", job=~\"cache-proxy.*\"}[$window])))",
               "hide": false,
               "instant": false,
               "legendFormat": "{{status}}",
@@ -1514,7 +1514,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1527,7 +1527,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1540,7 +1540,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -1653,7 +1653,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1666,7 +1666,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1679,7 +1679,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -1792,7 +1792,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1805,7 +1805,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1818,7 +1818,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -1931,7 +1931,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -1944,7 +1944,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -1957,7 +1957,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2070,7 +2070,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2083,7 +2083,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2096,7 +2096,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2209,7 +2209,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2222,7 +2222,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2235,7 +2235,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2348,7 +2348,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2361,7 +2361,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=~\"cache-proxy.*\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2374,7 +2374,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}]))/sum(rate(buildbuddy_proxy_content_addressable_storage_requests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2487,7 +2487,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2500,7 +2500,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_write_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2513,7 +2513,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "(sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}])))/(sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}])))",
+              "expr": "(sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}])))/(sum(rate(buildbuddy_proxy_action_cache_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_bytes{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}])))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2626,7 +2626,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}]))",
               "interval": "",
               "legendFormat": "read {{cache_status}}",
               "queryType": "randomWalk",
@@ -2639,7 +2639,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op=\"BatchUpdateBlobs\"}[${window}]))",
+              "expr": "sum by (cache_status) (rate(buildbuddy_proxy_action_cache_write_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_write_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum by (cache_status) (rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op=\"BatchUpdateBlobs\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "write",
@@ -2652,7 +2652,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "(sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}])))/(sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=\"cache-proxy\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=\"cache-proxy\", op!=\"BatchUpdateBlobs\"}[${window}])))",
+              "expr": "(sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=~\"cache-proxy.*\", cache_status=\"hit\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\", cache_status=\"hit\"}[${window}])))/(sum(rate(buildbuddy_proxy_action_cache_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum(rate(buildbuddy_proxy_byte_stream_read_requests{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) + sum(rate(buildbuddy_proxy_content_addressable_storage_digests{region=\"${region}\", job=~\"cache-proxy.*\", op!=\"BatchUpdateBlobs\"}[${window}])))",
               "hide": false,
               "instant": false,
               "legendFormat": "read hit rate",
@@ -2765,7 +2765,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_started_total{region=\"${region}\", job=\"cache-proxy\",grpc_service=\"distributed_cache.DistributedCache\"}[${window}])) by (grpc_method)\n",
+              "expr": "sum(rate(grpc_server_started_total{region=\"${region}\", job=~\"cache-proxy.*\",grpc_service=\"distributed_cache.DistributedCache\"}[${window}])) by (grpc_method)\n",
               "interval": "",
               "legendFormat": "{{grpc_method}}",
               "queryType": "randomWalk",
@@ -2881,7 +2881,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -2892,7 +2892,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -2902,7 +2902,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -2912,7 +2912,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"GetMulti\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -3026,7 +3026,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -3037,7 +3037,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -3047,7 +3047,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -3057,7 +3057,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"FindMissing\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -3172,7 +3172,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -3183,7 +3183,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -3193,7 +3193,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -3203,7 +3203,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Write\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -3318,7 +3318,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -3329,7 +3329,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P95",
               "refId": "B"
@@ -3339,7 +3339,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
+              "expr": "histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (le)\n)",
               "interval": "",
               "legendFormat": "P50",
               "refId": "C"
@@ -3349,7 +3349,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=\"cache-proxy\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
+              "expr": "sum(rate(grpc_server_handled_total{region=\"${region}\", job=~\"cache-proxy.*\", grpc_service=\"distributed_cache.DistributedCache\", grpc_method=\"Read\"}[${window}])) by (grpc_service)",
               "interval": "",
               "legendFormat": "QPS",
               "refId": "D"
@@ -3465,7 +3465,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\"}[${window}])) by (status)\n",
+              "expr": "sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) by (status)\n",
               "interval": "",
               "legendFormat": "__auto",
               "queryType": "randomWalk",
@@ -3478,7 +3478,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\", status=\"hit\"}[${window}])) / sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))\n",
+              "expr": "sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=~\"cache-proxy.*\", status=\"hit\"}[${window}])) / sum(rate(buildbuddy_remote_cache_lookaside_cache_lookup_count{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))\n",
               "hide": false,
               "interval": "",
               "legendFormat": "hit_ratio",
@@ -3580,7 +3580,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}])))",
+              "expr": "histogram_quantile(0.99, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])))",
               "interval": "",
               "legendFormat": "{{eviction_reason}} P99",
               "queryType": "randomWalk",
@@ -3593,7 +3593,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}])))",
+              "expr": "histogram_quantile(0.95, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])))",
               "interval": "",
               "legendFormat": "{{eviction_reason}} P95",
               "range": true,
@@ -3605,7 +3605,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=\"cache-proxy\"}[${window}])))",
+              "expr": "histogram_quantile(0.5, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_bucket{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])))",
               "interval": "",
               "legendFormat": "{{eviction_reason}} P50",
               "range": true,
@@ -3617,7 +3617,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by(eviction_reason) (increase(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_sum{region=\"${region}\", job=\"cache-proxy\"}[${window}])) / sum by(eviction_reason) (increase(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by(eviction_reason) (increase(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_sum{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}])) / sum by(eviction_reason) (increase(buildbuddy_remote_cache_lookaside_cache_eviction_age_msec_count{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "{{eviction_reason}} avg",
@@ -3718,7 +3718,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by(status) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by(status) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_count{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "__auto",
               "queryType": "randomWalk",
@@ -3815,7 +3815,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", status=\"OK\"}[${window}])))",
+              "expr": "histogram_quantile(0.99, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", status=\"OK\"}[${window}])))",
               "interval": "",
               "legendFormat": "P99",
               "queryType": "randomWalk",
@@ -3828,7 +3828,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", status=\"OK\"}[${window}])))",
+              "expr": "histogram_quantile(0.95, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", status=\"OK\"}[${window}])))",
               "interval": "",
               "legendFormat": "P95",
               "range": true,
@@ -3840,7 +3840,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", status=\"OK\"}[${window}])))",
+              "expr": "histogram_quantile(0.5, sum by (le, eviction_reason) (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", status=\"OK\"}[${window}])))",
               "interval": "",
               "legendFormat": "P50",
               "range": true,
@@ -3852,7 +3852,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_sum{region=\"${region}\", job=\"cache-proxy\", status=\"OK\"}[${window}])) / sum (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_count{region=\"${region}\", job=\"cache-proxy\", status=\"OK\"}[${window}]))",
+              "expr": "sum (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_sum{region=\"${region}\", job=~\"cache-proxy.*\", status=\"OK\"}[${window}])) / sum (rate(buildbuddy_remote_cache_distributed_cache_backfill_latency_usec_count{region=\"${region}\", job=~\"cache-proxy.*\", status=\"OK\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "avg",
@@ -3969,7 +3969,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}/1e6) by (partition_id)",
+              "expr": "avg(buildbuddy_remote_cache_disk_cache_last_eviction_age_usec{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}/1e6) by (partition_id)",
               "instant": false,
               "interval": "",
               "legendFormat": "",
@@ -4058,7 +4058,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_added_file_size_bytes_bucket{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
+              "expr": "sum(increase(buildbuddy_remote_cache_disk_cache_added_file_size_bytes_bucket{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[$__interval])) by (le)",
               "format": "heatmap",
               "interval": "",
               "legendFormat": "{{le}}",
@@ -4162,7 +4162,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"cache-proxy\", cache_name=\"${cache_name}\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=\"cache-proxy\", cache_name=\"${cache_name}\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=\"cache-proxy\", cache_name=\"${cache_name}\"}) by (pod_name)",
+              "expr": "max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region=\"${region}\",job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region=\"${region}\",job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}) by (pod_name)",
               "interval": "",
               "legendFormat": "{{pod_name}}",
               "range": true,
@@ -4257,7 +4257,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=\"cache-proxy\", cache_name=\"${cache_name}\"}[10m])) by (pod_name, partition_id)",
+              "expr": "max(rate(buildbuddy_remote_cache_disk_cache_num_evictions{region=\"${region}\",job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[10m])) by (pod_name, partition_id)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -4352,7 +4352,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_resample_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_resample_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -4447,7 +4447,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_evict_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
+              "expr": "histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_evict_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[${window}])) by (le, partition_id))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -4577,7 +4577,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\", status=\"hit\"}[${window}]))/sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=~\"cache-proxy.*\", status=\"hit\"}[${window}]))/sum(rate(buildbuddy_remote_cache_tree_cache_lookup_count{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -4589,7 +4589,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"cache-proxy\", cache_event_type=\"hit\", cache_type=\"action_cache\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"cache-proxy\", cache_event_type=~\"hit|miss\", cache_type=\"action_cache\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=~\"cache-proxy.*\", cache_event_type=\"hit\", cache_type=\"action_cache\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=~\"cache-proxy.*\", cache_event_type=~\"hit|miss\", cache_type=\"action_cache\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -4602,7 +4602,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"cache-proxy\", cache_event_type=\"hit\", cache_type=\"cas\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=\"cache-proxy\", cache_event_type=~\"hit|miss\", cache_type=\"cas\"}[${window}]))",
+              "expr": "sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=~\"cache-proxy.*\", cache_event_type=\"hit\", cache_type=\"cas\"}[${window}]))/sum(rate(buildbuddy_remote_cache_events{region=\"${region}\", job=~\"cache-proxy.*\", cache_event_type=~\"hit|miss\", cache_type=\"cas\"}[${window}]))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -4702,7 +4702,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=\"cache-proxy\", cache_name=\"${cache_name}\"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=\"cache-proxy\", cache_name=\"${cache_name}\"}) by (pod_name, partition_id)",
+              "expr": "max(buildbuddy_remote_cache_disk_cache_partition_size_bytes{region=\"${region}\",job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}/buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"${region}\",job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}) by (pod_name, partition_id)",
               "interval": "",
               "legendFormat": "{{pod_name}} {{partition_id}}",
               "range": true,
@@ -4813,7 +4813,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "instant": false,
               "legendFormat": "__auto",
               "range": true,
@@ -4825,7 +4825,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -4838,7 +4838,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "1/histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[10m])) by (le))",
+              "expr": "1/histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[10m])) by (le))",
               "hide": false,
               "instant": false,
               "legendFormat": "__auto",
@@ -4934,7 +4934,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (compaction_type)\n",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_compact_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (compaction_type)\n",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5062,7 +5062,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress_bytes{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "in progress (bytes)",
               "range": true,
@@ -5074,7 +5074,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_in_progress{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "in progress (count)",
               "range": true,
@@ -5086,7 +5086,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"})",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_marked_files{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"})",
               "hide": false,
               "legendFormat": "marked files",
               "range": true,
@@ -5215,7 +5215,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}) by (pod_name)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}) by (pod_name)",
               "legendFormat": "{{pod_name}}",
               "range": true,
               "refId": "A"
@@ -5310,7 +5310,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", job=\"cache-proxy\", pebble_id=\"${cache_name}\"}[1m])) by (pebble_op)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_count{region=\"${region}\", job=~\"cache-proxy.*\", pebble_id=\"${cache_name}\"}[1m])) by (pebble_op)",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5405,7 +5405,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.50, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5499,7 +5499,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.95, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5593,7 +5593,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=\"cache-proxy\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
+              "expr": "histogram_quantile(0.99, sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_op_latency_usec_bucket{region=\"${region}\", job=~\"cache-proxy.*\", pebble_id=\"${cache_name}\"}[1m])) by (le,pebble_op))",
               "legendFormat": "__auto",
               "range": true,
               "refId": "A"
@@ -5703,7 +5703,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_num_files{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5800,7 +5800,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_size_bytes{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5897,7 +5897,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}) by (level)",
+              "expr": "sum(buildbuddy_remote_cache_pebble_cache_pebble_level_score{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -5994,7 +5994,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_in_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6091,7 +6091,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_ingested_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6188,7 +6188,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_moved_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6281,7 +6281,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_read_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6374,7 +6374,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_compacted_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6467,7 +6467,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_bytes_flushed_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6560,7 +6560,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_compacted_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6653,7 +6653,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_flushed_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6746,7 +6746,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6839,7 +6839,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", job=\"cache-proxy\", cache_name=\"${cache_name}\"}[1m])) by (level)",
+              "expr": "sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region=\"${region}\", job=~\"cache-proxy.*\", cache_name=\"${cache_name}\"}[1m])) by (level)",
               "legendFormat": "{{level}}",
               "range": true,
               "refId": "A"
@@ -6946,7 +6946,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_encryption_key_refresh_count{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_encryption_key_refresh_count{region=\"${region}\", job=~\"cache-proxy.*\"}))",
               "legendFormat": "Refreshes",
               "range": true,
               "refId": "A"
@@ -6957,7 +6957,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_encryption_key_refresh_failure_count{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_encryption_key_refresh_failure_count{region=\"${region}\", job=~\"cache-proxy.*\"}))",
               "hide": false,
               "instant": false,
               "legendFormat": "Refresh Failures",
@@ -7064,7 +7064,7 @@
           "targets": [
             {
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_encryption_encrypted_blob_count{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_encryption_encrypted_blob_count{region=\"${region}\", job=~\"cache-proxy.*\"}))",
               "legendFormat": "Encrypted Blobs",
               "range": true,
               "refId": "A"
@@ -7075,7 +7075,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_encryption_decrypted_blob_count{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_encryption_decrypted_blob_count{region=\"${region}\", job=~\"cache-proxy.*\"}))",
               "hide": false,
               "instant": false,
               "legendFormat": "Decrypted Blobs",
@@ -7088,7 +7088,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum(rate(buildbuddy_encryption_decryption_error_count{region=\"${region}\", job=\"cache-proxy\"}))",
+              "expr": "sum(rate(buildbuddy_encryption_decryption_error_count{region=\"${region}\", job=~\"cache-proxy.*\"}))",
               "hide": false,
               "instant": false,
               "legendFormat": "Decryption Errors",
@@ -7202,7 +7202,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (grpc_code) (rate(grpc_server_handled_total{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "{{grpc_code}}",
               "queryType": "randomWalk",
@@ -7300,7 +7300,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum by (grpc_service, grpc_method) (rate(grpc_server_handled_total{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (grpc_service, grpc_method) (rate(grpc_server_handled_total{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "/{{grpc_service}}/{{grpc_method}}",
               "queryType": "randomWalk",
@@ -7403,7 +7403,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=\"cache-proxy\"}[$window])))",
+              "expr": "histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region=\"${region}\", job=~\"cache-proxy.*\"}[$window])))",
               "interval": "",
               "legendFormat": "/{{grpc_service}}/{{grpc_method}}",
               "range": true,
@@ -7508,7 +7508,7 @@
                 "uid": "vm"
               },
               "exemplar": true,
-              "expr": "sum by (grpc_method, grpc_service) (rate(grpc_client_msg_sent_total{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (grpc_method, grpc_service) (rate(grpc_client_msg_sent_total{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "/{{grpc_service}}/{{grpc_method}}",
               "refId": "A"
@@ -7622,7 +7622,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region=\"${region}\", job=~\"cache-proxy.*\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
@@ -7725,7 +7725,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region=\"${region}\", job=~\"cache-proxy.*\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
@@ -7828,7 +7828,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region=\"${region}\", job=~\"cache-proxy.*\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
@@ -7931,7 +7931,7 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
+              "expr": "sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region=\"${region}\", job=~\"cache-proxy.*\"}[$window]))",
               "interval": "",
               "legendFormat": "/{{rpc_service}}/{{rpc_method}}",
               "range": true,
@@ -8058,7 +8058,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by(provider) (rate(buildbuddy_grpc_server_egress_bytes{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
+              "expr": "sum by(provider) (rate(buildbuddy_grpc_server_egress_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[$window]))",
               "legendFormat": "{{provider}}",
               "range": true,
               "refId": "A"
@@ -8169,7 +8169,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum by(provider) (rate(buildbuddy_grpc_server_ingress_bytes{region=\"${region}\", job=\"cache-proxy\"}[$window]))",
+              "expr": "sum by(provider) (rate(buildbuddy_grpc_server_ingress_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}[$window]))",
               "legendFormat": "{{provider}}",
               "range": true,
               "refId": "A"
@@ -8282,7 +8282,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=\"cache-proxy\"}) by (job, pod_name, namespace)",
+              "expr": "sum (go_memstats_heap_alloc_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}) by (job, pod_name, namespace)",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
@@ -8393,7 +8393,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (go_memstats_next_gc_bytes{region=\"${region}\", job=\"cache-proxy\"}) by (job, pod_name, namespace)",
+              "expr": "sum (go_memstats_next_gc_bytes{region=\"${region}\", job=~\"cache-proxy.*\"}) by (job, pod_name, namespace)",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
@@ -8494,7 +8494,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "avg_over_time((time() - sum by (job, pod_name, namespace)(go_memstats_last_gc_time_seconds{region=\"${region}\", job=\"cache-proxy\"}))[$__rate_interval])",
+              "expr": "avg_over_time((time() - sum by (job, pod_name, namespace)(go_memstats_last_gc_time_seconds{region=\"${region}\", job=~\"cache-proxy.*\"}))[$__rate_interval])",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
@@ -8594,7 +8594,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=\"cache-proxy\"}) by (job, pod_name, namespace)",
+              "expr": "sum (go_gc_duration_seconds{region=\"${region}\", quantile=\"0.5\",job=~\"cache-proxy.*\"}) by (job, pod_name, namespace)",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
@@ -8693,7 +8693,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (go_goroutines{region=\"${region}\", job=\"cache-proxy\"} ) by (pod_name, job, namespace)",
+              "expr": "sum (go_goroutines{region=\"${region}\", job=~\"cache-proxy.*\"} ) by (pod_name, job, namespace)",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
@@ -8792,7 +8792,7 @@
                 "uid": "vm"
               },
               "editorMode": "code",
-              "expr": "sum (go_threads{region=\"${region}\", job=\"cache-proxy\"} ) by (pod_name, job, namespace)",
+              "expr": "sum (go_threads{region=\"${region}\", job=~\"cache-proxy.*\"} ) by (pod_name, job, namespace)",
               "interval": "",
               "legendFormat": "{{job}} @ {{pod_name}}, {{namespace}}",
               "queryType": "randomWalk",
@@ -9249,7 +9249,7 @@
                 "type": "prometheus",
                 "uid": "vm"
               },
-              "expr": "sum by (name) (rate(buildbuddy_unexpected_event{region=\"${region}\", job=\"cache-proxy\"}[${window}]))",
+              "expr": "sum by (name) (rate(buildbuddy_unexpected_event{region=\"${region}\", job=~\"cache-proxy.*\"}[${window}]))",
               "interval": "",
               "legendFormat": "",
               "queryType": "randomWalk",
@@ -9453,12 +9453,12 @@
           "type": "prometheus",
           "uid": "vm"
         },
-        "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\", job=\"cache-proxy\", namespace!=\"raft-dev\"},cache_name)",
+        "definition": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\", job=~\"cache-proxy.*\", namespace!=\"raft-dev\"},cache_name)",
         "includeAll": true,
         "name": "cache_name",
         "options": [],
         "query": {
-          "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\", job=\"cache-proxy\", namespace!=\"raft-dev\"},cache_name)",
+          "query": "label_values(buildbuddy_remote_cache_disk_cache_partition_capacity_bytes{region=\"$region\", job=~\"cache-proxy.*\", namespace!=\"raft-dev\"},cache_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,

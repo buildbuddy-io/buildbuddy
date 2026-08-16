@@ -63,7 +63,7 @@ func register() {
 		},
 		{
 			Name:    "box",
-			Help:    "Manages remote Firecracker VM boxes.",
+			Help:    "Starts a remote Firecracker VM box and opens a session in it.",
 			Handler: box.HandleBox,
 			Flags:   box.Flags,
 		},
@@ -195,7 +195,7 @@ func register() {
 		},
 		{
 			Name:    "explain",
-			Help:    "Explains the difference between two compact execution logs.",
+			Help:    "Explains your build using collected profiles and compact execution logs.",
 			Handler: explain.HandleExplain,
 			Flags:   explain.Flags,
 		},

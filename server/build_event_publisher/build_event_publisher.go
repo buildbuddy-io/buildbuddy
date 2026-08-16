@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -30,9 +29,9 @@ const (
 // Publisher publishes Bazel build events for a single build event stream.
 // It retries the stream if it gets disconnected.
 type Publisher struct {
-	streamID   *bepb.StreamId
-	apiKey     string
-	besBackend string
+	streamID *bepb.StreamId
+	apiKey   string
+	client   pepb.PublishBuildEventClient
 
 	events *EventBuffer
 	// errCh streams the stream publishing error (if any) after all retry attempts
@@ -40,7 +39,9 @@ type Publisher struct {
 	errCh chan error
 }
 
-func New(besBackend, apiKey, invocationID string) (*Publisher, error) {
+// New returns a Publisher that publishes build events for the given
+// invocation ID using the given BES client.
+func New(client pepb.PublishBuildEventClient, apiKey, invocationID string) (*Publisher, error) {
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return nil, err
@@ -50,11 +51,11 @@ func New(besBackend, apiKey, invocationID string) (*Publisher, error) {
 		BuildId:      id.String(),
 	}
 	return &Publisher{
-		streamID:   streamID,
-		apiKey:     apiKey,
-		besBackend: besBackend,
-		events:     NewEventBuffer(streamID),
-		errCh:      make(chan error, 1),
+		streamID: streamID,
+		apiKey:   apiKey,
+		client:   client,
+		events:   NewEventBuffer(streamID),
+		errCh:    make(chan error, 1),
 	}, nil
 }
 
@@ -86,23 +87,17 @@ func (p *Publisher) Start(ctx context.Context) {
 // run performs a single attempt to stream any currently buffered events
 // as well as all subsequently published events to the BES backend.
 func (p *Publisher) run(ctx context.Context) error {
-	conn, err := grpc_client.DialSimple(p.besBackend)
-	if err != nil {
-		return status.WrapError(err, "error dialing bes_backend")
-	}
-	defer conn.Close()
-	besClient := pepb.NewPublishBuildEventClient(conn)
 	if p.apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, p.apiKey)
 	}
-	stream, err := besClient.PublishBuildToolEventStream(ctx)
+	stream, err := p.client.PublishBuildToolEventStream(ctx)
 	if err != nil {
-		return status.WrapError(err, "error dialing bes_backend")
+		return status.WrapError(err, "open build event stream")
 	}
 
-	doneReceiving := make(chan error, 1)
+	recvErr := make(chan error, 1)
 	go func() {
-		defer close(doneReceiving)
+		defer close(recvErr)
 		for {
 			_, err := stream.Recv()
 			if err == nil {
@@ -111,7 +106,7 @@ func (p *Publisher) run(ctx context.Context) error {
 			if err == io.EOF {
 				return
 			}
-			doneReceiving <- status.UnavailableErrorf("recv failed: %s", err)
+			recvErr <- status.UnavailableErrorf("recv failed: %s", err)
 			return
 		}
 	}()
@@ -119,10 +114,29 @@ func (p *Publisher) run(ctx context.Context) error {
 	events, cancel := p.events.Subscribe()
 	defer cancel()
 
-	for obe := range events {
-		req := &pepb.PublishBuildToolEventStreamRequest{OrderedBuildEvent: obe}
-		if err := stream.Send(req); err != nil {
-			return status.UnavailableErrorf("send failed: %s", err)
+loop:
+	for {
+		// Wait until either the server closes the stream or we have another
+		// event to publish.
+		select {
+		case err, ok := <-recvErr:
+			if !ok {
+				// Recv returned io.EOF which normally means the stream closed
+				// cleanly, but in this case it's unexpected because the server
+				// should not close the stream until we're done publishing our
+				// events.
+				return status.UnavailableErrorf("server stream unexpectedly closed while publishing events")
+			}
+			return err
+		case obe, ok := <-events:
+			if !ok {
+				// No more events to publish
+				break loop
+			}
+			req := &pepb.PublishBuildToolEventStreamRequest{OrderedBuildEvent: obe}
+			if err := stream.Send(req); err != nil {
+				return status.UnavailableErrorf("send failed: %s", err)
+			}
 		}
 	}
 	// After successfully transmitting all events, close our side of the stream
@@ -130,8 +144,7 @@ func (p *Publisher) run(ctx context.Context) error {
 	if err := stream.CloseSend(); err != nil {
 		return status.UnavailableErrorf("close send failed: %s", err)
 	}
-	// Return any error from receiving ACKs
-	return <-doneReceiving
+	return <-recvErr
 }
 
 func (p *Publisher) Publish(bazelEvent *bespb.BuildEvent) error {

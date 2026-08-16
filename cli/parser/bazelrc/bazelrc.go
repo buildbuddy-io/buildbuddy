@@ -12,6 +12,10 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/rc_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/google/shlex"
 )
@@ -19,62 +23,13 @@ import (
 const (
 	EnablePlatformSpecificConfigFlag = "enable_platform_specific_config"
 	workspacePrefix                  = `%workspace%/`
-
-	CommonPhase = "common"
-	AlwaysPhase = "always"
 )
 
 var (
-	bazelCommands = set.Set[string]{
-		"analyze-profile":    {},
-		"aquery":             {},
-		"build":              {},
-		"canonicalize-flags": {},
-		"clean":              {},
-		"coverage":           {},
-		"cquery":             {},
-		"dump":               {},
-		"fetch":              {},
-		"help":               {},
-		"info":               {},
-		"license":            {},
-		"mobile-install":     {},
-		"mod":                {},
-		"print_action":       {},
-		"query":              {},
-		"run":                {},
-		"shutdown":           {},
-		"sync":               {},
-		"test":               {},
-		"version":            {},
-	}
-
-	// Inheritance hierarchy: https://bazel.build/run/bazelrc#option-defaults
-	// All commands inherit from "common".
-	parentCommand = map[string]string{
-		"test":           "build",
-		"run":            "build",
-		"clean":          "build",
-		"mobile-install": "build",
-		"info":           "build",
-		"print_action":   "build",
-		"config":         "build",
-		"cquery":         "build",
-		"aquery":         "build",
-
-		"coverage": "test",
-	}
-
-	unconditionalCommandPhases = set.Set[string]{
-		CommonPhase: {},
-		AlwaysPhase: {},
-	}
-
 	allPhases = set.FromSeq(
 		set.Union(
-			bazelCommands,
-			unconditionalCommandPhases,
-			set.From("startup"),
+			set.FromSeq(bazel_command.Commands().All()),
+			set.From(rc_util.CommonPhase, rc_util.AlwaysPhase, "startup"),
 		),
 	)
 
@@ -111,7 +66,7 @@ func GetPhases(command string) (out []string) {
 			break
 		}
 		out = append(out, command)
-		command = parentCommand[command]
+		command = bazel_command.Parent(command)
 	}
 	slices.Reverse(out)
 	return
@@ -273,28 +228,47 @@ func GetBazelOS() string {
 	}
 }
 
-// BazelCommands returns a view of the set of bazel commands.
-func BazelCommands() set.View[string] {
-	return set.KeyView(bazelCommands)
+// ExpandConfigs expands .bazelrc --config flags.
+func ExpandConfigs(
+	args *parsed.OrderedArgs,
+	namedConfigs map[string]*parsed.Config,
+	defaultConfig *parsed.Config,
+) (*parsed.OrderedArgs, error) {
+	policy := &parsed.ConfigExpansionPolicy{FlagName: "config", GetPhases: GetPhases}
+	expanded, err := args.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, policy)
+	if err != nil {
+		return nil, err
+	}
+	return expandPlatformSpecificConfig(expanded, namedConfigs, policy)
 }
 
-// IsBazelCommand returns whether the given string is recognized as a bazel
-// command.
-func IsBazelCommand(command string) bool {
-	return bazelCommands.Contains(command)
-}
-
-// Parent returns the parent command of the given command, if one exists.
-func Parent(command string) (string, bool) {
-	parent, ok := parentCommand[command]
-	return parent, ok
-}
-
-// IsUnconditionalCommandPhase returns whether or not this is a phase that should always
-// be evaluated, regardless of the command.
-func IsUnconditionalCommandPhase(phase string) bool {
-	_, ok := unconditionalCommandPhases[phase]
-	return ok
+// expandPlatformSpecificConfig replaces the last occurrence of
+// --enable_platform_specific_config with --config=<bazelOS>, so long as the
+// last occurrence evaluates to true.
+func expandPlatformSpecificConfig(
+	expanded *parsed.OrderedArgs,
+	namedConfigs map[string]*parsed.Config,
+	policy *parsed.ConfigExpansionPolicy,
+) (*parsed.OrderedArgs, error) {
+	opts := expanded.RemoveCommandOptions(EnablePlatformSpecificConfigFlag)
+	if v, err := options.AccumulateValues[*parsed.IndexedOption](false, opts); err != nil {
+		return nil, fmt.Errorf("failed to get value from %q option: %s", EnablePlatformSpecificConfigFlag, err)
+	} else if v {
+		index := opts[len(opts)-1].Index
+		bazelOS := GetBazelOS()
+		if _, ok := namedConfigs[bazelOS]; ok {
+			phases := GetPhases(expanded.GetCommand())
+			expansion, err := parsed.ExpandNamedConfig(bazelOS, namedConfigs, phases, policy)
+			if err != nil {
+				return nil, err
+			}
+			expanded.Args = slices.Insert(expanded.Args, index, expansion...)
+			// Remove all occurrences of the enable platform-specific config flag
+			// that may have been added when expanding the platform-specific config.
+			expanded.RemoveCommandOptions(EnablePlatformSpecificConfigFlag)
+		}
+	}
+	return expanded, nil
 }
 
 // IsPhase returns whether or not this is a valid phase for a bazel rc line.

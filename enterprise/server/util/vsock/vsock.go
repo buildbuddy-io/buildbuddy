@@ -138,9 +138,11 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 	fcConnectString := fmt.Sprintf("CONNECT %d\n", port)
 	n, err := conn.Write([]byte(fcConnectString))
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 	if n != len(fcConnectString) {
+		conn.Close()
 		return nil, status.InternalErrorf("HostDial failed: wrote %d bytes, expected %d", n, len(fcConnectString))
 	}
 	// Firecracker should normally be listening on v.sock as soon as
@@ -150,9 +152,11 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	rsp, err := bufio.NewReaderSize(conn, 32).ReadString('\n')
 	if err != nil {
+		conn.Close()
 		return nil, err
 	}
 	if !strings.HasPrefix(rsp, "OK ") {
+		conn.Close()
 		return nil, status.InternalErrorf("HostDial failed: didn't receive 'OK' after CONNECT, got %q", rsp)
 	}
 	conn.SetReadDeadline(time.Time{})
@@ -178,10 +182,10 @@ func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.
 	// These params are tuned for a fast-reconnect to the vmexec server
 	// running inside the VM.
 	backoffConfig := backoff.Config{
-		BaseDelay:  1 * time.Millisecond,
-		Multiplier: 1.6,
-		Jitter:     0.2,
-		MaxDelay:   10 * time.Second,
+		BaseDelay:  4 * time.Millisecond,
+		Multiplier: 1.15,
+		Jitter:     0.10,
+		MaxDelay:   2 * time.Second,
 	}
 	connectParams := grpc.ConnectParams{
 		Backoff:           backoffConfig,

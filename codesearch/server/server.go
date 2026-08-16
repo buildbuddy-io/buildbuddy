@@ -32,6 +32,15 @@ import (
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
+
+	// The KytheProxy RPC and its search protos still carry kythe reply-proto
+	// message types (search.proto embeds them, and the code browser frontend
+	// renders them), which are generated from the kythe.io module. No
+	// first-party Go source imports the module directly now that the kythe
+	// serving stack is gone, so this blank import keeps it a required
+	// dependency. Tree-sitter navigation reimplements KytheProxy over these
+	// same proto shapes.
+	_ "kythe.io/kythe/proto/xref_go_proto"
 )
 
 const (

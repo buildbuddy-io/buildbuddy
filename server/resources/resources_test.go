@@ -1,6 +1,7 @@
 package resources_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
@@ -73,4 +74,43 @@ func TestConfigure(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfigureDiskCapacity(t *testing.T) {
+	t.Run("disk_bytes flag sets capacity directly", func(t *testing.T) {
+		flags.Set(t, "executor.disk_bytes", int64(1234567))
+		// The ratio should be ignored when disk_bytes is set explicitly.
+		flags.Set(t, "executor.disk_capacity_ratio", 0.5)
+
+		require.NoError(t, resources.ConfigureDiskCapacity(t.TempDir()))
+		require.Equal(t, int64(1234567), resources.GetAllocatedDiskBytes())
+	})
+
+	t.Run("capacity is derived from filesystem size scaled by ratio", func(t *testing.T) {
+		buildRoot := t.TempDir()
+
+		flags.Set(t, "executor.disk_capacity_ratio", 1.0)
+		require.NoError(t, resources.ConfigureDiskCapacity(buildRoot))
+		full := resources.GetAllocatedDiskBytes()
+		require.Greater(t, full, int64(0))
+
+		flags.Set(t, "executor.disk_capacity_ratio", 0.5)
+		require.NoError(t, resources.ConfigureDiskCapacity(buildRoot))
+		half := resources.GetAllocatedDiskBytes()
+
+		// Can't assert an absolute size since it depends on the test machine's
+		// filesystem, but halving the ratio should halve the reported capacity.
+		require.InDelta(t, float64(full)/2, float64(half), float64(full)*0.01)
+	})
+
+	t.Run("out-of-range ratio returns error", func(t *testing.T) {
+		for _, ratio := range []float64{0, -1, 1.5} {
+			flags.Set(t, "executor.disk_capacity_ratio", ratio)
+			require.Error(t, resources.ConfigureDiskCapacity(t.TempDir()))
+		}
+	})
+
+	t.Run("nonexistent build root returns error", func(t *testing.T) {
+		require.Error(t, resources.ConfigureDiskCapacity(filepath.Join(t.TempDir(), "nonexistent")))
+	})
 }

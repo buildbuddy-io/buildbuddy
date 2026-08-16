@@ -241,7 +241,7 @@ fi
       return (
         <div className="compare-invocations container">
           <div className="error-container">
-            <XCircle className="icon red" />
+            <XCircle className="red" />
             <div>{error}</div>
           </div>
         </div>
@@ -258,7 +258,7 @@ fi
                 className="bb-explain-button"
                 onClick={this.onClickRunExplain.bind(this)}
                 disabled={this.state.isRunningExplain}>
-                <GitCompare className="icon" />
+                <GitCompare />
                 {this.state.isRunningExplain ? "Running..." : "Run bb explain"}
               </Button>
               {this.props.tab != "#file" && this.props.tab != "#spawn" && (

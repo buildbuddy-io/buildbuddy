@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+import "proto/view.proto";
+
+package hello;
+
+option go_package = "github.com/buildbuddy-io/buildbuddy/tools/protoc-gen-go-vtproto-view/testdata/hello";
+
+// A minimal demonstration of wire views. Annotating fields with a view name:
+//
+//   [(view.name) = "Payload"]
+//
+// makes the generator emit a GreetingPayloadView struct holding just those
+// fields, plus an UnmarshalWire method that decodes them directly from a
+// serialized Greeting and skips everything else. The view name is used
+// verbatim in the generated Go type name. See viewtest.proto for a fixture
+// covering the full feature surface, including nested messages.
+
+message Greeting {
+  // Expensive to unmarshal since Go strings copy the underlying bytes.
+  // Not part of the view so the bytes are skipped during unmarshalling.
+  string sender = 1;
+  // Raw bytes. The View references the original bytes directly.
+  // Caller's responsibility to make sure the original bytes outlive the view.
+  bytes message = 2 [(view.name) = "Payload"];
+  uint64 sent_at_usec = 3 [(view.name) = "Payload"];
+}

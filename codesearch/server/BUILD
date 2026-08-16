@@ -24,6 +24,7 @@ go_library(
         "//server/util/prefix",
         "//server/util/status",
         "@com_github_cockroachdb_pebble//:pebble",
+        "@io_kythe//kythe/proto:xref_go_proto",
         "@org_golang_x_sync//errgroup",
     ],
 )

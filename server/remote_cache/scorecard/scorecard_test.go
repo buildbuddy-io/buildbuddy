@@ -283,7 +283,7 @@ type fakeBlobStore struct {
 func (bs *fakeBlobStore) ReadBlob(ctx context.Context, name string) ([]byte, error) {
 	tokens := strings.Split(name, "/")
 	if attempt := tokens[1]; attempt == "1" {
-		return proto.MarshalOld(bs.ScoreCard)
+		return proto.Marshal(bs.ScoreCard)
 	}
 	return nil, status.NotFoundError("")
 }

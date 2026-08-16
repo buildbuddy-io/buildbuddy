@@ -12,6 +12,7 @@ go_library(
         "delete_tag_event.json",
         "pull_request_event.json",
         "pull_request_approved_review_event.json",
+        "push_annotated_tag_event.json",
         "push_event.json",
         "push_tag_event.json",
     ],

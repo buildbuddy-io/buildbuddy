@@ -66,6 +66,8 @@ func invocationMetricToDbField(m stat_filter.InvocationMetricType) (string, erro
 		return "upload_throughput_bytes_per_second", nil
 	case stat_filter.InvocationMetricType_ACTION_CACHE_MISSES_INVOCATION_METRIC:
 		return "action_cache_misses", nil
+	case stat_filter.InvocationMetricType_ACTION_CACHE_HITS_INVOCATION_METRIC:
+		return "action_cache_hits", nil
 	case stat_filter.InvocationMetricType_TIME_SAVED_USEC_INVOCATION_METRIC:
 		return "total_cached_action_exec_usec", nil
 	default:

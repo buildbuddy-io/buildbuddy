@@ -160,7 +160,7 @@ func (pmk PebbleKey) LockID() string {
 		}
 		return string(fmk)
 	}
-	return filepath.Join(pmk.isolation, pmk.hash)
+	return pmk.isolation + "/" + pmk.hash
 }
 
 func (pmk PebbleKey) CacheType() rspb.CacheType {
@@ -298,9 +298,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			}
 		}
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
-		partDir := PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath, "v5")
-		return []byte(filePath), nil
+		return []byte(PartitionDirectoryPrefix + pmk.partID + "/" + filePath + "/v5"), nil
 	case Version6:
 		hashStr := ""
 		if pmk.syntheticHash != "" {
@@ -317,9 +315,7 @@ func (pmk *PebbleKey) Bytes(version PebbleKeyVersion) ([]byte, error) {
 			}
 		}
 		filePath := filepath.Join(hashStr, strconv.Itoa(int(pmk.digestFunction)), pmk.isolation, pmk.encryptionKeyID)
-		partDir := PartitionDirectoryPrefix + pmk.partID
-		filePath = filepath.Join(partDir, filePath, "v6")
-		return []byte(filePath), nil
+		return []byte(PartitionDirectoryPrefix + pmk.partID + "/" + filePath + "/v6"), nil
 	default:
 		return nil, status.FailedPreconditionErrorf("Unknown key version: %v", version)
 	}
@@ -578,6 +574,7 @@ type Store interface {
 
 	BlobReader(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, offset, limit int64) (io.ReadCloser, error)
 	BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error)
+	CloneBlob(ctx context.Context, src *sgpb.StorageMetadata_GCSMetadata, fileRecord *sgpb.FileRecord) (*sgpb.StorageMetadata, error)
 	DeleteStoredBlob(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata) error
 	UpdateBlobAtime(ctx context.Context, b *sgpb.StorageMetadata_GCSMetadata, t time.Time) error
 
@@ -589,6 +586,7 @@ type PebbleGCSStorage interface {
 	SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error
 	Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error)
 	ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error)
+	CloneBlob(ctx context.Context, srcBlobName, dstBlobName string, customTime time.Time) error
 	DeleteBlob(ctx context.Context, blobName string) error
 	UpdateCustomTime(ctx context.Context, blobName string, t time.Time) error
 }
@@ -825,25 +823,22 @@ type gcsMetadataWriter struct {
 	ctx        context.Context
 	blobName   string
 	customTime time.Time
+	digest     *repb.Digest
 }
 
 func (g *gcsMetadataWriter) Commit() error {
 	_, spn := tracing.StartSpan(g.ctx)
 	defer spn.End()
 	err := g.CommittedWriteCloser.Commit()
-
-	switch {
-	case status.IsAlreadyExistsError(err):
-		log.Debugf("Write gcs blob %q (already exists)", g.blobName)
-		return nil
-	case status.IsResourceExhaustedError(err):
-		// gcs.ConditionalWriter returns this when there are too many writes to
-		// the same object. We can assume that another write was successful.
-		log.Debugf("Write gcs blob %q (too many writes)", g.blobName)
-		return nil
-	default:
-		return err
+	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			log.Debugf("Write gcs blob %q (already exists)", g.blobName)
+			return nil
+		}
+		log.CtxWarningf(g.ctx, "Write %s to gcs blob %q failed: %s", digest.String(g.digest), g.blobName, err)
+		return status.UnavailableError("write to blob storage failed")
 	}
+	return nil
 }
 
 func (g *gcsMetadataWriter) Close() error {
@@ -863,21 +858,28 @@ func (g *gcsMetadataWriter) Metadata() *sgpb.StorageMetadata {
 	}
 }
 
+func blobName(appName string, fileRecord *sgpb.FileRecord) (string, error) {
+	blobNameBytes, err := blobKey(appName, fileRecord)
+	if err != nil {
+		return "", err
+	}
+	salt, err := random.RandomString(5)
+	if err != nil {
+		return "", err
+	}
+	return string(blobNameBytes) + "-" + salt, nil
+}
+
 func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
 	if fs.gcs == nil || fs.appName == "" {
 		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
 	}
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
-	blobNameBytes, err := blobKey(fs.appName, fileRecord)
+	blobName, err := blobName(fs.appName, fileRecord)
 	if err != nil {
 		return nil, err
 	}
-	salt, err := random.RandomString(5)
-	if err != nil {
-		return nil, err
-	}
-	blobName := string(blobNameBytes) + "-" + salt
 
 	estimatedSize := fileRecord.GetDigest().GetSizeBytes()
 	if fileRecord.GetCompressor() != repb.Compressor_IDENTITY {
@@ -896,6 +898,32 @@ func (fs *fileStorer) BlobWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		CommittedWriteCloser: wc,
 		blobName:             string(blobName),
 		customTime:           customTime,
+		digest:               fileRecord.GetDigest(),
+	}, nil
+}
+
+// CloneBlob server-side-copies the blob referenced by src to a new blob owned
+// by this app, named for fileRecord, and returns storage metadata describing
+// the new blob.
+func (fs *fileStorer) CloneBlob(ctx context.Context, src *sgpb.StorageMetadata_GCSMetadata, fileRecord *sgpb.FileRecord) (*sgpb.StorageMetadata, error) {
+	if fs.gcs == nil || fs.appName == "" {
+		return nil, status.FailedPreconditionError("gcs blobstore or appName not configured")
+	}
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	blobName, err := blobName(fs.appName, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	customTime := fs.clock.Now()
+	if err := fs.gcs.CloneBlob(ctx, src.GetBlobName(), blobName, customTime); err != nil {
+		return nil, err
+	}
+	return &sgpb.StorageMetadata{
+		GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+			BlobName:           blobName,
+			LastCustomTimeUsec: customTime.UnixMicro(),
+		},
 	}, nil
 }
 

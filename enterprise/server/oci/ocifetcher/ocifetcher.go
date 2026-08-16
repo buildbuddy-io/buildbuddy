@@ -5,10 +5,14 @@ package ocifetcher
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -43,6 +47,14 @@ const (
 
 	accessProofCacheTTL        = 15 * time.Minute
 	accessProofCacheMaxEntries = 1000
+
+	// public.ecr.aws rejects all blob HEAD requests with 401; see blobHeadFallbackRegistries.
+	ecrPublicRegistry = "public.ecr.aws"
+	// A single-byte range keeps the blob HEAD fallback GET cheap while still exposing
+	// the full blob size in the response's Content-Range header.
+	blobHeadFallbackRange = "bytes=0-0"
+	// How much of a fallback response body to drain for connection reuse before closing.
+	blobHeadFallbackDrainLimit = 1024
 )
 
 var (
@@ -50,7 +62,15 @@ var (
 	mirrors           = flag.Slice("executor.container_registry_mirrors", []interfaces.MirrorConfig{}, "")
 	allowedPrivateIPs = flag.Slice("executor.container_registry_allowed_private_ips", []string{}, "Allowed private IP ranges for container registries. Private IPs are disallowed by default.")
 
+	// Restricting the fallback to hosts known to reject blob HEADs keeps genuine 401s
+	// (e.g. expired credentials) from spawning an extra doomed GET per HEAD everywhere else.
+	blobHeadFallbackRegistries = flag.Slice("ocifetcher.blob_head_fallback_registries", []string{ecrPublicRegistry}, "Registry hosts whose rejected blob HEAD requests are retried as single-byte ranged GETs.")
+
 	blobBufPool = bytebufferpool.VariableSize(blobChunkSize)
+
+	// blobsPathRegexp matches blob pull paths, "/v2/<name>/blobs/<digest>" per
+	// https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-blobs.
+	blobsPathRegexp = regexp.MustCompile(`^/v2/.+/blobs/[a-z0-9+._-]+:[a-zA-Z0-9=_-]+$`)
 )
 
 type ociFetcherServer struct {
@@ -615,13 +635,14 @@ func (s *ociFetcherServer) getRemoteOpts(ctx context.Context, creds *rgpb.Creden
 		}))
 	}
 
-	tr := httpclient.New(s.allowedPrivateIPs, "oci_fetcher").Transport
-
+	client := httpclient.New(s.allowedPrivateIPs, "oci_fetcher")
+	// The mirror transport sits inside the client, below the blob HEAD fallback transport, so
+	// the fallback's allowlist check sees original registry hostnames rather than mirror
+	// hostnames and its ranged GETs get the same mirror rewriting as any other request.
 	if len(s.mirrors) > 0 {
-		opts = append(opts, remote.WithTransport(NewMirrorTransport(tr, s.mirrors)))
-	} else {
-		opts = append(opts, remote.WithTransport(tr))
+		client.Transport = NewMirrorTransport(client.Transport, s.mirrors)
 	}
+	opts = append(opts, remote.WithTransport(NewBlobHeadFallbackTransport(client)))
 
 	return opts
 }
@@ -718,13 +739,46 @@ func withPullerRetry[T any](
 	}
 	if err != nil {
 		s.evictPuller(ref, creds)
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return zero, status.UnauthenticatedErrorf("not authorized to access resource: %s", err)
-		}
-		return zero, status.UnavailableErrorf("could not fetch from remote registry: %s", err)
+		return zero, RemoteRegistryError(err, "could not fetch from remote registry")
 	}
 
 	return result, nil
+}
+
+// RemoteRegistryError converts an error from a remote registry request into a
+// status error classified by HTTP status code when one is available, falling
+// back to Unavailable otherwise. msg is a human-readable prefix describing the
+// operation that failed.
+func RemoteRegistryError(err error, msg string) error {
+	var transportErr *transport.Error
+	if !errors.As(err, &transportErr) {
+		return status.UnavailableErrorf("%s: %s", msg, err)
+	}
+	return RegistryErrorFromHTTPStatusCode(
+		transportErr.StatusCode,
+		fmt.Sprintf("%s: remote registry HTTP status %d: %s", msg, transportErr.StatusCode, err),
+	)
+}
+
+// RegistryErrorFromHTTPStatusCode returns a status error for a remote registry
+// request failure when the HTTP status code is known.
+func RegistryErrorFromHTTPStatusCode(httpStatusCode int, msg string) error {
+	switch httpStatusCode {
+	case http.StatusBadRequest:
+		return status.InvalidArgumentError(msg)
+	case http.StatusUnauthorized:
+		return status.UnauthenticatedError(msg)
+	case http.StatusForbidden:
+		return status.PermissionDeniedError(msg)
+	case http.StatusNotFound:
+		return status.NotFoundError(msg)
+	case http.StatusTooManyRequests:
+		return status.ResourceExhaustedError(msg)
+	}
+	if httpStatusCode >= http.StatusBadRequest && httpStatusCode < http.StatusInternalServerError {
+		return status.InvalidArgumentError(msg)
+	}
+	return status.UnavailableError(msg)
 }
 
 type grpcStreamWriter struct {
@@ -758,6 +812,113 @@ func ParseAllowedPrivateIPs() ([]*net.IPNet, error) {
 
 func Mirrors() []interfaces.MirrorConfig {
 	return *mirrors
+}
+
+// NewBlobHeadFallbackTransport wraps client's transport to retry blob HEAD requests that
+// registries in blobHeadFallbackRegistries reject with 401 or 405 as single-byte ranged GETs.
+func NewBlobHeadFallbackTransport(client *http.Client) http.RoundTripper {
+	return &blobHeadFallbackTransport{client: client}
+}
+
+var _ http.RoundTripper = (*blobHeadFallbackTransport)(nil)
+
+type blobHeadFallbackTransport struct {
+	client *http.Client
+}
+
+func (t *blobHeadFallbackTransport) RoundTrip(in *http.Request) (*http.Response, error) {
+	resp, err := t.client.Transport.RoundTrip(in)
+	if err != nil || in.Method != http.MethodHead || !blobHeadFallbackHost(in.URL.Hostname()) || !blobsPathRegexp.MatchString(in.URL.Path) {
+		return resp, err
+	}
+	// If HEAD is not allowed (405) then fall back to a GET.
+	// `public.ecr.aws` returns 401 instead of an explicit 405, so we fall back to GET in that case as well.
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusMethodNotAllowed {
+		return resp, nil
+	}
+	fallbackResp, fallbackErr := t.rangedGet(in)
+	if fallbackErr != nil {
+		log.CtxDebugf(in.Context(), "Ranged GET fallback for blob HEAD request that failed with HTTP status %d did not succeed either: %s", resp.StatusCode, fallbackErr)
+		return resp, nil
+	}
+	resp.Body.Close()
+	return fallbackResp, nil
+}
+
+// blobHeadFallbackHost reports whether hostname is on the blob HEAD fallback allowlist.
+func blobHeadFallbackHost(hostname string) bool {
+	for _, h := range *blobHeadFallbackRegistries {
+		if strings.EqualFold(hostname, h) {
+			return true
+		}
+	}
+	return false
+}
+
+// rangedGet reissues a rejected blob HEAD request as a single-byte ranged GET and synthesizes
+// an equivalent HEAD response, with the full blob size from Content-Range or Content-Length.
+func (t *blobHeadFallbackTransport) rangedGet(headReq *http.Request) (*http.Response, error) {
+	req := headReq.Clone(headReq.Context())
+	req.Method = http.MethodGet
+	req.Header.Set("Range", blobHeadFallbackRange)
+	// client.Do follows redirects to blob CDNs, stripping Authorization on cross-host redirects.
+	resp, err := t.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	size, err := blobSizeFromRangedGetResponse(resp)
+	// Drain a range-honoring response (a single byte) so its connection can be reused; a body
+	// left unread beyond this (a registry that ignored Range) is aborted by the close instead.
+	io.Copy(io.Discard, io.LimitReader(resp.Body, blobHeadFallbackDrainLimit))
+	resp.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	out := &http.Response{
+		Status:        fmt.Sprintf("%d %s", http.StatusOK, http.StatusText(http.StatusOK)),
+		StatusCode:    http.StatusOK,
+		Proto:         resp.Proto,
+		ProtoMajor:    resp.ProtoMajor,
+		ProtoMinor:    resp.ProtoMinor,
+		Header:        resp.Header.Clone(),
+		Body:          http.NoBody,
+		ContentLength: size,
+		Request:       headReq,
+	}
+	out.Header.Del("Content-Range")
+	// Content-Encoding describes the ranged GET's body, which the synthesized response doesn't
+	// carry; drop it so the result reads like a real HEAD response.
+	out.Header.Del("Content-Encoding")
+	out.Header.Set("Content-Length", strconv.FormatInt(size, 10))
+	return out, nil
+}
+
+// blobSizeFromRangedGetResponse extracts the full blob size from a single-byte ranged GET response.
+func blobSizeFromRangedGetResponse(resp *http.Response) (int64, error) {
+	switch resp.StatusCode {
+	case http.StatusPartialContent, http.StatusRequestedRangeNotSatisfiable:
+		// "Content-Range: bytes 0-0/123" (206), or "bytes */0" (416, zero-length blob).
+		contentRange := resp.Header.Get("Content-Range")
+		slash := strings.LastIndexByte(contentRange, '/')
+		if slash < 0 {
+			return 0, status.UnavailableErrorf("missing or malformed Content-Range header %q", contentRange)
+		}
+		if contentRange[slash+1:] == "*" {
+			// RFC 9110 permits "bytes 0-0/*" for an unknown complete length.
+			return 0, status.UnavailableErrorf("Content-Range header %q reports an unknown blob size", contentRange)
+		}
+		size, err := strconv.ParseInt(contentRange[slash+1:], 10, 64)
+		if err != nil || size < 0 {
+			return 0, status.UnavailableErrorf("malformed Content-Range header %q", contentRange)
+		}
+		return size, nil
+	case http.StatusOK:
+		if resp.ContentLength < 0 {
+			return 0, status.UnavailableError("response reports an unknown content length")
+		}
+		return resp.ContentLength, nil
+	}
+	return 0, status.UnavailableErrorf("HTTP status %d", resp.StatusCode)
 }
 
 // NewMirrorTransport wraps an http.RoundTripper with registry mirror support.

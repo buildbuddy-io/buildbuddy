@@ -339,9 +339,7 @@ func Read(ctx context.Context, env environment.Env, invocationID string, invocat
 
 // Write writes the invocation cache scorecard to the configured blobstore.
 func Write(ctx context.Context, env environment.Env, invocationID string, invocationAttempt uint64, scoreCard *capb.ScoreCard) error {
-	// Use MarshalOld b/c ScoreCard.MarshalVT is 50% slower than standard Marshal()
-	// See https://github.com/buildbuddy-io/buildbuddy-internal/issues/3018
-	scoreCardBuf, err := proto.MarshalOld(scoreCard)
+	scoreCardBuf, err := proto.Marshal(scoreCard)
 	if err != nil {
 		return err
 	}

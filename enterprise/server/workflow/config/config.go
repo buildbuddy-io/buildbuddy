@@ -59,6 +59,13 @@ type Action struct {
 	// By default, if you have multiple workflow runs on the same branch, we'll cancel the old ones.
 	// If AllowConcurrentRuns is set to true, we'll allow multiple runs to continue in parallel.
 	AllowConcurrentRuns *bool `yaml:"allow_concurrent_runs"`
+	// AllowConcurrentRunsOnBranches is a list of branch name patterns that
+	// should be allowed to run concurrently, even when AllowConcurrentRuns=false.
+	// When unset, it defaults to the repo's default branch.
+	// Patterns use the same restricted-glob syntax as trigger `branches` (a
+	// single `*` wildcard, with an optional leading `!` for negation). This has
+	// no effect when AllowConcurrentRuns is true.
+	AllowConcurrentRunsOnBranches []string `yaml:"allow_concurrent_runs_on_branches"`
 
 	// DEPRECATED: Used `Steps` instead
 	DeprecatedBazelCommands []string `yaml:"bazel_commands"`
@@ -73,6 +80,36 @@ func (a *Action) GetTriggers() *Triggers {
 		return &Triggers{}
 	}
 	return a.Triggers
+}
+
+// AllowsConcurrentRunsOnBranch returns whether concurrent Workflows on the given
+// branch should be allowed, instead of being automatically cancelled.
+func (a *Action) AllowsConcurrentRunsOnBranch(branch, defaultBranch string) bool {
+	// By default, we don't allow concurrent runs.
+	// Allow on all branches if explicitly enabled.
+	if a.AllowConcurrentRuns != nil && *a.AllowConcurrentRuns {
+		return true
+	}
+
+	// By default, if no branches are explicitly allow-listed, we allow concurrent runs on the default branch only.
+	allowedBranches := a.AllowConcurrentRunsOnBranches
+	if allowedBranches == nil {
+		// Don't cancel workflows on the default branch.
+		if branch == defaultBranch {
+			return true
+		}
+
+		// If we don't know the default branch, err on the side of not cancelling.
+		if defaultBranch == "" {
+			return true
+		}
+
+		// On all other branches, don't allow concurrent runs.
+		return false
+	}
+
+	// If there are explicitly allow-listed branches, check if the given branch is in the list.
+	return matchesAnyPattern(allowedBranches, branch)
 }
 
 func (a *Action) GetGitFetchFilters() []string {
@@ -111,12 +148,45 @@ var defaultPullRequestTypes = []string{"opened", "synchronize", "reopened", "edi
 
 type PullRequestTrigger struct {
 	Branches []string `yaml:"branches"`
-	// Types optionally restricts the trigger to specific pull_request actions
-	// (e.g. "ready_for_review"). If empty, the default set of actions is used:
-	// opened, synchronize, reopened, and base-branch edits.
+	// Types optionally restricts the trigger to specific pull_request actions.
+	// If empty, the default set (opened, synchronize, reopened, and base-branch
+	// edits) is used.
+	//
+	// Valid types:
+	//   - "opened": the PR was created.
+	//   - "synchronize": a new commit was pushed to the PR branch.
+	//   - "reopened": a closed PR was reopened.
+	//   - "edited": the PR's base branch was changed.
+	//   - "ready_for_review": a draft PR was marked ready for review.
+	//   - "auto_merge_enabled": auto-merge was enabled on the PR.
+	//   - "approved": the PR received an approving review.
 	Types []string `yaml:"types"`
 	// NOTE: If nil, defaults to true.
 	MergeWithBase *bool `yaml:"merge_with_base"`
+	// MergeWithBaseInterval only applies if MergeWithBase is enabled.
+	//
+	// MergeWithBaseInterval controls which base branch commit the PR is merged with.
+	// When unset, the runner merges with the current base branch tip.
+	//
+	// When set, instead of merging with the tip, the runner merges with the
+	// oldest base branch commit after the most recent interval boundary: the
+	// current time floored to a multiple of this interval, in UTC. If there are
+	// no base branch commits after the boundary, the runner merges with the base
+	// branch tip. This keeps the merged result stable once the base advances
+	// within an interval so that repeated runs of the same PR hit a warm Bazel
+	// cache, while still periodically advancing the base branch to catch
+	// integration issues.
+	//
+	// For example, if set to 3h, the base advances at 00:00, 03:00, 06:00, ... UTC,
+	// and all runs within the same 3h window merge with the first base branch
+	// commit after the window boundary.
+	//
+	// If the PR's merge base is already newer than this commit, the merge with
+	// base is skipped.
+	//
+	// Must be at most maxMergeWithBaseInterval; larger values are rejected so that
+	// PRs are not merged with an overly stale base.
+	MergeWithBaseInterval *time.Duration `yaml:"merge_with_base_interval"`
 	// If MergeWithBase is enabled, determines whether the CI runner should manually
 	// merge the pushed and target branches. If this is disabled, the runner
 	// will try to use the merge commit SHA provided by the CI provider as a
@@ -127,6 +197,30 @@ type PullRequestTrigger struct {
 
 func (t *PullRequestTrigger) GetMergeWithBase() bool {
 	return t.MergeWithBase == nil || *t.MergeWithBase
+}
+
+// maxMergeWithBaseInterval is the largest allowed merge with base interval. Larger
+// configured values are rejected so that PRs are not merged with an overly
+// stale base branch commit.
+const maxMergeWithBaseInterval = 3 * time.Hour
+
+// GetMergeWithBaseInterval returns the configured merge with base interval. If
+// MergeWithBase is set and this is nil, merge with the base branch tip.
+//
+// Returns an error if the configured interval is non-positive or larger than
+// maxMergeWithBaseInterval.
+func (t *PullRequestTrigger) GetMergeWithBaseInterval() (*time.Duration, error) {
+	if t.MergeWithBaseInterval == nil {
+		return nil, nil
+	}
+	interval := *t.MergeWithBaseInterval
+	if interval <= 0 {
+		return nil, fmt.Errorf("merge_with_base_interval must be positive, got %s", interval)
+	}
+	if interval > maxMergeWithBaseInterval {
+		return nil, fmt.Errorf("merge_with_base_interval must be at most %s, got %s", maxMergeWithBaseInterval, interval)
+	}
+	return &interval, nil
 }
 
 func (t *PullRequestTrigger) GetForceManualMerge() bool {
@@ -140,7 +234,7 @@ func (t *PullRequestTrigger) matchesAction(action string) bool {
 	if len(t.Types) > 0 {
 		return slices.Contains(t.Types, action)
 	}
-	return action == "" || slices.Contains(defaultPullRequestTypes, action)
+	return action == "" || action == "approved" || slices.Contains(defaultPullRequestTypes, action)
 }
 
 type ScheduleTrigger struct {

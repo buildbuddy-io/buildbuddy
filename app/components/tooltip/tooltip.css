@@ -11,8 +11,7 @@
    * but don't go lower than 16px since it becomes illegible. 
    */
   font-size: inherit;
-  width: 1em;
-  height: 1em;
+  --icon-size: 1em;
   min-width: 16px;
   min-height: 16px;
 }

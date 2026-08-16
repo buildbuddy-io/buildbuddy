@@ -374,7 +374,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           </div>
           <div className="timing-profile-too-large-actions">
             <LinkButton className="small-button" href={downloadHref} target="_blank">
-              <Download className="icon" />
+              <Download />
               Download profile
             </LinkButton>
             <OutlinedButton className="small-button" onClick={this.fetchProfile.bind(this, true)}>
@@ -420,7 +420,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     if (!this.state.profile) {
       return (
         <div className="card timing">
-          <Clock className="icon" />
+          <Clock />
           <div className="content">
             <div className="header">
               <div className="title">Timing</div>
@@ -459,7 +459,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         {this.renderTimingSuggestionCard()}
 
         <div className="card timing">
-          <Clock className="icon" />
+          <Clock />
           <div className="content">
             <div className="header">
               <div className="title">All events</div>

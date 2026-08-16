@@ -42,5 +42,17 @@
   "base_ref": null,
   "compare": "https://github.com/test/hello_bb_ci/compare/v1.0.0",
   "commits": [],
-  "head_commit": null
+  "head_commit": {
+    "id": "258044d28288d5f6f1c5928b0e22580296fec666",
+    "tree_id": "e3797121ccacedf40c13872df15102a5e602b267",
+    "distinct": true,
+    "message": "Add+another+useless+diff.",
+    "timestamp": "2021-02-12T14:09:40-05:00",
+    "url": "https://github.com/test/hello_bb_ci/commit/258044d28288d5f6f1c5928b0e22580296fec666",
+    "author": { "name": "Test", "email": "test@buildbuddy.io", "username": "test" },
+    "committer": { "name": "Test", "email": "test@buildbuddy.io", "username": "test" },
+    "added": [],
+    "removed": [],
+    "modified": ["BUILD"]
+  }
 }

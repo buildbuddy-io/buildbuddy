@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
@@ -104,24 +106,26 @@ func (o *hintedHandoffOrder) String() string {
 
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
-	authenticator        interfaces.Authenticator
-	local                interfaces.Cache
-	log                  log.Logger
-	lookaside            lru.LRU[lookasideCacheEntry]
-	peerZones            map[string]string
-	hintedHandoffsMu     *sync.RWMutex
-	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
-	distributedProxy     *distributed_client.Proxy
-	consistentHash       *consistent_hash.ConsistentHash
-	extraConsistentHash  *consistent_hash.ConsistentHash
-	heartbeatChannel     *heartbeat.Channel
-	kubeDiscoveryChannel *kubediscovery.PeerWatcher
-	heartbeatMu          *sync.RWMutex
-	shutdownMu           *sync.RWMutex
-	shutDownChan         chan struct{}
-	finishedShutdown     bool
-	opts                 Options
-	zone                 string
+	authenticator            interfaces.Authenticator
+	env                      environment.Env
+	local                    interfaces.Cache
+	log                      log.Logger
+	lookaside                lru.LRU[lookasideCacheEntry]
+	lookasideRightsizeConfig atomic.Pointer[lookasideRightsizeConfig]
+	peerZones                map[string]string
+	hintedHandoffsMu         *sync.RWMutex
+	hintedHandoffsByPeer     map[string]chan *hintedHandoffOrder
+	distributedProxy         *distributed_client.Proxy
+	consistentHash           *consistent_hash.ConsistentHash
+	extraConsistentHash      *consistent_hash.ConsistentHash
+	heartbeatChannel         *heartbeat.Channel
+	kubeDiscoveryChannel     *kubediscovery.PeerWatcher
+	heartbeatMu              *sync.RWMutex
+	shutdownMu               *sync.RWMutex
+	shutDownChan             chan struct{}
+	finishedShutdown         bool
+	opts                     Options
+	zone                     string
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -217,6 +221,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
+		env:                 env,
 		local:               c,
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
 		opts:                opts,
@@ -233,9 +238,11 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
+	dc.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: true, ratio: defaultRightsizeLookasideRatio})
 
 	if opts.LookasideCacheSizeBytes > 0 {
 		l, err := lru.New[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
+			Name:    "distributed_lookaside_cache",
 			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
@@ -243,7 +250,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
-				return int64(len(v.data) + 8)
+				return int64(cap(v.data) + 8)
 			},
 			ThreadSafe: true,
 			TTL:        *lookasideCacheTTL,
@@ -433,6 +440,62 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 	return "", false
 }
 
+const (
+	rightsizeLookasideEnabledExperiment = "cache.distributed_cache.rightsize_lookaside_entries"
+	rightsizeLookasideRatioExperiment   = "cache.distributed_cache.rightsize_lookaside_min_slack_ratio"
+	defaultRightsizeLookasideRatio      = 1.5
+	rightsizeConfigRefreshInterval      = 30 * time.Second
+)
+
+type lookasideRightsizeConfig struct {
+	enabled bool
+	ratio   float64
+}
+
+// rightsizeLookasideData returns a right-sized copy of data when its backing
+// array is meaningfully larger than its length, otherwise data unchanged.
+func (c *Cache) rightsizeLookasideData(data []byte) []byte {
+	cfg := c.lookasideRightsizeConfig.Load()
+	if cfg != nil && cfg.enabled && float64(cap(data)) > float64(len(data))*cfg.ratio {
+		return bytes.Clone(data)
+	}
+	return data
+}
+
+func (c *Cache) refreshLookasideRightsizeConfig() {
+	enabled, ratio := true, float64(defaultRightsizeLookasideRatio)
+	if fp := c.env.GetExperimentFlagProvider(); fp != nil {
+		ctx := context.Background()
+		enabled = fp.Boolean(ctx, rightsizeLookasideEnabledExperiment, enabled)
+		ratio = fp.Float64(ctx, rightsizeLookasideRatioExperiment, ratio)
+	}
+	c.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: enabled, ratio: ratio})
+}
+
+func (c *Cache) watchLookasideRightsizeConfig(shutDownChan chan struct{}) {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return
+	}
+
+	changes := make(chan struct{}, 1)
+	unsubscribe := fp.Subscribe(changes)
+	defer unsubscribe()
+
+	ticker := time.NewTicker(rightsizeConfigRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-shutDownChan:
+			return
+		case <-changes:
+			c.refreshLookasideRightsizeConfig()
+		case <-ticker.C:
+			c.refreshLookasideRightsizeConfig()
+		}
+	}
+}
+
 func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
@@ -453,6 +516,9 @@ func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, dat
 }
 
 func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
+	// Right-size the slice before we store it so we don't retain oversized
+	// buffers.
+	data = c.rightsizeLookasideData(data)
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
 		data:            data,
@@ -633,6 +699,7 @@ func (c *Cache) StartListening() error {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
+	go c.watchLookasideRightsizeConfig(c.shutDownChan)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
@@ -1063,6 +1130,8 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	//	  we shouldn't either, since the blob might never be read from this node.
 	// 2) A Get/Read call, which would have already written to those caches if
 	//    appropriate.
+	// 3) A GetWithMetadata call, which doesn't write to those caches, so as
+	//    with FindMissing/Contains, we shouldn't either.
 	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
@@ -1082,21 +1151,7 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 type backfillOrder struct {
 	r      *rspb.ResourceName
 	source string
-	dest   string
-}
-
-func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
-	deduped := make([]*backfillOrder, 0, len(backfills))
-	seen := make(map[string]struct{}, len(backfills))
-	for _, bf := range backfills {
-		d := bf.r.GetDigest()
-		if _, ok := seen[d.GetHash()]; ok {
-			continue
-		}
-		seen[d.GetHash()] = struct{}{}
-		deduped = append(deduped, bf)
-	}
-	return deduped
+	dests  []string
 }
 
 func groupID(ctx context.Context) string {
@@ -1106,32 +1161,37 @@ func groupID(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (err error) {
+func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) {
 	if len(backfills) == 0 {
-		return nil
+		return
 	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	start := time.Now()
+	var err error
 	defer func() {
-		c.log.CtxDebugf(ctx, "backfill took %s err: %v", time.Since(start), err)
+		c.log.CtxDebugf(ctx, "backfill took %s; err: %v", time.Since(start), err)
 	}()
-	backfills = dedupeBackfills(backfills)
 	groupID := groupID(ctx)
-	eg, gCtx := errgroup.WithContext(ctx)
+	var eg errgroup.Group
+	eg.SetLimit(10)
 	for _, bf := range backfills {
-		bf := bf
-		eg.Go(func() error {
-			start := time.Now()
-			err := c.copyFile(gCtx, bf.r, bf.source, bf.dest)
-			metrics.DistributedCacheBackfillLatencyUsec.WithLabelValues(
-				groupID,
-				gstatus.Code(err).String(),
-			).Observe(float64(time.Since(start).Microseconds()))
-			return err
-		})
+		for _, dest := range bf.dests {
+			eg.Go(func() error {
+				start := time.Now()
+				err := c.copyFile(ctx, bf.r, bf.source, dest)
+				metrics.DistributedCacheBackfillLatencyUsec.WithLabelValues(
+					groupID,
+					gstatus.Code(err).String(),
+				).Observe(float64(time.Since(start).Microseconds()))
+				if err != nil {
+					c.log.CtxDebugf(ctx, "Error backfilling %s to peer %s: %s", bf.r.GetDigest().GetHash(), dest, err)
+				}
+				return nil
+			})
+		}
 	}
-	return eg.Wait()
+	err = eg.Wait()
 }
 
 func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*backfillOrder {
@@ -1142,16 +1202,11 @@ func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*
 	if len(targets) == 0 {
 		return nil
 	}
-
-	orders := make([]*backfillOrder, 0, len(targets))
-	for _, target := range targets {
-		orders = append(orders, &backfillOrder{
-			source: source,
-			dest:   target,
-			r:      r,
-		})
-	}
-	return orders
+	return []*backfillOrder{{
+		r:      r,
+		source: source,
+		dests:  targets,
+	}}
 }
 
 // The first contains result that finds the digest will be returned. If all
@@ -1165,18 +1220,12 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 		return true, nil
 	}
 	ps := c.readPeers(r)
-	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
-			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-		}
-	}
-
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		exists, err := c.remoteContains(ctx, peer, r)
 		if err == nil {
 			if exists {
 				c.log.CtxDebugf(ctx, "Contains(%q) found on peer %q", r.GetDigest(), peer)
-				backfill()
+				c.backfillPeers(ctx, c.getBackfillOrders(r, ps))
 				return exists, err
 			}
 			c.log.CtxDebugf(ctx, "Contains(%q) not found on peer %q (err: %+v)", r.GetDigest(), peer, err)
@@ -1214,13 +1263,21 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 }
 
 func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	return c.getWithMetadata(ctx, r, "GetWithMetadata" /*=metricsLabel*/)
+}
+
+func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metricsLabel string) ([]byte, *interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(r)
 
+	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
 		data, md, err := c.remoteGetWithMetadata(ctx, peer, r)
 		if err == nil {
+			c.backfillPeers(ctx, c.getBackfillOrders(r, ps))
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) found on peer %q", d, peer)
+			metrics.DistributedCachePeerLookups.WithLabelValues(metricsLabel, metrics.HitStatusLabel).Observe(float64(lookups))
 			return data, md, nil
 		}
 		if status.IsNotFoundError(err) {
@@ -1233,6 +1290,7 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 		ps.MarkPeerAsFailed(peer)
 	}
 
+	metrics.DistributedCachePeerLookups.WithLabelValues(metricsLabel, metrics.MissStatusLabel).Observe(float64(lookups))
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to GetWithMetadata %q. Peerset: %+v", d.GetHash(), ps)
 	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
@@ -1241,6 +1299,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	purpose := findmissing.PurposeFromContext(ctx)
 
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
@@ -1343,9 +1402,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		ps := peerMap[h]
 		backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-	}
+	c.backfillPeers(ctx, backfills)
 
 	var missing []*repb.Digest
 	for _, r := range resources {
@@ -1366,6 +1423,22 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			missMetric.Observe(float64(lookups))
 		}
 	}
+
+	// Record the LOGICAL present/absent counts by purpose (deduplicated across
+	// replica retries), a complementary view to the per-node pebble metric.
+	if len(resources) > 0 {
+		purposeLabel := purpose.String()
+		if present := len(resources) - len(missing); present > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
+				Add(float64(present))
+		}
+		if len(missing) > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
+				Add(float64(len(missing)))
+		}
+	}
 	return missing, nil
 }
 
@@ -1377,18 +1450,12 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 // Values found on a non-primary replica will be backfilled to the primary.
 func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64, metricsLabel string) (io.ReadCloser, error) {
 	ps := c.readPeers(rn)
-	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
-			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-		}
-	}
-
 	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		lookups++
 		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
 		if err == nil {
-			backfill()
+			c.backfillPeers(ctx, c.getBackfillOrders(rn, ps))
 			metrics.DistributedCachePeerLookups.WithLabelValues(
 				metricsLabel,
 				metrics.HitStatusLabel,
@@ -1448,6 +1515,11 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		}
 	}
 
+	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+		"GetMulti",
+		metrics.HitStatusLabel,
+	)
+	lookups := 0
 	for {
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
@@ -1473,6 +1545,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			// we're out of peers and should exit, returning what we have.
 			break
 		}
+		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
 			peer := peer
@@ -1491,6 +1564,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 				}
 				for d, data := range peerRsp {
 					gotMap[d.GetHash()] = data
+					hitMetric.Observe(float64(lookups))
 				}
 				return nil
 			})
@@ -1519,15 +1593,28 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 		}
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-	}
+	c.backfillPeers(ctx, backfills)
 
 	rsp := make(map[*repb.Digest][]byte, len(resources))
+	misses := 0
 	for _, r := range resources {
 		d := r.GetDigest()
 		if buf, ok := gotMap[d.GetHash()]; ok {
 			rsp[d] = buf
+		} else {
+			misses++
+		}
+	}
+
+	// For every resource we didn't find, record an observation indicating how
+	// many lookups we did.
+	if misses > 0 {
+		missMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+			"GetMulti",
+			metrics.MissStatusLabel,
+		)
+		for range misses {
+			missMetric.Observe(float64(lookups))
 		}
 	}
 	return rsp, nil

@@ -146,7 +146,7 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
     if (!this.state.report) {
       return (
         <div className="card">
-          <ListChecks className="icon" />
+          <ListChecks />
           <div className="content">
             <div className="header">
               <div className="title">Coverage</div>
@@ -177,7 +177,7 @@ export default class InvocationCoverageCardComponent extends React.Component<Pro
     return (
       <>
         <div className="card">
-          <ListChecks className="icon" />
+          <ListChecks />
           <div className="content">
             <div className="header">
               <div className="title">

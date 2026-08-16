@@ -100,6 +100,14 @@ message Usage {
   // Total wall time of tasks run on BuildBuddy-owned workflow runners,
   // ignoring cpu utilization.  Idle time is counted.
   int64 cloud_workflow_linux_execution_duration_usec = 19;
+
+  // The number of bytes downloaded from cache that was served by a
+  // customer-managed (customer-run) cache proxy.
+  int64 total_customer_proxy_download_size_bytes = 20;
+
+  // The number of bytes uploaded to cache through a customer-managed
+  // (customer-run) cache proxy.
+  int64 total_customer_proxy_upload_size_bytes = 21;
 }
 
 // Alerting rule for usage-based alerts.
@@ -151,6 +159,8 @@ message UsageAlertingMetric {
     CLOUD_CPU_NANOS = 16;
     CLOUD_RBE_CPU_NANOS = 17;
     CLOUD_WORKFLOW_CPU_NANOS = 18;
+    TOTAL_CUSTOMER_PROXY_DOWNLOAD_SIZE_BYTES = 19;
+    TOTAL_CUSTOMER_PROXY_UPLOAD_SIZE_BYTES = 20;
   }
 }
 

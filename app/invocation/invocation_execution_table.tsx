@@ -106,9 +106,7 @@ function renderExecutionLabel(execution: execution_stats.Execution) {
     return null;
   }
   return (
-    <span className="execution-label">
-      {joinReactNodes(nodes, <ChevronRight className="icon breadcrumb-separator" />)}
-    </span>
+    <span className="execution-label">{joinReactNodes(nodes, <ChevronRight className="breadcrumb-separator" />)}</span>
   );
 }
 

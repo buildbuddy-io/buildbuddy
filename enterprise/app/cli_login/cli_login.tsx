@@ -171,7 +171,7 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
       return (
         <div className="cli-login" debug-id="cli-login-complete">
           <div className="card">
-            {failed ? <XCircle className="icon red" /> : <CheckCircle className="icon green" />}
+            {failed ? <XCircle className="red" /> : <CheckCircle className="green" />}
             <div className="content">
               <div className="title">{failed ? "CLI login failed" : "CLI login succeeded"}</div>
               <div className="details">
@@ -196,7 +196,7 @@ export default class CliLoginComponent extends React.Component<CliLoginProps, St
     return (
       <div className="cli-login">
         <div className="card">
-          <TerminalIcon className="icon" />
+          <TerminalIcon />
           <div className="content">
             <div className="title">Complete CLI login</div>
             <div className="details">

@@ -41,7 +41,9 @@ import (
 	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -324,6 +326,41 @@ type StoppableCache interface {
 	Stop() error
 }
 
+// A Cache implementation that supports reading and writing refpb.References.
+type ReferenceCache interface {
+	Cache
+
+	// Creates a reference to the resource named by r from the bytes read from
+	// reader by writing them to shared storage, without writing r as an entry
+	// in this cache (so that the created reference can be claimed by another
+	// cache). The returned reference can be dereferenced with Dereference() or
+	// stored with WriteReference() by an identically-configured ReferenceCache;
+	// no cache owns the staged blob until a cache stores the reference, and at
+	// most one may do so without cloning.
+	CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error)
+
+	// Reads the provided resource from the cache and returns a reference to it.
+	// The provided reference can be dereferenced into an io.ReadCloser using
+	// Dereference(). This function returns a NotFound error if the requested
+	// resource does not exist as a reference in the cache. In this case, the
+	// caller should try reading it directly from the Cache via Get(), Reader(),
+	// or similar.
+	ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error)
+
+	// Converts a refpb.Reference into an io.ReadCloser serving the resource
+	// named by r. The stored blob is decrypted and transcoded as needed so the
+	// returned bytes use r's compressor, with offset and limit interpreted in
+	// uncompressed bytes. The reference must come from ReadReference() from an
+	// identically-configured ReferenceCache, or dereferencing will fail.
+	Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error)
+
+	// Stores the resource named by r using the provided reference to a blob
+	// in shared storage instead of a byte stream. If mustClone is true, the
+	// cache first makes its own copy of the referenced blob and stores the
+	// copy; otherwise it takes ownership of the referenced blob directly.
+	WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error
+}
+
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
 	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
@@ -457,6 +494,10 @@ type InvocationDB interface {
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 	SetNowFunc(now func() time.Time)
+
+	// GetInvocationReconnectWindow returns how long after an incomplete
+	// invocation's last DB update the invocation may still be retried.
+	GetInvocationReconnectWindow() time.Duration
 }
 
 type APIKeyGroup interface {
@@ -563,7 +604,11 @@ type UserDB interface {
 	// an error if no registered user was found. It requires that a
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
+	// It returns all groups the user is a member of.
 	GetUser(ctx context.Context) (*tables.User, error)
+	// GetUserWithOwnedGroups returns the authenticated user with only groups
+	// created by that user.
+	GetUserWithOwnedGroups(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *GetUserOpts) (*tables.User, error)
@@ -652,6 +697,10 @@ type UsageService interface {
 	CreateUsageAlertingRule(ctx context.Context, req *usagepb.CreateUsageAlertingRuleRequest) (*usagepb.CreateUsageAlertingRuleResponse, error)
 	DeleteUsageAlertingRule(ctx context.Context, req *usagepb.DeleteUsageAlertingRuleRequest) (*usagepb.DeleteUsageAlertingRuleResponse, error)
 	GetAlertsEnabled() bool
+}
+
+type NotificationService interface {
+	SendNotification(ctx context.Context, req *npb.SendNotificationRequest) (*npb.SendNotificationResponse, error)
 }
 
 type UsageTracker interface {
@@ -1106,6 +1155,14 @@ type TaskSizer interface {
 
 	// Update records a measured task size.
 	Update(ctx context.Context, cmd *repb.Command, props *platform.Properties, md *repb.ExecutedActionMetadata) error
+
+	// UpdateForOOM increases the recorded memory estimate for a task that was
+	// killed by the executor OOM killer after using more memory than its
+	// estimate, so that it is scheduled with at least observedMemoryBytes of
+	// memory the next time it runs (and possibly more, for headroom).
+	// scheduledSize is the size the task was scheduled with, and
+	// observedMemoryBytes is the memory usage observed by the OOM killer.
+	UpdateForOOM(ctx context.Context, cmd *repb.Command, props *platform.Properties, scheduledSize *scpb.TaskSize, observedMemoryBytes int64) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
@@ -1354,6 +1411,18 @@ type MetricsCollector interface {
 type KeyValStore interface {
 	Set(ctx context.Context, key string, val []byte) error
 	Get(ctx context.Context, key string) ([]byte, error)
+
+	// ReplaceSuffix replaces the value stored at the given key from offset
+	// onward with data, truncating the value to offset+len(data), if the
+	// stored value currently has length expectedLength (missing keys are
+	// treated as having length 0). Otherwise (for example, if the key was
+	// evicted), nothing is written and a FailedPrecondition error is
+	// returned; the caller can recover by writing the full value with Set.
+	// offset must be between 0 and expectedLength; passing offset ==
+	// expectedLength appends data to the value. Keys are expected to have a
+	// single writer at a time, so implementations need not guard against
+	// concurrent writes to the same key.
+	ReplaceSuffix(ctx context.Context, key string, expectedLength, offset int64, data []byte) error
 }
 
 // A RepoDownloader allows testing a git-repo to see if it's downloadable.
@@ -1414,11 +1483,6 @@ type XcodeLocator interface {
 	// Returns a slice containing the most specific version specifier for each
 	// Xcode installed on this host. E.g.: ["16.2.0.16C503", "16.0.0.16A242"]
 	Versions() []string
-
-	// Returns a slice containing the most specific version specifier for each
-	// Xcode SDK installed on this host. E.g.:
-	// ["iPhoneOS18.2", "iPhoneSimulator18.2"]
-	SDKs() []string
 
 	// Finds the Xcode matching the given Xcode version selector. Returns the
 	// developer directory for that Xcode and the SDK root for the given SDK.
@@ -1561,9 +1625,9 @@ type ExecutionCollector interface {
 	// behavior, and will not return the deleted execution.
 	DeleteInProgressExecution(ctx context.Context, executionID string) error
 
-	// DeleteInvocationExecutionLinks deletes all invocation => []execution
-	// links for the given invocation ID.
-	DeleteInvocationExecutionLinks(ctx context.Context, invocationID string) error
+	// DeleteInvocationExecutionLink deletes the single invocation => execution
+	// link.
+	DeleteInvocationExecutionLink(ctx context.Context, link *sipb.StoredInvocationLink) error
 
 	AppendExecution(ctx context.Context, iid string, execution *repb.StoredExecution) error
 	// GetExecutions fetches a range of executions for the given invocation ID.
@@ -1571,7 +1635,6 @@ type ExecutionCollector interface {
 	// of range, then the returned slice will contain as many executions are
 	// available starting from the start index.
 	GetExecutions(ctx context.Context, iid string, start, stop int64) ([]*repb.StoredExecution, error)
-	DeleteExecutions(ctx context.Context, iid string) error
 	ExpireExecutions(ctx context.Context, iid string, ttl time.Duration) error
 	AddInvocation(ctx context.Context, inv *sipb.StoredInvocation) error
 	GetInvocation(ctx context.Context, iid string) (*sipb.StoredInvocation, error)
@@ -1680,10 +1743,12 @@ type ClientIdentity struct {
 }
 
 const (
-	ClientIdentityExecutor   = "executor"
-	ClientIdentityApp        = "app"
-	ClientIdentityWorkflow   = "workflow"
-	ClientIdentityCacheProxy = "cache-proxy"
+	ClientIdentityExecutor         = "executor"
+	ClientIdentityApp              = "app"
+	ClientIdentityWorkflow         = "workflow"
+	ClientIdentityCacheProxy       = "cache-proxy"
+	ClientIdentityMetadataServer   = "metadata-server"
+	ClientIdentityCodeSearchServer = "code-search-server"
 
 	// ClientIdentityGRPCProxy identifies the gRPC forwarding proxy
 	// (server/util/grpc_forward), which proxies unknown RPCs to a backend and
@@ -1701,9 +1766,14 @@ type ClientIdentityService interface {
 	// outgoing context.
 	AddIdentityToContext(ctx context.Context) (context.Context, error)
 
-	// IdentityHeader generates a signed header value for the specified
+	// NewIdentityHeader generates a new signed header value for the specified
 	// identity.
-	IdentityHeader(si *ClientIdentity, expiration time.Duration) (string, error)
+	NewIdentityHeader(si *ClientIdentity, expiration time.Duration) (string, error)
+
+	// CachedIdentityHeader returns a signed header value for the specified
+	// identity, reusing a cached value that is periodically refreshed instead of
+	// signing a new JWT on every call.
+	CachedIdentityHeader(si *ClientIdentity) (string, error)
 
 	// ValidateIncomingIdentity validates the incoming identity and adds the
 	// authenticated identity information to the context. This function is

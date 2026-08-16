@@ -8,6 +8,9 @@ var PushEvent []byte
 //go:embed push_tag_event.json
 var PushTagEvent []byte
 
+//go:embed push_annotated_tag_event.json
+var PushAnnotatedTagEvent []byte
+
 //go:embed delete_tag_event.json
 var DeleteTagEvent []byte
 

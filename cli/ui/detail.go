@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -41,7 +41,7 @@ func (m detailModel) Init() tea.Cmd {
 
 func (m detailModel) Update(msg tea.Msg) (detailModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "esc":
 			m.goBack = true
@@ -75,12 +75,14 @@ func (m detailModel) Update(msg tea.Msg) (detailModel, tea.Cmd) {
 		m.height = msg.Height
 		headerHeight := 3
 		if !m.ready {
-			m.viewport = viewport.New(msg.Width, msg.Height-headerHeight)
-			m.viewport.YPosition = headerHeight
+			m.viewport = viewport.New(
+				viewport.WithWidth(msg.Width),
+				viewport.WithHeight(msg.Height-headerHeight),
+			)
 			m.ready = true
 		} else {
-			m.viewport.Width = msg.Width
-			m.viewport.Height = msg.Height - headerHeight
+			m.viewport.SetWidth(msg.Width)
+			m.viewport.SetHeight(msg.Height - headerHeight)
 		}
 		m.updateContent()
 		return m, nil

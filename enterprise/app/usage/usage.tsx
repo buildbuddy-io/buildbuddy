@@ -679,6 +679,30 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
+                {Boolean(selection.totalCustomerProxyDownloadSizeBytes) && (
+                  <>
+                    <div className="usage-resource-name">Total bytes downloaded from cache proxy</div>
+                    <div
+                      className="usage-value"
+                      title={formatWithCommas(selection.totalCustomerProxyDownloadSizeBytes)}>
+                      {formatBytes(
+                        selection.totalCustomerProxyDownloadSizeBytes,
+                        selection.totalCustomerProxyDownloadSizeBytes
+                      )}
+                    </div>
+                  </>
+                )}
+                {Boolean(selection.totalCustomerProxyUploadSizeBytes) && (
+                  <>
+                    <div className="usage-resource-name">Total bytes uploaded to cache proxy</div>
+                    <div className="usage-value" title={formatWithCommas(selection.totalCustomerProxyUploadSizeBytes)}>
+                      {formatBytes(
+                        selection.totalCustomerProxyUploadSizeBytes,
+                        selection.totalCustomerProxyUploadSizeBytes
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

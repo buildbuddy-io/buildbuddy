@@ -129,8 +129,7 @@
 }
 
 .invocation-targets-card .chevron-icon .icon {
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
   margin-right: -4px; /* offset flex gap */
 }
 
@@ -187,8 +186,7 @@
 .invocation-action-card .icon.folder-icon,
 .invocation-action-card .icon.file-question-icon {
   margin-right: 4px;
-  width: 18px;
-  height: 18px;
+  --icon-size: 18px;
 }
 
 .invocation-action-card .tree-node-symlink {
@@ -198,8 +196,7 @@
 
   .icon {
     opacity: 0.7;
-    width: 18px;
-    height: 18px;
+    --icon-size: 18px;
   }
 
   .icon:hover {
@@ -535,8 +532,7 @@
   /* remove icon from normal flow */
   position: absolute;
   left: 4px;
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   padding-top: 3px;
 }
 
@@ -700,6 +696,51 @@
   display: block;
 }
 
+.action-argument-row {
+  align-items: center;
+  display: flex;
+}
+
+.action-argument-expander {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  margin: 0 2px 0 0;
+  padding: 0;
+}
+
+.action-argument-expander .icon {
+  height: 14px;
+  margin-right: 0;
+  width: 14px;
+}
+
+.action-argument-param-file,
+.action-argument-param-file-loading,
+.action-argument-param-file-error {
+  margin: 2px 0 4px 18px;
+}
+
+.action-argument-param-file {
+  border-left: 1px solid var(--color-border-primary);
+  border-radius: 4px;
+  font-family: var(--code-font);
+  font-size: 12px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+}
+
+.action-argument-param-file-loading,
+.action-argument-param-file-error {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
 .action-section {
   display: flex;
   margin-bottom: 16px;
@@ -718,21 +759,16 @@
 }
 
 .action-header .base-button .icon.copy-icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   margin-right: 4px;
 }
 
 .action-header .view-history-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   margin-top: -16px;
 }
 
 .action-header .view-history-button .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
 }
 
 .action-section > div {
@@ -911,8 +947,7 @@
   opacity: 0.7;
   margin-right: 6px;
   margin-top: 2px;
-  width: 18px;
-  height: 18px;
+  --icon-size: 18px;
 }
 
 .cache-chart {
@@ -1243,8 +1278,7 @@
 .invocation-cancel-button-container .icon {
   margin-right: 6px;
   margin-top: 2px;
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
 }
 
 .invocation-menu-container {
@@ -1252,11 +1286,7 @@
 }
 
 .invocation-menu-container .base-button.invocation-menu-button {
-  width: 40px;
-  height: 40px;
   border: none;
-  padding: 0;
-  justify-content: center;
 }
 
 .invocation-delete-dialog .error-description {
@@ -1326,6 +1356,17 @@
   justify-content: space-between;
 }
 
+.metadata-detail-inline-action {
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.metadata-detail .metadata-history-link {
+  flex-shrink: 0;
+  margin-left: 0;
+}
+
 .snapshot-id-details {
   display: flex;
   justify-content: space-between;
@@ -1381,8 +1422,7 @@
   align-items: center;
 
   .icon {
-    height: 18px;
-    width: 18px;
+    --icon-size: 18px;
     opacity: 0.7;
   }
 
@@ -1613,8 +1653,7 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .child-invocation-card .icon {
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
 }
 
 .child-invocation-card .icon {
@@ -1685,9 +1724,5 @@ svg.invocation-query-graph .nodes rect {
 }
 
 .invocation-compare-button-container-mini .invocation-menu-button {
-  width: 40px;
-  height: 40px;
   border: none;
-  padding: 0;
-  justify-content: center;
 }

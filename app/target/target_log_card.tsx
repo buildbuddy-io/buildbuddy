@@ -12,7 +12,7 @@ export default class TargetLogCardComponent extends React.Component<Props> {
   render() {
     return (
       <div className={`card ${this.props.dark ? "dark" : "light-terminal"}`}>
-        <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+        <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
         <div className="content">
           <div className="test-log">
             <TerminalComponent

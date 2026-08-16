@@ -12,6 +12,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/cdc",
+        "//server/util/platform",
         "//server/util/usageutil",
         "@org_golang_google_grpc//metadata",
     ],

@@ -189,7 +189,7 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
             {comparison.status === "changed" && comparison.a?.spawn?.digest && comparison.b?.spawn?.digest && (
               <>
                 <DigestComponent digest={comparison.a.spawn.digest} expanded={false} />
-                <ArrowRight className="icon" />
+                <ArrowRight />
                 <DigestComponent digest={comparison.b.spawn.digest} expanded={false} />
               </>
             )}
@@ -245,10 +245,10 @@ export default class CompareExecutionLogSpawnsComponent extends React.Component<
 
     return (
       <>
-        {this.renderCard(this.state.changed, "changed", <CircleDot className="icon yellow" />)}
-        {this.renderCard(this.state.added, "added", <PlusCircle className="icon green" />)}
-        {this.renderCard(this.state.removed, "removed", <MinusCircle className="icon red" />)}
-        {this.renderCard(this.state.unchanged, "unchanged", <Circle className="icon" />)}
+        {this.renderCard(this.state.changed, "changed", <CircleDot className="yellow" />)}
+        {this.renderCard(this.state.added, "added", <PlusCircle className="green" />)}
+        {this.renderCard(this.state.removed, "removed", <MinusCircle className="red" />)}
+        {this.renderCard(this.state.unchanged, "unchanged", <Circle />)}
       </>
     );
   }

@@ -10,7 +10,7 @@ Libraries for fetching, caching, mirroring, and materializing OCI images are cur
   [go-containerregistry](https://github.com/google/go-containerregistry) Images.
 - [//enterprise/server/oci/ocicache](ocicache) provides functions for writing to and reading from the action cache and a
   byte stream server.
-- [//enterprise/server/util/ociconv](../util/ociconv) converts OCI image layer tarballs to ext4 filesystems.
+- [//enterprise/server/oci/ociconv](ociconv) converts OCI image layer tarballs to ext4 filesystems.
 
 ## End goal
 

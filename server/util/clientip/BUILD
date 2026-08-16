@@ -5,7 +5,11 @@ go_library(
     srcs = ["clientip.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/clientip",
     visibility = ["//visibility:public"],
-    deps = ["//server/util/flag"],
+    deps = [
+        "//server/util/flag",
+        "//server/util/log",
+        "//server/util/status",
+    ],
 )
 
 go_test(
@@ -13,6 +17,7 @@ go_test(
     srcs = ["clientip_test.go"],
     deps = [
         ":clientip",
+        "//server/util/authutil",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

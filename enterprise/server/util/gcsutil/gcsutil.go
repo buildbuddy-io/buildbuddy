@@ -19,7 +19,12 @@ import (
 // For this reason, if a GCS object is ever less than 1 hour away from
 // TTL, assume it has already been marked for deletion.
 func ObjectIsPastTTL(clock clockwork.Clock, gcsMetadata *sgpb.StorageMetadata_GCSMetadata, gcsTTLDays int64) bool {
-	customTimeUsec := gcsMetadata.GetLastCustomTimeUsec()
+	return CustomTimeIsPastTTL(clock, gcsMetadata.GetLastCustomTimeUsec(), gcsTTLDays)
+}
+
+// CustomTimeIsPastTTL is ObjectIsPastTTL for callers that have the object's
+// last custom time but not a StorageMetadata_GCSMetadata proto.
+func CustomTimeIsPastTTL(clock clockwork.Clock, customTimeUsec int64, gcsTTLDays int64) bool {
 	buffer := time.Hour
 	return clock.Since(time.UnixMicro(customTimeUsec))+buffer > time.Duration(gcsTTLDays*24)*time.Hour
 }

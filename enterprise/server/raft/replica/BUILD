@@ -15,7 +15,6 @@ go_library(
         "//proto:raft_go_proto",
         "//proto:storage_go_proto",
         "//server/metrics",
-        "//server/util/canary",
         "//server/util/lib/set",
         "//server/util/log",
         "//server/util/proto",

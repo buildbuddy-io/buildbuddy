@@ -27,9 +27,9 @@ export default class SidebarNodeComponent extends React.Component<SidebarNodePro
     const expanded =
       this.props.node.nodeType == workspace.NodeType.DIRECTORY && this.props.isExpanded(this.props.fullPath);
     const editing = this.props.isRenaming(this.props.fullPath) || false;
-    let fileIcon = expanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />;
+    let fileIcon = expanded ? <ChevronDown /> : <ChevronRight />;
     if (this.props.node.nodeType == workspace.NodeType.FILE) {
-      fileIcon = <File className="icon" />;
+      fileIcon = <File />;
     }
     let change = this.props.changes.get(this.props.fullPath);
     if (change?.changeType === workspace.ChangeType.DELETED) {

@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//codesearch/server",
         "//enterprise/server/backends/configsecrets",
+        "//enterprise/server/clientidentity",
         "//enterprise/server/remoteauth",
         "//proto:codesearch_service_go_proto",
         "//server/config",

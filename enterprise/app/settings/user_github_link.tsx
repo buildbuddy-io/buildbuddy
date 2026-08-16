@@ -135,7 +135,7 @@ export default class UserGitHubLink extends React.Component<Props, State> {
             {this.state.account ? (
               <img src={this.state.account.avatarUrl} alt="" className="avatar" />
             ) : (
-              <UserIcon className="icon avatar" />
+              <UserIcon className="avatar" />
             )}
             <div>
               <div>GitHub account linked</div>

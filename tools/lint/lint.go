@@ -34,12 +34,11 @@ var (
 
 // Set via x_defs in BUILD file.
 var (
-	goimportsRlocationpath                     string
-	goRlocationpath                            string
-	clangFormatRlocationpath                   string
-	bbCLIRlocationpath                         string
-	prettierRlocationpath                      string
-	prettierPluginOrganizeImportsRlocationpath string
+	goimportsRlocationpath   string
+	goRlocationpath          string
+	clangFormatRlocationpath string
+	bbCLIRlocationpath       string
+	prettierRlocationpath    string
 )
 
 var (
@@ -224,11 +223,6 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 	if err != nil {
 		return fmt.Errorf("get prettier command: %w", err)
 	}
-	prettierPluginOrganizeImports, err := runfiles.Rlocation(prettierPluginOrganizeImportsRlocationpath)
-	if err != nil {
-		return fmt.Errorf("find prettier-plugin-organize-imports in runfiles: %w", err)
-	}
-	cmd.Args = append(cmd.Args, "--plugin", filepath.Join(prettierPluginOrganizeImports, "index.js"))
 	if fix {
 		cmd.Args = append(cmd.Args, "--write")
 	} else {
@@ -244,6 +238,28 @@ func runPrettier(ctx context.Context, stdout, stderr io.Writer, fix bool, files 
 }
 
 func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	// When running `bazel run tools/lint`, the bazel invocation wrapping this
+	// tool will update MODULE.bazel.lock on its own, so the linter will
+	// effectively always see the auto-updated MODULE.bazel.lock
+	//
+	// This behavior is maybe a bit surprising, but we can probably live with
+	// it, because the alternative would be to add `common
+	// --lockfile_mode=error` to our .bazelrc which would be inconvenient for
+	// local development.
+	//
+	// When running on CI though, if the auto-update produces a diff, it should
+	// be treated as an error. So when running on CI, first revert any diff
+	// that might've been produced by the wrapping bazel invocation, then
+	// run a complete lockfile check below.
+	if !fix && os.Getenv("CI") != "" {
+		cmd := exec.Command("git", "restore", "MODULE.bazel.lock")
+		cmd.Stdout = stdout
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("git restore MODULE.bazel.lock: %w", err)
+		}
+	}
+
 	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
 	if err != nil {
 		return fmt.Errorf("get bb command: %w", err)

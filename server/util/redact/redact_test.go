@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1143,4 +1145,79 @@ func TestCollectSensitiveEnvValues(t *testing.T) {
 	for _, v := range values {
 		assert.NotEmpty(t, v)
 	}
+}
+
+type credentials struct {
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password" config:"secret"`
+}
+
+type registry struct {
+	Address     string      `yaml:"address" json:"address"`
+	Credentials credentials `yaml:"credentials" json:"credentials"`
+}
+
+// endpoint has no config:"secret" fields anywhere, including via nesting.
+type endpoint struct {
+	Host string `yaml:"host" json:"host"`
+	Port int    `yaml:"port" json:"port"`
+}
+
+type cluster struct {
+	Name      string     `yaml:"name" json:"name"`
+	Endpoints []endpoint `yaml:"endpoints" json:"endpoints"`
+}
+
+var (
+	_ = flag.String("test.is_secret.plain", "", "")
+	_ = flag.String("test.is_secret.secret", "", "", flag.Secret)
+	_ = flag.Slice("test.is_secret.credentials", []credentials{}, "")
+	_ = flag.Struct("test.is_secret.registry", registry{}, "")
+	_ = flag.Struct("test.is_secret.endpoint", endpoint{}, "")
+	_ = flag.Struct("test.is_secret.cluster", cluster{}, "")
+	_ = flag.Slice("test.is_secret.string_slice", []string{}, "")
+	_ = flag.Slice("test.is_secret.endpoint_slice", []endpoint{}, "")
+	_ = flag.Map("test.is_secret.string_map", map[string]string{}, "")
+	_ = flag.Map("test.is_secret.endpoint_map", map[string]endpoint{}, "")
+	_ = flag.Map("test.is_secret.credentials_map", map[string]credentials{}, "")
+)
+
+func TestIsSecret(t *testing.T) {
+	for name, want := range map[string]bool{
+		// A plain flag has no secrets.
+		"test.is_secret.plain": false,
+		// A flag declared with the Secret tag.
+		"test.is_secret.secret": true,
+		// A flag whose type has a config:"secret" field.
+		"test.is_secret.credentials": true,
+		// A flag whose type reaches a config:"secret" field via nesting.
+		"test.is_secret.registry": true,
+		// A struct flag with no secret fields.
+		"test.is_secret.endpoint": false,
+		// A struct flag whose nested structs (through a slice) have no
+		// secret fields.
+		"test.is_secret.cluster": false,
+		// Slices of secret-free types.
+		"test.is_secret.string_slice":   false,
+		"test.is_secret.endpoint_slice": false,
+		// Maps of secret-free types.
+		"test.is_secret.string_map":   false,
+		"test.is_secret.endpoint_map": false,
+		// A map whose value type has a config:"secret" field.
+		"test.is_secret.credentials_map": true,
+	} {
+		flg := flag.CommandLine.Lookup(name)
+		require.NotNil(t, flg, name)
+		assert.Equal(t, want, redact.IsSecret(flg), name)
+	}
+}
+
+func TestIsSecret_SetValuesNotExposed(t *testing.T) {
+	// Sanity-check the scenario IsSecret exists for: a set flag whose
+	// String() serialization would include a secret struct field.
+	flags.Set(t, "test.is_secret.credentials", []credentials{{Username: "user", Password: "SECRET_PASSWORD"}})
+	flg := flag.CommandLine.Lookup("test.is_secret.credentials")
+	require.NotNil(t, flg)
+	assert.Contains(t, flg.Value.String(), "SECRET_PASSWORD")
+	assert.True(t, redact.IsSecret(flg))
 }

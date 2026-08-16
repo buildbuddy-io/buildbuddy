@@ -1178,21 +1178,21 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:                      "action filter, codesearch enabled",
+			name:                      "action filter excludes codesearch",
 			actionFilter:              []string{"Test all targets"},
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
 			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:                      "codesearch action filter, codesearch enabled",
+			name:                      "codesearch-only action filter",
 			actionFilter:              []string{config.CSIncrementalUpdateName},
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
 			expectedActions:           []string{config.CSIncrementalUpdateName},
 		},
 		{
-			name:                      "no action filter, indexing flag disabled",
+			name:                      "codesearch indexing flag disabled",
 			actionFilter:              nil,
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     false,
@@ -1282,6 +1282,62 @@ actions:
 	require.Zero(t, scheduled.FailedAttemptCount)
 	require.Zero(t, scheduled.ConsecutiveScheduleFailureCount)
 	require.Zero(t, scheduled.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_SharesInstanceNameWithWebhookEvent(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
+	authCtx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	runBBServer(ctx, t, te)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      pull_request:
+        branches: [ "*" ]
+      schedule:
+        crons: ["0 * * * *"]
+`,
+	}
+
+	now := threePM
+	te.SetClock(clockwork.NewFakeClockAt(now))
+	// Scheduled workflows have normalize repo URLs (no ".git" suffix).
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "test",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Test",
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	require.NoError(t, te.GetWorkflowService().RunScheduledWorkflows(t.Context()))
+	scheduledRequest := execClient.NextExecuteRequest().Payload
+
+	// GitHub webhook payloads use clone URLs, which include a ".git" suffix.
+	cloneURL := repoURL + ".git"
+	wd := &interfaces.WebhookData{
+		EventName:               "pull_request",
+		PushedRepoURL:           cloneURL,
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		TargetRepoURL:           cloneURL,
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "main",
+	}
+	require.NoError(t, te.GetWorkflowService().HandleRepositoryEvent(authCtx, repo, wd, "faketoken"))
+	pullRequest := execClient.NextExecuteRequest().Payload
+
+	// Scheduled workflows and webhook events should share the same instance name so runners can be shared.
+	require.Equal(t, scheduledRequest.GetInstanceName(), pullRequest.GetInstanceName())
 }
 
 func TestScheduledWorkflow(t *testing.T) {
@@ -2361,25 +2417,26 @@ func TestTimeout(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		ctx := context.Background()
-		u, lis := testhttp.NewServer(t)
-		flags.Set(t, "app.build_buddy_url", *u)
-		flags.Set(t, "remote_execution.enable_remote_exec", true)
-		te := newTestEnv(t)
-		ctx, _, gid := authenticate(t, ctx, te)
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			u, lis := testhttp.NewServer(t)
+			flags.Set(t, "app.build_buddy_url", *u)
+			flags.Set(t, "remote_execution.enable_remote_exec", true)
+			te := newTestEnv(t)
+			ctx, _, gid := authenticate(t, ctx, te)
 
-		execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
-		te.SetRemoteExecutionClient(execClient)
-		go http.Serve(lis, te.GetWorkflowService())
-		provider := setupFakeGitProvider(t, te)
-		repoURL := makeTempRepo(t)
-		runBBServer(ctx, t, te)
-		repo := createWorkflow(t, te, repoURL, gid, false)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			te.SetRemoteExecutionClient(execClient)
+			go http.Serve(lis, te.GetWorkflowService())
+			provider := setupFakeGitProvider(t, te)
+			repoURL := makeTempRepo(t)
+			runBBServer(ctx, t, te)
+			repo := createWorkflow(t, te, repoURL, gid, false)
 
-		updateGroupStatus(t, te, gid, tc.groupStatus)
-		enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
+			updateGroupStatus(t, te, gid, tc.groupStatus)
+			enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
 
-		config := `
+			config := `
 actions:
   - name: "Test"
     triggers: { push: { branches: [ "*" ] } }
@@ -2387,17 +2444,18 @@ actions:
     timeout: "2h"
 `
 
-		pushToDefaultBranch(t, te, repo, provider, config)
+			pushToDefaultBranch(t, te, repo, provider, config)
 
-		execReq := execClient.NextExecuteRequest()
-		exec := getExecution(t, ctx, te, execReq.Payload)
-		expectedTimeout := tc.expectedTimeout.String()
-		require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout, tc.name)
-		if tc.expectedTimeoutReason != "" {
-			require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason, tc.name)
-		} else {
-			require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason, tc.name)
-		}
-		require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration(), tc.name)
+			execReq := execClient.NextExecuteRequest()
+			exec := getExecution(t, ctx, te, execReq.Payload)
+			expectedTimeout := tc.expectedTimeout.String()
+			require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout)
+			if tc.expectedTimeoutReason != "" {
+				require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason)
+			} else {
+				require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason)
+			}
+			require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration())
+		})
 	}
 }

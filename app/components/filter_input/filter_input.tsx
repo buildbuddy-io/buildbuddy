@@ -22,7 +22,7 @@ export const FilterInput = React.forwardRef((props: FilterInputProps, ref: React
         {...{ spellcheck: "false" }}
         {...rest}
       />
-      <Search className="icon" />
+      <Search />
       {rightElement && <span className="right-element">{rightElement}</span>}
     </div>
   );

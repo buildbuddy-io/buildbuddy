@@ -7,7 +7,6 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	"net/http"
 	"runtime"
 	"slices"
 	"sync"
@@ -35,7 +34,6 @@ import (
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/partial"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -243,10 +241,7 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	_, err = remote.Head(imageRef, remoteOpts...)
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
+		return ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
 	}
 
 	return nil
@@ -274,10 +269,7 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
 	desc, err := remote.Head(tagRef, remoteOpts...)
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return "", status.PermissionDeniedErrorf("not authorized to access image manifest: %s", err)
-		}
-		return "", status.UnavailableErrorf("could not fetch manifest metadata from remote registry: %s", err)
+		return "", ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
 	}
 	imageNameWithDigest := tagRef.Context().Digest(desc.Digest.String()).String()
 	r.imageTagToDigestLRU.Add(tagRef.String(), imageNameWithDigest)
@@ -446,10 +438,7 @@ func fetchImageFromCacheOrRemote(ctx context.Context, digestOrTagRef ctrname.Ref
 func fetchManifestMetadata(ctx context.Context, digestOrTagRef ctrname.Reference, puller *remote.Puller) (*ctr.Descriptor, error) {
 	desc, err := puller.Head(ctx, digestOrTagRef)
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, status.PermissionDeniedErrorf("cannot access image manifest: %s", err)
-		}
-		return nil, status.UnavailableErrorf("cannot retrieve manifest metadata from remote: %s", err)
+		return nil, ocifetcher.RemoteRegistryError(err, "cannot retrieve manifest metadata from remote")
 	}
 	return desc, nil
 }
@@ -482,10 +471,7 @@ func fetchManifest(ctx context.Context, digestOrTagRef ctrname.Reference, puller
 
 	remoteDesc, err := puller.Get(ctx, digestOrTagRef)
 	if err != nil {
-		if t, ok := err.(*transport.Error); ok && t.StatusCode == http.StatusUnauthorized {
-			return nil, nil, status.PermissionDeniedErrorf("not authorized to retrieve image manifest: %s", err)
-		}
-		return nil, nil, status.UnavailableErrorf("could not retrieve manifest from remote: %s", err)
+		return nil, nil, ocifetcher.RemoteRegistryError(err, "could not retrieve manifest from remote")
 	}
 	return &remoteDesc.Descriptor, remoteDesc.Manifest, nil
 }
@@ -760,7 +746,11 @@ func newLayerFromDigest(repo ctrname.Repository, digest ctr.Hash, image *imageFr
 		desc:   desc,
 		createRemoteLayer: sync.OnceValues(func() (ctr.Layer, error) {
 			ref := repo.Digest(digest.String())
-			return puller.Layer(image.ctx, ref)
+			layer, err := puller.Layer(image.ctx, ref)
+			if err != nil {
+				return nil, ocifetcher.RemoteRegistryError(err, "could not retrieve layer from remote")
+			}
+			return layer, nil
 		}),
 	}
 }

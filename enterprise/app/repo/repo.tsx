@@ -1,4 +1,4 @@
-import { BookCopy, ChevronRightSquare, FolderInput, Folders, Github } from "lucide-react";
+import { BookCopy, ChevronRightSquare, FolderInput, Folders } from "lucide-react";
 import React from "react";
 import auth_service, { User } from "../../../app/auth/auth_service";
 import Checkbox from "../../../app/components/checkbox/checkbox";
@@ -7,6 +7,7 @@ import Select from "../../../app/components/select/select";
 import Spinner from "../../../app/components/spinner/spinner";
 import error_service from "../../../app/errors/error_service";
 import { GithubIcon } from "../../../app/icons/github";
+import { Github } from "../../../app/icons/github_lucide";
 import { GoogleIcon } from "../../../app/icons/google";
 import picker_service from "../../../app/picker/picker_service";
 import router from "../../../app/router/router";

@@ -512,6 +512,157 @@ func TestSizer_P90CPUExperiment(t *testing.T) {
 	assert.Equal(t, int64(4000), ts.GetEstimatedMilliCpu())
 }
 
+func TestSizer_UpdateForOOM(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		// resizeMultiplier is the remote_execution.oom_resize_multiplier flag
+		// value.
+		resizeMultiplier float64
+		// scheduledSize is the size the task was scheduled with.
+		scheduledSize *scpb.TaskSize
+		// observedMemoryBytes is the task's memory usage observed by the OOM
+		// killer.
+		observedMemoryBytes int64
+		// expectedSize is the size expected to be recorded after the OOM
+		// update, or nil if no size should be recorded.
+		expectedSize *scpb.TaskSize
+	}{
+		{
+			// The task exceeded its 1GB estimate, so the new estimate should be
+			// the observed usage times the resize multiplier, with the CPU
+			// estimate carried over from the scheduled size.
+			name:                "usage above estimate records a resized estimate",
+			resizeMultiplier:    1.5,
+			scheduledSize:       &scpb.TaskSize{EstimatedMemoryBytes: 1e9, EstimatedMilliCpu: 2000},
+			observedMemoryBytes: 2e9,
+			expectedSize:        &scpb.TaskSize{EstimatedMemoryBytes: 3e9, EstimatedMilliCpu: 2000},
+		},
+		{
+			// The task was OOM-killed while using less memory than its estimate
+			// (it was killed for some other reason), so nothing should be
+			// recorded.
+			name:                "usage within estimate records nothing",
+			resizeMultiplier:    1.5,
+			scheduledSize:       &scpb.TaskSize{EstimatedMemoryBytes: 1e9, EstimatedMilliCpu: 2000},
+			observedMemoryBytes: 800e6,
+			expectedSize:        nil,
+		},
+		{
+			// Without a scheduled memory estimate, there is no baseline to
+			// compare the observed usage against, so nothing should be recorded.
+			name:                "missing memory estimate records nothing",
+			resizeMultiplier:    1.5,
+			scheduledSize:       &scpb.TaskSize{EstimatedMilliCpu: 2000},
+			observedMemoryBytes: 2e9,
+			expectedSize:        nil,
+		},
+		{
+			// Without a scheduled CPU estimate, the recorded size should fall
+			// back to the default CPU estimate, since a recorded size needs a
+			// non-zero CPU estimate to be read back.
+			name:                "missing CPU estimate falls back to the default CPU estimate",
+			resizeMultiplier:    1.5,
+			scheduledSize:       &scpb.TaskSize{EstimatedMemoryBytes: 1e9},
+			observedMemoryBytes: 2e9,
+			expectedSize:        &scpb.TaskSize{EstimatedMemoryBytes: 3e9, EstimatedMilliCpu: tasksize.DefaultCPUEstimate},
+		},
+		{
+			// A resize multiplier of 0 disables OOM resizing entirely.
+			name:                "resizing disabled records nothing",
+			resizeMultiplier:    0,
+			scheduledSize:       &scpb.TaskSize{EstimatedMemoryBytes: 1e9, EstimatedMilliCpu: 2000},
+			observedMemoryBytes: 2e9,
+			expectedSize:        nil,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+			flags.Set(t, "remote_execution.oom_resize_multiplier", test.resizeMultiplier)
+
+			env := testenv.GetTestEnv(t)
+			rdb := testredis.Start(t).Client()
+			env.SetRemoteExecutionRedisClient(rdb)
+			auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
+			env.SetAuthenticator(auth)
+			sizer, err := tasksize.NewSizer(env)
+			require.NoError(t, err)
+
+			ctx := t.Context()
+			cmd := &repb.Command{Arguments: []string{"some_memory_hungry_command"}}
+			props := &platform.Properties{}
+
+			// Report that the OOM killer killed the task while it was using
+			// observedMemoryBytes of memory.
+			err = sizer.UpdateForOOM(ctx, cmd, props, test.scheduledSize, test.observedMemoryBytes)
+			require.NoError(t, err)
+
+			// Read back the size that would be used to schedule the next
+			// attempt of the same command.
+			ts := sizer.Get(ctx, cmd, props)
+			if test.expectedSize == nil {
+				require.Nil(t, ts, "no task size should be recorded")
+			} else {
+				require.NotNil(t, ts, "expected a task size to be recorded")
+				assert.Equal(t, test.expectedSize.GetEstimatedMemoryBytes(), ts.GetEstimatedMemoryBytes())
+				assert.Equal(t, test.expectedSize.GetEstimatedMilliCpu(), ts.GetEstimatedMilliCpu())
+			}
+		})
+	}
+}
+
+func TestSizer_UpdateForOOM_DoesNotDecreaseExistingEstimate(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+	flags.Set(t, "remote_execution.oom_resize_multiplier", 1.5)
+
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
+	env.SetAuthenticator(auth)
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	cmd := &repb.Command{Arguments: []string{"some_memory_hungry_command"}}
+	props := &platform.Properties{}
+
+	// Record a measured size of 5GB memory and 4000 milliCPU (8 CPU-seconds
+	// over a 2 second execution).
+	execStart := time.Now()
+	md := &repb.ExecutedActionMetadata{
+		UsageStats: &repb.UsageStats{
+			CpuNanos:        8 * 1e9,
+			PeakMemoryBytes: 5 * 1e9,
+		},
+		ExecutionStartTimestamp:     timestamppb.New(execStart),
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(2 * time.Second)),
+	}
+	err = sizer.Update(ctx, cmd, props, md)
+	require.NoError(t, err)
+
+	// Report an OOM kill at 2GB of observed usage for a task scheduled with a
+	// 1GB estimate. The resized estimate (1.5 * 2GB = 3GB) is below the
+	// recorded 5GB estimate, so the recorded size should be unchanged.
+	scheduledSize := &scpb.TaskSize{EstimatedMemoryBytes: 1e9, EstimatedMilliCpu: 2000}
+	err = sizer.UpdateForOOM(ctx, cmd, props, scheduledSize, 2e9)
+	require.NoError(t, err)
+
+	ts := sizer.Get(ctx, cmd, props)
+	require.NotNil(t, ts)
+	assert.Equal(t, int64(5*1e9), ts.GetEstimatedMemoryBytes())
+	assert.Equal(t, int64(4000), ts.GetEstimatedMilliCpu())
+}
+
+func TestNewSizer_InvalidOOMResizeMultiplier(t *testing.T) {
+	// A multiplier below 1 (other than 0, which disables resizing) would
+	// resize the estimate to below the observed usage, so NewSizer should
+	// reject it.
+	flags.Set(t, "remote_execution.oom_resize_multiplier", 0.5)
+	env := testenv.GetTestEnv(t)
+	_, err := tasksize.NewSizer(env)
+	require.Error(t, err)
+}
+
 func TestCgroupSettings(t *testing.T) {
 	ctx := t.Context()
 	env := testenv.GetTestEnv(t)

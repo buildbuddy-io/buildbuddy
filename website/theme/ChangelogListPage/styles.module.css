@@ -91,10 +91,12 @@
 }
 
 .itemTitle {
-  font-size: 48px;
-  margin-bottom: 0.5rem;
+  font-size: 64px;
+  margin-bottom: 1.5rem;
   font-weight: 800;
   letter-spacing: -0.02em;
+  line-height: 1.1em;
+  max-width: 90%;
 }
 
 .itemTitle a {

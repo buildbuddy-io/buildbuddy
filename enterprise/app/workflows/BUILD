@@ -30,6 +30,7 @@ ts_library(
         "//app/util:clipboard",
         "//app/util:git",
         "//enterprise/app/workflows:action_list",
+        "//enterprise/app/workflows:checks_dropdown",
         "//enterprise/app/workflows:github_app_import",
         "//enterprise/app/workflows:zero_state",
         "//proto:github_ts_proto",
@@ -71,6 +72,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
         "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/alert:alert_service",
         "//app/auth:user",
         "//app/components/banner",
@@ -87,5 +89,37 @@ ts_library(
         "//app/util:git",
         "//app/util:github",
         "//proto:github_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "checks_dropdown",
+    srcs = ["checks_dropdown.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/alert:alert_service",
+        "//app/components/button",
+        "//app/components/input",
+        "//app/components/popup",
+        "//app/components/spinner",
+        "//app/errors:error_service",
+        "//app/service:rpc_service",
+        "//app/util:clipboard",
+        "//enterprise/app/workflows:workflow_presets",
+        "//proto:git_ts_proto",
+        "//proto:runner_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "workflow_presets",
+    srcs = ["workflow_presets.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
     ],
 )

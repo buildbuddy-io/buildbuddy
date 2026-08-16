@@ -52,6 +52,7 @@ go_library(
         "//server/splash",
         "//server/ssl",
         "//server/static",
+        "//server/util/channelz_metrics",
         "//server/util/db",
         "//server/util/grpc_client",
         "//server/util/grpc_server",

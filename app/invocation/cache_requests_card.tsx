@@ -367,7 +367,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <Option value={cache.GetCacheScoreCardRequest.OrderBy.ORDER_BY_CPU_SAVINGS}>CPU Savings</Option>
           </Select>
           <OutlinedButton className="icon-button" onClick={this.onToggleDescending.bind(this)}>
-            {this.getDescending() ? <SortDesc className="icon" /> : <SortAsc className="icon" />}
+            {this.getDescending() ? <SortDesc /> : <SortAsc />}
           </OutlinedButton>
           {/* Filtering controls */}
           <div className="separator" />
@@ -512,7 +512,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
             <div title="Download">
               <DownloadIcon
                 onClick={this.handleDownloadClicked.bind(this, result)}
-                className="download-button icon"
+                className="download-button"
                 role="button"
               />
             </div>
@@ -963,7 +963,7 @@ fi
                   {/* Then if grouping by action, show a chevron (">") followed by the action name. */}
                   {this.getGroupBy() === cache.GetCacheScoreCardRequest.GroupBy.GROUP_BY_ACTION && (
                     <>
-                      <ChevronRight className="icon chevron" />
+                      <ChevronRight className="chevron" />
                       {/* If we have an action ID that looks like a digest, render it as a link
                           to the action page. */}
                       {group.actionId && looksLikeDigest(group.actionId) && (
@@ -1023,7 +1023,7 @@ const RequestsCardContainer: React.FC<JSX.IntrinsicElements["div"]> = ({ classNa
   <div className={`card cache-requests-card ${className || ""}`} {...props}>
     <div className="content">
       <div className="title">
-        <ArrowLeftRight className="icon" />
+        <ArrowLeftRight />
         <span>Cache requests</span>
       </div>
       <div className="details">{children}</div>
@@ -1068,7 +1068,7 @@ function renderStatus(result: cache.ScoreCard.Result): React.ReactNode {
     if (result.status?.code !== 0 /*=OK*/) {
       return (
         <>
-          <X className="icon red" />
+          <X className="red" />
           <span>Miss</span>
           {/* TODO: Show "Error" if status code is something other than NotFound */}
         </>
@@ -1076,11 +1076,7 @@ function renderStatus(result: cache.ScoreCard.Result): React.ReactNode {
     }
     return (
       <>
-        {result.cacheType === resource.CacheType.AC ? (
-          <Check className="icon green" />
-        ) : (
-          <ArrowDown className="icon green" />
-        )}
+        {result.cacheType === resource.CacheType.AC ? <Check className="green" /> : <ArrowDown className="green" />}
         <span>Hit</span>
       </>
     );
@@ -1089,14 +1085,14 @@ function renderStatus(result: cache.ScoreCard.Result): React.ReactNode {
     if (result.status?.code !== 0 /*=OK*/) {
       return (
         <>
-          <X className="icon red" />
+          <X className="red" />
           <span>Error</span>
         </>
       );
     }
     return (
       <>
-        <ArrowUp className="icon red" />
+        <ArrowUp className="red" />
         <span>Write</span>
       </>
     );

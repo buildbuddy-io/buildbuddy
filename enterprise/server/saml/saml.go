@@ -16,6 +16,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -214,8 +215,9 @@ func (p cookieSessionProvider) GetSession(r *http.Request) (samlsp.Session, erro
 }
 
 type SAMLAuthenticator struct {
-	env           environment.Env
-	samlProviders lru.LRU[*samlsp.Middleware]
+	env                environment.Env
+	samlProviders      lru.LRU[*samlsp.Middleware]
+	metadataHTTPClient *http.Client
 }
 
 func IsEnabled(env environment.Env) bool {
@@ -237,8 +239,9 @@ func NewSAMLAuthenticator(env environment.Env) (*SAMLAuthenticator, error) {
 		return nil, err
 	}
 	return &SAMLAuthenticator{
-		env:           env,
-		samlProviders: cache,
+		env:                env,
+		samlProviders:      cache,
+		metadataHTTPClient: httpclient.New(nil /*=allowedPrivateIPNets*/, "saml_metadata"),
 	}, nil
 }
 
@@ -430,7 +433,7 @@ func (a *SAMLAuthenticator) serviceProviderFromRequest(r *http.Request) (*samlsp
 	if err != nil {
 		return nil, err
 	}
-	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
+	idpMetadata, err := samlsp.FetchMetadata(r.Context(), a.metadataHTTPClient,
 		*idpMetadataURL)
 	if err != nil {
 		return nil, err

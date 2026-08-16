@@ -168,6 +168,14 @@ message PostCompletionStats {
 
   // Firecracker-specific post-execution stats. Nil for non-firecracker runners.
   FirecrackerPostExecStats firecracker_post_exec_stats = 2;
+
+  // Disk space used by the task's workspace (buildroot), in bytes, measured
+  // just before the workspace is cleaned up. This is the logical (apparent)
+  // size summed across the workspace tree. Only populated when
+  // executor.workspace.measure_disk_usage is enabled, and not populated for
+  // VM-based runners. Measured off the task's critical path, so it does not add
+  // latency to task completion.
+  int64 buildroot_disk_usage_bytes = 3;
 }
 
 message FirecrackerPostExecStats {

@@ -70,7 +70,7 @@ export function RoleDescription({ role }: { role: grp.Group.Role }) {
       write: role === grp.Group.Role.WRITER_ROLE || role === grp.Group.Role.ADMIN_ROLE,
     },
   ];
-  const statusIcon = (ok: boolean) => (ok ? <CheckCircle className="icon green" /> : <XCircle className="icon red" />);
+  const statusIcon = (ok: boolean) => (ok ? <CheckCircle className="green" /> : <XCircle className="red" />);
   return (
     <table className="role-capabilities">
       <tr className="role-capability-header">

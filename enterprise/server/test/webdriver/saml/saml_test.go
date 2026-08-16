@@ -46,6 +46,7 @@ func startApp(t *testing.T, idpCertPath string, extraArgs ...string) buildbuddy_
 		"--auth.saml.key=" + string(appKey),
 		"--auth.saml.cert=" + string(appCert),
 		"--auth.saml.trusted_idp_cert_files=" + idpCertPath,
+		"--http.client.allow_localhost=true",
 	}, extraArgs...)
 	bb := buildbuddy_enterprise.SetupWebTarget(t, args...)
 	return bb

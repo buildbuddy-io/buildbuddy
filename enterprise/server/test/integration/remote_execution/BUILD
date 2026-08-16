@@ -19,6 +19,7 @@ go_test(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/commandutil",
+        "//enterprise/server/remote_execution/oom",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/tasksize",
         "//enterprise/server/test/integration/remote_execution/rbetest",

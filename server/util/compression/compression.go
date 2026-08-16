@@ -51,6 +51,9 @@ func mustGetZstdEncoder() *zstd.Encoder {
 // the >>8 term) plus the fixed frame header/checksum (bounded by the small-
 // input margin).
 //
+// This is the single-frame worst-case. Many small ZSTD frames can exceed it,
+// so it is not a hard boundary for arbitrary stored zstd streams.
+//
 // Extra headroom examples:
 // 1 KiB -> +67 bytes
 // 1 MiB -> +4 KiB

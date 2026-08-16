@@ -28,6 +28,12 @@ import (
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
+// invocationReconnectWindow is how long after an incomplete invocation's
+// last DB update the invocation may still be retried. An incomplete
+// invocation whose row has not been updated within this window is assumed to
+// be abandoned and may not be retried.
+const invocationReconnectWindow = 4 * time.Hour
+
 type InvocationDB struct {
 	env environment.Env
 	h   interfaces.DBHandle
@@ -63,12 +69,12 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
 			int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
-			tx.NowFunc().Add(time.Hour*-4).UnixMicro(),
+			tx.NowFunc().Add(-invocationReconnectWindow).UnixMicro(),
 		).Take(ti)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// The invocation either succeeded or is more than 4 hours old. It may
-				// not be re-attempted.
+				// The invocation either succeeded or is past the reconnect
+				// window. It may not be re-attempted.
 				return nil
 			}
 			return err
@@ -306,6 +312,10 @@ func (d *InvocationDB) deleteInvocation(ctx context.Context, tx interfaces.DB, i
 
 func (d *InvocationDB) SetNowFunc(now func() time.Time) {
 	d.h.SetNowFunc(now)
+}
+
+func (d *InvocationDB) GetInvocationReconnectWindow() time.Duration {
+	return invocationReconnectWindow
 }
 
 func TableInvocationToProto(i *tables.Invocation) *inpb.Invocation {

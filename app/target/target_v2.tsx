@@ -112,18 +112,18 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
       case Status.FAILED:
       case Status.CANCELLED:
       case Status.INCOMPLETE:
-        return <XCircle className="icon red" />;
+        return <XCircle className="red" />;
       case Status.BUILT:
       case Status.PASSED:
-        return <CheckCircle className="icon green" />;
+        return <CheckCircle className="green" />;
       case Status.FLAKY:
-        return <HelpCircle className="icon orange" />;
+        return <HelpCircle className="orange" />;
       case Status.TIMED_OUT:
-        return <Clock className="icon" />;
+        return <Clock />;
       case Status.SKIPPED:
-        return <SkipForward className="icon purple" />;
+        return <SkipForward className="purple" />;
       default:
-        return <HelpCircle className="icon gray" />;
+        return <HelpCircle className="gray" />;
     }
   }
 
@@ -374,7 +374,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
               <div className="subtitle">{this.getTime()}</div>
               {historyURL && (
                 <OutlinedLinkButton href={historyURL} className="target-history-button">
-                  <History className="icon" />
+                  <History />
                   <span>Target history</span>
                 </OutlinedLinkButton>
               )}
@@ -388,7 +388,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
               {capabilities.config.bazelButtonsEnabled && (
                 <>
                   <OutlinedButton className="" onClick={this.executeRemoteBazelQuery.bind(this, this.props.label)}>
-                    <HelpCircle className="icon blue" />
+                    <HelpCircle className="blue" />
                     <span>Why did this build?</span>
                   </OutlinedButton>
                   <LinkGithubRepoModal
@@ -408,7 +408,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
 
               {target?.testSummary && (
                 <div className="detail">
-                  <Hash className="icon" />
+                  <Hash />
                   {target.testSummary.totalRunCount ?? 0} total runs
                 </div>
               )}
@@ -419,15 +419,15 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                     return (
                       <>
                         <div className="detail">
-                          <Clock className="icon" />
+                          <Clock />
                           {format.durationMillis(durationStats.avg)} avg duration
                         </div>
                         <div className="detail">
-                          <ArrowDownToLine className="icon" />
+                          <ArrowDownToLine />
                           {format.durationMillis(durationStats.min)} min duration
                         </div>
                         <div className="detail">
-                          <ArrowUpToLine className="icon" />
+                          <ArrowUpToLine />
                           {format.durationMillis(durationStats.max)} max duration
                         </div>
                       </>
@@ -437,14 +437,14 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
                 })()}
               {Boolean(target?.metadata?.ruleType || target?.actionEvents.length) && (
                 <div className="detail">
-                  <Target className="icon" />
+                  <Target />
                   {target?.metadata?.ruleType ||
                     target?.actionEvents?.map((actionEvent) => actionEvent?.action?.type).join(",")}
                 </div>
               )}
               {Boolean(target.metadata?.testSize) && (
                 <div className="detail">
-                  <Box className="icon" />
+                  <Box />
                   {this.getTestSize()}
                 </div>
               )}

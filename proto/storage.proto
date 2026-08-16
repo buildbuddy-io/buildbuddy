@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/resource.proto";
 import "proto/remote_execution.proto";
+import "proto/view.proto";
 import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package storage;
@@ -32,25 +33,13 @@ message StorageMetadata {
   }
   FileMetadata file_metadata = 1;
 
-  message PebbleMetadata {
-    // The root key for all stored chunks.
-    bytes key = 1;
-
-    // The number of chunks stored in pebble
-    // for this file. Chunks are 1-indexed.
-    // Ex. If chunks == 2, a reader would expect to
-    // read: [chunk-1, chunk-2].
-    int64 chunks = 2;
-  }
-  PebbleMetadata pebble_metadata = 2;
-
   message InlineMetadata {
     bytes data = 1;
     int64 created_at_nsec = 2;
   }
   InlineMetadata inline_metadata = 3;
 
-  reserved 4;
+  reserved 2, 4;
 
   message GCSMetadata {
     string blob_name = 1;
@@ -58,9 +47,9 @@ message StorageMetadata {
     // A unix micros value that is the last custom time applied to an object.
     // This is used in conjunction with a bucket LifecycleCondition that
     // deletes objects after DaysSinceCustomTime is exceeded.
-    int64 last_custom_time_usec = 2;
+    int64 last_custom_time_usec = 2 [(view.name) = "FindMissing"];
   }
-  GCSMetadata gcs_metadata = 5;
+  GCSMetadata gcs_metadata = 5 [(view.name) = "FindMissing"];
 
   // Insert other storage types (gcs, etc) here.
   // Upon read, the server will first read this record and then serve the
@@ -74,10 +63,10 @@ message FileMetadata {
   EncryptionMetadata encryption_metadata = 6;
 
   // If data is compressed, this will be the compressed size
-  int64 stored_size_bytes = 3;
+  int64 stored_size_bytes = 3 [(view.name) = "FindMissing"];
 
   // Last access time of the record.
-  int64 last_access_usec = 4;
+  int64 last_access_usec = 4 [(view.name) = "FindMissing"];
 
   // Last modify time of the record
   int64 last_modify_usec = 5;

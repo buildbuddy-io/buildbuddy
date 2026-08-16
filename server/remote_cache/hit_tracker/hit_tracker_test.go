@@ -139,7 +139,7 @@ func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 		env.SetClientIdentityService(&fakeIdentityService{})
 		incomingContextMetadata := make(map[string][]string)
 		if test.clientIdentity != "" {
-			hv, err := env.GetClientIdentityService().IdentityHeader(&interfaces.ClientIdentity{
+			hv, err := env.GetClientIdentityService().NewIdentityHeader(&interfaces.ClientIdentity{
 				Origin: "whocares",
 				Client: test.clientIdentity,
 			}, time.Minute)
@@ -407,8 +407,12 @@ func (f *fakeIdentityService) IdentityFromContext(ctx context.Context) (*interfa
 	}, nil
 }
 
-// IdentityHeader implements interfaces.ClientIdentityService.
-func (f *fakeIdentityService) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
+// NewIdentityHeader implements interfaces.ClientIdentityService.
+func (f *fakeIdentityService) NewIdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
+	return si.Client + "|" + si.Origin, nil
+}
+
+func (f *fakeIdentityService) CachedIdentityHeader(si *interfaces.ClientIdentity) (string, error) {
 	return si.Client + "|" + si.Origin, nil
 }
 

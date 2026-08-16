@@ -50,13 +50,13 @@ export default class ChildInvocationCard extends React.Component<ChildInvocation
   private renderStatusIcon(status: CommandStatus) {
     switch (status) {
       case "succeeded":
-        return <CheckCircle className="icon" />;
+        return <CheckCircle />;
       case "failed":
-        return <XCircle className="icon" />;
+        return <XCircle />;
       case "in-progress":
-        return <PlayCircle className="icon" />;
+        return <PlayCircle />;
       case "not-run":
-        return <CircleSlash className="icon" />;
+        return <CircleSlash />;
       default:
         // Render nothing.
         return undefined;

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/githubapp"
@@ -32,6 +33,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
@@ -39,10 +41,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 )
 
@@ -659,15 +663,52 @@ func (tl *taskLease) Finalize() error {
 	return nil
 }
 
-func (e *fakeExecutor) Claim(taskID string) *taskLease {
-	stream, err := e.schedulerClient.LeaseTask(e.ctx)
-	require.NoError(e.t, err)
-	err = stream.Send(&scpb.LeaseTaskRequest{
-		TaskId: taskID,
+func (tl *taskLease) ReEnqueue() error {
+	err := tl.stream.Send(&scpb.LeaseTaskRequest{
+		TaskId:    tl.taskID,
+		ReEnqueue: true,
 	})
+	if err != nil {
+		return err
+	}
+	_, err = tl.stream.Recv()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (e *fakeExecutor) Claim(taskID string) *taskLease {
+	lease, err := e.leaseTask(taskID, "" /*=reconnectToken*/)
 	require.NoError(e.t, err)
+	return lease
+}
+
+// Reconnect claims a task using a reconnect token from a previous claim.
+func (e *fakeExecutor) Reconnect(taskID, reconnectToken string) (*taskLease, error) {
+	require.NotEmpty(e.t, reconnectToken)
+	return e.leaseTask(taskID, reconnectToken)
+}
+
+func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, error) {
+	stream, err := e.schedulerClient.LeaseTask(e.ctx)
+	if err != nil {
+		return nil, err
+	}
+	err = stream.Send(&scpb.LeaseTaskRequest{
+		TaskId:            taskID,
+		ExecutorId:        e.id,
+		ExecutorHostname:  e.node.GetHost(),
+		SupportsReconnect: true,
+		ReconnectToken:    reconnectToken,
+	})
+	if err != nil {
+		return nil, err
+	}
 	rsp, err := stream.Recv()
-	require.NoError(e.t, err)
+	if err != nil {
+		return nil, err
+	}
 	require.NotZero(e.t, rsp.GetLeaseDurationSeconds())
 
 	var task *repb.ExecutionTask
@@ -684,7 +725,7 @@ func (e *fakeExecutor) Claim(taskID string) *taskLease {
 		task:    task,
 		leaseID: rsp.GetLeaseId(),
 	}
-	return lease
+	return lease, nil
 }
 
 type scheduleOpts struct {
@@ -872,6 +913,61 @@ func TestLeaseExpiration(t *testing.T) {
 	// Lease renewal should fail as the stream should be broken.
 	err = lease.Renew()
 	require.ErrorIs(t, io.EOF, err)
+}
+
+func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
+	// Set a high grace period since we use real time in the test.
+	// TODO: use fake time.
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
+	// Disable unclaimed tasks cache so we test immediate work stealing.
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+
+	// The holder claims a task so that a scheduler shutdown can leave the
+	// task reserved for the original lease holder.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+
+	// Simulate a scheduler shutdown path that re-enqueues the task while
+	// allowing the holder to re-establish its lease.
+	s := env.GetSchedulerService().(*SchedulerServer)
+	reconnectToken := lease.leaseID
+	err := s.reEnqueueTask(ctx, taskID, lease.leaseID, reconnectToken, 1 /*=numReplicas*/, "server shutting down")
+	require.NoError(t, err)
+
+	// A newly registered executor asks for work and samples unclaimed tasks.
+	// While the task is reserved for the holder to reconnect, it must not be
+	// handed out, so the thief should not receive a reservation for it.
+	thief := newFakeExecutorWithId(ctx, t, "thief", env.GetSchedulerClient())
+	thief.Register()
+	thief.EnsureTaskNotReceived(taskID)
+
+	// Even if the thief attempts a lease directly (e.g. acting on a stale
+	// reservation), the claim must be rejected until the grace period expires.
+	_, err = thief.leaseTask(taskID, "" /*=reconnectToken*/)
+	require.True(t, status.IsNotFoundError(err), "unexpected claim error: %s", err)
+
+	// The original holder can still reconnect using the token it received
+	// before the scheduler shutdown.
+	reconnectedLease, err := holder.Reconnect(taskID, reconnectToken)
+	require.NoError(t, err)
+	require.NotEmpty(t, reconnectedLease.leaseID)
+
+	// Simulate the executor shutting down by canceling the newly reconnected
+	// lease. Since the reconnect was successful, this should re-enqueue the
+	// task without preserving the stale reconnect grace period.
+	require.NoError(t, reconnectedLease.ReEnqueue())
+
+	// Because the lease is canceled, another client should be able to get
+	// the lease now without waiting for the old reconnect grace period.
+	normalClient := newFakeExecutorWithId(ctx, t, "norm", env.GetSchedulerClient())
+	normalLease := normalClient.Claim(taskID)
+	require.NotEmpty(t, normalLease.leaseID)
+	require.NoError(t, normalLease.Finalize())
 }
 
 func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
@@ -1402,4 +1498,95 @@ func TestGetExecutionNodes(t *testing.T) {
 			require.GreaterOrEqual(t, executor.GetNode().GetHost(), last.GetNode().GetHost())
 		}
 	}
+}
+
+// testUpgradeDetector prompts an upgrade when an executor is more than 10
+// minor versions behind the newest registered version, escalating at 20.
+func testUpgradeDetector() *upgrade.Detector {
+	return upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
+		uppb.Prompt_LOW:    {MaxLag: semver.MustParse("0.10.0")},
+		uppb.Prompt_MEDIUM: {MaxLag: semver.MustParse("0.20.0")},
+	})
+}
+
+func TestGetExecutionNodes_UpgradePrompt(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}}, "user1")
+	enterprise_testauth.Configure(t, env)
+
+	for id, version := range map[string]string{"a": "v2.153.0", "b": "v2.140.0"} {
+		executor := newFakeExecutorWithId(ctx, t, id, env.GetSchedulerClient())
+		executor.node.Version = version
+		executor.Register()
+	}
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	rsp, err := env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: u.Groups[0].Group.GroupID,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecutor(), 2)
+	require.NotNil(t, rsp.GetUpgradePrompt())
+	require.Equal(t, uppb.Prompt_LOW, rsp.GetUpgradePrompt().GetUrgency())
+}
+
+func TestGetExecutionNodes_UpgradePrompt_WithinAllowance(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}}, "user1")
+	enterprise_testauth.Configure(t, env)
+
+	for id, version := range map[string]string{"a": "v2.153.0", "b": "v2.152.0"} {
+		executor := newFakeExecutorWithId(ctx, t, id, env.GetSchedulerClient())
+		executor.node.Version = version
+		executor.Register()
+	}
+
+	u := enterprise_testauth.CreateRandomUser(t, env, "org1.invalid")
+	auther := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auther.WithAuthenticatedUser(ctx, u.UserID)
+	require.NoError(t, err)
+
+	rsp, err := env.GetSchedulerService().GetExecutionNodes(authCtx, &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: u.Groups[0].Group.GroupID,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetExecutor(), 2)
+	require.Nil(t, rsp.GetUpgradePrompt())
+}
+
+// With user-owned executors enabled, only registrations in the shared
+// executor pool group ("sharedGroupID", set by getEnv) set the
+// newest-version bar.
+func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock, UpgradeDetector: testUpgradeDetector()}, userOwnedEnabled: true}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
+
+	register := func(groupID, version string) {
+		reg := &scpb.RegisteredExecutionNode{
+			Registration: &scpb.ExecutionNode{ExecutorId: "id-" + groupID, Version: version},
+			GroupId:      groupID,
+			LastPingTime: timestamppb.Now(),
+		}
+		b, err := proto.Marshal(reg)
+		require.NoError(t, err)
+		poolKey := "executorPool/" + groupID + "-linux-amd64-p"
+		require.NoError(t, s.rdb.HSet(ctx, poolKey, reg.GetRegistration().GetExecutorId(), b).Err())
+		require.NoError(t, s.rdb.SAdd(ctx, "executorPools/"+groupID, poolKey).Err())
+	}
+	// A newer version outside the shared pool group shouldn't set the bar.
+	register("GR-OTHER", "v2.199.0")
+	register("sharedGroupID", "v2.153.0")
+
+	v := s.getNewestVersion(ctx)
+	require.NotNil(t, v)
+	require.Equal(t, "2.153.0", v.String())
 }

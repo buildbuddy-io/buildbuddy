@@ -313,7 +313,9 @@ class RpcService {
     streamParams?: $stream.StreamingRPCParams
   ): Promise<void> {
     const url = `${server || ""}/rpc/BuildBuddyService/${method.name}`;
-    const init: RequestInit = { method: "POST", body: requestData };
+    // Protobufjs returns ArrayBuffer-backed Uint8Arrays, which are valid fetch request bodies.
+    // TODO: Update protobufjs to return Uint8Array<ArrayBuffer> so this assertion is unnecessary.
+    const init: RequestInit = { method: "POST", body: requestData as Uint8Array<ArrayBuffer> };
     if (capabilities.config.regions?.map((r) => r.server).includes(server)) {
       init.credentials = "include";
     }

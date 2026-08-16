@@ -90,7 +90,7 @@ export default class ResultComponent extends React.Component<ResultProps, Result
     return (
       <div className="result">
         <div className="result-title-bar">
-          <File size={16}></File>
+          <File />
           <div className="repo-name">[{this.props.result.repo}]</div>
           <div className="filename">
             <a href={this.getFileOnlyURL()}>{this.props.result.filename}</a>

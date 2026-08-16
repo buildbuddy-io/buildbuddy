@@ -4,10 +4,9 @@ import (
 	gproto "google.golang.org/protobuf/proto"
 )
 
-var Size = gproto.Size
+var Size = size
 var Merge = gproto.Merge
 var Equal = gproto.Equal
-var MarshalOld = gproto.Marshal
 
 var String = gproto.String
 var Float32 = gproto.Float32
@@ -30,12 +29,19 @@ type VTProtoMessage interface {
 	SizeVT() int
 }
 
+func size(v Message) int {
+	if vt, ok := v.(VTProtoMessage); ok {
+		return vt.SizeVT()
+	}
+	return gproto.Size(v)
+}
+
 func Marshal(v Message) ([]byte, error) {
 	vt, ok := v.(VTProtoMessage)
 	if ok {
 		return vt.MarshalVT()
 	}
-	return MarshalOld(v)
+	return gproto.Marshal(v)
 }
 
 func Unmarshal(b []byte, v Message) error {

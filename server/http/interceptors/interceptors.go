@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -343,18 +344,25 @@ func AuthorizeIP(env environment.Env, next http.Handler) http.Handler {
 
 func ClientIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peerIP := r.RemoteAddr
+		if ip, _, err := net.SplitHostPort(peerIP); err == nil {
+			peerIP = ip
+		}
 		if v := r.Header.Get("X-Forwarded-For"); v != "" {
-			ctx, ok := clientip.SetFromXForwardedForHeader(r.Context(), v)
+			ctx, ok := clientip.SetFromXForwardedForHeader(r.Context(), v, peerIP)
 			if ok {
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 		}
-		clientIP := r.RemoteAddr
-		if ip, _, err := net.SplitHostPort(clientIP); err == nil {
-			clientIP = ip
-		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientip.ContextKey, clientIP)))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), clientip.ContextKey, peerIP)))
+	})
+}
+
+func ClientUserAgent(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := useragent.SetFromHeader(r.Context(), r.Header.Get(useragent.HTTPHeader))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -561,6 +569,7 @@ func WrapAuthenticatedExternalProtoletHandler(env environment.Env, httpPrefix st
 		LogRequest,
 		RequestID,
 		ClientIP,
+		ClientUserAgent,
 		Subdomain,
 		region.CORS,
 		RecoverAndAlert,

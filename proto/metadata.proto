@@ -9,6 +9,9 @@ message GetRequest {
 }
 
 message GetResponse {
+  // Index-aligned to GetRequest.file_records: the i-th entry is the i-th
+  // record's metadata (nil/empty on miss). Clients pair results by position, so
+  // implementations must preserve request order and length.
   repeated storage.FileMetadata file_metadatas = 1;
 }
 

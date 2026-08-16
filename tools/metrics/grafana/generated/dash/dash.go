@@ -17,18 +17,43 @@ import (
 // Grafana unit codes accepted by the timeseries panel's Unit() setter.
 // See https://grafana.com/docs/grafana/latest/panels-visualizations/configure-standard-options/#unit
 const (
-	UnitBytesPerSec   = "Bps"
-	UnitBitsPerSec    = "bps"
-	UnitBytes         = "bytes"
+	// UnitBytesPerSec is SI bytes/sec (abbreviations are powers of 1000: kB/s, MB/s).
+	// Note the asymmetry with UnitBytes, which is IEC.
+	UnitBytesPerSec = "Bps"
+	// UnitBinaryBytesPerSec is IEC bytes/sec (abbreviations are powers of 1024: KiB/s, MiB/s).
+	UnitBinaryBytesPerSec = "binBps"
+	// UnitBitsPerSec is SI bits/sec (abbreviations are powers of 1000: kb/s, Mb/s).
+	UnitBitsPerSec = "bps"
+	// UnitBytes is IEC bytes (abbreviations are powers of 1024)
+	UnitBytes = "bytes"
+	// UnitDecimalBytes is SI bytes (abbreviations are powers of 1000)
+	UnitDecimalBytes = "decbytes"
+	// UnitPacketsPerSec formats as packets/sec ("p/s") with SI prefixes.
 	UnitPacketsPerSec = "pps"
-	UnitEventsPerSec  = "eps"
-	UnitMicroseconds  = "µs"
-	UnitOps           = "ops"
-	UnitPercent       = "percent"
-	UnitPercentUnit   = "percentunit"
-	UnitSeconds       = "s"
-	UnitShort         = "short"
-	UnitWatts         = "watt"
+	// UnitEventsPerSec formats as events/sec ("evt/s").
+	UnitEventsPerSec = "eps"
+	// UnitRequestsPerSec formats as requests/sec ("req/s").
+	UnitRequestsPerSec = "reqps"
+	// UnitMicroseconds is a duration in µs, rescaled to larger units as it
+	// grows (e.g. 1500000 renders as "1.5 s").
+	UnitMicroseconds = "µs"
+	// UnitMilliseconds is a duration in ms, rescaled to larger units as it grows.
+	UnitMilliseconds = "ms"
+	// UnitNone is a plain unabbreviated number with no suffix.
+	UnitNone = "none"
+	// UnitOps formats as operations/sec ("ops/s").
+	UnitOps = "ops"
+	// UnitPercent expects input from 0-100 and formats as a percentage.
+	UnitPercent = "percent"
+	// UnitPercentUnit expects input from 0-1 and formats as a percentage.
+	UnitPercentUnit = "percentunit"
+	// UnitSeconds is a duration in seconds, rescaled up (m, h, d) or down
+	// (ms, µs) as needed.
+	UnitSeconds = "s"
+	// UnitShort is an abbreviated count with no unit suffix (K, Mil, Bil).
+	UnitShort = "short"
+	// UnitWatts formats as watts with SI prefixes (W, kW, MW).
+	UnitWatts = "watt"
 )
 
 // Prometheus returns a reference to the default prometheus metrics datasource

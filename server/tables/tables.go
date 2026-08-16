@@ -183,6 +183,14 @@ type Invocation struct {
 	Tags string
 
 	ParentRunID string `gorm:"index:parent_run_id_index"`
+
+	// Git fetch stats reported by the remote runner (i.e. Workflows or remote
+	// bazel), if any. These are stored only in the OLAP DB; they are excluded
+	// from the primary DB schema and are populated in memory just before
+	// flushing the invocation to the OLAP DB.
+	GitFetchTotalBytes   int64 `gorm:"-"`
+	GitFetchDurationUsec int64 `gorm:"-"`
+	GitFetchRetryCount   int64 `gorm:"-"`
 }
 
 func (i *Invocation) TableName() string {
@@ -265,6 +273,12 @@ type Group struct {
 
 	// The status of the group: free tier, enterprise, etc.
 	Status grpb.Group_GroupStatus `gorm:"not null;default:1"`
+
+	// Information about the request that created this group. The user agent
+	// size must be at least useragent.MaxLength, otherwise MySQL defaults to
+	// varchar(255) and rejects longer values.
+	CreatedByIP        string
+	CreatedByUserAgent string `gorm:"size:1024"`
 }
 
 func (g *Group) TableName() string {
@@ -323,6 +337,17 @@ type User struct {
 	// Group roles are used to determine read/write permissions
 	// for everything.
 	Groups []*GroupRole `gorm:"-"`
+
+	// Information about the request that created this user. The user agent
+	// size must be at least useragent.MaxLength, otherwise MySQL defaults to
+	// varchar(255) and rejects longer values.
+	CreatedByIP        string
+	CreatedByUserAgent string `gorm:"size:1024"`
+
+	// When the login provider account backing this user was created, in
+	// microseconds since the epoch, or 0 if the provider doesn't report it.
+	ProviderAccountCreatedAtUsec int64
+
 	Model
 }
 

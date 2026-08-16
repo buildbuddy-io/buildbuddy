@@ -55,3 +55,6 @@ func (m *MockInvocationDB) FillCounts(ctx context.Context, log *telpb.TelemetryS
 }
 func (m *MockInvocationDB) SetNowFunc(now func() time.Time) {
 }
+func (m *MockInvocationDB) GetInvocationReconnectWindow() time.Duration {
+	return 4 * time.Hour
+}

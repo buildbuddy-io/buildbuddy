@@ -59,6 +59,7 @@ go_library(
         "//enterprise/server/ip_rules_enforcer",
         "//enterprise/server/ip_rules_service",
         "//enterprise/server/mcp/mcpserver",
+        "//enterprise/server/notification",
         "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/oci/ociregistry",
         "//enterprise/server/quota",

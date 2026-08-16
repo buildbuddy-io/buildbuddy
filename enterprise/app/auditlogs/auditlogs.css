@@ -1,7 +1,11 @@
+.audit-logs-page .top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .audit-logs-page .popup-wrapper {
   position: relative;
-  width: fit-content;
-  margin-bottom: 10px;
 }
 
 .audit-logs {
@@ -17,10 +21,6 @@
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-.audit-logs .icon-text-button > :not(:last-child) {
-  margin-right: 8px;
 }
 
 .audit-logs .empty-state {

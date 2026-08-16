@@ -689,7 +689,7 @@ func (c *podmanCommandContainer) Unpause(ctx context.Context) error {
 }
 
 func (c *podmanCommandContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
-	return c.stats.TaskStats(), nil
+	return c.stats.BasicTaskStats(), nil
 }
 
 func (c *podmanCommandContainer) runPodman(ctx context.Context, subCommand string, stdio *interfaces.Stdio, args ...string) *interfaces.CommandResult {

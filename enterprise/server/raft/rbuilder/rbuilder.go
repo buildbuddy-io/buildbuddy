@@ -122,6 +122,10 @@ func (bb *BatchBuilder) Add(m proto.Message) *BatchBuilder {
 		req.Value = &rfpb.RequestUnion_DeleteSessions{
 			DeleteSessions: value,
 		}
+	case *rfpb.DeleteTxnRollbackMarkersBeforeRequest:
+		req.Value = &rfpb.RequestUnion_DeleteTxnRollbackMarkersBefore{
+			DeleteTxnRollbackMarkersBefore: value,
+		}
 	case *rfpb.FetchRangesRequest:
 		req.Value = &rfpb.RequestUnion_FetchRanges{
 			FetchRanges: value,

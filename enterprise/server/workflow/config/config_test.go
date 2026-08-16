@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config/test_data"
@@ -250,6 +251,46 @@ func TestMatchesAnyTrigger_PullRequestTypes(t *testing.T) {
 	assert.False(t, config.MatchesAnyTrigger(scoped, "pull_request", "feature", "", "ready_for_review"))
 }
 
+func TestMatchesAnyTrigger_PullRequestApproved(t *testing.T) {
+	// By default (no types specified), the pull request trigger fires on "approved" actions.
+	defaultPR := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(defaultPR, "pull_request", "main", "", "approved"))
+
+	// A trigger can opt in to running only on approval via `types: [ approved ]`.
+	approvedOnly := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}, Types: []string{"approved"}},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(approvedOnly, "pull_request", "main", "", "approved"))
+	assert.False(t, config.MatchesAnyTrigger(approvedOnly, "pull_request", "main", "", "opened"))
+	assert.False(t, config.MatchesAnyTrigger(approvedOnly, "pull_request", "main", "", "synchronize"))
+}
+
+func TestMatchesAnyTrigger_PullRequestAutoMergeEnabled(t *testing.T) {
+	// By default (no types specified), the pull request trigger should not fire on "auto_merge_enabled" actions.
+	defaultPR := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}},
+		},
+	}
+	assert.False(t, config.MatchesAnyTrigger(defaultPR, "pull_request", "main", "", "auto_merge_enabled"))
+
+	// If explicitly requested, the trigger should fire.
+	autoMergeOnly := &config.Action{
+		Triggers: &config.Triggers{
+			PullRequest: &config.PullRequestTrigger{Branches: []string{"*"}, Types: []string{"auto_merge_enabled"}},
+		},
+	}
+	assert.True(t, config.MatchesAnyTrigger(autoMergeOnly, "pull_request", "main", "", "auto_merge_enabled"))
+	assert.False(t, config.MatchesAnyTrigger(autoMergeOnly, "pull_request", "main", "", "opened"))
+	assert.False(t, config.MatchesAnyTrigger(autoMergeOnly, "pull_request", "main", "", "approved"))
+}
+
 func TestMatchesAnyTrigger_TagNegationPatterns(t *testing.T) {
 	action := &config.Action{
 		Triggers: &config.Triggers{
@@ -282,6 +323,38 @@ func TestMatchesAnyTrigger_BothBranchAndTagTriggers(t *testing.T) {
 	// Tag named "main" matches tag patterns (not branch patterns),
 	// so it should not match since "main" doesn't match "v*".
 	assert.False(t, config.MatchesAnyTrigger(action, "push", "", "main", ""))
+}
+
+func TestAllowsConcurrentRunsOnBranch(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		patterns      []string
+		branch        string
+		defaultBranch string
+		want          bool
+	}{
+		// When unset, allows concurrent runs on the default branch.
+		{name: "unset allows default branch", patterns: nil, branch: "main", defaultBranch: "main", want: true},
+		{name: "unset does not allow other branches", patterns: nil, branch: "feature", defaultBranch: "main", want: false},
+		{name: "unset with unknown default branch allows everything", patterns: nil, branch: "feature", defaultBranch: "", want: true},
+		{name: "empty list blocks default branch", patterns: []string{}, branch: "main", defaultBranch: "main", want: false},
+		{name: "empty list blocks other branches", patterns: []string{}, branch: "feature", defaultBranch: "main", want: false},
+		{name: "explicit list omitting default branch", patterns: []string{"staging"}, branch: "main", defaultBranch: "main", want: false},
+		{name: "exact match", patterns: []string{"staging"}, branch: "staging", defaultBranch: "main", want: true},
+		{name: "exact non-match", patterns: []string{"staging"}, branch: "feature", defaultBranch: "main", want: false},
+		{name: "wildcard match", patterns: []string{"release-*"}, branch: "release-20240101", defaultBranch: "main", want: true},
+		{name: "wildcard non-match", patterns: []string{"release-*"}, branch: "releasefoo", defaultBranch: "main", want: false},
+		{name: "multiple patterns matches second", patterns: []string{"staging", "release-*"}, branch: "release-1", defaultBranch: "main", want: true},
+		{name: "multiple patterns no match", patterns: []string{"staging", "release-*"}, branch: "feature", defaultBranch: "main", want: false},
+		{name: "negation last match wins", patterns: []string{"release-*", "!release-exception"}, branch: "release-exception", defaultBranch: "main", want: false},
+		{name: "negation does not affect other branches", patterns: []string{"release-*", "!release-exception"}, branch: "release-1", defaultBranch: "main", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			action := &config.Action{AllowConcurrentRunsOnBranches: tc.patterns}
+			assert.Equal(t, tc.want, action.AllowsConcurrentRunsOnBranch(tc.branch, tc.defaultBranch),
+				"AllowsConcurrentRunsOnBranch(%q, %q) with patterns %v", tc.branch, tc.defaultBranch, tc.patterns)
+		})
+	}
 }
 
 func TestGetGitFetchFilters(t *testing.T) {
@@ -331,4 +404,37 @@ func TestCodeSearchAction(t *testing.T) {
 	assert.Len(t, action.Steps, 1)
 	assert.Contains(t, action.Steps[0].Run, apiURL.String())
 	assert.Contains(t, action.Steps[0].Run, ghURL)
+}
+
+func TestGetMergeWithBaseInterval(t *testing.T) {
+	dur := func(d time.Duration) *time.Duration { return &d }
+	for _, test := range []struct {
+		name     string
+		interval *time.Duration
+		want     *time.Duration
+		wantErr  bool
+	}{
+		{name: "unset returns nil", interval: nil, want: nil},
+		{name: "valid interval", interval: dur(2 * time.Hour), want: dur(2 * time.Hour)},
+		{name: "max interval allowed", interval: dur(3 * time.Hour), want: dur(3 * time.Hour)},
+		{name: "too large rejected", interval: dur(4 * time.Hour), wantErr: true},
+		{name: "zero rejected", interval: dur(0), wantErr: true},
+		{name: "negative rejected", interval: dur(-1 * time.Hour), wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			trigger := &config.PullRequestTrigger{MergeWithBaseInterval: test.interval}
+			got, err := trigger.GetMergeWithBaseInterval()
+			if test.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			if test.want == nil {
+				require.Nil(t, got)
+				return
+			}
+			require.NotNil(t, got)
+			require.Equal(t, *test.want, *got)
+		})
+	}
 }

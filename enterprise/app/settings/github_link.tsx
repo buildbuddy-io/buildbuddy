@@ -219,7 +219,7 @@ export default class GitHubLink extends React.Component<Props, State> {
             </div>
             {this.props.user.selectedGroup.githubLinked && (
               <div className="linked-github-account-row">
-                <CheckCircle className="icon green" />
+                <CheckCircle className="green" />
                 <div>GitHub account linked</div>
                 <OutlinedButton className="unlink-button destructive" onClick={this.onClickUnlinkButton.bind(this)}>
                   Unlink

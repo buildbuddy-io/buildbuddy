@@ -338,7 +338,7 @@ func (ut *tracker) startDBFlush() {
 			select {
 			case <-ticker.C:
 				if err := ut.FlushToDB(ctx); err != nil {
-					alert.UnexpectedEvent("usage_data_flush_failed", "Error flushing usage data to DB: %s", err)
+					log.CtxErrorf(ctx, "Error flushing usage data to DB: %s", err)
 				}
 			case <-ut.stopFlush:
 				return

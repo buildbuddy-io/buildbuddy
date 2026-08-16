@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
@@ -19,6 +20,9 @@ import (
 )
 
 const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
+
+var OTELGRPCMessageEventsEnabled = flag.Bool("grpc_otel_message_events_enabled", true,
+	"If set, record per-message OpenTelemetry events on gRPC spans. Only useful for streaming RPCs; disable on unary-only servers (e.g. the metadata server) to save per-RPC allocation.")
 
 func init() {
 	vtprotocodec.Register()

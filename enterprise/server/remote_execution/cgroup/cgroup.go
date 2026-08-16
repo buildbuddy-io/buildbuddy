@@ -449,6 +449,73 @@ func ReadMemoryCurrent(dir string) (int64, error) {
 	return readInt64FromFile(filepath.Join(dir, "memory.current"))
 }
 
+// ReadMemoryMax reads the "memory.max" file under the given cgroup directory
+// and returns the configured memory limit in bytes, or nil if the limit is
+// "max" (unlimited). The directory should be an absolute path, including the
+// /sys/fs/cgroup prefix.
+func ReadMemoryMax(dir string) (*int64, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "memory.max"))
+	if err != nil {
+		return nil, err
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "max" {
+		return nil, nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// ReadEffectiveMemoryLimit returns the smallest "memory.max" limit in effect
+// for the cgroup at the given absolute path and the absolute path of the
+// cgroup setting that limit, taking ancestor cgroup limits into account. It
+// returns an empty path and nil limit if neither the cgroup nor any of its
+// ancestors sets a limit. When the same smallest limit is set at multiple
+// levels, it returns the outermost such cgroup, because memory charged to an
+// ancestor by siblings counts against the shared limit and should be included
+// when the returned cgroup's usage is measured. The walk includes the cgroupfs
+// root. The real cgroup v2 root has no memory.max file and is treated as
+// unlimited, but under a cgroup namespace the root directory is a non-root
+// cgroup on the host, and any limit set on it applies.
+func ReadEffectiveMemoryLimit(dir string) (string, *int64, error) {
+	var limitCgroupPath string
+	var limit *int64
+	for dir = filepath.Clean(dir); dir == RootPath || strings.HasPrefix(dir, RootPath+string(os.PathSeparator)); dir = ParentPath(dir) {
+		v, err := ReadMemoryMax(dir)
+		if err != nil {
+			if dir == RootPath && os.IsNotExist(err) {
+				break
+			}
+			return "", nil, err
+		}
+		if v != nil && (limit == nil || *v <= *limit) {
+			limitCgroupPath = dir
+			limit = v
+		}
+		if dir == RootPath {
+			break
+		}
+	}
+	return limitCgroupPath, limit, nil
+}
+
+// ReadMemoryStatField reads the given field from the "memory.stat" file under
+// the given cgroup directory. The directory should be an absolute path,
+// including the /sys/fs/cgroup prefix.
+func ReadMemoryStatField(dir, field string) (int64, error) {
+	return readCgroupInt64Field(filepath.Join(dir, "memory.stat"), field)
+}
+
+// ReadMemoryStat reads the "memory.stat" file under the given cgroup directory
+// and returns the field values as a map. The directory should be an absolute
+// path, including the /sys/fs/cgroup prefix.
+func ReadMemoryStat(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "memory.stat"))
+}
+
 // ReadPidsEvents reads the "pids.events" file under the given cgroup
 // directory and returns the counter values as a map. The directory should be an
 // absolute path, including the /sys/fs/cgroup prefix.

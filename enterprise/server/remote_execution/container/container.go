@@ -31,6 +31,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -129,6 +131,8 @@ type Init struct {
 type UsageStats struct {
 	Clock clockwork.Clock
 
+	mu sync.RWMutex
+
 	// last is the last stats update we observed.
 	last *repb.UsageStats
 	// taskStats is the usage stats relative to when Reset() was last called
@@ -184,6 +188,9 @@ func (s *UsageStats) clock() clockwork.Clock {
 // the new task's resource usage can be accounted for.
 // TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.last != nil {
 		s.last.MemoryBytes = 0
 	}
@@ -202,8 +209,28 @@ func (s *UsageStats) Reset() {
 	}
 }
 
-// TaskStats returns the usage stats for an executed task.
+// TaskStats returns the usage stats for an executed task, including the usage
+// timeline if one was recorded. The returned timeline is not cloned, so callers
+// that need to read stats while they are being updated should use
+// BasicTaskStats.
 func (s *UsageStats) TaskStats() *repb.UsageStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.taskStatsLocked(true /*=includeTimeline*/)
+}
+
+// BasicTaskStats returns the usage stats for an executed task without the
+// usage timeline. This is intended for live stats polling while usage stats are
+// being updated.
+func (s *UsageStats) BasicTaskStats() *repb.UsageStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.taskStatsLocked(false /*=includeTimeline*/)
+}
+
+func (s *UsageStats) taskStatsLocked(includeTimeline bool) *repb.UsageStats {
 	if s.last == nil {
 		return &repb.UsageStats{}
 	}
@@ -243,8 +270,12 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 		taskStats.IoPressure.Full.Total -= s.baselineIOPressure.GetFull().GetTotal()
 	}
 
-	// Note: we don't clone the timeline because it's expensive.
-	taskStats.Timeline = s.timeline
+	if includeTimeline {
+		// Note: we don't clone the timeline because it's expensive. Callers
+		// that need to access stats while they are being updated should use
+		// BasicTaskStats instead.
+		taskStats.Timeline = s.timeline
+	}
 
 	return taskStats
 }
@@ -310,6 +341,9 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 // created).
 // TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.last = lifetimeStats.CloneVT()
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
@@ -463,9 +497,9 @@ type CommandContainer interface {
 	//
 	// A `nil` value may be returned if the resource usage is unknown.
 	//
-	// Implementations may assume that this will only be called when the
-	// container is paused, for the purposes of computing resources used for
-	// pooled runners.
+	// Live stats are used by the OOM killer to decide which tasks to kill when
+	// the executor is running low on memory. Paused stats are used for pooled
+	// runner accounting.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 
@@ -498,20 +532,10 @@ type VM interface {
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
-	statusLabel := metrics.OCIFetcherStatusOK
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
-			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
-			statusLabel = metrics.OCIFetcherStatusCanceled
-		} else {
-			statusLabel = metrics.OCIFetcherStatusError
-		}
-	}
 	labels := prometheus.Labels{
 		metrics.IsolationTypeLabel:           isolation,
 		metrics.ImageFetchRegistryLabel:      registry,
-		metrics.StatusLabel:                  statusLabel,
+		metrics.StatusLabel:                  ImagePullMetricStatus(err),
 		metrics.ImageFetchOnDiskLabel:        strconv.FormatBool(onDisk),
 		metrics.ImageFetchHasCredsLabel:      strconv.FormatBool(hasCreds),
 		metrics.ImageFetchTriggerLabel:       trigger,
@@ -521,12 +545,44 @@ func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCre
 }
 
 func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string, useOCIFetcher bool, err error, duration time.Duration) {
-	if err == nil {
+	if !ShouldCountImagePullError(err) {
 		return
 	}
 	log.CtxWarningf(ctx,
 		"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v duration=%s err=%s",
 		imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, duration, err)
+}
+
+// ImagePullMetricStatus returns the metrics status label for an image pull result.
+func ImagePullMetricStatus(err error) string {
+	if err == nil {
+		return metrics.OCIFetcherStatusOK
+	}
+	if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
+		return metrics.OCIFetcherStatusTimeout
+	}
+	if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
+		return metrics.OCIFetcherStatusCanceled
+	}
+	if !ShouldCountImagePullError(err) {
+		return metrics.OCIFetcherStatusUserError
+	}
+	return metrics.OCIFetcherStatusError
+}
+
+// ShouldCountImagePullError reports whether a failed image pull should count as
+// an image pull error in metrics and logs. This is based on the gRPC status code
+// intentionally constructed at the call site, not the error message text.
+func ShouldCountImagePullError(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch gstatus.Code(err) {
+	case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.PermissionDenied, codes.Unauthenticated, codes.FailedPrecondition, codes.OutOfRange:
+		return false
+	default:
+		return true
+	}
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it

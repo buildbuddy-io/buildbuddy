@@ -81,7 +81,7 @@ export default class InvocationMenuComponent extends React.Component<InvocationM
         <div className="invocation-menu-container">
           <OutlinedButton
             onClick={this.onClickMenuButton.bind(this)}
-            className="invocation-menu-button"
+            className="icon-button invocation-menu-button"
             title="More invocation options">
             <MoreVertical />
           </OutlinedButton>

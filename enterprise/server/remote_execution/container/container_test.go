@@ -2,6 +2,7 @@ package container_test
 
 import (
 	"context"
+	"fmt"
 	"syscall"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -28,6 +30,7 @@ import (
 type FakeContainer struct {
 	RequiredPullCredentials oci.Credentials
 	PullCount               int
+	PullErr                 error
 	pullDelay               time.Duration
 }
 
@@ -43,6 +46,9 @@ func (c *FakeContainer) IsImageCached(context.Context) (bool, error) {
 func (c *FakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	if c.pullDelay > 0*time.Second {
 		time.Sleep(c.pullDelay)
+	}
+	if c.PullErr != nil {
+		return c.PullErr
 	}
 	if creds != c.RequiredPullCredentials {
 		return status.PermissionDeniedError("Permission denied: wrong pull credentials")
@@ -135,6 +141,106 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef, false)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
+}
+
+func TestPullImageIfNecessary_NonOCIFetcherPullErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		pullErr     error
+		wantStatus  string
+		wantCounted bool
+	}{
+		{
+			name:        "resource exhausted",
+			pullErr:     status.ResourceExhaustedError("remote registry rate limited"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+		{
+			name:        "permission denied",
+			pullErr:     status.PermissionDeniedError("wrong pull credentials"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "not found",
+			pullErr:     status.NotFoundError("image not found"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "unavailable",
+			pullErr:     status.UnavailableError("remote registry unavailable"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+	} {
+		for _, useOCIFetcher := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/use_oci_fetcher_%t", tc.name, useOCIFetcher), func(t *testing.T) {
+				env := testenv.GetTestEnv(t)
+				imageRef := "docker.io/some-org/some-image:v1.0.0"
+				ctx := context.Background()
+				c := &FakeContainer{PullErr: tc.pullErr}
+
+				err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef, useOCIFetcher)
+
+				require.Error(t, err)
+				require.Equal(t, tc.wantStatus, container.ImagePullMetricStatus(err))
+				require.Equal(t, tc.wantCounted, container.ShouldCountImagePullError(err))
+			})
+		}
+	}
+}
+
+func TestImagePullMetricStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		err         error
+		wantStatus  string
+		wantCounted bool
+	}{
+		{
+			name:        "nil",
+			err:         nil,
+			wantStatus:  metrics.OCIFetcherStatusOK,
+			wantCounted: false,
+		},
+		{
+			name:        "unknown error",
+			err:         status.UnknownError("network unavailable"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+		{
+			name:        "resource exhausted",
+			err:         status.ResourceExhaustedError("remote registry rate limited"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+		{
+			name:        "permission denied",
+			err:         status.PermissionDeniedError("wrong pull credentials"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "not found",
+			err:         status.NotFoundError("image not found"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "unavailable",
+			err:         status.UnavailableError("remote registry unavailable"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantStatus, container.ImagePullMetricStatus(tc.err))
+			require.Equal(t, tc.wantCounted, container.ShouldCountImagePullError(tc.err))
+		})
+	}
 }
 
 func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
@@ -368,6 +474,52 @@ func TestUsageStats(t *testing.T) {
 		MemoryPressure:  makePSI(1_118, 118),
 		IoPressure:      makePSI(11_119, 1_119),
 	}, s.TaskStats(), protocmp.Transform()))
+}
+
+func TestUsageStats_ConcurrentUpdateAndBasicTaskStats(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	var eg errgroup.Group
+	eg.Go(func() error {
+		for i := range 1000 {
+			stats.Update(&repb.UsageStats{
+				CpuNanos:      int64(i) * 1e6,
+				MemoryBytes:   int64(i) * 1024,
+				CgroupIoStats: &repb.CgroupIOStats{Rbytes: int64(i), Wbytes: int64(i)},
+			})
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		for range 1000 {
+			taskStats := stats.BasicTaskStats()
+			_ = taskStats.GetMemoryBytes()
+			_ = taskStats.GetCpuNanos()
+		}
+		return nil
+	})
+
+	require.NoError(t, eg.Wait())
+}
+
+func TestUsageStats_BasicTaskStatsOmitsTimeline(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+	stats.Update(&repb.UsageStats{
+		CpuNanos:      1e6,
+		MemoryBytes:   1024,
+		CgroupIoStats: &repb.CgroupIOStats{},
+	})
+
+	// Full execution stats should include the timeline, but live stats polling
+	// should skip it to avoid returning a pointer to mutable timeline state.
+	require.NotNil(t, stats.TaskStats().GetTimeline())
+	require.Nil(t, stats.BasicTaskStats().GetTimeline())
 }
 
 func TestUsageStats_Timeseries(t *testing.T) {

@@ -17,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -40,6 +42,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
 
@@ -80,6 +83,7 @@ type fakeContainer struct {
 	CreateError                error
 	Removed                    chan struct{}
 	Result                     *interfaces.CommandResult
+	ExecFunc                   func(context.Context) *interfaces.CommandResult
 	Isolation                  string // Fake isolation type name
 	ImageCached                bool   // Return value for IsImageCached
 	BlockPull                  bool   // PullImage blocks forever if true.
@@ -121,6 +125,9 @@ func (c *fakeContainer) Create(ctx context.Context, workdir string) error {
 }
 
 func (c *fakeContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *interfaces.Stdio) *interfaces.CommandResult {
+	if c.ExecFunc != nil {
+		return c.ExecFunc(ctx)
+	}
 	return c.Result
 }
 
@@ -152,6 +159,19 @@ func newFakeFirecrackerContainer() *fakeFirecrackerContainer {
 
 func (*fakeFirecrackerContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
+}
+
+type fakeOOMKiller struct {
+	task oomkiller.KillableTask
+}
+
+func (k *fakeOOMKiller) Register(ctx context.Context, task oomkiller.KillableTask) func() {
+	k.task = task
+	return func() {
+		if k.task == task {
+			k.task = nil
+		}
+	}
 }
 
 type RunnerPoolOptions struct {
@@ -332,6 +352,60 @@ func mustGetNewRunner(t *testing.T, ctx context.Context, pool *pool, task *repb.
 
 func sleepRandMicros(max int64) {
 	time.Sleep(time.Duration(rand.Int63n(max) * int64(time.Microsecond)))
+}
+
+func TestRunnerOOMKiller_KillDuringTaskExecution_ReturnsOOMError(t *testing.T) {
+	env := newTestEnv(t)
+	cfg := noLimitsCfg()
+	ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+	oomKiller := &fakeOOMKiller{}
+	cfg.OOMKiller = oomKiller
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr := NewFakeContainer()
+		ctr.FakeStats = &repb.UsageStats{MemoryBytes: 800}
+		ctr.ExecFunc = func(ctx context.Context) *interfaces.CommandResult {
+			state, err := oomKiller.task.State(ctx)
+			require.NoError(t, err)
+			oomKiller.task.Kill(ctx, oom.Error(oom.Details{
+				EstimatedMemoryBytes: state.EstimatedMemoryBytes,
+				ObservedMemoryBytes:  state.UsageStats.GetMemoryBytes(),
+			}))
+			<-ctx.Done()
+			return &interfaces.CommandResult{
+				ExitCode:   commandutil.KilledExitCode,
+				Error:      ctx.Err(),
+				UsageStats: &repb.UsageStats{MemoryBytes: 100},
+			}
+		}
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	task := newTask()
+	task.ExecutionTask.ExecutionId = "execution-id"
+	task.SchedulingMetadata = &scpb.SchedulingMetadata{
+		TaskSize: &scpb.TaskSize{
+			EstimatedMemoryBytes: 100,
+		},
+	}
+
+	r, err := get(ctx, pool, task)
+	require.NoError(t, err)
+	defer func() {
+		pool.TryRecycle(ctx, r, false /*=finishedCleanly*/)
+		pool.Wait()
+	}()
+
+	res := r.Run(ctx, &repb.IOStats{})
+
+	require.True(t, oom.IsError(res.Error))
+	require.Equal(t, commandutil.NoExitCode, res.ExitCode)
+	require.True(t, res.DoNotRecycle)
+	require.Equal(t, int64(100), res.UsageStats.GetMemoryBytes())
+	require.Equal(t, int64(0), res.UsageStats.GetPeakMemoryBytes())
+	details, ok := oom.DetailsFromError(res.Error)
+	require.True(t, ok)
+	require.Equal(t, int64(100), details.EstimatedMemoryBytes)
+	require.Equal(t, int64(800), details.ObservedMemoryBytes)
 }
 
 func TestRunnerPool_CanAddAndGetBackSameRunner(t *testing.T) {

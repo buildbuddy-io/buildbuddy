@@ -1,0 +1,57 @@
+/* Styles for all icons, including non-lucide. */
+.icon {
+  width: var(--icon-size);
+  height: var(--icon-size);
+  /* By default, icons should not get squished */
+  flex-shrink: 0;
+}
+
+/*
+  Lucide icon styles.
+  The 'stroke' styling is specific to lucide, which uses stroke rather than fill.
+*/
+.lucide {
+  /* Default icon color is gray */
+  stroke: var(--color-icon-default);
+}
+
+.lucide.white {
+  stroke: var(--color-white);
+}
+
+.lucide.gray,
+.lucide.grey {
+  stroke: var(--color-icon-default);
+}
+
+.lucide.black {
+  stroke: var(--color-black);
+}
+
+.lucide.green {
+  stroke: var(--color-light-green-500);
+}
+
+.lucide.red {
+  stroke: var(--color-red-500);
+}
+
+.lucide.blue {
+  stroke: var(--color-light-blue-500);
+}
+
+.lucide.brown {
+  stroke: var(--color-brown-700-alt);
+}
+
+.lucide.purple {
+  stroke: var(--color-deep-purple-500);
+}
+
+.lucide.orange {
+  stroke: var(--color-amber-900);
+}
+
+.lucide.yellow {
+  stroke: var(--color-icon-yellow);
+}

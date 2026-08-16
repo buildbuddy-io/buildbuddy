@@ -1,5 +1,7 @@
 import {
   ArrowRight,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Download,
   File,
@@ -38,6 +40,7 @@ import Spinner from "../components/spinner/spinner";
 import HelpTooltip from "../components/tooltip/help_tooltip";
 import errorService from "../errors/error_service";
 import format, { durationUsec } from "../format/format";
+import { FileIcon } from "../icons/file_icon";
 import UserPreferences from "../preferences/preferences";
 import router from "../router/router";
 import { Cancelable, CancelablePromise, default as rpcService } from "../service/rpc_service";
@@ -60,6 +63,16 @@ type ITimestamp = google_timestamp.protobuf.ITimestamp;
 
 const executionDownloadsPageSize = 100;
 
+interface InputFileReference {
+  path: string;
+  digest: IDigest;
+}
+
+type ParamFileState =
+  | { expanded: boolean; status: "loading" }
+  | { expanded: boolean; status: "loaded"; content: string }
+  | { expanded: boolean; status: "error" };
+
 interface Props {
   model: InvocationModel;
   search: URLSearchParams;
@@ -76,6 +89,10 @@ interface State {
   execution?: execution_stats.Execution | null;
   executeResponse?: build.bazel.remote.execution.v2.ExecuteResponse;
   actionResult?: build.bazel.remote.execution.v2.ActionResult;
+  measuredMemoryPeakBytes?: number;
+  inputFilePathToDigest: Map<string, IDigest | null>;
+  argumentToInputFile: Map<string, InputFileReference | null>;
+  paramFilePathToState: Map<string, ParamFileState>;
   // The first entry in the tuple is the size, the second is the number of files.
   treeShaToTotalSizeMap: Map<string, [Number, Number]>;
   command?: build.bazel.remote.execution.v2.Command;
@@ -108,6 +125,9 @@ export default class InvocationActionCardComponent extends React.Component<Props
     treeShaToExpanded: new Map<string, boolean>(),
     treeShaToChildrenMap: new Map<string, TreeNode[]>(),
     treeShaToTotalSizeMap: new Map<string, [Number, Number]>(),
+    inputFilePathToDigest: new Map<string, IDigest | null>(),
+    argumentToInputFile: new Map<string, InputFileReference | null>(),
+    paramFilePathToState: new Map<string, ParamFileState>(),
     serverLogs: [],
     inputNodes: [],
     loadingAction: true,
@@ -121,10 +141,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
   };
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
+  private treeShaToChildrenPromiseMap = new Map<string, Promise<TreeNode[]>>();
 
   componentDidMount() {
     this.fetchAction();
     this.fetchExecuteResponseOrActionResult();
+    this.fetchSpawnMetrics();
     if (this.getExecutionId()) {
       this.fetchExecutionDownloads("");
     }
@@ -134,8 +156,12 @@ export default class InvocationActionCardComponent extends React.Component<Props
     if (prevProps.search.get("actionDigest") !== this.props.search.get("actionDigest")) {
       this.fetchAction();
       this.fetchExecuteResponseOrActionResult();
+      this.fetchSpawnMetrics();
       this.fetchExecutionDownloads("");
       return;
+    }
+    if (prevProps.model.getExecutionLogFileUri() !== this.props.model.getExecutionLogFileUri()) {
+      this.fetchSpawnMetrics();
     }
     if (prevProps.search.get("executeResponseDigest") !== this.props.search.get("executeResponseDigest")) {
       this.fetchExecuteResponseOrActionResult();
@@ -150,8 +176,50 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
   }
 
+  fetchSpawnMetrics() {
+    const actionDigestParam = this.props.search.get("actionDigest");
+    if (!actionDigestParam || !this.props.model.hasExecutionLog() || this.getExecutionId()) {
+      this.setState({ measuredMemoryPeakBytes: undefined });
+      return;
+    }
+
+    const actionDigest = parseActionDigest(actionDigestParam);
+    if (!actionDigest) {
+      this.setState({ measuredMemoryPeakBytes: undefined });
+      return;
+    }
+
+    const model = this.props.model;
+    const actionDigestString = digestToString(actionDigest);
+    const actionDigestHasSize = actionDigestParam.includes("/");
+    model
+      .getExecutionLog()
+      .then((log) => {
+        if (this.props.model !== model || this.props.search.get("actionDigest") !== actionDigestParam) return;
+
+        const spawn = log.find((entry) => {
+          const spawnDigest = entry.spawn?.digest;
+          if (!spawnDigest || spawnDigest.hash !== actionDigest.hash) return false;
+          return !actionDigestHasSize || digestToString(spawnDigest) === actionDigestString;
+        });
+        this.setState({
+          measuredMemoryPeakBytes: Number(spawn?.spawn?.metrics?.measuredMemoryPeakBytes || 0) || undefined,
+        });
+      })
+      .catch((e) => console.error("Failed to fetch execution log:", e));
+  }
+
   fetchAction() {
-    this.setState({ loadingAction: true });
+    this.setState({
+      loadingAction: true,
+      action: undefined,
+      command: undefined,
+      inputRoot: undefined,
+      inputNodes: [],
+      inputFilePathToDigest: new Map<string, IDigest | null>(),
+      argumentToInputFile: new Map<string, InputFileReference | null>(),
+      paramFilePathToState: new Map<string, ParamFileState>(),
+    });
     const digestParam = this.props.search.get("actionDigest");
     if (!digestParam) {
       alert_service.error("Missing action digest URL param");
@@ -167,9 +235,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(actionUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let action = build.bazel.remote.execution.v2.Action.decode(new Uint8Array(buffer));
-        this.setState({
-          action: action,
-        });
+        this.setState({ action });
         this.fetchCommand(action);
         this.fetchInputRoot(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
         this.fetchDirectorySizes(action.inputRootDigest ?? build.bazel.remote.execution.v2.Digest.create({}));
@@ -251,20 +317,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
       .fetchBytestreamFile(inputRootURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
         let inputRoot = build.bazel.remote.execution.v2.Directory.decode(new Uint8Array(buffer));
-        let inputFiles: TreeNode[] = inputRoot.files.map((node) => ({
-          obj: node,
-          type: "file",
-        }));
-        let inputDirectories: TreeNode[] = inputRoot.directories.map((node) => ({
-          obj: node,
-          type: "dir",
-        }));
-        let inputSymlinks: TreeNode[] = inputRoot.symlinks.map((node) => ({
-          obj: node,
-          type: "symlink",
-        }));
-        const inputNodes = [...inputDirectories, ...inputFiles, ...inputSymlinks];
-        this.setState({ inputRoot, inputNodes });
+        const inputNodes = this.treeNodesForDirectory(inputRoot);
+        this.setState({ inputRoot, inputNodes }, () => this.resolveArgumentInputFilesIfNeeded());
       })
       .catch((e) => console.error("Failed to fetch input root:", e));
   }
@@ -580,9 +634,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
     rpcService
       .fetchBytestreamFile(commandURL, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer) => {
-        this.setState({
-          command: build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer)),
-        });
+        const command = build.bazel.remote.execution.v2.Command.decode(new Uint8Array(buffer));
+        this.setState({ command }, () => this.resolveArgumentInputFilesIfNeeded());
       })
       .catch((e) => console.error("Failed to fetch command:", e));
   }
@@ -622,15 +675,199 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return this.props.search.get("executionId") || this.state.execution?.executionId;
   }
 
-  displayList(list: string[]) {
-    if (list.length == 0) return <div>None found</div>;
+  private renderArguments(args: string[]) {
+    if (args.length == 0) return <div>None found</div>;
     return (
       <div className="action-list">
-        {list.map((argument) => (
-          <div>{argument}</div>
+        {args.map((argument, index) => (
+          <div key={`${index}-${argument}`}>{this.renderArgument(argument)}</div>
         ))}
       </div>
     );
+  }
+
+  private renderArgument(argument: string) {
+    const inputFile = this.state.argumentToInputFile.get(argument);
+    if (!inputFile) return argument;
+
+    const paramFilePath = getArgumentParamFilePath(argument);
+    const paramFileDigest = paramFilePath ? this.state.inputFilePathToDigest.get(paramFilePath) : undefined;
+    const paramFile = paramFilePath && paramFileDigest ? { path: paramFilePath, digest: paramFileDigest } : undefined;
+    const paramFileState = paramFile ? this.state.paramFilePathToState.get(paramFile.path) : undefined;
+    const expanded = paramFileState?.expanded ?? false;
+    return (
+      <>
+        <div className="action-argument-row">
+          {paramFile && (
+            <button
+              className="action-argument-expander"
+              onClick={() => this.handleParamFileExpanded(paramFile.path, paramFile.digest)}
+              title={expanded ? "Collapse params file" : "Expand params file"}
+              type="button">
+              {expanded ? <ChevronDown className="icon" /> : <ChevronRight className="icon" />}
+            </button>
+          )}
+          <span>{argument}</span>
+          <TextLink
+            className="artifact-view"
+            href={this.getFileViewUrl(inputFile.path, inputFile.digest)}
+            target="_blank">
+            <FileIcon extension={getPathBasename(inputFile.path)} /> View
+          </TextLink>
+        </div>
+        {paramFileState?.expanded && this.renderParamFileContents(paramFileState)}
+      </>
+    );
+  }
+
+  private handleParamFileExpanded(path: string, digest: IDigest) {
+    const paramFileState = this.state.paramFilePathToState.get(path);
+    if (paramFileState?.expanded) {
+      this.updateParamFileState(path, (state) =>
+        state ? { ...state, expanded: false } : { expanded: false, status: "loading" }
+      );
+      return;
+    }
+
+    const shouldFetch = !paramFileState || paramFileState.status === "error";
+    this.updateParamFileState(
+      path,
+      (state) =>
+        !state || state.status === "error" ? { expanded: true, status: "loading" } : { ...state, expanded: true },
+      () => {
+        if (shouldFetch) this.fetchParamFileContent(path, digest);
+      }
+    );
+  }
+
+  private fetchParamFileContent(path: string, digest: IDigest) {
+    const actionDigest = this.props.search.get("actionDigest") ?? "";
+    this.updateParamFileState(path, (state) => ({ expanded: state?.expanded ?? true, status: "loading" }));
+
+    rpcService
+      .fetchBytestreamFile(this.props.model.getBytestreamURL(digest), this.props.model.getInvocationId(), "text")
+      .then((content) => {
+        if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+        this.updateParamFileState(path, (state) => ({
+          expanded: state?.expanded ?? false,
+          status: "loaded",
+          content,
+        }));
+      })
+      .catch((e) => {
+        console.error(`Failed to fetch params file ${path}:`, e);
+        if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+        this.updateParamFileState(path, (state) => ({ expanded: state?.expanded ?? false, status: "error" }));
+      });
+  }
+
+  private updateParamFileState(
+    path: string,
+    update: (state: ParamFileState | undefined) => ParamFileState,
+    callback?: () => void
+  ) {
+    this.setState((prevState) => {
+      const paramFilePathToState = new Map(prevState.paramFilePathToState);
+      paramFilePathToState.set(path, update(prevState.paramFilePathToState.get(path)));
+      return { paramFilePathToState };
+    }, callback);
+  }
+
+  private renderParamFileContents(paramFileState: ParamFileState) {
+    switch (paramFileState.status) {
+      case "loading":
+        return <div className="action-argument-param-file-loading">Loading params file...</div>;
+      case "error":
+        return <div className="action-argument-param-file-error">Failed to load params file.</div>;
+      case "loaded":
+        return <pre className="action-argument-param-file">{paramFileState.content || "(empty)"}</pre>;
+    }
+  }
+
+  private resolveArgumentInputFilesIfNeeded() {
+    if (!this.state.command || !this.state.inputRoot) return;
+
+    // Collect potential paths for command line arguments
+    const actionDigest = this.props.search.get("actionDigest") ?? "";
+    const argumentToCandidates = new Map<string, string[]>();
+    for (const argument of this.state.command.arguments) {
+      if (this.state.argumentToInputFile.has(argument)) continue;
+      const candidates = getArgumentInputFilePathCandidates(argument);
+      if (candidates.length) {
+        argumentToCandidates.set(argument, candidates);
+      }
+    }
+    if (!argumentToCandidates.size) return;
+
+    // Resolve each potential path only once
+    const inputFilePaths = new Set([...argumentToCandidates.values()].flat());
+    const pathsToResolve = [...inputFilePaths].filter((path) => !this.state.inputFilePathToDigest.has(path));
+
+    // For each argument attempt to resolve the path to a real input file digest
+    Promise.all(pathsToResolve.map((path) => this.resolveInputFilePath(path))).then((results) => {
+      if ((this.props.search.get("actionDigest") ?? "") !== actionDigest) return;
+      this.setState((prevState) => {
+        const inputFilePathToDigest = new Map(prevState.inputFilePathToDigest);
+        for (const [path, digest] of results) {
+          if (digest) {
+            inputFilePathToDigest.set(path, digest);
+          }
+        }
+        const argumentToInputFile = new Map(prevState.argumentToInputFile);
+        for (const [argument, candidates] of argumentToCandidates) {
+          for (const path of candidates) {
+            const digest = inputFilePathToDigest.get(path);
+            if (digest) {
+              argumentToInputFile.set(argument, { path, digest });
+              break;
+            }
+          }
+        }
+        return { inputFilePathToDigest, argumentToInputFile };
+      });
+    });
+  }
+
+  private async resolveInputFilePath(path: string): Promise<[string, IDigest | null]> {
+    try {
+      return [path, await this.resolveInputFileDigest(path)];
+    } catch (e) {
+      console.error(`Failed to resolve input file ${path}:`, e);
+      return [path, null];
+    }
+  }
+
+  private async resolveInputFileDigest(path: string): Promise<IDigest | null> {
+    const segments = path.split("/");
+    if (!segments.length || !this.state.inputNodes.length) return null;
+
+    let nodes = this.state.inputNodes;
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      const isLeaf = i === segments.length - 1;
+      if (isLeaf) {
+        // View links are only useful for files so ignore anything else
+        // At this point nodes contains only the children of the earlier path segments
+        for (const node of nodes) {
+          if (node.type === "file" && node.obj.name === segment) {
+            return node.obj.digest ?? null;
+          }
+        }
+        return null;
+      }
+
+      // The dirname of paths must be fetched first so the children exist in the inputNodes
+      let child: Extract<TreeNode, { type: "dir" | "tree" }> | undefined;
+      for (const node of nodes) {
+        if ((node.type === "dir" || node.type === "tree") && node.obj.name === segment) {
+          child = node;
+          break;
+        }
+      }
+      if (!child || !child.obj.digest) return null;
+      nodes = await this.fetchDirectoryChildren(child.obj.digest, child.type);
+    }
+    return null;
   }
 
   handleOutputFileClicked(file: build.bazel.remote.execution.v2.OutputFile) {
@@ -641,6 +878,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
       this.props.model.getBytestreamURL(file.digest),
       this.props.model.getInvocationId()
     );
+  }
+
+  private getFileViewUrl(path: string, digest: IDigest) {
+    const params: Record<string, string> = {
+      bytestream_url: this.props.model.getBytestreamURL(digest),
+      invocation_id: this.props.model.getInvocationId(),
+      filename: path,
+    };
+    return `/code/buildbuddy-io/buildbuddy/?${new URLSearchParams(params).toString()}`;
   }
 
   private renderTiming(metadata: build.bazel.remote.execution.v2.ExecutedActionMetadata) {
@@ -740,7 +986,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                   { filename: download.path }
                                 )}
                                 title="Download">
-                                <Download className="download-button icon" />
+                                <Download className="download-button" />
                               </a>
                             )}
                           </div>
@@ -837,43 +1083,68 @@ export default class InvocationActionCardComponent extends React.Component<Props
   };
 
   private fetchAndExpandDir(node: TreeNode): Promise<TreeNode[]> {
-    if (!("digest" in node.obj) || !node.obj?.digest) return Promise.resolve([]);
+    if (node.type !== "dir" && node.type !== "tree") return Promise.resolve([]);
+    if (!node.obj.digest) return Promise.resolve([]);
 
-    const dirUrl = this.props.model.getBytestreamURL(node.obj.digest);
     const digestString = node.obj.digest.hash ?? "";
+    return this.fetchDirectoryChildren(node.obj.digest, node.type).then((nodes) => {
+      if (digestString) {
+        this.state.treeShaToExpanded.set(digestString, true);
+      }
+      return nodes;
+    });
+  }
 
-    return rpcService
+  private fetchDirectoryChildren(digest: IDigest, type: "dir" | "tree"): Promise<TreeNode[]> {
+    const digestString = digest.hash ?? "";
+    const cachedChildren = digestString ? this.state.treeShaToChildrenMap.get(digestString) : undefined;
+    if (cachedChildren) return Promise.resolve(cachedChildren);
+    const cachedPromise = digestString ? this.treeShaToChildrenPromiseMap.get(digestString) : undefined;
+    if (cachedPromise) return cachedPromise;
+
+    const dirUrl = this.props.model.getBytestreamURL(digest);
+    const fetchPromise = rpcService
       .fetchBytestreamFile(dirUrl, this.props.model.getInvocationId(), "arraybuffer")
       .then((buffer: ArrayBuffer) => new Uint8Array(buffer))
       .then((array: Uint8Array) =>
-        node.type == "tree"
+        type == "tree"
           ? build.bazel.remote.execution.v2.Tree.decode(array).root
           : build.bazel.remote.execution.v2.Directory.decode(array)
       )
       .then((dir: build.bazel.remote.execution.v2.Directory | null | undefined) => {
         if (!dir) return [];
 
-        this.state.treeShaToExpanded.set(digestString, true);
-        const nodes = dir.directories
-          .map<TreeNode>((node) => ({
-            obj: node,
-            type: "dir",
-          }))
-          .concat(
-            dir.files.map((node) => ({
-              obj: node,
-              type: "file",
-            }))
-          )
-          .concat(
-            dir.symlinks.map((node) => ({
-              obj: node,
-              type: "symlink",
-            }))
-          );
-        this.state.treeShaToChildrenMap.set(digestString, nodes);
+        const nodes = this.treeNodesForDirectory(dir);
+        if (digestString) {
+          this.state.treeShaToChildrenMap.set(digestString, nodes);
+        }
         return nodes;
       });
+    if (digestString) {
+      this.treeShaToChildrenPromiseMap.set(digestString, fetchPromise);
+      fetchPromise.finally(() => this.treeShaToChildrenPromiseMap.delete(digestString));
+    }
+    return fetchPromise;
+  }
+
+  private treeNodesForDirectory(dir: build.bazel.remote.execution.v2.Directory): TreeNode[] {
+    return dir.directories
+      .map<TreeNode>((node) => ({
+        obj: node,
+        type: "dir",
+      }))
+      .concat(
+        dir.files.map((node) => ({
+          obj: node,
+          type: "file",
+        }))
+      )
+      .concat(
+        dir.symlinks.map((node) => ({
+          obj: node,
+          type: "symlink",
+        }))
+      );
   }
 
   private autoExpandSingleChildDirs(nodes: TreeNode[]): Promise<void> {
@@ -1050,11 +1321,11 @@ export default class InvocationActionCardComponent extends React.Component<Props
             {symlinks.map((symlink) => (
               <div className="tree-node-symlink">
                 <span>
-                  <FileSymlink className="icon symlink-icon" />
+                  <FileSymlink className="symlink-icon" />
                 </span>{" "}
                 <span>{symlink.path}</span>{" "}
                 <span>
-                  <ArrowRight className="icon arrow-right-icon" />
+                  <ArrowRight className="arrow-right-icon" />
                 </span>{" "}
                 <span>{symlink.target}</span>
               </div>
@@ -1076,7 +1347,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {command.outputPaths.map((expectedOutput) => (
           <div className="expected-output">
             <span>
-              <FileQuestion className="icon file-question-icon" />
+              <FileQuestion className="file-question-icon" />
             </span>
             <span className="expected-output-label">{expectedOutput}</span>
           </div>
@@ -1089,7 +1360,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {command.outputDirectories.map((expectedDir) => (
           <div className="expected-output">
             <span>
-              <Folder className="icon folder-icon" />
+              <Folder className="folder-icon" />
             </span>
             <span className="expected-output-label">{expectedDir}</span>
           </div>
@@ -1097,7 +1368,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {command.outputFiles.map((expectedFile) => (
           <div className="expected-output">
             <span>
-              <File className="icon file-icon" />
+              <File className="file-icon" />
             </span>
             <span className="expected-output-label">{expectedFile}</span>
           </div>
@@ -1125,7 +1396,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingOutputs.map((missingOutput) => (
           <div className="missing-output">
             <span>
-              <FileQuestion className="icon file-question-icon red" />
+              <FileQuestion className="file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingOutput}</span>
           </div>
@@ -1138,7 +1409,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingDirs.map((missingDir) => (
           <div className="missing-output">
             <span>
-              <Folder className="icon file-question-icon red" />
+              <Folder className="file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingDir}</span>
           </div>
@@ -1146,7 +1417,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         {missingFiles.map((missingFile) => (
           <div className="missing-output">
             <span>
-              <FileQuestion className="icon file-question-icon red" />
+              <FileQuestion className="file-question-icon red" />
             </span>
             <span className="missing-output-label">{missingFile}</span>
           </div>
@@ -1184,6 +1455,22 @@ export default class InvocationActionCardComponent extends React.Component<Props
     return (
       missingFiles.length + missingDirs.length > 0 &&
       renderOutline(renderMissingOutputFilesAndDirs(missingFiles, missingDirs))
+    );
+  }
+
+  private renderSpawnResourceUsage() {
+    if (this.getExecutionId()) return null;
+
+    const measuredMemoryPeakBytes = this.state.measuredMemoryPeakBytes;
+    if (!measuredMemoryPeakBytes || measuredMemoryPeakBytes <= 0) return null;
+
+    return (
+      <>
+        <div className="metadata-title">Resource usage</div>
+        <div>
+          <div>Peak memory: {format.bytesIEC(measuredMemoryPeakBytes)}</div>
+        </div>
+      </>
     );
   }
 
@@ -1276,6 +1563,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
     const vmMetadata = this.getAuxiliaryMetadata(firecracker.VMMetadata);
     const executionId = this.getExecutionId();
     const platformOverrides = this.getPlatformOverrides();
+    const spawnResourceUsage = this.renderSpawnResourceUsage();
 
     return (
       <div className="invocation-action-card">
@@ -1286,7 +1574,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         )}
         {!this.state.loadingAction && (
           <div className="card">
-            <Info className="icon purple" />
+            <Info className="purple" />
             <div className="content">
               {executionId && (
                 <>
@@ -1300,7 +1588,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                             getDrilldownUrl(this.state.execution?.targetLabel, this.state.execution?.actionMnemonic)
                           )
                         }>
-                        <History className="icon" />
+                        <History />
                         <span>View history</span>
                       </OutlinedButton>
                     )}
@@ -1418,6 +1706,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                               treeShaToChildrenMap={this.state.treeShaToChildrenMap}
                               treeShaToTotalSizeMap={this.state.treeShaToTotalSizeMap}
                               handleFileClicked={this.handleFileClicked.bind(this)}
+                              getFileViewUrl={this.getFileViewUrl.bind(this)}
                             />
                           ))}
                         </div>
@@ -1439,7 +1728,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div className="action-title">Command details</div>
                       {this.state.command && (
                         <OutlinedButton className="copy-bb-execute-button" onClick={this.onClickCopyBbExecute}>
-                          <Copy className="icon copy-icon" />
+                          <Copy className="copy-icon" />
                           Copy as bb-execute
                         </OutlinedButton>
                       )}
@@ -1448,7 +1737,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       <div>
                         <div className="action-section">
                           <div className="action-property-title">Arguments</div>
-                          {this.displayList(this.state.command.arguments)}
+                          {this.renderArguments(this.state.command.arguments)}
                         </div>
                         <div className="action-section">
                           <div className="action-property-title">Environment variables</div>
@@ -1521,7 +1810,16 @@ export default class InvocationActionCardComponent extends React.Component<Props
                         {this.state.actionResult.executionMetadata ? (
                           <div className="action-list">
                             <div className="metadata-title">Executor Host ID</div>
-                            <div className="metadata-detail">{this.state.actionResult.executionMetadata.worker} </div>
+                            <div className="metadata-detail metadata-detail-inline-action">
+                              <span>{this.state.actionResult.executionMetadata.worker}</span>
+                              {this.state.actionResult.executionMetadata.worker && (
+                                <TextLink
+                                  className="artifact-view metadata-history-link"
+                                  href={getExecutorDrilldownUrl(this.state.actionResult.executionMetadata.worker)}>
+                                  <History /> History
+                                </TextLink>
+                              )}
+                            </div>
                             <div className="metadata-title">Executor ID</div>
                             <div className="metadata-detail">
                               {this.state.actionResult.executionMetadata.executorId}
@@ -1656,14 +1954,17 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 </div>
                               </>
                             )}
-                            {this.state.actionResult.executionMetadata.usageStats &&
-                              this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)}
+                            {this.state.actionResult.executionMetadata.usageStats
+                              ? this.renderUsageStats(this.state.actionResult.executionMetadata.usageStats)
+                              : spawnResourceUsage}
                             {this.renderExecutionDownloads()}
                             {this.state.actionResult.executionMetadata &&
                               this.renderTiming(this.state.actionResult.executionMetadata)}
                           </div>
                         ) : (
-                          <div>None found</div>
+                          (spawnResourceUsage && <div className="action-list">{spawnResourceUsage}</div>) || (
+                            <div>None found</div>
+                          )
                         )}
                       </div>
                       <div className="action-section">
@@ -1675,9 +1976,19 @@ export default class InvocationActionCardComponent extends React.Component<Props
                                 className="file-name clickable"
                                 onClick={this.handleOutputFileClicked.bind(this, file)}>
                                 <span>
-                                  <Download className="icon file-icon" />
+                                  <Download className="file-icon" />
                                 </span>
                                 <span className="prop-link">{file.path}</span>
+                                {file.digest && (
+                                  <TextLink
+                                    className="artifact-view"
+                                    href={this.getFileViewUrl(file.path, file.digest)}
+                                    // Otherwise the file will be downloaded instead
+                                    onClick={(e) => e.stopPropagation()}
+                                    target="_blank">
+                                    <FileIcon extension={file.path} /> View
+                                  </TextLink>
+                                )}
                                 {file.isExecutable && <span className="detail"> (executable)</span>}
                                 {file.digest && <DigestComponent digest={file.digest} />}
                               </div>
@@ -1734,7 +2045,15 @@ export default class InvocationActionCardComponent extends React.Component<Props
                       </div>
                     </div>
                   ) : (
-                    !this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>
+                    <>
+                      {spawnResourceUsage && (
+                        <div className="action-section">
+                          <div className="action-property-title">Execution metadata</div>
+                          <div className="action-list">{spawnResourceUsage}</div>
+                        </div>
+                      )}
+                      {!this.state.executeResponse && <div>{this.renderNotFoundDetails({ result: true })}</div>}
+                    </>
                   )}
                 </div>
               </div>
@@ -1748,6 +2067,69 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
 function grpcStatusCodeToString(code: number): string {
   return google_grpc_code.rpc.Code[code] ?? "";
+}
+
+function getArgumentInputFilePathCandidates(argument: string): string[] {
+  const candidates: string[] = [];
+  const assignmentValue = getAssignmentValue(argument);
+  if (assignmentValue) {
+    candidates.push(...getNormalizedArgfilePathCandidates(assignmentValue), assignmentValue);
+  }
+  if (!argument.startsWith("-")) {
+    candidates.push(...getNormalizedArgfilePathCandidates(argument), argument);
+  }
+  return normalizeInputFilePathCandidates(candidates);
+}
+
+function getArgumentParamFilePath(argument: string): string | undefined {
+  const assignmentValue = getAssignmentValue(argument);
+  const paramFileArgument = assignmentValue?.startsWith("@") ? assignmentValue : argument;
+  return getNormalizedArgfilePathCandidates(paramFileArgument)[0];
+}
+
+// --include-something=path/to/file
+function getAssignmentValue(argument: string): string | undefined {
+  const assignmentIndex = argument.indexOf("=");
+  if (assignmentIndex <= 0 || assignmentIndex === argument.length - 1) return undefined;
+  return argument.substring(assignmentIndex + 1);
+}
+
+// @path/to/foo.params
+function getArgfilePathCandidates(argument: string): string[] {
+  if (!argument.startsWith("@") || argument.length <= 1) return [];
+  return [argument.substring(1)];
+}
+
+function getNormalizedArgfilePathCandidates(argument: string): string[] {
+  return normalizeInputFilePathCandidates(getArgfilePathCandidates(argument));
+}
+
+function normalizeInputFilePathCandidates(candidates: string[]): string[] {
+  return [...new Set(candidates.map(normalizeInputFilePathCandidate).filter((path): path is string => !!path))];
+}
+
+function normalizeInputFilePathCandidate(path: string): string | undefined {
+  if (isAbsolutePathCandidate(path)) return undefined;
+
+  path = path.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+  const segments = path.split("/");
+  if (
+    !path ||
+    path.startsWith("@") ||
+    path.includes("\0") ||
+    segments.some((segment) => segment === "" || segment === "." || segment === "..")
+  ) {
+    return undefined;
+  }
+  return path;
+}
+
+function isAbsolutePathCandidate(path: string): boolean {
+  return path.startsWith("/") || path.startsWith("\\") || /^[A-Za-z]:/.test(path);
+}
+
+function getPathBasename(path: string): string {
+  return path.split("/").pop() || path;
 }
 
 function computeMilliCpu(result: build.bazel.remote.execution.v2.ActionResult): number {
@@ -1780,6 +2162,17 @@ function getDrilldownUrl(targetLabel?: string, actionMnemonic?: string): string 
   }
   const dimensionParam = `${encodeTargetLabelUrlParam(targetLabel)}|${encodeActionMnemonicUrlParam(actionMnemonic)}`;
   return `/trends/?d=${encodeURIComponent(dimensionParam)}&ddMetric=e4#drilldown`;
+}
+
+function getExecutorDrilldownUrl(executorHostId?: string): string {
+  if (!executorHostId) {
+    return "";
+  }
+  return `/trends/?d=${encodeURIComponent(encodeWorkerUrlParam(executorHostId))}&ddMetric=e9#drilldown`;
+}
+
+export function encodeWorkerUrlParam(workerId: string): string {
+  return `e1|${workerId.length}|${workerId}`;
 }
 
 export function encodeTargetLabelUrlParam(targetLabel: string): string {

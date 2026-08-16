@@ -543,7 +543,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                   {!singleTarget && (
                     <div className="flake-table-row flake-table-summary-row">
                       <div className="flake-table-row-image">
-                        <Target className="icon"></Target>
+                        <Target></Target>
                       </div>
                       <div className="flake-table-row-content">
                         <div className="flake-table-row-header">Totals</div>
@@ -581,7 +581,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                     return (
                       <Link key={index} className="flake-table-row" href={`/tests/?target=${s.label}#flakes`}>
                         <div className="flake-table-row-image">
-                          <Target className="icon"></Target>
+                          <Target></Target>
                         </div>
                         <div className="flake-table-row-content">
                           <div className="flake-table-row-header">

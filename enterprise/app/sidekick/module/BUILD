@@ -14,5 +14,6 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/format",
+        "//app/icons:github_lucide",
     ],
 )

@@ -121,11 +121,11 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
         <div key={node.obj.name} className={className}>
           <div className="tree-node-symlink" style={symlinkStyle}>
             <span>
-              <FileSymlink className="icon symlink-icon" />
+              <FileSymlink className="symlink-icon" />
             </span>{" "}
             <span className="input-tree-node-label">{symlink.name}</span>{" "}
             <span>
-              <ArrowRight className="icon symlink-arrow-icon" />
+              <ArrowRight className="symlink-arrow-icon" />
             </span>{" "}
             <span className="input-tree-node-label">{symlink.target}</span>
           </div>
@@ -149,13 +149,13 @@ export default class DiffTreeNodeComponent extends React.Component<Props> {
             onClick={() => this.handleFileClick(node, otherNode)}>
             <span>
               {!isDir ? (
-                <Download className="icon file-icon" />
+                <Download className="file-icon" />
               ) : (
                 <>
                   {expanded ? (
-                    <FolderMinus className="icon file-icon folder-icon" />
+                    <FolderMinus className="file-icon folder-icon" />
                   ) : (
-                    <FolderPlus className="icon file-icon folder-icon" />
+                    <FolderPlus className="file-icon folder-icon" />
                   )}
                 </>
               )}

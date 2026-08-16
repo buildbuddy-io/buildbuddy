@@ -74,7 +74,7 @@ export default class InvocationBreakdownCardComponent extends React.Component<Pr
 
     return (
       <div className="card">
-        <PieChartIcon className="icon" />
+        <PieChartIcon />
         <div className="content">
           <div className="title">Timing Breakdown</div>
           <div className="details">

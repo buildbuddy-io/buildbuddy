@@ -265,7 +265,7 @@ func (w *Worker) stderrDebugString() string {
 	if s == "" {
 		return "<empty>"
 	}
-	return s
+	return strings.ToValidUTF8(s, "\uFFFD")
 }
 
 func (r *Worker) marshalWorkRequest(requestProto *wkpb.WorkRequest) error {

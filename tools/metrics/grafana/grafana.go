@@ -138,6 +138,7 @@ func run() error {
 		// Start docker-compose
 		os.Setenv("DASHBOARDS_DIR", tempDashboards)
 		os.Setenv("GF_DATASOURCE_URL", strings.Replace(datasourceURL(), "localhost", "host.docker.internal", 1))
+		os.Setenv("GF_DATASOURCE_SCRAPE_INTERVAL", datasourceScrapeInterval())
 
 		commandName := "docker"
 		args := []string{"compose"}
@@ -274,6 +275,19 @@ func datasourceURL() string {
 		return victoriaMetricsClusterURL
 	}
 	return victoriaMetricsLocalURL
+}
+
+// datasourceScrapeInterval returns the value for the VictoriaMetrics
+// datasource's timeInterval (the "Scrape interval" field), which Grafana uses
+// to derive $__rate_interval. It must match the real scrape interval of the
+// data being queried.
+func datasourceScrapeInterval() string {
+	// The local setup scrapes every 1s. For non-local fall back to the grafana
+	// default.
+	if !*kube {
+		return "1s"
+	}
+	return ""
 }
 
 type DashboardMetadata map[string]any

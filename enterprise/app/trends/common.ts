@@ -127,6 +127,7 @@ export function renderMetricValue(m: stat_filter.Metric, v: number) {
         return format.bytes(v);
       case stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC:
       case stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC:
+      case stat_filter.InvocationMetricType.ACTION_CACHE_HITS_INVOCATION_METRIC:
       default:
         return v.toString();
     }
@@ -148,11 +149,16 @@ const SUMMABLE_METRICS = [
   stat_filter.InvocationMetricType.CAS_CACHE_DOWNLOAD_SIZE_INVOCATION_METRIC,
   stat_filter.InvocationMetricType.CAS_CACHE_MISSES_INVOCATION_METRIC,
   stat_filter.InvocationMetricType.ACTION_CACHE_MISSES_INVOCATION_METRIC,
+  stat_filter.InvocationMetricType.ACTION_CACHE_HITS_INVOCATION_METRIC,
 ];
 
-export function renderTotalValue(m: stat_filter.Metric, v: number): string | null {
+export function isSummableMetric(m: stat_filter.Metric): boolean {
   const metricType = m.execution ?? m.invocation;
-  if (!metricType || !SUMMABLE_METRICS.includes(metricType)) {
+  return !!metricType && SUMMABLE_METRICS.includes(metricType);
+}
+
+export function renderTotalValue(m: stat_filter.Metric, v: number): string | null {
+  if (!isSummableMetric(m)) {
     return null;
   }
   return renderMetricValue(m, v);

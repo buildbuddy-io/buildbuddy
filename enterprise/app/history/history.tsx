@@ -5,7 +5,6 @@ import {
   Clock,
   GitBranch,
   GitCommit,
-  Github,
   Hash,
   Percent,
   XCircle,
@@ -21,6 +20,7 @@ import Link from "../../../app/components/link/link";
 import Spinner from "../../../app/components/spinner/spinner";
 import { Tooltip } from "../../../app/components/tooltip/tooltip";
 import format from "../../../app/format/format";
+import { Github } from "../../../app/icons/github_lucide";
 import InvocationCardComponent from "../../../app/invocation/invocation_card";
 import router, { Path } from "../../../app/router/router";
 import { ROLE_PARAM_NAME } from "../../../app/router/router_params";
@@ -608,19 +608,19 @@ export default class HistoryComponent extends React.Component<Props, State> {
             {this.state.summaryStat && !hideSummaryStats && (
               <div className="details">
                 <div className="detail">
-                  <Hash className="icon gray" />
+                  <Hash className="gray" />
                   {format.formatWithCommas(this.state.summaryStat.totalNumBuilds)} builds
                 </div>
                 <div className="detail">
-                  <CheckCircle className="icon green" />
+                  <CheckCircle className="green" />
                   {format.formatWithCommas(this.state.summaryStat.totalNumSucessfulBuilds)} passed
                 </div>
                 <div className="detail">
-                  <XCircle className="icon red" />
+                  <XCircle className="red" />
                   {format.formatWithCommas(this.state.summaryStat.totalNumFailingBuilds)} failed
                 </div>
                 <div className="detail">
-                  <Percent className="icon grey" />
+                  <Percent className="grey" />
                   {format.percent(
                     Number(this.state.summaryStat.totalNumSucessfulBuilds) /
                       (Number(this.state.summaryStat.totalNumSucessfulBuilds) +
@@ -629,11 +629,11 @@ export default class HistoryComponent extends React.Component<Props, State> {
                   passed
                 </div>
                 <div className="detail">
-                  <Clock className="icon" />
+                  <Clock />
                   {format.durationUsec(this.state.summaryStat.totalBuildTimeUsec)} total
                 </div>
                 <div className="detail">
-                  <Clock className="icon" />
+                  <Clock />
                   {format.durationUsec(
                     Number(this.state.summaryStat.totalBuildTimeUsec) / Number(this.state.summaryStat.totalNumBuilds)
                   )}{" "}

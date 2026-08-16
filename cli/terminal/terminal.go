@@ -22,6 +22,13 @@ func IsTTY(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd())
 }
 
+// DisableEcho disables writing input to the terminal associated with f, but
+// preserves normal terminal signal handling. It returns a function to restore
+// the original settings and flush queued input.
+func DisableEcho(f *os.File) (func() error, error) {
+	return disableEcho(f)
+}
+
 // Esc returns an ANSI escape sequence for the given codes.
 // If either stdout or stderr is not a tty, it returns an empty string.
 // It is intended only for text styling, where dropping the escape sequence

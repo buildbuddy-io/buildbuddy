@@ -154,6 +154,54 @@ func TestEvenDistributionUnderLoad(t *testing.T) {
 	}
 }
 
+func TestLeastLoadedCPUsAreSelected(t *testing.T) {
+	flags.Set(t, "executor.cpu_leaser.enable", true)
+	flags.Set(t, "executor.cpu_leaser.overhead", 0)
+	flags.Set(t, "executor.cpu_leaser.min_overhead", 0)
+	flags.Set(t, "executor.cpu_leaser.cpuset", "0:0-2")
+
+	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
+	require.NoError(t, err)
+
+	// Acquire and hold a single-CPU lease on each of the three CPUs.
+	cancels := make(map[int]func(), 3)
+	for range 3 {
+		_, cpus, cancel := cs.Acquire(1000, uuid.New())
+		defer cancel()
+		require.Len(t, cpus, 1)
+		cancels[cpus[0]] = cancel
+	}
+	require.Len(t, cancels, 3, "expected the held leases to land on 3 distinct CPUs")
+
+	// Acquire and hold another single-CPU lease. The CPU it lands on now
+	// holds two leases.
+	_, cpus, cancel := cs.Acquire(1000, uuid.New())
+	defer cancel()
+	require.Len(t, cpus, 1)
+	doubleLoaded := cpus[0]
+
+	// Release one of the initial leases on a CPU other than the double-loaded
+	// one, leaving that CPU with no load. The CPU loads are now 2, 1, and 0.
+	for cpu := range 3 {
+		if cpu != doubleLoaded {
+			cancels[cpu]()
+			break
+		}
+	}
+
+	// Acquire two CPUs. The CPUs with loads 0 and 1 should be selected, and
+	// the CPU with two leases should be avoided.
+	var leastLoaded []int
+	for cpu := range 3 {
+		if cpu != doubleLoaded {
+			leastLoaded = append(leastLoaded, cpu)
+		}
+	}
+	_, cpus, cancel = cs.Acquire(2000, uuid.New())
+	defer cancel()
+	require.ElementsMatch(t, leastLoaded, cpus)
+}
+
 func TestCPUSetOverhead(t *testing.T) {
 	flags.Set(t, "executor.cpu_leaser.enable", true)
 	flags.Set(t, "executor.cpu_leaser.overhead", .20)
