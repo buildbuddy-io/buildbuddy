@@ -298,6 +298,12 @@ type Execution struct {
 	SnapshotSavedBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
 	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
+	// Guest VM boot wait timings. Only set for executions that booted a fresh
+	// firecracker VM.
+	VMDockerdWaitDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	VMDnsWaitDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
+	VMExecInitDurationUsec    int64 `gorm:"codec:T64,ZSTD(1)"`
+
 	// Disk usage of the task's workspace (buildroot), measured after the task
 	// finishes. Only populated when executor.workspace.measure_disk_usage is
 	// enabled.
@@ -418,6 +424,9 @@ func (e *Execution) AdditionalFields() []string {
 		"SnapshotIsDiff",
 		"SnapshotSavedBytes",
 		"PauseDurationUsec",
+		"VMDockerdWaitDurationUsec",
+		"VMDnsWaitDurationUsec",
+		"VMExecInitDurationUsec",
 		"BuildrootDiskUsageBytes",
 		"ExecutorHostname",
 		"Experiments",

@@ -3,7 +3,6 @@ package vmexec_test
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net"
 	"path"
 	"strings"
@@ -173,25 +172,4 @@ func startExecService(t *testing.T) vmxpb.ExecClient {
 	require.NoError(t, err)
 	client := vmxpb.NewExecClient(conn)
 	return client
-}
-
-// Returns a python script that consumes 1 CPU core continuously for the given
-// duration.
-func useCPUPythonScript(dur time.Duration) string {
-	return fmt.Sprintf(`
-import time
-end = time.time() + %f
-while time.time() < end:
-    pass
-`, dur.Seconds())
-}
-
-// Returns a python script that uses the given amount of resident memory and
-// holds onto that memory for the given duration.
-func useMemPythonScript(memBytes int64, dur time.Duration) string {
-	return fmt.Sprintf(`
-import time
-arr = b'1' * %d
-time.sleep(%f)
-`, memBytes, dur.Seconds())
 }

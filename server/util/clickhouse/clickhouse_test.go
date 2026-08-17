@@ -92,6 +92,20 @@ func TestExecutionFromProto(t *testing.T) {
 			},
 		},
 		{
+			name: "VMMetrics",
+			in: &repb.StoredExecution{
+				ExecutionId:               executionID,
+				VmDockerdWaitDurationUsec: 4001,
+				VmDnsWaitDurationUsec:     4002,
+				VmExecInitDurationUsec:    4003,
+			},
+			want: &schema.Execution{
+				VMDockerdWaitDurationUsec: 4001,
+				VMDnsWaitDurationUsec:     4002,
+				VMExecInitDurationUsec:    4003,
+			},
+		},
+		{
 			name: "RequestAndTestMetadata",
 			in: &repb.StoredExecution{
 				ExecutionId:     executionID,
@@ -126,6 +140,9 @@ func TestExecutionFromProto(t *testing.T) {
 			require.Equal(t, testCase.want.TestSize, execution.TestSize)
 			require.Equal(t, testCase.want.TestShardIndex, execution.TestShardIndex)
 			require.Equal(t, testCase.want.TestTotalShards, execution.TestTotalShards)
+			require.Equal(t, testCase.want.VMDockerdWaitDurationUsec, execution.VMDockerdWaitDurationUsec)
+			require.Equal(t, testCase.want.VMDnsWaitDurationUsec, execution.VMDnsWaitDurationUsec)
+			require.Equal(t, testCase.want.VMExecInitDurationUsec, execution.VMExecInitDurationUsec)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}

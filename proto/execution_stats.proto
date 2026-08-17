@@ -157,6 +157,27 @@ message ExecutionAuxiliaryMetadata {
 
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
+
+  // Metrics reported by the guest VM which executed this action.
+  VMMetrics vm_metrics = 12;
+}
+
+// Metrics reported by the guest VM's vmexec server, including timings of
+// one-time initialization steps performed during VM boot, before the guest
+// could begin accepting commands.
+message VMMetrics {
+  // Time the guest spent waiting for dockerd to become ready. Zero if
+  // dockerd initialization was not requested.
+  int64 dockerd_wait_duration_usec = 1;
+
+  // Time the guest spent waiting for the VM's local DNS server to become
+  // ready. Zero if no DNS overrides were configured.
+  int64 vm_dns_wait_duration_usec = 2;
+
+  // Time from when the guest's vmexec process started until its gRPC server
+  // was about to begin serving. Includes the waits above, but not earlier
+  // guest init (kernel boot or init process setup).
+  int64 vm_exec_init_duration_usec = 3;
 }
 
 // Stats about work done after the COMPLETED operation is streamed back to the

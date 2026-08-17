@@ -3137,4 +3137,20 @@ message StoredExecution {
   string test_size = 89;
   uint32 test_shard_index = 90;
   uint32 test_total_shards = 91;
+
+  // Time the guest VM spent waiting for dockerd to become ready while booting,
+  // before it could begin accepting commands. Only set for executions that
+  // booted a fresh firecracker VM with dockerd enabled.
+  int64 vm_dockerd_wait_duration_usec = 93;
+
+  // Time the guest VM spent waiting for its local DNS server to become ready
+  // while booting. Only set for executions that booted a fresh firecracker VM
+  // with DNS overrides configured.
+  int64 vm_dns_wait_duration_usec = 94;
+
+  // Time from when the guest VM's vmexec process started until its gRPC
+  // server was about to begin serving (includes the dockerd and DNS waits
+  // above, but not earlier guest init such as kernel boot). Only set for
+  // executions that booted a fresh firecracker VM.
+  int64 vm_exec_init_duration_usec = 95;
 }
