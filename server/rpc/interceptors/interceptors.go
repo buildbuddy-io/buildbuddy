@@ -16,6 +16,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cpusampler"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -704,7 +705,8 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 	interceptors = append(interceptors, authUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
-		roleAuthUnaryServerInterceptor(env))
+		roleAuthUnaryServerInterceptor(env),
+		cpusampler.UnaryServerInterceptor())
 	return grpc.ChainUnaryInterceptor(interceptors...)
 }
 
@@ -731,7 +733,8 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 	interceptors = append(interceptors, authStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
-		roleAuthStreamServerInterceptor(env))
+		roleAuthStreamServerInterceptor(env),
+		cpusampler.StreamServerInterceptor())
 	return grpc.ChainStreamInterceptor(interceptors...)
 }
 
