@@ -441,11 +441,16 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			Repeat("cache_name").
 			RepeatDirection(dashboard.PanelRepeatDirectionH).
 			WithTarget(dash.PromQuery(`histogram_quantile(${quantile}, sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_resample_latency_usec_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[${window}])) by (le, partition_id))`, ""))).
-		WithPanel(ts("Eviction sample queue length", dash.UnitShort).
+		WithPanel(ts("Eviction sample queue length (${cache_name})", dash.UnitShort).
 			Span(24).
 			Repeat("cache_name").
 			RepeatDirection(dashboard.PanelRepeatDirectionH).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_eviction_samples_chan_size{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[${window}]) by (partition_id)`, ""))).
+		WithPanel(ts("Eviction samples by status (${cache_name})", dash.UnitOps).
+			Span(24).
+			Repeat("cache_name").
+			RepeatDirection(dashboard.PanelRepeatDirectionH).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_eviction_samples{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[${window}])) by (partition_id, status)`, ""))).
 		WithPanel(ts("Eviction evict latency (${cache_name})", dash.UnitMicroseconds).
 			Span(24).
 			Repeat("cache_name").

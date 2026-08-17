@@ -3086,6 +3086,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
 		err = fileMetadata.UnmarshalVT(iter.Value())
 		if err != nil {
+			metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "invalid_proto").Inc()
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
 		}
@@ -3108,6 +3109,7 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
 	age := e.clock.Since(atime)
 	if age < e.minEvictionAge {
+		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "age_too_small").Inc()
 		return
 	}
 	keyBytes := make([]byte, len(iter.Key()))
@@ -3124,8 +3126,10 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	timer.Reset(SamplerSleepDuration)
 	select {
 	case e.samples <- sample:
+		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "enqueued").Inc()
 	case <-quitChan:
 	case <-timer.Chan(): // e.samples is full.
+		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "queue_full").Inc()
 	}
 }
 

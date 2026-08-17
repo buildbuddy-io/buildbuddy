@@ -3567,6 +3567,17 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheEvictionSamples = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_eviction_samples",
+		Help:      "Number of samples produced, by status",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+		StatusLabel,
+	})
+
 	PebbleCachePebbleCompactCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
