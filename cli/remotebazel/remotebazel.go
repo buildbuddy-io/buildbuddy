@@ -140,9 +140,16 @@ type RunOpts struct {
 	// Whether the remotely built target should be fetched and run locally.
 	RunOutputLocally bool
 	// If RunOutputLocally=true, execution arguments for running the target locally.
-	ExecArgs          []string
-	WorkingDirectory  string
-	WorkspaceFilePath string
+	ExecArgs []string
+
+	// RelativeWorkspaceDir is the Bazel workspace directory relative to the Git repository root (applies to both the remote runner and the local machine).
+	// This is a relative path so that the remote runner can navigate to it, despite having a different absolute filesystem path.
+	RelativeWorkspaceDir string
+	// AbsLocalWorkspaceDir is the absolute path to the Bazel workspace on the local machine.
+	AbsLocalWorkspaceDir string
+	// AbsLocalWorkingDirectory is the absolute path from which the user invoked the CLI on the local machine.
+	// This can be different from AbsWorkspaceDir if the CLI was invoked from a subdirectory.
+	AbsLocalWorkingDirectory string
 }
 
 type gitRemote struct {
@@ -468,12 +475,12 @@ func getCurrentRef() (string, error) {
 
 	// Handle detached head state
 	detachedHeadOutput, _ := runGit("branch")
-	regex := regexp.MustCompile(".*detached at ([^)]+).*")
+	regex := regexp.MustCompile(".*detached (at|from) ([^)]+).*")
 	matches := regex.FindStringSubmatch(detachedHeadOutput)
-	if len(matches) != 2 {
+	if len(matches) != 3 {
 		return "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
 	}
-	return strings.TrimSpace(matches[1]), nil
+	return strings.TrimSpace(matches[2]), nil
 }
 
 // branchTrackedRemotely returns whether the given branch exists remotely, as reflected in
@@ -803,7 +810,7 @@ func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invo
 	return nil
 }
 
-func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
+func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
 		return fmt.Errorf("create output dir for %q: %w", outFile, err)
 	}
@@ -814,6 +821,9 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 	defer out.Close()
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
 		return status.WrapError(err, "download blob")
+	}
+	if err := out.Chmod(mode); err != nil {
+		return fmt.Errorf("set permissions on output file %q: %w", outFile, err)
 	}
 	return nil
 }
@@ -859,11 +869,12 @@ func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
 
 // TODO(vadim): add interactive progress bar for downloads
 // TODO(vadim): parallelize downloads
-func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
+func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, runfiles []*bespb.Runfile, supportingDirs []*bespb.Tree, outputBaseDir string) (map[string]struct{}, error) {
 	bsClient := env.GetByteStreamClient()
 
 	var mainLocalArtifacts []string
-	download := func(f *bespb.File) (string, error) {
+	downloadedFiles := make(map[string]struct{})
+	download := func(f *bespb.File, mode os.FileMode) (string, error) {
 		r, err := bytestreamURIToResourceName(f.GetUri())
 		if err != nil {
 			return "", fmt.Errorf("resolve output uri for %q: %w", f.GetName(), err)
@@ -873,22 +884,28 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 			outFile = filepath.Join(outFile, p)
 		}
 		outFile = filepath.Join(outFile, f.GetName())
-		if err := downloadFile(ctx, bsClient, r, outFile); err != nil {
+		log.Debugf("Downloading output %q to %q with mode %s", f.GetName(), outFile, mode)
+		if err := downloadFile(ctx, bsClient, r, outFile, mode); err != nil {
 			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
+		downloadedFiles[filepath.Clean(outFile)] = struct{}{}
 		return outFile, nil
 	}
 	for _, f := range mainOutputs {
-		outFile, err := download(f)
+		outFile, err := download(f, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("download main output %q: %w", f.GetName(), err)
 		}
 		mainLocalArtifacts = append(mainLocalArtifacts, outFile)
 	}
-	// Supporting outputs (i.e. runtime files) are downloaded but not displayed to the user.
-	for _, f := range supportingOutputs {
-		if _, err := download(f); err != nil {
-			return nil, fmt.Errorf("download supporting output %q: %w", f.GetName(), err)
+	// Runfiles are downloaded but not displayed to the user.
+	for _, rf := range runfiles {
+		mode := os.FileMode(0644)
+		if rf.GetIsExecutable() {
+			mode = 0755
+		}
+		if _, err := download(rf.GetFile(), mode); err != nil {
+			return nil, fmt.Errorf("download runfile %q: %w", rf.GetFile().GetName(), err)
 		}
 	}
 	for _, d := range supportingDirs {
@@ -918,18 +935,67 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		}
 		relArtifacts = append(relArtifacts, "  "+rp)
 	}
-	fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
-	return mainLocalArtifacts, nil
+	if len(relArtifacts) > 0 {
+		fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
+	}
+	return downloadedFiles, nil
 }
 
-func findExecutableOutput(outputs []string, outputBaseDir, executablePath string) (string, error) {
-	expectedPath := filepath.Clean(filepath.Join(outputBaseDir, BuildBuddyArtifactDir, executablePath))
-	for _, output := range outputs {
-		if filepath.Clean(output) == expectedPath {
-			return output, nil
+func downloadedExecutablePath(downloadedFiles map[string]struct{}, outputBaseDir, executablePath string) (string, error) {
+	if executablePath == "" {
+		return "", fmt.Errorf("run executable path is empty")
+	}
+	binPath := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, executablePath)
+	if _, ok := downloadedFiles[filepath.Clean(binPath)]; !ok {
+		return "", fmt.Errorf("run executable %q was not downloaded", executablePath)
+	}
+	info, err := os.Lstat(binPath)
+	if err != nil {
+		return "", fmt.Errorf("locate downloaded executable %q: %w", binPath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("downloaded executable %q is not a regular file", binPath)
+	}
+	return binPath, nil
+}
+
+// envForLocalRun ensures a locally-run target (build-remotely-run-locally)
+// resolves runfiles from the downloaded runfiles directory and sees the local
+// Bazel workspace. The runfiles manifest contains absolute paths from the
+// remote runner, and inherited runfiles and workspace variables may refer to
+// the bb binary's own environment, so replace them with local values.
+func envForLocalRun(env []string, runfilesDir, workspaceDir, workingDir string) []string {
+	filteredEnv := make([]string, 0, len(env)+3)
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "PYTHON_RUNFILES", "JAVA_RUNFILES", "BUILD_WORKSPACE_DIRECTORY", "BUILD_WORKING_DIRECTORY":
+			continue
+		}
+		filteredEnv = append(filteredEnv, entry)
+	}
+	return append(filteredEnv,
+		"RUNFILES_DIR="+runfilesDir,
+		"BUILD_WORKSPACE_DIRECTORY="+workspaceDir,
+		"BUILD_WORKING_DIRECTORY="+workingDir,
+	)
+}
+
+// removeRunfilesManifests removes runfile manifests whose absolute paths refer to the
+// remote runner. These manifests exist because we download the complete runfiles directory.
+// Removing them ensures the executable will use the downloaded local runfiles directory instead.
+func removeRunfilesManifests(binPath, runfilesDir string) error {
+	manifestPaths := []string{
+		filepath.Join(runfilesDir, "MANIFEST"),
+		binPath + ".runfiles_manifest",
+		binPath + ".exe.runfiles_manifest",
+	}
+	for _, path := range manifestPaths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove runfiles manifest %q: %w", path, err)
 		}
 	}
-	return "", fmt.Errorf("run executable %q not found among downloaded artifacts", executablePath)
+	return nil
 }
 
 func getWorkingDirectory(workspaceFilePath string) (string, error) {
@@ -1051,7 +1117,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	req := &rnpb.RunRequest{
 		Name:             opts.Name,
-		WorkingDirectory: opts.WorkingDirectory,
+		WorkingDirectory: opts.RelativeWorkspaceDir,
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -1144,7 +1210,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	childIID := ""
 	runfilesRoot := ""
-	var runfiles []*bespb.File
+	var runfiles []*bespb.Runfile
 	var runfileDirectories []*bespb.Tree
 	var defaultRunArgs []string
 	executablePath := ""
@@ -1155,7 +1221,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if opts.RunOutputLocally {
 			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
 				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
-				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
+				runfiles = rta.RunTargetAnalyzed.GetRunfileEntries()
 				runfileDirectories = rta.RunTargetAnalyzed.GetRunfileDirectories()
 				defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
 				executablePath = rta.RunTargetAnalyzed.GetExecutablePath()
@@ -1173,29 +1239,61 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
-			if err != nil {
-				return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
+			// For build-remotely run-locally, the main output is the executable and will be included
+			// by the ci_runner in the runfiles entries, so doesn't need to be explicitly downloaded as a
+			// `mainOutput`. (Even though the executable's path is not
+			// within the runfiles directory, we do this to ensure it is always uploaded to the cache).
+			var mainOutputs []*bespb.File
+			if !opts.RunOutputLocally {
+				mainOutputs, err = lookupBazelInvocationOutputs(ctx, bbClient, childIID)
+				if err != nil {
+					return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
+				}
 			}
-			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+			outputsBaseDir := opts.AbsLocalWorkspaceDir
+			downloadedFiles, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
 				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
-				binPath, err := findExecutableOutput(outputs, outputsBaseDir, executablePath)
+				binPath, err := downloadedExecutablePath(downloadedFiles, outputsBaseDir, executablePath)
 				if err != nil {
 					return 1, err
 				}
-				if err := os.Chmod(binPath, 0755); err != nil {
-					return 1, fmt.Errorf("prepare binary %q for execution: %w", binPath, err)
+				absBinPath, err := filepath.Abs(binPath)
+				if err != nil {
+					return 1, fmt.Errorf("compute absolute path for %q: %w", binPath, err)
 				}
+				if err := os.Chmod(absBinPath, 0755); err != nil {
+					return 1, fmt.Errorf("prepare binary %q for execution: %w", absBinPath, err)
+				}
+
+				// runfilesWorkDir is the working directory inside the downloaded runfiles tree.
+				runfilesWorkDir, err := filepath.Abs(filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot))
+				if err != nil {
+					return 1, fmt.Errorf("compute absolute runfiles working directory: %w", err)
+				}
+				// runfilesDir is the absolute path to the downloaded runfiles directory.
+				// This is one level up from the working directory `runfilesWorkDir`.
+				runfilesDir := filepath.Dir(runfilesWorkDir)
+				info, err := os.Stat(runfilesDir)
+				if err != nil {
+					return 1, fmt.Errorf("locate downloaded runfiles directory %q: %w", runfilesDir, err)
+				}
+				if !info.IsDir() {
+					return 1, fmt.Errorf("downloaded runfiles path %q is not a directory", runfilesDir)
+				}
+				if err := removeRunfilesManifests(absBinPath, runfilesDir); err != nil {
+					return 1, err
+				}
+
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
 				execArgs = append(execArgs, opts.ExecArgs...)
-				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
-				cmd := exec.CommandContext(ctx, binPath, execArgs...)
-				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
+				log.Printf("Running downloaded executable %q locally (working directory %q)", absBinPath, runfilesWorkDir)
+				cmd := exec.CommandContext(ctx, absBinPath, execArgs...)
+				cmd.Dir = runfilesWorkDir
+				cmd.Env = envForLocalRun(os.Environ(), runfilesDir, opts.AbsLocalWorkspaceDir, opts.AbsLocalWorkingDirectory)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err = cmd.Run()
@@ -1368,6 +1466,10 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	if err != nil {
 		return 1, status.WrapError(err, "determine working directory")
 	}
+	localWorkingDirectory, err := os.Getwd()
+	if err != nil {
+		return 1, status.WrapError(err, "determine local working directory")
+	}
 
 	cmd := ""
 	remoteRunName := "remote run"
@@ -1421,14 +1523,15 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 
 	exitCode, err := Run(ctx, RunOpts{
-		Server:            runner,
-		Name:              remoteRunName,
-		Command:           cmd,
-		RunOutputLocally:  runOutputLocally,
-		ExecArgs:          localExecArgs,
-		WorkingDirectory:  workingDirectory,
-		FetchOutputs:      fetchOutputs,
-		WorkspaceFilePath: wsFilePath,
+		Server:                   runner,
+		Name:                     remoteRunName,
+		Command:                  cmd,
+		RunOutputLocally:         runOutputLocally,
+		ExecArgs:                 localExecArgs,
+		RelativeWorkspaceDir:     workingDirectory,
+		FetchOutputs:             fetchOutputs,
+		AbsLocalWorkspaceDir:     filepath.Dir(wsFilePath),
+		AbsLocalWorkingDirectory: localWorkingDirectory,
 	}, repoConfig)
 	if err != nil && strings.Contains(err.Error(), "context canceled") {
 		return exitCode, nil
@@ -1471,21 +1574,31 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 		"--config=buildbuddy_bes_results_url",
 		"--config=buildbuddy_remote_cache",
 	}
+	var requiredArgs []string
 
 	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
 	bazelCmd := bazelArgsStruct.GetCommand()
 	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
-		extraArgs = append(extraArgs, "--remote_upload_local_results")
+		requiredArgs = append(requiredArgs,
+			"--remote_upload_local_results",
+		)
 	}
 	// To support building the target on the remote runner and running it locally,
 	// have Bazel write out a run script using the --script_path flag so we can
 	// extract run options (i.e. args, runfile information) from the generated run script.
 	if !*runRemotely && bazelCmd == "run" {
-		extraArgs = append(extraArgs, runScriptPathFlag)
+		requiredArgs = append(requiredArgs, runScriptPathFlag)
 	}
 	for _, extraArg := range extraArgs {
 		if err := bazelArgsStruct.Prepend(extraArg); err != nil {
 			return nil, nil, fmt.Errorf("add remote bazel arg: %w", err)
+		}
+	}
+	// These flags are required for fetching or locally running outputs, so append
+	// them after user flags and config expansions to ensure they take precedence.
+	for _, requiredArg := range requiredArgs {
+		if err := bazelArgsStruct.Append(requiredArg); err != nil {
+			return nil, nil, fmt.Errorf("add required remote bazel arg: %w", err)
 		}
 	}
 

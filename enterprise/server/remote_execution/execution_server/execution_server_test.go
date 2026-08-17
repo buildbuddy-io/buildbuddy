@@ -1003,6 +1003,11 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			Some: &repb.PSI_Metrics{Total: 1030},
 			Full: &repb.PSI_Metrics{Total: 2030},
 		}
+		aux.VmMetrics = &espb.VMMetrics{
+			DockerdWaitDurationUsec: 4001,
+			VmDnsWaitDurationUsec:   4002,
+			VmExecInitDurationUsec:  4003,
+		}
 	} else {
 		effectivePool := "test-pool"
 		if test.useDefaultPool {
@@ -1261,6 +1266,9 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.MemoryPressureFullStallUsec = 2020
 		expectedExecution.IoPressureSomeStallUsec = 1030
 		expectedExecution.IoPressureFullStallUsec = 2030
+		expectedExecution.VmDockerdWaitDurationUsec = 4001
+		expectedExecution.VmDnsWaitDurationUsec = 4002
+		expectedExecution.VmExecInitDurationUsec = 4003
 	}
 	require.Empty(t, cmp.Diff(
 		expectedExecution,

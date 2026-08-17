@@ -76,6 +76,7 @@ const (
 	RunnerRecyclingMaxWaitPropertyName       = "runner-recycling-max-wait"
 	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
 	transientErrorExitCodes                  = "transient-error-exit-codes"
+	AllowRemoteSnapshotsPropertyName         = "allow-remote-snapshots"
 	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName           = "snapshot-read-policy"
 	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"
@@ -853,10 +854,20 @@ func IsRecyclingEnabled(task *repb.ExecutionTask) bool {
 	return parsed.RecycleRunner
 }
 
-// IsCICommand returns whether the given command is either a BuildBuddy workflow
+// AllowsRemoteSnapshots returns whether the given task may use remote
+// snapshots. This is true if the `allow-remote-snapshots` platform property is
+// set, and for CI runner commands, which have always been allowed to use them.
+func AllowsRemoteSnapshots(task *repb.ExecutionTask) bool {
+	if IsTrue(FindEffectiveValue(task, AllowRemoteSnapshotsPropertyName)) {
+		return true
+	}
+	return IsCIRunner(task.GetCommand(), GetProto(task.GetAction(), task.GetCommand()))
+}
+
+// IsCIRunner returns whether the given command is either a BuildBuddy workflow
 // or a GitHub Actions runner task. These commands are longer-running and may
 // themselves invoke bazel.
-func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
+func IsCIRunner(cmd *repb.Command, platform *repb.Platform) bool {
 	if len(cmd.GetArguments()) > 0 && cmd.GetArguments()[0] == "./buildbuddy_ci_runner" {
 		return true
 	}

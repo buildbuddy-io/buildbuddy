@@ -157,7 +157,7 @@ func parseTimeouts(task *repb.ExecutionTask) (*executionTimeouts, error) {
 
 func isClientBazel(task *repb.ExecutionTask) bool {
 	// TODO(bduffany): Find a more reliable way to determine this.
-	return !platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
+	return !platform.IsCIRunner(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
 }
 
 func shouldRetry(task *repb.ExecutionTask, taskError error) bool {
@@ -499,6 +499,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
 	auxMetadata.InputFetchDetailedStats = cmdResult.InputFetchMetadata
+	auxMetadata.VmMetrics = cmdResult.VMMetrics
 
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful

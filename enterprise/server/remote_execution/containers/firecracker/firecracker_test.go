@@ -156,7 +156,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "a1158972c33dd534667f6b108b3fa8b60c697c0a3291f33d9334e9f0796d53a8"
+		expectedHash    = "56f029e9010a964e1126b3eb48c21b3cd0e21961c2a492f470bf411bcee72337"
 		expectedVersion = "19"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -629,6 +629,12 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		assert.Equal(t, int64(0), res.VMMetadata.GetSavedSnapshotVersionNumber())
 		require.Equal(t, "/workspace/count: 0\n/root/count: 0\n", string(res.Stdout))
 		require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
+		// The first task on the VM paid the boot cost, so it should report the
+		// vmexec init duration. The dockerd/DNS waits should be zero since
+		// neither is enabled for this VM.
+		assert.Greater(t, res.VMMetrics.GetVmExecInitDurationUsec(), int64(0))
+		assert.Zero(t, res.VMMetrics.GetDockerdWaitDurationUsec())
+		assert.Zero(t, res.VMMetrics.GetVmDnsWaitDurationUsec())
 
 		// Try pause, unpause, exec several times.
 		var cpuMillisObservations []float64
@@ -648,6 +654,9 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			res := c.Exec(ctx, cmd, nil /*=stdio*/)
 			require.NoError(t, res.Error)
 			assert.Equal(t, int64(i), res.VMMetadata.GetSavedSnapshotVersionNumber())
+			// Tasks on a VM resumed from a snapshot did not pay the boot cost,
+			// so boot timings should be cleared.
+			assert.Zero(t, res.VMMetrics.GetVmExecInitDurationUsec())
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 			cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
@@ -1698,7 +1707,7 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 	run("A", "2", 1) // Should resume from previous, and increment the counter
 }
 
-func TestFirecracker_RemoteSnapshotSharing_DevboxInstanceName(t *testing.T) {
+func TestFirecracker_RemoteSnapshotSharing_Devbox(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -1725,6 +1734,7 @@ func TestFirecracker_RemoteSnapshotSharing_DevboxInstanceName(t *testing.T) {
 			Arguments: []string{"sh"},
 			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 				{Name: "recycle-runner", Value: "true"},
+				{Name: "allow-remote-snapshots", Value: "true"},
 			}},
 		},
 	}
@@ -4339,5 +4349,6 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 	actual.UsageStats = nil
 	actual.AuxiliaryLogs = nil
 	actual.VMMetadata = nil
+	actual.VMMetrics = nil
 	assert.Equal(t, expected, actual)
 }

@@ -215,12 +215,22 @@ func TestBatchUpdateBlobsCompressorMetricsLabelsAreBounded(t *testing.T) {
 
 func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
-	clock.Advance(atimeUpdatePeriod + time.Second)
 	wait := time.Millisecond
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 10; i++ {
+		// The read that enqueued this atime update is processed asynchronously
+		// by the batcher goroutine, so the pending batch may not be ready when
+		// the sender's flush fires. Advance the clock on every iteration (rather
+		// than only once up front) so that a later tick still flushes the update
+		// once the batcher has caught up.
+		clock.Advance(atimeUpdatePeriod + time.Second)
 		time.Sleep(wait)
 		wait = wait * 2
-		if requestCount.Load() == 1 {
+		// A single read can enqueue multiple digests (e.g. read(foo, baz)
+		// updates the atime of both). If the batcher splits them across
+		// pending batches, they may flush on separate ticks, so more than one
+		// update RPC can be observed here. Accept >= 1 rather than == 1 so we
+		// don't spuriously fail when a second flush has already landed.
+		if requestCount.Load() >= 1 {
 			requestCount.Store(0)
 			return
 		}

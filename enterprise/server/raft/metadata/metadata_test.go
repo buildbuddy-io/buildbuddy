@@ -48,6 +48,7 @@ type testConfig struct {
 	env    *testenv.TestEnv
 	ta     *testauth.TestAuthenticator
 	config *config.ServerConfig
+	opts   []metadata.Option
 }
 
 func getTestConfigs(t testing.TB, n int) []testConfig {
@@ -172,7 +173,7 @@ func startNodes(t testing.TB, configs []testConfig) []*metadata.Server {
 		require.NoError(t, err)
 		config.config.GossipManager = gs
 		eg.Go(func() error {
-			n, err := metadata.New(config.env, config.config)
+			n, err := metadata.New(config.env, config.config, config.opts...)
 			if err != nil {
 				return err
 			}
@@ -225,6 +226,73 @@ func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.Fil
 		LastModifyUsec:     now,
 	}
 	return md
+}
+
+// gcsFileMetadata builds a GCS-backed record with the given custom time.
+func gcsFileMetadata(t testing.TB, groupID string, customTime time.Time) *sgpb.FileMetadata {
+	t.Helper()
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	rn := digest.ResourceNameFromProto(r)
+	require.NoError(t, rn.Validate())
+	return &sgpb.FileMetadata{
+		FileRecord: &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:          rn.GetCacheType(),
+				RemoteInstanceName: rn.GetInstanceName(),
+				PartitionId:        "default",
+				GroupId:            groupID,
+			},
+			Digest:         rn.GetDigest(),
+			DigestFunction: rn.GetDigestFunction(),
+		},
+		StorageMetadata: &sgpb.StorageMetadata{
+			GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+				BlobName:           "test-blob",
+				LastCustomTimeUsec: customTime.UnixMicro(),
+			},
+		},
+		StoredSizeBytes: 100,
+		LastAccessUsec:  customTime.UnixMicro(),
+	}
+}
+
+// End-to-end: a GCS record past the bucket TTL must report absent from Find even
+// though it exists (covers replica.find + the Find TTL check wiring).
+func TestFindReportsExpiredGCSObjectAbsent(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	configs := getTestConfigs(t, 1)
+	configs[0].env.SetClock(clock)
+	configs[0].opts = []metadata.Option{metadata.WithGCSTTLDays(7)}
+	caches := startNodes(t, configs)
+	rc1 := caches[0]
+
+	ctx, err := configs[0].ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	set := func(md *sgpb.FileMetadata) {
+		_, err := rc1.Set(ctx, &mdpb.SetRequest{
+			SetOperations: []*mdpb.SetRequest_SetOperation{{FileMetadata: md}},
+		})
+		require.NoError(t, err)
+	}
+	present := func(md *sgpb.FileMetadata) bool {
+		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+		})
+		require.NoError(t, err)
+		require.Len(t, findRsp.GetFindResponses(), 1)
+		return findRsp.GetFindResponses()[0].GetPresent()
+	}
+
+	// A GCS object past the 7d TTL is reported absent though its record exists.
+	expired := gcsFileMetadata(t, "group1", clock.Now().Add(-8*24*time.Hour))
+	set(expired)
+	require.False(t, present(expired), "past-TTL GCS record must report absent")
+
+	// Control: a fresh GCS record is still reported present.
+	fresh := gcsFileMetadata(t, "group1", clock.Now())
+	set(fresh)
+	require.True(t, present(fresh))
 }
 
 func TestAutoBringup(t *testing.T) {

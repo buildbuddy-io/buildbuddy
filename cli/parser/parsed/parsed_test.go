@@ -20,6 +20,82 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+func TestExpandConfigsWithPolicy(t *testing.T) {
+	// The explain command supports the following options:
+	// - bb_config
+	// - config
+	// - common_flag
+	// - detailed_flag
+	bbConfigDefinition := options.NewDefinition(
+		"bb_config",
+		options.WithRequiresValue(),
+		options.WithSupportFor("explain"),
+	)
+	bazelConfigDefinition := options.NewDefinition(
+		"config",
+		options.WithRequiresValue(),
+		options.WithSupportFor("explain"),
+	)
+	commonDefinition := options.NewDefinition(
+		"common_flag",
+		options.WithNegative(),
+		options.WithSupportFor("explain"),
+	)
+	detailedDefinition := options.NewDefinition(
+		"detailed_flag",
+		options.WithNegative(),
+		options.WithSupportFor("explain"),
+	)
+
+	// Args: explain --config=untouched --bb_config=detailed invocation-id
+	args := &parsed.OrderedArgs{Args: []arguments.Argument{
+		&arguments.PositionalArgument{Value: "explain"},
+		mustNewOption(t, "config", ptr("untouched"), bazelConfigDefinition),
+		mustNewOption(t, "bb_config", ptr("detailed"), bbConfigDefinition),
+		&arguments.PositionalArgument{Value: "invocation-id"},
+	}}
+
+	// Simulates a .rc line that looks like: `common --common_flag`
+	defaultConfig := parsed.NewConfig()
+	defaultConfig.ByPhase["common"] = []arguments.Argument{
+		mustNewOption(t, "common_flag", nil, commonDefinition),
+	}
+
+	// Simulates a .rc line that looks like: `explain:detailed --detailed_flag`
+	namedConfigs := map[string]*parsed.Config{
+		"detailed": {
+			ByPhase: map[string][]arguments.Argument{
+				"explain": {mustNewOption(t, "detailed_flag", nil, detailedDefinition)},
+			},
+		},
+	}
+
+	configPolicy := &parsed.ConfigExpansionPolicy{
+		FlagName: "bb_config",
+		GetPhases: func(command string) []string {
+			// Common flags should be applied first, then explain-specific flags.
+			require.Equal(t, "explain", command)
+			return []string{"common", "explain"}
+		},
+	}
+	expanded, err := args.ExpandConfigsWithPolicy(
+		namedConfigs,
+		defaultConfig,
+		configPolicy,
+	)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"explain",
+		// Common flags should've been applied first.
+		"--common_flag",
+		// We were only expanding bb_config, so the --config=untouched flag should be left alone.
+		"--config=untouched",
+		// The --bb_config=detailed flag should be expanded to --detailed_flag.
+		"--detailed_flag",
+		"invocation-id",
+	}, expanded.Format())
+}
+
 func TestRemoveAndAccumulateStartupOption(t *testing.T) {
 	startupOptionBoolName := "startup_option_bool"
 	startupOptionBoolDefinition := options.NewDefinition(

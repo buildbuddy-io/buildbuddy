@@ -167,6 +167,13 @@ func generateWebhookID() (string, error) {
 }
 
 func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActionName string, gitCleanExclude []string) string {
+	// Webhook payloads typically use clone URLs, which may include a ".git"
+	// suffix. Normalize the URL and remove the suffix.
+	pushedRepoURL := wd.PushedRepoURL
+	if normalizedURL, err := gitutil.NormalizeRepoURL(pushedRepoURL); err == nil {
+		pushedRepoURL = normalizedURL.String()
+	}
+
 	// Use a unique remote instance name per repo URL and workflow action name, to help
 	// route workflow tasks to runners which previously executed the same workflow
 	// action.
@@ -179,7 +186,7 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 	// existing runners for the workflow and cause subsequent workflows to be run
 	// from a clean runner.
 	keys := append([]string{
-		wd.PushedRepoURL,
+		pushedRepoURL,
 		workflowActionName,
 		wf.InstanceNameSuffix,
 	}, gitCleanExclude...)
@@ -1233,6 +1240,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.EstimatedMemoryPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedMemory()},
 				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 				{Name: platform.RetryPropertyName, Value: fmt.Sprintf("%v", retry)},
+				{Name: platform.AllowRemoteSnapshotsPropertyName, Value: "true"},
 			},
 		},
 	}

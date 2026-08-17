@@ -35,7 +35,65 @@ func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	files, dirs, err := collectRunfiles(runfilesDir)
 	assert.NoError(t, err)
 	assert.Empty(t, files)
-	assert.Equal(t, map[string]string{linkPath: targetDir}, dirs)
+	resolvedTargetDir, err := filepath.EvalSymlinks(targetDir)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]string{linkPath: resolvedTargetDir}, dirs)
+}
+
+func TestCollectRunfiles_ExecutableMetadata(t *testing.T) {
+	runfilesDir := t.TempDir()
+	executablePath := filepath.Join(runfilesDir, "executable")
+	require.NoError(t, os.WriteFile(executablePath, []byte("executable"), 0644))
+	require.NoError(t, os.Chmod(executablePath, 0755))
+	nonExecutablePath := filepath.Join(runfilesDir, "non-executable")
+	require.NoError(t, os.WriteFile(nonExecutablePath, []byte("non-executable"), 0644))
+
+	files, _, err := collectRunfiles(runfilesDir)
+	require.NoError(t, err)
+
+	executableByPath := make(map[string]bool, len(files))
+	for _, runfile := range files {
+		executableByPath[runfile.logicalPath] = runfile.isExecutable
+	}
+	assert.Equal(t, map[string]bool{
+		executablePath:    true,
+		nonExecutablePath: false,
+	}, executableByPath)
+}
+
+func TestCollectRunfiles_ResolvesFileSymlinks(t *testing.T) {
+	rootDir := t.TempDir()
+	targetPath := filepath.Join(rootDir, "target")
+	require.NoError(t, os.WriteFile(targetPath, []byte("contents"), 0755))
+
+	runfilesDir := filepath.Join(rootDir, "binary.runfiles")
+	require.NoError(t, os.Mkdir(runfilesDir, 0755))
+	firstLink := filepath.Join(runfilesDir, "first")
+	secondLink := filepath.Join(runfilesDir, "second")
+	require.NoError(t, os.Symlink(targetPath, firstLink))
+	require.NoError(t, os.Symlink(targetPath, secondLink))
+
+	files, dirs, err := collectRunfiles(runfilesDir)
+	require.NoError(t, err)
+	require.Empty(t, dirs)
+	// Output should still contain two entries, one for each symlink,
+	// even though the physical path is the same.
+	require.Len(t, files, 2)
+
+	filesByPath := make(map[string]*runfile, len(files))
+	for _, f := range files {
+		filesByPath[f.logicalPath] = f
+	}
+	resolvedTargetPath, err := filepath.EvalSymlinks(targetPath)
+	require.NoError(t, err)
+	for _, logicalPath := range []string{firstLink, secondLink} {
+		f := filesByPath[logicalPath]
+		require.NotNil(t, f)
+		require.Equal(t, resolvedTargetPath, f.physicalPath)
+		require.True(t, f.isExecutable)
+		require.NotNil(t, f.digest)
+	}
+	require.Equal(t, filesByPath[firstLink].digest, filesByPath[secondLink].digest)
 }
 
 type stallingReadCloser struct {

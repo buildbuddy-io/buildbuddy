@@ -458,6 +458,8 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		localBranchExistsRemotely bool
 		localCommitExistsRemotely bool
 		unpushedLocalCommit       bool
+		detachedHead              bool
+		detachedHeadMoved         bool
 
 		expectedBranch  string
 		expectedCommit  string
@@ -496,6 +498,21 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 			expectedCommit:      originalMasterHeadCommit,
 			expectedPatches:     []string{"local_only_commited_file.txt"},
 		},
+		{
+			name:            "Detached HEAD without additional commits",
+			detachedHead:    true,
+			expectedBranch:  "master",
+			expectedCommit:  originalMasterHeadCommit,
+			expectedPatches: []string{"local_file.txt"},
+		},
+		{
+			name:              "Detached HEAD with additional commits",
+			detachedHead:      true,
+			detachedHeadMoved: true,
+			expectedBranch:    "master",
+			expectedCommit:    originalMasterHeadCommit,
+			expectedPatches:   []string{"detached_file.txt"},
+		},
 	}
 
 	for i, tc := range testCases {
@@ -519,6 +536,15 @@ func TestGitConfig_BranchAndSha(t *testing.T) {
 		}
 		if !tc.localCommitExistsRemotely {
 			testgit.CommitFiles(t, localRepoPath, map[string]string{"local_file.txt": "exit 0"})
+		}
+
+		if tc.detachedHead {
+			testshell.Run(t, localRepoPath, "git checkout --detach")
+			if tc.detachedHeadMoved {
+				// A commit in a detached-head condition updates the `git branch` output from "detached at"
+				// to "detached from".
+				testgit.CommitFiles(t, localRepoPath, map[string]string{"detached_file.txt": "exit 0"})
+			}
 		}
 
 		config, err := Config()
@@ -728,6 +754,9 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 
 	bazelArgs, execArgs, err := parseArgs([]string{
 		"run",
+		"--noremote_upload_local_results",
+		"--remote_build_event_upload=minimal",
+		"--script_path=/tmp/custom-run-script.sh",
 		"@bazel-diff//cli:bazel-diff",
 		"generate-hashes",
 		"--",
@@ -749,6 +778,7 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 		"buildbuddy_remote_cache",
 	}, arg.GetMulti(forwardedBazelArgs, "config"))
 	require.Contains(t, forwardedBazelArgs, "--remote_upload_local_results")
+	require.Equal(t, "minimal", arg.Get(forwardedBazelArgs, "remote_build_event_upload"))
 	require.Equal(t,
 		"$BUILDBUDDY_CI_RUNNER_ROOT_DIR/bazel-run-scripts/run.sh",
 		arg.Get(forwardedBazelArgs, "script_path"),
@@ -763,6 +793,26 @@ func TestParseArgs_RunAddsRemoteArgsBeforeExecutableArgs(t *testing.T) {
 		quoteRemoteBazelArgs(bazelArgs),
 		`--script_path="$BUILDBUDDY_CI_RUNNER_ROOT_DIR"/bazel-run-scripts/run.sh`,
 	)
+}
+
+func TestEnvForLocalRun(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"RUNFILES_DIR=/old/runfiles",
+		"RUNFILES_MANIFEST_FILE=/old/MANIFEST",
+		"RUNFILES_MANIFEST_ONLY=1",
+		"BUILD_WORKSPACE_DIRECTORY=/old/workspace",
+		"BUILD_WORKING_DIRECTORY=/old/working-directory",
+		"USER=test",
+	}
+
+	require.Equal(t, []string{
+		"PATH=/usr/bin",
+		"USER=test",
+		"RUNFILES_DIR=/new/runfiles",
+		"BUILD_WORKSPACE_DIRECTORY=/new/workspace",
+		"BUILD_WORKING_DIRECTORY=/new/working-directory",
+	}, envForLocalRun(env, "/new/runfiles", "/new/workspace", "/new/working-directory"))
 }
 
 func TestQuoteRemoteBazelArgs_RunScriptEnvVarExpanded(t *testing.T) {

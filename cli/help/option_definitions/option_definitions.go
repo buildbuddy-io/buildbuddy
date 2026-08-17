@@ -3,7 +3,7 @@ package option_definitions
 import (
 	"slices"
 
-	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazelrc"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 )
 
@@ -16,6 +16,6 @@ var (
 		options.WithNegative(),
 		options.WithPluginID(options.NativeBuiltinPluginID),
 		options.WithSupportFor("startup"),
-		options.WithSupportFor(slices.Collect(bazelrc.BazelCommands().All())...),
+		options.WithSupportFor(slices.Collect(bazel_command.Commands().All())...),
 	)
 )

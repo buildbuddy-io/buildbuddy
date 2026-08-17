@@ -14,11 +14,56 @@ Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBud
 
 ### Options
 
+- `jwt_key:` A secret key used to sign authentication JWTs. Required when authentication is configured.
 - `oauth_providers:` A list of configured OAuth Providers.
   - `issuer_url: ` The issuer URL of this OIDC Provider.
   - `client_id: ` The oauth client ID.
   - `client_secret: ` The oauth client secret.
 - `enable_anonymous_usage:` If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.
+
+### JWT signing key
+
+Set `auth.jwt_key` to a securely generated random value. Keep this value secret and use the same value for every BuildBuddy server replica. You can generate a suitable key with:
+
+```bash
+openssl rand -hex 32
+```
+
+Then add it to your BuildBuddy config:
+
+```yaml title="config.yaml"
+auth:
+  jwt_key: "<randomly-generated-secret>"
+```
+
+### JWT key rotation
+
+JWT signing keys can be rotated without interrupting authenticated requests. Complete each phase on every BuildBuddy server replica before proceeding to the next phase.
+
+1. Generate a new key and configure it as `new_jwt_key`. Continue signing JWTs with the current key:
+
+   ```yaml title="config.yaml"
+   auth:
+     jwt_key: "<current-secret>"
+     new_jwt_key: "<new-secret>"
+     sign_using_new_jwt_key: false
+   ```
+
+2. After every replica is configured to accept both keys, begin signing new JWTs with the new key:
+
+   ```yaml title="config.yaml"
+   auth:
+     jwt_key: "<current-secret>"
+     new_jwt_key: "<new-secret>"
+     sign_using_new_jwt_key: true
+   ```
+
+3. Wait for all JWTs signed with the old key to expire. The default `auth.jwt_duration` is 6 hours. Then promote the new key and remove the rotation settings:
+
+   ```yaml title="config.yaml"
+   auth:
+     jwt_key: "<new-secret>"
+   ```
 
 ### Redirect URL
 
@@ -34,6 +79,7 @@ If you'd like to use Google as an auth provider, you can easily obtain your clie
 
 ```yaml title="config.yaml"
 auth:
+  jwt_key: "<randomly-generated-secret>"
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
       client_id: "12345678911-f1r0phjnhbabcdefm32etnia21keeg31.apps.googleusercontent.com"
@@ -66,6 +112,7 @@ Once the Gitlab application is created, you can configure it as a BuildBuddy aut
 
 ```yaml title="config.yaml"
 auth:
+  jwt_key: "<randomly-generated-secret>"
   oauth_providers:
     - issuer_url: "https://gitlab.com"
       client_id: "<GITLAB APPLICATION ID>"
@@ -106,6 +153,7 @@ auth:
 5. After that, your BuildBuddy config should be like this
    ```
    auth:
+     jwt_key: "<randomly-generated-secret>"
      oauth_providers:
        - issuer_url: "https://login.microsoftonline.com/<DIRECTORY_ID>/v2.0"
          client_id: "<CLIENT_ID>"

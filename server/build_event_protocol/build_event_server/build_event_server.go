@@ -108,11 +108,12 @@ func (s *BuildEventProtocolServer) PublishBuildToolEventStream(stream pepb.Publi
 			for {
 				_, err := fwdStream.Recv()
 				if err == io.EOF {
+					log.CtxInfof(ctx, "Build event forwarding stream closed by upstream")
 					break
 				}
 				if err != nil {
+					log.CtxWarningf(ctx, "Build event forwarding stream failed while receiving: %s", err)
 					if !s.synchronous {
-						log.CtxWarningf(ctx, "Proxying build event stream failed: recv: %s", err)
 						return nil
 					}
 					return status.WrapError(err, "recv from proxy stream")

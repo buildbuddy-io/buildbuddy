@@ -487,6 +487,12 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
 			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
 
+			if vmMetrics := auxMeta.GetVmMetrics(); vmMetrics != nil {
+				executionProto.VmDockerdWaitDurationUsec = vmMetrics.GetDockerdWaitDurationUsec()
+				executionProto.VmDnsWaitDurationUsec = vmMetrics.GetVmDnsWaitDurationUsec()
+				executionProto.VmExecInitDurationUsec = vmMetrics.GetVmExecInitDurationUsec()
+			}
+
 			if properties != nil {
 				executionProto.RequestedIsolationType, _ = platform.CoerceContainerType(properties.WorkloadIsolationType)
 				executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits
@@ -616,7 +622,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			if err := s.executionCollector.AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
-				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
+				log.CtxDebugf(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
 		} else if s.env.GetOLAPDBHandle() != nil {
 			// Flush to Clickhouse directly if the invocation completed before
@@ -972,7 +978,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if err != nil {
 			return nil, err
 		}
-		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, platform.IsCICommand(command, platform.GetProto(action, command)))
+		isCIRunner := platform.IsCIRunner(command, platform.GetProto(action, command))
+		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, isCIRunner /*=shouldExchangeToken*/)
 		if err != nil {
 			return nil, err
 		}
@@ -1121,7 +1128,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// Check if there's already an identical action pending execution that this request can be merged into.
 	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.New {
-		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
+		log.CtxDebugf(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 
 		// Check CPU time quota before dispatching execution.
 		// Use a 1ns check to verify quota is available before starting.
@@ -1140,7 +1147,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			return err
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
-		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
+		log.CtxDebugf(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "new")
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 	} else {
@@ -1199,7 +1206,7 @@ func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunni
 	// Log only on stage transitions or if it's been a while since we last
 	// logged.
 	if stage != e.lastStage || time.Since(e.lastLogTime) > 30*time.Second {
-		log.CtxInfof(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
+		log.CtxDebugf(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
 		e.lastLogTime = time.Now()
 	}
 	if stage < e.lastStage {
@@ -1242,7 +1249,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 }
 
 func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
-	log.CtxInfof(ctx, "WaitExecution called for: %q", req.GetName())
+	log.CtxDebugf(ctx, "WaitExecution called for: %q", req.GetName())
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
 	if err != nil {
 		return err

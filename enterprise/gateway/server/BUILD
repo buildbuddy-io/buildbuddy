@@ -12,6 +12,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//proto:gateway_go_proto",
+        "//proto:gateway_service_go_proto",
         "//server/environment",
         "//server/util/flag",
         "//server/util/log",
@@ -32,6 +33,8 @@ go_library(
         "@dev_gvisor_gvisor//pkg/tcpip/transport/icmp",
         "@dev_gvisor_gvisor//pkg/tcpip/transport/tcp",
         "@dev_gvisor_gvisor//pkg/tcpip/transport/udp",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -47,6 +50,7 @@ go_test(
         "//proto:gateway_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/wgkeys",
         "@com_github_stretchr_testify//require",
@@ -55,6 +59,7 @@ go_test(
         "@com_zx2c4_golang_wireguard//tun/netstack",
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",
+        "@org_golang_google_grpc//:grpc",
         "@org_uber_go_goleak//:goleak",
     ],
 )

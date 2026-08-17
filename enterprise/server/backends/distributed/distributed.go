@@ -250,7 +250,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
-				return int64(len(v.data) + 8)
+				return int64(cap(v.data) + 8)
 			},
 			ThreadSafe: true,
 			TTL:        *lookasideCacheTTL,
@@ -1130,6 +1130,8 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	//	  we shouldn't either, since the blob might never be read from this node.
 	// 2) A Get/Read call, which would have already written to those caches if
 	//    appropriate.
+	// 3) A GetWithMetadata call, which doesn't write to those caches, so as
+	//    with FindMissing/Contains, we shouldn't either.
 	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
@@ -1261,13 +1263,21 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 }
 
 func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	return c.getWithMetadata(ctx, r, "GetWithMetadata" /*=metricsLabel*/)
+}
+
+func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metricsLabel string) ([]byte, *interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(r)
 
+	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
 		data, md, err := c.remoteGetWithMetadata(ctx, peer, r)
 		if err == nil {
+			c.backfillPeers(ctx, c.getBackfillOrders(r, ps))
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) found on peer %q", d, peer)
+			metrics.DistributedCachePeerLookups.WithLabelValues(metricsLabel, metrics.HitStatusLabel).Observe(float64(lookups))
 			return data, md, nil
 		}
 		if status.IsNotFoundError(err) {
@@ -1280,6 +1290,7 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 		ps.MarkPeerAsFailed(peer)
 	}
 
+	metrics.DistributedCachePeerLookups.WithLabelValues(metricsLabel, metrics.MissStatusLabel).Observe(float64(lookups))
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to GetWithMetadata %q. Peerset: %+v", d.GetHash(), ps)
 	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
@@ -1504,6 +1515,11 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		}
 	}
 
+	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+		"GetMulti",
+		metrics.HitStatusLabel,
+	)
+	lookups := 0
 	for {
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
@@ -1529,6 +1545,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			// we're out of peers and should exit, returning what we have.
 			break
 		}
+		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
 			peer := peer
@@ -1547,6 +1564,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 				}
 				for d, data := range peerRsp {
 					gotMap[d.GetHash()] = data
+					hitMetric.Observe(float64(lookups))
 				}
 				return nil
 			})
@@ -1578,10 +1596,25 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	c.backfillPeers(ctx, backfills)
 
 	rsp := make(map[*repb.Digest][]byte, len(resources))
+	misses := 0
 	for _, r := range resources {
 		d := r.GetDigest()
 		if buf, ok := gotMap[d.GetHash()]; ok {
 			rsp[d] = buf
+		} else {
+			misses++
+		}
+	}
+
+	// For every resource we didn't find, record an observation indicating how
+	// many lookups we did.
+	if misses > 0 {
+		missMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+			"GetMulti",
+			metrics.MissStatusLabel,
+		)
+		for range misses {
+			missMetric.Observe(float64(lookups))
 		}
 	}
 	return rsp, nil

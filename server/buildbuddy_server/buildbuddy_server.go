@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -49,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
@@ -94,9 +96,15 @@ import (
 )
 
 var (
-	disableCertConfig              = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
-	paginateInvocations            = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
-	restrictMultiGroupToEnterprise = flag.Bool("app.restrict_multi_group_to_enterprise", false, "If true, only enterprise accounts can create multiple organizations.", flag.Internal)
+	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
+)
+
+const (
+	// When enabled, propagates "blocked" status across users/groups.
+	propagateGroupBlocksExperiment = "app.propagate_group_blocks"
+
+	maxGroupsPerUserExperiment = "app.max_groups_per_user"
 )
 
 const (
@@ -486,6 +494,8 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	if err := s.env.GetAuthenticator().FillUser(ctx, tu); err != nil {
 		return nil, err
 	}
+	tu.CreatedByIP = clientip.Get(ctx)
+	tu.CreatedByUserAgent = useragent.Get(ctx)
 	if err := userDB.InsertUser(ctx, tu); err != nil {
 		return nil, err
 	}
@@ -567,6 +577,46 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
 
+func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp interfaces.ExperimentFlagProvider, u interfaces.UserInfo) (*tables.User, error) {
+	isEnterprise := u.GetGroupStatus() == grpb.Group_ENTERPRISE_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS
+	if isEnterprise || efp == nil {
+		return nil, nil
+	}
+	propagateGroupBlocks := efp.Boolean(ctx, propagateGroupBlocksExperiment, false /*=default*/)
+	maxGroupsPerUser := efp.Int64(ctx, maxGroupsPerUserExperiment, 0)
+	if !propagateGroupBlocks && maxGroupsPerUser == 0 {
+		return nil, nil
+	}
+
+	if u.GetUserID() == "" {
+		return nil, status.PermissionDeniedError("Creating organizations is not supported through the API. Please continue in our UI.")
+	}
+
+	user, err := userDB.GetUserWithOwnedGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// No owned groups means the user is creating their first org.
+	allOwnedGroupsBlocked := len(user.Groups) > 0
+	ownedNonEnterpriseGroupCount := int64(0)
+	for _, gr := range user.Groups {
+		if gr.Group.Status != grpb.Group_BLOCKED_GROUP_STATUS {
+			allOwnedGroupsBlocked = false
+		}
+		if gr.Group.Status != grpb.Group_ENTERPRISE_GROUP_STATUS && gr.Group.Status != grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS {
+			ownedNonEnterpriseGroupCount++
+		}
+	}
+	if propagateGroupBlocks && allOwnedGroupsBlocked {
+		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
+	}
+
+	if maxGroupsPerUser > 0 && ownedNonEnterpriseGroupCount >= maxGroupsPerUser {
+		return nil, status.PermissionDeniedError("You've reached the limit on non-enterprise organizations. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
+	}
+	return user, nil
+}
+
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
@@ -576,13 +626,14 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	if err != nil {
 		return nil, err
 	}
-	if *restrictMultiGroupToEnterprise && (u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS) {
-		return nil, status.PermissionDeniedError("An enterprise account is required to create multiple organizations. Please contact support@buildbuddy.io if you need multiple organizations.")
-	}
-
 	groupName := strings.TrimSpace(req.GetName())
 	if len(groupName) == 0 {
 		return nil, status.InvalidArgumentError("Group name cannot be empty")
+	}
+
+	user, err := createGroupAllowed(ctx, userDB, s.env.GetExperimentFlagProvider(), u)
+	if err != nil {
+		return nil, err
 	}
 
 	groupOwnedDomain := ""
@@ -591,12 +642,14 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	// are intended to be managed manually so we do not currently allow
 	// joining by domain.
 	if req.GetAutoPopulateFromOwnedDomain() && u.GetUserID() != "" {
-		user, err := userDB.GetUser(ctx)
-		if err != nil {
-			return nil, err
+		// createGroupAllowed only looks the user up when it needs to.
+		if user == nil {
+			user, err = userDB.GetUser(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
-		userEmailDomain := getEmailDomain(user.Email)
-		groupOwnedDomain = userEmailDomain
+		groupOwnedDomain = getEmailDomain(user.Email)
 	}
 
 	group := &tables.Group{
@@ -609,6 +662,8 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		CodeSearchEnabled:           req.GetCodeSearchEnabled(),
 		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
+		CreatedByIP:                 clientip.Get(ctx),
+		CreatedByUserAgent:          useragent.Get(ctx),
 	}
 
 	// For groups created using an API Key allow the SAML IDP Metadata URL

@@ -43,6 +43,7 @@ import (
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
 	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -325,6 +326,41 @@ type StoppableCache interface {
 	Stop() error
 }
 
+// A Cache implementation that supports reading and writing refpb.References.
+type ReferenceCache interface {
+	Cache
+
+	// Creates a reference to the resource named by r from the bytes read from
+	// reader by writing them to shared storage, without writing r as an entry
+	// in this cache (so that the created reference can be claimed by another
+	// cache). The returned reference can be dereferenced with Dereference() or
+	// stored with WriteReference() by an identically-configured ReferenceCache;
+	// no cache owns the staged blob until a cache stores the reference, and at
+	// most one may do so without cloning.
+	CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error)
+
+	// Reads the provided resource from the cache and returns a reference to it.
+	// The provided reference can be dereferenced into an io.ReadCloser using
+	// Dereference(). This function returns a NotFound error if the requested
+	// resource does not exist as a reference in the cache. In this case, the
+	// caller should try reading it directly from the Cache via Get(), Reader(),
+	// or similar.
+	ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error)
+
+	// Converts a refpb.Reference into an io.ReadCloser serving the resource
+	// named by r. The stored blob is decrypted and transcoded as needed so the
+	// returned bytes use r's compressor, with offset and limit interpreted in
+	// uncompressed bytes. The reference must come from ReadReference() from an
+	// identically-configured ReferenceCache, or dereferencing will fail.
+	Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error)
+
+	// Stores the resource named by r using the provided reference to a blob
+	// in shared storage instead of a byte stream. If mustClone is true, the
+	// cache first makes its own copy of the referenced blob and stores the
+	// copy; otherwise it takes ownership of the referenced blob directly.
+	WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error
+}
+
 type PooledByteStreamClient interface {
 	StreamBytestreamFile(ctx context.Context, url *url.URL, writer io.Writer) error
 	FetchBytestreamZipManifest(ctx context.Context, url *url.URL) (*zipb.Manifest, error)
@@ -568,7 +604,11 @@ type UserDB interface {
 	// an error if no registered user was found. It requires that a
 	// valid authenticator is present in the environment and will return
 	// a UserToken given the provided context.
+	// It returns all groups the user is a member of.
 	GetUser(ctx context.Context) (*tables.User, error)
+	// GetUserWithOwnedGroups returns the authenticated user with only groups
+	// created by that user.
+	GetUserWithOwnedGroups(ctx context.Context) (*tables.User, error)
 	GetUserByID(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *GetUserOpts) (*tables.User, error)
@@ -1325,6 +1365,12 @@ type CommandResult struct {
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
+
+	// VMMetrics holds metrics reported by the guest VM which executed this
+	// command, such as timings of one-time initialization steps (e.g. waiting
+	// for dockerd to become ready) that ran while the VM was booting. Only
+	// set for commands that booted a fresh VM.
+	VMMetrics *espb.VMMetrics
 }
 
 type Subscriber interface {

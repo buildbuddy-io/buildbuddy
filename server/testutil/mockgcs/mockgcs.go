@@ -106,6 +106,20 @@ func (m *mockGCS) ConditionalWriter(ctx context.Context, blobName string, overwr
 	return cwc, nil
 }
 
+func (m *mockGCS) CloneBlob(ctx context.Context, srcBlobName, dstBlobName string, customTime time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	blob, ok := m.items[srcBlobName]
+	if !ok || m.expired(srcBlobName) {
+		return status.NotFoundErrorf("mock gcs blob not found: %s", srcBlobName)
+	}
+	m.items[dstBlobName] = &timestampedBlob{
+		data:       blob.data,
+		customTime: customTime,
+	}
+	return nil
+}
+
 func (m *mockGCS) DeleteBlob(ctx context.Context, blobName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -17,6 +17,7 @@ go_test(
     srcs = ["clientip_test.go"],
     deps = [
         ":clientip",
+        "//server/util/authutil",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

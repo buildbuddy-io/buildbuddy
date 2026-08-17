@@ -1316,6 +1316,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 							Arguments:          runScriptInfo.args,
 							RunfilesRoot:       runScriptInfo.runfilesRoot,
 							Runfiles:           runScriptInfo.runfiles,
+							RunfileEntries:     runScriptInfo.runfileEntries,
 							RunfileDirectories: runScriptInfo.runfileDirs,
 							ExecutablePath:     runScriptInfo.executablePath,
 						}},
@@ -1435,14 +1436,32 @@ func deserializeAction(actionString string) (*config.Action, error) {
 type runInfo struct {
 	args           []string
 	runfiles       []*bespb.File
+	runfileEntries []*bespb.Runfile
 	runfileDirs    []*bespb.Tree
 	runfilesRoot   string
 	executablePath string
 }
 
-func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]string, error) {
-	fileDigestMap := make(map[digest.Key]string)
+type runfile struct {
+	// logicalPath is the path the executable expects to find inside its runfiles tree
+	// For a symlink, this could be different from the physical path where the file's bytes
+	// physically live on the remote runner. Many logical paths can map to the same physical path.
+	logicalPath string
+	// physicalPath is the path where the file's bytes actually live.
+	physicalPath string
+	digest       *repb.Digest
+	isExecutable bool
+}
+
+func collectRunfiles(runfilesDir string) ([]*runfile, map[string]string, error) {
+	var runfiles []*runfile
 	dirsToUpload := make(map[string]string)
+	if _, err := os.Stat(runfilesDir); err != nil {
+		if os.IsNotExist(err) {
+			return runfiles, dirsToUpload, nil
+		}
+		return nil, nil, status.UnknownErrorf("could not setup runtime files: %s", err)
+	}
 	err := filepath.WalkDir(runfilesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1450,48 +1469,57 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 		if d.IsDir() {
 			return nil
 		}
+
+		// Get file metadata for symlinks.
+		physicalPath := path
 		if d.Type()&fs.ModeSymlink != 0 {
-			t, err := os.Readlink(path)
+			// Resolve all symlinks.
+			physicalPath, err = filepath.EvalSymlinks(path)
 			if err != nil {
 				return err
 			}
-			targetPath := t
-			if !filepath.IsAbs(targetPath) {
-				targetPath = filepath.Join(filepath.Dir(path), targetPath)
-			}
-			fi, err := os.Stat(targetPath)
+			info, err := os.Stat(physicalPath)
 			if err != nil {
 				return err
 			}
-			if fi.IsDir() {
-				dirsToUpload[path] = targetPath
+			if info.IsDir() {
+				dirsToUpload[path] = physicalPath
 				return nil
 			}
 		}
-		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName, repb.DigestFunction_SHA256)
+		info, err := os.Stat(physicalPath)
 		if err != nil {
 			return err
 		}
-		fileDigestMap[digest.NewKey(rn.GetDigest())] = path
+		rn, err := cachetools.ComputeFileDigest(physicalPath, *remoteInstanceName, repb.DigestFunction_SHA256)
+		if err != nil {
+			return err
+		}
+		runfiles = append(runfiles, &runfile{
+			logicalPath:  path,
+			physicalPath: physicalPath,
+			digest:       rn.GetDigest(),
+			isExecutable: info.Mode()&0111 != 0,
+		})
 		return nil
 	})
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return nil, nil, status.UnknownErrorf("could not setup runtime files: %s", err)
 	}
-	return fileDigestMap, dirsToUpload, err
+	return runfiles, dirsToUpload, nil
 }
 
-func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, []*bespb.Tree, error) {
+func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir, executablePath string) ([]*bespb.File, []*bespb.Tree, []*bespb.Runfile, error) {
 	healthChecker := healthcheck.NewHealthChecker("ci-runner")
 	env := real_environment.NewRealEnv(healthChecker)
 
-	fileDigestMap, dirs, err := collectRunfiles(runfilesDir)
+	runfileMetadata, dirs, err := collectRunfiles(runfilesDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	conn, err := grpc_client.DialSimple(*cacheBackend)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -1499,36 +1527,93 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 
 	backendURL, err := url.Parse(*cacheBackend)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	bytestreamURIPrefix := "bytestream://" + backendURL.Host
 
-	var digests []*repb.Digest
+	// We keep separate fields for digests to upload because the same digest may appear at multiple logical paths,
+	// but only needs one upload.
+	digestToPhysicalPath := make(map[string]string)
+	var digestsToUpload []*repb.Digest
+	// The runfiles slices should contain an entry for every logical path, even if the same digest appears multiple times,
+	// so we can recreate the entire runfiles tree.
 	var runfiles []*bespb.File
-	for d, runfilePath := range fileDigestMap {
-		digests = append(digests, d.ToDigest())
-		relPath, err := filepath.Rel(workspaceRoot, runfilePath)
-		if err != nil {
-			return nil, nil, err
+	var runfileEntries []*bespb.Runfile
+	for _, runfileInfo := range runfileMetadata {
+		d := runfileInfo.digest
+		if _, ok := digestToPhysicalPath[d.GetHash()]; !ok {
+			digestToPhysicalPath[d.GetHash()] = runfileInfo.physicalPath
+			digestsToUpload = append(digestsToUpload, d)
 		}
-		downloadString := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
+		relPath, err := filepath.Rel(workspaceRoot, runfileInfo.logicalPath)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		downloadString := digest.NewCASResourceName(d, *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
 		if !strings.HasPrefix(downloadString, "/") {
 			downloadString = "/" + downloadString
 		}
-		runfiles = append(runfiles, &bespb.File{
-			Name: relPath,
+		runfile := &bespb.File{
+			Name:   relPath,
+			Digest: d.GetHash(),
+			Length: d.GetSizeBytes(),
 			File: &bespb.File_Uri{
 				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, downloadString),
 			},
+		}
+		runfiles = append(runfiles, runfile)
+		runfileEntries = append(runfileEntries, &bespb.Runfile{
+			File:         runfile,
+			IsExecutable: runfileInfo.isExecutable,
 		})
 	}
+
+	// The executable may itself be a symlink. Ensure its physical contents are uploaded
+	// to the cache so that they can be downloaded.
+	resolvedExecutablePath, err := filepath.EvalSymlinks(executablePath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	executableRN, err := cachetools.ComputeFileDigest(resolvedExecutablePath, *remoteInstanceName, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	executableDigest := executableRN.GetDigest()
+	if _, ok := digestToPhysicalPath[executableDigest.GetHash()]; !ok {
+		digestToPhysicalPath[executableDigest.GetHash()] = resolvedExecutablePath
+		digestsToUpload = append(digestsToUpload, executableDigest)
+	}
+	executableRelPath, err := filepath.Rel(workspaceRoot, executablePath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	executableDownloadString := digest.NewCASResourceName(executableDigest, *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
+	if !strings.HasPrefix(executableDownloadString, "/") {
+		executableDownloadString = "/" + executableDownloadString
+	}
+	executableFile := &bespb.File{
+		Name:   executableRelPath,
+		Digest: executableDigest.GetHash(),
+		Length: executableDigest.GetSizeBytes(),
+		File: &bespb.File_Uri{
+			Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, executableDownloadString),
+		},
+	}
+	// Include the executable in the runfiles event, even though it's a top-level output and
+	// is uploaded separately by bazel, to guarantee it is always uploaded to the cache.
+	runfiles = append(runfiles, executableFile)
+	runfileEntries = append(runfileEntries, &bespb.Runfile{
+		File:         executableFile,
+		IsExecutable: true,
+	})
+
 	rsp, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		InstanceName: *remoteInstanceName,
-		BlobDigests:  digests,
+		BlobDigests:  digestsToUpload,
 		Purpose:      repb.FindMissingBlobsRequest_CI_RUNNER_UPLOAD,
 	})
 	if err != nil {
-		return nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)
+		return nil, nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)
 	}
 	missingDigests := rsp.GetMissingBlobDigests()
 
@@ -1536,17 +1621,17 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, nil /*=chunkingParams*/)
 
 	for _, d := range missingDigests {
-		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
+		uploadPath, ok := digestToPhysicalPath[d.GetHash()]
 		if !ok {
 			// not supposed to happen...
-			return nil, nil, status.InternalErrorf("missing digest not in our digest map")
+			return nil, nil, nil, status.InternalErrorf("missing digest not in our digest map")
 		}
-		f, err := os.Open(runfilePath)
+		f, err := os.Open(uploadPath)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := u.Upload(d, f); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -1582,10 +1667,9 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-
-	return runfiles, runfileDirs, nil
+	return runfiles, runfileDirs, runfileEntries, nil
 }
 
 // processRunScript processes the contents of a bazel run script (produced via bazel run --script_path) and extracts
@@ -1643,14 +1727,16 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	}
 
 	runfilesDir := bin + ".runfiles"
-	runfiles, runfileDirs, err := uploadRunfiles(ctx, wsRoot, runfilesDir)
+	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, wsRoot, runfilesDir, bin)
 	if err != nil {
 		return nil, err
 	}
 
 	return &runInfo{
-		args:           args,
+		args: args,
+		// TODO(Maggie): Delete deprecated field
 		runfiles:       runfiles,
+		runfileEntries: runfileEntries,
 		runfileDirs:    runfileDirs,
 		runfilesRoot:   runfilesRoot,
 		executablePath: executablePath,

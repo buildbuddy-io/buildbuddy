@@ -531,6 +531,31 @@ func (g *GCSBlobStore) UpdateCustomTime(ctx context.Context, blobName string, t 
 	return err
 }
 
+// CloneBlob makes a server-side copy of the blob named srcBlobName to
+// dstBlobName, setting the destination's custom time to customTime. The blob
+// bytes are copied inside GCS and never leave the storage service. Returns a
+// NotFound error if the source blob does not exist.
+func (g *GCSBlobStore) CloneBlob(ctx context.Context, srcBlobName, dstBlobName string, customTime time.Time) error {
+	start := time.Now()
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	copier := g.bucketHandle.Object(dstBlobName).CopierFrom(g.bucketHandle.Object(srcBlobName))
+	copier.CustomTime = customTime
+	attrs, err := copier.Run(ctx)
+	if errors.Is(err, storage.ErrObjectNotExist) {
+		err = status.NotFoundError(err.Error())
+	}
+	util.RecordCloneMetrics(g.metricLabel, start, bytesCloned(attrs), err)
+	return err
+}
+
+func bytesCloned(attrs *storage.ObjectAttrs) int {
+	if attrs == nil {
+		return 0
+	}
+	return int(attrs.Size)
+}
+
 // http.StatusTooManyRequests and status.ResourceExhaustedError can be returned
 // due to conflicting writes on the same object, or due to too much QPS to GCS.
 // The only way to tell the difference is to look at the message.

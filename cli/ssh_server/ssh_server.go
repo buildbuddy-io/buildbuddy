@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -27,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/creack/pty"
 	"github.com/gliderlabs/ssh"
@@ -48,14 +50,72 @@ var (
 	network     = flags.String("network", "", "Network name (default is blank)")
 	apiKey      = flags.String("api_key", "", "Optionally override the API key with this value")
 	gracePeriod = flags.Duration("grace_period", 1*time.Minute, "How long the VM will remain alive when no users are connected")
-	idleTimeout = flags.Duration("idle_timeout", 5*time.Minute, "Close idle SSH sessions after this duration of inactivity (0 means no timeout)")
+	idleTimeout = flags.Duration("idle_timeout", 5*time.Minute, "Log out interactive sessions after this duration without user input")
 
 	sshPort     = flags.Int("port", 22, "SSH listen port on the tunnel interface")
 	shellPath   = flags.String("shell", "", "Shell to use for interactive sessions (auto-detected if unset)")
 	hostKeyFile = flags.String("host_key_file", "", "SSH host private key file (generates an ephemeral key if empty)")
+	sessionID   = flags.String("session_id", "", "Unique identifier for this gateway connection, shown in gateway listings (generated if empty)")
+
+	// The default covers two handshake attempts: wireguard-go retransmits an
+	// unanswered handshake initiation after 5s (the protocol's REKEY_TIMEOUT,
+	// plus jitter), so a smaller value would tolerate zero packet loss.
+	wgHealthTimeout = flags.Duration("wg_health_timeout", 12*time.Second, "Exit if the WireGuard tunnel has not completed a handshake with the gateway within this duration after coming up. 0 disables the check.")
 
 	usage string
 )
+
+// waitForHandshake polls the WireGuard device until its peer (the gateway)
+// completes a handshake, or the timeout elapses.
+func waitForHandshake(dev *device.Device, timeout time.Duration) error {
+	var lastErr error
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		cfg, err := dev.IpcGet()
+		if err != nil {
+			lastErr = err
+		} else {
+			for line := range strings.SplitSeq(cfg, "\n") {
+				if v, ok := strings.CutPrefix(line, "last_handshake_time_sec="); ok && v != "0" {
+					return nil
+				}
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return status.UnavailableErrorf("no WireGuard handshake with the gateway within %s (last device error: %s)", timeout, lastErr)
+	}
+	return status.UnavailableErrorf("no WireGuard handshake with the gateway within %s", timeout)
+}
+
+// remoteActionEnvVar signals that this process is running inside a remote
+// action. It is set by `bb box` on the action's environment (and
+// inherited through bb record).
+const remoteActionEnvVar = "BUILDBUDDY_REMOTE_ACTION"
+
+// doNotRecycleMarkerFile, when present in the workspace root, tells the
+// executor not to recycle the runner or save a VM snapshot for it. Mirrors
+// the constant in enterprise/server/remote_execution/runner.
+const doNotRecycleMarkerFile = ".BUILDBUDDY_DO_NOT_RECYCLE"
+
+// writeDoNotRecycleMarker writes the executor's do-not-recycle marker to the
+// current working directory — which the executor guarantees is the workspace
+// root for remote actions — so the VM is neither recycled nor snapshotted.
+// No-op when running outside a remote action.
+func writeDoNotRecycleMarker() {
+	if os.Getenv(remoteActionEnvVar) == "" {
+		return
+	}
+	// Log the absolute path so a violated workspace-root assumption is
+	// visible in the invocation log.
+	path, _ := filepath.Abs(doNotRecycleMarkerFile)
+	if err := os.WriteFile(doNotRecycleMarkerFile, nil, 0644); err != nil {
+		log.Warnf("write %s: %v", path, err)
+	} else {
+		log.Printf("Wrote %s", path)
+	}
+}
 
 func init() {
 	var buf strings.Builder
@@ -63,6 +123,38 @@ func init() {
 	flags.SetOutput(&buf)
 	flags.PrintDefaults()
 	usage = buf.String()
+}
+
+// setHostname renames the VM after the box so shell prompts and logs
+// identify it. No-op outside a remote action: this command also runs on
+// developer machines, which must not be renamed. The box image runs as a
+// non-root user with passwordless sudo. Best effort: failures are cosmetic.
+func setHostname(name string) {
+	if name == "" || os.Getenv(remoteActionEnvVar) == "" {
+		return
+	}
+	// `bb box` validates the name, but this command can also be run
+	// directly, and the name reaches both sethostname(2) and an /etc/hosts
+	// line.
+	if len(name) > 64 || strings.ContainsAny(name, " \t\n#") {
+		log.Debugf("not renaming to invalid hostname %q", name)
+		return
+	}
+	if h, err := os.Hostname(); err == nil && h == name {
+		return // already set, e.g. on a resumed VM
+	}
+	if out, err := exec.Command("sudo", "-n", "hostname", name).CombinedOutput(); err != nil {
+		log.Debugf("set hostname to %s: %v: %s", name, err, out)
+		return
+	}
+	// Keep the new name resolvable, which sudo warns about otherwise. Only
+	// after the rename succeeded, so a failure leaves no stray entry. The
+	// leading newline covers an /etc/hosts written without a trailing one.
+	hosts := exec.Command("sudo", "-n", "tee", "-a", "/etc/hosts")
+	hosts.Stdin = strings.NewReader(fmt.Sprintf("\n127.0.0.1 %s\n", name))
+	if out, err := hosts.CombinedOutput(); err != nil {
+		log.Debugf("add %s to /etc/hosts: %v: %s", name, err, out)
+	}
 }
 
 func getShell() string {
@@ -121,6 +213,54 @@ func loadOrCreateHostKey(path string) ([]byte, error) {
 	return pemBytes, nil
 }
 
+// connIdleTimeout closes connections whose client has stopped sending
+// traffic entirely — bb ssh sends keepalives every 15s (keepaliveInterval in
+// cli/ssh), so only a dead client (host asleep, network gone) goes quiet
+// this long. Clients that don't send keepalives (older bb versions, plain
+// ssh) stay connected only as long as some traffic flows within this
+// window: if they sit completely silent, they are dropped here at 3m and
+// never reach the (5m default) --idle_timeout logout banner. Distinct from
+// --idle_timeout, which logs out live-but-inactive interactive sessions.
+const connIdleTimeout = 3 * time.Minute
+
+// countedConn runs onClose exactly once, when the connection is closed.
+type countedConn struct {
+	net.Conn
+	once    sync.Once
+	onClose func()
+}
+
+func (c *countedConn) Close() error {
+	c.once.Do(c.onClose)
+	return c.Conn.Close()
+}
+
+// activityReader resets an inactivity timer on every read that carries data.
+type activityReader struct {
+	r     io.Reader
+	reset func()
+}
+
+func (a *activityReader) Read(p []byte) (int, error) {
+	n, err := a.r.Read(p)
+	if n > 0 {
+		a.reset()
+	}
+	return n, err
+}
+
+// killGroup kills cmd's process group. Process.Kill fails once cmd.Wait has
+// reaped, and an unreaped pid can't be recycled, so it guards the group kill
+// against signaling an unrelated group.
+func killGroup(cmd *exec.Cmd) {
+	if err := cmd.Process.Kill(); err != nil {
+		return
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); err != nil {
+		log.Debugf("logout kill: %v", err)
+	}
+}
+
 func setWinsize(f *os.File, w, h int) {
 	syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCSWINSZ),
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
@@ -128,62 +268,128 @@ func setWinsize(f *os.File, w, h int) {
 
 func handleSession(s ssh.Session) {
 	ptyReq, winCh, isPty := s.Pty()
-	if isPty {
-		log.Printf("SSH session opened: user=%s remote=%s pty=%s", s.User(), s.RemoteAddr(), ptyReq.Term)
-		defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
+	raw := s.RawCommand()
 
-		cmd := exec.Command(getShell(), "-l")
+	// Remote commands run through the shell (like sshd's `$SHELL -c`) so
+	// quoting, pipes, and expansions behave as users expect; the raw command
+	// string is used because ssh.Session.Command() pre-splits it. With no
+	// command, start a login shell.
+	var cmd *exec.Cmd
+	if raw != "" {
+		log.Printf("SSH exec: user=%s remote=%s pty=%v cmd=%q", s.User(), s.RemoteAddr(), isPty, raw)
+		cmd = exec.Command(getShell(), "-c", raw)
+	} else {
+		log.Printf("SSH session opened: user=%s remote=%s pty=%v", s.User(), s.RemoteAddr(), isPty)
+		cmd = exec.Command(getShell(), "-l")
+	}
+	defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
+
+	// Bound Wait when a grandchild inherits the non-pty stdout/stderr pipes
+	// and outlives the child.
+	cmd.WaitDelay = 5 * time.Second
+
+	// Interactive sessions (a PTY, or a shell with no command) are logged
+	// out after --idle_timeout without user input; program output and client
+	// keepalives don't count, and plain command execution is exempt.
+	// cmd.Process.Kill is a no-op once cmd.Wait has reaped, so a logout
+	// racing the command's own exit can't signal an unrelated process.
+	var logout *time.Timer
+	if isPty {
 		cmd.Env = append(os.Environ(), "TERM="+ptyReq.Term)
 		f, err := pty.Start(cmd)
 		if err != nil {
-			fmt.Fprintf(s.Stderr(), "start shell: %v\n", err)
+			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
 			s.Exit(1)
 			return
 		}
 		defer f.Close()
+
+		var input io.Reader = s
+		if *idleTimeout > 0 {
+			logout = time.AfterFunc(*idleTimeout, func() {
+				fmt.Fprintf(s, "\r\nLogged out: no input for %s.\r\n", *idleTimeout)
+				// Closing the pty unblocks the copy below; killing the group
+				// takes the shell's children with it. A tmux server survives:
+				// it daemonizes into its own session.
+				f.Close()
+				killGroup(cmd)
+			})
+			defer logout.Stop()
+			input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
+		}
+		setWinsize(f, ptyReq.Window.Width, ptyReq.Window.Height)
 		go func() {
 			for win := range winCh {
+				if logout != nil {
+					logout.Reset(*idleTimeout)
+				}
 				setWinsize(f, win.Width, win.Height)
 			}
 		}()
-		go io.Copy(f, s)
+		go io.Copy(f, input)
 		io.Copy(s, f)
-		if err := cmd.Wait(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				s.Exit(exitErr.ExitCode())
-				return
-			}
-		}
-		s.Exit(0)
 	} else {
-		// No PTY: run the provided command, or a non-interactive shell if none given.
-		args := s.Command()
-		var cmd *exec.Cmd
-		if len(args) > 0 {
-			log.Printf("SSH exec: user=%s remote=%s cmd=%q", s.User(), s.RemoteAddr(), args)
-			cmd = exec.Command(args[0], args[1:]...)
-		} else {
-			log.Printf("SSH session opened: user=%s remote=%s (no pty)", s.User(), s.RemoteAddr())
-			cmd = exec.Command(getShell(), "-l")
-		}
-		defer log.Printf("SSH session closed: user=%s remote=%s", s.User(), s.RemoteAddr())
+		wantLogout := *idleTimeout > 0 && raw == ""
 		cmd.Env = os.Environ()
 		cmd.Stdout = s
 		cmd.Stderr = s.Stderr()
-		cmd.Stdin = s
-		if err := cmd.Run(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				s.Exit(exitErr.ExitCode())
-				return
-			}
+		if wantLogout {
+			// Without a pty there is no Setsid; give the shell its own group
+			// so the logout kill reaches its children and not the server.
+			cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		}
+		// Pump stdin through a real pipe ourselves: handing the session to
+		// os/exec would add a copier goroutine that cmd.Wait must join but
+		// that can block forever reading from the session (WaitDelay cannot
+		// interrupt reads from a non-File).
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
 			s.Exit(1)
 			return
 		}
-		s.Exit(0)
+		if err := cmd.Start(); err != nil {
+			fmt.Fprintf(s.Stderr(), "start command: %v\n", err)
+			s.Exit(1)
+			return
+		}
+		var input io.Reader = s
+		if wantLogout {
+			logout = time.AfterFunc(*idleTimeout, func() {
+				fmt.Fprintf(s, "\nLogged out: no input for %s.\n", *idleTimeout)
+				killGroup(cmd)
+			})
+			defer logout.Stop()
+			input = &activityReader{r: s, reset: func() { logout.Reset(*idleTimeout) }}
+		}
+		go func() {
+			io.Copy(stdin, input)
+			stdin.Close()
+		}()
 	}
+
+	// ErrWaitDelay means the process exited cleanly but a pipe copier was
+	// still blocked (e.g. a client holding stdin open); treat as success.
+	if err := cmd.Wait(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// ExitCode is -1 for a signaled process (including the logout
+			// kill); report 255 rather than -1 wrapping around on the wire.
+			if code := exitErr.ExitCode(); code >= 0 {
+				s.Exit(code)
+			} else {
+				s.Exit(255)
+			}
+			return
+		}
+		fmt.Fprintf(s.Stderr(), "wait for command: %v\n", err)
+		s.Exit(1)
+		return
+	}
+	s.Exit(0)
 }
 
 func HandleSSHServer(args []string) (int, error) {
+	start := time.Now()
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
@@ -224,28 +430,57 @@ func HandleSSHServer(args []string) (int, error) {
 
 	gwClient := gwsvcpb.NewGatewayServiceClient(grpcConn)
 
-	// Deregister runs before grpcConn.Close() (LIFO), freeing the IP and DNS
-	// name on the gateway immediately rather than waiting for stale-peer cleanup.
-	defer func() {
-		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		defer cancel()
-		if _, err := gwClient.Deregister(dctx, &gwpb.DeregisterRequest{PublicKey: privKey.PublicKey().Hex()}); err != nil {
-			log.Warnf("deregister: %v", err)
-		} else {
-			log.Printf("Deregistered from gateway.")
-		}
+	// Renaming shells out to sudo; overlap it with gateway and tunnel setup
+	// rather than adding to startup latency. Waited on before serving, since
+	// shells read the hostname when they start.
+	hostnameDone := make(chan struct{})
+	go func() {
+		defer close(hostnameDone)
+		setHostname(name)
 	}()
 
-	rsp, err := gwClient.Register(ctx, &gwpb.RegisterRequest{
+	sid := *sessionID
+	if sid == "" {
+		sid = uuid.New()
+	}
+
+	// Connect to the gateway. The registration is leased to this stream: the
+	// gateway frees the peer's IP and DNS name as soon as the stream closes,
+	// so there is no explicit Deregister on shutdown — canceling connectCtx
+	// (deferred below) is the clean-shutdown path.
+	connectCtx, cancelConnect := context.WithCancel(ctx)
+	defer cancelConnect()
+	stream, err := gwClient.Connect(connectCtx, &gwpb.ConnectRequest{
 		NetworkName: *network,
 		PeerName:    name,
 		PublicKey:   privKey.PublicKey().Hex(),
+		SessionId:   sid,
 	})
 	if err != nil {
-		return 1, status.WrapError(err, "registering with gateway")
+		// Note: for a server-streaming RPC, grpc-go surfaces most status
+		// errors (including ALREADY_EXISTS from the gateway) on the first
+		// Recv rather than here; this branch only catches immediate
+		// connection failures.
+		return 1, status.WrapError(err, "connecting to gateway")
 	}
-	log.Printf("Registered: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s name=%s",
-		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(), rsp.GetAssignedPeerName())
+	rsp, err := stream.Recv()
+	if err != nil {
+		if status.IsAlreadyExistsError(err) {
+			// The gateway refused the registration because the peer name,
+			// session ID, or public key is already in use — the server's
+			// message says which. Exit without doing any work, and drop the
+			// do-not-recycle marker so this VM is not snapshotted: otherwise
+			// its empty session could race the winner's snapshot save for
+			// the same recycling key.
+			log.Printf("Gateway registration refused: %s; exiting.", status.Message(err))
+			writeDoNotRecycleMarker()
+			return 1, nil
+		}
+		return 1, status.WrapError(err, "connecting to gateway")
+	}
+	log.Printf("Connected: assigned_ip=%s gateway_ip=%s cidr=%s endpoint=%s name=%s session=%s",
+		rsp.GetAssignedIp(), rsp.GetGatewayIp(), rsp.GetNetworkCidr(), rsp.GetServerEndpoint(), name, sid)
+	registeredIn := time.Since(start)
 
 	// Bring up the userspace WireGuard tunnel.
 	assignedAddr := netip.MustParseAddr(rsp.GetAssignedIp())
@@ -278,22 +513,52 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 	defer dev.Close()
 
+	// Fail fast if the tunnel never comes up. Persistent keepalives make the
+	// first handshake begin immediately, so a missing handshake means this
+	// host's UDP path to the gateway is broken (e.g. a misprogrammed
+	// executor node). Exiting promptly surfaces the failure in the create
+	// log instead of leaving behind a registered but unreachable server.
+	if *wgHealthTimeout > 0 {
+		handshakeStart := time.Now()
+		if err := waitForHandshake(dev, *wgHealthTimeout); err != nil {
+			writeDoNotRecycleMarker()
+			return 1, err
+		}
+		log.Printf("WireGuard handshake completed in %s", time.Since(handshakeStart))
+	}
+
 	// Build the SSH server. WireGuard membership is the auth boundary; no SSH
 	// credential checking is required. gliderlabs/ssh automatically sets
 	// NoClientAuth=true when no auth handlers are configured.
-	sshServer := &ssh.Server{IdleTimeout: *idleTimeout}
+	forwards := &ssh.ForwardedTCPHandler{}
+	sshServer := &ssh.Server{
+		IdleTimeout: connIdleTimeout,
+		ChannelHandlers: map[string]ssh.ChannelHandler{
+			"session": ssh.DefaultSessionHandler,
+			// `bb ssh -L`: the box dials the destination and splices.
+			"direct-tcpip": ssh.DirectTCPIPHandler,
+		},
+		RequestHandlers: map[string]ssh.RequestHandler{
+			// `bb ssh -R`: the box listens and opens a channel per connection.
+			"tcpip-forward":        forwards.HandleSSHRequest,
+			"cancel-tcpip-forward": forwards.HandleSSHRequest,
+		},
+		// The WireGuard tunnel is the authentication boundary, and anyone
+		// forwarding a port here can already run commands here.
+		LocalPortForwardingCallback:   func(ssh.Context, string, uint32) bool { return true },
+		ReversePortForwardingCallback: func(ssh.Context, string, uint32) bool { return true },
+	}
 	hostKeyPath := *hostKeyFile
 	if hostKeyPath == "" {
 		cacheDir, err := os.UserCacheDir()
 		if err != nil {
 			return 1, status.WrapError(err, "getting cache dir for host key")
 		}
-		// Key filename is scoped to the assigned peer name so that a VM
-		// resuming with the same name reuses the same key, preventing SSH warnings.
-		// A different assigned name (e.g. "myvm-1" due to a conflict) gets a
-		// fresh key. Falls back to the assigned IP for peers registered without
-		// a name (unique per peer, though not stable across restarts).
-		keyID := rsp.GetAssignedPeerName()
+		// Key filename is scoped to the peer name so that a VM resuming with
+		// the same name reuses the same key, preventing SSH warnings. Falls
+		// back to the assigned IP for peers registered without a name (unique
+		// per peer, though not stable across restarts).
+		keyID := name
 		if keyID == "" {
 			keyID = strings.ReplaceAll(rsp.GetAssignedIp(), ":", "_")
 		}
@@ -315,12 +580,12 @@ func HandleSSHServer(args []string) (int, error) {
 
 	hostPort := net.JoinHostPort(rsp.GetAssignedIp(), fmt.Sprintf("%d", *sshPort))
 	q := url.Values{}
-	if label := rsp.GetAssignedPeerName(); label != "" {
-		q.Set("name", label)
+	if name != "" {
+		q.Set("name", name)
 	}
 	sshURL := &url.URL{Scheme: "bb-ssh", Host: hostPort, RawQuery: q.Encode()}
-	log.Printf("Listening on %s", sshURL)
-	connectTarget := rsp.GetAssignedPeerName()
+	log.Printf("Listening on %s (registered with gateway in %s, startup took %s)", sshURL, registeredIn, time.Since(start))
+	connectTarget := name
 	if connectTarget == "" {
 		connectTarget = rsp.GetAssignedIp()
 	}
@@ -331,51 +596,88 @@ func HandleSSHServer(args []string) (int, error) {
 	}
 
 	// Idle-shutdown: call sshServer.Shutdown once the grace period elapses with
-	// no active sessions. The timer starts immediately to cover the case where
-	// no client ever connects.
+	// no connected clients. The timer starts immediately to cover the case
+	// where no client ever connects. Connections are counted rather than
+	// sessions, so that a client holding only port forwards (bb ssh -N) keeps
+	// the VM alive, and a client whose command outlives it does not.
 	var (
-		mu             sync.Mutex
-		activeSessions int
-		idleTimer      *time.Timer
+		mu          sync.Mutex
+		activeConns int
+		idleTimer   *time.Timer
 	)
 	resetIdleTimer := func() {
 		// Must be called with mu held.
 		if idleTimer != nil {
 			idleTimer.Stop()
 		}
-		idleTimer = time.AfterFunc(*gracePeriod, func() {
-			log.Printf("No active sessions for %s; shutting down.", *gracePeriod)
+		var t *time.Timer
+		t = time.AfterFunc(*gracePeriod, func() {
+			mu.Lock()
+			// Stop doesn't unschedule a timer that already fired, so this
+			// callback may belong to a grace period that has been superseded
+			// by a client connecting and disconnecting again.
+			if idleTimer != t || activeConns != 0 {
+				mu.Unlock()
+				return
+			}
+			idleTimer = nil
+			// Released before Shutdown: it waits for connections to drain,
+			// and both connection callbacks take this lock.
+			mu.Unlock()
+
+			log.Printf("No clients connected for %s; shutting down.", *gracePeriod)
 			shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			sshServer.Shutdown(shutCtx)
 		})
+		idleTimer = t
 	}
 	mu.Lock()
 	resetIdleTimer()
 	mu.Unlock()
 
-	sshServer.Handler = func(s ssh.Session) {
+	sshServer.Handler = handleSession
+	sshServer.ConnCallback = func(_ ssh.Context, conn net.Conn) net.Conn {
 		mu.Lock()
 		if idleTimer != nil {
 			idleTimer.Stop()
 			idleTimer = nil
 		}
-		activeSessions++
+		activeConns++
 		mu.Unlock()
-		defer func() {
+		return &countedConn{Conn: conn, onClose: func() {
 			mu.Lock()
-			activeSessions--
-			if activeSessions == 0 {
+			activeConns--
+			if activeConns == 0 {
 				resetIdleTimer()
 			}
 			mu.Unlock()
-		}()
-		handleSession(s)
+		}}
 	}
 
+	// The gateway registration is leased to the Connect stream. If the stream
+	// ends for any reason other than local shutdown (gateway restart, network
+	// partition, eviction), this server is unreachable through the tunnel:
+	// shut down so the VM suspends cleanly and can be resumed.
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				if connectCtx.Err() != nil {
+					// Local shutdown already in progress.
+					return
+				}
+				log.Printf("Gateway connection lost (%v); shutting down.", err)
+				shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				sshServer.Shutdown(shutCtx)
+				return
+			}
+		}
+	}()
+
 	// Catch SIGINT/SIGTERM so the process shuts down via Shutdown() rather than
-	// being killed abruptly, ensuring deferred cleanup (Deregister, dev.Close)
-	// runs on Ctrl-C or a normal kill signal.
+	// being killed abruptly, ensuring deferred cleanup (closing the gateway
+	// stream, dev.Close) runs on Ctrl-C or a normal kill signal.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
@@ -389,6 +691,8 @@ func HandleSSHServer(args []string) (int, error) {
 		defer cancel()
 		sshServer.Shutdown(shutCtx)
 	}()
+
+	<-hostnameDone
 
 	if err := sshServer.Serve(listener); err != nil && err != ssh.ErrServerClosed {
 		return 1, status.WrapError(err, "ssh server")

@@ -289,6 +289,9 @@ proto_library(
 proto_library(
     name = "gateway_proto",
     srcs = ["gateway.proto"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+    ],
 )
 
 go_proto_library(

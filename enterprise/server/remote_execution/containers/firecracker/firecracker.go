@@ -56,6 +56,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -232,6 +233,11 @@ const (
 
 	// The max amount of time we'll wait for the balloon to expand to the target size.
 	maxUpdateBalloonDuration = 30 * time.Second
+
+	// Stop waiting for the balloon early if it has made no meaningful
+	// progress toward its target size for this long. Gives the balloon a
+	// second chance in case resource contention temporarily stalls it.
+	balloonStallTimeout = 5 * time.Second
 
 	// Special file that actions can create in the workspace directory to
 	// invalidate the snapshot the action was run in. This can be written
@@ -818,9 +824,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		c.vmIdx = opts.ForceVMIdx
 	}
 
-	isCICommand := platform.IsCICommand(task.GetCommand(), platform.GetProto(task.GetAction(), task.GetCommand()))
-	isDevboxCommand := strings.HasPrefix(task.GetExecuteRequest().GetInstanceName(), snaputil.DevboxPartitionPrefix)
-	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (isCICommand || isDevboxCommand || *forceRemoteSnapshotting)
+	allowsRemoteSnapshots := platform.AllowsRemoteSnapshots(task)
+	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (allowsRemoteSnapshots || *forceRemoteSnapshotting)
 	if span.IsRecording() {
 		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
 	}
@@ -1203,7 +1208,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 		return false
 	}
 	// For RBE actions, we don't save another snapshot if one already exists.
-	if c.createFromSnapshot && !platform.IsCICommand(c.task.GetCommand(), platform.GetProto(c.task.GetAction(), c.task.GetCommand())) {
+	if c.createFromSnapshot && !platform.AllowsRemoteSnapshots(c.task) {
 		return false
 	}
 
@@ -2363,6 +2368,13 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		cancelCgroupPoll()
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
 		c.fillNetStats(ctx, res.UsageStats)
+		if c.createFromSnapshot && res.VMMetrics != nil {
+			// The guest reports boot timings for the original boot, so they're
+			// not meaningful when starting from a snapshot.
+			res.VMMetrics.DockerdWaitDurationUsec = 0
+			res.VMMetrics.VmDnsWaitDurationUsec = 0
+			res.VMMetrics.VmExecInitDurationUsec = 0
+		}
 		return res, true
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
@@ -3202,15 +3214,24 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 		log.CtxInfof(ctx, "Update balloon to %d MB (target %d MB) took %s", currentBalloonSize, targetSizeMib, time.Since(start).String())
 	}()
 
-	// Wait for the balloon to reach its target size.
-	pollInterval := 1 * time.Second
-	slowCount := 0
-	for {
+	// Poll until the balloon reaches its target size. Updates often complete
+	// almost immediately (deflating to zero especially), so poll with
+	// exponential backoff: quickly at first, capped at once per second.
+	r := retry.New(ctx, &retry.Options{
+		InitialBackoff: 10 * time.Millisecond,
+		MaxBackoff:     1 * time.Second,
+		Multiplier:     2,
+		// Polling is bounded by maxUpdateBalloonDuration and
+		// balloonStallTimeout below, not by an attempt count.
+		MaxRetries: math.MaxInt,
+	})
+	lastProgressTime := start
+	lastProgressSize := int64(-1)
+	for r.Next() {
 		stats, err := c.machine.GetBalloonStats(ctx)
 		if err != nil {
 			return 0, err
 		}
-		lastBalloonSize := currentBalloonSize
 		currentBalloonSize = *stats.ActualMib
 		if currentBalloonSize == targetSizeMib {
 			return currentBalloonSize, nil
@@ -3218,24 +3239,18 @@ func (c *FirecrackerContainer) updateBalloon(ctx context.Context, targetSizeMib 
 			return currentBalloonSize, nil
 		}
 
-		if math.Abs(float64(currentBalloonSize-lastBalloonSize)) < 100 {
-			slowCount++
-			if slowCount == 5 {
-				// If the rate of inflation is consistently slow or stops, just stop early.
-				// Give the balloon a second chance in case there is resource contention
-				// that temporarily slows the balloon inflation.
-				return currentBalloonSize, nil
-			}
-		} else {
-			slowCount = 0
-		}
-
-		select {
-		case <-ctx.Done():
+		// If the balloon stops making meaningful progress, stop early.
+		if lastProgressSize == -1 || math.Abs(float64(currentBalloonSize-lastProgressSize)) >= 100 {
+			lastProgressSize = currentBalloonSize
+			lastProgressTime = time.Now()
+		} else if time.Since(lastProgressTime) >= balloonStallTimeout {
 			return currentBalloonSize, nil
-		case <-time.After(pollInterval):
 		}
 	}
+	// The context was canceled while waiting (possibly before the balloon
+	// was observed even once, in which case currentBalloonSize is zero and
+	// must not be reported as a successful update).
+	return currentBalloonSize, ctx.Err()
 }
 
 func pointer[T any](val T) *T {

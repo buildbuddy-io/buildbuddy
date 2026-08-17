@@ -82,6 +82,7 @@ BuildBuddy supports OpenID Connect (OIDC) as a way of interacting with an Auth P
 
 ```yaml title="config.yaml"
 auth:
+  jwt_key: "<randomly-generated-secret>"
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"
       client_id: "0aaa5twc0asdkUW123x6"
@@ -92,6 +93,7 @@ Here’s another example of Google login using credentials obtained from: https:
 
 ```yaml title="config.yaml"
 auth:
+  jwt_key: "<randomly-generated-secret>"
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
       client_id: "YOUR_CLIENT_ID.apps.googleusercontent.com"
@@ -162,6 +164,7 @@ cache:
   disk:
     root_directory: "/data/buildbuddy-cache"
 auth:
+  jwt_key: "<randomly-generated-secret>"
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"
       client_id: "0aaa5twc0asdkUW123x6"

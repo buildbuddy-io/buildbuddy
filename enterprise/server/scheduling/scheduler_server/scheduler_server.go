@@ -2116,7 +2116,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			LeaseDurationSeconds: int64(s.leaseDuration.Seconds()),
 		}
 		if !claimed {
-			log.CtxInfof(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
+			log.CtxDebugf(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
 			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)
@@ -2179,7 +2179,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			err := s.deleteClaimedTask(ctx, taskID)
 			if err == nil {
 				claimed = false
-				log.CtxInfof(ctx, "LeaseTask task %q successfully finalized by %q", taskID, executorID)
+				log.CtxDebugf(ctx, "LeaseTask task %q successfully finalized by %q", taskID, executorID)
 			} else {
 				log.CtxWarningf(ctx, "Could not delete claimed task %q: %s", taskID, err)
 			}
@@ -2358,7 +2358,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
-	log.CtxInfof(ctx, "Enqueueing task reservations, pool_key=%+v", key)
+	log.CtxDebugf(ctx, "Enqueueing task reservations, pool_key=%+v", key)
 
 	nodeBalancer := s.getOrCreatePool(key)
 	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize())
@@ -2381,7 +2381,7 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	startTime := time.Now()
 	var successfulReservations []string
 	defer func() {
-		log.CtxInfof(ctx, "Enqueue task reservations took %s. Reservations: [%s]",
+		log.CtxDebugf(ctx, "Enqueue task reservations took %s. Reservations: [%s]",
 			time.Since(startTime), strings.Join(successfulReservations, ", "))
 	}()
 

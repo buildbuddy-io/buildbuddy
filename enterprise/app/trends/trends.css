@@ -50,6 +50,14 @@
   color: var(--color-text-primary);
 }
 
+.trend-chart .recharts-legend-item {
+  cursor: pointer;
+}
+
+.trend-chart .recharts-legend-item.inactive {
+  opacity: 0.5;
+}
+
 /* margin is given to heatmap so that y axis can render nicely. */
 .drilldown-chart-title {
   font-weight: 600;

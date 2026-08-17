@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -41,6 +42,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
@@ -50,7 +52,10 @@ const (
 	numDigests   = 100
 )
 
-var enablePebblePresenceCache = flag.Bool("enable_pebble_presence_cache", false, "If true, configure the pebble presence cache for benchmarks.")
+var (
+	enablePebblePresenceCache = flag.Bool("enable_pebble_presence_cache", false, "If true, configure the pebble presence cache for benchmarks.")
+	enableCompression         = flag.Bool("enable_compression", true, "If true, read and write compressed resources")
+)
 
 func init() {
 	*log.LogLevel = "error"
@@ -113,6 +118,10 @@ func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64, cacheType 
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, digestSizeBytes, cacheType, "")
+		if *enableCompression {
+			r.Compressor = repb.Compressor_ZSTD
+			buf = compression.CompressZstd(nil, buf)
+		}
 		digestBufs = append(digestBufs, &digestBuf{
 			d:   r,
 			buf: buf,
@@ -315,8 +324,8 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	}
 }
 
-func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes, rspb.CacheType_CAS)
+func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, batchSize int, b *testing.B) {
+	digestBufs := makeDigests(b, batchSize, digestSizeBytes, rspb.CacheType_CAS)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
@@ -432,16 +441,19 @@ func BenchmarkGetSingle(b *testing.B) {
 }
 
 func BenchmarkGetMulti(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{100, 10000}
+	batchSizes := []int{1, 2, 3, 5, 10, 25, 50, 100, 500}
 	te := getTestEnv(b)
 	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkGetMulti(ctx, cache, size, b)
-			})
+			for _, batchSize := range batchSizes {
+				name := fmt.Sprintf("%s%d/batch%d", cache.Name, size, batchSize)
+				b.Run(name, func(b *testing.B) {
+					benchmarkGetMulti(ctx, cache, size, batchSize, b)
+				})
+			}
 		}
 	}
 }

@@ -423,7 +423,7 @@ func computeAverageMilliCPU(ctx context.Context, md *repb.ExecutedActionMetadata
 
 	// Log all task sizing information so that we have a way to assess potential
 	// changes to the formula.
-	log.CtxInfof(
+	log.CtxDebugf(
 		ctx,
 		"Computed CPU usage: %d average milli-CPU from %.1f CPU-millis over %s exec duration minus full-stall durations cpu=%s, mem=%s, io=%s",
 		milliCPU, cpuMillisUsed, execDuration, cpuFullStallDuration, memoryFullStallDuration, ioFullStallDuration,

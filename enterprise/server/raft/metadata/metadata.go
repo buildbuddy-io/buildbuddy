@@ -431,6 +431,15 @@ func (rc *Server) sendAccessTimeUpdate(a atimeUpdateData) {
 	}
 }
 
+// gcsObjectMayBeExpired reports whether the backing GCS object was likely reaped
+// by the bucket TTL. Zero gcsTTLDays disables the check; inline records have none.
+func (rc *Server) gcsObjectMayBeExpired(gcsMetadata *sgpb.StorageMetadata_GCSMetadata) bool {
+	if rc.gcsTTLDays <= 0 || gcsMetadata == nil {
+		return false
+	}
+	return gcsutil.ObjectIsPastTTL(rc.clock, gcsMetadata, rc.gcsTTLDays)
+}
+
 // maybeUpdateGCSAtime refreshes the backing GCS object's custom time and
 // returns the new value to record, or 0 if it was not refreshed. Refreshes are
 // billed and contend on the object, and the custom time is only a TTL backstop,
@@ -696,7 +705,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 			if err != nil {
 				return nil, err
 			}
-			present := findRsp.GetPresent()
+			present := findRsp.GetPresent() && !rc.gcsObjectMayBeExpired(findRsp.GetGcsMetadata())
 			res.found[k.Meta.(*sgpb.FileRecord)] = present
 			if present {
 				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
