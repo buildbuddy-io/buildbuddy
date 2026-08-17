@@ -946,7 +946,21 @@ func (p *Parser) ParseBBRCFiles(workspaceDir string, filePaths ...string) (map[s
 			_, isBBCommand := cli_command.CommandsByName[phase]
 			return bazelrc.IsPhase(phase) || isBBCommand
 		},
-		ParsePhase: p.parseBBRCConfig,
+		ParsePhase: func(phase string, tokens []string) ([]arguments.Argument, error) {
+			sectionParser := p
+			// BB commands declare their flags in command-specific Go flag sets.
+			// Parse each such section with its command's parser so an unrelated
+			// section does not fail just because the current command's parser does
+			// not know those flags.
+			if command := cli_command.GetCommand(phase); command != nil && command.Flags != nil {
+				var err error
+				sectionParser, err = GetBBParserForCommand(command.Name)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return sectionParser.parseBBRCConfig(phase, tokens)
+		},
 	}, filePaths...)
 }
 

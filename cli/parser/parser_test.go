@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bytes"
+	"flag"
 	stdlog "log"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
@@ -144,6 +146,36 @@ build:nested --nested_flag
 		"--explain_flag",
 		"invocation-id",
 	}, expandedExplainArgs.Format())
+}
+
+func TestParseBBRCFiles_MultipleCommands(t *testing.T) {
+	remoteFlags := flag.NewFlagSet("remote", flag.ContinueOnError)
+	remoteFlags.String("container_image", "", "")
+
+	previousCommandsByName := cli_command.CommandsByName
+	cli_command.CommandsByName = map[string]*cli_command.Command{
+		"remote": {Name: "remote", Flags: remoteFlags},
+	}
+	t.Cleanup(func() {
+		cli_command.CommandsByName = previousCommandsByName
+	})
+
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `
+run --stream_run_logs
+remote --container_image=docker://example
+`,
+	})
+
+	// Simulate parsing a Bazel run invocation. The unrelated remote section
+	// should still be parseable and not cause a parsing error.
+	p, err := GetBBParserForCommand("run")
+	require.NoError(t, err)
+	_, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"--stream_run_logs"}, arguments.FormatAll(defaultConfig.ByPhase["run"]))
+	require.Equal(t, []string{"--container_image=docker://example"}, arguments.FormatAll(defaultConfig.ByPhase["remote"]))
 }
 
 func TestParseBBRCFiles_CircularConfigReference(t *testing.T) {
