@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"github.com/miekg/dns"
+	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/tun"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -205,10 +206,10 @@ func (t *muxTUN) dispatch(pkt []byte, extractAddrs func([]byte) (src, dst netip.
 		}
 	}
 
-	// Intra-network peer-to-peer: put in outbound queue for WireGuard.
-	pkb := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(pkt)})
-	view := pkb.ToView()
-	pkb.DecRef()
+	// Intra-network peer-to-peer: copy the packet into an owned buffer and put
+	// it in the outbound queue for WireGuard. The incoming packet is backed by
+	// wireguard-go's receive pool and is only valid until Write returns.
+	view := buffer.NewViewWithData(pkt)
 	select {
 	case t.outbound <- view:
 	default:
@@ -239,24 +240,49 @@ func extractIPv6Addrs(pkt []byte) (src, dst netip.Addr, ok bool) {
 }
 
 func (t *muxTUN) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+	readView := func(i int, view *buffer.View) error {
+		defer view.Release()
+		n, err := view.Read(bufs[i][offset:])
+		if err != nil {
+			return err
+		}
+		sizes[i] = n
+		return nil
+	}
+
+	// Wait for at least one packet so wireguard-go does not spin when the queue
+	// is empty, then drain everything already queued into the rest of the
+	// supplied batch. Passing a batch through here lets wireguard-go encrypt it
+	// together and lets its Linux bind use sendmmsg and UDP GSO.
 	select {
 	case view := <-t.outbound:
-		n, err := view.Read(bufs[0][offset:])
-		if err != nil {
+		if err := readView(0, view); err != nil {
 			return 0, err
 		}
-		sizes[0] = n
-		return 1, nil
 	case <-t.done:
 		return 0, os.ErrClosed
 	}
+
+	for n := 1; n < len(bufs); n++ {
+		select {
+		case view := <-t.outbound:
+			if err := readView(n, view); err != nil {
+				return n, err
+			}
+		case <-t.done:
+			return n, nil
+		default:
+			return n, nil
+		}
+	}
+	return len(bufs), nil
 }
 
 func (t *muxTUN) Name() (string, error)    { return "mux", nil }
 func (t *muxTUN) File() *os.File           { return nil }
 func (t *muxTUN) Events() <-chan tun.Event { return t.events }
 func (t *muxTUN) MTU() (int, error)        { return t.mtu, nil }
-func (t *muxTUN) BatchSize() int           { return 1 }
+func (t *muxTUN) BatchSize() int           { return conn.IdealBatchSize }
 
 func (t *muxTUN) Close() error {
 	t.closeOnce.Do(func() {
