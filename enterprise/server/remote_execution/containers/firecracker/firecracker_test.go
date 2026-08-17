@@ -4349,5 +4349,6 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 	actual.UsageStats = nil
 	actual.AuxiliaryLogs = nil
 	actual.VMMetadata = nil
+	actual.VMMetrics = nil
 	assert.Equal(t, expected, actual)
 }
