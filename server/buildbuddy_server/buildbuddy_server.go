@@ -588,7 +588,9 @@ func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp inter
 		return nil, nil
 	}
 
-	if u.GetUserID() == "" {
+	// User-owned API keys retain a user ID, so the API key ID is the reliable
+	// way to distinguish both user- and org-owned API keys from browser users.
+	if u.GetAPIKeyInfo().ID != "" {
 		return nil, status.PermissionDeniedError("Creating organizations is not supported through the API. Please continue in our UI.")
 	}
 

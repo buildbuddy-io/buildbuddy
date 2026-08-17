@@ -116,6 +116,9 @@ func TestCreateGroup(t *testing.T) {
 	require.NoError(t, err)
 	adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
 
+	// Enable all organization-creation restrictions. Enterprise parent orgs
+	// should always be able to create child orgs using an org API key.
+	configureCreateGroupExperiments(t, te, 1, true /*=propagateGroupBlocks*/)
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 	require.NoError(t, err)
 
@@ -154,6 +157,7 @@ func TestCreateGroup_Allowed(t *testing.T) {
 		ownedGroups     int
 		invitedGroups   int
 		orgAPIKey       bool
+		userAPIKey      bool
 		propagateBlocks bool
 		expectDenied    bool
 	}{
@@ -204,6 +208,63 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			ownedGroups: 2,
 		},
 		{
+			name:            "enterprise_org_api_key_not_limited",
+			maxGroups:       2,
+			groupStatus:     grpb.Group_ENTERPRISE_GROUP_STATUS,
+			ownedGroups:     2,
+			orgAPIKey:       true,
+			propagateBlocks: true,
+		},
+		{
+			name:            "enterprise_trial_org_api_key_not_limited",
+			maxGroups:       2,
+			groupStatus:     grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			ownedGroups:     2,
+			orgAPIKey:       true,
+			propagateBlocks: true,
+		},
+		{
+			name:            "enterprise_user_api_key_not_limited",
+			maxGroups:       2,
+			groupStatus:     grpb.Group_ENTERPRISE_GROUP_STATUS,
+			ownedGroups:     2,
+			userAPIKey:      true,
+			propagateBlocks: true,
+		},
+		{
+			name:            "enterprise_trial_user_api_key_not_limited",
+			maxGroups:       2,
+			groupStatus:     grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			ownedGroups:     2,
+			userAPIKey:      true,
+			propagateBlocks: true,
+		},
+		{
+			name:            "unknown_status_org_api_key_denied",
+			maxGroups:       1,
+			groupStatus:     grpb.Group_UNKNOWN_GROUP_STATUS,
+			ownedGroups:     1,
+			orgAPIKey:       true,
+			propagateBlocks: true,
+			expectDenied:    true,
+		},
+		{
+			name:         "blocked_org_api_key_denied_when_group_limit_enabled",
+			maxGroups:    1,
+			groupStatus:  grpb.Group_BLOCKED_GROUP_STATUS,
+			ownedGroups:  1,
+			orgAPIKey:    true,
+			expectDenied: true,
+		},
+		{
+			name:            "blocked_org_api_key_denied_when_block_propagation_enabled",
+			groupStatus:     grpb.Group_BLOCKED_GROUP_STATUS,
+			ownedGroups:     1,
+			orgAPIKey:       true,
+			propagateBlocks: true,
+			expectDenied:    true,
+		},
+		{
 			name:         "non_enterprise_org_api_key_denied",
 			maxGroups:    5,
 			groupStatus:  grpb.Group_FREE_TIER_GROUP_STATUS,
@@ -211,8 +272,19 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			orgAPIKey:    true,
 			expectDenied: true,
 		},
+		{
+			name:         "non_enterprise_user_api_key_denied",
+			maxGroups:    5,
+			groupStatus:  grpb.Group_FREE_TIER_GROUP_STATUS,
+			ownedGroups:  1,
+			userAPIKey:   true,
+			expectDenied: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.userAPIKey {
+				flags.Set(t, "app.user_owned_keys_enabled", true)
+			}
 			te := enterprise_testenv.New(t)
 			enterprise_testauth.Configure(t, te)
 			auth := te.GetAuthenticator()
@@ -226,6 +298,7 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			userCtx := authUserCtx(ctx, te, t, "US1")
 			group := getGroup(t, userCtx, te).Group
 			group.URLIdentifier = "initial-group"
+			group.UserOwnedKeysEnabled = tc.userAPIKey
 			_, err = te.GetUserDB().UpdateGroup(userCtx, &group)
 			require.NoError(t, err)
 
@@ -296,6 +369,12 @@ func TestCreateGroup_Allowed(t *testing.T) {
 					false /*=visibleToDevelopers*/)
 				require.NoError(t, err)
 				requestCtx = te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
+			} else if tc.userAPIKey {
+				userKey, err := te.GetAuthDB().CreateUserAPIKey(
+					userCtx, group.GroupID, "US1", "user key",
+					nil /*=capabilities*/, 0 /*=expiresIn*/)
+				require.NoError(t, err)
+				requestCtx = te.GetAuthenticator().AuthContextFromAPIKey(ctx, userKey.Value)
 			}
 			rsp, err := server.CreateGroup(requestCtx, &grpb.CreateGroupRequest{
 				Name:          "My Org",
@@ -313,7 +392,9 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			user, err = te.GetUserDB().GetUser(userCtx)
 			require.NoError(t, err)
 			expectedGroups := tc.ownedGroups + tc.invitedGroups
-			if !tc.expectDenied {
+			// Groups created using an org API key are not owned by or directly
+			// associated with the user that created the API key.
+			if !tc.expectDenied && !tc.orgAPIKey {
 				expectedGroups++
 			}
 			require.Len(t, user.Groups, expectedGroups)
