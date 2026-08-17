@@ -664,7 +664,6 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
 		CreatedByIP:                 clientip.Get(ctx),
 		CreatedByUserAgent:          useragent.Get(ctx),
-		Status:                      grpb.Group_UNKNOWN_GROUP_STATUS,
 	}
 
 	// For groups created using an API Key allow the SAML IDP Metadata URL
@@ -677,12 +676,12 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		}
 		if existingGroup.IsParent {
 			group.SamlIdpMetadataUrl = existingGroup.SamlIdpMetadataUrl
-			group.Status = existingGroup.Status
 		}
 	}
 
 	group.URLIdentifier = strings.TrimSpace(req.GetUrlIdentifier())
 	group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
+	group.Status = grpb.Group_UNKNOWN_GROUP_STATUS
 
 	groupID, err := userDB.CreateGroup(ctx, group)
 	if err != nil {
