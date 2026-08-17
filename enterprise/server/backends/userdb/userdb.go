@@ -290,7 +290,7 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 
 	// Group status defaults to free tier, unless the user is already blocked.
 	currentStatus := u.GetGroupStatus()
-	if currentStatus == grpb.Group_BLOCKED_GROUP_STATUS {
+	if currentStatus == grpb.Group_BLOCKED_GROUP_STATUS || currentStatus == grpb.Group_ENTERPRISE_GROUP_STATUS {
 		g.Status = currentStatus
 	} else {
 		g.Status = grpb.Group_FREE_TIER_GROUP_STATUS

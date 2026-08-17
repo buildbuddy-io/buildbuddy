@@ -713,10 +713,10 @@ func TestCreateGroup_StatusInheritance(t *testing.T) {
 			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
-			name:           "ENTERPRISE -> FREE_TIER",
+			name:           "ENTERPRISE -> ENTERPRISE",
 			urlID:          "test-ent",
 			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
-			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+			expectedStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
 		},
 		{
 			name:           "ENTERPRISE_TRIAL -> FREE_TIER",

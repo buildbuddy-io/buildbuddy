@@ -129,6 +129,7 @@ func TestCreateGroup(t *testing.T) {
 	g, err := te.GetUserDB().GetGroupByID(ctx, rsp.GetId())
 	require.NoError(t, err)
 	require.Empty(t, g.SamlIdpMetadataUrl)
+	require.Equal(t, grpb.Group_ENTERPRISE_GROUP_STATUS, g.Status)
 
 	// Make the first group a parent and try again.
 	// The SAML IDP Metadata URL should match that of the original group.
@@ -143,6 +144,7 @@ func TestCreateGroup(t *testing.T) {
 	g, err = te.GetUserDB().GetGroupByID(ctx, rsp.GetId())
 	require.NoError(t, err)
 	require.Equal(t, parentGroup.SamlIdpMetadataUrl, g.SamlIdpMetadataUrl)
+	require.Equal(t, grpb.Group_ENTERPRISE_GROUP_STATUS, g.Status)
 	require.False(t, g.IsParent)
 }
 
