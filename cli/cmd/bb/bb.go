@@ -289,7 +289,9 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 // EXPLICIT_COMMAND_LINE metadata to the bazel invocation.
 func handleBazelCommand(start time.Time, bazelArgs *arg.BazelArgs, execArgs []string, originalArgs []string) (exitCode int, err error) {
 	// Maybe run interactively (watching for changes to files).
-	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, arg.JoinExecutableArgs(bazelArgs.Forwarded(), execArgs)...)); exitCode >= 0 || err != nil {
+	// The watcher starts another bb process, so retain the complete set of original arguments.
+	// They'll be reparsed by the new process.
+	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, arg.JoinExecutableArgs(bazelArgs.Unresolved(), execArgs)...)); exitCode >= 0 || err != nil {
 		return exitCode, err
 	}
 

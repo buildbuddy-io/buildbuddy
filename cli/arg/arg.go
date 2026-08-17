@@ -42,6 +42,15 @@ func (a *BazelArgs) Forwarded() []string {
 	return args.Canonicalized().Format()
 }
 
+// Unresolved returns the arguments before rc files and config flags are
+// expanded. Unlike Forwarded, it retains BB rc-file options so that they can
+// be re-parsed if needed.
+func (a *BazelArgs) Unresolved() []string {
+	// Clone to avoid mutation of a.unresolved.
+	args := cloneOrderedArgs(a.unresolved)
+	return args.Canonicalized().Format()
+}
+
 // Resolved returns the resolved args as a canonicalized []string.
 func (a *BazelArgs) Resolved() []string {
 	if a.noResolve {

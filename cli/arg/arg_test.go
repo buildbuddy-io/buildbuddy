@@ -541,3 +541,36 @@ run:ci --on_stream_run_logs_failure=warn
 	require.Contains(t, args.Resolved(), "--on_stream_run_logs_failure=warn")
 	require.Contains(t, args.Resolved(), "--build_metadata=LATE")
 }
+
+func TestUnresolved_RetainsBBRCArgs(t *testing.T) {
+	setupWorkspace(t, "")
+	ws, err := workspace.Path()
+	require.NoError(t, err)
+	customBBRC := filepath.Join(ws, "custom.bbrc")
+	require.NoError(t, os.WriteFile(customBBRC, []byte("run:ci --stream_run_logs\n"), 0644))
+
+	args, err := NewBazelArgs([]string{
+		"--bbrc=" + customBBRC,
+		"run",
+		"--bb_config=ci",
+		"//:target",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{
+		"--bbrc=" + customBBRC,
+		"run",
+		"--bb_config=ci",
+		"//:target",
+	}, args.Unresolved())
+	require.Equal(t, []string{"run", "//:target"}, args.Forwarded())
+
+	args, err = NewBazelArgs([]string{"--ignore_all_bb_rc_files", "run", "//:target"})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"--ignore_all_bb_rc_files",
+		"run",
+		"//:target",
+	}, args.Unresolved())
+	require.Equal(t, []string{"run", "//:target"}, args.Forwarded())
+}
