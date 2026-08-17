@@ -499,6 +499,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
 	auxMetadata.InputFetchDetailedStats = cmdResult.InputFetchMetadata
+	auxMetadata.VmMetrics = cmdResult.VMMetrics
 
 	// Note: we continue to upload outputs, stderr, etc. below even if
 	// cmdResult.Error is present, because these outputs are helpful

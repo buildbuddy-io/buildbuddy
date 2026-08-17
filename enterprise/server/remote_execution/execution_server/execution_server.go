@@ -487,6 +487,12 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
 			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
 
+			if vmMetrics := auxMeta.GetVmMetrics(); vmMetrics != nil {
+				executionProto.VmDockerdWaitDurationUsec = vmMetrics.GetDockerdWaitDurationUsec()
+				executionProto.VmDnsWaitDurationUsec = vmMetrics.GetVmDnsWaitDurationUsec()
+				executionProto.VmExecInitDurationUsec = vmMetrics.GetVmExecInitDurationUsec()
+			}
+
 			if properties != nil {
 				executionProto.RequestedIsolationType, _ = platform.CoerceContainerType(properties.WorkloadIsolationType)
 				executionProto.RequestedComputeUnits = properties.EstimatedComputeUnits

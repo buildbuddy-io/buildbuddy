@@ -1365,6 +1365,12 @@ type CommandResult struct {
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata
+
+	// VMMetrics holds metrics reported by the guest VM which executed this
+	// command, such as timings of one-time initialization steps (e.g. waiting
+	// for dockerd to become ready) that ran while the VM was booting. Only
+	// set for commands that booted a fresh VM.
+	VMMetrics *espb.VMMetrics
 }
 
 type Subscriber interface {
