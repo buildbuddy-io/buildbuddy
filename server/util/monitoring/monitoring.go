@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
@@ -41,8 +42,9 @@ var (
 
 	enableRpcz = flag.Bool("enable_rpcz", false, "Enables a /rpcz endpoint for viewing gRPC requests")
 
-	basicAuthUser = flag.String("monitoring.basic_auth.username", "", "Optional username for basic auth on the monitoring port.")
-	basicAuthPass = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
+	basicAuthUser  = flag.String("monitoring.basic_auth.username", "", "Optional username for basic auth on the monitoring port.")
+	basicAuthPass  = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
+	basicAuthCreds = flag.Map("monitoring.basic_auth.credentials", map[string]string{}, "Optional list of credentials for auth on the monitoring port.", flag.Secret)
 )
 
 const (
@@ -53,8 +55,12 @@ const (
 // StartMonitoringHandler on a monitoring-only port is preferred.
 func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle := mux.Handle
+	creds := maps.Clone(*basicAuthCreds)
 	if *basicAuthUser != "" || *basicAuthPass != "" {
-		auth := basicauth.Middleware(basicauth.DefaultRealm, map[string]string{*basicAuthUser: *basicAuthPass})
+		creds[*basicAuthUser] = *basicAuthPass
+	}
+	if len(creds) > 0 {
+		auth := basicauth.Middleware(basicauth.DefaultRealm, creds)
 		handle = func(pattern string, handler http.Handler) {
 			mux.Handle(pattern, auth(handler))
 		}
