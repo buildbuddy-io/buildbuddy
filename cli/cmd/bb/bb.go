@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/metadata"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/picker"
@@ -154,6 +155,9 @@ func run() (exitCode int, err error) {
 		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 		StartupDebug(start)
 		helpArgs.RemoveCommandOptions(streamoptdef.StreamRunLogs.Name(), streamoptdef.OnStreamRunLogsFailure.Name())
+		// Help does not use .bbrc settings, and Bazel does not understand the
+		// flags that control them.
+		bbrc.RemoveOptions(helpArgs)
 		return runHelp(helpArgs)
 	}
 
@@ -274,10 +278,6 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 			toPrepend,
 			args.Args[len(startupOpts)+1:],
 		)
-	}
-	args, err = helpParser.ResolveArgs(args)
-	if err != nil {
-		return -1, err
 	}
 	return help.HandleHelp(args)
 }

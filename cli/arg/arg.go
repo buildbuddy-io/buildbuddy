@@ -37,8 +37,7 @@ func (a *BazelArgs) Forwarded() []string {
 	// Remove bbrc-related options that should not be passed to Bazelisk.
 	// bbrc files should not contain Bazel options, so they do not need to be expanded before
 	// being removed.
-	args.RemoveStartupOptions(bbrc.FileFlagName, bbrc.IgnoreAllRCFilesFlagName)
-	args.RemoveCommandOptions(bbrc.ConfigFlagName)
+	bbrc.RemoveOptions(args)
 	return args.Canonicalized().Format()
 }
 

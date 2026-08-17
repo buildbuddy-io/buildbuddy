@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -865,7 +866,7 @@ func (p *Parser) expandBazelRC(parsedArgs *parsed.OrderedArgs, ws string) (*pars
 }
 
 func (p *Parser) expandBBRC(args *parsed.OrderedArgs, workspaceDir string) (*parsed.OrderedArgs, error) {
-	homeDir, err := os.UserHomeDir()
+	homeDir, err := userHomeDir()
 	if err != nil {
 		log.Debugf("Could not determine home dir for .bbrc: %s", err)
 	}
@@ -878,6 +879,18 @@ func (p *Parser) expandBBRC(args *parsed.OrderedArgs, workspaceDir string) (*par
 		return nil, fmt.Errorf("failed to parse .bbrc file: %s", err)
 	}
 	return bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
+}
+
+func userHomeDir() (string, error) {
+	homeDir, homeDirErr := os.UserHomeDir()
+	if homeDirErr == nil && homeDir != "" {
+		return homeDir, nil
+	}
+	u, currentUserErr := user.Current()
+	if currentUserErr == nil && u != nil && u.HomeDir != "" {
+		return u.HomeDir, nil
+	}
+	return "", fmt.Errorf("os.UserHomeDir: %v; user.Current: %v", homeDirErr, currentUserErr)
 }
 
 func bbrcFilePaths(workspaceDir, homeDir string) []string {

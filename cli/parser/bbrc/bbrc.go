@@ -62,3 +62,9 @@ func ExpandConfigs(
 ) (*parsed.OrderedArgs, error) {
 	return args.ExpandConfigsWithPolicy(namedConfigs, defaultConfig, NewConfigExpansionPolicy())
 }
+
+// RemoveOptions removes all options related to .bbrc files.
+func RemoveOptions(args *parsed.OrderedArgs) {
+	args.RemoveStartupOptions(FileFlagName, IgnoreAllRCFilesFlagName)
+	args.RemoveCommandOptions(ConfigFlagName)
+}

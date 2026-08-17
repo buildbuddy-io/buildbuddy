@@ -119,6 +119,41 @@ func TestBazelHelp(t *testing.T) {
 	require.Contains(t, output, `BAZEL_STARTUP_OPTIONS="`)
 }
 
+func TestBazelHelp_IgnoresBBRC(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		// This would fail if help attempted to parse the workspace .bbrc.
+		".bbrc": `startup --not_a_bb_flag`,
+	})
+
+	// Explicit bbrc options should also not be forwarded to Bazel.
+	// to Bazel.
+	cmd := testcli.Command(t, ws,
+		"--bbrc="+ws+"/missing.bbrc",
+		"help",
+		"--bb_config=missing",
+		"build",
+	)
+	b, err := testcli.CombinedOutput(cmd)
+	output := string(b)
+	require.NoErrorf(t, err, "output: %s", output)
+	require.Contains(t, output, "Usage:")
+}
+
+func TestBazelHelp_UsesBazelrc(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `help --announce_rc`,
+	})
+
+	cmd := testcli.Command(t, ws, "help", "build")
+	b, err := testcli.CombinedOutput(cmd)
+	output := string(b)
+	require.NoErrorf(t, err, "output: %s", output)
+	require.Contains(t, output, "Reading rc options for 'help'")
+	require.Contains(t, output, "--announce_rc")
+}
+
 func TestHelpWithoutHomeEnv(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	cmd := testcli.Command(t, ws, "--help")
