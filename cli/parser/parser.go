@@ -989,8 +989,7 @@ func (p *Parser) parseBBRCConfig(phase string, tokens []string) ([]arguments.Arg
 		if !ok {
 			continue
 		}
-		switch option.AsOption().PluginID() {
-		case options.UnknownBuiltinPluginID, options.StarlarkBuiltinPluginID:
+		if id := option.AsOption().PluginID(); id == options.UnknownBuiltinPluginID || id == options.StarlarkBuiltinPluginID {
 			return nil, fmt.Errorf("option %q is not a bb CLI flag", option.AsOption().Name())
 		}
 	}

@@ -127,7 +127,6 @@ func TestBazelHelp_IgnoresBBRC(t *testing.T) {
 	})
 
 	// Explicit bbrc options should also not be forwarded to Bazel.
-	// to Bazel.
 	cmd := testcli.Command(t, ws,
 		"--bbrc="+ws+"/missing.bbrc",
 		"help",
@@ -306,9 +305,17 @@ func TestBBRC_Watcher(t *testing.T) {
 	writeFakeBazel(t, ws)
 	customBBRC := ws + "/custom.bbrc"
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"custom.bbrc": `run:ci --stream_run_logs --on_stream_run_logs_failure=warn`,
+		"custom.bbrc": `
+startup --watch
+run:ci --stream_run_logs --on_stream_run_logs_failure=warn
+`,
 		"fake-godemon.sh": `#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${FAKE_GODEMON_ACTIVE:-}" == "1" ]]; then
+  echo "nested watcher invocation" >&2
+  exit 1
+fi
+export FAKE_GODEMON_ACTIVE=1
 # Skip Godemon's --watch and --lockfile arguments, then execute bb once.
 shift 4
 printf 'WATCHER_CHILD_ARGS:%s\n' "$*"
@@ -318,7 +325,6 @@ exec "$@"
 	testfs.MakeExecutable(t, ws, "fake-godemon.sh")
 
 	cmd := testcli.Command(t, ws,
-		"--watch",
 		"--bbrc="+customBBRC,
 		"run",
 		"--bb_config=ci",
