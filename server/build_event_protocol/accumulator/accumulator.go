@@ -16,7 +16,6 @@ import (
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -30,10 +29,6 @@ const (
 	// from cache -> blobstore. If more than this number are present, they
 	// will be dropped.
 	maxPersistableTestArtifacts = 1000
-
-	// If codesearch is enabled, and an invocation contains a single file with the
-	// following name, attempt to ingest this kythe sstable file in codesearch.
-	KytheOutputName = "kythe_serving.sst"
 )
 
 var (
@@ -86,7 +81,6 @@ type BEValues struct {
 	buildStartTime            time.Time
 	buildToolLogURIs          []*url.URL
 	outputFilesMap            map[string]*build_event_stream.File
-	kytheSSTableResourceName  *rspb.ResourceName
 	profileName               string
 	gitFetchTotalBytes        int64
 	gitFetchDuration          time.Duration
@@ -127,10 +121,6 @@ func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
 		}
 		digestHash := rn.GetDigest().GetHash()
 		v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
-		// Special case: check for kythe output files.
-		if file.GetName() == KytheOutputName {
-			v.kytheSSTableResourceName = rn.ToProto()
-		}
 	}
 }
 
@@ -236,10 +226,6 @@ func (v *BEValues) StartTime() time.Time {
 
 func (v *BEValues) OutputFiles() map[string]*build_event_stream.File {
 	return v.outputFilesMap
-}
-
-func (v *BEValues) KytheSSTableResourceName() *rspb.ResourceName {
-	return v.kytheSSTableResourceName
 }
 
 // GitFetchTotalBytes returns the total number of bytes fetched by git while

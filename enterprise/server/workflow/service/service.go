@@ -685,7 +685,7 @@ func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c 
 }
 
 func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, groupID string) (bool, error) {
-	// No point checking the DB if both flags are off.
+	// No point checking the DB if the flag is off.
 	if !*enableCodesearchIndexing {
 		return false, nil
 	}
