@@ -86,7 +86,7 @@ func printDetected(path string) error {
 	if st, err := os.Stat(path); err == nil && !st.Mode().IsRegular() {
 		return fmt.Errorf("cannot detect the format of %q: not a regular file; pass --grpc_log or --compact_execution_log instead", path)
 	}
-	format, err := detect.File(path)
+	format, err := detect.FileFormat(path)
 	if err != nil {
 		return fmt.Errorf("detect log format for %q: %w", path, err)
 	}

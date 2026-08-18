@@ -48,19 +48,18 @@ var candidates = []candidate{
 	},
 }
 
-// File returns the format of the log file at path.
-func File(path string) (Format, error) {
+// FileFormat returns the format of the log file at path.
+func FileFormat(path string) (Format, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
-	return Stream(f)
+	return StreamFormat(f)
 }
 
-// Stream returns the format of a log stream, reading only as much of r as it
-// needs to decide.
-func Stream(r io.Reader) (Format, error) {
+// StreamFormat returns the format of a log stream.
+func StreamFormat(r io.Reader) (Format, error) {
 	frames, compressed, err := sample(r)
 	if err != nil {
 		return "", err
@@ -73,6 +72,7 @@ func Stream(r io.Reader) (Format, error) {
 	return "", errors.New("unsupported log format (expected output from --remote_grpc_log or --execution_log_compact_file)")
 }
 
+// sample returns a bounded prefix of frames and whether r is zstd-compressed.
 func sample(r io.Reader) (frames [][]byte, compressed bool, err error) {
 	const (
 		zstdMagic    = "\x28\xb5\x2f\xfd"
@@ -118,6 +118,7 @@ func sample(r io.Reader) (frames [][]byte, compressed bool, err error) {
 	return frames, compressed, nil
 }
 
+// matches reports whether the sampled messages identify c's format.
 func (c candidate) matches(frames [][]byte) bool {
 	sampled, accounted, leading := 0, 0, true
 	for _, frame := range frames {
@@ -146,6 +147,7 @@ func (c candidate) matches(frames [][]byte) bool {
 	return sampled > 0 && accounted*2 > sampled
 }
 
+// unknownBytes returns the encoded size of unknown fields in m and nested messages.
 func unknownBytes(m protoreflect.Message) int {
 	n := len(m.GetUnknown())
 	m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
@@ -172,6 +174,7 @@ func unknownBytes(m protoreflect.Message) int {
 	return n
 }
 
+// isMessage reports whether fd can contain a message value.
 func isMessage(fd protoreflect.FieldDescriptor) bool {
 	return fd.Kind() == protoreflect.MessageKind || fd.Kind() == protoreflect.GroupKind
 }

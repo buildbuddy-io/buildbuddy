@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/encoding/protodelim"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -100,11 +101,11 @@ func logFile(t *testing.T, format detect.Format, n int) []byte {
 	return b
 }
 
-func TestStream(t *testing.T) {
+func TestStreamFormat(t *testing.T) {
 	for format := range entryForFormat {
 		for _, n := range []int{1, 2, 50} {
 			t.Run(fmt.Sprintf("%s/%d_entries", format, n), func(t *testing.T) {
-				got, err := detect.Stream(bytes.NewReader(logFile(t, format, n)))
+				got, err := detect.StreamFormat(bytes.NewReader(logFile(t, format, n)))
 				require.NoError(t, err)
 				require.Equal(t, format, got)
 			})
@@ -129,7 +130,7 @@ func binaryExecLog(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
-func TestStreamRejectsNonLogs(t *testing.T) {
+func TestStreamFormatRejectsNonLogs(t *testing.T) {
 	var unrelatedProto bytes.Buffer
 	_, err := protodelim.MarshalTo(&unrelatedProto, &repb.Platform{
 		Properties: []*repb.Platform_Property{{Name: "OSFamily", Value: "linux"}},
@@ -154,15 +155,15 @@ func TestStreamRejectsNonLogs(t *testing.T) {
 		{"uncompressed_compact_log", delimited(t, detect.CompactExecutionLog, 4)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := detect.Stream(bytes.NewReader(tc.contents))
+			_, err := detect.StreamFormat(bytes.NewReader(tc.contents))
 			require.Error(t, err)
 		})
 	}
 }
 
-func TestStreamToleratesUnknownEntryTypes(t *testing.T) {
-	// An entry using oneof case 11, which spawn.proto doesn't define.
-	unknownEntry := []byte{11<<3 | 2, 4, 'a', 'b', 'c', 'd'}
+func TestStreamFormatToleratesUnknownEntryTypes(t *testing.T) {
+	unknownEntry := protowire.AppendTag(nil, protowire.MaxValidNumber, protowire.BytesType)
+	unknownEntry = protowire.AppendBytes(unknownEntry, []byte("abcd"))
 
 	var buf bytes.Buffer
 	writeEntry := func(i int) {
@@ -178,12 +179,12 @@ func TestStreamToleratesUnknownEntryTypes(t *testing.T) {
 		writeEntry(i)
 	}
 
-	format, err := detect.Stream(bytes.NewReader(zstdCompress(t, buf.Bytes())))
+	format, err := detect.StreamFormat(bytes.NewReader(zstdCompress(t, buf.Bytes())))
 	require.NoError(t, err)
 	require.Equal(t, detect.CompactExecutionLog, format)
 }
 
-func TestFileOnRealCompactExecutionLogs(t *testing.T) {
+func TestFileFormatOnRealCompactExecutionLogs(t *testing.T) {
 	dir, err := runfiles.Rlocation("com_github_buildbuddy_io_buildbuddy/cli/explain/compactgraph/testdata")
 	require.NoError(t, err)
 	logs, err := filepath.Glob(filepath.Join(dir, "*", "*.pb.zstd"))
@@ -193,21 +194,21 @@ func TestFileOnRealCompactExecutionLogs(t *testing.T) {
 	for _, log := range logs {
 		name := filepath.Join(filepath.Base(filepath.Dir(log)), filepath.Base(log))
 		t.Run(name, func(t *testing.T) {
-			format, err := detect.File(log)
+			format, err := detect.FileFormat(log)
 			require.NoError(t, err)
 			require.Equal(t, detect.CompactExecutionLog, format)
 		})
 	}
 }
 
-func TestStreamReadsOnlyTheStart(t *testing.T) {
+func TestStreamFormatReadsOnlyTheStart(t *testing.T) {
 	for format := range entryForFormat {
 		t.Run(string(format), func(t *testing.T) {
 			contents := logFile(t, format, 50000)
 			require.Greater(t, len(contents), 512<<10, "test log should be big enough to matter")
 
 			r := &countingReader{Reader: bytes.NewReader(contents)}
-			got, err := detect.Stream(r)
+			got, err := detect.StreamFormat(r)
 			require.NoError(t, err)
 			require.Equal(t, format, got)
 			// Tight enough to catch the zstd decoder reading ahead, which it does
