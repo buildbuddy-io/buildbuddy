@@ -698,6 +698,8 @@ func TestCreateGroup_StatusInheritance(t *testing.T) {
 		name           string
 		urlID          string
 		parentStatus   grpb.Group_GroupStatus
+		isAPIKey       bool
+		isAdmin        bool
 		expectedStatus grpb.Group_GroupStatus
 	}{
 		{
@@ -713,15 +715,45 @@ func TestCreateGroup_StatusInheritance(t *testing.T) {
 			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
-			name:           "ENTERPRISE -> FREE_TIER",
-			urlID:          "test-ent",
+			name:           "ENTERPRISE browser user -> FREE_TIER",
+			urlID:          "test-ent-user",
 			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
 			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
-			name:           "ENTERPRISE_TRIAL -> FREE_TIER",
-			urlID:          "test-trial",
+			name:           "ENTERPRISE_TRIAL browser user -> FREE_TIER",
+			urlID:          "test-trial-user",
 			parentStatus:   grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE admin API key -> ENTERPRISE",
+			urlID:          "test-ent-org-key",
+			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
+			isAPIKey:       true,
+			isAdmin:        true,
+			expectedStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE non-admin API key -> FREE_TIER",
+			urlID:          "test-ent-non-admin-key",
+			parentStatus:   grpb.Group_ENTERPRISE_GROUP_STATUS,
+			isAPIKey:       true,
+			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE_TRIAL admin API key -> ENTERPRISE_TRIAL",
+			urlID:          "test-trial-org-key",
+			parentStatus:   grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			isAPIKey:       true,
+			isAdmin:        true,
+			expectedStatus: grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+		},
+		{
+			name:           "ENTERPRISE_TRIAL non-admin API key -> FREE_TIER",
+			urlID:          "test-trial-non-admin-key",
+			parentStatus:   grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS,
+			isAPIKey:       true,
 			expectedStatus: grpb.Group_FREE_TIER_GROUP_STATUS,
 		},
 		{
@@ -756,12 +788,17 @@ func TestCreateGroup_StatusInheritance(t *testing.T) {
 			// Attach authenticated user.
 			testUser := testauth.User("US1", group.GroupID)
 			testUser.GroupStatus = tc.parentStatus
-			auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
-			auth.UserProvider = func(context.Context, string) (interfaces.UserInfo, error) {
-				return testUser, nil
+			if tc.isAPIKey {
+				testUser.APIKeyID = "AK1"
 			}
-			ctx1, err = auth.WithAuthenticatedUser(ctx, "US1")
-			require.NoError(t, err)
+			if tc.isAdmin {
+				testUser.Capabilities = append(testUser.Capabilities, cappb.Capability_ORG_ADMIN)
+				testUser.GroupMemberships[0].Capabilities = append(
+					testUser.GroupMemberships[0].Capabilities,
+					cappb.Capability_ORG_ADMIN,
+				)
+			}
+			ctx1 = testauth.WithAuthenticatedUserInfo(ctx, testUser)
 
 			newGroupID, err := udb.CreateGroup(ctx1, &tables.Group{
 				Name:          "Child Group",
