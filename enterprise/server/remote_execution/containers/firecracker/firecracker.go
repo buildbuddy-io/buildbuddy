@@ -734,8 +734,9 @@ type FirecrackerContainer struct {
 	releaseCPUs func()
 
 	vmExec struct {
-		conn *grpc.ClientConn
-		err  error
+		conn         *grpc.ClientConn
+		err          error
+		dialDuration time.Duration
 	}
 
 	// latestGuestStats is the latest UsageStats sample streamed from vmexec.
@@ -2368,13 +2369,16 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		cancelCgroupPoll()
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
 		c.fillNetStats(ctx, res.UsageStats)
-		if c.createFromSnapshot && res.VMMetrics != nil {
-			// The guest reports boot timings for the original boot, so they're
-			// not meaningful when starting from a snapshot.
+		if res.VMMetrics == nil {
+			res.VMMetrics = &espb.VMMetrics{}
+		} else if c.createFromSnapshot {
+			// The guest reports boot timings for the original boot, so
+			// they're not meaningful when starting from a snapshot.
 			res.VMMetrics.DockerdWaitDurationUsec = 0
 			res.VMMetrics.VmDnsWaitDurationUsec = 0
 			res.VMMetrics.VmExecInitDurationUsec = 0
 		}
+		res.VMMetrics.VmExecDialDurationUsec = c.vmExec.dialDuration.Microseconds()
 		return res, true
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
@@ -2392,6 +2396,11 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		res := commandutil.ErrorResult(status.UnavailableErrorf("%s: %s", errMsg, err))
 		res.UsageStats = usage
 		c.fillNetStats(ctx, res.UsageStats)
+		// The dial succeeded even though the VM crashed mid-execution, so
+		// still report the host-measured dial duration.
+		res.VMMetrics = &espb.VMMetrics{
+			VmExecDialDurationUsec: c.vmExec.dialDuration.Microseconds(),
+		}
 		return res, false
 	}
 }
@@ -2449,9 +2458,10 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 
 	start := time.Now()
 	defer func() {
+		c.vmExec.dialDuration = time.Since(start)
 		metrics.FirecrackerExecDialDurationUsec.With(prometheus.Labels{
 			metrics.CreatedFromSnapshot: strconv.FormatBool(c.createFromSnapshot),
-		}).Observe(float64(time.Since(start).Microseconds()))
+		}).Observe(float64(c.vmExec.dialDuration.Microseconds()))
 	}()
 
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)

@@ -471,6 +471,7 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		VMDockerdWaitDurationUsec:          in.GetVmDockerdWaitDurationUsec(),
 		VMDnsWaitDurationUsec:              in.GetVmDnsWaitDurationUsec(),
 		VMExecInitDurationUsec:             in.GetVmExecInitDurationUsec(),
+		VMExecDialDurationUsec:             in.GetVmExecDialDurationUsec(),
 		BuildrootDiskUsageBytes:            in.GetBuildrootDiskUsageBytes(),
 	}
 
