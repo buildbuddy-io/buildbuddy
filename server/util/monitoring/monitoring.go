@@ -57,6 +57,9 @@ func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle := mux.Handle
 	creds := maps.Clone(*basicAuthCreds)
 	if *basicAuthUser != "" || *basicAuthPass != "" {
+		if _, ok := creds[*basicAuthUser]; ok {
+			log.Fatalf("duplicate monitoring auth creds for user %s", *basicAuthUser)
+		}
 		creds[*basicAuthUser] = *basicAuthPass
 	}
 	if len(creds) > 0 {
