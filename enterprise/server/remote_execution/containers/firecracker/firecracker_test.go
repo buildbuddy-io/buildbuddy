@@ -3927,6 +3927,8 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.True(t, status.IsUnavailableError(res.Error), "expected Unavailable err, got %s", res.Error)
 	require.GreaterOrEqual(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
+	// The dial duration should be recorded even though the exec failed.
+	require.Greater(t, res.VMMetrics.GetVmExecDialDurationUsec(), int64(0))
 }
 
 func TestFirecrackerStressIO(t *testing.T) {
