@@ -13,6 +13,9 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 # COMMON FLAGS #
 ################
 
+# Remote instance name
+common --remote_instance_name=rin20260818
+
 # Use a mirror for all source archives referenced by the BCR to protect against checksum changes and upstream outages.
 common --module_mirrors=https://bcr.cloudflaremirrors.com
 
@@ -323,7 +326,7 @@ common:probers-dev --remote_executor=grpcs://buildbuddy-probers.buildbuddy.dev
 
 # Configuration used for Buildbuddy auto-release probers
 common:auto-release --config=probers
-common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release
+common:auto-release --remote_instance_name=buildbuddy-io/buildbuddy/auto-release/rin20260818
 common:auto-release --compilation_mode=opt
 common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
 
@@ -338,7 +341,7 @@ common:release-shared --@rules_img//img/settings:compression_level=9
 # Configuration used for Linux releases
 common:release --config=release-shared
 common:release --repository_cache=~/repo-cache/
-common:release --remote_instance_name=buildbuddy-io/buildbuddy/release
+common:release --remote_instance_name=buildbuddy-io/buildbuddy/release/rin20260818
 
 # Configuration used for release-mac workflow
 common:release-mac --config=release-shared
@@ -351,7 +354,7 @@ common:release-m1 --config=release-shared
 common:release-windows --config=cache
 common:release-windows --config=release-shared
 common:release-windows --repository_cache=C:/bazel/repo-cache/
-common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows-25
+common:release-windows --remote_instance_name=buildbuddy-io/buildbuddy/release-windows-25/rin20260818
 
 # Common flags for Github Actions and BuildBuddy Workflows setup
 # Note that the actual Remote endpoint is not included here.
@@ -367,7 +370,7 @@ common:ci-shared --color=yes
 # Configuration used for untrusted GitHub actions-based CI
 common:untrusted-ci --config=ci-shared
 common:untrusted-ci --config=remote-minimal
-common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci
+common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci/rin20260818
 common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
 common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
@@ -377,7 +380,7 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
 # Disabled RBE for Windows
 common:untrusted-ci-windows --config=ci-shared
-common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25
+common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25/rin20260818
 common:untrusted-ci-windows --repository_cache=C:/bazel/repo-cache/
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci-windows --bes_backend=grpcs://remote.buildbuddy.io
