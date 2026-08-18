@@ -44,7 +44,7 @@ var (
 
 	basicAuthUser  = flag.String("monitoring.basic_auth.username", "", "Optional username for basic auth on the monitoring port.")
 	basicAuthPass  = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
-	basicAuthCreds = flag.Map("monitoring.basic_auth.credentials", map[string]string{}, "Optional list of credentials for auth on the monitoring port.", flag.Secret)
+	basicAuthCreds = flag.Map("monitoring.basic_auth.credentials", map[string]string{}, "Optional user->pass map of credentials for auth on the monitoring port.", flag.Secret)
 )
 
 const (
@@ -56,6 +56,9 @@ const (
 func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle := mux.Handle
 	creds := maps.Clone(*basicAuthCreds)
+	if creds == nil {
+		creds = map[string]string{}
+	}
 	if *basicAuthUser != "" || *basicAuthPass != "" {
 		if pass, ok := creds[*basicAuthUser]; ok && pass != *basicAuthPass {
 			log.Fatalf("duplicate monitoring login creds for user %s", *basicAuthUser)
