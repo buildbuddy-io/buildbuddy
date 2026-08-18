@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/metadata"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 	"github.com/buildbuddy-io/buildbuddy/cli/picker"
@@ -154,6 +155,9 @@ func run() (exitCode int, err error) {
 		Configure(helpArgs.RemoveStartupOptions(logoptdef.Verbose.Name(), watchoptdef.Watch.Name(), watchoptdef.WatcherFlags.Name()))
 		StartupDebug(start)
 		helpArgs.RemoveCommandOptions(streamoptdef.StreamRunLogs.Name(), streamoptdef.OnStreamRunLogsFailure.Name())
+		// Help does not use .bbrc settings, and Bazel does not understand the
+		// flags that control them.
+		bbrc.RemoveOptions(helpArgs)
 		return runHelp(helpArgs)
 	}
 
@@ -275,10 +279,6 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 			args.Args[len(startupOpts)+1:],
 		)
 	}
-	args, err = helpParser.ResolveArgs(args)
-	if err != nil {
-		return -1, err
-	}
 	return help.HandleHelp(args)
 }
 
@@ -289,7 +289,9 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 // EXPLICIT_COMMAND_LINE metadata to the bazel invocation.
 func handleBazelCommand(start time.Time, bazelArgs *arg.BazelArgs, execArgs []string, originalArgs []string) (exitCode int, err error) {
 	// Maybe run interactively (watching for changes to files).
-	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, arg.JoinExecutableArgs(bazelArgs.Forwarded(), execArgs)...)); exitCode >= 0 || err != nil {
+	// The watcher starts another bb process, so retain the complete set of original arguments.
+	// They'll be reparsed by the new process.
+	if exitCode, err := watcher.Watch(append([]string{os.Args[0]}, arg.JoinExecutableArgs(bazelArgs.Unresolved(), execArgs)...)); exitCode >= 0 || err != nil {
 		return exitCode, err
 	}
 

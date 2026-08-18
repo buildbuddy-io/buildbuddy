@@ -2,6 +2,7 @@ package parser
 
 import (
 	"bytes"
+	"flag"
 	stdlog "log"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/arguments"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
@@ -144,6 +146,36 @@ build:nested --nested_flag
 		"--explain_flag",
 		"invocation-id",
 	}, expandedExplainArgs.Format())
+}
+
+func TestParseBBRCFiles_MultipleCommands(t *testing.T) {
+	remoteFlags := flag.NewFlagSet("remote", flag.ContinueOnError)
+	remoteFlags.String("container_image", "", "")
+
+	previousCommandsByName := cli_command.CommandsByName
+	cli_command.CommandsByName = map[string]*cli_command.Command{
+		"remote": {Name: "remote", Flags: remoteFlags},
+	}
+	t.Cleanup(func() {
+		cli_command.CommandsByName = previousCommandsByName
+	})
+
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `
+run --stream_run_logs
+remote --container_image=docker://example
+`,
+	})
+
+	// Simulate parsing a Bazel run invocation. The unrelated remote section
+	// should still be parseable and not cause a parsing error.
+	p, err := GetBBParserForCommand("run")
+	require.NoError(t, err)
+	_, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"--stream_run_logs"}, arguments.FormatAll(defaultConfig.ByPhase["run"]))
+	require.Equal(t, []string{"--container_image=docker://example"}, arguments.FormatAll(defaultConfig.ByPhase["remote"]))
 }
 
 func TestParseBBRCFiles_CircularConfigReference(t *testing.T) {
@@ -306,6 +338,90 @@ func TestConsumeBBRCFileOptions_IgnoreAllLastValueWins(t *testing.T) {
 		"/home/user/.bbrc",
 		"explicit.bbrc",
 	}, paths)
+}
+
+func TestResolveArgs_ExpandsBBRCBeforeBazelRC(t *testing.T) {
+	workspaceDir := testfs.MakeTempDir(t)
+	homeDir := testfs.MakeTempDir(t)
+	explicitBBRC := filepath.Join(testfs.MakeTempDir(t), "explicit.bbrc")
+	t.Setenv("HOME", homeDir)
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": `
+run --stream_run_logs
+run:ci --on_stream_run_logs_failure=warn
+`,
+		".bazelrc": `
+run:bazel --build_metadata=BAZEL
+`,
+	})
+	testfs.WriteAllFileContents(t, homeDir, map[string]string{
+		".bbrc": `
+run --nostream_run_logs
+run:ci --on_stream_run_logs_failure=ignore
+`,
+	})
+	require.NoError(t, os.WriteFile(explicitBBRC, []byte(`
+run:ci --on_stream_run_logs_failure=fail
+`), 0644))
+
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{
+		"--bbrc=" + explicitBBRC,
+		"run",
+		"//:target",
+		"--bb_config=ci",
+		"--config=bazel",
+	})
+	require.NoError(t, err)
+	args, err = p.resolveArgs(args, workspaceDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"--ignore_all_rc_files",
+		"run",
+		"--stream_run_logs",
+		"--nostream_run_logs",
+		"//:target",
+		"--on_stream_run_logs_failure=warn",
+		"--on_stream_run_logs_failure=ignore",
+		"--on_stream_run_logs_failure=fail",
+		"--build_metadata=BAZEL",
+	}, args.Format())
+}
+
+func TestResolveArgs_BBRCRejectsBazelFlags(t *testing.T) {
+	workspaceDir := testfs.MakeTempDir(t)
+	t.Setenv("HOME", testfs.MakeTempDir(t))
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": "run --build_metadata=NOT_ALLOWED",
+	})
+
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{"run", "//:target"})
+	require.NoError(t, err)
+	_, err = p.resolveArgs(args, workspaceDir)
+	require.ErrorContains(t, err, "build_metadata")
+}
+
+func TestResolveArgs_IgnoreAllBBRCFiles(t *testing.T) {
+	workspaceDir := testfs.MakeTempDir(t)
+	homeDir := testfs.MakeTempDir(t)
+	t.Setenv("HOME", homeDir)
+	testfs.WriteAllFileContents(t, workspaceDir, map[string]string{
+		".bbrc": "run --stream_run_logs",
+	})
+	testfs.WriteAllFileContents(t, homeDir, map[string]string{
+		".bbrc": "run --nostream_run_logs",
+	})
+
+	p, err := GetParser()
+	require.NoError(t, err)
+	args, err := p.ParseArgs([]string{"--ignore_all_bb_rc_files", "run", "//:target"})
+	require.NoError(t, err)
+	args, err = p.resolveArgs(args, workspaceDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"--ignore_all_rc_files", "run", "//:target"}, args.Format())
 }
 
 func TestParseBBRCFiles_MultipleConfigs(t *testing.T) {

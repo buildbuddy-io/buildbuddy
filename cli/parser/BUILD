@@ -40,6 +40,7 @@ go_test(
     deps = [
         "//cli/cli_command",
         "//cli/log",
+        "//cli/parser/arguments",
         "//cli/parser/bbrc",
         "//cli/parser/options",
         "//cli/parser/test_data",
