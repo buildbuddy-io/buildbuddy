@@ -5,6 +5,7 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "view",
     srcs = [
+        "errors.go",
         "filtered_test_output.go",
         "view.go",
     ],
@@ -17,6 +18,7 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
+        "//proto:failure_details_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:target_go_proto",
@@ -30,12 +32,17 @@ go_library(
 
 go_test(
     name = "view_test",
-    srcs = ["filtered_test_output_test.go"],
+    srcs = [
+        "errors_test.go",
+        "filtered_test_output_test.go",
+    ],
     deps = [
         ":view",
         "//cli/util/download/downloadtest",
         "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
+        "//proto:failure_details_go_proto",
+        "//proto:invocation_go_proto",
         "//proto:target_go_proto",
         "//proto/api/v1:common_go_proto",
         "//server/util/status",
