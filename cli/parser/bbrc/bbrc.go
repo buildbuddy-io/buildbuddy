@@ -7,9 +7,32 @@ import (
 )
 
 const (
-	ConfigFlagName = "bb_config"
-	FileName       = ".bbrc"
+	ConfigFlagName           = "bb_config"
+	FileFlagName             = "bbrc"
+	IgnoreAllRCFilesFlagName = "ignore_all_bb_rc_files"
+	FileName                 = ".bbrc"
 )
+
+// NewIgnoreAllRCFilesOptionDefinition returns the
+// --ignore_all_bb_rc_files startup option definition.
+func NewIgnoreAllRCFilesOptionDefinition() *options.Definition {
+	return options.NewDefinition(
+		IgnoreAllRCFilesFlagName,
+		options.WithNegative(),
+		options.WithSupportFor("startup"),
+	)
+}
+
+// NewFileOptionDefinition returns the repeatable --bbrc startup option
+// definition.
+func NewFileOptionDefinition() *options.Definition {
+	return options.NewDefinition(
+		FileFlagName,
+		options.WithMulti(),
+		options.WithRequiresValue(),
+		options.WithSupportFor("startup"),
+	)
+}
 
 // NewConfigOptionDefinition returns the --bb_config option definition.
 // The flag is supported for the given commands.
