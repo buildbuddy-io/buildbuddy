@@ -35,22 +35,16 @@ import (
 )
 
 const (
-	maxGroupsPerUserExperiment     = "app.max_groups_per_user"
-	propagateGroupBlocksExperiment = "app.propagate_group_blocks"
+	maxGroupsPerUserExperiment = "app.max_groups_per_user"
 )
 
-func configureCreateGroupExperiments(t *testing.T, env *testenv.TestEnv, maxGroups int64, propagateGroupBlocks bool) {
+func configureCreateGroupExperiments(t *testing.T, env *testenv.TestEnv, maxGroups int64) {
 	provider := openfeatureTesting.NewTestProvider()
 	provider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
 		maxGroupsPerUserExperiment: {
 			State:          memprovider.Enabled,
 			DefaultVariant: "configured",
 			Variants:       map[string]any{"configured": int(maxGroups)},
-		},
-		propagateGroupBlocksExperiment: {
-			State:          memprovider.Enabled,
-			DefaultVariant: "configured",
-			Variants:       map[string]any{"configured": propagateGroupBlocks},
 		},
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(provider))
@@ -148,14 +142,13 @@ func TestCreateGroup(t *testing.T) {
 
 func TestCreateGroup_Allowed(t *testing.T) {
 	for _, tc := range []struct {
-		name            string
-		maxGroups       int
-		groupStatus     grpb.Group_GroupStatus
-		ownedGroups     int
-		invitedGroups   int
-		orgAPIKey       bool
-		propagateBlocks bool
-		expectDenied    bool
+		name          string
+		maxGroups     int
+		groupStatus   grpb.Group_GroupStatus
+		ownedGroups   int
+		invitedGroups int
+		orgAPIKey     bool
+		expectDenied  bool
 	}{
 		{
 			name:        "limit_disabled",
@@ -184,12 +177,11 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			expectDenied: true,
 		},
 		{
-			name:            "blocked_user_below_limit",
-			maxGroups:       2,
-			groupStatus:     grpb.Group_BLOCKED_GROUP_STATUS,
-			ownedGroups:     1,
-			propagateBlocks: true,
-			expectDenied:    true,
+			name:         "blocked_user_below_limit",
+			maxGroups:    2,
+			groupStatus:  grpb.Group_BLOCKED_GROUP_STATUS,
+			ownedGroups:  1,
+			expectDenied: true,
 		},
 		{
 			name:        "enterprise_user_not_limited",
@@ -283,7 +275,7 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, user.Groups, tc.ownedGroups+tc.invitedGroups)
 
-			configureCreateGroupExperiments(t, te, int64(tc.maxGroups), tc.propagateBlocks)
+			configureCreateGroupExperiments(t, te, int64(tc.maxGroups))
 			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 			require.NoError(t, err)
 
