@@ -135,9 +135,7 @@ func run() (exitCode int, err error) {
 	// the command.
 	// This is to shortcut the startup-time of the bazel client / server if they
 	// do not need to be run.
-	if _, command, _ := interpretAsBBCliCommand(os.Args[1:]); command != nil && command.Name != "help" {
-		// Let the help parser handle a help command; otherwise, let's handle the
-		// CLI command.
+	if command := interpretAsBBCliCommand(os.Args[1:]); command != nil && command.Name != "help" {
 		opts, args, err := resolveBBCliCommandArgs(os.Args[1:], command)
 		if err != nil {
 			return -1, err
@@ -182,32 +180,31 @@ func run() (exitCode int, err error) {
 	return handleBazelCommand(start, bazelArgs, execArgs, originalArgs)
 }
 
-// interpretAsBBCliCommand strips the bb options from the beginning of a bb
-// command and returns the options, the command, and the truncated args. If any
-// unrecognized option is encountered before the first positional argument or if
-// the first positional argument is not a bb command (like it might be if it
-// were a bazel command, for example), the args are returned untouched, the
-// options will be nil, and the command will be nil.
-func interpretAsBBCliCommand(args []string) ([]options.Option, *cli_command.Command, []string) {
+// interpretAsBBCliCommand returns the BB command being invoked, or nil if the
+// first positional argument is not a registered CLI command. Unknown startup
+// options also return nil so the invocation can be handled as a Bazel command.
+func interpretAsBBCliCommand(args []string) *cli_command.Command {
 	p := parser.GetNativeParser().StartupOptionParser
 	p.Permissive = true
+
+	// Parse the startup options to get the index of the first positional argument,
+	// which is presumed to be the command.
 	opts, argIndex, err := p.ParseOptions(args, "startup")
 	if err != nil {
 		log.Warnf("Error parsing global options: %s", err)
-		return nil, nil, args
+		return nil
 	}
 	for _, opt := range opts {
 		if opt.PluginID() == options.UnknownBuiltinPluginID {
-			return nil, nil, args
+			return nil
 		}
 	}
+
 	if argIndex == len(args) {
-		return nil, nil, args
+		// No positional arguments, so this is not a CLI command.
+		return nil
 	}
-	if command := cli_command.GetCommand(args[argIndex]); command != nil {
-		return opts, command, args[argIndex:]
-	}
-	return nil, nil, args
+	return cli_command.GetCommand(args[argIndex])
 }
 
 // resolveBBCliCommandArgs expands bbrc settings for bb CLI specific commands.
