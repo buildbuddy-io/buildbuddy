@@ -2369,16 +2369,13 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		cancelCgroupPoll()
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
 		c.fillNetStats(ctx, res.UsageStats)
-		if res.VMMetrics == nil {
-			res.VMMetrics = &espb.VMMetrics{}
-		} else if c.createFromSnapshot {
+		if c.createFromSnapshot && res.VMMetrics != nil {
 			// The guest reports boot timings for the original boot, so
 			// they're not meaningful when starting from a snapshot.
 			res.VMMetrics.DockerdWaitDurationUsec = 0
 			res.VMMetrics.VmDnsWaitDurationUsec = 0
 			res.VMMetrics.VmExecInitDurationUsec = 0
 		}
-		res.VMMetrics.VmExecDialDurationUsec = c.vmExec.dialDuration.Microseconds()
 		return res, true
 	case err := <-healthCheckErrCh:
 		cancelCgroupPoll()
@@ -2396,11 +2393,6 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		res := commandutil.ErrorResult(status.UnavailableErrorf("%s: %s", errMsg, err))
 		res.UsageStats = usage
 		c.fillNetStats(ctx, res.UsageStats)
-		// The dial succeeded even though the VM crashed mid-execution, so
-		// still report the host-measured dial duration.
-		res.VMMetrics = &espb.VMMetrics{
-			VmExecDialDurationUsec: c.vmExec.dialDuration.Microseconds(),
-		}
 		return res, false
 	}
 }
@@ -2533,6 +2525,10 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer func() {
 		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
+		if result.VMMetrics == nil {
+			result.VMMetrics = &espb.VMMetrics{}
+		}
+		result.VMMetrics.VmExecDialDurationUsec = c.vmExec.dialDuration.Microseconds()
 
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
@@ -2611,7 +2607,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
-		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
+		result.Error = status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
+		return result
 	}
 	// Emit metrics to track time spent preparing VM to execute a command
 	c.emitCOWAndUFFDMetrics(stage)
