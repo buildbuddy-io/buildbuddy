@@ -2370,8 +2370,8 @@ func (c *FirecrackerContainer) sendExecRequestToGuest(ctx context.Context, conn 
 		res.UsageStats = combineHostAndGuestStats(hostCgroupStats.TaskStats(), res.UsageStats)
 		c.fillNetStats(ctx, res.UsageStats)
 		if c.createFromSnapshot && res.VMMetrics != nil {
-			// The guest reports boot timings for the original boot, so
-			// they're not meaningful when starting from a snapshot.
+			// The guest reports boot timings for the original boot, so they're
+			// not meaningful when starting from a snapshot.
 			res.VMMetrics.DockerdWaitDurationUsec = 0
 			res.VMMetrics.VmDnsWaitDurationUsec = 0
 			res.VMMetrics.VmExecInitDurationUsec = 0
