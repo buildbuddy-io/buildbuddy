@@ -3,11 +3,7 @@ package execution_search_service
 import (
 	"context"
 	"fmt"
-	"log"
-	"maps"
-	"math"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,6 +30,12 @@ import (
 const (
 	defaultLimitSize     = int64(15)
 	pageSizeOffsetPrefix = "offset_"
+
+	// The maximum number of individual executions returned by
+	// GetExecutionTimeline, sampled uniformly at random from all matching
+	// executions.  Summary stats are computed over all matching executions in
+	// the OLAP DB, so they are unaffected by this cap.
+	timelineExecutionSampleSize = int64(1000)
 )
 
 var (
@@ -278,37 +280,134 @@ func executionTimelineInterval(query *expb.ExecutionQuery, timezone string) (inv
 	return interval, location
 }
 
-// bucketStartUsec returns the inclusive start time of the aggregation bucket
-// containing tsUsec.  Buckets are `interval` long and aligned to the start of
-// the day in `loc`, matching the toStartOfInterval bucketing that the OLAP DB
-// performs for trends queries.
-func bucketStartUsec(tsUsec int64, interval invocation_stat_service.StatInterval, loc *time.Location) int64 {
-	t := time.UnixMicro(tsUsec).In(loc)
-	dayStart := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
-	d := interval.Duration()
-	if d >= 24*time.Hour {
-		return dayStart.UnixMicro()
-	}
-	return dayStart.Add(t.Sub(dayStart).Truncate(d)).UnixMicro()
+// addTimelineWhereClauses applies the WHERE clauses shared by both
+// GetExecutionTimeline queries (the stats aggregation and the execution
+// sample).
+func (s *ExecutionSearchService) addTimelineWhereClauses(q *query_builder.Query, groupID string, req *expb.GetExecutionTimelineRequest) error {
+	// Always filter to the currently selected (and authorized) group, and to
+	// the requested target to constrain the scan size.
+	q.AddWhereClause("group_id = ?", groupID)
+	q.AddWhereClause("target_label = ?", req.GetTarget())
+	// Only include executions that actually ran on a worker; entries that never
+	// started have nothing meaningful to plot on the timeline.
+	q.AddWhereClause("worker_start_timestamp_usec > 0")
+	q.AddWhereClause("worker_completed_timestamp_usec > 0")
+	return s.addExecutionQueryFilters(q, req.GetQuery())
 }
 
-// aggregateTimeline groups a single timeline's executions into time buckets
-// and summarizes each bucket, for rendering when there are too many
-// executions to usefully show individually.
-func aggregateTimeline(executions []*expb.ExecutionTimelineEntry, interval invocation_stat_service.StatInterval, loc *time.Location) []*expb.AggregatedExecutionTimelineEntry {
-	bucketed := make(map[int64][]*expb.ExecutionTimelineEntry)
-	for _, ex := range executions {
-		start := bucketStartUsec(ex.GetStartTimeUsec(), interval, loc)
-		bucketed[start] = append(bucketed[start], ex)
+// timelineStatsRow is a single row of the OLAP aggregation query issued by
+// GetExecutionTimeline: a summary of one timeline's executions, either within
+// a single time bucket (bucket_start_time_usec > 0) or across the whole
+// timeline (bucket_start_time_usec == 0, from the GROUPING SETS rollup).
+type timelineStatsRow struct {
+	CleanedOutputPath   string
+	ActionMnemonic      string
+	OS                  string
+	Arch                string
+	BucketStartTimeUsec int64
+	DurationUsecTotal   int64
+	DurationUsecP50     int64
+	DurationUsecP90     int64
+	CPUNanosTotal       int64
+	CPUNanosP50         int64
+	CPUNanosP90         int64
+	PeakMemoryP50       int64
+	PeakMemoryP90       int64
+}
+
+func (r *timelineStatsRow) toSummaryProto() *expb.ExecutionTimelineSummary {
+	return &expb.ExecutionTimelineSummary{
+		DurationUsecTotal: r.DurationUsecTotal,
+		DurationUsecP50:   r.DurationUsecP50,
+		DurationUsecP90:   r.DurationUsecP90,
+		CpuNanosTotal:     r.CPUNanosTotal,
+		CpuNanosP50:       r.CPUNanosP50,
+		CpuNanosP90:       r.CPUNanosP90,
+		PeakMemoryP50:     r.PeakMemoryP50,
+		PeakMemoryP90:     r.PeakMemoryP90,
 	}
-	aggregated := make([]*expb.AggregatedExecutionTimelineEntry, 0, len(bucketed))
-	for _, start := range slices.Sorted(maps.Keys(bucketed)) {
-		aggregated = append(aggregated, &expb.AggregatedExecutionTimelineEntry{
-			BucketStartTimeUsec: start,
-			Summary:             summarizeTimeline(bucketed[start]),
-		})
+}
+
+// timelineKey identifies the timeline an execution belongs to: executions
+// with the same (run-stripped) output path, mnemonic, os, and arch are
+// plotted together.
+func timelineKey(cleanedOutputPath, mnemonic, os, arch string) string {
+	return cleanedOutputPath + "|" + mnemonic + "|" + os + "|" + arch
+}
+
+// queryTimelineStats computes summary stats for every timeline matching the
+// request directly in the OLAP DB.  It returns one row per (timeline, time
+// bucket) pair plus one whole-timeline rollup row per timeline (with
+// bucket_start_time_usec == 0), ordered so that each timeline's rollup row
+// immediately precedes its bucket rows.
+//
+// quantilesExactLow is used because it matches the nearest-rank percentiles
+// this service previously computed in Go (including returning the lower of
+// the two middle values for the median of an even-sized set).
+func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *expb.GetExecutionTimelineRequest, groupID string, interval invocation_stat_service.StatInterval, location *time.Location) ([]*timelineStatsRow, error) {
+	bucketExpr, bucketArgs := s.oh.BucketFromUsecTimestamp("worker_start_timestamp_usec", location, interval.ClickhouseInterval())
+	q := query_builder.NewQueryWithArgs(`
+		SELECT
+			replaceRegexpAll(output_path, ?, '') AS cleaned_output_path,
+			action_mnemonic,
+			os,
+			arch,
+			`+bucketExpr+` AS bucket_start_time_usec,
+			SUM(worker_completed_timestamp_usec - worker_start_timestamp_usec) AS duration_usec_total,
+			SUM(cpu_nanos) AS cpu_nanos_total,
+			arrayElement(quantilesExactLow(0.5, 0.9)(worker_completed_timestamp_usec - worker_start_timestamp_usec), 1) AS duration_usec_p50,
+			arrayElement(quantilesExactLow(0.5, 0.9)(worker_completed_timestamp_usec - worker_start_timestamp_usec), 2) AS duration_usec_p90,
+			arrayElement(quantilesExactLow(0.5, 0.9)(cpu_nanos), 1) AS cpu_nanos_p50,
+			arrayElement(quantilesExactLow(0.5, 0.9)(cpu_nanos), 2) AS cpu_nanos_p90,
+			arrayElement(quantilesExactLow(0.5, 0.9)(peak_memory_bytes), 1) AS peak_memory_p50,
+			arrayElement(quantilesExactLow(0.5, 0.9)(peak_memory_bytes), 2) AS peak_memory_p90
+		FROM "Executions"
+	`, append([]interface{}{runMatcher.String()}, bucketArgs...))
+
+	if err := s.addTimelineWhereClauses(q, groupID, req); err != nil {
+		return nil, err
 	}
-	return aggregated
+
+	// GROUPING SETS gives us both per-bucket rows and a whole-timeline rollup
+	// row in a single scan; the rollup rows get the default value (0) for
+	// bucket_start_time_usec, which cannot collide with a real bucket because
+	// we exclude executions with worker_start_timestamp_usec == 0 above.
+	q.SetGroupBy("GROUPING SETS ((cleaned_output_path, action_mnemonic, os, arch, bucket_start_time_usec), (cleaned_output_path, action_mnemonic, os, arch))")
+	q.SetOrderBy("cleaned_output_path, action_mnemonic, os, arch, bucket_start_time_usec", true)
+
+	qString, qArgs := q.Build()
+	rq := s.oh.NewQuery(ctx, "execution_search_service_timeline_stats").Raw(qString, qArgs...)
+	return db.ScanAll(rq, &timelineStatsRow{})
+}
+
+// queryTimelineExecutions fetches a uniformly random sample of up to
+// timelineExecutionSampleSize individual executions matching the request, for
+// rendering individual points on the timeline.
+func (s *ExecutionSearchService) queryTimelineExecutions(ctx context.Context, req *expb.GetExecutionTimelineRequest, groupID string) ([]*schema.Execution, error) {
+	q := query_builder.NewQuery(`
+		SELECT worker_start_timestamp_usec, worker_completed_timestamp_usec, cpu_nanos, peak_memory_bytes, action_mnemonic, os, arch, output_path
+		FROM "Executions"
+	`)
+	if err := s.addTimelineWhereClauses(q, groupID, req); err != nil {
+		return nil, err
+	}
+	q.SetOrderBy("rand()", true)
+	q.SetLimit(timelineExecutionSampleSize)
+
+	qString, qArgs := q.Build()
+	return s.rawQueryExecutions(ctx, qString, qArgs...)
+}
+
+// shardFromOutputPath extracts the shard number from a test output path like
+// ".../shard_3_of_5/...", returning 0 if the path has no shard component.
+func shardFromOutputPath(outputPath string) int64 {
+	shardMatch := shardMatcher.FindStringSubmatch(outputPath)
+	if len(shardMatch) > 1 {
+		if shard, err := strconv.Atoi(shardMatch[1]); err == nil {
+			return int64(shard)
+		}
+	}
+	return 0
 }
 
 func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *expb.GetExecutionTimelineRequest) (*expb.GetExecutionTimelineResponse, error) {
@@ -329,119 +428,66 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 		return nil, err
 	}
 
-	q := query_builder.NewQuery(`
-		SELECT worker_start_timestamp_usec, worker_completed_timestamp_usec, cpu_nanos, peak_memory_bytes, action_mnemonic, os, arch, output_path
-		FROM "Executions"
-	`)
+	interval, location := executionTimelineInterval(req.GetQuery(), req.GetRequestContext().GetTimezone())
 
-	// Always filter to the currently selected (and authorized) group, and to
-	// the requested target to constrain the scan size.
-	q.AddWhereClause("group_id = ?", u.GetGroupID())
-	q.AddWhereClause("target_label = ?", req.GetTarget())
-	// Only include executions that actually ran on a worker; entries that never
-	// started have nothing meaningful to plot on the timeline.
-	q.AddWhereClause("worker_start_timestamp_usec > 0")
-	q.AddWhereClause("worker_completed_timestamp_usec > 0")
-
-	if err := s.addExecutionQueryFilters(q, req.GetQuery()); err != nil {
-		return nil, err
-	}
-
-	q.SetOrderBy("worker_start_timestamp_usec", true)
-
-	qString, qArgs := q.Build()
-	olapExecutions, err := s.rawQueryExecutions(ctx, qString, qArgs...)
+	statsRows, err := s.queryTimelineStats(ctx, req, u.GetGroupID(), interval, location)
 	if err != nil {
 		return nil, err
 	}
-	groupedExecutions := make(map[string][]*schema.Execution)
-	for _, ex := range olapExecutions {
-		cleanedOutput := runMatcher.ReplaceAllString(ex.OutputPath, "")
-		k := cleanedOutput + ex.ActionMnemonic + ex.OS + ex.Arch
-
-		groupedExecutions[k] = append(groupedExecutions[k], ex)
+	sampledExecutions, err := s.queryTimelineExecutions(ctx, req, u.GetGroupID())
+	if err != nil {
+		return nil, err
 	}
 
-	interval, location := executionTimelineInterval(req.GetQuery(), req.GetRequestContext().GetTimezone())
 	rsp := &expb.GetExecutionTimelineResponse{
-		Interval:  interval.IntervalProto(),
-		Timelines: make([]*expb.ExecutionTimeline, 0, len(groupedExecutions)),
+		Interval: interval.IntervalProto(),
 	}
-	for _, tl := range groupedExecutions {
-		executions := make([]*expb.ExecutionTimelineEntry, len(tl))
-		for i, ex := range tl {
-			executions[i] = &expb.ExecutionTimelineEntry{
-				StartTimeUsec:   ex.WorkerStartTimestampUsec,
-				DurationUsec:    ex.WorkerCompletedTimestampUsec - ex.WorkerStartTimestampUsec,
-				CpuNanos:        ex.CPUNanos,
-				PeakMemoryBytes: ex.PeakMemoryBytes,
+	timelinesByKey := make(map[string]*expb.ExecutionTimeline)
+	for _, row := range statsRows {
+		k := timelineKey(row.CleanedOutputPath, row.ActionMnemonic, row.OS, row.Arch)
+		if row.BucketStartTimeUsec == 0 {
+			// Whole-timeline rollup row: starts a new timeline.
+			tl := &expb.ExecutionTimeline{
+				OutputPath: row.CleanedOutputPath,
+				Mnemonic:   row.ActionMnemonic,
+				Os:         row.OS,
+				Arch:       row.Arch,
+				Shard:      shardFromOutputPath(row.CleanedOutputPath),
+				Summary:    row.toSummaryProto(),
 			}
+			timelinesByKey[k] = tl
+			rsp.Timelines = append(rsp.Timelines, tl)
+			continue
 		}
-		cleanedOutput := runMatcher.ReplaceAllString(tl[0].OutputPath, "")
-		shardMatch := shardMatcher.FindStringSubmatch(cleanedOutput)
-		log.Print(cleanedOutput)
-		log.Printf("%+v", shardMatch)
-		shard := int64(0)
-		if len(shardMatch) > 1 {
-			if realShard, err := strconv.Atoi(shardMatch[1]); err == nil {
-				shard = int64(realShard)
-			}
+		tl := timelinesByKey[k]
+		if tl == nil {
+			// Shouldn't happen: rollup rows sort before their bucket rows.
+			continue
 		}
-		rsp.Timelines = append(rsp.Timelines, &expb.ExecutionTimeline{
-			OutputPath:      cleanedOutput,
-			Mnemonic:        tl[0].ActionMnemonic,
-			Os:              tl[0].OS,
-			Arch:            tl[0].Arch,
-			Shard:           shard,
-			Summary:         summarizeTimeline(executions),
-			Execution:       executions,
-			AggregatedStats: aggregateTimeline(executions, interval, location),
+		tl.AggregatedStats = append(tl.AggregatedStats, &expb.AggregatedExecutionTimelineEntry{
+			BucketStartTimeUsec: row.BucketStartTimeUsec,
+			Summary:             row.toSummaryProto(),
+		})
+	}
+	for _, ex := range sampledExecutions {
+		cleanedOutput := runMatcher.ReplaceAllString(ex.OutputPath, "")
+		tl := timelinesByKey[timelineKey(cleanedOutput, ex.ActionMnemonic, ex.OS, ex.Arch)]
+		if tl == nil {
+			// The sample runs as a separate query from the stats, so a
+			// just-written execution can miss its timeline; skip it.
+			continue
+		}
+		tl.Execution = append(tl.Execution, &expb.ExecutionTimelineEntry{
+			StartTimeUsec:   ex.WorkerStartTimestampUsec,
+			DurationUsec:    ex.WorkerCompletedTimestampUsec - ex.WorkerStartTimestampUsec,
+			CpuNanos:        ex.CPUNanos,
+			PeakMemoryBytes: ex.PeakMemoryBytes,
+		})
+	}
+	for _, tl := range rsp.Timelines {
+		sort.Slice(tl.Execution, func(i, j int) bool {
+			return tl.Execution[i].GetStartTimeUsec() < tl.Execution[j].GetStartTimeUsec()
 		})
 	}
 	return rsp, nil
-}
-
-// percentile returns the value at the given percentile (0-100) using the
-// nearest-rank method over a slice that has already been sorted ascending.
-// It returns 0 for an empty slice.
-func percentile(sorted []int64, p float64) int64 {
-	if len(sorted) == 0 {
-		return 0
-	}
-	rank := int(math.Ceil(p/100*float64(len(sorted)))) - 1
-	if rank < 0 {
-		rank = 0
-	}
-	if rank >= len(sorted) {
-		rank = len(sorted) - 1
-	}
-	return sorted[rank]
-}
-
-// summarizeTimeline computes aggregate totals and percentiles across all
-// executions in a single timeline.
-func summarizeTimeline(executions []*expb.ExecutionTimelineEntry) *expb.ExecutionTimelineSummary {
-	durations := make([]int64, len(executions))
-	cpuNanos := make([]int64, len(executions))
-	peakMemory := make([]int64, len(executions))
-	summary := &expb.ExecutionTimelineSummary{}
-	for i, ex := range executions {
-		durations[i] = ex.GetDurationUsec()
-		cpuNanos[i] = ex.GetCpuNanos()
-		peakMemory[i] = ex.GetPeakMemoryBytes()
-		summary.DurationUsecTotal += ex.GetDurationUsec()
-		summary.CpuNanosTotal += ex.GetCpuNanos()
-	}
-	sort.Slice(durations, func(i, j int) bool { return durations[i] < durations[j] })
-	sort.Slice(cpuNanos, func(i, j int) bool { return cpuNanos[i] < cpuNanos[j] })
-	sort.Slice(peakMemory, func(i, j int) bool { return peakMemory[i] < peakMemory[j] })
-
-	summary.DurationUsecP50 = percentile(durations, 50)
-	summary.DurationUsecP90 = percentile(durations, 90)
-	summary.CpuNanosP50 = percentile(cpuNanos, 50)
-	summary.CpuNanosP90 = percentile(cpuNanos, 90)
-	summary.PeakMemoryP50 = percentile(peakMemory, 50)
-	summary.PeakMemoryP90 = percentile(peakMemory, 90)
-
-	return summary
 }

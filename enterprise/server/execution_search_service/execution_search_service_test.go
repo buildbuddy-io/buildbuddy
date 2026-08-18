@@ -409,6 +409,9 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 func TestGetExecutionTimeline(t *testing.T) {
 	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "testenv.reuse_server", true)
+	// Pin the aggregation to 1-day buckets so the bucket expectations below
+	// don't depend on the finer-time-buckets default.
+	flags.Set(t, "app.finer_time_buckets", false)
 
 	actionDigest1 := &repb.Digest{Hash: "1c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", SizeBytes: 142}
 	actionDigest2 := &repb.Digest{Hash: "2cde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9", SizeBytes: 256}
@@ -513,8 +516,8 @@ func TestGetExecutionTimeline(t *testing.T) {
 	assert.Equal(t, int64(2000000000), timeline.Execution[1].CpuNanos)
 	assert.Equal(t, int64(512*1024*1024), timeline.Execution[1].PeakMemoryBytes)
 
-	// With finer time buckets disabled (the default), stats are aggregated
-	// into 1-day buckets.
+	// With finer time buckets disabled, stats are aggregated into 1-day
+	// buckets.
 	assert.Equal(t, stpb.IntervalType_INTERVAL_TYPE_DAY, rsp.GetInterval().GetType())
 	assert.Equal(t, int64(1), rsp.GetInterval().GetCount())
 

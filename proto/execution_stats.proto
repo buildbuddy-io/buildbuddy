@@ -448,9 +448,10 @@ message GetExecutionTimelineResponse {
   // timeline.
   stats.StatsInterval interval = 3;
 
-  // One `ExecutionTimelineEntry` for each execution that matched the target
-  // and query in the request, ordered by start_time_usec - we are basically
-  // relying on the fact that we have the target label to constrain the scan
-  // size, which might not work, but that's where we're starting.
+  // One `ExecutionTimeline` for each group of executions that matched the
+  // target and query in the request.  Each timeline's summary and
+  // aggregated_stats cover all matching executions, but the individual
+  // `execution` entries are a bounded random sample across all timelines,
+  // ordered by start_time_usec.
   repeated ExecutionTimeline timelines = 2;
 }
