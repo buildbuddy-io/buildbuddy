@@ -877,6 +877,24 @@ func TestBashScript(t *testing.T) {
 	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
 }
 
+func TestBBRC(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		".bbrc": `
+remote --skip_auto_checkout=true
+remote:ci --script='echo BBRC config applied'
+`,
+	})
+
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+		"--bb_config=ci",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1),
+	)
+	require.Contains(t, output, "BBRC config applied")
+}
+
 // In production, the apps upload the ci_runner and bb binaries to the cache so
 // executors can fetch the latest versions without upgrading. Writing to the cache
 // for tests is very slow, so this behavior is disabled by default.

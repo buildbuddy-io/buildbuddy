@@ -59,7 +59,6 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	csinpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
@@ -247,10 +246,9 @@ type recordStatsTask struct {
 	createdAt time.Time
 	// files contains a mapping of file digests to file name metadata for files
 	// referenced in the BEP.
-	files                    map[string]*build_event_stream.File
-	persist                  *PersistArtifacts
-	kytheSSTableResourceName *rspb.ResourceName
-	invocationStatus         inspb.InvocationStatus
+	files            map[string]*build_event_stream.File
+	persist          *PersistArtifacts
+	invocationStatus inspb.InvocationStatus
 	// Git fetch stats reported by the remote runner, if any. These are stored
 	// only in the OLAP DB, so they are carried here rather than read back from
 	// the primary DB at flush time.
@@ -315,14 +313,13 @@ func (r *statsRecorder) Enqueue(ctx context.Context, beValues *accumulator.BEVal
 			attempt: invocation.GetAttempt(),
 			jwt:     jwt,
 		},
-		createdAt:                time.Now(),
-		files:                    beValues.OutputFiles(),
-		invocationStatus:         invocation.GetInvocationStatus(),
-		persist:                  persist,
-		kytheSSTableResourceName: beValues.KytheSSTableResourceName(),
-		gitFetchTotalBytes:       beValues.GitFetchTotalBytes(),
-		gitFetchDurationUsec:     beValues.GitFetchDuration().Microseconds(),
-		gitFetchRetryCount:       beValues.GitFetchRetryCount(),
+		createdAt:            time.Now(),
+		files:                beValues.OutputFiles(),
+		invocationStatus:     invocation.GetInvocationStatus(),
+		persist:              persist,
+		gitFetchTotalBytes:   beValues.GitFetchTotalBytes(),
+		gitFetchDurationUsec: beValues.GitFetchDuration().Microseconds(),
+		gitFetchRetryCount:   beValues.GitFetchRetryCount(),
 	}
 	select {
 	case r.tasks <- req:
@@ -433,25 +430,6 @@ func (r *statsRecorder) flushInvocationStatsToOLAPDB(ctx context.Context, task *
 	return nil
 }
 
-func (r *statsRecorder) maybeIngestKytheSST(ctx context.Context, ij *invocationInfo, sstableResource *rspb.ResourceName) error {
-	// first check that css is enabled
-	codesearchService := r.env.GetCodesearchService()
-	if codesearchService == nil {
-		return nil
-	}
-
-	if sstableResource == nil {
-		return nil
-	}
-
-	ctx = r.env.GetAuthenticator().AuthContextFromTrustedJWT(ctx, ij.jwt)
-	_, err := codesearchService.IngestAnnotations(ctx, &csinpb.IngestAnnotationsRequest{
-		SstableName: sstableResource,
-		Async:       true, // don't wait for an answer.
-	})
-	return err
-}
-
 func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 	start := time.Now()
 	defer func() {
@@ -474,10 +452,6 @@ func (r *statsRecorder) handleTask(ctx context.Context, task *recordStatsTask) {
 		if err := scorecard.Write(ctx, r.env, task.invocationInfo.id, task.invocationInfo.attempt, sc); err != nil {
 			log.CtxErrorf(ctx, "Error writing scorecard blob: %s", err)
 		}
-	}
-
-	if err := r.maybeIngestKytheSST(ctx, task.invocationInfo, task.kytheSSTableResourceName); err != nil {
-		log.CtxWarningf(ctx, "Failed to ingest kythe sst: %s", err)
 	}
 
 	updated, err := r.env.GetInvocationDB().UpdateInvocation(ctx, ti)

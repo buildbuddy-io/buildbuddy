@@ -1171,6 +1171,13 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName},
 		},
 		{
+			name:                      "action filter, codesearch disabled for group",
+			actionFilter:              []string{"Test all targets"},
+			codesearchEnabledForGroup: false,
+			codesearchFlagEnabled:     true,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
 			name:                      "action filter excludes codesearch",
 			actionFilter:              []string{"Test all targets"},
 			codesearchEnabledForGroup: true,

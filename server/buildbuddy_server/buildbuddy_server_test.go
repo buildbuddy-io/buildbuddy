@@ -197,6 +197,7 @@ func userClaims(userID, groupID string) *claims.Claims {
 // associated user but does carry the key group's status.
 func orgAPIKeyClaims(groupID string, groupStatus grpb.Group_GroupStatus) *claims.Claims {
 	c := testauth.User("" /*=userID*/, groupID)
+	c.APIKeyID = "AK1"
 	c.Capabilities = []cappb.Capability{cappb.Capability_ORG_ADMIN}
 	c.GroupStatus = groupStatus
 	return c

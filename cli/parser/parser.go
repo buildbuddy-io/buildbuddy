@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/user"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -44,6 +45,10 @@ import (
 
 var (
 	nativeDefinitions = map[string]*options.Definition{
+		// Adds an explicit bbrc file.
+		bbrc.FileFlagName: bbrc.NewFileOptionDefinition(),
+		// Disables all bbrc files.
+		bbrc.IgnoreAllRCFilesFlagName: bbrc.NewIgnoreAllRCFilesOptionDefinition(),
 		// Set to print debug output for the bb CLI.
 		logoptdef.Verbose.Name(): logoptdef.Verbose,
 		// Reinvokes the CLI as a subprocess on changes to source files.
@@ -679,7 +684,7 @@ func (p *Parser) canonicalizeArgs(args []string) ([]string, error) {
 			return args, nil
 		}
 	}
-	parsedArgs, err := ParseArgs(args)
+	parsedArgs, err := p.ParseArgs(args)
 	if err != nil {
 		return nil, err
 	}
@@ -803,10 +808,7 @@ func runBazelHelpWithCache() (*bfpb.FlagCollection, error) {
 	return flags, err
 }
 
-// ResolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs using the default parser, and expands all config options using
-// those configs, and returns the result.
+// ResolveArgs applies BB and Bazel rc-file settings to the parsed arguments.
 func ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -823,11 +825,7 @@ func resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs
 	return p.resolveArgs(parsedArgs, ws)
 }
 
-// ResolveArgs removes all rc-file options from the args, appends an
-// `ignore_all_rc_files` option to the startup options, parses those rc-files
-// into Configs, and expands all config options (as well as any
-// `enable_platform_specific_config` option, if one exists) using
-// those configs, and returns the result.
+// ResolveArgs applies BB and Bazel rc-file settings to the parsed arguments.
 func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
 	ws, err := workspace.Path()
 	if err != nil {
@@ -836,8 +834,30 @@ func (p *Parser) ResolveArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArg
 	return p.resolveArgs(parsedArgs, ws)
 }
 
+// ResolveBBArgs expands bbrc settings.
+func (p *Parser) ResolveBBArgs(parsedArgs *parsed.OrderedArgs) (*parsed.OrderedArgs, error) {
+	ws, err := workspace.Path()
+	if err != nil {
+		log.Debugf("Could not determine workspace dir: %s", err)
+	}
+	return p.expandBBRC(parsedArgs, ws)
+}
+
 func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
-	// TODO(Maggie): Add bbrc config expansion here
+	// When expanding bbrc, use the bb-specific parser because bbrc files
+	// should not contain Bazel options.
+	bbParser, err := GetBBParserForCommand(parsedArgs.GetCommand())
+	if err != nil {
+		return nil, err
+	}
+	parsedArgs, err = bbParser.expandBBRC(parsedArgs, ws)
+	if err != nil {
+		return nil, err
+	}
+	return p.expandBazelRC(parsedArgs, ws)
+}
+
+func (p *Parser) expandBazelRC(parsedArgs *parsed.OrderedArgs, ws string) (*parsed.OrderedArgs, error) {
 	configs, defaultConfig, err := p.consumeAndParseRCFiles(parsedArgs, ws)
 	if err != nil {
 		return nil, err
@@ -845,12 +865,32 @@ func (p *Parser) resolveArgs(parsedArgs *parsed.OrderedArgs, ws string) (*parsed
 	return bazelrc.ExpandConfigs(parsedArgs, configs, defaultConfig)
 }
 
-func (p *Parser) expandBBRC(args *parsed.OrderedArgs, workspaceDir, homeDir string) (*parsed.OrderedArgs, error) {
-	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(workspaceDir, bbrcFilePaths(workspaceDir, homeDir)...)
+func (p *Parser) expandBBRC(args *parsed.OrderedArgs, workspaceDir string) (*parsed.OrderedArgs, error) {
+	homeDir, err := userHomeDir()
+	if err != nil {
+		log.Debugf("Could not determine home dir for .bbrc: %s", err)
+	}
+	filePaths, err := consumeBBRCFileOptions(args, workspaceDir, homeDir)
+	if err != nil {
+		return nil, err
+	}
+	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(workspaceDir, filePaths...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse .bbrc file: %s", err)
 	}
 	return bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
+}
+
+func userHomeDir() (string, error) {
+	homeDir, homeDirErr := os.UserHomeDir()
+	if homeDirErr == nil && homeDir != "" {
+		return homeDir, nil
+	}
+	u, currentUserErr := user.Current()
+	if currentUserErr == nil && u != nil && u.HomeDir != "" {
+		return u.HomeDir, nil
+	}
+	return "", fmt.Errorf("os.UserHomeDir: %v; user.Current: %v", homeDirErr, currentUserErr)
 }
 
 func bbrcFilePaths(workspaceDir, homeDir string) []string {
@@ -862,6 +902,36 @@ func bbrcFilePaths(workspaceDir, homeDir string) []string {
 		paths = append(paths, filepath.Join(homeDir, bbrc.FileName))
 	}
 	return paths
+}
+
+// consumeBBRCFileOptions removes --bbrc options and returns the BuildBuddy rc
+// files in increasing precedence order.
+func consumeBBRCFileOptions(args *parsed.OrderedArgs, workspaceDir, homeDir string) ([]string, error) {
+	ignoreAll, err := options.AccumulateValues[*parsed.IndexedOption](
+		false,
+		args.RemoveStartupOptions(bbrc.IgnoreAllRCFilesFlagName),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get value from %q: %s", bbrc.IgnoreAllRCFilesFlagName, err)
+	}
+	if ignoreAll {
+		args.RemoveStartupOptions(bbrc.FileFlagName)
+		return nil, nil
+	}
+
+	paths := bbrcFilePaths(workspaceDir, homeDir)
+	for _, indexedOption := range args.RemoveStartupOptions(bbrc.FileFlagName) {
+		path := indexedOption.GetValue()
+		if path == "/dev/null" {
+			// Match --bazelrc: /dev/null stops processing later explicit files.
+			break
+		}
+		if _, err := bazelrc.Realpath(path); err != nil {
+			log.Warnf("Could not find --bbrc file %q, skipping: %s", path, err)
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
 }
 
 // RCFilePolicy controls how sections of an rc file are parsed.
@@ -889,8 +959,41 @@ func (p *Parser) ParseBBRCFiles(workspaceDir string, filePaths ...string) (map[s
 			_, isBBCommand := cli_command.CommandsByName[phase]
 			return bazelrc.IsPhase(phase) || isBBCommand
 		},
-		ParsePhase: p.ParseConfig,
+		ParsePhase: func(phase string, tokens []string) ([]arguments.Argument, error) {
+			sectionParser := p
+			// BB commands declare their flags in command-specific Go flag sets.
+			// Parse each such section with its command's parser so an unrelated
+			// section does not fail just because the current command's parser does
+			// not know those flags.
+			if command := cli_command.GetCommand(phase); command != nil && command.Flags != nil {
+				var err error
+				sectionParser, err = GetBBParserForCommand(command.Name)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return sectionParser.parseBBRCConfig(phase, tokens)
+		},
 	}, filePaths...)
+}
+
+func (p *Parser) parseBBRCConfig(phase string, tokens []string) ([]arguments.Argument, error) {
+	args, err := p.ParseConfig(phase, tokens)
+	if err != nil {
+		return nil, err
+	}
+	// Validate that all options in the config are CLI flags.
+	// Bazel options are not allowed in bbrc files.
+	for _, classified := range parsed.Classify(args) {
+		option, ok := classified.(parsed.ClassifiedOption)
+		if !ok {
+			continue
+		}
+		if id := option.AsOption().PluginID(); id == options.UnknownBuiltinPluginID || id == options.StarlarkBuiltinPluginID {
+			return nil, fmt.Errorf("option %q is not a bb CLI flag", option.AsOption().Name())
+		}
+	}
+	return args, nil
 }
 
 // ParseRCFilesWithPolicy parses rc files and returns a map of the named configs as well as the default (unnamed)
@@ -965,8 +1068,12 @@ func (p *Parser) ParseConfig(phase string, tokens []string) ([]arguments.Argumen
 		for _, o := range parsed.Classify(parsedArgs.Args) {
 			switch o := o.(type) {
 			case *parsed.StartupOption:
-				if _, ok := bazelrc.StartupFlagNoRc[o.Name()]; ok {
-					return nil, fmt.Errorf("Can't specify %s in the .bazelrc file.", o.Name())
+				// Disallow sections like `startup --bazelrc=another.bazelrc --bbrc=another.bbrc`
+				// which try to change which rc files are loaded after file loading has already started.
+				// This matches Bazel's behavior of disallowing rc-selection flags inside rc files.
+				_, isBazelrcFlag := bazelrc.StartupFlagNoRc[o.Name()]
+				if isBazelrcFlag || o.Name() == bbrc.FileFlagName || o.Name() == bbrc.IgnoreAllRCFilesFlagName {
+					return nil, fmt.Errorf("Can't specify %s in an rc file.", o.Name())
 				}
 			default:
 				return nil, fmt.Errorf("Unknown startup option: '%s'", o.Arg().Format()[0])
