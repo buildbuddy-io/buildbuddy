@@ -58,6 +58,8 @@ func commandArgs(request *agentutil.RunRequest) []string {
 		"--sandbox", "read-only",
 		"--config", `approval_policy="never"`,
 		"--json",
+		// Support not running in a git repository.
+		"--skip-git-repo-check",
 	}
 	if request.Model != "" {
 		args = append(args, "--model", request.Model)

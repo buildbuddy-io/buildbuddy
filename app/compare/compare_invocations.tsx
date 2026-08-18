@@ -221,7 +221,14 @@ fi
 `;
 
       let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
-      triggerRemoteRun(modelA, command, false /*autoOpenChild*/, platformProps, ["--skip_auto_checkout=true"]);
+      triggerRemoteRun(
+        modelA,
+        command,
+        false /*autoOpenChild*/,
+        platformProps,
+        ["--skip_auto_checkout=true"],
+        "bb explain"
+      );
     } catch (error) {
       console.error("Error running bb explain:", error);
       alert_service.error("Failed to run bb explain: " + error);

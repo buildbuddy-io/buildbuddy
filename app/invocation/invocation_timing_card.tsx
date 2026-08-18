@@ -1,9 +1,22 @@
-import { Clock, Download } from "lucide-react";
+import { Check, ChevronDown, Clock, Copy, Download, Info, Sparkles } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
+import alertService from "../alert/alert_service";
 import capabilities from "../capabilities/capabilities";
 import Button, { OutlinedButton } from "../components/button/button";
+import { OutlinedButtonGroup } from "../components/button/button_group";
 import LinkButton from "../components/button/link_button";
+import Dialog, {
+  DialogBody,
+  DialogFooter,
+  DialogFooterButtons,
+  DialogHeader,
+  DialogTitle,
+} from "../components/dialog/dialog";
+import Menu, { MenuItem } from "../components/menu/menu";
+import Modal from "../components/modal/modal";
+import Popup, { PopupContainer } from "../components/popup/popup";
+import { TextLink } from "../components/link/link";
 import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
@@ -11,6 +24,8 @@ import rpcService, { CancelablePromise, FileEncoding } from "../service/rpc_serv
 import { Profile, readProfile, Thread } from "../trace/compact_trace";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
 import TraceViewer from "../trace/trace_viewer";
+import { copyToClipboard } from "../util/clipboard";
+import { triggerRemoteRun } from "../util/remote_runner";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import InvocationModel from "./invocation_model";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
@@ -19,6 +34,8 @@ interface Props {
   model: InvocationModel;
   dark: boolean;
 }
+
+type ExplainProfileAgent = "claude" | "codex";
 
 interface State {
   profile: Profile | null;
@@ -34,6 +51,9 @@ interface State {
   eventPageSize: number;
   localProfileName: string;
   viewerKey: number;
+  explainProfileAgent: ExplainProfileAgent;
+  isExplainProfileMenuOpen: boolean;
+  isExplainProfileDialogOpen: boolean;
 }
 
 interface TraceEventRef {
@@ -71,6 +91,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
     viewerKey: 0,
+    explainProfileAgent: "codex",
+    isExplainProfileMenuOpen: false,
+    isExplainProfileDialogOpen: false,
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
@@ -414,6 +437,137 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return refs;
   }
 
+  private getExplainProfileCommand() {
+    return `bb explain profile --agent=${this.state.explainProfileAgent} ${this.props.model.getInvocationId()}`;
+  }
+
+  // suggestSpeedups runs `bb explain profile` on a remote runner.
+  private suggestSpeedups() {
+    triggerRemoteRun(
+      this.props.model,
+      this.getExplainProfileCommand(),
+      true,
+      new Map<string, string>([["env-secrets", "ANTHROPIC_API_KEY,OPENAI_API_KEY"]]),
+      ["--skip_auto_checkout=true"],
+      "explain profile",
+      true /* installAgentTools */
+    );
+  }
+
+  private copyExplainProfileCommand() {
+    this.setState({ isExplainProfileMenuOpen: false });
+    try {
+      copyToClipboard(this.getExplainProfileCommand());
+      alertService.success("Copied command to clipboard");
+    } catch (e) {
+      errorService.handleError(e);
+    }
+  }
+
+  private selectExplainProfileAgent(agent: ExplainProfileAgent) {
+    this.setState({ explainProfileAgent: agent, isExplainProfileMenuOpen: false });
+  }
+
+  private renderExplainProfileActions() {
+    return (
+      <PopupContainer className="timing-explain-actions">
+        <OutlinedButtonGroup>
+          <OutlinedButton onClick={this.suggestSpeedups.bind(this)}>
+            <Sparkles className="icon" />
+            Suggest speedups with AI
+          </OutlinedButton>
+          <OutlinedButton
+            className="icon-button"
+            aria-label="More ways to run bb explain profile"
+            aria-haspopup="menu"
+            aria-expanded={this.state.isExplainProfileMenuOpen}
+            onClick={() => this.setState({ isExplainProfileMenuOpen: true })}>
+            <ChevronDown />
+          </OutlinedButton>
+          <OutlinedButton
+            className="icon-button"
+            aria-label="How AI profile analysis works"
+            onClick={() => this.setState({ isExplainProfileDialogOpen: true })}>
+            <Info />
+          </OutlinedButton>
+        </OutlinedButtonGroup>
+        <Popup
+          isOpen={this.state.isExplainProfileMenuOpen}
+          onRequestClose={() => this.setState({ isExplainProfileMenuOpen: false })}
+          anchor="right">
+          <Menu className="timing-explain-menu">
+            <li className="timing-explain-menu-label" role="presentation">
+              Run with
+            </li>
+            {(["claude", "codex"] as ExplainProfileAgent[]).map((agent) => (
+              <MenuItem
+                key={agent}
+                className={this.state.explainProfileAgent === agent ? "selected" : ""}
+                role="menuitemradio"
+                aria-checked={this.state.explainProfileAgent === agent}
+                onClick={() => this.selectExplainProfileAgent(agent)}>
+                <Check className="timing-explain-menu-icon check" />
+                <span>{agent === "claude" ? "Claude" : "Codex"}</span>
+              </MenuItem>
+            ))}
+            <li className="timing-explain-menu-divider" role="separator" />
+            <MenuItem onClick={this.copyExplainProfileCommand.bind(this)}>
+              <Copy className="timing-explain-menu-icon" />
+              <span>Copy command to run locally</span>
+            </MenuItem>
+          </Menu>
+        </Popup>
+      </PopupContainer>
+    );
+  }
+
+  private renderExplainProfileDialog() {
+    return (
+      <Modal
+        isOpen={this.state.isExplainProfileDialogOpen}
+        onRequestClose={() => this.setState({ isExplainProfileDialogOpen: false })}>
+        <Dialog className="timing-explain-dialog">
+          <DialogHeader>
+            <DialogTitle>AI timing profile analysis</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <p>
+              <span className="inline-code">bb explain profile</span> uses AI to analyze the timing profile uploaded
+              with this build and recommend ways to improve build performance.
+            </p>
+            <p>
+              <b>Run from the UI</b>
+              <br />
+              When triggered from the UI, the command will be run on a remote runner and the results will be rendered in
+              a new tab. The runner requires an{" "}
+              <TextLink href="/settings/org/secrets" target="_blank">
+                agent API-key stored as a BuildBuddy secret
+              </TextLink>
+              .
+            </p>
+            <p>
+              <b>Run locally</b>
+              <br />
+              The adjacent menu has a button to copy the command to run locally. On your local machine, the command can
+              use your existing agent sign-in.
+            </p>
+            <p>
+              Relevant profile data is sent to the AI provider, and provider charges may apply.{" "}
+              <TextLink href="https://www.buildbuddy.io/docs/cli-commands#bb-explain-profile" target="_blank">
+                See the docs for more info.
+              </TextLink>
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <DialogFooterButtons>
+              <Button onClick={() => this.setState({ isExplainProfileDialogOpen: false })}>Done</Button>
+            </DialogFooterButtons>
+          </DialogFooter>
+        </Dialog>
+      </Modal>
+    );
+  }
+
   render() {
     let threads = Array.from(this.state.threadMap.values());
 
@@ -463,13 +617,16 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           <div className="content">
             <div className="header">
               <div className="title">All events</div>
-              {downloadHref && (
-                <div className="button">
-                  <LinkButton className="download-gz-file" href={downloadHref} target="_blank">
+              <div className="button timing-events-actions">
+                {/* Suggest speedups downloads a timing profile from the cache. Disable it for local profiles. */}
+                {!this.state.localProfileName && this.renderExplainProfileActions()}
+
+                {downloadHref && (
+                  <LinkButton href={downloadHref} target="_blank">
                     {this.state.localProfileName ? "Download invocation profile" : "Download profile"}
                   </LinkButton>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             <div className="sort-controls">
               <div className="sort-control">
@@ -641,6 +798,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
               )}
           </div>
         </div>
+        {this.renderExplainProfileDialog()}
       </>
     );
   }

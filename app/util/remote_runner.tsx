@@ -8,6 +8,39 @@ import rpcService from "../service/rpc_service";
 
 const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest";
 
+const SETUP_AGENT_TOOLS_COMMAND = `
+set -euo pipefail
+
+if [[ -z "\${ANTHROPIC_API_KEY:-}" ]] && [[ -z "\${OPENAI_API_KEY:-}" ]]; then
+  echo "ERROR: Authentication via an API key is required. Add ANTHROPIC_API_KEY or OPENAI_API_KEY as a BuildBuddy secret." >&2
+  exit 1
+fi
+
+if [[ -n "\${ANTHROPIC_API_KEY:-}" ]] && ! command -v claude &>/dev/null; then
+  echo "==> Installing Claude..." >&2
+  curl -fsSL https://claude.ai/install.sh | bash
+  if [[ -f "$HOME/.local/bin/claude" ]]; then
+    sudo mv "$HOME/.local/bin/claude" /usr/local/bin/claude
+  fi
+  if ! command -v claude &>/dev/null; then
+    echo "Error: Claude Code installation failed." >&2
+    exit 1
+  fi
+fi
+
+if [[ -n "\${OPENAI_API_KEY:-}" ]] && ! command -v codex &>/dev/null; then
+  echo "==> Installing Codex..." >&2
+  curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
+  if [[ -f "$HOME/.local/bin/codex" ]]; then
+    sudo mv "$HOME/.local/bin/codex" /usr/local/bin/codex
+  fi
+  if ! command -v codex &>/dev/null; then
+    echo "Error: Codex installation failed." >&2
+    exit 1
+  fi
+fi
+`;
+
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());
   return rsp.repos.some((repo) => repo.repoUrl === repoUrl);
@@ -18,7 +51,9 @@ export function triggerRemoteRun(
   command: string,
   autoOpenChild: boolean,
   platformProps: Map<string, string> | null,
-  runnerFlags: string[] = []
+  runnerFlags: string[],
+  name: string,
+  installAgentTools = false
 ) {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
@@ -49,6 +84,13 @@ export function triggerRemoteRun(
       branch: invocationModel.getBranchName(),
     }),
     steps: [
+      ...(installAgentTools
+        ? [
+            new runner.Step({
+              run: SETUP_AGENT_TOOLS_COMMAND,
+            }),
+          ]
+        : []),
       new runner.Step({
         run: command,
       }),
@@ -64,6 +106,7 @@ export function triggerRemoteRun(
     },
     execProperties: execProps,
     runnerFlags: runnerFlags,
+    name: name,
   });
 
   rpcService.service
