@@ -40,7 +40,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         commands = [
             name + ".push_only",
             name + ".apply_only",
-        ]
+        ],
         **kwargs
     )
 
