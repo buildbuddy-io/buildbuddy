@@ -97,7 +97,7 @@ func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) e
 		TargetId:         op,
 	})
 	if err != nil {
-		log.Fatalf("Failed to attach request metadata: %v", err)
+		return err
 	}
 	start := time.Now()
 	err = fn(ctx)
@@ -400,7 +400,7 @@ func main() {
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
-	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace=force", "force")
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
 
 	res := &results{}
 
@@ -411,6 +411,7 @@ func main() {
 			c.Close()
 		}
 	}()
+	uuid := uuid.New()
 	probers := make([]*prober, 0, *numConnections)
 	for range *numConnections {
 		conn, err := grpc_client.DialSimpleWithoutPooling(*cacheTarget)
@@ -424,7 +425,7 @@ func main() {
 			bs:           bspb.NewByteStreamClient(conn),
 			ac:           repb.NewActionCacheClient(conn),
 			cas:          repb.NewContentAddressableStorageClient(conn),
-			invocationID: uuid.New(),
+			invocationID: uuid,
 		})
 	}
 
