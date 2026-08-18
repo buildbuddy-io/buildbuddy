@@ -147,6 +147,7 @@ func runProbe() error {
 		extraArgs := strings.Split(*bazelArgs, " ")
 		args = append(args, extraArgs...)
 	}
+	args = append(args, "--remote_header=x-buildbuddy-trace=force")
 	trimmedTags := strings.TrimSpace(*tags)
 	if trimmedTags != "" {
 		args = append(args, "--build_metadata=TAGS="+trimmedTags)
