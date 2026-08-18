@@ -41,7 +41,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
             name + ".push_only",
             name + ".apply_only",
         ]
-        **kwargs,
+        **kwargs
     )
 
     # Generate an .apply rule for uploading.
