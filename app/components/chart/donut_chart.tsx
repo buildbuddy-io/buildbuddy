@@ -9,7 +9,7 @@ interface Props {
 
 const MAX_LEGEND_ENTRIES = 5;
 
-export default class LegendPieChart extends React.Component<Props> {
+export default class DonutChart extends React.Component<Props> {
   render() {
     let data = this.props.data?.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
     const sum = data?.reduce(
@@ -36,7 +36,7 @@ export default class LegendPieChart extends React.Component<Props> {
     }
 
     return (
-      <div className="bb-pie-chart">
+      <div className="donut-chart">
         <ResponsiveContainer width={80} height={80}>
           <PieChart>
             <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
@@ -46,12 +46,12 @@ export default class LegendPieChart extends React.Component<Props> {
         </ResponsiveContainer>
         <div>
           {data?.map((entry, index) => (
-            <div className="bb-pie-chart-label">
-              <span className="bb-pie-chart-swatch" style={{ backgroundColor: getChartColor(index) }}></span>
+            <div className="donut-chart-label">
+              <span className="donut-chart-swatch" style={{ backgroundColor: getChartColor(index) }}></span>
               <span>
-                <span className="bb-pie-chart-legend-value">{format.formatWithCommas(entry.value)}</span>{" "}
+                <span className="donut-chart-legend-value">{format.formatWithCommas(entry.value)}</span>{" "}
                 <span
-                  className="bb-pie-chart-legend-desc"
+                  className="donut-chart-legend-desc"
                   title={
                     other > 0 && index == MAX_LEGEND_ENTRIES
                       ? otherLabels.join(", ")

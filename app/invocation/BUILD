@@ -259,7 +259,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/recharts",
         "//app/capabilities",
-        "//app/components/chart:pie_chart",
+        "//app/components/chart:donut_chart",
         "//app/format",
         "//app/invocation:invocation_model",
         "//proto:action_cache_ts_proto",

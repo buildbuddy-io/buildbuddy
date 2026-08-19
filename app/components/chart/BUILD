@@ -5,8 +5,8 @@ package(default_visibility = ["//visibility:public"])
 exports_files(glob(["*.css"]))
 
 ts_library(
-    name = "pie_chart",
-    srcs = ["pie_chart.tsx"],
+    name = "donut_chart",
+    srcs = ["donut_chart.tsx"],
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/react",

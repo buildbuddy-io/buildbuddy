@@ -5,7 +5,7 @@ import { blaze } from "../../proto/action_cache_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import format from "../format/format";
 import InvocationModel from "./invocation_model";
-import LegendPieChart from "../components/chart/pie_chart";
+import DonutChart from "../components/chart/donut_chart";
 
 interface Props {
   model: InvocationModel;
@@ -278,7 +278,7 @@ function renderBreakdown(data: any[] | undefined, title: string, subtitle: strin
     <div className="cache-section">
       <div className="cache-title">{title}</div>
       <div className="cache-subtitle">{subtitle}</div>
-      <LegendPieChart data={data}></LegendPieChart>
+      <DonutChart data={data}></DonutChart>
     </div>
   );
 }
