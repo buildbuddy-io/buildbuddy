@@ -1246,9 +1246,9 @@ func victoriaMetricsRow() *dashboard.RowBuilder {
 			Min(0).
 			FillOpacity(10).
 			WithTarget(dash.PromQuery(`sum by (url) (rate(vmagent_remotewrite_bytes_sent_total{app_kubernetes_io_instance="victoria-metrics-agent-regional", region="${region}"}[${window}]))`, ""))).
-		WithPanel(ts("vmstorage (global) - free disk space", dash.UnitDecimalBytes).
+		WithPanel(ts("free disk space", dash.UnitDecimalBytes).
 			Min(0).
-			WithTarget(dash.PromQuery(`sum by (apps_kubernetes_io_pod_index) (vm_free_disk_space_bytes{region="${region}", app="vmstorage"})`, "pod {{apps_kubernetes_io_pod_index}}"))).
+			WithTarget(dash.PromQuery(`sum by (pod_name) (vm_free_disk_space_bytes{region="${region}"})`, "__auto"))).
 		WithPanel(ts("vmstorage (global) - churn rate (new timeseries creation rate)", "series/s").
 			Min(0).
 			WithTarget(dash.PromQuery(`sum by (apps_kubernetes_io_pod_index) (rate(vm_new_timeseries_created_total{region="${region}", app="vmstorage"}[${window}]))`, "pod {{apps_kubernetes_io_pod_index}}"))).
