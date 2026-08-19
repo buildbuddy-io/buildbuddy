@@ -1,0 +1,31 @@
+.bb-pie-chart {
+  display: flex;
+  font-size: 16px;
+  align-items: center;
+}
+
+.bb-pie-chart-label {
+  display: flex;
+  white-space: nowrap;
+  font-weight: 600;
+  font-weight: 20px;
+}
+
+.bb-pie-chart-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  margin-right: 8px;
+  margin-top: 3px;
+  display: block;
+  background-color: var(--color-bg-hover);
+}
+
+.bb-pie-chart-legend-value {
+  min-width: 60px;
+  display: inline-block;
+}
+
+.bb-pie-chart-legend-desc {
+  font-weight: normal;
+}
