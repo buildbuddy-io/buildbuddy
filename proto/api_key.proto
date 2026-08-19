@@ -2,6 +2,7 @@ syntax = "proto3";
 
 import "proto/capability.proto";
 import "proto/context.proto";
+import "proto/user_id.proto";
 import "google/protobuf/duration.proto";
 
 package api_key;
@@ -34,6 +35,14 @@ message ApiKey {
   // Optional certificate corresponding to this API key, if
   // requested.
   Certificate certificate = 8;
+
+  // Time at which this API key was created. Unset for keys created before
+  // creation times were recorded.
+  int64 created_at_usec = 9;
+
+  // User that created this API key. Unset for keys created before creators
+  // were recorded, and for keys created by the server itself.
+  user_id.DisplayUser created_by_user = 10;
 }
 
 message Certificate {

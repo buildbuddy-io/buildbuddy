@@ -226,6 +226,61 @@ func TestGroupKeyExpiration(t *testing.T) {
 	require.NotContains(t, apiKeyIDs(keys), rsp.GetApiKey().GetId())
 }
 
+func TestAPIKeyCreationMetadata(t *testing.T) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	authCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	groupID := admin.Groups[0].Group.GroupID
+
+	fakeClock.Advance(1 * time.Hour)
+	createdAtUsec := fakeClock.Now().UnixMicro()
+	created, err := adb.CreateAPIKey(authCtx, groupID, "test key", nil /*=caps*/, 0 /*=expiresIn*/, false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	require.Equal(t, createdAtUsec, created.CreatedAtUsec)
+	require.Equal(t, admin.UserID, created.CreatedByUserID)
+
+	// The creation metadata should be persisted, not just set on the returned
+	// struct.
+	fakeClock.Advance(1 * time.Hour)
+	key, err := adb.GetAPIKey(authCtx, created.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, createdAtUsec, key.CreatedAtUsec)
+	require.Equal(t, admin.UserID, key.CreatedByUserID)
+
+	// The creation metadata should be plumbed through to the API.
+	rsp, err := env.GetBuildBuddyServer().GetApiKeys(authCtx, &akpb.GetApiKeysRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+	})
+	require.NoError(t, err)
+	for _, k := range rsp.GetApiKey() {
+		if k.GetId() == created.APIKeyID {
+			require.Equal(t, createdAtUsec, k.GetCreatedAtUsec())
+			require.Equal(t, admin.UserID, k.GetCreatedByUser().GetUserId().GetId())
+			require.Equal(t, admin.FirstName+" "+admin.LastName, k.GetCreatedByUser().GetName().GetFull())
+			return
+		}
+	}
+	require.FailNow(t, "created key was not returned by GetApiKeys")
+}
+
 func TestUserKeyExpiration(t *testing.T) {
 	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
 	ctx := context.Background()

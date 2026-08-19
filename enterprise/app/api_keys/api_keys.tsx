@@ -17,6 +17,7 @@ import TextInput from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
+import format from "../../../app/format/format";
 import rpcService, { CancelablePromise, UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
@@ -645,6 +646,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 ) : (
                   <span className="untitled-key">Untitled key</span>
                 )}
+                {renderCreationDetails(key)}
               </div>
               <div
                 className="api-key-capabilities"
@@ -769,6 +771,22 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities += " (*)";
   }
   return capabilities;
+}
+
+// Renders creation details as a subtitle under the key label.
+function renderCreationDetails(apiKey: api_key.ApiKey) {
+  const creator = apiKey.createdByUser?.name?.full || apiKey.createdByUser?.email || "";
+  const usec = +(apiKey.createdAtUsec ?? 0);
+  if (!creator && usec <= 0) return null;
+
+  let text = "Created";
+  if (creator) text += ` by ${creator}`;
+  if (usec > 0) text += ` on ${format.formatTimestampUsec(usec)}`;
+  return (
+    <div className="api-key-created-at" title={text}>
+      {text}
+    </div>
+  );
 }
 
 function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {

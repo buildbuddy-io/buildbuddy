@@ -745,6 +745,16 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 		encryptedValue = ek
 		value = ""
 	}
+	// This is a raw insert, so gorm's BeforeCreate hook doesn't run and the
+	// creation timestamp has to be set explicitly.
+	ak.CreatedAtUsec = d.clock.Now().UnixMicro()
+	// Some keys are created by the server itself, with no authenticated user;
+	// those are left without a recorded creator.
+	if a := d.env.GetAuthenticator(); a != nil {
+		if u, err := a.AuthenticatedUser(ctx); err == nil {
+			ak.CreatedByUserID = u.GetUserID()
+		}
+	}
 	err = db.NewQuery(ctx, "authdb_create_api_key").Raw(`
 		INSERT INTO "APIKeys" (
 			api_key_id,
@@ -758,8 +768,10 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 			label,
 			visible_to_developers,
 			impersonation,
-			expiry_usec
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			expiry_usec,
+			created_at_usec,
+			created_by_user_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
 		ak.UserID,
 		ak.GroupID,
@@ -772,6 +784,8 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 		ak.VisibleToDevelopers,
 		ak.Impersonation,
 		ak.ExpiryUsec,
+		ak.CreatedAtUsec,
+		ak.CreatedByUserID,
 	).Exec().Error
 	if err != nil {
 		return nil, err

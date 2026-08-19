@@ -1049,6 +1049,28 @@ func (d *UserDB) GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID strin
 	return d.getUserByID(ctx, d.h, &getUserOpts{subID: subID, directMembershipsOnly: opts.DirectMembershipsOnly})
 }
 
+func (d *UserDB) GetDisplayUsersByIDWithoutAuthCheck(ctx context.Context, userIDs []string) (map[string]*tables.User, error) {
+	users := make(map[string]*tables.User, len(userIDs))
+	if len(userIDs) == 0 {
+		return users, nil
+	}
+	args := make([]any, 0, len(userIDs))
+	for _, id := range userIDs {
+		args = append(args, id)
+	}
+	rq := d.h.NewQuery(ctx, "userdb_get_display_users").Raw(
+		`SELECT * FROM "Users" WHERE user_id IN (?`+strings.Repeat(",?", len(userIDs)-1)+`)`,
+		args...)
+	rows, err := db.ScanAll(rq, &tables.User{})
+	if err != nil {
+		return nil, err
+	}
+	for _, u := range rows {
+		users[u.UserID] = u
+	}
+	return users, nil
+}
+
 // processUserGroupMemberships updates the groupRoles map using the results
 // of the passed query which is expected contain user table, group table and
 // role columns.

@@ -1006,6 +1006,49 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
+func (s *BuildBuddyServer) toDisplayUser(ctx context.Context, userID string) *uidpb.DisplayUser {
+	return s.toDisplayUsers(ctx, []string{userID})[userID]
+}
+
+func (s *BuildBuddyServer) toDisplayUsers(ctx context.Context, userIDs []string) map[string]*uidpb.DisplayUser {
+	udb := s.env.GetUserDB()
+	if udb == nil {
+		return nil
+	}
+	lookup := make([]string, 0, len(userIDs))
+	seen := make(map[string]bool, len(userIDs))
+	for _, id := range userIDs {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		lookup = append(lookup, id)
+	}
+	if len(lookup) == 0 {
+		return nil
+	}
+	users, err := udb.GetDisplayUsersByIDWithoutAuthCheck(ctx, lookup)
+	if err != nil {
+		log.CtxWarningf(ctx, "Could not look up users %v: %s", lookup, err)
+		return nil
+	}
+	displayUsers := make(map[string]*uidpb.DisplayUser, len(users))
+	for id, u := range users {
+		displayUsers[id] = u.ToProto()
+	}
+	return displayUsers
+}
+
+// apiKeyCreators returns a map from user ID to DisplayUser, covering the
+// creators of all the given API keys.
+func (s *BuildBuddyServer) apiKeyCreators(ctx context.Context, keys []*tables.APIKey) map[string]*uidpb.DisplayUser {
+	userIDs := make([]string, 0, len(keys))
+	for _, k := range keys {
+		userIDs = append(userIDs, k.CreatedByUserID)
+	}
+	return s.toDisplayUsers(ctx, userIDs)
+}
+
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
@@ -1015,6 +1058,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if err != nil {
 		return nil, err
 	}
+	creators := s.apiKeyCreators(ctx, tableKeys)
 	rsp := &akpb.GetApiKeysResponse{
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
@@ -1025,6 +1069,8 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			CreatedAtUsec:       k.CreatedAtUsec,
+			CreatedByUser:       creators[k.CreatedByUserID],
 		})
 	}
 	return rsp, nil
@@ -1058,6 +1104,8 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
+			CreatedAtUsec:       key.CreatedAtUsec,
+			CreatedByUser:       s.toDisplayUser(ctx, key.CreatedByUserID),
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1103,6 +1151,8 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			CreatedAtUsec:       k.CreatedAtUsec,
+			CreatedByUser:       s.toDisplayUser(ctx, k.CreatedByUserID),
 		},
 	}, nil
 }
@@ -1194,6 +1244,8 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
 			ExpiryUsec:          k.ExpiryUsec,
+			CreatedAtUsec:       k.CreatedAtUsec,
+			CreatedByUser:       s.toDisplayUser(ctx, k.CreatedByUserID),
 		},
 	}, nil
 }
@@ -1222,6 +1274,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 	rsp := &akpb.GetApiKeysResponse{
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
+	creators := s.apiKeyCreators(ctx, tableKeys)
 	for _, k := range tableKeys {
 		// API Key value must be retrieved via GetUserAPIKey API.
 		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
@@ -1229,6 +1282,8 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			CreatedAtUsec:       k.CreatedAtUsec,
+			CreatedByUser:       creators[k.CreatedByUserID],
 		})
 	}
 	return rsp, nil
@@ -1262,6 +1317,8 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
+			CreatedAtUsec:       key.CreatedAtUsec,
+			CreatedByUser:       s.toDisplayUser(ctx, key.CreatedByUserID),
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1318,6 +1375,8 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			CreatedAtUsec:       k.CreatedAtUsec,
+			CreatedByUser:       s.toDisplayUser(ctx, k.CreatedByUserID),
 		},
 	}, nil
 
@@ -1446,6 +1505,7 @@ func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
 			Label:               k.Label,
 			VisibleToDevelopers: k.VisibleToDevelopers,
 			UserOwned:           k.Perms&perms.OWNER_READ > 0,
+			CreatedAtUsec:       k.CreatedAtUsec,
 		}
 	}
 	return protoKeys
