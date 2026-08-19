@@ -175,6 +175,7 @@ func TestTaskRouter_RankNodes_RecyclableRunnerRouterAppliesToCIRunnerAndBox(t *t
 				Arguments: []string{"./buildbuddy_ci_runner"},
 				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
 					{Name: "recycle-runner", Value: "true"},
+					{Name: "allow-remote-snapshots", Value: "true"},
 				}},
 			},
 		},
