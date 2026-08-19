@@ -55,9 +55,12 @@ go_library(
 go_test(
     name = "pebble_cache_test",
     size = "medium",
-    srcs = ["pebble_cache_test.go"],
+    srcs = [
+        "pebble_cache_internal_test.go",
+        "pebble_cache_test.go",
+    ],
+    embed = [":pebble_cache"],
     deps = [
-        ":pebble_cache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/crypter_service",
         "//enterprise/server/experiments",

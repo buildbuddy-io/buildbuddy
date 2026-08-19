@@ -831,7 +831,23 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(pc.blobDirectory); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, pc.blobDirectory, pc.leaser, pc.locker, pc, clock, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.SamplerIterRefreshPeriod, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
+			pe, err := newPartitionEvictor(
+				env.GetServerContext(),
+				part,
+				pc.fileStorer,
+				pc.blobDirectory,
+				pc.leaser,
+				pc.locker,
+				pc,
+				clock,
+				*opts.MinEvictionAge,
+				opts.Name,
+				opts.IncludeMetadataSize,
+				*opts.SampleBufferSize,
+				*opts.SamplesPerBatch,
+				*opts.SamplerIterRefreshPeriod,
+				*opts.DeleteBufferSize,
+				*opts.NumDeleteWorkers)
 			if err != nil {
 				return err
 			}
@@ -2553,6 +2569,22 @@ func getSizeOnLocalDisk(key []byte, md *sgpb.FileMetadata, includeMetadata bool)
 	return payloadSize
 }
 
+func getSizeOnLocalDiskFromView(keyLen, valLen int, v *sgpb.FileMetadataEvictionView, includeMetadata bool) int64 {
+	hasFile := v.HasStorageMetadata && v.StorageMetadata.HasFileMetadata
+	hasInline := v.HasStorageMetadata && v.StorageMetadata.HasInlineMetadata
+	payloadSize := v.StoredSizeBytes
+	if !hasFile && !hasInline {
+		payloadSize = 0 // Not on disk, so doesn't count.
+	}
+	if !includeMetadata {
+		return payloadSize
+	}
+	if hasInline {
+		payloadSize = 0 // Inline payloads are part of the serialized metadata and are already counted in valLen.
+	}
+	return int64(valLen) + int64(keyLen) + payloadSize
+}
+
 func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	encryption, err := p.activeEncryption(ctx)
 	if err != nil {
@@ -2907,7 +2939,23 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker[string], vg versionGetter, clock clockwork.Clock, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, samplerIterRefreshPeriod time.Duration, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
+func newPartitionEvictor(
+	ctx context.Context,
+	part disk.Partition,
+	fileStorer filestore.Store,
+	blobDir string, dbg pebble.Leaser,
+	locker lockmap.Locker[string],
+	vg versionGetter,
+	clock clockwork.Clock,
+	minEvictionAge time.Duration,
+	cacheName string,
+	includeMetadataSize bool,
+	sampleBufferSize int,
+	samplesPerBatch int,
+	samplerIterRefreshPeriod time.Duration,
+	deleteBufferSize int,
+	numDeleteWorkers int) (*partitionEvictor, error) {
+
 	pe := &partitionEvictor{
 		ctx:                      ctx,
 		mu:                       &sync.Mutex{},
@@ -3014,6 +3062,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
+	var fileMetadataView sgpb.FileMetadataEvictionView
 	timer := e.clock.NewTimer(0)
 	defer timer.Stop()
 
@@ -3083,30 +3132,32 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 
-		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
-		err = fileMetadata.UnmarshalVT(iter.Value())
-		if err != nil {
+		if err := fileMetadataView.UnmarshalWire(iter.Value()); err != nil {
 			metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "invalid_proto").Inc()
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
 		}
 
 		if rand.Float64() <= *groupSizeSampleRate {
-			keyBytes := make([]byte, len(iter.Key()))
-			copy(keyBytes, iter.Key())
-			sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
-			e.mu.Lock()
-			e.sizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
-			e.mu.Unlock()
+			// We need the group ID, so unmarshal the full metadata.
+			fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
+			if err := fileMetadata.UnmarshalVT(iter.Value()); err == nil {
+				keyBytes := make([]byte, len(iter.Key()))
+				copy(keyBytes, iter.Key())
+				sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
+				e.mu.Lock()
+				e.sizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
+				e.mu.Unlock()
+			}
 		}
 
-		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
+		e.maybeAddToSampleChan(iter, &fileMetadataView, quitChan, timer)
 		iter.Next()
 	}
 }
 
-func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, quitChan chan struct{}, timer clockwork.Timer) {
-	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, view *sgpb.FileMetadataEvictionView, quitChan chan struct{}, timer clockwork.Timer) {
+	atime := time.UnixMicro(view.LastAccessUsec)
 	age := e.clock.Since(atime)
 	if age < e.minEvictionAge {
 		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "age_too_small").Inc()
@@ -3115,7 +3166,7 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	keyBytes := make([]byte, len(iter.Key()))
 	copy(keyBytes, iter.Key())
 
-	sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
+	sizeBytes := getSizeOnLocalDiskFromView(len(iter.Key()), len(iter.Value()), view, e.includeMetadataSize)
 	sample := &approxlru.Sample[*evictionKey]{
 		Key: &evictionKey{
 			bytes: keyBytes,
