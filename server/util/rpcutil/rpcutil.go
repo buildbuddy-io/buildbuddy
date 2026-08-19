@@ -245,6 +245,8 @@ var MeterProvider = sync.OnceValue(func() metric.MeterProvider {
 	// The metrics are named `rpc.{client,server}.call.duration`, measured in
 	// seconds.
 	metricAttrs := attribute.NewAllowKeysFilter(
+		// rpc.method holds the full "package.Service/Method" path; the new
+		// semconv has no separate rpc.service attribute.
 		"rpc.method",
 		"rpc.response.status_code",
 		"rpc.system.name",

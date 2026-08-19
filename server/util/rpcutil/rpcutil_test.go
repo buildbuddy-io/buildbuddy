@@ -362,16 +362,43 @@ func TestMeterProviderGRPCViews(t *testing.T) {
 	_, err = hlpb.NewHealthClient(conn).Check(ctx, &hlpb.HealthCheckRequest{})
 	require.NoError(t, err)
 
-	metricFamilies, err := prometheus.DefaultGatherer.Gather()
-	require.NoError(t, err)
 	// Depending on the exporter version, in-process names keep semconv dots
 	// ("rpc.client.call.duration_seconds"); scrapers see the escaped form
 	// ("rpc_client_call_duration_seconds"). Normalize before comparing.
 	normalize := func(name string) string { return strings.ReplaceAll(name, ".", "_") }
-	families := map[string]*dto.MetricFamily{}
-	for _, f := range metricFamilies {
-		families[normalize(f.GetName())] = f
+	gather := func() map[string]*dto.MetricFamily {
+		metricFamilies, err := prometheus.DefaultGatherer.Gather()
+		require.NoError(t, err)
+		families := map[string]*dto.MetricFamily{}
+		for _, f := range metricFamilies {
+			families[normalize(f.GetName())] = f
+		}
+		return families
 	}
+	// The server emits its stats.End event after the client call returns, so
+	// the server family may lag the Gather by a moment.
+	require.Eventually(t, func() bool {
+		families := gather()
+		return families["rpc_client_call_duration_seconds"] != nil &&
+			families["rpc_server_call_duration_seconds"] != nil
+	}, 5*time.Second, 10*time.Millisecond,
+		"rpc.{client,server}.call.duration were not exported; if otelgrpc renamed its instruments, update the Views in rpcutil.MeterProvider to match")
+	families := gather()
+
+	// The Views only cover the call-duration instruments. Any other RPC
+	// family here (e.g. the retired *.size / *_per_rpc instruments coming
+	// back in an otelgrpc upgrade) would export unfiltered default-bucket
+	// histograms and needs a View before it ships.
+	var rpcFamilies []string
+	for name := range families {
+		if strings.HasPrefix(name, "rpc_") {
+			rpcFamilies = append(rpcFamilies, name)
+		}
+	}
+	require.ElementsMatch(t,
+		[]string{"rpc_client_call_duration_seconds", "rpc_server_call_duration_seconds"},
+		rpcFamilies,
+		"unexpected RPC metric families; add Views in rpcutil.MeterProvider for new otelgrpc instruments")
 
 	coarseBoundaries := []float64{0.005, 0.025, 0.1, 0.5, 1, 5, 10, 30}
 	for _, tc := range []struct {
@@ -383,13 +410,18 @@ func TestMeterProviderGRPCViews(t *testing.T) {
 		{name: "rpc_client_call_duration_seconds", wantBoundaries: coarseBoundaries},
 		{name: "rpc_server_call_duration_seconds", wantBoundaries: nil},
 	} {
-		family := families[tc.name]
-		require.NotNil(t, family,
-			"%s was not exported; if otelgrpc renamed its instruments, update the Views in rpcutil.MeterProvider to match", tc.name)
-		for _, m := range family.GetMetric() {
+		for _, m := range families[tc.name].GetMetric() {
+			labelNames := map[string]bool{}
 			for _, lp := range m.GetLabel() {
-				require.NotContains(t, []string{"server_address", "server_port"}, normalize(lp.GetName()),
-					"per-peer attributes must be filtered out by the View's AttributeFilter")
+				labelNames[normalize(lp.GetName())] = true
+			}
+			for _, banned := range []string{"server_address", "server_port"} {
+				require.False(t, labelNames[banned],
+					"per-peer attribute %s on %s must be filtered out by the View's AttributeFilter", banned, tc.name)
+			}
+			for _, want := range []string{"rpc_method", "rpc_response_status_code", "rpc_system_name"} {
+				require.True(t, labelNames[want],
+					"expected %s label on %s; if otelgrpc renamed its attributes, update the allowlist in rpcutil.MeterProvider", want, tc.name)
 			}
 			var boundaries []float64
 			for _, b := range m.GetHistogram().GetBucket() {
