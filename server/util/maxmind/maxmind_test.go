@@ -22,6 +22,20 @@ func TestLookupASN(t *testing.T) {
 	assert.Contains(t, asn.Organization, "Google")
 }
 
+func TestLookupASN_BuildBuddy(t *testing.T) {
+	for _, ip := range []string{
+		"23.176.168.49",  // SJC
+		"216.226.68.241", // NUQ
+	} {
+		t.Run(ip, func(t *testing.T) {
+			asn, err := LookupASN(netip.MustParseAddr(ip))
+			require.NoError(t, err)
+			assert.Equal(t, uint(17095), asn.Number)
+			assert.Equal(t, "BuildBuddy", asn.Organization)
+		})
+	}
+}
+
 func TestLookupASN_Unknown(t *testing.T) {
 	// Private-range addresses are not present in the database; the lookup
 	// should succeed but return a zero-valued ASN rather than an error.
