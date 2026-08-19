@@ -288,9 +288,15 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
 	}
 
-	// Group status defaults to free tier, unless the user is already blocked.
+	// Group status defaults to free tier, unless the user is already blocked or
+	// an enterprise group is provisioning a child using an admin API key.
 	currentStatus := u.GetGroupStatus()
 	if currentStatus == grpb.Group_BLOCKED_GROUP_STATUS {
+		g.Status = currentStatus
+	} else if u.GetAPIKeyInfo().ID != "" &&
+		u.HasCapability(cappb.Capability_ORG_ADMIN) &&
+		(currentStatus == grpb.Group_ENTERPRISE_GROUP_STATUS ||
+			currentStatus == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS) {
 		g.Status = currentStatus
 	} else {
 		g.Status = grpb.Group_FREE_TIER_GROUP_STATUS

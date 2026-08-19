@@ -34,9 +34,11 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
@@ -76,11 +78,12 @@ func (r *results) add(res opResult) {
 // prober runs the full check suite over a single connection. Multiple probers,
 // one per connection, run concurrently and record into a shared results sink.
 type prober struct {
-	ctx     context.Context
-	results *results
-	bs      bspb.ByteStreamClient
-	ac      repb.ActionCacheClient
-	cas     repb.ContentAddressableStorageClient
+	ctx          context.Context
+	results      *results
+	bs           bspb.ByteStreamClient
+	ac           repb.ActionCacheClient
+	cas          repb.ContentAddressableStorageClient
+	invocationID string
 }
 
 // do runs a single cache operation with its own timeout, records its latency
@@ -88,23 +91,31 @@ type prober struct {
 func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) error {
 	ctx, cancel := context.WithTimeout(p.ctx, *opTimeout)
 	defer cancel()
+	ctx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: p.invocationID,
+		ActionMnemonic:   "BazelCacheProber",
+		TargetId:         op,
+	})
+	if err != nil {
+		return err
+	}
 	start := time.Now()
-	err := fn(ctx)
+	err = fn(ctx)
 	latency := time.Since(start)
 
 	p.results.add(opResult{op: op, compressor: compressor, latency: latency, err: err})
 
 	if err != nil {
-		log.Errorf("%s failed after %s: %s", opDesc(op, compressor), latency, err)
+		log.Errorf("%s failed after %s: %s", opDesc(op, compressor, p.invocationID), latency, err)
 	}
 	return err
 }
 
-func opDesc(op, compressor string) string {
+func opDesc(op, compressor, invocationID string) string {
 	if compressor == "" {
-		return op
+		return op + " (invocationID=" + invocationID + ")"
 	}
-	return op + " (compressor=" + compressor + ")"
+	return op + " (compressor=" + compressor + ", invocationID=" + invocationID + ")"
 }
 
 func compressorName(compressor repb.Compressor_Value) string {
@@ -389,6 +400,7 @@ func main() {
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
 
 	res := &results{}
 
@@ -399,6 +411,7 @@ func main() {
 			c.Close()
 		}
 	}()
+	uuid := uuid.New()
 	probers := make([]*prober, 0, *numConnections)
 	for range *numConnections {
 		conn, err := grpc_client.DialSimpleWithoutPooling(*cacheTarget)
@@ -407,11 +420,12 @@ func main() {
 		}
 		closers = append(closers, conn)
 		probers = append(probers, &prober{
-			ctx:     ctx,
-			results: res,
-			bs:      bspb.NewByteStreamClient(conn),
-			ac:      repb.NewActionCacheClient(conn),
-			cas:     repb.NewContentAddressableStorageClient(conn),
+			ctx:          ctx,
+			results:      res,
+			bs:           bspb.NewByteStreamClient(conn),
+			ac:           repb.NewActionCacheClient(conn),
+			cas:          repb.NewContentAddressableStorageClient(conn),
+			invocationID: uuid,
 		})
 	}
 

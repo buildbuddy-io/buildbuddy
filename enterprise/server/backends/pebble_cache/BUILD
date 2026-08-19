@@ -55,14 +55,18 @@ go_library(
 go_test(
     name = "pebble_cache_test",
     size = "medium",
-    srcs = ["pebble_cache_test.go"],
+    srcs = [
+        "pebble_cache_internal_test.go",
+        "pebble_cache_test.go",
+    ],
+    embed = [":pebble_cache"],
     deps = [
-        ":pebble_cache",
         "//enterprise/server/backends/kms",
         "//enterprise/server/crypter_service",
         "//enterprise/server/experiments",
         "//enterprise/server/filestore",
         "//enterprise/server/raft/keys",
+        "//enterprise/server/util/pebble",
         "//enterprise/server/util/proxy_util",
         "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
@@ -81,6 +85,7 @@ go_test(
         "//server/util/compression",
         "//server/util/disk",
         "//server/util/ioutil",
+        "//server/util/lockmap",
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",

@@ -734,8 +734,9 @@ type FirecrackerContainer struct {
 	releaseCPUs func()
 
 	vmExec struct {
-		conn *grpc.ClientConn
-		err  error
+		conn         *grpc.ClientConn
+		err          error
+		dialDuration time.Duration
 	}
 
 	// latestGuestStats is the latest UsageStats sample streamed from vmexec.
@@ -2451,9 +2452,10 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 
 	start := time.Now()
 	defer func() {
+		c.vmExec.dialDuration = time.Since(start)
 		metrics.FirecrackerExecDialDurationUsec.With(prometheus.Labels{
 			metrics.CreatedFromSnapshot: strconv.FormatBool(c.createFromSnapshot),
-		}).Observe(float64(time.Since(start).Microseconds()))
+		}).Observe(float64(c.vmExec.dialDuration.Microseconds()))
 	}()
 
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
@@ -2525,6 +2527,10 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer func() {
 		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
+		if result.VMMetrics == nil {
+			result.VMMetrics = &espb.VMMetrics{}
+		}
+		result.VMMetrics.VmExecDialDurationUsec = c.vmExec.dialDuration.Microseconds()
 
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
@@ -2603,7 +2609,8 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	conn, err := c.vmExecConn(ctx)
 	if err != nil {
-		return commandutil.ErrorResult(status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err))
+		result.Error = status.InternalErrorf("Firecracker exec failed: failed to dial VM exec port: %s", err)
+		return result
 	}
 	// Emit metrics to track time spent preparing VM to execute a command
 	c.emitCOWAndUFFDMetrics(stage)
