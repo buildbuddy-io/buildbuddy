@@ -90,9 +90,9 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	// Define the available routing strategies (note: strategies earlier in the
 	// list have higher precedence)
 	strategies := []Router{
-		&recyclableRunnerRouter{rdb: rdb},
 		&persistentWorkerRouter{env: env, rdb: rdb},
 		&affinityRouter{rdb: rdb},
+		&recyclableRunnerRouter{rdb: rdb},
 	}
 	return &taskRouter{
 		env:        env,

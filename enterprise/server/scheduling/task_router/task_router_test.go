@@ -164,6 +164,50 @@ func TestTaskRouter_RankNodes_RemoteSnapshotRunner(t *testing.T) {
 	requireNotAlwaysRanked(0, executorHostID1, t, router, ctx, otherCmd, instanceName)
 }
 
+func TestTaskRouter_RankNodes_RecyclableRunnerRouterAppliesToCIRunnerAndBox(t *testing.T) {
+	testCases := []struct {
+		name string
+		cmd  *repb.Command
+	}{
+		{
+			name: "CI runner",
+			cmd: &repb.Command{
+				Arguments: []string{"./buildbuddy_ci_runner"},
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+				}},
+			},
+		},
+		{
+			name: "box",
+			cmd: &repb.Command{
+				Arguments: []string{"./bb", "ssh-server"},
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "recycle-runner", Value: "true"},
+					{Name: "allow-remote-snapshots", Value: "true"},
+					{Name: "runner-recycling-key", Value: "my-box"},
+				}},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			router := newTaskRouter(t, env)
+			ctx := withAuthUser(t, context.Background(), env, "US1")
+			instanceName := "test-instance"
+
+			// Neither command has an affinity or persistent-worker routing signal,
+			// so only recyclableRunnerRouter can make the executor preferred.
+			router.MarkSucceeded(ctx, nil, tc.cmd, instanceName, executorHostID1)
+			ranked := router.RankNodes(ctx, nil, tc.cmd, instanceName, sequentiallyNumberedNodes(100))
+			require.Equal(t, executorHostID1, ranked[0].GetExecutionNode().GetExecutorHostId())
+			require.True(t, ranked[0].IsPreferred())
+		})
+	}
+}
+
 func TestTaskRouter_RankNodes_AffinityRouting(t *testing.T) {
 	env := newTestEnv(t)
 	router := newTaskRouter(t, env)
