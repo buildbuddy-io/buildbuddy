@@ -162,9 +162,9 @@ message ExecutionAuxiliaryMetadata {
   VMMetrics vm_metrics = 12;
 }
 
-// Metrics reported by the guest VM's vmexec server, including timings of
-// one-time initialization steps performed during VM boot, before the guest
-// could begin accepting commands.
+// Metrics associated with the guest VM which executed an action. Mostly
+// reported by the guest's vmexec server; some fields are measured by the
+// executor.
 message VMMetrics {
   // Time the guest spent waiting for dockerd to become ready. Zero if
   // dockerd initialization was not requested.
@@ -178,6 +178,13 @@ message VMMetrics {
   // was about to begin serving. Includes the waits above, but not earlier
   // guest init (kernel boot or init process setup).
   int64 vm_exec_init_duration_usec = 3;
+
+  // Time the executor spent dialing the guest's vmexec server, measured on
+  // the host. For executions that booted a fresh VM, this includes guest boot
+  // up to the point where the vmexec server was serving. Unlike the boot
+  // timings above, this is set for every execution, since the connection is
+  // re-established for each task.
+  int64 vm_exec_dial_duration_usec = 4;
 }
 
 // Stats about work done after the COMPLETED operation is streamed back to the

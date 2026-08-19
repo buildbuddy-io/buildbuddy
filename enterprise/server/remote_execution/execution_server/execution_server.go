@@ -491,6 +491,7 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 				executionProto.VmDockerdWaitDurationUsec = vmMetrics.GetDockerdWaitDurationUsec()
 				executionProto.VmDnsWaitDurationUsec = vmMetrics.GetVmDnsWaitDurationUsec()
 				executionProto.VmExecInitDurationUsec = vmMetrics.GetVmExecInitDurationUsec()
+				executionProto.VmExecDialDurationUsec = vmMetrics.GetVmExecDialDurationUsec()
 			}
 
 			if properties != nil {
