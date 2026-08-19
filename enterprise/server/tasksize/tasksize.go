@@ -693,9 +693,14 @@ func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 	minMemoryBytes := MinimumMemoryBytes
 	minMilliCPU := MinimumMilliCPU
 	// Test actions have higher minimums, determined by the test size ("small",
-	// "medium", etc.)
+	// "medium", etc.). Explicit CPU requests override the test-size CPU
+	// minimum, but are still subject to the global safety minimum.
 	if s, ok := testSize(cmd); ok {
-		minMemoryBytes, minMilliCPU = estimateFromTestSize(s)
+		testSizeMemoryBytes, testSizeMilliCPU := estimateFromTestSize(s)
+		minMemoryBytes = testSizeMemoryBytes
+		if props == nil || props.EstimatedMilliCPU <= 0 {
+			minMilliCPU = testSizeMilliCPU
+		}
 	}
 
 	if clone.EstimatedMilliCpu < minMilliCPU {

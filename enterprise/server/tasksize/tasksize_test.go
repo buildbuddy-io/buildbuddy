@@ -255,6 +255,49 @@ func TestApplyLimits_LargeTest(t *testing.T) {
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
 }
 
+func TestApplyLimits_TestSizeWithExplicitCPU(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		estimatedCPU     string
+		expectedMilliCPU int64
+	}{
+		{name: "test size default", expectedMilliCPU: 1000},
+		{name: "half CPU", estimatedCPU: "0.5", expectedMilliCPU: 500},
+		{name: "three quarters CPU", estimatedCPU: "0.75", expectedMilliCPU: 750},
+		{name: "below global minimum", estimatedCPU: "0.1", expectedMilliCPU: tasksize.MinimumMilliCPU},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "TEST_SIZE", Value: "large"},
+					},
+				},
+			}
+			if testCase.estimatedCPU != "" {
+				task.Command.Platform = &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{Name: "EstimatedCPU", Value: testCase.estimatedCPU},
+					},
+				}
+			}
+
+			props, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			sz := tasksize.ApplyLimits(
+				context.Background(),
+				nil,
+				task.GetCommand(),
+				props,
+				tasksize.Override(tasksize.Default(task), tasksize.Requested(task)),
+			)
+
+			assert.Equal(t, testCase.expectedMilliCPU, sz.EstimatedMilliCpu)
+			assert.Equal(t, int64(300_000_000), sz.EstimatedMemoryBytes)
+		})
+	}
+}
+
 func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
 	testProvider := openfeatureTesting.NewTestProvider()
 	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
