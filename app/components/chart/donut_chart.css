@@ -4,11 +4,15 @@
   align-items: center;
 }
 
+.donut-chart .recharts-responsive-container {
+  flex-shrink: 0;
+  margin-right: 32px;
+}
+
 .donut-chart-label {
   display: flex;
   white-space: nowrap;
   font-weight: 600;
-  font-weight: 20px;
 }
 
 .donut-chart-swatch {
