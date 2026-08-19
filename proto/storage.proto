@@ -31,13 +31,13 @@ message StorageMetadata {
   message FileMetadata {
     string filename = 1;
   }
-  FileMetadata file_metadata = 1;
+  FileMetadata file_metadata = 1 [(view.name) = "Eviction"];
 
   message InlineMetadata {
     bytes data = 1;
     int64 created_at_nsec = 2;
   }
-  InlineMetadata inline_metadata = 3;
+  InlineMetadata inline_metadata = 3 [(view.name) = "Eviction"];
 
   reserved 2, 4;
 
@@ -63,10 +63,12 @@ message FileMetadata {
   EncryptionMetadata encryption_metadata = 6;
 
   // If data is compressed, this will be the compressed size
-  int64 stored_size_bytes = 3 [(view.name) = "FindMissing"];
+  int64 stored_size_bytes = 3
+      [(view.name) = "FindMissing", (view.name) = "Eviction"];
 
   // Last access time of the record.
-  int64 last_access_usec = 4 [(view.name) = "FindMissing"];
+  int64 last_access_usec = 4
+      [(view.name) = "FindMissing", (view.name) = "Eviction"];
 
   // Last modify time of the record
   int64 last_modify_usec = 5;
