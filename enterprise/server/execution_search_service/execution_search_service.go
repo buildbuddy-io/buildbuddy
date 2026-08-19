@@ -306,25 +306,27 @@ type timelineStatsRow struct {
 	Arch                string
 	BucketStartTimeUsec int64
 	DurationUsecTotal   int64
-	DurationUsecP50     int64
-	DurationUsecP90     int64
 	CPUNanosTotal       int64
-	CPUNanosP50         int64
-	CPUNanosP90         int64
-	PeakMemoryP50       int64
-	PeakMemoryP90       int64
+
+	// Each of these is populated with an array of p10,p50,p90.
+	DurationUsecQuantiles []int64 `gorm:"type:int64[]"`
+	CPUNanosQuantiles     []int64 `gorm:"type:int64[]"`
+	PeakMemoryQuantiles   []int64 `gorm:"type:int64[]"`
 }
 
 func (r *timelineStatsRow) toSummaryProto() *expb.ExecutionTimelineSummary {
 	return &expb.ExecutionTimelineSummary{
 		DurationUsecTotal: r.DurationUsecTotal,
-		DurationUsecP50:   r.DurationUsecP50,
-		DurationUsecP90:   r.DurationUsecP90,
+		DurationUsecP10:   r.DurationUsecQuantiles[0],
+		DurationUsecP50:   r.DurationUsecQuantiles[1],
+		DurationUsecP90:   r.DurationUsecQuantiles[2],
 		CpuNanosTotal:     r.CPUNanosTotal,
-		CpuNanosP50:       r.CPUNanosP50,
-		CpuNanosP90:       r.CPUNanosP90,
-		PeakMemoryP50:     r.PeakMemoryP50,
-		PeakMemoryP90:     r.PeakMemoryP90,
+		CpuNanosP10:       r.CPUNanosQuantiles[0],
+		CpuNanosP50:       r.CPUNanosQuantiles[1],
+		CpuNanosP90:       r.CPUNanosQuantiles[2],
+		PeakMemoryP10:     r.PeakMemoryQuantiles[0],
+		PeakMemoryP50:     r.PeakMemoryQuantiles[1],
+		PeakMemoryP90:     r.PeakMemoryQuantiles[2],
 	}
 }
 
@@ -355,12 +357,9 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 			`+bucketExpr+` AS bucket_start_time_usec,
 			SUM(worker_completed_timestamp_usec - worker_start_timestamp_usec) AS duration_usec_total,
 			SUM(cpu_nanos) AS cpu_nanos_total,
-			arrayElement(quantilesExactLow(0.5, 0.9)(worker_completed_timestamp_usec - worker_start_timestamp_usec), 1) AS duration_usec_p50,
-			arrayElement(quantilesExactLow(0.5, 0.9)(worker_completed_timestamp_usec - worker_start_timestamp_usec), 2) AS duration_usec_p90,
-			arrayElement(quantilesExactLow(0.5, 0.9)(cpu_nanos), 1) AS cpu_nanos_p50,
-			arrayElement(quantilesExactLow(0.5, 0.9)(cpu_nanos), 2) AS cpu_nanos_p90,
-			arrayElement(quantilesExactLow(0.5, 0.9)(peak_memory_bytes), 1) AS peak_memory_p50,
-			arrayElement(quantilesExactLow(0.5, 0.9)(peak_memory_bytes), 2) AS peak_memory_p90
+			quantilesExactLow(0.1, 0.5, 0.9)(worker_completed_timestamp_usec - worker_start_timestamp_usec) AS duration_usec_quantiles,
+			quantilesExactLow(0.1, 0.5, 0.9)(cpu_nanos) AS cpu_nanos_quantiles,
+			quantilesExactLow(0.1, 0.5, 0.9)(peak_memory_bytes) AS peak_memory_quantiles
 		FROM "Executions"
 	`, append([]interface{}{runMatcher.String()}, bucketArgs...))
 
@@ -368,10 +367,6 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 		return nil, err
 	}
 
-	// GROUPING SETS gives us both per-bucket rows and a whole-timeline rollup
-	// row in a single scan; the rollup rows get the default value (0) for
-	// bucket_start_time_usec, which cannot collide with a real bucket because
-	// we exclude executions with worker_start_timestamp_usec == 0 above.
 	q.SetGroupBy("GROUPING SETS ((cleaned_output_path, action_mnemonic, os, arch, bucket_start_time_usec), (cleaned_output_path, action_mnemonic, os, arch))")
 	q.SetOrderBy("cleaned_output_path, action_mnemonic, os, arch, bucket_start_time_usec", true)
 

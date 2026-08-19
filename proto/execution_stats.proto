@@ -420,13 +420,16 @@ message AggregatedExecutionTimelineEntry {
 
 message ExecutionTimelineSummary {
   int64 duration_usec_total = 1;
-  int64 duration_usec_p50 = 2;
-  int64 duration_usec_p90 = 3;
-  int64 cpu_nanos_total = 4;
-  int64 cpu_nanos_p50 = 5;
-  int64 cpu_nanos_p90 = 6;
-  int64 peak_memory_p50 = 7;
-  int64 peak_memory_p90 = 8;
+  int64 duration_usec_p10 = 2;
+  int64 duration_usec_p50 = 3;
+  int64 duration_usec_p90 = 4;
+  int64 cpu_nanos_total = 5;
+  int64 cpu_nanos_p10 = 6;
+  int64 cpu_nanos_p50 = 7;
+  int64 cpu_nanos_p90 = 8;
+  int64 peak_memory_p10 = 9;
+  int64 peak_memory_p50 = 10;
+  int64 peak_memory_p90 = 11;
 }
 
 message ExecutionTimeline {
