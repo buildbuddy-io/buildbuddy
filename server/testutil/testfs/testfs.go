@@ -56,6 +56,10 @@ func MakeTempDir(t testing.TB) string {
 	if err != nil {
 		assert.FailNow(t, "failed to create temp dir", err)
 	}
+	// TEST_TMPDIR may use slash-separated paths on Windows while os.MkdirTemp
+	// appends a native backslash-separated component. Return a canonical native
+	// path so callers do not accidentally exercise mixed-separator behavior.
+	tmpDir = filepath.Clean(tmpDir)
 	t.Cleanup(func() {
 		// Use mktempdir to get a new tempdir name to move our dir to before we
 		// remove it. This prevents a race condition where something else could
@@ -66,8 +70,9 @@ func MakeTempDir(t testing.TB) string {
 		if err != nil {
 			assert.FailNow(t, "failed to clean up temp dir", err)
 		}
+		newDir = filepath.Clean(newDir)
 		// Move the old directory into the new directory.
-		if err := os.Rename(tmpDir, path.Join(newDir, path.Base(tmpDir))); err != nil && !os.IsNotExist(err) {
+		if err := os.Rename(tmpDir, filepath.Join(newDir, filepath.Base(tmpDir))); err != nil && !os.IsNotExist(err) {
 			assert.FailNow(t, "failed to clean up temp dir", err)
 		}
 		// Remove the new directory containing the old directory.

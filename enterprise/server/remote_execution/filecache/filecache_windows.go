@@ -11,6 +11,12 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
+// Windows does not expose a supported equivalent of fsync for directories, so
+// flush the whole volume to make directory metadata changes durable.
+func syncDir(path string) error {
+	return syncFilesystem(path)
+}
+
 func syncFilesystem(path string) error {
 	vol := filepath.VolumeName(path)
 	volumePath, err := windows.UTF16PtrFromString(`\\.\` + vol)
