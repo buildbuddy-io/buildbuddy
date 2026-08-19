@@ -1,7 +1,3 @@
-load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("@rules_multirun//:defs.bzl", "multirun")
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-
 # Handles uploading files to GCS.
 #
 # Example usage:
@@ -20,7 +16,99 @@ load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 #
 # In order to delete the files from GCS, run:
 #   `bazel run :app_bundle_release.delete`
-#
+
+# Resolve the runfiles root. `bazel run` sets RUNFILES_DIR; rules_python-based
+# launchers (e.g. rules_multirun, rules_k8s aggregators) set PYTHON_RUNFILES;
+# otherwise fall back to the `<script>.runfiles` directory adjacent to the
+# binary, or walk up from `${0}` for the nested-runfiles case.
+_RUNFILES_PREAMBLE = """if [[ -z "${RUNFILES_DIR:-}" ]]; then
+  if [[ -n "${PYTHON_RUNFILES:-}" ]]; then
+    RUNFILES_DIR="${PYTHON_RUNFILES}"
+  elif [[ -d "${0}.runfiles" ]]; then
+    RUNFILES_DIR="$(cd "${0}.runfiles" && pwd)"
+  else
+    mydir="$(cd "$(dirname "${0}")" && pwd)"
+    RUNFILES_DIR="${mydir%%.runfiles*}.runfiles"
+  fi
+fi
+export RUNFILES_DIR
+# gsutil is a Python program that imports bootstrap modules from the directory
+# of its entry point; unset PYTHONSAFEPATH in case a rules_python-based
+# launcher (e.g. rules_multirun) leaked it into the environment.
+unset -v PYTHONSAFEPATH"""
+
+def _runfiles_path(ctx, f):
+    if f.short_path.startswith("../"):
+        return f.short_path[3:]
+    return ctx.workspace_name + "/" + f.short_path
+
+def _gcs_run_impl(ctx):
+    lines = ["#!/usr/bin/env bash", "set -euo pipefail"]
+    runfiles_files = []
+    dest = 'gs://%s/%s' % (ctx.attr.bucket, ctx.attr.prefix)
+
+    if ctx.attr.mode in ("push", "delete"):
+        lines.append(_RUNFILES_PREAMBLE)
+        if ctx.file.sha_file != None:
+            runfiles_files.append(ctx.file.sha_file)
+            lines.append('SHA_PREFIX="$(cat "${RUNFILES_DIR}/%s")/"' % _runfiles_path(ctx, ctx.file.sha_file))
+        else:
+            lines.append('SHA_PREFIX=""')
+
+    if ctx.attr.mode == "push":
+        # The sha file, when present, is uploaded alongside the srcs, matching
+        # the historical behavior of this rule.
+        src_files = []
+        for src in ctx.attr.srcs:
+            src_files.extend(src[DefaultInfo].files.to_list())
+        if ctx.file.sha_file != None:
+            src_files.append(ctx.file.sha_file)
+        runfiles_files.extend(src_files)
+
+        # Resolve runfiles symlinks so gsutil sees regular files/directories.
+        lines.append("SRCS=()")
+        for f in src_files:
+            lines.append('SRCS+=("$(readlink -f "${RUNFILES_DIR}/%s")")' % _runfiles_path(ctx, f))
+        lines.append('exec %s cp %s "${SRCS[@]}" "%s${SHA_PREFIX}"' % (
+            ctx.attr.gsutil_with_options,
+            ctx.attr.copy_options,
+            dest,
+        ))
+    elif ctx.attr.mode == "delete":
+        lines.append('exec %s rm -r "%s${SHA_PREFIX}"' % (ctx.attr.gsutil_with_options, dest))
+    elif ctx.attr.mode == "diff":
+        lines.append("echo 'Diff not yet implemented for gcs uploads.'")
+    elif ctx.attr.mode == "noop":
+        lines.append("true")
+    else:
+        fail("unknown gcs mode: %s" % ctx.attr.mode)
+
+    script = ctx.actions.declare_file(ctx.label.name + ".sh")
+    ctx.actions.write(script, "\n".join(lines) + "\n", is_executable = True)
+    return [DefaultInfo(
+        executable = script,
+        runfiles = ctx.runfiles(files = runfiles_files),
+    )]
+
+_gcs_run = rule(
+    implementation = _gcs_run_impl,
+    attrs = {
+        "srcs": attr.label_list(allow_files = True),
+        "sha_file": attr.label(allow_single_file = True),
+        "bucket": attr.string(mandatory = True),
+        "prefix": attr.string(),
+        "gsutil_with_options": attr.string(default = "gsutil -m"),
+        "copy_options": attr.string(default = "-r"),
+        "mode": attr.string(mandatory = True, values = ["push", "delete", "diff", "noop"]),
+    },
+    executable = True,
+    doc = "Generates an executable script that copies its runfiles to (or " +
+          "deletes them from) a GCS bucket with gsutil. Unlike a genrule, the " +
+          "srcs are staged as runfiles in the target configuration, so the " +
+          "script keeps working when invoked through launchers such as " +
+          "rules_multirun that run it outside the execroot.",
+)
+
 def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip = True, disable_caching = False, **kwargs):
     # Apply a trailing slash to the prefix if not present.
     if prefix != "" and not prefix.endswith("/"):
@@ -31,114 +119,48 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if zip:
         copy_options += " -Z"
 
-    util_options = "-m"
+    gsutil_with_options = gsutil + " -m"
     if disable_caching:
-        util_options += " -h 'Cache-Control:no-store'"
+        gsutil_with_options += " -h 'Cache-Control:no-store'"
 
-    multirun(
-        name = name + ".apply",
-        commands = [
-            name + ".push_only",
-            name + ".apply_only",
-        ],
-        **kwargs
-    )
+    sha_file = sha_prefix or None
 
-    # Generate an .apply rule for uploading.
-    write_file(
-        name = name + ".push_only.script",
-        out = name + ".push_only.out",
-        content = [
-            "unset -v PYTHONSAFEPATH",
-            "if [ -n \"${1}\" ]; then",
-            "  read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
-            "else",
-            "  shift",
-            "fi",
-            "{gsutil} {util_options} cp {copy_options} \"${{@}}\" \"gs://{bucket}/{prefix}${{SHA_PREFIX}}\"".format(
-                gsutil = gsutil,
-                util_options = util_options,
-                copy_options = copy_options,
-                bucket = bucket,
-                prefix = prefix,
-            ),
-        ],
-        is_executable = True,
-        **kwargs
-    )
+    # `.apply` and `.push_only` both upload the srcs (plus the sha file) to
+    # `gs://<bucket>/<prefix>/<sha>/`. Uploading is the only deployment
+    # operation for a GCS bundle, so `.apply_only` has nothing left to do.
+    for action in [".apply", ".push_only"]:
+        _gcs_run(
+            name = name + action,
+            srcs = srcs,
+            sha_file = sha_file,
+            bucket = bucket,
+            prefix = prefix,
+            gsutil_with_options = gsutil_with_options,
+            copy_options = copy_options,
+            mode = "push",
+            **kwargs
+        )
 
-    sh_binary(
-        name = name + ".push_only",
-        args = ["../$(rlocationpaths %s)" % sha_prefix if sha_prefix != "" else ""] + ["../$(rlocationpaths %s)" % src for src in srcs],
-        srcs = [name + ".push_only.script"],
-        data = srcs + ([sha_prefix] if sha_prefix != "" else []),
-        use_bash_launcher = True,
-        **kwargs
-    )
-
-    # Uploading is the only deployment operation for a GCS bundle, so there
-    # is nothing left to do during the apply-only phase.
-    write_file(
-        name = name + ".apply_only.script",
-        out = name + ".apply_only.out",
-        content = [
-            "true",
-        ],
-        is_executable = True,
-        **kwargs,
-    )
-
-    sh_binary(
+    _gcs_run(
         name = name + ".apply_only",
-        srcs = [
-            name + ".apply_only.script",
-        ],
-        **kwargs,
-    )
-
-    # Generate a .diff rule for diffing.
-    write_file(
-        name = name + ".diff.script",
-        out = name + ".diff.out",
-        content = [
-            "echo 'Diff not yet implemented for gcs uploads.'",
-        ],
-        is_executable = True,
+        bucket = bucket,
+        mode = "noop",
         **kwargs
     )
 
-    sh_binary(
+    _gcs_run(
         name = name + ".diff",
-        srcs = [name + ".diff.script"],
+        bucket = bucket,
+        mode = "diff",
         **kwargs
     )
 
-    # Generate a .delete rule for deleting.
-    write_file(
-        name = name + ".delete.script",
-        out = name + ".delete.out",
-        content = [
-            "unset -v PYTHONSAFEPATH",
-            "if [ -n \"${1}\" ]; then",
-            "  read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
-            "else",
-            "  shift",
-            "fi",
-            "{gsutil} -m rm -r gs://{bucket}/{prefix}${{SHA_PREFIX}}".format(
-                gsutil = gsutil,
-                bucket = bucket,
-                prefix = prefix,
-            ),
-        ],
-        is_executable = True,
-        **kwargs
-    )
-
-    sh_binary(
+    _gcs_run(
         name = name + ".delete",
-        args = ["../$(rlocationpaths %s)" % sha_prefix if sha_prefix != "" else ""],
-        srcs = [name + ".delete.script"],
-        data = [sha_prefix] if sha_prefix != "" else [],
-        use_bash_launcher = True,
+        sha_file = sha_file,
+        bucket = bucket,
+        prefix = prefix,
+        gsutil_with_options = gsutil_with_options,
+        mode = "delete",
         **kwargs
     )
