@@ -259,9 +259,9 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/recharts",
         "//app/capabilities",
+        "//app/components/chart:donut_chart",
         "//app/format",
         "//app/invocation:invocation_model",
-        "//app/util:color",
         "//proto:action_cache_ts_proto",
     ],
 )
