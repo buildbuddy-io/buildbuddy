@@ -683,8 +683,19 @@ func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
 	return res
 }
 
+// ApplyLimitsWithRequestedSize applies the requested size to size, then clamps
+// the result to within an allowed range. An explicit CPU request overrides the
+// test-size CPU minimum but remains subject to the global CPU minimum.
+func ApplyLimitsWithRequestedSize(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd *repb.Command, props *platform.Properties, size, requestedSize *scpb.TaskSize) *scpb.TaskSize {
+	return applyLimits(ctx, efp, cmd, props, Override(size, requestedSize), requestedSize)
+}
+
 // ApplyLimits clamps each value in size to within an allowed range.
 func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd *repb.Command, props *platform.Properties, size *scpb.TaskSize) *scpb.TaskSize {
+	return applyLimits(ctx, efp, cmd, props, size, nil)
+}
+
+func applyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd *repb.Command, props *platform.Properties, size, requestedSize *scpb.TaskSize) *scpb.TaskSize {
 	if size == nil {
 		return nil
 	}
@@ -698,7 +709,7 @@ func ApplyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 	if s, ok := testSize(cmd); ok {
 		testSizeMemoryBytes, testSizeMilliCPU := estimateFromTestSize(s)
 		minMemoryBytes = testSizeMemoryBytes
-		if props == nil || props.EstimatedMilliCPU <= 0 {
+		if requestedSize.GetEstimatedMilliCpu() <= 0 {
 			minMilliCPU = testSizeMilliCPU
 		}
 	}
