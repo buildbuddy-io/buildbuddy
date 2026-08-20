@@ -33,20 +33,37 @@ const (
 	defaultKeyErrCacheTime  = 10 * time.Second
 )
 
+// KeyScope identifies which derivation of a group's encryption key a cache
+// entry holds. Cloud-scoped keys encrypt content stored in the cloud cache;
+// customer-deployment-scoped keys are independently derived and are safe to
+// serve to customer-managed deployments (e.g. cache proxies, and potentially
+// executors in the future).
+type KeyScope int32
+
+const (
+	KeyScopeCloud              KeyScope = 0
+	KeyScopeCustomerDeployment KeyScope = 1
+)
+
 // Note: there are two types of keys in the cache, one with only groupID set
 // (encryption) and one with all values set (decryption).
 type CacheKey struct {
 	GroupID string
 	KeyID   string
 	Version int64
+	Scope   KeyScope
 }
 
+// String must map every scope to a distinct string: it keys both the cache
+// map and the singleflight group, so two scopes rendering identically could
+// hand one scope's derived key to a caller expecting the other, defeating
+// the domain separation. The scope is included unconditionally so this holds
+// for any scope value without needing per-scope cases.
 func (ck CacheKey) String() string {
 	if ck.KeyID == "" {
-		return ck.GroupID
-	} else {
-		return fmt.Sprintf("%s/%s/%d", ck.GroupID, ck.KeyID, ck.Version)
+		return fmt.Sprintf("%s/scope-%d", ck.GroupID, ck.Scope)
 	}
+	return fmt.Sprintf("%s/%s/%d/scope-%d", ck.GroupID, ck.KeyID, ck.Version, ck.Scope)
 }
 
 type cacheEntry struct {
@@ -210,6 +227,22 @@ func (c *KeyCache) cacheGet(ck CacheKey) (*cacheEntry, bool) {
 	return e, true
 }
 
+// isNonRetryable returns true for errors that a refresh retry cannot fix:
+// the key doesn't exist, the caller isn't allowed to fetch it, or the request
+// itself is malformed. Auth-class errors are treated as durable (matching
+// standard gRPC retry policies); for CMEK this is also the desired behavior,
+// since a PermissionDenied from the customer's KMS means they revoked our
+// access and we should stop deriving keys promptly rather than retry.
+// Refreshes are singleflighted, so retrying a durable failure would also
+// block all concurrent key loads for the same group while the retry loop
+// runs down the caller's deadline.
+func isNonRetryable(err error) bool {
+	return status.IsNotFoundError(err) ||
+		status.IsPermissionDeniedError(err) ||
+		status.IsUnauthenticatedError(err) ||
+		status.IsInvalidArgumentError(err)
+}
+
 func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cacheError bool) (*crypter.DerivedKey, error) {
 	opts := retry.DefaultOptions()
 	opts.Clock = c.clock
@@ -217,7 +250,7 @@ func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cache
 	key, err := retry.Do(ctx, opts, func(ctx context.Context) (*crypter.DerivedKey, error) {
 		keyBytes, md, err := c.refreshFn(ctx, ck)
 		// TODO(vadim): figure out if there are other KMS errors we can treat as immediate failures
-		if status.IsNotFoundError(err) {
+		if isNonRetryable(err) {
 			return nil, retry.NonRetryableError(err)
 		} else if err != nil {
 			return nil, err
@@ -245,12 +278,12 @@ func (c *KeyCache) refreshKeyWithRetries(ctx context.Context, ck CacheKey, cache
 			expiresAfter: c.clock.Now().Add(c.errCacheTime),
 		})
 	}
-	if status.IsNotFoundError(err) {
-		// Preserve the NotFound status so that callers can tell "key does
-		// not exist" apart from transient refresh failures. In particular,
-		// the app returns this error over the GetEncryptionKey RPC, and the
-		// proxy's KeyCache uses the NotFound status to decide that the
-		// refresh should not be retried (see the check above).
+	if isNonRetryable(err) {
+		// Preserve the status of non-retryable errors so that callers can
+		// tell them apart from transient refresh failures. In particular,
+		// the app returns these errors over the GetEncryptionKey RPC, and
+		// the proxy's KeyCache uses the status to decide that the refresh
+		// should not be retried (see isNonRetryable above).
 		return nil, err
 	}
 	return nil, status.UnavailableErrorf("exhausted attempts to refresh key, last error: %s", err)
@@ -285,7 +318,14 @@ func (c *KeyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*c
 	} else {
 		ck = CacheKey{GroupID: u.GetGroupID()}
 	}
+	return c.LoadKey(ctx, ck)
+}
 
+// LoadKey returns the derived key for the given CacheKey, from the cache if
+// present or via the refresh function otherwise. Unlike EncryptionKey and
+// DecryptionKey, the caller is responsible for constructing (and authorizing)
+// the CacheKey.
+func (c *KeyCache) LoadKey(ctx context.Context, ck CacheKey) (*crypter.DerivedKey, error) {
 	e, ok := c.cacheGet(ck)
 	if ok {
 		e.mu.Lock()
