@@ -29,6 +29,7 @@ go_test(
         "//server/interfaces",
         "//server/util/log",
         "//server/util/proto",
+        "//server/util/testing/flags",
         "@com_github_hashicorp_serf//serf",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
