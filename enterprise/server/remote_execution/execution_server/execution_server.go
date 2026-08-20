@@ -1004,7 +1004,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionTask.QueuedTimestamp = timestamppb.Now()
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
-	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), command, props, tasksize.Override(defaultTaskSize, requestedTaskSize))
+	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
 	measuredSize := s.taskSizer.Get(ctx, command, props)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {

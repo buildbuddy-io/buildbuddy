@@ -255,6 +255,55 @@ func TestApplyLimits_LargeTest(t *testing.T) {
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
 }
 
+func TestApplyLimits_TestSizeWithExplicitResourceRequest(t *testing.T) {
+	for _, testCase := range []struct {
+		name                string
+		propertyName        string
+		propertyValue       string
+		expectedMilliCPU    int64
+		expectedMemoryBytes int64
+	}{
+		{name: "test size default", expectedMilliCPU: 1000, expectedMemoryBytes: 300_000_000},
+		{name: "half CPU", propertyName: "EstimatedCPU", propertyValue: "0.5", expectedMilliCPU: 500, expectedMemoryBytes: 300_000_000},
+		{name: "three quarters CPU", propertyName: "EstimatedCPU", propertyValue: "0.75", expectedMilliCPU: 750, expectedMemoryBytes: 300_000_000},
+		{name: "half compute unit", propertyName: "EstimatedComputeUnits", propertyValue: "0.5", expectedMilliCPU: 500, expectedMemoryBytes: 1_250_000_000},
+		{name: "below global minimum", propertyName: "EstimatedCPU", propertyValue: "0.1", expectedMilliCPU: tasksize.MinimumMilliCPU, expectedMemoryBytes: 300_000_000},
+		{name: "memory below test-size minimum", propertyName: "EstimatedMemory", propertyValue: "10000000", expectedMilliCPU: 1000, expectedMemoryBytes: 10_000_000},
+		{name: "memory below global minimum", propertyName: "EstimatedMemory", propertyValue: "100", expectedMilliCPU: 1000, expectedMemoryBytes: tasksize.MinimumMemoryBytes},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			task := &repb.ExecutionTask{
+				Command: &repb.Command{
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "TEST_SIZE", Value: "large"},
+					},
+				},
+			}
+			if testCase.propertyName != "" {
+				task.Command.Platform = &repb.Platform{
+					Properties: []*repb.Platform_Property{
+						{Name: testCase.propertyName, Value: testCase.propertyValue},
+					},
+				}
+			}
+
+			props, err := platform.ParseProperties(task)
+			require.NoError(t, err)
+			sz := tasksize.ApplyLimitsWithRequestedSize(
+				context.Background(),
+				nil,
+				task.GetCommand(),
+				props,
+				tasksize.Default(task),
+				tasksize.Requested(task),
+			)
+
+			assert.Equal(t, testCase.expectedMilliCPU, sz.EstimatedMilliCpu)
+			assert.Equal(t, testCase.expectedMemoryBytes, sz.EstimatedMemoryBytes)
+		})
+	}
+}
+
 func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
 	testProvider := openfeatureTesting.NewTestProvider()
 	testProvider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
@@ -433,6 +482,42 @@ func TestSizer_RespectsMinimumSize(t *testing.T) {
 	ts = sizer.Get(ctx, cmd, props)
 	assert.Equal(t, int64(1000), ts.GetEstimatedMilliCpu())
 	assert.Equal(t, int64(800*1e6), ts.GetEstimatedMemoryBytes())
+}
+
+func TestSizer_Get_TestSizeMinimumUnaffectedByExplicitCPU(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
+	env.SetAuthenticator(auth)
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	cmd := &repb.Command{
+		Arguments: []string{"test.sh"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "TEST_SIZE", Value: "large"},
+		},
+	}
+	execStart := time.Now()
+	md := &repb.ExecutedActionMetadata{
+		UsageStats: &repb.UsageStats{
+			CpuNanos:        1,
+			PeakMemoryBytes: 1,
+		},
+		ExecutionStartTimestamp:     timestamppb.New(execStart),
+		ExecutionCompletedTimestamp: timestamppb.New(execStart.Add(1 * time.Second)),
+	}
+	require.NoError(t, sizer.Update(ctx, cmd, &platform.Properties{}, md))
+
+	// An explicit CPU request affects the requested task size, but must not
+	// lower the test-size floor applied independently to a measured size.
+	ts := sizer.Get(ctx, cmd, &platform.Properties{EstimatedMilliCPU: 4000})
+	assert.Equal(t, int64(1000), ts.GetEstimatedMilliCpu())
+	assert.Equal(t, int64(300*1e6), ts.GetEstimatedMemoryBytes())
 }
 
 func TestSizer_P90CPUExperiment(t *testing.T) {
