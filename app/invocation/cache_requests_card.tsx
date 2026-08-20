@@ -769,7 +769,7 @@ export default class CacheRequestsCardComponent extends React.Component<CacheReq
     const command = commandWithRemoteRunnerFlags(
       `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`
     );
-    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/, null);
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/, null, [], "query");
   }
 
   private async runBbExplain() {
@@ -850,7 +850,7 @@ else
 fi
 `;
     let platformProps = new Map([["EstimatedComputeUnits", "3"]]);
-    triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/, platformProps);
+    triggerRemoteRun(this.props.model, command, false /*autoOpenChild*/, platformProps, [], "bb explain");
     this.setState({ showDebugCacheMissDropdown: false });
   }
 
