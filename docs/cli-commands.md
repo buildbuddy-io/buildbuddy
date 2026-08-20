@@ -81,3 +81,53 @@ make the builds faster, and make the Workflow runner less likely to run out of l
 ```bash
 bb detect nondeterminism --bazel_command='build //foo:bar --remote_executor=grpcs://remote.buildbuddy.io'
 ```
+
+## bb explain
+
+### bb explain profile
+
+`bb explain profile` uses an AI coding agent to analyze a Bazel timing profile uploaded by a BuildBuddy invocation. It produces a detailed report with recommendations for improving build performance.
+
+The command accepts an invocation ID or invocation URL:
+
+```bash
+bb explain profile <INVOCATION_ID>
+bb explain profile https://app.buildbuddy.io/invocation/<INVOCATION_ID>
+```
+
+Relevant timing-profile data is sent to the selected AI provider. Timing profiles can contain target names, file paths, and other details about the build.
+
+#### Prerequisites
+
+Before running the command:
+
+- The build must have uploaded a timing profile.
+- The selected agent's CLI must be installed and available in `PATH`: `claude` or `codex`.
+
+Only `darwin-arm64` and `linux-amd64` are currently supported.
+
+#### Authentication
+
+On remote runners, only authorization via an API key is supported. It should be set as a [BuildBuddy secret](/docs/secrets).
+Local runs can use a locally authenticated Claude Code or Codex subscription if available, or can authenticate with an API key.
+
+Agent usage is billed according to the selected provider and authentication method.
+
+```bash
+ANTHROPIC_API_KEY=<API_KEY> bb explain profile --agent=claude <INVOCATION_ID>
+
+OPENAI_API_KEY=<API_KEY> bb explain profile --agent=codex <INVOCATION_ID>
+```
+
+#### Choosing an agent and model
+
+Use `--agent` to select Claude or Codex.
+If `--model` and `--effort` are omitted, the selected agent's defaults are used.
+
+```bash
+bb explain profile \
+  --agent=codex \
+  --model=gpt-5.4 \
+  --effort=high \
+  <INVOCATION_ID>
+```

@@ -22,3 +22,5 @@ locally authenticated Claude Code or Codex subscription. Otherwise you can set t
 ```bash
 bb explain profile --agent=codex --model=gpt-5.4 --effort=high <INVOCATION_ID>
 ```
+
+See the [`bb explain profile` documentation](/docs/cli-commands#bb-explain-profile) for more details.
