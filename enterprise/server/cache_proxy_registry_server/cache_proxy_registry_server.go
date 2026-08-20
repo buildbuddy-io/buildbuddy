@@ -16,6 +16,7 @@ package cache_proxy_registry_server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"slices"
@@ -120,8 +121,17 @@ func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector
 	}, nil
 }
 
+// redisKeyForCacheProxies returns the key of the hash holding the registration
+// information of the provided group's cache proxies, keyed by proxy ID.
 func redisKeyForCacheProxies(groupID string) string {
 	return "cacheProxies/" + groupID
+}
+
+// redisKeyForConfiguredFlags returns the key of the hash holding the configured
+// flags of the group's cache proxies, keyed by proxy ID. These are stored
+// separately to support intermittent updates.
+func redisKeyForConfiguredFlags(groupID string) string {
+	return redisKeyForCacheProxies(groupID) + "/configuredFlags"
 }
 
 func (s *CacheProxyRegistryServer) authorize(ctx context.Context) (string, error) {
@@ -228,6 +238,18 @@ func (s *CacheProxyRegistryServer) RegisterAndStreamHeartbeat(stream cppb.CacheP
 func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, groupID string, node *cppb.CacheProxyNode, stats *cppb.Statistics) error {
 	acl := perms.ToACLProto(nil /*=userID*/, groupID, perms.GROUP_WRITE|perms.GROUP_READ)
 
+	// Proxies don't always report their configured flags
+	var flags []byte
+	if len(node.GetConfiguredFlags()) > 0 {
+		f, err := json.Marshal(node.GetConfiguredFlags())
+		if err != nil {
+			return err
+		}
+		flags = f
+		node = proto.Clone(node).(*cppb.CacheProxyNode)
+		node.ConfiguredFlags = nil
+	}
+
 	r := &cppb.RegisteredCacheProxy{
 		Registration: node,
 		GroupId:      groupID,
@@ -239,11 +261,21 @@ func (s *CacheProxyRegistryServer) insertOrUpdateProxy(ctx context.Context, grou
 	if err != nil {
 		return err
 	}
-	return s.rdb.HSet(ctx, redisKeyForCacheProxies(groupID), node.GetProxyId(), b).Err()
+	pipe := s.rdb.Pipeline()
+	pipe.HSet(ctx, redisKeyForCacheProxies(groupID), node.GetProxyId(), b)
+	if flags != nil {
+		pipe.HSet(ctx, redisKeyForConfiguredFlags(groupID), node.GetProxyId(), flags)
+	}
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 func (s *CacheProxyRegistryServer) removeProxy(ctx context.Context, groupID, proxyID string) error {
-	return s.rdb.HDel(ctx, redisKeyForCacheProxies(groupID), proxyID).Err()
+	pipe := s.rdb.Pipeline()
+	pipe.HDel(ctx, redisKeyForCacheProxies(groupID), proxyID)
+	pipe.HDel(ctx, redisKeyForConfiguredFlags(groupID), proxyID)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // getNewestVersion returns the maximum semantic version among live
@@ -330,6 +362,10 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 	if err != nil {
 		return nil, err
 	}
+	allConfiguredFlags, err := s.rdb.HGetAll(ctx, redisKeyForConfiguredFlags(groupID)).Result()
+	if err != nil {
+		return nil, err
+	}
 
 	proxies := make([]*cppb.GetCacheProxiesResponse_CacheProxy, 0, len(entries))
 	for id, data := range entries {
@@ -343,13 +379,22 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 			// drop a live registration. That's tolerable here because
 			// the next heartbeat from that proxy will reinsert it.
 			log.CtxInfof(ctx, "Removing stale cache proxy %q (group %q)", id, groupID)
-			if err := s.rdb.HDel(ctx, redisKey, id).Err(); err != nil {
+			if err := s.removeProxy(ctx, groupID, id); err != nil {
 				log.CtxWarningf(ctx, "could not remove stale cache proxy: %s", err)
 			}
 			continue
 		}
 		if err := perms.AuthorizeRead(user, reg.GetAcl()); err != nil {
 			continue
+		}
+		if flagData, ok := allConfiguredFlags[id]; ok && reg.GetRegistration() != nil {
+			var flags []string
+			if err := json.Unmarshal([]byte(flagData), &flags); err != nil {
+				// Flags are cosmetic; don't fail the whole response.
+				log.CtxWarningf(ctx, "could not parse configured flags for cache proxy %q: %s", id, err)
+			} else {
+				reg.Registration.ConfiguredFlags = flags
+			}
 		}
 		proxies = append(proxies, &cppb.GetCacheProxiesResponse_CacheProxy{
 			Node:            reg.GetRegistration(),

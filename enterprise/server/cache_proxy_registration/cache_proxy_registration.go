@@ -37,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"github.com/google/uuid"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -79,10 +80,19 @@ var (
 	maxLabels   = 20
 	maxLabelLen = 50
 
+	// How often the configured flags are resent even if they haven't changed,
+	// so the app recovers them if it lost its copy while the stream was up.
+	configuredFlagsResendInterval = 5 * time.Minute
+
 	// Caching for parsed command-line flags, to avoid racing against config
-	// reparsing logic in config.go.
+	// reparsing logic in config.go. configuredFlags holds the most recently
+	// parsed flags; sendConfiguredFlags controls when they're sent to the app.
+	// told about them.
 	registerReloadHookOnce sync.Once
-	configuredFlagsCache   atomic.Pointer[[]string]
+	configuredFlags        atomic.Pointer[[]string]
+	sendConfiguredFlags    atomic.Bool
+
+	clock clockwork.Clock = clockwork.NewRealClock()
 )
 
 func Register(env *real_environment.RealEnv) error {
@@ -165,7 +175,11 @@ func Register(env *real_environment.RealEnv) error {
 
 func refreshConfiguredFlags() {
 	flags := redact.GetConfiguredFlags()
-	configuredFlagsCache.Store(&flags)
+	if len(flags) == 0 {
+		flags = []string{"none"}
+	}
+	configuredFlags.Store(&flags)
+	sendConfiguredFlags.Store(true)
 }
 
 func run(ctx context.Context, shutdownCh <-chan struct{}, env environment.Env, target, apiKey string, node *cppb.CacheProxyNode) {
@@ -200,8 +214,10 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 	defer cleanup()
 	log.Infof("Successfully registered Cache Proxy %q with the app", node.GetProxyId())
 
-	ticker := time.NewTicker(heartbeatInterval)
+	ticker := clock.NewTicker(heartbeatInterval)
 	defer ticker.Stop()
+	resendConfiguredFlagsTicker := clock.NewTicker(configuredFlagsResendInterval)
+	defer resendConfiguredFlagsTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -221,7 +237,11 @@ func streamHeartbeats(ctx context.Context, shutdownCh <-chan struct{}, client cp
 				stream.CloseAndRecv()
 			}
 			return nil
-		case <-ticker.C:
+		case <-resendConfiguredFlagsTicker.Chan():
+			// Re-report the flags even though they haven't changed, so the app
+			// recovers them if it lost its copy while this stream stayed up.
+			sendConfiguredFlags.Store(true)
+		case <-ticker.Chan():
 			req := &cppb.RegisterCacheProxyRequest{Node: node, Statistics: collectStatistics()}
 			if err := sendHeartbeat(stream, req); err != nil {
 				return err
@@ -326,6 +346,8 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 	if err != nil {
 		return nil, nil, fail(err)
 	}
+	// Always include the configured flags in the first heartbeat of a stream.
+	sendConfiguredFlags.Store(true)
 	if err := sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node, Statistics: collectStatistics()}); err != nil {
 		return nil, nil, fail(err)
 	}
@@ -338,8 +360,11 @@ func openStream(ctx context.Context, client cppb.CacheProxyRegistryClient, node 
 // surface the real status (PermissionDenied, etc.) instead of a bare EOF.
 func sendHeartbeat(stream cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient, req *cppb.RegisterCacheProxyRequest) error {
 	if node := req.GetNode(); node != nil {
-		if flags := configuredFlagsCache.Load(); flags != nil {
-			node.ConfiguredFlags = *flags
+		node.ConfiguredFlags = nil
+		if sendConfiguredFlags.Swap(false) {
+			if flags := configuredFlags.Load(); flags != nil {
+				node.ConfiguredFlags = *flags
+			}
 		}
 	}
 	err := stream.Send(req)
