@@ -331,6 +331,7 @@ common:auto-release --compilation_mode=opt
 common:auto-release --@io_bazel_rules_go//go/config:pgoprofile=enterprise/tools/pgo:prod.pprof
 
 # Configuration used for all builds of artifacts released to GitHub
+common:release-shared --bes_upload_mode=nowait_for_upload_complete
 common:release-shared --compilation_mode=opt
 common:release-shared --stamp
 common:release-shared --define=release=true
