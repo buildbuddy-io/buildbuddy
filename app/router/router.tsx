@@ -430,7 +430,17 @@ class Router {
   }
 
   canAccessExecutorsPage(user?: User) {
-    return capabilities.executors && Boolean(user?.canCall("getExecutionNodes"));
+    if (!capabilities.executors || !user?.canCall("getExecutionNodes")) {
+      return false;
+    }
+    if (user.isGroupAdmin()) {
+      return true;
+    }
+    return (
+      user.selectedGroup.writerExecutorAccessEnabled &&
+      user.selectedGroup.capabilities.includes(capability.Capability.CACHE_WRITE) &&
+      user.selectedGroup.capabilities.includes(capability.Capability.CAS_WRITE)
+    );
   }
 
   canAccessCacheProxiesPage(user?: User) {

@@ -345,7 +345,7 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
         regions: regions,
         userOwnedExecutorsSupported: userOwnedExecutorsSupported,
       });
-      if (userOwnedExecutorsSupported) {
+      if (userOwnedExecutorsSupported && this.props.user.isGroupAdmin()) {
         await this.fetchApiKeys();
         await this.fetchBazelConfig();
       }
@@ -398,8 +398,10 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
   // "bring your own runners" is enabled for the installation (i.e. BuildBuddy Cloud deployment).
   renderWithGroupOwnedExecutorsEnabled() {
     const allNodes = this.state.regions.flatMap((r) => r.response.executor);
-    const defaultTabId = allNodes.length > 0 ? "status" : "setup";
-    const activeTab = (this.props.path.substring("/executors/".length) || defaultTabId) as TabId;
+    const isAdmin = this.props.user.isGroupAdmin();
+    const defaultTabId = isAdmin && allNodes.length == 0 ? "setup" : "status";
+    const requestedTab = (this.props.path.substring("/executors/".length) || defaultTabId) as TabId;
+    const activeTab = requestedTab === "setup" && !isAdmin ? "status" : requestedTab;
 
     return (
       <>
@@ -409,11 +411,13 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
             onClick={this.onClickTab.bind(this, "status")}>
             Status
           </div>
-          <div
-            className={`tab ${activeTab === "setup" ? "selected" : ""}`}
-            onClick={this.onClickTab.bind(this, "setup")}>
-            Setup
-          </div>
+          {isAdmin && (
+            <div
+              className={`tab ${activeTab === "setup" ? "selected" : ""}`}
+              onClick={this.onClickTab.bind(this, "setup")}>
+              Setup
+            </div>
+          )}
           {activeTab === "status" && allNodes.length > 0 && this.renderViewModeToggle()}
         </div>
         {activeTab === "status" && (
@@ -424,29 +428,31 @@ export default class ExecutorsComponent extends React.Component<Props, State> {
                   Self-hosted executors are not the default for this organization. To change this, enable "Default to
                   self-hosted executors" in your organization settings.
                 </div>
-                <div>
-                  <LinkButton href="/settings/" className="organization-settings-button">
-                    Open settings
-                  </LinkButton>
-                </div>
+                {isAdmin && (
+                  <div>
+                    <LinkButton href="/settings/" className="organization-settings-button">
+                      Open settings
+                    </LinkButton>
+                  </div>
+                )}
               </Banner>
             )}
             <ExecutorsList regions={this.state.regions} details={this.state.viewMode === "details"} />
             {!allNodes.length && this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
                 <h1>No self-hosted executors are connected.</h1>
-                <p>Click the "setup" tab to deploy your executors.</p>
+                {isAdmin && <p>Click the "setup" tab to deploy your executors.</p>}
               </div>
             )}
             {!allNodes.length && !this.props.user.selectedGroup.useGroupOwnedExecutors && (
               <div className="empty-state">
                 <h1>You're currently using BuildBuddy cloud executors.</h1>
-                <p>Click the "setup" tab for instructions on self-hosting executors.</p>
+                {isAdmin && <p>Click the "setup" tab for instructions on self-hosting executors.</p>}
               </div>
             )}
           </>
         )}
-        {activeTab === "setup" && (
+        {isAdmin && activeTab === "setup" && (
           <ExecutorSetup
             user={this.props.user}
             executorKeys={this.state.executorKeys}

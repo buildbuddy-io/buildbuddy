@@ -137,6 +137,12 @@ func TestAllowedRPCs(t *testing.T) {
 			Allowed:      true,
 		},
 		{
+			Name:         "GetExecutionNodes_OrgMember_AllowedForHandlerAuthorization",
+			RPC:          buildBuddyServicePrefix + "GetExecutionNodes",
+			Capabilities: []cappb.Capability{},
+			Allowed:      true,
+		},
+		{
 			Name:         "AdminOnlyRPC_NonAdmin_NotAllowed",
 			RPC:          buildBuddyServicePrefix + "UpdateGroup",
 			Capabilities: []cappb.Capability{},
