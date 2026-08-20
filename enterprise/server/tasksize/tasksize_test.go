@@ -255,7 +255,7 @@ func TestApplyLimits_LargeTest(t *testing.T) {
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk, sz.EstimatedFreeDiskBytes)
 }
 
-func TestApplyLimits_TestSizeWithExplicitCPURequest(t *testing.T) {
+func TestApplyLimits_TestSizeWithExplicitResourceRequest(t *testing.T) {
 	for _, testCase := range []struct {
 		name                string
 		propertyName        string
@@ -268,6 +268,8 @@ func TestApplyLimits_TestSizeWithExplicitCPURequest(t *testing.T) {
 		{name: "three quarters CPU", propertyName: "EstimatedCPU", propertyValue: "0.75", expectedMilliCPU: 750, expectedMemoryBytes: 300_000_000},
 		{name: "half compute unit", propertyName: "EstimatedComputeUnits", propertyValue: "0.5", expectedMilliCPU: 500, expectedMemoryBytes: 1_250_000_000},
 		{name: "below global minimum", propertyName: "EstimatedCPU", propertyValue: "0.1", expectedMilliCPU: tasksize.MinimumMilliCPU, expectedMemoryBytes: 300_000_000},
+		{name: "memory below test-size minimum", propertyName: "EstimatedMemory", propertyValue: "10000000", expectedMilliCPU: 1000, expectedMemoryBytes: 10_000_000},
+		{name: "memory below global minimum", propertyName: "EstimatedMemory", propertyValue: "100", expectedMilliCPU: 1000, expectedMemoryBytes: tasksize.MinimumMemoryBytes},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			task := &repb.ExecutionTask{

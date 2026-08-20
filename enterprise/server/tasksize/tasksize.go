@@ -684,8 +684,9 @@ func Override(base, over *scpb.TaskSize) *scpb.TaskSize {
 }
 
 // ApplyLimitsWithRequestedSize applies the requested size to size, then clamps
-// the result to within an allowed range. An explicit CPU request overrides the
-// test-size CPU minimum but remains subject to the global CPU minimum.
+// the result to within an allowed range. Explicit CPU and memory requests
+// override the corresponding test-size minimums but remain subject to the
+// global minimums.
 func ApplyLimitsWithRequestedSize(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd *repb.Command, props *platform.Properties, size, requestedSize *scpb.TaskSize) *scpb.TaskSize {
 	return applyLimits(ctx, efp, cmd, props, Override(size, requestedSize), requestedSize)
 }
@@ -704,13 +705,15 @@ func applyLimits(ctx context.Context, efp interfaces.ExperimentFlagProvider, cmd
 	minMemoryBytes := MinimumMemoryBytes
 	minMilliCPU := MinimumMilliCPU
 	// Test actions have higher minimums, determined by the test size ("small",
-	// "medium", etc.). Explicit CPU requests override the test-size CPU
-	// minimum, but are still subject to the global safety minimum.
+	// "medium", etc.). Explicit resource requests override the corresponding
+	// test-size minimum but are still subject to the global safety minimum.
 	if s, ok := testSize(cmd); ok {
-		testSizeMemoryBytes, testSizeMilliCPU := estimateFromTestSize(s)
-		minMemoryBytes = testSizeMemoryBytes
-		if requestedSize.GetEstimatedMilliCpu() <= 0 {
-			minMilliCPU = testSizeMilliCPU
+		minMemoryBytes, minMilliCPU = estimateFromTestSize(s)
+		if requestedSize.GetEstimatedMemoryBytes() > 0 {
+			minMemoryBytes = MinimumMemoryBytes
+		}
+		if requestedSize.GetEstimatedMilliCpu() > 0 {
+			minMilliCPU = MinimumMilliCPU
 		}
 	}
 
