@@ -8,15 +8,17 @@ import rpcService from "../service/rpc_service";
 
 const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest";
 
-const SETUP_AGENT_TOOLS_COMMAND = `
+export type RemoteRunnerAgent = "claude" | "codex";
+
+const SETUP_CLAUDE_COMMAND = `
 set -euo pipefail
 
-if [[ -z "\${ANTHROPIC_API_KEY:-}" ]] && [[ -z "\${OPENAI_API_KEY:-}" ]]; then
-  echo "ERROR: Authentication via an API key is required. Add ANTHROPIC_API_KEY or OPENAI_API_KEY as a BuildBuddy secret." >&2
+if [[ -z "\${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "ERROR: Add ANTHROPIC_API_KEY as a BuildBuddy secret to use Claude." >&2
   exit 1
 fi
 
-if [[ -n "\${ANTHROPIC_API_KEY:-}" ]] && ! command -v claude &>/dev/null; then
+if ! command -v claude &>/dev/null; then
   echo "==> Installing Claude..." >&2
   curl -fsSL https://claude.ai/install.sh | bash
   if [[ -f "$HOME/.local/bin/claude" ]]; then
@@ -27,8 +29,17 @@ if [[ -n "\${ANTHROPIC_API_KEY:-}" ]] && ! command -v claude &>/dev/null; then
     exit 1
   fi
 fi
+`;
 
-if [[ -n "\${OPENAI_API_KEY:-}" ]] && ! command -v codex &>/dev/null; then
+const SETUP_CODEX_COMMAND = `
+set -euo pipefail
+
+if [[ -z "\${CODEX_API_KEY:-}" ]]; then
+  echo "ERROR: Add CODEX_API_KEY as a BuildBuddy secret to use Codex." >&2
+  exit 1
+fi
+
+if ! command -v codex &>/dev/null; then
   echo "==> Installing Codex..." >&2
   curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh
   if [[ -f "$HOME/.local/bin/codex" ]]; then
@@ -40,6 +51,11 @@ if [[ -n "\${OPENAI_API_KEY:-}" ]] && ! command -v codex &>/dev/null; then
   fi
 fi
 `;
+
+const SETUP_AGENT_COMMANDS: Record<RemoteRunnerAgent, string> = {
+  claude: SETUP_CLAUDE_COMMAND,
+  codex: SETUP_CODEX_COMMAND,
+};
 
 export async function supportsRemoteRun(repoUrl: string): Promise<boolean> {
   const rsp = await rpcService.service.getLinkedGitHubRepos(new github.GetLinkedReposRequest());
@@ -53,7 +69,7 @@ export function triggerRemoteRun(
   platformProps: Map<string, string> | null,
   runnerFlags: string[],
   name: string,
-  installAgentTools = false
+  agent?: RemoteRunnerAgent
 ) {
   command = command.replaceAll(/--[a-zA-Z_]+='\<REDACTED\>'/g, "");
   let execProps: build.bazel.remote.execution.v2.Platform.Property[] = [];
@@ -84,10 +100,10 @@ export function triggerRemoteRun(
       branch: invocationModel.getBranchName(),
     }),
     steps: [
-      ...(installAgentTools
+      ...(agent
         ? [
             new runner.Step({
-              run: SETUP_AGENT_TOOLS_COMMAND,
+              run: SETUP_AGENT_COMMANDS[agent],
             }),
           ]
         : []),

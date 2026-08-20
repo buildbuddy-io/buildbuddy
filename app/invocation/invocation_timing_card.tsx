@@ -25,7 +25,7 @@ import { Profile, readProfile, Thread } from "../trace/compact_trace";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
 import TraceViewer from "../trace/trace_viewer";
 import { copyToClipboard } from "../util/clipboard";
-import { triggerRemoteRun } from "../util/remote_runner";
+import { RemoteRunnerAgent, triggerRemoteRun } from "../util/remote_runner";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import InvocationModel from "./invocation_model";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
@@ -34,8 +34,6 @@ interface Props {
   model: InvocationModel;
   dark: boolean;
 }
-
-type ExplainProfileAgent = "claude" | "codex";
 
 interface State {
   profile: Profile | null;
@@ -51,7 +49,7 @@ interface State {
   eventPageSize: number;
   localProfileName: string;
   viewerKey: number;
-  explainProfileAgent: ExplainProfileAgent;
+  explainProfileAgent: RemoteRunnerAgent;
   isExplainProfileMenuOpen: boolean;
   isExplainProfileDialogOpen: boolean;
 }
@@ -447,10 +445,12 @@ export default class InvocationTimingCardComponent extends React.Component<Props
       this.props.model,
       this.getExplainProfileCommand(),
       true,
-      new Map<string, string>([["env-secrets", "ANTHROPIC_API_KEY,OPENAI_API_KEY"]]),
+      new Map<string, string>([
+        ["env-secrets", this.state.explainProfileAgent === "claude" ? "ANTHROPIC_API_KEY" : "CODEX_API_KEY"],
+      ]),
       ["--skip_auto_checkout=true"],
       "explain profile",
-      true /* installAgentTools */
+      this.state.explainProfileAgent
     );
   }
 
@@ -464,7 +464,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     }
   }
 
-  private selectExplainProfileAgent(agent: ExplainProfileAgent) {
+  private selectExplainProfileAgent(agent: RemoteRunnerAgent) {
     this.setState({ explainProfileAgent: agent, isExplainProfileMenuOpen: false });
   }
 
@@ -499,7 +499,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
             <li className="timing-explain-menu-label" role="presentation">
               Run with
             </li>
-            {(["claude", "codex"] as ExplainProfileAgent[]).map((agent) => (
+            {(["claude", "codex"] as RemoteRunnerAgent[]).map((agent) => (
               <MenuItem
                 key={agent}
                 className={this.state.explainProfileAgent === agent ? "selected" : ""}
