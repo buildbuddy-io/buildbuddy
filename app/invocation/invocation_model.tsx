@@ -22,6 +22,7 @@ import format, { formatDate } from "../format/format";
 import rpcService from "../service/rpc_service";
 import { resourceNameToString } from "../util/cache";
 import { exitCode } from "../util/exit_codes";
+import { normalizeRepoURL } from "../util/git";
 import { durationToMillisWithFallback, timestampToDateWithFallback } from "../util/proto";
 import { quote } from "../util/shlex";
 
@@ -587,11 +588,40 @@ export default class InvocationModel {
 
   // https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables
   getGithubActionsUrl() {
-    if (this.getGithubRepo() && this.clientEnvMap.get("GITHUB_RUN_ID")) {
-      return `${this.getGithubRepo()}/actions/runs/${this.clientEnvMap.get("GITHUB_RUN_ID")}`;
+    if (this.getGithubActionsRepo() && this.clientEnvMap.get("GITHUB_RUN_ID")) {
+      return `${this.getGithubActionsRepo()}/actions/runs/${this.clientEnvMap.get("GITHUB_RUN_ID")}`;
     }
 
     return undefined;
+  }
+
+  getGithubActionsRepo(): string {
+    const repository = this.clientEnvMap.get("GITHUB_REPOSITORY");
+    if (!repository) {
+      return this.getGithubRepo();
+    }
+    if (this.githubRepositoryHasHost(repository)) {
+      return normalizeRepoURL(repository);
+    }
+    return normalizeRepoURL(`${this.getGithubServerUrl()}/${repository.replace(/^\//, "")}`);
+  }
+
+  private getGithubServerUrl(): string {
+    const serverUrl = this.clientEnvMap.get("GITHUB_SERVER_URL");
+    if (serverUrl) {
+      return serverUrl.replace(/\/$/, "");
+    }
+    try {
+      const repoUrl = new URL(this.getGithubRepo());
+      return `${repoUrl.protocol}//${repoUrl.host}`;
+    } catch (e) {
+      return "https://github.com";
+    }
+  }
+
+  private githubRepositoryHasHost(repository: string): boolean {
+    const firstSegment = repository.split("/", 1)[0] || "";
+    return repository.includes("://") || repository.includes("@") || /[.:]/.test(firstSegment);
   }
 
   getGithubRepo(): string {
