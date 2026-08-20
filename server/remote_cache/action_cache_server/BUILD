@@ -36,6 +36,7 @@ go_test(
     srcs = ["action_cache_server_test.go"],
     deps = [
         ":action_cache_server",
+        "//enterprise/server/experiments",
         "//proto:cache_go_proto",
         "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
@@ -60,6 +61,8 @@ go_test(
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_open_feature_go_sdk//openfeature",
+        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_stretchr_testify//assert",

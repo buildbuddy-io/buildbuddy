@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -71,7 +72,7 @@ func NewActionCacheServerProxy(env environment.Env) (*ActionCacheServerProxy, er
 	}, nil
 }
 
-func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
+func (s *ActionCacheServerProxy) getACKeyForGetActionResultRequest(ctx context.Context, req *repb.GetActionResultRequest) (*digest.ACResourceName, error) {
 	hashBytes, err := proto.Marshal(req)
 	if err != nil {
 		return nil, err
@@ -81,7 +82,11 @@ func getACKeyForGetActionResultRequest(req *repb.GetActionResultRequest) (*diges
 	if err != nil {
 		return nil, err
 	}
-	return digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction()), nil
+	rn := digest.NewACResourceName(d, req.GetInstanceName(), req.GetDigestFunction())
+	if prefix := action_cache_server.GetPrefix(ctx, s.env.GetExperimentFlagProvider()); prefix != "" {
+		rn = digest.NewACResourceName(rn.GetDigest(), prefix+rn.GetInstanceName(), rn.GetDigestFunction())
+	}
+	return rn, nil
 }
 
 func isDefaultGetActionResultRequest(req *repb.GetActionResultRequest) bool {
@@ -276,7 +281,7 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 	var localKey *digest.ACResourceName
 	ttl := s.actionCacheTTL(ctx)
 	if *cacheActionResults {
-		localKey, err = getACKeyForGetActionResultRequest(req)
+		localKey, err = s.getACKeyForGetActionResultRequest(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -420,7 +425,7 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 				ActionDigest:   req.GetActionDigest(),
 				DigestFunction: req.GetDigestFunction(),
 			}
-			if localKey, keyErr := getACKeyForGetActionResultRequest(getReq); keyErr == nil {
+			if localKey, keyErr := s.getACKeyForGetActionResultRequest(cacheCtx, getReq); keyErr == nil {
 				actionResult := resp
 				if resp.GetExecutionMetadata().GetUsageStats().GetTimeline() != nil {
 					// Default GetActionResult omits timeline data.

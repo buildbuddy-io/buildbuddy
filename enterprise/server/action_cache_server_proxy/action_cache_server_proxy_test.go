@@ -144,8 +144,8 @@ func (c *localOnlyCache) put(r *rspb.ResourceName, data []byte, mtime int64) {
 	c.mtimes[key] = mtime
 }
 
-func seedLocalActionResult(t *testing.T, cache *localOnlyCache, req *repb.GetActionResultRequest, result *repb.ActionResult, mtime int64) *digest.ACResourceName {
-	localKey, err := getACKeyForGetActionResultRequest(req)
+func seedLocalActionResult(t *testing.T, ctx context.Context, env *testenv.TestEnv, cache *localOnlyCache, req *repb.GetActionResultRequest, result *repb.ActionResult, mtime int64) *digest.ACResourceName {
+	localKey, err := (&ActionCacheServerProxy{env: env}).getACKeyForGetActionResultRequest(ctx, req)
 	require.NoError(t, err)
 	casDigest, err := digest.ComputeForMessage(result, req.GetDigestFunction())
 	require.NoError(t, err)
@@ -440,7 +440,7 @@ func TestActionCacheProxy_TTLServesFreshLocalResult(t *testing.T) {
 		},
 	}
 	cache := newLocalOnlyCache()
-	seedLocalActionResult(t, cache, req, localResult, env.GetClock().Now().Add(-time.Second).UnixMicro())
+	seedLocalActionResult(t, ctx, env, cache, req, localResult, env.GetClock().Now().Add(-time.Second).UnixMicro())
 	proxy := &ActionCacheServerProxy{
 		supportsEncryption: func(context.Context) bool { return false },
 		env:                env,
@@ -491,7 +491,7 @@ func TestActionCacheProxy_TTLExpiredValidatesWithRemote(t *testing.T) {
 	require.NoError(t, err)
 	cache := newLocalOnlyCache()
 	oldMTime := env.GetClock().Now().Add(-2 * time.Minute).UnixMicro()
-	localKey := seedLocalActionResult(t, cache, req, localResult, oldMTime)
+	localKey := seedLocalActionResult(t, ctx, env, cache, req, localResult, oldMTime)
 	proxy := &ActionCacheServerProxy{
 		supportsEncryption: func(context.Context) bool { return false },
 		env:                env,
@@ -598,7 +598,7 @@ func TestActionCacheProxy_UpdateActionResultRefreshesLocalResultWithinTTL(t *tes
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
 	cache := newLocalOnlyCache()
-	seedLocalActionResult(t, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
+	seedLocalActionResult(t, ctx, env, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
 	proxy := &ActionCacheServerProxy{
 		supportsEncryption: func(context.Context) bool { return false },
 		env:                env,
@@ -653,7 +653,7 @@ func TestActionCacheProxy_UpdateActionResultDoesNotLeaveFreshRequestVariantStale
 		IncludeTimelineData: true,
 	}
 	cache := newLocalOnlyCache()
-	seedLocalActionResult(t, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
+	seedLocalActionResult(t, ctx, env, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
 	proxy := &ActionCacheServerProxy{
 		supportsEncryption: func(context.Context) bool { return false },
 		env:                env,
