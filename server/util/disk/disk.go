@@ -41,10 +41,26 @@ var (
 )
 
 type Partition struct {
-	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
-	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
-	NumRanges    int    `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
-	SoftDeleted  bool   `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
+	ID                string         `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes      int64          `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	EvictionThreshold *float64       `yaml:"eviction_threshold" json:"eviction_threshold" usage:"Fraction of max_size_bytes above which the janitor evicts the oldest items from the partition. Defaults to 0.9. This is only used by the pebble cache."`
+	MinEvictionAge    *time.Duration `yaml:"min_eviction_age" json:"min_eviction_age" usage:"Don't evict anything from this partition unless it's been idle for at least this long. Defaults to cache.pebble.min_eviction_age. This is only used by the pebble cache."`
+	NumRanges         int            `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
+	SoftDeleted       bool           `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
+}
+
+// DefaultEvictionThreshold is the fraction of a partition's max size at which
+// eviction starts, for partitions that don't set eviction_threshold.
+const DefaultEvictionThreshold = .9
+
+// EvictionThresholdBytes returns the maximum number of bytes that can be stored before
+// eviction should start.
+func (p *Partition) EvictionThresholdBytes() int64 {
+	threshold := float64(DefaultEvictionThreshold)
+	if p.EvictionThreshold != nil {
+		threshold = *p.EvictionThreshold
+	}
+	return int64(threshold * float64(p.MaxSizeBytes))
 }
 
 type PartitionMapping struct {
