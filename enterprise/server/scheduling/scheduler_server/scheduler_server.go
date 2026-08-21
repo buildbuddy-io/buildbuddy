@@ -2646,7 +2646,12 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		return err
 	}
 
-	if scheduledTask.attemptCount >= maxTaskAttemptCount {
+	// Re-establishing a lease after a scheduler disconnect is not an execution
+	// retry. Tasks with retries disabled should survive scheduler
+	// rollouts so that the executor which is already running the task can
+	// reconnect. A successful reconnect does not increment the attempt count.
+	isLeaseReconnect := reconnectToken != ""
+	if !isLeaseReconnect && scheduledTask.attemptCount >= maxTaskAttemptCount {
 		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
@@ -2664,7 +2669,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
 		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
-	if !platform.Retryable(task) {
+	if !isLeaseReconnect && !platform.Retryable(task) {
 		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
