@@ -619,12 +619,17 @@ export async function fetchDocumentation(tick: string): Promise<search.ExtendedD
     });
 }
 
-export async function fetchDecorations(filename: string) {
+export async function fetchDecorations(repo: string, filename: string) {
   if (!filename) {
     return;
   }
 
-  let ticket = "kythe://buildbuddy?path=" + filename;
+  // A tree-sitter:// file ticket names the repo (authority) and the
+  // repo-relative path. The server serves navigation for it from tree-sitter
+  // annotations; symbol tickets returned in the decorations carry the repo
+  // forward, so the subsequent CrossReferences (go-to-definition) call scopes
+  // to the same repo.
+  let ticket = "tree-sitter://" + repo + "?path=" + filename;
   const req = new search.KytheRequest({
     decorationsRequest: new kythe.proto.DecorationsRequest({
       location: new kythe.proto.Location({

@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/annotations"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/nav"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/performance"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -32,15 +34,6 @@ import (
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
-
-	// The KytheProxy RPC and its search protos still carry kythe reply-proto
-	// message types (search.proto embeds them, and the code browser frontend
-	// renders them), which are generated from the kythe.io module. No
-	// first-party Go source imports the module directly now that the kythe
-	// serving stack is gone, so this blank import keeps it a required
-	// dependency. Tree-sitter navigation reimplements KytheProxy over these
-	// same proto shapes.
-	_ "kythe.io/kythe/proto/xref_go_proto"
 )
 
 const (
@@ -50,6 +43,13 @@ const (
 )
 
 var isAlphaNumPath = regexp.MustCompile(`^[A-Za-z/0-9]*$`).MatchString
+
+// The kythe Decorations/CrossReferences endpoints carry no namespace (kythe
+// data was group-scoped); nav data is namespace-scoped, so for now we read from
+// a configured namespace, defaulting to the group's default namespace. Carrying
+// the namespace on the request is a follow-up.
+var treeSitterNavNamespace = flag.String("codesearch.treesitter_nav_namespace", "",
+	"Namespace (within the authenticated group) to serve tree-sitter navigation from.")
 
 func New(env environment.Env, rootDirectory, scratchDirectory string) (*codesearchServer, error) {
 	if err := disk.EnsureDirectoryExists(scratchDirectory); err != nil {
@@ -518,12 +518,43 @@ func (css *codesearchServer) Search(ctx context.Context, req *srpb.SearchRequest
 // configured namespace, defaulting to the group's default namespace — the same
 // one search reads when no namespace is requested. Carrying the namespace on
 // the request is a follow-up.
-// KytheProxy served the code browser's navigation requests from kythe. Kythe
-// has been removed; navigation is reimplemented over tree-sitter in a
-// follow-up. Until then the endpoint is unimplemented (kythe navigation did not
-// run in practice).
+func (css *codesearchServer) navReader(ctx context.Context) (*index.Reader, error) {
+	ns, err := css.getUserNamespace(ctx, *treeSitterNavNamespace)
+	if err != nil {
+		return nil, err
+	}
+	return index.NewReader(ctx, css.db, ns, schema.GitHubFileSchema()), nil
+}
+
+// KytheProxy answers the code browser's navigation requests. The endpoints and
+// reply protos are kythe's (the frontend speaks them), but the data is served
+// from tree-sitter over the codesearch index — kythe itself is gone. Request
+// types the browser doesn't use are unimplemented.
 func (css *codesearchServer) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
-	return nil, status.UnimplementedError("code navigation is not implemented")
+	r, err := css.navReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rsp := new(srpb.KytheResponse)
+	switch req.Value.(type) {
+	case *srpb.KytheRequest_DecorationsRequest:
+		reply, err := nav.Decorations(ctx, r, req.GetDecorationsRequest())
+		rsp.Value = &srpb.KytheResponse_DecorationsReply{DecorationsReply: reply}
+		return rsp, err
+	case *srpb.KytheRequest_CrossReferencesRequest:
+		reply, err := nav.CrossReferences(ctx, r, req.GetCrossReferencesRequest())
+		rsp.Value = &srpb.KytheResponse_CrossReferencesReply{CrossReferencesReply: reply}
+		return rsp, err
+	case *srpb.KytheRequest_ExtendedXrefsRequest:
+		reply, err := nav.ExtendedXrefs(ctx, r, req.GetExtendedXrefsRequest())
+		rsp.Value = &srpb.KytheResponse_ExtendedXrefsReply{ExtendedXrefsReply: reply}
+		return rsp, err
+	case *srpb.KytheRequest_DocsRequest:
+		reply, err := nav.Documentation(ctx, r, req.GetDocsRequest())
+		rsp.Value = &srpb.KytheResponse_DocsReply{DocsReply: reply}
+		return rsp, err
+	}
+	return rsp, status.UnimplementedError("unsupported navigation request type")
 }
 
 func (css *codesearchServer) Close(ctx context.Context) {
