@@ -22,7 +22,7 @@
    * so columns stay aligned across keys; tracks whose cells aren't rendered
    * collapse to zero width. */
   display: grid;
-  grid-template-columns: minmax(224px, max-content) repeat(4, max-content);
+  grid-template-columns: minmax(400px, max-content) repeat(4, max-content);
   overflow-x: auto;
 }
 
@@ -63,6 +63,18 @@
   white-space: nowrap;
 }
 
+.api-keys .api-key-created-at {
+  width: 0;
+  min-width: 100%;
+  font-size: 12px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--color-text-emphasis);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .api-keys .untitled-key {
   color: #757575;
 }
@@ -75,7 +87,7 @@
   color: var(--color-text-primary);
   border-radius: 8px;
   padding-left: 16px;
-  padding-right: 4px;
+  padding-right: 8px;
   align-self: stretch;
   display: flex;
   align-items: center;

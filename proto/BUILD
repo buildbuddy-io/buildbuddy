@@ -55,6 +55,7 @@ proto_library(
     deps = [
         ":capability_proto",
         ":context_proto",
+        ":user_id_proto",
         "@com_google_protobuf//:duration_proto",
     ],
 )
@@ -1043,6 +1044,7 @@ go_proto_library(
     deps = [
         ":capability_go_proto",
         ":context_go_proto",
+        ":user_id_go_proto",
     ],
 )
 
@@ -1989,6 +1991,7 @@ ts_proto_library(
         ":capability_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
+        ":user_id_ts_proto",
     ],
 )
 
