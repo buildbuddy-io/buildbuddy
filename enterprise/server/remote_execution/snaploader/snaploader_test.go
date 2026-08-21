@@ -111,6 +111,63 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	}
 }
 
+func gitTask(branch, base, defaultBranch string, props ...*repb.Platform_Property) *repb.ExecutionTask {
+	env := []*repb.Command_EnvironmentVariable{
+		{Name: "GIT_BRANCH", Value: branch},
+		{Name: "GIT_BASE_BRANCH", Value: base},
+		{Name: "GIT_REPO_DEFAULT_BRANCH", Value: defaultBranch},
+	}
+	return &repb.ExecutionTask{
+		Command: &repb.Command{
+			EnvironmentVariables: env,
+			Platform:             &repb.Platform{Properties: props},
+		},
+	}
+}
+
+func TestIsLikelyDefaultSnapshot(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	ctx := context.Background()
+	loader, err := snaploader.New(setupEnv(t))
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name                    string
+		branch, base, defaultBr string
+		want                    bool
+	}{
+		{name: "only GIT_BRANCH set", branch: "main", want: true},
+		{name: "pushed branch equals default branch", branch: "main", defaultBr: "main", want: true},
+		{name: "pushed branch is not default branch", branch: "pr-1", base: "main", defaultBr: "main", want: false},
+		{name: "stacked PR", branch: "pr-2", base: "pr-1", defaultBr: "main", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			task := gitTask(tc.branch, tc.base, tc.defaultBr)
+			keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
+			require.NoError(t, err)
+			require.Equal(t, tc.want, snaploader.IsLikelyDefaultSnapshot(keys, task))
+		})
+	}
+}
+
+// Disabling the property removes the universal key from the read path too.
+func TestUniversalFallbackDisabled(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	ctx := context.Background()
+	loader, err := snaploader.New(setupEnv(t))
+	require.NoError(t, err)
+
+	task := gitTask("pr-1", "main", "main",
+		&repb.Platform_Property{Name: platform.EnableUniversalSnapshotPropertyName, Value: "false"})
+	keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
+	require.NoError(t, err)
+	for _, k := range keys.GetFallbackKeys() {
+		require.NotEqual(t, snaputil.UniversalSnapshotRef, k.GetRef())
+	}
+	require.Len(t, keys.GetFallbackKeys(), 1)
+	require.Equal(t, "main", keys.GetFallbackKeys()[0].GetRef())
+}
+
 func TestUnpackFallbackKey(t *testing.T) {
 	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 
@@ -133,7 +190,8 @@ func TestUnpackFallbackKey(t *testing.T) {
 	keys, err := loader.SnapshotKeySet(ctx, task, "config-hash", "")
 	require.NoError(t, err)
 	require.Equal(t, "main", keys.GetBranchKey().GetRef())
-	require.Empty(t, keys.GetFallbackKeys())
+	require.Equal(t, 1, len(keys.GetFallbackKeys()))
+	require.Equal(t, snaputil.UniversalSnapshotRef, keys.GetFallbackKeys()[0].Ref)
 
 	opts := makeFakeSnapshot(t, workDir, true /*=enableRemote*/, nil, "")
 	err = loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts)
@@ -154,9 +212,10 @@ func TestUnpackFallbackKey(t *testing.T) {
 	forkKeys, err := loader.SnapshotKeySet(ctx, forkTask, "config-hash", "")
 	require.NoError(t, err)
 	require.Equal(t, "my-cool-pr", forkKeys.GetBranchKey().GetRef())
-	require.Len(t, forkKeys.GetFallbackKeys(), 2)
+	require.Len(t, forkKeys.GetFallbackKeys(), 3)
 	require.Equal(t, "my-cool-stacked-pr-base-branch", forkKeys.FallbackKeys[0].Ref)
 	require.Equal(t, "main", forkKeys.FallbackKeys[1].Ref)
+	require.Equal(t, snaputil.UniversalSnapshotRef, forkKeys.FallbackKeys[2].Ref)
 
 	// Sanity check that the branch key is not found in cache, to make sure
 	// we're actually falling back.
