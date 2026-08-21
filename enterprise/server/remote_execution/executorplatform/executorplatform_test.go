@@ -89,6 +89,27 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 	}
 }
 
+func TestUseOCIFetcher(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		executorEnabled bool
+		platformEnabled bool
+		expectedEnabled bool
+	}{
+		{name: "disabled by executor", executorEnabled: false, platformEnabled: true, expectedEnabled: false},
+		{name: "disabled by platform", executorEnabled: true, platformEnabled: false, expectedEnabled: false},
+		{name: "enabled", executorEnabled: true, platformEnabled: true, expectedEnabled: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.use_oci_fetcher", tc.executorEnabled)
+			props := &platform.Properties{UseOCIFetcher: tc.platformEnabled}
+			err := ApplyOverrides(testenv.GetTestEnv(t), bare, props, &repb.Command{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectedEnabled, props.UseOCIFetcher)
+		})
+	}
+}
+
 func TestParse_ApplyOverrides(t *testing.T) {
 	for _, testCase := range []struct {
 		platformProps       []*repb.Platform_Property
