@@ -13,6 +13,7 @@ go_library(
         "filecache_darwin.go",
         "filecache_linux.go",
         "filecache_other.go",
+        "filecache_unix.go",
         "filecache_windows.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache",
@@ -49,7 +50,12 @@ go_library(
 go_test(
     name = "filecache_test",
     size = "small",
-    srcs = ["filecache_test.go"],
+    timeout = "moderate",
+    srcs = [
+        "filecache_nonwindows_test.go",
+        "filecache_test.go",
+        "filecache_windows_test.go",
+    ],
     deps = [
         ":filecache",
         "//proto:remote_execution_go_proto",
@@ -67,5 +73,10 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:windows": [
+            "@org_golang_x_sys//windows",
+        ],
+        "//conditions:default": [],
+    }),
 )

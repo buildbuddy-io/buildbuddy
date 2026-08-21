@@ -112,6 +112,7 @@ func TestFilecache(t *testing.T) {
 }
 
 func TestFileCacheGroupIsolation(t *testing.T) {
+	requireFilecacheRestartScanSupport(t)
 	ctx := context.TODO()
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
@@ -247,6 +248,7 @@ func TestFileCacheSharedDirectoryAcrossGroups(t *testing.T) {
 }
 
 func TestFileCacheSharedDirectoryAcrossGroupsAfterRestart(t *testing.T) {
+	requireFilecacheRestartScanSupport(t)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
@@ -349,6 +351,9 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 
 	// Seed malformed shared-directory layouts on disk before startup scanning.
 	for _, test := range tests {
+		if !canCreateSharedDirectoryStartupFixture(test.sharedDirName) {
+			continue
+		}
 		node := nodeFromString("invalid-shared-"+test.name, false)
 		writeFileContent(
 			t,
@@ -545,6 +550,7 @@ func TestFileCacheEviction(t *testing.T) {
 }
 
 func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
+	requireFilecacheRestartScanSupport(t)
 	ctx := context.Background()
 	// For now just assume the disk block size is 4096
 	const fsBlockSize = 4096
@@ -583,6 +589,7 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 }
 
 func TestScanWithConcurrentAdd(t *testing.T) {
+	requireFilecacheRestartScanSupport(t)
 	for trial := 0; trial < 100; trial++ {
 		ctx := context.Background()
 		filecacheRoot := testfs.MakeTempDir(t)
@@ -836,9 +843,11 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 }
 
 func TestFileCacheProcessCrash(t *testing.T) {
+	requireFilecacheRestartScanSupport(t)
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	baseDir := testfs.MakeTempDir(t)
 
 	// Create a filecache and add a file.
@@ -870,6 +879,7 @@ func TestFileCacheRebootWithoutCleanShutdown(t *testing.T) {
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	baseDir := testfs.MakeTempDir(t)
 
 	// Create a filecache and add a file.
@@ -901,9 +911,11 @@ func TestFileCacheRebootWithoutCleanShutdown(t *testing.T) {
 }
 
 func TestFileCacheCleanShutdown(t *testing.T) {
+	requireFilecacheRestartScanSupport(t)
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	baseDir := testfs.MakeTempDir(t)
 
 	// Create a filecache, add a file, then shut down cleanly.
@@ -930,9 +942,11 @@ func TestFileCacheCleanShutdown(t *testing.T) {
 }
 
 func TestFileCacheBootIDFileRemovedWhenDetectionDisabled(t *testing.T) {
+	requireFilecacheRestartScanSupport(t)
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	baseDir := testfs.MakeTempDir(t)
 
 	// With unclean shutdown detection enabled, create a filecache, add a
@@ -969,6 +983,7 @@ func TestFileCacheAddFileAfterClose(t *testing.T) {
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	baseDir := testfs.MakeTempDir(t)
 
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
@@ -988,6 +1003,7 @@ func TestFileCacheFastLinkFileAfterClose(t *testing.T) {
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	baseDir := testfs.MakeTempDir(t)
 
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
@@ -1010,6 +1026,7 @@ func TestFileCacheWriterCommitAfterClose(t *testing.T) {
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	baseDir := testfs.MakeTempDir(t)
 
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
@@ -1038,6 +1055,7 @@ func TestFileCacheTrackExternalDirectoryAfterClose(t *testing.T) {
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
@@ -1464,6 +1482,7 @@ func TestFileCacheWriteAfterClose(t *testing.T) {
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
+	requireFilecacheDurabilitySupport(t, fcDir)
 	outputDir := testfs.MakeTempDir(t)
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
 	require.NoError(t, err)
