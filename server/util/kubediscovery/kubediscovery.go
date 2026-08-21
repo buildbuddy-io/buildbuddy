@@ -25,6 +25,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ktypes "k8s.io/apimachinery/pkg/types"
 )
 
 const apiMaxBackoff = 30 * time.Second
@@ -70,8 +71,38 @@ type PeerWatcher struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu    sync.Mutex
-	peers map[string]string // peer key -> "ip:port"
+	mu sync.Mutex
+
+	// pods holds every pod where phase=Running, keyed by pod UID.
+	// Keeping track of all of them lets us fallback to a Running pod on the same
+	// node if the pod that owns the peer key stops running (for example
+	// during a rolling restart).
+	pods map[ktypes.UID]podInfo
+	// peers is a map from peer key -> "ip:port".
+	// It is recomputed from pods after every change.
+	peers map[string]string
+}
+
+type podInfo struct {
+	uid         ktypes.UID
+	key         string // ring key: node name, or pod name for StatefulSets
+	addr        string // "ip:port"
+	name        string // pod name, used only as a tiebreaker
+	createdAt   time.Time
+	terminating bool // pod has a deletion timestamp
+}
+
+// preferredOver reports whether e should take the peer key from other.
+// A pod that isn't shutting down always wins; otherwise the newest pod wins.
+// Ties break on pod name so every watcher in the cluster picks the same owner.
+func (e podInfo) preferredOver(other podInfo) bool {
+	if e.terminating != other.terminating {
+		return !e.terminating
+	}
+	if !e.createdAt.Equal(other.createdAt) {
+		return e.createdAt.After(other.createdAt)
+	}
+	return e.name > other.name
 }
 
 // NewPeerWatcher creates a new Kubernetes peer discovery watcher.
@@ -173,13 +204,13 @@ func (c *PeerWatcher) runOnce() error {
 	}
 
 	c.mu.Lock()
-	c.peers = make(map[string]string)
+	c.pods = make(map[ktypes.UID]podInfo, len(podList.Items))
 	for _, pod := range podList.Items {
-		if addr := c.podAddr(pod); addr != "" {
-			c.peers[c.peerKey(pod)] = addr
+		if e := c.getPodInfo(&pod); e != nil {
+			c.pods[pod.UID] = *e
 		}
 	}
-	c.notifyLocked()
+	c.rebuildPeerMapAndNotifyLocked()
 	c.mu.Unlock()
 
 	resourceVersion := podList.ResourceVersion
@@ -327,23 +358,45 @@ func (c *PeerWatcher) podAddr(pod corev1.Pod) string {
 	return net.JoinHostPort(pod.Status.PodIP, c.port)
 }
 
+// getPodInfo returns the podInfo for pod, or nil if the pod has no usable
+// address and so can't be a candidate for any peer key.
+func (c *PeerWatcher) getPodInfo(pod *corev1.Pod) *podInfo {
+	addr := c.podAddr(*pod)
+	if addr == "" {
+		// If the pod doesn't have a usable address,
+		// it can't be a candidate for a peer key.
+		return nil
+	}
+	return &podInfo{
+		uid:       pod.UID,
+		key:       c.peerKey(*pod),
+		addr:      addr,
+		name:      pod.Name,
+		createdAt: pod.CreationTimestamp.Time,
+		// A terminating pod stays a candidate, so that its key keeps
+		// pointing somewhere while it drains and nothing has replaced it.
+		// That keeps the hash ring stable: a read to a peer that has
+		// stopped serving fails over to the next replica, whereas
+		// dropping the peer reshuffles the ring for every key.
+		terminating: pod.DeletionTimestamp != nil,
+	}
+}
+
 func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := c.peerKey(*pod)
-	addr := c.podAddr(*pod)
-	if addr == "" {
-		if _, exists := c.peers[key]; exists {
-			delete(c.peers, key)
-			c.notifyLocked()
+	e := c.getPodInfo(pod)
+	if e == nil {
+		// This pod no longer has an address. Remove it from the pod list
+		// and rebuild the peer map.
+		if _, exists := c.pods[pod.UID]; exists {
+			delete(c.pods, pod.UID)
+			c.rebuildPeerMapAndNotifyLocked()
 		}
 		return
 	}
-	existing, exists := c.peers[key]
-	if !exists || existing != addr {
-		c.peers[key] = addr
-		c.notifyLocked()
-	}
+	c.pods[pod.UID] = *e
+	c.rebuildPeerMapAndNotifyLocked()
 	if len(c.peers) > maxPeers {
 		alert.UnexpectedEvent("kubediscovery_too_many_peers", "Found %v peers, which is over the limit of %v", len(c.peers), maxPeers)
 	}
@@ -352,11 +405,33 @@ func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 func (c *PeerWatcher) removePod(pod *corev1.Pod) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	key := c.peerKey(*pod)
-	if _, exists := c.peers[key]; exists {
-		delete(c.peers, key)
-		c.notifyLocked()
+	if _, exists := c.pods[pod.UID]; exists {
+		delete(c.pods, pod.UID)
+		c.rebuildPeerMapAndNotifyLocked()
 	}
+}
+
+// rebuildPeerMapAndNotifyLocked recomputes the peer key -> address map by electing an
+// owner for each peer key, and publishes it if the addresses changed.
+func (c *PeerWatcher) rebuildPeerMapAndNotifyLocked() {
+	owners := make(map[string]podInfo, len(c.pods))
+	for _, e := range c.pods {
+		if owner, ok := owners[e.key]; ok && !e.preferredOver(owner) {
+			continue
+		}
+		owners[e.key] = e
+	}
+	peers := make(map[string]string, len(owners))
+	for key, e := range owners {
+		peers[key] = e.addr
+	}
+	// Ownership can change without the address changing (e.g. the owner
+	// starts terminating). Don't rebuild the hash ring for that.
+	if maps.Equal(peers, c.peers) {
+		return
+	}
+	c.peers = peers
+	c.notifyLocked()
 }
 
 func (c *PeerWatcher) notifyLocked() {
