@@ -1,6 +1,6 @@
 module github.com/buildbuddy-io/buildbuddy
 
-go 1.26.6
+go 1.27.0
 
 // Device Manager
 tool gitlab.com/arm-research/smarter/smarter-device-manager
@@ -134,6 +134,7 @@ require (
 	github.com/moby/moby/client v0.4.1
 	github.com/mwitkow/grpc-proxy v0.0.0-20250813121105-2866842de9a5
 	github.com/ncruces/go-sqlite3 v0.25.2
+	github.com/open-feature/flagd/core v0.13.2
 	github.com/open-feature/go-sdk v1.17.1
 	github.com/open-feature/go-sdk-contrib/providers/flagd v0.3.2
 	github.com/opencontainers/runtime-spec v1.3.0
@@ -407,7 +408,6 @@ require (
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/open-feature/flagd-schemas v0.2.13 // indirect
-	github.com/open-feature/flagd/core v0.13.2
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/opencontainers/runtime-tools v0.9.1-0.20251114084447-edf4cb3d2116 // indirect
