@@ -161,7 +161,7 @@ func newBenchEvictor(b *testing.B, eligibleEvery int) (*partitionEvictor, pebble
 		ID:                benchPartitionID,
 		MaxSizeBytes:      100,
 		MinEvictionAge:    new(benchMinEvictionAge),
-		EvictionThreshold: new(JanitorCutoffThreshold),
+		EvictionThreshold: new(disk.DefaultEvictionThreshold),
 	}
 	evictor, err := newPartitionEvictor(
 		context.Background(),

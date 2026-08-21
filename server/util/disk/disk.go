@@ -49,10 +49,18 @@ type Partition struct {
 	SoftDeleted       bool           `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
 }
 
-// MaxSizeByte returns the maximum number of bytes that can be stored before
+// DefaultEvictionThreshold is the fraction of a partition's max size at which
+// eviction starts, for partitions that don't set eviction_threshold.
+const DefaultEvictionThreshold = .9
+
+// EvictionThresholdBytes returns the maximum number of bytes that can be stored before
 // eviction should start.
-func (p *Partition) MaxSizeByte() int64 {
-	return int64(*p.EvictionThreshold * float64(p.MaxSizeBytes))
+func (p *Partition) EvictionThresholdBytes() int64 {
+	threshold := float64(DefaultEvictionThreshold)
+	if p.EvictionThreshold != nil {
+		threshold = *p.EvictionThreshold
+	}
+	return int64(threshold * float64(p.MaxSizeBytes))
 }
 
 type PartitionMapping struct {
