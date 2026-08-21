@@ -75,6 +75,7 @@ go_test(
         "@io_k8s_api//apps/v1:apps",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/types",
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//kubernetes/fake",
         "@org_golang_google_grpc//:grpc",

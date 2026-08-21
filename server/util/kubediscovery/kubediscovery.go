@@ -395,10 +395,16 @@ func (c *PeerWatcher) updatePod(pod *corev1.Pod) {
 		}
 		return
 	}
+	// Kubernetes emits lots of no-op status updates. Exit early in that case.
+	// Addr and terminating are the only fields that might change, and would require a rebuild of the peer map.
+	if existing, exists := c.pods[pod.UID]; exists &&
+		existing.addr == e.addr && existing.terminating == e.terminating {
+		return
+	}
 	c.pods[pod.UID] = *e
 	c.rebuildPeerMapAndNotifyLocked()
-	if len(c.peers) > maxPeers {
-		alert.UnexpectedEvent("kubediscovery_too_many_peers", "Found %v peers, which is over the limit of %v", len(c.peers), maxPeers)
+	if len(c.pods) > maxPeers {
+		alert.UnexpectedEvent("kubediscovery_too_many_peers", "Found %v peers, which is over the limit of %v", len(c.pods), maxPeers)
 	}
 }
 
