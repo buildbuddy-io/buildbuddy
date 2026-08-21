@@ -3,10 +3,13 @@
 package filecache_test
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
 )
@@ -37,12 +40,28 @@ func requireFilecacheDurabilitySupport(t testing.TB, path string) {
 	require.NoError(t, err)
 	require.NoError(t, windows.CloseHandle(handle))
 }
+func requireFilecacheRestartScanSupport(t testing.TB) {}
 
-// requireFilecacheRestartScanSupport skips restart-scan tests until FileCache
-// normalizes WalkDir's native paths before combining them with slash-separated
-// relative cache paths. Otherwise, FastLinkFile looks up mixed-separator source
-// paths that do not exist.
-func requireFilecacheRestartScanSupport(t testing.TB) {
-	t.Helper()
-	t.Skip("Windows startup scans require native cache path normalization")
+func TestFileCacheRestartScanWindows(t *testing.T) {
+	ctx := context.Background()
+	// Deliberately use slash separators so this remains a regression test even
+	// though MakeTempDir returns a canonical native Windows path.
+	cacheRoot := filepath.ToSlash(testfs.MakeTempDir(t))
+	workspace := testfs.MakeTempDir(t)
+	node := nodeFromString("restart-scan", true)
+	sourcePath := writeFileContent(t, workspace, "source", "restart-scan", true)
+
+	fc, err := filecache.NewFileCache(cacheRoot, 100_000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	require.NoError(t, fc.AddFile(ctx, node, sourcePath))
+	require.NoError(t, fc.Close())
+
+	fc, err = filecache.NewFileCache(cacheRoot, 100_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, fc.Close()) })
+	fc.WaitForDirectoryScanToComplete()
+
+	linkedPath := filepath.Join(workspace, "linked")
+	require.True(t, fc.FastLinkFile(ctx, node, linkedPath), "startup scan should preserve the cached file")
 }
