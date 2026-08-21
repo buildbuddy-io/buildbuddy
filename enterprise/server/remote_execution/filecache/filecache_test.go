@@ -303,6 +303,7 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 		sharedDirName           string
 		startupDir              string
 		unexpectedSharedDirName string
+		skipWindows             bool
 	}{
 		{
 			name:          "empty",
@@ -313,11 +314,17 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 			name:          "dot",
 			sharedDirName: ".",
 			startupDir:    "_SHARED_.",
+			// Windows strips the trailing dot from this directory name, so the
+			// malformed startup fixture cannot be represented on disk.
+			skipWindows: true,
 		},
 		{
 			name:          "dotdot",
 			sharedDirName: "..",
 			startupDir:    "_SHARED_..",
+			// Windows strips the trailing dots from this directory name, so the
+			// malformed startup fixture cannot be represented on disk.
+			skipWindows: true,
 		},
 		{
 			name:          "anon",
@@ -349,6 +356,9 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 
 	// Seed malformed shared-directory layouts on disk before startup scanning.
 	for _, test := range tests {
+		if test.skipWindows && runtime.GOOS == "windows" {
+			continue
+		}
 		node := nodeFromString("invalid-shared-"+test.name, false)
 		writeFileContent(
 			t,
@@ -366,6 +376,9 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			if test.skipWindows && runtime.GOOS == "windows" {
+				t.Skip("malformed startup fixture cannot be represented on Windows")
+			}
 			node := nodeFromString("invalid-shared-"+test.name, false)
 			invalidSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.sharedDirName)
 
