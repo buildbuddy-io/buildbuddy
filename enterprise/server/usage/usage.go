@@ -781,36 +781,6 @@ func countsToMap(tu *tables.UsageCounts) (map[string]int64, error) {
 	if tu.MemoryGBUsec > 0 {
 		counts["memory_gb_usec"] = tu.MemoryGBUsec
 	}
-	if tu.LinuxArm64ExecutionBurstableComputeDurationUsec > 0 {
-		counts["linux_arm64_execution_burstable_compute_duration_usec"] = tu.LinuxArm64ExecutionBurstableComputeDurationUsec
-	}
-	if tu.LinuxArm64ExecutionComputeDurationUsec > 0 {
-		counts["linux_arm64_execution_compute_duration_usec"] = tu.LinuxArm64ExecutionComputeDurationUsec
-	}
-	if tu.LinuxX86_64ExecutionBurstableComputeDurationUsec > 0 {
-		counts["linux_x86_64_execution_burstable_compute_duration_usec"] = tu.LinuxX86_64ExecutionBurstableComputeDurationUsec
-	}
-	if tu.LinuxX86_64ExecutionComputeDurationUsec > 0 {
-		counts["linux_x86_64_execution_compute_duration_usec"] = tu.LinuxX86_64ExecutionComputeDurationUsec
-	}
-	if tu.DarwinArm64ExecutionBurstableComputeDurationUsec > 0 {
-		counts["darwin_arm64_execution_burstable_compute_duration_usec"] = tu.DarwinArm64ExecutionBurstableComputeDurationUsec
-	}
-	if tu.DarwinArm64ExecutionComputeDurationUsec > 0 {
-		counts["darwin_arm64_execution_compute_duration_usec"] = tu.DarwinArm64ExecutionComputeDurationUsec
-	}
-	if tu.DarwinX86_64ExecutionBurstableComputeDurationUsec > 0 {
-		counts["darwin_x86_64_execution_burstable_compute_duration_usec"] = tu.DarwinX86_64ExecutionBurstableComputeDurationUsec
-	}
-	if tu.DarwinX86_64ExecutionComputeDurationUsec > 0 {
-		counts["darwin_x86_64_execution_compute_duration_usec"] = tu.DarwinX86_64ExecutionComputeDurationUsec
-	}
-	if tu.LocalSnapshotSavedBytes > 0 {
-		counts["local_snapshot_saved_bytes"] = tu.LocalSnapshotSavedBytes
-	}
-	if tu.RemoteSnapshotSavedBytes > 0 {
-		counts["remote_snapshot_saved_bytes"] = tu.RemoteSnapshotSavedBytes
-	}
 	return counts, nil
 }
 
@@ -838,15 +808,5 @@ func stringMapToCounts(h map[string]string) (*tables.UsageCounts, error) {
 		TotalCachedActionExecUsec:            hInt64["total_cached_action_exec_usec"],
 		CPUNanos:                             hInt64["cpu_nanos"],
 		MemoryGBUsec:                         hInt64["memory_gb_usec"],
-		LinuxArm64ExecutionBurstableComputeDurationUsec:   hInt64["linux_arm64_execution_burstable_compute_duration_usec"],
-		LinuxArm64ExecutionComputeDurationUsec:            hInt64["linux_arm64_execution_compute_duration_usec"],
-		LinuxX86_64ExecutionBurstableComputeDurationUsec:  hInt64["linux_x86_64_execution_burstable_compute_duration_usec"],
-		LinuxX86_64ExecutionComputeDurationUsec:           hInt64["linux_x86_64_execution_compute_duration_usec"],
-		DarwinArm64ExecutionBurstableComputeDurationUsec:  hInt64["darwin_arm64_execution_burstable_compute_duration_usec"],
-		DarwinArm64ExecutionComputeDurationUsec:           hInt64["darwin_arm64_execution_compute_duration_usec"],
-		DarwinX86_64ExecutionBurstableComputeDurationUsec: hInt64["darwin_x86_64_execution_burstable_compute_duration_usec"],
-		DarwinX86_64ExecutionComputeDurationUsec:          hInt64["darwin_x86_64_execution_compute_duration_usec"],
-		LocalSnapshotSavedBytes:                           hInt64["local_snapshot_saved_bytes"],
-		RemoteSnapshotSavedBytes:                          hInt64["remote_snapshot_saved_bytes"],
 	}, nil
 }
