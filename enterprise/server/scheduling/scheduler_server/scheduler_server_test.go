@@ -982,6 +982,7 @@ func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
 	holder.WaitForTask(taskID)
 	lease := holder.Claim(taskID)
+	holder.ResetTasks()
 
 	// Re-enqueue the task with a reconnect token, which is what happens
 	// when a scheduler shuts down.
@@ -989,6 +990,10 @@ func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
 	reconnectToken := lease.leaseID
 	err := s.reEnqueueTask(ctx, taskID, lease.leaseID, reconnectToken, 1 /*=numReplicas*/, "server shutting down")
 	require.NoError(t, err)
+
+	// The scheduler should reserve the task for the current executor without
+	// offering it as a new attempt to any executor.
+	holder.EnsureTaskNotReceived(taskID)
 
 	// Lease reconnection is not an execution retry, so the task should not have been
 	// deleted while its executor is reconnecting, even though retries are disabled.

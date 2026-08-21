@@ -2669,7 +2669,8 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	if err := proto.Unmarshal(scheduledTask.serializedTask, task); err != nil {
 		return status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
-	if !isLeaseReconnect && !platform.Retryable(task) {
+	retryable := platform.Retryable(task)
+	if !isLeaseReconnect && !retryable {
 		if _, err := s.deleteTask(ctx, taskID); err != nil {
 			return err
 		}
@@ -2688,6 +2689,13 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		}
 		log.CtxDebugf(ctx, "Failed to unclaim task: %s", err)
 		// Proceed despite error - it's fine if it's already unclaimed.
+	}
+	if isLeaseReconnect && !retryable {
+		// Allow the current executor to reconnect, but don't offer the task to
+		// another executor. The client is responsible for starting a new attempt
+		// when execution retries are disabled.
+		log.CtxDebugf(ctx, "Task %q is waiting for its executor to reconnect; not re-enqueueing because retries are disabled", taskID)
+		return nil
 	}
 	log.CtxDebugf(ctx, "Re-enqueueing task")
 
