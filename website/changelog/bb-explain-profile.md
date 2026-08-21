@@ -17,8 +17,10 @@ bb explain profile https://app.buildbuddy.io/invocation/<INVOCATION_ID>
 ```
 
 The command supports interpreting the timing profile with `--agent=codex` or `--agent=claude`. If available, it uses your
-locally authenticated Claude Code or Codex subscription. Otherwise you can set the environment variable `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` to authorize API requests. You can also specify `--model` and `--effort` to control the agent's behavior.
+locally authenticated Claude Code or Codex subscription. Otherwise you can set the environment variable `ANTHROPIC_API_KEY` or `CODEX_API_KEY` to authorize API requests. You can also specify `--model` and `--effort` to control the agent's behavior.
 
 ```bash
 bb explain profile --agent=codex --model=gpt-5.4 --effort=high <INVOCATION_ID>
 ```
+
+See the [`bb explain profile` documentation](/docs/cli-commands#bb-explain-profile) for more details.

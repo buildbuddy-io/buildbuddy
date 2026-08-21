@@ -635,6 +635,7 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 		assert.Greater(t, res.VMMetrics.GetVmExecInitDurationUsec(), int64(0))
 		assert.Zero(t, res.VMMetrics.GetDockerdWaitDurationUsec())
 		assert.Zero(t, res.VMMetrics.GetVmDnsWaitDurationUsec())
+		assert.Greater(t, res.VMMetrics.GetVmExecDialDurationUsec(), int64(0))
 
 		// Try pause, unpause, exec several times.
 		var cpuMillisObservations []float64
@@ -657,6 +658,9 @@ func TestFirecrackerSnapshotAndResume(t *testing.T) {
 			// Tasks on a VM resumed from a snapshot did not pay the boot cost,
 			// so boot timings should be cleared.
 			assert.Zero(t, res.VMMetrics.GetVmExecInitDurationUsec())
+			// The vmexec connection is re-established for each task, so the
+			// dial duration should be reported even on resumed VMs.
+			assert.Greater(t, res.VMMetrics.GetVmExecDialDurationUsec(), int64(0))
 			assert.Equal(t, fmt.Sprintf("/workspace/count: %d\n/root/count: %d\n", countBefore+1, i), string(res.Stdout))
 			require.NotContains(t, string(res.AuxiliaryLogs["vm_log_tail.txt"]), "is not a multiple of sector size")
 			cpuMillisObservations = append(cpuMillisObservations, float64(res.UsageStats.GetCpuNanos())/1e6)
@@ -3923,6 +3927,8 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 	res := c.Exec(ctx, cmd, nil /*=stdio*/)
 	require.True(t, status.IsUnavailableError(res.Error), "expected Unavailable err, got %s", res.Error)
 	require.GreaterOrEqual(t, res.UsageStats.GetPeakMemoryBytes(), int64(0))
+	// The dial duration should be recorded even though the exec failed.
+	require.Greater(t, res.VMMetrics.GetVmExecDialDurationUsec(), int64(0))
 }
 
 func TestFirecrackerStressIO(t *testing.T) {

@@ -98,11 +98,13 @@ func TestExecutionFromProto(t *testing.T) {
 				VmDockerdWaitDurationUsec: 4001,
 				VmDnsWaitDurationUsec:     4002,
 				VmExecInitDurationUsec:    4003,
+				VmExecDialDurationUsec:    4004,
 			},
 			want: &schema.Execution{
 				VMDockerdWaitDurationUsec: 4001,
 				VMDnsWaitDurationUsec:     4002,
 				VMExecInitDurationUsec:    4003,
+				VMExecDialDurationUsec:    4004,
 			},
 		},
 		{
@@ -143,6 +145,7 @@ func TestExecutionFromProto(t *testing.T) {
 			require.Equal(t, testCase.want.VMDockerdWaitDurationUsec, execution.VMDockerdWaitDurationUsec)
 			require.Equal(t, testCase.want.VMDnsWaitDurationUsec, execution.VMDnsWaitDurationUsec)
 			require.Equal(t, testCase.want.VMExecInitDurationUsec, execution.VMExecInitDurationUsec)
+			require.Equal(t, testCase.want.VMExecDialDurationUsec, execution.VMExecDialDurationUsec)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}

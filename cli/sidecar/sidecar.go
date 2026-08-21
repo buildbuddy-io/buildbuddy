@@ -243,7 +243,7 @@ func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 		return nil, nil
 	}
 
-	originalArgs := args.Forwarded()
+	originalArgs := args.Unresolved()
 
 	log.Debugf("Configuring sidecar")
 

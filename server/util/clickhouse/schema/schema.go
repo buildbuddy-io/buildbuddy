@@ -303,6 +303,9 @@ type Execution struct {
 	VMDockerdWaitDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 	VMDnsWaitDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 	VMExecInitDurationUsec    int64 `gorm:"codec:T64,ZSTD(1)"`
+	// Time the executor spent dialing the guest VM's vmexec server. Set for
+	// every firecracker execution, not just fresh boots.
+	VMExecDialDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	// Disk usage of the task's workspace (buildroot), measured after the task
 	// finishes. Only populated when executor.workspace.measure_disk_usage is
@@ -427,6 +430,7 @@ func (e *Execution) AdditionalFields() []string {
 		"VMDockerdWaitDurationUsec",
 		"VMDnsWaitDurationUsec",
 		"VMExecInitDurationUsec",
+		"VMExecDialDurationUsec",
 		"BuildrootDiskUsageBytes",
 		"ExecutorHostname",
 		"Experiments",

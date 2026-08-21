@@ -3153,4 +3153,10 @@ message StoredExecution {
   // above, but not earlier guest init such as kernel boot). Only set for
   // executions that booted a fresh firecracker VM.
   int64 vm_exec_init_duration_usec = 95;
+
+  // Time the executor spent dialing the guest VM's vmexec server. For
+  // executions that booted a fresh firecracker VM, this includes guest boot
+  // up to the point where the vmexec server was serving. Set for every
+  // firecracker execution.
+  int64 vm_exec_dial_duration_usec = 96;
 }

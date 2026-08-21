@@ -970,6 +970,39 @@ func TestLeaseReconnectGrace_OtherExecutorsCannotStealTask(t *testing.T) {
 	require.NoError(t, normalLease.Finalize())
 }
 
+func TestLeaseReconnectGrace_RetriesDisabled(t *testing.T) {
+	// Set a high grace period since we use real time in the test.
+	flags.Set(t, "remote_execution.lease_reconnect_grace_period", 24*time.Hour)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	holder := newFakeExecutorWithId(ctx, t, "holder", env.GetSchedulerClient())
+	holder.Register()
+
+	// Explicitly set retries to false.
+	taskID := scheduleTask(ctx, t, env, map[string]string{platform.RetryPropertyName: "false"})
+	holder.WaitForTask(taskID)
+	lease := holder.Claim(taskID)
+	holder.ResetTasks()
+
+	// Re-enqueue the task with a reconnect token, which is what happens
+	// when a scheduler shuts down.
+	s := env.GetSchedulerService().(*SchedulerServer)
+	reconnectToken := lease.leaseID
+	err := s.reEnqueueTask(ctx, taskID, lease.leaseID, reconnectToken, 1 /*=numReplicas*/, "server shutting down")
+	require.NoError(t, err)
+
+	// The scheduler should reserve the task for the current executor without
+	// offering it as a new attempt to any executor.
+	holder.EnsureTaskNotReceived(taskID)
+
+	// Lease reconnection is not an execution retry, so the task should not have been
+	// deleted while its executor is reconnecting, even though retries are disabled.
+	reconnectedLease, err := holder.Reconnect(taskID, reconnectToken)
+	require.NoError(t, err)
+	require.NotEmpty(t, reconnectedLease.leaseID)
+	require.NoError(t, reconnectedLease.Finalize())
+}
+
 func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())

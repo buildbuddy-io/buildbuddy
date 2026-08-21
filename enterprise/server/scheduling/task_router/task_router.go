@@ -42,12 +42,12 @@ const (
 	// leaves one of the three probes available for load balancing.
 	experimentPreferredNodeLimit = 2
 
-	// The preferred node limit for ci_runner tasks.
+	// The preferred node limit for recyclable runner tasks.
 	// This is set higher than the default limit since we strongly prefer
 	// these tasks to hit a node with a warm bazel workspace, but it is
 	// set less than the number of probes so that we can autoscale the workflow
 	// executor pool effectively.
-	ciRunnerPreferredNodeLimit = 1
+	recyclableRunnerPreferredNodeLimit = 1
 
 	// Preferred node limit for tasks using [persistentWorkerRouter].
 	persistentWorkerRouterPreferredNodeLimit = 128
@@ -90,9 +90,9 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	// Define the available routing strategies (note: strategies earlier in the
 	// list have higher precedence)
 	strategies := []Router{
-		&ciRunnerRouter{rdb: rdb},
 		&persistentWorkerRouter{env: env, rdb: rdb},
 		&affinityRouter{rdb: rdb},
+		&recyclableRunnerRouter{rdb: rdb},
 	}
 	return &taskRouter{
 		env:        env,
@@ -416,23 +416,24 @@ type Router interface {
 	UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, key, hostID string) error
 }
 
-// The ciRunnerRouter routes ci_runner tasks according to git branch
-// information.
-type ciRunnerRouter struct {
+// The recyclableRunnerRouter routes recyclable runners that may use remote
+// snapshots. CI runners are routed according to git branch information.
+type recyclableRunnerRouter struct {
 	rdb redis.UniversalClient
 }
 
-func (*ciRunnerRouter) Applies(_ context.Context, params routingParams) bool {
+func (*recyclableRunnerRouter) Applies(_ context.Context, params routingParams) bool {
 	// TODO: pass parsed platform into routingParams and avoid manual parsing
 	// here.
-	return platform.IsCIRunner(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, "recycle-runner"))
+	return platform.IsTrue(platform.FindValue(params.platform, "recycle-runner")) &&
+		platform.AllowsRemoteSnapshots(params.cmd, params.platform, nil /*=platformOverrides*/)
 }
 
-func (c *ciRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
+func (c *recyclableRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
 	return c.rdb.LRange(ctx, routingKey, 0, -1).Result()
 }
 
-func (c *ciRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
+func (c *recyclableRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
 	pipe := c.rdb.TxPipeline()
 	if taskSucceeded {
 		// Push the node to the head of the list (but first remove it if already
@@ -450,11 +451,11 @@ func (c *ciRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceed
 	return err
 }
 
-func (*ciRunnerRouter) preferredNodeLimit(_ routingParams) int {
-	return ciRunnerPreferredNodeLimit
+func (*recyclableRunnerRouter) preferredNodeLimit(_ routingParams) int {
+	return recyclableRunnerPreferredNodeLimit
 }
 
-func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
+func (*recyclableRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	parts := []string{"task_route", params.groupID}
 	keys := make([]string, 0)
 
@@ -468,7 +469,7 @@ func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
-	// For workflow tasks, route using git branch name so that when re-running the
+	// For CI runner tasks, route using git branch name so that when re-running the
 	// workflow multiple times using the same branch, the runs are more likely
 	// to hit an executor with a warmer snapshot cache.
 	if platform.IsCIRunner(params.cmd, params.platform) {
@@ -493,7 +494,7 @@ func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	return keys, nil
 }
 
-func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+func (s *recyclableRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	keys, err := s.routingKeys(params)
 	return nodeLimit, keys, err

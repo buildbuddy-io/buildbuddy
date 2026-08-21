@@ -314,7 +314,7 @@ export default class TargetV2Component extends React.Component<TargetProps, Stat
     const command = commandWithRemoteRunnerFlags(
       `bazel query "allpaths(${this.props.model.invocation.pattern}, ${target})" --output=graph`
     );
-    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/, null);
+    triggerRemoteRun(this.props.model, command, true /*autoOpenChild*/, null, [], "query");
   }
 
   render() {

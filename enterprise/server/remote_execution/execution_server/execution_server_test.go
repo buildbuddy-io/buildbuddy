@@ -1007,6 +1007,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 			DockerdWaitDurationUsec: 4001,
 			VmDnsWaitDurationUsec:   4002,
 			VmExecInitDurationUsec:  4003,
+			VmExecDialDurationUsec:  4004,
 		}
 	} else {
 		effectivePool := "test-pool"
@@ -1269,6 +1270,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.VmDockerdWaitDurationUsec = 4001
 		expectedExecution.VmDnsWaitDurationUsec = 4002
 		expectedExecution.VmExecInitDurationUsec = 4003
+		expectedExecution.VmExecDialDurationUsec = 4004
 	}
 	require.Empty(t, cmp.Diff(
 		expectedExecution,

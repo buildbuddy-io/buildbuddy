@@ -1,0 +1,35 @@
+.donut-chart {
+  display: flex;
+  font-size: 16px;
+  align-items: center;
+}
+
+.donut-chart .recharts-responsive-container {
+  flex-shrink: 0;
+  margin-right: 32px;
+}
+
+.donut-chart-label {
+  display: flex;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.donut-chart-swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  margin-right: 8px;
+  margin-top: 3px;
+  display: block;
+  background-color: var(--color-bg-hover);
+}
+
+.donut-chart-legend-value {
+  min-width: 60px;
+  display: inline-block;
+}
+
+.donut-chart-legend-desc {
+  font-weight: normal;
+}
