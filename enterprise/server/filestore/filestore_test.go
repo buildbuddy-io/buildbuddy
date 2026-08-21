@@ -3,6 +3,7 @@ package filestore_test
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
@@ -26,7 +27,8 @@ func TestKeyVersionDefinitions(t *testing.T) {
 	assert.Equal(t, 4, int(filestore.Version4))
 	assert.Equal(t, 5, int(filestore.Version5))
 	assert.Equal(t, 6, int(filestore.Version6))
-	assert.Equal(t, 7, int(filestore.MaxKeyVersion))
+	assert.Equal(t, 7, int(filestore.Version7))
+	assert.Equal(t, 8, int(filestore.MaxKeyVersion))
 }
 
 func toFileRecord(r *rspb.ResourceName) *sgpb.FileRecord {
@@ -69,12 +71,22 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 	// CAS entries cannot be converted to v6 from an earlier version because
 	// group ID info is lost.
 	//
+	// v7 keeps the real digest + literal groupID, so it's reachable only from a
+	// source that still carries both: CAS keys never stored a groupID, and
+	// v5/v6 replaced the real digest with a lossy synthetic hash. Those sources
+	// are listed below and yield ErrMissingKeyInfo when migrated to v7.
+	acLostDigestForV7 := map[filestore.PebbleKeyVersion]bool{
+		filestore.Version5: true,
+		filestore.Version6: true,
+	}
 	testCases := []testCase{}
 	for i := filestore.UndefinedKeyVersion; i < filestore.MaxKeyVersion; i++ {
 		for _, cacheType := range []rspb.CacheType{rspb.CacheType_AC, rspb.CacheType_CAS} {
 			maxCASMigratableVersion := filestore.Version5
 			if i >= filestore.Version6 {
-				maxCASMigratableVersion = filestore.MaxKeyVersion - 1
+				// v6+ CAS/synthetic keys carry their own encoded form, so they
+				// round-trip only to their own version.
+				maxCASMigratableVersion = i
 			}
 			for j := i; j < filestore.MaxKeyVersion; j++ {
 				tc := testCase{
@@ -84,6 +96,9 @@ func TestKeyVersionCrossCompatibility(t *testing.T) {
 					wantErr:     nil,
 				}
 				if j > maxCASMigratableVersion && cacheType == rspb.CacheType_CAS {
+					tc.wantErr = filestore.ErrMissingKeyInfo
+				}
+				if j == filestore.Version7 && cacheType == rspb.CacheType_AC && acLostDigestForV7[i] {
 					tc.wantErr = filestore.ErrMissingKeyInfo
 				}
 				testCases = append(testCases, tc)
@@ -163,6 +178,14 @@ func TestKnownVersions(t *testing.T) {
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/v6",
 			"PTFOO/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/EK123/v6",
 		},
+		filestore.Version7: {
+			// CAS keys carry the groupID too, so they are group-prefixed like AC.
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/v7",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/cas/EK123/v7",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/2364854541/v7",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/2364854541/EK123/v7",
+			"PTFOO/GR00000000000000007890/9c1385f58c3caf4a21a2626217c86303a9d157603d95eb6799811abb12ebce6b/9/ac/0/v7",
+		},
 	}
 
 	for version := filestore.UndefinedKeyVersion; version < filestore.MaxKeyVersion; version++ {
@@ -187,6 +210,10 @@ func TestMigration(t *testing.T) {
 	type result struct {
 		key     string
 		wantErr error
+		// unmigratableFrom lists the source versions that can't produce this
+		// target's key because they discarded information it needs; migrating
+		// from one of them yields ErrMissingKeyInfo instead of `key`.
+		unmigratableFrom []filestore.PebbleKeyVersion
 	}
 	cases := []map[filestore.PebbleKeyVersion]result{
 		{
@@ -197,6 +224,8 @@ func TestMigration(t *testing.T) {
 			filestore.Version4:            {key: "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v4"},
 			filestore.Version5:            {key: "PTFOO/baec85817b2bf76db939f38e33f1acccdfeb5683885d014717918bbc0c1996d2/1/cas/v5"},
 			filestore.Version6:            {wantErr: filestore.ErrMissingKeyInfo},
+			// CAS keys never stored a groupID, which v7 requires.
+			filestore.Version7: {wantErr: filestore.ErrMissingKeyInfo},
 		},
 		{
 			filestore.UndefinedKeyVersion: {key: "PTFOO/GR7890/ac/2364854541/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309"},
@@ -206,6 +235,7 @@ func TestMigration(t *testing.T) {
 			filestore.Version4:            {key: "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/2364854541/v4"},
 			filestore.Version5:            {key: "PTFOO/8d35507f8943fa0242206a2077054c0ead9c71ba9f5d01c6b7f3578c6d4ba464/1/ac/v5"},
 			filestore.Version6:            {key: "PTFOO/8d35507f8943fa0242206a2077054c0ead9c71ba9f5d01c6b7f3578c6d4ba464/1/ac/v6"},
+			filestore.Version7:            {key: "PTFOO/GR00000000000000007890/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/2364854541/v7", unmigratableFrom: []filestore.PebbleKeyVersion{filestore.Version5, filestore.Version6}},
 		},
 		{
 			filestore.UndefinedKeyVersion: {key: "PTdefault/GR7890/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f"},
@@ -215,6 +245,7 @@ func TestMigration(t *testing.T) {
 			filestore.Version4:            {key: "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4"},
 			filestore.Version5:            {key: "PTdefault/1e664dcc33e701dc7d59472f93f110159ca128b5e52e4e849d6eefeb4bda7f72/1/ac/v5"},
 			filestore.Version6:            {key: "PTdefault/1e664dcc33e701dc7d59472f93f110159ca128b5e52e4e849d6eefeb4bda7f72/1/ac/v6"},
+			filestore.Version7:            {key: "PTdefault/GR00000000000000007890/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v7", unmigratableFrom: []filestore.PebbleKeyVersion{filestore.Version5, filestore.Version6}},
 		},
 		{
 			filestore.UndefinedKeyVersion: {key: "PTdefault/ANON/ac/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f"},
@@ -224,6 +255,7 @@ func TestMigration(t *testing.T) {
 			filestore.Version4:            {key: "PTdefault/GR74042147050500190371/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v4"},
 			filestore.Version5:            {key: "PTdefault/4929cde6f4c93cd5ab0ffde947e7e5da09bdb0677057c2ae7ea75b083c67feaa/1/ac/v5"},
 			filestore.Version6:            {key: "PTdefault/4929cde6f4c93cd5ab0ffde947e7e5da09bdb0677057c2ae7ea75b083c67feaa/1/ac/v6"},
+			filestore.Version7:            {key: "PTdefault/GR74042147050500190371/ffb4ed9aea57f797c92a1a8ea784dde745becc35ca60315cb14f3a3db772939f/1/ac/0/v7", unmigratableFrom: []filestore.PebbleKeyVersion{filestore.Version5, filestore.Version6}},
 		},
 	}
 
@@ -245,6 +277,12 @@ func TestMigration(t *testing.T) {
 					expected, ok := tc[version]
 					if !ok {
 						t.Fatalf("Please add test exemplars for pebble key version: %d", version)
+					}
+					// A target may be unreachable from certain sources (see
+					// result.unmigratableFrom); from those, expect the lossy error
+					// rather than the key.
+					if slices.Contains(expected.unmigratableFrom, startingVersion) {
+						expected = result{wantErr: filestore.ErrMissingKeyInfo}
 					}
 					versionedKey, err := parsedKey.Bytes(version)
 					if expected.wantErr == nil {
@@ -426,5 +464,82 @@ func TestVersion5(t *testing.T) {
 		// CAS w/ encryption
 		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
 		assert.Equal(t, "PTfoo/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/EK456/v5", formatKey(t, fr, filestore.Version5))
+	}
+}
+
+func TestVersion7(t *testing.T) {
+	partitionID := "foo"
+	groupID := "GR123"
+	fixedGroupID := "GR00000000000000000123"
+	d := &repb.Digest{Hash: "647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309", SizeBytes: 123}
+
+	// AC: group-prefixed, real digest preserved.
+	{
+		// AC w/o instance name (rih defaults to "0").
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:          rspb.CacheType_AC,
+				RemoteInstanceName: "",
+				PartitionId:        partitionID,
+				GroupId:            groupID,
+			},
+			Digest:         d,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		assert.Equal(t, "PTfoo/"+fixedGroupID+"/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/0/v7", formatKey(t, fr, filestore.Version7))
+
+		// AC w/ instance name.
+		fr.Isolation.RemoteInstanceName = "remote_instance_name"
+		assert.Equal(t, "PTfoo/"+fixedGroupID+"/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/2364854541/v7", formatKey(t, fr, filestore.Version7))
+
+		// AC w/ instance name & encryption.
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
+		assert.Equal(t, "PTfoo/"+fixedGroupID+"/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/ac/2364854541/EK456/v7", formatKey(t, fr, filestore.Version7))
+	}
+
+	// CAS: unlike v5/v6, the groupID is a literal, recoverable prefix.
+	{
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:   rspb.CacheType_CAS,
+				PartitionId: partitionID,
+				GroupId:     groupID,
+			},
+			Digest:         d,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		casKey := "PTfoo/" + fixedGroupID + "/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/v7"
+		assert.Equal(t, casKey, formatKey(t, fr, filestore.Version7))
+
+		// CAS w/ encryption
+		fr.Encryption = &sgpb.Encryption{KeyId: "EK456"}
+		assert.Equal(t, "PTfoo/"+fixedGroupID+"/647c5961cba680d5deeba0169a64c8913d6b5b77495a1ee21c808ac6a514f309/1/cas/EK456/v7", formatKey(t, fr, filestore.Version7))
+
+		// The groupID must be recoverable from a parsed CAS key (the property
+		// v5/v6 gave up and that group-weighted sampling depends on).
+		var parsed filestore.PebbleKey
+		version, err := parsed.FromBytes([]byte(casKey))
+		require.NoError(t, err)
+		assert.Equal(t, filestore.Version7, version)
+		reSerialized, err := parsed.Bytes(filestore.Version7)
+		require.NoError(t, err)
+		assert.Equal(t, casKey, string(reSerialized))
+	}
+
+	// A v7 key cannot be created without a groupID (true for CAS as well as AC).
+	{
+		fr := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:   rspb.CacheType_CAS,
+				PartitionId: partitionID,
+			},
+			Digest:         d,
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		fs := filestore.New()
+		key, err := fs.PebbleKey(fr)
+		require.NoError(t, err)
+		_, err = key.Bytes(filestore.Version7)
+		assert.ErrorIs(t, err, filestore.ErrMissingKeyInfo)
 	}
 }
