@@ -70,6 +70,12 @@ func FindFile(ctx context.Context, r *index.Reader, path string) (File, bool) {
 
 // inRepoFromImports builds a NavOptions.InRepo predicate from a file's stored
 // `imports` field (the in-repo import identity terms the extractor kept).
+//
+// NOTE: Go-only. It reconstructs a Go identity term ("go:" + import path) to
+// test membership, so it only recognizes Go package selectors. Other languages
+// that want in-repo filtering will need their own term derivation here (TS
+// resolves relative specifiers directly and ignores InRepo, so it is
+// unaffected today).
 func inRepoFromImports(imports []byte) func(string) bool {
 	set := make(map[string]struct{})
 	for term := range strings.FieldsSeq(string(imports)) {
