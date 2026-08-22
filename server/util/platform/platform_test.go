@@ -227,6 +227,19 @@ func TestParse_ShmSize(t *testing.T) {
 	}
 }
 
+func TestParse_ShmExec(t *testing.T) {
+	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{}}})
+	require.NoError(t, err)
+	assert.False(t, platformProps.ShmExec)
+
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: ShmExecPropertyName, Value: "true"},
+	}}
+	platformProps, err = ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	assert.True(t, platformProps.ShmExec)
+}
+
 func TestParse_Duration(t *testing.T) {
 	const durationProperty = "runner-recycling-max-wait"
 
