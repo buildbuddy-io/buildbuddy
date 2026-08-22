@@ -2,13 +2,13 @@ package distributed
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -847,8 +847,8 @@ func (c *Cache) readPeers(r *rspb.ResourceName) *peerset.PeerSet {
 			return 2
 		}
 	}
-	sort.Slice(primaryPeers, func(i, j int) bool {
-		return sortVal(primaryPeers[i]) < sortVal(primaryPeers[j])
+	slices.SortFunc(primaryPeers, func(a, b string) int {
+		return cmp.Compare(sortVal(a), sortVal(b))
 	})
 	ps := peerset.New(primaryPeers, secondaryPeers)
 	ps.BlockBackfills = blockBackfills

@@ -301,9 +301,7 @@ func benchmarkRead(ctx context.Context, c interfaces.Cache, digestSizeBytes int6
 		if err != nil {
 			b.Fatal(err)
 		}
-		if n != digestSizeBytes {
-			b.Fatalf("Wanted %v bytes, got %v", digestSizeBytes, n)
-		}
+		require.Equal(b, len(dbuf.buf), int(n))
 	}
 }
 
@@ -504,7 +502,7 @@ func BenchmarkParallel(b *testing.B) {
 							require.NoError(b, err)
 							n, err := w.Write(dbuf.buf)
 							require.NoError(b, err)
-							require.Equal(b, size, int64(n))
+							require.Equal(b, len(dbuf.buf), n)
 							require.NoError(b, w.Commit())
 							require.NoError(b, w.Close())
 						}
@@ -514,7 +512,7 @@ func BenchmarkParallel(b *testing.B) {
 						require.NoError(b, err)
 						n, err := io.Copy(io.Discard, r)
 						require.NoError(b, err)
-						require.Equal(b, size, n)
+						require.Equal(b, len(dbuf.buf), int(n))
 						require.NoError(b, r.Close())
 
 						// Get the digest from the cache.
