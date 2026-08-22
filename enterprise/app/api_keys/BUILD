@@ -26,6 +26,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:clipboard",
         "//app/util:errors",
+        "//app/util:react",
         "//proto:api_key_ts_proto",
         "//proto:capability_ts_proto",
     ],
