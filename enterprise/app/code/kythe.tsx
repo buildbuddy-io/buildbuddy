@@ -619,12 +619,15 @@ export async function fetchDocumentation(tick: string): Promise<search.ExtendedD
     });
 }
 
-export async function fetchDecorations(filename: string) {
+export async function fetchDecorations(owner: string, repo: string, filename: string) {
   if (!filename) {
     return;
   }
 
-  let ticket = "kythe://buildbuddy?path=" + filename;
+  // A tree-sitter:// file ticket names the repository (owner/repo authority)
+  // and the repo-relative path. The server resolves it to the exact indexed
+  // document and serves navigation from tree-sitter annotations.
+  let ticket = "tree-sitter://" + owner + "/" + repo + "?path=" + filename;
   const req = new search.KytheRequest({
     decorationsRequest: new kythe.proto.DecorationsRequest({
       location: new kythe.proto.Location({

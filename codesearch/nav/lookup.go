@@ -94,6 +94,7 @@ func (l *DefLookup) FindDefs(ctx context.Context, importID, symbolLower string) 
 	for _, m := range matches {
 		doc := l.R.GetStoredDocument(m.Docid())
 		out = append(out, annotations.DefFile{
+			Owner:   string(doc.Field(schema.OwnerField).Contents()),
 			Repo:    string(doc.Field(schema.RepoField).Contents()),
 			Path:    string(doc.Field(schema.FilenameField).Contents()),
 			Content: doc.Field(schema.ContentField).Contents(),
@@ -119,6 +120,7 @@ func (l *DefLookup) FindReferencingFiles(ctx context.Context, importID string) (
 	for _, m := range matches {
 		doc := l.R.GetStoredDocument(m.Docid())
 		out = append(out, annotations.RefFile{
+			Owner:        string(doc.Field(schema.OwnerField).Contents()),
 			Repo:         string(doc.Field(schema.RepoField).Contents()),
 			Path:         string(doc.Field(schema.FilenameField).Contents()),
 			Content:      doc.Field(schema.ContentField).Contents(),

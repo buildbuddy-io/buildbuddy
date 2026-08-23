@@ -92,6 +92,7 @@ type Def struct {
 // Location is a resolved definition site: the repository holding the file, its
 // repo-relative path, and the span of the declared name within it.
 type Location struct {
+	Owner string
 	Repo  string
 	Path  string
 	Start Pos
@@ -100,6 +101,7 @@ type Location struct {
 
 // Definition is a resolved definition with documentation metadata, for hover.
 type Definition struct {
+	Owner     string
 	Repo      string
 	Path      string
 	Start     Pos
@@ -112,8 +114,9 @@ type Definition struct {
 // DefFile is a candidate file that may declare a looked-up symbol, returned by
 // a DefLookup.
 type DefFile struct {
-	// Repo is the repository the file belongs to (as stored in the index), so
-	// result locations can say which repo a definition lives in.
+	// Owner and Repo identify the repository the file belongs to (as stored in
+	// the index), so result locations can name (and address) the exact file.
+	Owner   string
 	Repo    string
 	Path    string
 	Content []byte
@@ -135,6 +138,7 @@ type DefLookup interface {
 // RefFile is a candidate file that may reference a symbol, with the inputs
 // needed to decorate it (the same inputs Decorate takes).
 type RefFile struct {
+	Owner        string
 	Repo         string
 	Path         string
 	Content      []byte
@@ -154,6 +158,7 @@ type RefLookup interface {
 // Reference is a use site of a symbol: its span plus the source line it sits
 // on, for display in the references panel.
 type Reference struct {
+	Owner   string
 	Repo    string
 	Path    string
 	Start   Pos
@@ -250,9 +255,10 @@ func definitions(ctx context.Context, lang string, content []byte) ([]Def, error
 
 // resolvedDef pairs a matched declaration with the file it was found in.
 type resolvedDef struct {
-	Repo string
-	Path string
-	Def  Def
+	Owner string
+	Repo  string
+	Path  string
+	Def   Def
 }
 
 // resolve decodes a target ticket, looks up candidate files via lk, and
@@ -277,7 +283,7 @@ func resolve(ctx context.Context, lk DefLookup, ticket string) ([]resolvedDef, e
 		}
 		for _, d := range defs {
 			if strings.ToLower(d.Name) == symLower {
-				out = append(out, resolvedDef{Repo: f.Repo, Path: f.Path, Def: d})
+				out = append(out, resolvedDef{Owner: f.Owner, Repo: f.Repo, Path: f.Path, Def: d})
 			}
 		}
 	}
@@ -293,7 +299,7 @@ func Resolve(ctx context.Context, lk DefLookup, ticket string) ([]Location, erro
 	}
 	locs := make([]Location, 0, len(rs))
 	for _, r := range rs {
-		locs = append(locs, Location{Repo: r.Repo, Path: r.Path, Start: r.Def.Start, End: r.Def.End})
+		locs = append(locs, Location{Owner: r.Owner, Repo: r.Repo, Path: r.Path, Start: r.Def.Start, End: r.Def.End})
 	}
 	return locs, nil
 }
@@ -308,6 +314,7 @@ func Describe(ctx context.Context, lk DefLookup, ticket string) ([]Definition, e
 	defs := make([]Definition, 0, len(rs))
 	for _, r := range rs {
 		defs = append(defs, Definition{
+			Owner:     r.Owner,
 			Repo:      r.Repo,
 			Path:      r.Path,
 			Start:     r.Def.Start,
@@ -345,6 +352,7 @@ func FindReferences(ctx context.Context, rl RefLookup, ticket string) ([]Referen
 				continue
 			}
 			refs = append(refs, Reference{
+				Owner:   f.Owner,
 				Repo:    f.Repo,
 				Path:    f.Path,
 				Start:   d.Start,
