@@ -451,6 +451,33 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	return manifest, nil
 }
 
+// ReadBlob reconstructs a chunked blob from its manifest and chunks.
+func ReadBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
+	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	rns := make([]*rspb.ResourceName, 0, len(manifest.ChunkDigests))
+	for _, d := range manifest.ChunkDigests {
+		rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+		rn.SetCompressor(compressor)
+		rns = append(rns, rn.ToProto())
+	}
+	chunkData, err := cache.GetMulti(ctx, rns)
+	if err != nil {
+		return nil, err
+	}
+	buf := make([]byte, 0, blobDigest.GetSizeBytes())
+	for _, d := range manifest.ChunkDigests {
+		data, ok := chunkData[d]
+		if !ok {
+			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+		}
+		buf = append(buf, data...)
+	}
+	return buf, nil
+}
+
 func loadManifestFrom(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, acRNProto *rspb.ResourceName) (*Manifest, error) {
 	arBytes, err := cache.Get(ctx, acRNProto)
 	if err != nil {

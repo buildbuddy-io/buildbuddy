@@ -693,6 +693,64 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	assert.True(t, status.IsNotFoundError(err))
 }
 
+func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	outputRN, outputData := testdigest.RandomCASResourceBuf(t, 128)
+	require.NoError(t, cache.Set(ctx, outputRN, outputData))
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{Name: "output.bin", Digest: outputRN.GetDigest()},
+			},
+		},
+	}
+	treeData, err := proto.Marshal(tree)
+	require.NoError(t, err)
+	treeDigest, err := digest.Compute(bytes.NewReader(treeData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	split := len(treeData) / 2
+	chunkData := [][]byte{treeData[:split], treeData[split:]}
+	chunkRNs := make([]*rspb.ResourceName, 0, len(chunkData))
+	for _, data := range chunkData {
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256).ToProto()
+		require.NoError(t, cache.Set(ctx, rn, data))
+		chunkRNs = append(chunkRNs, rn)
+	}
+	cm := &chunking.Manifest{
+		BlobDigest:     treeDigest,
+		ChunkDigests:   []*repb.Digest{chunkRNs[0].GetDigest(), chunkRNs[1].GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, cm.Store(ctx, cache))
+
+	ar := &repb.ActionResult{
+		OutputDirectories: []*repb.OutputDirectory{
+			{Path: "output", TreeDigest: treeDigest},
+		},
+	}
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, false, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+
+	require.NoError(t, cache.Delete(ctx, chunkRNs[1]))
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+}
+
 func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1024)
 

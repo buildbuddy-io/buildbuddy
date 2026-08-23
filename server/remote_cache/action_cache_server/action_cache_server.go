@@ -110,6 +110,26 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	return eg.Wait()
 }
 
+func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, treeDigest *repb.Digest) (*repb.Tree, error) {
+	rn := digest.NewResourceName(treeDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
+	blob, err := cache.Get(ctx, rn)
+	if err != nil {
+		minFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
+		if !status.IsNotFoundError(err) || !chunkingEnabled || treeDigest.GetSizeBytes() <= minFallbackSizeBytes || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, treeDigest.GetSizeBytes()) {
+			return nil, err
+		}
+		blob, err = chunking.ReadBlob(ctx, cache, treeDigest, instanceName, digestFunction, repb.Compressor_IDENTITY)
+		if err != nil {
+			return nil, err
+		}
+	}
+	tree := &repb.Tree{}
+	if err := proto.Unmarshal(blob, tree); err != nil {
+		return nil, err
+	}
+	return tree, nil
+}
+
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, r *repb.ActionResult) error {
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
@@ -129,13 +149,8 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			rn := digest.NewResourceName(dc.GetTreeDigest(), remoteInstanceName, rspb.CacheType_CAS, digestFunction).ToProto()
-			blob, err := cache.Get(gCtx, rn)
+			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, chunkingEnabled, efp, dc.GetTreeDigest())
 			if err != nil {
-				return err
-			}
-			tree := &repb.Tree{}
-			if err := proto.Unmarshal(blob, tree); err != nil {
 				return err
 			}
 			for _, f := range tree.GetRoot().GetFiles() {
