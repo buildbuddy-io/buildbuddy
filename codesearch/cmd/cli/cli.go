@@ -56,6 +56,11 @@ var (
 	offset      = searchCmd.Int("offset", 0, "Start printing results this far in")
 	snippets    = searchCmd.Int("snippets", 5, "Print this many snippets per result")
 	resolveRefs = decorationsCmd.Bool("resolve", false, "Also resolve each reference's ticket to its definition location")
+	// Files are looked up by exact document id (owner, repo, path), so these
+	// must match what was indexed. For a local `cli index` of a plain checkout,
+	// owner is "" and repo defaults to the indexed directory's base name.
+	owner = decorationsCmd.String("owner", "", "Repo owner of the file to decorate (as indexed)")
+	repo  = decorationsCmd.String("repo", "", "Repo name of the file to decorate (as indexed; defaults to the index dir's base name)")
 )
 
 func printMainHelpAndDie() {
@@ -160,7 +165,8 @@ func extractRepoURL(dir string) *git.RepoURL {
 			return repoURL
 		}
 	}
-	return &git.RepoURL{}
+	// No usable remote: use the directory's base name as the repo.
+	return &git.RepoURL{Repo: filepath.Base(dir)}
 }
 
 func extractGitSHA(dir string) string {
@@ -382,7 +388,7 @@ func handleDecorations(ctx context.Context, args []string) {
 	// per-query performance tracker (which warns on repeated metric keys).
 	r := index.NewReader(context.Background(), db, getNamespace(), schema.GitHubFileSchema())
 
-	f, ok := nav.FindFile(ctx, r, path)
+	f, ok := nav.FindFile(ctx, r, *owner, *repo, path)
 	if !ok {
 		log.Fatalf("file %q not found in namespace %q", path, getNamespace())
 	}

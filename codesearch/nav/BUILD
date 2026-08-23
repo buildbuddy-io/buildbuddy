@@ -8,7 +8,6 @@ go_library(
     deps = [
         "//codesearch/annotations",
         "//codesearch/index",
-        "//codesearch/query",
         "//codesearch/schema",
     ],
 )

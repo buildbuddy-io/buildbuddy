@@ -11,13 +11,11 @@ package nav
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/codesearch/annotations"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
-	"github.com/buildbuddy-io/buildbuddy/codesearch/query"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
 )
 
@@ -36,36 +34,26 @@ type File struct {
 	InRepo func(importPath string) bool
 }
 
-// FindFile loads the decorate inputs for an exact repo-relative path. ok is
-// false if no document with that filename exists in the reader's namespace.
-// The filename field is trigram-indexed, so a literal `file:` query yields a
-// superset of candidates that we filter down to the exact match.
-func FindFile(ctx context.Context, r *index.Reader, path string) (File, bool) {
-	rq, err := query.NewReQuery(ctx, "file:^"+regexp.QuoteMeta(path)+"$")
-	if err != nil {
-		return File{}, false
-	}
-	sq := rq.SQuery()
-	if sq == "" {
-		return File{}, false
-	}
+// FindFile loads the decorate inputs for a repo file, addressed by its exact
+// document id (owner, repo, repo-relative path — the same key indexing wrote).
+// ok is false if no such document exists in the reader's namespace. Because the
+// lookup is an exact id match it is deterministic and unaffected by other repos
+// in the namespace sharing the same path; and the path never passes through the
+// `file:` query filter, so paths containing spaces resolve fine.
+func FindFile(ctx context.Context, r *index.Reader, owner, repo, path string) (File, bool) {
+	id := schema.FileID(owner, repo, path)
+	sq := fmt.Sprintf("(:eq %s %s)", schema.IDField, strconv.Quote(string(id)))
 	matches, err := r.RawQuery(sq)
-	if err != nil {
+	if err != nil || len(matches) == 0 {
 		return File{}, false
 	}
-	for _, m := range matches {
-		doc := r.GetStoredDocument(m.Docid())
-		if string(doc.Field(schema.FilenameField).Contents()) != path {
-			continue
-		}
-		return File{
-			Content:      doc.Field(schema.ContentField).Contents(),
-			Lang:         string(doc.Field(schema.LanguageField).Contents()),
-			SelfImportID: string(doc.Field(schema.ImportIDField).Contents()),
-			InRepo:       inRepoFromImports(doc.Field(schema.ImportsField).Contents()),
-		}, true
-	}
-	return File{}, false
+	doc := r.GetStoredDocument(matches[0].Docid())
+	return File{
+		Content:      doc.Field(schema.ContentField).Contents(),
+		Lang:         string(doc.Field(schema.LanguageField).Contents()),
+		SelfImportID: string(doc.Field(schema.ImportIDField).Contents()),
+		InRepo:       inRepoFromImports(doc.Field(schema.ImportsField).Contents()),
+	}, true
 }
 
 // inRepoFromImports builds a NavOptions.InRepo predicate from a file's stored
