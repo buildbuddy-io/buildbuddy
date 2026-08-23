@@ -26,6 +26,16 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
+type getMultiBatchRecordingCache struct {
+	interfaces.Cache
+	batchSizes []int
+}
+
+func (c *getMultiBatchRecordingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	c.batchSizes = append(c.batchSizes, len(resources))
+	return c.Cache.GetMulti(ctx, resources)
+}
+
 func TestChunker_ReassemblesOriginalData(t *testing.T) {
 	ctx := context.Background()
 
@@ -136,6 +146,42 @@ func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
 	ctx := context.Background()
 	efp := booleanFlagProvider{}
 	require.Equal(t, chunking.MaxChunkSizeBytes(ctx, efp), chunking.MinChunkedReadFallbackSizeBytes(ctx, efp))
+}
+
+func TestReadBlob_RejectsForgedManifestSizes(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	chunkRN, chunkData := testdigest.RandomCASResourceBuf(t, 128)
+	require.NoError(t, cache.Set(ctx, chunkRN, chunkData))
+	const chunkCount = 21
+	forgedChunkDigest := &repb.Digest{
+		Hash:      chunkRN.GetDigest().GetHash(),
+		SizeBytes: 1024 * 1024,
+	}
+	forgedBlobDigest := &repb.Digest{
+		Hash:      chunkRN.GetDigest().GetHash(),
+		SizeBytes: chunkCount * forgedChunkDigest.GetSizeBytes(),
+	}
+	chunkDigests := make([]*repb.Digest, chunkCount)
+	for i := range chunkDigests {
+		chunkDigests[i] = forgedChunkDigest
+	}
+	manifest := &chunking.Manifest{
+		BlobDigest:     forgedBlobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache))
+
+	recordingCache := &getMultiBatchRecordingCache{Cache: cache}
+	_, err = chunking.ReadBlob(ctx, recordingCache, forgedBlobDigest, "", repb.DigestFunction_SHA256, repb.Compressor_IDENTITY)
+	require.Error(t, err)
+	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
+	require.Equal(t, []int{20, 1}, recordingCache.batchSizes)
 }
 
 func TestChunker_DeterministicChunking(t *testing.T) {

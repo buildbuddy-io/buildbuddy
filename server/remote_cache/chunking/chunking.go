@@ -451,29 +451,45 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	return manifest, nil
 }
 
-// ReadBlob reconstructs a chunked blob from its manifest and chunks.
+// ReadBlob reconstructs a chunked blob in bounded batches. It validates the
+// manifest's declared sizes and, for identity reads, the reconstructed size.
 func ReadBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
 	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err
 	}
-	rns := make([]*rspb.ResourceName, 0, len(manifest.ChunkDigests))
-	for _, d := range manifest.ChunkDigests {
-		rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
-		rn.SetCompressor(compressor)
-		rns = append(rns, rn.ToProto())
-	}
-	chunkData, err := cache.GetMulti(ctx, rns)
-	if err != nil {
+	if err := manifest.checkChunkSizes(); err != nil {
 		return nil, err
 	}
-	buf := make([]byte, 0, blobDigest.GetSizeBytes())
-	for _, d := range manifest.ChunkDigests {
-		data, ok := chunkData[d]
-		if !ok {
-			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+
+	// Avoid trusting the blob's declared size for an unbounded allocation. The
+	// previous BatchReadBlobs caller already capped reads below this value, so
+	// this preserves its allocation behavior while keeping larger callers safe.
+	initialCapacity := min(blobDigest.GetSizeBytes(), MaxSupportedChunkSizeBytes())
+	buf := make([]byte, 0, initialCapacity)
+	const batchSize = 20
+	rns := make([]*rspb.ResourceName, 0, batchSize)
+	for chunkDigests := range slices.Chunk(manifest.ChunkDigests, batchSize) {
+		for _, d := range chunkDigests {
+			rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+			rn.SetCompressor(compressor)
+			rns = append(rns, rn.ToProto())
 		}
-		buf = append(buf, data...)
+		chunkData, err := cache.GetMulti(ctx, rns)
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range chunkDigests {
+			data, ok := chunkData[d]
+			if !ok {
+				return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+			}
+			buf = append(buf, data...)
+		}
+		rns = rns[:0]
+	}
+	if compressor == repb.Compressor_IDENTITY && int64(len(buf)) != blobDigest.GetSizeBytes() {
+		return nil, status.DataLossErrorf("reconstructed blob %s has size %d, expected %d", blobDigest.GetHash(), len(buf), blobDigest.GetSizeBytes())
 	}
 	return buf, nil
 }
