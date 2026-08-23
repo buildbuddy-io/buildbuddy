@@ -10,6 +10,7 @@ go_library(
         "//codesearch/github",
         "//codesearch/index",
         "//codesearch/indexprofile",
+        "//codesearch/nav",
         "//codesearch/performance",
         "//codesearch/query",
         "//codesearch/schema",

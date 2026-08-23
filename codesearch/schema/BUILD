@@ -9,6 +9,7 @@ go_library(
         "//codesearch/token",
         "//codesearch/types",
         "//server/util/status",
+        "@com_github_cespare_xxhash_v2//:xxhash",
     ],
 )
 
