@@ -1,6 +1,7 @@
 package action_cache_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -121,6 +122,13 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 		blob, err = chunking.ReadBlob(ctx, cache, treeDigest, instanceName, digestFunction, repb.Compressor_IDENTITY)
 		if err != nil {
 			return nil, err
+		}
+		computedDigest, err := digest.Compute(bytes.NewReader(blob), digestFunction)
+		if err != nil {
+			return nil, err
+		}
+		if !digest.Equal(computedDigest, treeDigest) {
+			return nil, status.DataLossErrorf("reconstructed output Tree digest %s does not match expected %s", digest.String(computedDigest), digest.String(treeDigest))
 		}
 	}
 	tree := &repb.Tree{}

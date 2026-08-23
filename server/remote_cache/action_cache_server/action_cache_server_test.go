@@ -745,6 +745,21 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 
+	tree.Root.Files[0].Name = "xutput.bin"
+	corruptTreeData, err := proto.Marshal(tree)
+	require.NoError(t, err)
+	require.Len(t, corruptTreeData, len(treeData))
+	corruptChunkData := [][]byte{corruptTreeData[:split], corruptTreeData[split:]}
+	for i, data := range corruptChunkData {
+		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
+	}
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
+
+	for i, data := range chunkData {
+		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
+	}
 	require.NoError(t, cache.Delete(ctx, chunkRNs[1]))
 	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
 	require.Error(t, err)
