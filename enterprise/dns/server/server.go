@@ -157,8 +157,9 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	defer func() {
 		metrics.DNSServerRequestCount.With(prometheus.Labels{
-			metrics.DNSRecordTypeLabel:   recordType,
-			metrics.DNSResponseCodeLabel: rcodeLabel(m.Rcode),
+			metrics.DNSRecordTypeLabel:       recordType,
+			metrics.DNSResponseCodeLabel:     rcodeLabel(m.Rcode),
+			metrics.DNSResolverProviderLabel: resolverProvider(w.RemoteAddr()),
 		}).Inc()
 		metrics.DNSServerHandlerDurationUsec.With(prometheus.Labels{
 			metrics.DNSRecordTypeLabel: recordType,
@@ -559,6 +560,39 @@ func rcodeLabel(rcode int) string {
 		return s
 	}
 	return "OTHER"
+}
+
+// resolverProvider classifies the recursive resolver that sent a query from
+// the transport peer's ASN organization. In particular, this deliberately does
+// not use EDNS Client Subnet: ECS identifies the end client on whose behalf a
+// resolver is querying, not the resolver itself. The returned set is fixed to
+// keep the Prometheus label cardinality bounded.
+func resolverProvider(remote net.Addr) string {
+	ip := addrFromNetAddr(remote)
+	if !ip.IsValid() {
+		return "unknown"
+	}
+	asn, err := maxmind.LookupASN(ip)
+	if err != nil {
+		log.Debugf("ASN lookup for DNS resolver %s failed: %s", ip, err)
+		return "unknown"
+	}
+	if asn.Number == 0 {
+		return "unknown"
+	}
+	organization := strings.ToLower(asn.Organization)
+	switch {
+	case strings.Contains(organization, "cloudflare"):
+		return "cloudflare"
+	case strings.Contains(organization, "google"):
+		return "google"
+	case strings.Contains(organization, "amazon"):
+		return "aws"
+	case strings.Contains(organization, "microsoft"):
+		return "azure"
+	default:
+		return "other"
+	}
 }
 
 func filterByType(records []dns.RR, qType uint16) []dns.RR {

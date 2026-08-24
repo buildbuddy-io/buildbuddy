@@ -445,6 +445,10 @@ const (
 	// The DNS response code, such as "NOERROR", "NXDOMAIN", or "FORMERR".
 	DNSResponseCodeLabel = "rcode"
 
+	// The provider operating the recursive resolver that sent the query, inferred
+	// from the transport peer's ASN. Values are bounded by the DNS server.
+	DNSResolverProviderLabel = "resolver_provider"
+
 	// The apex of a served DNS zone, such as "buildbuddy.io.". Zones come from
 	// operator-controlled zone files, so cardinality is bounded. Named
 	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
@@ -4605,10 +4609,11 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "dns",
 		Name:      "server_request_count",
-		Help:      "The total number of DNS queries handled, by record type and response code.",
+		Help:      "The total number of DNS queries handled, by record type, response code, and recursive resolver provider.",
 	}, []string{
 		DNSRecordTypeLabel,
 		DNSResponseCodeLabel,
+		DNSResolverProviderLabel,
 	})
 
 	// #### Examples
@@ -4616,6 +4621,9 @@ var (
 	// ```promql
 	// # DNS queries per second by record type
 	// sum by (record_type) (rate(buildbuddy_dns_server_request_count[5m]))
+	//
+	// # DNS queries per second by recursive resolver provider
+	// sum by (resolver_provider) (rate(buildbuddy_dns_server_request_count[5m]))
 	//
 	// # NXDOMAIN rate
 	// sum(rate(buildbuddy_dns_server_request_count{rcode="NXDOMAIN"}[5m]))
