@@ -1327,31 +1327,11 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
 		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
 	}
-	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
-	if err != nil {
-		return nil, err
+	compressor := repb.Compressor_IDENTITY
+	if readZstd {
+		compressor = repb.Compressor_ZSTD
 	}
-	rns := make([]*rspb.ResourceName, 0, len(manifest.ChunkDigests))
-	for _, d := range manifest.ChunkDigests {
-		rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
-		if readZstd {
-			rn.SetCompressor(repb.Compressor_ZSTD)
-		}
-		rns = append(rns, rn.ToProto())
-	}
-	chunkData, err := s.cache.GetMulti(ctx, rns)
-	if err != nil {
-		return nil, err
-	}
-	buf := make([]byte, 0, blobDigest.GetSizeBytes())
-	for _, d := range manifest.ChunkDigests {
-		data, ok := chunkData[d]
-		if !ok {
-			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
-		}
-		buf = append(buf, data...)
-	}
-	return buf, nil
+	return chunking.GetBlob(ctx, s.cache, blobDigest, instanceName, digestFunction, compressor)
 }
 
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if

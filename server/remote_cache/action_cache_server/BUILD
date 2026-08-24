@@ -24,10 +24,12 @@ go_library(
         "//server/util/log",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/rpcutil",
         "//server/util/status",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_x_sync//errgroup",
+        "@org_golang_x_sync//semaphore",
     ],
 )
 
@@ -57,6 +59,7 @@ go_test(
         "//server/util/claims",
         "//server/util/prefix",
         "//server/util/proto",
+        "//server/util/rpcutil",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",

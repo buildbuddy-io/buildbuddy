@@ -437,7 +437,9 @@ func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	return nil
 }
 
-// LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
+// LoadManifest retrieves a chunked manifest from the cache. It returns an error
+// if the blob does not have a chunked representation and does not validate the
+// existence of the chunks.
 func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
 	rn, err := acResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
@@ -449,6 +451,50 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	}
 	metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
 	return manifest, nil
+}
+
+// GetBlob reconstructs a blob from its chunked representation in bounded
+// batches. It validates the manifest's declared sizes and, for identity reads,
+// the reconstructed size. It returns an error if the blob does not have a
+// chunked representation.
+func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
+	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	if err := manifest.checkChunkSizes(); err != nil {
+		return nil, err
+	}
+
+	// Avoid trusting the blob's declared size for an unbounded allocation. The
+	// previous BatchReadBlobs caller already capped reads below this value, so
+	// this preserves its allocation behavior while keeping larger callers safe.
+	initialCapacity := min(blobDigest.GetSizeBytes(), MaxSupportedChunkSizeBytes())
+	buf := make([]byte, 0, initialCapacity)
+	const batchSize = 20
+	for chunkDigests := range slices.Chunk(manifest.ChunkDigests, batchSize) {
+		rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
+		for _, d := range chunkDigests {
+			rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+			rn.SetCompressor(compressor)
+			rns = append(rns, rn.ToProto())
+		}
+		chunkData, err := cache.GetMulti(ctx, rns)
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range chunkDigests {
+			data, ok := chunkData[d]
+			if !ok {
+				return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+			}
+			buf = append(buf, data...)
+		}
+	}
+	if compressor == repb.Compressor_IDENTITY && int64(len(buf)) != blobDigest.GetSizeBytes() {
+		return nil, status.DataLossErrorf("reconstructed blob %s has size %d, expected %d", blobDigest.GetHash(), len(buf), blobDigest.GetSizeBytes())
+	}
+	return buf, nil
 }
 
 func loadManifestFrom(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, acRNProto *rspb.ResourceName) (*Manifest, error) {
