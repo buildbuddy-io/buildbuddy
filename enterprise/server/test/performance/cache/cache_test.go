@@ -284,18 +284,15 @@ func benchmarkRead(ctx context.Context, c interfaces.Cache, digestSizeBytes int6
 	b.ReportAllocs()
 	b.SetBytes(digestSizeBytes)
 
-	// Using a bytes.Buffer here because it is used in the distributed.Cache.Get
-	// path, which calls Cache.Reader, and this results in Read calls of various
-	// sizes.
-	readBuf := bytes.NewBuffer(make([]byte, 1))
-	i := 1
-	for b.Loop() {
+	for i := 1; b.Loop(); i++ {
 		dbuf := digestBufs[i%len(digestBufs)]
-		i++
 		r, err := c.Reader(ctx, dbuf.d, 0, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
+		// Using an undersized bytes.Buffer here because this results in Read
+		// calls of various sizes.
+		readBuf := bytes.NewBuffer(make([]byte, 1))
 		n, err := readBuf.ReadFrom(r)
 		r.Close()
 		if err != nil {
