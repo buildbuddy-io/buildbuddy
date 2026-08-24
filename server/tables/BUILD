@@ -10,6 +10,7 @@ go_library(
         "//proto:group_go_proto",
         "//proto:usage_go_proto",
         "//proto:user_id_go_proto",
+        "//server/usage/sku",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/random",
