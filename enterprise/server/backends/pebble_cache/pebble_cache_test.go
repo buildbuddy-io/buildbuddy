@@ -1443,6 +1443,167 @@ func TestNoEarlyEviction(t *testing.T) {
 	}
 }
 
+func TestPartitionMinEvictionAge(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	clock := clockwork.NewFakeClock()
+	maxSizeBytes := int64(100_000)
+	partitionMinEvictionAge := 1 * time.Hour
+	opts := &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  maxSizeBytes,
+		Partitions: []disk.Partition{{
+			ID:             pebble_cache.DefaultPartitionID,
+			MaxSizeBytes:   maxSizeBytes,
+			MinEvictionAge: &partitionMinEvictionAge,
+		}},
+		// The partition-level setting should take precedence over this.
+		MinEvictionAge: new(time.Duration(0)),
+		// Don't compress anything so that sizes are predictable.
+		MinBytesAutoZstdCompression: new(int64(math.MaxInt64)),
+		// Never update atime so that Contains() doesn't prevent eviction.
+		AtimeUpdateThreshold: new(time.Duration(math.MaxInt64)),
+		Clock:                clock,
+		SamplesPerBatch:      new(50),
+		SampleBufferSize:     new(10), // Don't allow filling the sample channel with many copies of the same key.
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Write 3x the partition capacity.
+	var resourceKeys []*rspb.ResourceName
+	for i := 0; i < int(maxSizeBytes)/1000*3; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		resourceKeys = append(resourceKeys, rn)
+	}
+
+	// Wake the sample generator, which goes to sleep while the cache is
+	// empty. Advance repeatedly in case it wasn't sleeping yet on the first
+	// advance.
+	for i := 0; i < 5; i++ {
+		clock.Advance(pebble_cache.SamplerSleepDuration)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Nothing has been idle for the partition's min eviction age, so nothing
+	// should be evicted even though the partition is over capacity. Give the
+	// janitor a chance to run and verify everything is still present.
+	time.Sleep(3 * time.Second)
+	for _, r := range resourceKeys {
+		exists, err := pc.Contains(ctx, r)
+		require.NoError(t, err)
+		require.True(t, exists)
+	}
+
+	// Once entries pass the partition's min eviction age, eviction should
+	// bring the partition back under the janitor cutoff.
+	clock.Advance(partitionMinEvictionAge)
+	gcCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	require.NoError(t, pc.TestingWaitForGC(gcCtx))
+
+	evicted := 0
+	for _, r := range resourceKeys {
+		exists, err := pc.Contains(ctx, r)
+		require.NoError(t, err)
+		if !exists {
+			evicted++
+		}
+	}
+	require.Greater(t, evicted, 0)
+	require.Less(t, evicted, len(resourceKeys))
+}
+
+func TestPartitionJanitorCutoffThreshold(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+
+	maxSizeBytes := int64(100_000)
+	newCache := func(t *testing.T, cutoff float64) *pebble_cache.PebbleCache {
+		opts := &pebble_cache.Options{
+			RootDirectory: testfs.MakeTempDir(t),
+			MaxSizeBytes:  maxSizeBytes,
+			Partitions: []disk.Partition{{
+				ID:                pebble_cache.DefaultPartitionID,
+				MaxSizeBytes:      maxSizeBytes,
+				EvictionThreshold: &cutoff,
+			}},
+			MinEvictionAge: new(time.Duration(0)),
+			// Don't compress anything so that sizes are predictable.
+			MinBytesAutoZstdCompression: new(int64(math.MaxInt64)),
+			// Never update atime so that Contains() doesn't prevent eviction.
+			AtimeUpdateThreshold: new(time.Duration(math.MaxInt64)),
+			SamplesPerBatch:      new(50),
+			SampleBufferSize:     new(10), // Don't allow filling the sample channel with many copies of the same key.
+		}
+		pc, err := pebble_cache.NewPebbleCache(te, opts)
+		require.NoError(t, err)
+		require.NoError(t, pc.Start())
+		t.Cleanup(func() { pc.Stop() })
+		return pc
+	}
+	write := func(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCache, n int) []*rspb.ResourceName {
+		resourceKeys := make([]*rspb.ResourceName, 0, n)
+		for i := 0; i < n; i++ {
+			rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+			require.NoError(t, pc.Set(ctx, rn, buf))
+			resourceKeys = append(resourceKeys, rn)
+		}
+		return resourceKeys
+	}
+
+	t.Run("lower_threshold_starts_eviction_sooner", func(t *testing.T) {
+		ctx := getAnonContext(t, te)
+		pc := newCache(t, 0.5)
+		// Fill to 70% of the partition size: under the default .9 cutoff, but
+		// over the configured .5 cutoff.
+		resourceKeys := write(t, ctx, pc, 70)
+
+		countEvicted := func() int {
+			evicted := 0
+			for _, r := range resourceKeys {
+				if exists, err := pc.Contains(ctx, r); err == nil && !exists {
+					evicted++
+				}
+			}
+			return evicted
+		}
+
+		// Set() returns before the write is reflected in the partition's size
+		// accounting, so TestingWaitForGC may observe a stale size and return
+		// before eviction has started. Instead, wait for eviction directly.
+		require.Eventually(t, func() bool { return countEvicted() > 0 },
+			30*time.Second, 100*time.Millisecond)
+
+		// Let eviction finish and verify it didn't evict everything.
+		gcCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		require.NoError(t, pc.TestingWaitForGC(gcCtx))
+		require.Less(t, countEvicted(), len(resourceKeys))
+	})
+
+	t.Run("higher_threshold_starts_eviction_later", func(t *testing.T) {
+		ctx := getAnonContext(t, te)
+		pc := newCache(t, 1.0)
+		// Fill to 95% of the partition size: over the default .9 cutoff, but
+		// under the configured 1.0 cutoff.
+		resourceKeys := write(t, ctx, pc, 95)
+
+		// Give the janitor a chance to run, then verify nothing was evicted.
+		time.Sleep(3 * time.Second)
+		for _, r := range resourceKeys {
+			exists, err := pc.Contains(ctx, r)
+			require.NoError(t, err)
+			require.True(t, exists)
+		}
+	})
+}
+
 func TestLRU(t *testing.T) {
 	testCases := []struct {
 		desc                   string
@@ -1472,15 +1633,15 @@ func TestLRU(t *testing.T) {
 			opts := &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                maxSizeBytes,
-				AtimeUpdateThreshold:        pointer(time.Duration(0)), // update atime on every access
-				AtimeBufferSize:             pointer(0),                // blocking channel of atime updates
-				MinEvictionAge:              pointer(time.Duration(0)), // no min eviction age
+				AtimeUpdateThreshold:        new(time.Duration(0)), // update atime on every access
+				AtimeBufferSize:             new(0),                // blocking channel of atime updates
+				MinEvictionAge:              new(time.Duration(0)), // no min eviction age
 				MinBytesAutoZstdCompression: &maxSizeBytes,
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
-				ActiveKeyVersion:            pointer(int64(5)),
+				ActiveKeyVersion:            new(int64(5)),
 				Clock:                       clock,
-				SamplesPerBatch:             pointer(50),
-				SampleBufferSize:            pointer(10), // Don't allow filling the sample channel with many copies of the same key.
+				SamplesPerBatch:             new(50),
+				SampleBufferSize:            new(10), // Don't allow filling the sample channel with many copies of the same key.
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -2763,10 +2924,10 @@ func TestSampling(t *testing.T) {
 		MinEvictionAge:   &minEvictionAge,
 		Clock:            clock,
 		ActiveKeyVersion: &activeKeyVersion,
-		SamplesPerBatch:  pointer(50),
+		SamplesPerBatch:  new(50),
 		// Never update atime so we can check if something has been evicted
 		// without preventing its eviction.
-		AtimeUpdateThreshold: pointer(time.Duration(math.MaxInt64)),
+		AtimeUpdateThreshold: new(time.Duration(math.MaxInt64)),
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	require.NoError(t, err)
@@ -3164,8 +3325,8 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 		MinGCSFileSizeBytes:     &minGCSFileSize,
 		GCSTTLDays:              &gcsTTLDays,
 		GCSAtimeUpdateThreshold: &atimeThreshold,
-		AtimeUpdateThreshold:    pointer(time.Duration(0)), // update atime on every access
-		AtimeBufferSize:         pointer(0),                // blocking channel of atime updates
+		AtimeUpdateThreshold:    new(time.Duration(0)), // update atime on every access
+		AtimeBufferSize:         new(0),                // blocking channel of atime updates
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, options)
 	require.NoError(t, err)
@@ -3203,10 +3364,6 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
-}
-
-func pointer[T any](value T) *T {
-	return &value
 }
 
 func dirSizeFiles(path string) (int64, error) {
@@ -3250,9 +3407,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 			},
 		},
@@ -3261,9 +3418,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				MaxInlineFileSizeBytes:      -1, // don't inline anything.
 			},
@@ -3273,9 +3430,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 			},
@@ -3285,17 +3442,17 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 
 				Clock:                  clock,
 				FileStorer:             fileStorer,
 				MaxInlineFileSizeBytes: -1, // force everything into mock gcs
-				MinGCSFileSizeBytes:    pointer(int64(1)),
-				GCSTTLDays:             pointer(int64(1)),
+				MinGCSFileSizeBytes:    new(int64(1)),
+				GCSTTLDays:             new(int64(1)),
 			},
 		},
 	}
@@ -3306,8 +3463,8 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			flags.Set(t, "cache.pebble.deletes_per_eviction", 1)
 
 			// Don't allow filling the sample channel with many copies of the same key.
-			tc.opts.SamplesPerBatch = pointer(50)
-			tc.opts.SampleBufferSize = pointer(10)
+			tc.opts.SamplesPerBatch = new(50)
+			tc.opts.SampleBufferSize = new(10)
 			pc, err := pebble_cache.NewPebbleCache(te, tc.opts)
 			if err != nil {
 				t.Fatal(err)

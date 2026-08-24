@@ -157,7 +157,12 @@ func newBenchEvictor(b *testing.B, eligibleEvery int) (*partitionEvictor, pebble
 		require.NoError(b, err)
 		require.NoError(b, db.Set(keyBytes, buf, cpebble.NoSync))
 	}
-	part := disk.Partition{ID: benchPartitionID, MaxSizeBytes: 100}
+	part := disk.Partition{
+		ID:                benchPartitionID,
+		MaxSizeBytes:      100,
+		MinEvictionAge:    new(benchMinEvictionAge),
+		EvictionThreshold: new(JanitorCutoffThreshold),
+	}
 	evictor, err := newPartitionEvictor(
 		context.Background(),
 		part,
@@ -167,7 +172,6 @@ func newBenchEvictor(b *testing.B, eligibleEvery int) (*partitionEvictor, pebble
 		lockmap.New[string](),
 		benchVersionGetter{},
 		clockwork.NewRealClock(),
-		benchMinEvictionAge,
 		"bench",
 		true,          /*=includeMetadataSize*/
 		1000,          /*=sampleBufferSize*/

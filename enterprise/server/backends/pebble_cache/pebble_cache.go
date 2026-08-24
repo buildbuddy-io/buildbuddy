@@ -86,7 +86,7 @@ var (
 	numDeleteWorkers          = flag.Int("cache.pebble.num_delete_workers", DefaultNumDeleteWorkers, "Number of deletes in parallel")
 	samplesPerBatch           = flag.Int("cache.pebble.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.")
 	samplerIterRefreshPeriod  = flag.Duration("cache.pebble.sampler_iter_refresh_peroid", DefaultSamplerIterRefreshPeriod, "How often we refresh iterator in sampler")
-	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
+	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long. May be overridden per-partition via the partition's min_eviction_age.")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
@@ -451,6 +451,15 @@ func validateOpts(opts *Options) error {
 		return status.FailedPreconditionError("Pebble cache size must be greater than 0")
 	}
 
+	for _, p := range opts.Partitions {
+		if *p.EvictionThreshold <= 0 || *p.EvictionThreshold > 1 {
+			return status.FailedPreconditionErrorf("Partition %q eviction_threshold must be in (0, 1]", p.ID)
+		}
+		if *p.MinEvictionAge < 0 {
+			return status.FailedPreconditionErrorf("Partition %q min_eviction_age must not be negative", p.ID)
+		}
+	}
+
 	for _, pm := range opts.PartitionMappings {
 		found := false
 		for _, p := range opts.Partitions {
@@ -526,6 +535,18 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.MinBytesAutoZstdCompression == nil {
 		opts.MinBytesAutoZstdCompression = &DefaultMinBytesAutoZstdCompression
+	}
+}
+
+func setPartitionDefaults(opts *Options) {
+	for i := range opts.Partitions {
+		part := &opts.Partitions[i]
+		if part.MinEvictionAge == nil {
+			part.MinEvictionAge = opts.MinEvictionAge
+		}
+		if part.EvictionThreshold == nil {
+			part.EvictionThreshold = new(JanitorCutoffThreshold)
+		}
 	}
 }
 
@@ -614,6 +635,11 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 // NewPebbleCache creates a new cache from the provided env and opts.
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	SetOptionDefaults(opts)
+	// Create the default partition after scalar defaults are set, so that it
+	// picks up the defaulted MaxSizeBytes, but before per-partition defaults
+	// are filled in.
+	ensureDefaultPartitionExists(opts)
+	setPartitionDefaults(opts)
 	if err := validateOpts(opts); err != nil {
 		return nil, err
 	}
@@ -626,7 +652,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := disk.EnsureDirectoryExists(opts.RootDirectory); err != nil {
 		return nil, err
 	}
-	ensureDefaultPartitionExists(opts)
 	warnIfCacheTooLarge(opts)
 
 	mc := &pebble.MetricsCollector{}
@@ -840,7 +865,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 				pc.locker,
 				pc,
 				clock,
-				*opts.MinEvictionAge,
 				opts.Name,
 				opts.IncludeMetadataSize,
 				*opts.SampleBufferSize,
@@ -2863,7 +2887,7 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 		for _, e := range evictors {
 			e.mu.Lock()
 			e.lru.UpdateSizeBytes(e.sizeBytes)
-			maxAllowedSize := int64(JanitorCutoffThreshold * float64(e.part.MaxSizeBytes))
+			maxAllowedSize := evictionThresholdBytes(e.part)
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
@@ -2917,7 +2941,6 @@ type partitionEvictor struct {
 	acCount     int64
 
 	atimeBufferSize  int
-	minEvictionAge   time.Duration
 	activeKeyVersion int64
 
 	samplesPerBatch          int
@@ -2947,7 +2970,6 @@ func newPartitionEvictor(
 	locker lockmap.Locker[string],
 	vg versionGetter,
 	clock clockwork.Clock,
-	minEvictionAge time.Duration,
 	cacheName string,
 	includeMetadataSize bool,
 	sampleBufferSize int,
@@ -2967,7 +2989,6 @@ func newPartitionEvictor(
 		versionGetter:            vg,
 		rng:                      rand.New(rand.NewSource(time.Now().UnixNano())),
 		clock:                    clock,
-		minEvictionAge:           minEvictionAge,
 		cacheName:                cacheName,
 		samples:                  make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
 		samplesPerBatch:          samplesPerBatch,
@@ -2988,7 +3009,7 @@ func newPartitionEvictor(
 		EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
 		EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
 		RateLimit:                   float64(*evictionRateLimit),
-		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
+		MaxSizeBytes:                evictionThresholdBytes(part),
 		Clock:                       clock,
 		OnEvict:                     pe.evict,
 		OnSample:                    pe.sample,
@@ -3039,6 +3060,16 @@ func (e *partitionEvictor) processEviction(quitChan chan struct{}) {
 	eg.Wait()
 }
 
+// evictionThresholdBytes returns the maximum number of bytes that can be stored before
+// eviction should start.
+func evictionThresholdBytes(p disk.Partition) int64 {
+	threshold := float64(JanitorCutoffThreshold)
+	if p.EvictionThreshold != nil {
+		threshold = *p.EvictionThreshold
+	}
+	return int64(threshold * float64(p.MaxSizeBytes))
+}
+
 func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -3080,7 +3111,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		// entries to evict. We will sleep for some time to prevent from
 		// constantly generating samples in vain.
 		e.mu.Lock()
-		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes))
+		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(evictionThresholdBytes(e.part)))
 		e.mu.Unlock()
 		if shouldSleep {
 			select {
@@ -3159,7 +3190,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, view *sgpb.FileMetadataEvictionView, quitChan chan struct{}, timer clockwork.Timer) {
 	atime := time.UnixMicro(view.LastAccessUsec)
 	age := e.clock.Since(atime)
-	if age < e.minEvictionAge {
+	if age < *e.part.MinEvictionAge {
 		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "age_too_small").Inc()
 		return
 	}
@@ -3368,7 +3399,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Partition %q (%q)\n", e.part.ID, e.blobDir)
 
-	maxAllowedSize := int64(JanitorCutoffThreshold * float64(e.part.MaxSizeBytes))
+	maxAllowedSize := evictionThresholdBytes(e.part)
 	percentFull := float64(e.sizeBytes) / float64(maxAllowedSize) * 100.0
 	totalCount := e.casCount + e.acCount
 	buf += fmt.Sprintf("Items: CAS: %d AC: %d (%d total)\n", e.casCount, e.acCount, totalCount)
