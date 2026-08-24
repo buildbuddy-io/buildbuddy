@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -23,9 +24,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -42,6 +45,10 @@ var (
 // checkFilesExist performs in parallel. Each lookup issues independent cache
 // reads, so the work is I/O-bound.
 const chunkCheckConcurrency = 8
+
+// Set high enough to avoid affecting normal requests while still preventing
+// abusive fan-out.
+const chunkedTreeReadConcurrency = 32
 
 type ActionCacheServer struct {
 	env   environment.Env
@@ -111,19 +118,30 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	return eg.Wait()
 }
 
-func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, treeDigest *repb.Digest) (*repb.Tree, error) {
+func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, chunkedReadLimiter *semaphore.Weighted, treeDigest *repb.Digest) (*repb.Tree, error) {
 	rn := digest.NewResourceName(treeDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
 	blob, err := cache.Get(ctx, rn)
 	if err != nil {
+		isNotFound := status.IsNotFoundError(err) || os.IsNotExist(err)
+		treeSizeBytes := treeDigest.GetSizeBytes()
 		minFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
-		if !status.IsNotFoundError(err) || !chunkingEnabled || treeDigest.GetSizeBytes() <= minFallbackSizeBytes || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, treeDigest.GetSizeBytes()) {
+		if !isNotFound ||
+			!chunkingEnabled ||
+			treeSizeBytes <= minFallbackSizeBytes ||
+			treeSizeBytes > rpcutil.GRPCMaxSizeBytes ||
+			chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, treeSizeBytes) {
 			return nil, err
 		}
-		blob, err = chunking.GetBlob(ctx, cache, treeDigest, instanceName, digestFunction, repb.Compressor_IDENTITY)
+		// Avoid unbounded fan-out across chunked Tree reconstructions.
+		if err := chunkedReadLimiter.Acquire(ctx, 1); err != nil {
+			return nil, err
+		}
+		defer chunkedReadLimiter.Release(1)
+		blob, err = chunking.GetBlob(ctx, cache, treeDigest, instanceName, rn.GetDigestFunction(), repb.Compressor_IDENTITY)
 		if err != nil {
 			return nil, err
 		}
-		computedDigest, err := digest.Compute(bytes.NewReader(blob), digestFunction)
+		computedDigest, err := digest.Compute(bytes.NewReader(blob), rn.GetDigestFunction())
 		if err != nil {
 			return nil, err
 		}
@@ -154,10 +172,11 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
+	chunkedTreeReadLimiter := semaphore.NewWeighted(chunkedTreeReadConcurrency)
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, chunkingEnabled, efp, dc.GetTreeDigest())
+			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, chunkingEnabled, efp, chunkedTreeReadLimiter, dc.GetTreeDigest())
 			if err != nil {
 				return err
 			}

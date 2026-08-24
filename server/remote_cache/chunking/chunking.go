@@ -437,7 +437,9 @@ func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	return nil
 }
 
-// LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
+// LoadManifest retrieves a chunked manifest from the cache. It returns an error
+// if the blob does not have a chunked representation and does not validate the
+// existence of the chunks.
 func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
 	rn, err := acResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
@@ -453,7 +455,8 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 
 // GetBlob reconstructs a blob from its chunked representation in bounded
 // batches. It validates the manifest's declared sizes and, for identity reads,
-// the reconstructed size.
+// the reconstructed size. It returns an error if the blob does not have a
+// chunked representation.
 func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
 	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction)
 	if err != nil {
@@ -469,8 +472,8 @@ func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Diges
 	initialCapacity := min(blobDigest.GetSizeBytes(), MaxSupportedChunkSizeBytes())
 	buf := make([]byte, 0, initialCapacity)
 	const batchSize = 20
-	rns := make([]*rspb.ResourceName, 0, batchSize)
 	for chunkDigests := range slices.Chunk(manifest.ChunkDigests, batchSize) {
+		rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
 		for _, d := range chunkDigests {
 			rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
 			rn.SetCompressor(compressor)
@@ -487,7 +490,6 @@ func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Diges
 			}
 			buf = append(buf, data...)
 		}
-		rns = rns[:0]
 	}
 	if compressor == repb.Compressor_IDENTITY && int64(len(buf)) != blobDigest.GetSizeBytes() {
 		return nil, status.DataLossErrorf("reconstructed blob %s has size %d, expected %d", blobDigest.GetHash(), len(buf), blobDigest.GetSizeBytes())
