@@ -690,6 +690,10 @@ type FirecrackerContainer struct {
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
 
+	// If set, the snapshot for the container image that can be used for the root filesystem.
+	containerfsSnapshot     *snaploader.Snapshot
+	containerfsSnapshotOnce sync.Once
+
 	// The current task assigned to the VM.
 	task *repb.ExecutionTask
 	// When the VM was initialized (i.e. created or unpaused) for the command
@@ -1479,14 +1483,41 @@ func (c *FirecrackerContainer) initScratchImage(ctx context.Context, path string
 	return nil
 }
 
+// cachedContainerfs returns the snapshot for the container image.
+func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploader.Snapshot {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
+		return nil
+	}
+	c.containerfsSnapshotOnce.Do(func() {
+		instanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
+		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage, c.supportsRemoteSnapshots)
+		if err != nil {
+			if !status.IsNotFoundError(err) {
+				log.CtxWarningf(ctx, "Failed to look up cached containerfs for image %q: %s", c.containerImage, err)
+			}
+			return
+		}
+		c.containerfsSnapshot = snap
+	})
+	return c.containerfsSnapshot
+}
+
 // initRootfsStore creates the initial rootfs chunk layout in the chroot.
 func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 	cowChunkDir := filepath.Join(c.getChroot(), rootFSName)
 	if err := os.MkdirAll(cowChunkDir, 0755); err != nil {
 		return status.UnavailableErrorf("failed to create rootfs chunk dir: %s", err)
 	}
-	containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-	cf, err := snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.supportsRemoteSnapshots)
+	var cf *copy_on_write.COWStore
+	var err error
+	if snap := c.cachedContainerfs(ctx); snap != nil {
+		// If a chunked containerfs snapshot is in the cache, unpack it directly.
+		cf, err = snaploader.UnpackContainerImageSnapshot(c.vmCtx, c.loader, snap, cowChunkDir)
+	} else {
+		// If a chunked containerfs is not cached, we need to convert the ext4 image into chunks.
+		containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
+		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.supportsRemoteSnapshots)
+	}
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
 	}
@@ -2188,12 +2219,18 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	// Hardlink the ext4 image to the chroot at containerFSPath, if we haven't
 	// already. Normally it will only exist if we got a cache miss and had to
 	// call PullImage; otherwise we expect to find it in cache.
-	if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
-		return status.UnavailableErrorf("check containerfs exists: %s", err)
-	} else if !exists {
-		err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
-		if err != nil {
-			return status.UnavailableErrorf("link cached image: %s", err)
+	//
+	// If the chunked containerfs is already cached then the image was never
+	// pulled or converted, and the VM reads the rootfs chunks over VBD instead,
+	// so there is no EXT4 image to link.
+	if c.cachedContainerfs(ctx) == nil {
+		if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
+			return status.UnavailableErrorf("check containerfs exists: %s", err)
+		} else if !exists {
+			err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
+			if err != nil {
+				return status.UnavailableErrorf("link cached image: %s", err)
+			}
 		}
 	}
 
@@ -2721,7 +2758,16 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	return ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
+	// Checking for the EXT4 image on local disk is cheap, so do it first.
+	cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
+	if err != nil || cached {
+		return cached, err
+	}
+
+	// The image also doesn't need to be pulled if the chunked containerfs is
+	// cached, since then the VM reads rootfs chunks over VBD rather than
+	// reading the EXT4 image.
+	return c.cachedContainerfs(ctx) != nil, nil
 }
 
 // PullImage pulls the container image from the remote. It always
@@ -2750,6 +2796,16 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 
 	if err := c.resolver.AuthenticateWithRegistry(ctx, c.containerImage, oci.RuntimePlatform(), creds); err != nil {
 		return status.WrapError(err, "authenticate with registry")
+	}
+
+	// If the chunked containerfs is already cached, the VM reads its rootfs
+	// chunks lazily over VBD, so we don't need to pull the image.
+	// Note that we still authenticate with the
+	// registry above, so skipping the pull doesn't grant access to an image the
+	// caller can't pull.
+	if c.cachedContainerfs(ctx) != nil {
+		log.CtxInfof(ctx, "Skipping pull of %q: chunked containerfs is already cached", c.containerImage)
+		return nil
 	}
 
 	containerFSPath := filepath.Join(c.getChroot(), containerFSName)
