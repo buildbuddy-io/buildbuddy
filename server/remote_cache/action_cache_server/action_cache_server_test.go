@@ -693,6 +693,71 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	assert.True(t, status.IsNotFoundError(err))
 }
 
+func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
+	// Force chunking on all blobs so this small synthetic Tree exercises chunk
+	// reconstruction.
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	// Store the output file referenced by the output-directory Tree.
+	outputRN, outputData := testdigest.RandomCASResourceBuf(t, 128)
+	require.NoError(t, cache.Set(ctx, outputRN, outputData))
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{Name: "output.bin", Digest: outputRN.GetDigest()},
+			},
+		},
+	}
+	treeData, err := proto.Marshal(tree)
+	require.NoError(t, err)
+	treeDigest, err := digest.Compute(bytes.NewReader(treeData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	// Store the Tree as two CAS chunks plus a manifest, intentionally omitting
+	// the whole Tree blob from CAS.
+	split := len(treeData) / 2
+	chunkData := [][]byte{treeData[:split], treeData[split:]}
+	chunkRNs := make([]*rspb.ResourceName, 0, len(chunkData))
+	for _, data := range chunkData {
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256).ToProto()
+		require.NoError(t, cache.Set(ctx, rn, data))
+		chunkRNs = append(chunkRNs, rn)
+	}
+	cm := &chunking.Manifest{
+		BlobDigest:     treeDigest,
+		ChunkDigests:   []*repb.Digest{chunkRNs[0].GetDigest(), chunkRNs[1].GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, cm.Store(ctx, cache))
+
+	ar := &repb.ActionResult{
+		OutputDirectories: []*repb.OutputDirectory{
+			{Path: "output", TreeDigest: treeDigest},
+		},
+	}
+	// The validator currently checks only for the whole Tree blob, even when
+	// chunking is enabled, so it reports this complete chunked Tree as missing.
+	// A follow-up fix should flip this expectation to require.NoError.
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+
+	// With chunking disabled, validation should require the whole Tree blob and
+	// report a cache miss.
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, false, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+}
+
 func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1024)
 
