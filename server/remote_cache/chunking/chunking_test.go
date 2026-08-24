@@ -148,7 +148,7 @@ func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
 	require.Equal(t, chunking.MaxChunkSizeBytes(ctx, efp), chunking.MinChunkedReadFallbackSizeBytes(ctx, efp))
 }
 
-func TestReadBlob_RejectsForgedManifestSizes(t *testing.T) {
+func TestGetBlobRejectsForgedManifestSizes(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
@@ -178,7 +178,7 @@ func TestReadBlob_RejectsForgedManifestSizes(t *testing.T) {
 	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache))
 
 	recordingCache := &getMultiBatchRecordingCache{Cache: cache}
-	_, err = chunking.ReadBlob(ctx, recordingCache, forgedBlobDigest, "", repb.DigestFunction_SHA256, repb.Compressor_IDENTITY)
+	_, err = chunking.GetBlob(ctx, recordingCache, forgedBlobDigest, "", repb.DigestFunction_SHA256, repb.Compressor_IDENTITY)
 	require.Error(t, err)
 	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
 	require.Equal(t, []int{20, 1}, recordingCache.batchSizes)

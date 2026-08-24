@@ -119,7 +119,7 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 		if !status.IsNotFoundError(err) || !chunkingEnabled || treeDigest.GetSizeBytes() <= minFallbackSizeBytes || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, treeDigest.GetSizeBytes()) {
 			return nil, err
 		}
-		blob, err = chunking.ReadBlob(ctx, cache, treeDigest, instanceName, digestFunction, repb.Compressor_IDENTITY)
+		blob, err = chunking.GetBlob(ctx, cache, treeDigest, instanceName, digestFunction, repb.Compressor_IDENTITY)
 		if err != nil {
 			return nil, err
 		}

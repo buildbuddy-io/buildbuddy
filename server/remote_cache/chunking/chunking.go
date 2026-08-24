@@ -451,9 +451,10 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	return manifest, nil
 }
 
-// ReadBlob reconstructs a chunked blob in bounded batches. It validates the
-// manifest's declared sizes and, for identity reads, the reconstructed size.
-func ReadBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
+// GetBlob reconstructs a blob from its chunked representation in bounded
+// batches. It validates the manifest's declared sizes and, for identity reads,
+// the reconstructed size.
+func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
 	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction)
 	if err != nil {
 		return nil, err

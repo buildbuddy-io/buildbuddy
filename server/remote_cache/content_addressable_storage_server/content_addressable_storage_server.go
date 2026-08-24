@@ -1331,7 +1331,7 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 	if readZstd {
 		compressor = repb.Compressor_ZSTD
 	}
-	return chunking.ReadBlob(ctx, s.cache, blobDigest, instanceName, digestFunction, compressor)
+	return chunking.GetBlob(ctx, s.cache, blobDigest, instanceName, digestFunction, compressor)
 }
 
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
