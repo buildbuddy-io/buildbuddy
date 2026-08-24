@@ -1373,6 +1373,51 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 	return gid, nil
 }
 
+// containerImageSnapshotKey returns the key under which the chunked
+// containerfs for the given container image is cached.
+//
+// TODO: use an Action for this key instead (to allow remote snapshot
+// sharing).
+func containerImageSnapshotKey(instanceName, imageRef string) *fcpb.SnapshotKeySet {
+	return &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
+		InstanceName:      instanceName,
+		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
+	}}
+}
+
+// GetCachedContainerImage returns the cached snapshot for the given
+// container image.
+func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, remoteEnabled bool) (*Snapshot, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(instanceName, imageRef), &GetSnapshotOptions{
+		SupportsRemoteManifest: remoteEnabled,
+		SupportsRemoteChunks:   remoteEnabled,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return snap, nil
+}
+
+// UnpackContainerImageSnapshot returns a ChunkedFile from a container image snapshot.
+func UnpackContainerImageSnapshot(ctx context.Context, l *FileCacheLoader, snap *Snapshot, outDir string) (*copy_on_write.COWStore, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	unpacked, err := l.UnpackSnapshot(ctx, snap, outDir)
+	if err != nil {
+		return nil, err
+	}
+	cf := unpacked.ChunkedFiles[rootfsFileName]
+	if cf == nil {
+		return nil, status.InternalError("missing rootfs artifact in snapshot")
+	}
+	return cf, nil
+}
+
 // UnpackContainerImage returns a ChunkedFile representing the given container
 // image. The chunk dir is stored as a child directory of the given outDir.
 //
@@ -1382,31 +1427,12 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// TODO: use an Action for this key instead (to allow remote snapshot
-	// sharing).
-	key := &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
-		InstanceName:      instanceName,
-		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
-	}}
-
-	snap, err := l.GetSnapshot(ctx, key, &GetSnapshotOptions{
-		SupportsRemoteManifest: remoteEnabled,
-		SupportsRemoteChunks:   remoteEnabled,
-		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
-	})
+	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef, remoteEnabled)
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err
 	}
 	if snap != nil {
-		unpacked, err := l.UnpackSnapshot(ctx, snap, outDir)
-		if err != nil {
-			return nil, err
-		}
-		cf := unpacked.ChunkedFiles[rootfsFileName]
-		if cf == nil {
-			return nil, status.InternalError("missing rootfs artifact in snapshot")
-		}
-		return cf, nil
+		return UnpackContainerImageSnapshot(ctx, l, snap, outDir)
 	}
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
@@ -1423,6 +1449,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		CacheSnapshotLocally:  true,
 		WriteManifestLocally:  !remoteEnabled,
 	}
+	key := containerImageSnapshotKey(instanceName, imageRef)
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
 	}

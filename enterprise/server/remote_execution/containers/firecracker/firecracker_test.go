@@ -547,6 +547,102 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 	)
 }
 
+func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
+	ctx := context.Background()
+	// Keep snapshot sharing local-only to simplify test setup.
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	// Mock requests to the container registry.
+	var manifestRequests, blobRequests atomic.Int32
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if strings.Contains(r.URL.Path, "/blobs/") {
+				blobRequests.Add(1)
+			} else if strings.Contains(r.URL.Path, "/manifests/") {
+				manifestRequests.Add(1)
+			}
+			return true
+		},
+	})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
+
+	// The test registry listens on a random port, so this image ref is unique
+	// to this test run and is guaranteed not to be present in the executor
+	// image cache, which may be shared across runs.
+	imageRef, _ := reg.PushNamedImage(t, "firecracker-skip-redundant-pull:latest", nil)
+
+	// Reset the registry counters so they only reflect requests made by following code.
+	manifestRequests.Store(0)
+	blobRequests.Store(0)
+
+	env := getTestEnv(ctx, t, envOpts{})
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageRef,
+		ActionWorkingDirectory: testfs.MakeTempDir(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	newContainer := func() *firecracker.FirecrackerContainer {
+		containerOpts := opts
+		containerOpts.ActionWorkingDirectory = testfs.MakeTempDir(t)
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, containerOpts)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, c.Remove(context.Background()))
+		})
+		return c
+	}
+
+	// Sanity check: the image should not be cached yet.
+	coldContainer := newContainer()
+	cached, err := coldContainer.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.False(t, cached)
+	require.Equal(t, int32(0), blobRequests.Load())
+
+	// Cache a chunked containerfs for the image, as a previous VM run would've.
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	const chunkSize = 512 * 1024
+	workDir := testfs.MakeTempDir(t)
+	// The chunk contents are arbitrary: no VM is booted here, so only the presence
+	// of the cache entry matters.
+	testfs.WriteRandomString(t, workDir, "containerfs.ext4", 4*chunkSize)
+	ext4Path := filepath.Join(workDir, "containerfs.ext4")
+	instanceName := coldContainer.SnapshotKeySet().GetBranchKey().GetInstanceName()
+	cow, err := snaploader.UnpackContainerImage(
+		ctx, loader, instanceName, imageRef, ext4Path,
+		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize,
+		false /*=remoteEnabled*/)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		cow.Close()
+	})
+
+	// A container for a subsequent task should now see the cached containerfs.
+	c := newContainer()
+	cached, err = c.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.True(t, cached)
+
+	// Call PullImage, as a clean VM run would.
+	require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+
+	// Because the chunked containerfs is already cached, PullImage should not download the image layers
+	// from the registry.
+	require.Equal(t, int32(0), blobRequests.Load())
+	// The manifest should still have been fetched, in order to authenticate with the registry.
+	require.Greater(t, manifestRequests.Load(), int32(0))
+}
+
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
 	// Test for both small and large memory sizes
 	for _, memorySize := range []int64{minMemSizeMB, 4000} {
