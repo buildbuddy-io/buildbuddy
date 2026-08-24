@@ -95,7 +95,7 @@ func qpsByResolverProviderPanel() *timeseries.PanelBuilder {
 	return dash.StackedTimeseries("Queries/sec by Recursive Resolver Provider", dash.UnitOps).
 		Description("DNS query rate by the provider operating the recursive resolver, inferred from the transport peer's ASN. Cloudflare, Google, AWS, and Azure are identified explicitly; all remaining public ASNs are grouped as other.").
 		GridPos(grid(8, 24, 0, 15)).
-		WithTarget(q(rateBy("resolver_provider"), "{{resolver_provider}}"))
+		WithTarget(q(`sum by (resolver_provider) (rate(`+reqs+`{resolver_provider=~".+", `+filter+`}[`+window+`]))`, "{{resolver_provider}}"))
 }
 
 func latencyPanel() *timeseries.PanelBuilder {

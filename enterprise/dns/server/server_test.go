@@ -176,6 +176,17 @@ func TestRequestMetricResolverProvider(t *testing.T) {
 			assert.Equal(t, float64(1), got)
 		})
 	}
+
+	// Resolver-provider classification must use the transport peer, not ECS.
+	// Here Google is the advertised end-client network, while Cloudflare is the
+	// recursive resolver that actually sent the query.
+	serve(t, h, withECS(t, newQuery("cache.buildbuddy.io.", dns.TypeA), "8.8.8.8"), "1.1.1.1")
+	got := testutil.ToFloat64(metrics.DNSServerRequestCount.With(prometheus.Labels{
+		metrics.DNSRecordTypeLabel:       "A",
+		metrics.DNSResponseCodeLabel:     "NOERROR",
+		metrics.DNSResolverProviderLabel: "cloudflare",
+	}))
+	assert.Equal(t, float64(2), got)
 }
 
 // queryFromIP issues a query carrying an EDNS Client Subnet option advertising
