@@ -1241,7 +1241,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 	maxSizeBytes := int64(
 		math.Ceil( // account for integer rounding
 			float64(totalSizeCompresedData) *
-				(1 / disk.DefaultEvictionThreshold))) // account for .9 evictor cutoff
+				(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 
 	opts := &pebble_cache.Options{
 		RootDirectory:  testfs.MakeTempDir(t),
@@ -1402,7 +1402,7 @@ func TestNoEarlyEviction(t *testing.T) {
 				math.Ceil( // account for integer rounding
 					float64(numDigests) *
 						float64(tc.digestSize) *
-						(1 / disk.DefaultEvictionThreshold))) // account for .9 evictor cutoff
+						(1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 
 			rootDir := testfs.MakeTempDir(t)
 			atimeUpdateThreshold := time.Duration(0) // update atime on every access
@@ -1629,7 +1629,7 @@ func TestLRU(t *testing.T) {
 			clock := clockwork.NewFakeClock()
 			numDigests := 25
 			maxSizeBytes := int64(math.Ceil( // account for integer rounding
-				float64(numDigests) * float64(tc.digestSize) * (1 / disk.DefaultEvictionThreshold))) // account for .9 evictor cutoff
+				float64(numDigests) * float64(tc.digestSize) * (1 / pebble_cache.JanitorCutoffThreshold))) // account for .9 evictor cutoff
 			opts := &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                maxSizeBytes,

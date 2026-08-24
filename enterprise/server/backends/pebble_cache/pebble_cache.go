@@ -145,6 +145,10 @@ var (
 )
 
 const (
+	// cutoffThreshold is the point above which a janitor thread will run
+	// and delete the oldest items from the cache.
+	JanitorCutoffThreshold = .9
+
 	megabyte = 1e6
 
 	DefaultPartitionID           = "default"
@@ -541,7 +545,7 @@ func setPartitionDefaults(opts *Options) {
 			part.MinEvictionAge = opts.MinEvictionAge
 		}
 		if part.EvictionThreshold == nil {
-			part.EvictionThreshold = new(disk.DefaultEvictionThreshold)
+			part.EvictionThreshold = new(JanitorCutoffThreshold)
 		}
 	}
 }
@@ -2883,7 +2887,7 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 		for _, e := range evictors {
 			e.mu.Lock()
 			e.lru.UpdateSizeBytes(e.sizeBytes)
-			maxAllowedSize := e.part.EvictionThresholdBytes()
+			maxAllowedSize := evictionThresholdBytes(e.part)
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
@@ -3005,7 +3009,7 @@ func newPartitionEvictor(
 		EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
 		EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
 		RateLimit:                   float64(*evictionRateLimit),
-		MaxSizeBytes:                part.EvictionThresholdBytes(),
+		MaxSizeBytes:                evictionThresholdBytes(part),
 		Clock:                       clock,
 		OnEvict:                     pe.evict,
 		OnSample:                    pe.sample,
@@ -3056,6 +3060,16 @@ func (e *partitionEvictor) processEviction(quitChan chan struct{}) {
 	eg.Wait()
 }
 
+// evictionThresholdBytes returns the maximum number of bytes that can be stored before
+// eviction should start.
+func evictionThresholdBytes(p disk.Partition) int64 {
+	threshold := float64(JanitorCutoffThreshold)
+	if p.EvictionThreshold != nil {
+		threshold = *p.EvictionThreshold
+	}
+	return int64(threshold * float64(p.MaxSizeBytes))
+}
+
 func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -3097,7 +3111,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		// entries to evict. We will sleep for some time to prevent from
 		// constantly generating samples in vain.
 		e.mu.Lock()
-		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.EvictionThresholdBytes()))
+		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(evictionThresholdBytes(e.part)))
 		e.mu.Unlock()
 		if shouldSleep {
 			select {
@@ -3385,7 +3399,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Partition %q (%q)\n", e.part.ID, e.blobDir)
 
-	maxAllowedSize := e.part.EvictionThresholdBytes()
+	maxAllowedSize := evictionThresholdBytes(e.part)
 	percentFull := float64(e.sizeBytes) / float64(maxAllowedSize) * 100.0
 	totalCount := e.casCount + e.acCount
 	buf += fmt.Sprintf("Items: CAS: %d AC: %d (%d total)\n", e.casCount, e.acCount, totalCount)
