@@ -1354,6 +1354,61 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 	return buf, nil
 }
 
+// GetBlob reads a CAS blob, falling back to its chunked representation when
+// chunking is enabled and the blob is eligible for fallback.
+func GetBlob(ctx context.Context, cache interfaces.Cache, rn *digest.CASResourceName, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider) ([]byte, error) {
+	// A digest does not identify which storage representation was used, so try
+	// the canonical CAS resource before looking for a chunk manifest.
+	blob, err := cache.Get(ctx, rn.ToProto())
+	if err == nil {
+		return blob, nil
+	}
+	blobDigest := rn.GetDigest()
+	if !status.IsNotFoundError(err) ||
+		!chunkingEnabled ||
+		blobDigest.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes(ctx, efp) ||
+		chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, blobDigest.GetSizeBytes()) {
+		return nil, err
+	}
+	manifest, err := chunking.LoadManifest(ctx, cache, blobDigest, rn.GetInstanceName(), rn.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+	rns := manifest.ChunkResourceNames()
+	for _, chunkRN := range rns {
+		chunkRN.Compressor = rn.GetCompressor()
+	}
+	chunkData, err := cache.GetMulti(ctx, rns)
+	if err != nil {
+		return nil, err
+	}
+	remainingSize := blobDigest.GetSizeBytes()
+	if remainingSize < 0 {
+		return nil, status.NotFoundErrorf("invalid size for blob %s", blobDigest.GetHash())
+	}
+	for _, d := range manifest.ChunkDigests {
+		data, ok := chunkData[d]
+		if !ok {
+			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+		}
+		chunkSize := d.GetSizeBytes()
+		if chunkSize < 0 || chunkSize > remainingSize ||
+			(rn.GetCompressor() == repb.Compressor_IDENTITY && int64(len(data)) != chunkSize) {
+			return nil, status.NotFoundErrorf("invalid chunk %s for blob %s", d.GetHash(), blobDigest.GetHash())
+		}
+		remainingSize -= chunkSize
+	}
+	if remainingSize != 0 {
+		return nil, status.NotFoundErrorf("chunk sizes do not match blob %s", blobDigest.GetHash())
+	}
+	var buf []byte
+	for _, d := range manifest.ChunkDigests {
+		data := chunkData[d]
+		buf = append(buf, data...)
+	}
+	return buf, nil
+}
+
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
 // any chunks are available locally to reduce download from the remote CAS.
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {

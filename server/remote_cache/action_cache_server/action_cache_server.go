@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -129,8 +130,9 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			rn := digest.NewResourceName(dc.GetTreeDigest(), remoteInstanceName, rspb.CacheType_CAS, digestFunction).ToProto()
-			blob, err := cache.Get(gCtx, rn)
+			treeDigest := dc.GetTreeDigest()
+			rn := digest.NewCASResourceName(treeDigest, remoteInstanceName, digestFunction)
+			blob, err := content_addressable_storage_server.GetBlob(gCtx, cache, rn, chunkingEnabled, efp)
 			if err != nil {
 				return err
 			}

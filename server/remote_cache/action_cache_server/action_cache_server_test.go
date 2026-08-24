@@ -744,12 +744,9 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 			{Path: "output", TreeDigest: treeDigest},
 		},
 	}
-	// The validator currently checks only for the whole Tree blob, even when
-	// chunking is enabled, so it reports this complete chunked Tree as missing.
-	// A follow-up fix should flip this expectation to require.NoError.
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
-	require.Error(t, err)
-	assert.True(t, status.IsNotFoundError(err))
+	// With chunking enabled, the manifest and chunks make the Tree logically
+	// available, so the ActionResult should validate.
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
 
 	// With chunking disabled, validation should require the whole Tree blob and
 	// report a cache miss.

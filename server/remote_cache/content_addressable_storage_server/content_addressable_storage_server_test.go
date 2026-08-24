@@ -92,6 +92,19 @@ func (e *evilCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName
 	return rsp, err
 }
 
+type getErrorCache struct {
+	interfaces.Cache
+	cacheType rspb.CacheType
+	err       error
+}
+
+func (c *getErrorCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	if r.GetCacheType() == c.cacheType {
+		return nil, c.err
+	}
+	return c.Cache.Get(ctx, r)
+}
+
 type casCompressionCache struct {
 	interfaces.Cache
 }
@@ -1457,6 +1470,138 @@ func TestFindMissingBlobsDiscardsLegacyChunkedBlobForAvgChunkSizeOverride(t *tes
 	require.NoError(t, err)
 	require.Len(t, rsp.MissingBlobDigests, 1)
 	require.Equal(t, blobDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
+}
+
+func TestGetBlob(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	wholeBlob := []byte("whole blob")
+	wholeDigest, err := digest.Compute(bytes.NewReader(wholeBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	wholeRN := digest.NewCASResourceName(wholeDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, cache.Set(ctx, wholeRN.ToProto(), wholeBlob))
+
+	// The canonical blob is returned without attempting to read a manifest,
+	// even when chunking is enabled.
+	manifestErrorCache := &getErrorCache{
+		Cache:     cache,
+		cacheType: rspb.CacheType_AC,
+		err:       status.InternalError("unexpected manifest read"),
+	}
+	got, err := content_addressable_storage_server.GetBlob(ctx, manifestErrorCache, wholeRN, true, te.GetExperimentFlagProvider())
+	require.NoError(t, err)
+	require.Equal(t, wholeBlob, got)
+
+	// Errors other than NotFound are returned without attempting chunked
+	// fallback.
+	cacheErr := status.InternalError("cache read failed")
+	_, err = content_addressable_storage_server.GetBlob(ctx, &getErrorCache{
+		Cache:     cache,
+		cacheType: rspb.CacheType_CAS,
+		err:       cacheErr,
+	}, wholeRN, true, te.GetExperimentFlagProvider())
+	require.ErrorIs(t, err, cacheErr)
+
+	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 128)
+	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 128)
+	chunkedBlob := append(append([]byte{}, chunk1...), chunk2...)
+	chunkedDigest, err := digest.Compute(bytes.NewReader(chunkedBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
+	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
+	manifest := &chunking.Manifest{
+		BlobDigest:     chunkedDigest,
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest()},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.Store(ctx, cache))
+	chunkedRN := digest.NewCASResourceName(chunkedDigest, "", repb.DigestFunction_SHA256)
+
+	got, err = content_addressable_storage_server.GetBlob(ctx, cache, chunkedRN, true, te.GetExperimentFlagProvider())
+	require.NoError(t, err)
+	require.Equal(t, chunkedBlob, got)
+
+	// The requested compressor is propagated to each chunk read.
+	compressedRN := digest.NewCASResourceName(chunkedDigest, "", repb.DigestFunction_SHA256)
+	compressedRN.SetCompressor(repb.Compressor_ZSTD)
+	got, err = content_addressable_storage_server.GetBlob(ctx, &casCompressionCache{Cache: cache}, compressedRN, true, te.GetExperimentFlagProvider())
+	require.NoError(t, err)
+	require.Equal(t, chunkedBlob, zstdDecompress(t, got))
+
+	// Disabling chunking prevents manifest fallback.
+	_, err = content_addressable_storage_server.GetBlob(ctx, cache, chunkedRN, false, te.GetExperimentFlagProvider())
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+
+	// The fallback size threshold is non-inclusive.
+	thresholdDigest, err := digest.Compute(bytes.NewReader([]byte("x")), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	thresholdRN := digest.NewCASResourceName(thresholdDigest, "", repb.DigestFunction_SHA256)
+	_, err = content_addressable_storage_server.GetBlob(ctx, manifestErrorCache, thresholdRN, true, te.GetExperimentFlagProvider())
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+
+	// Missing chunks return NotFound rather than a partial blob.
+	missingBlob := []byte("blob with a missing chunk")
+	missingBlobDigest, err := digest.Compute(bytes.NewReader(missingBlob), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	missingChunkDigest, err := digest.Compute(bytes.NewReader(missingBlob[:len(missingBlob)/2]), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.NoError(t, (&chunking.Manifest{
+		BlobDigest:     missingBlobDigest,
+		ChunkDigests:   []*repb.Digest{missingChunkDigest},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}).StoreWithoutVerification(ctx, cache))
+	missingRN := digest.NewCASResourceName(missingBlobDigest, "", repb.DigestFunction_SHA256)
+	_, err = content_addressable_storage_server.GetBlob(ctx, cache, missingRN, true, te.GetExperimentFlagProvider())
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+
+	// An untrusted parent size cannot be used as an allocation hint before the
+	// manifest is validated.
+	hugeRN := digest.NewCASResourceName(&repb.Digest{
+		Hash:      strings.Repeat("b", 64),
+		SizeBytes: 1 << 62,
+	}, "", repb.DigestFunction_SHA256)
+	require.NoError(t, (&chunking.Manifest{
+		BlobDigest:     hugeRN.GetDigest(),
+		ChunkDigests:   []*repb.Digest{missingChunkDigest},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_SHA256,
+	}).StoreWithoutVerification(ctx, cache))
+	_, err = content_addressable_storage_server.GetBlob(ctx, cache, hugeRN, true, te.GetExperimentFlagProvider())
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+
+	// Legacy blobs in the chunk-size migration range skip manifest fallback.
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.avg_chunk_size_override": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "one_mb",
+			Variants: map[string]any{
+				"one_mb": 1 * 1024 * 1024,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+	legacyRN := digest.NewCASResourceName(&repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: 3 * 1024 * 1024,
+	}, "", repb.DigestFunction_SHA256)
+	_, err = content_addressable_storage_server.GetBlob(ctx, manifestErrorCache, legacyRN, true, fp)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
 }
 
 func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {

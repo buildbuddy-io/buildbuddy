@@ -15,6 +15,7 @@ go_library(
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/chunking",
+        "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
         "//server/util/authutil",
         "//server/util/bazel_request",
