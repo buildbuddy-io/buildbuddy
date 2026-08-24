@@ -866,7 +866,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       this.state.fullPathToModelMap.set(fullPath, model);
       this.state.fullPathToNodeMap.set(fullPath, node);
 
-      fetchDecorations(fullPath).then((newDecs) => {
+      fetchDecorations(this.currentOwner(), this.currentRepo(), fullPath).then((newDecs) => {
         if (!newDecs) {
           return;
         }

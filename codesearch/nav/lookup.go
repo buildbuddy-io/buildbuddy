@@ -17,7 +17,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/annotations"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/index"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/schema"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 )
+
+// maxReferenceFiles is the max number of files a ref panel can load.
+const maxReferenceFiles = 1000
 
 // File holds the per-file inputs annotations.Decorate needs, read from a single
 // indexed document.
@@ -94,6 +98,7 @@ func (l *DefLookup) FindDefs(ctx context.Context, importID, symbolLower string) 
 	for _, m := range matches {
 		doc := l.R.GetStoredDocument(m.Docid())
 		out = append(out, annotations.DefFile{
+			Owner:   string(doc.Field(schema.OwnerField).Contents()),
 			Repo:    string(doc.Field(schema.RepoField).Contents()),
 			Path:    string(doc.Field(schema.FilenameField).Contents()),
 			Content: doc.Field(schema.ContentField).Contents(),
@@ -115,10 +120,16 @@ func (l *DefLookup) FindReferencingFiles(ctx context.Context, importID string) (
 	if err != nil {
 		return nil, err
 	}
+	if len(matches) > maxReferenceFiles {
+		log.CtxInfof(ctx, "nav: %q has %d referencing files; scanning first %d",
+			importID, len(matches), maxReferenceFiles)
+		matches = matches[:maxReferenceFiles]
+	}
 	out := make([]annotations.RefFile, 0, len(matches))
 	for _, m := range matches {
 		doc := l.R.GetStoredDocument(m.Docid())
 		out = append(out, annotations.RefFile{
+			Owner:        string(doc.Field(schema.OwnerField).Contents()),
 			Repo:         string(doc.Field(schema.RepoField).Contents()),
 			Path:         string(doc.Field(schema.FilenameField).Contents()),
 			Content:      doc.Field(schema.ContentField).Contents(),
