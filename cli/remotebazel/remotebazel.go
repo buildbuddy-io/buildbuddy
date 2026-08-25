@@ -345,26 +345,8 @@ func runCommand(name string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-func isBinaryFile(path string) (bool, error) {
-	fileDetails, err := runCommand("file", "--mime", path)
-	if err != nil {
-		return false, fmt.Errorf("inspect file mime: %w", err)
-	}
-	isBinary := strings.Contains(fileDetails, "charset=binary")
-	return isBinary, nil
-}
-
 func diffUntrackedFile(path string) (string, error) {
-	isBinary, err := isBinaryFile(path)
-	if err != nil {
-		return "", fmt.Errorf("check whether %q is binary: %w", path, err)
-	}
-
-	args := []string{"diff", "--no-index", "/dev/null", path}
-	if isBinary {
-		args = append(args, "--binary")
-	}
-	patch, err := runGit(args...)
+	patch, err := runGit("diff", "--no-index", "--binary", "/dev/null", path)
 	if err != nil {
 		// `git diff` returns exit code 1 if there is (valid) diff. Explicitly
 		// check for this case.
@@ -552,50 +534,13 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 			duration.String(), totalSizeMB)
 	}()
 
-	modifiedFiles, err := runGit("diff", baseCommit, "--name-only")
-	if err != nil {
-		return nil, status.WrapError(err, "get modified files")
-	}
-	modifiedFiles = strings.Trim(modifiedFiles, "\n")
-
-	binaryFilesToExclude := make([]string, 0)
-	binaryFiles := make([]string, 0)
-	if modifiedFiles != "" {
-		for mf := range strings.SplitSeq(modifiedFiles, "\n") {
-			isBinary, err := isBinaryFile(mf)
-			if err != nil {
-				return nil, status.WrapError(err, "check binary file")
-			}
-			if isBinary {
-				binaryFilesToExclude = append(binaryFilesToExclude, fmt.Sprintf(":!%s", mf))
-				binaryFiles = append(binaryFiles, mf)
-			}
-		}
-	}
-
-	// Generate patches for non-binary files
-	args := []string{"diff", baseCommit}
-	if len(binaryFilesToExclude) > 0 {
-		args = append(args, binaryFilesToExclude...)
-	}
-	patch, err := runGit(args...)
+	// `--binary` is inert for a text diff and the only applyable form for a binary one.
+	patch, err := runGit("diff", "--binary", baseCommit)
 	if err != nil {
 		return nil, status.WrapError(err, "git diff")
 	}
 	if patch != "" {
 		patches = append(patches, []byte(patch))
-	}
-
-	// Generate patches for binary files
-	if len(binaryFiles) > 0 {
-		binaryArgs := append([]string{"diff", baseCommit, "--binary", "--"}, binaryFiles...)
-		binaryPatch, err := runGit(binaryArgs...)
-		if err != nil {
-			return nil, status.WrapError(err, "git diff --binary")
-		}
-		if binaryPatch != "" {
-			patches = append(patches, []byte(binaryPatch))
-		}
 	}
 
 	// Generate patches for non-tracked files
