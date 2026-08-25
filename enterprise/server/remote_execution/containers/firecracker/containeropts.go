@@ -49,9 +49,13 @@ type ContainerOpts struct {
 	// in the executor process.
 	BlockDevice *block_io.Device
 
-	// NetworkPool is an optional network pool which allows reusing networks
-	// across multiple VM instances.
-	NetworkPool *networking.VMNetworkPool
+	// ExternalNetworkPool and LocalNetworkPool are optional network pools
+	// which allow reusing networks across multiple VM instances. Networks
+	// with and without external networking are pooled separately, because
+	// the host firewall rules installed at network creation time differ
+	// between the two modes and last for the lifetime of the network.
+	ExternalNetworkPool *networking.VMNetworkPool
+	LocalNetworkPool    *networking.VMNetworkPool
 
 	// MarshalledDNSOverrides is an optional field to overrides DNS responses
 	// in the guest. It is the marshalled form of []*networking.DNSOverride

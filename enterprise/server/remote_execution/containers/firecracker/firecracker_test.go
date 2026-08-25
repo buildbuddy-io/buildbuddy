@@ -2766,13 +2766,70 @@ func TestFirecrackerRunWithNetworkPooling(t *testing.T) {
 				NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
 				ScratchDiskSizeMb: 100,
 			},
-			ExecutorConfig: getExecutorConfig(t),
-			NetworkPool:    networkPool,
+			ExecutorConfig:      getExecutorConfig(t),
+			ExternalNetworkPool: networkPool,
 		}
 		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 		require.NoError(t, err)
 		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
 		require.NoError(t, err)
+		assert.Equal(t, 0, res.ExitCode)
+		assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+	}
+}
+
+func TestFirecrackerRunWithNetworkPooling_MixedNetworkModes(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	externalNetworkPool := networking.NewVMNetworkPool(-1 /*use default size limit*/)
+	localNetworkPool := networking.NewVMNetworkPool(-1 /*use default size limit*/)
+	t.Cleanup(func() {
+		require.NoError(t, externalNetworkPool.Shutdown(ctx))
+		require.NoError(t, localNetworkPool.Shutdown(ctx))
+	})
+
+	newContainer := func(mode fcpb.NetworkMode) *firecracker.FirecrackerContainer {
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration: &fcpb.VMConfiguration{
+				NumCpus:           1,
+				MemSizeMb:         1000,
+				NetworkMode:       mode,
+				ScratchDiskSizeMb: 100,
+			},
+			ExecutorConfig:      getExecutorConfig(t),
+			ExternalNetworkPool: externalNetworkPool,
+			LocalNetworkPool:    localNetworkPool,
+		}
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+		require.NoError(t, err)
+		return c
+	}
+
+	// Run a VM with networking enabled but external networking disabled
+	// (NETWORK_MODE_LOCAL). Its network setup rejects all traffic forwarded
+	// through the host. On teardown the network goes back to a pool.
+	{
+		cmd := &repb.Command{Arguments: []string{"sh", "-c", "true"}}
+		c := newContainer(fcpb.NetworkMode_NETWORK_MODE_LOCAL)
+		res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+		require.NoError(t, res.Error)
+		require.Equal(t, 0, res.ExitCode)
+	}
+
+	// Run a VM with external networking, using the same pools. We expect it
+	// to reach the internet: the loopback-only network pooled by the previous
+	// VM must not be handed to a VM that requested external access.
+	{
+		googleDNS := "8.8.8.8"
+		cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W2", googleDNS}}
+		c := newContainer(fcpb.NetworkMode_NETWORK_MODE_EXTERNAL)
+		res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
 	}
