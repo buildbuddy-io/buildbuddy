@@ -364,7 +364,7 @@ func (p *prober) warmup() error {
 		_, err := p.cas.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 			InstanceName:   *instanceName,
 			DigestFunction: repb.DigestFunction_SHA256,
-			BlobDigests:    []*repb.Digest{{Hash: digest.EmptyHash, SizeBytes: 0}},
+			BlobDigests:    []*repb.Digest{{Hash: digest.EmptySha256, SizeBytes: 0}},
 		})
 		return err
 	})
