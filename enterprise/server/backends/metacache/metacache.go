@@ -568,11 +568,20 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		}
 		req.FileRecords = append(req.FileRecords, fileRecord)
 	}
+	if len(req.GetFileRecords()) == 0 {
+		return missing, nil // no valid digests to check
+	}
 	rsp, err := c.opts.MetadataClient.Find(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	for i, findRsp := range rsp.GetFindResponses() {
+	responses := rsp.GetFindResponses()
+	if len(responses) != len(requestedResources) {
+		// Aligned 1:1 is the server contract; a mismatch is a server bug.
+		log.CtxErrorf(ctx, "[%s] FindMissing metadata length %d != request length %d", c.opts.Name, len(responses), len(requestedResources))
+		return nil, status.InternalErrorf("metadata response length %d does not match request length %d", len(responses), len(requestedResources))
+	}
+	for i, findRsp := range responses {
 		if !findRsp.GetPresent() {
 			missing = append(missing, requestedResources[i].GetDigest())
 		}
