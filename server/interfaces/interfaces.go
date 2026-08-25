@@ -1511,6 +1511,12 @@ type DistributedLock interface {
 	Unlock(ctx context.Context) error
 }
 
+// GroupStatusChecker rejects API requests from groups whose status does not
+// allow them.
+type GroupStatusChecker interface {
+	CheckAllowed(ctx context.Context) error
+}
+
 // QuotaManager manages quota.
 type QuotaManager interface {
 	// Allow checks whether a user (identified from the ctx) has exceeded a rate
