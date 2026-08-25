@@ -543,23 +543,38 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	}
 	groupID := c.userGroupID(ctx)
 	req := &mdpb.FindRequest{
-		FileRecords: make([]*sgpb.FileRecord, len(resources)),
+		FileRecords: make([]*sgpb.FileRecord, 0, len(resources)),
 	}
+	// Resources with invalid digests are reported as missing rather than
+	// failing the whole batch. They are excluded from the Find request.
+	var missing []*repb.Digest
+	// requestedResources aliases resources until the first invalid digest,
+	// then diverges to a copy holding only the valid ones, so it stays
+	// index-aligned with req.FileRecords (and the FindResponses).
+	requestedResources := resources
 	for i, r := range resources {
 		fileRecord, err := c.makeFileRecord(groupID, encryption, r)
 		if err != nil {
-			return nil, err
+			missing = append(missing, r.GetDigest())
+			if len(requestedResources) == len(resources) {
+				// First invalid digest: all prior resources were valid,
+				// so seed the copy with them.
+				requestedResources = append(make([]*rspb.ResourceName, 0, len(resources)-1), resources[:i]...)
+			}
+			continue
 		}
-		req.FileRecords[i] = fileRecord
+		if len(requestedResources) != len(resources) {
+			requestedResources = append(requestedResources, r)
+		}
+		req.FileRecords = append(req.FileRecords, fileRecord)
 	}
 	rsp, err := c.opts.MetadataClient.Find(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	missing := make([]*repb.Digest, 0)
 	for i, findRsp := range rsp.GetFindResponses() {
 		if !findRsp.GetPresent() {
-			missing = append(missing, resources[i].GetDigest())
+			missing = append(missing, requestedResources[i].GetDigest())
 		}
 	}
 	return missing, nil
