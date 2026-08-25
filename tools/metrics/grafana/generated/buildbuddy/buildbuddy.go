@@ -257,6 +257,7 @@ func distributedCacheRow() *dashboard.RowBuilder {
 	methodPanel := func(method string) *timeseries.PanelBuilder {
 		filters := fmt.Sprintf(`region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="%s"`, method)
 		return ts("/"+method, dash.UnitSeconds).
+			AxisPlacement(common.AxisPlacementLeft).
 			Legend(rightLegend()).
 			Tooltip(multiTooltip()).
 			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
