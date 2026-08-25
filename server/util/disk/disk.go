@@ -345,11 +345,6 @@ func (w *writeMover) Commit() error {
 		return err
 	}
 	defer releaseQuota()
-	if *syncOnCommit {
-		if err := w.Sync(); err != nil {
-			return err
-		}
-	}
 	if w.anonymous {
 		// Fast path: try linking the anonymous file directly to finalPath.
 		// This is the common case (writing a new file). linkat fails with
@@ -373,12 +368,32 @@ func (w *writeMover) Commit() error {
 				return err
 			}
 		}
+		// Sync after linking, not before: on journaling filesystems
+		// (XFS/ext4), fsyncing the file also persists the link/rename that
+		// published it, since the directory update and the inode change
+		// share a journal transaction. Syncing before the link would leave
+		// a crash window where metadata written after Commit survives but
+		// the directory entry does not, so callers like pebble_cache's
+		// FindMissing (which consults only metadata) would advertise a
+		// blob that can't be read.
+		if *syncOnCommit {
+			if err := w.Sync(); err != nil {
+				return err
+			}
+		}
 		w.releaseTmpFileBytesMetric()
 		if err := w.File.Close(); err != nil {
 			return err
 		}
 		w.tmpFileIsClosed = true
 		return nil
+	}
+	// This fallback path closes the file before renaming it, so the sync
+	// makes the data durable but not the rename that publishes it.
+	if *syncOnCommit {
+		if err := w.Sync(); err != nil {
+			return err
+		}
 	}
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {
