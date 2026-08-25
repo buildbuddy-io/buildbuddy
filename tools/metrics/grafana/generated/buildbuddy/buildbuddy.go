@@ -2,6 +2,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/dash"
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
@@ -252,56 +254,27 @@ func workflowsRow() *dashboard.RowBuilder {
 }
 
 func distributedCacheRow() *dashboard.RowBuilder {
+	methodPanel := func(method string) *timeseries.PanelBuilder {
+		filters := fmt.Sprintf(`region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="%s"`, method)
+		return ts("/"+method, dash.UnitSeconds).
+			AxisPlacement(common.AxisPlacementLeft).
+			Legend(rightLegend()).
+			Tooltip(multiTooltip()).
+			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
+			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{`+filters+`}[${window}])) by (le))`, "P99").RefId("A")).
+			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{`+filters+`}[${window}])) by (le))`, "P95").RefId("B")).
+			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{`+filters+`}[${window}])) by (le))`, "P50").RefId("C")).
+			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{`+filters+`}[${window}])) by (grpc_service)`, "QPS").RefId("D"))
+	}
 	return row("Distributed Cache").
 		WithPanel(ts("Request Mix", "").
 			WithTarget(dash.PromQuery(`sum(rate(grpc_server_started_total{region="${region}", job="buildbuddy-app",grpc_service="distributed_cache.DistributedCache"}[${window}])) by (grpc_method)`, "{{grpc_method}}"))).
-		WithPanel(ts("/GetMulti", dash.UnitSeconds).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
-		WithPanel(ts("/FindMissing", dash.UnitSeconds).
-			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
-		WithPanel(ts("/Write", dash.UnitSeconds).
-			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
-		WithPanel(ts("/Read", dash.UnitSeconds).
-			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
+		WithPanel(methodPanel("Metadata")).
+		WithPanel(methodPanel("GetWithMetadata")).
+		WithPanel(methodPanel("GetMulti")).
+		WithPanel(methodPanel("FindMissing")).
+		WithPanel(methodPanel("Write")).
+		WithPanel(methodPanel("Read")).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
 			Legend(rightLegend()).
