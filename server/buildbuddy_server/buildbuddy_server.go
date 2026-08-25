@@ -371,6 +371,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			ExternalUserManagement:            g.ExternalUserManagement,
 			AllowedUserApiKeyCapabilities:     allowedUserAPIKeyCapabilities,
 			Status:                            g.Status,
+			BillingStatus:                     g.BillingStatus,
 		})
 	}
 	return groups, nil

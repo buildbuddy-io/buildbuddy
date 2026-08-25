@@ -157,6 +157,7 @@ type Claims struct {
 	CacheEncryptionEnabled bool                          `json:"cache_encryption_enabled,omitempty"`
 	EnforceIPRules         bool                          `json:"enforce_ip_rules,omitempty"`
 	GroupStatus            grpb.Group_GroupStatus        `json:"group_status,omitempty"`
+	BillingStatus          grpb.Group_BillingStatus      `json:"billing_status,omitempty"`
 	// TODO(vadim): remove this field
 	SAML        bool `json:"saml,omitempty"`
 	CustomerSSO bool `json:"customer_sso,omitempty"`
@@ -222,6 +223,10 @@ func (c *Claims) GetEnforceIPRules() bool {
 
 func (c *Claims) GetGroupStatus() grpb.Group_GroupStatus {
 	return grpb.Group_GroupStatus(c.GroupStatus)
+}
+
+func (c *Claims) GetBillingStatus() grpb.Group_BillingStatus {
+	return c.BillingStatus
 }
 
 func (c *Claims) IsSAML() bool {
@@ -329,6 +334,7 @@ func APIKeyGroupClaims(ctx context.Context, akg interfaces.APIKeyGroup) (*Claims
 		EnforceIPRules:             akg.GetEnforceIPRules(),
 		Impersonating:              akg.IsImpersonating(),
 		GroupStatus:                akg.GetGroupStatus(),
+		BillingStatus:              akg.GetBillingStatus(),
 	}, nil
 }
 
@@ -409,6 +415,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 	cacheEncryptionEnabled := false
 	enforceIPRules := false
 	groupStatus := grpb.Group_UNKNOWN_GROUP_STATUS
+	billingStatus := grpb.Group_UNKNOWN_BILLING_STATUS
 	var capabilities []cappb.Capability
 	for _, g := range u.Groups {
 		allowedGroups = append(allowedGroups, g.Group.GroupID)
@@ -421,6 +428,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 			cacheEncryptionEnabled = g.Group.CacheEncryptionEnabled
 			enforceIPRules = g.Group.EnforceIPRules
 			groupStatus = g.Group.Status
+			billingStatus = g.Group.BillingStatus
 			capabilities = g.Capabilities
 		}
 	}
@@ -433,6 +441,7 @@ func userClaims(u *tables.User, effectiveGroup string) (*Claims, error) {
 		CacheEncryptionEnabled: cacheEncryptionEnabled,
 		EnforceIPRules:         enforceIPRules,
 		GroupStatus:            groupStatus,
+		BillingStatus:          billingStatus,
 	}, nil
 }
 

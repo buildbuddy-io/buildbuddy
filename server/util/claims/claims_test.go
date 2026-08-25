@@ -105,6 +105,7 @@ type fakeAPIKeyGroup struct {
 	enforceIPRules         bool
 	impersonation          bool
 	groupStatus            grpb.Group_GroupStatus
+	billingStatus          grpb.Group_BillingStatus
 }
 
 func (f *fakeAPIKeyGroup) GetCapabilities() int32 {
@@ -145,6 +146,10 @@ func (f *fakeAPIKeyGroup) IsImpersonating() bool {
 
 func (f *fakeAPIKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 	return f.groupStatus
+}
+
+func (f *fakeAPIKeyGroup) GetBillingStatus() grpb.Group_BillingStatus {
+	return f.billingStatus
 }
 
 func TestAPIKeyGroupClaimsWithRequestContext(t *testing.T) {

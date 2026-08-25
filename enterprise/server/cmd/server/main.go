@@ -248,7 +248,7 @@ func main() {
 	if err := quota.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
-	realEnv.SetGroupStatusChecker(groupstatus.New())
+	realEnv.SetGroupStatusChecker(groupstatus.New(realEnv))
 
 	if err := redis_client.RegisterRemoteExecutionRedisClient(realEnv); err != nil {
 		log.Fatalf("%v", err)

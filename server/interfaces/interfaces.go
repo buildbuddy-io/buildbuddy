@@ -141,6 +141,7 @@ type UserInfo interface {
 	GetCacheEncryptionEnabled() bool
 	GetEnforceIPRules() bool
 	GetGroupStatus() grpb.Group_GroupStatus
+	GetBillingStatus() grpb.Group_BillingStatus
 	// IsCustomerSSO indicates whether the user logged in via a customer SSO integration (SAML/OIDC).
 	IsCustomerSSO() bool
 }
@@ -511,6 +512,7 @@ type APIKeyGroup interface {
 	GetEnforceIPRules() bool
 	IsImpersonating() bool
 	GetGroupStatus() grpb.Group_GroupStatus
+	GetBillingStatus() grpb.Group_BillingStatus
 }
 
 type AuthDB interface {
@@ -1514,7 +1516,7 @@ type DistributedLock interface {
 // GroupStatusChecker rejects API requests from groups whose status does not
 // allow them.
 type GroupStatusChecker interface {
-	CheckAllowed(ctx context.Context) error
+	CheckAllowed(ctx context.Context, method string) error
 }
 
 // QuotaManager manages quota.

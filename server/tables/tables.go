@@ -274,6 +274,10 @@ type Group struct {
 	// The status of the group: free tier, enterprise, etc.
 	Status grpb.Group_GroupStatus `gorm:"not null;default:1"`
 
+	// The billing state of the group, such as having exceeded its usage
+	// allowance. Independent of Status.
+	BillingStatus grpb.Group_BillingStatus `gorm:"not null;default:1"`
+
 	// Information about the request that created this group. The user agent
 	// size must be at least useragent.MaxLength, otherwise MySQL defaults to
 	// varchar(255) and rejects longer values.

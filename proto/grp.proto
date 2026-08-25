@@ -125,6 +125,19 @@ message Group {
 
   // The status of the group.
   GroupStatus status = 21;
+
+  enum BillingStatus {
+    UNKNOWN_BILLING_STATUS = 0;
+
+    // The group is in good standing.
+    OK_BILLING_STATUS = 1;
+
+    // The group has used up its usage allowance for the current period.
+    USAGE_LIMIT_EXCEEDED_BILLING_STATUS = 2;
+  }
+
+  // The billing status of the group.
+  BillingStatus billing_status = 22;
 }
 
 message JoinGroupRequest {

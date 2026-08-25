@@ -478,7 +478,7 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 func groupStatusUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if gs := env.GetGroupStatusChecker(); gs != nil {
-			if err := gs.CheckAllowed(ctx); err != nil {
+			if err := gs.CheckAllowed(ctx, info.FullMethod); err != nil {
 				return nil, err
 			}
 		}
@@ -489,7 +489,7 @@ func groupStatusUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInte
 func groupStatusStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
 	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if gs := env.GetGroupStatusChecker(); gs != nil {
-			if err := gs.CheckAllowed(stream.Context()); err != nil {
+			if err := gs.CheckAllowed(stream.Context(), info.FullMethod); err != nil {
 				return err
 			}
 		}

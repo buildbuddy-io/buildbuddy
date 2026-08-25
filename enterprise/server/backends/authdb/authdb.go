@@ -190,6 +190,7 @@ type apiKeyGroup struct {
 	EnforceIPRules         bool
 	Impersonation          bool
 	Status                 int32
+	BillingStatus          int32
 }
 
 func (g *apiKeyGroup) GetAPIKeyID() string {
@@ -236,6 +237,10 @@ func (g *apiKeyGroup) GetGroupStatus() grpb.Group_GroupStatus {
 	return grpb.Group_GroupStatus(g.Status)
 }
 
+func (g *apiKeyGroup) GetBillingStatus() grpb.Group_BillingStatus {
+	return grpb.Group_BillingStatus(g.BillingStatus)
+}
+
 // apiKeyGroupRow contains a single row from a DB lookup for an API key.
 // The data contains columns from both the APIKey and Group tables.
 // toAPIKeyGroup converts the data to the more compact apiKeyGroup
@@ -250,6 +255,7 @@ type apiKeyGroupRow struct {
 	EnforceIPRules         bool
 	IsParent               bool
 	GroupStatus            int32 `gorm:"column:group_status"`
+	BillingStatus          int32 `gorm:"column:billing_status"`
 	// Role from direct group membership for user-owned keys.
 	DirectMembershipRole *uint32 `gorm:"column:direct_membership_role"`
 	// Role from indirect membership via user lists for user-owned keys.
@@ -268,6 +274,7 @@ func (r *apiKeyGroupRow) toAPIKeyGroup() *apiKeyGroup {
 		EnforceIPRules:         r.EnforceIPRules,
 		Impersonation:          r.Impersonation,
 		Status:                 r.GroupStatus,
+		BillingStatus:          r.BillingStatus,
 	}
 }
 
@@ -650,7 +657,8 @@ func (d *AuthDB) newAPIKeyLookupQuery(subDomain string) *query_builder.Query {
 			g.cache_encryption_enabled,
 			g.enforce_ip_rules,
 			g.is_parent,
-			g.status AS group_status
+			g.status AS group_status,
+			g.billing_status
 		FROM "APIKeys" AS ak
 		JOIN "Groups" AS g ON ak.group_id = g.group_id
 		LEFT JOIN "UserGroups" AS ug
