@@ -38,6 +38,7 @@ var (
 	tmpWriteFileRe = regexp.MustCompile(`\.[0-9a-zA-Z]{10}\.tmp$`)
 
 	fileWriterConcurrencyLimit = flag.Int("file_writer_concurrency_limit", 5_000, "Limit on concurrent file writer operations that may result in syscalls. Can be disabled by setting the value to 0.")
+	syncOnCommit               = flag.Bool("disk.sync_on_commit", false, "Whether disk.FileWriterWithTmpDir should sync the file on commit")
 )
 
 type Partition struct {
@@ -344,6 +345,11 @@ func (w *writeMover) Commit() error {
 		return err
 	}
 	defer releaseQuota()
+	if *syncOnCommit {
+		if err := w.Sync(); err != nil {
+			return err
+		}
+	}
 	if w.anonymous {
 		// Fast path: try linking the anonymous file directly to finalPath.
 		// This is the common case (writing a new file). linkat fails with

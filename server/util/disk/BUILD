@@ -50,6 +50,7 @@ go_test(
     deps = [
         ":disk",
         "//server/testutil/testfs",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ] + select({
         "@io_bazel_rules_go//go/platform:linux": [
