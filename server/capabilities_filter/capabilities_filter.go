@@ -13,6 +13,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 var (
@@ -306,6 +307,9 @@ func AuthorizeRPC(ctx context.Context, env environment.Env, rpcName string) erro
 	u, err := env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err == nil {
 		groupID = u.GetGroupID()
+		if u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS && !u.IsImpersonating() && rpcName != buildBuddyServicePrefix+"GetUser" {
+			return status.PermissionDeniedError("permission denied")
+		}
 	}
 
 	if !slices.Contains(AllowedRPCs(ctx, env, groupID), rpcName) {

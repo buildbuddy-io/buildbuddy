@@ -16,6 +16,7 @@ import (
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 var (
@@ -258,6 +259,39 @@ func TestAllowedRPCs(t *testing.T) {
 			} else {
 				assert.Error(t, authErr)
 				assert.NotContains(t, allowedRPCs, test.RPC)
+			}
+		})
+	}
+}
+
+func TestAuthorizeRPC_GroupStatus(t *testing.T) {
+	for _, test := range []struct {
+		Name          string
+		RPC           string
+		Status        grpb.Group_GroupStatus
+		Impersonating bool
+		Allowed       bool
+	}{
+		{Name: "Blocked_GetUser_Allowed", RPC: buildBuddyServicePrefix + "GetUser", Status: grpb.Group_BLOCKED_GROUP_STATUS, Allowed: true},
+		{Name: "Blocked_GetInvocation_NotAllowed", RPC: buildBuddyServicePrefix + "GetInvocation", Status: grpb.Group_BLOCKED_GROUP_STATUS, Allowed: false},
+		{Name: "Blocked_SearchInvocation_NotAllowed", RPC: buildBuddyServicePrefix + "SearchInvocation", Status: grpb.Group_BLOCKED_GROUP_STATUS, Allowed: false},
+		{Name: "Blocked_Impersonating_Allowed", RPC: buildBuddyServicePrefix + "SearchInvocation", Status: grpb.Group_BLOCKED_GROUP_STATUS, Impersonating: true, Allowed: true},
+		{Name: "FreeTier_SearchInvocation_Allowed", RPC: buildBuddyServicePrefix + "SearchInvocation", Status: grpb.Group_FREE_TIER_GROUP_STATUS, Allowed: true},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			users := testauth.TestUsers("US1", "GR1")
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+			u := users["US1"].(*testauth.TestUser)
+			u.GroupStatus = test.Status
+			u.Impersonating = test.Impersonating
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), u)
+
+			err := capabilities_filter.AuthorizeRPC(ctx, env, test.RPC)
+			if test.Allowed {
+				assert.NoError(t, err)
+			} else {
+				assert.Error(t, err)
 			}
 		})
 	}
