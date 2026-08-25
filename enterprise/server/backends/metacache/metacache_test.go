@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
@@ -194,6 +195,73 @@ func TestFindMissing(t *testing.T) {
 			require.Empty(t, missing)
 		})
 	}
+}
+
+// Invalid digests can't be looked up, so FindMissing must report them as
+// missing (like pebble_cache does) rather than failing the whole batch.
+func TestFindMissingWithInvalidDigests(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
+
+	options := metacache.Options{
+		Name: "TestFindMissingWithInvalidDigests",
+
+		MaxInlineFileSizeBytes:      1000,
+		MinBytesAutoZstdCompression: 100,
+
+		GCSTTLDays: 1,
+	}
+	bc := runMetacache(t, te, clock, options)
+
+	present, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, bc.Set(ctx, present, buf))
+	absent, _ := testdigest.RandomCASResourceBuf(t, 100)
+
+	badHashLength := &rspb.ResourceName{
+		Digest:         &repb.Digest{Hash: "invalid-hash", SizeBytes: 100},
+		CacheType:      rspb.CacheType_CAS,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	notHex := &rspb.ResourceName{
+		Digest: &repb.Digest{
+			Hash:      "ZZZZc44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			SizeBytes: 100,
+		},
+		CacheType:      rspb.CacheType_CAS,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	negativeSize := &rspb.ResourceName{
+		Digest: &repb.Digest{
+			Hash:      strings.Repeat("a", 64),
+			SizeBytes: -1,
+		},
+		CacheType:      rspb.CacheType_CAS,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+
+	// Interleave invalid digests between valid ones so a positional bug
+	// would misattribute or run off the end of the responses.
+	rns := []*rspb.ResourceName{badHashLength, present, notHex, absent, negativeSize}
+	missing, err := bc.FindMissing(ctx, rns)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{
+		badHashLength.GetDigest(),
+		notHex.GetDigest(),
+		absent.GetDigest(),
+		negativeSize.GetDigest(),
+	}, missing)
+
+	// A batch with only invalid digests reports all of them missing.
+	missing, err = bc.FindMissing(ctx, []*rspb.ResourceName{badHashLength, notHex})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []*repb.Digest{badHashLength.GetDigest(), notHex.GetDigest()}, missing)
+
+	// Contains goes through FindMissing and must say false, not error.
+	contains, err := bc.Contains(ctx, badHashLength)
+	require.NoError(t, err)
+	require.False(t, contains)
 }
 
 func generateKMSKey(t *testing.T, kmsDir string, id string) string {
