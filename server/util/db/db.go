@@ -718,6 +718,11 @@ func setDBOptions(driver string, gdb *gorm.DB) error {
 	// SQLITE Special! To avoid "database is locked errors":
 	if driver == sqliteDriver {
 		db.SetMaxOpenConns(1)
+		// An in-memory sqlite DB lives and dies with this single
+		// connection, so keep it idle forever and never expire it.
+		db.SetMaxIdleConns(1)
+		db.SetConnMaxLifetime(0)
+		db.SetConnMaxIdleTime(0)
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	} else {
 		if *maxOpenConns != 0 {
