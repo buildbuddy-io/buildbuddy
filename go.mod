@@ -48,6 +48,7 @@ require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.46.1-0.20260605085020-0da5b91b1c2c
 	github.com/GoogleCloudPlatform/cloudsql-proxy v1.35.0
 	github.com/Masterminds/semver/v3 v3.4.0
+	github.com/NVIDIA/go-nvml v0.13.3-1
 	github.com/RoaringBitmap/roaring v1.9.1
 	github.com/VictoriaMetrics/metrics v1.33.1
 	github.com/anishathalye/porcupine v1.1.0

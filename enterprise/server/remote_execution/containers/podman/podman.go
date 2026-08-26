@@ -20,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -428,7 +429,14 @@ func (c *podmanCommandContainer) doWithStatsTracking(ctx context.Context, runPod
 		if err != nil {
 			return nil, err
 		}
-		return c.cgroupPaths.Stats(ctx, cid, c.blockDevice)
+		stats, err := c.cgroupPaths.Stats(ctx, cid, c.blockDevice)
+		if err != nil {
+			return nil, err
+		}
+		if c.cgroupPaths.CgroupVersion() == 2 {
+			stats.GpuUsage = gpu.CgroupUsage(c.cgroupPaths.V2Dir(cid))
+		}
+		return stats, nil
 	})
 	res := runPodmanFn(ctx)
 	stop()

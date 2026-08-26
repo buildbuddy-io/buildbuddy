@@ -719,6 +719,7 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 	timestampsMillis := timeseries.DeltaDecode(stats.GetTimeline().GetTimestamps())
 	cumulativeCPUMillis := timeseries.DeltaDecode(stats.GetTimeline().GetCpuSamples())
 	memoryUsageKB := timeseries.DeltaDecode(stats.GetTimeline().GetMemoryKbSamples())
+	gpuMemoryUsageKB := timeseries.DeltaDecode(stats.GetTimeline().GetGpuUsage().GetTotalMemoryKbSamples())
 	cumulativeDiskRbytes := timeseries.DeltaDecode(stats.GetTimeline().GetRbytesTotalSamples())
 	cumulativeDiskWbytes := timeseries.DeltaDecode(stats.GetTimeline().GetWbytesTotalSamples())
 	cumulativeDiskRios := timeseries.DeltaDecode(stats.GetTimeline().GetRiosTotalSamples())
@@ -734,6 +735,9 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 	}
 	if len(memoryUsageKB) > 0 && len(timestampsMillis) != len(memoryUsageKB) {
 		return status.UnknownErrorf("length mismatch: timestamps[%d], memory[%d]", len(timestampsMillis), len(memoryUsageKB))
+	}
+	if len(gpuMemoryUsageKB) > 0 && len(timestampsMillis) != len(gpuMemoryUsageKB) {
+		return status.UnknownErrorf("length mismatch: timestamps[%d], GPU memory[%d]", len(timestampsMillis), len(gpuMemoryUsageKB))
 	}
 	if len(cumulativeDiskRbytes) > 0 && len(timestampsMillis) != len(cumulativeDiskRbytes) {
 		return status.UnknownErrorf("length mismatch: timestamps[%d], disk read bytes[%d]", len(timestampsMillis), len(cumulativeDiskRbytes))
@@ -865,6 +869,10 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 	for _, m := range memoryUsageKB {
 		memoryUsage = append(memoryUsage, float64(m))
 	}
+	var gpuMemoryUsage []float64
+	for _, m := range gpuMemoryUsageKB {
+		gpuMemoryUsage = append(gpuMemoryUsage, float64(m))
+	}
 
 	// Derive disk bandwidth in MB/s.
 	const diskBandwidthScale = 1e-3 // 1 byte/ms = 1e-3 MB/s
@@ -891,6 +899,11 @@ func (es *ExecutionService) WriteExecutionProfile(ctx context.Context, w io.Writ
 			name: "Memory usage (KB)",
 			key:  "memory",
 			data: memoryUsage,
+		},
+		{
+			name: "GPU memory usage (KB)",
+			key:  "gpu-memory",
+			data: gpuMemoryUsage,
 		},
 		{
 			name: "Disk read bandwidth (MB/s)",
