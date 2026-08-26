@@ -41,11 +41,8 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         content = [
             "set -x",
             "unset -v PYTHONSAFEPATH",
-            "if [ -n \"${1}\" ]; then",
-            "  read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
-            "else",
-            "  shift",
-            "fi",
+            "read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
+            "shift",
             "{gsutil} {util_options} cp {copy_options} \"${{@}}\" \"gs://{bucket}/{prefix}${{SHA_PREFIX}}\"".format(
                 gsutil = gsutil,
                 util_options = util_options,
@@ -58,9 +55,18 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         **kwargs
     )
 
+    to_copy = ["../$(rlocationpath {})".format(src) for src in srcs]
+    if sha_prefix != "":
+        sha_prefix_location = "../$(rlocationpath {})".format(sha_prefix)
+        # copy the sha_prefix file if it exists.
+        to_copy.append(sha_prefix_location)
+    else:
+        sha_prefix_location = "/dev/null"
+
     sh_binary(
         name = name + ".apply",
-        args = ["../$(rlocationpaths %s)" % sha_prefix if sha_prefix != "" else ""] + ["../$(rlocationpaths %s)" % src for src in srcs],
+        # the first argument is where to read the sha_prefix from.
+        args = [sha_prefix_location] + to_copy,
         srcs = [":" + name + ".push_only.script"],
         data = srcs + ([sha_prefix] if sha_prefix != "" else []),
         use_bash_launcher = True,
@@ -69,7 +75,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".push_only",
-        args = ["../$(rlocationpaths %s)" % sha_prefix if sha_prefix != "" else ""] + ["../$(rlocationpaths %s)" % src for src in srcs],
+        args = [sha_prefix_location] + to_copy,
         srcs = [":" + name + ".push_only.script"],
         data = srcs + ([sha_prefix] if sha_prefix != "" else []),
         use_bash_launcher = True,
@@ -111,6 +117,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     sh_binary(
         name = name + ".diff",
         srcs = [":" + name + ".diff.script"],
+        use_bash_launcher = True,
         **kwargs
     )
 
@@ -119,6 +126,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".delete.script",
         out = name + ".delete.out",
         content = [
+            "set -e",
             "unset -v PYTHONSAFEPATH",
             "if [ -n \"${1}\" ]; then",
             "  read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
