@@ -13,10 +13,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 
@@ -32,6 +34,8 @@ const cacheDigestFunction = repb.DigestFunction_SHA256
 type OCIFetcherServerProxy struct {
 	remote        ofpb.OCIFetcherClient
 	localBSClient bspb.ByteStreamClient
+	localCache    interfaces.Cache
+	authenticator interfaces.Authenticator
 	// fetchGroup deduplicates concurrent FetchBlob requests for the same
 	// blob and credentials. The leader fetches from the upstream (apps)
 	// and writes to local BSS; waiters block until the leader finishes,
@@ -55,9 +59,14 @@ func New(env environment.Env) (*OCIFetcherServerProxy, error) {
 	if env.GetLocalByteStreamClient() == nil {
 		return nil, status.FailedPreconditionError("A LocalByteStreamClient is required to enable the OCIFetcherServerProxy")
 	}
+	if env.GetCache() == nil {
+		return nil, status.FailedPreconditionError("A local cache is required to enable the OCIFetcherServerProxy")
+	}
 	return &OCIFetcherServerProxy{
 		remote:        env.GetOCIFetcherClient(),
 		localBSClient: env.GetLocalByteStreamClient(),
+		localCache:    env.GetCache(),
+		authenticator: env.GetAuthenticator(),
 	}, nil
 }
 
@@ -88,9 +97,10 @@ func (s *OCIFetcherServerProxy) FetchBlob(req *ofpb.FetchBlobRequest, stream ofp
 
 	// Also check FailedPrecondition: cachetools.GetBlob wraps NotFound cache
 	// misses as FailedPrecondition via MissingDigestError.
-	if err := fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, &grpcStreamWriter{stream: stream}); err == nil {
+	localWriter := &grpcStreamWriter{stream: stream}
+	if err := fetchBlobFromLocalBS(ctx, s.localBSClient, hash, size, localWriter); err == nil {
 		return nil // local cache hit
-	} else if !status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err) {
+	} else if localWriter.bytesWritten > 0 || (!status.IsNotFoundError(err) && !status.IsFailedPreconditionError(err)) {
 		return err
 	}
 
@@ -153,6 +163,17 @@ func (s *OCIFetcherServerProxy) dedupedFetchBlob(ctx context.Context, stream ofp
 // and writes it to the local byte stream cache. It does not stream to any
 // caller; callers read from local BSS after this completes.
 func (s *OCIFetcherServerProxy) fetchBlobFromUpstreamToLocalBS(ctx context.Context, req *ofpb.FetchBlobRequest, hash ctr.Hash, size int64) error {
+	// A stale local cache index can cause the ByteStream writer to report
+	// AlreadyExists without storing any of the upstream bytes. Evict first so
+	// this fetch is guaranteed to replace an unreadable entry.
+	cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
+	if err != nil {
+		return err
+	}
+	if err := ocicache.DeleteBlobFromCache(cacheCtx, s.localCache, hash, size); err != nil {
+		return status.UnavailableErrorf("could not evict unreadable local blob before refetch: %s", err)
+	}
+
 	remoteStream, err := s.remote.FetchBlob(ctx, req)
 	if err != nil {
 		return err
@@ -207,12 +228,14 @@ func newLocalBSWriter(ctx context.Context, bsClient bspb.ByteStreamClient, hash 
 }
 
 type grpcStreamWriter struct {
-	stream ofpb.OCIFetcher_FetchBlobServer
+	stream       ofpb.OCIFetcher_FetchBlobServer
+	bytesWritten int64
 }
 
 func (w *grpcStreamWriter) Write(p []byte) (int, error) {
 	if err := w.stream.Send(&ofpb.FetchBlobResponse{Data: p}); err != nil {
 		return 0, err
 	}
+	w.bytesWritten += int64(len(p))
 	return len(p), nil
 }

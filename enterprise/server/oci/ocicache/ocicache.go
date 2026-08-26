@@ -218,6 +218,34 @@ func blobHit(ctx context.Context) {
 	updateCacheEventMetric(metrics.OCIBlobResourceTypeLabel, metrics.HitStatusLabel)
 }
 
+func blobResourceName(cache interfaces.Cache, hash ctr.Hash, contentLength int64) *digest.CASResourceName {
+	blobCASDigest := &repb.Digest{
+		Hash:      hash.Hex,
+		SizeBytes: contentLength,
+	}
+	blobRN := digest.NewCASResourceName(
+		blobCASDigest,
+		blobInstanceName,
+		cacheDigestFunction,
+	)
+	if cache == nil || cache.SupportsCompressor(repb.Compressor_ZSTD) {
+		blobRN.SetCompressor(repb.Compressor_ZSTD)
+	}
+	return blobRN
+}
+
+// DeleteBlobFromCache evicts blob data from the CAS so that a subsequent
+// ByteStream upload cannot be short-circuited by a stale Contains result.
+func DeleteBlobFromCache(ctx context.Context, cache interfaces.Cache, hash ctr.Hash, contentLength int64) error {
+	if cache == nil {
+		return status.FailedPreconditionError("cache not configured")
+	}
+	if err := cache.Delete(ctx, blobResourceName(cache, hash, contentLength).ToProto()); err != nil && !status.IsNotFoundError(err) {
+		return err
+	}
+	return nil
+}
+
 func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash ctr.Hash, contentLength int64) error {
 	blobCASDigest := &repb.Digest{
 		Hash:      hash.Hex,

@@ -28,6 +28,7 @@ import (
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gproto "google.golang.org/protobuf/proto"
@@ -35,7 +36,9 @@ import (
 
 func TestNew_MissingOCIFetcherClient(t *testing.T) {
 	env := testenv.GetTestEnv(t)
-	env.SetLocalByteStreamClient(setupLocalBSClient(t))
+	localBSClient, localCache := setupLocalBSClient(t)
+	env.SetLocalByteStreamClient(localBSClient)
+	env.SetCache(localCache)
 	// Don't set OCIFetcherClient
 
 	_, err := New(env)
@@ -229,6 +232,70 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 			require.Empty(t, cmp.Diff(req, remoteClient.fetchBlobRequest, protocmp.Transform()))
 		})
 	}
+}
+
+type staleLocalCache struct {
+	interfaces.Cache
+	mu         sync.Mutex
+	targetHash string
+	stale      bool
+}
+
+func (c *staleLocalCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	c.mu.Lock()
+	stale := c.stale && r.GetDigest().GetHash() == c.targetHash
+	c.mu.Unlock()
+	if stale {
+		return true, nil
+	}
+	return c.Cache.Contains(ctx, r)
+}
+
+func (c *staleLocalCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	c.mu.Lock()
+	stale := c.stale && r.GetDigest().GetHash() == c.targetHash
+	c.mu.Unlock()
+	if stale {
+		return nil, status.NotFoundError("stale local cache index")
+	}
+	return c.Cache.Reader(ctx, r, uncompressedOffset, limit)
+}
+
+func (c *staleLocalCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
+	c.mu.Lock()
+	if r.GetDigest().GetHash() == c.targetHash {
+		c.stale = false
+	}
+	c.mu.Unlock()
+	return c.Cache.Delete(ctx, r)
+}
+
+func TestFetchBlob_RepairsStaleLocalCacheIndex(t *testing.T) {
+	flags.Set(t, "cache.max_direct_write_size_bytes", 1)
+	ctx := context.Background()
+	const ref = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+	expected := []byte("hello")
+
+	localEnv := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, localEnv, interfaces.ClientIdentityApp)
+	localCache := &staleLocalCache{
+		Cache:      localEnv.GetCache(),
+		targetHash: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+		stale:      true,
+	}
+	localEnv.SetCache(localCache)
+	_, runLocalServer, lis := testenv.RegisterLocalGRPCServer(t, localEnv)
+	testcache.Setup(t, localEnv, lis)
+	go runLocalServer()
+
+	remote := &countingOCIFetcherClient{inner: &recordingOCIFetcherClient{}}
+	proxyClient := runOCIFetcherProxyWithLocalCache(ctx, t, remote, localEnv.GetByteStreamClient(), localCache)
+	for i := 0; i < 2; i++ {
+		stream, err := proxyClient.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: ref})
+		require.NoError(t, err)
+		require.Equal(t, expected, collectBlobData(t, stream))
+	}
+	require.Equal(t, int32(1), remote.fetchBlobCount.Load())
 }
 
 // TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
@@ -795,14 +862,14 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 }
 
 // setupLocalBSClient creates a standalone local BS cache env and returns
-// a ByteStream client connected to it.
-func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
+// a ByteStream client connected to it and the cache backing that client.
+func setupLocalBSClient(t *testing.T) (bspb.ByteStreamClient, interfaces.Cache) {
 	te := testenv.GetTestEnv(t)
 	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, lis)
 	go runServer()
-	return te.GetByteStreamClient()
+	return te.GetByteStreamClient(), te.GetCache()
 }
 
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
@@ -829,9 +896,15 @@ func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteSt
 // runOCIFetcherProxy sets up the proxy server connecting to the remote client
 // and returns a client connected to the proxy.
 func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient) ofpb.OCIFetcherClient {
+	localBSClient, localCache := setupLocalBSClient(t)
+	return runOCIFetcherProxyWithLocalCache(ctx, t, remoteClient, localBSClient, localCache)
+}
+
+func runOCIFetcherProxyWithLocalCache(ctx context.Context, t *testing.T, remoteClient ofpb.OCIFetcherClient, localBSClient bspb.ByteStreamClient, localCache interfaces.Cache) ofpb.OCIFetcherClient {
 	env := testenv.GetTestEnv(t)
 	env.SetOCIFetcherClient(remoteClient)
-	env.SetLocalByteStreamClient(setupLocalBSClient(t))
+	env.SetLocalByteStreamClient(localBSClient)
+	env.SetCache(localCache)
 
 	proxy, err := New(env)
 	require.NoError(t, err)

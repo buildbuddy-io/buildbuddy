@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -191,6 +192,30 @@ func TestManifestWrittenOnlyToAC(t *testing.T) {
 
 	require.Equal(t, contentType, mc.ContentType)
 	require.Empty(t, cmp.Diff(raw, mc.Raw))
+}
+
+func TestDeleteBlobFromCache(t *testing.T) {
+	te := setupTestEnv(t)
+	layerBuf, repo, hash, contentType := createLayer(t, "delete_blob_from_cache", 1024)
+	contentLength := int64(len(layerBuf))
+	ctx := context.Background()
+	bsClient := te.GetByteStreamClient()
+	acClient := te.GetActionCacheClient()
+
+	err := ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
+
+	cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	err = ocicache.DeleteBlobFromCache(cacheCtx, te.GetCache(), hash, contentLength)
+	require.NoError(t, err)
+	err = ocicache.FetchBlobFromCache(ctx, io.Discard, bsClient, hash, contentLength)
+	require.Error(t, err)
+
+	err = ocicache.WriteBlobToCache(ctx, bytes.NewReader(layerBuf), bsClient, acClient, repo, hash, contentType, contentLength)
+	require.NoError(t, err)
+	fetchAndCheckBlob(t, te, layerBuf, repo, hash, contentType)
 }
 
 func TestWriteAndFetchBlob(t *testing.T) {

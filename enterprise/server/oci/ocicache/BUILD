@@ -44,6 +44,7 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testenv",
         "//server/util/bazel_request",
+        "//server/util/prefix",
         "//server/util/random",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",

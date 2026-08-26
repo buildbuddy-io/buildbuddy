@@ -1,7 +1,9 @@
 package ociregistry_test
 
 import (
+	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"fmt"
 	"io"
 	"net"
@@ -14,16 +16,306 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+type failBlobReadOnceByteStreamClient struct {
+	bspb.ByteStreamClient
+	hash   string
+	failed atomic.Bool
+}
+
+func (c *failBlobReadOnceByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	if strings.Contains(req.GetResourceName(), c.hash) && c.failed.CompareAndSwap(false, true) {
+		return nil, status.NotFoundError("blob data missing")
+	}
+	return c.ByteStreamClient.Read(ctx, req, opts...)
+}
+
+type faultingBlobCache struct {
+	interfaces.Cache
+
+	mu         sync.Mutex
+	targetHash string
+	stale      bool
+	readErr    error
+	failAfter  int64
+}
+
+func (c *faultingBlobCache) setReadFault(hash string, err error, failAfter int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.targetHash = hash
+	c.readErr = err
+	c.failAfter = failAfter
+}
+
+func (c *faultingBlobCache) setStale(hash string, stale bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.targetHash = hash
+	c.stale = stale
+}
+
+func (c *faultingBlobCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	c.mu.Lock()
+	stale := c.stale && r.GetDigest().GetHash() == c.targetHash
+	c.mu.Unlock()
+	if stale {
+		return true, nil
+	}
+	return c.Cache.Contains(ctx, r)
+}
+
+func (c *faultingBlobCache) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	missing, err := c.Cache.FindMissing(ctx, resources)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	stale := c.stale
+	targetHash := c.targetHash
+	c.mu.Unlock()
+	if !stale {
+		return missing, nil
+	}
+	filtered := missing[:0]
+	for _, d := range missing {
+		if d.GetHash() != targetHash {
+			filtered = append(filtered, d)
+		}
+	}
+	return filtered, nil
+}
+
+func (c *faultingBlobCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	c.mu.Lock()
+	isTarget := r.GetDigest().GetHash() == c.targetHash
+	stale := c.stale
+	readErr := c.readErr
+	failAfter := c.failAfter
+	c.mu.Unlock()
+	if isTarget && stale {
+		return nil, status.NotFoundError("stale cache index points to missing blob data")
+	}
+	reader, err := c.Cache.Reader(ctx, r, uncompressedOffset, limit)
+	if err != nil {
+		return nil, err
+	}
+	if isTarget && readErr != nil {
+		return &faultingReader{ReadCloser: reader, failAfter: failAfter, err: readErr}, nil
+	}
+	return reader, nil
+}
+
+func (c *faultingBlobCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
+	c.mu.Lock()
+	if r.GetDigest().GetHash() == c.targetHash {
+		c.stale = false
+	}
+	c.mu.Unlock()
+	return c.Cache.Delete(ctx, r)
+}
+
+type faultingReader struct {
+	io.ReadCloser
+	bytesRead int64
+	failAfter int64
+	err       error
+}
+
+func (r *faultingReader) Read(p []byte) (int, error) {
+	remaining := r.failAfter - r.bytesRead
+	if remaining <= 0 {
+		return 0, r.err
+	}
+	if int64(len(p)) > remaining {
+		p = p[:remaining]
+	}
+	n, err := r.ReadCloser.Read(p)
+	r.bytesRead += int64(n)
+	return n, err
+}
+
+func setupOCIRegistryTestEnv(t *testing.T, cache interfaces.Cache) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t)
+	if cache != nil {
+		te.SetCache(cache)
+	}
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+	return te
+}
+
+func runOCIRegistryMirror(t *testing.T, te *testenv.TestEnv) string {
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	port := testport.FindFree(t)
+	addr := fmt.Sprintf("localhost:%d", port)
+	server := &http.Server{Handler: ocireg}
+	lis, err := net.Listen("tcp", addr)
+	require.NoError(t, err)
+	go func() { _ = server.Serve(lis) }()
+	t.Cleanup(func() { require.NoError(t, server.Shutdown(context.Background())) })
+	return addr
+}
+
+func blobDetails(t *testing.T, imageName string, image ctr.Image) (ctrname.Repository, ctr.Hash, string, []byte) {
+	ref, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.NotEmpty(t, layers)
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	mediaType, err := layer.MediaType()
+	require.NoError(t, err)
+	r, err := layer.Compressed()
+	require.NoError(t, err)
+	defer r.Close()
+	data, err := io.ReadAll(r)
+	require.NoError(t, err)
+	return ref.Context(), hash, string(mediaType), data
+}
+
+func TestBlobCacheDataReadFailureRefetchesUpstream(t *testing.T) {
+	te := setupOCIRegistryTestEnv(t, nil)
+	var upstreamBlobGets atomic.Int32
+	reg := testregistry.Run(t, testregistry.Opts{HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+			upstreamBlobGets.Add(1)
+		}
+		return true
+	}})
+	t.Cleanup(func() { require.NoError(t, reg.Shutdown()) })
+
+	imageName, image := reg.PushNamedImage(t, "cache_data_read_failure", nil)
+	repo, hash, contentType, expected := blobDetails(t, imageName, image)
+	err := ocicache.WriteBlobToCache(context.Background(), bytes.NewReader(expected), te.GetByteStreamClient(), te.GetActionCacheClient(), repo, hash, contentType, int64(len(expected)))
+	require.NoError(t, err)
+	te.SetByteStreamClient(&failBlobReadOnceByteStreamClient{ByteStreamClient: te.GetByteStreamClient(), hash: hash.Hex})
+
+	mirrorAddr := runOCIRegistryMirror(t, te)
+	resp, err := http.Get(fmt.Sprintf("http://%s/v2/%s/blobs/%s", mirrorAddr, imageName, hash.String()))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, expected, body)
+	require.Equal(t, int32(1), upstreamBlobGets.Load())
+}
+
+func TestBlobCacheReadFailureBeforeResponseReturnsCleanError(t *testing.T) {
+	baseEnv := testenv.GetTestEnv(t)
+	faultCache := &faultingBlobCache{Cache: baseEnv.GetCache()}
+	te := setupOCIRegistryTestEnv(t, faultCache)
+	reg := testregistry.Run(t, testregistry.Opts{HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+			w.WriteHeader(http.StatusInternalServerError)
+			return false
+		}
+		return true
+	}})
+	t.Cleanup(func() { require.NoError(t, reg.Shutdown()) })
+
+	imageName, image := reg.PushNamedImage(t, "cache_read_failure_clean_error", nil)
+	repo, hash, contentType, expected := blobDetails(t, imageName, image)
+	err := ocicache.WriteBlobToCache(context.Background(), bytes.NewReader(expected), te.GetByteStreamClient(), te.GetActionCacheClient(), repo, hash, contentType, int64(len(expected)))
+	require.NoError(t, err)
+	faultCache.setReadFault(hash.Hex, status.InternalError("cache read failed before first byte"), 0)
+
+	mirrorAddr := runOCIRegistryMirror(t, te)
+	resp, err := http.Get(fmt.Sprintf("http://%s/v2/%s/blobs/%s", mirrorAddr, imageName, hash.String()))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.NotContains(t, string(body), string(expected))
+}
+
+func TestBlobCacheReadFailureAfterResponseAbortsWithoutErrorBody(t *testing.T) {
+	baseEnv := testenv.GetTestEnv(t)
+	faultCache := &faultingBlobCache{Cache: baseEnv.GetCache()}
+	te := setupOCIRegistryTestEnv(t, faultCache)
+	reg := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() { require.NoError(t, reg.Shutdown()) })
+
+	randomData := make([]byte, 1024*1024)
+	_, err := cryptorand.Read(randomData)
+	require.NoError(t, err)
+	imageName, image := reg.PushNamedImageWithFiles(t, "cache_read_failure_abort", map[string][]byte{"/large-random-file": randomData}, nil)
+	repo, hash, contentType, expected := blobDetails(t, imageName, image)
+	require.Greater(t, len(expected), 300*1024)
+	err = ocicache.WriteBlobToCache(context.Background(), bytes.NewReader(expected), te.GetByteStreamClient(), te.GetActionCacheClient(), repo, hash, contentType, int64(len(expected)))
+	require.NoError(t, err)
+	faultCache.setReadFault(hash.Hex, status.InternalError("cache read failed after streaming bytes"), 300*1024)
+
+	mirrorAddr := runOCIRegistryMirror(t, te)
+	resp, err := http.Get(fmt.Sprintf("http://%s/v2/%s/blobs/%s", mirrorAddr, imageName, hash.String()))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Error(t, readErr)
+	require.Less(t, len(body), len(expected))
+	require.Equal(t, expected[:len(body)], body)
+	require.NotContains(t, string(body), "Error fetching image")
+	require.NotContains(t, string(body), "Error serving")
+}
+
+func TestBlobRefetchRepairsStaleCacheIndex(t *testing.T) {
+	flags.Set(t, "cache.max_direct_write_size_bytes", 1)
+	baseEnv := testenv.GetTestEnv(t)
+	faultCache := &faultingBlobCache{Cache: baseEnv.GetCache()}
+	te := setupOCIRegistryTestEnv(t, faultCache)
+	var upstreamBlobGets atomic.Int32
+	reg := testregistry.Run(t, testregistry.Opts{HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+			upstreamBlobGets.Add(1)
+		}
+		return true
+	}})
+	t.Cleanup(func() { require.NoError(t, reg.Shutdown()) })
+
+	imageName, image := reg.PushNamedImage(t, "stale_cache_index", nil)
+	_, hash, _, expected := blobDetails(t, imageName, image)
+	faultCache.setStale(hash.Hex, true)
+
+	mirrorAddr := runOCIRegistryMirror(t, te)
+	blobURL := fmt.Sprintf("http://%s/v2/%s/blobs/%s", mirrorAddr, imageName, hash.String())
+	for i := 0; i < 2; i++ {
+		resp, err := http.Get(blobURL)
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		require.Equal(t, expected, body)
+	}
+	require.Equal(t, int32(1), upstreamBlobGets.Load())
+}
 
 type simplePullTestCase struct {
 	name                     string

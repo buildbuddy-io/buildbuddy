@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -86,6 +87,18 @@ type manifestResolveResult struct {
 	exists        bool
 	contentLength string
 	contentType   string
+}
+
+type blobCacheReadError struct {
+	err error
+}
+
+func (e *blobCacheReadError) Error() string { return e.err.Error() }
+func (e *blobCacheReadError) Unwrap() error { return e.err }
+
+func isBlobCacheReadError(err error) bool {
+	var readErr *blobCacheReadError
+	return errors.As(err, &readErr)
 }
 
 type registry struct {
@@ -471,11 +484,16 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
 		return
 	}
-	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	responseStarted, err := fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
 	if err == nil {
 		return // Successfully served request from cache.
 	}
-	if !status.IsNotFoundError(err) {
+	if responseStarted {
+		log.CtxWarningf(ctx, "error streaming image %q from the cache after starting HTTP response: %s", resolvedRef.Context(), err)
+		panic(http.ErrAbortHandler)
+	}
+	blobReadFailure := isBlobCacheReadError(err)
+	if !status.IsNotFoundError(err) && !blobReadFailure {
 		log.CtxErrorf(ctx, "error fetching image %q from the cache: %s", resolvedRef.Context(), err)
 		http.Error(w, fmt.Sprintf("Error fetching image %q from the cache: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
 		return
@@ -502,9 +520,12 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	// The blob should now be in the cache, serve it from there.
-	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	responseStarted, err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
 	if err != nil {
 		log.CtxErrorf(ctx, "error serving %q from cache after fetch: %s", resolvedRef.Context(), err)
+		if responseStarted {
+			panic(http.ErrAbortHandler)
+		}
 		http.Error(w, fmt.Sprintf("Error serving %q: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
 	}
 }
@@ -534,6 +555,15 @@ func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsCli
 		return status.UnavailableErrorf("missing Content-Type from upstream for %s", resolvedRef.Context())
 	}
 
+	// ByteStream uploads may short-circuit when Contains reports that a large
+	// blob exists. Evict before every upstream blob fill so stale index entries
+	// cannot discard the fresh bytes.
+	if ociResourceType == ocipb.OCIResourceType_BLOB {
+		if err := ocicache.DeleteBlobFromCache(ctx, r.env.GetCache(), hash, contentLength); err != nil {
+			return status.UnavailableErrorf("could not evict unreadable blob %s before refetch: %s", resolvedRef.Context(), err)
+		}
+	}
+
 	return ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, io.Discard, bsClient, acClient, resolvedRef.Context(), ociResourceType, hash, contentType, contentLength, originalRef)
 }
 
@@ -549,34 +579,60 @@ func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, has
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
 }
 
-func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef ctrname.Reference) error {
+func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef ctrname.Reference) (bool, error) {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		mc, err := ocicache.FetchManifestFromAC(ctx, acClient, repo, hash, originalRef)
 		if err != nil {
-			return err
+			return false, err
 		}
 		writeManifestMetadataToResponse(ctx, w, hash, mc)
 		w.WriteHeader(http.StatusOK)
 		if !writeBody {
-			return nil
+			return true, nil
 		}
 		if _, err := io.Copy(w, bytes.NewReader(mc.GetRaw())); err != nil {
-			return err
+			return true, err
 		}
-		return nil
+		return true, nil
 	}
 
 	blobMetadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
 	if err != nil {
-		return err
+		return false, err
 	}
+	if !writeBody || blobMetadata.GetContentLength() == 0 {
+		writeBlobMetadataToResponse(ctx, w, hash, blobMetadata)
+		w.WriteHeader(http.StatusOK)
+		return true, nil
+	}
+
+	// Start the cache read before committing HTTP 200. This allows errors that
+	// occur before any blob bytes are available to be handled as cache misses.
+	pr, pw := io.Pipe()
+	go func() {
+		pw.CloseWithError(ocicache.FetchBlobFromCache(ctx, pw, bsClient, hash, blobMetadata.GetContentLength()))
+	}()
+	defer pr.Close()
+
+	buf := make([]byte, 32*1024)
+	var n int
+	for n == 0 {
+		n, err = pr.Read(buf)
+		if err != nil {
+			return false, &blobCacheReadError{err: err}
+		}
+	}
+
 	writeBlobMetadataToResponse(ctx, w, hash, blobMetadata)
 	w.WriteHeader(http.StatusOK)
-
-	if !writeBody {
-		return nil
+	if _, err := w.Write(buf[:n]); err != nil {
+		pr.CloseWithError(err)
+		return true, err
 	}
-	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash, blobMetadata.GetContentLength())
+	if _, err := io.Copy(w, pr); err != nil {
+		return true, &blobCacheReadError{err: err}
+	}
+	return true, nil
 }
 
 // resolveTagToDigest resolves a manifest tag to its digest, using an
