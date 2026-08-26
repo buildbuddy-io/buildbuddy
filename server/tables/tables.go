@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
@@ -1035,6 +1036,22 @@ func (*IPRule) TableName() string {
 	return "IPRules"
 }
 
+// BillingPrice is the price of a usage SKU from EffectiveAtUsec onward. To
+// change a price, insert a new row with a later effective time.
+type BillingPrice struct {
+	Model
+	BillingPriceID string `gorm:"primaryKey"`
+
+	SKU               sku.SKU `gorm:"not null;uniqueIndex:billing_price_sku_effective_at_idx,priority:1"`
+	EffectiveAtUsec   int64   `gorm:"not null;uniqueIndex:billing_price_sku_effective_at_idx,priority:2"`
+	Quantity          int64   `gorm:"not null"`
+	PriceMicroDollars int64   `gorm:"not null"`
+}
+
+func (*BillingPrice) TableName() string {
+	return "BillingPrices"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -1521,6 +1538,7 @@ func RegisterTables() {
 	// Keep these sorted by two-letter prefix (and when adding new tables,
 	// use a unique prefix if possible):
 	registerTable("AK", &APIKey{})
+	registerTable("BP", &BillingPrice{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
 	registerTable("EK", &EncryptionKey{})
