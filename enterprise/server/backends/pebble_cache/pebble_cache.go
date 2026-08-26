@@ -1850,6 +1850,9 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		if ctx.Err() != nil {
+			return -1, ctx.Err()
+		}
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
 			return -1, err
