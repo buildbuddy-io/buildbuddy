@@ -58,6 +58,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     to_copy = ["../$(rlocationpath {})".format(src) for src in srcs]
     if sha_prefix != "":
         sha_prefix_location = "../$(rlocationpath {})".format(sha_prefix)
+
         # copy the sha_prefix file if it exists.
         to_copy.append(sha_prefix_location)
     else:
