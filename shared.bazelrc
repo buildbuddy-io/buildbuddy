@@ -413,6 +413,13 @@ common:mac-workflows --config=cache
 common:mac-workflows --config=workflows
 common:mac-workflows --build_metadata=TAGS=mac-workflow
 
-# Build fully static binaries linked against musl on Linux.
+# For static builds, apply a 'static' tag for use with go:build directives.
+common:static-shared --@io_bazel_rules_go//go/config:tags=static
+
+# Build fully static binaries linked against musl on Linux (x86_64)
+common:static --config=static-shared
 common:static --platforms=//platforms:linux_x86_64_musl
+
+# Build fully static binaries linked against musl on Linux (arm64)
+common:static-arm64 --config=static-shared
 common:static-arm64 --platforms=//platforms:linux_arm64_musl

@@ -1,6 +1,6 @@
 package(default_visibility = ["//visibility:public"])
 
-# Target this platforms with --platforms for a static build linked against musl libc.
+# Target this platform with --config=static for a static build linked against musl libc.
 # Only meant to be used as a target platform.
 platform(
     name = "linux_x86_64_musl",
@@ -11,7 +11,7 @@ platform(
     ],
 )
 
-# Target this platforms with --platforms for a static build linked against musl libc.
+# Target this platform with --config=static-arm64 for a static build linked against musl libc.
 # Only meant to be used as a target platform.
 platform(
     name = "linux_arm64_musl",
