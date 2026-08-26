@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
+	"github.com/buildbuddy-io/buildbuddy/cli/fix/invocation"
 	"github.com/buildbuddy-io/buildbuddy/cli/fix/language"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/translate"
@@ -53,9 +54,13 @@ var (
 const (
 	usage = `
 usage: bb fix [ --diff ]
+       bb fix <invocation> <target> [ --test_filter=<regex> ]
 
-Applies fixes to WORKSPACE and BUILD files.
+With no arguments, applies fixes to WORKSPACE and BUILD files.
 Use the --diff flag to print suggested fixes without applying.
+
+Given an invocation ID (or URL) and a target, instead reproduces that
+target's test failure and fixes it.
 `
 	gazelleTarget = "//:gazelle"
 )
@@ -63,6 +68,12 @@ Use the --diff flag to print suggested fixes without applying.
 var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9 ]+`)
 
 func HandleFix(args []string) (exitCode int, err error) {
+	// `bb fix <invocation> [<target>]` reproduces and fixes a test or build
+	// failure.
+	if len(args) > 0 {
+		return invocation.Handle(args)
+	}
+
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
