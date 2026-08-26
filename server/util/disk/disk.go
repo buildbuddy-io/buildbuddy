@@ -350,6 +350,7 @@ func (w *writeMover) Commit() error {
 		// This is the common case (writing a new file). linkat fails with
 		// EEXIST if finalPath already exists, in which case we fall back to
 		// linking to a unique temp name and renaming over the destination.
+		renamedOver := false
 		err := linkAnonymousTmpFile(w.File, w.finalPath)
 		if err != nil {
 			if !errors.Is(err, syscall.EEXIST) {
@@ -367,6 +368,7 @@ func (w *writeMover) Commit() error {
 				RemoveIfExists(linkPath)
 				return err
 			}
+			renamedOver = true
 		}
 		// Sync after linking, not before: on journaling filesystems
 		// (XFS/ext4), fsyncing the file also persists the link/rename that
@@ -377,7 +379,21 @@ func (w *writeMover) Commit() error {
 		// FindMissing (which consults only metadata) would advertise a
 		// blob that can't be read.
 		if *syncOnCommit {
-			if err := w.Sync(); err != nil {
+			if err := w.File.Sync(); err != nil {
+				// The link above already published the file at finalPath.
+				// After a fresh link, nothing can reference it yet (callers
+				// record metadata only after Commit succeeds), so undo the
+				// publish rather than leave an orphan that eviction never
+				// sees. After a rename over an existing file, keep it:
+				// metadata from the earlier write may point at finalPath,
+				// and removing it would leave that metadata dangling.
+				deleted := false
+				if !renamedOver {
+					deleted = RemoveIfExists(w.finalPath) == nil
+				}
+				if !deleted {
+					log.CtxWarningf(w.ctx, "Left orphaned file at %s", w.finalPath)
+				}
 				return err
 			}
 		}
@@ -391,7 +407,7 @@ func (w *writeMover) Commit() error {
 	// This fallback path closes the file before renaming it, so the sync
 	// makes the data durable but not the rename that publishes it.
 	if *syncOnCommit {
-		if err := w.Sync(); err != nil {
+		if err := w.File.Sync(); err != nil {
 			return err
 		}
 	}
