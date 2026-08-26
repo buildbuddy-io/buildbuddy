@@ -91,10 +91,17 @@ func qpsByRcodePanel() *timeseries.PanelBuilder {
 		WithTarget(q(rateBy("rcode"), "{{rcode}}"))
 }
 
+func qpsByResolverProviderPanel() *timeseries.PanelBuilder {
+	return dash.StackedTimeseries("Queries/sec by Recursive Resolver Provider", dash.UnitOps).
+		Description("DNS query rate by the provider operating the recursive resolver, inferred from the transport peer's ASN. Cloudflare, Google, AWS, and Azure are identified explicitly; all remaining public ASNs are grouped as other.").
+		GridPos(grid(8, 24, 0, 15)).
+		WithTarget(q(`sum by (resolver_provider) (rate(`+reqs+`{resolver_provider=~".+", `+filter+`}[`+window+`]))`, "{{resolver_provider}}"))
+}
+
 func latencyPanel() *timeseries.PanelBuilder {
 	return dash.Timeseries("Handler Latency Percentiles", dash.UnitMicroseconds).
 		Description("Query handler latency percentiles.").
-		GridPos(grid(8, 12, 0, 15)).
+		GridPos(grid(8, 12, 0, 24)).
 		WithTarget(q(latencyQuantile("0.5"), "p50").RefId("A")).
 		WithTarget(q(latencyQuantile("0.9"), "p90").RefId("B")).
 		WithTarget(q(latencyQuantile("0.99"), "p99").RefId("C"))
@@ -103,7 +110,7 @@ func latencyPanel() *timeseries.PanelBuilder {
 func durationHeatmapPanel() *heatmap.PanelBuilder {
 	return dash.Heatmap("Handler Duration", dash.UnitMicroseconds).
 		Description("Distribution of query handler durations.").
-		GridPos(grid(8, 12, 12, 15)).
+		GridPos(grid(8, 12, 12, 24)).
 		WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(` + dur + `_bucket{` + filter + `}[` + window + `]))`).Interval(window).RefId("A"))
 }
 
@@ -112,7 +119,7 @@ func durationHeatmapPanel() *heatmap.PanelBuilder {
 func zoneSerialsStat() *stat.PanelBuilder {
 	return dash.Stat("Zones Served", dash.UnitNone).
 		Description("SOA serial of each zone currently served (max across replicas). A zone missing here is not being served at all.").
-		GridPos(grid(8, 12, 0, 24)).
+		GridPos(grid(8, 12, 0, 33)).
 		WithTarget(q(`max by (dns_zone) (`+serial+`{`+filter+`})`, "{{dns_zone}}"))
 }
 
@@ -122,7 +129,7 @@ func zoneSerialsStat() *stat.PanelBuilder {
 func zoneSerialByReplicaPanel() *timeseries.PanelBuilder {
 	return dash.Timeseries("Zone Serial by Replica", dash.UnitNone).
 		Description("SOA serial of each served zone, per replica. Divergence between replicas of the same zone means a stale or failed zone reload.").
-		GridPos(grid(8, 12, 12, 24)).
+		GridPos(grid(8, 12, 12, 33)).
 		WithTarget(q(`max by (dns_zone, instance) (`+serial+`{`+filter+`})`, "{{dns_zone}} {{instance}}"))
 }
 
@@ -163,10 +170,12 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(rowAt("Traffic", 5)).
 		WithPanel(qpsByTypePanel()).
 		WithPanel(qpsByRcodePanel()).
-		WithRow(rowAt("Latency", 14)).
+		WithRow(rowAt("Recursive Resolvers", 14)).
+		WithPanel(qpsByResolverProviderPanel()).
+		WithRow(rowAt("Latency", 23)).
 		WithPanel(latencyPanel()).
 		WithPanel(durationHeatmapPanel()).
-		WithRow(rowAt("Zones", 23)).
+		WithRow(rowAt("Zones", 32)).
 		WithPanel(zoneSerialsStat()).
 		WithPanel(zoneSerialByReplicaPanel()).
 		Build()
