@@ -712,9 +712,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	foundMap := make(map[*repb.Digest][]byte, len(hits))
 	handleBatch := func() error {
 		for {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
 			i := int(next.Add(1)) - 1
 			if i >= len(hits) {
 				return nil
@@ -731,6 +728,9 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md, rc)))
 			_, copyErr := io.Copy(buf, rc)
 			closeErr := rc.Close()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if copyErr != nil {
 				log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
 				continue
