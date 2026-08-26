@@ -25,7 +25,7 @@ import (
 func TestFileWriter_UsesOTmpfile(t *testing.T) {
 	for _, syncOnCommit := range []bool{false, true} {
 		t.Run(fmt.Sprintf("sync=%v", syncOnCommit), func(t *testing.T) {
-			flags.Set(t, "disk.sync_on_commit", syncOnCommit)
+			flags.Set(t, "file_writer_sync_on_commit", syncOnCommit)
 			dir := testfs.MakeTempDir(t)
 			finalPath := filepath.Join(dir, "out.bin")
 
@@ -62,7 +62,7 @@ func TestFileWriter_UsesOTmpfile(t *testing.T) {
 func TestFileWriter_OverwritesExisting(t *testing.T) {
 	for _, syncOnCommit := range []bool{false, true} {
 		t.Run(fmt.Sprintf("sync=%v", syncOnCommit), func(t *testing.T) {
-			flags.Set(t, "disk.sync_on_commit", syncOnCommit)
+			flags.Set(t, "file_writer_sync_on_commit", syncOnCommit)
 			dir := testfs.MakeTempDir(t)
 			finalPath := filepath.Join(dir, "out.bin")
 			require.NoError(t, os.WriteFile(finalPath, []byte("old"), 0644))

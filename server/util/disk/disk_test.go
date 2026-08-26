@@ -32,7 +32,7 @@ func TestWriteMover_CloseCleansUp(t *testing.T) {
 				t.Run(fmt.Sprintf("cancel=%v", shouldCancel), func(t *testing.T) {
 					for _, shouldCommit := range []bool{true, false} {
 						t.Run(fmt.Sprintf("commit=%v", shouldCommit), func(t *testing.T) {
-							flags.Set(t, "disk.sync_on_commit", syncOnCommit)
+							flags.Set(t, "file_writer_sync_on_commit", syncOnCommit)
 							dir := testfs.MakeTempDir(t)
 							ctx, cancel := context.WithCancel(context.Background())
 							defer cancel()
