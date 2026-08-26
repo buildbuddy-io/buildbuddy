@@ -8,11 +8,8 @@ single_version_override(
     patch_strip = 1,
     patches = [
         "//buildpatches/bazel_dep:gazelle.patch",
-        # TODO: Remove after upgrading to the next Gazelle release.
-        "//buildpatches/bazel_dep:gazelle_2383.patch",
-        "//buildpatches/bazel_dep:gazelle_2405.patch",
     ],
-    version = "0.52.2",
+    version = "0.53.0",
 )
 
 bazel_dep(name = "googleapis")
