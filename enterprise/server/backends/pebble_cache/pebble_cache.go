@@ -1850,6 +1850,9 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		if ctx.Err() != nil {
+			return -1, ctx.Err()
+		}
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
 			return -1, err
@@ -2151,9 +2154,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	handleBatch := func() error {
 		for {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
 			i := int(next.Add(1)) - 1
 			if i >= len(resources) {
 				return nil
@@ -2169,6 +2169,9 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
 			_, copyErr := io.Copy(buf, rc)
 			closeErr := rc.Close()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if copyErr != nil {
 				log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
 				continue
@@ -3477,7 +3480,9 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	err = pebble.GetProto(db, sample.Key.bytes, md)
 	defer md.ReturnToVTPool()
 	if err != nil {
-		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
+		if !status.IsNotFoundError(err) && !os.IsNotExist(err) {
+			log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
+		}
 		return
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
