@@ -1,11 +1,14 @@
 package ociregistry_test
 
 import (
+	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,9 +24,197 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+type failActionCacheReadClient struct {
+	repb.ActionCacheClient
+	shouldFail func() bool
+}
+
+func (c *failActionCacheReadClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	if c.shouldFail() {
+		return nil, status.UnavailableError("injected action cache read failure")
+	}
+	return c.ActionCacheClient.GetActionResult(ctx, req, opts...)
+}
+
+type failBlobReadOnceClient struct {
+	bspb.ByteStreamClient
+	targetHash         string
+	failAfterResponses int
+	failed             atomic.Bool
+}
+
+func (c *failBlobReadOnceClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	if !strings.Contains(req.GetResourceName(), c.targetHash) || !c.failed.CompareAndSwap(false, true) {
+		return c.ByteStreamClient.Read(ctx, req, opts...)
+	}
+	if c.failAfterResponses == 0 {
+		return nil, status.NotFoundError("injected blob read failure")
+	}
+	stream, err := c.ByteStreamClient.Read(ctx, req, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &failAfterNResponsesReadClient{
+		ByteStream_ReadClient: stream,
+		remaining:             c.failAfterResponses,
+	}, nil
+}
+
+type failAfterNResponsesReadClient struct {
+	bspb.ByteStream_ReadClient
+	remaining int
+}
+
+func (c *failAfterNResponsesReadClient) Recv() (*bspb.ReadResponse, error) {
+	if c.remaining == 0 {
+		return nil, status.UnavailableError("injected mid-stream blob read failure")
+	}
+	resp, err := c.ByteStream_ReadClient.Recv()
+	if err == nil {
+		c.remaining--
+	}
+	return resp, err
+}
+
+type cacheReadFailureTest struct {
+	env              *testenv.TestEnv
+	blobURL          string
+	blobHash         string
+	blobBody         []byte
+	upstreamBlobGets *atomic.Int32
+}
+
+func setupCacheReadFailureTest(t *testing.T, name string, contents []byte) *cacheReadFailureTest {
+	t.Helper()
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	require.NoError(t, clientidentity.Register(te))
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	upstreamBlobGets := atomic.Int32{}
+	upstream := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/blobs/") {
+				upstreamBlobGets.Add(1)
+			}
+			return true
+		},
+	})
+	t.Cleanup(func() { require.NoError(t, upstream.Shutdown()) })
+
+	imageName, image := upstream.PushNamedImageWithFiles(t, name, map[string][]byte{"/file": contents}, nil)
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	bodyReader, err := layer.Compressed()
+	require.NoError(t, err)
+	defer bodyReader.Close()
+	body, err := io.ReadAll(bodyReader)
+	require.NoError(t, err)
+
+	registry, err := ociregistry.New(te)
+	require.NoError(t, err)
+	mirror := httptest.NewServer(registry)
+	t.Cleanup(mirror.Close)
+	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", mirror.URL, imageName, hash.String())
+
+	// Populate the cache before injecting a cache read failure.
+	resp, err := http.Get(blobURL)
+	require.NoError(t, err)
+	got, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, body, got)
+
+	return &cacheReadFailureTest{
+		env:              te,
+		blobURL:          blobURL,
+		blobHash:         hash.Hex,
+		blobBody:         body,
+		upstreamBlobGets: &upstreamBlobGets,
+	}
+}
+
+func TestActionCacheReadFailureFallsBackToUpstream(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "action_cache_read_failure", []byte("contents"))
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	f.env.SetActionCacheClient(&failActionCacheReadClient{
+		ActionCacheClient: f.env.GetActionCacheClient(),
+		shouldFail: func() bool {
+			return f.upstreamBlobGets.Load() == upstreamGetsBefore
+		},
+	})
+
+	resp, err := http.Get(f.blobURL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, f.blobBody, body)
+	require.Equal(t, int32(1), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
+
+func TestBlobReadFailureBeforeResponseFallsBackToUpstream(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "blob_read_failure_before_response", []byte("contents"))
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	f.env.SetByteStreamClient(&failBlobReadOnceClient{
+		ByteStreamClient: f.env.GetByteStreamClient(),
+		targetHash:       f.blobHash,
+	})
+
+	resp, err := http.Get(f.blobURL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, f.blobBody, body)
+	require.Equal(t, int32(1), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
+
+func TestBlobReadFailureMidResponseAbortsWithoutAppendingError(t *testing.T) {
+	contents := make([]byte, 4*1024*1024)
+	_, err := cryptorand.Read(contents)
+	require.NoError(t, err)
+	f := setupCacheReadFailureTest(t, "blob_read_failure_mid_response", contents)
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	f.env.SetByteStreamClient(&failBlobReadOnceClient{
+		ByteStreamClient:   f.env.GetByteStreamClient(),
+		targetHash:         f.blobHash,
+		failAfterResponses: 1,
+	})
+
+	resp, err := http.Get(f.blobURL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Error(t, readErr)
+	require.NotEmpty(t, body)
+	require.Less(t, len(body), len(f.blobBody))
+	require.True(t, bytes.Equal(f.blobBody[:len(body)], body), "partial response contains bytes other than the blob prefix")
+	require.Equal(t, int32(0), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
 
 type simplePullTestCase struct {
 	name                     string
