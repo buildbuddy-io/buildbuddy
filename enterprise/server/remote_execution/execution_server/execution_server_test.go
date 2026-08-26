@@ -2,7 +2,9 @@ package execution_server_test
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +211,47 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
+	assert.NotContains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	assert.NotContains(t, task.GetExperiments(), "executor.download_inputs_chunked")
+	assert.Nil(t, task.GetFastCdc_2020Params())
+}
+
+func TestDispatch_ChunkingConfigWithNoopExperimentProvider(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			flags.Set(t, "remote_execution.chunking_enabled", enabled)
+			env, _, _ := setupEnv(t)
+			require.NoError(t, experiments.Register(env))
+			require.NotNil(t, env.GetExperimentFlagProvider())
+
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.upload_outputs_chunked"))
+			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.download_inputs_chunked"))
+			if enabled {
+				require.NotNil(t, task.GetFastCdc_2020Params())
+				assert.Equal(t, uint64(1024*1024), task.GetFastCdc_2020Params().GetAvgChunkSizeBytes())
+			} else {
+				assert.Nil(t, task.GetFastCdc_2020Params())
+			}
+		})
+	}
 }
 
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
@@ -227,6 +270,13 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
       "defaultVariant": "on"
     },
     "executor.upload_outputs_chunked": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "executor.download_inputs_chunked": {
       "state": "ENABLED",
       "variants": {
         "on": true
@@ -281,6 +331,7 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 	err = proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task)
 	require.NoError(t, err)
 	require.Contains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	require.Contains(t, task.GetExperiments(), "executor.download_inputs_chunked")
 	require.Contains(t, task.GetExperiments(), "splice-without-validation")
 	require.Equal(t, int64(123456789), task.GetFastCdc_2020Params().GetBuildbuddyMaxChunkedWriteSizeBytes())
 }

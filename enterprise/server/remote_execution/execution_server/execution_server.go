@@ -94,6 +94,7 @@ var (
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+	chunkingEnabled                    = flag.Bool("remote_execution.chunking_enabled", false, "If true, executors upload outputs and download inputs using content-defined chunks.")
 
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
@@ -954,14 +955,20 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
-	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
+	uploadOutputsChunked := *chunkingEnabled
+	downloadInputsChunked := *chunkingEnabled
+	if efp != nil {
+		uploadOutputsChunked = efp.Boolean(ctx, "executor.upload_outputs_chunked", uploadOutputsChunked)
+		downloadInputsChunked = efp.Boolean(ctx, "executor.download_inputs_chunked", downloadInputsChunked)
+	}
+	if chunking.Enabled(ctx, efp) && uploadOutputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
-		if efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
+		if efp != nil && efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
 			executionTask.Experiments = append(executionTask.Experiments, cdc.SpliceWithoutValidationExperiment)
 		}
 	}
-	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.download_inputs_chunked", false) {
+	if chunking.Enabled(ctx, efp) && downloadInputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 
