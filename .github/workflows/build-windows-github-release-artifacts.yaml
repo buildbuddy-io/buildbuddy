@@ -48,6 +48,11 @@ jobs:
             "--remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
             "--platforms=@io_bazel_rules_go//go/toolchain:windows_386"
           )
+          $windowsArm64Args = @(
+            "--config=release-windows"
+            "--remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
+            "--platforms=@io_bazel_rules_go//go/toolchain:windows_arm64"
+          )
           $target = "//enterprise/server/cmd/executor:executor"
 
           bazelisk --output_user_root=C:/0 build @commonArgs $target
@@ -61,4 +66,9 @@ jobs:
           $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
           Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-386-beta.exe
 
-          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe executor-enterprise-windows-386-beta.exe --clobber
+          bazelisk --output_user_root=C:/0 build @windowsArm64Args $target
+          $artifact_rel_path = bazelisk --output_user_root=C:/0 cquery @windowsArm64Args --output=files $target
+          $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
+          Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-arm64-beta.exe
+
+          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe executor-enterprise-windows-386-beta.exe executor-enterprise-windows-arm64-beta.exe --clobber
