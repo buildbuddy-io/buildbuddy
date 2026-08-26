@@ -92,7 +92,7 @@ var (
 	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 	overprovisionCPUs                     = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
 	initOnAllocAndFree                    = flag.Bool("executor.firecracker_init_on_alloc_and_free", false, "Set init_on_alloc=1 and init_on_free=1 in firecracker vms")
-	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	netPoolSize                           = flag.Int("executor.firecracker_network_pool_size", 0, "Limit on the number of networks to be reused between VMs, applied independently to each mode-specific pool (local, external). Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
 	firecrackerVMDockerMirrors            = flag.Slice("executor.firecracker_vm_docker_mirrors", []string{}, "Registry mirror hosts (and ports) for public Docker images. Only used if InitDockerd is set to true.")
 	firecrackerVMDockerInsecureRegistries = flag.Slice("executor.firecracker_vm_docker_insecure_registries", []string{}, "Tell Docker to communicate over HTTP with these URLs. Only used if InitDockerd is set to true.")
 	firecrackerVMResolvConfPath           = flag.String("executor.firecracker_vm_resolv_conf", "", "Path to a resolv.conf file to use inside firecracker VMs. If empty, VMs use default nameservers (8.8.8.8, 8.8.4.4, 1.1.1.1).")
@@ -529,7 +529,8 @@ func getHostKernelVersion() (string, error) {
 type Provider struct {
 	env                    environment.Env
 	executorConfig         *ExecutorConfig
-	networkPool            *networking.VMNetworkPool
+	externalNetworkPool    *networking.VMNetworkPool
+	localNetworkPool       *networking.VMNetworkPool
 	marshalledDNSOverrides string
 	hostResolvConf         string
 }
@@ -553,10 +554,12 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 		return nil, status.WrapError(err, "enable masquerading")
 	}
 
-	var networkPool *networking.VMNetworkPool
+	var externalNetworkPool, localNetworkPool *networking.VMNetworkPool
 	if *netPoolSize != 0 {
-		networkPool = networking.NewVMNetworkPool(*netPoolSize)
-		env.GetHealthChecker().RegisterShutdownFunction(networkPool.Shutdown)
+		externalNetworkPool = networking.NewVMNetworkPool(*netPoolSize)
+		env.GetHealthChecker().RegisterShutdownFunction(externalNetworkPool.Shutdown)
+		localNetworkPool = networking.NewVMNetworkPool(*netPoolSize)
+		env.GetHealthChecker().RegisterShutdownFunction(localNetworkPool.Shutdown)
 	}
 
 	dns, err := parseDNSOverrides()
@@ -575,7 +578,8 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*Provider, e
 	return &Provider{
 		env:                    env,
 		executorConfig:         executorConfig,
-		networkPool:            networkPool,
+		externalNetworkPool:    externalNetworkPool,
+		localNetworkPool:       localNetworkPool,
 		marshalledDNSOverrides: dns,
 		hostResolvConf:         hostResolvConf,
 	}, nil
@@ -623,7 +627,8 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		BlockDevice:            args.BlockDevice,
 		OverrideSnapshotKey:    args.Props.OverrideSnapshotKey,
 		ExecutorConfig:         p.executorConfig,
-		NetworkPool:            p.networkPool,
+		ExternalNetworkPool:    p.externalNetworkPool,
+		LocalNetworkPool:       p.localNetworkPool,
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
 		HostResolvConf:         p.hostResolvConf,
 		UseOCIFetcher:          args.Props.UseOCIFetcher,
@@ -672,8 +677,9 @@ type FirecrackerContainer struct {
 	rmOnce *sync.Once
 	rmErr  error
 
-	networkPool *networking.VMNetworkPool
-	network     *networking.VMNetwork
+	externalNetworkPool *networking.VMNetworkPool
+	localNetworkPool    *networking.VMNetworkPool
+	network             *networking.VMNetwork
 
 	// Whether the VM was recycled.
 	recycled bool
@@ -801,7 +807,8 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		user:                   opts.User,
 		actionWorkingDir:       opts.ActionWorkingDirectory,
 		cgroupParent:           opts.CgroupParent,
-		networkPool:            opts.NetworkPool,
+		externalNetworkPool:    opts.ExternalNetworkPool,
+		localNetworkPool:       opts.LocalNetworkPool,
 		cgroupSettings:         &scpb.CgroupSettings{},
 		blockDevice:            opts.BlockDevice,
 		env:                    env,
@@ -1971,11 +1978,8 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 
 	externalNetworking := externalNetworkingEnabled(c.vmConfig.NetworkMode)
 
-	// Pooled networks have external network access enabled. Only use them if
-	// that's the VM's configured state.
-	// TODO: add a pool for 'network=false' (if this bottlenecks).
-	if c.networkPool != nil && externalNetworking {
-		if network := c.networkPool.Get(ctx); network != nil {
+	if pool := c.vmNetworkPool(); pool != nil {
+		if network := pool.Get(ctx); network != nil {
 			c.network = network
 			return nil
 		}
@@ -1988,6 +1992,19 @@ func (c *FirecrackerContainer) setupNetworking(ctx context.Context) error {
 	c.network = network
 
 	return nil
+}
+
+// vmNetworkPool returns the network pool matching the VM's networking mode,
+// or nil if pooling is disabled. Networks with and without external
+// networking must not be mixed: the host firewall rules installed when the
+// network is created differ between the two modes and last for the lifetime
+// of the network, so a network pooled by a VM without external networking
+// would silently break egress for a VM that expects it.
+func (c *FirecrackerContainer) vmNetworkPool() *networking.VMNetworkPool {
+	if externalNetworkingEnabled(c.vmConfig.NetworkMode) {
+		return c.externalNetworkPool
+	}
+	return c.localNetworkPool
 }
 
 func (c *FirecrackerContainer) setupUFFDHandler(ctx context.Context) error {
@@ -2103,8 +2120,8 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if c.networkPool != nil {
-		if ok := c.networkPool.Add(ctx, network); ok {
+	if pool := c.vmNetworkPool(); pool != nil {
+		if ok := pool.Add(ctx, network); ok {
 			return nil
 		}
 		log.CtxInfof(ctx, "Failed to add network to pool - cleaning up network.")
