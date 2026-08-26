@@ -668,11 +668,12 @@ type FirecrackerContainer struct {
 	vmIdx      int    // the index of this vm on the host machine
 	loader     *snaploader.FileCacheLoader
 
-	vmConfig         *fcpb.VMConfiguration
-	containerImage   string // the OCI container image. ex "alpine:latest"
-	actionWorkingDir string // the action directory with inputs / outputs
-	pulled           bool   // whether the container ext4 image has been pulled
-	user             string // user to execute all commands as
+	vmConfig               *fcpb.VMConfiguration
+	containerImage         string // the requested OCI container image. ex "alpine:latest"
+	resolvedContainerImage string // immutable image ref observed during registry authentication
+	actionWorkingDir       string // the action directory with inputs / outputs
+	pulled                 bool   // whether the container ext4 image has been pulled
+	user                   string // user to execute all commands as
 
 	rmOnce *sync.Once
 	rmErr  error
@@ -2244,7 +2245,7 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 		if exists, err := disk.FileExists(ctx, containerFSPath); err != nil {
 			return status.UnavailableErrorf("check containerfs exists: %s", err)
 		} else if !exists {
-			err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, containerFSPath)
+			err := ociconv.LinkCachedImage(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImageCacheKey(), containerFSPath)
 			if err != nil {
 				return status.UnavailableErrorf("link cached image: %s", err)
 			}
@@ -2771,14 +2772,33 @@ func (c *FirecrackerContainer) Signal(ctx context.Context, sig syscall.Signal) e
 	return status.UnimplementedError("not implemented")
 }
 
+func (c *FirecrackerContainer) remoteExt4Cache() *ociconv.RemoteCache {
+	return &ociconv.RemoteCache{
+		ByteStreamClient:  c.env.GetByteStreamClient(),
+		ActionCacheClient: c.env.GetActionCacheClient(),
+	}
+}
+
+func (c *FirecrackerContainer) containerImageCacheKey() string {
+	if ociconv.RemoteCacheEnabled(c.remoteExt4Cache()) && c.resolvedContainerImage != "" {
+		return c.resolvedContainerImage
+	}
+	return c.containerImage
+}
+
 func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Checking for the EXT4 image on local disk is cheap, so do it first.
-	cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil || cached {
-		return cached, err
+	// Remote ext4 caching uses immutable image refs as local cache keys. Before
+	// registry authentication we do not know that key, so skip the tag-keyed
+	// local lookup rather than potentially accepting a stale mutable tag.
+	remoteCache := c.remoteExt4Cache()
+	if !ociconv.RemoteCacheEnabled(remoteCache) || c.resolvedContainerImage != "" {
+		cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImageCacheKey())
+		if err != nil || cached {
+			return cached, err
+		}
 	}
 
 	// The image also doesn't need to be pulled if the chunked containerfs is
@@ -2811,9 +2831,11 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	if err := c.resolver.AuthenticateWithRegistry(ctx, c.containerImage, oci.RuntimePlatform(), creds); err != nil {
+	resolvedContainerImage, err := c.resolver.ResolveImageDigestAndAuthenticate(ctx, c.containerImage, oci.RuntimePlatform(), creds)
+	if err != nil {
 		return status.WrapError(err, "authenticate with registry")
 	}
+	c.resolvedContainerImage = resolvedContainerImage
 
 	// If the chunked containerfs is already cached, the VM reads its rootfs
 	// chunks lazily over VBD, so we don't need to pull the image.
@@ -2839,7 +2861,8 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 	if err := os.MkdirAll(c.getChroot(), 0755); err != nil {
 		return status.UnavailableErrorf("create chroot dir: %s", err)
 	}
-	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage, creds, c.useOCIFetcher, containerFSPath)
+	remoteCache := c.remoteExt4Cache()
+	err = ociconv.CreateDiskImage(ctx, c.resolver, c.env.GetFileCache(), remoteCache, c.executorConfig.CacheRoot, c.containerImage, c.resolvedContainerImage, creds, c.useOCIFetcher, containerFSPath)
 	if err != nil {
 		return err
 	}

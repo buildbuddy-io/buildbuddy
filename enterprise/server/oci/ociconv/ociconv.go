@@ -18,6 +18,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -27,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"golang.org/x/sys/unix"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -40,6 +43,12 @@ const (
 	// Shared images namespace in the filecache. On disk this will appear as
 	// "_SHARED_ext4_images" under the filecache dir.
 	fileCacheSharedImagesNamespace = "ext4_images"
+
+	// remoteImageCacheVersion is part of the AC key. Increment this whenever
+	// conversion changes could make previously cached filesystems incompatible.
+	remoteImageCacheVersion = "1"
+	remoteImageInstanceName = interfaces.OCIImageInstanceNamePrefix + "ext4_images"
+	remoteImageOutputPath   = "containerfs.ext4"
 )
 
 var (
@@ -48,8 +57,17 @@ var (
 	// Single-flight group used to dedupe firecracker image conversions.
 	conversionGroup singleflight.Group[string, string]
 
-	localCacheStoreExt4Images = flag.Bool("executor.local_cache_store_ext4_images", false, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
+	localCacheStoreExt4Images  = flag.Bool("executor.local_cache_store_ext4_images", false, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
+	remoteCacheStoreExt4Images = flag.Bool("executor.remote_cache_store_ext4_images", false, "If true, store converted Firecracker ext4 images in the remote CAS so other executors can reuse them without converting the OCI image again.")
 )
+
+// RemoteCache contains clients used to map OCI images to converted ext4 blobs.
+// The Action Cache stores the mapping, while the ByteStream service stores the
+// filesystem bytes in CAS.
+type RemoteCache struct {
+	ByteStreamClient  bspb.ByteStreamClient
+	ActionCacheClient repb.ActionCacheClient
+}
 
 func hashFile(filename string) (string, error) {
 	f, err := os.Open(filename)
@@ -235,48 +253,199 @@ func IsImageCached(ctx context.Context, fileCache interfaces.FileCache, cacheRoo
 	return legacyPath != "", nil
 }
 
+// RemoteCacheEnabled reports whether remote ext4 image caching is configured.
+func RemoteCacheEnabled(remoteCache *RemoteCache) bool {
+	return *remoteCacheStoreExt4Images && remoteCache != nil && remoteCache.ByteStreamClient != nil && remoteCache.ActionCacheClient != nil
+}
+
+func remoteImageACResourceName(resolvedContainerImage string) (*digest.ACResourceName, error) {
+	platform := oci.RuntimePlatform()
+	key := hash.Strings(
+		"firecracker-ext4-image",
+		remoteImageCacheVersion,
+		resolvedContainerImage,
+		platform.GetOs(),
+		platform.GetArch(),
+		platform.GetVariant(),
+	)
+	return digest.NewACResourceName(
+		&repb.Digest{Hash: key, SizeBytes: 1},
+		remoteImageInstanceName,
+		repb.DigestFunction_SHA256,
+	), nil
+}
+
+func remoteImageDigest(ctx context.Context, remoteCache *RemoteCache, resolvedContainerImage string) (*repb.Digest, error) {
+	rn, err := remoteImageACResourceName(resolvedContainerImage)
+	if err != nil {
+		return nil, err
+	}
+	ar, err := cachetools.GetActionResult(ctx, remoteCache.ActionCacheClient, rn)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range ar.GetOutputFiles() {
+		if f.GetPath() == remoteImageOutputPath && f.GetDigest() != nil {
+			return f.GetDigest(), nil
+		}
+	}
+	return nil, status.NotFoundErrorf("remote ext4 image metadata for %q did not contain %q", resolvedContainerImage, remoteImageOutputPath)
+}
+
+func cacheRemoteImage(ctx context.Context, remoteCache *RemoteCache, resolvedContainerImage, imagePath string) error {
+	d, err := cachetools.UploadFile(ctx, remoteCache.ByteStreamClient, remoteImageInstanceName, repb.DigestFunction_SHA256, imagePath)
+	if err != nil {
+		return status.WrapError(err, "upload ext4 image to CAS")
+	}
+	rn, err := remoteImageACResourceName(resolvedContainerImage)
+	if err != nil {
+		return err
+	}
+	ar := &repb.ActionResult{OutputFiles: []*repb.OutputFile{{Path: remoteImageOutputPath, Digest: d}}}
+	if err := cachetools.UploadActionResult(ctx, remoteCache.ActionCacheClient, rn, ar); err != nil {
+		return status.WrapError(err, "store ext4 image metadata in action cache")
+	}
+	log.CtxInfof(ctx, "Stored converted ext4 image for %q in remote CAS as %s/%d", resolvedContainerImage, d.GetHash(), d.GetSizeBytes())
+	return nil
+}
+
+// restoreRemoteImage downloads an ext4 image from CAS and populates the local
+// image cache. It returns false on a remote cache miss.
+func restoreRemoteImage(ctx context.Context, remoteCache *RemoteCache, fileCache interfaces.FileCache, cacheRoot, containerImage, resolvedContainerImage string) (bool, error) {
+	d, err := remoteImageDigest(ctx, remoteCache, resolvedContainerImage)
+	if status.IsNotFoundError(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+
+	tempDir := cacheRoot
+	if *localCacheStoreExt4Images && fileCache != nil {
+		tempDir = fileCache.TempDir()
+	}
+	if err := disk.EnsureDirectoryExists(tempDir); err != nil {
+		return false, err
+	}
+	f, err := os.CreateTemp(tempDir, "remote-containerfs-*.ext4")
+	if err != nil {
+		return false, err
+	}
+	tmpImagePath := f.Name()
+	keepTempFile := false
+	defer func() {
+		f.Close()
+		if !keepTempFile {
+			if err := os.Remove(tmpImagePath); err != nil && !os.IsNotExist(err) {
+				log.CtxWarningf(ctx, "Delete temporary remote disk image %q: %s", tmpImagePath, err)
+			}
+		}
+	}()
+
+	rn := digest.NewCASResourceName(d, remoteImageInstanceName, repb.DigestFunction_SHA256)
+	rn.SetCompressor(repb.Compressor_ZSTD)
+	if err := cachetools.GetBlob(ctx, remoteCache.ByteStreamClient, rn, f); err != nil {
+		return false, status.WrapError(err, "download ext4 image from CAS")
+	}
+	if err := f.Close(); err != nil {
+		return false, err
+	}
+
+	if *localCacheStoreExt4Images && fileCache != nil {
+		sharedCtx := sharedFileCacheContext(ctx, fileCache)
+		if err := fileCache.AddFile(sharedCtx, diskImageFileNode(containerImage), tmpImagePath); err != nil {
+			return false, fmt.Errorf("add remotely cached disk image to filecache: %w", err)
+		}
+	} else {
+		containerImageHome := filepath.Join(getDiskImagesPath(cacheRoot, containerImage), d.GetHash())
+		if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
+			return false, err
+		}
+		containerImagePath := filepath.Join(containerImageHome, diskImageFileName)
+		if err := os.Rename(tmpImagePath, containerImagePath); err != nil {
+			return false, err
+		}
+		keepTempFile = true
+	}
+	log.CtxInfof(ctx, "Restored converted ext4 image for %q from remote CAS", resolvedContainerImage)
+	return true, nil
+}
+
 // CreateDiskImage pulls the image from the container registry, converts it to
 // ext4 format, stores it in the configured cache directory, and hardlinks the
 // cached image to outputPath.
 //
-// This function does NOT re-authenticate with the registry if the image is
-// already cached. Instead, the caller is responsible for doing so if needed.
-func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
+// If remote caching is enabled, resolvedContainerImage should be the immutable
+// image ref returned by the registry authentication request. If it is empty,
+// this function performs a fresh authenticated resolution before checking the
+// remote cache. When remote caching is disabled, callers remain responsible for
+// authorizing access before using a locally cached image.
+func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, remoteCache *RemoteCache, cacheRoot, containerImage, resolvedContainerImage string, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	localCacheKey := containerImage
+	conversionImage := containerImage
+	if RemoteCacheEnabled(remoteCache) {
+		if resolvedContainerImage == "" {
+			var err error
+			resolvedContainerImage, err = resolver.ResolveImageDigestAndAuthenticate(ctx, containerImage, oci.RuntimePlatform(), creds)
+			if err != nil {
+				// Remote caching is only an optimization. Continue with the normal
+				// conversion path if the immutable cache key cannot be resolved.
+				log.CtxWarningf(ctx, "Could not resolve immutable image ref for remote ext4 cache: %s", err)
+			}
+		}
+		if resolvedContainerImage != "" {
+			localCacheKey = resolvedContainerImage
+			conversionImage = resolvedContainerImage
+		}
+	}
 
 	// Note: creds are included in the singleflight key here, so it looks like
 	// we might be doing unnecessary concurrent pulls for the same image. In
 	// practice however, container.PullImageIfNecessary only allows one
 	// concurrent pull per image ref, so this should be fine.
-	conversionOpKeyParts := []string{cacheRoot, containerImage, creds.Username, creds.Password}
+	conversionOpKeyParts := []string{cacheRoot, localCacheKey, creds.Username, creds.Password}
 	if *localCacheStoreExt4Images {
 		// Dedupe image conversion operations since they are disk IO-heavy.
 		conversionOpKeyParts = append([]string{cacheRoot, fileCache.TempDir()}, conversionOpKeyParts[1:]...)
 	} else {
 		conversionOpKeyParts = append([]string{"legacy"}, conversionOpKeyParts...)
 	}
-	_, _, err := conversionGroup.Do(ctx, hash.Strings(conversionOpKeyParts...), func(ctx context.Context) (string, error) {
+	cacheKey, _, err := conversionGroup.Do(ctx, hash.Strings(conversionOpKeyParts...), func(ctx context.Context) (string, error) {
 		ctx, cancel := context.WithTimeout(ctx, imageConversionTimeout)
 		defer cancel()
 
 		// Re-check the cache here so we can avoid duplicate conversion work if
 		// another caller populated the cache after the caller's initial lookup.
-		cached, err := IsImageCached(ctx, fileCache, cacheRoot, containerImage)
+		cached, err := IsImageCached(ctx, fileCache, cacheRoot, localCacheKey)
 		if err != nil {
 			return "", err
 		}
 		if cached {
-			return "", nil
+			return localCacheKey, nil
+		}
+
+		if RemoteCacheEnabled(remoteCache) && resolvedContainerImage != "" {
+			restored, restoreErr := restoreRemoteImage(ctx, remoteCache, fileCache, cacheRoot, localCacheKey, resolvedContainerImage)
+			if restoreErr != nil {
+				if status.IsPermissionDeniedError(restoreErr) || status.IsUnauthenticatedError(restoreErr) {
+					return "", restoreErr
+				}
+				log.CtxWarningf(ctx, "Could not restore ext4 image for %q from remote cache; falling back to conversion: %s", resolvedContainerImage, restoreErr)
+			} else if restored {
+				return localCacheKey, nil
+			}
 		}
 
 		// NOTE: If more params are added to this func, be sure to update
 		// conversionOpKeyParts above (if applicable).
-		out, err := createExt4Image(ctx, resolver, fileCache, cacheRoot, containerImage, creds, useOCIFetcher)
+		_, err = createExt4Image(ctx, resolver, fileCache, remoteCache, cacheRoot, conversionImage, localCacheKey, resolvedContainerImage, creds, useOCIFetcher)
 		if err != nil {
-			return "", status.WrapErrorf(err, "convert %q from OCI to EXT4 format", containerImage)
+			return "", status.WrapErrorf(err, "convert %q from OCI to EXT4 format", conversionImage)
 		}
-		return out, nil
+		return localCacheKey, nil
 	})
 	if err != nil {
 		return err
@@ -286,25 +455,32 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	// could potentially get evicted. Since we just pulled, this normally
 	// shouldn't happen unless the filecache is under heavy eviction pressure,
 	// which most likely means it's too small.
-	if err := LinkCachedImage(ctx, fileCache, cacheRoot, containerImage, outputPath); err != nil {
+	if err := LinkCachedImage(ctx, fileCache, cacheRoot, cacheKey, outputPath); err != nil {
 		return status.WrapError(err, "failed to link cached image")
 	}
 	return nil
 }
 
-func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, remoteCache *RemoteCache, cacheRoot, containerImage, localCacheKey, resolvedContainerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher)
 	if err != nil {
 		return "", err
 	}
+	if RemoteCacheEnabled(remoteCache) && resolvedContainerImage != "" {
+		// A remote cache write is best-effort: the converted local image is still
+		// usable if the CAS or Action Cache is temporarily unavailable.
+		if err := cacheRemoteImage(ctx, remoteCache, resolvedContainerImage, tmpImagePath); err != nil {
+			log.CtxWarningf(ctx, "Could not store converted ext4 image for %q in remote cache: %s", resolvedContainerImage, err)
+		}
+	}
 	if !*localCacheStoreExt4Images || fileCache == nil {
 		imageHash, err := hashFile(tmpImagePath)
 		if err != nil {
 			return "", err
 		}
-		containerImageHome := filepath.Join(getDiskImagesPath(cacheRoot, containerImage), imageHash)
+		containerImageHome := filepath.Join(getDiskImagesPath(cacheRoot, localCacheKey), imageHash)
 		if err := disk.EnsureDirectoryExists(containerImageHome); err != nil {
 			return "", err
 		}
@@ -321,7 +497,7 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 		}
 	}()
 	sharedCtx := sharedFileCacheContext(ctx, fileCache)
-	if err := fileCache.AddFile(sharedCtx, diskImageFileNode(containerImage), tmpImagePath); err != nil {
+	if err := fileCache.AddFile(sharedCtx, diskImageFileNode(localCacheKey), tmpImagePath); err != nil {
 		return "", fmt.Errorf("add disk image to filecache: %w", err)
 	}
 	return "", nil

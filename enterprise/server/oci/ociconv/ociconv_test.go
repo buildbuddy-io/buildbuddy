@@ -13,15 +13,19 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,7 +71,7 @@ func TestOciconv(t *testing.T) {
 	require.NotNil(t, resolver)
 
 	path := filepath.Join(root, "materialized.ext4")
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, path)
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, nil, root, ref, "", oci.Credentials{}, false /*=useOCIFetcher*/, path)
 	require.NoError(t, err)
 
 	fi, err := os.Stat(path)
@@ -128,6 +132,74 @@ func TestOciconv(t *testing.T) {
 	require.Empty(t, cmp.Diff(imageFiles, extractedFiles))
 }
 
+func TestCreateDiskImage_RemoteCacheAvoidsConversion(t *testing.T) {
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.local_cache_store_ext4_images", true)
+	flags.Set(t, "executor.remote_cache_store_ext4_images", true)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityExecutor)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	remoteCache := &ociconv.RemoteCache{
+		ByteStreamClient:  te.GetByteStreamClient(),
+		ActionCacheClient: te.GetActionCacheClient(),
+	}
+
+	reg := testregistry.Run(t, testregistry.Opts{})
+	registryRunning := true
+	t.Cleanup(func() {
+		if registryRunning {
+			require.NoError(t, reg.Shutdown())
+		}
+	})
+	const imageName = "ociconv-remote-cache:latest"
+	tagRef, img := reg.PushNamedImageWithFiles(t, imageName, map[string][]byte{"/version": []byte("one")}, nil)
+	parsedRef, err := ctrname.ParseReference(tagRef)
+	require.NoError(t, err)
+	imageDigest, err := img.Digest()
+	require.NoError(t, err)
+	resolvedRef := parsedRef.Context().Digest(imageDigest.String()).String()
+
+	// Move the tag after resolving it. Conversion must still pull the immutable
+	// digest that was authenticated, rather than storing the new tag contents
+	// under the old digest's cache key.
+	_, _ = reg.PushNamedImageWithFiles(t, imageName, map[string][]byte{"/version": []byte("two")}, nil)
+
+	resolver, err := oci.NewResolver(te)
+	require.NoError(t, err)
+
+	root1 := testfs.MakeTempDir(t)
+	fc1, err := filecache.NewFileCache(filepath.Join(root1, "filecache"), 1_000_000_000, false)
+	require.NoError(t, err)
+	output1 := filepath.Join(root1, "first.ext4")
+	require.NoError(t, ociconv.CreateDiskImage(ctx, resolver, fc1, remoteCache, root1, tagRef, resolvedRef, oci.Credentials{}, false /*=useOCIFetcher*/, output1))
+	firstExtractDir := testfs.MakeTempDir(t)
+	require.NoError(t, ext4.ImageToDirectory(ctx, output1, firstExtractDir, []string{"/version"}))
+	version, err := os.ReadFile(filepath.Join(firstExtractDir, "version"))
+	require.NoError(t, err)
+	require.Equal(t, "one", string(version))
+
+	// Make the registry unavailable. A second executor with an empty local cache
+	// can now succeed only by restoring the already-converted filesystem from CAS.
+	require.NoError(t, reg.Shutdown())
+	registryRunning = false
+
+	root2 := testfs.MakeTempDir(t)
+	fc2, err := filecache.NewFileCache(filepath.Join(root2, "filecache"), 1_000_000_000, false)
+	require.NoError(t, err)
+	output2 := filepath.Join(root2, "second.ext4")
+	require.NoError(t, ociconv.CreateDiskImage(ctx, resolver, fc2, remoteCache, root2, tagRef, resolvedRef, oci.Credentials{}, false /*=useOCIFetcher*/, output2))
+
+	firstImage, err := os.ReadFile(output1)
+	require.NoError(t, err)
+	secondImage, err := os.ReadFile(output2)
+	require.NoError(t, err)
+	require.Equal(t, firstImage, secondImage)
+}
+
 func TestCreateDiskImage_UsesCredentialsOnCacheMiss(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
@@ -177,13 +249,13 @@ func TestCreateDiskImage_UsesCredentialsOnCacheMiss(t *testing.T) {
 
 	// This should fail because the credentials are invalid and the image is not
 	// cached yet.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("first"))
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, nil, root, ref, "", oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("first"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401 Unauthorized")
 
 	// This should succeed because the credentials are valid and the image is not
 	// cached yet.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, nil, root, ref, "", oci.Credentials{
 		Username: "test",
 		Password: "test",
 	}, false /*=useOCIFetcher*/, outputPath("second"))
@@ -193,13 +265,13 @@ func TestCreateDiskImage_UsesCredentialsOnCacheMiss(t *testing.T) {
 	// Once the image is cached, CreateDiskImage's internal re-check should
 	// short-circuit before attempting another registry access, while still
 	// linking the cached image to the requested output path.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("third"))
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, nil, root, ref, "", oci.Credentials{}, false /*=useOCIFetcher*/, outputPath("third"))
 	require.NoError(t, err)
 	require.FileExists(t, outputPath("third"))
 
 	// A subsequent call with valid credentials should also succeed when the
 	// image is already cached.
-	err = ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{
+	err = ociconv.CreateDiskImage(ctx, resolver, fc, nil, root, ref, "", oci.Credentials{
 		Username: "test",
 		Password: "test",
 	}, false /*=useOCIFetcher*/, outputPath("fourth"))
@@ -224,7 +296,7 @@ func TestLinkCachedImage_SharesAcrossGroups(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx1 := claims.AuthContextWithJWT(context.Background(), &claims.Claims{GroupID: "GR1"}, nil)
-	require.NoError(t, ociconv.CreateDiskImage(ctx1, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, filepath.Join(root, "group1.ext4")))
+	require.NoError(t, ociconv.CreateDiskImage(ctx1, resolver, fc, nil, root, ref, "", oci.Credentials{}, false /*=useOCIFetcher*/, filepath.Join(root, "group1.ext4")))
 
 	ctx2 := claims.AuthContextWithJWT(context.Background(), &claims.Claims{GroupID: "GR2"}, nil)
 	linkedPath := filepath.Join(root, "linked.ext4")
@@ -251,7 +323,7 @@ func TestCreateDiskImage_LegacyStorage(t *testing.T) {
 	require.NoError(t, err)
 
 	materializedPath := filepath.Join(root, "materialized.ext4")
-	require.NoError(t, ociconv.CreateDiskImage(ctx, resolver, fc, root, ref, oci.Credentials{}, false /*=useOCIFetcher*/, materializedPath))
+	require.NoError(t, ociconv.CreateDiskImage(ctx, resolver, fc, nil, root, ref, "", oci.Credentials{}, false /*=useOCIFetcher*/, materializedPath))
 	require.FileExists(t, materializedPath)
 
 	linkedPath := filepath.Join(root, "linked.ext4")

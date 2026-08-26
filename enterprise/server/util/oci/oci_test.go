@@ -1310,6 +1310,44 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 	}
 }
 
+func TestResolveImageDigestAndAuthenticate_BypassesTagCache(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	registry := testregistry.Run(t, testregistry.Opts{})
+
+	imageName := "fresh_digest"
+	nameToResolve, firstImage := registry.PushNamedImageWithFiles(t, imageName, map[string][]byte{"/version": []byte("one")}, nil)
+	firstDigest, err := firstImage.Digest()
+	require.NoError(t, err)
+
+	resolver := newResolver(t, te)
+	cachedRef, err := resolver.ResolveImageDigest(context.Background(), nameToResolve, oci.RuntimePlatform(), oci.Credentials{})
+	require.NoError(t, err)
+	cachedDigest, err := name.NewDigest(cachedRef)
+	require.NoError(t, err)
+	require.Equal(t, firstDigest.String(), cachedDigest.DigestStr())
+
+	_, secondImage := registry.PushNamedImageWithFiles(t, imageName, map[string][]byte{"/version": []byte("two")}, nil)
+	secondDigest, err := secondImage.Digest()
+	require.NoError(t, err)
+	require.NotEqual(t, firstDigest, secondDigest)
+
+	// The ordinary resolver intentionally retains the old tag mapping in its
+	// short-lived LRU.
+	cachedRef, err = resolver.ResolveImageDigest(context.Background(), nameToResolve, oci.RuntimePlatform(), oci.Credentials{})
+	require.NoError(t, err)
+	cachedDigest, err = name.NewDigest(cachedRef)
+	require.NoError(t, err)
+	require.Equal(t, firstDigest.String(), cachedDigest.DigestStr())
+
+	// Authentication-sensitive cache lookups must observe the current digest.
+	freshRef, err := resolver.ResolveImageDigestAndAuthenticate(context.Background(), nameToResolve, oci.RuntimePlatform(), oci.Credentials{})
+	require.NoError(t, err)
+	freshDigest, err := name.NewDigest(freshRef)
+	require.NoError(t, err)
+	require.Equal(t, secondDigest.String(), freshDigest.DigestStr())
+}
+
 func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})

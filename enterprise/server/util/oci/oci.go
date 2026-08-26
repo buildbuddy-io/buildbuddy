@@ -230,21 +230,38 @@ func (r *Resolver) AuthenticateWithRegistry(ctx context.Context, imageName strin
 	if credentials.bypassRegistry {
 		return nil
 	}
+	_, err := r.ResolveImageDigestAndAuthenticate(ctx, imageName, platform, credentials)
+	return err
+}
+
+// ResolveImageDigestAndAuthenticate makes an authenticated HEAD request to the
+// remote registry and returns a canonical image reference containing the digest
+// observed by that request. Unlike ResolveImageDigest, this method intentionally
+// bypasses the tag-to-digest LRU so callers can safely bind authorization and
+// cache lookup to the same current registry digest. If registry access is
+// explicitly bypassed, it returns a canonical digest ref when one was provided,
+// or an empty string for a tag.
+func (r *Resolver) ResolveImageDigestAndAuthenticate(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials) (string, error) {
+	if credentials.bypassRegistry {
+		if imageRef, err := ctrname.NewDigest(imageName); err == nil {
+			return imageRef.String(), nil
+		}
+		return "", nil
+	}
 
 	log.CtxDebugf(ctx, "Authenticating with registry for %q", imageName)
 
 	imageRef, err := ctrname.ParseReference(imageName)
 	if err != nil {
-		return status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
+		return "", status.InvalidArgumentErrorf("invalid image reference %q: %s", imageName, err)
 	}
 
 	remoteOpts := r.getRemoteOpts(ctx, platform, credentials)
-	_, err = remote.Head(imageRef, remoteOpts...)
+	desc, err := remote.Head(imageRef, remoteOpts...)
 	if err != nil {
-		return ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
+		return "", ocifetcher.RemoteRegistryError(err, "could not fetch manifest metadata from remote registry")
 	}
-
-	return nil
+	return imageRef.Context().Digest(desc.Digest.String()).String(), nil
 }
 
 // ResolveImageDigest takes an image name and returns an image name with a digest.
