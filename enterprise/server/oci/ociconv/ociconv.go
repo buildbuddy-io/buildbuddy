@@ -48,7 +48,7 @@ var (
 	// Single-flight group used to dedupe firecracker image conversions.
 	conversionGroup singleflight.Group[string, string]
 
-	localCacheStoreExt4Images = flag.Bool("executor.local_cache_store_ext4_images", false, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
+	localCacheStoreExt4Images = flag.Bool("executor.local_cache_store_ext4_images", true, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
 )
 
 func hashFile(filename string) (string, error) {
