@@ -1883,8 +1883,11 @@ func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, ref *
 			}
 			continue
 		}
+		// Nil out the reference once a peer has consumed it so that only one
+		// peer verifies it. Local writes don't count: they go through
+		// c.local.Writer, which ignores the reference, so it is kept for the
+		// first remote peer's stream.
 		if ref != nil && !(c.opts.EnableLocalWrites && peer == c.opts.ListenAddr) {
-			// Only send the reference to one peer to verify.
 			ref = nil
 		}
 		mwc.peerClosers[peer] = rwc
