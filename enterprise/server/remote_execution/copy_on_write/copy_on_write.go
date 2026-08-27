@@ -49,8 +49,8 @@ const (
 
 	// If we access a chunk, we will queue this number of contiguous chunks
 	// to be eagerly fetched in the background, anticipating that they will
-	// also be accessed
-	numChunksToEagerFetch = 32
+	// also be accessed.
+	defaultNumChunksToEagerFetch = 32
 
 	// Number of goroutines to run concurrently to handle LRU evictions.
 	lruEvictionConcurrency = 2
@@ -163,10 +163,11 @@ type COWStore struct {
 	// Chunk offsets to be eagerly fetched. This is using a bounded stack data
 	// structure so that if the buffer is full, a new item can still be appended,
 	// evicting the least recently added chunk.
-	eagerFetchStack *boundedstack.BoundedStack[int64]
-	eagerFetchEg    *errgroup.Group
-	quitOnce        sync.Once
-	quitChan        chan struct{}
+	eagerFetchStack  *boundedstack.BoundedStack[int64]
+	eagerFetchEg     *errgroup.Group
+	eagerFetchChunks int
+	quitOnce         sync.Once
+	quitChan         chan struct{}
 
 	// usageLock protects chunkOperationToUsageSummary
 	usageLock                    sync.Mutex
@@ -186,6 +187,10 @@ type COWOptions struct {
 	DataDir            string
 	RemoteInstanceName string
 	RemoteEnabled      bool
+
+	// EagerFetchChunks controls how many chunks following an accessed chunk are
+	// fetched speculatively. If unset, the default eager-fetch window is used.
+	EagerFetchChunks int
 
 	// By default, mmapped chunks are managed by the executor-wide shared LRU.
 	//
@@ -212,6 +217,11 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 	chunkMap := make(map[int64]*Mmap, len(chunks))
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
+	}
+
+	eagerFetchChunks := opts.EagerFetchChunks
+	if eagerFetchChunks <= 0 {
+		eagerFetchChunks = defaultNumChunksToEagerFetch
 	}
 
 	var lru *MmapLRU
@@ -257,6 +267,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		ioBlockSize:                  int64(stat.Sys().(*syscall.Stat_t).Blksize),
 		eagerFetchStack:              eagerFetchStack,
 		eagerFetchEg:                 &errgroup.Group{},
+		eagerFetchChunks:             eagerFetchChunks,
 		quitChan:                     make(chan struct{}),
 		chunkOperationToUsageSummary: make(map[string]usageSummary, 0),
 		mmapLRU:                      lru,
@@ -831,7 +842,7 @@ func (s *COWStore) eagerFetchNextChunks(offset int64) {
 		return
 	}
 	currentOffset := offset + s.chunkSizeBytes
-	for i := 0; i < numChunksToEagerFetch; i++ {
+	for i := 0; i < s.eagerFetchChunks; i++ {
 		s.eagerFetchStack.Push(currentOffset)
 		currentOffset += s.chunkSizeBytes
 	}
