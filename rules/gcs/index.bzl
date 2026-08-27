@@ -77,9 +77,8 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     # gcs has no apply_only step; it just pushes.
     native.alias(
         name = name + ".apply",
-        actual = ":" + name + ".push_only"
+        actual = ":" + name + ".push_only",
     )
-
 
     # Uploading is the only deployment operation for a GCS bundle, so there
     # is nothing left to do during the apply-only phase.
