@@ -36,6 +36,7 @@ go_test(
     deps = [
         ":copy_on_write",
         "//enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
+        "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/snaputil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
@@ -68,6 +69,7 @@ go_test(
     deps = [
         ":copy_on_write",
         "//enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil",
+        "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/snaputil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
