@@ -27,7 +27,7 @@ var (
 	EnableLocalSnapshotSharing       = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
 	EnableRemoteSnapshotSharing      = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs.")
 	RemoteSnapshotReadonly           = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
-	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
+	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", true, "Enable memory balloon support when snapshotting firecracker VMs.")
 	VerboseLogging                   = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
 	enableUploadCompresssion         = flag.Bool("executor.enable_snapshot_chunk_upload_compression", true, "If true, snapshot chunks will be sent to the remote cache compressed.")
