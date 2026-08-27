@@ -577,10 +577,19 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	}
 
 	if _, ok := persistentworker.Key(r.PlatformProperties, command.GetArguments()); ok {
-		return r.sendPersistentWorkRequest(ctx, command)
+		res := r.sendPersistentWorkRequest(ctx, command)
+		// The worker protocol buffers the work response output in memory, so
+		// it doesn't write to the stdio writers itself. Write the output to
+		// the stderr writer here, matching the other execution paths.
+		if _, err := stdio.Stderr.Write(res.Stderr); err != nil {
+			log.CtxWarningf(ctx, "Failed to write persistent worker output to stderr file: %s", err)
+		} else {
+			res.Stderr = nil
+		}
+		return res
 	}
 
-	execResult := r.Container.Exec(ctx, command, &interfaces.Stdio{})
+	execResult := r.Container.Exec(ctx, command, stdio)
 
 	if r.hasMaxResourceUtilization(ctx, execResult.UsageStats) {
 		r.doNotReuse = true
