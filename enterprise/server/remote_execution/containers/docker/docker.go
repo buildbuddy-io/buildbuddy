@@ -284,10 +284,7 @@ func (r *dockerCommandContainer) Run(ctx context.Context, command *repb.Command,
 
 	eg := &errgroup.Group{}
 	eg.Go(func() error {
-		var stdout, stderr bytes.Buffer
-		_, err := stdcopy.StdCopy(&stdout, &stderr, hijackedResp.Reader)
-		result.Stdout = stdout.Bytes()
-		result.Stderr = stderr.Bytes()
+		_, err := stdcopy.StdCopy(stdio.Stdout, stdio.Stderr, hijackedResp.Reader)
 		mu.Lock()
 		defer mu.Unlock()
 		if state == ctrDidNotExitCleanly {

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/docker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
@@ -55,8 +56,6 @@ func TestDockerRun(t *testing.T) {
 	}
 	expectedResult := &interfaces.CommandResult{
 		ExitCode:           0,
-		Stdout:             []byte("Hello world"),
-		Stderr:             []byte("foo"),
 		CommandDebugString: "(docker) [sh -c printf \"$GREETING $(cat world.txt)\" && printf \"foo\" >&2]",
 	}
 	env := testenv.GetTestEnv(t)
@@ -64,8 +63,11 @@ func TestDockerRun(t *testing.T) {
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
+	assert.Equal(t, "Hello world", stdout.String())
+	assert.Equal(t, "foo", stderr.String())
 	assert.Equal(t, expectedResult, res)
 }
 
@@ -206,7 +208,8 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}()
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
 	assert.True(
 		t, status.IsUnavailableError(res.Error),
@@ -215,10 +218,10 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")
 	assert.Equal(
-		t, "ExampleStdout\n", string(res.Stdout),
+		t, "ExampleStdout\n", stdout.String(),
 		"if timed out, should be able to see debug output on stdout")
 	assert.Equal(
-		t, "ExampleStderr\n", string(res.Stderr),
+		t, "ExampleStderr\n", stderr.String(),
 		"if timed out, should be able to see debug output on stderr")
 	output := testfs.ReadFileAsString(t, workDir, "output.txt")
 	assert.Equal(
@@ -359,7 +362,8 @@ func TestDockerRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, _, stdio := commandutil.BufferStdio()
+	c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
-	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+	assert.Equal(t, "Hello world\nHello again\n", stdout.String())
 }
