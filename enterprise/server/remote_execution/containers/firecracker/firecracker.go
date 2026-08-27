@@ -2179,7 +2179,7 @@ func (c *FirecrackerContainer) Run(ctx context.Context, command *repb.Command, a
 		}
 	}()
 
-	cmdResult := c.Exec(ctx, command, &interfaces.Stdio{})
+	cmdResult := c.Exec(ctx, command, stdio)
 	return cmdResult
 }
 

@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -354,8 +355,6 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	}
 	expectedResult := &interfaces.CommandResult{
 		ExitCode: 0,
-		Stdout:   []byte("Hello world"),
-		Stderr:   []byte("foo"),
 	}
 
 	opts := firecracker.ContainerOpts{
@@ -375,11 +374,14 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
 
+	assert.Equal(t, "Hello world", stdout.String())
+	assert.Equal(t, "foo", stderr.String())
 	assertCommandResult(t, expectedResult, res)
 }
 
@@ -2389,8 +2391,6 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	}
 	expectedResult := &interfaces.CommandResult{
 		ExitCode: 0,
-		Stdout:   nil,
-		Stderr:   nil,
 	}
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         busyboxImage,
@@ -2408,7 +2408,8 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatalf("error: %s", res.Error)
 	}
@@ -2472,6 +2473,8 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 			"total scratch disk size")
 	}
 
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
 	assertCommandResult(t, expectedResult, res)
 
 	for _, fullPath := range files {
@@ -2594,13 +2597,14 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+	assert.Contains(t, stdout.String(), "64 bytes from "+googleDNS)
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
 	assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 }
@@ -2634,7 +2638,8 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	_, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -2672,11 +2677,12 @@ func TestFirecrackerResolvConf(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, string(hostResolvConf), string(res.Stdout))
+	assert.Equal(t, string(hostResolvConf), stdout.String())
 }
 
 func TestSnapshotAndResumeWithNetwork(t *testing.T) {
@@ -2771,10 +2777,11 @@ func TestFirecrackerRunWithNetworkPooling(t *testing.T) {
 		}
 		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 		require.NoError(t, err)
-		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+		stdout, _, stdio := commandutil.BufferStdio()
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 		require.NoError(t, err)
 		assert.Equal(t, 0, res.ExitCode)
-		assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+		assert.Contains(t, stdout.String(), "64 bytes from "+googleDNS)
 	}
 }
 
@@ -2816,7 +2823,8 @@ func TestFirecrackerRunWithNetworkPooling_MixedNetworkModes(t *testing.T) {
 	{
 		cmd := &repb.Command{Arguments: []string{"sh", "-c", "true"}}
 		c := newContainer(fcpb.NetworkMode_NETWORK_MODE_LOCAL)
-		res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+		_, _, stdio := commandutil.BufferStdio()
+		res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 		require.NoError(t, res.Error)
 		require.Equal(t, 0, res.ExitCode)
 	}
@@ -2828,10 +2836,11 @@ func TestFirecrackerRunWithNetworkPooling_MixedNetworkModes(t *testing.T) {
 		googleDNS := "8.8.8.8"
 		cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W2", googleDNS}}
 		c := newContainer(fcpb.NetworkMode_NETWORK_MODE_EXTERNAL)
-		res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+		stdout, _, stdio := commandutil.BufferStdio()
+		res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
-		assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
+		assert.Contains(t, stdout.String(), "64 bytes from "+googleDNS)
 	}
 }
 
@@ -2902,11 +2911,12 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
-	assert.Empty(t, string(res.Stderr))
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
 
 	initPID := 1
@@ -2929,7 +2939,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 		// If it shows state "Z" ("zombie"), it wasn't properly reaped.
 		""
 
-	assert.Equal(t, expectedOutput, string(res.Stdout))
+	assert.Equal(t, expectedOutput, stdout.String())
 }
 
 func TestFirecrackerNonRoot(t *testing.T) {
@@ -2971,14 +2981,15 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
 	require.NoError(t, res.Error)
-	require.Empty(t, string(res.Stderr))
+	require.Empty(t, stderr.String())
 	require.Equal(t, 0, res.ExitCode)
-	require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), string(res.Stdout))
+	require.Regexp(t, regexp.MustCompile(`uid=[0-9]+\(nobody\) gid=[0-9]+\(nobody\)`), stdout.String())
 }
 
 func TestFirecrackerRunAsNonExistentUser(t *testing.T) {
@@ -3018,11 +3029,12 @@ func TestFirecrackerRunAsNonExistentUser(t *testing.T) {
 	}
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	require.Empty(t, string(res.Stderr))
+	require.Empty(t, stderr.String())
 	require.Equal(t, 0, res.ExitCode)
-	require.Equal(t, "uid=1234 gid=0(root) groups=0(root)\n", string(res.Stdout))
+	require.Equal(t, "uid=1234 gid=0(root) groups=0(root)\n", stdout.String())
 }
 
 func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
@@ -3049,11 +3061,12 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "", string(res.Stderr))
-	assert.Equal(t, "/workspace\n", string(res.Stdout))
+	assert.Equal(t, "", stderr.String())
+	assert.Equal(t, "/workspace\n", stdout.String())
 }
 
 func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
@@ -3123,11 +3136,12 @@ func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "", string(res.Stderr))
-	assert.Equal(t, "ipv4_ipv6_enabled\n", string(res.Stdout))
+	assert.Equal(t, "", stderr.String())
+	assert.Equal(t, "ipv4_ipv6_enabled\n", stdout.String())
 }
 
 func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
@@ -3175,22 +3189,22 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	stdout := string(res.Stdout)
 	if snaputil.IsChunkedSnapshotSharingEnabled() {
 		// Docker may report the native overlay-backed fast path as either the
 		// legacy graphdriver name ("overlay2") or the newer containerd
 		// snapshotter name ("overlayfs"), depending on daemon configuration.
-		assert.Regexp(t, `^Hello\nworld\n Storage Driver: (overlay2|overlayfs)\n$`, stdout, "stdout should contain docker output with a native overlay storage driver")
+		assert.Regexp(t, `^Hello\nworld\n Storage Driver: (overlay2|overlayfs)\n$`, stdout.String(), "stdout should contain docker output with a native overlay storage driver")
 	} else {
-		assert.Equal(t, "Hello\nworld\n Storage Driver: vfs\n", stdout, "stdout should contain docker output")
+		assert.Equal(t, "Hello\nworld\n Storage Driver: vfs\n", stdout.String(), "stdout should contain docker output")
 	}
-	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+	assert.Equal(t, "", stderr.String(), "stderr should be empty")
 }
 
 func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
@@ -3256,14 +3270,15 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
 
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "Hello\nworld\n", string(res.Stdout), "stdout should contain pwd output")
-	assert.Equal(t, "", string(res.Stderr), "stderr should be empty")
+	assert.Equal(t, "Hello\nworld\n", stdout.String(), "stdout should contain pwd output")
+	assert.Equal(t, "", stderr.String(), "stderr should be empty")
 }
 
 func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
@@ -3300,7 +3315,8 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	_, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	assert.NotEqual(t, 0, res.ExitCode)
 }
 
@@ -3401,12 +3417,13 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 				},
 			}
 
-			res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+			stdout, stderr, stdio := commandutil.BufferStdio()
+			res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 			require.NoError(t, res.Error)
 
 			assert.Equal(t, 0, res.ExitCode)
-			assert.Equal(t, "", string(res.Stderr))
-			stdoutString := strings.Trim(string(res.Stdout), "\n")
+			assert.Equal(t, "", stderr.String())
+			stdoutString := strings.Trim(stdout.String(), "\n")
 			assert.Truef(t, strings.HasSuffix(stdoutString, "docker.io/library/busybox:latest"), "did not find busyboxy:latest in `%s`", stdoutString)
 
 			actualRequestCount := mirrorCounter.Load()
@@ -3780,16 +3797,17 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	`}}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 
 	require.True(
 		t, status.IsDeadlineExceededError(res.Error),
 		"expected DeadlineExceeded, but got: %s", res.Error)
 	assert.Equal(
-		t, "stdout\n", string(res.Stdout),
+		t, "stdout\n", stdout.String(),
 		"should get partial stdout if the exec times out")
 	assert.Equal(
-		t, "stderr\n", string(res.Stderr),
+		t, "stderr\n", stderr.String(),
 		"should get partial stderr if the exec times out")
 	out := testfs.ReadFileAsString(t, workDir, "output.txt")
 	assert.Equal(
@@ -3890,11 +3908,12 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	require.NoError(t, err)
 	const stdoutSize = 10_000_000
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
 	require.NoError(t, res.Error)
-	assert.Equal(t, string(res.Stderr), "")
-	assert.Len(t, res.Stdout, stdoutSize)
+	assert.Equal(t, stderr.String(), "")
+	assert.Len(t, stdout.Bytes(), stdoutSize)
 }
 
 func TestMergeDiffSnapshot(t *testing.T) {
@@ -4034,7 +4053,8 @@ func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	_, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 }
 
@@ -4468,7 +4488,8 @@ func TestBazelBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
+	_, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 }
 
