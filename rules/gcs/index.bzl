@@ -129,11 +129,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         content = [
             "set -e",
             "unset -v PYTHONSAFEPATH",
-            "if [ -n \"${1}\" ]; then",
-            "  read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
-            "else",
-            "  shift",
-            "fi",
+            "read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
             "{gsutil} -m rm -r gs://{bucket}/{prefix}${{SHA_PREFIX}}".format(
                 gsutil = gsutil,
                 bucket = bucket,
@@ -146,7 +142,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
 
     sh_binary(
         name = name + ".delete",
-        args = ["../$(rlocationpaths %s)" % sha_prefix if sha_prefix != "" else ""],
+        args = ["../$(rlocationpath %s)" % sha_prefix if sha_prefix != "" else ""],
         srcs = [":" + name + ".delete.script"],
         data = [sha_prefix] if sha_prefix != "" else [],
         use_bash_launcher = True,
