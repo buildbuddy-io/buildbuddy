@@ -82,6 +82,18 @@ func CreateProject(gitProjectRoot, owner, repo string, settings *ProjectSettings
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("git init --bare failed: %q (%w)", strings.TrimSpace(stderr.String()), err)
 	}
+	// Support partial clones, like real git hosts such as GitHub do.
+	// allowFilter lets clients fetch with --filter (e.g. blob:none), and
+	// allowAnySHA1InWant lets the resulting lazy fetches request the
+	// filtered-out objects directly by object ID.
+	for _, key := range []string{"uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant"} {
+		cmd := exec.Command("git", "-C", repoPath, "config", key, "true")
+		stderr := &bytes.Buffer{}
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("git config %s: %q (%w)", key, strings.TrimSpace(stderr.String()), err)
+		}
+	}
 	// Create git-daemon-export-ok file to make it available for serving.
 	if err := os.WriteFile(filepath.Join(repoPath, "git-daemon-export-ok"), nil, 0644); err != nil {
 		return fmt.Errorf("create git-daemon-export-ok: %w", err)

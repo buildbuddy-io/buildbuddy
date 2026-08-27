@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -14,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -180,6 +183,239 @@ func TestGitFetchRetriesSlowTransfer(t *testing.T) {
 	fetchedCommitSHA, gitErr := git(t.Context(), io.Discard, "rev-parse", "FETCH_HEAD")
 	require.Nil(t, gitErr)
 	require.Equal(t, wantCommitSHA, strings.TrimSpace(fetchedCommitSHA))
+}
+
+func TestGitCheckoutRetriesSlowLazyFetch(t *testing.T) {
+	flags.Set(t, "git_fetch_low_speed_retries", 1)
+	flags.Set(t, "git_fetch_low_speed_limit", 1)
+	// Git and libcurl configure the low-speed window in whole seconds, so one
+	// second is the shortest interval and gives the fastest possible check.
+	flags.Set(t, "git_fetch_low_speed_time", time.Second)
+	// Fetch with blob:none so that the checkout has to lazily fetch the blobs
+	// it needs from the remote.
+	flags.Set(t, "git_fetch_filters", []string{"blob:none"})
+	flags.Set(t, "pushed_branch", "master")
+	for _, envVar := range []string{"GIT_HTTP_LOW_SPEED_LIMIT", "GIT_HTTP_LOW_SPEED_TIME"} {
+		originalValue, wasSet := os.LookupEnv(envVar)
+		require.NoError(t, os.Unsetenv(envVar))
+		t.Cleanup(func() {
+			if wasSet {
+				require.NoError(t, os.Setenv(envVar, originalValue))
+				return
+			}
+			require.NoError(t, os.Unsetenv(envVar))
+		})
+	}
+	// Fetch from the proxy URL as-is. Otherwise fetch() embeds the REPO_USER
+	// and REPO_TOKEN credentials in the URL if they are set, which they are
+	// when this test itself runs in a BuildBuddy workflow.
+	t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
+
+	// Serve a real repository over HTTP.
+	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
+	remote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: true})
+	sourceDir, wantCommitSHA := testgit.MakeTempRepo(t, map[string]string{"README.md": "test repo"})
+	remote.Push("test-org", "test-repo", remote.AccessToken(), sourceDir)
+
+	// Proxy the Git server. Once armed, the proxy leaves the next upload-pack
+	// response hanging after its first byte until Git aborts it; all other
+	// responses pass through.
+	upstreamURL, err := url.Parse(remote.RepoURL("test-org", "test-repo", ""))
+	require.NoError(t, err)
+	var stallNextFetch atomic.Bool
+	proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
+	proxy.ModifyResponse = func(response *http.Response) error {
+		if response.Request.Method == http.MethodPost && strings.HasSuffix(response.Request.URL.Path, "/git-upload-pack") && stallNextFetch.CompareAndSwap(true, false) {
+			response.Body = &stallingReadCloser{ctx: response.Request.Context(), ReadCloser: response.Body}
+		}
+		return nil
+	}
+	proxyServer := httptest.NewServer(proxy)
+	t.Cleanup(proxyServer.Close)
+
+	checkoutDir := t.TempDir()
+	originalWorkingDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(checkoutDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWorkingDir))
+	})
+	invocationLog := newInvocationLog(nil)
+	invocationLog.writer = io.Discard
+	ws := &workspace{
+		rootDir: checkoutDir,
+		log:     &buildEventReporter{log: invocationLog},
+	}
+	require.NoError(t, ws.init(t.Context()))
+	// Filtered fetches require the partialClone extension, which the runner
+	// normally enables while configuring the repository.
+	_, gitErr := git(t.Context(), io.Discard, "config", "extensions.partialClone", "true")
+	require.Nil(t, gitErr)
+
+	// Fetch the pushed branch without blobs. This fetch is not stalled, so
+	// expect no retries. Fetched byte counts are not asserted in this test,
+	// since the git version on the test executors is too old to log the
+	// trace2 progress events that byte counting is parsed from.
+	require.NoError(t, ws.fetch(t.Context(), proxyServer.URL, []string{"refs/heads/master"}, 1))
+	require.Equal(t, int64(0), ws.gitFetchRetryCount)
+
+	// Check out the fetched branch, stalling the lazy blob fetch that the
+	// checkout triggers. Expect the checkout to be aborted by Git's low-speed
+	// check and retried.
+	stallNextFetch.Store(true)
+	require.NoError(t, ws.checkoutRef(t.Context()))
+	require.Equal(t, int64(1), ws.gitFetchRetryCount)
+
+	// The checked-out working tree should contain the lazily fetched README
+	// at the pushed commit.
+	readme, err := os.ReadFile("README.md")
+	require.NoError(t, err)
+	require.Equal(t, "test repo", string(readme))
+	headCommitSHA, gitErr := git(t.Context(), io.Discard, "rev-parse", "HEAD")
+	require.Nil(t, gitErr)
+	require.Equal(t, wantCommitSHA, strings.TrimSpace(headCommitSHA))
+}
+
+func TestGitMergeRetriesSlowLazyFetch(t *testing.T) {
+	flags.Set(t, "git_fetch_low_speed_retries", 1)
+	flags.Set(t, "git_fetch_low_speed_limit", 1)
+	// Git and libcurl configure the low-speed window in whole seconds, so one
+	// second is the shortest interval and gives the fastest possible check.
+	flags.Set(t, "git_fetch_low_speed_time", time.Second)
+	// Fetch with blob:none so that the merge has to lazily fetch the blobs it
+	// needs from the remote.
+	flags.Set(t, "git_fetch_filters", []string{"blob:none"})
+	flags.Set(t, "pushed_branch", "feature")
+	flags.Set(t, "target_branch", "master")
+	for _, envVar := range []string{"GIT_HTTP_LOW_SPEED_LIMIT", "GIT_HTTP_LOW_SPEED_TIME"} {
+		originalValue, wasSet := os.LookupEnv(envVar)
+		require.NoError(t, os.Unsetenv(envVar))
+		t.Cleanup(func() {
+			if wasSet {
+				require.NoError(t, os.Setenv(envVar, originalValue))
+				return
+			}
+			require.NoError(t, os.Unsetenv(envVar))
+		})
+	}
+	// Fetch from the proxy URL as-is. Otherwise fetch() embeds the REPO_USER
+	// and REPO_TOKEN credentials in the URL if they are set, which they are
+	// when this test itself runs in a BuildBuddy workflow.
+	t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
+
+	// Serve a repository over HTTP in which a feature branch and master have
+	// diverged, so that merging master into the feature branch needs master's
+	// updated README blob.
+	remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
+	remote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: true})
+	sourceDir, _ := testgit.MakeTempRepo(t, map[string]string{"README.md": "base readme"})
+	testshell.Run(t, sourceDir, `
+		git checkout -q -b feature
+		echo -n "feature change" > feature.txt
+		git add . && git commit -qm "feature change"
+		git checkout -q master
+		echo -n "updated readme" > README.md
+		git add . && git commit -qm "master change"
+	`)
+	remote.Push("test-org", "test-repo", remote.AccessToken(), sourceDir)
+	// Push the feature branch with the same credential settings that
+	// remote.Push uses. In particular the credential helper list must be
+	// reset, because on macOS the system gitconfig enables the osxkeychain
+	// helper, which hangs forever on unattended hosts waiting for keychain
+	// access.
+	testshell.Run(t, sourceDir, `
+		export GIT_ASKPASS=/usr/bin/true
+		git -c credential.helper= push -q origin feature
+	`)
+	masterReadmeOID := strings.TrimSpace(testshell.Run(t, sourceDir, `git rev-parse master:README.md`))
+
+	// Proxy the Git server. The merge's lazy fetch is identified by its
+	// request body wanting master's README blob; once armed, the proxy leaves
+	// the response to that fetch hanging after its first byte until Git
+	// aborts it. All other responses pass through, including those of the
+	// target branch fetch that precedes the merge.
+	upstreamURL, err := url.Parse(remote.RepoURL("test-org", "test-repo", ""))
+	require.NoError(t, err)
+	var stallNextLazyFetch atomic.Bool
+	type stallMarker struct{}
+	proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
+	proxy.ModifyResponse = func(response *http.Response) error {
+		if response.Request.Context().Value(stallMarker{}) != nil {
+			response.Body = &stallingReadCloser{ctx: response.Request.Context(), ReadCloser: response.Body}
+		}
+		return nil
+	}
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-upload-pack") {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			if strings.Contains(string(body), masterReadmeOID) && stallNextLazyFetch.CompareAndSwap(true, false) {
+				r = r.WithContext(context.WithValue(r.Context(), stallMarker{}, true))
+			}
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(proxyServer.Close)
+	flags.Set(t, "pushed_repo_url", proxyServer.URL)
+	flags.Set(t, "target_repo_url", proxyServer.URL)
+
+	checkoutDir := t.TempDir()
+	originalWorkingDir, err := os.Getwd()
+	require.NoError(t, err)
+	require.NoError(t, os.Chdir(checkoutDir))
+	t.Cleanup(func() {
+		require.NoError(t, os.Chdir(originalWorkingDir))
+	})
+	invocationLog := newInvocationLog(nil)
+	invocationLog.writer = io.Discard
+	ws := &workspace{
+		rootDir: checkoutDir,
+		log:     &buildEventReporter{log: invocationLog},
+	}
+	require.NoError(t, ws.init(t.Context()))
+	// Filtered fetches require the partialClone extension, and the merge
+	// commit needs a committer identity. The runner normally sets both while
+	// configuring the repository.
+	for _, kv := range [][2]string{
+		{"extensions.partialClone", "true"},
+		{"user.email", "ci-runner@buildbuddy.io"},
+		{"user.name", "BuildBuddy"},
+	} {
+		_, gitErr := git(t.Context(), io.Discard, "config", kv[0], kv[1])
+		require.Nil(t, gitErr)
+	}
+
+	// Fetch and check out the feature branch. Neither is stalled, so expect
+	// no retries.
+	require.NoError(t, ws.fetch(t.Context(), proxyServer.URL, []string{"refs/heads/feature"}, 1))
+	require.NoError(t, ws.checkoutRef(t.Context()))
+	require.Equal(t, int64(0), ws.gitFetchRetryCount)
+
+	// Merge with the base branch, stalling the lazy fetch of master's README
+	// blob that the merge triggers. Expect the merge to be aborted by Git's
+	// low-speed check and retried. MergeWithBase is enabled by default for
+	// pull request triggers.
+	stallNextLazyFetch.Store(true)
+	triggers := &config.Triggers{PullRequest: &config.PullRequestTrigger{}}
+	require.NoError(t, ws.mergeWithBaseIfRequested(t.Context(), triggers))
+	require.Nil(t, ws.setupError, "setup error: %v", ws.setupError)
+	require.False(t, stallNextLazyFetch.Load(), "expected the proxy to have stalled the merge's lazy fetch")
+	require.Equal(t, int64(1), ws.gitFetchRetryCount)
+
+	// The merge commit should combine both branches, with the lazily fetched
+	// README at master's version and the feature branch's file intact.
+	readme, err := os.ReadFile("README.md")
+	require.NoError(t, err)
+	require.Equal(t, "updated readme", string(readme))
+	featureFile, err := os.ReadFile("feature.txt")
+	require.NoError(t, err)
+	require.Equal(t, "feature change", string(featureFile))
+	_, gitErr := git(t.Context(), io.Discard, "rev-parse", "--verify", "HEAD^2")
+	require.Nil(t, gitErr, "expected HEAD to be a merge commit")
 }
 
 func TestIsTransferTooSlow(t *testing.T) {
