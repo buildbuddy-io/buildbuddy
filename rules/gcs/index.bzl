@@ -39,7 +39,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         name = name + ".push_only.script",
         out = name + ".push_only.out",
         content = [
-            "set -x",
+            "set -e",
             "unset -v PYTHONSAFEPATH",
             "read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
             "shift",
@@ -65,7 +65,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         sha_prefix_location = "/dev/null"
 
     sh_binary(
-        name = name + ".apply",
+        name = name + ".push_only",
         # the first argument is where to read the sha_prefix from.
         args = [sha_prefix_location] + to_copy,
         srcs = [":" + name + ".push_only.script"],
@@ -74,14 +74,12 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
         **kwargs
     )
 
-    sh_binary(
-        name = name + ".push_only",
-        args = [sha_prefix_location] + to_copy,
-        srcs = [":" + name + ".push_only.script"],
-        data = srcs + ([sha_prefix] if sha_prefix != "" else []),
-        use_bash_launcher = True,
-        **kwargs
+    # gcs has no apply_only step; it just pushes.
+    native.alias(
+        name = name + ".apply",
+        actual = ":" + name + ".push_only"
     )
+
 
     # Uploading is the only deployment operation for a GCS bundle, so there
     # is nothing left to do during the apply-only phase.
