@@ -1933,6 +1933,8 @@ message FindMissingBlobsRequest {
     FMB_CHUNK_VALIDATION = 17;
     // CAS SplitBlob API.
     CAS_SPLIT_BLOB = 18;
+    // Reference write-path "does this already exist?" dedupe guard.
+    REFERENCE_WRITE_DEDUPE = 19;
   }
   Purpose purpose = 1000;
 }

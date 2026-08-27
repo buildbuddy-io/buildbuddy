@@ -4175,6 +4175,23 @@ func TestWriteByReference(t *testing.T) {
 		assertReplicated(t, locals, dcs, rn)
 	})
 
+	t.Run("duplicate writes are not staged again", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true, false)
+		_, dcs, locals, store := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+
+		// Every write peer already has the blob, so a repeated write skips
+		// staging and the peers dedupe the byte-path fallback.
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		assertReplicated(t, locals, dcs, rn)
+	})
+
 	t.Run("verify flag tees bytes and verifies references", func(t *testing.T) {
 		setWriteReferenceExperiments(t, false, true)
 		_, dcs, locals, store := newCluster(t, 3)

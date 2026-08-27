@@ -1700,7 +1700,37 @@ type referenceWriteCloser struct {
 	peers            *peerset.PeerSet
 }
 
+// writePeersContain returns whether every write peer for r already holds it.
+// Errors are treated as the blob being missing so that the write proceeds.
+func (c *Cache) writePeersContain(ctx context.Context, r *rspb.ResourceName) bool {
+	ps, err := c.writePeers(r)
+	if err != nil {
+		return false
+	}
+	ctx = findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_REFERENCE_WRITE_DEDUPE)
+	eg, gCtx := errgroup.WithContext(ctx)
+	for _, peer := range ps.PreferredPeers {
+		eg.Go(func() error {
+			missing, err := c.remoteFindMissing(gCtx, peer, []*rspb.ResourceName{r})
+			if err != nil {
+				return err
+			}
+			if len(missing) > 0 {
+				return status.NotFoundErrorf("digest %q missing on peer %q", r.GetDigest().GetHash(), peer)
+			}
+			return nil
+		})
+	}
+	return eg.Wait() == nil
+}
+
 func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.ReferenceCache, rn *rspb.ResourceName, sendBytes bool) (interfaces.CommittedWriteCloser, error) {
+	if c.writePeersContain(ctx, rn) {
+		// Every write peer already has this blob, so don't pay to stage it in
+		// shared storage; the byte writers short-circuit when the peers
+		// respond with AlreadyExists.
+		return c.byteMultiWriter(ctx, rn, nil)
+	}
 	refWriter, err := refCache.CreateReference(ctx, rn)
 	if err != nil {
 		// The blob can't be staged in shared storage (e.g. it's too small);
