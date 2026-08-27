@@ -44,7 +44,7 @@ import (
 
 const (
 	// File name used for the rootfs snapshot artifact.
-	rootfsFileName = "rootfs.ext4"
+	rootfsFileName         = "rootfs.ext4"
 	misnamedRootfsFileName = "rootfs" // TODO(bduffany): consolidate.
 
 	// Rootfs access during guest boot mixes filesystem metadata and file data
