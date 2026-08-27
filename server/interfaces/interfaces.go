@@ -1333,9 +1333,11 @@ type CommandResult struct {
 	Error error
 	// CommandDebugString indicates the command that was run, for debugging purposes only.
 	CommandDebugString string
-	// Stdout from the command. This may contain data even if there was an Error.
+	// Stdout from the command. This may contain data even if there was an
+	// Error. It is empty when stdout was redirected to a Stdio writer.
 	Stdout []byte
-	// Stderr from the command. This may contain data even if there was an Error.
+	// Stderr from the command. This may contain data even if there was an
+	// Error. It is empty when stderr was redirected to a Stdio writer.
 	Stderr []byte
 	// AuxiliaryLogs contain extra logs associated with the task that may be
 	// useful to present to the user.

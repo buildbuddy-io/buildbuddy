@@ -249,6 +249,13 @@ type taskRunner struct {
 	// measured during the recycle/cleanup path (see measureWorkspaceDiskUsage).
 	// Reported via PostCompletionStats.
 	measuredWorkspaceDiskUsageBytes int64
+
+	// stdoutBuf and stderrBuf hold the current task's stdout/stderr between
+	// Run and UploadOutputs. They are set at the start of Run and cleaned up
+	// after upload, or during runner removal for tasks that fail before
+	// uploading.
+	stdoutBuf *ioutil.SpillBuffer
+	stderrBuf *ioutil.SpillBuffer
 }
 
 func (r *taskRunner) Metadata() *espb.RunnerMetadata {
@@ -482,47 +489,16 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
 
-	// Write the command's stdout/stderr to spill buffers, which buffer small
+	// Write the command's stdout/stderr to spill buffers, which hold small
 	// outputs in memory and spill larger outputs to files on disk, so that
-	// output does not have to be fully buffered in memory.
-	stdoutPath := wsPath + ".stdout"
-	stderrPath := wsPath + ".stderr"
-	stdoutBuf := ioutil.NewSpillBuffer(stdoutPath, *stdioMemoryBufferSize)
-	stderrBuf := ioutil.NewSpillBuffer(stderrPath, *stdioMemoryBufferSize)
-	defer func() {
-		// Container implementations are being migrated to write output to the
-		// stdio writers; until then, output may be written either to the stdio
-		// writers or to the in-memory CommandResult buffers depending on the
-		// implementation. Merge the stdio contents into the result buffers so
-		// that consumers only have to look at the buffers.
-		// TODO: once all implementations write to stdio, upload stdout/stderr
-		// directly from the spill buffers and remove this dual-read logic.
-		readAll := func(buf *ioutil.SpillBuffer) ([]byte, error) {
-			rd, err := buf.Reader()
-			if err != nil {
-				return nil, err
-			}
-			return io.ReadAll(rd)
-		}
-		if b, err := readAll(stdoutBuf); err != nil {
-			log.CtxWarningf(ctx, "Failed to read buffered stdout: %s", err)
-		} else {
-			res.Stdout = append(res.Stdout, b...)
-		}
-		if b, err := readAll(stderrBuf); err != nil {
-			log.CtxWarningf(ctx, "Failed to read buffered stderr: %s", err)
-		} else {
-			res.Stderr = append(res.Stderr, b...)
-		}
-		if err := stdoutBuf.Close(); err != nil {
-			log.CtxWarningf(ctx, "Failed to close stdout buffer: %s", err)
-		}
-		if err := stderrBuf.Close(); err != nil {
-			log.CtxWarningf(ctx, "Failed to close stderr buffer: %s", err)
-		}
-	}()
-	stdout := io.Writer(stdoutBuf)
-	stderr := io.Writer(stderrBuf)
+	// output does not have to be fully buffered in memory. The buffers are
+	// uploaded by UploadOutputs and cleaned up once the upload completes, or
+	// during runner removal for tasks that fail before uploading.
+	r.closeStdio(ctx)
+	r.stdoutBuf = ioutil.NewSpillBuffer(r.stdoutPath(), *stdioMemoryBufferSize)
+	r.stderrBuf = ioutil.NewSpillBuffer(r.stderrPath(), *stdioMemoryBufferSize)
+	stdout := io.Writer(r.stdoutBuf)
+	stderr := io.Writer(r.stderrBuf)
 	if *commandutil.DebugStreamCommandOutputs {
 		stdout = io.MultiWriter(stdout, os.Stdout)
 		stderr = io.MultiWriter(stderr, os.Stderr)
@@ -649,7 +625,11 @@ func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, e
 	if slices.Contains(r.task.GetExperiments(), cdc.SpliceWithoutValidationExperiment) {
 		ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
 	}
-	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
+	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult, r.stdoutBuf, r.stderrBuf)
+	// The stdio buffers are no longer needed once the upload attempt is done.
+	// Clean them up now so they don't consume memory or disk while the runner
+	// is pooled.
+	r.closeStdio(ctx)
 	if err != nil {
 		return err
 	}
@@ -657,6 +637,33 @@ func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, e
 	ioStats.FileUploadDurationUsec = txInfo.TransferDuration.Microseconds()
 	ioStats.FileUploadSizeBytes = txInfo.BytesTransferred
 	return nil
+}
+
+// stdoutPath returns the path of the file that the current task's stdout is
+// spilled to, if it exceeds the in-memory buffer limit.
+func (r *taskRunner) stdoutPath() string {
+	return r.Workspace.Path() + ".stdout"
+}
+
+// stderrPath returns the path of the file that the current task's stderr is
+// spilled to, if it exceeds the in-memory buffer limit.
+func (r *taskRunner) stderrPath() string {
+	return r.Workspace.Path() + ".stderr"
+}
+
+// closeStdio releases the stdio buffers, which also removes their spill
+// files if any output was large enough to spill.
+func (r *taskRunner) closeStdio(ctx context.Context) {
+	for _, buf := range []*ioutil.SpillBuffer{r.stdoutBuf, r.stderrBuf} {
+		if buf == nil {
+			continue
+		}
+		if err := buf.Close(); err != nil {
+			log.CtxWarningf(ctx, "Failed to close stdio buffer: %s", err)
+		}
+	}
+	r.stdoutBuf = nil
+	r.stderrBuf = nil
 }
 
 func (r *taskRunner) GetIsolationType() string {
@@ -723,6 +730,9 @@ func (r *taskRunner) Remove(ctx context.Context) error {
 	if err := r.Container.Remove(ctx); err != nil {
 		errs = append(errs, err)
 	}
+	// Clean up any stdio buffers that were not already cleaned up after
+	// upload, e.g. if the task failed before outputs were uploaded.
+	r.closeStdio(ctx)
 	if err := r.Workspace.Remove(ctx); err != nil {
 		errs = append(errs, err)
 	}

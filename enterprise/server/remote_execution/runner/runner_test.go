@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"path"
@@ -159,6 +160,26 @@ func newFakeFirecrackerContainer() *fakeFirecrackerContainer {
 
 func (*fakeFirecrackerContainer) Stats(context.Context) (*repb.UsageStats, error) {
 	return &repb.UsageStats{}, nil
+}
+
+// readStdout returns the executed command's stdout from the runner's stdio
+// buffer.
+func readStdout(t *testing.T, r interfaces.Runner) string {
+	rd, err := r.(*taskRunner).stdoutBuf.Reader()
+	require.NoError(t, err)
+	b, err := io.ReadAll(rd)
+	require.NoError(t, err)
+	return string(b)
+}
+
+// readStderr returns the executed command's stderr from the runner's stdio
+// buffer.
+func readStderr(t *testing.T, r interfaces.Runner) string {
+	rd, err := r.(*taskRunner).stderrBuf.Reader()
+	require.NoError(t, err)
+	b, err := io.ReadAll(rd)
+	require.NoError(t, err)
+	return string(b)
 }
 
 type fakeOOMKiller struct {
@@ -915,7 +936,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 			res := r.Run(ctx, &repb.IOStats{})
 			require.NoError(t, res.Error)
 			assert.Equal(t, 0, res.ExitCode)
-			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			assert.Equal(t, resp.Output, readStderr(t, r))
 			pool.TryRecycle(ctx, r, true)
 			assert.Equal(t, 1, pool.PausedRunnerCount())
 		})()
@@ -930,7 +951,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 			res := r.Run(ctx, &repb.IOStats{})
 			require.NoError(t, res.Error)
 			assert.Equal(t, 0, res.ExitCode)
-			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			assert.Equal(t, resp.Output, readStderr(t, r))
 			pool.TryRecycle(ctx, r, true)
 			assert.Equal(t, 1, pool.PausedRunnerCount())
 		})()
@@ -945,7 +966,7 @@ func TestRunnerPool_PersistentWorker(t *testing.T) {
 			res := r.Run(ctx, &repb.IOStats{})
 			require.NoError(t, res.Error)
 			assert.Equal(t, 0, res.ExitCode)
-			assert.Equal(t, []byte(resp.Output), res.Stderr)
+			assert.Equal(t, resp.Output, readStderr(t, r))
 			pool.TryRecycle(ctx, r, true)
 			assert.Equal(t, 2, pool.PausedRunnerCount())
 		})()
@@ -1233,8 +1254,34 @@ func TestRunUnder_WithRealWrapperScript(t *testing.T) {
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Equal(t, "WRAPPER_CALLED\nORIGINAL_CALLED\n", string(res.Stdout),
+	assert.Equal(t, "WRAPPER_CALLED\nORIGINAL_CALLED\n", readStdout(t, r),
 		"wrapper should be invoked first, then the original command")
+}
+
+func TestRun_LargeOutputSpillsToDisk(t *testing.T) {
+	// Configure a small in-memory stdio buffer limit so that a modest amount
+	// of output is enough to exercise the spill path.
+	flags.Set(t, "executor.stdout_stderr_memory_buffer_size_bytes", int64(16))
+	env := newTestEnv(t)
+	pool := newRunnerPool(t, env, noLimitsCfg())
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	// Run a command whose stdout exceeds the in-memory buffer limit.
+	task := newTask()
+	task.ExecutionTask.Command.Arguments = []string{"sh", "-c", "head -c 100 /dev/zero | tr '\\0' A"}
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	res := r.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+
+	// The full output should be readable back from the stdio buffer, and the
+	// spill file adjacent to the workspace should hold the output since it
+	// exceeded the in-memory limit.
+	assert.Equal(t, strings.Repeat("A", 100), readStdout(t, r))
+	spilled, err := os.ReadFile(r.(*taskRunner).stdoutPath())
+	require.NoError(t, err)
+	assert.Equal(t, strings.Repeat("A", 100), string(spilled))
 }
 
 func TestTransientErrorExitCodes(t *testing.T) {

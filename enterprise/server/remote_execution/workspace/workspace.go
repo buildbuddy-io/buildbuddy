@@ -28,6 +28,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -459,8 +460,9 @@ func (ws *Workspace) CleanInputsIfNecessary(keep map[fspath.Key]*repb.FileNode) 
 }
 
 // UploadOutputs uploads any outputs created by the last executed command
-// as well as the command's stdout and stderr.
-func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) (*dirtools.TransferInfo, error) {
+// as well as the command's stdout and stderr, which are read from the given
+// spill buffers.
+func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult, stdout, stderr *ioutil.SpillBuffer) (*dirtools.TransferInfo, error) {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	if ws.removing {
@@ -477,9 +479,24 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var txInfo *dirtools.TransferInfo
 	var stdoutDigest, stderrDigest *repb.Digest
 
+	// uploadStdio uploads the contents of a stdio spill buffer. The action
+	// result must always reference valid stdout/stderr digests, so if there is
+	// no buffer (e.g. because the runner failed before it could create the
+	// buffers), an empty blob is uploaded instead.
+	uploadStdio := func(ctx context.Context, buf *ioutil.SpillBuffer) (*repb.Digest, error) {
+		if buf == nil {
+			return cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, bytes.NewReader(nil))
+		}
+		rd, err := buf.Reader()
+		if err != nil {
+			return nil, err
+		}
+		return cachetools.UploadBlob(ctx, bsClient, instanceName, digestFunction, rd)
+	}
+
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
-		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stdout))
+		d, err := uploadStdio(egCtx, stdout)
 		if err != nil {
 			return status.UnavailableErrorf("upload stdout: %s", err)
 		}
@@ -487,7 +504,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		return nil
 	})
 	eg.Go(func() error {
-		d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(cmdResult.Stderr))
+		d, err := uploadStdio(egCtx, stderr)
 		if err != nil {
 			return status.UnavailableErrorf("upload stderr: %s", err)
 		}
@@ -552,7 +569,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 		return nil, err
 	}
 	txInfo.FileCount += 2 // for stdout and stderr
-	txInfo.BytesTransferred += int64(len(cmdResult.Stdout) + len(cmdResult.Stderr))
+	txInfo.BytesTransferred += stdoutDigest.GetSizeBytes() + stderrDigest.GetSizeBytes()
 	txInfo.FileCount += int64(len(cmdResult.AuxiliaryLogs))
 	for _, b := range cmdResult.AuxiliaryLogs {
 		txInfo.BytesTransferred += int64(len(b))

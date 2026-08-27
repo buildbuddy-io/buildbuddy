@@ -443,10 +443,6 @@ type CommandContainer interface {
 	// The command's stdout and stderr MUST be written to stdio.Stdout and
 	// stdio.Stderr, which can be assumed to be non-nil. Stdin is currently
 	// unsupported.
-	//
-	// TODO: some implementations still buffer stdout/stderr in the
-	// CommandResult instead of writing to stdio. Once all implementations
-	// write to stdio, remove the dual-read logic in the runner package.
 	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials, stdio *interfaces.Stdio) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.

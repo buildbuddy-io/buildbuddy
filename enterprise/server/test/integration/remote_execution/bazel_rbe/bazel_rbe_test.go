@@ -281,15 +281,20 @@ func TestPersistentExecutorShutdown_Retried(t *testing.T) {
 	// TODO(bduffany): Simplify executor shutdown logic across runner types and
 	// remove reliance on ErrSIGKILL here
 	errResult := commandutil.ErrorResult(commandutil.ErrSIGKILL)
-	errResult.Stderr = []byte("THIS_MSG_SHOULD_APPEAR_IN_BAZEL_STDERR")
+	// Let the real command run (so that its stderr is written to the runner's
+	// stdio files and uploaded), then replace its result with the SIGKILL
+	// error.
 	env.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{
-		RunInterceptor: rbetest.AlwaysReturn(errResult),
+		RunInterceptor: rbetest.RunAndAlwaysReturn(errResult),
 	})
 	// observe initial count so that we can get the diff at the end of the test
 	_ = tasksStarted(t)
 	ctx := context.Background()
 
-	res := runRemoteShellActionViaBazel(t, ctx, env, "")
+	res := runRemoteShellActionViaBazel(t, ctx, env, `
+		echo THIS_MSG_SHOULD_APPEAR_IN_BAZEL_STDERR >&2
+		exit 0
+	`)
 
 	require.Error(t, res.Error)
 	assert.Contains(

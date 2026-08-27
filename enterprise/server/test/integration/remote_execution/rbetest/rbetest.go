@@ -1445,6 +1445,17 @@ func AlwaysReturn(result *interfaces.CommandResult) RunInterceptor {
 	}
 }
 
+// RunAndAlwaysReturn returns a RunInterceptor that executes the real command
+// but replaces its result with the given fixed result on every task attempt.
+// Unlike AlwaysReturn, anything the command writes to the runner's stdio files
+// is preserved and gets uploaded with the (fake) result.
+func RunAndAlwaysReturn(result *interfaces.CommandResult) RunInterceptor {
+	return func(ctx context.Context, original RunFunc) *interfaces.CommandResult {
+		original(ctx, &repb.IOStats{})
+		return result
+	}
+}
+
 // ReturnForFirstAttempt returns a RunInterceptor that returns the given result
 // only on the very first task attempt. Subsequent runs even across different
 // runners will return the real command result.
