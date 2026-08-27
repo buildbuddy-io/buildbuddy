@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	mrand "math/rand/v2"
@@ -22,6 +23,7 @@ var (
 	bazelArgs           = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
 	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
 	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
+	containerImage      = flag.String("container_image", "docker://mirror.gcr.io/library/busybox:1.36.1", "Container image in which to execute prober actions. Set to 'none' to use the executor default.")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
@@ -29,9 +31,44 @@ var (
 	tags               = flag.String("tags", "", "Comma-separated list of tags to pass to Bazel via --build_metadata=TAGS=...")
 )
 
-// createEchoRule creates a target that generates an action that echoes the contents of each input file to a separate
-// output file.
-func createEchoRule(targetName string, inputs, outputs []string) (string, error) {
+const copyRuleDefinition = `
+def _copy_files_impl(ctx):
+    copy_script = ctx.actions.declare_file(ctx.label.name + "_copy.sh")
+    ctx.actions.write(
+        output = copy_script,
+        content = """#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  /bin/cat "$1" > "$2"
+  shift 2
+done
+""",
+        is_executable = True,
+    )
+
+    args = ctx.actions.args()
+    for i in range(len(ctx.files.srcs)):
+        args.add(ctx.files.srcs[i])
+        args.add(ctx.outputs.outs[i])
+
+    ctx.actions.run(
+        executable = copy_script,
+        arguments = [args],
+        inputs = ctx.files.srcs,
+        outputs = ctx.outputs.outs,
+        mnemonic = "ProberCopy",
+    )
+
+copy_files = rule(
+    implementation = _copy_files_impl,
+    attrs = {
+        "srcs": attr.label_list(allow_files = True),
+        "outs": attr.output_list(),
+    },
+)
+`
+
+// createCopyRule creates a target that copies each input file to its corresponding output file.
+func createCopyRule(targetName string, inputs, outputs []string) (string, error) {
 	if len(inputs) != len(outputs) {
 		return "", status.FailedPreconditionError("number inputs doesn't match number of outputs")
 	}
@@ -44,22 +81,16 @@ func createEchoRule(targetName string, inputs, outputs []string) (string, error)
 	// Disable affinity routing by adding a random salt to platform properties.
 	salt := mrand.Uint64()
 	return fmt.Sprintf(`
-genrule(
-      name = "%s",
-      srcs = [%s],
-      outs = [%s],
-      cmd_bash = """
-		  srcs=($(SRCS))
-		  outs=($(OUTS))
-		  for ((i=0; i < $${#srcs[@]}; i++)); do
-			src=$${srcs[i]}  
-			out=$${outs[i]}
-			/bin/cat "$$src" > "$$out"
-		  done
-      """,
-	  exec_properties = {"salt": "%d"},
+copy_files(
+    name = "%s",
+    srcs = [%s],
+    outs = [%s],
+    exec_properties = {
+        "container-image": %s,
+        "salt": "%d",
+    },
 )
-`, targetName, strings.Join(srcs, ","), strings.Join(outs, ","), salt), nil
+`, targetName, strings.Join(srcs, ","), strings.Join(outs, ","), strconv.Quote(*containerImage), salt), nil
 }
 
 func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes int) error {
@@ -76,11 +107,19 @@ func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes 
 		}
 	}
 
+	if err := os.WriteFile(filepath.Join(dir, "copy.bzl"), []byte(copyRuleDefinition), 0644); err != nil {
+		return err
+	}
 	buildFile, err := os.Create(filepath.Join(dir, "BUILD"))
 	if err != nil {
 		return err
 	}
 	defer buildFile.Close()
+	if _, err := buildFile.WriteString(`load(":copy.bzl", "copy_files")
+
+`); err != nil {
+		return err
+	}
 	inputBuf := make([]byte, inputSizeBytes)
 	for targetIdx := 0; targetIdx < numTargets; targetIdx++ {
 		var inputs []string
@@ -97,7 +136,7 @@ func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes 
 			inputs = append(inputs, src)
 			outputs = append(outputs, out)
 		}
-		rule, err := createEchoRule(fmt.Sprintf("target%d", targetIdx), inputs, outputs)
+		rule, err := createCopyRule(fmt.Sprintf("target%d", targetIdx), inputs, outputs)
 		if err != nil {
 			return err
 		}

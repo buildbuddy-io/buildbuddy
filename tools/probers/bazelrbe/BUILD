@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 go_library(
     name = "bazelrbe_lib",
@@ -8,6 +8,16 @@ go_library(
     deps = [
         "//server/util/log",
         "//server/util/status",
+    ],
+)
+
+go_test(
+    name = "bazelrbe_test",
+    srcs = ["bazelrbe_test.go"],
+    embed = [":bazelrbe_lib"],
+    deps = [
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
     ],
 )
 

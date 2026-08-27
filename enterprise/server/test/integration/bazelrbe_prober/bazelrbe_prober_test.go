@@ -81,6 +81,9 @@ func runProberTest(t *testing.T, bazelRunfilepath, proberName, extraBazelArgs st
 	args := []string{
 		"--bazel_binary=" + bazelBinary,
 		"--prober_name=" + proberName,
+		// The integration-test executor uses bare isolation. Production probers
+		// use the default BusyBox image.
+		"--container_image=none",
 		"--num_targets=2",
 		"--num_inputs_per_target=2",
 		"--input_size_bytes=1000",
