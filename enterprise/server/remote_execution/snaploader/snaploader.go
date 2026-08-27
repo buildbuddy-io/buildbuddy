@@ -1387,12 +1387,10 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 // containerImageSnapshotKey returns the key under which the chunked
 // containerfs for the given container image is cached.
 //
-// TODO: The key is scoped to the task's remote instance name, so tasks
-// running under different instance names (e.g. workflows vs. plain RBE
-// actions) don't reuse each other's converted images.
-func containerImageSnapshotKey(instanceName, imageRef string) *fcpb.SnapshotKeySet {
+// Container images are immutable content, so use one shared namespace rather
+// than converting and uploading the same image once per remote instance.
+func containerImageSnapshotKey(imageRef string) *fcpb.SnapshotKeySet {
 	return &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
-		InstanceName:      instanceName,
 		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
 	}}
 }
@@ -1415,12 +1413,12 @@ func remoteContainerImageWritesEnabled() bool {
 
 // GetCachedContainerImage returns the cached snapshot for the given
 // container image.
-func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string) (*Snapshot, error) {
+func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, imageRef string) (*Snapshot, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
 	remoteEnabled := remoteContainerImageReadsEnabled()
-	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(instanceName, imageRef), &GetSnapshotOptions{
+	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(imageRef), &GetSnapshotOptions{
 		SupportsRemoteManifest: remoteEnabled,
 		SupportsRemoteChunks:   remoteEnabled,
 		// A chunked container image is immutable for a given image ref, so
@@ -1456,11 +1454,11 @@ func UnpackContainerImageSnapshot(ctx context.Context, l *FileCacheLoader, snap 
 //
 // If the image is not cached, this func will split up the given ext4 image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*copy_on_write.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef)
+	snap, err := GetCachedContainerImage(ctx, l, imageRef)
 	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
 		return nil, err
 	}
@@ -1470,7 +1468,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteContainerImageReadsEnabled(), snaputil.ConvertToCOWConcurrency)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, "" /*=instanceName*/, remoteContainerImageReadsEnabled(), snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
@@ -1485,7 +1483,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 		// them without depending on the remote manifest still being valid.
 		WriteManifestLocally: true,
 	}
-	key := containerImageSnapshotKey(instanceName, imageRef)
+	key := containerImageSnapshotKey(imageRef)
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
 		return nil, status.WrapError(err, "cache containerfs snapshot")
 	}

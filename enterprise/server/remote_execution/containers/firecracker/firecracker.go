@@ -1496,8 +1496,7 @@ func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploade
 		return nil
 	}
 	c.containerfsSnapshotOnce.Do(func() {
-		instanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
-		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage)
+		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, c.containerImage)
 		if err != nil {
 			if !status.IsNotFoundError(err) {
 				log.CtxWarningf(ctx, "Failed to look up cached containerfs for image %q: %s", c.containerImage, err)
@@ -1523,7 +1522,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 	} else {
 		// If a chunked containerfs is not cached, we need to convert the ext4 image into chunks.
 		containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes())
+		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes())
 	}
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
