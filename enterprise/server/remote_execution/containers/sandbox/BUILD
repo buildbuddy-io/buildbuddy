@@ -32,6 +32,7 @@ go_test(
             ":sandbox",
             "//enterprise/server/util/oci",
             "//proto:remote_execution_go_proto",
+            "//server/interfaces",
             "//server/testutil/testfs",
             "@com_github_stretchr_testify//assert",
         ],

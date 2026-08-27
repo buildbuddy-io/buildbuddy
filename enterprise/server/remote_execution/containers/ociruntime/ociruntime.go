@@ -714,7 +714,7 @@ func (c *ociContainer) PullImage(ctx context.Context, creds oci.Credentials) err
 	return nil
 }
 
-func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir string, creds oci.Credentials, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	c.workDir = workDir
 	cid, err := newCID()
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"os"
@@ -478,6 +479,63 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
 
+	// Write the command's stdout/stderr to files on disk so that output does
+	// not have to be fully buffered in memory.
+	stdoutPath := wsPath + ".stdout"
+	stderrPath := wsPath + ".stderr"
+	stdoutFile, err := os.Create(stdoutPath)
+	if err != nil {
+		return commandutil.ErrorResult(status.UnavailableErrorf("create stdout file: %s", err))
+	}
+	stderrFile, err := os.Create(stderrPath)
+	if err != nil {
+		stdoutFile.Close()
+		return commandutil.ErrorResult(status.UnavailableErrorf("create stderr file: %s", err))
+	}
+	defer func() {
+		if err := stdoutFile.Close(); err != nil {
+			log.CtxWarningf(ctx, "Failed to close stdout file: %s", err)
+		}
+		if err := stderrFile.Close(); err != nil {
+			log.CtxWarningf(ctx, "Failed to close stderr file: %s", err)
+		}
+		// Container implementations are being migrated to write output to the
+		// stdio writers; until then, output may be written either to the stdio
+		// files or to the in-memory CommandResult buffers depending on the
+		// implementation. Merge the file contents into the result buffers so
+		// that consumers only have to look at the buffers.
+		// TODO: once all implementations write to stdio, upload stdout/stderr
+		// directly from the files and remove this dual-read logic.
+		if b, err := os.ReadFile(stdoutPath); err != nil {
+			log.CtxWarningf(ctx, "Failed to read stdout file: %s", err)
+		} else {
+			res.Stdout = append(res.Stdout, b...)
+		}
+		if b, err := os.ReadFile(stderrPath); err != nil {
+			log.CtxWarningf(ctx, "Failed to read stderr file: %s", err)
+		} else {
+			res.Stderr = append(res.Stderr, b...)
+		}
+		if err := os.Remove(stdoutPath); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove stdout file: %s", err)
+		}
+		if err := os.Remove(stderrPath); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove stderr file: %s", err)
+		}
+	}()
+	stdout := io.Writer(stdoutFile)
+	stderr := io.Writer(stderrFile)
+	if *commandutil.DebugStreamCommandOutputs {
+		stdout = io.MultiWriter(stdout, os.Stdout)
+		stderr = io.MultiWriter(stderr, os.Stderr)
+	}
+	// The writers enforce the configured stdout/stderr size limit
+	// (executor.stdouterr_max_size_bytes).
+	stdio := &interfaces.Stdio{
+		Stdout: commandutil.LimitStdOutErrWriter(stdout),
+		Stderr: commandutil.LimitStdOutErrWriter(stderr),
+	}
+
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
@@ -486,7 +544,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		return r.Container.Run(ctx, command, wsPath, creds)
+		return r.Container.Run(ctx, command, wsPath, creds, stdio)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.

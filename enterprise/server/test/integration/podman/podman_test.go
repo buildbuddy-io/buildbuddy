@@ -102,7 +102,7 @@ func TestRunHelloWorld(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, c.Remove(ctx))
 	})
-	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	result := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	require.NoError(t, result.Error)
 	assert.Equal(t, "Hello world!", string(result.Stdout),
@@ -236,7 +236,7 @@ func TestSlowRun(t *testing.T) {
 	}}
 
 	before := time.Now()
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 	duration := time.Since(before)
 	require.NoError(t, res.Error, "Run should not return an error")
 	assert.Equal(t, 0, res.ExitCode, "Run should exit with success")
@@ -280,7 +280,7 @@ func TestRun_Timeout(t *testing.T) {
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	t.Cleanup(cancel)
 
-	res := c.Run(runCtx, cmd, workDir, oci.Credentials{})
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -334,7 +334,7 @@ func TestExec_Timeout(t *testing.T) {
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	t.Cleanup(cancel)
 
-	res := c.Run(runCtx, cmd, workDir, oci.Credentials{})
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -454,7 +454,7 @@ func TestForceRoot(t *testing.T) {
 			t.Cleanup(func() {
 				require.NoError(t, c.Remove(ctx))
 			})
-			result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+			result := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 			require.NoError(t, result.Error)
 			assert.Equal(t, tc.wantUID, strings.TrimSpace(string(result.Stdout)))
 			assert.Empty(t, string(result.Stderr), "stderr should be empty")
@@ -507,7 +507,7 @@ func TestUser(t *testing.T) {
 			})
 			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
-			}, workDir, oci.Credentials{})
+			}, workDir, oci.Credentials{}, &interfaces.Stdio{})
 			u := strings.TrimSpace(string(result.Stdout))
 			if tc.wantUser != "" {
 				assert.Equal(t, tc.wantUser, u)
@@ -525,7 +525,7 @@ func TestUser(t *testing.T) {
 			})
 			result = c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-g", "-n"},
-			}, workDir, oci.Credentials{})
+			}, workDir, oci.Credentials{}, &interfaces.Stdio{})
 			g := strings.TrimSpace(string(result.Stdout))
 			if tc.wantGroup != "" {
 				assert.Equal(t, tc.wantGroup, g)
@@ -564,7 +564,7 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 		require.NoError(t, c.Remove(ctx))
 	})
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
 }
@@ -593,7 +593,7 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 		require.NoError(t, c.Remove(ctx))
 	})
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	require.NotEqual(t, 0, res.ExitCode, "sanity check: command should have failed")
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
@@ -639,7 +639,7 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 		require.NoError(t, c.Remove(ctx))
 	})
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 	t.Log(string(res.Stderr))
 	require.Equal(t, res.ExitCode, 0)
@@ -683,7 +683,7 @@ func TestSignal(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	result := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	result := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 	assert.NoError(t, result.Error)
 	assert.Empty(t, string(result.Stderr))
 	assert.Equal(t, "Got SIGTERM\n", string(result.Stdout))

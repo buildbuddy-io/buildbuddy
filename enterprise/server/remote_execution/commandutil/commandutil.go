@@ -83,6 +83,15 @@ func (lw *limitWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// BufferStdio returns a Stdio whose stdout and stderr are captured in the
+// returned in-memory buffers. It is intended for tests, which usually deal
+// with small amounts of output and don't need file-backed stdio.
+func BufferStdio() (stdout, stderr *bytes.Buffer, stdio *interfaces.Stdio) {
+	stdout = &bytes.Buffer{}
+	stderr = &bytes.Buffer{}
+	return stdout, stderr, &interfaces.Stdio{Stdout: stdout, Stderr: stderr}
+}
+
 func constructExecCommand(command *repb.Command, workDir string, stdio *interfaces.Stdio) (*exec.Cmd, *bytes.Buffer, *bytes.Buffer, error) {
 	if stdio == nil {
 		stdio = &interfaces.Stdio{}
