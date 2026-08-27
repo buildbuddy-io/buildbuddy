@@ -3,8 +3,10 @@
 package vfs_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -26,7 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -767,11 +771,16 @@ func TestStatfs(t *testing.T) {
 
 	err = os.Remove(testFilePath)
 	require.NoError(t, err)
-	err = unix.Statfs(fsPath, stats)
-	require.NoError(t, err)
-	log.Infof("stats %+v", stats)
-	require.Equal(t, stats.Bfree, stats.Blocks)
-	require.Equal(t, stats.Bavail, stats.Blocks)
+
+	// The cleanup of backing files happens asynchronously so we need to
+	// give it some time to update the stats.
+	if !assert.Eventually(t, func() bool {
+		err = unix.Statfs(fsPath, stats)
+		require.NoError(t, err)
+		return stats.Bfree == stats.Blocks && stats.Bavail == stats.Blocks
+	}, 5*time.Second, 10*time.Millisecond) {
+		require.FailNowf(t, "expected blocks to be freed", "last stats: Bfree=%d Bavail=%d Blocks=%d", stats.Bfree, stats.Bavail, stats.Blocks)
+	}
 }
 
 func TestAttrCaching(t *testing.T) {
@@ -1048,4 +1057,53 @@ func TestMknod(t *testing.T) {
 	require.NoError(t, err)
 	rs = rawStat(t, testCharDevice)
 	require.EqualValues(t, unix.S_IFCHR, rs.Mode&unix.S_IFMT)
+}
+
+func TestConcurrentRenameAndOpen(t *testing.T) {
+	fsPath := setupVFS(t)
+
+	srcPath := filepath.Join(fsPath, "src.txt")
+	dstPath := filepath.Join(fsPath, "dst.txt")
+	contents := []byte("hello world")
+
+	err := os.WriteFile(dstPath, contents, 0644)
+	require.NoError(t, err)
+
+	var eg errgroup.Group
+
+	// The first goroutine will continuously rename over an existing file name.
+	// Each time the rename happens, the destination file will be unlinked and
+	// replaced with a new one (with a different inode number).
+	eg.Go(func() error {
+		for range 1000 {
+			if err := os.WriteFile(srcPath, contents, 0644); err != nil {
+				return err
+			}
+			if err := os.Rename(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	// The second goroutine will continuously try to open the file at the
+	// destination path. This goroutine should always be able to read something
+	// at the destination path, whether it's the new file renamed over
+	// the destination or the old file that is in the process of being
+	// unlinked.
+	eg.Go(func() error {
+		for range 1000 {
+			bs, err := os.ReadFile(dstPath)
+			if err != nil {
+				return err
+			}
+			if !bytes.Equal(bs, contents) {
+				return fmt.Errorf("content mismatch")
+			}
+		}
+		return nil
+	})
+
+	err = eg.Wait()
+	require.NoError(t, err)
 }
