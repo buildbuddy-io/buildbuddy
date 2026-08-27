@@ -736,8 +736,11 @@ func TestGitConfig_FetchURL(t *testing.T) {
 func TestGeneratingPatches(t *testing.T) {
 	// Setup the "remote" repo
 	remoteRepoPath, _ := testgit.MakeTempRepo(t, map[string]string{
-		"hello.txt": "echo HI",
-		"b.bin":     "",
+		"hello.txt":      "echo HI",
+		"b.bin":          "",
+		"deleted.bin":    "\x00\x01\x02\x03\x04",
+		"attributed.md":  "v1",
+		".gitattributes": "attributed.md binary\n",
 	})
 
 	// Setup a "local" repo
@@ -760,26 +763,45 @@ func TestGeneratingPatches(t *testing.T) {
 
 		# Generate a binary diff on an untracked file
 		echo -ne '\x00\x01\x02\x03\x04' > b2.bin
+
+		# Delete a pre-existing binary file
+		rm deleted.bin
+
+		# Diff a file git treats as binary by attribute, though its bytes are text
+		echo "v2" > attributed.md
 `)
 
 	config, err := Config()
 	require.NoError(t, err)
 
-	require.Equal(t, 4, len(config.Patches))
+	all := ""
 	for _, patchBytes := range config.Patches {
-		p := string(patchBytes)
-		if strings.Contains(p, "hello.txt") {
-			require.Contains(t, p, "HELLO")
-		} else if strings.Contains(p, "bye.txt") {
-			require.Contains(t, p, "BYE")
-		} else if strings.Contains(p, "b.bin") {
-			require.Contains(t, p, "GIT binary patch")
-		} else if strings.Contains(p, "b2.bin") {
-			require.Contains(t, p, "GIT binary patch")
-		} else {
-			require.FailNowf(t, "unexpected patch %s", p)
-		}
+		all += string(patchBytes)
 	}
+	require.Contains(t, all, "HELLO")
+	require.Contains(t, all, "BYE")
+	// Every file git renders as binary needs the binary format, deletions and
+	// attribute-marked files included.
+	for _, binaryFile := range []string{"b.bin", "b2.bin", "deleted.bin", "attributed.md"} {
+		require.Contains(t, all, binaryFile)
+	}
+	require.Equal(t, 4, strings.Count(all, "GIT binary patch"))
+
+	// The runner applies the patchset; a binary patch without its full index line fails there.
+	runnerRepoPath := testgit.MakeTempRepoClone(t, remoteRepoPath)
+	for i, patchBytes := range config.Patches {
+		patchPath := filepath.Join(t.TempDir(), fmt.Sprintf("%d.patch", i))
+		require.NoError(t, os.WriteFile(patchPath, patchBytes, 0644))
+		testshell.Run(t, runnerRepoPath, fmt.Sprintf("git apply %q", patchPath))
+	}
+	for _, file := range []string{"hello.txt", "bye.txt", "b.bin", "b2.bin", "attributed.md"} {
+		want, err := os.ReadFile(filepath.Join(localRepoPath, file))
+		require.NoError(t, err)
+		got, err := os.ReadFile(filepath.Join(runnerRepoPath, file))
+		require.NoError(t, err)
+		require.Equal(t, want, got, "%s should match the local working tree", file)
+	}
+	require.NoFileExists(t, filepath.Join(runnerRepoPath, "deleted.bin"))
 }
 
 func TestWorkingDirectory(t *testing.T) {
