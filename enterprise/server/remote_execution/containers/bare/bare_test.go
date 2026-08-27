@@ -11,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -55,7 +56,7 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 	defer cancel()
 
 	bareContainer := bare.NewBareCommandContainer(&bare.Opts{})
-	result := bareContainer.Run(ctx, cmd, tempDir, oci.Credentials{})
+	result := bareContainer.Run(ctx, cmd, tempDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	if result.Error != nil {
 		t.Fatal(result.Error)
@@ -92,7 +93,7 @@ func TestLogFiles(t *testing.T) {
 			# been flushed yet.
 			sleep 0.01
 		done
-	`}}, workDir, oci.Credentials{})
+	`}}, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.Equal(t, "test-stderr\n", string(result.Stderr))
 	assert.Equal(t, "test-stdout\n", string(result.Stdout))
@@ -135,7 +136,7 @@ func TestTMPDIR(t *testing.T) {
 						exit 1
 					fi
 				`},
-			}, workDir, oci.Credentials{})
+			}, workDir, oci.Credentials{}, &interfaces.Stdio{})
 			assert.Empty(t, string(res.Stderr))
 			require.NoError(t, res.Error)
 
@@ -166,7 +167,7 @@ func TestBareRun_WorkingDirectory(t *testing.T) {
 		WorkingDirectory: "subdir",
 	}
 	ctr := bare.NewBareCommandContainer(&bare.Opts{})
-	result := ctr.Run(ctx, cmd, workDir, oci.Credentials{})
+	result := ctr.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	require.NoError(t, result.Error)
 	assert.Equal(t, 0, result.ExitCode)

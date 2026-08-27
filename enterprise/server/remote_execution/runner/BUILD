@@ -43,6 +43,7 @@ go_library(
         "//server/util/disk",
         "//server/util/flag",
         "//server/util/fspath",
+        "//server/util/ioutil",
         "//server/util/log",
         "//server/util/platform",
         "//server/util/proto",

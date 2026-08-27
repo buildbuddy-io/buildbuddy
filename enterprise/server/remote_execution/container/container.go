@@ -32,11 +32,11 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	gstatus "google.golang.org/grpc/status"
 	tspb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -439,7 +439,15 @@ type CommandContainer interface {
 	//
 	// It is approximately the same as calling PullImageIfNecessary, Create,
 	// Exec, then Remove.
-	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult
+	//
+	// The command's stdout and stderr MUST be written to stdio.Stdout and
+	// stdio.Stderr, which can be assumed to be non-nil. Stdin is currently
+	// unsupported.
+	//
+	// TODO: some implementations still buffer stdout/stderr in the
+	// CommandResult instead of writing to stdio. Once all implementations
+	// write to stdio, remove the dual-read logic in the runner package.
+	Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials, stdio *interfaces.Stdio) *interfaces.CommandResult
 
 	// IsImageCached returns whether the configured image is cached locally.
 	IsImageCached(ctx context.Context) (bool, error)
@@ -795,7 +803,7 @@ func (t *TracedCommandContainer) IsolationType() string {
 	return t.Delegate.IsolationType()
 }
 
-func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials) *interfaces.CommandResult {
+func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command, workingDir string, creds oci.Credentials, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	t.pauseDuration = 0
 	ctx, span := tracing.StartSpan(ctx, trace.WithAttributes(t.implAttr))
 	defer span.End()
@@ -806,7 +814,7 @@ func (t *TracedCommandContainer) Run(ctx context.Context, command *repb.Command,
 		return &interfaces.CommandResult{ExitCode: noExitCode, Error: ErrRemoved}
 	}
 
-	return t.Delegate.Run(ctx, command, workingDir, creds)
+	return t.Delegate.Run(ctx, command, workingDir, creds, stdio)
 }
 
 func (t *TracedCommandContainer) IsImageCached(ctx context.Context) (bool, error) {

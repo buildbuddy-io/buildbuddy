@@ -37,7 +37,7 @@ type FakeContainer struct {
 func (c *FakeContainer) IsolationType() string {
 	return "fake"
 }
-func (c *FakeContainer) Run(context.Context, *repb.Command, string, oci.Credentials) *interfaces.CommandResult {
+func (c *FakeContainer) Run(context.Context, *repb.Command, string, oci.Credentials, *interfaces.Stdio) *interfaces.CommandResult {
 	return nil
 }
 func (c *FakeContainer) IsImageCached(context.Context) (bool, error) {
@@ -651,7 +651,7 @@ func TestTracedCommandContainer_PostCompletionStats_ResetOnRunAndExec(t *testing
 
 	// Run resets the pause duration so the next pause doesn't inherit the
 	// previous value.
-	tc.Run(context.Background(), &repb.Command{}, "", oci.Credentials{})
+	tc.Run(context.Background(), &repb.Command{}, "", oci.Credentials{}, &interfaces.Stdio{})
 	assert.Zero(t, tc.PostCompletionStats().GetPauseDurationUsec(), "Run should reset pause duration")
 
 	require.NoError(t, tc.Pause(context.Background()))

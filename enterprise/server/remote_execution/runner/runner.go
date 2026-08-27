@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"os"
@@ -46,6 +47,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -87,6 +89,8 @@ var (
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
 
 	measureWorkspaceDiskUsage = flag.Bool("executor.workspace.measure_disk_usage", false, "If set, measure the disk space used by the task's buildroot (workspace) after each task finishes and report it in the task's usage stats. Note: this requires walking the entire workspace tree, which may add CPU/IO overhead for tasks with large workspaces.")
+
+	stdioMemoryBufferSize = flag.Int64("executor.stdout_stderr_memory_buffer_size_bytes", 16_384, "Number of bytes of command stdout/stderr to buffer in memory per stream before spilling the output to a file on disk.")
 )
 
 const (
@@ -478,6 +482,58 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		res.VfsStats = r.Workspace.ComputeVFSStats()
 	}()
 
+	// Write the command's stdout/stderr to spill buffers, which buffer small
+	// outputs in memory and spill larger outputs to files on disk, so that
+	// output does not have to be fully buffered in memory.
+	stdoutPath := wsPath + ".stdout"
+	stderrPath := wsPath + ".stderr"
+	stdoutBuf := ioutil.NewSpillBuffer(stdoutPath, *stdioMemoryBufferSize)
+	stderrBuf := ioutil.NewSpillBuffer(stderrPath, *stdioMemoryBufferSize)
+	defer func() {
+		// Container implementations are being migrated to write output to the
+		// stdio writers; until then, output may be written either to the stdio
+		// writers or to the in-memory CommandResult buffers depending on the
+		// implementation. Merge the stdio contents into the result buffers so
+		// that consumers only have to look at the buffers.
+		// TODO: once all implementations write to stdio, upload stdout/stderr
+		// directly from the spill buffers and remove this dual-read logic.
+		readAll := func(buf *ioutil.SpillBuffer) ([]byte, error) {
+			rd, err := buf.Reader()
+			if err != nil {
+				return nil, err
+			}
+			return io.ReadAll(rd)
+		}
+		if b, err := readAll(stdoutBuf); err != nil {
+			log.CtxWarningf(ctx, "Failed to read buffered stdout: %s", err)
+		} else {
+			res.Stdout = append(res.Stdout, b...)
+		}
+		if b, err := readAll(stderrBuf); err != nil {
+			log.CtxWarningf(ctx, "Failed to read buffered stderr: %s", err)
+		} else {
+			res.Stderr = append(res.Stderr, b...)
+		}
+		if err := stdoutBuf.Close(); err != nil {
+			log.CtxWarningf(ctx, "Failed to close stdout buffer: %s", err)
+		}
+		if err := stderrBuf.Close(); err != nil {
+			log.CtxWarningf(ctx, "Failed to close stderr buffer: %s", err)
+		}
+	}()
+	stdout := io.Writer(stdoutBuf)
+	stderr := io.Writer(stderrBuf)
+	if *commandutil.DebugStreamCommandOutputs {
+		stdout = io.MultiWriter(stdout, os.Stdout)
+		stderr = io.MultiWriter(stderr, os.Stderr)
+	}
+	// The writers enforce the configured stdout/stderr size limit
+	// (executor.stdouterr_max_size_bytes).
+	stdio := &interfaces.Stdio{
+		Stdout: commandutil.LimitStdOutErrWriter(stdout),
+		Stderr: commandutil.LimitStdOutErrWriter(stderr),
+	}
+
 	if !r.PlatformProperties.RecycleRunner {
 		// If the container is not recyclable, then use `Run` to walk through
 		// the entire container lifecycle in a single step.
@@ -486,7 +542,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		if err != nil {
 			return commandutil.ErrorResult(err)
 		}
-		return r.Container.Run(ctx, command, wsPath, creds)
+		return r.Container.Run(ctx, command, wsPath, creds, stdio)
 	}
 
 	// Get the container to "ready" state so that we can exec commands in it.

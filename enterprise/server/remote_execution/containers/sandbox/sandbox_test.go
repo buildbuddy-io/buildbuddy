@@ -11,6 +11,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 
@@ -53,7 +54,7 @@ func TestSandboxedHelloWorld(t *testing.T) {
 	defer cancel()
 
 	sandboxContainer := sandbox.New(&sandbox.Options{})
-	result := sandboxContainer.Run(ctx, cmd, tempDir, oci.Credentials{})
+	result := sandboxContainer.Run(ctx, cmd, tempDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	if result.Error != nil {
 		t.Fatal(result.Error)
@@ -84,8 +85,8 @@ func TestCrossContainerReads(t *testing.T) {
 	defer cancel()
 
 	sandboxContainer := sandbox.New(&sandbox.Options{})
-	goodResult := sandboxContainer.Run(ctx, goodCmd, tempDir1, oci.Credentials{})
-	evilResult := sandboxContainer.Run(ctx, evilCmd, tempDir2, oci.Credentials{})
+	goodResult := sandboxContainer.Run(ctx, goodCmd, tempDir1, oci.Credentials{}, &interfaces.Stdio{})
+	evilResult := sandboxContainer.Run(ctx, evilCmd, tempDir2, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.Empty(t, string(goodResult.Stderr), "stderr should be empty")
 	assert.Equal(t, 0, goodResult.ExitCode, "should exit with success")

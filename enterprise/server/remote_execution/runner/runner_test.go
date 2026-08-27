@@ -104,7 +104,7 @@ func (c *fakeContainer) IsolationType() string {
 	return c.Isolation
 }
 
-func (c *fakeContainer) Run(ctx context.Context, cmd *repb.Command, workdir string, creds oci.Credentials) *interfaces.CommandResult {
+func (c *fakeContainer) Run(ctx context.Context, cmd *repb.Command, workdir string, creds oci.Credentials, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	return c.Result
 }
 

@@ -64,7 +64,7 @@ func TestDockerRun(t *testing.T) {
 	env.SetImageCacheAuthenticator(container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{}))
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.Equal(t, expectedResult, res)
 }
@@ -206,7 +206,7 @@ func TestDockerRun_Timeout_StdoutStderrStillVisible(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 	}()
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.True(
 		t, status.IsUnavailableError(res.Error),
@@ -359,7 +359,7 @@ func TestDockerRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	c := docker.NewDockerContainer(env, dc, "mirror.gcr.io/library/busybox", rootDir, cfg)
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
 }

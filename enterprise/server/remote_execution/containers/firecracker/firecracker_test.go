@@ -375,7 +375,7 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -2408,7 +2408,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatalf("error: %s", res.Error)
 	}
@@ -2594,7 +2594,7 @@ func TestFirecrackerRunWithNetwork(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -2634,7 +2634,7 @@ func TestFirecrackerRunWithoutNetwork(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -2672,7 +2672,7 @@ func TestFirecrackerResolvConf(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 
 	assert.Equal(t, 0, res.ExitCode)
@@ -2771,7 +2771,7 @@ func TestFirecrackerRunWithNetworkPooling(t *testing.T) {
 		}
 		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 		require.NoError(t, err)
-		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+		res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 		require.NoError(t, err)
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
@@ -2816,7 +2816,7 @@ func TestFirecrackerRunWithNetworkPooling_MixedNetworkModes(t *testing.T) {
 	{
 		cmd := &repb.Command{Arguments: []string{"sh", "-c", "true"}}
 		c := newContainer(fcpb.NetworkMode_NETWORK_MODE_LOCAL)
-		res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+		res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 		require.NoError(t, res.Error)
 		require.Equal(t, 0, res.ExitCode)
 	}
@@ -2828,7 +2828,7 @@ func TestFirecrackerRunWithNetworkPooling_MixedNetworkModes(t *testing.T) {
 		googleDNS := "8.8.8.8"
 		cmd := &repb.Command{Arguments: []string{"ping", "-c1", "-W2", googleDNS}}
 		c := newContainer(fcpb.NetworkMode_NETWORK_MODE_EXTERNAL)
-		res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+		res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
 		assert.Contains(t, string(res.Stdout), "64 bytes from "+googleDNS)
@@ -2902,7 +2902,7 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -2971,7 +2971,7 @@ func TestFirecrackerNonRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -3018,7 +3018,7 @@ func TestFirecrackerRunAsNonExistentUser(t *testing.T) {
 	}
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 	require.Empty(t, string(res.Stderr))
 	require.Equal(t, 0, res.ExitCode)
@@ -3049,7 +3049,7 @@ func TestFirecrackerRunNOPWithZeroDisk(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "", string(res.Stderr))
@@ -3123,7 +3123,7 @@ func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Equal(t, "", string(res.Stderr))
@@ -3175,7 +3175,7 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -3256,7 +3256,7 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
@@ -3300,7 +3300,7 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 	}
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	assert.NotEqual(t, 0, res.ExitCode)
 }
 
@@ -3401,7 +3401,7 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 				},
 			}
 
-			res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+			res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 			require.NoError(t, res.Error)
 
 			assert.Equal(t, 0, res.ExitCode)
@@ -3780,7 +3780,7 @@ func TestFirecrackerRun_Timeout_DebugOutputIsAvailable(t *testing.T) {
 	`}}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 
 	require.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -3890,7 +3890,7 @@ func TestFirecrackerLargeResult(t *testing.T) {
 	require.NoError(t, err)
 	const stdoutSize = 10_000_000
 	cmd := &repb.Command{Arguments: []string{"sh", "-c", fmt.Sprintf(`yes | head -c %d`, stdoutSize)}}
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
 
 	require.NoError(t, res.Error)
 	assert.Equal(t, string(res.Stderr), "")
@@ -4034,7 +4034,7 @@ func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	require.NoError(t, err)
 
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 }
 
@@ -4468,7 +4468,7 @@ func TestBazelBuild(t *testing.T) {
 	require.NoError(t, err)
 
 	// Run will handle the full lifecycle: no need to call Remove() here.
-	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{}, &interfaces.Stdio{})
 	require.NoError(t, res.Error)
 }
 
