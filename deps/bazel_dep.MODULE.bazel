@@ -59,11 +59,11 @@ archive_override(
 bazel_dep(name = "rules_k8s", repo_name = "io_bazel_rules_k8s")
 archive_override(
     module_name = "rules_k8s",
-    integrity = "sha256-J14gxzYpfnrt+fWUZR+xPZZ1qJAK0qeuC2nRLL+31sQ=",
-    strip_prefix = "rules_k8s-2457e25475c111168fc3de8e1169adfe2e817801",
+    integrity = "sha256-L67k3AQBwKqMxowakuNjETkweetv0PHDempnsIwjv1Q=",
+    strip_prefix = "rules_k8s-7de36041347622e4d59a94eac9ba2bf93528fb5e",
     # This is our own fork of rules_k8s with bzlmod support.
     # Diff: https://github.com/bazelbuild/rules_k8s/compare/master...buildbuddy-io:rules_k8s:master
-    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/2457e25475c111168fc3de8e1169adfe2e817801.tar.gz"],
+    urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/7de36041347622e4d59a94eac9ba2bf93528fb5e.tar.gz"],
 )
 
 bazel_dep(name = "protobuf", version = "34.0.bcr.1", repo_name = "com_google_protobuf")
