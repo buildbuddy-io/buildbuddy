@@ -47,6 +47,11 @@ const (
 	rootfsFileName         = "rootfs.ext4"
 	misnamedRootfsFileName = "rootfs" // TODO(bduffany): consolidate.
 
+	// Container images are immutable content, so use one shared namespace in the
+	// snapshot partition for all cached, chunked EXT4s.
+	// They should be shared across remote instance names.
+	containerImageInstanceName = snaputil.SnapshotPartitionPrefix + "/chunked-images"
+
 	// Rootfs access during guest boot mixes filesystem metadata and file data
 	// reads, so large sequential prefetch windows cause substantial read
 	// amplification. Keep this separate from the generic COW default, which was
@@ -704,7 +709,8 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 
 	for _, fileNode := range snapshot.manifest.Files {
 		outputPath := filepath.Join(outputDirectory, fileNode.GetName())
-		if _, err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), snapshot.supportsRemoteChunks, fileNode.GetDigest(), snapshot.key.InstanceName, outputPath); err != nil {
+		remoteInstanceName, remoteEnabled := snapshot.remoteChunkAccessForFile(fileNode.GetName())
+		if _, err := snaputil.GetArtifact(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), remoteEnabled, fileNode.GetDigest(), remoteInstanceName, outputPath); err != nil {
 			return nil, err
 		}
 	}
@@ -714,7 +720,8 @@ func (l *FileCacheLoader) UnpackSnapshot(ctx context.Context, snapshot *Snapshot
 	}
 	// Construct COWs from chunks.
 	for _, cf := range snapshot.manifest.ChunkedFiles {
-		cow, err := l.unpackCOW(ctx, cf, snapshot.key.InstanceName, outputDirectory, snapshot.supportsRemoteChunks)
+		remoteInstanceName, remoteEnabled := snapshot.remoteChunkAccessForFile(cf.GetName())
+		cow, err := l.unpackCOW(ctx, cf, remoteInstanceName, outputDirectory, remoteEnabled)
 		if err != nil {
 			return nil, status.WrapError(err, "unpack COW")
 		}
@@ -910,28 +917,56 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 	return nil
 }
 
+func isRootfsSnapshot(name string) bool {
+	return name == rootfsFileName || name == misnamedRootfsFileName
+}
+
+// remoteChunkAccessForFile returns the CAS instance name from which the file's
+// chunks should be read and whether remote fallback is enabled for the file.
+func remoteChunkAccessForFile(name, snapshotInstanceName string, supportsRemoteFallback bool) (string, bool) {
+	if supportsRemoteFallback {
+		return snapshotInstanceName, true
+	}
+	// Rootfs snapshots combine immutable ext4 image chunks, which can and
+	// should be shared remotely, with modified disk chunks, which should only
+	// be written remotely when explicitly requested. Consequently, a local
+	// rootfs manifest may intentionally reference remote immutable chunks even
+	// when the rest of the VM snapshot is local-only. These immutable chunks are
+	// stored in the shared snapshot partition rather than the task's instance.
+	if *snaputil.EnableRemoteSnapshotSharing && isRootfsSnapshot(name) {
+		return containerImageInstanceName, true
+	}
+	return snapshotInstanceName, false
+}
+
+func (s *Snapshot) remoteChunkAccessForFile(name string) (string, bool) {
+	return remoteChunkAccessForFile(name, s.key.GetInstanceName(), s.supportsRemoteChunks)
+}
+
 func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *fcpb.SnapshotManifest, instanceName string, supportsRemoteFallback bool) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	missingDigests := make([]*repb.Digest, 0)
+	missingDigestsByInstance := make(map[string][]*repb.Digest)
 	for _, f := range manifest.GetFiles() {
 		if !l.env.GetFileCache().ContainsFile(ctx, f) {
-			if supportsRemoteFallback {
-				missingDigests = append(missingDigests, f.GetDigest())
+			remoteInstanceName, remoteEnabled := remoteChunkAccessForFile(f.GetName(), instanceName, supportsRemoteFallback)
+			if remoteEnabled {
+				missingDigestsByInstance[remoteInstanceName] = append(missingDigestsByInstance[remoteInstanceName], f.GetDigest())
 			} else {
 				return status.NotFoundErrorf("file %q not found (digest %q)", f.GetName(), digest.String(f.GetDigest()))
 			}
 		}
 	}
 	for _, cf := range manifest.GetChunkedFiles() {
+		remoteInstanceName, remoteEnabled := remoteChunkAccessForFile(cf.GetName(), instanceName, supportsRemoteFallback)
 		for _, c := range cf.GetChunks() {
 			node := &repb.FileNode{
 				Digest: c.GetDigest(),
 			}
 			if !l.env.GetFileCache().ContainsFile(ctx, node) {
-				if supportsRemoteFallback {
-					missingDigests = append(missingDigests, c.GetDigest())
+				if remoteEnabled {
+					missingDigestsByInstance[remoteInstanceName] = append(missingDigestsByInstance[remoteInstanceName], c.GetDigest())
 				} else {
 					return status.NotFoundErrorf("chunked file %q missing chunk at offset 0x%x (digest %q)", cf.GetName(), c.GetOffset(), digest.String(node.Digest))
 				}
@@ -939,13 +974,12 @@ func (l *FileCacheLoader) checkAllArtifactsExist(ctx context.Context, manifest *
 		}
 	}
 
-	// If `supportsRemoteFallback` is enabled, allow using a local manifest even
-	// if all snapshot chunks don't exist locally. The snaploader can fallback
-	// to fetching chunks from the remote cache.
-	if supportsRemoteFallback && len(missingDigests) > 0 {
+	// If remote fallback is enabled for any files, allow using a local manifest
+	// when its locally missing artifacts are available in the remote cache.
+	for remoteInstanceName, missingDigests := range missingDigestsByInstance {
 		ctx = snaputil.GetSnapshotAccessContext(ctx)
 		rsp, err := l.env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
-			InstanceName:   instanceName,
+			InstanceName:   remoteInstanceName,
 			BlobDigests:    missingDigests,
 			DigestFunction: repb.DigestFunction_BLAKE3,
 			Purpose:        repb.FindMissingBlobsRequest_SNAPSHOT,
@@ -992,7 +1026,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		RemoteInstanceName: remoteInstanceName,
 		RemoteEnabled:      remoteEnabled,
 	}
-	if file.GetName() == rootfsFileName || file.GetName() == misnamedRootfsFileName {
+	if isRootfsSnapshot(file.GetName()) {
 		opts.EagerFetchChunks = rootfsEagerFetchChunks
 	}
 	cow, err := copy_on_write.NewCOWStore(ctx, l.env, file.GetName(), chunks, opts)
@@ -1387,25 +1421,50 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 // containerImageSnapshotKey returns the key under which the chunked
 // containerfs for the given container image is cached.
 //
-// TODO: use an Action for this key instead (to allow remote snapshot
-// sharing).
-func containerImageSnapshotKey(instanceName, imageRef string) *fcpb.SnapshotKeySet {
+// Container images are immutable content, so use one shared namespace in the
+// snapshot partition rather than converting and uploading the same image once
+// per remote instance.
+//
+// TODO: Use the image manifest digest, rather than just the name, to account for
+// situations where the image is updated for the same ref (e.g. if it's using the latest tag)
+func containerImageSnapshotKey(imageRef string) *fcpb.SnapshotKeySet {
 	return &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
-		InstanceName:      instanceName,
+		InstanceName:      containerImageInstanceName,
 		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
 	}}
 }
 
+// remoteContainerImageReadsEnabled returns whether chunked container images can
+// be read from the remote cache.
+//
+// Caching container images remotely is beneficial because any executor starting a
+// clean VM from the image can use them, skipping the expensive image pull
+// and ext4 conversion phases. Enable it as long as remote snapshot sharing is enabled.
+func remoteContainerImageReadsEnabled() bool {
+	return *snaputil.EnableRemoteSnapshotSharing
+}
+
+// remoteContainerImageWritesEnabled returns whether chunked container images
+// should be written to the remote cache.
+func remoteContainerImageWritesEnabled() bool {
+	return remoteContainerImageReadsEnabled() && !*snaputil.RemoteSnapshotReadonly
+}
+
 // GetCachedContainerImage returns the cached snapshot for the given
 // container image.
-func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, remoteEnabled bool) (*Snapshot, error) {
+func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, imageRef string) (*Snapshot, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(instanceName, imageRef), &GetSnapshotOptions{
+	remoteEnabled := remoteContainerImageReadsEnabled()
+	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(imageRef), &GetSnapshotOptions{
 		SupportsRemoteManifest: remoteEnabled,
 		SupportsRemoteChunks:   remoteEnabled,
-		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+		// A chunked container image is immutable for a given image ref, so
+		// there is never a newer version to read. Prefer the local manifest,
+		// which also lets a remote hit be written back to the local filecache
+		// so that later runs on this executor don't depend on the remote cache.
+		ReadPolicy: platform.ReadLocalSnapshotFirst,
 	})
 	if err != nil {
 		return nil, err
@@ -1434,21 +1493,33 @@ func UnpackContainerImageSnapshot(ctx context.Context, l *FileCacheLoader, snap 
 //
 // If the image is not cached, this func will split up the given ext4 image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path string, outDir string, chunkSize int64, remoteEnabled bool) (*copy_on_write.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef, remoteEnabled)
-	if err != nil && !(status.IsNotFoundError(err) || status.IsUnavailableError(err)) {
-		return nil, err
+	snap, err := GetCachedContainerImage(ctx, l, imageRef)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Failed to read cached container image %q; converting the pulled image instead: %s", imageRef, err)
+		}
 	}
 	if snap != nil {
-		return UnpackContainerImageSnapshot(ctx, l, snap, outDir)
+		cow, err := UnpackContainerImageSnapshot(ctx, l, snap, outDir)
+		if err == nil {
+			return cow, nil
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		log.CtxWarningf(ctx, "Failed to unpack cached container image %q; converting the pulled image instead: %s", imageRef, err)
 	}
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteEnabled, snaputil.ConvertToCOWConcurrency)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, containerImageInstanceName, remoteContainerImageReadsEnabled(), snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
@@ -1456,13 +1527,21 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	opts := &CacheSnapshotOptions{
 		ChunkedFiles:          map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 		Recycled:              false,
-		CacheSnapshotRemotely: remoteEnabled,
+		CacheSnapshotRemotely: remoteContainerImageWritesEnabled(),
 		CacheSnapshotLocally:  true,
-		WriteManifestLocally:  !remoteEnabled,
+		// Always write the manifest locally too. Future lookups can reuse locally
+		// cached chunks and fetch missing immutable chunks from the remote cache.
+		WriteManifestLocally: true,
 	}
-	key := containerImageSnapshotKey(instanceName, imageRef)
+	key := containerImageSnapshotKey(imageRef)
 	if err := l.CacheSnapshot(ctx, key.GetBranchKey(), opts); err != nil {
-		return nil, status.WrapError(err, "cache containerfs snapshot")
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			if closeErr := cow.Close(); closeErr != nil {
+				log.CtxWarningf(ctx, "Failed to close container image COW after context cancellation: %s", closeErr)
+			}
+			return nil, ctxErr
+		}
+		log.CtxWarningf(ctx, "Failed to cache converted container image %q; continuing with the local COW: %s", imageRef, err)
 	}
 	log.CtxDebugf(ctx, "Converted containerfs to COW in %s", time.Since(start))
 	return cow, nil

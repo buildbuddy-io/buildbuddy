@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
@@ -171,6 +172,7 @@ type envOpts struct {
 	cacheSize        int64
 	filecacheRootDir string
 	runProxy         bool
+	usePebble        bool
 }
 
 func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
@@ -206,11 +208,31 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 	if cacheSize == 0 {
 		cacheSize = diskCacheSize
 	}
-	dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, cacheSize)
-	if err != nil {
-		t.Error(err)
+	var cache interfaces.Cache
+	if opts.usePebble {
+		const snapshotPartitionID = "snapshots"
+		pc, err := pebble_cache.NewPebbleCache(env, &pebble_cache.Options{
+			RootDirectory: testRootDir,
+			MaxSizeBytes:  cacheSize,
+			Partitions: []disk.Partition{
+				{ID: snapshotPartitionID, MaxSizeBytes: cacheSize},
+			},
+			PartitionMappings: []disk.PartitionMapping{
+				{Prefix: snaputil.SnapshotPartitionPrefix, PartitionID: snapshotPartitionID},
+			},
+		})
+		require.NoError(t, err)
+		require.NoError(t, pc.Start())
+		t.Cleanup(func() { require.NoError(t, pc.Stop()) })
+		cache = pc
+	} else {
+		dc, err := disk_cache.NewDiskCache(env, &disk_cache.Options{RootDirectory: testRootDir}, cacheSize)
+		if err != nil {
+			t.Error(err)
+		}
+		cache = dc
 	}
-	env.SetCache(dc)
+	env.SetCache(cache)
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		t.Error(err)
@@ -549,8 +571,7 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 
 func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	ctx := context.Background()
-	// Keep snapshot sharing local-only to simplify test setup.
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	// Mock requests to the container registry.
@@ -578,7 +599,7 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	manifestRequests.Store(0)
 	blobRequests.Store(0)
 
-	env := getTestEnv(ctx, t, envOpts{})
+	env := getTestEnv(ctx, t, envOpts{usePebble: true})
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         imageRef,
 		ActionWorkingDirectory: testfs.MakeTempDir(t),
@@ -590,10 +611,12 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
-	newContainer := func() *firecracker.FirecrackerContainer {
+	newContainer := func(instanceName string) *firecracker.FirecrackerContainer {
 		containerOpts := opts
 		containerOpts.ActionWorkingDirectory = testfs.MakeTempDir(t)
-		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, containerOpts)
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+			ExecuteRequest: &repb.ExecuteRequest{InstanceName: instanceName},
+		}, containerOpts)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, c.Remove(context.Background()))
@@ -602,7 +625,7 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	}
 
 	// Sanity check: the image should not be cached yet.
-	coldContainer := newContainer()
+	coldContainer := newContainer("instance-a")
 	cached, err := coldContainer.IsImageCached(ctx)
 	require.NoError(t, err)
 	require.False(t, cached)
@@ -617,18 +640,16 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	// of the cache entry matters.
 	testfs.WriteRandomString(t, workDir, "containerfs.ext4", 4*chunkSize)
 	ext4Path := filepath.Join(workDir, "containerfs.ext4")
-	instanceName := coldContainer.SnapshotKeySet().GetBranchKey().GetInstanceName()
 	cow, err := snaploader.UnpackContainerImage(
-		ctx, loader, instanceName, imageRef, ext4Path,
-		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize,
-		false /*=remoteEnabled*/)
+		ctx, loader, imageRef, ext4Path,
+		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cow.Close()
 	})
 
 	// A container for a subsequent task should now see the cached containerfs.
-	c := newContainer()
+	c := newContainer("instance-a")
 	cached, err = c.IsImageCached(ctx)
 	require.NoError(t, err)
 	require.True(t, cached)
@@ -641,6 +662,12 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	require.Equal(t, int32(0), blobRequests.Load())
 	// The manifest should still have been fetched, in order to authenticate with the registry.
 	require.Greater(t, manifestRequests.Load(), int32(0))
+
+	// A container with a different remote instance should reuse the cached
+	// containerfs rather than converting and uploading its own copy.
+	c = newContainer("instance-b")
+	require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+	require.Equal(t, int32(0), blobRequests.Load())
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {
