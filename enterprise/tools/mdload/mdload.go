@@ -41,6 +41,7 @@ var (
 	target       = flag.String("target", "grpc://localhost:1970", "Cache target to connect to.")
 	writeQPS     = flag.Uint("write_qps", 1000, "How many queries per second to attempt to write.")
 	readQPS      = flag.Uint("read_qps", 1000, "How many queries per second to attempt to read.")
+	findQPS      = flag.Uint("find_qps", 0, "How many queries per second to attempt to find.")
 	instanceName = flag.String("instance_name", "loadtest", "An optional Remote Instance name.")
 	apiKey       = flag.String("api_key", "", "An optional API key to use when reading / writing data.")
 	qpsAvgWindow = flag.Duration("qps_avg_window", 5*time.Second, "QPS averaging window")
@@ -203,6 +204,24 @@ func readBlob(ctx context.Context, client mdspb.MetadataServiceClient, fr *sgpb.
 	})
 }
 
+func findBlob(ctx context.Context, client mdspb.MetadataServiceClient, fr *sgpb.FileRecord) error {
+	return retry.DoVoid(ctx, retry.DefaultOptions(), func(ctx context.Context) error {
+		rsp, err := client.Find(ctx, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{fr},
+		})
+		incrementPromTotalErrorMetric("find", err)
+		if err == nil {
+			if !rsp.GetFindResponses()[0].GetPresent() {
+				log.Fatalf("found record was not present")
+			}
+			return nil
+		} else if status.IsUnavailableError(err) {
+			return err
+		}
+		return retry.NonRetryableError(err)
+	})
+}
+
 func main() {
 	flag.Parse()
 	if err := log.Configure(); err != nil {
@@ -240,7 +259,7 @@ func main() {
 	blobSizeDesc := fmt.Sprintf("size %d bytes", *blobSize)
 
 	log.Infof("MDLoad testing target %q", *target)
-	log.Infof("Planned load W: %d / R: %d [QPS], blob size: %s", *writeQPS, *readQPS, blobSizeDesc)
+	log.Infof("Planned load W: %d / R: %d / F: %d [QPS], blob size: %s", *writeQPS, *readQPS, *findQPS, blobSizeDesc)
 
 	if *monitoringAddr != "" {
 		monitoring.StartMonitoringHandler(env, *monitoringAddr)
@@ -260,12 +279,16 @@ func main() {
 	eg, gctx := errgroup.WithContext(ctx)
 
 	writtenDigests := make(chan *sgpb.FileRecord, 1_000_000)
+	findDigests := make(chan *sgpb.FileRecord, 1_000_000)
 	writeQPSCounter := qps.NewCounter(*qpsAvgWindow, clockwork.NewRealClock())
 	defer writeQPSCounter.Stop()
 	readQPSCounter := qps.NewCounter(*qpsAvgWindow, clockwork.NewRealClock())
 	defer readQPSCounter.Stop()
+	findQPSCounter := qps.NewCounter(*qpsAvgWindow, clockwork.NewRealClock())
+	defer findQPSCounter.Stop()
 
 	readsPerWrite := int(math.Ceil(float64(*readQPS) / float64(*writeQPS)))
+	findsPerWrite := int(math.Ceil(float64(*findQPS) / float64(*writeQPS)))
 
 	// Periodically print read and write QPS.
 	eg.Go(func() error {
@@ -277,7 +300,7 @@ func main() {
 				log.Errorf("exiting")
 				return nil
 			case <-ticker.C:
-				log.Infof("Write: %.1f, Read: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), *qpsAvgWindow)
+				log.Infof("Write: %.1f, Read: %.1f, Find: %.1f QPS (%s avg)", writeQPSCounter.Get(), readQPSCounter.Get(), findQPSCounter.Get(), *qpsAvgWindow)
 			}
 		}
 	})
@@ -301,6 +324,14 @@ func main() {
 				for i := 0; i < readsPerWrite; i++ {
 					select {
 					case writtenDigests <- d:
+					default:
+					}
+				}
+			}
+			if *findQPS > 0 {
+				for i := 0; i < findsPerWrite; i++ {
+					select {
+					case findDigests <- d:
 					default:
 					}
 				}
@@ -362,6 +393,52 @@ func main() {
 			select {
 			case <-ticker.C:
 				readOnce()
+			case <-gctx.Done():
+				return nil
+			}
+		}
+	})
+
+	findOnce := func() {
+		eg.Go(func() error {
+			var d *sgpb.FileRecord
+			select {
+			case d = <-findDigests:
+				break
+			case <-gctx.Done():
+				return nil
+			}
+
+			ctx, cancel := context.WithTimeout(gctx, *timeout)
+			err := findBlob(ctx, mdClient, d)
+			cancel()
+			if err != nil {
+				log.Errorf("Find err: %s", err)
+				incrementPromFinalErrorMetric("find", err)
+				if *keepGoing {
+					return nil
+				}
+				return err
+			}
+			findQPSCounter.Inc()
+			if rand.Intn(10) < int(*recycleRate*10) {
+				findDigests <- d
+			}
+			return nil
+		})
+	}
+
+	eg.Go(func() error {
+		if *findQPS <= 0 {
+			return nil
+		}
+
+		ticker := time.NewTicker(time.Second / time.Duration(*findQPS))
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				findOnce()
 			case <-gctx.Done():
 				return nil
 			}
