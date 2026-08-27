@@ -122,7 +122,6 @@ go_test(
     timeout = "long",
     srcs = ["firecracker_test.go"],
     args = [
-        "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
         # Uncomment to test the 6.1 kernel.
         # TODO: turn this on by default once the 6.1 kernel is used everywhere
