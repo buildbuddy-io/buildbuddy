@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
@@ -56,48 +56,23 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 	defer cancel()
 
 	bareContainer := bare.NewBareCommandContainer(&bare.Opts{})
-	result := bareContainer.Run(ctx, cmd, tempDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	result := bareContainer.Run(ctx, cmd, tempDir, oci.Credentials{}, stdio)
 
 	if result.Error != nil {
 		t.Fatal(result.Error)
 	}
 	assert.Regexp(t, "^(/usr)?/bin/sh\\s", result.CommandDebugString, "sanity check: command should be run bare")
-	assert.Equal(t, "Hello world!", string(result.Stdout),
+	assert.Equal(t, "Hello world!", stdout.String(),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
 	)
-	assert.Empty(t, string(result.Stderr), "stderr should be empty")
+	assert.Empty(t, stderr.String(), "stderr should be empty")
+	// Output should only be written to the stdio writers, not buffered in the
+	// command result.
+	assert.Empty(t, string(result.Stdout))
+	assert.Empty(t, string(result.Stderr))
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
-}
-
-func TestLogFiles(t *testing.T) {
-	flags.Set(t, "executor.bare.enable_log_files", true)
-	ctx := context.Background()
-	ctr := bare.NewBareCommandContainer(&bare.Opts{})
-	workDir := testfs.MakeTempDir(t)
-
-	result := ctr.Run(ctx, &repb.Command{Arguments: []string{"bash", "-ec", `
-		echo test-stdout >&1
-		echo test-stderr >&2
-		while true; do
-			logged_stderr=$(cat "$(pwd).stderr")
-			logged_stdout=$(cat "$(pwd).stdout")
-			if [[ $logged_stderr == test-stderr ]] && [[ $logged_stdout == test-stdout ]]; then
-				exit 0
-			fi
-			if [[ -n $logged_stderr ]] && [[ -n $logged_stdout ]]; then
-				echo >&2 "Unexpected contents: stderr='$logged_stderr' stdout='$logged_stdout'"
-				exit 1
-			fi
-			# Wait a little bit and try again in case the log files have not
-			# been flushed yet.
-			sleep 0.01
-		done
-	`}}, workDir, oci.Credentials{}, &interfaces.Stdio{})
-
-	assert.Equal(t, "test-stderr\n", string(result.Stderr))
-	assert.Equal(t, "test-stdout\n", string(result.Stdout))
-	assert.Equal(t, 0, result.ExitCode)
 }
 
 func TestTMPDIR(t *testing.T) {
@@ -127,6 +102,7 @@ func TestTMPDIR(t *testing.T) {
 				workDir = filepath.Base(workDir)
 			}
 
+			_, stderr, stdio := commandutil.BufferStdio()
 			res := ctr.Run(ctx, &repb.Command{
 				Arguments: []string{"bash", "-ec", `
 					echo -n foo > $TMPDIR/foo.txt
@@ -136,8 +112,8 @@ func TestTMPDIR(t *testing.T) {
 						exit 1
 					fi
 				`},
-			}, workDir, oci.Credentials{}, &interfaces.Stdio{})
-			assert.Empty(t, string(res.Stderr))
+			}, workDir, oci.Credentials{}, stdio)
+			assert.Empty(t, stderr.String())
 			require.NoError(t, res.Error)
 
 			b, err := os.ReadFile(filepath.Join(workDir+".tmp", "foo.txt"))
@@ -167,11 +143,12 @@ func TestBareRun_WorkingDirectory(t *testing.T) {
 		WorkingDirectory: "subdir",
 	}
 	ctr := bare.NewBareCommandContainer(&bare.Opts{})
-	result := ctr.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, _, stdio := commandutil.BufferStdio()
+	result := ctr.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
 	require.NoError(t, result.Error)
 	assert.Equal(t, 0, result.ExitCode)
-	assert.Equal(t, "hello", string(result.Stdout))
+	assert.Equal(t, "hello", stdout.String())
 }
 
 func TestBareExec_WorkingDirectory(t *testing.T) {

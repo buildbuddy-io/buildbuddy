@@ -1,10 +1,7 @@
 package bare
 
 import (
-	"bytes"
 	"context"
-	"flag"
-	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -14,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -21,9 +19,10 @@ import (
 )
 
 var (
-	enableStats    = flag.Bool("executor.bare.enable_stats", true, "Whether to enable stats for bare command execution.")
-	enableLogFiles = flag.Bool("executor.bare.enable_log_files", false, "Whether to send bare runner output to log files for debugging. These files are stored adjacent to the task directory and are deleted when the task is complete.")
-	enableTmpdir   = flag.Bool("executor.bare.enable_tmpdir", true, "If provided, set a default TMPDIR in each command's environment variables to a temporary directory provisioned for each task.")
+	enableStats  = flag.Bool("executor.bare.enable_stats", true, "Whether to enable stats for bare command execution.")
+	enableTmpdir = flag.Bool("executor.bare.enable_tmpdir", true, "If provided, set a default TMPDIR in each command's environment variables to a temporary directory provisioned for each task.")
+
+	_ = flag.Bool("executor.bare.enable_log_files", false, "Whether to send bare runner output to log files for debugging. These files are stored adjacent to the task directory and are deleted when the task is complete.", flag.Deprecated("This flag no longer has any effect. The executor now always writes command output to files stored adjacent to the task directory."))
 )
 
 type Opts struct {
@@ -72,7 +71,7 @@ func (c *bareCommandContainer) Run(ctx context.Context, command *repb.Command, w
 	if err := c.Create(ctx, workDir); err != nil {
 		return commandutil.ErrorResult(err)
 	}
-	return c.exec(ctx, command, workDir, nil /*=stdio*/)
+	return c.exec(ctx, command, workDir, stdio)
 }
 
 func (c *bareCommandContainer) Create(ctx context.Context, workDir string) error {
@@ -100,50 +99,12 @@ func (c *bareCommandContainer) Signal(ctx context.Context, sig syscall.Signal) e
 	}
 }
 
-func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
+func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) *interfaces.CommandResult {
 	var statsListener procstats.Listener
 	if c.opts.EnableStats {
 		// Setting the stats listener to non-nil enables stats reporting in
 		// commandutil.RunWithOpts.
 		statsListener = func(*repb.UsageStats) {}
-	}
-
-	if *enableLogFiles {
-		stdoutPath := workDir + ".stdout"
-		stdoutFile, err := os.Create(stdoutPath)
-		if err != nil {
-			return commandutil.ErrorResult(status.UnavailableErrorf("create stdout log file: %s", err))
-		}
-		defer stdoutFile.Close()
-		defer os.Remove(stdoutPath)
-
-		stderrPath := workDir + ".stderr"
-		stderrFile, err := os.Create(stderrPath)
-		if err != nil {
-			return commandutil.ErrorResult(status.UnavailableErrorf("create stderr log file: %s", err))
-		}
-		defer stderrFile.Close()
-		defer os.Remove(stderrPath)
-
-		if stdio == nil {
-			stdio = &interfaces.Stdio{}
-		}
-		// We want to set stdio.{Stdout,Stderr} in order to write to log files.
-		// But setting stdout/stderr disables the default buffering behavior
-		// (into the CommandResult Stdout/Stderr fields). So we need to manually
-		// buffer stdout/stderr here.
-		if stdio.Stdout == nil {
-			stdoutBuf := &bytes.Buffer{}
-			stdio.Stdout = stdoutBuf
-			defer func() { result.Stdout = stdoutBuf.Bytes() }()
-		}
-		if stdio.Stderr == nil {
-			stderrBuf := &bytes.Buffer{}
-			stdio.Stderr = stderrBuf
-			defer func() { result.Stderr = stderrBuf.Bytes() }()
-		}
-		stdio.Stdout = io.MultiWriter(stdio.Stdout, stdoutFile)
-		stdio.Stderr = io.MultiWriter(stdio.Stderr, stderrFile)
 	}
 
 	// Set TMPDIR if not already set.
