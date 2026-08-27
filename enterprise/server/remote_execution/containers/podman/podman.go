@@ -99,6 +99,11 @@ const (
 	// --cidfile to be written by podman before we give up.
 	pollCIDTimeout = 15 * time.Second
 
+	// How many trailing bytes of stderr to keep in memory for error pattern
+	// matching (e.g. storage corruption detection) when stderr is being
+	// written to a stdio writer rather than buffered in the CommandResult.
+	stderrTailLimitBytes = 8 * 1024
+
 	// How long to cache the result of `podman image exists` when it returns
 	// true. A short duration is used to help recover from rare scenarios in
 	// which the image might be deleted externally.
@@ -387,8 +392,15 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 	}
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, command.Arguments...)
+	// Keep the tail of stderr in memory so that storage corruption errors can
+	// be detected below without buffering the full stderr stream.
+	stderrTail := &tailBuffer{limit: stderrTailLimitBytes}
+	runStdio := &interfaces.Stdio{
+		Stdout: stdio.Stdout,
+		Stderr: io.MultiWriter(stdio.Stderr, stderrTail),
+	}
 	result = c.doWithStatsTracking(ctx, func(ctx context.Context) *interfaces.CommandResult {
-		return c.runPodman(ctx, "run", &interfaces.Stdio{}, podmanRunArgs...)
+		return c.runPodman(ctx, "run", runStdio, podmanRunArgs...)
 	})
 
 	if result.ExitCode == podmanCommandNotRunnableExitCode {
@@ -405,7 +417,7 @@ func (c *podmanCommandContainer) Run(ctx context.Context, command *repb.Command,
 		result.Error = commandutil.ErrSIGKILL
 	}
 
-	if err := c.maybeCleanupCorruptedImages(ctx, result); err != nil {
+	if err := c.maybeCleanupCorruptedImages(ctx, result, stderrTail.Bytes()); err != nil {
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 	if exitedCleanly := result.ExitCode >= 0; !exitedCleanly {
@@ -456,7 +468,7 @@ func (c *podmanCommandContainer) Create(ctx context.Context, workDir string) err
 	podmanRunArgs = append(podmanRunArgs, c.image)
 	podmanRunArgs = append(podmanRunArgs, "sleep", "infinity")
 	createResult := c.runPodman(ctx, "create", &interfaces.Stdio{}, podmanRunArgs...)
-	if err := c.maybeCleanupCorruptedImages(ctx, createResult); err != nil {
+	if err := c.maybeCleanupCorruptedImages(ctx, createResult, createResult.Stderr); err != nil {
 		log.Warningf("Failed to remove corrupted image: %s", err)
 	}
 
@@ -723,22 +735,60 @@ func runPodman(ctx context.Context, commandRunner interfaces.CommandRunner, podm
 
 	command = append(command, subCommand)
 	command = append(command, args...)
+	// If stderr is being written to a stdio writer, the CommandResult stderr
+	// buffer stays empty, so keep a tail of stderr for the error pattern
+	// matching below.
+	var stderrTail *tailBuffer
+	if stdio != nil && stdio.Stderr != nil {
+		stderrTail = &tailBuffer{limit: stderrTailLimitBytes}
+		stdioCopy := *stdio
+		stdioCopy.Stderr = io.MultiWriter(stdio.Stderr, stderrTail)
+		stdio = &stdioCopy
+	}
 	// Note: we don't collect stats on the podman process, and instead use
 	// cgroups for stats accounting.
 	result := commandRunner.Run(ctx, &repb.Command{Arguments: command}, "" /*=workDir*/, nil /*=statsListener*/, stdio)
 
+	stderr := result.Stderr
+	if stderrTail != nil {
+		stderr = stderrTail.Bytes()
+	}
 	// If the disk is under heavy load, podman may fail with "database is
 	// locked". Detect these and return a retryable error.
 	if (result.ExitCode == podmanCommandNotRunnableExitCode ||
 		result.ExitCode == podmanInternalExitCode ||
 		result.ExitCode == podmanCommandNotFoundExitCode ||
 		result.ExitCode == podmanCommandOutOfRangeExitCode) &&
-		databaseLockedRegexp.Match(result.Stderr) {
+		databaseLockedRegexp.Match(stderr) {
 		result.ExitCode = commandutil.NoExitCode
-		result.Error = status.UnavailableErrorf("podman failed: %q", strings.TrimSpace(string(result.Stderr)))
+		result.Error = status.UnavailableErrorf("podman failed: %q", strings.TrimSpace(string(stderr)))
 	}
 
 	return result
+}
+
+// tailBuffer is an io.Writer that keeps only the last `limit` bytes written to
+// it. It is used to match error patterns in stderr without having to buffer
+// the entire stream in memory.
+type tailBuffer struct {
+	limit int
+	buf   []byte
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	if len(p) > b.limit {
+		p = p[len(p)-b.limit:]
+	}
+	b.buf = append(b.buf, p...)
+	if len(b.buf) > b.limit {
+		b.buf = b.buf[len(b.buf)-b.limit:]
+	}
+	return n, nil
+}
+
+func (b *tailBuffer) Bytes() []byte {
+	return b.buf
 }
 
 func generateContainerName() (string, error) {
@@ -764,11 +814,14 @@ func (c *podmanCommandContainer) killContainerIfRunning(ctx context.Context) err
 // An image can be corrupted if "podman pull" command is killed when pulling a parent layer.
 // More details can be found at https://github.com/containers/storage/issues/1136. When this
 // happens when need to remove the image before re-pulling the image in order to fix it.
-func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context, result *interfaces.CommandResult) error {
+//
+// stderr is passed separately from the result since the result stderr buffer
+// is not populated when stderr is written to a stdio writer.
+func (c *podmanCommandContainer) maybeCleanupCorruptedImages(ctx context.Context, result *interfaces.CommandResult, stderr []byte) error {
 	if result.ExitCode != podmanInternalExitCode {
 		return nil
 	}
-	if !storageErrorRegex.MatchString(string(result.Stderr)) {
+	if !storageErrorRegex.MatchString(string(stderr)) {
 		return nil
 	}
 	result.Error = status.UnavailableError("a storage corruption occurred")

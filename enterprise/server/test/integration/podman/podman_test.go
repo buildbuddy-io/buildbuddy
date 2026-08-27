@@ -102,14 +102,15 @@ func TestRunHelloWorld(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, c.Remove(ctx))
 	})
-	result := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	result := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
 	require.NoError(t, result.Error)
-	assert.Equal(t, "Hello world!", string(result.Stdout),
+	assert.Equal(t, "Hello world!", stdout.String(),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
 	)
-	assert.Empty(t, string(result.Stderr), "stderr should be empty")
+	assert.Empty(t, stderr.String(), "stderr should be empty")
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 }
 
@@ -236,12 +237,13 @@ func TestSlowRun(t *testing.T) {
 	}}
 
 	before := time.Now()
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 	duration := time.Since(before)
 	require.NoError(t, res.Error, "Run should not return an error")
 	assert.Equal(t, 0, res.ExitCode, "Run should exit with success")
-	assert.Equal(t, "Hello World\n", string(res.Stdout), "Run should return expected stdout")
-	assert.Empty(t, string(res.Stderr), "Run should not return any stderr")
+	assert.Equal(t, "Hello World\n", stdout.String(), "Run should return expected stdout")
+	assert.Empty(t, stderr.String(), "Run should not return any stderr")
 
 	assert.LessOrEqual(t, duration, 5*time.Second, "Run should complete within 5 seconds")
 }
@@ -280,7 +282,8 @@ func TestRun_Timeout(t *testing.T) {
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	t.Cleanup(cancel)
 
-	res := c.Run(runCtx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{}, stdio)
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -289,10 +292,10 @@ func TestRun_Timeout(t *testing.T) {
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")
 	assert.Equal(
-		t, "ExampleStdout\n", string(res.Stdout),
+		t, "ExampleStdout\n", stdout.String(),
 		"if timed out, should be able to see debug output on stdout")
 	assert.Equal(
-		t, "ExampleStderr\n", string(res.Stderr),
+		t, "ExampleStderr\n", stderr.String(),
 		"if timed out, should be able to see debug output on stderr")
 	output := testfs.ReadFileAsString(t, workDir, "output.txt")
 	assert.Equal(
@@ -334,7 +337,8 @@ func TestExec_Timeout(t *testing.T) {
 	runCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	t.Cleanup(cancel)
 
-	res := c.Run(runCtx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(runCtx, cmd, workDir, oci.Credentials{}, stdio)
 
 	assert.True(
 		t, status.IsDeadlineExceededError(res.Error),
@@ -343,10 +347,10 @@ func TestExec_Timeout(t *testing.T) {
 		t, res.ExitCode, 0,
 		"if timed out, exit code should be < 0 (unset)")
 	assert.Equal(
-		t, "ExampleStdout\n", string(res.Stdout),
+		t, "ExampleStdout\n", stdout.String(),
 		"if timed out, should be able to see debug output on stdout")
 	assert.Equal(
-		t, "ExampleStderr\n", string(res.Stderr),
+		t, "ExampleStderr\n", stderr.String(),
 		"if timed out, should be able to see debug output on stderr")
 	output := testfs.ReadFileAsString(t, workDir, "output.txt")
 	assert.Equal(
@@ -454,10 +458,11 @@ func TestForceRoot(t *testing.T) {
 			t.Cleanup(func() {
 				require.NoError(t, c.Remove(ctx))
 			})
-			result := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+			stdout, stderr, stdio := commandutil.BufferStdio()
+			result := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 			require.NoError(t, result.Error)
-			assert.Equal(t, tc.wantUID, strings.TrimSpace(string(result.Stdout)))
-			assert.Empty(t, string(result.Stderr), "stderr should be empty")
+			assert.Equal(t, tc.wantUID, strings.TrimSpace(stdout.String()))
+			assert.Empty(t, stderr.String(), "stderr should be empty")
 			assert.Equal(t, 0, result.ExitCode, "should exit with success")
 		})
 	}
@@ -505,16 +510,17 @@ func TestUser(t *testing.T) {
 			t.Cleanup(func() {
 				require.NoError(t, c.Remove(ctx))
 			})
+			userStdout, userStderr, userStdio := commandutil.BufferStdio()
 			result := c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-u", "-n"},
-			}, workDir, oci.Credentials{}, &interfaces.Stdio{})
-			u := strings.TrimSpace(string(result.Stdout))
+			}, workDir, oci.Credentials{}, userStdio)
+			u := strings.TrimSpace(userStdout.String())
 			if tc.wantUser != "" {
 				assert.Equal(t, tc.wantUser, u)
-				assert.Empty(t, string(result.Stderr), "stderr should be empty")
+				assert.Empty(t, userStderr.String(), "stderr should be empty")
 				assert.Equal(t, 0, result.ExitCode, "should exit with success")
 			} else {
-				assert.Contains(t, string(result.Stderr), "unknown ID")
+				assert.Contains(t, userStderr.String(), "unknown ID")
 				assert.Equal(t, 1, result.ExitCode, "should exit with error")
 			}
 
@@ -523,16 +529,17 @@ func TestUser(t *testing.T) {
 			t.Cleanup(func() {
 				require.NoError(t, c.Remove(ctx))
 			})
+			groupStdout, groupStderr, groupStdio := commandutil.BufferStdio()
 			result = c.Run(ctx, &repb.Command{
 				Arguments: []string{"id", "-g", "-n"},
-			}, workDir, oci.Credentials{}, &interfaces.Stdio{})
-			g := strings.TrimSpace(string(result.Stdout))
+			}, workDir, oci.Credentials{}, groupStdio)
+			g := strings.TrimSpace(groupStdout.String())
 			if tc.wantGroup != "" {
 				assert.Equal(t, tc.wantGroup, g)
-				assert.Empty(t, string(result.Stderr), "stderr should be empty")
+				assert.Empty(t, groupStderr.String(), "stderr should be empty")
 				assert.Equal(t, 0, result.ExitCode, "should exit with success")
 			} else {
-				assert.Contains(t, string(result.Stderr), "unknown ID")
+				assert.Contains(t, groupStderr.String(), "unknown ID")
 				assert.Equal(t, 1, result.ExitCode, "should exit with error")
 			}
 		})
@@ -564,9 +571,10 @@ func TestPodmanRun_LongRunningProcess_CanGetAllLogs(t *testing.T) {
 		require.NoError(t, c.Remove(ctx))
 	})
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, _, stdio := commandutil.BufferStdio()
+	c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
-	assert.Equal(t, "Hello world\nHello again\n", string(res.Stdout))
+	assert.Equal(t, "Hello world\nHello again\n", stdout.String())
 }
 
 func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
@@ -593,7 +601,8 @@ func TestPodmanRun_CommandNotExecuted_RecordsStats(t *testing.T) {
 		require.NoError(t, c.Remove(ctx))
 	})
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	_, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 
 	require.NotEqual(t, 0, res.ExitCode, "sanity check: command should have failed")
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
@@ -639,9 +648,10 @@ func TestPodmanRun_RecordsStats(t *testing.T) {
 		require.NoError(t, c.Remove(ctx))
 	})
 
-	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	_, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	t.Log(string(res.Stderr))
+	t.Log(stderr.String())
 	require.Equal(t, res.ExitCode, 0)
 
 	require.NotNil(t, res.UsageStats, "usage stats should not be nil")
@@ -683,8 +693,9 @@ func TestSignal(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	result := c.Run(ctx, cmd, workDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	result := c.Run(ctx, cmd, workDir, oci.Credentials{}, stdio)
 	assert.NoError(t, result.Error)
-	assert.Empty(t, string(result.Stderr))
-	assert.Equal(t, "Got SIGTERM\n", string(result.Stdout))
+	assert.Empty(t, stderr.String())
+	assert.Equal(t, "Got SIGTERM\n", stdout.String())
 }
