@@ -2676,8 +2676,16 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	// after boot.
 	if c.isBalloonEnabled() && c.machineHasBalloon(ctx) {
 		stage = "update_balloon"
-		if _, err := c.updateBalloon(ctx, 0); err != nil {
+		balloonSizeMB, err := c.updateBalloon(ctx, 0)
+		if err != nil {
 			result.Error = status.WrapError(err, "deflate balloon")
+			return result
+		}
+		// Running with an inflated balloon would give the task less memory than
+		// requested. Return a retryable error so this VM is discarded before the
+		// command starts.
+		if balloonSizeMB != 0 {
+			result.Error = status.UnavailableErrorf("deflate balloon stalled at %d MB. vmlog: %s", balloonSizeMB, c.vmLog.Tail())
 			return result
 		}
 		c.emitCOWAndUFFDMetrics(stage)
@@ -3260,10 +3268,20 @@ func (c *FirecrackerContainer) reclaimMemoryWithBalloon(ctx context.Context) err
 	if res.Error != nil {
 		return res.Error
 	}
+	// The memory query can fail when awk or /proc/meminfo is unavailable. No
+	// balloon update has been requested yet, so keep the balloon deflated and
+	// save a larger snapshot.
+	if res.ExitCode != 0 {
+		log.CtxWarningf(ctx, "Skipping balloon memory reclamation because the guest memory query exited with code %d (%s)", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
+		return nil
+	}
 
 	availableMemMB, err := strconv.ParseFloat(strings.TrimSpace(string(res.Stdout)), 32)
 	if err != nil {
-		return status.WrapErrorf(err, "failed to parse available memory %s", string(res.Stdout))
+		// Parsing happens before balloon state changes, so a larger snapshot is
+		// safer than preventing runner recycling for an unexpected output format.
+		log.CtxWarningf(ctx, "Skipping balloon memory reclamation because available guest memory could not be parsed (%q)", strings.TrimSpace(string(res.Stdout)))
+		return nil
 	}
 	balloonTargetMB := int64(float64(availableMemMB) * .8)
 	if _, err := c.updateBalloon(ctx, balloonTargetMB); err != nil {

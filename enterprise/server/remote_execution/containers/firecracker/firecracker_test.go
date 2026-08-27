@@ -2265,6 +2265,63 @@ free -h
 	}
 }
 
+func TestFirecrackerBalloon_MissingAwkStillSavesSnapshot(t *testing.T) {
+	flags.Set(t, "executor.firecracker_enable_balloon", true)
+	ctx := t.Context()
+
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+
+	cfg := getExecutorConfig(t)
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         ubuntuImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:            2,
+			MemSizeMb:          500,
+			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb:  500,
+			GuestKernelVersion: cfg.GuestKernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
+		},
+		ExecutorConfig: cfg,
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			// Remote snapshot support and recycling enable the balloon.
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.MinTimeBetweenSnapshotWritesPropertyName, Value: "0s"},
+			}},
+			Arguments: []string{"./buildbuddy_ci_runner"},
+		},
+	}
+
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+	require.NoError(t, c.Create(ctx, opts.ActionWorkingDirectory))
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(context.WithoutCancel(ctx)))
+	})
+
+	// A shell without awk cannot determine available memory. Since the balloon
+	// has not been inflated, the VM should save a larger snapshot instead of
+	// preventing runner recycling.
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"/bin/rm", "/usr/bin/awk"}}, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	require.NoError(t, c.Pause(ctx))
+	require.NoError(t, c.Unpause(ctx))
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"/bin/true"}}, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, int64(1), res.VMMetadata.GetSavedSnapshotVersionNumber())
+}
+
 func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
 	ctx := context.Background()
 
