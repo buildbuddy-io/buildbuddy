@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/sandbox"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/stretchr/testify/assert"
 
@@ -54,17 +54,22 @@ func TestSandboxedHelloWorld(t *testing.T) {
 	defer cancel()
 
 	sandboxContainer := sandbox.New(&sandbox.Options{})
-	result := sandboxContainer.Run(ctx, cmd, tempDir, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	result := sandboxContainer.Run(ctx, cmd, tempDir, oci.Credentials{}, stdio)
 
 	if result.Error != nil {
 		t.Fatal(result.Error)
 	}
 	assert.Regexp(t, "^(/usr)?/bin/sandbox-exec\\s", result.CommandDebugString, "sanity check: command should be run bare")
-	assert.Equal(t, "Hello world!", string(result.Stdout),
+	assert.Equal(t, "Hello world!", stdout.String(),
 		"stdout should equal 'Hello world!' ('$GREETING' env var should be replaced with 'Hello', and "+
 			"tempfile containing 'world' should be readable.)",
 	)
-	assert.Empty(t, string(result.Stderr), "stderr should be empty")
+	assert.Empty(t, stderr.String(), "stderr should be empty")
+	// Output should only be written to the stdio writers, not buffered in the
+	// command result.
+	assert.Empty(t, string(result.Stdout))
+	assert.Empty(t, string(result.Stderr))
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 }
 
@@ -85,12 +90,14 @@ func TestCrossContainerReads(t *testing.T) {
 	defer cancel()
 
 	sandboxContainer := sandbox.New(&sandbox.Options{})
-	goodResult := sandboxContainer.Run(ctx, goodCmd, tempDir1, oci.Credentials{}, &interfaces.Stdio{})
-	evilResult := sandboxContainer.Run(ctx, evilCmd, tempDir2, oci.Credentials{}, &interfaces.Stdio{})
+	_, goodStderr, goodStdio := commandutil.BufferStdio()
+	goodResult := sandboxContainer.Run(ctx, goodCmd, tempDir1, oci.Credentials{}, goodStdio)
+	_, evilStderr, evilStdio := commandutil.BufferStdio()
+	evilResult := sandboxContainer.Run(ctx, evilCmd, tempDir2, oci.Credentials{}, evilStdio)
 
-	assert.Empty(t, string(goodResult.Stderr), "stderr should be empty")
+	assert.Empty(t, goodStderr.String(), "stderr should be empty")
 	assert.Equal(t, 0, goodResult.ExitCode, "should exit with success")
 
-	assert.Contains(t, string(evilResult.Stderr), "Operation not permitted")
+	assert.Contains(t, evilStderr.String(), "Operation not permitted")
 	assert.Equal(t, 1, evilResult.ExitCode, "should exit with error")
 }

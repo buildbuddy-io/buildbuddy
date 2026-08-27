@@ -323,7 +323,7 @@ func (c *sandbox) IsolationType() string {
 }
 
 func (c *sandbox) Run(ctx context.Context, command *repb.Command, workDir string, _ oci.Credentials, stdio *interfaces.Stdio) *interfaces.CommandResult {
-	return c.runCmdInSandbox(ctx, command, workDir, &interfaces.Stdio{})
+	return c.runCmdInSandbox(ctx, command, workDir, stdio)
 }
 
 func (c *sandbox) Create(ctx context.Context, workDir string) error {

@@ -30,9 +30,9 @@ go_test(
     deps = select({
         "@io_bazel_rules_go//go/platform:darwin": [
             ":sandbox",
+            "//enterprise/server/remote_execution/commandutil",
             "//enterprise/server/util/oci",
             "//proto:remote_execution_go_proto",
-            "//server/interfaces",
             "//server/testutil/testfs",
             "@com_github_stretchr_testify//assert",
         ],
