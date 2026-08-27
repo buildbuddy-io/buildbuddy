@@ -2277,7 +2277,27 @@ func (p *PebbleCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (
 	return &refpb.Reference{Metadata: md}, nil
 }
 
-func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error) {
+type referenceWriter struct {
+	wc interfaces.CommittedWriteCloser
+	md *sgpb.FileMetadata
+}
+
+func (w *referenceWriter) Write(p []byte) (int, error) {
+	return w.wc.Write(p)
+}
+
+func (w *referenceWriter) Close() error {
+	return w.wc.Close()
+}
+
+func (w *referenceWriter) Commit() (*refpb.Reference, error) {
+	if err := w.wc.Commit(); err != nil {
+		return nil, err
+	}
+	return &refpb.Reference{Metadata: w.md}, nil
+}
+
+func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
 	if p.gcsBlobstore == nil {
 		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot create references")
 	}
@@ -2301,23 +2321,16 @@ func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName,
 
 	// Commit only captures the blob's metadata instead of registering it in
 	// this cache.
-	var md *sgpb.FileMetadata
-	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, nil, func(m *sgpb.FileMetadata) error {
-		md = m
+	rw := &referenceWriter{}
+	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, nil, func(md *sgpb.FileMetadata) error {
+		rw.md = md
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	defer wc.Close()
-
-	if _, err := io.Copy(wc, reader); err != nil {
-		return nil, err
-	}
-	if err := wc.Commit(); err != nil {
-		return nil, err
-	}
-	return &refpb.Reference{Metadata: md}, nil
+	rw.wc = wc
+	return rw, nil
 }
 
 func validateReference(ref *refpb.Reference) error {

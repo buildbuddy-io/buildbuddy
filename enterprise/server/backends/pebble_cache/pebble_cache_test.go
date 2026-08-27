@@ -3201,7 +3201,12 @@ func TestCreateReference(t *testing.T) {
 
 	// Blobs at or above minGCSFileSize are staged in GCS and referenceable.
 	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
-	ref, err := pc.CreateReference(ctx, gcsRN, bytes.NewReader(gcsBuf))
+	w, err := pc.CreateReference(ctx, gcsRN)
+	require.NoError(t, err)
+	defer w.Close()
+	_, err = w.Write(gcsBuf)
+	require.NoError(t, err)
+	ref, err := w.Commit()
 	require.NoError(t, err)
 	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
 	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
@@ -3229,8 +3234,8 @@ func TestCreateReference(t *testing.T) {
 
 	// Blobs below minGCSFileSize cannot be referenced, and nothing is
 	// written anywhere for them.
-	diskRN, diskBuf := testdigest.RandomCASResourceBuf(t, 50)
-	_, err = pc.CreateReference(ctx, diskRN, bytes.NewReader(diskBuf))
+	diskRN, _ := testdigest.RandomCASResourceBuf(t, 50)
+	_, err = pc.CreateReference(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 	_, err = pc.Get(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)

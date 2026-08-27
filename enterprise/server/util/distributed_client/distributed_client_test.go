@@ -1427,7 +1427,7 @@ func (c *fakeReferenceCache) ReadReference(ctx context.Context, r *rspb.Resource
 	return nil, status.UnimplementedError("not implemented")
 }
 
-func (c *fakeReferenceCache) CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error) {
+func (c *fakeReferenceCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
 
@@ -1622,7 +1622,7 @@ func (c *serverReferenceCache) ReadReference(ctx context.Context, r *rspb.Resour
 	return nil, status.NotFoundError("no reference available")
 }
 
-func (c *serverReferenceCache) CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error) {
+func (c *serverReferenceCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
 	return nil, status.UnimplementedError("not implemented")
 }
 
