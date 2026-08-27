@@ -45,6 +45,7 @@ import (
 const (
 	// File name used for the rootfs snapshot artifact.
 	rootfsFileName = "rootfs.ext4"
+	misnamedRootfsFileName = "rootfs"  // TODO(bduffany): consolidate.
 
 	// Rootfs access during guest boot mixes filesystem metadata and file data
 	// reads, so large sequential prefetch windows cause substantial read
@@ -991,7 +992,7 @@ func (l *FileCacheLoader) unpackCOW(ctx context.Context, file *fcpb.ChunkedFile,
 		RemoteInstanceName: remoteInstanceName,
 		RemoteEnabled:      remoteEnabled,
 	}
-	if file.GetName() == rootfsFileName {
+	if file.GetName() == rootfsFileName || file.GetName() == misnamedRootfsFileName {
 		opts.EagerFetchChunks = rootfsEagerFetchChunks
 	}
 	cow, err := copy_on_write.NewCOWStore(ctx, l.env, file.GetName(), chunks, opts)
