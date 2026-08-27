@@ -146,7 +146,7 @@ func GRPCServer(env environment.Env, lis net.Listener) (*grpc.Server, func()) {
 func setupDBHandle(t testing.TB, te environment.Env, testRootDir string) (interfaces.DBHandle, error) {
 	switch *databaseType {
 	case "sqlite":
-		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://%s", filepath.Join(testRootDir, "test.db")))
+		flags.Set(t, "database.data_source", fmt.Sprintf("sqlite3://file:%s?mode=memory&cache=shared", filepath.Join(testRootDir, "test.db")))
 	case "mysql":
 		flags.Set(t, "database.data_source", testmysql.GetOrStart(t, *reuseServer))
 	case "postgres":
