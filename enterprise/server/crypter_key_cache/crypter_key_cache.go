@@ -265,7 +265,19 @@ func (c *KeyCache) refreshKey(ctx context.Context, ck CacheKey, cacheError bool)
 		}
 		return k, err
 	})
-	return v, err
+	if err != nil {
+		return nil, err
+	}
+	// The singleflight group detaches the caller's cancelation from the
+	// context passed to the refresh func, so the refresh can succeed even
+	// though the caller's ctx is already done. In that case the wait below the
+	// singleflight can observe both the completed refresh and the done ctx, so
+	// return the ctx error explicitly rather than relying on which one it
+	// happens to pick.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
+	}
+	return v, nil
 }
 
 func (c *KeyCache) loadKey(ctx context.Context, em *sgpb.EncryptionMetadata) (*crypter.DerivedKey, error) {
