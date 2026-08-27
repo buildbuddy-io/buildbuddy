@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/bazelbuild/rules_go/go/runfiles"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -225,10 +226,11 @@ func TestRun(t *testing.T) {
 			{Name: "GREETING", Value: "Hello"},
 		},
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	assert.Equal(t, "Hello world!\n", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "Hello world!\n", stdout.String())
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
 	assert.True(t, testfs.Exists(t, wd, "output.txt"), "output.txt should exist")
 }
@@ -281,10 +283,11 @@ func TestCgroupSettings(t *testing.T) {
 		`},
 	}
 
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	assert.Equal(t, "300000 100000\n256\n", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "300000 100000\n256\n", stdout.String())
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -322,7 +325,8 @@ func TestRunUsageStats(t *testing.T) {
 	// cumulative CPU usage file to reliably return stats even if we don't have
 	// a chance to poll
 	cmd := &repb.Command{Arguments: []string{"sleep", "0.5"}}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	_, _, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 	require.Equal(t, 0, res.ExitCode)
 	assert.Greater(t, res.UsageStats.GetPeakMemoryBytes(), int64(0), "memory")
@@ -368,7 +372,8 @@ func TestRunWithImage(t *testing.T) {
 			{Name: "GREETING", Value: "Hello"},
 		},
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 	assert.Equal(t, `Hello world!
 GREETING=Hello
@@ -378,8 +383,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/test/bin
 PWD=/buildbuddy-execroot
 SHLVL=1
 TEST_ENV_VAR=foo
-`, string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+`, stdout.String())
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -467,11 +472,12 @@ echo "All child processes were killed!"
 cat /sys/fs/cgroup/memory.events
 
 `}}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	assert.True(t, status.IsUnavailableError(res.Error), "expected UnavailableError, got %#+v", res.Error)
 	assert.Equal(t, "task process or child process killed by oom killer", status.Message(res.Error))
-	assert.Empty(t, string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
 }
 
 func TestCreateExecRemove(t *testing.T) {
@@ -551,10 +557,11 @@ func TestTini_Run(t *testing.T) {
 	// script that intentionally creates a zombie process, since shells will
 	// handle SIGCHLD and reap processes.
 	cmd := &repb.Command{Arguments: []string{"cat", "/proc/1/stat"}}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	assert.Empty(t, string(res.Stderr))
-	assert.True(t, strings.HasPrefix(string(res.Stdout), "1 (tini)"), "tini should be pid 1. /proc/1/stat contents: %q", string(res.Stdout))
+	assert.Empty(t, stderr.String())
+	assert.True(t, strings.HasPrefix(stdout.String(), "1 (tini)"), "tini should be pid 1. /proc/1/stat contents: %q", stdout.String())
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -1040,6 +1047,7 @@ func TestDevices(t *testing.T) {
 		require.NoError(t, err)
 	})
 	require.NoError(t, err)
+	stdout, stderr, stdio := commandutil.BufferStdio()
 	res := c.Run(ctx, &repb.Command{
 		Arguments: []string{"sh", "-e", "-c", `
 			# Print out device file types and major/minor device numbers
@@ -1051,7 +1059,7 @@ func TestDevices(t *testing.T) {
 			cat /dev/zero | head -c1 >/dev/null
 			echo foo >/dev/null
 		`},
-	}, wd, oci.Credentials{}, &interfaces.Stdio{})
+	}, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
 	expectedLines := []string{
@@ -1060,8 +1068,8 @@ func TestDevices(t *testing.T) {
 		"/dev/random: character special file (1,8)",
 		"/dev/urandom: character special file (1,9)",
 	}
-	assert.Equal(t, strings.Join(expectedLines, "\n")+"\n", string(res.Stdout))
-	assert.Equal(t, "", string(res.Stderr))
+	assert.Equal(t, strings.Join(expectedLines, "\n")+"\n", stdout.String())
+	assert.Equal(t, "", stderr.String())
 }
 
 func TestSignal(t *testing.T) {
@@ -1108,10 +1116,11 @@ func TestSignal(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	assert.NoError(t, res.Error)
-	assert.Equal(t, "Got SIGTERM\n", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "Got SIGTERM\n", stdout.String())
+	assert.Empty(t, stderr.String())
 }
 
 func TestNetworking(t *testing.T) {
@@ -1198,15 +1207,16 @@ func TestNetworking(t *testing.T) {
 					fi
 				`},
 			}
-			res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+			stdout, stderr, stdio := commandutil.BufferStdio()
+			res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 			require.NoError(t, res.Error)
-			t.Logf("stderr: %s", string(res.Stderr))
+			t.Logf("stderr: %s", stderr.String())
 			if tc.expectExternalConnectivity {
-				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=true\n", string(res.Stdout))
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=true\n", stdout.String())
 				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesSent(), int64(100))
 				assert.GreaterOrEqual(t, res.UsageStats.GetNetworkStats().GetBytesReceived(), int64(100))
 			} else {
-				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=false\n", string(res.Stdout))
+				assert.Equal(t, "PING_LOOPBACK_OK=true\nPING_EXTERNAL_OK=false\n", stdout.String())
 				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesSent())
 				assert.Equal(t, int64(0), res.UsageStats.GetNetworkStats().GetBytesReceived())
 			}
@@ -1313,10 +1323,11 @@ func TestUser(t *testing.T) {
 				require.NoError(t, err)
 			})
 			cmd := &repb.Command{Arguments: []string{"id"}}
-			res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+			stdout, stderr, stdio := commandutil.BufferStdio()
+			res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 			require.NoError(t, res.Error)
-			assert.Equal(t, test.expectedID, strings.TrimSpace(string(res.Stdout)))
-			assert.Empty(t, string(res.Stderr))
+			assert.Equal(t, test.expectedID, strings.TrimSpace(stdout.String()))
+			assert.Empty(t, stderr.String())
 			assert.Equal(t, 0, res.ExitCode)
 		})
 	}
@@ -1359,10 +1370,11 @@ func TestOverlayfsEdgeCases(t *testing.T) {
 		test -e /test/DELETED_FILE && echo >&2 "/test/DELETED_FILE unexpectedly exists"
 		exit 0
 	`}}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	assert.Empty(t, string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Empty(t, stdout.String())
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -1422,11 +1434,12 @@ func TestHighLayerCount(t *testing.T) {
 				require.NoError(t, c.Remove(ctx))
 			})
 			cmd := &repb.Command{Arguments: []string{"sh", "-c", `cat /a.txt`}}
-			res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+			stdout, stderr, stdio := commandutil.BufferStdio()
+			res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 			require.NoError(t, res.Error)
 			// Verify last layer wins
-			assert.Equal(t, lastContent, string(res.Stdout))
-			assert.Empty(t, string(res.Stderr))
+			assert.Equal(t, lastContent, stdout.String())
+			assert.Empty(t, stderr.String())
 			assert.Equal(t, 0, res.ExitCode)
 		})
 	}
@@ -1468,12 +1481,13 @@ func TestEntrypoint(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	stdout, _, stdio := commandutil.BufferStdio()
 	res := c.Run(ctx, &repb.Command{
 		Arguments: []string{"sh", "-c", "echo $FOO"},
-	}, wd, oci.Credentials{}, &interfaces.Stdio{})
+	}, wd, oci.Credentials{}, stdio)
 
 	require.NoError(t, res.Error)
-	assert.Equal(t, "bar\n", string(res.Stdout))
+	assert.Equal(t, "bar\n", stdout.String())
 }
 
 func TestFileOwnership(t *testing.T) {
@@ -1548,16 +1562,17 @@ func TestFileOwnership(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	stdout, stderr, stdio := commandutil.BufferStdio()
 	res := c.Run(ctx, &repb.Command{
 		Arguments: []string{"stat", "-c", "%n: %u %g", "/foo.txt", "/bar", "/baz.ln", "/qux.hardlink"},
-	}, wd, oci.Credentials{}, &interfaces.Stdio{})
+	}, wd, oci.Credentials{}, stdio)
 
 	require.NoError(t, res.Error)
-	require.Empty(t, string(res.Stderr))
+	require.Empty(t, stderr.String())
 	assert.Equal(
 		t,
 		"/foo.txt: 1000 1000\n/bar: 1000 1000\n/baz.ln: 1000 1000\n/qux.hardlink: 1000 1000\n",
-		string(res.Stdout),
+		stdout.String(),
 	)
 }
 
@@ -2212,10 +2227,11 @@ func TestCancelRun(t *testing.T) {
 		err := disk.WaitUntilExists(ctx, filepath.Join(wd, "DONE"), disk.WaitOpts{Timeout: -1})
 		require.NoError(t, err)
 	}()
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	assert.True(t, status.IsCanceledError(res.Error), "expected CanceledError, got %+#v", res.Error)
-	assert.Equal(t, "Hello world!\n", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "Hello world!\n", stdout.String())
+	assert.Empty(t, stderr.String())
 	// Make sure all child processes were killed.
 	out := testshell.Run(t, wd, `( ps aux | grep `+childID+` | grep -v grep ) || true`)
 	assert.Empty(t, out)
@@ -2413,10 +2429,11 @@ func TestMounts(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"cat", "/mnt/testmount/foo.txt"},
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	assert.Equal(t, "bar", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "bar", stdout.String())
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -2452,11 +2469,12 @@ func TestShmSize(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"grep", " /dev/shm ", "/proc/mounts"},
 	}
-	res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	assert.Empty(t, string(res.Stderr))
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
-	assert.Contains(t, string(res.Stdout), "size=3108k")
+	assert.Contains(t, stdout.String(), "size=3108k")
 }
 
 func TestCDIDevicesMountsFromCDISpec(t *testing.T) {
@@ -2508,10 +2526,11 @@ devices:
 		require.NoError(t, err)
 	})
 
-	res := c.Run(ctx, &repb.Command{Arguments: []string{"cat", "/mnt/from-cdi.txt"}}, wd, oci.Credentials{}, &interfaces.Stdio{})
+	stdout, stderr, stdio := commandutil.BufferStdio()
+	res := c.Run(ctx, &repb.Command{Arguments: []string{"cat", "/mnt/from-cdi.txt"}}, wd, oci.Credentials{}, stdio)
 	require.NoError(t, res.Error)
-	assert.Equal(t, "hello-from-cdi\n", string(res.Stdout))
-	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, "hello-from-cdi\n", stdout.String())
+	assert.Empty(t, stderr.String())
 	assert.Equal(t, 0, res.ExitCode)
 }
 
@@ -2543,11 +2562,12 @@ func TestPersistentVolumes(t *testing.T) {
 		err := c1.Remove(ctx)
 		require.NoError(t, err)
 	})
+	_, stderr1, stdio1 := commandutil.BufferStdio()
 	res := c1.Run(ctx, &repb.Command{
 		Arguments: []string{"touch", "/tmp/.cache/foo", "/root/.cache/bar"},
-	}, wd1, oci.Credentials{}, &interfaces.Stdio{})
+	}, wd1, oci.Credentials{}, stdio1)
 	require.NoError(t, res.Error)
-	require.Empty(t, string(res.Stderr))
+	require.Empty(t, stderr1.String())
 	require.Equal(t, 0, res.ExitCode)
 
 	wd2 := testfs.MakeDirAll(t, buildRoot, "work2")
@@ -2562,11 +2582,12 @@ func TestPersistentVolumes(t *testing.T) {
 		err := c2.Remove(ctx)
 		require.NoError(t, err)
 	})
+	_, stderr2, stdio2 := commandutil.BufferStdio()
 	res = c2.Run(ctx, &repb.Command{
 		Arguments: []string{"stat", "/tmp/.cache/foo", "/root/.cache/bar"},
-	}, wd2, oci.Credentials{}, &interfaces.Stdio{})
+	}, wd2, oci.Credentials{}, stdio2)
 	require.NoError(t, res.Error)
-	require.Empty(t, string(res.Stderr))
+	require.Empty(t, stderr2.String())
 	require.Equal(t, 0, res.ExitCode)
 }
 
@@ -3301,10 +3322,11 @@ func TestExecrootPath(t *testing.T) {
 		})
 
 		cmd := &repb.Command{Arguments: []string{"sh", "-c", "pwd && cat input.txt"}}
-		res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+		stdout, _, stdio := commandutil.BufferStdio()
+		res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, "/buildbuddy-execroot\nhello\n", string(res.Stdout))
+		assert.Equal(t, "/buildbuddy-execroot\nhello\n", stdout.String())
 	})
 
 	t.Run("Custom", func(t *testing.T) {
@@ -3329,10 +3351,11 @@ func TestExecrootPath(t *testing.T) {
 		})
 
 		cmd := &repb.Command{Arguments: []string{"sh", "-c", "pwd && cat input.txt"}}
-		res := c.Run(ctx, cmd, wd, oci.Credentials{}, &interfaces.Stdio{})
+		stdout, _, stdio := commandutil.BufferStdio()
+		res := c.Run(ctx, cmd, wd, oci.Credentials{}, stdio)
 		require.NoError(t, res.Error)
 		assert.Equal(t, 0, res.ExitCode)
-		assert.Equal(t, "/custom-execroot\nhello\n", string(res.Stdout))
+		assert.Equal(t, "/custom-execroot\nhello\n", stdout.String())
 	})
 
 }

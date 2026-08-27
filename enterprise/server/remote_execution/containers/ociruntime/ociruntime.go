@@ -743,7 +743,7 @@ func (c *ociContainer) Run(ctx context.Context, cmd *repb.Command, workDir strin
 		// Use --keep to prevent the cgroup from being deleted when the
 		// container exits, since we still want to be able to look at stats,
 		// events, etc. after completion.
-		return c.invokeRuntime(ctx, nil /*=cmd*/, &interfaces.Stdio{}, 0 /*=waitDelay*/, "run", "--keep", "--bundle="+c.bundlePath(), c.cid)
+		return c.invokeRuntime(ctx, nil /*=cmd*/, stdio, 0 /*=waitDelay*/, "run", "--keep", "--bundle="+c.bundlePath(), c.cid)
 	})
 }
 

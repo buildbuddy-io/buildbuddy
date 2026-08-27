@@ -99,6 +99,7 @@ go_test(
     },
     deps = [
         ":ociruntime",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/persistentworker",
