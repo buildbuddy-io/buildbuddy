@@ -268,12 +268,11 @@ func (c *KeyCache) refreshKey(ctx context.Context, ck CacheKey, cacheError bool)
 	if err != nil {
 		return nil, err
 	}
-	// The singleflight group detaches the caller's cancelation from the
-	// context passed to the refresh func, so the refresh can succeed even
-	// though the caller's ctx is already done. In that case the wait below the
-	// singleflight can observe both the completed refresh and the done ctx, so
-	// return the ctx error explicitly rather than relying on which one it
-	// happens to pick.
+
+	// The singleflight group runs the refresh on a context without cancelation, so that
+	// the refresh can succeed even if the caller's ctx is done.
+	// The group's `wait` then non-deterministically selects between the result from `refreshKey` and the done context.
+	// If the context is done, return the same result here so that the results are consistent.
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, ctxErr
 	}

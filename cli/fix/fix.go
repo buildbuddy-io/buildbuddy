@@ -54,13 +54,13 @@ var (
 const (
 	usage = `
 usage: bb fix [ --diff ]
-       bb fix <invocation> <target> [ --test_filter=<regex> ]
+       bb fix <invocation> [ <target> ] [ --test_filter=<regex> ]
 
 With no arguments, applies fixes to WORKSPACE and BUILD files.
 Use the --diff flag to print suggested fixes without applying.
 
-Given an invocation ID (or URL) and a target, instead reproduces that
-target's test failure and fixes it.
+Given an invocation ID (or URL), instead reproduces that invocation's test or
+build failure and fixes it.
 `
 	gazelleTarget = "//:gazelle"
 )
@@ -69,9 +69,12 @@ var nonAlphanumericRegex = regexp.MustCompile(`[^a-zA-Z0-9 ]+`)
 
 func HandleFix(args []string) (exitCode int, err error) {
 	// `bb fix <invocation> [<target>]` reproduces and fixes a test or build
-	// failure.
+	// failure. Dispatch on the first arg actually being an invocation, so that
+	// `bb fix`'s own flags (--diff, --help) still reach the workspace path.
 	if len(args) > 0 {
-		return invocation.Handle(args)
+		if _, err := invocation.ParseInvocationID(args[0]); err == nil {
+			return invocation.Handle(args)
+		}
 	}
 
 	if err := arg.ParseFlagSet(flags, args); err != nil {
