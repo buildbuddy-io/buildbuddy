@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4writer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -88,6 +89,9 @@ var (
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
 	dieOnFirecrackerFailure               = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 	workspaceDiskSlackSpaceMB             = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
+	workspaceImageWriter                  = flag.String("executor.firecracker_workspace_image_writer", "mke2fs", "How to build the per-action workspace ext4 image: 'mke2fs' (shell out to mke2fs -d) or 'native' (in-process ext4 writer; much faster for large input trees). ** Experimental **")
+	workspaceImageWriterConcurrency       = flag.Int("executor.firecracker_workspace_image_writer_concurrency", 0, "Number of parallel data-copy workers for the native workspace image writer (0 = min(8, NumCPU)).")
+	workspaceOutputExtractor              = flag.String("executor.firecracker_workspace_output_extractor", "debugfs", "How to extract action outputs from the workspace image: 'debugfs' (shell out; fsyncs the whole image) or 'native' (in-process ext4 reader). ** Experimental **")
 	healthCheckInterval                   = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 	overprovisionCPUs                     = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
@@ -1566,6 +1570,17 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	if err := os.RemoveAll(ext4ImagePath); err != nil {
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
+	if *workspaceImageWriter == "native" {
+		stats, err := ext4writer.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, &ext4writer.Options{
+			SlackBytes:  ext4.MinDiskImageSizeBytes + *workspaceDiskSlackSpaceMB*1e6,
+			Concurrency: *workspaceImageWriterConcurrency,
+		})
+		if err != nil {
+			return status.WrapError(err, "failed to convert workspace dir to ext4 image (native writer)")
+		}
+		log.CtxDebugf(ctx, "Native workspace image writer: %s", stats)
+		return nil
+	}
 	workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)
 	if err != nil {
 		return err
@@ -1945,7 +1960,11 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer os.RemoveAll(wsDir) // clean up
 
 	outputPaths := workspacePathsToExtract(c.task)
-	if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
+	if *workspaceOutputExtractor == "native" {
+		if err := ext4writer.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
+			return err
+		}
+	} else if err := ext4.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
 		return err
 	}
 
