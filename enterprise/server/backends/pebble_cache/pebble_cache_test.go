@@ -2912,6 +2912,14 @@ func TestSampling(t *testing.T) {
 	require.NoError(t, err)
 
 	minEvictionAge := 1 * time.Hour
+	evictionTimeout := 15 * time.Second
+	evictionPollInterval := 100 * time.Millisecond
+	// Each unsuccessful poll advances the fake clock to wake the sampler. Keep
+	// newer entries ineligible throughout the entire polling window.
+	maxClockAdvance := time.Duration(evictionTimeout/evictionPollInterval) * pebble_cache.SamplerSleepDuration
+	newerAtimeGap := maxClockAdvance + time.Minute
+	require.Less(t, newerAtimeGap, minEvictionAge)
+
 	clock := clockwork.NewFakeClock()
 	opts := &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -2943,7 +2951,6 @@ func TestSampling(t *testing.T) {
 	// encrypted. The encrypted key should have the same digest prefix as the
 	// unencrypted key and come before the unencrypted key in lexicographical
 	// order.
-	newerAtimeGap := 5 * time.Minute
 	clock.Advance(newerAtimeGap)
 	err = pc.Set(ctx, rn, buf)
 	require.NoError(t, err)
@@ -2964,23 +2971,22 @@ func TestSampling(t *testing.T) {
 	// fake clock while waking the sampler.
 	clock.Advance(minEvictionAge - newerAtimeGap)
 
-	waitForEviction := func(timeout time.Duration) {
-		interval := 100 * time.Millisecond
-		for i := 0; i < int(timeout/interval); i++ {
+	waitForEviction := func() {
+		for i := 0; i < int(evictionTimeout/evictionPollInterval); i++ {
 			if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 				log.Infof("i = %d: unencrypted test digest is evicted", i)
 				return
 			}
-			time.Sleep(interval)
+			time.Sleep(evictionPollInterval)
 			// generateSamplesForEviction might be sleeping, so advance
 			// enough to wake it up. Alternatively, we could call
 			// pc.Start() after the cache already has some data so that
 			// generateSamplesForEviction never sleeps.
 			clock.Advance(pebble_cache.SamplerSleepDuration)
 		}
-		t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, timeout)
+		t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, evictionTimeout)
 	}
-	waitForEviction(15 * time.Second)
+	waitForEviction()
 
 	// The unencrypted key should no longer exist.
 	unencryptedExists, err := pc.Contains(anonCtx, rn)
