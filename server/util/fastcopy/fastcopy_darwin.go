@@ -4,9 +4,12 @@ package fastcopy
 
 import (
 	"errors"
+	"flag"
 
 	"golang.org/x/sys/unix"
 )
+
+var useMacOSHardlinks = flag.Bool("executor.use_hardlinks_macos", false, "If true, use hardlinks on macOS instead of copy-on-write clones")
 
 func Clone(source, destination string) error {
 	if err := unix.Clonefile(source, destination, unix.CLONE_NOFOLLOW); err != nil && !errors.Is(err, unix.EEXIST) {
