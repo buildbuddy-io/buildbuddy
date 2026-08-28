@@ -92,6 +92,7 @@ var (
 	workspaceImageWriter                  = flag.String("executor.firecracker_workspace_image_writer", "mke2fs", "How to build the per-action workspace ext4 image: 'mke2fs' (shell out to mke2fs -d) or 'native' (in-process ext4 writer; much faster for large input trees). ** Experimental **")
 	workspaceImageWriterConcurrency       = flag.Int("executor.firecracker_workspace_image_writer_concurrency", 0, "Number of parallel data-copy workers for the native workspace image writer (0 = min(8, NumCPU)).")
 	workspaceImageCopyMode                = flag.String("executor.firecracker_workspace_image_copy_mode", "mmap", "Data copy strategy for the native workspace image writer: mmap or cfr (copy_file_range).")
+	removeChrootInBackground              = flag.Bool("executor.firecracker_remove_chroot_in_background", false, "Rename the VM chroot (which holds the workspace disk image) aside and delete it in the background instead of on the task's critical path. ** Experimental **")
 	workspaceOutputExtractor              = flag.String("executor.firecracker_workspace_output_extractor", "debugfs", "How to extract action outputs from the workspace image: 'debugfs' (shell out; fsyncs the whole image) or 'native' (in-process ext4 reader). ** Experimental **")
 	healthCheckInterval                   = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
@@ -2997,7 +2998,7 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		}
 	}
 
-	if err := os.RemoveAll(filepath.Dir(c.getChroot())); err != nil {
+	if err := removeChroot(ctx, filepath.Dir(c.getChroot())); err != nil {
 		log.CtxErrorf(ctx, "Error removing chroot %q: %s", c.getChroot(), err)
 		lastErr = err
 	} else {
@@ -3008,6 +3009,43 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 		c.releaseCPUs()
 	}
 	return lastErr
+}
+
+// backgroundRemovals tracks in-flight background chroot deletions so that
+// tests and shutdown can wait for them.
+var backgroundRemovals sync.WaitGroup
+
+// WaitForBackgroundRemovals blocks until all background chroot deletions
+// started so far have completed.
+func WaitForBackgroundRemovals() {
+	backgroundRemovals.Wait()
+}
+
+// removeChroot deletes the VM's chroot directory tree. With
+// --executor.firecracker_remove_chroot_in_background, the directory is
+// renamed aside first (cheap) and deleted asynchronously, so that dropping
+// the workspace image's page cache pages doesn't sit on the task's critical
+// path. Leftovers after a crash are cleaned up by delete_build_root_on_startup
+// like any other stale chroot.
+func removeChroot(ctx context.Context, dir string) error {
+	if !*removeChrootInBackground {
+		return os.RemoveAll(dir)
+	}
+	trash := dir + ".rm-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if err := os.Rename(dir, trash); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return os.RemoveAll(dir)
+	}
+	backgroundRemovals.Add(1)
+	go func() {
+		defer backgroundRemovals.Done()
+		if err := os.RemoveAll(trash); err != nil {
+			log.CtxWarningf(ctx, "Background removal of chroot %q failed: %s", trash, err)
+		}
+	}()
+	return nil
 }
 
 func (c *FirecrackerContainer) closeMemoryStore(ctx context.Context) {
