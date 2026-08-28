@@ -1072,12 +1072,9 @@ func (c *Cache) remoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	return readCloser, nil
 }
 
-func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference]) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
 		return c.local.Writer(ctx, r)
-	}
-	if ref != nil {
-		return c.distributedProxy.RemoteVerifiedWriter(ctx, peer, handoffPeer, r, ref)
 	}
 	return c.distributedProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
@@ -1141,7 +1138,7 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.remoteWriter(ctx, dest, "", rn, nil /*=reference*/)
+	rwc, err := c.remoteWriter(ctx, dest, "", rn)
 	if err != nil {
 		return err
 	}
@@ -1598,6 +1595,18 @@ type multiWriteCloser struct {
 	log         log.Logger
 	peerClosers map[string]interfaces.CommittedWriteCloser
 	r           *rspb.ResourceName
+
+	// verifiedWriter is the single peer writer opened for reference
+	// verification, if any. It is also present in peerClosers.
+	verifiedWriter *distributed_client.VerifiedWriter
+}
+
+// SetReference binds ref to the verifying peer stream's final message, if a
+// peer writer was opened for verification. It must be called before Commit.
+func (mc *multiWriteCloser) SetReference(ref *refpb.Reference) {
+	if mc.verifiedWriter != nil {
+		mc.verifiedWriter.SetReference(ref)
+	}
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
@@ -1695,8 +1704,7 @@ type referenceWriteCloser struct {
 	// multiWriteCloser streams bytes to the peers: pre-opened in verify mode,
 	// nil in reference-only mode (the reference writers are opened at Commit,
 	// once the reference exists).
-	multiWriteCloser interfaces.CommittedWriteCloser
-	ref              *atomic.Pointer[refpb.Reference]
+	multiWriteCloser *multiWriteCloser
 	refCache         interfaces.ReferenceCache
 }
 
@@ -1729,13 +1737,13 @@ func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.Referen
 		// Every write peer already has this blob, so don't pay to stage it in
 		// shared storage; the byte writers short-circuit when the peers
 		// respond with AlreadyExists.
-		return c.byteMultiWriter(ctx, rn, nil)
+		return c.byteMultiWriter(ctx, rn, false /*=verify*/)
 	}
 	refWriter, err := refCache.CreateReference(ctx, rn)
 	if err != nil {
 		// The blob can't be staged in shared storage (e.g. it's too small);
 		// fall back to streaming bytes to the peers.
-		return c.byteMultiWriter(ctx, rn, nil)
+		return c.byteMultiWriter(ctx, rn, false /*=verify*/)
 	}
 	refWriteCloser := &referenceWriteCloser{
 		ctx:       ctx,
@@ -1745,8 +1753,7 @@ func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.Referen
 		refCache:  refCache,
 	}
 	if sendBytes {
-		refWriteCloser.ref = &atomic.Pointer[refpb.Reference]{}
-		multiWriteCloser, err := c.byteMultiWriter(ctx, rn, refWriteCloser.ref)
+		multiWriteCloser, err := c.byteMultiWriter(ctx, rn, true /*=verify*/)
 		if err != nil {
 			refWriter.Close()
 			return nil, err
@@ -1794,11 +1801,10 @@ func (rwc *referenceWriteCloser) Commit() error {
 		}
 	}
 	if rwc.multiWriteCloser != nil {
-		// rwc.ref is shared with the single peer stream opened for
-		// verification; storing the staged reference here is what makes that
-		// stream attach it to its final message when Commit below runs.
-		if ref != nil && rwc.ref != nil {
-			rwc.ref.Store(ref)
+		if ref != nil {
+			// Bind the staged reference to the verifying peer stream's final
+			// message before committing sends it.
+			rwc.multiWriteCloser.SetReference(ref)
 		}
 		return rwc.multiWriteCloser.Commit()
 	}
@@ -1840,24 +1846,37 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 			return c.referenceWriter(ctx, refCache, r, sendBytes)
 		}
 	}
-	return c.byteMultiWriter(ctx, r, nil)
+	mwc, err := c.byteMultiWriter(ctx, r, false /*=verify*/)
+	if err != nil {
+		return nil, err
+	}
+	return mwc, nil
 }
 
-func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference]) (interfaces.CommittedWriteCloser, error) {
-	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
-		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r, ref)
-		if err != nil {
-			return nil, err
+// byteMultiWriter opens a multiWriteCloser streaming bytes to the write
+// peers. If verify is set, a single peer's stream is opened for reference
+// verification: binding a reference to the returned writer via SetReference
+// puts it on that stream's final message. Local writes never verify (they
+// don't go through the peer protocol), so the verifying stream is the first
+// remote peer's.
+func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, verify bool) (*multiWriteCloser, error) {
+	var verifiedWriter *distributed_client.VerifiedWriter
+	mwc, err := c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
+		if verify && verifiedWriter == nil && !(c.opts.EnableLocalWrites && peer == c.opts.ListenAddr) {
+			vw, err := c.distributedProxy.RemoteVerifiedWriter(ctx, peer, hintedHandoff, r)
+			if err != nil {
+				return nil, err
+			}
+			verifiedWriter = vw
+			return vw, nil
 		}
-		// Nil out the reference once a peer has consumed it so that only one
-		// peer verifies it. Local writes don't count: they go through
-		// c.local.Writer, which ignores the reference, so it is kept for the
-		// first remote peer's stream.
-		if ref != nil && !(c.opts.EnableLocalWrites && peer == c.opts.ListenAddr) {
-			ref = nil
-		}
-		return rwc, nil
+		return c.remoteWriter(ctx, peer, hintedHandoff, r)
 	})
+	if err != nil {
+		return nil, err
+	}
+	mwc.verifiedWriter = verifiedWriter
+	return mwc, nil
 }
 
 // localReferenceWriteCloser adapts a local WriteReference call to the
@@ -1909,7 +1928,7 @@ func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.Re
 // open to create each peer's writer. Peers whose writers fail to open are
 // replaced from the peer set's fallback peers; if fewer than
 // ReplicationFactor writers open, the whole write fails.
-func (c *Cache) openMultiWriter(ctx context.Context, r *rspb.ResourceName, open func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error)) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) openMultiWriter(ctx context.Context, r *rspb.ResourceName, open func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error)) (*multiWriteCloser, error) {
 	ps, err := c.writePeers(r)
 	if err != nil {
 		return nil, err

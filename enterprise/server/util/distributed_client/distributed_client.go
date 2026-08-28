@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -1056,7 +1055,7 @@ type streamWriteCloser struct {
 	cancelFunc      context.CancelFunc
 	sender          rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
 	r               *rspb.ResourceName
-	ref             *atomic.Pointer[refpb.Reference]
+	ref             *refpb.Reference
 	refMustBeCloned bool
 	peer            string
 	handoffPeer     string
@@ -1117,10 +1116,8 @@ func (wc *streamWriteCloser) Commit() error {
 		CheckAlreadyExists:    true,
 		HandoffPeer:           wc.handoffPeer,
 		Resource:              wc.r,
+		Reference:             wc.ref,
 		ReferenceMustBeCloned: wc.refMustBeCloned,
-	}
-	if wc.ref != nil {
-		req.Reference = wc.ref.Load()
 	}
 	sendErr := wc.send(req)
 	if sendErr != nil && sendErr != io.EOF {
@@ -1148,16 +1145,34 @@ func (wc *streamWriteCloser) Close() error {
 }
 
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	return c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	return dbw, err
 }
 
-// RemoteVerifiedWriter is like RemoteWriter, but the final message of the
-// write stream carries the reference in ref, if any, for the peer to verify
-// against the written bytes. The reference can't be provided directly because
-// the write is streamed to GCS and the client simultaneously, but if it is
-// eventually set, it will be sent to the peer.
-func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference]) (interfaces.CommittedWriteCloser, error) {
-	return c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, false /*=refMustBeCloned*/)
+// VerifiedWriter is a CommittedWriteCloser whose write stream's final message
+// can carry a reference for the peer to verify against the written bytes.
+type VerifiedWriter struct {
+	interfaces.CommittedWriteCloser
+	swc *streamWriteCloser
+}
+
+// SetReference binds ref to the write stream's final message, for the peer to
+// verify against the written bytes. It must be called before Commit; the
+// reference can't be provided at open time because it isn't known until the
+// write has been fully streamed.
+func (w *VerifiedWriter) SetReference(ref *refpb.Reference) {
+	w.swc.ref = ref
+}
+
+// RemoteVerifiedWriter is like RemoteWriter, but returns a VerifiedWriter
+// whose final stream message carries the reference bound via SetReference, if
+// any, for the peer to verify against the written bytes.
+func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (*VerifiedWriter, error) {
+	dbw, swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	if err != nil {
+		return nil, err
+	}
+	return &VerifiedWriter{CommittedWriteCloser: dbw, swc: swc}, nil
 }
 
 // RemoteReferenceWriter opens a write stream that writes r to the peer by
@@ -1166,22 +1181,21 @@ func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer stri
 // referenced blob's ownership semantics via mustClone. Like the byte path, a
 // peer that already has r is not an error.
 func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
-	refPtr := &atomic.Pointer[refpb.Reference]{}
-	refPtr.Store(ref)
-	return c.newRemoteWriter(ctx, peer, handoffPeer, r, refPtr, mustClone)
+	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+	return dbw, err
 }
 
-func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference], refMustBeCloned bool) (interfaces.CommittedWriteCloser, error) {
+func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (interfaces.CommittedWriteCloser, *streamWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
 		cancel()
-		return nil, err
+		return nil, nil, err
 	}
 
 	wc := &streamWriteCloser{
@@ -1193,7 +1207,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 		ref:             ref,
 		refMustBeCloned: refMustBeCloned,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
+	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), wc, nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

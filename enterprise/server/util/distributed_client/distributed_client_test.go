@@ -11,7 +11,6 @@ import (
 	"net"
 	"runtime"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2401,24 +2400,25 @@ func TestRemoteVerifiedWriter(t *testing.T) {
 		waitUntilServerIsAlive(peer)
 		return peer, cache, c
 	}
-	writeAll := func(t *testing.T, peer string, rn *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference], data []byte) {
+	writeAll := func(t *testing.T, peer string, rn *rspb.ResourceName, ref *refpb.Reference, data []byte) {
 		t.Helper()
-		wc, err := client.RemoteVerifiedWriter(ctx, peer, "", rn, ref)
+		wc, err := client.RemoteVerifiedWriter(ctx, peer, "", rn)
 		require.NoError(t, err)
 		_, err = wc.Write(data)
 		require.NoError(t, err)
+		if ref != nil {
+			wc.SetReference(ref)
+		}
 		require.NoError(t, wc.Commit())
 		require.NoError(t, wc.Close())
 	}
 
-	t.Run("holder reference rides on the final message", func(t *testing.T) {
+	t.Run("a bound reference rides on the final message", func(t *testing.T) {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		ref := makeReference(rn, blobName, repb.Compressor_IDENTITY)
 		peer, cache, proxy := newPeer(t, map[string][]byte{blobName: buf})
 		before := writeVerificationCounts(t)
-		refPtr := &atomic.Pointer[refpb.Reference]{}
-		refPtr.Store(ref)
-		writeAll(t, peer, rn, refPtr, buf)
+		writeAll(t, peer, rn, ref, buf)
 		proxy.WaitForPendingVerificationsForTesting()
 		// The bytes are the write and the reference was verified.
 		got, err := te.GetCache().Get(ctx, rn)
@@ -2430,11 +2430,11 @@ func TestRemoteVerifiedWriter(t *testing.T) {
 		require.Equal(t, before[distributed_client.VerificationSuccess]+1, after[distributed_client.VerificationSuccess])
 	})
 
-	t.Run("an empty holder is a plain byte write", func(t *testing.T) {
+	t.Run("an unbound reference is a plain byte write", func(t *testing.T) {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		peer, cache, proxy := newPeer(t, map[string][]byte{blobName: buf})
 		before := writeVerificationCounts(t)
-		writeAll(t, peer, rn, &atomic.Pointer[refpb.Reference]{}, buf)
+		writeAll(t, peer, rn, nil, buf)
 		proxy.WaitForPendingVerificationsForTesting()
 		got, err := te.GetCache().Get(ctx, rn)
 		require.NoError(t, err)
