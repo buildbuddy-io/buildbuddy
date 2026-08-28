@@ -205,17 +205,15 @@ func orgAPIKeyClaims(groupID string, groupStatus grpb.Group_GroupStatus) *claims
 
 func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
 	for _, tc := range []struct {
-		name              string
-		experimentEnabled bool
-		claims            *claims.Claims
+		name   string
+		claims *claims.Claims
 		// user is what the fake UserDB returns; nil means the DB has no such user.
 		user         *tables.User
 		expectDenied bool
 	}{
 		{
-			name:              "user_all_groups_blocked_denied",
-			experimentEnabled: true,
-			claims:            userClaims(user1, group1),
+			name:   "user_all_groups_blocked_denied",
+			claims: userClaims(user1, group1),
 			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
 				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
 				groupRole(group2, grpb.Group_BLOCKED_GROUP_STATUS),
@@ -223,9 +221,8 @@ func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
 			expectDenied: true,
 		},
 		{
-			name:              "user_one_group_not_blocked_allowed",
-			experimentEnabled: true,
-			claims:            userClaims(user1, group1),
+			name:   "user_one_group_not_blocked_allowed",
+			claims: userClaims(user1, group1),
 			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
 				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
 				groupRole(group2, grpb.Group_FREE_TIER_GROUP_STATUS),
@@ -233,9 +230,8 @@ func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
 			expectDenied: false,
 		},
 		{
-			name:              "user_owned_group_blocked_and_invited_group_unblocked_denied",
-			experimentEnabled: true,
-			claims:            userClaims(user1, group1),
+			name:   "user_owned_group_blocked_and_invited_group_unblocked_denied",
+			claims: userClaims(user1, group1),
 			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
 				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
 				groupRoleOwnedBy(group2, user2, grpb.Group_FREE_TIER_GROUP_STATUS),
@@ -243,47 +239,28 @@ func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
 			expectDenied: true,
 		},
 		{
-			name:              "user_only_invited_to_blocked_group_allowed",
-			experimentEnabled: true,
-			claims:            userClaims(user1, group1),
+			name:   "user_only_invited_to_blocked_group_allowed",
+			claims: userClaims(user1, group1),
 			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
 				groupRoleOwnedBy(group1, user2, grpb.Group_BLOCKED_GROUP_STATUS),
 			}},
 			expectDenied: false,
 		},
 		{
-			name:              "user_with_no_groups_allowed",
-			experimentEnabled: true,
-			claims:            userClaims(user1, group1),
-			user:              &tables.User{UserID: user1},
-			expectDenied:      false,
-		},
-		{
-			name:              "org_api_key_blocked_group_denied",
-			experimentEnabled: true,
-			claims:            orgAPIKeyClaims(group1, grpb.Group_BLOCKED_GROUP_STATUS),
-			expectDenied:      true,
-		},
-		{
-			name:              "org_api_key_unblocked_group_allowed",
-			experimentEnabled: true,
-			claims:            orgAPIKeyClaims(group1, grpb.Group_ENTERPRISE_GROUP_STATUS),
-			expectDenied:      false,
-		},
-		{
-			name:              "experiment_disabled_user_all_groups_blocked_allowed",
-			experimentEnabled: false,
-			claims:            userClaims(user1, group1),
-			user: &tables.User{UserID: user1, Groups: []*tables.GroupRole{
-				groupRole(group1, grpb.Group_BLOCKED_GROUP_STATUS),
-			}},
+			name:         "user_with_no_groups_allowed",
+			claims:       userClaims(user1, group1),
+			user:         &tables.User{UserID: user1},
 			expectDenied: false,
 		},
 		{
-			name:              "experiment_disabled_org_api_key_blocked_group_allowed",
-			experimentEnabled: false,
-			claims:            orgAPIKeyClaims(group1, grpb.Group_BLOCKED_GROUP_STATUS),
-			expectDenied:      false,
+			name:         "org_api_key_blocked_group_denied",
+			claims:       orgAPIKeyClaims(group1, grpb.Group_BLOCKED_GROUP_STATUS),
+			expectDenied: true,
+		},
+		{
+			name:         "org_api_key_unblocked_group_allowed",
+			claims:       orgAPIKeyClaims(group1, grpb.Group_ENTERPRISE_GROUP_STATUS),
+			expectDenied: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -291,9 +268,7 @@ func TestCreateGroup_PropagateGroupBlocks(t *testing.T) {
 			te.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
 			udb := &fakeUserDB{user: tc.user}
 			te.SetUserDB(udb)
-			te.SetExperimentFlagProvider(&fakeExperimentFlagProvider{
-				booleanFlags: map[string]bool{"app.propagate_group_blocks": tc.experimentEnabled},
-			})
+			te.SetExperimentFlagProvider(&fakeExperimentFlagProvider{})
 			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 			require.NoError(t, err)
 
