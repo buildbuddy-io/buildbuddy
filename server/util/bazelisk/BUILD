@@ -6,6 +6,7 @@ genrule(
         "@bazel_tools//src/conditions:darwin_x86_64": ["@com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64//file:downloaded"],
         "@bazel_tools//src/conditions:darwin_arm64": ["@com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64//file:downloaded"],
         "@bazel_tools//src/conditions:linux_aarch64": ["@com_github_bazelbuild_bazelisk-bazelisk-linux-arm64//file:downloaded"],
+        "@bazel_tools//src/conditions:windows": ["@com_github_bazelbuild_bazelisk-bazelisk-windows-amd64//file:downloaded"],
         "//conditions:default": ["@com_github_bazelbuild_bazelisk-bazelisk-linux-amd64//file:downloaded"],
     }),
     outs = ["bazelisk-bin"],

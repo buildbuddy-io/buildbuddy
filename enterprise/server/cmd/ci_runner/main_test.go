@@ -23,6 +23,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsBazelCommandTokenForOS(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		goos  string
+		want  bool
+	}{
+		{name: "linux bazel", token: "bazel", goos: "linux", want: true},
+		{name: "windows bazel", token: "bazel.exe", goos: "windows", want: true},
+		{name: "windows bazelisk", token: "bazelisk.exe", goos: "windows", want: true},
+		{name: "windows bb", token: "bb.exe", goos: "windows", want: true},
+		{name: "linux exe suffix", token: "bazel.exe", goos: "linux", want: false},
+		{name: "prefix only", token: "bazelisk-custom", goos: "windows", want: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isBazelCommandTokenForOS(tc.token, tc.goos))
+		})
+	}
+}
+
 func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	rootDir := t.TempDir()
 	targetDir := filepath.Join(rootDir, "target")

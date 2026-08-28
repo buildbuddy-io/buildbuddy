@@ -6,6 +6,7 @@ use_repo(
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
     "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
     "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
+    "com_github_bazelbuild_bazelisk-bazelisk-windows-amd64",
     "com_github_buildbuddy_io_podman_static_podman-linux-amd64",
     "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
     "com_github_buildbuddy_io_protoc_gen_protobufjs",

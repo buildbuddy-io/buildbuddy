@@ -1177,7 +1177,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	serializedAction := base64.StdEncoding.EncodeToString(yamlBytes)
 
 	args := []string{
-		"./" + ci_runner_util.ExecutableName,
+		"./" + ci_runner_util.ExecutableNameForOS(os),
 		"--invocation_id=" + invocationID,
 		"--action_name=" + workflowAction.Name,
 		"--bes_backend=" + events_api_url.String(),

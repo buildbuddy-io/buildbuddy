@@ -2321,7 +2321,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 }
 
 func getWorkflowName(task *repb.ExecutionTask) string {
-	if !(ci_runner_util.IsRemoteRunnerTask(task)) {
+	if !ci_runner_util.IsRemoteRunnerTask(task) {
 		return ""
 	}
 	for _, arg := range task.GetCommand().GetArguments() {

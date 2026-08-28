@@ -381,8 +381,12 @@ func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {
 	if err := ws.AddCIRunner(ctx); err != nil {
 		return err
 	}
-	if err := ws.AddCLI(ctx); err != nil {
-		return err
+	// The bb CLI is not embedded on Windows, but the CI runner can still use
+	// its embedded Bazelisk binary.
+	if len(cli_bundle.CLIBytes) > 0 {
+		if err := ws.AddCLI(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -397,7 +401,7 @@ func (ws *Workspace) AddCLI(ctx context.Context) error {
 	if ws.vfs != nil {
 		return status.UnimplementedErrorf("AddCLI not supported on VFS")
 	}
-	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryName)
+	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryNameForOS(runtime.GOOS))
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err
@@ -416,7 +420,7 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	if ws.vfs != nil {
 		return status.UnimplementedErrorf("AddCIRunner not supported on VFS")
 	}
-	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
+	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableNameForOS(runtime.GOOS))
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err

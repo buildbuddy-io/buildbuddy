@@ -34,6 +34,23 @@ const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_tim
 const LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
 const FreeTierTimeoutReason = "free_tier_limit"
 
+// ExecutableNameForOS returns the CI runner executable name for goos.
+func ExecutableNameForOS(goos string) string {
+	return executableNameForOS(ExecutableName, goos)
+}
+
+// CLIBinaryNameForOS returns the bb CLI executable name for goos.
+func CLIBinaryNameForOS(goos string) string {
+	return executableNameForOS(CLIBinaryName, goos)
+}
+
+func executableNameForOS(name, goos string) string {
+	if goos == platform.WindowsOperatingSystemName {
+		return name + ".exe"
+	}
+	return name
+}
+
 type RunnerTimeoutResult struct {
 	Duration time.Duration
 	Reason   string
@@ -181,7 +198,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, err
 		}
 
-		runnerName := filepath.Base(ExecutableName)
+		runnerName := filepath.Base(ExecutableNameForOS(os))
 		dir := &repb.Directory{
 			Files: []*repb.FileNode{
 				{
@@ -190,7 +207,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 					IsExecutable: true,
 				},
 				{
-					Name:         CLIBinaryName,
+					Name:         CLIBinaryNameForOS(os),
 					Digest:       bbBinDigest,
 					IsExecutable: true,
 				},
@@ -204,7 +221,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 // SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
 // It mutates the original task.
 func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
-	if !(IsRemoteRunnerTask(task)) {
+	if !IsRemoteRunnerTask(task) {
 		return nil
 	}
 	if groupID == "" {
@@ -313,5 +330,9 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 
 func IsRemoteRunnerTask(task *repb.ExecutionTask) bool {
 	args := task.GetCommand().GetArguments()
-	return len(args) > 0 && args[0] == "./"+ExecutableName
+	if len(args) == 0 {
+		return false
+	}
+	return args[0] == "./"+ExecutableName ||
+		args[0] == "./"+ExecutableNameForOS(platform.WindowsOperatingSystemName)
 }

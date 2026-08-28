@@ -164,6 +164,40 @@ const (
 )
 
 var (
+	bazelExecutableName    = executableName(bazelBinaryName)
+	bazeliskExecutableName = executableName(bazeliskBinaryName)
+	bbExecutableName       = executableName(bbBinaryName)
+)
+
+func executableName(name string) string {
+	return executableNameForOS(name, runtime.GOOS)
+}
+
+func executableNameForOS(name, goos string) string {
+	if goos == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
+
+func isBazelCommandToken(token string) bool {
+	return token == bazelBinaryName || token == bazelExecutableName ||
+		token == bazeliskBinaryName || token == bazeliskExecutableName ||
+		token == bbBinaryName || token == bbExecutableName
+}
+
+func isBazelCommandTokenForOS(token, goos string) bool {
+	return token == bazelBinaryName || token == executableNameForOS(bazelBinaryName, goos) ||
+		token == bazeliskBinaryName || token == executableNameForOS(bazeliskBinaryName, goos) ||
+		token == bbBinaryName || token == executableNameForOS(bbBinaryName, goos)
+}
+
+func startsWithBazelCommand(cmd string) bool {
+	tokens, err := shlex.Split(cmd)
+	return err == nil && len(tokens) > 0 && isBazelCommandToken(tokens[0])
+}
+
+var (
 	// Subcommands of the ci_runner.
 	// Go binaries are relatively large, so these are included as subcommands instead
 	// of separate scripts.
@@ -741,6 +775,9 @@ func run() error {
 	if err != nil {
 		return status.WrapError(err, "compute CI runner binary abspath")
 	}
+	if filepath.Ext(absPath) == "" {
+		absPath = executableName(absPath)
+	}
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
 
 	// Store the original task workspace dir since we change directories later.
@@ -807,15 +844,15 @@ func run() error {
 
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
-		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName)
+		bazeliskPath := filepath.Join(rootDir, bazeliskExecutableName)
 		if err := extractBazelisk(bazeliskPath); err != nil {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
 		*bazelCommand = bazeliskPath
 	}
 	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
-	if *bazelCommand == bbBinaryName {
-		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+	if *bazelCommand == bbBinaryName || *bazelCommand == bbExecutableName {
+		bbPath := filepath.Join(taskWorkspaceDir, bbExecutableName)
 		if _, err := os.Stat(bbPath); err != nil {
 			backendLog.Warningf("bb binary not found in workspace: %s", err)
 		} else {
@@ -1180,7 +1217,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		action.Steps = make([]*rnpb.Step, 0)
 	}
 	for _, cmd := range action.DeprecatedBazelCommands {
-		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName) || strings.HasPrefix(cmd, bbBinaryName)) {
+		if !startsWithBazelCommand(cmd) {
 			cmd = "bazel " + cmd
 		}
 		action.Steps = append(action.Steps, &rnpb.Step{
@@ -1769,7 +1806,7 @@ func (ws *workspace) bazelArgsWithCustomBazelrc(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName || tokens[0] == bbBinaryName {
+	if isBazelCommandToken(tokens[0]) {
 		tokens = tokens[1:]
 	}
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
@@ -2536,7 +2573,7 @@ func parseGitFetchedBytes(trace2EventLog io.Reader) int64 {
 // all bazel commands.
 func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+	bbPath := filepath.Join(taskWorkspaceDir, bbExecutableName)
 
 	wrapperBinaries := map[string]string{
 		bazelBinaryName:    *bazelCommand,
@@ -2559,7 +2596,7 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 		}
 
 		cmd := fmt.Sprintf(
-			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %s \"$@\"",
+			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %q \"$@\"",
 			binaryPath,
 			ws.rootDir,
 			os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"),
@@ -2574,7 +2611,7 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 
 	prevPath := os.Getenv("PATH")
 	if !strings.Contains(prevPath, wrapperDir) {
-		if err := os.Setenv("PATH", fmt.Sprintf("%s:%s", wrapperDir, prevPath)); err != nil {
+		if err := os.Setenv("PATH", strings.Join([]string{wrapperDir, prevPath}, string(os.PathListSeparator))); err != nil {
 			return status.WrapError(err, "failed to include wrapper dir in PATH")
 		}
 	}
@@ -2733,7 +2770,7 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		lines = append(lines, "common:buildbuddy_remote_executor --remote_executor="+*rbeBackend)
 	}
 
-	outputBase := filepath.Join(rootDir, outputBaseDirName)
+	outputBase := filepath.ToSlash(filepath.Join(rootDir, outputBaseDirName))
 	lines = append(lines, "startup --output_base="+outputBase)
 	startupFlags, err := shlex.Split(*bazelStartupFlags)
 	if err != nil {
@@ -2812,19 +2849,29 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	size := &pty.Winsize{Rows: uint16(*ptyRows), Cols: uint16(*ptyCols)}
-	f, err := pty.StartWithSize(cmd, size)
-	if err != nil {
-		return err
+	var err error
+	if runtime.GOOS == "windows" {
+		// TODO: https://github.com/creack/pty/issues/95
+		// github.com/creack/pty does not support Windows. Attach the child
+		// directly to the log writer instead so Git, Bash, and Bazel can run.
+		cmd.Stdout = outputSink
+		cmd.Stderr = outputSink
+		err = cmd.Run()
+	} else {
+		size := &pty.Winsize{Rows: uint16(*ptyRows), Cols: uint16(*ptyCols)}
+		f, startErr := pty.StartWithSize(cmd, size)
+		if startErr != nil {
+			return startErr
+		}
+		defer f.Close()
+		copyOutputDone := make(chan struct{})
+		go func() {
+			io.Copy(outputSink, f)
+			copyOutputDone <- struct{}{}
+		}()
+		err = cmd.Wait()
+		<-copyOutputDone
 	}
-	defer f.Close()
-	copyOutputDone := make(chan struct{})
-	go func() {
-		io.Copy(outputSink, f)
-		copyOutputDone <- struct{}{}
-	}()
-	err = cmd.Wait()
-	<-copyOutputDone
 
 	if ctx.Err() == context.DeadlineExceeded {
 		// Go to the next line so we don't clobber partial output from the
@@ -3030,7 +3077,7 @@ func runBazelWrapper() error {
 	// so that it can be displayed in the UI
 	filteredOriginalArgs := make([]string, 0, len(originalArgs))
 	for i, arg := range originalArgs {
-		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName || arg == bbBinaryName) {
+		if i == 0 && isBazelCommandToken(arg) {
 			continue
 		}
 		if strings.Contains(arg, "--invocation_id") ||
@@ -3059,7 +3106,7 @@ func runBazelWrapper() error {
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
 
 	// When using the bb CLI and running `bb run`, stream the run logs to the server.
-	if filepath.Base(bazelBin) == bbBinaryName && bazelSubcmd == "run" {
+	if filepath.Base(bazelBin) == bbExecutableName && bazelSubcmd == "run" {
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--stream_run_logs")
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--on_stream_run_logs_failure=warn")
 	}
@@ -3069,6 +3116,20 @@ func runBazelWrapper() error {
 	// Bazel server isn't restarted.
 	if err := cacheStartupOptions(bazelArgs, rootPath); err != nil {
 		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
+	}
+
+	if runtime.GOOS == "windows" {
+		// syscall.Exec is not supported on Windows. Run Bazel as a child while
+		// preserving the wrapper's standard streams and exit code instead.
+		cmd := exec.Command(bazelBin, bazelCmd[1:]...)
+		cmd.Env = os.Environ()
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return &actionResult{exitCode: getExitCode(err), exitCodeName: failedExitCodeName}
+		}
+		return nil
 	}
 
 	// Replace the process running the bazel wrapper with the process running bazel,
