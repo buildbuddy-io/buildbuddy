@@ -153,15 +153,20 @@ func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd b
 // restore, so the read below unblocks in a restored guest and causes it to
 // reconnect and send a fresh readiness signal.
 func maintainVMExecReadySignal(ctx context.Context) {
-	retryDelay := vmExecReadySignalInitialRetryDelay
-	for ctx.Err() == nil {
+	r := retry.New(ctx, &retry.Options{
+		InitialBackoff: vmExecReadySignalInitialRetryDelay,
+		MaxBackoff:     vmExecReadySignalMaxRetryDelay,
+		Multiplier:     2,
+		MaxRetries:     math.MaxInt,
+	})
+	for r.Next() {
 		conn, err := vsock.DialGuestToHost(vsock.HostVMExecReadyPort)
 		if err == nil {
 			_, err = io.WriteString(conn, vsock.VMExecReadyMessage)
 		}
 		if err == nil {
 			log.Debugf("Signaled vmexec readiness to host")
-			retryDelay = vmExecReadySignalInitialRetryDelay
+			r.Reset()
 			// The host deliberately sends no data. This read returns when the
 			// connection is reset, including after snapshot restore.
 			var buf [1]byte
@@ -172,17 +177,6 @@ func maintainVMExecReadySignal(ctx context.Context) {
 		if conn != nil {
 			_ = conn.Close()
 		}
-
-		timer := time.NewTimer(retryDelay)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return
-		case <-timer.C:
-		}
-		retryDelay = min(2*retryDelay, vmExecReadySignalMaxRetryDelay)
 	}
 }
 
