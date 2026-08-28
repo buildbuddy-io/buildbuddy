@@ -338,6 +338,21 @@ common:release-shared --define=release=true
 common:release-shared --strip=always
 common:release-shared --@rules_img//img/settings:compress=gzip
 common:release-shared --@rules_img//img/settings:compression_level=9
+# Release builds run cold on ephemeral runners with no remote cache, so
+# path mapping (--experimental_output_paths=strip, enabled above for cache
+# sharing across configurations) can never produce a cache hit; it only adds
+# overhead and forces every spawn to be sandboxed. Turn it off, and run the
+# Go actions (which dominate the build and whose inputs are fully declared)
+# unsandboxed: skipping the per-action sandbox setup cut Go compile CPU by
+# 11% and wall time by ~5% on Linux; the resulting executor binary is
+# bit-for-bit identical to the sandboxed build. macOS's sandbox-exec is
+# slower still.
+common:release-shared --experimental_output_paths=off
+common:release-shared --strategy=GoCompilePkg=local
+common:release-shared --strategy=GoStdlib=local
+common:release-shared --strategy=GoProtocGen=local
+common:release-shared --strategy=GoLink=local
+common:release-shared --strategy=GoToolchainBinaryBuild=local
 
 # Configuration used for Linux releases
 common:release --config=release-shared
