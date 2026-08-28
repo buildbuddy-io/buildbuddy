@@ -178,6 +178,37 @@ func setupVFSWithBlockedDirectorySnapshot(t *testing.T) (*blockingGetDirectoryCo
 	return client, root, child
 }
 
+func setupRenameOverwriteTest(t *testing.T, wrapClient func(vfspb.FileSystemClient) vfspb.FileSystemClient) (*vfs.Node, *vfs.Node) {
+	env := setupEnv(t)
+	_, vfsClient, _ := setupVFSWithInputTreeAndClient(t, env, &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, wrapClient)
+	rootInode, err := vfsClient.GetInode(1)
+	require.NoError(t, err)
+	root, ok := rootInode.Operations().(*vfs.Node)
+	require.True(t, ok)
+
+	sourceParentInode, errno := root.Mkdir(t.Context(), "source", 0755, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, root.AddChild("source", sourceParentInode, false))
+	sourceParent := sourceParentInode.Operations().(*vfs.Node)
+
+	aliasParentInode, errno := root.Mkdir(t.Context(), "aliases", 0755, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, root.AddChild("aliases", aliasParentInode, false))
+	aliasParent := aliasParentInode.Operations().(*vfs.Node)
+
+	source, errno := sourceParent.Mknod(t.Context(), "source.txt", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, sourceParent.AddChild("source.txt", source, false))
+	target, errno := sourceParent.Mknod(t.Context(), "target.txt", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, sourceParent.AddChild("target.txt", target, false))
+	alias, errno := aliasParent.Link(t.Context(), target.Operations(), "alias.txt", &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, aliasParent.AddChild("alias.txt", alias, false))
+
+	return sourceParent, aliasParent
+}
+
 type readdirResult struct {
 	entry *fuse.DirEntry
 	errno syscall.Errno
@@ -429,6 +460,51 @@ func TestReaddirSnapshotDoesNotRestoreStaleAttrs(t *testing.T) {
 	_, errno = root.Lookup(t.Context(), "file.txt", lookupOut)
 	require.Zero(t, errno)
 	require.EqualValues(t, 2, lookupOut.Nlink)
+}
+
+func TestReaddirCachedAttrsInvalidatedWhenRenameOverwritesHardlink(t *testing.T) {
+	sourceParent, aliasParent := setupRenameOverwriteTest(t, nil)
+	handle, _, errno := aliasParent.OpendirHandle(t.Context(), 0)
+	require.Zero(t, errno)
+	readdirenter := handle.(interface {
+		Readdirent(context.Context) (*fuse.DirEntry, syscall.Errno)
+	})
+	entry, errno := readdirenter.Readdirent(t.Context())
+	require.Zero(t, errno)
+	require.Equal(t, "alias.txt", entry.Name)
+
+	require.Zero(t, sourceParent.Rename(t.Context(), "source.txt", sourceParent, "target.txt", 0))
+	removed, _ := aliasParent.RmChild("alias.txt")
+	require.True(t, removed)
+	lookupOut := &fuse.EntryOut{}
+	_, errno = aliasParent.Lookup(t.Context(), "alias.txt", lookupOut)
+	require.Zero(t, errno)
+	require.EqualValues(t, 1, lookupOut.Nlink)
+}
+
+func TestReaddirSnapshotOverlappingRenameDoesNotCacheOverwrittenAttrs(t *testing.T) {
+	client := &blockingGetDirectoryContentsClient{
+		snapshotReady:    make(chan struct{}),
+		releaseSnapshot:  make(chan struct{}),
+	}
+	sourceParent, aliasParent := setupRenameOverwriteTest(t, func(baseClient vfspb.FileSystemClient) vfspb.FileSystemClient {
+		client.FileSystemClient = baseClient
+		return client
+	})
+	t.Cleanup(client.release)
+	result := startBlockedReaddir(t, client, aliasParent)
+	require.Zero(t, sourceParent.Rename(t.Context(), "source.txt", sourceParent, "target.txt", 0))
+	client.release()
+	readdirResult := <-result
+	require.Zero(t, readdirResult.errno)
+	require.Equal(t, "alias.txt", readdirResult.entry.Name)
+
+	removed, _ := aliasParent.RmChild("alias.txt")
+	require.True(t, removed)
+	lookupOut := &fuse.EntryOut{}
+	_, errno := aliasParent.Lookup(t.Context(), "alias.txt", lookupOut)
+	require.Zero(t, errno)
+	require.EqualValues(t, 1, lookupOut.Nlink)
 }
 
 func stat(t *testing.T, path string) os.FileInfo {

@@ -1203,8 +1203,10 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 		newParentNode.beginDirectoryMutation()
 		defer newParentNode.endDirectoryMutation()
 	}
+	n.vfs.beginAttrsMutation()
+	defer n.vfs.endAttrsMutation()
 
-	_, err := n.vfs.vfsClient.Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
+	rsp, err := n.vfs.vfsClient.Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
 		OldParentId: n.StableAttr().Ino,
 		OldName:     name,
 		NewParentId: newParent.EmbeddedInode().StableAttr().Ino,
@@ -1213,6 +1215,9 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
+	}
+	if rsp.GetReplacedId() != 0 {
+		n.vfs.inodeCache.removeCachedAttrs(rsp.GetReplacedId())
 	}
 	return fs.OK
 }
