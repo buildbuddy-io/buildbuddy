@@ -14,13 +14,14 @@ import (
 	mrand "math/rand/v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
 	bazelBinary         = flag.String("bazel_binary", "bazel", "Path to bazel binary")
-	bazelArgs           = flag.String("bazel_args", "", "Whitespace-separated list of args to pass to Bazel")
-	bazelStartupOptions = flag.String("bazel_startup_options", "", "Whitespace-separated list of Bazel startup options to pass (appear before the command)")
+	bazelArgs           = flag.String("bazel_args", "", "Shell-style list of args to pass to Bazel")
+	bazelStartupOptions = flag.String("bazel_startup_options", "", "Shell-style list of Bazel startup options to pass (appear before the command)")
 	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
 	containerImage      = flag.String("container_image", "none", "Container image in which to execute prober actions. Set to 'none' to use the executor default.")
 
@@ -140,7 +141,10 @@ func runProbe() error {
 		"--max_idle_secs=5",
 	}
 	if *bazelStartupOptions != "" {
-		startupArgs := strings.Fields(*bazelStartupOptions)
+		startupArgs, err := shlex.Split(*bazelStartupOptions)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid --bazel_startup_options: %s", err)
+		}
 		args = append(args, startupArgs...)
 	}
 	args = append(args,
@@ -148,7 +152,10 @@ func runProbe() error {
 		"//"+*proberName+":all",
 	)
 	if *bazelArgs != "" {
-		extraArgs := strings.Fields(*bazelArgs)
+		extraArgs, err := shlex.Split(*bazelArgs)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid --bazel_args: %s", err)
+		}
 		args = append(args, extraArgs...)
 	}
 	args = append(args, "--remote_header=x-buildbuddy-trace=force")
