@@ -1592,11 +1592,20 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 		var err error
 		if c.inputTree != nil {
 			fc := c.env.GetFileCache()
+			open := func(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+				f, err := fc.Open(ctx, node)
+				if err != nil && (status.IsNotFoundError(err) || os.IsNotExist(err)) {
+					// Evicted between DownloadInputs and now; the task can be
+					// retried, which re-fetches the inputs.
+					return nil, status.UnavailableErrorf("input %s evicted from filecache before the workspace image was built: %s", node.GetDigest().GetHash(), err)
+				}
+				return f, err
+			}
 			stats, err = ext4writer.DirectoryAndTreeToImage(ctx, workspaceDir, ext4ImagePath, &ext4writer.TreeOptions{
 				Options:        wopts,
 				Tree:           c.inputTree.Inputs,
 				DigestFunction: c.inputTree.DigestFunction,
-				Open:           fc.Open,
+				Open:           open,
 			})
 		} else {
 			stats, err = ext4writer.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, &wopts)
@@ -2191,9 +2200,17 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 // SetWorkspaceInputTree makes the next Exec build the workspace image from
 // the given input tree (contents read from the filecache) overlaid on the
 // action working directory, instead of expecting the inputs to already be
-// hardlinked into the working directory. ** Experimental **
-func (c *FirecrackerContainer) SetWorkspaceInputTree(layout *container.FileSystemLayout) {
+// hardlinked into the working directory. Returns false (and ignores the
+// tree) if the native image writer is not enabled, since only that writer
+// understands input trees. ** Experimental **
+func (c *FirecrackerContainer) SetWorkspaceInputTree(layout *container.FileSystemLayout) bool {
+	if layout != nil && *workspaceImageWriter != "native" {
+		log.Warningf("Workspace image from input tree requires --executor.firecracker_workspace_image_writer=native; materializing inputs instead")
+		c.inputTree = nil
+		return false
+	}
 	c.inputTree = layout
+	return layout != nil
 }
 
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {

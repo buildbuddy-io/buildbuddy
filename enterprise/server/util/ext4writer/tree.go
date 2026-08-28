@@ -90,9 +90,37 @@ func (w *writer) addTree(root *node, tree *repb.Tree, df repb.DigestFunction_Val
 		for _, ch := range parent.children {
 			existing[ch.name] = ch
 		}
+		// replaceHost drops a host-directory entry that an input of the same
+		// name shadows: inputs win, matching the normal path where inputs are
+		// written first and host-side additions (e.g. CI runner binaries)
+		// skip names that already exist.
+		replaceHost := func(name string) error {
+			old, ok := existing[name]
+			if !ok {
+				return nil
+			}
+			if old.fileNode != nil || old.mode.IsDir() {
+				return status.InvalidArgumentErrorf("duplicate entry %q", name)
+			}
+			for i, ch := range parent.children {
+				if ch == old {
+					parent.children = append(parent.children[:i], parent.children[i+1:]...)
+					break
+				}
+			}
+			delete(existing, name)
+			switch {
+			case old.mode.IsRegular():
+				w.stats.Files--
+				w.stats.DataBytes -= old.size
+			case old.mode&os.ModeSymlink != 0:
+				w.stats.Symlinks--
+			}
+			return nil
+		}
 		for _, f := range dir.GetFiles() {
-			if _, dup := existing[f.GetName()]; dup {
-				return status.InvalidArgumentErrorf("duplicate entry %q", f.GetName())
+			if err := replaceHost(f.GetName()); err != nil {
+				return err
 			}
 			mode := uint32(0644)
 			if f.GetIsExecutable() {
@@ -105,7 +133,6 @@ func (w *writer) addTree(root *node, tree *repb.Tree, df repb.DigestFunction_Val
 			key := digestKey{f.GetDigest().GetHash(), n.size, f.GetIsExecutable()}
 			if orig, ok := byDigest[key]; ok && orig.links < 65000 {
 				n.hardlink = orig
-				n.ino = orig.ino
 				orig.links++
 				w.stats.Hardlinks++
 				parent.children = append(parent.children, n)
@@ -113,22 +140,16 @@ func (w *writer) addTree(root *node, tree *repb.Tree, df repb.DigestFunction_Val
 				continue
 			}
 			byDigest[key] = n
-			n.ino = w.nextInode
-			w.nextInode++
-			w.nodes = append(w.nodes, n)
 			w.stats.Files++
 			w.stats.DataBytes += n.size
 			parent.children = append(parent.children, n)
 			existing[n.name] = n
 		}
 		for _, s := range dir.GetSymlinks() {
-			if _, dup := existing[s.GetName()]; dup {
-				return status.InvalidArgumentErrorf("duplicate entry %q", s.GetName())
+			if err := replaceHost(s.GetName()); err != nil {
+				return err
 			}
 			n := &node{name: s.GetName(), mode: os.ModeSymlink | 0777, rawMode: syscall.S_IFLNK | 0777, target: s.GetTarget(), size: int64(len(s.GetTarget())), mtime: w.opts.Now, parent: parent, links: 1}
-			n.ino = w.nextInode
-			w.nextInode++
-			w.nodes = append(w.nodes, n)
 			w.stats.Symlinks++
 			parent.children = append(parent.children, n)
 			existing[n.name] = n
@@ -141,9 +162,6 @@ func (w *writer) addTree(root *node, tree *repb.Tree, df repb.DigestFunction_Val
 				}
 			} else {
 				child = &node{name: d.GetName(), mode: os.ModeDir | 0755, rawMode: syscall.S_IFDIR | 0755, mtime: w.opts.Now, parent: parent}
-				child.ino = w.nextInode
-				w.nextInode++
-				w.nodes = append(w.nodes, child)
 				w.stats.Dirs++
 				parent.children = append(parent.children, child)
 				existing[child.name] = child
@@ -162,11 +180,16 @@ func (w *writer) addTree(root *node, tree *repb.Tree, df repb.DigestFunction_Val
 		return err
 	}
 	// Directory entries must be sorted by name for deterministic images.
-	for _, n := range w.nodes {
+	var sortAll func(n *node)
+	sortAll = func(n *node) {
 		if n.mode.IsDir() {
 			sortChildren(n)
+			for _, ch := range n.children {
+				sortAll(ch)
+			}
 		}
 	}
+	sortAll(root)
 	return nil
 }
 

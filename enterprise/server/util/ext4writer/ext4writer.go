@@ -216,7 +216,8 @@ func defaultConcurrency() int { return runtime.NumCPU() }
 
 // finish lays out and writes the image for the already-walked tree.
 func (w *writer) finish(ctx context.Context, outputFile string) (*Stats, error) {
-	root := w.nodes[0]
+	w.assignInodes()
+	root := w.root
 	start := time.Now()
 	if err := w.layout(root); err != nil {
 		return nil, status.WrapError(err, "compute layout")
@@ -258,6 +259,7 @@ type writer struct {
 	opts  Options
 	stats *Stats
 	open  func(n *node) (*os.File, error) // content source for regular files
+	root  *node
 
 	nodes    []*node // all nodes in inode order (index 0 = root)
 	files    []*node // regular files with data (excluding hardlink duplicates)
@@ -301,17 +303,53 @@ func (w *writer) walk(dir string) (*node, error) {
 		return nil, status.InvalidArgumentErrorf("%q is not a directory", dir)
 	}
 	root := w.newNode("", dir, st)
-	root.ino = rootInode
-	w.nodes = append(w.nodes, root)
 	// lost+found: keep e2fsck happy.
-	lf := &node{name: "lost+found", mode: os.ModeDir | 0700, rawMode: syscall.S_IFDIR | 0700, mtime: w.opts.Now, parent: root, ino: lostFoundInode}
+	lf := &node{name: "lost+found", mode: os.ModeDir | 0700, rawMode: syscall.S_IFDIR | 0700, mtime: w.opts.Now, parent: root}
 	root.children = append(root.children, lf)
-	w.nodes = append(w.nodes, lf)
-	w.nextInode = lostFoundInode + 1
 	if err := w.walkDir(root); err != nil {
 		return nil, err
 	}
+	w.root = root
 	return root, nil
+}
+
+// assignInodes numbers every node (root=2, lost+found=11, then depth-first in
+// name order from 12) and fills w.nodes. Hardlink duplicates get the number of
+// their original in a second pass, so the original is always numbered first
+// regardless of tree order.
+func (w *writer) assignInodes() {
+	w.nodes = w.nodes[:0]
+	next := uint32(lostFoundInode + 1)
+	var visit func(n *node)
+	visit = func(n *node) {
+		switch {
+		case n == w.root:
+			n.ino = rootInode
+		case n.parent == w.root && n.name == "lost+found":
+			n.ino = lostFoundInode
+		case n.hardlink != nil:
+			return // numbered in the second pass
+		default:
+			n.ino = next
+			next++
+		}
+		w.nodes = append(w.nodes, n)
+		for _, ch := range n.children {
+			visit(ch)
+		}
+	}
+	visit(w.root)
+	w.nextInode = next
+	var fix func(n *node)
+	fix = func(n *node) {
+		if n.hardlink != nil {
+			n.ino = n.hardlink.ino
+		}
+		for _, ch := range n.children {
+			fix(ch)
+		}
+	}
+	fix(w.root)
 }
 
 func (w *writer) newNode(name, path string, st os.FileInfo) *node {
@@ -351,7 +389,6 @@ func (w *writer) walkDir(d *node) error {
 					return status.InvalidArgumentErrorf("%q has more than 65000 hard links", orig.path)
 				}
 				n.hardlink = orig
-				n.ino = orig.ino
 				orig.links++
 				w.stats.Hardlinks++
 				continue
@@ -359,9 +396,6 @@ func (w *writer) walkDir(d *node) error {
 			w.hardlink[key] = n
 		}
 		n.links = 1
-		n.ino = w.nextInode
-		w.nextInode++
-		w.nodes = append(w.nodes, n)
 		switch {
 		case st.IsDir():
 			w.stats.Dirs++

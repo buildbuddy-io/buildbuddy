@@ -311,7 +311,10 @@ func fillStatsFromTransferInfo(ioStats *repb.IOStats, rxInfo *dirtools.TransferI
 // workspaceImageFromTree is implemented by VM containers that can build the
 // guest workspace disk image directly from the input tree + filecache.
 type workspaceImageFromTree interface {
-	SetWorkspaceInputTree(layout *container.FileSystemLayout)
+	// SetWorkspaceInputTree returns false if the container can't build the
+	// image from the tree (e.g. the native writer is not enabled), in which
+	// case inputs must be materialized in the workspace as usual.
+	SetWorkspaceInputTree(layout *container.FileSystemLayout) bool
 }
 
 // startVMDuringInputFetch starts the VM (snapshot restore) concurrently with
@@ -319,7 +322,7 @@ type workspaceImageFromTree interface {
 // It returns a wait function that must be called before returning from
 // DownloadInputs; the wait function transitions the runner to the ready state
 // on success.
-func (r *taskRunner) startVMDuringInputFetch(ctx context.Context) func() error {
+func (r *taskRunner) startVMDuringInputFetch(ctx context.Context, cancel context.CancelCauseFunc) func() error {
 	if !*prepareVMDuringInputFetch || !r.PlatformProperties.RecycleRunner {
 		return nil
 	}
@@ -345,11 +348,18 @@ func (r *taskRunner) startVMDuringInputFetch(ctx context.Context) func() error {
 			err = r.Container.Create(ctx, wsPath)
 		}
 		log.CtxDebugf(ctx, "VM prepared during input fetch in %s (err=%v)", time.Since(start), err)
+		if err != nil {
+			cancel(err)
+		}
 		errCh <- err
 	}()
 	return func() error {
 		err := <-errCh
 		if err != nil {
+			if cause := context.Cause(ctx); cause != nil && cause != err {
+				// The fetch failed first and cancelled us; report that.
+				return nil
+			}
 			return status.WrapError(err, "prepare VM during input fetch")
 		}
 		r.p.mu.Lock()
@@ -361,12 +371,38 @@ func (r *taskRunner) startVMDuringInputFetch(ctx context.Context) func() error {
 	}
 }
 
+// useWorkspaceImageFromTree reports whether this task should skip host
+// materialization of inputs and let the VM build its workspace image from the
+// input tree. Only for plain recyclable/non-recyclable actions: persistent
+// workers and preserve-workspace need the inputs on the host, and the native
+// image writer must be enabled or the inputs would be silently dropped.
+func (r *taskRunner) useWorkspaceImageFromTree() bool {
+	if !*workspaceImageFromTreeEnabled {
+		return false
+	}
+	if r.PlatformProperties.EnableVFS || r.PlatformProperties.PreserveWorkspace {
+		return false
+	}
+	if _, ok := persistentworker.Key(r.PlatformProperties, r.task.GetCommand().GetArguments()); ok {
+		return false
+	}
+	return true
+}
+
 func (r *taskRunner) DownloadInputs(ctx context.Context) (err error) {
-	if wait := r.startVMDuringInputFetch(ctx); wait != nil {
+	// If the VM is being prepared concurrently, a failure on either side
+	// cancels the other so we don't keep fetching for a VM that failed to
+	// start (or vice versa).
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	if wait := r.startVMDuringInputFetch(ctx, cancel); wait != nil {
 		defer func() {
 			// Always wait for the VM to finish starting, even if the input
 			// fetch failed, so that the runner can be safely removed or
 			// recycled afterwards.
+			if err != nil {
+				cancel(err)
+			}
 			if werr := wait(); werr != nil && err == nil {
 				err = werr
 			}
@@ -399,15 +435,13 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) (err error) {
 		return err
 	}
 	if vm, ok := r.Container.Delegate.(workspaceImageFromTree); ok {
-		if *workspaceImageFromTreeEnabled && !r.PlatformProperties.EnableVFS {
-			// Don't hardlink inputs into the host workspace; the VM builds
-			// its workspace disk image straight from the tree + filecache.
-			r.Workspace.SetInputsInFileCacheOnly(true)
-			vm.SetWorkspaceInputTree(layout)
-		} else {
-			r.Workspace.SetInputsInFileCacheOnly(false)
+		// Don't hardlink inputs into the host workspace if the VM can build
+		// its workspace disk image straight from the tree + filecache.
+		fromTree := r.useWorkspaceImageFromTree() && vm.SetWorkspaceInputTree(layout)
+		if !fromTree {
 			vm.SetWorkspaceInputTree(nil)
 		}
+		r.Workspace.SetInputsInFileCacheOnly(fromTree)
 	}
 	err = r.Workspace.DownloadInputs(ctx, layout)
 	if err != nil {

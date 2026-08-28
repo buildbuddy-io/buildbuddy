@@ -513,6 +513,8 @@ func TestTreeToImage(t *testing.T) {
 	ws := filepath.Join(root, "ws")
 	require.NoError(t, os.MkdirAll(filepath.Join(ws, "out", "sub"), 0755))
 	require.NoError(t, os.WriteFile(filepath.Join(ws, "local.txt"), []byte("local"), 0644))
+	// A host file with the same name as an input: the input must win.
+	require.NoError(t, os.WriteFile(filepath.Join(ws, "shadowed"), []byte("host-version"), 0644))
 
 	mkFile := func(name string, content []byte, exe bool) *repb.FileNode {
 		d, err := digest.Compute(bytes.NewReader(content), repb.DigestFunction_SHA256)
@@ -535,7 +537,7 @@ func TestTreeToImage(t *testing.T) {
 	outD, err := digest.ComputeForMessage(outDir, repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	rootDir := &repb.Directory{
-		Files:       []*repb.FileNode{mkFile("big.bin", big, true), mkFile("empty", nil, false)},
+		Files:       []*repb.FileNode{mkFile("big.bin", big, true), mkFile("empty", nil, false), mkFile("shadowed", []byte("input-version"), false)},
 		Directories: []*repb.DirectoryNode{{Name: "sub", Digest: subD}, {Name: "out", Digest: outD}},
 	}
 	tree := &repb.Tree{Root: rootDir, Children: []*repb.Directory{sub, outDir}}
@@ -565,6 +567,9 @@ func TestTreeToImage(t *testing.T) {
 	require.Equal(t, "-rwxr-xr-x", names["sub/same-exe"].Mode)
 	require.Equal(t, "-rw-r--r--", names["sub/same1"].Mode)
 	require.Equal(t, "a.txt", names["sub/ln"].Target)
+	sh, err := os.ReadFile(filepath.Join(dst, "shadowed"))
+	require.NoError(t, err)
+	require.Equal(t, "input-version", string(sh))
 	s1, _ := os.Stat(filepath.Join(dst, "sub", "same1"))
 	s2, _ := os.Stat(filepath.Join(dst, "sub", "same2"))
 	require.True(t, os.SameFile(s1, s2))
