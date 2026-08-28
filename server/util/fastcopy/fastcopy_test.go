@@ -63,6 +63,36 @@ func TestFastCopyFileExist(t *testing.T) {
 	require.Equal(t, before.ModTime(), after.ModTime(), "target should not have been modified")
 }
 
+func TestFastCopyDarwinForceHardlinks(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("test runs on macOS only")
+	}
+
+	ws := testfs.MakeTempDir(t)
+	source := testfs.MakeTempFile(t, ws, "source")
+
+	clone := path.Join(ws, "clone")
+	require.NoError(t, fastcopy.FastCopy(source, clone))
+	sourceInfo, err := os.Stat(source)
+	require.NoError(t, err)
+	cloneInfo, err := os.Stat(clone)
+	require.NoError(t, err)
+	require.False(t, os.SameFile(sourceInfo, cloneInfo))
+
+	flags.Set(t, "executor.use_hardlinks_macos", true)
+	hardlink := path.Join(ws, "hardlink")
+	require.NoError(t, fastcopy.FastCopy(source, hardlink))
+	hardlinkInfo, err := os.Stat(hardlink)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(sourceInfo, hardlinkInfo))
+
+	forcedClone := path.Join(ws, "forced-clone")
+	require.NoError(t, fastcopy.Clone(source, forcedClone))
+	forcedCloneInfo, err := os.Stat(forcedClone)
+	require.NoError(t, err)
+	require.False(t, os.SameFile(sourceInfo, forcedCloneInfo))
+}
+
 func TestFastCopySymlink(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	linkTarget := testfs.MakeTempFile(t, ws, "foo")
