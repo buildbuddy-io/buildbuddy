@@ -2293,7 +2293,7 @@ func TestWriteReferenceVerification(t *testing.T) {
 	})
 }
 
-func TestRemoteWriteReference(t *testing.T) {
+func TestRemoteReferenceWriter(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
 	require.NoError(t, err)
@@ -2311,11 +2311,21 @@ func TestRemoteWriteReference(t *testing.T) {
 	require.NoError(t, client.StartListening())
 	waitUntilServerIsAlive(clientAddr)
 
+	writeRef := func(t *testing.T, peer, handoffPeer string, rn *rspb.ResourceName, ref *refpb.Reference, mustClone bool) error {
+		t.Helper()
+		wc, err := client.RemoteReferenceWriter(ctx, peer, handoffPeer, rn, ref, mustClone)
+		if err != nil {
+			return err
+		}
+		defer wc.Close()
+		return wc.Commit()
+	}
+
 	t.Run("writes the reference", func(t *testing.T) {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		ref := makeReference(rn, "blobs/rpc-blob", repb.Compressor_IDENTITY)
 		peer, cache, _ := newPeer(t)
-		require.NoError(t, client.RemoteWriteReference(ctx, peer, "", rn, ref, false /*=mustClone*/))
+		require.NoError(t, writeRef(t, peer, "", rn, ref, false /*=mustClone*/))
 		gotRef, gotRN, gotCloned := cache.lastWriteReference()
 		require.Empty(t, cmp.Diff(ref, gotRef, protocmp.Transform()))
 		require.Empty(t, cmp.Diff(rn, gotRN, protocmp.Transform()))
@@ -2327,7 +2337,7 @@ func TestRemoteWriteReference(t *testing.T) {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		ref := makeReference(rn, "blobs/rpc-blob", repb.Compressor_IDENTITY)
 		peer, cache, _ := newPeer(t)
-		require.NoError(t, client.RemoteWriteReference(ctx, peer, "", rn, ref, true /*=mustClone*/))
+		require.NoError(t, writeRef(t, peer, "", rn, ref, true /*=mustClone*/))
 		_, _, gotCloned := cache.lastWriteReference()
 		require.True(t, gotCloned)
 	})
@@ -2337,7 +2347,7 @@ func TestRemoteWriteReference(t *testing.T) {
 		ref := makeReference(rn, "blobs/rpc-blob", repb.Compressor_IDENTITY)
 		require.NoError(t, te.GetCache().Set(ctx, rn, buf))
 		peer, cache, _ := newPeer(t)
-		require.NoError(t, client.RemoteWriteReference(ctx, peer, "", rn, ref, false))
+		require.NoError(t, writeRef(t, peer, "", rn, ref, false))
 		_, gotRN, _ := cache.lastWriteReference()
 		require.Nil(t, gotRN)
 	})
@@ -2353,7 +2363,7 @@ func TestRemoteWriteReference(t *testing.T) {
 			defer mu.Unlock()
 			handoffPeer = peer
 		})
-		require.NoError(t, client.RemoteWriteReference(ctx, peer, "handoff-peer", rn, ref, false))
+		require.NoError(t, writeRef(t, peer, "handoff-peer", rn, ref, false))
 		mu.Lock()
 		defer mu.Unlock()
 		require.Equal(t, "handoff-peer", handoffPeer)
@@ -2366,7 +2376,7 @@ func TestRemoteWriteReference(t *testing.T) {
 		cache.mu.Lock()
 		cache.writeRefErr = status.NotFoundError("backing object may have expired")
 		cache.mu.Unlock()
-		err := client.RemoteWriteReference(ctx, peer, "", rn, ref, false)
+		err := writeRef(t, peer, "", rn, ref, false)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
 	})

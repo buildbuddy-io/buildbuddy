@@ -1053,13 +1053,14 @@ func (r *distributedCacheReader) Close() error {
 }
 
 type streamWriteCloser struct {
-	cancelFunc    context.CancelFunc
-	sender        rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
-	r             *rspb.ResourceName
-	ref           *atomic.Pointer[refpb.Reference]
-	peer          string
-	handoffPeer   string
-	alreadyExists bool
+	cancelFunc      context.CancelFunc
+	sender          rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	r               *rspb.ResourceName
+	ref             *atomic.Pointer[refpb.Reference]
+	refMustBeCloned bool
+	peer            string
+	handoffPeer     string
+	alreadyExists   bool
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
@@ -1112,10 +1113,11 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 
 	req := &dcpb.WriteRequest{
-		FinishWrite:        true,
-		CheckAlreadyExists: true,
-		HandoffPeer:        wc.handoffPeer,
-		Resource:           wc.r,
+		FinishWrite:           true,
+		CheckAlreadyExists:    true,
+		HandoffPeer:           wc.handoffPeer,
+		Resource:              wc.r,
+		ReferenceMustBeCloned: wc.refMustBeCloned,
 	}
 	if wc.ref != nil {
 		req.Reference = wc.ref.Load()
@@ -1146,7 +1148,7 @@ func (wc *streamWriteCloser) Close() error {
 }
 
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	return c.newRemoteWriter(ctx, peer, handoffPeer, r, nil)
+	return c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 }
 
 // RemoteVerifiedWriter is like RemoteWriter, but the final message of the
@@ -1155,10 +1157,21 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 // the write is streamed to GCS and the client simultaneously, but if it is
 // eventually set, it will be sent to the peer.
 func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference]) (interfaces.CommittedWriteCloser, error) {
-	return c.newRemoteWriter(ctx, peer, handoffPeer, r, ref)
+	return c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, false /*=refMustBeCloned*/)
 }
 
-func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference]) (interfaces.CommittedWriteCloser, error) {
+// RemoteReferenceWriter opens a write stream that writes r to the peer by
+// reference alone: no bytes are streamed, and committing it sends a single
+// message carrying ref. The caller is responsible for determining the
+// referenced blob's ownership semantics via mustClone. Like the byte path, a
+// peer that already has r is not an error.
+func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
+	refPtr := &atomic.Pointer[refpb.Reference]{}
+	refPtr.Store(ref)
+	return c.newRemoteWriter(ctx, peer, handoffPeer, r, refPtr, mustClone)
+}
+
+func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference], refMustBeCloned bool) (interfaces.CommittedWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -1172,47 +1185,15 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 	}
 
 	wc := &streamWriteCloser{
-		cancelFunc:  cancel,
-		sender:      rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
-		peer:        peer,
-		handoffPeer: handoffPeer,
-		r:           r,
-		ref:         ref,
+		cancelFunc:      cancel,
+		sender:          rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		peer:            peer,
+		handoffPeer:     handoffPeer,
+		r:               r,
+		ref:             ref,
+		refMustBeCloned: refMustBeCloned,
 	}
 	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
-}
-
-// RemoteWriteReference writes r to the peer by reference alone. The caller
-// is responsible for determining the referenced blob's ownership semantics.
-// Like the byte path, a peer that already has r is not an error.
-func (c *Proxy) RemoteWriteReference(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) error {
-	client, err := c.getClient(ctx, peer)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(ctx, *peerWriteTimeout)
-	defer cancel()
-	stream, err := client.Write(ctx)
-	if err != nil {
-		return err
-	}
-	req := &dcpb.WriteRequest{
-		Resource:              r,
-		Reference:             ref,
-		ReferenceMustBeCloned: refMustBeCloned,
-		HandoffPeer:           handoffPeer,
-		CheckAlreadyExists:    true,
-		FinishWrite:           true,
-	}
-	// On Send failure the server's status surfaces from CloseAndRecv.
-	if err := stream.Send(req); err != nil && err != io.EOF {
-		return err
-	}
-	_, err = stream.CloseAndRecv()
-	if status.IsAlreadyExistsError(err) {
-		return nil
-	}
-	return err
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

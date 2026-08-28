@@ -1693,11 +1693,11 @@ type referenceWriteCloser struct {
 	refWriter interfaces.ReferenceWriter
 
 	// multiWriteCloser streams bytes to the peers: pre-opened in verify mode,
-	// nil in reference-only mode.
+	// nil in reference-only mode (the reference writers are opened at Commit,
+	// once the reference exists).
 	multiWriteCloser interfaces.CommittedWriteCloser
 	ref              *atomic.Pointer[refpb.Reference]
 	refCache         interfaces.ReferenceCache
-	peers            *peerset.PeerSet
 }
 
 // writePeersContain returns whether every write peer for r already holds it.
@@ -1752,13 +1752,11 @@ func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.Referen
 			return nil, err
 		}
 		refWriteCloser.multiWriteCloser = multiWriteCloser
-	} else {
-		peers, err := c.writePeers(rn)
-		if err != nil {
-			refWriter.Close()
-			return nil, err
-		}
-		refWriteCloser.peers = peers
+	} else if _, err := c.writePeers(rn); err != nil {
+		// Fail fast, before any bytes are accepted, if there aren't enough
+		// write peers.
+		refWriter.Close()
+		return nil, err
 	}
 	return refWriteCloser, nil
 }
@@ -1805,31 +1803,12 @@ func (rwc *referenceWriteCloser) Commit() error {
 		return rwc.multiWriteCloser.Commit()
 	}
 
-	c := rwc.c
-	written := 0
-	refMustBeCloned := false
-	for peer, handoff := rwc.peers.GetNextPeerAndHandoff(); peer != ""; peer, handoff = rwc.peers.GetNextPeerAndHandoff() {
-		var err error
-		if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
-			err = rwc.refCache.WriteReference(rwc.ctx, ref, rwc.rn, refMustBeCloned)
-			// At most one peer can own the reference. Other peers must clone.
-			refMustBeCloned = true
-		} else {
-			err = c.distributedProxy.RemoteWriteReference(rwc.ctx, peer, handoff, rwc.rn, ref, refMustBeCloned)
-			// At most one peer can own the reference. Other peers must clone.
-			refMustBeCloned = true
-		}
-		if err != nil {
-			rwc.peers.MarkPeerAsFailed(peer)
-			c.log.CtxDebugf(rwc.ctx, "Error writing reference for %q to peer %q: %s", distributed_client.ResourceIsolationString(rwc.rn), peer, err)
-			continue
-		}
-		written++
+	mwc, err := rwc.c.referenceMultiWriter(rwc.ctx, rwc.refCache, rwc.rn, ref)
+	if err != nil {
+		return err
 	}
-	if written < c.opts.ReplicationFactor {
-		return status.UnavailableErrorf("Not enough peers (%d) available to satisfy replication factor (%d).", written, c.opts.ReplicationFactor)
-	}
-	return nil
+	defer mwc.Close()
+	return mwc.Commit()
 }
 
 func (rwc *referenceWriteCloser) Close() error {
@@ -1865,6 +1844,72 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 }
 
 func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, ref *atomic.Pointer[refpb.Reference]) (interfaces.CommittedWriteCloser, error) {
+	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
+		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r, ref)
+		if err != nil {
+			return nil, err
+		}
+		// Nil out the reference once a peer has consumed it so that only one
+		// peer verifies it. Local writes don't count: they go through
+		// c.local.Writer, which ignores the reference, so it is kept for the
+		// first remote peer's stream.
+		if ref != nil && !(c.opts.EnableLocalWrites && peer == c.opts.ListenAddr) {
+			ref = nil
+		}
+		return rwc, nil
+	})
+}
+
+// localReferenceWriteCloser adapts a local WriteReference call to the
+// CommittedWriteCloser shape used by multiWriteCloser. Reference writes carry
+// no bytes; the write happens at Commit.
+type localReferenceWriteCloser struct {
+	ctx       context.Context
+	refCache  interfaces.ReferenceCache
+	ref       *refpb.Reference
+	rn        *rspb.ResourceName
+	mustClone bool
+}
+
+func (l *localReferenceWriteCloser) Write(p []byte) (int, error) {
+	return 0, status.InternalError("reference writers do not accept bytes")
+}
+
+func (l *localReferenceWriteCloser) Commit() error {
+	return l.refCache.WriteReference(l.ctx, l.ref, l.rn, l.mustClone)
+}
+
+func (l *localReferenceWriteCloser) Close() error {
+	return nil
+}
+
+// referenceMultiWriter is like byteMultiWriter, but the peers receive only
+// the reference; committing the returned writer performs the reference
+// writes.
+func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference) (interfaces.CommittedWriteCloser, error) {
+	refMustBeCloned := false
+	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
+		var wc interfaces.CommittedWriteCloser
+		if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
+			wc = &localReferenceWriteCloser{ctx: ctx, refCache: refCache, ref: ref, rn: r, mustClone: refMustBeCloned}
+		} else {
+			var err error
+			wc, err = c.distributedProxy.RemoteReferenceWriter(ctx, peer, hintedHandoff, r, ref, refMustBeCloned)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// At most one peer can own the reference. Other peers must clone.
+		refMustBeCloned = true
+		return wc, nil
+	})
+}
+
+// openMultiWriter opens a multiWriteCloser over the write peers for r, using
+// open to create each peer's writer. Peers whose writers fail to open are
+// replaced from the peer set's fallback peers; if fewer than
+// ReplicationFactor writers open, the whole write fails.
+func (c *Cache) openMultiWriter(ctx context.Context, r *rspb.ResourceName, open func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error)) (interfaces.CommittedWriteCloser, error) {
 	ps, err := c.writePeers(r)
 	if err != nil {
 		return nil, err
@@ -1877,7 +1922,7 @@ func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, ref *
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
 		start := time.Now()
-		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r, ref)
+		rwc, err := open(peer, hintedHandoff)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
 			c.log.CtxDebugf(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
@@ -1887,13 +1932,6 @@ func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, ref *
 				break
 			}
 			continue
-		}
-		// Nil out the reference once a peer has consumed it so that only one
-		// peer verifies it. Local writes don't count: they go through
-		// c.local.Writer, which ignores the reference, so it is kept for the
-		// first remote peer's stream.
-		if ref != nil && !(c.opts.EnableLocalWrites && peer == c.opts.ListenAddr) {
-			ref = nil
 		}
 		mwc.peerClosers[peer] = rwc
 	}
