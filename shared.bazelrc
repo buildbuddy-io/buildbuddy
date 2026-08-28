@@ -223,6 +223,7 @@ common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
 # Build with --config=cache to use prod cache.
 common:cache --config=cache-shared
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
+common:cache --remote_downloader=grpcs://buildbuddy.buildbuddy.io
 
 # Target+Exec Platforms configuration
 common:target-darwin-arm64 --platforms=@toolchains_buildbuddy//platforms:darwin_arm64
