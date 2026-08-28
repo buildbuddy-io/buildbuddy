@@ -1796,6 +1796,9 @@ func (rwc *referenceWriteCloser) Commit() error {
 		}
 	}
 	if rwc.multiWriteCloser != nil {
+		// rwc.ref is shared with the single peer stream opened for
+		// verification; storing the staged reference here is what makes that
+		// stream attach it to its final message when Commit below runs.
 		if ref != nil && rwc.ref != nil {
 			rwc.ref.Store(ref)
 		}
