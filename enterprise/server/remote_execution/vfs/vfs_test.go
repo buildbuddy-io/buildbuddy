@@ -484,8 +484,8 @@ func TestReaddirCachedAttrsInvalidatedWhenRenameOverwritesHardlink(t *testing.T)
 
 func TestReaddirSnapshotOverlappingRenameDoesNotCacheOverwrittenAttrs(t *testing.T) {
 	client := &blockingGetDirectoryContentsClient{
-		snapshotReady:    make(chan struct{}),
-		releaseSnapshot:  make(chan struct{}),
+		snapshotReady:   make(chan struct{}),
+		releaseSnapshot: make(chan struct{}),
 	}
 	sourceParent, aliasParent := setupRenameOverwriteTest(t, func(baseClient vfspb.FileSystemClient) vfspb.FileSystemClient {
 		client.FileSystemClient = baseClient
