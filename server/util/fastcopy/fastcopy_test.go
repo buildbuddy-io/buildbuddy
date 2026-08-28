@@ -2,6 +2,7 @@ package fastcopy_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
@@ -109,8 +110,44 @@ func TestFastCopySymlink(t *testing.T) {
 	err = fastcopy.FastCopy(source, target)
 	require.NoError(t, err)
 
-	_, err = os.Stat(target)
+	targetInfo, err := os.Lstat(target)
 	require.NoError(t, err, "target symlink should exist")
+	require.True(t, targetInfo.Mode()&os.ModeSymlink != 0, "target should be a symlink")
+	actualLinkTarget, err := os.Readlink(target)
+	require.NoError(t, err)
+	require.Equal(t, linkTarget, actualLinkTarget)
+}
+
+func TestFastCopyDarwinHardlinksSymlinkWithoutFollowing(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("test runs on macOS only")
+	}
+	flags.Set(t, "executor.use_hardlinks_macos", true)
+
+	for _, dangling := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dangling=%t", dangling), func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			linkTarget := path.Join(ws, "link-target")
+			if !dangling {
+				testfs.MakeTempFile(t, ws, "link-target")
+			}
+			source := path.Join(ws, "source")
+			require.NoError(t, os.Symlink(linkTarget, source))
+
+			target := path.Join(ws, "target")
+			require.NoError(t, fastcopy.FastCopy(source, target))
+
+			sourceInfo, err := os.Lstat(source)
+			require.NoError(t, err)
+			targetInfo, err := os.Lstat(target)
+			require.NoError(t, err)
+			require.True(t, targetInfo.Mode()&os.ModeSymlink != 0, "target should be a symlink")
+			require.True(t, os.SameFile(sourceInfo, targetInfo), "source and target should hardlink the same symlink inode")
+			actualLinkTarget, err := os.Readlink(target)
+			require.NoError(t, err)
+			require.Equal(t, linkTarget, actualLinkTarget)
+		})
+	}
 }
 
 func TestFastCopyXFSReflink(t *testing.T) {
