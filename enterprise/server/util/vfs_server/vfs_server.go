@@ -1347,7 +1347,9 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	newParentNode.mu.Lock()
 	newChildNode, newExists := newParentNode.children[request.GetNewName()]
 	newParentNode.mu.Unlock()
+	var replacedID uint64
 	if newExists {
+		replacedID = newChildNode.id
 		if err := unlink(newParentNode, newChildNode, request.GetNewName()); err != nil {
 			return nil, err
 		}
@@ -1373,7 +1375,7 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	newParentNode.children[request.GetNewName()] = oldChildNode
 	newParentNode.mu.Unlock()
 
-	return &vfspb.RenameResponse{}, nil
+	return &vfspb.RenameResponse{ReplacedId: replacedID}, nil
 }
 
 func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb.MkdirResponse, error) {

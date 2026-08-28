@@ -177,7 +177,7 @@ func main() {
 	}
 	vfsClient := vfs_server.NewDirectClient(vfsServer)
 
-	fs := vfs.New(vfsClient, *dir, &vfs.Options{})
+	fs := vfs.New(vfsClient, *dir, &vfs.Options{EnablePassthrough: true})
 	err = fs.Mount()
 	if err != nil {
 		log.Fatalf("Could not mount filesystem at %q: %s", *dir, err)
