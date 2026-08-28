@@ -338,6 +338,12 @@ common:release-shared --define=release=true
 common:release-shared --strip=always
 common:release-shared --@rules_img//img/settings:compress=gzip
 common:release-shared --@rules_img//img/settings:compression_level=9
+# Release builds are cold (ephemeral runners, no remote cache). nogo (vet +
+# staticcheck) is a lint that CI has already run on the same commit; re-running
+# it here roughly doubles the number of build actions (RunNogo/ValidateNogo for
+# every Go package, plus building the nogo analyzer binary itself) and adds
+# ~30% CPU time to the executor build. Skip validation actions for releases.
+common:release-shared --norun_validations
 
 # Configuration used for Linux releases
 common:release --config=release-shared
