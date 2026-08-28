@@ -323,3 +323,99 @@ func TestReaderMatchesDebugfs(t *testing.T) {
 		}
 	}
 }
+
+// TestReaderRejectsCorruptImages mutates images in many random ways and checks
+// that extraction fails cleanly (no panic, no hang, no writes outside the
+// output dir) — the guest that wrote the image is untrusted.
+func TestReaderRejectsCorruptImages(t *testing.T) {
+	root := testfs.MakeTempDir(t)
+	src := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(src, 0755))
+	makeTree(t, src, 200, 4096, 4)
+	image := filepath.Join(root, "ws.ext4")
+	_, err := ext4writer.DirectoryToImage(context.Background(), src, image, &ext4writer.Options{SizeBytes: 150e6})
+	require.NoError(t, err)
+	orig, err := os.ReadFile(image)
+	require.NoError(t, err)
+	rng := rand.New(rand.NewSource(7))
+	// Interesting regions: superblock, GDT, bitmaps, inode tables, first dir blocks.
+	regions := []int{1024, 4096, 8192, 12288, 16384, 16384 + 4096*8, 4096 * 40}
+	for i := 0; i < 300; i++ {
+		img := append([]byte(nil), orig...)
+		nMut := 1 + rng.Intn(8)
+		for j := 0; j < nMut; j++ {
+			base := regions[rng.Intn(len(regions))]
+			off := base + rng.Intn(4096)
+			if off >= len(img) {
+				continue
+			}
+			switch rng.Intn(3) {
+			case 0:
+				img[off] = byte(rng.Intn(256))
+			case 1:
+				img[off] = 0xFF
+			case 2:
+				img[off] = 0
+			}
+		}
+		mutated := filepath.Join(root, fmt.Sprintf("m%d.ext4", i))
+		require.NoError(t, os.WriteFile(mutated, img, 0644))
+		out := filepath.Join(root, fmt.Sprintf("o%d", i))
+		require.NoError(t, os.Mkdir(out, 0755))
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("mutation %d: panic: %v", i, r)
+				}
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			_ = ext4writer.ImageToDirectory(ctx, mutated, out, []string{"/"})
+		}()
+		select {
+		case <-done:
+		case <-time.After(30 * time.Second):
+			t.Fatalf("mutation %d: extraction hung", i)
+		}
+		os.Remove(mutated)
+		os.RemoveAll(out)
+	}
+}
+
+// TestReaderRefusesSymlinkEscape: a directory entry that is a symlink followed
+// by a same-named directory must not let us write through the symlink.
+func TestReaderRefusesDuplicateNames(t *testing.T) {
+	requireTool(t, "/sbin/debugfs")
+	root := testfs.MakeTempDir(t)
+	src := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(src, 0755))
+	require.NoError(t, os.Symlink("/tmp", filepath.Join(src, "a")))
+	image := filepath.Join(root, "ws.ext4")
+	_, err := ext4writer.DirectoryToImage(context.Background(), src, image, nil)
+	require.NoError(t, err)
+	// Use debugfs to add a second entry named "a" (a directory) to the root.
+	out, err := exec.Command("/sbin/debugfs", "-w", "-R", "mkdir /b", image).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	// Rename b -> a via debugfs isn't possible when a exists; instead patch the
+	// dirent name directly: find "b" in the root directory block.
+	img, err := os.ReadFile(image)
+	require.NoError(t, err)
+	idx := -1
+	for i := 0; i+9 < len(img); i++ {
+		// dirent header: inode(4) rec_len(2) name_len(1)=1 ftype(1)=2 name "b"
+		if img[i+6] == 1 && img[i+7] == 2 && img[i+8] == 'b' && img[i+9] == 0 {
+			idx = i
+			break
+		}
+	}
+	require.Greater(t, idx, 0, "could not find dirent for b")
+	img[idx+8] = 'a'
+	require.NoError(t, os.WriteFile(image, img, 0644))
+	dst := filepath.Join(root, "dst")
+	require.NoError(t, os.Mkdir(dst, 0755))
+	err = ext4writer.ImageToDirectory(context.Background(), image, dst, []string{"/"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate")
+}

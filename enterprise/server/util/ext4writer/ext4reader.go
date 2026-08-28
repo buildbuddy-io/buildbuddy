@@ -17,8 +17,6 @@ package ext4writer
 import (
 	"context"
 	"encoding/binary"
-	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,14 +34,31 @@ const (
 
 type ext4Image struct {
 	f              *os.File
+	size           int64 // image file size; every read is bounds-checked against it
 	blockSize      int64
 	inodeSize      int64
 	inodesPerGroup uint32
+	ngroups        uint32
 	firstDataBlock uint32
 	descSize       int64
 	gdtOffset      int64
 	incompat       uint32
-	buf            []byte
+}
+
+// Limits that protect the host from a malicious or corrupt guest-written image.
+const (
+	maxDirBytes    = 1 << 30 // 1 GiB of directory blocks
+	maxExtentsList = 1 << 20 // extents per file
+	maxNameLen     = 255
+)
+
+// readAt reads exactly len(dst) bytes at off, refusing reads outside the image.
+func (img *ext4Image) readAt(dst []byte, off int64) error {
+	if off < 0 || off+int64(len(dst)) > img.size {
+		return status.InvalidArgumentErrorf("read [%d,+%d) outside image of %d bytes", off, len(dst), img.size)
+	}
+	_, err := img.f.ReadAt(dst, off)
+	return err
 }
 
 func openImage(path string) (*ext4Image, error) {
@@ -51,32 +66,57 @@ func openImage(path string) (*ext4Image, error) {
 	if err != nil {
 		return nil, err
 	}
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	img := &ext4Image{f: f, size: st.Size()}
 	sb := make([]byte, 1024)
-	if _, err := f.ReadAt(sb, 1024); err != nil {
+	if err := img.readAt(sb, 1024); err != nil {
 		f.Close()
 		return nil, status.WrapError(err, "read superblock")
 	}
 	le := binary.LittleEndian
-	if le.Uint16(sb[0x38:]) != superMagic {
+	bad := func(format string, args ...any) (*ext4Image, error) {
 		f.Close()
-		return nil, status.InvalidArgumentError("not an ext4 image (bad magic)")
+		return nil, status.InvalidArgumentErrorf("invalid ext4 image: "+format, args...)
 	}
-	img := &ext4Image{
-		f:              f,
-		blockSize:      1024 << le.Uint32(sb[0x18:]),
-		inodesPerGroup: le.Uint32(sb[0x28:]),
-		firstDataBlock: le.Uint32(sb[0x14:]),
-		incompat:       le.Uint32(sb[0x60:]),
+	if le.Uint16(sb[0x38:]) != superMagic {
+		return bad("bad magic")
 	}
+	logBlockSize := le.Uint32(sb[0x18:])
+	if logBlockSize > 6 {
+		return bad("log block size %d", logBlockSize)
+	}
+	img.blockSize = 1024 << logBlockSize
+	img.inodesPerGroup = le.Uint32(sb[0x28:])
+	blocksPerGrp := le.Uint32(sb[0x20:])
+	blocksCount := uint64(le.Uint32(sb[0x04:]))
+	img.firstDataBlock = le.Uint32(sb[0x14:])
+	img.incompat = le.Uint32(sb[0x60:])
+	if img.incompat&incompat64Bit != 0 {
+		blocksCount |= uint64(le.Uint32(sb[0x150:])) << 32
+	}
+	if img.inodesPerGroup == 0 || int64(img.inodesPerGroup) > img.blockSize*8 || blocksPerGrp == 0 || int64(blocksPerGrp) > img.blockSize*8 {
+		return bad("inodes/blocks per group %d/%d", img.inodesPerGroup, blocksPerGrp)
+	}
+	if blocksCount == 0 || int64(blocksCount)*img.blockSize > img.size+img.blockSize {
+		return bad("block count %d exceeds image size %d", blocksCount, img.size)
+	}
+	img.ngroups = uint32((blocksCount - uint64(img.firstDataBlock) + uint64(blocksPerGrp) - 1) / uint64(blocksPerGrp))
 	img.inodeSize = 128
 	if le.Uint32(sb[0x4C:]) >= 1 {
 		img.inodeSize = int64(le.Uint16(sb[0x58:]))
 	}
+	if img.inodeSize < 128 || img.inodeSize > img.blockSize || img.inodeSize&(img.inodeSize-1) != 0 {
+		return bad("inode size %d", img.inodeSize)
+	}
 	img.descSize = 32
 	if img.incompat&incompat64Bit != 0 {
 		img.descSize = int64(le.Uint16(sb[0xFE:]))
-		if img.descSize < 64 {
-			img.descSize = 64
+		if img.descSize < 64 || img.descSize > img.blockSize || img.descSize&(img.descSize-1) != 0 {
+			return bad("descriptor size %d", img.descSize)
 		}
 	}
 	if img.incompat&incompatEncrypt != 0 {
@@ -88,18 +128,16 @@ func openImage(path string) (*ext4Image, error) {
 	if img.blockSize == 1024 {
 		img.gdtOffset = 2048
 	}
-	img.buf = make([]byte, img.blockSize)
 	return img, nil
 }
 
 func (img *ext4Image) Close() error { return img.f.Close() }
 
 func (img *ext4Image) readBlock(blk uint64, dst []byte) error {
-	_, err := img.f.ReadAt(dst, int64(blk)*img.blockSize)
-	if err != nil && !(errors.Is(err, io.EOF)) {
-		return err
+	if blk > uint64(img.size/img.blockSize) {
+		return status.InvalidArgumentErrorf("block %d outside image", blk)
 	}
-	return nil
+	return img.readAt(dst, int64(blk)*img.blockSize)
 }
 
 type inode struct {
@@ -119,8 +157,11 @@ func (img *ext4Image) readInode(num uint32) (*inode, error) {
 	}
 	group := (num - 1) / img.inodesPerGroup
 	index := int64((num - 1) % img.inodesPerGroup)
+	if group >= img.ngroups {
+		return nil, status.InvalidArgumentErrorf("inode %d is beyond the last block group", num)
+	}
 	desc := make([]byte, img.descSize)
-	if _, err := img.f.ReadAt(desc, img.gdtOffset+int64(group)*img.descSize); err != nil {
+	if err := img.readAt(desc, img.gdtOffset+int64(group)*img.descSize); err != nil {
 		return nil, status.WrapErrorf(err, "read group descriptor %d", group)
 	}
 	le := binary.LittleEndian
@@ -129,7 +170,10 @@ func (img *ext4Image) readInode(num uint32) (*inode, error) {
 		table |= uint64(le.Uint32(desc[0x28:])) << 32
 	}
 	raw := make([]byte, img.inodeSize)
-	if _, err := img.f.ReadAt(raw, int64(table)*img.blockSize+index*img.inodeSize); err != nil {
+	if table > uint64(img.size/img.blockSize) {
+		return nil, status.InvalidArgumentErrorf("inode table for group %d outside image", group)
+	}
+	if err := img.readAt(raw, int64(table)*img.blockSize+index*img.inodeSize); err != nil {
 		return nil, status.WrapErrorf(err, "read inode %d", num)
 	}
 	in := &inode{
@@ -144,6 +188,11 @@ func (img *ext4Image) readInode(num uint32) (*inode, error) {
 	}
 	if img.inodeSize > 128 {
 		in.extraSize = le.Uint16(raw[0x80:])
+	}
+	if in.size < 0 || in.size > img.size {
+		// A regular file can be sparse, but nothing legitimately claims to be
+		// larger than the whole image.
+		return nil, status.InvalidArgumentErrorf("inode %d claims size %d > image size %d", num, in.size, img.size)
 	}
 	return in, nil
 }
@@ -177,6 +226,9 @@ func (img *ext4Image) extents(in *inode) ([]extent, error) {
 			return status.InternalErrorf("extent header claims %d entries in inode %d", entries, in.num)
 		}
 		for i := 0; i < entries; i++ {
+			if len(out) >= maxExtentsList {
+				return status.InvalidArgumentErrorf("inode %d has too many extents", in.num)
+			}
 			e := node[12+i*12:]
 			if depth == 0 {
 				l := uint32(le.Uint16(e[4:]))
@@ -184,6 +236,9 @@ func (img *ext4Image) extents(in *inode) ([]extent, error) {
 				if l > maxExtentLen {
 					l -= maxExtentLen
 					uninit = true
+				}
+				if l == 0 {
+					return status.InvalidArgumentErrorf("zero-length extent in inode %d", in.num)
 				}
 				out = append(out, extent{
 					logical: le.Uint32(e[0:]),
@@ -224,11 +279,15 @@ func (img *ext4Image) readDir(in *inode) ([]dirent, error) {
 	if in.flags&inodeFlagInline != 0 {
 		return nil, status.UnimplementedErrorf("inline directory (inode %d) is not supported", in.num)
 	}
+	if in.size > maxDirBytes {
+		return nil, status.InvalidArgumentErrorf("directory inode %d is too large (%d bytes)", in.num, in.size)
+	}
 	exts, err := img.extents(in)
 	if err != nil {
 		return nil, err
 	}
 	var out []dirent
+	seen := map[string]bool{}
 	blk := make([]byte, img.blockSize)
 	le := binary.LittleEndian
 	for _, e := range exts {
@@ -248,12 +307,21 @@ func (img *ext4Image) readDir(in *inode) ([]dirent, error) {
 				recLen := int(le.Uint16(blk[off+4:]))
 				nameLen := int(blk[off+6])
 				ftype := blk[off+7]
-				if recLen < 8 || off+recLen > len(blk) || 8+nameLen > recLen {
-					return nil, status.InternalErrorf("corrupt directory entry in inode %d", in.num)
+				if recLen < 8 || recLen%4 != 0 || off+recLen > len(blk) || 8+nameLen > recLen {
+					return nil, status.InvalidArgumentErrorf("corrupt directory entry in inode %d", in.num)
 				}
 				if ino != 0 {
 					name := string(blk[off+8 : off+8+nameLen])
 					if name != "." && name != ".." {
+						if name == "" || strings.ContainsAny(name, "/\x00") {
+							return nil, status.InvalidArgumentErrorf("invalid entry name %q in inode %d", name, in.num)
+						}
+						if seen[name] {
+							// Duplicate names could be used to make us write
+							// through a symlink we created a moment ago.
+							return nil, status.InvalidArgumentErrorf("duplicate entry %q in inode %d", name, in.num)
+						}
+						seen[name] = true
 						out = append(out, dirent{inode: ino, name: name, ftype: ftype})
 					}
 				}
@@ -305,11 +373,12 @@ func (img *ext4Image) extractFile(in *inode, dst string) error {
 	if in.flags&inodeFlagInline != 0 {
 		return status.UnimplementedErrorf("inline data (inode %d) is not supported", in.num)
 	}
-	f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(in.mode&0o777))
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, os.FileMode(in.mode&0o777)|0o600)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
+	defer f.Chmod(os.FileMode(in.mode & 0o777))
 	if err := f.Truncate(in.size); err != nil {
 		return err
 	}
@@ -330,7 +399,7 @@ func (img *ext4Image) extractFile(in *inode, dst string) error {
 		srcOff := int64(e.start) * img.blockSize
 		for remaining > 0 {
 			n := min(remaining, int64(len(buf)))
-			if _, err := img.f.ReadAt(buf[:n], srcOff); err != nil && !errors.Is(err, io.EOF) {
+			if err := img.readAt(buf[:n], srcOff); err != nil {
 				return err
 			}
 			if _, err := f.WriteAt(buf[:n], logicalOff); err != nil {
@@ -370,9 +439,18 @@ func (img *ext4Image) extractTree(ctx context.Context, in *inode, dst string, de
 	if depth > 256 {
 		return status.InternalError("directory nesting too deep")
 	}
+	isDir := in.mode&syscall.S_IFMT == syscall.S_IFDIR
+	if st, err := os.Lstat(dst); err == nil {
+		// Only the top-level requested directory may already exist (e.g. the
+		// output dir itself when extracting "/"); everything below must be new,
+		// otherwise a crafted image could make us write through a symlink.
+		if !(depth == 0 && isDir && st.IsDir()) {
+			return status.InvalidArgumentErrorf("refusing to overwrite existing path %q", dst)
+		}
+	}
 	switch in.mode & syscall.S_IFMT {
 	case syscall.S_IFDIR:
-		if err := os.MkdirAll(dst, os.FileMode(in.mode&0o777)|0o700); err != nil {
+		if err := os.Mkdir(dst, os.FileMode(in.mode&0o777)|0o700); err != nil && !(depth == 0 && os.IsExist(err)) {
 			return err
 		}
 		ents, err := img.readDir(in)
@@ -382,9 +460,6 @@ func (img *ext4Image) extractTree(ctx context.Context, in *inode, dst string, de
 		for _, e := range ents {
 			if ctx.Err() != nil {
 				return ctx.Err()
-			}
-			if strings.ContainsRune(e.name, '/') || e.name == "." || e.name == ".." {
-				return status.InternalErrorf("invalid directory entry name %q", e.name)
 			}
 			child, err := img.readInode(e.inode)
 			if err != nil {

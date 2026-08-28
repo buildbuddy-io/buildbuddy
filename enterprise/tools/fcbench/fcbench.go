@@ -106,6 +106,8 @@ var (
 	logLevel    = flag.String("fcbench_log_level", "info", "Log level.")
 	printStdout = flag.Bool("print_stdout", false, "Log guest command stdout/stderr.")
 	overlap     = flag.Bool("overlap_unpause", false, "Experimental: run snapshot restore (Create/Unpause) concurrently with input fetch instead of after it.")
+	seedFlag    = flag.Int64("seed", 0, "Seed for synthetic input generation. 0 = fixed seed for shared inputs, or time-based when --unique_inputs (so re-runs don't hit the filecache from a previous run).")
+	useVFS      = flag.Bool("vfs", false, "Use the guest FUSE VFS (executor.enable_vfs path): inputs are served lazily from the host filecache/CAS instead of via a workspace ext4 image.")
 )
 
 // ---------------------------------------------------------------------------
@@ -446,14 +448,19 @@ func (b *bench) guestCommand(w workload) *repb.Command {
 		script = "find . -type f -exec cat {} + > /dev/null"
 	}
 	if *outputFiles > 0 {
-		script += fmt.Sprintf("; mkdir -p out && i=0; while [ $i -lt %d ]; do head -c 65536 /dev/urandom > out/o$i.bin; i=$((i+1)); done", *outputFiles)
+		// One process writes all output files (64 KiB each) so the cost is
+		// the writes, not process spawns.
+		script += fmt.Sprintf(`; mkdir -p out && awk 'BEGIN{for(i=0;i<%d;i++){f="out/o" i ".bin"; printf "%%65536s", "", > f; close(f)}}'`, *outputFiles)
+	}
+	props := []*repb.Platform_Property{
+		{Name: "workload-isolation-type", Value: "firecracker"},
+	}
+	if *mode != "fresh" {
+		props = append(props, &repb.Platform_Property{Name: "recycle-runner", Value: "true"})
 	}
 	return &repb.Command{
-		Arguments: []string{"sh", "-c", script},
-		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
-			{Name: "recycle-runner", Value: "true"},
-			{Name: "workload-isolation-type", Value: "firecracker"},
-		}},
+		Arguments:   []string{"sh", "-c", script},
+		Platform:    &repb.Platform{Properties: props},
 		OutputPaths: []string{"out"},
 	}
 }
@@ -462,6 +469,9 @@ func (b *bench) runSlot(ctx context.Context, w workload, slot int, trees []*inpu
 	keySalt := "fcbench"
 	if !*sharedKey {
 		keySalt = fmt.Sprintf("fcbench-slot-%d", slot)
+	}
+	if *useVFS {
+		keySalt += "-vfs"
 	}
 	cmd := b.guestCommand(w)
 	cmd.Platform.Properties = append(cmd.Platform.Properties, &repb.Platform_Property{Name: "salt", Value: keySalt + "-" + w.Name})
@@ -524,7 +534,13 @@ func (b *bench) runSlot(ctx context.Context, w workload, slot int, trees []*inpu
 			// the restore runs concurrently with the input fetch.
 			fetchInputs := func() error {
 				return stage("input_fetch", func() error {
-					txInfo, err := dirtools.DownloadTree(iterCtx, b.env, "", repb.DigestFunction_SHA256, tree.Tree, &dirtools.DownloadTreeOpts{RootDir: workDir})
+					dlOpts := &dirtools.DownloadTreeOpts{RootDir: workDir}
+					if *useVFS {
+						// VFS: only populate the filecache; the guest fetches
+						// lazily through the host VFS server.
+						dlOpts.RootDir = ""
+					}
+					txInfo, err := dirtools.DownloadTree(iterCtx, b.env, "", repb.DigestFunction_SHA256, tree.Tree, dlOpts)
 					if err != nil {
 						return err
 					}
@@ -547,6 +563,12 @@ func (b *bench) runSlot(ctx context.Context, w workload, slot int, trees []*inpu
 				})
 				if err != nil {
 					return status.WrapError(err, "new container")
+				}
+				if *useVFS {
+					c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+						Inputs:         tree.Tree,
+						DigestFunction: repb.DigestFunction_SHA256,
+					})
 				}
 				if *mode == "keep" {
 					keepC = c
@@ -725,6 +747,10 @@ func main() {
 				seed := int64(1000*s + t)
 				if !*uniqueIn {
 					seed = 0 // identical tree for everyone => warm filecache after first fetch
+				} else if *seedFlag != 0 {
+					seed += *seedFlag * 1_000_000
+				} else {
+					seed += time.Now().UnixNano() // genuinely cold across runs
 				}
 				seed = seed*1_000_003 + int64(len(w.Name)) + int64(w.NumFiles)*31 + int64(w.AvgFileBytes)
 				tr, err := generateAndUploadTree(ctx, env, w, seed)
@@ -735,6 +761,8 @@ func main() {
 			}
 		}
 		log.Infof("uploaded %d trees (%d files, %.1f MB each)", nTrees**concurrency, treesPerSlot[0][0].NumFiles, float64(treesPerSlot[0][0].TotalBytes)/1e6)
+		// Discard spans emitted while uploading; only iteration spans are interesting.
+		sc.drain()
 
 		var wg sync.WaitGroup
 		for s := 0; s < *concurrency; s++ {
