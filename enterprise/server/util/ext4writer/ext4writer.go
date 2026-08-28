@@ -33,6 +33,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"syscall"
@@ -1252,7 +1253,7 @@ func (w *writer) copyData(ctx context.Context, f *os.File) error {
 					return status.WrapErrorf(err, "open %q", n.name)
 				}
 				if mapping != nil {
-					err = copyFileMmap(ctx, src, n, mapping)
+					err = copyFileMmapSafe(ctx, src, n, mapping)
 				} else {
 					err = copyFile(ctx, src, n, dstFD, &bufPool, reflink)
 				}
@@ -1331,6 +1332,19 @@ func copyFile(ctx context.Context, src *os.File, n *node, dstFD int, pool *sync.
 		}
 	}
 	return nil
+}
+
+// copyFileMmapSafe runs copyFileMmap with memory faults on the mapping turned
+// into recoverable panics, so an I/O error on the image file (which would
+// otherwise SIGBUS and kill the whole executor) surfaces as an error.
+func copyFileMmapSafe(ctx context.Context, src *os.File, n *node, mapping []byte) (err error) {
+	defer debug.SetPanicOnFault(debug.SetPanicOnFault(true))
+	defer func() {
+		if r := recover(); r != nil {
+			err = status.UnavailableErrorf("memory fault while writing workspace image (I/O error on the host filesystem?): %v", r)
+		}
+	}()
+	return copyFileMmap(ctx, src, n, mapping)
 }
 
 // copyFileMmap preads the source file directly into the MAP_SHARED image
