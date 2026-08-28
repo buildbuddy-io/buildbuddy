@@ -156,7 +156,7 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "56f029e9010a964e1126b3eb48c21b3cd0e21961c2a492f470bf411bcee72337"
+		expectedHash    = "1d7122795df50c9b1303067e7a0d3b6403104c6a844fbdd8d3f41db219d2e35c"
 		expectedVersion = "19"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
@@ -337,6 +337,7 @@ func getExecutorConfig(t testing.TB) *firecracker.ExecutorConfig {
 }
 
 func TestFirecrackerRunSimple(t *testing.T) {
+	flags.Set(t, "executor.firecracker_vmexec_ready_signal", true)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -379,6 +380,8 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	if res.Error != nil {
 		t.Fatal(res.Error)
 	}
+	require.True(t, res.VMMetrics.GetVmExecReadySignalReceived())
+	require.EqualValues(t, 1, res.VMMetrics.GetVmExecDialAttempts())
 
 	assertCommandResult(t, expectedResult, res)
 }

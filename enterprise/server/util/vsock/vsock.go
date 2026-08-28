@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -43,6 +44,15 @@ const (
 	// HostBlockDeviceServerPort is the host gRPC port for the block device
 	// server that handles requests forwarded from the VM-local NBD server.
 	HostBlockDeviceServerPort = 25411
+	// HostVMExecReadyPort is the host port used by the guest vmexec server to
+	// signal that it is ready for a fresh host-initiated connection. The guest
+	// keeps this connection open so that a snapshot restore resets it and causes
+	// the guest to send a new signal.
+	HostVMExecReadyPort = 25412
+
+	// VMExecReadyMessage is written to HostVMExecReadyPort once vmexec is ready
+	// to serve requests.
+	VMExecReadyMessage = "VMEXEC_READY\n"
 )
 
 // GetContextID returns ths next available vsock context ID.
@@ -91,6 +101,11 @@ func NewGuestListener(ctx context.Context, port uint32) (net.Listener, error) {
 		ctx:      ctx,
 		Listener: l,
 	}, nil
+}
+
+// DialGuestToHost opens a guest-initiated connection to a host vsock port.
+func DialGuestToHost(port uint32) (*libVsock.Conn, error) {
+	return libVsock.Dial(libVsock.Host, port, &libVsock.Config{})
 }
 
 func (l *vListener) Accept() (net.Conn, error) {
@@ -169,9 +184,18 @@ func dialHostToGuest(ctx context.Context, socketPath string, port uint32) (net.C
 // hit.
 // N.B. Callers are responsible for closing the returned connection.
 func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.ClientConn, error) {
+	conn, _, err := SimpleGRPCDialWithAttempts(ctx, socketPath, port)
+	return conn, err
+}
+
+// SimpleGRPCDialWithAttempts is like SimpleGRPCDial, but also reports how many
+// transport connection attempts gRPC made before the connection was ready.
+func SimpleGRPCDialWithAttempts(ctx context.Context, socketPath string, port uint32) (*grpc.ClientConn, int64, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	var attempts atomic.Int64
 	bufDialer := func(ctx context.Context, _ string) (net.Conn, error) {
+		attempts.Add(1)
 		// gRPC doesn't pass through the context to the dialer, so manually
 		// propagate the span.
 		ctx = trace.ContextWithSpan(ctx, span)
@@ -203,10 +227,10 @@ func SimpleGRPCDial(ctx context.Context, socketPath string, port uint32) (*grpc.
 	connectionStart := time.Now()
 	conn, err := grpc.DialContext(ctx, "vsock", dialOptions...)
 	if err != nil {
-		return nil, err
+		return nil, attempts.Load(), err
 	}
 	log.Debugf("Connected after %s", time.Since(connectionStart))
-	return conn, nil
+	return conn, attempts.Load(), nil
 }
 
 // HostListenSocketPath returns the path to a unix socket on which the host should listen for guest initiated
