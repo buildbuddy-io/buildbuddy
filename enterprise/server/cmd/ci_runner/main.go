@@ -164,7 +164,6 @@ const (
 )
 
 var (
-	bazelExecutableName    = executableName(bazelBinaryName)
 	bazeliskExecutableName = executableName(bazeliskBinaryName)
 	bbExecutableName       = executableName(bbBinaryName)
 )
@@ -181,9 +180,7 @@ func executableNameForOS(name, goos string) string {
 }
 
 func isBazelCommandToken(token string) bool {
-	return token == bazelBinaryName || token == bazelExecutableName ||
-		token == bazeliskBinaryName || token == bazeliskExecutableName ||
-		token == bbBinaryName || token == bbExecutableName
+	return isBazelCommandTokenForOS(token, runtime.GOOS)
 }
 
 func isBazelCommandTokenForOS(token, goos string) bool {
@@ -3070,7 +3067,7 @@ func runBazelWrapper() error {
 	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
 	bazelSubcmd, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs)
 	if cmdIdx == -1 {
-		return syscall.Exec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
+		return runOrExec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
 	}
 
 	// Pass the original command as metadata, stripping the custom flags we've set,
@@ -3118,23 +3115,35 @@ func runBazelWrapper() error {
 		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
 	}
 
-	if runtime.GOOS == "windows" {
-		// syscall.Exec is not supported on Windows. Run Bazel as a child while
-		// preserving the wrapper's standard streams and exit code instead.
-		cmd := exec.Command(bazelBin, bazelCmd[1:]...)
-		cmd.Env = os.Environ()
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return &actionResult{exitCode: getExitCode(err), exitCodeName: failedExitCodeName}
-		}
+	return runOrExec(bazelBin, bazelCmd, os.Environ())
+}
+
+// Replaces the current process with argv on Unix. Since syscall.Exec is not
+// supported on Windows, runs argv as a child process there instead.
+func runOrExec(executable string, argv, env []string) error {
+	if runtime.GOOS != "windows" {
+		return syscall.Exec(executable, argv, env)
+	}
+	if len(argv) == 0 {
+		return status.InvalidArgumentError("missing command arguments")
+	}
+	cmd := exec.Command(executable, argv[1:]...)
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return bazelChildProcessResult(cmd.Run())
+}
+
+func bazelChildProcessResult(err error) error {
+	if err == nil {
 		return nil
 	}
-
-	// Replace the process running the bazel wrapper with the process running bazel,
-	// so there are no remaining traces of the wrapper script.
-	return syscall.Exec(bazelBin, bazelCmd, os.Environ())
+	exitCode := getExitCode(err)
+	if exitCode == noExitCode {
+		return status.WrapError(err, "failed to start Bazel")
+	}
+	return &actionResult{exitCode: exitCode, exitCodeName: failedExitCodeName}
 }
 
 // Parse and save the startup options for a bazel command in a file on disk.

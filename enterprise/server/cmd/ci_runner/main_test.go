@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -42,6 +43,13 @@ func TestIsBazelCommandTokenForOS(t *testing.T) {
 			require.Equal(t, tc.want, isBazelCommandTokenForOS(tc.token, tc.goos))
 		})
 	}
+}
+
+func TestBazelChildProcessResult_StartError(t *testing.T) {
+	err := bazelChildProcessResult(errors.New("executable not found"))
+	require.ErrorContains(t, err, "failed to start Bazel")
+	var result *actionResult
+	require.False(t, errors.As(err, &result))
 }
 
 func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {

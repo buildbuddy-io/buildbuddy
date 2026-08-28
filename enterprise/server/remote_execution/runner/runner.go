@@ -689,8 +689,7 @@ func (r *taskRunner) isCIRunner() bool {
 	task := r.task
 	r.p.mu.RUnlock()
 
-	args := task.GetCommand().GetArguments()
-	return len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+	return platform.IsCIRunnerCommand(task.GetCommand())
 }
 
 func (r *taskRunner) cleanupCIRunner(ctx context.Context) error {
