@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -28,8 +29,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -59,6 +62,13 @@ func setupEnv(t *testing.T) environment.Env {
 }
 
 func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (*vfs_server.Server, *vfs.VFS, string) {
+	return setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{
+		EnablePassthrough: true,
+		Verbose:           true,
+	}, nil)
+}
+
+func setupVFSWithInputTreeAndClient(t *testing.T, env environment.Env, tree *repb.Tree, options *vfs.Options, wrapClient func(vfspb.FileSystemClient) vfspb.FileSystemClient) (*vfs_server.Server, *vfs.VFS, string) {
 	tmp := testfs.MakeTempDir(t)
 	mnt := filepath.Join(tmp, "vfs")
 	err := os.MkdirAll(mnt, 0755)
@@ -77,11 +87,11 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 	_, err = server.Prepare(context.Background(), &container.FileSystemLayout{Inputs: tree}, tf)
 	require.NoError(t, err)
 
-	client := vfs_server.NewDirectClient(server)
-	fs := vfs.New(client, mnt, &vfs.Options{
-		Verbose: true,
-		//LogFUSEOps: true,
-	})
+	client := vfspb.FileSystemClient(vfs_server.NewDirectClient(server))
+	if wrapClient != nil {
+		client = wrapClient(client)
+	}
+	fs := vfs.New(client, mnt, options)
 	err = fs.Mount()
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -91,6 +101,28 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 		}
 	})
 	return server, fs, mnt
+}
+
+type countingFileSystemClient struct {
+	vfspb.FileSystemClient
+	readCount                 atomic.Int64
+	lookupCount               atomic.Int64
+	getDirectoryContentsCount atomic.Int64
+}
+
+func (c *countingFileSystemClient) Read(ctx context.Context, req *vfspb.ReadRequest, opts ...grpc.CallOption) (*vfspb.ReadResponse, error) {
+	c.readCount.Add(1)
+	return c.FileSystemClient.Read(ctx, req, opts...)
+}
+
+func (c *countingFileSystemClient) Lookup(ctx context.Context, req *vfspb.LookupRequest, opts ...grpc.CallOption) (*vfspb.LookupResponse, error) {
+	c.lookupCount.Add(1)
+	return c.FileSystemClient.Lookup(ctx, req, opts...)
+}
+
+func (c *countingFileSystemClient) GetDirectoryContents(ctx context.Context, req *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
+	c.getDirectoryContentsCount.Add(1)
+	return c.FileSystemClient.GetDirectoryContents(ctx, req, opts...)
 }
 
 func setupVFS(t *testing.T) string {
@@ -235,6 +267,53 @@ func TestReaddir(t *testing.T) {
 			size: len(newTestData),
 		},
 	})
+}
+
+func TestPassthroughDisabledByDefault(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	tree := createInputTree(t, ctx, env, map[string]string{"input.txt": "hello"})
+
+	var countingClient *countingFileSystemClient
+	_, _, fsPath := setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{}, func(client vfspb.FileSystemClient) vfspb.FileSystemClient {
+		countingClient = &countingFileSystemClient{FileSystemClient: client}
+		return countingClient
+	})
+
+	data, err := os.ReadFile(filepath.Join(fsPath, "input.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "hello", string(data))
+	require.Positive(t, countingClient.readCount.Load())
+}
+
+func TestReaddirCachesLookupAttrs(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	tree := createInputTree(t, ctx, env, map[string]string{
+		"one.txt":       "one",
+		"two.txt":       "two",
+		"sub/three.txt": "three",
+	})
+
+	var countingClient *countingFileSystemClient
+	_, _, fsPath := setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{}, func(client vfspb.FileSystemClient) vfspb.FileSystemClient {
+		countingClient = &countingFileSystemClient{FileSystemClient: client}
+		return countingClient
+	})
+	countingClient.lookupCount.Store(0)
+	countingClient.getDirectoryContentsCount.Store(0)
+
+	entries, err := os.ReadDir(fsPath)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		_, err := entry.Info()
+		require.NoError(t, err)
+	}
+
+	require.EqualValues(t, 1, countingClient.getDirectoryContentsCount.Load())
+	require.Zero(t, countingClient.lookupCount.Load())
 }
 
 func stat(t *testing.T, path string) os.FileInfo {

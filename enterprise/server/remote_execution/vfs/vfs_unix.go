@@ -120,6 +120,7 @@ func (ic *inodeCache) removeCachedAttrs(inode uint64) {
 type VFS struct {
 	vfsClient           vfspb.FileSystemClient
 	mountDir            string
+	enablePassthrough   bool
 	verbose             bool
 	logFUSEOps          bool
 	logFUSELatencyStats bool
@@ -139,6 +140,11 @@ type VFS struct {
 }
 
 type Options struct {
+	// EnablePassthrough lets the kernel access file descriptors returned by
+	// the VFS server directly. This is only valid when the client and server
+	// run in the same process; file descriptor numbers cannot be transferred
+	// over gRPC or across a VM boundary.
+	EnablePassthrough bool
 	// Verbose enables logging of most per-file operations.
 	Verbose bool
 	// LogFUSEOps enabled logging of all operations received by the go fuse
@@ -160,6 +166,7 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 	vfs := &VFS{
 		vfsClient:           vfsClient,
 		mountDir:            mountDir,
+		enablePassthrough:   options.EnablePassthrough,
 		verbose:             options.Verbose,
 		logFUSEOps:          options.LogFUSEOps,
 		logFUSELatencyStats: options.LogFUSELatencyStats,
@@ -263,7 +270,21 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedIn
 	vfs.mu.Lock()
 	vfs.internalTaskID = taskID
 	vfs.rpcCtx = ctx
+	var nodes []*fs.Inode
+	for _, node := range vfs.nodesByInodeID {
+		nodes = append(nodes, node)
+	}
 	vfs.mu.Unlock()
+	// Directory entries are snapshots returned by GetDirectoryContents for the
+	// previous task. Do not carry unconsumed entries across task boundaries.
+	for _, inode := range nodes {
+		if node, ok := inode.Operations().(*Node); ok {
+			node.clearCachedDirectoryEntries()
+		}
+	}
+	if invalidatedInodes == nil {
+		invalidatedInodes = &vfscommon.InodeInvalidations{}
+	}
 
 	// If the list of inodes to invalidate is sufficiently large, it might
 	// be more efficient to remount the filesystem? Newer kernels also have
@@ -473,8 +494,9 @@ type Node struct {
 	vfs       *VFS
 	immutable bool
 
-	mu            sync.Mutex
-	symlinkTarget string
+	mu                     sync.Mutex
+	symlinkTarget          string
+	cachedDirectoryEntries map[string]*vfspb.Node
 }
 
 func (n *Node) relativePath() string {
@@ -483,6 +505,52 @@ func (n *Node) relativePath() string {
 
 func (n *Node) resetCachedAttrs() {
 	n.vfs.inodeCache.removeCachedAttrs(n.StableAttr().Ino)
+}
+
+func (n *Node) cacheDirectoryEntries(entries []*vfspb.Node) {
+	cached := make(map[string]*vfspb.Node, len(entries))
+	for _, entry := range entries {
+		// GetDirectoryContents does not include symlink targets, which are
+		// required to instantiate a symlink node correctly. Keep symlinks on
+		// the regular Lookup RPC path.
+		if entry.GetMode()&unix.S_IFMT == unix.S_IFLNK {
+			continue
+		}
+		cached[entry.GetName()] = entry
+	}
+
+	n.mu.Lock()
+	n.cachedDirectoryEntries = cached
+	n.mu.Unlock()
+}
+
+func (n *Node) takeCachedDirectoryEntry(name string) (*vfspb.Node, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	entry, ok := n.cachedDirectoryEntries[name]
+	if !ok {
+		return nil, false
+	}
+	delete(n.cachedDirectoryEntries, name)
+	if len(n.cachedDirectoryEntries) == 0 {
+		n.cachedDirectoryEntries = nil
+	}
+	return entry, true
+}
+
+func (n *Node) removeCachedDirectoryEntry(name string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	delete(n.cachedDirectoryEntries, name)
+	if len(n.cachedDirectoryEntries) == 0 {
+		n.cachedDirectoryEntries = nil
+	}
+}
+
+func (n *Node) clearCachedDirectoryEntries() {
+	n.mu.Lock()
+	n.cachedDirectoryEntries = nil
+	n.mu.Unlock()
 }
 
 type remoteFile struct {
@@ -532,13 +600,23 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 			}
 		}()
 	}
-	req := &vfspb.LookupRequest{
-		ParentId: n.StableAttr().Ino,
-		Name:     name,
-	}
-	rsp, err := n.vfs.vfsClient.Lookup(n.vfs.getRPCContext(), req)
-	if err != nil {
-		return nil, rpcErrToSyscallErrno(err)
+	var rsp *vfspb.LookupResponse
+	if entry, ok := n.takeCachedDirectoryEntry(name); ok {
+		rsp = &vfspb.LookupResponse{
+			Mode:  entry.GetMode(),
+			Attrs: entry.GetAttrs(),
+			Id:    entry.GetId(),
+		}
+	} else {
+		req := &vfspb.LookupRequest{
+			ParentId: n.StableAttr().Ino,
+			Name:     name,
+		}
+		var err error
+		rsp, err = n.vfs.vfsClient.Lookup(n.vfs.getRPCContext(), req)
+		if err != nil {
+			return nil, rpcErrToSyscallErrno(err)
+		}
 	}
 
 	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
@@ -613,6 +691,7 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 			return nil, rpcErrToSyscallErrno(err)
 		}
 		d.children = rsp.Nodes
+		d.node.cacheDirectoryEntries(rsp.Nodes)
 		d.pos = 0
 	}
 
@@ -655,6 +734,9 @@ func (f *remoteFile) startOP(op string) {
 
 func (f *remoteFile) PassthroughFd() (int, bool) {
 	f.startOP("PassthroughFd")
+	if !f.node.vfs.enablePassthrough {
+		return -1, false
+	}
 	if f.node.vfs.verbose {
 		log.CtxDebugf(f.node.vfs.rpcCtx, "PassthroughFd %q", f.path)
 	}
@@ -903,6 +985,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	if err != nil {
 		return nil, nil, 0, rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
 	n.vfs.inodeCache.opened(rsp.GetId())
 
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFREG, Ino: rsp.GetId()})
@@ -943,6 +1026,7 @@ func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, 
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
 
 	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 
@@ -1014,6 +1098,8 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
+	newParentNode.removeCachedDirectoryEntry(newName)
 
 	return fs.OK
 }
@@ -1234,6 +1320,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
 
 	child := &Node{vfs: n.vfs}
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: rsp.Id})
@@ -1250,6 +1337,7 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
 	return fs.OK
 }
 
@@ -1308,6 +1396,7 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
 
 	n.vfs.inodeCache.removeCachedAttrs(targetNode.StableAttr().Ino)
 
@@ -1336,6 +1425,7 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
 
 	child := &Node{vfs: n.vfs, symlinkTarget: target}
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: rsp.GetId()})
@@ -1388,6 +1478,7 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
+	n.removeCachedDirectoryEntry(name)
 
 	n.vfs.inodeCache.removeCachedAttrs(existingTargetNode.StableAttr().Ino)
 
