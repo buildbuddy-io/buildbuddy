@@ -1570,6 +1570,11 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	if err := os.RemoveAll(ext4ImagePath); err != nil {
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
+	switch *workspaceImageWriter {
+	case "native", "mke2fs":
+	default:
+		return status.InvalidArgumentErrorf("invalid --executor.firecracker_workspace_image_writer %q (want native or mke2fs)", *workspaceImageWriter)
+	}
 	if *workspaceImageWriter == "native" {
 		stats, err := ext4writer.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, &ext4writer.Options{
 			SlackBytes:  ext4.MinDiskImageSizeBytes + *workspaceDiskSlackSpaceMB*1e6,
@@ -1968,6 +1973,11 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer os.RemoveAll(wsDir) // clean up
 
 	outputPaths := workspacePathsToExtract(c.task)
+	switch *workspaceOutputExtractor {
+	case "native", "debugfs":
+	default:
+		return status.InvalidArgumentErrorf("invalid --executor.firecracker_workspace_output_extractor %q (want native or debugfs)", *workspaceOutputExtractor)
+	}
 	if *workspaceOutputExtractor == "native" {
 		if err := ext4writer.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
 			return err

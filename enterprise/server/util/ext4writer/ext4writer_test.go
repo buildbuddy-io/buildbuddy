@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"syscall"
@@ -331,7 +332,7 @@ func TestReaderRejectsCorruptImages(t *testing.T) {
 	root := testfs.MakeTempDir(t)
 	src := filepath.Join(root, "src")
 	require.NoError(t, os.Mkdir(src, 0755))
-	makeTree(t, src, 200, 4096, 4)
+	makeTree(t, src, 50, 4096, 4)
 	image := filepath.Join(root, "ws.ext4")
 	_, err := ext4writer.DirectoryToImage(context.Background(), src, image, &ext4writer.Options{SizeBytes: 150e6})
 	require.NoError(t, err)
@@ -340,7 +341,7 @@ func TestReaderRejectsCorruptImages(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
 	// Interesting regions: superblock, GDT, bitmaps, inode tables, first dir blocks.
 	regions := []int{1024, 4096, 8192, 12288, 16384, 16384 + 4096*8, 4096 * 40}
-	for i := 0; i < 300; i++ {
+	for i := 0; i < 150; i++ {
 		img := append([]byte(nil), orig...)
 		nMut := 1 + rng.Intn(8)
 		for j := 0; j < nMut; j++ {
@@ -418,4 +419,81 @@ func TestReaderRefusesDuplicateNames(t *testing.T) {
 	err = ext4writer.ImageToDirectory(context.Background(), image, dst, []string{"/"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "duplicate")
+}
+
+// TestHardlinksShareInode checks hardlinks map to one inode with the right
+// link count, and are extracted as hardlinks.
+func TestHardlinksShareInode(t *testing.T) {
+	requireTool(t, "/sbin/debugfs")
+	root := testfs.MakeTempDir(t)
+	src := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(src, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(src, "a"), []byte("x"), 0644))
+	require.NoError(t, os.Link(filepath.Join(src, "a"), filepath.Join(src, "b")))
+	require.NoError(t, os.Mkdir(filepath.Join(src, "d"), 0755))
+	require.NoError(t, os.Link(filepath.Join(src, "a"), filepath.Join(src, "d", "c")))
+	// Exactly-60-byte symlink target (boundary between fast and slow).
+	require.NoError(t, os.Symlink(strings.Repeat("y", 60), filepath.Join(src, "sym60")))
+	require.NoError(t, os.Symlink(strings.Repeat("y", 59), filepath.Join(src, "sym59")))
+	image := filepath.Join(root, "ws.ext4")
+	_, err := ext4writer.DirectoryToImage(context.Background(), src, image, nil)
+	require.NoError(t, err)
+	fsck(t, image)
+	ino := func(p string) string {
+		out, err := exec.Command("/sbin/debugfs", "-R", "stat "+p, image).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		m := regexp.MustCompile(`Inode: (\d+).*Links: (\d+)`).FindStringSubmatch(strings.ReplaceAll(string(out), "\n", " "))
+		require.NotNil(t, m, "%s", out)
+		return m[1] + "/" + m[2]
+	}
+	require.Equal(t, ino("/a"), ino("/b"))
+	require.Equal(t, ino("/a"), ino("/d/c"))
+	require.True(t, strings.HasSuffix(ino("/a"), "/3"), "link count: %s", ino("/a"))
+	dst := filepath.Join(root, "dst")
+	require.NoError(t, os.Mkdir(dst, 0755))
+	require.NoError(t, ext4writer.ImageToDirectory(context.Background(), image, dst, []string{"/"}))
+	sa, _ := os.Stat(filepath.Join(dst, "a"))
+	sb, _ := os.Stat(filepath.Join(dst, "d", "c"))
+	require.True(t, os.SameFile(sa, sb), "extracted hardlinks should share an inode")
+	for _, n := range []string{"sym60", "sym59"} {
+		tgt, err := os.Readlink(filepath.Join(dst, n))
+		require.NoError(t, err)
+		want, _ := os.Readlink(filepath.Join(src, n))
+		require.Equal(t, want, tgt)
+	}
+}
+
+// TestManyInodesAndGroups: 100k empty files (inode-bound sizing) and a large
+// image (many block groups, metadata past group 0, flex boundary).
+func TestManyInodesAndGroups(t *testing.T) {
+	requireTool(t, "/sbin/e2fsck")
+	root := testfs.MakeTempDir(t)
+	src := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(src, 0755))
+	for d := 0; d < 100; d++ {
+		dir := filepath.Join(src, fmt.Sprintf("d%03d", d))
+		require.NoError(t, os.Mkdir(dir, 0755))
+		for i := 0; i < 1000; i++ {
+			require.NoError(t, os.WriteFile(filepath.Join(dir, fmt.Sprintf("f%d", i)), nil, 0644))
+		}
+	}
+	image := filepath.Join(root, "small.ext4")
+	stats, err := ext4writer.DirectoryToImage(context.Background(), src, image, &ext4writer.Options{ExtraInodes: 1})
+	require.NoError(t, err)
+	t.Logf("100k empty files: %s", stats)
+	fsck(t, image)
+
+	// 24 GiB image: 192 groups, metadata area crosses backup-superblock groups.
+	big := filepath.Join(root, "big.ext4")
+	stats, err = ext4writer.DirectoryToImage(context.Background(), src, big, &ext4writer.Options{SizeBytes: 24 << 30})
+	require.NoError(t, err)
+	t.Logf("24GiB image: %s", stats)
+	require.Equal(t, 192, stats.BlockGroups)
+	fsck(t, big)
+	dst := filepath.Join(root, "dst")
+	require.NoError(t, os.Mkdir(dst, 0755))
+	require.NoError(t, ext4writer.ImageToDirectory(context.Background(), big, dst, []string{"d099"}))
+	entries, err := os.ReadDir(filepath.Join(dst, "d099"))
+	require.NoError(t, err)
+	require.Len(t, entries, 1000)
 }

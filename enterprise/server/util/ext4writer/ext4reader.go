@@ -34,6 +34,8 @@ const (
 
 type ext4Image struct {
 	f              *os.File
+	dirCache       map[uint32][]dirent // parsed directories, by inode
+	linked         map[uint32]string   // first extracted path per inode (for hardlinks)
 	size           int64 // image file size; every read is bounds-checked against it
 	blockSize      int64
 	inodeSize      int64
@@ -71,7 +73,7 @@ func openImage(path string) (*ext4Image, error) {
 		f.Close()
 		return nil, err
 	}
-	img := &ext4Image{f: f, size: st.Size()}
+	img := &ext4Image{f: f, size: st.Size(), dirCache: map[uint32][]dirent{}, linked: map[uint32]string{}}
 	sb := make([]byte, 1024)
 	if err := img.readAt(sb, 1024); err != nil {
 		f.Close()
@@ -119,9 +121,15 @@ func openImage(path string) (*ext4Image, error) {
 			return bad("descriptor size %d", img.descSize)
 		}
 	}
-	if img.incompat&incompatEncrypt != 0 {
+	// Reject anything we don't know how to read rather than misparse it.
+	const supportedIncompat = featureIncompatFiletype | featureIncompatExtents | featureIncompatFlexBG | incompat64Bit |
+		0x0004 /*recover*/ | 0x0010 /*journal_dev? no: 0x8 is journal_dev; 0x10 is meta_bg*/
+	// Explicitly: allow filetype, extents, flex_bg, 64bit, recover, extra_isize(0x2000), mmp(0x100), large_dir(0x4000), csum_seed(0x2000? no 0x2000 is csum_seed)
+	allowed := uint32(featureIncompatFiletype | featureIncompatExtents | featureIncompatFlexBG | incompat64Bit | 0x0004 | 0x0100 | 0x2000 | 0x4000)
+	_ = supportedIncompat
+	if unknown := img.incompat &^ allowed; unknown != 0 {
 		f.Close()
-		return nil, status.UnimplementedError("encrypted ext4 images are not supported")
+		return nil, status.UnimplementedErrorf("ext4 image has unsupported incompat features 0x%x", unknown)
 	}
 	// GDT starts at the block after the superblock.
 	img.gdtOffset = int64(img.firstDataBlock+1) * img.blockSize
@@ -211,19 +219,26 @@ func (img *ext4Image) extents(in *inode) ([]extent, error) {
 		return nil, status.UnimplementedErrorf("inode %d does not use extents", in.num)
 	}
 	var out []extent
-	var walk func(node []byte, depthLimit int) error
-	walk = func(node []byte, depthLimit int) error {
+	visited := map[uint64]bool{}
+	imgBlocks := uint64(img.size / img.blockSize)
+	var nextLogical uint64 // extents must be in increasing, non-overlapping logical order
+	var walk func(node []byte, wantDepth int) error
+	walk = func(node []byte, wantDepth int) error {
 		le := binary.LittleEndian
 		if le.Uint16(node[0:]) != extentMagic {
-			return status.InternalErrorf("bad extent header magic in inode %d", in.num)
+			return status.InvalidArgumentErrorf("bad extent header magic in inode %d", in.num)
 		}
 		entries := int(le.Uint16(node[2:]))
+		max := int(le.Uint16(node[4:]))
 		depth := int(le.Uint16(node[6:]))
-		if depthLimit < 0 {
-			return status.InternalErrorf("extent tree too deep in inode %d", in.num)
+		if wantDepth >= 0 && depth != wantDepth {
+			return status.InvalidArgumentErrorf("extent node depth %d != expected %d in inode %d", depth, wantDepth, in.num)
 		}
-		if 12+entries*12 > len(node) {
-			return status.InternalErrorf("extent header claims %d entries in inode %d", entries, in.num)
+		if depth > 5 {
+			return status.InvalidArgumentErrorf("extent tree too deep (%d) in inode %d", depth, in.num)
+		}
+		if entries > max || 12+max*12 > len(node) {
+			return status.InvalidArgumentErrorf("extent header %d/%d entries does not fit in inode %d", entries, max, in.num)
 		}
 		for i := 0; i < entries; i++ {
 			if len(out) >= maxExtentsList {
@@ -237,29 +252,31 @@ func (img *ext4Image) extents(in *inode) ([]extent, error) {
 					l -= maxExtentLen
 					uninit = true
 				}
-				if l == 0 {
-					return status.InvalidArgumentErrorf("zero-length extent in inode %d", in.num)
+				logical := le.Uint32(e[0:])
+				start := uint64(le.Uint32(e[8:])) | uint64(le.Uint16(e[6:]))<<32
+				if l == 0 || uint64(logical) < nextLogical || start == 0 || start+uint64(l) > imgBlocks {
+					return status.InvalidArgumentErrorf("invalid extent (logical %d, len %d, start %d) in inode %d", logical, l, start, in.num)
 				}
-				out = append(out, extent{
-					logical: le.Uint32(e[0:]),
-					len:     l,
-					start:   uint64(le.Uint32(e[8:])) | uint64(le.Uint16(e[6:]))<<32,
-					uninit:  uninit,
-				})
+				nextLogical = uint64(logical) + uint64(l)
+				out = append(out, extent{logical: logical, len: l, start: start, uninit: uninit})
 			} else {
 				leaf := uint64(le.Uint32(e[4:])) | uint64(le.Uint16(e[8:]))<<32
+				if leaf == 0 || leaf >= imgBlocks || visited[leaf] {
+					return status.InvalidArgumentErrorf("invalid extent index block %d in inode %d", leaf, in.num)
+				}
+				visited[leaf] = true
 				child := make([]byte, img.blockSize)
 				if err := img.readBlock(leaf, child); err != nil {
 					return err
 				}
-				if err := walk(child, depthLimit-1); err != nil {
+				if err := walk(child, depth-1); err != nil {
 					return err
 				}
 			}
 		}
 		return nil
 	}
-	if err := walk(in.iblock, 8); err != nil {
+	if err := walk(in.iblock, -1); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -276,6 +293,18 @@ type dirent struct {
 // naturally: dx_root hides the index behind the ".." entry's rec_len, and
 // dx_node blocks are fake entries with inode 0.
 func (img *ext4Image) readDir(in *inode) ([]dirent, error) {
+	if ents, ok := img.dirCache[in.num]; ok {
+		return ents, nil
+	}
+	ents, err := img.readDirUncached(in)
+	if err != nil {
+		return nil, err
+	}
+	img.dirCache[in.num] = ents
+	return ents, nil
+}
+
+func (img *ext4Image) readDirUncached(in *inode) ([]dirent, error) {
 	if in.flags&inodeFlagInline != 0 {
 		return nil, status.UnimplementedErrorf("inline directory (inode %d) is not supported", in.num)
 	}
@@ -414,21 +443,34 @@ func (img *ext4Image) extractFile(in *inode, dst string) error {
 }
 
 func (img *ext4Image) readlink(in *inode) (string, error) {
-	if in.size < 60 && in.flags&inodeFlagExtents == 0 {
+	if in.flags&inodeFlagExtents == 0 {
+		if in.size > int64(len(in.iblock)) {
+			return "", status.InvalidArgumentErrorf("fast symlink inode %d claims size %d", in.num, in.size)
+		}
 		return string(in.iblock[:in.size]), nil
+	}
+	if in.size > 4096 {
+		return "", status.InvalidArgumentErrorf("symlink inode %d target too long (%d)", in.num, in.size)
 	}
 	exts, err := img.extents(in)
 	if err != nil {
 		return "", err
 	}
-	data := make([]byte, 0, in.size)
+	data := make([]byte, in.size)
 	blk := make([]byte, img.blockSize)
 	for _, e := range exts {
-		for i := uint32(0); i < e.len && int64(len(data)) < in.size; i++ {
+		if e.uninit {
+			continue
+		}
+		for i := uint32(0); i < e.len; i++ {
+			off := int64(e.logical+i) * img.blockSize
+			if off >= in.size {
+				break
+			}
 			if err := img.readBlock(e.start+uint64(i), blk); err != nil {
 				return "", err
 			}
-			data = append(data, blk[:min(img.blockSize, in.size-int64(len(data)))]...)
+			copy(data[off:], blk)
 		}
 	}
 	return string(data), nil
@@ -472,6 +514,13 @@ func (img *ext4Image) extractTree(ctx context.Context, in *inode, dst string, de
 		// Apply the real mode after populating (it may be read-only).
 		return os.Chmod(dst, os.FileMode(in.mode&0o777))
 	case syscall.S_IFREG:
+		if in.linksCnt > 1 {
+			if first, ok := img.linked[in.num]; ok {
+				// Hard link to something we already extracted.
+				return os.Link(first, dst)
+			}
+			img.linked[in.num] = dst
+		}
 		return img.extractFile(in, dst)
 	case syscall.S_IFLNK:
 		target, err := img.readlink(in)

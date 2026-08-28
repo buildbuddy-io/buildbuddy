@@ -81,6 +81,10 @@ const (
 	ftSock    = 6
 	ftSymlink = 7
 
+	// maxFileBytes bounds a single input file (ext4 with 4K blocks and 32-bit
+	// block numbers can't address more than 16 TiB anyway).
+	maxFileBytes = int64(1) << 40
+
 	// MinImageSizeBytes is the smallest image we'll produce (one block group
 	// worth of blocks is always allocated anyway, since group sizes are fixed).
 	MinImageSizeBytes = int64(blocksPerGroup) * blockSize
@@ -144,7 +148,7 @@ type node struct {
 	leaf     uint32     // extent leaf block if depth==1, else 0
 	dirData  []byte     // rendered directory blocks
 	hardlink *node      // if this path is a hardlink to an already-seen node
-	links    uint16     // number of directory entries referencing this inode (files)
+	links    int        // number of directory entries referencing this inode (files)
 }
 
 type extentRg struct {
@@ -324,6 +328,9 @@ func (w *writer) walkDir(d *node) error {
 		if sys, ok := st.Sys().(*syscall.Stat_t); ok && !st.IsDir() && sys.Nlink > 1 {
 			key := devIno{uint64(sys.Dev), sys.Ino}
 			if orig, ok := w.hardlink[key]; ok {
+				if orig.links >= 65000 {
+					return status.InvalidArgumentErrorf("%q has more than 65000 hard links", orig.path)
+				}
 				n.hardlink = orig
 				n.ino = orig.ino
 				orig.links++
@@ -351,6 +358,9 @@ func (w *writer) walkDir(d *node) error {
 			n.target = target
 			n.size = int64(len(target))
 		case st.Mode().IsRegular():
+			if n.size < 0 || n.size > maxFileBytes {
+				return status.InvalidArgumentErrorf("%q: unsupported file size %d", n.path, n.size)
+			}
 			w.stats.Files++
 			w.stats.DataBytes += n.size
 		}
@@ -372,7 +382,7 @@ func linkCount(n *node) uint16 {
 		}
 		return uint16(c)
 	}
-	return max(n.links, 1)
+	return uint16(max(n.links, 1))
 }
 
 // direntLen returns the on-disk size of a directory entry for a name.
@@ -483,8 +493,12 @@ func (w *writer) layout(root *node) error {
 	sizeBytes := max(w.opts.SizeBytes, MinImageSizeBytes)
 	// Metadata estimate: GDT + bitmaps + inode tables. Iterate once since inode
 	// count depends on size.
+	if w.opts.SizeBytes < 0 || w.opts.SlackBytes < 0 || w.opts.ExtraInodes < 0 {
+		return status.InvalidArgumentError("negative size option")
+	}
 	var ngroups, ipg, itb, gdtBlocks int64
-	for iter := 0; iter < 4; iter++ {
+	converged := false
+	for iter := 0; iter < 16 && !converged; iter++ {
 		ngroups = ceilDiv(sizeBytes, int64(blocksPerGroup)*blockSize)
 		if w.opts.ExtraInodes == 0 {
 			// 1 inode per 16 KiB of image, like mke2fs -N 0. This must be
@@ -493,13 +507,23 @@ func (w *writer) layout(root *node) error {
 			extraInodes = ngroups * blocksPerGroup * blockSize / 16384
 		}
 		totalInodes := inodesNeeded + extraInodes
+		// A group holds at most 32768 inodes (one bitmap block); grow the
+		// image if the inodes alone need more groups.
+		if minGroups := ceilDiv(totalInodes, blocksPerGroup); minGroups > ngroups {
+			sizeBytes = minGroups * blocksPerGroup * blockSize
+			continue
+		}
 		ipg = ceilDiv(totalInodes, ngroups)
-		ipg = (ipg + 15) &^ 15 // multiple of inodes per block-bitmap byte... keep it aligned to 16
+		ipg = (ipg + 15) &^ 15
 		if ipg > blocksPerGroup {
 			ipg = blocksPerGroup
 		}
 		itb = ceilDiv(ipg*inodeSize, blockSize)
 		ipg = itb * blockSize / inodeSize // fill whole table blocks
+		if ipg > blocksPerGroup {
+			ipg = blocksPerGroup
+			itb = ipg * inodeSize / blockSize
+		}
 		gdtBlocks = ceilDiv(ngroups*32, blockSize)
 		nBackup := int64(0)
 		for g := int64(0); g < ngroups; g++ {
@@ -513,7 +537,10 @@ func (w *writer) layout(root *node) error {
 			sizeBytes = need
 			continue
 		}
-		break
+		converged = true
+	}
+	if !converged {
+		return status.InternalError("image sizing did not converge")
 	}
 	w.ngroups = uint32(ngroups)
 	w.blocksCount = uint32(ngroups * blocksPerGroup)
@@ -540,33 +567,59 @@ func (w *writer) layout(root *node) error {
 			}
 		}
 	}
-	// --- Bitmaps and inode tables, all packed into group 0 (flex_bg).
-	next := 1 + w.gdtBlocks
+	// --- Bitmaps and inode tables, packed at the front (flex_bg lets them
+	// live anywhere). Skip blocks already reserved for backup superblocks,
+	// which matters once the metadata area grows past group 0 (~8 GiB
+	// images at default inode density).
+	w.nextBlock = 1 + w.gdtBlocks
+	takeBlocks := func(n uint32) (uint32, error) {
+		// Find n contiguous free blocks starting at nextBlock.
+		for {
+			for w.nextBlock < w.blocksCount && w.isBlockUsed(w.nextBlock) {
+				w.nextBlock++
+			}
+			start := w.nextBlock
+			ok := true
+			for b := start; b < start+n; b++ {
+				if b >= w.blocksCount {
+					return 0, status.InternalErrorf("metadata does not fit in %d blocks", w.blocksCount)
+				}
+				if w.isBlockUsed(b) {
+					ok = false
+					w.nextBlock = b + 1
+					break
+				}
+			}
+			if !ok {
+				continue
+			}
+			for b := start; b < start+n; b++ {
+				w.markBlock(b)
+			}
+			w.nextBlock = start + n
+			return start, nil
+		}
+	}
 	w.blockBitmapBlk = make([]uint32, w.ngroups)
 	w.inodeBitmapBlk = make([]uint32, w.ngroups)
 	w.inodeTableBlk = make([]uint32, w.ngroups)
+	var err error
 	for g := uint32(0); g < w.ngroups; g++ {
-		w.blockBitmapBlk[g] = next
-		w.markBlock(next)
-		next++
-	}
-	for g := uint32(0); g < w.ngroups; g++ {
-		w.inodeBitmapBlk[g] = next
-		w.markBlock(next)
-		next++
-	}
-	for g := uint32(0); g < w.ngroups; g++ {
-		w.inodeTableBlk[g] = next
-		for b := next; b < next+w.itBlocksPerGrp; b++ {
-			w.markBlock(b)
+		if w.blockBitmapBlk[g], err = takeBlocks(1); err != nil {
+			return err
 		}
-		next += w.itBlocksPerGrp
 	}
-	if next > w.blocksCount {
-		return status.InternalErrorf("metadata does not fit: %d blocks > %d", next, w.blocksCount)
+	for g := uint32(0); g < w.ngroups; g++ {
+		if w.inodeBitmapBlk[g], err = takeBlocks(1); err != nil {
+			return err
+		}
 	}
-	w.nextBlock = next
-	w.dataStartBlock = next
+	for g := uint32(0); g < w.ngroups; g++ {
+		if w.inodeTableBlk[g], err = takeBlocks(w.itBlocksPerGrp); err != nil {
+			return err
+		}
+	}
+	w.dataStartBlock = w.nextBlock
 
 	// --- Inodes 1..10 are reserved.
 	for i := uint32(1); i <= 10; i++ {
@@ -873,21 +926,23 @@ func (w *writer) writeMetadata(f *os.File) error {
 			return err
 		}
 	}
-	// Block bitmaps: contiguous in group 0.
-	if _, err := f.WriteAt(w.blockBmp, int64(w.blockBitmapBlk[0])*blockSize); err != nil {
+	// Block bitmaps: one block per group (contiguous unless a backup
+	// superblock interrupted the run, so write in contiguous runs).
+	if err := writeRuns(f, w.blockBitmapBlk, func(g uint32) []byte {
+		return w.blockBmp[g*blockSize : (g+1)*blockSize]
+	}); err != nil {
 		return err
 	}
 	// Inode bitmaps: one block per group, bits beyond inodesPerGroup set.
-	ibm := make([]byte, w.ngroups*blockSize)
-	for g := uint32(0); g < w.ngroups; g++ {
-		blk := ibm[g*blockSize : (g+1)*blockSize]
+	nbytes := w.inodesPerGroup / 8
+	if err := writeRuns(f, w.inodeBitmapBlk, func(g uint32) []byte {
+		blk := make([]byte, blockSize)
 		for i := range blk {
 			blk[i] = 0xFF
 		}
-		nbytes := w.inodesPerGroup / 8
 		copy(blk[:nbytes], w.inodeBmp[g*nbytes:(g+1)*nbytes])
-	}
-	if _, err := f.WriteAt(ibm, int64(w.inodeBitmapBlk[0])*blockSize); err != nil {
+		return blk
+	}); err != nil {
 		return err
 	}
 	// Inode tables: only the used prefix of each group's table.
@@ -944,6 +999,33 @@ func (w *writer) writeMetadata(f *os.File) error {
 		}
 	}
 	return nil
+}
+
+// writeRuns writes one block per group at the given block numbers, coalescing
+// adjacent blocks into single writes.
+func writeRuns(f *os.File, blocks []uint32, data func(g uint32) []byte) error {
+	var buf []byte
+	var start uint32
+	flush := func() error {
+		if len(buf) == 0 {
+			return nil
+		}
+		_, err := f.WriteAt(buf, int64(start)*blockSize)
+		buf = buf[:0]
+		return err
+	}
+	for g := uint32(0); g < uint32(len(blocks)); g++ {
+		if len(buf) > 0 && blocks[g] != start+uint32(len(buf)/blockSize) {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+		if len(buf) == 0 {
+			start = blocks[g]
+		}
+		buf = append(buf, data(g)...)
+	}
+	return flush()
 }
 
 // writeExtents writes data to the physical blocks described by extents.
@@ -1034,7 +1116,7 @@ func (w *writer) copyData(ctx context.Context, f *os.File) error {
 			for n := range ch {
 				var err error
 				if mapping != nil {
-					err = copyFileMmap(n, mapping)
+					err = copyFileMmap(ctx, n, mapping)
 				} else {
 					err = copyFile(ctx, n, dstFD, &bufPool, reflink)
 				}
@@ -1138,7 +1220,7 @@ func copyFile(ctx context.Context, n *node, dstFD int, pool *sync.Pool, reflink 
 // copyFileMmap preads the source file directly into the MAP_SHARED image
 // mapping, so the kernel copies from the source page cache straight into the
 // image's page cache pages.
-func copyFileMmap(n *node, mapping []byte) error {
+func copyFileMmap(ctx context.Context, n *node, mapping []byte) error {
 	src, err := os.Open(n.path)
 	if err != nil {
 		return err
@@ -1149,7 +1231,11 @@ func copyFileMmap(n *node, mapping []byte) error {
 		dstOff := int64(e.start) * blockSize
 		remaining := min(n.size-srcOff, int64(e.len)*blockSize)
 		for remaining > 0 {
-			nr, err := src.ReadAt(mapping[dstOff:dstOff+remaining], srcOff)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			chunk := min(remaining, int64(64<<20))
+			nr, err := src.ReadAt(mapping[dstOff:dstOff+chunk], srcOff)
 			if err != nil && !(errors.Is(err, io.EOF) && nr > 0) {
 				return err
 			}
@@ -1185,8 +1271,15 @@ func copyFileBuffered(src *os.File, n *node, dstFD int, pool *sync.Pool) error {
 			if nr == 0 {
 				return io.ErrUnexpectedEOF
 			}
-			if _, err := unix.Pwrite(dstFD, buf[:nr], dstOff); err != nil {
-				return err
+			for w := 0; w < nr; {
+				nw, err := unix.Pwrite(dstFD, buf[w:nr], dstOff+int64(w))
+				if err != nil {
+					return err
+				}
+				if nw == 0 {
+					return io.ErrShortWrite
+				}
+				w += nw
 			}
 			srcOff += int64(nr)
 			dstOff += int64(nr)
