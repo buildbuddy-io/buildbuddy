@@ -146,6 +146,12 @@ func rdump(t *testing.T, image, dst string) {
 }
 
 func TestImageContentsMatchSource(t *testing.T) {
+	for _, mode := range []string{"mmap", "cfr"} {
+		t.Run(mode, func(t *testing.T) { testImageContentsMatchSource(t, mode) })
+	}
+}
+
+func testImageContentsMatchSource(t *testing.T, copyMode string) {
 	requireTool(t, "/sbin/e2fsck")
 	requireTool(t, "/sbin/debugfs")
 	root := testfs.MakeTempDir(t)
@@ -154,7 +160,7 @@ func TestImageContentsMatchSource(t *testing.T) {
 	makeTree(t, src, 2000, 16*1024, 1)
 
 	image := filepath.Join(root, "ws.ext4")
-	stats, err := ext4writer.DirectoryToImage(context.Background(), src, image, &ext4writer.Options{SizeBytes: 300e6})
+	stats, err := ext4writer.DirectoryToImage(context.Background(), src, image, &ext4writer.Options{SizeBytes: 300e6, CopyMode: copyMode, Reflink: copyMode == "cfr"})
 	require.NoError(t, err)
 	t.Logf("stats: %s", stats)
 	require.Equal(t, 2, stats.Hardlinks)

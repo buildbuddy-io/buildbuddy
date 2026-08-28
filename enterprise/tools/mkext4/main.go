@@ -18,12 +18,14 @@ var (
 	slackMB     = flag.Int64("slack_mb", 2000, "Free space to leave")
 	sizeMB      = flag.Int64("size_mb", 0, "Minimum image size")
 	concurrency = flag.Int("concurrency", 0, "Copy workers")
+	reflink     = flag.Bool("reflink", false, "Try FICLONERANGE")
+	copyMode    = flag.String("copy_mode", "mmap", "mmap or cfr")
 )
 
 func main() {
 	flag.Parse()
 	start := time.Now()
-	stats, err := ext4writer.DirectoryToImage(context.Background(), *dir, *out, &ext4writer.Options{SizeBytes: *sizeMB << 20, SlackBytes: *slackMB * 1e6, Concurrency: *concurrency})
+	stats, err := ext4writer.DirectoryToImage(context.Background(), *dir, *out, &ext4writer.Options{SizeBytes: *sizeMB << 20, SlackBytes: *slackMB * 1e6, Concurrency: *concurrency, Reflink: *reflink, CopyMode: *copyMode})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

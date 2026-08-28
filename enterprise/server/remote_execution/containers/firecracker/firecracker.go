@@ -1579,6 +1579,14 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 			return status.WrapError(err, "failed to convert workspace dir to ext4 image (native writer)")
 		}
 		log.CtxDebugf(ctx, "Native workspace image writer: %s", stats)
+		span.SetAttributes(
+			attribute.Int64("walk_ms", stats.WalkDuration.Milliseconds()),
+			attribute.Int64("layout_ms", stats.LayoutDuration.Milliseconds()),
+			attribute.Int64("metadata_ms", stats.MetadataDuration.Milliseconds()),
+			attribute.Int64("data_copy_ms", stats.DataDuration.Milliseconds()),
+			attribute.Int64("data_bytes", stats.DataBytes),
+			attribute.Int64("files", int64(stats.Files)),
+		)
 		return nil
 	}
 	workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)

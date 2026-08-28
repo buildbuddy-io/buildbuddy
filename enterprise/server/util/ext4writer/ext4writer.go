@@ -102,12 +102,21 @@ type Options struct {
 	ExtraInodes int
 	// Now is the timestamp used for the filesystem metadata (default: time.Now()).
 	Now time.Time
+	// Reflink attempts FICLONERANGE for block-aligned file prefixes (works on
+	// XFS with reflink=1 and btrfs; silently falls back elsewhere).
+	Reflink bool
+	// CopyMode selects how file data is copied: "mmap" (default: map the
+	// image MAP_SHARED and pread source files directly into the mapping;
+	// parallelizes well since writes are not serialized on the image inode
+	// lock) or "cfr" (copy_file_range; required for Reflink).
+	CopyMode string
 }
 
 // Stats describes what was written.
 type Stats struct {
 	Files, Dirs, Symlinks, Hardlinks int
 	DataBytes                        int64
+	ReflinkedBytes                   int64 // bytes shared with the source via FICLONERANGE
 	ImageBytes                       int64
 	BlockGroups                      int
 	Inodes                           uint32
@@ -192,11 +201,18 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, opts *Op
 	}
 	w.stats.LayoutDuration = time.Since(start)
 
-	f, err := os.OpenFile(outputFile, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0644)
+	f, err := os.OpenFile(outputFile, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0644)
 	if err != nil {
 		return nil, status.WrapError(err, "create image file")
 	}
 	defer f.Close()
+	// Don't leave a half-written image behind on failure.
+	ok := false
+	defer func() {
+		if !ok {
+			os.Remove(outputFile)
+		}
+	}()
 	if err := f.Truncate(w.stats.ImageBytes); err != nil {
 		return nil, status.WrapError(err, "truncate image file")
 	}
@@ -212,6 +228,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, opts *Op
 		return nil, status.WrapError(err, "copy file data")
 	}
 	w.stats.DataDuration = time.Since(start)
+	ok = true
 	return w.stats, nil
 }
 
@@ -238,6 +255,7 @@ type writer struct {
 	inodeTableBlk  []uint32
 
 	// Allocation state.
+	dataStartBlock uint32 // first block after the metadata area
 	nextBlock  uint32
 	usedBlocks uint32
 	blockBmp   []byte // one bit per block for the whole fs
@@ -548,6 +566,7 @@ func (w *writer) layout(root *node) error {
 		return status.InternalErrorf("metadata does not fit: %d blocks > %d", next, w.blocksCount)
 	}
 	w.nextBlock = next
+	w.dataStartBlock = next
 
 	// --- Inodes 1..10 are reserved.
 	for i := uint32(1); i <= 10; i++ {
@@ -943,6 +962,32 @@ func writeExtents(f *os.File, extents []extentRg, data []byte) error {
 // Data copy
 // ---------------------------------------------------------------------------
 
+// reflinkState remembers whether FICLONERANGE works between the source
+// files and the image, so we stop trying after the first hard failure.
+type reflinkState struct {
+	mu       sync.Mutex
+	disabled bool
+	bytes    int64
+}
+
+func (r *reflinkState) add(n int64) {
+	r.mu.Lock()
+	r.bytes += n
+	r.mu.Unlock()
+}
+
+func (r *reflinkState) enabled() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return !r.disabled
+}
+
+func (r *reflinkState) disable() {
+	r.mu.Lock()
+	r.disabled = true
+	r.mu.Unlock()
+}
+
 func (w *writer) copyData(ctx context.Context, f *os.File) error {
 	// Sort files by size descending so big copies start first (better tail).
 	files := make([]*node, 0, len(w.files))
@@ -956,10 +1001,44 @@ func (w *writer) copyData(ctx context.Context, f *os.File) error {
 	eg, ctx := errgroup.WithContext(ctx)
 	dstFD := int(f.Fd())
 	var bufPool sync.Pool
+	reflink := &reflinkState{disabled: !w.opts.Reflink}
+	var mapping []byte
+	if w.opts.CopyMode != "cfr" && len(files) > 0 {
+		// Writing through a MAP_SHARED mapping means a failed page allocation
+		// (ENOSPC on the host filesystem) would surface as SIGBUS and kill the
+		// process. Reserve the data region up front so that ENOSPC is reported
+		// here instead. Data blocks are allocated in one contiguous run after
+		// the metadata, so this is a single fallocate.
+		dataStart := int64(w.dataStartBlock) * blockSize
+		dataLen := int64(w.nextBlock)*blockSize - dataStart
+		if dataLen > 0 {
+			if err := unix.Fallocate(dstFD, unix.FALLOC_FL_KEEP_SIZE, dataStart, dataLen); err != nil {
+				if errors.Is(err, unix.ENOSPC) {
+					return status.ResourceExhaustedErrorf("fallocate %d bytes for workspace image: %s", dataLen, err)
+				}
+				// Filesystem doesn't support fallocate: fall back to
+				// copy_file_range which reports errors normally.
+				mapping = nil
+			} else {
+				m, err := unix.Mmap(dstFD, 0, int(w.stats.ImageBytes), unix.PROT_WRITE|unix.PROT_READ, unix.MAP_SHARED)
+				if err != nil {
+					return status.WrapError(err, "mmap image")
+				}
+				mapping = m
+				defer unix.Munmap(m)
+			}
+		}
+	}
 	for i := 0; i < w.opts.Concurrency; i++ {
 		eg.Go(func() error {
 			for n := range ch {
-				if err := copyFile(ctx, n, dstFD, &bufPool); err != nil {
+				var err error
+				if mapping != nil {
+					err = copyFileMmap(n, mapping)
+				} else {
+					err = copyFile(ctx, n, dstFD, &bufPool, reflink)
+				}
+				if err != nil {
 					return status.WrapErrorf(err, "copy %q", n.path)
 				}
 			}
@@ -977,12 +1056,19 @@ func (w *writer) copyData(ctx context.Context, f *os.File) error {
 		}
 		return nil
 	})
-	return eg.Wait()
+	err := eg.Wait()
+	w.stats.ReflinkedBytes = reflink.bytes
+	return err
 }
 
-// copyFile copies n's contents into the image at its allocated extents using
-// copy_file_range, falling back to read/write.
-func copyFile(ctx context.Context, n *node, dstFD int, pool *sync.Pool) error {
+// copyFile copies n's contents into the image at its allocated extents.
+//
+// On filesystems with reflink support (XFS with reflink=1, btrfs) the
+// block-aligned prefix of each file is cloned with FICLONERANGE, which shares
+// the filecache's on-disk extents with the image instead of copying bytes.
+// Otherwise (or for the unaligned tail) copy_file_range is used, falling back
+// to read/write.
+func copyFile(ctx context.Context, n *node, dstFD int, pool *sync.Pool, reflink *reflinkState) error {
 	src, err := os.Open(n.path)
 	if err != nil {
 		return err
@@ -990,9 +1076,47 @@ func copyFile(ctx context.Context, n *node, dstFD int, pool *sync.Pool) error {
 	defer src.Close()
 	srcFD := int(src.Fd())
 	var srcOff int64
+	if reflink.enabled() && len(n.extents) > 0 && n.size >= blockSize {
+		// Clone the aligned prefix extent by extent.
+		aligned := n.size &^ (blockSize - 1)
+		var off int64
+		ok := true
+		for _, e := range n.extents {
+			if off >= aligned {
+				break
+			}
+			l := min(int64(e.len)*blockSize, aligned-off)
+			err := unix.IoctlFileCloneRange(dstFD, &unix.FileCloneRange{
+				Src_fd: int64(srcFD), Src_offset: uint64(off), Src_length: uint64(l), Dest_offset: uint64(e.start) * blockSize,
+			})
+			if err != nil {
+				if errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.EXDEV) || errors.Is(err, unix.ENOTTY) || errors.Is(err, unix.EINVAL) {
+					reflink.disable()
+				}
+				ok = false
+				break
+			}
+			off += l
+		}
+		if ok {
+			reflink.add(aligned)
+			srcOff = aligned
+			if srcOff == n.size {
+				return nil
+			}
+			// Fall through to copy the tail with copy_file_range.
+		} else {
+			srcOff = 0
+		}
+	}
 	for _, e := range n.extents {
-		dstOff := int64(e.start) * blockSize
-		remaining := min(n.size-srcOff, int64(e.len)*blockSize)
+		extEnd := int64(e.logical+e.len) * blockSize
+		if extEnd <= srcOff {
+			continue // already cloned
+		}
+		// Position within this extent (srcOff may be mid-extent after a clone).
+		dstOff := int64(e.start)*blockSize + (srcOff - int64(e.logical)*blockSize)
+		remaining := min(n.size, extEnd) - srcOff
 		for remaining > 0 {
 			nn, err := unix.CopyFileRange(srcFD, &srcOff, dstFD, &dstOff, int(remaining), 0)
 			if err != nil {
@@ -1006,6 +1130,35 @@ func copyFile(ctx context.Context, n *node, dstFD int, pool *sync.Pool) error {
 				return io.ErrUnexpectedEOF
 			}
 			remaining -= int64(nn)
+		}
+	}
+	return nil
+}
+
+// copyFileMmap preads the source file directly into the MAP_SHARED image
+// mapping, so the kernel copies from the source page cache straight into the
+// image's page cache pages.
+func copyFileMmap(n *node, mapping []byte) error {
+	src, err := os.Open(n.path)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	var srcOff int64
+	for _, e := range n.extents {
+		dstOff := int64(e.start) * blockSize
+		remaining := min(n.size-srcOff, int64(e.len)*blockSize)
+		for remaining > 0 {
+			nr, err := src.ReadAt(mapping[dstOff:dstOff+remaining], srcOff)
+			if err != nil && !(errors.Is(err, io.EOF) && nr > 0) {
+				return err
+			}
+			if nr == 0 {
+				return io.ErrUnexpectedEOF
+			}
+			srcOff += int64(nr)
+			dstOff += int64(nr)
+			remaining -= int64(nr)
 		}
 	}
 	return nil
@@ -1045,7 +1198,7 @@ func copyFileBuffered(src *os.File, n *node, dstFD int, pool *sync.Pool) error {
 
 // String renders stats for logs.
 func (s *Stats) String() string {
-	return fmt.Sprintf("files=%d dirs=%d symlinks=%d hardlinks=%d data=%dMB image=%dMB groups=%d inodes=%d walk=%s layout=%s meta=%s data_copy=%s",
-		s.Files, s.Dirs, s.Symlinks, s.Hardlinks, s.DataBytes>>20, s.ImageBytes>>20, s.BlockGroups, s.Inodes,
+	return fmt.Sprintf("files=%d dirs=%d symlinks=%d hardlinks=%d data=%dMB reflinked=%dMB image=%dMB groups=%d inodes=%d walk=%s layout=%s meta=%s data_copy=%s",
+		s.Files, s.Dirs, s.Symlinks, s.Hardlinks, s.DataBytes>>20, s.ReflinkedBytes>>20, s.ImageBytes>>20, s.BlockGroups, s.Inodes,
 		s.WalkDuration.Round(time.Millisecond), s.LayoutDuration.Round(time.Millisecond), s.MetadataDuration.Round(time.Millisecond), s.DataDuration.Round(time.Millisecond))
 }
