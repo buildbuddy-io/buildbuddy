@@ -29,6 +29,16 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
+    # Force fully static linking on Linux. Under the musl platform transition
+    # cgo is enabled, and without this the Go linker emits a binary that is
+    # dynamically linked against musl's ld.so (which does not exist inside
+    # workflow containers / the microVM). "auto" elsewhere (macOS cannot link
+    # statically).
+    static = select({
+        "//platforms/configs:linux_x86_64": "on",
+        "//platforms/configs:linux_arm64": "on",
+        "//conditions:default": "auto",
+    }),
 )
 
 # The initrd embeds a statically linked goinit. Build it through the same

@@ -58,6 +58,16 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":ci_runner_lib"],
+    # Force fully static linking on Linux. Under the musl platform transition
+    # cgo is enabled, and without this the Go linker emits a binary that is
+    # dynamically linked against musl's ld.so (which does not exist inside
+    # workflow containers / the microVM). "auto" elsewhere (macOS cannot link
+    # statically).
+    static = select({
+        "//platforms/configs:linux_x86_64": "on",
+        "//platforms/configs:linux_arm64": "on",
+        "//conditions:default": "auto",
+    }),
 )
 
 # Statically linked (musl) ci_runner for embedding into the Linux executor.

@@ -47,6 +47,19 @@ go_library(
 go_binary(
     name = "bb",
     embed = [":bb_lib"],
+    # Force fully static linking on Linux so that the embedded copy in the
+    # executor (//server/util/bb) and the other statically linked helper
+    # binaries (goinit, ci_runner) share one Bazel configuration.
+    # Under the musl platform transition
+    # cgo is enabled, and without this the Go linker emits a binary that is
+    # dynamically linked against musl's ld.so (which does not exist inside
+    # workflow containers / the microVM). "auto" elsewhere (macOS cannot link
+    # statically).
+    static = select({
+        "//platforms/configs:linux_x86_64": "on",
+        "//platforms/configs:linux_arm64": "on",
+        "//conditions:default": "auto",
+    }),
     visibility = ["//visibility:public"],
 )
 
