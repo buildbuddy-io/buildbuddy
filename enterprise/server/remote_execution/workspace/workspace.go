@@ -188,6 +188,7 @@ func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, e
 		return nil, nil, err
 	}
 	fs := vfs.New(vfs_server.NewDirectClient(vfsServer), path, &vfs.Options{
+		EnablePassthrough:   true,
 		Verbose:             *vfsVerbose,
 		LogFUSEOps:          *vfsVerboseFUSEOps,
 		LogFUSELatencyStats: *vfsLogFUSELatencyStats,

@@ -14,6 +14,7 @@ type VFS struct {
 }
 
 type Options struct {
+	EnablePassthrough   bool
 	Verbose             bool
 	LogFUSEOps          bool
 	LogFUSELatencyStats bool

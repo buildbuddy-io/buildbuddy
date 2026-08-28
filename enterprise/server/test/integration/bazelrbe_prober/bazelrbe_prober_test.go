@@ -70,13 +70,16 @@ func runProberTest(t *testing.T, bazelRunfilepath, proberName, extraBazelArgs st
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	bazelArgs := "--remote_executor=" + env.GetRemoteExecutionTarget() +
-		" --remote_instance_name=buildbuddy-io/buildbuddy/ci" +
-		" --remote_default_exec_properties=OSFamily=" + runtime.GOOS +
-		" --remote_default_exec_properties=Arch=" + runtime.GOARCH
+	// Include extra whitespace and a quoted value to verify shell-style parsing.
+	bazelArgs := "  --remote_executor=" + env.GetRemoteExecutionTarget() +
+		"  --remote_instance_name=buildbuddy-io/buildbuddy/ci" +
+		"  --remote_default_exec_properties=OSFamily=" + runtime.GOOS +
+		"  --remote_default_exec_properties=Arch=" + runtime.GOARCH +
+		"  --build_metadata=SHLEX_TEST='value with spaces'"
 	if extraBazelArgs != "" {
-		bazelArgs += " " + extraBazelArgs
+		bazelArgs += "  " + extraBazelArgs
 	}
+	bazelArgs += "  "
 
 	args := []string{
 		"--bazel_binary=" + bazelBinary,
