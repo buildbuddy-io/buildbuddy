@@ -91,6 +91,7 @@ var (
 	workspaceDiskSlackSpaceMB             = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
 	workspaceImageWriter                  = flag.String("executor.firecracker_workspace_image_writer", "mke2fs", "How to build the per-action workspace ext4 image: 'mke2fs' (shell out to mke2fs -d) or 'native' (in-process ext4 writer; much faster for large input trees). ** Experimental **")
 	workspaceImageWriterConcurrency       = flag.Int("executor.firecracker_workspace_image_writer_concurrency", 0, "Number of parallel data-copy workers for the native workspace image writer (0 = min(8, NumCPU)).")
+	workspaceImageCopyMode                = flag.String("executor.firecracker_workspace_image_copy_mode", "mmap", "Data copy strategy for the native workspace image writer: mmap or cfr (copy_file_range).")
 	workspaceOutputExtractor              = flag.String("executor.firecracker_workspace_output_extractor", "debugfs", "How to extract action outputs from the workspace image: 'debugfs' (shell out; fsyncs the whole image) or 'native' (in-process ext4 reader). ** Experimental **")
 	healthCheckInterval                   = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
@@ -1584,6 +1585,7 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 		wopts := ext4writer.Options{
 			SlackBytes:  ext4.MinDiskImageSizeBytes + *workspaceDiskSlackSpaceMB*1e6,
 			Concurrency: *workspaceImageWriterConcurrency,
+			CopyMode:    *workspaceImageCopyMode,
 		}
 		var stats *ext4writer.Stats
 		var err error

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
@@ -4510,4 +4511,74 @@ func assertCommandResult(t testing.TB, expected *interfaces.CommandResult, actua
 	actual.VMMetadata = nil
 	actual.VMMetrics = nil
 	assert.Equal(t, expected, actual)
+}
+
+// TestFirecrackerExec_WorkspaceImageFromTree checks the experimental path
+// where the workspace disk image is built directly from the input tree and
+// the filecache (native image writer), overlaid on the working directory.
+func TestFirecrackerExec_WorkspaceImageFromTree(t *testing.T) {
+	flags.Set(t, "executor.firecracker_workspace_image_writer", "native")
+	flags.Set(t, "executor.firecracker_workspace_output_extractor", "native")
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	// Output dir pre-created in the host workspace, like CreateOutputDirs does.
+	testfs.MakeDirAll(t, workDir, "out")
+
+	// Put inputs in the filecache only.
+	fc := env.GetFileCache()
+	mkFile := func(name, content string, exe bool) *repb.FileNode {
+		p := testfs.MakeTempFile(t, rootDir, "in-*")
+		require.NoError(t, os.WriteFile(p, []byte(content), 0644))
+		d, err := digest.ComputeForFile(p, repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		node := &repb.FileNode{Name: name, Digest: d, IsExecutable: exe}
+		require.NoError(t, fc.AddFile(ctx, node, p))
+		return node
+	}
+	sub := &repb.Directory{Files: []*repb.FileNode{mkFile("data.txt", "payload\n", false)}}
+	subD, err := digest.ComputeForMessage(sub, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	root := &repb.Directory{
+		Files:       []*repb.FileNode{mkFile("run.sh", "cat sub/data.txt; ls out; echo done > out/result.txt\n", true)},
+		Directories: []*repb.DirectoryNode{{Name: "sub", Digest: subD}},
+		Symlinks:    []*repb.SymlinkNode{{Name: "link", Target: "sub/data.txt"}},
+	}
+	tree := &repb.Tree{Root: root, Children: []*repb.Directory{sub}}
+
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         1000,
+			ScratchDiskSizeMb: 500,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Platform:    &repb.Platform{Properties: []*repb.Platform_Property{{Name: "recycle-runner", Value: "true"}}},
+			OutputPaths: []string{"out"},
+		},
+	}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	c.SetWorkspaceInputTree(&container.FileSystemLayout{Inputs: tree, DigestFunction: repb.DigestFunction_SHA256})
+	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+	require.NoError(t, c.Create(ctx, workDir))
+	t.Cleanup(func() { assert.NoError(t, c.Remove(ctx)) })
+
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "-c", "./run.sh && cat link"}, OutputPaths: []string{"out"}}, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "payload\npayload\n", string(res.Stdout))
+	// Outputs came back to the host workspace.
+	b, err := os.ReadFile(filepath.Join(workDir, "out", "result.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "done\n", string(b))
+	// Inputs were never materialized on the host.
+	_, err = os.Stat(filepath.Join(workDir, "run.sh"))
+	require.True(t, os.IsNotExist(err))
 }

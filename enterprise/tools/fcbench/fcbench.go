@@ -451,7 +451,7 @@ func (b *bench) guestCommand(w workload) *repb.Command {
 	if *outputFiles > 0 {
 		// One process writes all output files (64 KiB each) so the cost is
 		// the writes, not process spawns.
-		script += fmt.Sprintf(`; mkdir -p out && awk 'BEGIN{for(i=0;i<%d;i++){f="out/o" i ".bin"; printf "%%65536s", "", > f; close(f)}}'`, *outputFiles)
+		script += fmt.Sprintf(`; mkdir -p out && awk 'BEGIN{for(i=0;i<%d;i++){f="out/o" i ".bin"; printf("%%65536s", "") > f; close(f)}}'`, *outputFiles)
 	}
 	props := []*repb.Platform_Property{
 		{Name: "workload-isolation-type", Value: "firecracker"},

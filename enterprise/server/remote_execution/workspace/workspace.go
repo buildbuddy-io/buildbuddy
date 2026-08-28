@@ -71,6 +71,9 @@ func setDeleteLimit() {
 // Workspace holds the working tree for an action and keeps track of
 // inputs and outputs.
 type Workspace struct {
+	// inputsInFileCacheOnly: see SetInputsInFileCacheOnly.
+	inputsInFileCacheOnly bool
+
 	env     environment.Env
 	rootDir string
 	overlay *overlayfs.Overlay
@@ -321,7 +324,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	}
 
 	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
-	if ws.vfs == nil {
+	if ws.vfs == nil && !ws.inputsInFileCacheOnly {
 		opts.RootDir = ws.inputRoot()
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
@@ -369,11 +372,23 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 
 	// Update the input tracking map to include inputs specified by the action
 	// that were not in the workspace yet.
-	for relPath, node := range inputsState.NeedFetching {
-		ws.Inputs[fspath.NewKey(relPath, ws.Opts.CaseInsensitive)] = node
+	if !ws.inputsInFileCacheOnly {
+		for relPath, node := range inputsState.NeedFetching {
+			ws.Inputs[fspath.NewKey(relPath, ws.Opts.CaseInsensitive)] = node
+		}
 	}
 
 	return nil
+}
+
+// SetInputsInFileCacheOnly controls whether DownloadInputs materializes the
+// input tree in the workspace directory (default) or only ensures the inputs
+// are present in the filecache. The latter is used by VM runners that build
+// the guest workspace disk image directly from the input tree.
+func (ws *Workspace) SetInputsInFileCacheOnly(v bool) {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	ws.inputsInFileCacheOnly = v
 }
 
 func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {

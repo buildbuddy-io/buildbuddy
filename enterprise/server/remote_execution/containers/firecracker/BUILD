@@ -146,6 +146,7 @@ go_test(
         "@platforms//os:linux",
     ],
     deps = [
+        "//server/remote_cache/digest",
         ":firecracker",
         "//enterprise/server/action_cache_server_proxy",
         "//enterprise/server/byte_stream_server_proxy",
