@@ -20,12 +20,13 @@ var (
 	concurrency = flag.Int("concurrency", 0, "Copy workers")
 	reflink     = flag.Bool("reflink", false, "Try FICLONERANGE")
 	copyMode    = flag.String("copy_mode", "mmap", "mmap or cfr")
+	xattrs      = flag.Bool("xattrs", false, "Copy extended attributes")
 )
 
 func main() {
 	flag.Parse()
 	start := time.Now()
-	stats, err := ext4writer.DirectoryToImage(context.Background(), *dir, *out, &ext4writer.Options{SizeBytes: *sizeMB << 20, SlackBytes: *slackMB * 1e6, Concurrency: *concurrency, Reflink: *reflink, CopyMode: *copyMode})
+	stats, err := ext4writer.DirectoryToImage(context.Background(), *dir, *out, &ext4writer.Options{SizeBytes: *sizeMB << 20, SlackBytes: *slackMB * 1e6, Concurrency: *concurrency, Reflink: *reflink, CopyMode: *copyMode, Xattrs: *xattrs})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

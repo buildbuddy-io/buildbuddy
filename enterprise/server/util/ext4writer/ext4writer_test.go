@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -682,4 +683,53 @@ func TestVirtualImage(t *testing.T) {
 	// Read past the end returns EOF.
 	_, err = v.ReadAt(buf, size)
 	require.Equal(t, io.EOF, err)
+}
+
+// TestXattrs: in-inode and external-block extended attributes survive and
+// e2fsck (which verifies xattr hashes) is happy.
+func TestXattrs(t *testing.T) {
+	requireTool(t, "/sbin/e2fsck")
+	requireTool(t, "/sbin/debugfs")
+	root := testfs.MakeTempDir(t)
+	src := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(src, 0755))
+	small := filepath.Join(src, "small")
+	require.NoError(t, os.WriteFile(small, []byte("x"), 0755))
+	if err := unix.Setxattr(small, "user.cap", []byte{1, 0, 0, 2, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 0); err != nil {
+		t.Skipf("xattrs not supported here: %s", err)
+	}
+	require.NoError(t, unix.Setxattr(small, "user.b", []byte("second"), 0))
+	bigv := bytes.Repeat([]byte("v"), 300) // won't fit in the inode
+	big := filepath.Join(src, "big")
+	require.NoError(t, os.WriteFile(big, []byte("y"), 0644))
+	require.NoError(t, unix.Setxattr(big, "user.large", bigv, 0))
+	require.NoError(t, unix.Setxattr(big, "user.a", []byte("1"), 0))
+	dir := filepath.Join(src, "d")
+	require.NoError(t, os.Mkdir(dir, 0755))
+	require.NoError(t, unix.Setxattr(dir, "user.dirattr", []byte("d"), 0))
+
+	image := filepath.Join(root, "ws.ext4")
+	stats, err := ext4writer.DirectoryToImage(context.Background(), src, image, &ext4writer.Options{Xattrs: true})
+	require.NoError(t, err)
+	require.Equal(t, 5, stats.Xattrs)
+	fsck(t, image)
+	ea := func(p string) string {
+		out, err := exec.Command("/sbin/debugfs", "-R", "ea_list "+p, image).CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return string(out)
+	}
+	require.Contains(t, ea("/small"), "user.b")
+	require.Contains(t, ea("/small"), "user.cap")
+	require.Contains(t, ea("/big"), "user.large")
+	require.Contains(t, ea("/big"), "user.a")
+	require.Contains(t, ea("/d"), "user.dirattr")
+	out, err := exec.Command("/sbin/debugfs", "-R", "ea_get /big user.large", image).CombinedOutput()
+	require.NoError(t, err, "%s", out)
+	require.Contains(t, string(out), strings.Repeat("v", 300))
+	// Without the option, none are copied and the ext_attr feature is off.
+	image2 := filepath.Join(root, "ws2.ext4")
+	stats, err = ext4writer.DirectoryToImage(context.Background(), src, image2, nil)
+	require.NoError(t, err)
+	require.Equal(t, 0, stats.Xattrs)
+	fsck(t, image2)
 }

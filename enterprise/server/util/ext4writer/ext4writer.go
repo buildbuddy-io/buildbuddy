@@ -112,6 +112,9 @@ type Options struct {
 	// Reflink attempts FICLONERANGE for block-aligned file prefixes (works on
 	// XFS with reflink=1 and btrfs; silently falls back elsewhere).
 	Reflink bool
+	// Xattrs copies extended attributes (needed for container images; Bazel
+	// inputs never have them, so it's off by default to save syscalls).
+	Xattrs bool
 	// CopyMode selects how file data is copied: "mmap" (default: map the
 	// image MAP_SHARED and pread source files directly into the mapping;
 	// parallelizes well since writes are not serialized on the image inode
@@ -122,6 +125,7 @@ type Options struct {
 // Stats describes what was written.
 type Stats struct {
 	Files, Dirs, Symlinks, Hardlinks int
+	Xattrs                           int
 	DataBytes                        int64
 	ReflinkedBytes                   int64 // bytes shared with the source via FICLONERANGE
 	ImageBytes                       int64
@@ -154,6 +158,8 @@ type node struct {
 	links    int        // number of directory entries referencing this inode (files)
 	fileNode *repb.FileNode // when building from a Tree: the input node (content via writer.open)
 	ranges   []blockRange   // logical block ranges holding data (nil = [0, nblocks) i.e. dense)
+	xattrs   []xattr        // extended attributes
+	xattrBlk uint32         // external xattr block, if the attributes don't fit in the inode
 }
 
 // blockRange is a run of logical blocks that contain data (sparse files have
@@ -383,6 +389,14 @@ func (w *writer) walkDir(d *node) error {
 		n := w.newNode(e.Name(), filepath.Join(d.path, e.Name()), st)
 		n.parent = d
 		d.children = append(d.children, n)
+		if w.opts.Xattrs {
+			xs, err := readXattrs(n.path)
+			if err != nil {
+				return status.WrapErrorf(err, "read xattrs of %q", n.path)
+			}
+			n.xattrs = xs
+			w.stats.Xattrs += len(xs)
+		}
 		if sys, ok := st.Sys().(*syscall.Stat_t); ok && !st.IsDir() && sys.Nlink > 1 {
 			key := devIno{uint64(sys.Dev), sys.Ino}
 			if orig, ok := w.hardlink[key]; ok {
@@ -598,6 +612,9 @@ func (w *writer) layout(root *node) error {
 			}
 		}
 		dataBlocks += int64(n.nblocks)
+		if len(n.xattrs) > 0 && !xattrsFitInInode(n.xattrs) {
+			dataBlocks++
+		}
 		// Files with more than 4 extents need an extent-tree leaf block. Extents
 		// are split at 32768 blocks and around reserved backup blocks, so
 		// reserve a leaf for anything over 2 max-size extents; the general
@@ -771,6 +788,20 @@ func (w *writer) layout(root *node) error {
 			w.files = append(w.files, n)
 		}
 	}
+	// External xattr blocks.
+	for _, n := range w.nodes {
+		if len(n.xattrs) > 0 && !xattrsFitInInode(n.xattrs) {
+			for w.nextBlock < w.blocksCount && w.isBlockUsed(w.nextBlock) {
+				w.nextBlock++
+			}
+			if w.nextBlock >= w.blocksCount {
+				return status.ResourceExhaustedErrorf("image too small: out of blocks")
+			}
+			n.xattrBlk = w.nextBlock
+			w.markBlock(n.xattrBlk)
+			w.nextBlock++
+		}
+	}
 	return nil
 }
 
@@ -885,7 +916,11 @@ func (w *writer) superblock() []byte {
 	le.PutUint32(sb[0x54:], firstInode)
 	le.PutUint16(sb[0x58:], inodeSize)
 	le.PutUint16(sb[0x5A:], 0)
-	le.PutUint32(sb[0x5C:], 0) // compat
+	compat := uint32(0)
+	if w.stats.Xattrs > 0 {
+		compat |= featureCompatExtAttr
+	}
+	le.PutUint32(sb[0x5C:], compat)
 	le.PutUint32(sb[0x60:], featureIncompatFiletype|featureIncompatExtents|featureIncompatFlexBG)
 	le.PutUint32(sb[0x64:], featureROSparseSuper|featureROLargeFile|featureROHugeFile|featureRODirNlink|featureROExtraIsize)
 	// uuid: derive something non-zero but deterministic-looking from time.
@@ -976,6 +1011,16 @@ func (w *writer) encodeInode(n *node) []byte {
 	le.PutUint16(b[0x7A:], uint16(n.gid>>16))
 	le.PutUint16(b[0x80:], 32) // extra isize
 	le.PutUint32(b[0x90:], t)  // crtime
+	if len(n.xattrs) > 0 {
+		if n.xattrBlk != 0 {
+			le.PutUint32(b[0x68:], n.xattrBlk) // i_file_acl_lo
+			blocks += blockSize / 512
+			le.PutUint32(b[0x1C:], uint32(blocks))
+			le.PutUint16(b[0x74:], uint16(blocks>>32))
+		} else {
+			encodeInodeXattrs(b, n.xattrs)
+		}
+	}
 	iblock := b[0x28:0x64]
 	switch {
 	case n.mode&os.ModeSymlink != 0 && n.nblocks == 0:
@@ -1112,8 +1157,17 @@ func (w *writer) writeMetadata(f io.WriterAt) error {
 			return err
 		}
 	}
-	// Directory blocks, extent leaves, slow symlinks.
+	// Directory blocks, extent leaves, slow symlinks, xattr blocks.
 	for _, n := range w.nodes {
+		if n.xattrBlk != 0 {
+			blk, err := encodeXattrBlock(n.xattrs)
+			if err != nil {
+				return err
+			}
+			if _, err := f.WriteAt(blk, int64(n.xattrBlk)*blockSize); err != nil {
+				return err
+			}
+		}
 		if n.leaf != 0 {
 			if _, err := f.WriteAt(w.encodeLeaf(n), int64(n.leaf)*blockSize); err != nil {
 				return err
@@ -1410,7 +1464,7 @@ func copyRangeBuffered(src *os.File, srcOff, end int64, dstFD int, dstOff int64,
 
 // String renders stats for logs.
 func (s *Stats) String() string {
-	return fmt.Sprintf("files=%d dirs=%d symlinks=%d hardlinks=%d data=%dMB reflinked=%dMB image=%dMB groups=%d inodes=%d walk=%s layout=%s meta=%s data_copy=%s",
-		s.Files, s.Dirs, s.Symlinks, s.Hardlinks, s.DataBytes>>20, s.ReflinkedBytes>>20, s.ImageBytes>>20, s.BlockGroups, s.Inodes,
+	return fmt.Sprintf("files=%d dirs=%d symlinks=%d hardlinks=%d xattrs=%d data=%dMB reflinked=%dMB image=%dMB groups=%d inodes=%d walk=%s layout=%s meta=%s data_copy=%s",
+		s.Files, s.Dirs, s.Symlinks, s.Hardlinks, s.Xattrs, s.DataBytes>>20, s.ReflinkedBytes>>20, s.ImageBytes>>20, s.BlockGroups, s.Inodes,
 		s.WalkDuration.Round(time.Millisecond), s.LayoutDuration.Round(time.Millisecond), s.MetadataDuration.Round(time.Millisecond), s.DataDuration.Round(time.Millisecond))
 }

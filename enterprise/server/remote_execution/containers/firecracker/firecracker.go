@@ -89,7 +89,7 @@ var (
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
 	dieOnFirecrackerFailure               = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 	workspaceDiskSlackSpaceMB             = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
-	workspaceImageWriter                  = flag.String("executor.firecracker_workspace_image_writer", "mke2fs", "How to build the per-action workspace ext4 image: 'mke2fs' (shell out to mke2fs -d) or 'native' (in-process ext4 writer; much faster for large input trees). ** Experimental **")
+	workspaceImageWriter                  = flag.String("executor.firecracker_workspace_image_writer", "mke2fs", "How to build the per-action workspace ext4 image: 'mke2fs' (shell out to mke2fs -d), 'native' (in-process ext4 writer; much faster for large input trees) or 'vbd' (never materialize the image: serve it through a FUSE block device with file data read straight from the host workspace / filecache). ** Experimental **")
 	workspaceImageWriterConcurrency       = flag.Int("executor.firecracker_workspace_image_writer_concurrency", 0, "Number of parallel data-copy workers for the native workspace image writer (0 = min(8, NumCPU)).")
 	workspaceImageCopyMode                = flag.String("executor.firecracker_workspace_image_copy_mode", "mmap", "Data copy strategy for the native workspace image writer: mmap or cfr (copy_file_range).")
 	removeChrootInBackground              = flag.Bool("executor.firecracker_remove_chroot_in_background", false, "Rename the VM chroot (which holds the workspace disk image) aside and delete it in the background instead of on the task's critical path. ** Experimental **")
@@ -727,6 +727,11 @@ type FirecrackerContainer struct {
 	// filecache instead of being materialized in the host workspace dir first.
 	// Experimental; requires the native workspace image writer.
 	inputTree *container.FileSystemLayout
+
+	// Virtual workspace disk (writer mode "vbd"): the ext4 image is served
+	// through a FUSE block device instead of being written to a file.
+	workspaceImage *ext4writer.VirtualImage
+	workspaceVBD   *vbd.FS
 
 	scratchStore            *copy_on_write.COWStore
 	scratchVBD              *vbd.FS
@@ -1578,9 +1583,9 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
 	switch *workspaceImageWriter {
-	case "native", "mke2fs":
+	case "native", "mke2fs", "vbd":
 	default:
-		return status.InvalidArgumentErrorf("invalid --executor.firecracker_workspace_image_writer %q (want native or mke2fs)", *workspaceImageWriter)
+		return status.InvalidArgumentErrorf("invalid --executor.firecracker_workspace_image_writer %q (want native, vbd or mke2fs)", *workspaceImageWriter)
 	}
 	if *workspaceImageWriter == "native" {
 		wopts := ext4writer.Options{
@@ -1690,6 +1695,10 @@ func (c *FirecrackerContainer) updateWorkspaceDriveToEmptyFile(ctx context.Conte
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativePath); err != nil {
 		return status.UnavailableErrorf("update guest drive: %s", err)
 	}
+	// The VM no longer references the virtual workspace disk.
+	if err := c.teardownVirtualWorkspace(ctx); err != nil {
+		log.CtxWarningf(ctx, "Failed to tear down virtual workspace: %s", err)
+	}
 	return nil
 }
 
@@ -1710,9 +1719,18 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return nil
 	}
 
-	workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
-	if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
-		return status.WrapError(err, "failed to create workspace image")
+	chrootRelativeImagePath := workspaceFSName
+	if *workspaceImageWriter == "vbd" {
+		p, err := c.createVirtualWorkspace(ctx)
+		if err != nil {
+			return status.WrapError(err, "failed to create virtual workspace disk")
+		}
+		chrootRelativeImagePath = p
+	} else {
+		workspaceExt4Path := filepath.Join(c.getChroot(), workspaceFSName)
+		if err := c.createWorkspaceImage(ctx, c.actionWorkingDir, workspaceExt4Path); err != nil {
+			return status.WrapError(err, "failed to create workspace image")
+		}
 	}
 
 	conn, err := c.vmExecConn(ctx)
@@ -1725,7 +1743,6 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 	// The only way to tell if the VM booted seems to be monitoring its stdout.
 	// Instead we'll just wait for the vm exec server to start above, which
 	// happens after boot.
-	chrootRelativeImagePath := workspaceFSName
 	if err := c.machine.UpdateGuestDrive(ctx, workspaceDriveID, chrootRelativeImagePath); err != nil {
 		return status.UnavailableErrorf("error updating workspace drive attached to snapshot: %s", err)
 	}
@@ -1738,6 +1755,62 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 		return status.WrapError(err, "failed to remount workspace after update")
 	}
 
+	return nil
+}
+
+// createVirtualWorkspace builds the workspace image layout in memory and
+// exposes it as a file through a FUSE block device inside the chroot.
+// Returns the chroot-relative path to hand to firecracker.
+func (c *FirecrackerContainer) createVirtualWorkspace(ctx context.Context) (string, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	if err := c.teardownVirtualWorkspace(ctx); err != nil {
+		return "", err
+	}
+	wopts := ext4writer.Options{SlackBytes: ext4.MinDiskImageSizeBytes + *workspaceDiskSlackSpaceMB*1e6}
+	var img *ext4writer.VirtualImage
+	var err error
+	if c.inputTree != nil {
+		fc := c.env.GetFileCache()
+		img, err = ext4writer.NewVirtualImageFromTree(ctx, c.actionWorkingDir, c.jailerRoot, &ext4writer.TreeOptions{
+			Options: wopts, Tree: c.inputTree.Inputs, DigestFunction: c.inputTree.DigestFunction, Open: fc.Open,
+		})
+	} else {
+		img, err = ext4writer.NewVirtualImage(ctx, c.actionWorkingDir, c.jailerRoot, &wopts)
+	}
+	if err != nil {
+		return "", err
+	}
+	log.CtxDebugf(ctx, "Virtual workspace image: %s", img.Stats())
+	span.SetAttributes(attribute.Int64("walk_ms", img.Stats().WalkDuration.Milliseconds()), attribute.Int64("layout_ms", img.Stats().LayoutDuration.Milliseconds()), attribute.Int64("files", int64(img.Stats().Files)))
+	d, err := vbd.New(img)
+	if err != nil {
+		img.Close()
+		return "", err
+	}
+	mountPath := filepath.Join(c.getChroot(), workspaceDriveID+vbdMountDirSuffix)
+	if err := d.Mount(c.vmCtx, mountPath); err != nil {
+		img.Close()
+		return "", status.WrapError(err, "mount workspace VBD")
+	}
+	c.workspaceImage = img
+	c.workspaceVBD = d
+	return filepath.Join(workspaceDriveID+vbdMountDirSuffix, vbd.FileName), nil
+}
+
+// teardownVirtualWorkspace unmounts and releases the virtual workspace disk,
+// if any. The guest must not have the drive mounted.
+func (c *FirecrackerContainer) teardownVirtualWorkspace(ctx context.Context) error {
+	if c.workspaceVBD != nil {
+		if err := c.workspaceVBD.Unmount(ctx); err != nil {
+			return status.WrapError(err, "unmount workspace VBD")
+		}
+		c.workspaceVBD = nil
+	}
+	if c.workspaceImage != nil {
+		c.workspaceImage.Close()
+		c.workspaceImage = nil
+	}
 	return nil
 }
 
@@ -1989,8 +2062,10 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	defer func() {
 		log.CtxDebugf(ctx, "copyOutputsToWorkspace took %s", time.Since(start))
 	}()
-	if exists, err := disk.FileExists(ctx, workspaceExt4Path); err != nil || !exists {
-		return status.FailedPreconditionErrorf("workspacefs path %q not found", workspaceExt4Path)
+	if c.workspaceImage == nil {
+		if exists, err := disk.FileExists(ctx, workspaceExt4Path); err != nil || !exists {
+			return status.FailedPreconditionErrorf("workspacefs path %q not found", workspaceExt4Path)
+		}
 	}
 	if exists, err := disk.FileExists(ctx, c.actionWorkingDir); err != nil || !exists {
 		return status.FailedPreconditionErrorf("actionWorkingDir path %q not found", c.actionWorkingDir)
@@ -2008,7 +2083,13 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	default:
 		return status.InvalidArgumentErrorf("invalid --executor.firecracker_workspace_output_extractor %q (want native or debugfs)", *workspaceOutputExtractor)
 	}
-	if *workspaceOutputExtractor == "native" {
+	if c.workspaceImage != nil {
+		size, _ := c.workspaceImage.SizeBytes()
+		log.CtxDebugf(ctx, "Virtual workspace: guest wrote %d blocks", c.workspaceImage.DirtyBlocks())
+		if err := ext4writer.ReaderToDirectory(ctx, c.workspaceImage, size, wsDir, outputPaths); err != nil {
+			return err
+		}
+	} else if *workspaceOutputExtractor == "native" {
 		if err := ext4writer.ImageToDirectory(ctx, workspaceExt4Path, wsDir, outputPaths); err != nil {
 			return err
 		}
@@ -2204,7 +2285,7 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 // tree) if the native image writer is not enabled, since only that writer
 // understands input trees. ** Experimental **
 func (c *FirecrackerContainer) SetWorkspaceInputTree(layout *container.FileSystemLayout) bool {
-	if layout != nil && *workspaceImageWriter != "native" {
+	if layout != nil && *workspaceImageWriter != "native" && *workspaceImageWriter != "vbd" {
 		log.Warningf("Workspace image from input tree requires --executor.firecracker_workspace_image_writer=native; materializing inputs instead")
 		c.inputTree = nil
 		return false
@@ -3116,6 +3197,17 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bo
 			lastErr = err
 		}
 		c.rootVBD = nil
+	}
+	if c.workspaceVBD != nil {
+		if err := c.workspaceVBD.Unmount(ctx); err != nil {
+			logErr(workspaceDriveID, err)
+			lastErr = err
+		}
+		c.workspaceVBD = nil
+		if c.workspaceImage != nil {
+			c.workspaceImage.Close()
+			c.workspaceImage = nil
+		}
 	}
 	if c.memorySnapshotExportVBD != nil {
 		if err := c.memorySnapshotExportVBD.Unmount(ctx); err != nil {
