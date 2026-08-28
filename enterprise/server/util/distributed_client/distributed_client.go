@@ -500,12 +500,10 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 				if ok {
 					verifyRef := req.GetReference().CloneVT()
 					vctx, cancel := background.ExtendContextForFinalization(ctx, referenceVerificationTimeout)
-					c.verificationWG.Add(1)
-					go func() {
-						defer c.verificationWG.Done()
+					c.verificationWG.Go(func() {
 						defer cancel()
 						c.verifyReferenceWrite(vctx, refCache, verifyRef, verifyRN)
-					}()
+					})
 				} else {
 					c.log.Debugf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
 					metrics.DistributedCacheReferenceWriteVerificationCount.With(
