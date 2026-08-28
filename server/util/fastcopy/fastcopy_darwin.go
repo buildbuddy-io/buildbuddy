@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var useMacOSHardlinks = flag.Bool("executor.use_hardlinks_macos", false, "If true, use hardlinks on macOS instead of copy-on-write clones")
+var localCacheUseHardlinks = flag.Bool("executor.local_cache_use_hardlinks", false, "If true, use hardlinks instead of copy-on-write clones")
 
 func Clone(source, destination string) error {
 	if err := unix.Clonefile(source, destination, unix.CLONE_NOFOLLOW); err != nil && !errors.Is(err, unix.EEXIST) {
@@ -19,7 +19,7 @@ func Clone(source, destination string) error {
 }
 
 func FastCopy(source, destination string) error {
-	if *useMacOSHardlinks {
+	if *localCacheUseHardlinks {
 		if err := unix.Linkat(unix.AT_FDCWD, source, unix.AT_FDCWD, destination, 0); err != nil && !errors.Is(err, unix.EEXIST) {
 			return err
 		}

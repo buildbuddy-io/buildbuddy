@@ -80,7 +80,7 @@ func TestFastCopyDarwinForceHardlinks(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, os.SameFile(sourceInfo, cloneInfo))
 
-	flags.Set(t, "executor.use_hardlinks_macos", true)
+	flags.Set(t, "executor.local_cache_use_hardlinks", true)
 	hardlink := path.Join(ws, "hardlink")
 	require.NoError(t, fastcopy.FastCopy(source, hardlink))
 	hardlinkInfo, err := os.Stat(hardlink)
@@ -122,7 +122,7 @@ func TestFastCopyDarwinHardlinksSymlinkWithoutFollowing(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("test runs on macOS only")
 	}
-	flags.Set(t, "executor.use_hardlinks_macos", true)
+	flags.Set(t, "executor.local_cache_use_hardlinks", true)
 
 	for _, dangling := range []bool{false, true} {
 		t.Run(fmt.Sprintf("dangling=%t", dangling), func(t *testing.T) {
