@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,12 +22,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cookie"
-	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-github/v59/github"
+	"gorm.io/gorm"
 
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 )
@@ -696,7 +697,7 @@ func (c *GithubClient) IsStatusReportingEnabled(ctx context.Context, groupID str
 		`SELECT * from "GitHubAppInstallations" WHERE group_id = ? AND owner = ?`, groupID, parsedRepo.Owner).Take(installation)
 	if err == nil {
 		return installation.ReportCommitStatusesForCIBuilds, nil
-	} else if !db.IsRecordNotFound(err) {
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, status.WrapErrorf(err, "failed to query GitHubAppInstallations: %s", err)
 	}
 

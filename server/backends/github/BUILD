@@ -24,12 +24,12 @@ go_library(
         "//server/tables",
         "//server/util/authutil",
         "//server/util/cookie",
-        "//server/util/db",
         "//server/util/flag",
         "//server/util/git",
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
         "@com_github_google_go_github_v59//github",
+        "@io_gorm_gorm//:gorm",
     ],
 )
