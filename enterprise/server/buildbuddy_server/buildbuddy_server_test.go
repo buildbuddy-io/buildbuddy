@@ -38,7 +38,7 @@ const (
 	maxGroupsPerUserExperiment = "app.max_groups_per_user"
 )
 
-func configureCreateGroupExperiments(t *testing.T, env *testenv.TestEnv, maxGroups int64) {
+func configureMaxGroupsPerUserExperiment(t *testing.T, env *testenv.TestEnv, maxGroups int64) {
 	provider := openfeatureTesting.NewTestProvider()
 	provider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
 		maxGroupsPerUserExperiment: {
@@ -113,7 +113,7 @@ func TestCreateGroup(t *testing.T) {
 
 	// Enable all organization-creation restrictions. Enterprise parent orgs
 	// should always be able to create child orgs using an org API key.
-	configureCreateGroupExperiments(t, te, 1)
+	configureMaxGroupsPerUserExperiment(t, te, 1)
 	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 	require.NoError(t, err)
 
@@ -359,7 +359,7 @@ func TestCreateGroup_Allowed(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, user.Groups, tc.ownedGroups+tc.invitedGroups)
 
-			configureCreateGroupExperiments(t, te, int64(tc.maxGroups))
+			configureMaxGroupsPerUserExperiment(t, te, int64(tc.maxGroups))
 			server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
 			require.NoError(t, err)
 
