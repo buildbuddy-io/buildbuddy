@@ -1,6 +1,8 @@
 package runner
 
 import (
+	"path/filepath"
+	"sync/atomic"
 	"context"
 	"encoding/base64"
 	"encoding/binary"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
@@ -41,6 +44,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
+	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
@@ -1291,4 +1295,158 @@ func TestTransientErrorExitCodes(t *testing.T) {
 			}
 		})
 	}
+}
+
+// fakeVMContainer is a fakeContainer that also satisfies container.VM and
+// records when Create was called relative to the input fetch.
+type fakeVMContainer struct {
+	*fakeContainer
+	createStarted chan struct{}
+	createRelease chan struct{}
+	createCalls   int32
+	treeSet       bool
+}
+
+func (c *fakeVMContainer) SetTaskFileSystemLayout(layout *container.FileSystemLayout) {}
+func (c *fakeVMContainer) SnapshotDebugString(ctx context.Context) string          { return "" }
+func (c *fakeVMContainer) VMConfig() *fcpb.VMConfiguration                          { return &fcpb.VMConfiguration{} }
+func (c *fakeVMContainer) SetWorkspaceInputTree(layout *container.FileSystemLayout) bool {
+	c.treeSet = layout != nil
+	return layout != nil
+}
+func (c *fakeVMContainer) Create(ctx context.Context, workdir string) error {
+	atomic.AddInt32(&c.createCalls, 1)
+	close(c.createStarted)
+	select {
+	case <-c.createRelease:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return c.CreateError
+}
+
+func TestDownloadInputs_PrepareVMDuringInputFetch(t *testing.T) {
+	flags.Set(t, "executor.firecracker_prepare_vm_during_input_fetch", true)
+	env := newTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	go runServer()
+	var ctr *fakeVMContainer
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr = &fakeVMContainer{fakeContainer: NewFakeContainer(), createStarted: make(chan struct{}), createRelease: make(chan struct{})}
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+
+	tmp := testfs.MakeTempDir(t)
+	testfs.WriteFile(t, tmp, "input.txt", "hello")
+	task := newTask()
+	inputRootDigest, _, err := cachetools.UploadDirectoryToCAS(ctx, env, "", repb.DigestFunction_SHA256, tmp)
+	require.NoError(t, err)
+	task.ExecutionTask.Action = &repb.Action{InputRootDigest: inputRootDigest}
+
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	tr := r.(*taskRunner)
+	require.NoError(t, tr.PrepareForTask(ctx))
+
+	// Release Create only once it has been started concurrently with the
+	// fetch; DownloadInputs must not return before Create finishes.
+	done := make(chan error, 1)
+	go func() { done <- tr.DownloadInputs(ctx) }()
+	select {
+	case <-ctr.createStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Create was not started during input fetch")
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("DownloadInputs returned (%v) before Create finished", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(ctr.createRelease)
+	require.NoError(t, <-done)
+	require.Equal(t, int32(1), atomic.LoadInt32(&ctr.createCalls))
+	require.Equal(t, ready, tr.getState(), "runner should be ready after concurrent create")
+	// Inputs were materialized as usual.
+	require.FileExists(t, filepath.Join(tr.Workspace.Path(), "input.txt"))
+
+	// Run must not call Create again.
+	res := tr.Run(ctx, &repb.IOStats{})
+	require.NoError(t, res.Error)
+	require.Equal(t, int32(1), atomic.LoadInt32(&ctr.createCalls))
+	pool.TryRecycle(ctx, r, true)
+}
+
+func TestDownloadInputs_PrepareVMDuringInputFetch_CreateFails(t *testing.T) {
+	flags.Set(t, "executor.firecracker_prepare_vm_during_input_fetch", true)
+	env := newTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	go runServer()
+	var ctr *fakeVMContainer
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr = &fakeVMContainer{fakeContainer: NewFakeContainer(), createStarted: make(chan struct{}), createRelease: make(chan struct{})}
+		ctr.CreateError = fmt.Errorf("boom")
+		close(ctr.createRelease)
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	tmp := testfs.MakeTempDir(t)
+	testfs.WriteFile(t, tmp, "input.txt", "hello")
+	task := newTask()
+	inputRootDigest, _, err := cachetools.UploadDirectoryToCAS(ctx, env, "", repb.DigestFunction_SHA256, tmp)
+	require.NoError(t, err)
+	task.ExecutionTask.Action = &repb.Action{InputRootDigest: inputRootDigest}
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	tr := r.(*taskRunner)
+	require.NoError(t, tr.PrepareForTask(ctx))
+	err = tr.DownloadInputs(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "boom")
+	require.Equal(t, initial, tr.getState())
+	pool.TryRecycle(ctx, r, false)
+	<-ctr.Removed
+}
+
+func TestDownloadInputs_WorkspaceImageFromTree(t *testing.T) {
+	flags.Set(t, "executor.firecracker_workspace_image_from_tree", true)
+	env := newTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, lis)
+	go runServer()
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 100_000_000, false)
+	require.NoError(t, err)
+	env.SetFileCache(fc)
+	var ctr *fakeVMContainer
+	cfg := noLimitsCfg()
+	cfg.ContainerProvider = providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+		ctr = &fakeVMContainer{fakeContainer: NewFakeContainer(), createStarted: make(chan struct{}), createRelease: make(chan struct{})}
+		close(ctr.createRelease)
+		return ctr, nil
+	})
+	pool := newRunnerPool(t, env, cfg)
+	ctx := withAuthenticatedUser(t, context.Background(), env, "US1")
+	tmp := testfs.MakeTempDir(t)
+	testfs.WriteFile(t, tmp, "input.txt", "hello")
+	task := newTask()
+	inputRootDigest, _, err := cachetools.UploadDirectoryToCAS(ctx, env, "", repb.DigestFunction_SHA256, tmp)
+	require.NoError(t, err)
+	task.ExecutionTask.Action = &repb.Action{InputRootDigest: inputRootDigest}
+	r, err := pool.Get(ctx, task)
+	require.NoError(t, err)
+	tr := r.(*taskRunner)
+	require.NoError(t, tr.PrepareForTask(ctx))
+	require.NoError(t, tr.DownloadInputs(ctx))
+	require.True(t, ctr.treeSet, "container should have been given the input tree")
+	// Inputs are in the filecache but not in the host workspace.
+	require.NoFileExists(t, filepath.Join(tr.Workspace.Path(), "input.txt"))
+	d, err := cachetools.UploadBlob(ctx, env.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("hello"))
+	require.NoError(t, err)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, &repb.FileNode{Digest: d}))
 }

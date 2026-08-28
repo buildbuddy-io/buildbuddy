@@ -403,7 +403,9 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) (err error) {
 			if err != nil {
 				cancel(err)
 			}
-			if werr := wait(); werr != nil && err == nil {
+			// If the VM failed first, the fetch was cancelled because of
+			// it; report the VM error rather than "context canceled".
+			if werr := wait(); werr != nil && (err == nil || ctx.Err() != nil) {
 				err = werr
 			}
 		}()
