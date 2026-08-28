@@ -32,6 +32,13 @@ type getMultiBatchRecordingCache struct {
 	batches    [][]*rspb.ResourceName
 }
 
+func TestAvgChunkSizeDefault(t *testing.T) {
+	ctx := context.Background()
+	require.Equal(t, int64(1024*1024), chunking.AvgChunkSizeBytes(ctx, nil))
+	require.Equal(t, uint64(1024*1024), chunking.FastCDCParams(ctx, nil).GetAvgChunkSizeBytes())
+	require.Equal(t, int64(4*1024*1024), chunking.MaxChunkSizeBytes(ctx, nil))
+}
+
 func (c *getMultiBatchRecordingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	c.batchSizes = append(c.batchSizes, len(resources))
 	c.batches = append(c.batches, resources)
@@ -663,20 +670,6 @@ func (p booleanFlagProvider) Int64(ctx context.Context, flagName string, default
 		return v
 	}
 	return defaultValue
-}
-
-func TestShouldDiscardLegacyChunkedBlob(t *testing.T) {
-	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
-
-	ctx := context.Background()
-	efp := booleanFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, nil, 3*1024*1024))
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, booleanFlagProvider{}, 3*1024*1024))
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 2*1024*1024))
-	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 3*1024*1024))
-	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024))
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024+1))
 }
 
 func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {
