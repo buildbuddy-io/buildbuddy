@@ -1,6 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(
@@ -57,15 +58,21 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":ci_runner_lib"],
-    # pure = "on" (CGO_ENABLED=0) already yields a statically linked binary via
-    # the internal Go linker; in rules_go, static = "on" only adds -static to the
-    # external-linker flags, which are unused with internal linking. Leaving
-    # static unset lets this binary share its configuration
-    # (and thus its stdlib + all shared package compiles) with the other
-    # pure-Go binaries embedded in the executor (e.g. goinit), which
-    # removes ~800 duplicate GoCompilePkg actions + one GoStdlib from cold
-    # executor builds.
-    pure = "on",
+)
+
+# Statically linked (musl) ci_runner for embedding into the Linux executor.
+# Built through the same platform transition as the embedded bb CLI so the two
+# share a Bazel configuration; see //server/util/bb.
+linux_x86_64_musl_alias(
+    name = "ci_runner_linux_x86_64_static",
+    actual = ":ci_runner",
+    tags = ["manual"],
+)
+
+linux_arm64_musl_alias(
+    name = "ci_runner_linux_arm64_static",
+    actual = ":ci_runner",
+    tags = ["manual"],
 )
 
 container_image(
@@ -78,7 +85,7 @@ container_image(
 go_image(
     name = "ci_runner_image",
     base = ":base_image",
-    binary = ":ci_runner",
+    binary = ":ci_runner_linux_x86_64_static",
     tags = ["manual"],
 )
 

@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -28,14 +29,29 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
-    # "pure" causes the init file to require an ELF interpreter which the kernel
-    # does not have access to if we are bulding statically.
-    pure = select({
-        "//:static": "auto",
-        "//conditions:default": "on",
+)
+
+# The initrd embeds a statically linked goinit. Build it through the same
+# musl platform transition used for the embedded bb CLI (//server/util/bb)
+# instead of pure = "on": the resulting binary is still fully static, but it
+# now shares its Bazel configuration (stdlib + ~800 shared packages) with bb
+# instead of requiring a separate CGO_ENABLED=0 configuration.
+linux_x86_64_musl_alias(
+    name = "goinit_linux_x86_64_static",
+    actual = ":goinit",
+    tags = ["manual"],
+)
+
+linux_arm64_musl_alias(
+    name = "goinit_linux_arm64_static",
+    actual = ":goinit",
+    tags = ["manual"],
+)
+
+alias(
+    name = "goinit_static",
+    actual = select({
+        "//platforms/configs:linux_x86_64": ":goinit_linux_x86_64_static",
+        "//platforms/configs:linux_arm64": ":goinit_linux_arm64_static",
     }),
-    # static = select({
-    #    "//:static": "on",
-    #    "//conditions:default": "auto",
-    # }),
 )
