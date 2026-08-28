@@ -1,6 +1,8 @@
 package firecracker_test
 
 import (
+	"encoding/hex"
+	"crypto/sha256"
 	"bytes"
 	"context"
 	"flag"
@@ -4581,4 +4583,69 @@ func TestFirecrackerExec_WorkspaceImageFromTree(t *testing.T) {
 	// Inputs were never materialized on the host.
 	_, err = os.Stat(filepath.Join(workDir, "run.sh"))
 	require.True(t, os.IsNotExist(err))
+}
+
+// TestFirecrackerExec_VirtualWorkspaceDisk exercises the 'vbd' workspace
+// writer: the workspace ext4 image is served through a FUSE block device and
+// never written to disk. Runs two actions on a recycled VM (pause/unpause in
+// between) to cover teardown and re-mount, plus the Tree-based variant.
+func TestFirecrackerExec_VirtualWorkspaceDisk(t *testing.T) {
+	flags.Set(t, "executor.firecracker_workspace_image_writer", "vbd")
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	testfs.MakeDirAll(t, workDir, "out")
+	big := make([]byte, 3<<20)
+	for i := range big {
+		big[i] = byte(i % 251)
+	}
+	testfs.WriteAllFileContents(t, workDir, map[string]string{
+		"run.sh":       "cat sub/data.txt; sha256sum big.bin | cut -c1-16; echo first > out/result.txt\n",
+		"sub/data.txt": "payload\n",
+		"big.bin":      string(big),
+	})
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration:        &fcpb.VMConfiguration{NumCpus: 1, MemSizeMb: 1000, ScratchDiskSizeMb: 500},
+		ExecutorConfig:         getExecutorConfig(t),
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{
+		Platform:    &repb.Platform{Properties: []*repb.Platform_Property{{Name: "recycle-runner", Value: "true"}}},
+		OutputPaths: []string{"out"},
+	}}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+	require.NoError(t, c.Create(ctx, workDir))
+	t.Cleanup(func() { assert.NoError(t, c.Remove(ctx)) })
+
+	wantSum := sha256.Sum256(big)
+	res := c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "run.sh"}, OutputPaths: []string{"out"}}, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, "", string(res.Stderr))
+	require.Equal(t, "payload\n"+hex.EncodeToString(wantSum[:])[:16]+"\n", string(res.Stdout))
+	b, err := os.ReadFile(filepath.Join(workDir, "out", "result.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "first\n", string(b))
+	// No image file was materialized.
+	_, err = os.Stat(filepath.Join(rootDir, "workspacefs.ext4"))
+	require.True(t, os.IsNotExist(err))
+
+	// Recycle: pause, change the workspace, unpause, run again.
+	require.NoError(t, c.Pause(ctx))
+	require.NoError(t, os.Remove(filepath.Join(workDir, "out", "result.txt")))
+	testfs.WriteAllFileContents(t, workDir, map[string]string{"run2.sh": "ls sub; echo second > out/result.txt; dd if=/dev/zero of=out/zeros bs=1M count=8 2>/dev/null; sync\n"})
+	require.NoError(t, c.Unpause(ctx))
+	res = c.Exec(ctx, &repb.Command{Arguments: []string{"sh", "run2.sh"}, OutputPaths: []string{"out"}}, nil)
+	require.NoError(t, res.Error)
+	require.Equal(t, "data.txt\n", string(res.Stdout))
+	b, err = os.ReadFile(filepath.Join(workDir, "out", "result.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "second\n", string(b))
+	st, err := os.Stat(filepath.Join(workDir, "out", "zeros"))
+	require.NoError(t, err)
+	require.Equal(t, int64(8<<20), st.Size())
+	require.NoError(t, c.Pause(ctx))
 }

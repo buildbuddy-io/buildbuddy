@@ -348,7 +348,13 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
-	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
+	tarArgs := []string{"--extract", "--directory", tempUnpackDir}
+	if *containerImageExt4Writer == "native" {
+		// Preserve extended attributes (e.g. security.capability); GNU tar
+		// drops them by default and, with --xattrs alone, keeps only user.*.
+		tarArgs = append(tarArgs, "--xattrs", "--xattrs-include=*")
+	}
+	cmd := exec.CommandContext(ctx, "tar", tarArgs...)
 	var stderr bytes.Buffer
 	cmd.Stdin = rc
 	cmd.Stderr = &stderr

@@ -134,8 +134,10 @@ func xattrsFitInInode(xs []xattr) bool {
 // valueBase is the offset that e_value_offs is relative to, measured from
 // the start of the entries (0 for in-inode, where offsets are relative to
 // the first entry; for a block, entries start at 32 and offsets are relative
-// to the block start, so valueBase = 32).
-func encodeXattrs(xs []xattr, region []byte, valueBase int) {
+// to the block start, so valueBase = 32). hashed selects whether e_hash is
+// filled in: the kernel requires it for external blocks and requires zero for
+// in-inode entries (it doesn't maintain those).
+func encodeXattrs(xs []xattr, region []byte, valueBase int, hashed bool) {
 	off := 0
 	valEnd := len(region)
 	for _, x := range xs {
@@ -147,7 +149,9 @@ func encodeXattrs(xs []xattr, region []byte, valueBase int) {
 		binary.LittleEndian.PutUint16(e[2:], uint16(valEnd+valueBase))
 		binary.LittleEndian.PutUint32(e[4:], 0) // e_value_inum
 		binary.LittleEndian.PutUint32(e[8:], uint32(len(x.value)))
-		binary.LittleEndian.PutUint32(e[12:], xattrHashEntry(x.name, x.value))
+		if hashed {
+			binary.LittleEndian.PutUint32(e[12:], xattrHashEntry(x.name, x.value))
+		}
 		copy(e[16:], x.name)
 		copy(region[valEnd:], x.value)
 		off += xattrEntryLen(x.name)
@@ -159,7 +163,7 @@ func encodeXattrs(xs []xattr, region []byte, valueBase int) {
 func encodeInodeXattrs(b []byte, xs []xattr) {
 	region := b[128+32:]
 	binary.LittleEndian.PutUint32(region, xattrMagic)
-	encodeXattrs(xs, region[4:], 0)
+	encodeXattrs(xs, region[4:], 0, false)
 }
 
 // encodeXattrBlock renders an external xattr block.
@@ -176,7 +180,7 @@ func encodeXattrBlock(xs []xattr) ([]byte, error) {
 	le.PutUint32(b[0:], xattrMagic)
 	le.PutUint32(b[4:], 1) // h_refcount
 	le.PutUint32(b[8:], 1) // h_blocks
-	encodeXattrs(xs, b[32:], 32)
+	encodeXattrs(xs, b[32:], 32, true)
 	// h_hash: combination of entry hashes.
 	var h uint32
 	for _, x := range xs {

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"golang.org/x/sys/unix"
 )
 
 // blockMap collects metadata writes as 4 KiB blocks.
@@ -48,6 +49,15 @@ type dataExtent struct {
 	logical uint32 // logical block within the file
 }
 
+// VirtualOptions configures a VirtualImage.
+type VirtualOptions struct {
+	// PinSources opens every source file when the image is created and keeps
+	// it open for the image's lifetime, so that a filecache eviction can't
+	// pull an input out from under a running action. Costs one fd per unique
+	// file. Off by default (host workspace hardlinks already pin the inode).
+	PinSources bool
+}
+
 // VirtualImage implements vbd.BlockDevice (io.ReaderAt, io.WriterAt,
 // SizeBytes) for a workspace image that is never written to disk.
 type VirtualImage struct {
@@ -76,12 +86,15 @@ func NewVirtualImage(ctx context.Context, inputDir, overlayDir string, opts *Opt
 		return nil, status.WrapError(err, "walk input directory")
 	}
 	w.stats.WalkDuration = time.Since(start)
-	return w.finishVirtual(ctx, overlayDir)
+	return w.finishVirtual(ctx, overlayDir, &VirtualOptions{})
 }
 
 // NewVirtualImageFromTree is NewVirtualImage with an input Tree overlaid on
 // inputDir (see DirectoryAndTreeToImage).
-func NewVirtualImageFromTree(ctx context.Context, inputDir, overlayDir string, opts *TreeOptions) (*VirtualImage, error) {
+func NewVirtualImageFromTree(ctx context.Context, inputDir, overlayDir string, opts *TreeOptions, vopts *VirtualOptions) (*VirtualImage, error) {
+	if vopts == nil {
+		vopts = &VirtualOptions{PinSources: true}
+	}
 	if opts == nil || opts.Tree == nil || opts.Open == nil {
 		return nil, status.InvalidArgumentError("tree and opener are required")
 	}
@@ -101,7 +114,7 @@ func NewVirtualImageFromTree(ctx context.Context, inputDir, overlayDir string, o
 		return nil, status.WrapError(err, "add input tree")
 	}
 	w.stats.WalkDuration = time.Since(start)
-	return w.finishVirtual(ctx, overlayDir)
+	return w.finishVirtual(ctx, overlayDir, vopts)
 }
 
 func newWriter(opts *Options) *writer {
@@ -118,7 +131,7 @@ func newWriter(opts *Options) *writer {
 	return w
 }
 
-func (w *writer) finishVirtual(ctx context.Context, overlayDir string) (*VirtualImage, error) {
+func (w *writer) finishVirtual(ctx context.Context, overlayDir string, vopts *VirtualOptions) (*VirtualImage, error) {
 	w.assignInodes()
 	start := time.Now()
 	if err := w.layout(w.root); err != nil {
@@ -161,7 +174,63 @@ func (w *writer) finishVirtual(ctx context.Context, overlayDir string) (*Virtual
 		overlay: overlay,
 		fds:     newFDCache(virtualImageMaxOpenFiles),
 	}
+	if vopts.PinSources {
+		// Open everything now (in parallel) and keep it open.
+		start := time.Now()
+		if err := v.pinAll(ctx, w.opts.Concurrency); err != nil {
+			v.Close()
+			return nil, status.WrapError(err, "open input files")
+		}
+		w.stats.DataDuration = time.Since(start)
+	}
 	return v, nil
+}
+
+// pinAll opens every source file and holds a reference so it is never
+// evicted from the fd cache (and can't be deleted from under us).
+func (v *VirtualImage) pinAll(ctx context.Context, concurrency int) error {
+	seen := map[*node]bool{}
+	var nodes []*node
+	for i := range v.extents {
+		n := v.extents[i].node
+		if !seen[n] {
+			seen[n] = true
+			nodes = append(nodes, n)
+		}
+	}
+	if rl, err := getNoFileLimit(); err == nil && uint64(len(nodes)+1024) > rl {
+		return status.ResourceExhaustedErrorf("need %d open files but RLIMIT_NOFILE is %d", len(nodes), rl)
+	}
+	v.fds.max = len(nodes) + virtualImageMaxOpenFiles
+	ch := make(chan *node)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+	for i := 0; i < max(1, concurrency); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for n := range ch {
+				_, _, err := v.fds.get(n, v.open) // reference intentionally never released
+				if err != nil {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	for _, n := range nodes {
+		if ctx.Err() != nil {
+			break
+		}
+		ch <- n
+	}
+	close(ch)
+	wg.Wait()
+	return firstErr
 }
 
 // Stats returns layout statistics.
@@ -193,9 +262,19 @@ func (v *VirtualImage) ReadAt(p []byte, off int64) (int, error) {
 	if off < 0 || off >= v.size {
 		return 0, io.EOF
 	}
+	short := false
 	if int64(len(p)) > v.size-off {
 		p = p[:v.size-off]
+		short = true
 	}
+	n, err := v.readAll(p, off)
+	if err == nil && short {
+		return n, io.EOF
+	}
+	return n, err
+}
+
+func (v *VirtualImage) readAll(p []byte, off int64) (int, error) {
 	done := 0
 	for done < len(p) {
 		blk := uint32((off + int64(done)) / blockSize)
@@ -248,9 +327,9 @@ func (v *VirtualImage) readFileBlock(e *dataExtent, blk uint32, inBlk int, dst [
 	nr, err := f.ReadAt(want, fileOff)
 	if err != nil && !(err == io.EOF && nr == len(want)) {
 		if err == io.EOF {
-			// Source shorter than expected: treat the rest as zeros.
-			clear(want[nr:])
-			return nil
+			// The source is shorter than it was when the layout was computed:
+			// don't hand the guest zeros in place of input data.
+			return status.DataLossErrorf("input %q truncated: expected %d bytes at %d, got %d", n.name, len(want), fileOff, nr)
 		}
 		return err
 	}
@@ -364,7 +443,16 @@ func (c *fdCache) put(n *node) {
 	if e, ok := c.items[n]; ok {
 		e.refs--
 	}
+	c.evictLocked()
 	c.mu.Unlock()
+}
+
+func getNoFileLimit() (uint64, error) {
+	var rl unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_NOFILE, &rl); err != nil {
+		return 0, err
+	}
+	return rl.Cur, nil
 }
 
 func (c *fdCache) touch(n *node) {

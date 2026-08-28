@@ -313,6 +313,14 @@ func (w *writer) walk(dir string) (*node, error) {
 		return nil, status.InvalidArgumentErrorf("%q is not a directory", dir)
 	}
 	root := w.newNode("", dir, st)
+	if w.opts.Xattrs {
+		xs, err := readXattrs(dir)
+		if err != nil {
+			return nil, status.WrapErrorf(err, "read xattrs of %q", dir)
+		}
+		root.xattrs = xs
+		w.stats.Xattrs += len(xs)
+	}
 	// lost+found: keep e2fsck happy.
 	lf := &node{name: "lost+found", mode: os.ModeDir | 0700, rawMode: syscall.S_IFDIR | 0700, mtime: w.opts.Now, parent: root}
 	root.children = append(root.children, lf)

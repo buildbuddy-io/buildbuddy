@@ -1764,6 +1764,13 @@ func (c *FirecrackerContainer) createAndAttachWorkspace(ctx context.Context) err
 func (c *FirecrackerContainer) createVirtualWorkspace(ctx context.Context) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+	if c.workspaceVBD != nil {
+		// A previous virtual disk is still attached (e.g. no snapshot was
+		// taken between actions): detach it from the VM before unmounting.
+		if err := c.updateWorkspaceDriveToEmptyFile(ctx); err != nil {
+			return "", status.WrapError(err, "detach previous workspace disk")
+		}
+	}
 	if err := c.teardownVirtualWorkspace(ctx); err != nil {
 		return "", err
 	}
@@ -1774,7 +1781,7 @@ func (c *FirecrackerContainer) createVirtualWorkspace(ctx context.Context) (stri
 		fc := c.env.GetFileCache()
 		img, err = ext4writer.NewVirtualImageFromTree(ctx, c.actionWorkingDir, c.jailerRoot, &ext4writer.TreeOptions{
 			Options: wopts, Tree: c.inputTree.Inputs, DigestFunction: c.inputTree.DigestFunction, Open: fc.Open,
-		})
+		}, &ext4writer.VirtualOptions{PinSources: true})
 	} else {
 		img, err = ext4writer.NewVirtualImage(ctx, c.actionWorkingDir, c.jailerRoot, &wopts)
 	}
@@ -3200,14 +3207,16 @@ func (c *FirecrackerContainer) unmountAllVBDs(ctx context.Context, fromRemove bo
 	}
 	if c.workspaceVBD != nil {
 		if err := c.workspaceVBD.Unmount(ctx); err != nil {
+			// The unmount may still complete in the background; keep the
+			// backing image open so a live mount is never backed by closed
+			// files.
 			logErr(workspaceDriveID, err)
 			lastErr = err
-		}
-		c.workspaceVBD = nil
-		if c.workspaceImage != nil {
+		} else if c.workspaceImage != nil {
 			c.workspaceImage.Close()
 			c.workspaceImage = nil
 		}
+		c.workspaceVBD = nil
 	}
 	if c.memorySnapshotExportVBD != nil {
 		if err := c.memorySnapshotExportVBD.Unmount(ctx); err != nil {
