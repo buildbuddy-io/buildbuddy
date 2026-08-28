@@ -3,12 +3,12 @@ package(default_visibility = ["//enterprise:__subpackages__"])
 genrule(
     name = "mkinitrd",
     srcs = [
-        "//enterprise/server/cmd/goinit",
+        "//enterprise/server/cmd/goinit:goinit_static",
     ],
     outs = ["initrd.cpio"],
     cmd_bash = """
         env \
-            GOINIT=$(location //enterprise/server/cmd/goinit:goinit) \
+            GOINIT=$(location //enterprise/server/cmd/goinit:goinit_static) \
             CPIO=$(location //enterprise/tools/cpio) \
             ./$(location mkinitrd.sh) \
             "$@"
