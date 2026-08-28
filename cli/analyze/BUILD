@@ -21,5 +21,8 @@ go_test(
     name = "analyze_test",
     srcs = ["analyze_test.go"],
     embed = [":analyze"],
-    deps = ["//proto:bazel_query_go_proto"],
+    deps = [
+        "//proto:bazel_query_go_proto",
+        "@com_github_stretchr_testify//require",
+    ],
 )
