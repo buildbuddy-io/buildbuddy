@@ -57,7 +57,7 @@ func TestNewMemoryMonitor_NoGPUsAvailable_ReturnsError(t *testing.T) {
 }
 
 func TestDeviceProcessMemory_UnavailableValueReported_ValueIsIgnored(t *testing.T) {
-	device := gpuDevice{Device: &mock.Device{
+	device := gpuDevice{device: &mock.Device{
 		GetComputeRunningProcessesFunc: func() ([]nvml.ProcessInfo, nvml.Return) {
 			return []nvml.ProcessInfo{
 				{Pid: 123, UsedGpuMemory: 2 * 1024 * 1024},
@@ -79,7 +79,7 @@ func TestDeviceProcessMemory_ProcessHoldingComputeAndGraphicsMemory_UsageIsCount
 	// PID 100 holds both a compute and a graphics context, so NVML reports it
 	// in both lists with its total usage. PIDs 200 and 300 hold only one
 	// context type each.
-	device := gpuDevice{Device: &mock.Device{
+	device := gpuDevice{device: &mock.Device{
 		GetComputeRunningProcessesFunc: func() ([]nvml.ProcessInfo, nvml.Return) {
 			return []nvml.ProcessInfo{
 				{Pid: 100, UsedGpuMemory: 5 * 1024 * 1024},
@@ -116,7 +116,7 @@ func TestMemoryMonitorRead_MultipleReads_OnlyLatestReadingIsReported(t *testing.
 			return nil, nvml.SUCCESS
 		},
 	}
-	m := &MemoryMonitor{devices: []gpuDevice{{Device: device, uuid: "GPU-a"}}}
+	m := &memoryMonitor{devices: []gpuDevice{{device: device, uuid: "GPU-a"}}}
 
 	first, err := m.read()
 	require.NoError(t, err)
@@ -136,8 +136,8 @@ func TestMemoryMonitorRead_MultipleReads_OnlyLatestReadingIsReported(t *testing.
 }
 
 func TestMemoryMonitorRead_MultipleGPUsWithSingleGPUFailing_EntireReadingIsDiscarded(t *testing.T) {
-	m := &MemoryMonitor{devices: []gpuDevice{
-		{uuid: "GPU-a", Device: &mock.Device{
+	m := &memoryMonitor{devices: []gpuDevice{
+		{uuid: "GPU-a", device: &mock.Device{
 			GetComputeRunningProcessesFunc: func() ([]nvml.ProcessInfo, nvml.Return) {
 				return []nvml.ProcessInfo{{Pid: 123, UsedGpuMemory: 2 * 1024 * 1024}}, nvml.SUCCESS
 			},
@@ -145,7 +145,7 @@ func TestMemoryMonitorRead_MultipleGPUsWithSingleGPUFailing_EntireReadingIsDisca
 				return nil, nvml.SUCCESS
 			},
 		}},
-		{uuid: "GPU-b", Device: &mock.Device{
+		{uuid: "GPU-b", device: &mock.Device{
 			GetComputeRunningProcessesFunc: func() ([]nvml.ProcessInfo, nvml.Return) {
 				return nil, nvml.ERROR_GPU_IS_LOST
 			},
@@ -161,7 +161,7 @@ func TestMemoryMonitorCgroupGPUUsage_CgroupAndUnrelatedProcesses_OnlyCgroupMemor
 	cgroupPath := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(cgroupPath, "cgroup.procs"), []byte("123\n456\n"), 0o644))
 
-	m := &MemoryMonitor{lastReading: memoryReading{
+	m := &memoryMonitor{lastReading: memoryReading{
 		"GPU-b": {
 			123: 7 * 1024 * 1024,
 		},
@@ -187,7 +187,7 @@ func TestMemoryMonitorCgroupGPUUsage_NoAvailableData_UsageIsNil(t *testing.T) {
 	cgroupPath := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(cgroupPath, "cgroup.procs"), nil, 0o644))
 
-	m := &MemoryMonitor{}
+	m := &memoryMonitor{}
 	usage := m.cgroupGPUUsage(cgroupPath)
 	require.Nil(t, usage)
 }
@@ -196,7 +196,7 @@ func TestMemoryMonitorCgroupGPUUsage_EmptyReading_ZeroUsageIsReported(t *testing
 	cgroupPath := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(cgroupPath, "cgroup.procs"), nil, 0o644))
 
-	m := &MemoryMonitor{lastReading: memoryReading{}}
+	m := &memoryMonitor{lastReading: memoryReading{}}
 	usage := m.cgroupGPUUsage(cgroupPath)
 	require.NotNil(t, usage)
 	require.Empty(t, cmp.Diff(&repb.GPUUsage{}, usage, protocmp.Transform()))

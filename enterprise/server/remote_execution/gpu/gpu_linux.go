@@ -22,7 +22,7 @@ import (
 var (
 	// defaultMemoryMonitor is the executor-wide monitor, set by configure when
 	// GPU memory tracking is enabled.
-	defaultMemoryMonitor *MemoryMonitor
+	defaultMemoryMonitor *memoryMonitor
 )
 
 // memoryReading maps GPU ID to PID to GPU memory usage in bytes, as measured
@@ -34,8 +34,8 @@ type readFunc func() (memoryReading, error)
 // gpuDevice pairs an NVML device handle with its UUID, which is queried once
 // at discovery time.
 type gpuDevice struct {
-	nvml.Device
-	uuid string
+	device nvml.Device
+	uuid   string
 }
 
 // discoverDevices returns the accessible NVIDIA GPUs and their stable UUIDs.
@@ -59,7 +59,7 @@ func discoverDevices(library nvml.Interface) ([]gpuDevice, error) {
 		if ret != nvml.SUCCESS {
 			return nil, fmt.Errorf("get device %d UUID: %w", index, ret)
 		}
-		devices = append(devices, gpuDevice{Device: device, uuid: uuid})
+		devices = append(devices, gpuDevice{device: device, uuid: uuid})
 	}
 	return devices, nil
 }
@@ -72,11 +72,11 @@ func discoverDevices(library nvml.Interface) ([]gpuDevice, error) {
 // graphics context appears in both lists with its total usage (confirmed
 // empirically). Such processes are deduplicated by PID rather than summed.
 func (d gpuDevice) processMemory() (map[int]int64, error) {
-	compute, ret := d.GetComputeRunningProcesses()
+	compute, ret := d.device.GetComputeRunningProcesses()
 	if ret != nvml.SUCCESS {
 		return nil, fmt.Errorf("query compute processes: %w", ret)
 	}
-	graphics, ret := d.GetGraphicsRunningProcesses()
+	graphics, ret := d.device.GetGraphicsRunningProcesses()
 	if ret != nvml.SUCCESS {
 		return nil, fmt.Errorf("query graphics processes: %w", ret)
 	}
@@ -101,23 +101,22 @@ func (d gpuDevice) processMemory() (map[int]int64, error) {
 	return memoryBytesByPID, nil
 }
 
-// MemoryMonitor samples NVIDIA GPU memory usage and attributes it to cgroups.
-type MemoryMonitor struct {
+// memoryMonitor samples NVIDIA GPU memory usage and attributes it to cgroups.
+type memoryMonitor struct {
 	library nvml.Interface
 	devices []gpuDevice
 
-	startOnce sync.Once
-
-	mu sync.RWMutex
+	// mu guards lastReading.
+	mu sync.Mutex
 	// lastReading is the most recent complete poll. A nil map means that no
 	// successful reading is available.
 	lastReading memoryReading
 }
 
-// newMemoryMonitor initializes NVML and discovers GPUs once so polling only
-// queries process memory. If discovery fails, NVML is shut down before
-// returning the error.
-func newMemoryMonitor(library nvml.Interface) (*MemoryMonitor, error) {
+// newMemoryMonitor initializes NVML, discovers GPUs once so polling only
+// queries process memory, and starts the background poller. If discovery
+// fails, NVML is shut down before returning the error.
+func newMemoryMonitor(library nvml.Interface) (*memoryMonitor, error) {
 	if ret := library.Init(); ret != nvml.SUCCESS {
 		return nil, fmt.Errorf("initialize NVML: %w", ret)
 	}
@@ -129,23 +128,15 @@ func newMemoryMonitor(library nvml.Interface) (*MemoryMonitor, error) {
 		}
 		return nil, err
 	}
-	return &MemoryMonitor{library: library, devices: devices}, nil
+	m := &memoryMonitor{library: library, devices: devices}
+	go m.monitor(context.Background(), m.read)
+	return m, nil
 }
 
-// CgroupGPUUsage starts GPU monitoring on its first call and returns the most
-// recent GPU memory usage for processes in the given cgroup. It returns nil
-// when no successful NVML reading is available or the cgroup's process list
-// cannot be read.
-func (m *MemoryMonitor) CgroupGPUUsage(cgroupPath string) *repb.GPUUsage {
-	m.startOnce.Do(func() {
-		go m.monitor(context.Background(), m.read)
-	})
-	return m.cgroupGPUUsage(cgroupPath)
-}
-
-// cgroupGPUUsage filters the latest process readings to the processes in the
-// requested cgroup and aggregates their memory by GPU.
-func (m *MemoryMonitor) cgroupGPUUsage(cgroupPath string) *repb.GPUUsage {
+// cgroupGPUUsage returns the most recent GPU memory usage for processes in
+// the given cgroup, aggregated by GPU. It returns nil when no successful NVML
+// reading is available or the cgroup's process list cannot be read.
+func (m *memoryMonitor) cgroupGPUUsage(cgroupPath string) *repb.GPUUsage {
 	pids, err := cgroup.ReadCgroupProcs(cgroupPath)
 	if err != nil {
 		// The cgroup may be deleted while a final stats poll is in flight, so
@@ -156,15 +147,16 @@ func (m *MemoryMonitor) cgroupGPUUsage(cgroupPath string) *repb.GPUUsage {
 		return nil
 	}
 
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	lastReading := m.lastReading
+	m.mu.Unlock()
 
-	if m.lastReading == nil {
+	if lastReading == nil {
 		return nil
 	}
 
 	memoryBytesByGPU := make(map[string]int64)
-	for gpuID, memoryBytesByPID := range m.lastReading {
+	for gpuID, memoryBytesByPID := range lastReading {
 		for pid, memoryBytes := range memoryBytesByPID {
 			if _, ok := pids[pid]; ok {
 				memoryBytesByGPU[gpuID] += memoryBytes
@@ -176,6 +168,7 @@ func (m *MemoryMonitor) cgroupGPUUsage(cgroupPath string) *repb.GPUUsage {
 	for gpuID := range memoryBytesByGPU {
 		gpuIDs = append(gpuIDs, gpuID)
 	}
+	// Sort by ID so clients see per-GPU stats in a deterministic order.
 	slices.Sort(gpuIDs)
 
 	usage := &repb.GPUUsage{}
@@ -193,7 +186,9 @@ func (m *MemoryMonitor) cgroupGPUUsage(cgroupPath string) *repb.GPUUsage {
 
 // monitor polls NVML and replaces the published reading after each poll. A
 // failed poll clears the published reading rather than leaving stale data.
-func (m *MemoryMonitor) monitor(ctx context.Context, read readFunc) {
+func (m *memoryMonitor) monitor(ctx context.Context, read readFunc) {
+	ticker := time.NewTicker(*gpuMemoryPollInterval)
+	defer ticker.Stop()
 	var lastError string
 	for {
 		reading, err := read()
@@ -208,12 +203,10 @@ func (m *MemoryMonitor) monitor(ctx context.Context, read readFunc) {
 			lastError = ""
 		}
 
-		timer := time.NewTimer(*gpuMemoryPollInterval)
 		select {
 		case <-ctx.Done():
-			timer.Stop()
 			return
-		case <-timer.C:
+		case <-ticker.C:
 		}
 	}
 }
@@ -221,7 +214,7 @@ func (m *MemoryMonitor) monitor(ctx context.Context, read readFunc) {
 // read returns a reading of the memory used by each process on each GPU. If
 // any GPU query fails, the whole reading is discarded, so a partial reading
 // is never presented as total usage.
-func (m *MemoryMonitor) read() (memoryReading, error) {
+func (m *memoryMonitor) read() (memoryReading, error) {
 	reading := make(memoryReading)
 	for _, device := range m.devices {
 		memoryBytesByPID, err := device.processMemory()
@@ -235,7 +228,7 @@ func (m *MemoryMonitor) read() (memoryReading, error) {
 	return reading, nil
 }
 
-func (m *MemoryMonitor) setReading(reading memoryReading) {
+func (m *memoryMonitor) setReading(reading memoryReading) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastReading = reading
@@ -257,5 +250,5 @@ func cgroupUsage(cgroupPath string) *repb.GPUUsage {
 		// Configure was not called; usage is unknown.
 		return nil
 	}
-	return defaultMemoryMonitor.CgroupGPUUsage(cgroupPath)
+	return defaultMemoryMonitor.cgroupGPUUsage(cgroupPath)
 }
