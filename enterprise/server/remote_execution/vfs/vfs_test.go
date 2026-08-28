@@ -27,6 +27,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc"
@@ -107,6 +109,7 @@ type countingFileSystemClient struct {
 	vfspb.FileSystemClient
 	readCount                 atomic.Int64
 	lookupCount               atomic.Int64
+	getAttrCount              atomic.Int64
 	getDirectoryContentsCount atomic.Int64
 }
 
@@ -120,9 +123,86 @@ func (c *countingFileSystemClient) Lookup(ctx context.Context, req *vfspb.Lookup
 	return c.FileSystemClient.Lookup(ctx, req, opts...)
 }
 
+func (c *countingFileSystemClient) GetAttr(ctx context.Context, req *vfspb.GetAttrRequest, opts ...grpc.CallOption) (*vfspb.GetAttrResponse, error) {
+	c.getAttrCount.Add(1)
+	return c.FileSystemClient.GetAttr(ctx, req, opts...)
+}
+
 func (c *countingFileSystemClient) GetDirectoryContents(ctx context.Context, req *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
 	c.getDirectoryContentsCount.Add(1)
 	return c.FileSystemClient.GetDirectoryContents(ctx, req, opts...)
+}
+
+type blockingGetDirectoryContentsClient struct {
+	vfspb.FileSystemClient
+	blockNext       atomic.Bool
+	released        atomic.Bool
+	snapshotReady   chan struct{}
+	releaseSnapshot chan struct{}
+}
+
+func (c *blockingGetDirectoryContentsClient) GetDirectoryContents(ctx context.Context, req *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
+	rsp, err := c.FileSystemClient.GetDirectoryContents(ctx, req, opts...)
+	if c.blockNext.CompareAndSwap(true, false) {
+		close(c.snapshotReady)
+		<-c.releaseSnapshot
+	}
+	return rsp, err
+}
+
+func (c *blockingGetDirectoryContentsClient) release() {
+	if c.released.CompareAndSwap(false, true) {
+		close(c.releaseSnapshot)
+	}
+}
+
+func setupVFSWithBlockedDirectorySnapshot(t *testing.T) (*blockingGetDirectoryContentsClient, *vfs.Node, *fusefs.Inode) {
+	env := setupEnv(t)
+	var client *blockingGetDirectoryContentsClient
+	_, vfsClient, _ := setupVFSWithInputTreeAndClient(t, env, &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, func(baseClient vfspb.FileSystemClient) vfspb.FileSystemClient {
+		client = &blockingGetDirectoryContentsClient{
+			FileSystemClient: baseClient,
+			snapshotReady:    make(chan struct{}),
+			releaseSnapshot:  make(chan struct{}),
+		}
+		return client
+	})
+	t.Cleanup(client.release)
+	rootInode, err := vfsClient.GetInode(1)
+	require.NoError(t, err)
+	root, ok := rootInode.Operations().(*vfs.Node)
+	require.True(t, ok)
+	child, errno := root.Mknod(t.Context(), "file.txt", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, root.AddChild("file.txt", child, false))
+	return client, root, child
+}
+
+type readdirResult struct {
+	entry *fuse.DirEntry
+	errno syscall.Errno
+}
+
+func startBlockedReaddir(t *testing.T, client *blockingGetDirectoryContentsClient, root *vfs.Node) <-chan readdirResult {
+	t.Helper()
+	handle, _, errno := root.OpendirHandle(t.Context(), 0)
+	require.Zero(t, errno)
+	readdirenter, ok := handle.(interface {
+		Readdirent(context.Context) (*fuse.DirEntry, syscall.Errno)
+	})
+	require.True(t, ok)
+	result := make(chan readdirResult, 1)
+	client.blockNext.Store(true)
+	go func() {
+		entry, errno := readdirenter.Readdirent(t.Context())
+		result <- readdirResult{entry: entry, errno: errno}
+	}()
+	select {
+	case <-client.snapshotReady:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for directory snapshot")
+	}
+	return result
 }
 
 func setupVFS(t *testing.T) string {
@@ -303,6 +383,7 @@ func TestReaddirCachesLookupAttrs(t *testing.T) {
 		return countingClient
 	})
 	countingClient.lookupCount.Store(0)
+	countingClient.getAttrCount.Store(0)
 	countingClient.getDirectoryContentsCount.Store(0)
 
 	entries, err := os.ReadDir(fsPath)
@@ -314,6 +395,40 @@ func TestReaddirCachesLookupAttrs(t *testing.T) {
 
 	require.EqualValues(t, 1, countingClient.getDirectoryContentsCount.Load())
 	require.Zero(t, countingClient.lookupCount.Load())
+	require.Zero(t, countingClient.getAttrCount.Load())
+}
+
+func TestReaddirSnapshotDoesNotRestoreDeletedEntry(t *testing.T) {
+	client, root, _ := setupVFSWithBlockedDirectorySnapshot(t)
+	result := startBlockedReaddir(t, client, root)
+	require.Zero(t, root.Unlink(t.Context(), "file.txt"))
+	removed, _ := root.RmChild("file.txt")
+	require.True(t, removed)
+	client.release()
+	readdirResult := <-result
+	require.Zero(t, readdirResult.errno)
+	require.Equal(t, "file.txt", readdirResult.entry.Name)
+
+	_, errno := root.Lookup(t.Context(), "file.txt", &fuse.EntryOut{})
+	require.Equal(t, syscall.ENOENT, errno)
+}
+
+func TestReaddirSnapshotDoesNotRestoreStaleAttrs(t *testing.T) {
+	client, root, child := setupVFSWithBlockedDirectorySnapshot(t)
+	result := startBlockedReaddir(t, client, root)
+	client.release()
+	readdirResult := <-result
+	require.Zero(t, readdirResult.errno)
+	require.Equal(t, "file.txt", readdirResult.entry.Name)
+
+	_, errno := root.Link(t.Context(), child.Operations(), "link.txt", &fuse.EntryOut{})
+	require.Zero(t, errno)
+	removed, _ := root.RmChild("file.txt")
+	require.True(t, removed)
+	lookupOut := &fuse.EntryOut{}
+	_, errno = root.Lookup(t.Context(), "file.txt", lookupOut)
+	require.Zero(t, errno)
+	require.EqualValues(t, 2, lookupOut.Nlink)
 }
 
 func stat(t *testing.T, path string) os.FileInfo {
