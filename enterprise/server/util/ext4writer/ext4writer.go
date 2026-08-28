@@ -152,6 +152,14 @@ type node struct {
 	hardlink *node      // if this path is a hardlink to an already-seen node
 	links    int        // number of directory entries referencing this inode (files)
 	fileNode *repb.FileNode // when building from a Tree: the input node (content via writer.open)
+	ranges   []blockRange   // logical block ranges holding data (nil = [0, nblocks) i.e. dense)
+}
+
+// blockRange is a run of logical blocks that contain data (sparse files have
+// gaps between ranges).
+type blockRange struct {
+	start uint32 // logical block
+	n     uint32
 }
 
 type extentRg struct {
@@ -372,11 +380,67 @@ func (w *writer) walkDir(d *node) error {
 			if n.size < 0 || n.size > maxFileBytes {
 				return status.InvalidArgumentErrorf("%q: unsupported file size %d", n.path, n.size)
 			}
+			if sys, ok := st.Sys().(*syscall.Stat_t); ok && n.size >= 2*blockSize && sys.Blocks*512+blockSize < n.size {
+				// Sparse file: only map the data ranges.
+				ranges, err := dataRanges(n.path, n.size)
+				if err != nil {
+					return status.WrapErrorf(err, "find data ranges of %q", n.path)
+				}
+				n.ranges = ranges
+			}
 			w.stats.Files++
 			w.stats.DataBytes += n.size
 		}
 	}
 	return nil
+}
+
+// dataRanges finds the logical block ranges of a file that contain data,
+// using SEEK_DATA/SEEK_HOLE. Falls back to a single dense range.
+func dataRanges(path string, size int64) ([]blockRange, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var out []blockRange
+	var off int64
+	for off < size {
+		dataStart, err := unix.Seek(int(f.Fd()), off, unix.SEEK_DATA)
+		if err != nil {
+			if errors.Is(err, unix.ENXIO) {
+				break // no more data
+			}
+			if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOTSUP) || errors.Is(err, unix.EOPNOTSUPP) {
+				return nil, nil // filesystem doesn't support it: treat as dense
+			}
+			return nil, err
+		}
+		holeStart, err := unix.Seek(int(f.Fd()), dataStart, unix.SEEK_HOLE)
+		if err != nil {
+			return nil, err
+		}
+		if holeStart > size {
+			holeStart = size
+		}
+		// Round to whole blocks.
+		sb := uint32(dataStart / blockSize)
+		eb := uint32(ceilDiv(holeStart, blockSize))
+		if len(out) > 0 && out[len(out)-1].start+out[len(out)-1].n >= sb {
+			// Merge with previous (block rounding can make ranges touch).
+			last := &out[len(out)-1]
+			if eb > last.start+last.n {
+				last.n = eb - last.start
+			}
+		} else if eb > sb {
+			out = append(out, blockRange{start: sb, n: eb - sb})
+		}
+		off = holeStart
+		if len(out) > maxExtentsList {
+			return nil, status.InvalidArgumentErrorf("%q has too many data ranges", path)
+		}
+	}
+	return out, nil
 }
 
 func sortChildren(d *node) {
@@ -486,7 +550,13 @@ func (w *writer) layout(root *node) error {
 			n.dirData = renderDir(n)
 			n.nblocks = uint32(len(n.dirData) / blockSize)
 		case n.mode.IsRegular():
-			n.nblocks = uint32(ceilDiv(n.size, blockSize))
+			if n.ranges != nil {
+				for _, r := range n.ranges {
+					n.nblocks += r.n
+				}
+			} else {
+				n.nblocks = uint32(ceilDiv(n.size, blockSize))
+			}
 		case n.mode&os.ModeSymlink != 0:
 			if len(n.target) >= 60 {
 				n.nblocks = uint32(ceilDiv(n.size, blockSize))
@@ -686,8 +756,37 @@ func (w *writer) isBlockUsed(b uint32) bool {
 // allocExtents allocates n.nblocks contiguous-as-possible blocks, splitting
 // around reserved backup blocks and the 32768-block extent limit.
 func (w *writer) allocExtents(n *node) error {
-	remaining := n.nblocks
-	var logical uint32
+	ranges := n.ranges
+	if ranges == nil {
+		ranges = []blockRange{{start: 0, n: n.nblocks}}
+	}
+	for _, r := range ranges {
+		if err := w.allocRange(n, r); err != nil {
+			return err
+		}
+	}
+	if len(n.extents) > extentsInInode {
+		if len(n.extents) > extentsPerLeaf {
+			return status.UnimplementedErrorf("file %q needs %d extents; more than %d is unsupported", n.path, len(n.extents), extentsPerLeaf)
+		}
+		// Allocate one leaf block for the extent tree.
+		for w.nextBlock < w.blocksCount && w.isBlockUsed(w.nextBlock) {
+			w.nextBlock++
+		}
+		if w.nextBlock >= w.blocksCount {
+			return status.ResourceExhaustedErrorf("image too small: out of blocks")
+		}
+		n.leaf = w.nextBlock
+		w.markBlock(n.leaf)
+		w.nextBlock++
+	}
+	return nil
+}
+
+// allocRange allocates physical blocks for one logical range of n.
+func (w *writer) allocRange(n *node, r blockRange) error {
+	remaining := r.n
+	logical := r.start
 	for remaining > 0 {
 		// Skip used (reserved) blocks.
 		for w.nextBlock < w.blocksCount && w.isBlockUsed(w.nextBlock) {
@@ -709,21 +808,6 @@ func (w *writer) allocExtents(n *node) error {
 		n.extents = append(n.extents, extentRg{logical: logical, start: start, len: l})
 		logical += l
 		remaining -= l
-	}
-	if len(n.extents) > extentsInInode {
-		if len(n.extents) > extentsPerLeaf {
-			return status.UnimplementedErrorf("file %q needs %d extents; more than %d is unsupported", n.path, len(n.extents), extentsPerLeaf)
-		}
-		// Allocate one leaf block for the extent tree.
-		for w.nextBlock < w.blocksCount && w.isBlockUsed(w.nextBlock) {
-			w.nextBlock++
-		}
-		if w.nextBlock >= w.blocksCount {
-			return status.ResourceExhaustedErrorf("image too small: out of blocks")
-		}
-		n.leaf = w.nextBlock
-		w.markBlock(n.leaf)
-		w.nextBlock++
 	}
 	return nil
 }
@@ -1171,61 +1255,45 @@ func (w *writer) copyData(ctx context.Context, f *os.File) error {
 // to read/write.
 func copyFile(ctx context.Context, src *os.File, n *node, dstFD int, pool *sync.Pool, reflink *reflinkState) error {
 	srcFD := int(src.Fd())
-	var srcOff int64
-	if reflink.enabled() && len(n.extents) > 0 && n.size >= blockSize {
-		// Clone the aligned prefix extent by extent.
-		aligned := n.size &^ (blockSize - 1)
-		var off int64
-		ok := true
-		for _, e := range n.extents {
-			if off >= aligned {
-				break
-			}
-			l := min(int64(e.len)*blockSize, aligned-off)
-			err := unix.IoctlFileCloneRange(dstFD, &unix.FileCloneRange{
-				Src_fd: int64(srcFD), Src_offset: uint64(off), Src_length: uint64(l), Dest_offset: uint64(e.start) * blockSize,
-			})
-			if err != nil {
-				if errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.EXDEV) || errors.Is(err, unix.ENOTTY) || errors.Is(err, unix.EINVAL) {
+	for _, e := range n.extents {
+		srcOff := int64(e.logical) * blockSize
+		end := min(n.size, int64(e.logical+e.len)*blockSize)
+		dstOff := int64(e.start) * blockSize
+		if reflink.enabled() {
+			// Clone the block-aligned part of this extent; the tail (if any)
+			// is copied below.
+			alignedEnd := end &^ (blockSize - 1)
+			if alignedEnd > srcOff {
+				err := unix.IoctlFileCloneRange(dstFD, &unix.FileCloneRange{
+					Src_fd: int64(srcFD), Src_offset: uint64(srcOff), Src_length: uint64(alignedEnd - srcOff), Dest_offset: uint64(dstOff),
+				})
+				if err == nil {
+					reflink.add(alignedEnd - srcOff)
+					dstOff += alignedEnd - srcOff
+					srcOff = alignedEnd
+				} else if errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.EXDEV) || errors.Is(err, unix.ENOTTY) || errors.Is(err, unix.EINVAL) {
 					reflink.disable()
 				}
-				ok = false
-				break
 			}
-			off += l
 		}
-		if ok {
-			reflink.add(aligned)
-			srcOff = aligned
-			if srcOff == n.size {
-				return nil
+		for srcOff < end {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			// Fall through to copy the tail with copy_file_range.
-		} else {
-			srcOff = 0
-		}
-	}
-	for _, e := range n.extents {
-		extEnd := int64(e.logical+e.len) * blockSize
-		if extEnd <= srcOff {
-			continue // already cloned
-		}
-		// Position within this extent (srcOff may be mid-extent after a clone).
-		dstOff := int64(e.start)*blockSize + (srcOff - int64(e.logical)*blockSize)
-		remaining := min(n.size, extEnd) - srcOff
-		for remaining > 0 {
-			nn, err := unix.CopyFileRange(srcFD, &srcOff, dstFD, &dstOff, int(remaining), 0)
+			nn, err := unix.CopyFileRange(srcFD, &srcOff, dstFD, &dstOff, int(min(end-srcOff, 1<<30)), 0)
 			if err != nil {
 				if errors.Is(err, unix.EXDEV) || errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.EINVAL) {
-					// Fall back to a buffered copy for this file.
-					return copyFileBuffered(src, n, dstFD, pool)
+					// Fall back to a buffered copy for the rest of this extent.
+					if err := copyRangeBuffered(src, srcOff, end, dstFD, dstOff, pool); err != nil {
+						return err
+					}
+					break
 				}
 				return err
 			}
 			if nn == 0 {
 				return io.ErrUnexpectedEOF
 			}
-			remaining -= int64(nn)
 		}
 	}
 	return nil
@@ -1235,15 +1303,15 @@ func copyFile(ctx context.Context, src *os.File, n *node, dstFD int, pool *sync.
 // mapping, so the kernel copies from the source page cache straight into the
 // image's page cache pages.
 func copyFileMmap(ctx context.Context, src *os.File, n *node, mapping []byte) error {
-	var srcOff int64
 	for _, e := range n.extents {
+		srcOff := int64(e.logical) * blockSize
+		end := min(n.size, int64(e.logical+e.len)*blockSize)
 		dstOff := int64(e.start) * blockSize
-		remaining := min(n.size-srcOff, int64(e.len)*blockSize)
-		for remaining > 0 {
+		for srcOff < end {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			chunk := min(remaining, int64(64<<20))
+			chunk := min(end-srcOff, int64(64<<20))
 			nr, err := src.ReadAt(mapping[dstOff:dstOff+chunk], srcOff)
 			if err != nil && !(errors.Is(err, io.EOF) && nr > 0) {
 				return err
@@ -1253,13 +1321,13 @@ func copyFileMmap(ctx context.Context, src *os.File, n *node, mapping []byte) er
 			}
 			srcOff += int64(nr)
 			dstOff += int64(nr)
-			remaining -= int64(nr)
 		}
 	}
 	return nil
 }
 
-func copyFileBuffered(src *os.File, n *node, dstFD int, pool *sync.Pool) error {
+// copyRangeBuffered copies [srcOff, end) of src to dstOff with read/write.
+func copyRangeBuffered(src *os.File, srcOff, end int64, dstFD int, dstOff int64, pool *sync.Pool) error {
 	bufp, _ := pool.Get().(*[]byte)
 	if bufp == nil {
 		b := make([]byte, 1<<20)
@@ -1267,33 +1335,27 @@ func copyFileBuffered(src *os.File, n *node, dstFD int, pool *sync.Pool) error {
 	}
 	defer pool.Put(bufp)
 	buf := *bufp
-	var srcOff int64
-	for _, e := range n.extents {
-		dstOff := int64(e.start) * blockSize
-		remaining := min(n.size-srcOff, int64(e.len)*blockSize)
-		for remaining > 0 {
-			chunk := min(remaining, int64(len(buf)))
-			nr, err := src.ReadAt(buf[:chunk], srcOff)
-			if err != nil && !(errors.Is(err, io.EOF) && nr > 0) {
+	for srcOff < end {
+		chunk := min(end-srcOff, int64(len(buf)))
+		nr, err := src.ReadAt(buf[:chunk], srcOff)
+		if err != nil && !(errors.Is(err, io.EOF) && nr > 0) {
+			return err
+		}
+		if nr == 0 {
+			return io.ErrUnexpectedEOF
+		}
+		for w := 0; w < nr; {
+			nw, err := unix.Pwrite(dstFD, buf[w:nr], dstOff+int64(w))
+			if err != nil {
 				return err
 			}
-			if nr == 0 {
-				return io.ErrUnexpectedEOF
+			if nw == 0 {
+				return io.ErrShortWrite
 			}
-			for w := 0; w < nr; {
-				nw, err := unix.Pwrite(dstFD, buf[w:nr], dstOff+int64(w))
-				if err != nil {
-					return err
-				}
-				if nw == 0 {
-					return io.ErrShortWrite
-				}
-				w += nw
-			}
-			srcOff += int64(nr)
-			dstOff += int64(nr)
-			remaining -= int64(nr)
+			w += nw
 		}
+		srcOff += int64(nr)
+		dstOff += int64(nr)
 	}
 	return nil
 }

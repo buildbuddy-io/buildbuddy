@@ -569,3 +569,51 @@ func TestTreeToImage(t *testing.T) {
 	s2, _ := os.Stat(filepath.Join(dst, "sub", "same2"))
 	require.True(t, os.SameFile(s1, s2))
 }
+
+// TestSparseFilesStaySparse: holes in source files become holes in the image
+// (no blocks allocated) and extract back as sparse files with equal content.
+func TestSparseFilesStaySparse(t *testing.T) {
+	requireTool(t, "/sbin/e2fsck")
+	requireTool(t, "/sbin/debugfs")
+	for _, mode := range []string{"mmap", "cfr"} {
+		t.Run(mode, func(t *testing.T) {
+			root := testfs.MakeTempDir(t)
+			src := filepath.Join(root, "src")
+			require.NoError(t, os.Mkdir(src, 0755))
+			f, err := os.Create(filepath.Join(src, "sparse"))
+			require.NoError(t, err)
+			require.NoError(t, f.Truncate(64<<20))
+			_, err = f.WriteAt([]byte("start"), 0)
+			require.NoError(t, err)
+			_, err = f.WriteAt(make([]byte, 5000), 20<<20+100) // straddles blocks
+			require.NoError(t, err)
+			_, err = f.WriteAt([]byte("end"), 64<<20-3)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+			st, _ := os.Stat(filepath.Join(src, "sparse"))
+			if st.Sys().(*syscall.Stat_t).Blocks*512 >= 64<<20 {
+				t.Skip("filesystem does not support sparse files")
+			}
+			image := filepath.Join(root, "ws.ext4")
+			stats, err := ext4writer.DirectoryToImage(context.Background(), src, image, &ext4writer.Options{CopyMode: mode})
+			require.NoError(t, err)
+			fsck(t, image)
+			out, err := exec.Command("/sbin/debugfs", "-R", "stat /sparse", image).CombinedOutput()
+			require.NoError(t, err, "%s", out)
+			m := regexp.MustCompile(`Blockcount: (\d+)`).FindStringSubmatch(string(out))
+			require.NotNil(t, m, "%s", out)
+			var blocks int
+			fmt.Sscanf(m[1], "%d", &blocks)
+			require.Less(t, blocks, 64, "sparse file should use only a few blocks, got %d (stats %s)", blocks, stats)
+			dst := filepath.Join(root, "dst")
+			require.NoError(t, os.Mkdir(dst, 0755))
+			require.NoError(t, ext4writer.ImageToDirectory(context.Background(), image, dst, []string{"sparse"}))
+			want, _ := os.ReadFile(filepath.Join(src, "sparse"))
+			got, err := os.ReadFile(filepath.Join(dst, "sparse"))
+			require.NoError(t, err)
+			require.True(t, bytes.Equal(want, got))
+			st2, _ := os.Stat(filepath.Join(dst, "sparse"))
+			require.Less(t, st2.Sys().(*syscall.Stat_t).Blocks*512, int64(1<<20), "extracted file should be sparse")
+		})
+	}
+}
