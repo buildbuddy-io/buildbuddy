@@ -1,0 +1,25 @@
+--- a/go/private/rules/transition.bzl	2026-08-28 23:44:34.160984205 +0000
++++ b/go/private/rules/transition.bzl	2026-08-28 23:53:01.570068754 +0000
+@@ -19,7 +19,6 @@
+ load(
+     "//go/private:mode.bzl",
+     "LINKMODES",
+-    "LINKMODE_NORMAL",
+ )
+ load(
+     "//go/private:platforms.bzl",
+@@ -182,7 +181,13 @@
+     "//go/config:race": False,
+     "//go/config:pure": False,
+     "//go/config:debug": False,
+-    "//go/config:linkmode": LINKMODE_NORMAL,
++    # Reset to the flag's default ("auto", which go_context resolves to
++    # "normal"/"pie" per platform) rather than to an explicit "normal": tools
++    # reached through this transition otherwise end up in a configuration that
++    # differs from plain exec-config Go targets *only* in this setting, so
++    # go_stdlib_transition (which keeps linkmode) builds the standard library
++    # twice for the exec platform.
++    "//go/config:linkmode": "auto",
+     "//go/config:tags": [],
+     "//go/config:pgoprofile": Label("//go/config:empty"),
+ }, **{setting: "" for setting in _SETTING_KEY_TO_ORIGINAL_SETTING_KEY.values()})

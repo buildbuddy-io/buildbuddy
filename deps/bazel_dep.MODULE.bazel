@@ -32,6 +32,16 @@ single_version_override(
 )
 
 bazel_dep(name = "rules_go", version = "0.62.0", repo_name = "io_bazel_rules_go")
+single_version_override(
+    module_name = "rules_go",
+    patch_strip = 1,
+    patches = [
+        # Avoid building the Go stdlib twice for the exec platform.
+        # TODO: upstream to rules_go and drop after the next release.
+        "//buildpatches/bazel_dep:rules_go.patch",
+    ],
+    version = "0.62.0",
+)
 bazel_dep(name = "rules_webtesting")
 archive_override(
     module_name = "rules_webtesting",
