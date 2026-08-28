@@ -2941,9 +2941,10 @@ func TestSampling(t *testing.T) {
 
 	// Advance time (to force newer atime) and write the same digest
 	// encrypted. The encrypted key should have the same digest prefix as the
-	// unencrypted key and come before the unencrypted key in lexicographical f
+	// unencrypted key and come before the unencrypted key in lexicographical
 	// order.
-	clock.Advance(5 * time.Minute)
+	newerAtimeGap := 5 * time.Minute
+	clock.Advance(newerAtimeGap)
 	err = pc.Set(ctx, rn, buf)
 	require.NoError(t, err)
 
@@ -2957,9 +2958,11 @@ func TestSampling(t *testing.T) {
 		randomResources = append(randomResources, rn)
 	}
 
-	// Now advance the clock past the min eviction age to allow eviction to
-	// kick in. The unencrypted test digest should be evicted.
-	clock.Advance(minEvictionAge - 1*time.Minute)
+	// Now advance the clock to the min eviction age to allow eviction to
+	// kick in. The unencrypted test digest should be evicted. Keep the newer
+	// entries younger by the full atime gap, since waitForEviction advances the
+	// fake clock while waking the sampler.
+	clock.Advance(minEvictionAge - newerAtimeGap)
 
 	waitForEviction := func(timeout time.Duration) {
 		interval := 100 * time.Millisecond
