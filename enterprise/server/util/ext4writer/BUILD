@@ -8,6 +8,7 @@ go_library(
         "ext4reader.go",
         "ext4writer.go",
         "tree.go",
+        "virtual.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4writer",
     target_compatible_with = ["@platforms//os:linux"],

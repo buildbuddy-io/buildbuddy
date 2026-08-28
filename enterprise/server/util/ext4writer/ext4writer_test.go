@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"math/rand"
 	"os"
@@ -621,4 +622,64 @@ func TestSparseFilesStaySparse(t *testing.T) {
 			require.Less(t, st2.Sys().(*syscall.Stat_t).Blocks*512, int64(1<<20), "extracted file should be sparse")
 		})
 	}
+}
+
+// TestVirtualImage serves the image through the block-device interface,
+// dumps it to a file, and checks fsck + contents; then exercises writes.
+func TestVirtualImage(t *testing.T) {
+	requireTool(t, "/sbin/e2fsck")
+	requireTool(t, "/sbin/debugfs")
+	root := testfs.MakeTempDir(t)
+	src := filepath.Join(root, "src")
+	require.NoError(t, os.Mkdir(src, 0755))
+	makeTree(t, src, 1500, 16*1024, 5)
+	v, err := ext4writer.NewVirtualImage(context.Background(), src, root, &ext4writer.Options{SizeBytes: 200e6})
+	require.NoError(t, err)
+	defer v.Close()
+	t.Logf("virtual: %s", v.Stats())
+	size, _ := v.SizeBytes()
+	// Dump through ReadAt in odd-sized chunks to a file and fsck it.
+	dump := filepath.Join(root, "dump.ext4")
+	f, err := os.Create(dump)
+	require.NoError(t, err)
+	buf := make([]byte, 100_003)
+	for off := int64(0); off < size; off += int64(len(buf)) {
+		n, err := v.ReadAt(buf, off)
+		if err != nil && err != io.EOF {
+			require.NoError(t, err)
+		}
+		_, err = f.WriteAt(buf[:n], off)
+		require.NoError(t, err)
+	}
+	require.NoError(t, f.Truncate(size))
+	require.NoError(t, f.Close())
+	fsck(t, dump)
+	// Same content as the source, via the reader on the device.
+	dst := filepath.Join(root, "dst")
+	require.NoError(t, os.Mkdir(dst, 0755))
+	require.NoError(t, ext4writer.ReaderToDirectory(context.Background(), v, size, dst, []string{"/"}))
+	skip := map[string]bool{"lost+found": true, "fifo": true}
+	want := snapshotDir(t, src, skip)
+	got := snapshotDir(t, dst, skip)
+	require.Equal(t, len(want), len(got))
+	for i := range want {
+		require.Equal(t, want[i], got[i])
+	}
+	// Writes: overwrite part of a data block and a metadata block; reads see them; others untouched.
+	off := size/2 + 123
+	before := make([]byte, 8192)
+	_, err = v.ReadAt(before, off-100)
+	require.NoError(t, err)
+	_, err = v.WriteAt([]byte("HELLO"), off)
+	require.NoError(t, err)
+	after := make([]byte, 8192)
+	_, err = v.ReadAt(after, off-100)
+	require.NoError(t, err)
+	require.Equal(t, "HELLO", string(after[100:105]))
+	require.Equal(t, before[:100], after[:100])
+	require.Equal(t, before[105:], after[105:])
+	require.Equal(t, 1, v.DirtyBlocks())
+	// Read past the end returns EOF.
+	_, err = v.ReadAt(buf, size)
+	require.Equal(t, io.EOF, err)
 }

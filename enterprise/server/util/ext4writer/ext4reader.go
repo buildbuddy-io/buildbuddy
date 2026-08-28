@@ -17,6 +17,7 @@ package ext4writer
 import (
 	"context"
 	"encoding/binary"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,8 @@ const (
 )
 
 type ext4Image struct {
-	f              *os.File
+	f              io.ReaderAt
+	closer         io.Closer
 	dirCache       map[uint32][]dirent // parsed directories, by inode
 	linked         map[uint32]string   // first extracted path per inode (for hardlinks)
 	size           int64 // image file size; every read is bounds-checked against it
@@ -73,15 +75,25 @@ func openImage(path string) (*ext4Image, error) {
 		f.Close()
 		return nil, err
 	}
-	img := &ext4Image{f: f, size: st.Size(), dirCache: map[uint32][]dirent{}, linked: map[uint32]string{}}
+	img, err := openImageReader(f, st.Size())
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	img.closer = f
+	return img, nil
+}
+
+// openImageReader parses the superblock of an ext4 image served by any
+// ReaderAt (a file, or a virtual block device).
+func openImageReader(r io.ReaderAt, size int64) (*ext4Image, error) {
+	img := &ext4Image{f: r, size: size, dirCache: map[uint32][]dirent{}, linked: map[uint32]string{}}
 	sb := make([]byte, 1024)
 	if err := img.readAt(sb, 1024); err != nil {
-		f.Close()
 		return nil, status.WrapError(err, "read superblock")
 	}
 	le := binary.LittleEndian
 	bad := func(format string, args ...any) (*ext4Image, error) {
-		f.Close()
 		return nil, status.InvalidArgumentErrorf("invalid ext4 image: "+format, args...)
 	}
 	if le.Uint16(sb[0x38:]) != superMagic {
@@ -128,7 +140,6 @@ func openImage(path string) (*ext4Image, error) {
 	allowed := uint32(featureIncompatFiletype | featureIncompatExtents | featureIncompatFlexBG | incompat64Bit | 0x0004 | 0x0100 | 0x2000 | 0x4000)
 	_ = supportedIncompat
 	if unknown := img.incompat &^ allowed; unknown != 0 {
-		f.Close()
 		return nil, status.UnimplementedErrorf("ext4 image has unsupported incompat features 0x%x", unknown)
 	}
 	// GDT starts at the block after the superblock.
@@ -139,7 +150,12 @@ func openImage(path string) (*ext4Image, error) {
 	return img, nil
 }
 
-func (img *ext4Image) Close() error { return img.f.Close() }
+func (img *ext4Image) Close() error {
+	if img.closer != nil {
+		return img.closer.Close()
+	}
+	return nil
+}
 
 func (img *ext4Image) readBlock(blk uint64, dst []byte) error {
 	if blk > uint64(img.size/img.blockSize) {
@@ -543,6 +559,20 @@ func ImageToDirectory(ctx context.Context, imagePath, outputDir string, paths []
 		return err
 	}
 	defer img.Close()
+	return img.extractPaths(ctx, outputDir, paths)
+}
+
+// ReaderToDirectory is ImageToDirectory for an image served by a ReaderAt
+// (e.g. a virtual workspace block device).
+func ReaderToDirectory(ctx context.Context, r io.ReaderAt, size int64, outputDir string, paths []string) error {
+	img, err := openImageReader(r, size)
+	if err != nil {
+		return err
+	}
+	return img.extractPaths(ctx, outputDir, paths)
+}
+
+func (img *ext4Image) extractPaths(ctx context.Context, outputDir string, paths []string) error {
 	for _, p := range paths {
 		clean := filepath.Clean("/" + p)
 		in, err := img.lookup(clean)

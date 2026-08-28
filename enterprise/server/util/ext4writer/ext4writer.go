@@ -1038,7 +1038,7 @@ func (w *writer) encodeLeaf(n *node) []byte {
 
 // writeMetadata writes superblocks, GDTs, bitmaps, inode tables, directory
 // blocks, extent leaves and slow symlink targets.
-func (w *writer) writeMetadata(f *os.File) error {
+func (w *writer) writeMetadata(f io.WriterAt) error {
 	sb := w.superblock()
 	gdt := w.groupDescriptors()
 	// Primary superblock lives at byte 1024; backups at the first block of
@@ -1137,7 +1137,7 @@ func (w *writer) writeMetadata(f *os.File) error {
 
 // writeRuns writes one block per group at the given block numbers, coalescing
 // adjacent blocks into single writes.
-func writeRuns(f *os.File, blocks []uint32, data func(g uint32) []byte) error {
+func writeRuns(f io.WriterAt, blocks []uint32, data func(g uint32) []byte) error {
 	var buf []byte
 	var start uint32
 	flush := func() error {
@@ -1163,7 +1163,7 @@ func writeRuns(f *os.File, blocks []uint32, data func(g uint32) []byte) error {
 }
 
 // writeExtents writes data to the physical blocks described by extents.
-func writeExtents(f *os.File, extents []extentRg, data []byte) error {
+func writeExtents(f io.WriterAt, extents []extentRg, data []byte) error {
 	for _, e := range extents {
 		off := int64(e.logical) * blockSize
 		end := min(int64(len(data)), off+int64(e.len)*blockSize)
