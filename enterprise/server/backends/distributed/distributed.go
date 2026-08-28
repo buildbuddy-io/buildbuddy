@@ -1811,7 +1811,9 @@ func (rwc *referenceWriteCloser) Commit() error {
 	for peer, handoff := rwc.peers.GetNextPeerAndHandoff(); peer != ""; peer, handoff = rwc.peers.GetNextPeerAndHandoff() {
 		var err error
 		if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
-			err = rwc.refCache.WriteReference(rwc.ctx, ref, rwc.rn, true /*=mustClone*/)
+			err = rwc.refCache.WriteReference(rwc.ctx, ref, rwc.rn, refMustBeCloned)
+			// At most one peer can own the reference. Other peers must clone.
+			refMustBeCloned = true
 		} else {
 			err = c.distributedProxy.RemoteWriteReference(rwc.ctx, peer, handoff, rwc.rn, ref, refMustBeCloned)
 			// At most one peer can own the reference. Other peers must clone.
