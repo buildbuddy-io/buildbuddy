@@ -43,7 +43,7 @@ const (
 
 	vmDNSInitTimeout                   = 5 * time.Second
 	vmExecReadySignalInitialRetryDelay = 2 * time.Millisecond
-	vmExecReadySignalMaxRetryDelay     = 5 * time.Second
+	vmExecReadySignalMaxRetryDelay     = 1 * time.Second
 )
 
 func init() {

@@ -103,7 +103,7 @@ var (
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
-	useVMExecReadySignal    = flag.Bool("executor.firecracker_vmexec_ready_signal", false, "Wait for a guest-initiated readiness signal before dialing vmexec after VM startup. Falls back to the existing polling dial if no signal arrives. ** Experimental **")
+	useVMExecReadySignal    = flag.Bool("executor.firecracker_vmexec_ready_signal", true, "Wait for a guest-initiated readiness signal before dialing vmexec after VM startup. Falls back to the existing polling dial if no signal arrives.")
 )
 
 //go:embed guest_api_hash.sha256
@@ -2147,29 +2147,32 @@ func serveVMExecReadySignal(ctx context.Context, lis net.Listener, ready chan<- 
 			}
 			return
 		}
-		if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-			_ = conn.Close()
-			continue
-		}
-		message := make([]byte, len(vsock.VMExecReadyMessage))
-		_, err = io.ReadFull(conn, message)
-		if err != nil || string(message) != vsock.VMExecReadyMessage {
-			_ = conn.Close()
-			continue
-		}
-		_ = conn.SetReadDeadline(time.Time{})
-		// No second signal is needed during this VM lifecycle. The restored VM
-		// gets a new listener in its new chroot.
-		_ = lis.Close()
-		close(ready)
-		log.CtxDebugf(ctx, "Received vmexec readiness signal from guest")
+		signalReceived := func() bool {
+			defer conn.Close()
+			if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+				return false
+			}
+			message := make([]byte, len(vsock.VMExecReadyMessage))
+			_, err = io.ReadFull(conn, message)
+			if err != nil || string(message) != vsock.VMExecReadyMessage {
+				return false
+			}
+			_ = conn.SetReadDeadline(time.Time{})
+			// No second signal is needed during this VM lifecycle. The restored VM
+			// gets a new listener in its new chroot.
+			_ = lis.Close()
+			close(ready)
+			log.CtxDebugf(ctx, "Received vmexec readiness signal from guest")
 
-		// Keep the connection alive until this VM lifecycle ends. Its reset is
-		// what wakes the notifier captured in a snapshot and makes a restored
-		// guest signal its new host.
-		<-ctx.Done()
-		_ = conn.Close()
-		return
+			// Keep the connection alive until this VM lifecycle ends. Its reset is
+			// what wakes the notifier captured in a snapshot and makes a restored
+			// guest signal its new host.
+			<-ctx.Done()
+			return true
+		}()
+		if signalReceived {
+			return
+		}
 	}
 }
 
