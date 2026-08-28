@@ -22,8 +22,14 @@
    * so columns stay aligned across keys; tracks whose cells aren't rendered
    * collapse to zero width. */
   display: grid;
-  grid-template-columns: minmax(400px, max-content) repeat(4, max-content);
+  grid-template-columns: minmax(224px, max-content) repeat(4, max-content);
   overflow-x: auto;
+}
+
+/* Creation details are only rendered for org admins; give the label column
+ * enough room to fit them. */
+.api-keys .api-keys-list.with-creation-details {
+  grid-template-columns: minmax(400px, max-content) repeat(4, max-content);
 }
 
 .api-keys .api-key-created-banner-content {

@@ -562,6 +562,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       initialLoadError,
     } = this.state;
     const apiKeyValueReadbackEnabled = !this.isAPIKeyValueReadbackExplicitlyDisabled();
+    // The server only populates creation metadata for org admins.
+    const showCreationDetails = this.props.user.isGroupAdmin();
 
     if (!getApiKeysResponse) {
       return (
@@ -632,7 +634,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           onRequestClose: this.onCloseUpdateForm.bind(this),
         })}
 
-        <div className="api-keys-list">
+        <div className={`api-keys-list ${showCreationDetails ? "with-creation-details" : ""}`}>
           {!this.props.userOwnedOnly && getApiKeysResponse.apiKey.length == 0 && !this.canEdit() && (
             <div className="no-api-keys-message">
               No API keys have been made visible to developers. Only organization admins can create API keys.
@@ -646,7 +648,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 ) : (
                   <span className="untitled-key">Untitled key</span>
                 )}
-                {renderCreationDetails(key)}
+                {showCreationDetails && renderCreationDetails(key)}
               </div>
               <div
                 className="api-key-capabilities"

@@ -237,22 +237,33 @@ func TestAPIKeyCreationMetadata(t *testing.T) {
 	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
 	require.NoError(t, err)
 
+	// Find a group that has both an admin and a non-admin member.
 	users := enterprise_testauth.CreateRandomGroups(t, env)
-	var admin *tables.User
+	var admin, dev *tables.User
 	for _, u := range users {
-		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+		if !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			dev = u
+			break
+		}
+	}
+	require.NotNil(t, dev, "expected at least one non-admin user")
+	groupID := dev.Groups[0].Group.GroupID
+	for _, u := range users {
+		if u.Groups[0].Group.GroupID == groupID && u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
 			admin = u
 			break
 		}
 	}
+	require.NotNil(t, admin, "expected group %s to have an admin", groupID)
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
-	authCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
 	require.NoError(t, err)
-	groupID := admin.Groups[0].Group.GroupID
+	devCtx, err := auth.WithAuthenticatedUser(ctx, dev.UserID)
+	require.NoError(t, err)
 
 	fakeClock.Advance(1 * time.Hour)
 	createdAtUsec := fakeClock.Now().UnixMicro()
-	created, err := adb.CreateAPIKey(authCtx, groupID, "test key", nil /*=caps*/, 0 /*=expiresIn*/, false /*=visibleToDevelopers*/)
+	created, err := adb.CreateAPIKey(adminCtx, groupID, "test key", nil /*=caps*/, 0 /*=expiresIn*/, true /*=visibleToDevelopers*/)
 	require.NoError(t, err)
 	require.Equal(t, createdAtUsec, created.CreatedAtUsec)
 	require.Equal(t, admin.UserID, created.CreatedByUserID)
@@ -260,25 +271,35 @@ func TestAPIKeyCreationMetadata(t *testing.T) {
 	// The creation metadata should be persisted, not just set on the returned
 	// struct.
 	fakeClock.Advance(1 * time.Hour)
-	key, err := adb.GetAPIKey(authCtx, created.APIKeyID)
+	key, err := adb.GetAPIKey(adminCtx, created.APIKeyID)
 	require.NoError(t, err)
 	require.Equal(t, createdAtUsec, key.CreatedAtUsec)
 	require.Equal(t, admin.UserID, key.CreatedByUserID)
 
-	// The creation metadata should be plumbed through to the API.
-	rsp, err := env.GetBuildBuddyServer().GetApiKeys(authCtx, &akpb.GetApiKeysRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
-	})
-	require.NoError(t, err)
-	for _, k := range rsp.GetApiKey() {
-		if k.GetId() == created.APIKeyID {
-			require.Equal(t, createdAtUsec, k.GetCreatedAtUsec())
-			require.Equal(t, admin.UserID, k.GetCreatedByUser().GetUserId().GetId())
-			require.Equal(t, admin.FirstName+" "+admin.LastName, k.GetCreatedByUser().GetName().GetFull())
-			return
+	getKey := func(reqCtx context.Context) *akpb.ApiKey {
+		rsp, err := env.GetBuildBuddyServer().GetApiKeys(reqCtx, &akpb.GetApiKeysRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		})
+		require.NoError(t, err)
+		for _, k := range rsp.GetApiKey() {
+			if k.GetId() == created.APIKeyID {
+				return k
+			}
 		}
+		require.FailNow(t, "created key was not returned by GetApiKeys")
+		return nil
 	}
-	require.FailNow(t, "created key was not returned by GetApiKeys")
+
+	// Admins should see the creation metadata.
+	k := getKey(adminCtx)
+	require.Equal(t, createdAtUsec, k.GetCreatedAtUsec())
+	require.Equal(t, admin.UserID, k.GetCreatedByUser().GetUserId().GetId())
+	require.Equal(t, admin.FirstName+" "+admin.LastName, k.GetCreatedByUser().GetName().GetFull())
+
+	// Non-admins should see the key, but not who created it or when.
+	k = getKey(devCtx)
+	require.Zero(t, k.GetCreatedAtUsec())
+	require.Nil(t, k.GetCreatedByUser())
 }
 
 func TestUserKeyExpiration(t *testing.T) {
