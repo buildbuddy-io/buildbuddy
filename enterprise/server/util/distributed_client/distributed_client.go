@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 
@@ -42,6 +44,7 @@ import (
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -773,19 +776,16 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
 
-		// Confirm the provided reference matches what was requested.
+		// Confirm the reference identifies the requested content. Only the
+		// digest is compared: the metadata may legitimately mis-match.
 		fr := ref.GetMetadata().GetFileRecord()
-		frd := fr.GetDigest()
-		if frd.GetHash() != r.GetDigest().GetHash() ||
-			frd.GetSizeBytes() != r.GetDigest().GetSizeBytes() ||
-			fr.GetDigestFunction() != r.GetDigestFunction() ||
-			fr.GetIsolation().GetCacheType() != r.GetCacheType() ||
-			fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
-			rc.Close()
-			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d (cache type %s, instance %q), but %s/%d (cache type %s, instance %q) was requested",
-				peer,
-				frd.GetHash(), frd.GetSizeBytes(), fr.GetIsolation().GetCacheType(), fr.GetIsolation().GetRemoteInstanceName(),
-				r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), r.GetCacheType(), r.GetInstanceName())
+		frd := ref.GetMetadata().GetFileRecord().GetDigest()
+		refMatches := frd.GetHash() == r.GetDigest().GetHash() &&
+			frd.GetSizeBytes() == r.GetDigest().GetSizeBytes() &&
+			fr.GetDigestFunction() == r.GetDigestFunction() &&
+			fr.GetIsolation().GetCacheType() == r.GetCacheType()
+		if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS {
+			refMatches = refMatches && fr.GetIsolation().GetRemoteInstanceName() == r.GetInstanceName()
 		}
 
 		// If the server is also streaming the data, serve those bytes to the
@@ -803,19 +803,39 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 				byteReader = dr
 			}
 			recordReadResponseMetrics("bytes", r)
+			if !refMatches {
+				// Verification is best-effort: log bad refs, but don't fail.
+				c.log.Errorf("Reference verification failed for %q from peer %q: reference identifies %s/%d", ResourceIsolationString(r), peer, frd.GetHash(), frd.GetSizeBytes())
+				metrics.DistributedCacheReferenceVerificationCount.With(
+					prometheus.Labels{
+						metrics.GroupID:                  groupIDForMetrics(ctx),
+						metrics.VerificationOutcomeLabel: VerificationFailure,
+						metrics.StatusHumanReadableLabel: codes.Internal.String(),
+					}).Inc()
+				return byteReader, nil
+			}
 			refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
 			if err != nil {
 				// Verification is best-effort: the byte stream is
 				// authoritative, so log and serve it.
 				c.log.Warningf("Cannot verify reference for %q from peer %q: %s", ResourceIsolationString(r), peer, err)
 				metrics.DistributedCacheReferenceVerificationCount.With(
-					prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+					prometheus.Labels{
+						metrics.GroupID:                  groupIDForMetrics(ctx),
+						metrics.VerificationOutcomeLabel: VerificationError,
+						metrics.StatusHumanReadableLabel: gstatus.Code(err).String(),
+					}).Inc()
 				return byteReader, nil
 			}
-			return NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer), nil
+			return NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer, groupIDForMetrics(ctx)), nil
 		}
 
 		// The reference is the whole response: dereference it.
+		if !refMatches {
+			rc.Close()
+			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
+				peer, frd.GetHash(), frd.GetSizeBytes(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
+		}
 		if err := rc.Close(); err != nil {
 			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
 		}
@@ -834,6 +854,15 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	}
 	recordReadResponseMetrics("bytes", r)
 	return dr, nil
+}
+
+// groupIDForMetrics returns the authenticated group ID in ctx, for metric
+// labels.
+func groupIDForMetrics(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
 }
 
 // recordReadResponseMetrics records that a peer read's payload was received
@@ -863,19 +892,21 @@ type verifyingReadCloser struct {
 	log       log.Logger
 	resource  *rspb.ResourceName
 	peer      string
+	groupID   string
 
 	scratch  []byte
 	compared int64
 	done     bool
 }
 
-func NewVerifyingReadCloser(primary, secondary io.ReadCloser, log log.Logger, r *rspb.ResourceName, peer string) io.ReadCloser {
+func NewVerifyingReadCloser(primary, secondary io.ReadCloser, log log.Logger, r *rspb.ResourceName, peer, groupID string) io.ReadCloser {
 	return &verifyingReadCloser{
 		primary:   primary,
 		secondary: secondary,
 		log:       log,
 		resource:  r,
 		peer:      peer,
+		groupID:   groupID,
 	}
 }
 
@@ -891,7 +922,7 @@ func (v *verifyingReadCloser) verify(p []byte) {
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes ended early at offset %d", v.compared))
 		} else {
-			v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+			v.report(VerificationError, status.WrapErrorf(err, "error reading dereferenced bytes at offset %d", v.compared))
 		}
 		return
 	}
@@ -914,7 +945,7 @@ func (v *verifyingReadCloser) verifyEOF() {
 	case n != 0 || err == nil:
 		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes continue past streamed bytes at offset %d", v.compared))
 	default:
-		v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+		v.report(VerificationError, status.WrapErrorf(err, "error reading dereferenced bytes at offset %d", v.compared))
 	}
 }
 
@@ -927,7 +958,11 @@ func (v *verifyingReadCloser) report(verificationStatus string, err error) {
 		v.log.Warningf("Reference verification error for %q from peer %q: %s", ResourceIsolationString(v.resource), v.peer, err)
 	}
 	metrics.DistributedCacheReferenceVerificationCount.With(
-		prometheus.Labels{metrics.VerificationOutcomeLabel: verificationStatus}).Inc()
+		prometheus.Labels{
+			metrics.GroupID:                  v.groupID,
+			metrics.VerificationOutcomeLabel: verificationStatus,
+			metrics.StatusHumanReadableLabel: gstatus.Code(err).String(),
+		}).Inc()
 }
 
 func (v *verifyingReadCloser) Read(p []byte) (int, error) {
