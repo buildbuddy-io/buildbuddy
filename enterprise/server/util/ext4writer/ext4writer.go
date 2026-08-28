@@ -102,6 +102,9 @@ type Options struct {
 	// SlackBytes is free space to leave in the image beyond what the tree
 	// needs (for outputs). The image size is max(SizeBytes, needed+SlackBytes).
 	SlackBytes int64
+	// SlackFraction adds this fraction of the data size as extra free space
+	// (e.g. 0.2 for 20% headroom, like ext4.DirectoryToImageAutoSize).
+	SlackFraction float64
 	// Concurrency is the number of parallel data-copy workers (default: min(8, NumCPU)).
 	Concurrency int
 	// ExtraInodes reserves this many extra inodes beyond what the tree needs,
@@ -669,7 +672,7 @@ func (w *writer) layout(root *node) error {
 			}
 		}
 		meta := nBackup*(1+gdtBlocks) + 2*ngroups + ngroups*itb
-		need := (meta+dataBlocks+256)*blockSize + w.opts.SlackBytes
+		need := (meta+dataBlocks+256)*blockSize + w.opts.SlackBytes + int64(float64(dataBlocks*blockSize)*w.opts.SlackFraction)
 		if need > sizeBytes {
 			sizeBytes = need
 			continue

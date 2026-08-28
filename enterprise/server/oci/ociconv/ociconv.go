@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4writer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
@@ -49,6 +50,7 @@ var (
 	conversionGroup singleflight.Group[string, string]
 
 	localCacheStoreExt4Images = flag.Bool("executor.local_cache_store_ext4_images", true, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
+	containerImageExt4Writer  = flag.String("executor.container_image_ext4_writer", "mke2fs", "How to convert an unpacked container image to ext4: 'mke2fs' (mke2fs -d) or 'native' (in-process ext4 writer, much faster; copies xattrs). ** Experimental **")
 )
 
 func hashFile(filename string) (string, error) {
@@ -362,8 +364,25 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	}
 	defer f.Close()
 	imageFile := f.Name()
-	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
-		return "", err
+	switch *containerImageExt4Writer {
+	case "native":
+		// Same sizing as DirectoryToImageAutoSize: 20% headroom plus the
+		// minimum image size.
+		f.Close()
+		os.Remove(imageFile)
+		stats, err := ext4writer.DirectoryToImage(ctx, tempUnpackDir, imageFile, &ext4writer.Options{
+			SlackFraction: 0.2, SlackBytes: ext4.MinDiskImageSizeBytes, Xattrs: true,
+		})
+		if err != nil {
+			return "", err
+		}
+		log.CtxInfof(ctx, "Native ext4 writer: %s", stats)
+	case "mke2fs":
+		if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
+			return "", err
+		}
+	default:
+		return "", status.InvalidArgumentErrorf("invalid --executor.container_image_ext4_writer %q", *containerImageExt4Writer)
 	}
 	log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
 	return imageFile, nil

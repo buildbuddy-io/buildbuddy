@@ -9,6 +9,7 @@ go_library(
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
         "//enterprise/server/util/ext4",
+        "//enterprise/server/util/ext4writer",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
