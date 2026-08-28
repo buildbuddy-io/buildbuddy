@@ -23,3 +23,21 @@ linux_arm64_musl_alias, _linux_arm64_musl_alias = (
         .set("platforms", [Label("//platforms:linux_arm64_musl")])
         .build()
 )
+
+windows_amd64_alias, _windows_amd64_alias = (
+    with_cfg(native.alias)
+        .set("platforms", [Label("@io_bazel_rules_go//go/toolchain:windows_amd64")])
+        .build()
+)
+
+windows_386_alias, _windows_386_alias = (
+    with_cfg(native.alias)
+        .set("platforms", [Label("@io_bazel_rules_go//go/toolchain:windows_386")])
+        .build()
+)
+
+windows_arm64_alias, _windows_arm64_alias = (
+    with_cfg(native.alias)
+        .set("platforms", [Label("@io_bazel_rules_go//go/toolchain:windows_arm64")])
+        .build()
+)
