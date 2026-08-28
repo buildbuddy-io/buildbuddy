@@ -721,6 +721,11 @@ type FirecrackerContainer struct {
 	fsLayout  *container.FileSystemLayout
 	vfsServer *vfs_server.Server
 
+	// inputTree, if set, is overlaid onto the workspace image directly from the
+	// filecache instead of being materialized in the host workspace dir first.
+	// Experimental; requires the native workspace image writer.
+	inputTree *container.FileSystemLayout
+
 	scratchStore            *copy_on_write.COWStore
 	scratchVBD              *vbd.FS
 	rootStore               *copy_on_write.COWStore
@@ -1576,10 +1581,23 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 		return status.InvalidArgumentErrorf("invalid --executor.firecracker_workspace_image_writer %q (want native or mke2fs)", *workspaceImageWriter)
 	}
 	if *workspaceImageWriter == "native" {
-		stats, err := ext4writer.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, &ext4writer.Options{
+		wopts := ext4writer.Options{
 			SlackBytes:  ext4.MinDiskImageSizeBytes + *workspaceDiskSlackSpaceMB*1e6,
 			Concurrency: *workspaceImageWriterConcurrency,
-		})
+		}
+		var stats *ext4writer.Stats
+		var err error
+		if c.inputTree != nil {
+			fc := c.env.GetFileCache()
+			stats, err = ext4writer.DirectoryAndTreeToImage(ctx, workspaceDir, ext4ImagePath, &ext4writer.TreeOptions{
+				Options:        wopts,
+				Tree:           c.inputTree.Inputs,
+				DigestFunction: c.inputTree.DigestFunction,
+				Open:           fc.Open,
+			})
+		} else {
+			stats, err = ext4writer.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, &wopts)
+		}
 		if err != nil {
 			return status.WrapError(err, "failed to convert workspace dir to ext4 image (native writer)")
 		}
@@ -2165,6 +2183,14 @@ func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	}
 
 	return network.Cleanup(ctx)
+}
+
+// SetWorkspaceInputTree makes the next Exec build the workspace image from
+// the given input tree (contents read from the filecache) overlaid on the
+// action working directory, instead of expecting the inputs to already be
+// hardlinked into the working directory. ** Experimental **
+func (c *FirecrackerContainer) SetWorkspaceInputTree(layout *container.FileSystemLayout) {
+	c.inputTree = layout
 }
 
 func (c *FirecrackerContainer) SetTaskFileSystemLayout(fsLayout *container.FileSystemLayout) {

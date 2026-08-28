@@ -107,6 +107,7 @@ var (
 	printStdout = flag.Bool("print_stdout", false, "Log guest command stdout/stderr.")
 	overlap     = flag.Bool("overlap_unpause", false, "Experimental: run snapshot restore (Create/Unpause) concurrently with input fetch instead of after it.")
 	seedFlag    = flag.Int64("seed", 0, "Seed for synthetic input generation. 0 = fixed seed for shared inputs, or time-based when --unique_inputs (so re-runs don't hit the filecache from a previous run).")
+	treeImage   = flag.Bool("tree_image", false, "Experimental: download inputs into the filecache only and build the workspace image directly from the input tree (no host workspace hardlinks).")
 	useVFS      = flag.Bool("vfs", false, "Use the guest FUSE VFS (executor.enable_vfs path): inputs are served lazily from the host filecache/CAS instead of via a workspace ext4 image.")
 )
 
@@ -535,9 +536,9 @@ func (b *bench) runSlot(ctx context.Context, w workload, slot int, trees []*inpu
 			fetchInputs := func() error {
 				return stage("input_fetch", func() error {
 					dlOpts := &dirtools.DownloadTreeOpts{RootDir: workDir}
-					if *useVFS {
-						// VFS: only populate the filecache; the guest fetches
-						// lazily through the host VFS server.
+					if *useVFS || *treeImage {
+						// Only populate the filecache; the guest fetches
+						// lazily (VFS) or the image is built from the tree.
 						dlOpts.RootDir = ""
 					}
 					txInfo, err := dirtools.DownloadTree(iterCtx, b.env, "", repb.DigestFunction_SHA256, tree.Tree, dlOpts)
@@ -566,6 +567,12 @@ func (b *bench) runSlot(ctx context.Context, w workload, slot int, trees []*inpu
 				}
 				if *useVFS {
 					c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+						Inputs:         tree.Tree,
+						DigestFunction: repb.DigestFunction_SHA256,
+					})
+				}
+				if *treeImage {
+					c.SetWorkspaceInputTree(&container.FileSystemLayout{
 						Inputs:         tree.Tree,
 						DigestFunction: repb.DigestFunction_SHA256,
 					})

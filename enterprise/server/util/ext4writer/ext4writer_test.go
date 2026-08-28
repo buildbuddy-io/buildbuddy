@@ -1,6 +1,7 @@
 package ext4writer_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,9 +20,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4writer"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/stretchr/testify/require"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 func requireTool(t *testing.T, path string) {
@@ -496,4 +500,72 @@ func TestManyInodesAndGroups(t *testing.T) {
 	entries, err := os.ReadDir(filepath.Join(dst, "d099"))
 	require.NoError(t, err)
 	require.Len(t, entries, 1000)
+}
+
+// TestTreeToImage builds an image from a REAPI Tree with contents served by an
+// opener, overlaid on a directory, and checks the result.
+func TestTreeToImage(t *testing.T) {
+	requireTool(t, "/sbin/e2fsck")
+	requireTool(t, "/sbin/debugfs")
+	root := testfs.MakeTempDir(t)
+	blobs := filepath.Join(root, "blobs")
+	require.NoError(t, os.Mkdir(blobs, 0755))
+	ws := filepath.Join(root, "ws")
+	require.NoError(t, os.MkdirAll(filepath.Join(ws, "out", "sub"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(ws, "local.txt"), []byte("local"), 0644))
+
+	mkFile := func(name string, content []byte, exe bool) *repb.FileNode {
+		d, err := digest.Compute(bytes.NewReader(content), repb.DigestFunction_SHA256)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(blobs, d.GetHash()), content, 0644))
+		return &repb.FileNode{Name: name, Digest: d, IsExecutable: exe}
+	}
+	big := make([]byte, 5<<20)
+	for i := range big {
+		big[i] = byte(i * 7)
+	}
+	sub := &repb.Directory{
+		Files:    []*repb.FileNode{mkFile("a.txt", []byte("hello"), false), mkFile("same1", []byte("dup"), false), mkFile("same2", []byte("dup"), false), mkFile("same-exe", []byte("dup"), true)},
+		Symlinks: []*repb.SymlinkNode{{Name: "ln", Target: "a.txt"}},
+	}
+	subD, err := digest.ComputeForMessage(sub, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	// "out" also exists in the workspace dir: must merge.
+	outDir := &repb.Directory{Files: []*repb.FileNode{mkFile("in-out", []byte("x"), false)}}
+	outD, err := digest.ComputeForMessage(outDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	rootDir := &repb.Directory{
+		Files:       []*repb.FileNode{mkFile("big.bin", big, true), mkFile("empty", nil, false)},
+		Directories: []*repb.DirectoryNode{{Name: "sub", Digest: subD}, {Name: "out", Digest: outD}},
+	}
+	tree := &repb.Tree{Root: rootDir, Children: []*repb.Directory{sub, outDir}}
+	opener := func(ctx context.Context, n *repb.FileNode) (*os.File, error) {
+		return os.Open(filepath.Join(blobs, n.GetDigest().GetHash()))
+	}
+	image := filepath.Join(root, "ws.ext4")
+	stats, err := ext4writer.DirectoryAndTreeToImage(context.Background(), ws, image, &ext4writer.TreeOptions{Tree: tree, DigestFunction: repb.DigestFunction_SHA256, Open: opener})
+	require.NoError(t, err)
+	t.Logf("stats: %s", stats)
+	require.Equal(t, 1, stats.Hardlinks) // same1/same2 share; same-exe differs by mode
+	fsck(t, image)
+	dst := filepath.Join(root, "dst")
+	require.NoError(t, os.Mkdir(dst, 0755))
+	require.NoError(t, ext4writer.ImageToDirectory(context.Background(), image, dst, []string{"/"}))
+	got := snapshotDir(t, dst, map[string]bool{"lost+found": true})
+	names := map[string]entry{}
+	for _, e := range got {
+		names[e.Path] = e
+	}
+	for _, p := range []string{"local.txt", "out/sub", "out/in-out", "sub/a.txt", "sub/same1", "sub/same2", "sub/same-exe", "sub/ln", "big.bin", "empty"} {
+		require.Contains(t, names, p)
+	}
+	b, err := os.ReadFile(filepath.Join(dst, "big.bin"))
+	require.NoError(t, err)
+	require.Equal(t, big, b)
+	require.Equal(t, "-rwxr-xr-x", names["sub/same-exe"].Mode)
+	require.Equal(t, "-rw-r--r--", names["sub/same1"].Mode)
+	require.Equal(t, "a.txt", names["sub/ln"].Target)
+	s1, _ := os.Stat(filepath.Join(dst, "sub", "same1"))
+	s2, _ := os.Stat(filepath.Join(dst, "sub", "same2"))
+	require.True(t, os.SameFile(s1, s2))
 }

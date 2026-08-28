@@ -7,10 +7,13 @@ go_library(
     srcs = [
         "ext4reader.go",
         "ext4writer.go",
+        "tree.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4writer",
     target_compatible_with = ["@platforms//os:linux"],
     deps = [
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
         "//server/util/status",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sys//unix",
@@ -23,6 +26,8 @@ go_test(
     embed = [":ext4writer"],
     deps = [
         "//enterprise/server/util/ext4",
+        "//proto:remote_execution_go_proto",
+        "//server/remote_cache/digest",
         "//server/testutil/testfs",
         "//server/util/log",
         "@com_github_stretchr_testify//require",

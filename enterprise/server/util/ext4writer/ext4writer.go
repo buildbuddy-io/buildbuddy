@@ -41,6 +41,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sys/unix"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 const (
@@ -149,6 +151,7 @@ type node struct {
 	dirData  []byte     // rendered directory blocks
 	hardlink *node      // if this path is a hardlink to an already-seen node
 	links    int        // number of directory entries referencing this inode (files)
+	fileNode *repb.FileNode // when building from a Tree: the input node (content via writer.open)
 }
 
 type extentRg struct {
@@ -187,19 +190,26 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, opts *Op
 	}
 	w := &writer{opts: *opts, stats: &Stats{}}
 	if w.opts.Concurrency <= 0 {
-		w.opts.Concurrency = min(8, runtime.NumCPU())
+		w.opts.Concurrency = min(8, defaultConcurrency())
 	}
 	if w.opts.Now.IsZero() {
 		w.opts.Now = time.Now()
 	}
+	w.open = func(n *node) (*os.File, error) { return os.Open(n.path) }
 	start := time.Now()
-	root, err := w.walk(inputDir)
-	if err != nil {
+	if _, err := w.walk(inputDir); err != nil {
 		return nil, status.WrapError(err, "walk input directory")
 	}
 	w.stats.WalkDuration = time.Since(start)
+	return w.finish(ctx, outputFile)
+}
 
-	start = time.Now()
+func defaultConcurrency() int { return runtime.NumCPU() }
+
+// finish lays out and writes the image for the already-walked tree.
+func (w *writer) finish(ctx context.Context, outputFile string) (*Stats, error) {
+	root := w.nodes[0]
+	start := time.Now()
 	if err := w.layout(root); err != nil {
 		return nil, status.WrapError(err, "compute layout")
 	}
@@ -239,6 +249,7 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, opts *Op
 type writer struct {
 	opts  Options
 	stats *Stats
+	open  func(n *node) (*os.File, error) // content source for regular files
 
 	nodes    []*node // all nodes in inode order (index 0 = root)
 	files    []*node // regular files with data (excluding hardlink duplicates)
@@ -366,6 +377,10 @@ func (w *writer) walkDir(d *node) error {
 		}
 	}
 	return nil
+}
+
+func sortChildren(d *node) {
+	sort.Slice(d.children, func(i, j int) bool { return d.children[i].name < d.children[j].name })
 }
 
 // linkCount returns the number of hard links to a node's inode.
@@ -1114,12 +1129,16 @@ func (w *writer) copyData(ctx context.Context, f *os.File) error {
 	for i := 0; i < w.opts.Concurrency; i++ {
 		eg.Go(func() error {
 			for n := range ch {
-				var err error
-				if mapping != nil {
-					err = copyFileMmap(ctx, n, mapping)
-				} else {
-					err = copyFile(ctx, n, dstFD, &bufPool, reflink)
+				src, err := w.open(n)
+				if err != nil {
+					return status.WrapErrorf(err, "open %q", n.name)
 				}
+				if mapping != nil {
+					err = copyFileMmap(ctx, src, n, mapping)
+				} else {
+					err = copyFile(ctx, src, n, dstFD, &bufPool, reflink)
+				}
+				src.Close()
 				if err != nil {
 					return status.WrapErrorf(err, "copy %q", n.path)
 				}
@@ -1150,12 +1169,7 @@ func (w *writer) copyData(ctx context.Context, f *os.File) error {
 // the filecache's on-disk extents with the image instead of copying bytes.
 // Otherwise (or for the unaligned tail) copy_file_range is used, falling back
 // to read/write.
-func copyFile(ctx context.Context, n *node, dstFD int, pool *sync.Pool, reflink *reflinkState) error {
-	src, err := os.Open(n.path)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
+func copyFile(ctx context.Context, src *os.File, n *node, dstFD int, pool *sync.Pool, reflink *reflinkState) error {
 	srcFD := int(src.Fd())
 	var srcOff int64
 	if reflink.enabled() && len(n.extents) > 0 && n.size >= blockSize {
@@ -1220,12 +1234,7 @@ func copyFile(ctx context.Context, n *node, dstFD int, pool *sync.Pool, reflink 
 // copyFileMmap preads the source file directly into the MAP_SHARED image
 // mapping, so the kernel copies from the source page cache straight into the
 // image's page cache pages.
-func copyFileMmap(ctx context.Context, n *node, mapping []byte) error {
-	src, err := os.Open(n.path)
-	if err != nil {
-		return err
-	}
-	defer src.Close()
+func copyFileMmap(ctx context.Context, src *os.File, n *node, mapping []byte) error {
 	var srcOff int64
 	for _, e := range n.extents {
 		dstOff := int64(e.start) * blockSize
