@@ -16,7 +16,6 @@ go_library(
         "@bazel_gazelle//repo",
         "@bazel_gazelle//resolve",
         "@bazel_gazelle//rule",
-        "@com_github_smacker_go_tree_sitter//:go-tree-sitter",
-        "@com_github_smacker_go_tree_sitter//typescript/tsx",
+        "//cli/fix/typescript/tsimports",
     ],
 )
