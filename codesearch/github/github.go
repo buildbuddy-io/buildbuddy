@@ -1,6 +1,7 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -213,6 +214,41 @@ func GetRepoModulePath(r types.IndexReader, repoURL *git.RepoURL) (string, error
 	return string(doc.Field(schema.RepoModulePathField).Contents()), nil
 }
 
+// looksLikeSVG reports whether the prefix of a file is an SVG document: an
+// optional XML declaration / comments / DOCTYPE followed by an <svg root
+// element (the same heuristic gabriel-vasile/mimetype used).
+func looksLikeSVG(prefix []byte) bool {
+	p := bytes.TrimLeft(prefix, " \t\r\n\xef\xbb\xbf")
+	for len(p) > 0 && p[0] == '<' {
+		switch {
+		case bytes.HasPrefix(p, []byte("<svg")):
+			return true
+		case bytes.HasPrefix(p, []byte("<?")):
+			i := bytes.Index(p, []byte("?>"))
+			if i < 0 {
+				return false
+			}
+			p = p[i+2:]
+		case bytes.HasPrefix(p, []byte("<!--")):
+			i := bytes.Index(p, []byte("-->"))
+			if i < 0 {
+				return false
+			}
+			p = p[i+3:]
+		case bytes.HasPrefix(p, []byte("<!")):
+			i := bytes.IndexByte(p, '>')
+			if i < 0 {
+				return false
+			}
+			p = p[i+1:]
+		default:
+			return false
+		}
+		p = bytes.TrimLeft(p, " \t\r\n")
+	}
+	return false
+}
+
 func detectionBuffer(content []byte) []byte {
 	if len(content) > detectionBufferSize {
 		return content[:detectionBufferSize]
@@ -228,11 +264,21 @@ func validateFile(content []byte) error {
 	shortBuf := detectionBuffer(content)
 
 	// Check the mimetype and skip if not valid for indexing. The standard
-	// library's sniffer (the WHATWG mime-sniffing algorithm) knows the
-	// common image/audio/video/gzip signatures; anything more exotic that
-	// slips through here is caught by the UTF-8 check below, which no media
-	// file passes.
-	if mtype := http.DetectContentType(shortBuf); skipMime.MatchString(mtype) {
+	// library's sniffer (the WHATWG mime-sniffing algorithm) knows the common
+	// binary image/audio/video/gzip signatures; the gabriel-vasile/mimetype
+	// library it replaces knew many more (FLAC, HEIC, TIFF, PSD, ...), but
+	// those are binary and rejected by the UTF-8 check below anyway. The two
+	// media formats that are valid text and were previously skipped, SVG and
+	// Ogg, are handled explicitly; other text-based image formats (XPM, X
+	// bitmaps) are now indexed like any other text.
+	mtype := http.DetectContentType(shortBuf)
+	if mtype == "application/ogg" || looksLikeSVG(shortBuf) {
+		mtype = "image/svg+xml"
+		if bytes.HasPrefix(shortBuf, []byte("OggS")) {
+			mtype = "audio/ogg"
+		}
+	}
+	if skipMime.MatchString(mtype) {
 		return fmt.Errorf("mimetype not supported for indexing: %s", mtype)
 	}
 
