@@ -3,21 +3,32 @@ package xds
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"k8s.io/client-go/rest"
 )
+
+// userAgent identifies this client in API server audit logs by binary name
+// and platform. client-go's DefaultKubernetesUserAgent additionally appends
+// its own version and git commit ("kubernetes/<commit>"); those are not
+// meaningful here and are deliberately omitted.
+var userAgent = filepath.Base(os.Args[0]) + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")"
 
 const (
 	// xdsBootstrapFileEnv is the env var grpc-go reads the xDS bootstrap
@@ -88,13 +99,10 @@ func Bootstrap(ctx context.Context, client NodeLabelGetter) error {
 		return nil
 	}
 	if client == nil {
-		cfg, err := rest.InClusterConfig()
+		var err error
+		client, err = NewInClusterNodeLabelGetter()
 		if err != nil {
-			return status.UnavailableErrorf("in-cluster config: %s", err)
-		}
-		client, err = NewNodeLabelGetter(cfg)
-		if err != nil {
-			return status.UnavailableErrorf("create k8s client: %s", err)
+			return status.UnavailableErrorf("create in-cluster k8s client: %s", err)
 		}
 	}
 	bootstrapPath := os.Getenv(xdsBootstrapFileEnv)
@@ -156,32 +164,94 @@ type NodeLabelGetter interface {
 	NodeLabels(ctx context.Context, nodeName string) (map[string]string, error)
 }
 
-// NewNodeLabelGetter returns a NodeLabelGetter that reads Nodes from the API
-// server described by cfg using a plain authenticated HTTP client (the same
-// TLS / bearer-token / proxy configuration client-go would use).
-func NewNodeLabelGetter(cfg *rest.Config) (NodeLabelGetter, error) {
-	cfg = rest.CopyConfig(cfg)
-	if cfg.UserAgent == "" {
-		cfg.UserAgent = rest.DefaultKubernetesUserAgent()
+// In-cluster service account credentials, as mounted by the kubelet. These
+// are the same paths and env vars client-go's rest.InClusterConfig uses.
+const (
+	inClusterTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	inClusterCAFile    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	inClusterHostEnv   = "KUBERNETES_SERVICE_HOST"
+	inClusterPortEnv   = "KUBERNETES_SERVICE_PORT"
+)
+
+// NewInClusterNodeLabelGetter returns a NodeLabelGetter for the API server of
+// the cluster this process runs in, authenticated with the pod's service
+// account. It replaces rest.InClusterConfig + rest.HTTPClientFor: the API
+// server address comes from the KUBERNETES_SERVICE_{HOST,PORT} env vars, the
+// server is verified against the mounted CA bundle, and the mounted bearer
+// token is re-read on every request so that projected token rotation works
+// without a client-go reloading transport.
+//
+// Deliberate differences from client-go, all fail-closed or irrelevant for
+// the single GET this package makes at startup: an unreadable or empty CA
+// bundle is an error (client-go logs and falls back to system roots); a
+// token file read error fails the request instead of reusing a cached
+// token; requests have a 30s timeout. Proxy env vars, SNI (derived from the
+// request host, as client-go) and HTTP/2 behave the same.
+func NewInClusterNodeLabelGetter() (NodeLabelGetter, error) {
+	return newInClusterNodeLabelGetter(os.Getenv(inClusterHostEnv), os.Getenv(inClusterPortEnv), inClusterTokenFile, inClusterCAFile)
+}
+
+func newInClusterNodeLabelGetter(host, port, tokenFile, caFile string) (NodeLabelGetter, error) {
+	if host == "" || port == "" {
+		return nil, fmt.Errorf("%s and %s must be defined (not running in a Kubernetes pod?)", inClusterHostEnv, inClusterPortEnv)
 	}
-	httpClient, err := rest.HTTPClientFor(cfg)
+	if _, err := os.ReadFile(tokenFile); err != nil {
+		return nil, fmt.Errorf("read service account token: %w", err)
+	}
+	caPEM, err := os.ReadFile(caFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read service account CA: %w", err)
 	}
-	host := cfg.Host
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(caPEM) {
+		return nil, fmt.Errorf("no certificates found in %s", caFile)
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	client := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: &bearerTokenFileTransport{base: transport, tokenFile: tokenFile},
+	}
+	return NewNodeLabelGetter("https://"+net.JoinHostPort(host, port), client)
+}
+
+// bearerTokenFileTransport adds "Authorization: Bearer <token>" to every
+// request, reading the token file each time (it is small and the kubelet
+// rotates projected tokens in place).
+type bearerTokenFileTransport struct {
+	base      http.RoundTripper
+	tokenFile string
+}
+
+func (t *bearerTokenFileTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	token, err := os.ReadFile(t.tokenFile)
+	if err != nil {
+		return nil, fmt.Errorf("read service account token: %w", err)
+	}
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(token)))
+	return t.base.RoundTrip(req)
+}
+
+// NewNodeLabelGetter returns a NodeLabelGetter that reads Nodes from the API
+// server at host (a URL, or a bare host:port which is treated as https, as
+// client-go does) using the given HTTP client, which is responsible for
+// authentication and TLS. A nil client uses http.DefaultClient.
+func NewNodeLabelGetter(host string, client *http.Client) (NodeLabelGetter, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
 	if !strings.Contains(host, "://") {
-		// rest.Config.Host may be a bare host:port (client-go treats that
-		// as https).
 		host = "https://" + host
 	}
 	base, err := url.Parse(host)
 	if err != nil {
-		return nil, fmt.Errorf("parse API server host %q: %w", cfg.Host, err)
+		return nil, fmt.Errorf("parse API server host %q: %w", host, err)
 	}
 	if base.Host == "" {
-		return nil, fmt.Errorf("parse API server host %q: missing host", cfg.Host)
+		return nil, fmt.Errorf("parse API server host %q: missing host", host)
 	}
-	return &restNodeLabelGetter{client: httpClient, base: base}, nil
+	return &restNodeLabelGetter{client: client, base: base}, nil
 }
 
 type restNodeLabelGetter struct {
@@ -199,6 +269,7 @@ func (g *restNodeLabelGetter) NodeLabels(ctx context.Context, nodeName string) (
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := g.client.Do(req)
 	if err != nil {
 		return nil, err

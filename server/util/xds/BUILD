@@ -10,7 +10,6 @@ go_library(
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
-        "@io_k8s_client_go//rest",
     ],
 )
 
@@ -24,6 +23,12 @@ go_test(
         ":xds",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
-        "@io_k8s_client_go//rest",
     ],
+)
+
+go_test(
+    name = "incluster_test",
+    srcs = ["incluster_test.go"],
+    embed = [":xds"],
+    deps = ["@com_github_stretchr_testify//require"],
 )
