@@ -72,6 +72,11 @@ func TestImports(t *testing.T) {
 		{"jsx mismatched closing tag not jsx", "const a = 1 < b; const c = d > e; import x from \"y\"", true, []string{"y"}},
 		{"jsx eof in opening tag", "const e = <div a=\"x\"", true, nil},
 		{"spread in import attributes", `import data from "./d.json" with { type: "json" }; const o = {...p}; import x from "y"`, false, []string{"./d.json", "y"}},
+		// Cases from the second codex review.
+		{"lookahead pops pre-existing paren (no panic)", "const z = (<T>(x: T)) => T;\nimport value from \"pkg\"", true, []string{"pkg"}},
+		{"unterminated regexp ends at U+2028", "const r = /unterminated\u2028import value from \"pkg\";", false, []string{"pkg"}},
+		{"regexp after for await header", "for await (const x of xs) /import fake from \"evil\"/.test(x);\nimport real from \"real\"", false, []string{"real"}},
+		{"regexp after for header", "for (const x of xs) /'/.test(x);\nimport real from \"real\"", false, []string{"real"}},
 		{"unterminated string", "const s = 'oops\nimport x from \"y\"", false, []string{"y"}},
 		{"empty", "", false, nil},
 	} {

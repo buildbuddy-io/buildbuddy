@@ -219,12 +219,13 @@ type token struct {
 }
 
 type scanner struct {
-	src    []byte
-	pos    int
-	prev   token // previous significant token (for regexp/JSX disambiguation)
-	depth  int   // (), [], {} nesting depth at top level
-	jsx    bool
-	pushed *token
+	src      []byte
+	pos      int
+	prev     token // previous significant token (for regexp/JSX disambiguation)
+	prevPrev token
+	depth    int // (), [], {} nesting depth at top level
+	jsx      bool
+	pushed   *token
 	// parens records, for each currently open `(`, whether it started a
 	// control-flow header.
 	parens []bool
@@ -235,16 +236,19 @@ type scannerState struct {
 	prev   token
 	depth  int
 	pushed *token
-	parens int
+	parens []bool
 }
 
+// save captures the scanner state for speculative lookahead. The paren stack
+// is copied, not just measured: lookahead may consume an unmatched `)` and
+// pop entries that existed before the save.
 func (s *scanner) save() scannerState {
-	return scannerState{s.pos, s.prev, s.depth, s.pushed, len(s.parens)}
+	return scannerState{s.pos, s.prev, s.depth, s.pushed, append([]bool(nil), s.parens...)}
 }
 
 func (s *scanner) restore(st scannerState) {
 	s.pos, s.prev, s.depth, s.pushed = st.pos, st.prev, st.depth, st.pushed
-	s.parens = s.parens[:st.parens]
+	s.parens = append(s.parens[:0], st.parens...)
 }
 
 func (s *scanner) pushBack(t token) { s.pushed = &t }
@@ -261,7 +265,7 @@ func (s *scanner) next() token {
 
 func (s *scanner) scanAndTrack() token {
 	t := s.scan()
-	s.prev = t
+	s.prevPrev, s.prev = s.prev, t
 	return t
 }
 
@@ -359,7 +363,9 @@ func (s *scanner) scanPunct() token {
 	switch c {
 	case '(':
 		s.depth++
-		s.parens = append(s.parens, s.prev.kind == tokWord && isControlKeyword(s.prev.text))
+		s.parens = append(s.parens, s.prev.kind == tokWord && (isControlKeyword(s.prev.text) ||
+			// `for await (...)`
+			s.prev.text == "await" && s.prevPrev.kind == tokWord && s.prevPrev.text == "for"))
 	case ')':
 		if s.depth > 0 {
 			s.depth--
@@ -519,7 +525,7 @@ func (s *scanner) scanRegexp() {
 		case c == '\\':
 			s.pos += 2
 			continue
-		case c == '\n' || c == '\r':
+		case s.atLineTerminator():
 			return // unterminated
 		case c == '[':
 			inClass = true
