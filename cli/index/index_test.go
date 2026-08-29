@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/codesearch/github"
+	"github.com/buildbuddy-io/buildbuddy/codesearch/gitclient"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
 	"github.com/stretchr/testify/assert"
@@ -52,7 +52,7 @@ func TestIncremental_OneCommit(t *testing.T) {
 		"test.txt": "initial content",
 	})
 
-	gc := github.NewCommandLineGitClient(scratchDir)
+	gc := gitclient.NewCommandLineGitClient(scratchDir)
 	client := &testBBClient{
 		latestCommitSHA: initialSHA,
 	}
@@ -99,7 +99,7 @@ func TestIncremental_TwoCommits(t *testing.T) {
 		"test2.txt": "better content",
 	})
 
-	gc := github.NewCommandLineGitClient(scratchDir)
+	gc := gitclient.NewCommandLineGitClient(scratchDir)
 	client := &testBBClient{
 		latestCommitSHA: initialSHA,
 	}
@@ -158,7 +158,7 @@ func TestIncremental_NoOp(t *testing.T) {
 		"test2.txt": "better content",
 	})
 
-	gc := github.NewCommandLineGitClient(scratchDir)
+	gc := gitclient.NewCommandLineGitClient(scratchDir)
 	client := &testBBClient{
 		latestCommitSHA: commit2,
 	}
@@ -166,7 +166,7 @@ func TestIncremental_NoOp(t *testing.T) {
 	assert.Empty(t, client.indexReqs)
 
 	testshell.Run(t, scratchDir, `git reset --hard `+initialCommit)
-	gc = github.NewCommandLineGitClient(scratchDir)
+	gc = gitclient.NewCommandLineGitClient(scratchDir)
 	client = &testBBClient{
 		latestCommitSHA: commit2,
 	}
@@ -174,7 +174,7 @@ func TestIncremental_NoOp(t *testing.T) {
 	assert.Empty(t, client.indexReqs)
 
 	testshell.Run(t, scratchDir, `git reset --hard `+commit1)
-	gc = github.NewCommandLineGitClient(scratchDir)
+	gc = gitclient.NewCommandLineGitClient(scratchDir)
 	client = &testBBClient{
 		latestCommitSHA: commit2,
 	}
@@ -196,7 +196,7 @@ func TestIncremental_TooBig(t *testing.T) {
 	}
 	commit1 := testgit.CommitFiles(t, scratchDir, filesToAdd)
 
-	gc := github.NewCommandLineGitClient(scratchDir)
+	gc := gitclient.NewCommandLineGitClient(scratchDir)
 	client := &testBBClient{
 		latestCommitSHA: initialCommit,
 	}
@@ -229,7 +229,7 @@ func TestIncremental_NoPreviousIndex(t *testing.T) {
 		"test.txt": "initial content",
 	})
 
-	gc := github.NewCommandLineGitClient(scratchDir)
+	gc := gitclient.NewCommandLineGitClient(scratchDir)
 	client := &testBBClient{
 		latestCommitSHA: "",
 	}
