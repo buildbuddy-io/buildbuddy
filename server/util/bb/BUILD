@@ -1,14 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//rules:platform_transitions.bzl", "embedded_static_binary")
 
-# Embeds the bb CLI binary for Linux and mac. On Windows, we create an empty
-# file instead because the CLI depends on tree-sitter which requires CGo, and
-# our Windows build environment doesn't have a C compiler available.
+# Embeds the bb CLI binary for Linux and mac. //cli/cmd/bb is built with
+# pure = "on" (no cgo), so on Linux it is already a static binary and no
+# separate musl-linked build is needed. On Windows we still create an empty
+# file; now that the CLI has no cgo dependency that could be revisited.
 genrule(
     name = "bb-crossplatform",
     srcs = select({
-        "//platforms/configs:linux_x86_64": [":bb-static"],
-        "//platforms/configs:linux_arm64": [":bb-static"],
+        "//platforms/configs:linux_x86_64": ["//cli/cmd/bb"],
+        "//platforms/configs:linux_arm64": ["//cli/cmd/bb"],
         "//platforms/configs:macos_x86_64": ["//cli/cmd/bb"],
         "//platforms/configs:macos_arm64": ["//cli/cmd/bb"],
         "//conditions:default": [],
@@ -24,11 +24,4 @@ go_library(
     embedsrcs = ["bb-bin"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bb",
     visibility = ["//visibility:public"],
-)
-
-# Statically linked bb CLI for embedding into the Linux executor; shares its
-# configuration with goinit and ci_runner (see embedded_static_binary).
-embedded_static_binary(
-    name = "bb-static",
-    actual = "//cli/cmd/bb",
 )

@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//rules:platform_transitions.bzl", "STATIC_ON_LINUX", "embedded_static_binary")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -29,11 +28,14 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
-    static = STATIC_ON_LINUX,
-)
-
-# Statically linked goinit for the firecracker initrd; see embedded_static_binary.
-embedded_static_binary(
-    name = "goinit_static",
-    actual = ":goinit",
+    # "pure" causes the init file to require an ELF interpreter which the kernel
+    # does not have access to if we are bulding statically.
+    pure = select({
+        "//:static": "auto",
+        "//conditions:default": "on",
+    }),
+    # static = select({
+    #    "//:static": "on",
+    #    "//conditions:default": "auto",
+    # }),
 )

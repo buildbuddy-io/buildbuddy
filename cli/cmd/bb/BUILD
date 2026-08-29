@@ -1,5 +1,4 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//rules:platform_transitions.bzl", "STATIC_ON_LINUX")
 
 # NOTE: //tools/lint uses a prebuilt bb binary (//tools/bb) instead of this
 # target. If you make CLI changes that affect `bb fix` or `bb mod deps`,
@@ -48,15 +47,13 @@ go_library(
 go_binary(
     name = "bb",
     embed = [":bb_lib"],
-    # Force fully static linking on Linux so that the embedded copy in the
-    # executor (//server/util/bb) and the other statically linked helper
-    # binaries (goinit, ci_runner) share one Bazel configuration.
-    # Under the musl platform transition
-    # cgo is enabled, and without this the Go linker emits a binary that is
-    # dynamically linked against musl's ld.so (which does not exist inside
-    # workflow containers / the microVM). "auto" elsewhere (macOS cannot link
-    # statically).
-    static = STATIC_ON_LINUX,
+    # The CLI has no cgo dependencies, so build it with CGO_ENABLED=0. This
+    # yields a fully static binary on Linux (which the copy embedded in the
+    # executor, //server/util/bb, needs inside workflow containers) and lets
+    # it share one Bazel configuration -- one Go stdlib and one compile of
+    # every common package -- with the other pure-Go binaries embedded in the
+    # executor (goinit, ci_runner). The release targets below are pure too.
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 
