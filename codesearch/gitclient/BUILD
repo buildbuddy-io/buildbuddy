@@ -12,7 +12,6 @@ go_library(
         "//proto:index_go_proto",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_gabriel_vasile_mimetype//:mimetype",
     ],
 )
 

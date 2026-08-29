@@ -7,6 +7,7 @@ package gitclient
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/gabriel-vasile/mimetype"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
@@ -35,10 +35,45 @@ const (
 
 var (
 	// TODO(tylerw): this should come from a flag?
-	skipMime    = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
+	skipMime    = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/(x-)?gzip$`)
 	regexpSha   = regexp.MustCompile("^[0-9a-f]{5,40}$")
 	filepathSha = regexp.MustCompile("^:[0-9]{6} [0-9]{6}")
 )
+
+// looksLikeSVG reports whether the prefix of a file is an SVG document: an
+// optional XML declaration / comments / DOCTYPE followed by an <svg root
+// element (the same heuristic gabriel-vasile/mimetype used).
+func looksLikeSVG(prefix []byte) bool {
+	p := bytes.TrimLeft(prefix, " \t\r\n\xef\xbb\xbf")
+	for len(p) > 0 && p[0] == '<' {
+		switch {
+		case bytes.HasPrefix(p, []byte("<svg")):
+			return true
+		case bytes.HasPrefix(p, []byte("<?")):
+			i := bytes.Index(p, []byte("?>"))
+			if i < 0 {
+				return false
+			}
+			p = p[i+2:]
+		case bytes.HasPrefix(p, []byte("<!--")):
+			i := bytes.Index(p, []byte("-->"))
+			if i < 0 {
+				return false
+			}
+			p = p[i+3:]
+		case bytes.HasPrefix(p, []byte("<!")):
+			i := bytes.IndexByte(p, '>')
+			if i < 0 {
+				return false
+			}
+			p = p[i+1:]
+		default:
+			return false
+		}
+		p = bytes.TrimLeft(p, " \t\r\n")
+	}
+	return false
+}
 
 func detectionBuffer(content []byte) []byte {
 	if len(content) > detectionBufferSize {
@@ -56,12 +91,22 @@ func ValidateFile(content []byte) error {
 
 	shortBuf := detectionBuffer(content)
 
-	// Check the mimetype and skip if not valid for indexing.
-	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
-	if err != nil {
-		return fmt.Errorf("failed to detect mimetype: %w", err)
+	// Check the mimetype and skip if not valid for indexing. The standard
+	// library's sniffer (the WHATWG mime-sniffing algorithm) knows the common
+	// binary image/audio/video/gzip signatures; the gabriel-vasile/mimetype
+	// library it replaces knew many more (FLAC, HEIC, TIFF, PSD, ...), but
+	// those are binary and rejected by the UTF-8 check below anyway. The two
+	// media formats that are valid text and were previously skipped, SVG and
+	// Ogg, are handled explicitly; other text-based image formats (XPM, X
+	// bitmaps) are now indexed like any other text.
+	mtype := http.DetectContentType(shortBuf)
+	if mtype == "application/ogg" || looksLikeSVG(shortBuf) {
+		mtype = "image/svg+xml"
+		if bytes.HasPrefix(shortBuf, []byte("OggS")) {
+			mtype = "audio/ogg"
+		}
 	}
-	if skipMime.MatchString(mtype.String()) {
+	if skipMime.MatchString(mtype) {
 		return fmt.Errorf("mimetype not supported for indexing: %s", mtype)
 	}
 

@@ -231,3 +231,31 @@ def456
 		},
 	}, result)
 }
+
+func TestValidateFileMediaDetection(t *testing.T) {
+	for name, tc := range map[string]struct {
+		content []byte
+		skip    bool
+	}{
+		"go source":        {[]byte("package main\n\nfunc main() {}\n"), false},
+		"png":              {[]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), true},
+		"gif":              {[]byte("GIF89a\x01\x00\x01\x00"), true},
+		"gzip":             {[]byte("\x1f\x8b\x08\x00\x00\x00\x00\x00"), true},
+		"mp3 id3":          {[]byte("ID3\x03\x00\x00\x00\x00\x00\x00"), true},
+		"ogg":              {[]byte("OggS\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00"), true},
+		"svg":              {[]byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>`), true},
+		"svg with prolog":  {[]byte("\xef\xbb\xbf<?xml version=\"1.0\"?>\n<!-- c -->\n<!DOCTYPE svg>\n<svg></svg>"), true},
+		"xml not svg":      {[]byte(`<?xml version="1.0"?><project><name>x</name></project>`), false},
+		"html":             {[]byte("<!DOCTYPE html><html><body>svg</body></html>"), false},
+		"binary non-media": {[]byte("\x00\x01\x02\x03\xff\xfe"), true}, // invalid UTF-8
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := ValidateFile(tc.content)
+			if tc.skip {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
