@@ -26,7 +26,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
@@ -41,7 +40,6 @@ import (
 
 var (
 	// TODO: use this project ID or deprecate it. It is currently unreferenced.
-	traceJaegerCollector      = flag.String("app.trace_jaeger_collector", "", "Address of the Jaeger collector HTTP endpoint where traces will be sent, e.g. http://jaeger.svc.cluster.local:14268")
 	traceOTLPCollector        = flag.String("app.trace_otlp_grpc_collector", "", "Address of the OTLP gRPC collector endpoint where traces will be sent, e.g. otel-collector.svc.cluster.local:4317")
 	traceOTLPHTTPCollector    = flag.String("app.trace_otlp_http_collector", "", "Address of the OTLP HTTP collector endpoint where traces will be sent, e.g. http://otel-collector.svc.cluster.local:4318")
 	traceServiceName          = flag.String("app.trace_service_name", "", "Name of the service to associate with traces (maps to the standard 'service.name' attribute, like the OTEL_SERVICE_NAME environment variable, but allows for env substitution).")
@@ -207,9 +205,6 @@ func Configure(env environment.Env) error {
 
 	// Check early that exactly one collector is configured
 	numCollectorsSet := 0
-	if *traceJaegerCollector != "" {
-		numCollectorsSet++
-	}
 	if *traceOTLPCollector != "" {
 		numCollectorsSet++
 	}
@@ -224,13 +219,7 @@ func Configure(env environment.Env) error {
 	var traceExporter sdktrace.SpanExporter
 	var err error
 
-	if *traceJaegerCollector != "" {
-		traceExporter, err = jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(*traceJaegerCollector)))
-		if err != nil {
-			log.Warningf("Could not initialize Jaeger exporter: %s", err)
-			return nil
-		}
-	} else if *traceOTLPCollector != "" {
+	if *traceOTLPCollector != "" {
 		traceExporter, err = otlptracegrpc.New(env.GetServerContext(), otlptracegrpc.WithEndpoint(*traceOTLPCollector), otlptracegrpc.WithInsecure())
 		if err != nil {
 			log.Warningf("Could not initialize OTEL exporter: %s", err)
@@ -249,7 +238,7 @@ func Configure(env environment.Env) error {
 	}
 
 	if traceExporter == nil {
-		return status.InvalidArgumentErrorf("no trace collector ('app.trace_{jaeger,otlp_grpc,otlp_http}_collector') configured")
+		return status.InvalidArgumentErrorf("no trace collector ('app.trace_{otlp_grpc,otlp_http}_collector') configured")
 	}
 
 	return setupTracingWithExporter(env, traceExporter)
