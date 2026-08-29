@@ -178,6 +178,29 @@ func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree 
 	require.NoError(t, err)
 }
 
+func TestCASFileFetchedOnDemand(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	d := setFile(t, env, ctx, "", "only fetched after open")
+	fileNode := &repb.FileNode{Name: "input.txt", Digest: d}
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{
+			Files: []*repb.FileNode{fileNode},
+		}},
+	}
+
+	_, err := server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+	require.False(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+
+	require.Equal(t, "only fetched after open", readFromVFS(t, server, "input.txt"))
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+	stats := server.ComputeStats()
+	require.EqualValues(t, 1, stats.GetCasFilesAccessedCount())
+	require.EqualValues(t, 1, stats.GetFileDownloadCount())
+	require.Equal(t, d.GetSizeBytes(), stats.GetFileDownloadSizeBytes())
+}
+
 func TestGetLayout(t *testing.T) {
 	server, env := newServer(t)
 	ctx := context.Background()
