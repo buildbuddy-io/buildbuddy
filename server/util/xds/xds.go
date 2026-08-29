@@ -157,22 +157,29 @@ type NodeLabelGetter interface {
 }
 
 // NewNodeLabelGetter returns a NodeLabelGetter that reads Nodes from the API
-// server described by cfg using a plain authenticated HTTP client.
+// server described by cfg using a plain authenticated HTTP client (the same
+// TLS / bearer-token / proxy configuration client-go would use).
 func NewNodeLabelGetter(cfg *rest.Config) (NodeLabelGetter, error) {
+	cfg = rest.CopyConfig(cfg)
+	if cfg.UserAgent == "" {
+		cfg.UserAgent = rest.DefaultKubernetesUserAgent()
+	}
 	httpClient, err := rest.HTTPClientFor(cfg)
 	if err != nil {
 		return nil, err
 	}
-	base, err := url.Parse(cfg.Host)
+	host := cfg.Host
+	if !strings.Contains(host, "://") {
+		// rest.Config.Host may be a bare host:port (client-go treats that
+		// as https).
+		host = "https://" + host
+	}
+	base, err := url.Parse(host)
 	if err != nil {
 		return nil, fmt.Errorf("parse API server host %q: %w", cfg.Host, err)
 	}
-	if base.Scheme == "" {
-		// rest.Config.Host may be a bare host:port.
-		base, err = url.Parse("https://" + cfg.Host)
-		if err != nil {
-			return nil, fmt.Errorf("parse API server host %q: %w", cfg.Host, err)
-		}
+	if base.Host == "" {
+		return nil, fmt.Errorf("parse API server host %q: missing host", cfg.Host)
 	}
 	return &restNodeLabelGetter{client: httpClient, base: base}, nil
 }
@@ -183,8 +190,10 @@ type restNodeLabelGetter struct {
 }
 
 func (g *restNodeLabelGetter) NodeLabels(ctx context.Context, nodeName string) (map[string]string, error) {
-	u := *g.base
-	u.Path = strings.TrimSuffix(u.Path, "/") + "/api/v1/nodes/" + url.PathEscape(nodeName)
+	// Equivalent to the typed clientset's CoreV1().Nodes().Get: the core API
+	// group lives under /api/v1 relative to the configured host (which may
+	// itself carry a path prefix).
+	u := g.base.JoinPath("api", "v1", "nodes", nodeName)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return nil, err
@@ -200,7 +209,15 @@ func (g *restNodeLabelGetter) NodeLabels(ctx context.Context, nodeName string) (
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
+		// The API server returns a metav1.Status document on errors; surface
+		// its message rather than the raw JSON when we can.
+		var st struct {
+			Message string `json:"message"`
+		}
 		msg := strings.TrimSpace(string(body))
+		if json.Unmarshal(body, &st) == nil && st.Message != "" {
+			msg = st.Message
+		}
 		if len(msg) > 512 {
 			msg = msg[:512]
 		}
