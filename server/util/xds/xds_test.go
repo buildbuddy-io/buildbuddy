@@ -24,7 +24,7 @@ func (f fakeNodes) NodeLabels(_ context.Context, name string) (map[string]string
 	return labels, nil
 }
 
-func fakeNode(name string, labels map[string]string) fakeNodes {
+func nodeWithLabels(name string, labels map[string]string) fakeNodes {
 	return fakeNodes{name: labels}
 }
 
@@ -76,7 +76,7 @@ func TestBootstrap(t *testing.T) {
 			flags.Set(t, "grpc_client.xds.server_uri", "xds.example.com:5000")
 			flags.Set(t, "grpc_client.xds.sub_zone_label", tc.subZoneLabel)
 
-			client := fakeNode(nodeName, tc.nodeLabels)
+			client := nodeWithLabels(nodeName, tc.nodeLabels)
 			require.NoError(t, xds.Bootstrap(context.Background(), client))
 
 			data, err := os.ReadFile(bootstrapPath)
@@ -116,7 +116,7 @@ func TestBootstrapXDS_MissingZoneLabel(t *testing.T) {
 	flags.Set(t, "grpc_client.xds.server_uri", "xds.example.com:5000")
 	flags.Set(t, "grpc_client.xds.sub_zone_label", "")
 
-	client := fakeNode("node-a", map[string]string{"other": "label"})
+	client := nodeWithLabels("node-a", map[string]string{"other": "label"})
 	err := xds.Bootstrap(context.Background(), client)
 	require.Error(t, err)
 	require.NoFileExists(t, bootstrapPath)
@@ -131,7 +131,7 @@ func TestBootstrapXDS_MissingPodName(t *testing.T) {
 	flags.Set(t, "grpc_client.xds.server_uri", "xds.example.com:5000")
 	flags.Set(t, "grpc_client.xds.sub_zone_label", "")
 
-	client := fakeNode("node-a", map[string]string{"topology.kubernetes.io/zone": "us-west1-b"})
+	client := nodeWithLabels("node-a", map[string]string{"topology.kubernetes.io/zone": "us-west1-b"})
 	err := xds.Bootstrap(context.Background(), client)
 	require.Error(t, err)
 	require.NoFileExists(t, bootstrapPath)

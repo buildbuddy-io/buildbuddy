@@ -16,10 +16,14 @@ go_library(
 
 go_test(
     name = "xds_test",
-    srcs = ["xds_test.go"],
+    srcs = [
+        "nodelabels_test.go",
+        "xds_test.go",
+    ],
     deps = [
         ":xds",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@io_k8s_client_go//rest",
     ],
 )
