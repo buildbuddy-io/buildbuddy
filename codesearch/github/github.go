@@ -1,9 +1,9 @@
 package github
 
 import (
-	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,7 +21,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
-	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
@@ -41,7 +40,7 @@ const (
 
 var (
 	// TODO(tylerw): this should come from a flag?
-	skipMime    = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/gzip$`)
+	skipMime    = regexp.MustCompile(`^audio/.*|video/.*|image/.*|application/(x-)?gzip$`)
 	regexpSha   = regexp.MustCompile("^[0-9a-f]{5,40}$")
 	filepathSha = regexp.MustCompile("^:[0-9]{6} [0-9]{6}")
 )
@@ -228,12 +227,12 @@ func validateFile(content []byte) error {
 
 	shortBuf := detectionBuffer(content)
 
-	// Check the mimetype and skip if not valid for indexing.
-	mtype, err := mimetype.DetectReader(bytes.NewReader(shortBuf))
-	if err != nil {
-		return fmt.Errorf("failed to detect mimetype: %w", err)
-	}
-	if skipMime.MatchString(mtype.String()) {
+	// Check the mimetype and skip if not valid for indexing. The standard
+	// library's sniffer (the WHATWG mime-sniffing algorithm) knows the
+	// common image/audio/video/gzip signatures; anything more exotic that
+	// slips through here is caught by the UTF-8 check below, which no media
+	// file passes.
+	if mtype := http.DetectContentType(shortBuf); skipMime.MatchString(mtype) {
 		return fmt.Errorf("mimetype not supported for indexing: %s", mtype)
 	}
 
