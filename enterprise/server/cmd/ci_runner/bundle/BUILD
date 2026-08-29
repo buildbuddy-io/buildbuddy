@@ -10,8 +10,9 @@ package(
 genrule(
     name = "embedsrcs_compatible_ci_runner",
     srcs = select({
-        "//platforms/configs:linux_x86_64": ["//enterprise/server/cmd/ci_runner:ci_runner_linux_x86_64_static"],
-        "//platforms/configs:linux_arm64": ["//enterprise/server/cmd/ci_runner:ci_runner_linux_arm64_static"],
+        "//platforms/configs:linux_x86_64": ["//enterprise/server/cmd/ci_runner:ci_runner_static"],
+        "//platforms/configs:linux_arm64": ["//enterprise/server/cmd/ci_runner:ci_runner_static"],
+        # macOS executors run the ci_runner on the host itself.
         "//conditions:default": ["//enterprise/server/cmd/ci_runner"],
     }),
     outs = ["buildbuddy_ci_runner"],

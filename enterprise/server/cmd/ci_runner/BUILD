@@ -1,7 +1,7 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
+load("//rules:platform_transitions.bzl", "STATIC_ON_LINUX", "embedded_static_binary")
 
 # gazelle:default_visibility //enterprise:__subpackages__
 package(
@@ -58,31 +58,14 @@ go_library(
 go_binary(
     name = "ci_runner",
     embed = [":ci_runner_lib"],
-    # Force fully static linking on Linux. Under the musl platform transition
-    # cgo is enabled, and without this the Go linker emits a binary that is
-    # dynamically linked against musl's ld.so (which does not exist inside
-    # workflow containers / the microVM). "auto" elsewhere (macOS cannot link
-    # statically).
-    static = select({
-        "//platforms/configs:linux_x86_64": "on",
-        "//platforms/configs:linux_arm64": "on",
-        "//conditions:default": "auto",
-    }),
+    static = STATIC_ON_LINUX,
 )
 
-# Statically linked (musl) ci_runner for embedding into the Linux executor.
-# Built through the same platform transition as the embedded bb CLI so the two
-# share a Bazel configuration; see //server/util/bb.
-linux_x86_64_musl_alias(
-    name = "ci_runner_linux_x86_64_static",
+# Statically linked (musl) ci_runner for embedding into the Linux executor and
+# for the container image; see embedded_static_binary.
+embedded_static_binary(
+    name = "ci_runner_static",
     actual = ":ci_runner",
-    tags = ["manual"],
-)
-
-linux_arm64_musl_alias(
-    name = "ci_runner_linux_arm64_static",
-    actual = ":ci_runner",
-    tags = ["manual"],
 )
 
 container_image(
@@ -95,7 +78,7 @@ container_image(
 go_image(
     name = "ci_runner_image",
     base = ":base_image",
-    binary = ":ci_runner_linux_x86_64_static",
+    binary = ":ci_runner_static_linux_x86_64",
     tags = ["manual"],
 )
 

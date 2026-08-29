@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
-load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
+load("//rules:platform_transitions.bzl", "STATIC_ON_LINUX", "embedded_static_binary")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -29,39 +29,11 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
-    # Force fully static linking on Linux. Under the musl platform transition
-    # cgo is enabled, and without this the Go linker emits a binary that is
-    # dynamically linked against musl's ld.so (which does not exist inside
-    # workflow containers / the microVM). "auto" elsewhere (macOS cannot link
-    # statically).
-    static = select({
-        "//platforms/configs:linux_x86_64": "on",
-        "//platforms/configs:linux_arm64": "on",
-        "//conditions:default": "auto",
-    }),
+    static = STATIC_ON_LINUX,
 )
 
-# The initrd embeds a statically linked goinit. Build it through the same
-# musl platform transition used for the embedded bb CLI (//server/util/bb)
-# instead of pure = "on": the resulting binary is still fully static, but it
-# now shares its Bazel configuration (stdlib + ~800 shared packages) with bb
-# instead of requiring a separate CGO_ENABLED=0 configuration.
-linux_x86_64_musl_alias(
-    name = "goinit_linux_x86_64_static",
-    actual = ":goinit",
-    tags = ["manual"],
-)
-
-linux_arm64_musl_alias(
-    name = "goinit_linux_arm64_static",
-    actual = ":goinit",
-    tags = ["manual"],
-)
-
-alias(
+# Statically linked goinit for the firecracker initrd; see embedded_static_binary.
+embedded_static_binary(
     name = "goinit_static",
-    actual = select({
-        "//platforms/configs:linux_x86_64": ":goinit_linux_x86_64_static",
-        "//platforms/configs:linux_arm64": ":goinit_linux_arm64_static",
-    }),
+    actual = ":goinit",
 )
