@@ -22,6 +22,7 @@ go_test(
     srcs = ["selfauth_test.go"],
     embed = [":selfauth"],
     deps = [
+        "@com_github_coreos_go_oidc_v3//oidc",
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_stretchr_testify//require",
     ],

@@ -208,7 +208,8 @@ func (o *selfAuth) AccessToken(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"aud": "buildbuddy",
+		// jwx serialized the audience as a one-element array; keep that shape.
+		"aud": []string{"buildbuddy"},
 		"exp": now.Add(time.Hour).Unix(),
 		"jti": base64.StdEncoding.EncodeToString(idKey),
 		"iat": now.Unix(),
