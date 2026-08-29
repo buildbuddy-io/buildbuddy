@@ -15,7 +15,9 @@ go_library(
         "//server/util/lib/set",
         "@com_github_mitchellh_go_ps//:go-ps",
     ] + select({
-        "@io_bazel_rules_go//go/platform:linux": [],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_tklauser_go_sysconf//:go-sysconf",
+        ],
         "//conditions:default": [
             "@com_github_shirou_gopsutil_v3//process",
         ],

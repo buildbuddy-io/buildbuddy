@@ -8,22 +8,38 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	"github.com/tklauser/go-sysconf"
 )
 
-// clockTicks is USER_HZ, the unit of the CPU time fields in
-// /proc/<pid>/stat. It is part of the Linux userspace ABI and is 100 on
-// every architecture regardless of the kernel's internal HZ (gopsutil
-// hardcodes the same value).
-const clockTicks = 100
+var (
+	clockTicksOnce sync.Once
+	clockTicksHz   int64
+)
+
+// clockTicks returns sysconf(_SC_CLK_TCK), the unit of the CPU time fields
+// in /proc/<pid>/stat (USER_HZ; 100 on all mainstream architectures, 1024 on
+// Alpha). go-sysconf answers this in pure Go from the AT_CLKTCK auxv entry;
+// it is the same call gopsutil makes.
+func clockTicks() int64 {
+	clockTicksOnce.Do(func() {
+		clockTicksHz = 100
+		if v, err := sysconf.Sysconf(sysconf.SC_CLK_TCK); err == nil && v > 0 {
+			clockTicksHz = v
+		}
+	})
+	return clockTicksHz
+}
 
 // getProcessStats reads CPU time and resident memory of a single process
-// straight from procfs. This replaces gopsutil's process.NewProcess, whose
-// Times() and MemoryInfo() do exactly this (parse /proc/<pid>/stat) but drag
-// in the whole gopsutil dependency tree.
+// straight from procfs. This replaces gopsutil's process.NewProcess: its
+// Times() parses utime/stime from /proc/<pid>/stat exactly as below, and its
+// MemoryInfo() reads the resident page count from /proc/<pid>/statm; field 24
+// of stat is the same kernel RSS counter, so one read serves both.
 func getProcessStats(pid int) (*repb.UsageStats, error) {
-	return parseProcStat(fmt.Sprintf("/proc/%d/stat", pid), clockTicks, int64(os.Getpagesize()))
+	return parseProcStat(fmt.Sprintf("/proc/%d/stat", pid), clockTicks(), int64(os.Getpagesize()))
 }
 
 func parseProcStat(path string, ticksPerSecond, pageSize int64) (*repb.UsageStats, error) {
@@ -68,6 +84,6 @@ func parseProcStatData(data []byte, ticksPerSecond, pageSize int64) (*repb.Usage
 	// shared library memory usage.
 	return &repb.UsageStats{
 		MemoryBytes: rssPages * pageSize,
-		CpuNanos:    (utime + stime) * (1e9 / ticksPerSecond),
+		CpuNanos:    (utime + stime) * 1_000_000_000 / ticksPerSecond,
 	}, nil
 }

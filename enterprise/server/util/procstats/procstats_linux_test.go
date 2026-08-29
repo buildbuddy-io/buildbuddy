@@ -3,6 +3,7 @@
 package procstats
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -17,6 +18,12 @@ func TestParseProcStatData(t *testing.T) {
 	require.Equal(t, int64(300*4096), s.MemoryBytes)
 	require.Equal(t, int64((250+50)*1e7), s.CpuNanos) // 3.00s at 100 Hz
 
+	// Alpha: USER_HZ is 1024.
+	s, err = parseProcStatData([]byte(line), 1024, 8192)
+	require.NoError(t, err)
+	require.Equal(t, int64(300*8192), s.MemoryBytes)
+	require.Equal(t, int64(300*1_000_000_000/1024), s.CpuNanos) // 292968750, not truncated per tick
+
 	_, err = parseProcStatData([]byte("garbage"), 100, 4096)
 	require.Error(t, err)
 	_, err = parseProcStatData([]byte("1 (x) S 1 2"), 100, 4096)
@@ -24,8 +31,19 @@ func TestParseProcStatData(t *testing.T) {
 }
 
 func TestGetProcessStats_Self(t *testing.T) {
+	require.Greater(t, clockTicks(), int64(0))
 	s, err := getProcessStats(os.Getpid())
 	require.NoError(t, err)
 	require.Greater(t, s.MemoryBytes, int64(0))
 	require.GreaterOrEqual(t, s.CpuNanos, int64(0))
+
+	// RSS from stat field 24 must agree with what gopsutil read: the second
+	// field of /proc/<pid>/statm (both are the kernel's resident page count;
+	// allow a little drift since the two reads are not atomic).
+	statm, err := os.ReadFile("/proc/self/statm")
+	require.NoError(t, err)
+	var size, resident int64
+	_, err = fmt.Sscan(string(statm), &size, &resident)
+	require.NoError(t, err)
+	require.InEpsilon(t, float64(resident*int64(os.Getpagesize())), float64(s.MemoryBytes), 0.1)
 }
