@@ -1,7 +1,6 @@
 package typescript
 
 import (
-	"context"
 	"encoding/json"
 	"flag"
 	"log"
@@ -17,9 +16,7 @@ import (
 	"github.com/bazelbuild/bazel-gazelle/repo"
 	"github.com/bazelbuild/bazel-gazelle/resolve"
 	"github.com/bazelbuild/bazel-gazelle/rule"
-
-	sitter "github.com/smacker/go-tree-sitter"
-	"github.com/smacker/go-tree-sitter/typescript/tsx"
+	"github.com/buildbuddy-io/buildbuddy/cli/fix/typescript/tsimports"
 )
 
 const (
@@ -40,16 +37,10 @@ const (
 var dynamicImportPattern = regexp.MustCompile("(?ms)import\\s*\\(\\s*(['\"`]([^'\"`]+)['\"`])\\s*\\)")
 var tslibPattern = regexp.MustCompile(`(async|await|\.\.\.|import \* as)`)
 
-type TS struct {
-	parser *sitter.Parser
-}
+type TS struct{}
 
 func NewLanguage() language.Language {
-	parser := sitter.NewParser()
-	parser.SetLanguage(tsx.GetLanguage())
-	return &TS{
-		parser: parser,
-	}
+	return &TS{}
 }
 
 func (*TS) Name() string {
@@ -125,18 +116,9 @@ func (t *TS) GenerateRules(args language.GenerateArgs) language.GenerateResult {
 			log.Fatalf("Error reading %s: %v", filePath, err)
 		}
 		ruleImports := make([]string, 0)
-		tree, _ := t.parser.ParseCtx(context.Background(), nil, data)
-		for i := 0; i < int(tree.RootNode().ChildCount()); i++ {
-			child := tree.RootNode().Child(i)
-			if child.Type() == "import_statement" {
-				if child.NamedChild(1) == nil {
-					continue
-				}
-				ruleImports = append(ruleImports, child.NamedChild(1).Child(1).Content(data))
-			}
-		}
+		ruleImports = append(ruleImports, tsimports.Imports(data, tsimports.Options{JSX: strings.HasSuffix(baseName, tsxFileExtension)})...)
 
-		// TODO(siggisim): See if we can grab dynamic imports and tslib usage using treesitter in an efficient way.
+		// TODO(siggisim): See if we can grab dynamic imports and tslib usage in an efficient way.
 		for _, match := range dynamicImportPattern.FindAllSubmatch(data, -1) {
 			ruleImports = append(ruleImports, string(match[2]))
 		}
