@@ -25,3 +25,10 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
+
+go_test(
+    name = "incluster_test",
+    srcs = ["incluster_test.go"],
+    embed = [":xds"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

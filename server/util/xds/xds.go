@@ -24,8 +24,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
-// userAgent mirrors what client-go's rest.DefaultKubernetesUserAgent sends,
-// so API server audit logs keep identifying this client by binary name.
+// userAgent identifies this client in API server audit logs by binary name
+// and platform. client-go's DefaultKubernetesUserAgent additionally appends
+// its own version and git commit ("kubernetes/<commit>"); those are not
+// meaningful here and are deliberately omitted.
 var userAgent = filepath.Base(os.Args[0]) + " (" + runtime.GOOS + "/" + runtime.GOARCH + ")"
 
 const (
@@ -164,7 +166,7 @@ type NodeLabelGetter interface {
 
 // In-cluster service account credentials, as mounted by the kubelet. These
 // are the same paths and env vars client-go's rest.InClusterConfig uses.
-var (
+const (
 	inClusterTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	inClusterCAFile    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	inClusterHostEnv   = "KUBERNETES_SERVICE_HOST"
@@ -178,27 +180,37 @@ var (
 // server is verified against the mounted CA bundle, and the mounted bearer
 // token is re-read on every request so that projected token rotation works
 // without a client-go reloading transport.
+//
+// Deliberate differences from client-go, all fail-closed or irrelevant for
+// the single GET this package makes at startup: an unreadable or empty CA
+// bundle is an error (client-go logs and falls back to system roots); a
+// token file read error fails the request instead of reusing a cached
+// token; requests have a 30s timeout. Proxy env vars, SNI (derived from the
+// request host, as client-go) and HTTP/2 behave the same.
 func NewInClusterNodeLabelGetter() (NodeLabelGetter, error) {
-	host, port := os.Getenv(inClusterHostEnv), os.Getenv(inClusterPortEnv)
+	return newInClusterNodeLabelGetter(os.Getenv(inClusterHostEnv), os.Getenv(inClusterPortEnv), inClusterTokenFile, inClusterCAFile)
+}
+
+func newInClusterNodeLabelGetter(host, port, tokenFile, caFile string) (NodeLabelGetter, error) {
 	if host == "" || port == "" {
 		return nil, fmt.Errorf("%s and %s must be defined (not running in a Kubernetes pod?)", inClusterHostEnv, inClusterPortEnv)
 	}
-	if _, err := os.ReadFile(inClusterTokenFile); err != nil {
+	if _, err := os.ReadFile(tokenFile); err != nil {
 		return nil, fmt.Errorf("read service account token: %w", err)
 	}
-	caPEM, err := os.ReadFile(inClusterCAFile)
+	caPEM, err := os.ReadFile(caFile)
 	if err != nil {
 		return nil, fmt.Errorf("read service account CA: %w", err)
 	}
 	roots := x509.NewCertPool()
 	if !roots.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("no certificates found in %s", inClusterCAFile)
+		return nil, fmt.Errorf("no certificates found in %s", caFile)
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 	client := &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: &bearerTokenFileTransport{base: transport, tokenFile: inClusterTokenFile},
+		Transport: &bearerTokenFileTransport{base: transport, tokenFile: tokenFile},
 	}
 	return NewNodeLabelGetter("https://"+net.JoinHostPort(host, port), client)
 }
