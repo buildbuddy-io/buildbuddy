@@ -4,7 +4,10 @@ go_library(
     name = "gitclient",
     srcs = ["gitclient.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/codesearch/gitclient",
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//cli/index:__pkg__",
+        "//codesearch:__subpackages__",
+    ],
     deps = [
         "//proto:index_go_proto",
         "//server/util/log",
