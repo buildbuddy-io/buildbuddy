@@ -10,8 +10,15 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/xds"
 	"github.com/stretchr/testify/require"
-	"k8s.io/client-go/rest"
 )
+
+type bearer struct{ token string }
+
+func (b bearer) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Authorization", "Bearer "+b.token)
+	return http.DefaultTransport.RoundTrip(r)
+}
 
 func newNodeServer(t *testing.T) (*httptest.Server, *http.Request) {
 	var last http.Request
@@ -44,7 +51,7 @@ func newNodeServer(t *testing.T) (*httptest.Server, *http.Request) {
 
 func TestRestNodeLabelGetter(t *testing.T) {
 	srv, last := newNodeServer(t)
-	getter, err := xds.NewNodeLabelGetter(&rest.Config{Host: srv.URL + "/prefix", BearerToken: "test-token"})
+	getter, err := xds.NewNodeLabelGetter(srv.URL+"/prefix", &http.Client{Transport: bearer{"test-token"}})
 	require.NoError(t, err)
 
 	labels, err := getter.NodeLabels(context.Background(), "node-a")
@@ -73,10 +80,10 @@ func TestRestNodeLabelGetter(t *testing.T) {
 
 func TestNewNodeLabelGetter_HostForms(t *testing.T) {
 	for _, host := range []string{"10.0.0.1:443", "https://10.0.0.1:443", "https://10.0.0.1:443/prefix", "kubernetes.default.svc"} {
-		getter, err := xds.NewNodeLabelGetter(&rest.Config{Host: host})
+		getter, err := xds.NewNodeLabelGetter(host, nil)
 		require.NoError(t, err, host)
 		require.NotNil(t, getter, host)
 	}
-	_, err := xds.NewNodeLabelGetter(&rest.Config{Host: ""})
+	_, err := xds.NewNodeLabelGetter("", nil)
 	require.Error(t, err)
 }
