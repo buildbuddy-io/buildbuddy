@@ -996,6 +996,13 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		return nil, err
 	}
+	f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
+	if err == nil {
+		return f, nil
+	}
+	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
+		return nil, err
+	}
 	return p.env.GetFileCache().Open(ctx, node.fileNode)
 }
 

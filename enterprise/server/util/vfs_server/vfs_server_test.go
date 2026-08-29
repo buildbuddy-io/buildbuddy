@@ -3,7 +3,9 @@ package vfs_server_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfscommon"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -178,6 +181,21 @@ func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree 
 	require.NoError(t, err)
 }
 
+type evictingFileCache struct {
+	interfaces.FileCache
+	once sync.Once
+}
+
+func (fc *evictingFileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
+	contains := fc.FileCache.ContainsFile(ctx, node)
+	if contains {
+		fc.once.Do(func() {
+			fc.FileCache.DeleteFile(ctx, node)
+		})
+	}
+	return contains
+}
+
 func TestCASFileFetchedOnDemand(t *testing.T) {
 	ctx, env, server, _ := newServerWithEnv(t)
 	d := setFile(t, env, ctx, "", "only fetched after open")
@@ -199,6 +217,28 @@ func TestCASFileFetchedOnDemand(t *testing.T) {
 	require.EqualValues(t, 1, stats.GetCasFilesAccessedCount())
 	require.EqualValues(t, 1, stats.GetFileDownloadCount())
 	require.Equal(t, d.GetSizeBytes(), stats.GetFileDownloadSizeBytes())
+}
+
+func TestCASFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	contents := "refetched after eviction"
+	d := setFile(t, env, ctx, "", contents)
+	fileNode := &repb.FileNode{Name: "input.txt", Digest: d}
+
+	tmpPath := filepath.Join(testfs.MakeTempDir(t), "input.txt")
+	require.NoError(t, os.WriteFile(tmpPath, []byte(contents), 0644))
+	require.NoError(t, env.GetFileCache().AddFile(ctx, fileNode, tmpPath))
+	env.SetFileCache(&evictingFileCache{FileCache: env.GetFileCache()})
+
+	_, err := server.Prepare(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{
+			Files: []*repb.FileNode{fileNode},
+		}},
+	}, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, contents, readFromVFS(t, server, "input.txt"))
 }
 
 func TestGetLayout(t *testing.T) {

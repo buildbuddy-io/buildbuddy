@@ -428,7 +428,7 @@ func (ws *Workspace) AddCLI(ctx context.Context) error {
 		return status.UnimplementedErrorf("CLI binary not embedded")
 	}
 	// Don't add CLI if the workspace is backed by FUSE.
-	if ws.vfs != nil || ws.Opts.VFSInputMode != "" {
+	if ws.vfs != nil {
 		return status.UnimplementedErrorf("AddCLI not supported on VFS")
 	}
 	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryName)
@@ -447,7 +447,7 @@ func (ws *Workspace) AddCLI(ctx context.Context) error {
 // already exist.
 func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	// Don't add CI runner if the workspace is backed by FUSE.
-	if ws.vfs != nil || ws.Opts.VFSInputMode != "" {
+	if ws.vfs != nil {
 		return status.UnimplementedErrorf("AddCIRunner not supported on VFS")
 	}
 	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)

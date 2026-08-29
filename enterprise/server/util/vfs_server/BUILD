@@ -74,6 +74,7 @@ go_test(
         "//proto:vfs_go_proto",
         "//server/cache/dirtools",
         "//server/environment",
+        "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
