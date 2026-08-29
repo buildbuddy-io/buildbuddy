@@ -63,11 +63,15 @@ def embedded_static_binary(name, actual, visibility = None):
         tags = ["manual"],
         visibility = visibility,
     )
+    # manual: the select has no default branch on purpose (Linux-only), and
+    # tags do not propagate through aliases, so without this a wildcard build
+    # on macOS would fail on these targets.
     native.alias(
         name = name,
         actual = select({
             "//platforms/configs:linux_x86_64": ":" + name + "_linux_x86_64",
             "//platforms/configs:linux_arm64": ":" + name + "_linux_arm64",
         }),
+        tags = ["manual"],
         visibility = visibility,
     )
