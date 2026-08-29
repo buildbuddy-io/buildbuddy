@@ -13,12 +13,18 @@
 // The scanner is deliberately conservative: it tracks nesting depth and only
 // recognizes `import` at the top level, so it never returns a specifier for a
 // declaration inside `declare module "x" { ... }` blocks, and it ignores
-// `import.meta`, dynamic `import(...)` calls, `export ... from` re-exports and
-// `import x = require("y")` (matching the previous tree-sitter behaviour).
+// `import.meta` and dynamic `import(...)` calls.
+//
+// Unlike the previous tree-sitter extractor, side-effect imports
+// (`import "x"`), re-exports (`export ... from "x"`) and
+// `import x = require("x")` are returned too: each makes the file depend on
+// the named module just as much as `import y from "x"` does.
 package tsimports
 
 import (
-	"strings"
+	"bytes"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Options controls scanning.
@@ -39,16 +45,21 @@ func Imports(src []byte, opts Options) []string {
 		if t.kind == tokEOF {
 			break
 		}
-		// `x.import` is a property access and `export import x = ...` is an
-		// alias export (an export_statement to tree-sitter), not a declaration.
-		isImport := t.kind == tokWord && t.text == "import" && s.depth == 0 &&
-			!(last.kind == tokPunct && last.text == ".") &&
-			!(last.kind == tokWord && last.text == "export")
+		// `x.import` / `x.export` are property accesses, not declarations.
+		isDecl := t.kind == tokWord && (t.text == "import" || t.text == "export") && s.depth == 0 &&
+			!(last.kind == tokPunct && last.text == ".")
 		last = t
-		if !isImport {
+		if !isDecl {
 			continue
 		}
-		if spec, ok := s.importSpecifier(); ok {
+		var spec string
+		var ok bool
+		if t.text == "import" {
+			spec, ok = s.importSpecifier()
+		} else {
+			spec, ok = s.exportSpecifier()
+		}
+		if ok {
 			out = append(out, spec)
 		}
 		last = s.prev
@@ -62,9 +73,8 @@ func (s *scanner) importSpecifier() (string, bool) {
 	t := s.next()
 	switch t.kind {
 	case tokString:
-		// import "side-effect"; tree-sitter's import_statement has a single
-		// named child here, which the previous extractor skipped. Keep parity.
-		return "", false
+		// import "side-effect";
+		return t.text, true
 	case tokPunct:
 		if t.text == "(" || t.text == "." {
 			// Dynamic import or import.meta: not a declaration.
@@ -75,7 +85,8 @@ func (s *scanner) importSpecifier() (string, bool) {
 	default:
 	}
 	// import [type] [default][, ] [* as ns | { ... }] from "spec" [with {...}]
-	groupDepth := 0
+	// import [type] x = require("spec")
+	importClauseBraceDepth := 0
 	for {
 		switch t.kind {
 		case tokEOF:
@@ -83,26 +94,23 @@ func (s *scanner) importSpecifier() (string, bool) {
 		case tokPunct:
 			switch t.text {
 			case "{":
-				groupDepth++
+				importClauseBraceDepth++
 			case "}":
-				groupDepth--
-			case ";", "=":
-				if groupDepth == 0 {
-					// `;` terminates a malformed declaration; `=` means
-					// `import x = require("y")` / `import x = N.y`, which the
-					// previous extractor ignored.
-					return "", false
+				importClauseBraceDepth--
+			case ";":
+				if importClauseBraceDepth == 0 {
+					return "", false // malformed declaration
+				}
+			case "=":
+				if importClauseBraceDepth == 0 {
+					return s.requireSpecifier()
 				}
 			}
 		case tokWord:
-			if groupDepth == 0 && t.text == "from" {
-				t = s.next()
-				if t.kind == tokString {
-					return t.text, true
-				}
-				return "", false
+			if importClauseBraceDepth == 0 && t.text == "from" {
+				return s.stringNext()
 			}
-			if groupDepth == 0 && (t.text == "import" || t.text == "export") {
+			if importClauseBraceDepth == 0 && (t.text == "import" || t.text == "export") {
 				// Malformed declaration ran into the next one; re-scan it.
 				s.pushBack(t)
 				return "", false
@@ -111,6 +119,81 @@ func (s *scanner) importSpecifier() (string, bool) {
 		}
 		t = s.next()
 	}
+}
+
+// exportSpecifier is called right after an `export` keyword at top level. It
+// returns the module specifier of a re-export (`export * from "x"`,
+// `export * as ns from "x"`, `export { a, b as c } from "x"`,
+// `export type { T } from "x"`) and consumes only as much as needed to tell
+// that the statement is not one; `export import x = require("y")` is
+// handled by returning to the main loop, which sees the `import`.
+func (s *scanner) exportSpecifier() (string, bool) {
+	t := s.next()
+	if t.kind == tokWord && t.text == "type" {
+		t = s.next()
+	}
+	switch {
+	case t.kind == tokPunct && t.text == "*":
+		for {
+			t = s.next()
+			switch {
+			case t.kind == tokEOF:
+				return "", false
+			case t.kind == tokWord && t.text == "from":
+				return s.stringNext()
+			case t.kind == tokPunct && t.text == ";":
+				return "", false
+			}
+		}
+	case t.kind == tokPunct && t.text == "{":
+		braceDepth := 1
+		for braceDepth > 0 {
+			t = s.next()
+			switch {
+			case t.kind == tokEOF:
+				return "", false
+			case t.kind == tokPunct && t.text == "{":
+				braceDepth++
+			case t.kind == tokPunct && t.text == "}":
+				braceDepth--
+			}
+		}
+		t = s.next()
+		if t.kind == tokWord && t.text == "from" {
+			return s.stringNext()
+		}
+		s.pushBack(t)
+		return "", false
+	default:
+		// export const/function/class/default/import ...: rescan the token.
+		s.pushBack(t)
+		return "", false
+	}
+}
+
+// requireSpecifier handles the remainder of `import x = require("spec")`.
+// `import x = N.y` (a namespace alias) has no module specifier.
+func (s *scanner) requireSpecifier() (string, bool) {
+	t := s.next()
+	if t.kind != tokWord || t.text != "require" {
+		s.pushBack(t)
+		return "", false
+	}
+	if t = s.next(); t.kind != tokPunct || t.text != "(" {
+		s.pushBack(t)
+		return "", false
+	}
+	return s.stringNext()
+}
+
+// stringNext returns the next token's text if it is a string literal.
+func (s *scanner) stringNext() (string, bool) {
+	t := s.next()
+	if t.kind == tokString {
+		return t.text, true
+	}
+	s.pushBack(t)
+	return "", false
 }
 
 type tokKind int
@@ -129,6 +212,10 @@ const (
 type token struct {
 	kind tokKind
 	text string
+	// ctrlClose marks a `)` that closes an `if (...)`, `while (...)`,
+	// `for (...)` or `with (...)` header: a `/` after it starts a regexp
+	// (`if (x) /re/.test(y)`), whereas after any other `)` it is division.
+	ctrlClose bool
 }
 
 type scanner struct {
@@ -138,6 +225,26 @@ type scanner struct {
 	depth  int   // (), [], {} nesting depth at top level
 	jsx    bool
 	pushed *token
+	// parens records, for each currently open `(`, whether it started a
+	// control-flow header.
+	parens []bool
+}
+
+type scannerState struct {
+	pos    int
+	prev   token
+	depth  int
+	pushed *token
+	parens int
+}
+
+func (s *scanner) save() scannerState {
+	return scannerState{s.pos, s.prev, s.depth, s.pushed, len(s.parens)}
+}
+
+func (s *scanner) restore(st scannerState) {
+	s.pos, s.prev, s.depth, s.pushed = st.pos, st.prev, st.depth, st.pushed
+	s.parens = s.parens[:st.parens]
 }
 
 func (s *scanner) pushBack(t token) { s.pushed = &t }
@@ -149,9 +256,23 @@ func (s *scanner) next() token {
 		s.pushed = nil
 		return t
 	}
+	return s.scanAndTrack()
+}
+
+func (s *scanner) scanAndTrack() token {
 	t := s.scan()
 	s.prev = t
 	return t
+}
+
+// Multi-character punctuators, longest first. The ones that matter for
+// disambiguation are `++`/`--` (a `/` after them is division), `=>` (arrow
+// functions and generic signatures) and `...`; the rest just keep tokens
+// honest.
+var punctuators = []string{
+	">>>=", "...", "===", "!==", "**=", "<<=", ">>=", ">>>", "&&=", "||=", "??=",
+	"=>", "++", "--", "**", "&&", "||", "??", "?.", "==", "!=", "<=", ">=",
+	"<<", ">>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=",
 }
 
 func (s *scanner) scan() token {
@@ -160,8 +281,13 @@ func (s *scanner) scan() token {
 		switch {
 		case c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v':
 			s.pos++
-		case c == 0xEF && s.hasPrefix("\xEF\xBB\xBF"): // BOM
-			s.pos += 3
+		case c >= 0x80:
+			r, size := utf8.DecodeRune(s.src[s.pos:])
+			if isUnicodeSpace(r) {
+				s.pos += size
+				continue
+			}
+			return s.scanWord()
 		case c == '#' && s.pos == 0 && s.hasPrefix("#!"): // shebang
 			s.skipLine()
 		case c == '/' && s.hasPrefix("//"):
@@ -169,62 +295,113 @@ func (s *scanner) scan() token {
 		case c == '/' && s.hasPrefix("/*"):
 			s.skipBlockComment()
 		case c == '"' || c == '\'':
-			return token{tokString, s.scanString(c)}
+			return token{kind: tokString, text: s.scanString(c)}
 		case c == '`':
 			s.scanTemplate()
-			return token{tokTemplate, ""}
+			return token{kind: tokTemplate}
 		case c == '/':
 			if s.regexpAllowed() {
 				s.scanRegexp()
-				return token{tokRegexp, ""}
+				return token{kind: tokRegexp}
 			}
-			s.pos++
-			if s.pos < len(s.src) && s.src[s.pos] == '=' {
-				s.pos++
-				return token{tokPunct, "/="}
-			}
-			return token{tokPunct, "/"}
+			return s.scanPunct()
 		case c == '<' && s.jsx && s.jsxAllowed():
 			if s.scanJSXElement() {
-				return token{tokJSX, ""}
+				return token{kind: tokJSX}
 			}
 			// Not JSX (e.g. `<T,>(x: T) => x`): treat `<` as a punctuator.
-			s.pos++
-			return token{tokPunct, "<"}
+			return s.scanPunct()
 		case isIdentStart(c):
-			start := s.pos
-			for s.pos < len(s.src) && isIdentPart(s.src[s.pos]) {
-				s.pos++
-			}
-			return token{tokWord, string(s.src[start:s.pos])}
+			return s.scanWord()
 		case c >= '0' && c <= '9':
 			start := s.pos
 			for s.pos < len(s.src) && (isIdentPart(s.src[s.pos]) || s.src[s.pos] == '.') {
 				s.pos++
 			}
-			return token{tokNumber, string(s.src[start:s.pos])}
+			return token{kind: tokNumber, text: string(s.src[start:s.pos])}
 		default:
-			s.pos++
-			switch c {
-			case '(', '[', '{':
-				s.depth++
-			case ')', ']', '}':
-				if s.depth > 0 {
-					s.depth--
-				}
-			}
-			return token{tokPunct, string(c)}
+			return s.scanPunct()
 		}
 	}
-	return token{tokEOF, ""}
+	return token{kind: tokEOF}
+}
+
+func (s *scanner) scanWord() token {
+	start := s.pos
+	for s.pos < len(s.src) {
+		c := s.src[s.pos]
+		if c < 0x80 {
+			if !isIdentPart(c) {
+				break
+			}
+			s.pos++
+			continue
+		}
+		r, size := utf8.DecodeRune(s.src[s.pos:])
+		if isUnicodeSpace(r) {
+			break
+		}
+		s.pos += size
+	}
+	return token{kind: tokWord, text: string(s.src[start:s.pos])}
+}
+
+func (s *scanner) scanPunct() token {
+	for _, p := range punctuators {
+		if s.hasPrefix(p) {
+			s.pos += len(p)
+			return token{kind: tokPunct, text: p}
+		}
+	}
+	c := s.src[s.pos]
+	s.pos++
+	t := token{kind: tokPunct, text: string(c)}
+	switch c {
+	case '(':
+		s.depth++
+		s.parens = append(s.parens, s.prev.kind == tokWord && isControlKeyword(s.prev.text))
+	case ')':
+		if s.depth > 0 {
+			s.depth--
+		}
+		if n := len(s.parens); n > 0 {
+			t.ctrlClose = s.parens[n-1]
+			s.parens = s.parens[:n-1]
+		}
+	case '[', '{':
+		s.depth++
+	case ']', '}':
+		if s.depth > 0 {
+			s.depth--
+		}
+	}
+	return t
+}
+
+func isControlKeyword(w string) bool {
+	switch w {
+	case "if", "while", "for", "with":
+		return true
+	}
+	return false
 }
 
 func (s *scanner) hasPrefix(p string) bool {
-	return strings.HasPrefix(string(s.src[s.pos:min(len(s.src), s.pos+len(p))]), p)
+	return bytes.HasPrefix(s.src[s.pos:], []byte(p))
+}
+
+// atLineTerminator reports whether a line terminator (LF, CR, U+2028 or
+// U+2029) starts at s.pos.
+func (s *scanner) atLineTerminator() bool {
+	c := s.src[s.pos]
+	if c == '\n' || c == '\r' {
+		return true
+	}
+	return c == 0xE2 && s.pos+2 < len(s.src) && s.src[s.pos+1] == 0x80 && (s.src[s.pos+2] == 0xA8 || s.src[s.pos+2] == 0xA9)
 }
 
 func (s *scanner) skipLine() {
-	for s.pos < len(s.src) && s.src[s.pos] != '\n' {
+	for s.pos < len(s.src) && !s.atLineTerminator() {
 		s.pos++
 	}
 }
@@ -241,8 +418,8 @@ func (s *scanner) skipBlockComment() {
 }
 
 // scanString consumes a quoted string starting at s.pos and returns its raw
-// contents. Unterminated strings end at the newline (like the TypeScript
-// scanner, which reports an error but recovers there).
+// contents. Unterminated strings end at the line terminator (like the
+// TypeScript scanner, which reports an error but recovers there).
 func (s *scanner) scanString(quote byte) string {
 	s.pos++
 	start := s.pos
@@ -257,7 +434,7 @@ func (s *scanner) scanString(quote byte) string {
 			s.pos++
 			return text
 		}
-		if c == '\n' {
+		if s.atLineTerminator() {
 			return string(s.src[start:s.pos])
 		}
 		s.pos++
@@ -292,7 +469,7 @@ func (s *scanner) skipBalanced() {
 	saveDepth := s.depth
 	s.depth = 1
 	savePrev := s.prev
-	s.prev = token{tokPunct, "{"}
+	s.prev = token{kind: tokPunct, text: "{"}
 	for s.depth > 0 {
 		if s.scanAndTrack().kind == tokEOF {
 			break
@@ -300,12 +477,6 @@ func (s *scanner) skipBalanced() {
 	}
 	s.depth = saveDepth
 	s.prev = savePrev
-}
-
-func (s *scanner) scanAndTrack() token {
-	t := s.scan()
-	s.prev = t
-	return t
 }
 
 // regexpAllowed reports whether a `/` at the current position starts a
@@ -326,14 +497,17 @@ func (s *scanner) regexpAllowed() bool {
 		return false
 	case tokPunct:
 		switch s.prev.text {
-		case ")", "]":
+		case ")":
+			return s.prev.ctrlClose
+		case "]", "++", "--":
 			return false
 		}
 		// `}` is ambiguous (end of block vs. end of object literal). A regexp
 		// after a block is far more common than dividing an object literal.
 		return true
+	default:
+		return true
 	}
-	return true
 }
 
 func (s *scanner) scanRegexp() {
@@ -345,7 +519,7 @@ func (s *scanner) scanRegexp() {
 		case c == '\\':
 			s.pos += 2
 			continue
-		case c == '\n':
+		case c == '\n' || c == '\r':
 			return // unterminated
 		case c == '[':
 			inClass = true
@@ -377,7 +551,7 @@ func (s *scanner) jsxAllowed() bool {
 		return false
 	case tokPunct:
 		switch s.prev.text {
-		case ")", "]", "}":
+		case ")", "]", "}", "++", "--":
 			// `}` closes a block or object literal; JSX is only valid after
 			// `}` inside a JSX expression container, which skipBalanced
 			// handles by starting with prev="{".
@@ -391,19 +565,24 @@ func (s *scanner) jsxAllowed() bool {
 
 // scanJSXElement consumes a complete JSX element or fragment starting at `<`.
 // It returns false (without consuming anything) if the text does not look
-// like JSX, e.g. an arrow-function generic `<T,>` or `<T extends U>`.
+// like well-formed JSX, e.g. an arrow-function generic `<T,>`, a generic
+// function type `<T>(x: T) => T`, or an element whose tags do not match.
 func (s *scanner) scanJSXElement() bool {
-	start := s.pos
+	st := s.save()
 	if !s.scanJSXTag(true) {
-		s.pos = start
+		s.restore(st)
 		return false
 	}
 	return true
 }
 
+func isJSXNameByte(c byte) bool {
+	return isIdentPart(c) || c == '.' || c == ':' || c == '-'
+}
+
 // scanJSXTag consumes an opening tag (self-closing or not) and, if not
-// self-closing, its children and closing tag. Returns false if the text is
-// not JSX.
+// self-closing, its children and matching closing tag. Returns false if the
+// text is not well-formed JSX.
 func (s *scanner) scanJSXTag(first bool) bool {
 	s.pos++ // '<'
 	s.skipSpace()
@@ -414,7 +593,7 @@ func (s *scanner) scanJSXTag(first bool) bool {
 	}
 	// Tag name: identifiers with '.', ':', '-'; empty for fragments.
 	nameStart := s.pos
-	for s.pos < len(s.src) && (isIdentPart(s.src[s.pos]) || s.src[s.pos] == '.' || s.src[s.pos] == ':' || s.src[s.pos] == '-') {
+	for s.pos < len(s.src) && isJSXNameByte(s.src[s.pos]) {
 		s.pos++
 	}
 	name := s.src[nameStart:s.pos]
@@ -427,10 +606,11 @@ func (s *scanner) scanJSXTag(first bool) bool {
 	}
 	// Attributes.
 	selfClosing := false
+attrs:
 	for {
 		s.skipSpace()
 		if s.pos >= len(s.src) {
-			return true
+			return false // EOF inside an opening tag: not JSX
 		}
 		c := s.src[s.pos]
 		switch {
@@ -441,11 +621,11 @@ func (s *scanner) scanJSXTag(first bool) bool {
 				// type (valid in type positions even in .tsx), not an element.
 				return false
 			}
-			goto children
+			break attrs
 		case c == '/' && s.pos+1 < len(s.src) && s.src[s.pos+1] == '>':
 			s.pos += 2
 			selfClosing = true
-			goto children
+			break attrs
 		case c == '{':
 			s.pos++
 			s.skipBalanced()
@@ -467,10 +647,10 @@ func (s *scanner) scanJSXTag(first bool) bool {
 			s.pos++
 		}
 	}
-children:
 	if selfClosing {
 		return true
 	}
+	// Children, until the matching closing tag.
 	for s.pos < len(s.src) {
 		switch s.src[s.pos] {
 		case '{':
@@ -478,55 +658,58 @@ children:
 			s.skipBalanced()
 		case '<':
 			if s.pos+1 < len(s.src) && s.src[s.pos+1] == '/' {
-				// Closing tag: </name> or </>.
-				for s.pos < len(s.src) && s.src[s.pos] != '>' {
+				s.pos += 2
+				s.skipSpace()
+				closeStart := s.pos
+				for s.pos < len(s.src) && isJSXNameByte(s.src[s.pos]) {
 					s.pos++
+				}
+				if !bytes.Equal(s.src[closeStart:s.pos], name) {
+					return false // mismatched closing tag: not JSX
+				}
+				s.skipSpace()
+				if s.pos >= len(s.src) || s.src[s.pos] != '>' {
+					return false
 				}
 				s.pos++
 				return true
 			}
-			s.scanJSXTag(false)
+			if !s.scanJSXTag(false) {
+				return false
+			}
 		default:
 			s.pos++ // JSX text
 		}
 	}
-	return true
+	return false // EOF before the closing tag
 }
 
 // isGenericCallSignature reports whether the text after a just-consumed
-// `<Name>` looks like `(...) =>` or `(...):`, i.e. a generic function type or
-// call signature rather than JSX children. It does not consume anything.
+// `<Name>` is `(...) =>` or `(...):`, i.e. a generic function type or call
+// signature rather than JSX children. It uses the real lexer for the
+// lookahead (so strings, comments, templates and nested parens inside the
+// parameter list are handled) and consumes nothing.
 func (s *scanner) isGenericCallSignature() bool {
-	i := s.pos
-	for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t' || s.src[i] == '\n' || s.src[i] == '\r') {
-		i++
-	}
-	if i >= len(s.src) || s.src[i] != '(' {
+	st := s.save()
+	defer s.restore(st)
+	s.prev = token{kind: tokPunct, text: ">"}
+	if t := s.scanAndTrack(); t.kind != tokPunct || t.text != "(" {
 		return false
 	}
-	depth := 0
-	for ; i < len(s.src); i++ {
-		switch s.src[i] {
-		case '(':
+	depth := 1
+	for depth > 0 {
+		t := s.scanAndTrack()
+		switch {
+		case t.kind == tokEOF, t.kind == tokJSX:
+			return false
+		case t.kind == tokPunct && t.text == "(":
 			depth++
-		case ')':
+		case t.kind == tokPunct && t.text == ")":
 			depth--
-			if depth == 0 {
-				i++
-				for i < len(s.src) && (s.src[i] == ' ' || s.src[i] == '\t' || s.src[i] == '\n' || s.src[i] == '\r') {
-					i++
-				}
-				return i < len(s.src) && (s.src[i] == ':' || s.src[i] == '=' && i+1 < len(s.src) && s.src[i+1] == '>')
-			}
-		case '<':
-			// Children text of a real element would end at `</`; a call
-			// signature never contains one.
-			if i+1 < len(s.src) && s.src[i+1] == '/' {
-				return false
-			}
 		}
 	}
-	return false
+	t := s.scanAndTrack()
+	return t.kind == tokPunct && (t.text == ":" || t.text == "=>")
 }
 
 func (s *scanner) skipSpace() {
@@ -541,9 +724,15 @@ func (s *scanner) skipSpace() {
 }
 
 func isIdentStart(c byte) bool {
-	return c == '_' || c == '$' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
+	return c == '_' || c == '$' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 func isIdentPart(c byte) bool {
 	return isIdentStart(c) || c >= '0' && c <= '9'
+}
+
+// isUnicodeSpace reports whether a non-ASCII rune is ECMAScript WhiteSpace
+// or a LineTerminator (U+FEFF, the Zs category, U+2028, U+2029).
+func isUnicodeSpace(r rune) bool {
+	return r == 0xFEFF || r == 0x2028 || r == 0x2029 || unicode.Is(unicode.Zs, r)
 }
