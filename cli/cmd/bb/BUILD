@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+load("//rules:platform_transitions.bzl", "STATIC_ON_LINUX")
 
 # NOTE: //tools/lint uses a prebuilt bb binary (//tools/bb) instead of this
 # target. If you make CLI changes that affect `bb fix` or `bb mod deps`,
@@ -55,11 +56,7 @@ go_binary(
     # dynamically linked against musl's ld.so (which does not exist inside
     # workflow containers / the microVM). "auto" elsewhere (macOS cannot link
     # statically).
-    static = select({
-        "//platforms/configs:linux_x86_64": "on",
-        "//platforms/configs:linux_arm64": "on",
-        "//conditions:default": "auto",
-    }),
+    static = STATIC_ON_LINUX,
     visibility = ["//visibility:public"],
 )
 

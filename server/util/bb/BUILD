@@ -1,5 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
+load("//rules:platform_transitions.bzl", "embedded_static_binary")
 
 # Embeds the bb CLI binary for Linux and mac. On Windows, we create an empty
 # file instead because the CLI depends on tree-sitter which requires CGo, and
@@ -7,8 +7,8 @@ load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64
 genrule(
     name = "bb-crossplatform",
     srcs = select({
-        "//platforms/configs:linux_x86_64": [":bb-linux-x86_64"],
-        "//platforms/configs:linux_arm64": [":bb-linux-arm64"],
+        "//platforms/configs:linux_x86_64": [":bb-static"],
+        "//platforms/configs:linux_arm64": [":bb-static"],
         "//platforms/configs:macos_x86_64": ["//cli/cmd/bb"],
         "//platforms/configs:macos_arm64": ["//cli/cmd/bb"],
         "//conditions:default": [],
@@ -26,14 +26,9 @@ go_library(
     visibility = ["//visibility:public"],
 )
 
-linux_arm64_musl_alias(
-    name = "bb-linux-arm64",
+# Statically linked bb CLI for embedding into the Linux executor; shares its
+# configuration with goinit and ci_runner (see embedded_static_binary).
+embedded_static_binary(
+    name = "bb-static",
     actual = "//cli/cmd/bb",
-    tags = ["manual"],
-)
-
-linux_x86_64_musl_alias(
-    name = "bb-linux-x86_64",
-    actual = "//cli/cmd/bb",
-    tags = ["manual"],
 )
