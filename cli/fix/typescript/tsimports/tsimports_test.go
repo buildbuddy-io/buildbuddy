@@ -55,6 +55,23 @@ func TestImports(t *testing.T) {
 		{"jsx text with parens", `const e = <b>(optional)</b>; import x from "y"`, true, []string{"y"}},
 		{"generic function type in tsx", "type F = <T>(a: T) => T;\ninterface I {\n  <P>(c: P): P;\n}\nexport function f(): <R>(a: R) => R;\nimport x from \"y\"", true, []string{"y"}},
 		{"export import ignored (parity)", `export import a = N.b; import x from "y"`, false, []string{"y"}},
+		// Cases from the codex review of the first version.
+		{"postfix increment then division", "const ratio = x++ / y;\nimport value from \"pkg\"", false, []string{"pkg"}},
+		{"postfix decrement then division", "const ratio = x-- / y;\nimport value from \"pkg\"", false, []string{"pkg"}},
+		{"postfix division in jsx attribute", "const node = <A value={x++ / y} />;\nimport value from \"pkg\"", true, []string{"pkg"}},
+		{"regexp after if header", "if (enabled) /import fake from \"evil\"/.test(text);\nimport real from \"real\"", false, []string{"real"}},
+		{"regexp after while header", "while (x) /'/.test(text);\nimport real from \"real\"", false, []string{"real"}},
+		{"division after call", "const a = f(x) / 2; const s = 'q'; import x from \"y\"", false, []string{"y"}},
+		{"generic signature with paren in string", "type F = <T>(value: \"(\") => T;\nimport value from \"pkg\"", true, []string{"pkg"}},
+		{"generic signature with paren in comment", "type F = <T>(value: T /* ( */) => T;\nimport value from \"pkg\"", true, []string{"pkg"}},
+		{"generic signature with template", "type F = <T>(value: `(${x})`) => T;\nimport value from \"pkg\"", true, []string{"pkg"}},
+		{"unicode line separator", "const x = 1;\u2028import value from \"pkg\";", false, []string{"pkg"}},
+		{"unicode paragraph separator ends comment", "// c\u2029import value from \"pkg\";", false, []string{"pkg"}},
+		{"nbsp before import", "const x = 1;\u00a0import value from \"pkg\";", false, []string{"pkg"}},
+		{"unicode identifiers", "const caf\u00e9 = 1; const \u0394 = 2; import x from \"y\"", false, []string{"y"}},
+		{"jsx mismatched closing tag not jsx", "const a = 1 < b; const c = d > e; import x from \"y\"", true, []string{"y"}},
+		{"jsx eof in opening tag", "const e = <div a=\"x\"", true, nil},
+		{"spread in import attributes", `import data from "./d.json" with { type: "json" }; const o = {...p}; import x from "y"`, false, []string{"./d.json", "y"}},
 		{"unterminated string", "const s = 'oops\nimport x from \"y\"", false, []string{"y"}},
 		{"empty", "", false, nil},
 	} {
@@ -62,4 +79,26 @@ func TestImports(t *testing.T) {
 			require.Equal(t, tc.want, Imports([]byte(tc.src), Options{JSX: tc.jsx}))
 		})
 	}
+}
+
+func FuzzImports(f *testing.F) {
+	for _, seed := range []string{
+		`import a from "a"; const s = "x"; import b from './b'`,
+		"const r = /'/; import x from \"y\"",
+		"const e = <div a={x++ / 2}>it's</div>; import x from \"y\"",
+		"type F = <T>(a: T) => T; import x from \"y\"",
+		"`${`${1}`}` import x from \"y\"",
+	} {
+		f.Add(seed, true)
+		f.Add(seed, false)
+	}
+	f.Fuzz(func(t *testing.T, src string, jsx bool) {
+		// Must terminate without panicking on arbitrary input, and appending
+		// a fresh statement must never make previously found imports vanish.
+		got := Imports([]byte(src), Options{JSX: jsx})
+		again := Imports([]byte(src+"\n;\n"), Options{JSX: jsx})
+		if len(again) < len(got) {
+			t.Fatalf("appending a statement lost imports: %q -> %q", got, again)
+		}
+	})
 }
