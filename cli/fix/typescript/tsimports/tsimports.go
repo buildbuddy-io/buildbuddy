@@ -15,11 +15,10 @@
 // declaration inside `declare module "x" { ... }` blocks, and it ignores
 // `import.meta` and dynamic `import(...)` calls.
 //
-// Behaviour parity with the previous tree-sitter extractor: side-effect
-// imports (`import "x"`), re-exports (`export ... from "x"`) and
-// `import x = require("x")` are not returned either. Those are arguably
-// dependencies too; they are left out here so that this change is purely a
-// dependency swap, and can be enabled in a follow-up.
+// Unlike the previous tree-sitter extractor, side-effect imports
+// (`import "x"`), re-exports (`export ... from "x"`) and
+// `import x = require("x")` are returned too: each makes the file depend on
+// the named module just as much as `import y from "x"` does.
 package tsimports
 
 import (
@@ -46,16 +45,21 @@ func Imports(src []byte, opts Options) []string {
 		if t.kind == tokEOF {
 			break
 		}
-		// `x.import` is a property access and `export import x = ...` is an
-		// alias export (an export_statement to tree-sitter), not a declaration.
-		isImport := t.kind == tokWord && t.text == "import" && s.depth == 0 &&
-			!(last.kind == tokPunct && last.text == ".") &&
-			!(last.kind == tokWord && last.text == "export")
+		// `x.import` / `x.export` are property accesses, not declarations.
+		isDecl := t.kind == tokWord && (t.text == "import" || t.text == "export") && s.depth == 0 &&
+			!(last.kind == tokPunct && last.text == ".")
 		last = t
-		if !isImport {
+		if !isDecl {
 			continue
 		}
-		if spec, ok := s.importSpecifier(); ok {
+		var spec string
+		var ok bool
+		if t.text == "import" {
+			spec, ok = s.importSpecifier()
+		} else {
+			spec, ok = s.exportSpecifier()
+		}
+		if ok {
 			out = append(out, spec)
 		}
 		last = s.prev
@@ -69,9 +73,8 @@ func (s *scanner) importSpecifier() (string, bool) {
 	t := s.next()
 	switch t.kind {
 	case tokString:
-		// import "side-effect"; tree-sitter's import_statement has a single
-		// named child here, which the previous extractor skipped. Keep parity.
-		return "", false
+		// import "side-effect";
+		return t.text, true
 	case tokPunct:
 		if t.text == "(" || t.text == "." {
 			// Dynamic import or import.meta: not a declaration.
@@ -82,6 +85,7 @@ func (s *scanner) importSpecifier() (string, bool) {
 	default:
 	}
 	// import [type] [default][, ] [* as ns | { ... }] from "spec" [with {...}]
+	// import [type] x = require("spec")
 	importClauseBraceDepth := 0
 	for {
 		switch t.kind {
@@ -93,21 +97,18 @@ func (s *scanner) importSpecifier() (string, bool) {
 				importClauseBraceDepth++
 			case "}":
 				importClauseBraceDepth--
-			case ";", "=":
+			case ";":
 				if importClauseBraceDepth == 0 {
-					// `;` terminates a malformed declaration; `=` means
-					// `import x = require("y")` / `import x = N.y`, which the
-					// previous extractor ignored.
-					return "", false
+					return "", false // malformed declaration
+				}
+			case "=":
+				if importClauseBraceDepth == 0 {
+					return s.requireSpecifier()
 				}
 			}
 		case tokWord:
 			if importClauseBraceDepth == 0 && t.text == "from" {
-				t = s.next()
-				if t.kind == tokString {
-					return t.text, true
-				}
-				return "", false
+				return s.stringNext()
 			}
 			if importClauseBraceDepth == 0 && (t.text == "import" || t.text == "export") {
 				// Malformed declaration ran into the next one; re-scan it.
@@ -118,6 +119,81 @@ func (s *scanner) importSpecifier() (string, bool) {
 		}
 		t = s.next()
 	}
+}
+
+// exportSpecifier is called right after an `export` keyword at top level. It
+// returns the module specifier of a re-export (`export * from "x"`,
+// `export * as ns from "x"`, `export { a, b as c } from "x"`,
+// `export type { T } from "x"`) and consumes only as much as needed to tell
+// that the statement is not one; `export import x = require("y")` is
+// handled by returning to the main loop, which sees the `import`.
+func (s *scanner) exportSpecifier() (string, bool) {
+	t := s.next()
+	if t.kind == tokWord && t.text == "type" {
+		t = s.next()
+	}
+	switch {
+	case t.kind == tokPunct && t.text == "*":
+		for {
+			t = s.next()
+			switch {
+			case t.kind == tokEOF:
+				return "", false
+			case t.kind == tokWord && t.text == "from":
+				return s.stringNext()
+			case t.kind == tokPunct && t.text == ";":
+				return "", false
+			}
+		}
+	case t.kind == tokPunct && t.text == "{":
+		braceDepth := 1
+		for braceDepth > 0 {
+			t = s.next()
+			switch {
+			case t.kind == tokEOF:
+				return "", false
+			case t.kind == tokPunct && t.text == "{":
+				braceDepth++
+			case t.kind == tokPunct && t.text == "}":
+				braceDepth--
+			}
+		}
+		t = s.next()
+		if t.kind == tokWord && t.text == "from" {
+			return s.stringNext()
+		}
+		s.pushBack(t)
+		return "", false
+	default:
+		// export const/function/class/default/import ...: rescan the token.
+		s.pushBack(t)
+		return "", false
+	}
+}
+
+// requireSpecifier handles the remainder of `import x = require("spec")`.
+// `import x = N.y` (a namespace alias) has no module specifier.
+func (s *scanner) requireSpecifier() (string, bool) {
+	t := s.next()
+	if t.kind != tokWord || t.text != "require" {
+		s.pushBack(t)
+		return "", false
+	}
+	if t = s.next(); t.kind != tokPunct || t.text != "(" {
+		s.pushBack(t)
+		return "", false
+	}
+	return s.stringNext()
+}
+
+// stringNext returns the next token's text if it is a string literal.
+func (s *scanner) stringNext() (string, bool) {
+	t := s.next()
+	if t.kind == tokString {
+		return t.text, true
+	}
+	s.pushBack(t)
+	return "", false
 }
 
 type tokKind int
