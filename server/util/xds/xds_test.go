@@ -3,6 +3,7 @@ package xds_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,16 +11,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/xds"
 	"github.com/stretchr/testify/require"
-	"k8s.io/client-go/kubernetes/fake"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func fakeNode(name string, labels map[string]string) *corev1.Node {
-	return &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels},
+// fakeNodes is a NodeLabelGetter backed by a map of node name -> labels.
+type fakeNodes map[string]map[string]string
+
+func (f fakeNodes) NodeLabels(_ context.Context, name string) (map[string]string, error) {
+	labels, ok := f[name]
+	if !ok {
+		return nil, fmt.Errorf("node %q not found", name)
 	}
+	return labels, nil
+}
+
+func fakeNode(name string, labels map[string]string) fakeNodes {
+	return fakeNodes{name: labels}
 }
 
 func TestBootstrap(t *testing.T) {
@@ -70,7 +76,7 @@ func TestBootstrap(t *testing.T) {
 			flags.Set(t, "grpc_client.xds.server_uri", "xds.example.com:5000")
 			flags.Set(t, "grpc_client.xds.sub_zone_label", tc.subZoneLabel)
 
-			client := fake.NewClientset(fakeNode(nodeName, tc.nodeLabels))
+			client := fakeNode(nodeName, tc.nodeLabels)
 			require.NoError(t, xds.Bootstrap(context.Background(), client))
 
 			data, err := os.ReadFile(bootstrapPath)
@@ -110,7 +116,7 @@ func TestBootstrapXDS_MissingZoneLabel(t *testing.T) {
 	flags.Set(t, "grpc_client.xds.server_uri", "xds.example.com:5000")
 	flags.Set(t, "grpc_client.xds.sub_zone_label", "")
 
-	client := fake.NewClientset(fakeNode("node-a", map[string]string{"other": "label"}))
+	client := fakeNode("node-a", map[string]string{"other": "label"})
 	err := xds.Bootstrap(context.Background(), client)
 	require.Error(t, err)
 	require.NoFileExists(t, bootstrapPath)
@@ -125,7 +131,7 @@ func TestBootstrapXDS_MissingPodName(t *testing.T) {
 	flags.Set(t, "grpc_client.xds.server_uri", "xds.example.com:5000")
 	flags.Set(t, "grpc_client.xds.sub_zone_label", "")
 
-	client := fake.NewClientset(fakeNode("node-a", map[string]string{"topology.kubernetes.io/zone": "us-west1-b"}))
+	client := fakeNode("node-a", map[string]string{"topology.kubernetes.io/zone": "us-west1-b"})
 	err := xds.Bootstrap(context.Background(), client)
 	require.Error(t, err)
 	require.NoFileExists(t, bootstrapPath)

@@ -3,15 +3,19 @@ package xds
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"text/template"
 
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
 
@@ -79,7 +83,7 @@ var xdsBootstrapTmpl = template.Must(template.New("xds-bootstrap").Parse(`{
 // its value is written to locality.sub_zone.
 //
 // If client is nil, an in-cluster Kubernetes client is created.
-func Bootstrap(ctx context.Context, client kubernetes.Interface) error {
+func Bootstrap(ctx context.Context, client NodeLabelGetter) error {
 	if !*xdsBootstrapEnabled {
 		return nil
 	}
@@ -88,7 +92,7 @@ func Bootstrap(ctx context.Context, client kubernetes.Interface) error {
 		if err != nil {
 			return status.UnavailableErrorf("in-cluster config: %s", err)
 		}
-		client, err = kubernetes.NewForConfig(cfg)
+		client, err = NewNodeLabelGetter(cfg)
 		if err != nil {
 			return status.UnavailableErrorf("create k8s client: %s", err)
 		}
@@ -109,18 +113,18 @@ func Bootstrap(ctx context.Context, client kubernetes.Interface) error {
 		return status.FailedPreconditionError("pod name is not set (expose metadata.name as MY_POD_NAME via downward API)")
 	}
 
-	node, err := client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+	labels, err := client.NodeLabels(ctx, nodeName)
 	if err != nil {
 		return status.UnavailableErrorf("get node %q: %s", nodeName, err)
 	}
 
-	zone := node.Labels[zoneLabel]
+	zone := labels[zoneLabel]
 	if zone == "" {
 		return status.FailedPreconditionErrorf("node %q has no %q label", nodeName, zoneLabel)
 	}
 	subZone := ""
 	if *xdsSubZoneLabel != "" {
-		subZone = node.Labels[*xdsSubZoneLabel]
+		subZone = labels[*xdsSubZoneLabel]
 	}
 
 	var buf bytes.Buffer
@@ -140,4 +144,75 @@ func Bootstrap(ctx context.Context, client kubernetes.Interface) error {
 	}
 	log.Infof("Wrote xDS bootstrap config to %q:\n%s", bootstrapPath, buf.String())
 	return nil
+}
+
+// NodeLabelGetter returns the labels of a Kubernetes Node.
+//
+// This is the only piece of the Kubernetes API that xDS bootstrapping needs.
+// It is deliberately a narrow interface rather than kubernetes.Interface: the
+// typed clientset (and k8s.io/api behind it) adds ~200 packages to every binary
+// that links this package, including the executor.
+type NodeLabelGetter interface {
+	NodeLabels(ctx context.Context, nodeName string) (map[string]string, error)
+}
+
+// NewNodeLabelGetter returns a NodeLabelGetter that reads Nodes from the API
+// server described by cfg using a plain authenticated HTTP client.
+func NewNodeLabelGetter(cfg *rest.Config) (NodeLabelGetter, error) {
+	httpClient, err := rest.HTTPClientFor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	base, err := url.Parse(cfg.Host)
+	if err != nil {
+		return nil, fmt.Errorf("parse API server host %q: %w", cfg.Host, err)
+	}
+	if base.Scheme == "" {
+		// rest.Config.Host may be a bare host:port.
+		base, err = url.Parse("https://" + cfg.Host)
+		if err != nil {
+			return nil, fmt.Errorf("parse API server host %q: %w", cfg.Host, err)
+		}
+	}
+	return &restNodeLabelGetter{client: httpClient, base: base}, nil
+}
+
+type restNodeLabelGetter struct {
+	client *http.Client
+	base   *url.URL
+}
+
+func (g *restNodeLabelGetter) NodeLabels(ctx context.Context, nodeName string) (map[string]string, error) {
+	u := *g.base
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/api/v1/nodes/" + url.PathEscape(nodeName)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		msg := strings.TrimSpace(string(body))
+		if len(msg) > 512 {
+			msg = msg[:512]
+		}
+		return nil, fmt.Errorf("GET %s: HTTP %d: %s", u.Path, resp.StatusCode, msg)
+	}
+	var node struct {
+		Metadata struct {
+			Labels map[string]string `json:"labels"`
+		} `json:"metadata"`
+	}
+	if err := json.Unmarshal(body, &node); err != nil {
+		return nil, fmt.Errorf("decode node %q: %w", nodeName, err)
+	}
+	return node.Metadata.Labels, nil
 }
