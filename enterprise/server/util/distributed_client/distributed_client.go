@@ -776,8 +776,10 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
 
-		// Confirm the reference identifies the requested content. Only the
-		// digest is compared: the metadata may legitimately mis-match.
+		// Confirm the reference identifies the requested content. Compressor,
+		// encryption, and partition/group are peer-local and may legitimately
+		// differ; the instance name is only ignored for CAS, where content is
+		// instance-independent.
 		fr := ref.GetMetadata().GetFileRecord()
 		frd := ref.GetMetadata().GetFileRecord().GetDigest()
 		refMatches := frd.GetHash() == r.GetDigest().GetHash() &&
