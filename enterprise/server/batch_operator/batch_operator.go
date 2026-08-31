@@ -204,7 +204,6 @@ type BatchDigestOperatorConfig struct {
 	// number of batches that will be flushed will be
 	// MaxBatchesPerGroup*[# of groups generating batches] per BatchInterval.
 	BatchInterval time.Duration
-
 	// The maximum number of digests waiting to be flushed for a single GroupID,
 	// independent of how many different instance names are being updated.
 	MaxDigestsPerGroup int
@@ -398,7 +397,6 @@ func (u *batchOperator) batch(eqd *enqueuedDigests) {
 	pendingBatch := batchesForGroup.findOrCreatePendingBatch(eqd.instanceName, eqd.digestFunction)
 	batchesForGroup.mu.Unlock()
 	if pendingBatch == nil {
-		log.Infof("[%s] Too many pending batches for group %s, dropping %d pending digests", u.name, groupID, len(keys))
 		metrics.BatchOperatorEnqueuedDigests.WithLabelValues(
 			u.name,
 			groupID,
@@ -495,7 +493,6 @@ func (u *batchOperator) sender() {
 func (u *batchOperator) flushBatches(ctx context.Context) int {
 	// Remove batches to flush and release the mutex before sending RPCs.
 	batchesToFlush := map[string]*DigestBatch{}
-	batchesFlushed := 0
 	authHeaders := map[string]map[string][]string{}
 	u.batchesByGroupID.Range(func(key, value interface{}) bool {
 		groupID, ok := key.(string)
@@ -523,10 +520,9 @@ func (u *batchOperator) flushBatches(ctx context.Context) int {
 	})
 
 	for groupID, batch := range batchesToFlush {
-		batchesFlushed++
 		u.dispatch(ctx, groupID, authHeaders[groupID], batch)
 	}
-	return batchesFlushed
+	return len(batchesToFlush)
 }
 
 // Returns a DigestBatch representing the first batch in the
