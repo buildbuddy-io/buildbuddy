@@ -27,9 +27,13 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
-const LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
-const FreeTierTimeoutReason = "free_tier_limit"
+const (
+	ExecutableName                    = platform.CIRunnerExecutableBaseName + platform.ExecutableSuffix
+	CLIBinaryName                     = "bb" + platform.ExecutableSuffix
+	DefaultTimeoutExperimentName      = "remote_execution.remote_runner_default_timeout"
+	LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
+	FreeTierTimeoutReason             = "free_tier_limit"
+)
 
 type RunnerTimeoutResult struct {
 	Duration time.Duration

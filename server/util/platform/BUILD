@@ -2,7 +2,11 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "platform",
-    srcs = ["platform.go"],
+    srcs = [
+        "executable_suffix_unix.go",
+        "executable_suffix_windows.go",
+        "platform.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/platform",
     visibility = ["//visibility:public"],
     deps = [

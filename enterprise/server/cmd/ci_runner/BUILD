@@ -11,11 +11,7 @@ package(
 
 go_library(
     name = "ci_runner_lib",
-    srcs = [
-        "executable_suffix_unix.go",
-        "executable_suffix_windows.go",
-        "main.go",
-    ],
+    srcs = ["main.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
         "//enterprise/server/bes_artifacts",
@@ -40,6 +36,7 @@ go_library(
         "//server/util/healthcheck",
         "//server/util/lockingbuffer",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/redact",
         "//server/util/status",
         "//server/util/usageutil",
@@ -87,6 +84,7 @@ go_test(
         "//enterprise/server/workflow/config",
         "//server/testutil/testgit",
         "//server/testutil/testshell",
+        "//server/util/platform",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

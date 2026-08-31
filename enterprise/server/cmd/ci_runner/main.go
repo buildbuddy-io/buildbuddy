@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -164,7 +165,7 @@ const (
 )
 
 func isExecutableName(name, baseName string) bool {
-	return name == baseName || name == baseName+executableSuffix
+	return name == baseName || name == baseName+platform.ExecutableSuffix
 }
 
 func isBazelCommandToken(token string) bool {
@@ -757,7 +758,7 @@ func run() error {
 		return status.WrapError(err, "compute CI runner binary abspath")
 	}
 	if filepath.Ext(absPath) == "" {
-		absPath = absPath + executableSuffix
+		absPath = absPath + platform.ExecutableSuffix
 	}
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
 
@@ -825,7 +826,7 @@ func run() error {
 
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
-		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName+executableSuffix)
+		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName+platform.ExecutableSuffix)
 		if err := extractBazelisk(bazeliskPath); err != nil {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
@@ -833,7 +834,7 @@ func run() error {
 	}
 	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
 	if isExecutableName(*bazelCommand, bbBinaryName) {
-		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+executableSuffix)
+		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+platform.ExecutableSuffix)
 		if _, err := os.Stat(bbPath); err != nil {
 			backendLog.Warningf("bb binary not found in workspace: %s", err)
 		} else {
@@ -1199,7 +1200,7 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 	}
 	for _, cmd := range action.DeprecatedBazelCommands {
 		if !startsWithBazelCommand(cmd) {
-			cmd = "bazel " + cmd
+			cmd = bazelBinaryName + " " + cmd
 		}
 		action.Steps = append(action.Steps, &rnpb.Step{
 			Run: cmd,
@@ -2554,7 +2555,7 @@ func parseGitFetchedBytes(trace2EventLog io.Reader) int64 {
 // all bazel commands.
 func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+executableSuffix)
+	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+platform.ExecutableSuffix)
 
 	wrapperBinaries := map[string]string{
 		bazelBinaryName:    *bazelCommand,

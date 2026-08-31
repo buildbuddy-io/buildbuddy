@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,9 +32,9 @@ func TestIsBazelCommandToken(t *testing.T) {
 		bbBinaryName,
 	} {
 		require.True(t, isBazelCommandToken(baseName))
-		require.True(t, isBazelCommandToken(baseName+executableSuffix))
+		require.True(t, isBazelCommandToken(baseName+platform.ExecutableSuffix))
 	}
-	require.Equal(t, executableSuffix == ".exe", isBazelCommandToken("bazel.exe"))
+	require.Equal(t, platform.ExecutableSuffix == ".exe", isBazelCommandToken("bazel.exe"))
 	require.False(t, isBazelCommandToken("bazelisk-custom"))
 }
 
