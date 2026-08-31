@@ -401,7 +401,7 @@ func (ws *Workspace) AddCLI(ctx context.Context) error {
 	if ws.vfs != nil {
 		return status.UnimplementedErrorf("AddCLI not supported on VFS")
 	}
-	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryNameForOS(runtime.GOOS))
+	destPath := path.Join(ws.Path(), ci_runner_util.CLIBinaryName)
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err
@@ -420,7 +420,7 @@ func (ws *Workspace) AddCIRunner(ctx context.Context) error {
 	if ws.vfs != nil {
 		return status.UnimplementedErrorf("AddCIRunner not supported on VFS")
 	}
-	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableNameForOS(runtime.GOOS))
+	destPath := path.Join(ws.Path(), ci_runner_util.ExecutableName)
 	exists, err := disk.FileExists(ctx, destPath)
 	if err != nil {
 		return err

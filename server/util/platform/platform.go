@@ -888,8 +888,8 @@ func IsCIRunnerCommand(cmd *repb.Command) bool {
 	if len(args) == 0 {
 		return false
 	}
-	const executableName = "./buildbuddy_ci_runner"
-	return args[0] == executableName || args[0] == executableName+".exe"
+	commandPath := strings.ReplaceAll(args[0], `\`, "/")
+	return commandPath == "./buildbuddy_ci_runner" || commandPath == "./buildbuddy_ci_runner.exe"
 }
 
 func Retryable(task *repb.ExecutionTask) bool {

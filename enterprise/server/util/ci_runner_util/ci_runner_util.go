@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,28 +27,9 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const ExecutableName = "buildbuddy_ci_runner"
-const CLIBinaryName = "bb"
 const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
 const LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
 const FreeTierTimeoutReason = "free_tier_limit"
-
-// ExecutableNameForOS returns the CI runner executable name for goos.
-func ExecutableNameForOS(goos string) string {
-	return executableNameForOS(ExecutableName, goos)
-}
-
-// CLIBinaryNameForOS returns the bb CLI executable name for goos.
-func CLIBinaryNameForOS(goos string) string {
-	return executableNameForOS(CLIBinaryName, goos)
-}
-
-func executableNameForOS(name, goos string) string {
-	if goos == platform.WindowsOperatingSystemName {
-		return name + ".exe"
-	}
-	return name
-}
 
 type RunnerTimeoutResult struct {
 	Duration time.Duration
@@ -198,16 +178,15 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, err
 		}
 
-		runnerName := filepath.Base(ExecutableNameForOS(os))
 		dir := &repb.Directory{
 			Files: []*repb.FileNode{
 				{
-					Name:         runnerName,
+					Name:         ExecutableName,
 					Digest:       runnerBinDigest,
 					IsExecutable: true,
 				},
 				{
-					Name:         CLIBinaryNameForOS(os),
+					Name:         CLIBinaryName,
 					Digest:       bbBinDigest,
 					IsExecutable: true,
 				},
@@ -333,6 +312,7 @@ func IsRemoteRunnerTask(task *repb.ExecutionTask) bool {
 	if len(args) == 0 {
 		return false
 	}
-	return args[0] == "./"+ExecutableName ||
-		args[0] == "./"+ExecutableNameForOS(platform.WindowsOperatingSystemName)
+	commandPath := strings.ReplaceAll(args[0], `\`, "/")
+	baseName := strings.TrimSuffix(ExecutableName, ".exe")
+	return commandPath == "./"+baseName || commandPath == "./"+baseName+".exe"
 }

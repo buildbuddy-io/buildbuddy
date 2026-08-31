@@ -201,7 +201,7 @@ func (r *runnerService) createAction(ctx context.Context, req *rnpb.RunRequest, 
 	}
 
 	args := []string{
-		"./" + ci_runner_util.ExecutableNameForOS(os),
+		"./" + ci_runner_util.ExecutableName,
 		"--bes_backend=" + events_api_url.String(),
 		"--cache_backend=" + cache_api_url.String(),
 		"--rbe_backend=" + remote_exec_api_url.String(),
