@@ -123,6 +123,7 @@ go_binary(
 
 go_test(
     name = "bb_test",
+    size = "small",
     srcs = ["bb_test.go"],
     data = [":bb"],
     embed = [":bb_lib"],

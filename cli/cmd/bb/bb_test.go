@@ -18,8 +18,21 @@ import (
 var bbRunfilePath string
 
 func TestStartupDoesNotQueryTerminal(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Second)
-	defer cancel()
+	// The regression this test guards against (terminal queries during
+	// startup) is detected by inspecting the output bytes below, not by
+	// timing: a binary that probes the terminal emits the query escape
+	// sequences whether or not it also stalls waiting for a reply. Avoid a
+	// short wall-clock deadline here; on heavily loaded CI machines just
+	// exec-ing the CLI binary can take several seconds, which made this
+	// test flaky. Instead, allow the subprocess to run until shortly
+	// before the test itself times out, so a true hang still fails with
+	// useful output instead of tripping the bazel test timeout.
+	ctx := t.Context()
+	if deadline, ok := t.Deadline(); ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, deadline.Add(-10*time.Second))
+		defer cancel()
+	}
 
 	// version --cli exits without starting Bazel, but it still imports the CLI
 	// command registry and the UI package, covering package-level initialization.
