@@ -38,6 +38,17 @@ func TestIsBazelCommandToken(t *testing.T) {
 	require.False(t, isBazelCommandToken("bazelisk-custom"))
 }
 
+func TestStartsWithBazelCommand(t *testing.T) {
+	for _, cmd := range []string{
+		"bazel build //...",
+		"bazelisk-custom build //...",
+		"bb.exe test //...",
+	} {
+		require.True(t, startsWithBazelCommand(cmd))
+	}
+	require.False(t, startsWithBazelCommand("build //..."))
+}
+
 func TestBazelChildProcessResult_StartError(t *testing.T) {
 	err := bazelChildProcessResult(errors.New("executable not found"))
 	require.ErrorContains(t, err, "failed to start Bazel")

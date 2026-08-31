@@ -175,8 +175,9 @@ func isBazelCommandToken(token string) bool {
 }
 
 func startsWithBazelCommand(cmd string) bool {
-	tokens, err := shlex.Split(cmd)
-	return err == nil && len(tokens) > 0 && isBazelCommandToken(tokens[0])
+	return strings.HasPrefix(cmd, bazeliskBinaryName) ||
+		strings.HasPrefix(cmd, bazelBinaryName) ||
+		strings.HasPrefix(cmd, bbBinaryName)
 }
 
 var (
