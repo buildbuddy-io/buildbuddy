@@ -582,6 +582,95 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	}, nil
 }
 
+func cleanRelativePath(path string) (string, error) {
+	path = filepath.Clean(path)
+	if path == "." {
+		return "", nil
+	}
+	if filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+		return "", status.InvalidArgumentErrorf("path %q escapes the workspace", path)
+	}
+	return path, nil
+}
+
+func joinRelativePath(base, path string) (string, error) {
+	base, err := cleanRelativePath(base)
+	if err != nil {
+		return "", err
+	}
+	path, err = cleanRelativePath(path)
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		return "", status.InvalidArgumentError("output path cannot be empty")
+	}
+	return cleanRelativePath(filepath.Join(base, path))
+}
+
+func (p *Server) mkdirAll(path string) error {
+	path, err := cleanRelativePath(path)
+	if err != nil {
+		return err
+	}
+	if path == "" {
+		return nil
+	}
+
+	node := p.root
+	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
+		p.mu.Lock()
+		node.mu.Lock()
+		child := node.children[name]
+		if child == nil {
+			if node.children == nil {
+				node.children = make(map[string]*fsNode)
+			}
+			child = newDirNode(node, name)
+			child.server = p
+			child.id = atomic.AddUint64(&p.nextId, 1)
+			node.children[name] = child
+			p.nodes[child.id] = child
+		}
+		node.mu.Unlock()
+		p.mu.Unlock()
+		if !child.IsDirectory() {
+			return status.FailedPreconditionErrorf("cannot create output directory %q: %q is not a directory", path, child.Path())
+		}
+		node = child
+	}
+	return nil
+}
+
+func outputPaths(layout *container.FileSystemLayout) []string {
+	if len(layout.OutputPaths) > 0 {
+		return layout.OutputPaths
+	}
+	return slices.Concat(layout.OutputFiles, layout.OutputDirectories)
+}
+
+func (p *Server) createOutputDirectories(layout *container.FileSystemLayout) error {
+	for _, outputPath := range outputPaths(layout) {
+		path, err := joinRelativePath(layout.WorkingDirectory, outputPath)
+		if err != nil {
+			return err
+		}
+		if err := p.mkdirAll(filepath.Dir(path)); err != nil {
+			return err
+		}
+	}
+	for _, outputDirectory := range layout.OutputDirectories {
+		path, err := joinRelativePath(layout.WorkingDirectory, outputDirectory)
+		if err != nil {
+			return err
+		}
+		if err := p.mkdirAll(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (p *Server) ComputeStats() *repb.VfsStats {
 	stats := &repb.VfsStats{
 		CasFilesCount:     p.casFileCount,
@@ -623,6 +712,9 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	// directories. We merge the known CAS inputs with the tree we already have.
 	invalidatedInodes, err := p.updateLayout(ctx, layout.Inputs, layout.DigestFunction)
 	if err != nil {
+		return nil, err
+	}
+	if err := p.createOutputDirectories(layout); err != nil {
 		return nil, err
 	}
 
@@ -1004,6 +1096,124 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 		return nil, err
 	}
 	return p.env.GetFileCache().Open(ctx, node.fileNode)
+}
+
+func (p *Server) lookupPath(path string) (*fsNode, error) {
+	path, err := cleanRelativePath(path)
+	if err != nil {
+		return nil, err
+	}
+	node := p.root
+	if path == "" {
+		return node, nil
+	}
+	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
+		node.mu.Lock()
+		child := node.children[name]
+		node.mu.Unlock()
+		if child == nil {
+			return nil, nil
+		}
+		node = child
+	}
+	return node, nil
+}
+
+func copyFile(source *os.File, destination string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(destination); err != nil {
+		return err
+	}
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	destinationFile, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(destinationFile, source)
+	closeErr := destinationFile.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination string) error {
+	node.mu.Lock()
+	nodeType := node.nodeType
+	mode := os.FileMode(node.attrs.GetPerm())
+	target := node.target
+	backingPath := node.backingPath
+	children := make(map[string]*fsNode, len(node.children))
+	for name, child := range node.children {
+		children[name] = child
+	}
+	node.mu.Unlock()
+
+	switch nodeType {
+	case fsDirectoryNode:
+		if info, err := os.Lstat(destination); err == nil && !info.IsDir() {
+			if err := os.RemoveAll(destination); err != nil {
+				return err
+			}
+		}
+		if err := os.MkdirAll(destination, mode); err != nil {
+			return err
+		}
+		for name, child := range children {
+			if err := p.materializeNode(ctx, child, filepath.Join(destination, name)); err != nil {
+				return err
+			}
+		}
+		return nil
+	case fsFileNode:
+		var source *os.File
+		var err error
+		if backingPath != "" {
+			source, err = os.Open(backingPath)
+		} else {
+			source, err = p.openCASFile(ctx, node)
+		}
+		if err != nil {
+			return err
+		}
+		defer source.Close()
+		return copyFile(source, destination, mode)
+	case fsSymlinkNode:
+		if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(destination); err != nil {
+			return err
+		}
+		return os.Symlink(target, destination)
+	default:
+		return status.UnimplementedErrorf("cannot materialize VFS node type %d", nodeType)
+	}
+}
+
+// MaterializeOutputs copies declared outputs into the action workspace.
+func (p *Server) MaterializeOutputs(ctx context.Context, layout *container.FileSystemLayout, outputRoot string) error {
+	for _, outputPath := range outputPaths(layout) {
+		relativePath, err := joinRelativePath(layout.WorkingDirectory, outputPath)
+		if err != nil {
+			return err
+		}
+		node, err := p.lookupPath(relativePath)
+		if err != nil {
+			return err
+		}
+		if node == nil {
+			continue
+		}
+		if err := p.materializeNode(ctx, node, filepath.Join(outputRoot, relativePath)); err != nil {
+			return status.WrapErrorf(err, "materialize output %q", outputPath)
+		}
+	}
+	return nil
 }
 
 func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb.MknodResponse, error) {

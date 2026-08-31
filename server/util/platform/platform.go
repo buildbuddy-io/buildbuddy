@@ -459,12 +459,6 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	default:
 		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the %q platform property", vfsPrefetchMode, VFSPrefetchModePropertyName)
 	}
-	// Runner recycling is not yet supported in combination with VFS workspaces.
-	// Firecracker VFS performance is not good enough yet to be enabled.
-	if ContainerType(isolationType) == FirecrackerContainerType {
-		vfsEnabled = false
-	}
-
 	envOverrides := stringListProp(m, EnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
 		b, err := base64.StdEncoding.DecodeString(prop)

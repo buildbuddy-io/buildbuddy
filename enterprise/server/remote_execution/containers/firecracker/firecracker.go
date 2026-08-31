@@ -2088,7 +2088,11 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
-	vfsSrv, err := vfs_server.New(c.env, c.actionWorkingDir)
+	vfsScratchDir := c.actionWorkingDir + ".vfs-scratch"
+	if err := os.MkdirAll(vfsScratchDir, 0755); err != nil {
+		return status.WrapError(err, "create VFS scratch directory")
+	}
+	vfsSrv, err := vfs_server.New(c.env, vfsScratchDir)
 	if err != nil {
 		return err
 	}
@@ -2537,7 +2541,34 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 }
 
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
-	return nil, status.UnimplementedErrorf("VFS support not available for firecracker")
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	if c.vfsServer == nil || c.fsLayout == nil {
+		return nil, status.FailedPreconditionError("Firecracker VFS server is not configured")
+	}
+	if _, err := c.vfsServer.Prepare(ctx, c.fsLayout, c.fsLayout.InputFetcher); err != nil {
+		return nil, status.WrapError(err, "prepare host VFS server")
+	}
+
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMVFSPort)
+	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
+		return nil, status.WrapError(err, "dial guest VFS server")
+	}
+	defer conn.Close()
+
+	client := vmfspb.NewFileSystemClient(conn)
+	rsp, err := client.Prepare(ctx, req)
+	if err != nil {
+		return nil, status.WrapError(err, "prepare guest VFS")
+	}
+	return rsp, nil
 }
 
 // monitorVMContext returns a context that is cancelled if the VM exits. The
@@ -2689,8 +2720,15 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
-	// If FUSE is enabled then outputs are already in the workspace.
-	if c.fsLayout == nil && !*disableWorkspaceSync {
+	if c.fsLayout != nil {
+		result.DoNotRecycle = true
+		stage = "materialize_vfs_outputs"
+		if err := c.vfsServer.MaterializeOutputs(ctx, c.fsLayout, c.actionWorkingDir); err != nil {
+			result.Error = status.WrapError(err, "materialize VFS outputs")
+			return result
+		}
+		result.VfsStats = c.vfsServer.ComputeStats()
+	} else if !*disableWorkspaceSync {
 		c.emitCOWAndUFFDMetrics(stage)
 		stage = "copy_workspace_outputs"
 		// Unmount the workspace and pause the VM before syncing to ensure that
@@ -2895,8 +2933,12 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 
 	if c.vfsServer != nil {
+		vfsScratchDir := c.vfsServer.Path()
 		c.vfsServer.Stop()
 		c.vfsServer = nil
+		if err := os.RemoveAll(vfsScratchDir); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove VFS scratch directory %q: %s", vfsScratchDir, err)
+		}
 	}
 
 	if err := c.unmountAllVBDs(ctx, true /*fromRemove*/); err != nil {

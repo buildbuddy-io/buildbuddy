@@ -241,6 +241,50 @@ func TestCASFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
 	require.Equal(t, contents, readFromVFS(t, server, "input.txt"))
 }
 
+func TestMaterializeOutputs(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	layout := &container.FileSystemLayout{
+		DigestFunction:   repb.DigestFunction_SHA256,
+		Inputs:           &repb.Tree{Root: &repb.Directory{}},
+		WorkingDirectory: "work",
+		OutputFiles:      []string{"out/result.txt"},
+	}
+	_, err := server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+
+	workRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "work"})
+	require.NoError(t, err)
+	outRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: workRsp.GetId(), Name: "out"})
+	require.NoError(t, err)
+	createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
+		ParentId: outRsp.GetId(),
+		Name:     "result.txt",
+		Flags:    uint32(os.O_CREATE | os.O_RDWR),
+		Mode:     0755,
+	})
+	require.NoError(t, err)
+	_, err = server.Write(ctx, &vfspb.WriteRequest{HandleId: createRsp.GetHandleId(), Data: []byte("result")})
+	require.NoError(t, err)
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: createRsp.GetHandleId()})
+	require.NoError(t, err)
+
+	outputRoot := testfs.MakeTempDir(t)
+	require.NoError(t, server.MaterializeOutputs(ctx, layout, outputRoot))
+	b, err := os.ReadFile(filepath.Join(outputRoot, "work", "out", "result.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "result", string(b))
+}
+
+func TestPrepareRejectsEscapingOutputPath(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	_, err := server.Prepare(ctx, &container.FileSystemLayout{
+		Inputs:           &repb.Tree{Root: &repb.Directory{}},
+		WorkingDirectory: "work",
+		OutputFiles:      []string{"../../escape"},
+	}, nil)
+	require.Error(t, err)
+}
+
 func TestGetLayout(t *testing.T) {
 	server, env := newServer(t)
 	ctx := context.Background()

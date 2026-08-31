@@ -29,6 +29,10 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	return nil, fmt.Errorf("Prepare not implemented")
 }
 
+func (p *Server) MaterializeOutputs(ctx context.Context, layout *container.FileSystemLayout, outputRoot string) error {
+	return fmt.Errorf("MaterializeOutputs not implemented")
+}
+
 func (p *Server) Stop() {
 
 }
