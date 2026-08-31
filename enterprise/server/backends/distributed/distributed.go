@@ -1809,6 +1809,9 @@ func (rwc *referenceWriteCloser) Commit() error {
 		return rwc.multiWriteCloser.Commit()
 	}
 
+	// No byte streams were opened, so the staged reference is the write:
+	// fan it out to the write peers, who will store it without receiving
+	// the blob's bytes.
 	mwc, err := rwc.c.referenceMultiWriter(rwc.ctx, rwc.refCache, rwc.rn, ref)
 	if err != nil {
 		return err

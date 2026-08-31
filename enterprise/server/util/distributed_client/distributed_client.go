@@ -504,7 +504,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 						c.verifyReferenceWrite(vctx, refCache, verifyRef, verifyRN)
 					})
 				} else {
-					c.log.Debugf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
+					c.log.Warningf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
 					metrics.DistributedCacheReferenceWriteVerificationCount.With(
 						prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
 				}
@@ -1144,6 +1144,11 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
+// RemoteWriter returns a writer that streams the resource's bytes to the
+// given peer, where they are stored when Commit is called. A non-empty
+// handoffPeer names an unavailable peer this write was originally destined
+// for; the receiving peer records a hinted handoff so the data can be
+// forwarded once that peer returns.
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
 	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 	return dbw, err
