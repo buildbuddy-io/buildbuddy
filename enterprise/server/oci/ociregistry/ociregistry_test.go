@@ -1,11 +1,14 @@
 package ociregistry_test
 
 import (
+	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +17,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -21,9 +25,319 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	ctrname "github.com/google/go-containerregistry/pkg/name"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+type failActionCacheReadClient struct {
+	repb.ActionCacheClient
+	shouldFail func() bool
+}
+
+func (c *failActionCacheReadClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	if c.shouldFail() {
+		return nil, status.UnavailableError("injected action cache read failure")
+	}
+	return c.ActionCacheClient.GetActionResult(ctx, req, opts...)
+}
+
+type failBlobReadOnceClient struct {
+	bspb.ByteStreamClient
+	targetHash         string
+	failAfterResponses int
+	failed             atomic.Bool
+}
+
+func (c *failBlobReadOnceClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	if !strings.Contains(req.GetResourceName(), c.targetHash) || !c.failed.CompareAndSwap(false, true) {
+		return c.ByteStreamClient.Read(ctx, req, opts...)
+	}
+	if c.failAfterResponses == 0 {
+		return nil, status.NotFoundError("injected blob read failure")
+	}
+	stream, err := c.ByteStreamClient.Read(ctx, req, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &failAfterNResponsesReadClient{
+		ByteStream_ReadClient: stream,
+		remaining:             c.failAfterResponses,
+	}, nil
+}
+
+type failAfterNResponsesReadClient struct {
+	bspb.ByteStream_ReadClient
+	remaining int
+}
+
+func (c *failAfterNResponsesReadClient) Recv() (*bspb.ReadResponse, error) {
+	if c.remaining == 0 {
+		return nil, status.UnavailableError("injected mid-stream blob read failure")
+	}
+	resp, err := c.ByteStream_ReadClient.Recv()
+	if err == nil {
+		c.remaining--
+	}
+	return resp, err
+}
+
+type cacheReadFailureTest struct {
+	env       *testenv.TestEnv
+	mirrorURL string
+	// repo is the repository the test image was pushed to, in the form the
+	// registry handler resolves it to.
+	repo ctrname.Repository
+
+	blobURL  string
+	blobHash string
+	blobBody []byte
+
+	manifestURL         string
+	manifestBody        []byte
+	manifestContentType string
+
+	upstreamBlobGets     *atomic.Int32
+	upstreamManifestGets *atomic.Int32
+}
+
+// doRequest issues a request to the mirror and reads the whole body. The
+// returned error is the error from reading the body, which is how an aborted
+// response surfaces to the client; a failure to get a response at all fails
+// the test.
+func doRequest(t *testing.T, method, url, accept string) (*http.Response, []byte, error) {
+	t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	require.NoError(t, err)
+	if accept != "" {
+		req.Header.Set("Accept", accept)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	return resp, body, readErr
+}
+
+func requireServedFromMirror(t *testing.T, url, accept string, want []byte) {
+	t.Helper()
+	resp, body, readErr := doRequest(t, http.MethodGet, url, accept)
+	require.NoError(t, readErr)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Equal(t, want, body)
+}
+
+func setupCacheReadFailureTest(t *testing.T, name string, contents []byte) *cacheReadFailureTest {
+	t.Helper()
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityApp)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", string(key))
+	require.NoError(t, clientidentity.Register(te))
+
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	upstreamBlobGets := atomic.Int32{}
+	upstreamManifestGets := atomic.Int32{}
+	upstream := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if r.Method == http.MethodGet {
+				switch {
+				case strings.Contains(r.URL.Path, "/blobs/"):
+					upstreamBlobGets.Add(1)
+				case strings.Contains(r.URL.Path, "/manifests/"):
+					upstreamManifestGets.Add(1)
+				}
+			}
+			return true
+		},
+	})
+	t.Cleanup(func() { require.NoError(t, upstream.Shutdown()) })
+
+	imageName, image := upstream.PushNamedImageWithFiles(t, name, map[string][]byte{"/file": contents}, nil)
+	imageRef, err := ctrname.ParseReference(imageName)
+	require.NoError(t, err)
+	layers, err := image.Layers()
+	require.NoError(t, err)
+	require.Len(t, layers, 1)
+	layer := layers[0]
+	hash, err := layer.Digest()
+	require.NoError(t, err)
+	bodyReader, err := layer.Compressed()
+	require.NoError(t, err)
+	defer bodyReader.Close()
+	body, err := io.ReadAll(bodyReader)
+	require.NoError(t, err)
+	manifestHash, err := image.Digest()
+	require.NoError(t, err)
+	rawManifest, err := image.RawManifest()
+	require.NoError(t, err)
+	manifestMediaType, err := image.MediaType()
+	require.NoError(t, err)
+
+	registry, err := ociregistry.New(te)
+	require.NoError(t, err)
+	mirror := httptest.NewServer(registry)
+	t.Cleanup(mirror.Close)
+	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", mirror.URL, imageName, hash.String())
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", mirror.URL, imageName, manifestHash.String())
+
+	// Populate the cache before injecting a cache read failure.
+	requireServedFromMirror(t, blobURL, "", body)
+	requireServedFromMirror(t, manifestURL, string(manifestMediaType), rawManifest)
+
+	return &cacheReadFailureTest{
+		env:                  te,
+		mirrorURL:            mirror.URL,
+		repo:                 imageRef.Context(),
+		blobURL:              blobURL,
+		blobHash:             hash.Hex,
+		blobBody:             body,
+		manifestURL:          manifestURL,
+		manifestBody:         rawManifest,
+		manifestContentType:  string(manifestMediaType),
+		upstreamBlobGets:     &upstreamBlobGets,
+		upstreamManifestGets: &upstreamManifestGets,
+	}
+}
+
+// failACUntilUpstreamFetch makes every action cache read fail until the mirror
+// has fetched from upstream, so that the fallback path is exercised exactly
+// once and the retry afterwards succeeds.
+func failACUntilUpstreamFetch(t *testing.T, f *cacheReadFailureTest, counter *atomic.Int32) {
+	t.Helper()
+	before := counter.Load()
+	f.env.SetActionCacheClient(&failActionCacheReadClient{
+		ActionCacheClient: f.env.GetActionCacheClient(),
+		shouldFail: func() bool {
+			return counter.Load() == before
+		},
+	})
+}
+
+func TestActionCacheReadFailureFallsBackToUpstream(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "action_cache_read_failure", []byte("contents"))
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	failACUntilUpstreamFetch(t, f, f.upstreamBlobGets)
+
+	requireServedFromMirror(t, f.blobURL, "", f.blobBody)
+	require.Equal(t, int32(1), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
+
+func TestManifestCacheReadFailureFallsBackToUpstream(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "manifest_cache_read_failure", []byte("contents"))
+	upstreamGetsBefore := f.upstreamManifestGets.Load()
+	failACUntilUpstreamFetch(t, f, f.upstreamManifestGets)
+
+	requireServedFromMirror(t, f.manifestURL, f.manifestContentType, f.manifestBody)
+	require.Equal(t, int32(1), f.upstreamManifestGets.Load()-upstreamGetsBefore)
+}
+
+func TestHeadBlobCacheReadFailureFallsBackToUpstream(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "head_blob_cache_read_failure", []byte("contents"))
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	failACUntilUpstreamFetch(t, f, f.upstreamBlobGets)
+
+	resp, body, readErr := doRequest(t, http.MethodHead, f.blobURL, "")
+	require.NoError(t, readErr)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Empty(t, body)
+	require.Equal(t, int64(len(f.blobBody)), resp.ContentLength)
+	require.Equal(t, int32(1), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
+
+func TestBlobReadFailureBeforeResponseFallsBackToUpstream(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "blob_read_failure_before_response", []byte("contents"))
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	f.env.SetByteStreamClient(&failBlobReadOnceClient{
+		ByteStreamClient: f.env.GetByteStreamClient(),
+		targetHash:       f.blobHash,
+	})
+
+	requireServedFromMirror(t, f.blobURL, "", f.blobBody)
+	require.Equal(t, int32(1), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
+
+func TestBlobReadFailureMidResponseAbortsWithoutAppendingError(t *testing.T) {
+	// The blob has to be large enough to span several ByteStream.Read
+	// responses (which are capped by cache.read_buf_size_bytes), so that
+	// failing after the first one leaves the response genuinely truncated.
+	// Random contents keep it from compressing down to a single response.
+	contents := make([]byte, 4*1024*1024)
+	_, err := cryptorand.Read(contents)
+	require.NoError(t, err)
+	f := setupCacheReadFailureTest(t, "blob_read_failure_mid_response", contents)
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	f.env.SetByteStreamClient(&failBlobReadOnceClient{
+		ByteStreamClient:   f.env.GetByteStreamClient(),
+		targetHash:         f.blobHash,
+		failAfterResponses: 1,
+	})
+
+	resp, body, readErr := doRequest(t, http.MethodGet, f.blobURL, "")
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	// The response was already committed from the cache, so the mirror cannot
+	// fall back to upstream or turn the failure into an HTTP error status.
+	require.Equal(t, int64(len(f.blobBody)), resp.ContentLength)
+	require.Equal(t, int32(0), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+	// Instead it aborts the response, which the client must see as a failed
+	// read rather than as a short or corrupted blob.
+	require.Error(t, readErr)
+	require.Less(t, len(body), len(f.blobBody))
+	require.True(t, bytes.Equal(f.blobBody[:len(body)], body), "partial response contains bytes other than the blob prefix")
+}
+
+// TestPersistentCacheReadFailureReturnsServiceUnavailable pins the behavior
+// when cache reads keep failing: the mirror fetches from upstream and caches
+// the blob, but serving it requires another cache read, so the client gets an
+// error rather than the blob.
+func TestPersistentCacheReadFailureReturnsServiceUnavailable(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "persistent_cache_read_failure", []byte("contents"))
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+	f.env.SetActionCacheClient(&failActionCacheReadClient{
+		ActionCacheClient: f.env.GetActionCacheClient(),
+		shouldFail:        func() bool { return true },
+	})
+
+	resp, _, readErr := doRequest(t, http.MethodGet, f.blobURL, "")
+	require.NoError(t, readErr)
+	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	require.Equal(t, int32(1), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
+
+// TestEmptyBlobServedFromCache covers the zero-length blob, which is read from
+// the cache without ever writing a body, and so would otherwise never commit
+// the response.
+func TestEmptyBlobServedFromCache(t *testing.T) {
+	f := setupCacheReadFailureTest(t, "empty_blob", []byte("contents"))
+	upstreamGetsBefore := f.upstreamBlobGets.Load()
+
+	emptyHash, _, err := ctr.SHA256(bytes.NewReader(nil))
+	require.NoError(t, err)
+	const contentType = "application/octet-stream"
+	err = ocicache.WriteBlobToCache(context.Background(), bytes.NewReader(nil), f.env.GetByteStreamClient(), f.env.GetActionCacheClient(), f.repo, emptyHash, contentType, 0)
+	require.NoError(t, err)
+
+	url := fmt.Sprintf("%s/v2/%s/blobs/%s", f.mirrorURL, f.repo.Name(), emptyHash.String())
+	resp, body, readErr := doRequest(t, http.MethodGet, url, "")
+	require.NoError(t, readErr)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	require.Empty(t, body)
+	require.Equal(t, int64(0), resp.ContentLength)
+	require.Equal(t, emptyHash.String(), resp.Header.Get("Docker-Content-Digest"))
+	require.Equal(t, contentType, resp.Header.Get("Content-Type"))
+	// Served entirely from the cache; upstream has no such blob.
+	require.Equal(t, int32(0), f.upstreamBlobGets.Load()-upstreamGetsBefore)
+}
 
 type simplePullTestCase struct {
 	name                     string

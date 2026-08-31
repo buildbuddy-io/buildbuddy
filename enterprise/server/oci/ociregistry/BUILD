@@ -42,14 +42,21 @@ go_test(
     deps = [
         ":ociregistry",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci/ocicache",
         "//enterprise/server/testutil/testregistry",
+        "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/util/random",
+        "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
     ],
 )
 
