@@ -427,6 +427,12 @@ type FileSystemLayout struct {
 	RemoteInstanceName string
 	DigestFunction     repb.DigestFunction_Value
 	Inputs             *repb.Tree
+	InputFetcher       InputFetcher
+}
+
+// InputFetcher ensures that an input file is available in the local file cache.
+type InputFetcher interface {
+	Fetch(ctx context.Context, node *repb.FileNode) error
 }
 
 // CommandContainer provides an execution environment for commands.
