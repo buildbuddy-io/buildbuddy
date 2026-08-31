@@ -440,9 +440,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 
 	var bytesWritten int64
 	var writeCloser interfaces.CommittedWriteCloser
-	// A reference to-be-verified received alongside data bytes, and the
-	// resource to verify it against.
-	var verifyRef *refpb.Reference
+	// The resource being written, for reference-write-verification.
 	var verifyRN *rspb.ResourceName
 	var req *dcpb.WriteRequest
 	for {
@@ -468,17 +466,13 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
 			}
-			if req.GetReference() != nil {
-				if len(req.GetData()) == 0 {
-					return c.writeReference(ctx, stream, req, up)
-				}
-				// The request carries both bytes and a reference: the bytes
-				// are written and the reference is verified. Clone these
-				// because the request proto is pooled and reused for later
-				// messages.
-				verifyRef = req.GetReference().CloneVT()
-				verifyRN = rn.CloneVT()
+
+			// If the first frame has a reference, no bytes, and finish-write
+			// set, this is the write-reference path.
+			if req.GetReference() != nil && len(req.GetData()) == 0 && req.GetFinishWrite() {
+				return c.writeReference(ctx, stream, req, up)
 			}
+			// Else, this is the normal write or reference-write-verify path.
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -486,6 +480,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			}
 			defer wc.Close()
 			writeCloser = wc
+			verifyRN = rn.CloneVT()
 		}
 		n, err := writeCloser.Write(req.GetData())
 		if err != nil {
@@ -496,18 +491,22 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
-			if verifyRef != nil {
-				if refCache, ok := c.cache.(interfaces.ReferenceCache); ok {
-					// Verification is observe-only, so don't block the
-					// write response on it. The stream context is canceled
-					// when this handler returns, so extend it.
+			if req.GetReference() != nil && verifyRN != nil {
+				// If data was written and the final message has a reference,
+				// this is the write-verify path. Perform write-verification
+				// asynchronously to avoid slowing down the write response.
+				refCache, ok := c.cache.(interfaces.ReferenceCache)
+				if ok {
+					verifyRef := req.GetReference().CloneVT()
 					vctx, cancel := background.ExtendContextForFinalization(ctx, referenceVerificationTimeout)
-					c.verificationWG.Add(1)
-					go func() {
-						defer c.verificationWG.Done()
+					c.verificationWG.Go(func() {
 						defer cancel()
 						c.verifyReferenceWrite(vctx, refCache, verifyRef, verifyRN)
-					}()
+					})
+				} else {
+					c.log.Warningf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
+					metrics.DistributedCacheReferenceWriteVerificationCount.With(
+						prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
 				}
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
@@ -517,16 +516,11 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	return nil
 }
 
-// writeReference handles a write request that carries a reference to a blob
-// in shared storage instead of data bytes.
+// writeReference handles a write that carries a reference to a blob in
+// shared storage instead of data bytes: a single message with a reference,
+// finish_write set, and no data.
 func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, userPrefix string) error {
 	rn := req.GetResource()
-	if !req.GetFinishWrite() {
-		return status.InvalidArgumentError("a write carrying a reference must be a single message with finish_write set")
-	}
-	if len(req.GetData()) > 0 {
-		return status.InvalidArgumentError("a write carrying a reference must not carry data bytes")
-	}
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
 	if !ok {
 		return status.UnimplementedErrorf("the local cache (%T) cannot accept references", c.cache)
@@ -1060,12 +1054,14 @@ func (r *distributedCacheReader) Close() error {
 }
 
 type streamWriteCloser struct {
-	cancelFunc    context.CancelFunc
-	sender        rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
-	r             *rspb.ResourceName
-	peer          string
-	handoffPeer   string
-	alreadyExists bool
+	cancelFunc      context.CancelFunc
+	sender          rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	r               *rspb.ResourceName
+	ref             *refpb.Reference
+	refMustBeCloned bool
+	peer            string
+	handoffPeer     string
+	alreadyExists   bool
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
@@ -1118,10 +1114,12 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 
 	req := &dcpb.WriteRequest{
-		FinishWrite:        true,
-		CheckAlreadyExists: true,
-		HandoffPeer:        wc.handoffPeer,
-		Resource:           wc.r,
+		FinishWrite:           true,
+		CheckAlreadyExists:    true,
+		HandoffPeer:           wc.handoffPeer,
+		Resource:              wc.r,
+		Reference:             wc.ref,
+		ReferenceMustBeCloned: wc.refMustBeCloned,
 	}
 	sendErr := wc.send(req)
 	if sendErr != nil && sendErr != io.EOF {
@@ -1148,27 +1146,75 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
+// RemoteWriter returns a writer that streams the resource's bytes to the
+// given peer, where they are stored when Commit is called. A non-empty
+// handoffPeer names an unavailable peer this write was originally destined
+// for; the receiving peer records a hinted handoff so the data can be
+// forwarded once that peer returns.
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	client, err := c.getClient(ctx, peer)
+	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	return dbw, err
+}
+
+// VerifiedWriter is a CommittedWriteCloser whose write stream's final message
+// can carry a reference for the peer to verify against the written bytes.
+type VerifiedWriter struct {
+	interfaces.CommittedWriteCloser
+	swc *streamWriteCloser
+}
+
+// SetReference binds ref to the write stream's final message, for the peer to
+// verify against the written bytes. It must be called before Commit; the
+// reference can't be provided at open time because it isn't known until the
+// write has been fully streamed.
+func (w *VerifiedWriter) SetReference(ref *refpb.Reference) {
+	w.swc.ref = ref
+}
+
+// RemoteVerifiedWriter is like RemoteWriter, but returns a VerifiedWriter
+// whose final stream message carries the reference bound via SetReference, if
+// any, for the peer to verify against the written bytes.
+func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (*VerifiedWriter, error) {
+	dbw, swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 	if err != nil {
 		return nil, err
+	}
+	return &VerifiedWriter{CommittedWriteCloser: dbw, swc: swc}, nil
+}
+
+// RemoteReferenceWriter opens a write stream that writes r to the peer by
+// reference alone: no bytes are streamed, and committing it sends a single
+// message carrying ref. The caller is responsible for determining the
+// referenced blob's ownership semantics via mustClone. Like the byte path, a
+// peer that already has r is not an error.
+func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
+	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+	return dbw, err
+}
+
+func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (interfaces.CommittedWriteCloser, *streamWriteCloser, error) {
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
 		cancel()
-		return nil, err
+		return nil, nil, err
 	}
 
 	wc := &streamWriteCloser{
-		cancelFunc:  cancel,
-		sender:      rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
-		peer:        peer,
-		handoffPeer: handoffPeer,
-		r:           r,
+		cancelFunc:      cancel,
+		sender:          rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		peer:            peer,
+		handoffPeer:     handoffPeer,
+		r:               r,
+		ref:             ref,
+		refMustBeCloned: refMustBeCloned,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
+	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), wc, nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

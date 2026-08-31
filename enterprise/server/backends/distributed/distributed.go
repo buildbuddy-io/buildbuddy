@@ -42,6 +42,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -1594,6 +1595,18 @@ type multiWriteCloser struct {
 	log         log.Logger
 	peerClosers map[string]interfaces.CommittedWriteCloser
 	r           *rspb.ResourceName
+
+	// verifiedWriter is the single peer writer opened for reference
+	// verification, if any. It is also present in peerClosers.
+	verifiedWriter *distributed_client.VerifiedWriter
+}
+
+// SetReference binds ref to the verifying peer stream's final message, if a
+// peer writer was opened for verification. It must be called before Commit.
+func (mc *multiWriteCloser) SetReference(ref *refpb.Reference) {
+	if mc.verifiedWriter != nil {
+		mc.verifiedWriter.SetReference(ref)
+	}
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
@@ -1655,6 +1668,170 @@ func (mc *multiWriteCloser) Close() error {
 	return nil
 }
 
+// referenceWriteMode returns whether writes should distribute a reference to
+// the blob's location in shared storage to the write peers, and whether they
+// should stream the blob's bytes, based on the reference-write experiments.
+// Sending both lets the peers verify the reference against the authoritative
+// byte stream.
+func (c *Cache) referenceWriteMode(ctx context.Context) (sendReference bool, sendBytes bool) {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false, true
+	}
+	if fp.Boolean(ctx, "distributed_cache.verify_write_gcs_references", false) {
+		return true, true
+	}
+	if fp.Boolean(ctx, "distributed_cache.write_gcs_references", false) {
+		return true, false
+	}
+	return false, true
+}
+
+// referenceWriteCloser stages a write in shared storage via the local
+// cache's CreateReference while distributing it to the write peers. In
+// verify mode the bytes are streamed to the peers as they arrive, and the
+// created reference rides on one peer stream's final message for that peer
+// to verify. Otherwise the peers receive only the reference.
+type referenceWriteCloser struct {
+	ctx context.Context
+	c   *Cache
+	rn  *rspb.ResourceName
+
+	// refWriter stages the bytes in shared storage; its Commit produces the
+	// reference. Nil after a staging failure in verify mode.
+	refWriter interfaces.ReferenceWriter
+
+	// multiWriteCloser streams bytes to the peers: pre-opened in verify mode,
+	// nil in reference-only mode (the reference writers are opened at Commit,
+	// once the reference exists).
+	multiWriteCloser *multiWriteCloser
+	refCache         interfaces.ReferenceCache
+}
+
+// writePeersContain returns whether every write peer for r already holds it.
+// Errors are treated as the blob being missing so that the write proceeds.
+func (c *Cache) writePeersContain(ctx context.Context, r *rspb.ResourceName) bool {
+	ps, err := c.writePeers(r)
+	if err != nil {
+		return false
+	}
+	ctx = findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_REFERENCE_WRITE_DEDUPE)
+	eg, gCtx := errgroup.WithContext(ctx)
+	for _, peer := range ps.PreferredPeers {
+		eg.Go(func() error {
+			missing, err := c.remoteFindMissing(gCtx, peer, []*rspb.ResourceName{r})
+			if err != nil {
+				return err
+			}
+			if len(missing) > 0 {
+				return status.NotFoundErrorf("digest %q missing on peer %q", r.GetDigest().GetHash(), peer)
+			}
+			return nil
+		})
+	}
+	return eg.Wait() == nil
+}
+
+func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.ReferenceCache, rn *rspb.ResourceName, sendBytes bool) (interfaces.CommittedWriteCloser, error) {
+	if c.writePeersContain(ctx, rn) {
+		// Every write peer already has this blob, so don't pay to stage it in
+		// shared storage; the byte writers short-circuit when the peers
+		// respond with AlreadyExists.
+		return c.byteMultiWriter(ctx, rn, false /*=verify*/)
+	}
+	refWriter, err := refCache.CreateReference(ctx, rn)
+	if err != nil {
+		// The blob can't be staged in shared storage (e.g. it's too small);
+		// fall back to streaming bytes to the peers.
+		return c.byteMultiWriter(ctx, rn, false /*=verify*/)
+	}
+	refWriteCloser := &referenceWriteCloser{
+		ctx:       ctx,
+		c:         c,
+		rn:        rn,
+		refWriter: refWriter,
+		refCache:  refCache,
+	}
+	if sendBytes {
+		multiWriteCloser, err := c.byteMultiWriter(ctx, rn, true /*=verify*/)
+		if err != nil {
+			refWriter.Close()
+			return nil, err
+		}
+		refWriteCloser.multiWriteCloser = multiWriteCloser
+	} else if _, err := c.writePeers(rn); err != nil {
+		// Fail fast, before any bytes are accepted, if there aren't enough
+		// write peers.
+		refWriter.Close()
+		return nil, err
+	}
+	return refWriteCloser, nil
+}
+
+func (rwc *referenceWriteCloser) Write(data []byte) (int, error) {
+	if rwc.refWriter != nil {
+		if _, err := rwc.refWriter.Write(data); err != nil {
+			if rwc.multiWriteCloser == nil {
+				// The staged bytes were lost mid-stream and were never sent
+				// to the peers; the write fails.
+				return 0, err
+			}
+			// Stop staging; the peers still receive the bytes.
+			rwc.refWriter.Close()
+			rwc.refWriter = nil
+		}
+	}
+	if rwc.multiWriteCloser != nil {
+		return rwc.multiWriteCloser.Write(data)
+	}
+	return len(data), nil
+}
+
+func (rwc *referenceWriteCloser) Commit() error {
+	var ref *refpb.Reference
+	if rwc.refWriter != nil {
+		r, err := rwc.refWriter.Commit()
+		if err != nil {
+			if rwc.multiWriteCloser == nil {
+				return err
+			}
+			rwc.c.log.CtxDebugf(rwc.ctx, "Error staging reference for %q: %s", distributed_client.ResourceIsolationString(rwc.rn), err)
+		} else {
+			ref = r
+		}
+	}
+	if rwc.multiWriteCloser != nil {
+		if ref != nil {
+			// Bind the staged reference to the verifying peer stream's final
+			// message before committing sends it.
+			rwc.multiWriteCloser.SetReference(ref)
+		}
+		return rwc.multiWriteCloser.Commit()
+	}
+
+	// No byte streams were opened, so the staged reference is the write:
+	// fan it out to the write peers, who will store it without receiving
+	// the blob's bytes.
+	mwc, err := rwc.c.referenceMultiWriter(rwc.ctx, rwc.refCache, rwc.rn, ref)
+	if err != nil {
+		return err
+	}
+	defer mwc.Close()
+	return mwc.Commit()
+}
+
+func (rwc *referenceWriteCloser) Close() error {
+	var err error
+	if rwc.refWriter != nil {
+		// Aborts the staging write if it was never committed.
+		err = rwc.refWriter.Close()
+	}
+	if rwc.multiWriteCloser != nil {
+		return rwc.multiWriteCloser.Close()
+	}
+	return err
+}
+
 // Attempt to write digest to N peers (where N == replicationFactor).
 // Return an unavailable error if less than a quarum of peers can be
 // written to.
@@ -1667,6 +1844,94 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		return nil, err
 	}
 
+	if sendReference, sendBytes := c.referenceWriteMode(ctx); sendReference && r.GetCacheType() == rspb.CacheType_CAS {
+		if refCache, ok := c.local.(interfaces.ReferenceCache); ok {
+			return c.referenceWriter(ctx, refCache, r, sendBytes)
+		}
+	}
+	mwc, err := c.byteMultiWriter(ctx, r, false /*=verify*/)
+	if err != nil {
+		return nil, err
+	}
+	return mwc, nil
+}
+
+// byteMultiWriter opens a multiWriteCloser streaming bytes to the write
+// peers. If verify is set, a single peer's stream is opened for reference
+// verification: binding a reference to the returned writer via SetReference
+// puts it on that stream's final message. Local writes never verify (they
+// don't go through the peer protocol), so the verifying stream is the first
+// remote peer's.
+func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, verify bool) (*multiWriteCloser, error) {
+	var verifiedWriter *distributed_client.VerifiedWriter
+	mwc, err := c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
+		if verify && verifiedWriter == nil && !(c.opts.EnableLocalWrites && peer == c.opts.ListenAddr) {
+			vw, err := c.distributedProxy.RemoteVerifiedWriter(ctx, peer, hintedHandoff, r)
+			if err != nil {
+				return nil, err
+			}
+			verifiedWriter = vw
+			return vw, nil
+		}
+		return c.remoteWriter(ctx, peer, hintedHandoff, r)
+	})
+	if err != nil {
+		return nil, err
+	}
+	mwc.verifiedWriter = verifiedWriter
+	return mwc, nil
+}
+
+// localReferenceWriteCloser adapts a local WriteReference call to the
+// CommittedWriteCloser shape used by multiWriteCloser. Reference writes carry
+// no bytes; the write happens at Commit.
+type localReferenceWriteCloser struct {
+	ctx       context.Context
+	refCache  interfaces.ReferenceCache
+	ref       *refpb.Reference
+	rn        *rspb.ResourceName
+	mustClone bool
+}
+
+func (l *localReferenceWriteCloser) Write(p []byte) (int, error) {
+	return 0, status.InternalError("reference writers do not accept bytes")
+}
+
+func (l *localReferenceWriteCloser) Commit() error {
+	return l.refCache.WriteReference(l.ctx, l.ref, l.rn, l.mustClone)
+}
+
+func (l *localReferenceWriteCloser) Close() error {
+	return nil
+}
+
+// referenceMultiWriter is like byteMultiWriter, but the peers receive only
+// the reference; committing the returned writer performs the reference
+// writes.
+func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference) (interfaces.CommittedWriteCloser, error) {
+	refMustBeCloned := false
+	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
+		var wc interfaces.CommittedWriteCloser
+		if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
+			wc = &localReferenceWriteCloser{ctx: ctx, refCache: refCache, ref: ref, rn: r, mustClone: refMustBeCloned}
+		} else {
+			var err error
+			wc, err = c.distributedProxy.RemoteReferenceWriter(ctx, peer, hintedHandoff, r, ref, refMustBeCloned)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// At most one peer can own the reference. Other peers must clone.
+		refMustBeCloned = true
+		return wc, nil
+	})
+}
+
+// openMultiWriter opens a multiWriteCloser over the write peers for r, using
+// open to create each peer's writer. Peers whose writers fail to open are
+// replaced from the peer set's fallback peers; if fewer than
+// ReplicationFactor writers open, the whole write fails.
+func (c *Cache) openMultiWriter(ctx context.Context, r *rspb.ResourceName, open func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error)) (*multiWriteCloser, error) {
 	ps, err := c.writePeers(r)
 	if err != nil {
 		return nil, err
@@ -1679,7 +1944,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
 		start := time.Now()
-		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r)
+		rwc, err := open(peer, hintedHandoff)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
 			c.log.CtxDebugf(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
