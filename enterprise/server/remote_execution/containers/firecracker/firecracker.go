@@ -2609,6 +2609,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
+	if c.fsLayout != nil {
+		result.DoNotRecycle = true
+	}
 	defer func() {
 		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
@@ -2721,7 +2724,6 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	defer cancel()
 
 	if c.fsLayout != nil {
-		result.DoNotRecycle = true
 		stage = "materialize_vfs_outputs"
 		if err := c.vfsServer.MaterializeOutputs(ctx, c.fsLayout, c.actionWorkingDir); err != nil {
 			result.Error = status.WrapError(err, "materialize VFS outputs")

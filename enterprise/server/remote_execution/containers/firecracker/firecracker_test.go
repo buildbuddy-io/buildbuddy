@@ -383,6 +383,49 @@ func TestFirecrackerRunSimple(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
+func TestFirecrackerRunVFS(t *testing.T) {
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	workDir := testfs.MakeTempDir(t)
+
+	inputResource, inputContents := testdigest.RandomCASResourceBuf(t, 32)
+	require.NoError(t, env.GetCache().Set(ctx, inputResource, inputContents))
+	cmd := &repb.Command{
+		Arguments:   []string{"sh", "-c", "cat input.txt; printf result > out/result.txt; printf ignored > ignored.txt"},
+		OutputFiles: []string{"out/result.txt"},
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+			EnableVfs:         true,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: cmd}, opts)
+	require.NoError(t, err)
+	c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+			{Name: "input.txt", Digest: inputResource.GetDigest()},
+		}}},
+		OutputFiles: cmd.GetOutputFiles(),
+	})
+
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	require.Equal(t, inputContents, res.Stdout)
+	require.True(t, res.DoNotRecycle)
+	require.Equal(t, "result", testfs.ReadFileAsString(t, workDir, "out/result.txt"))
+	_, err = os.Stat(filepath.Join(workDir, "ignored.txt"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 func TestFirecrackerLifecycle(t *testing.T) {
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
