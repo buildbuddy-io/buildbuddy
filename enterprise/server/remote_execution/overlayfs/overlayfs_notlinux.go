@@ -1,4 +1,4 @@
-//go:build (darwin && !ios) || windows
+//go:build (darwin && !ios) || freebsd || openbsd || windows
 
 package overlayfs
 

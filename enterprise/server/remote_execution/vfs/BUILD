@@ -9,6 +9,7 @@ package(default_visibility = [
 go_library(
     name = "vfs",
     srcs = [
+        "vfs_bsd.go",
         "vfs_darwin.go",
         "vfs_linux_amd64.go",
         "vfs_linux_arm64.go",
@@ -39,6 +40,10 @@ go_library(
             "@org_golang_google_grpc//status",
             "@org_golang_x_sys//unix",
         ],
+        "@io_bazel_rules_go//go/platform:freebsd_amd64": [
+            "//enterprise/server/util/vfscommon",
+            "//proto:vfs_go_proto",
+        ],
         "@io_bazel_rules_go//go/platform:linux_amd64": [
             "//enterprise/server/util/vfscommon",
             "//proto:vfs_go_proto",
@@ -60,6 +65,10 @@ go_library(
             "@com_github_hanwen_go_fuse_v2//fuse",
             "@org_golang_google_grpc//status",
             "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd_amd64": [
+            "//enterprise/server/util/vfscommon",
+            "//proto:vfs_go_proto",
         ],
         "@io_bazel_rules_go//go/platform:windows_386": [
             "//enterprise/server/util/vfscommon",

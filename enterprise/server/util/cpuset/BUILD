@@ -6,6 +6,7 @@ go_library(
     name = "cpuset",
     srcs = [
         "cpuset.go",
+        "numcpu_bsd.go",
         "numcpu_darwin.go",
         "numcpu_linux.go",
         "numcpu_windows.go",

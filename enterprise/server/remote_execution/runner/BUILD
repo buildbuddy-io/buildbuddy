@@ -6,6 +6,7 @@ go_library(
     name = "runner",
     srcs = [
         "runner.go",
+        "runner_bsd.go",
         "runner_darwin.go",
         "runner_linux.go",
         "runner_windows.go",
@@ -58,12 +59,18 @@ go_library(
             "//enterprise/server/remote_execution/containers/bare",
             "//enterprise/server/remote_execution/containers/sandbox",
         ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "//enterprise/server/remote_execution/containers/bare",
+        ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/containers/bare",
             "//enterprise/server/remote_execution/containers/docker",
             "//enterprise/server/remote_execution/containers/firecracker",
             "//enterprise/server/remote_execution/containers/ociruntime",
             "//enterprise/server/remote_execution/containers/podman",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
+            "//enterprise/server/remote_execution/containers/bare",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//enterprise/server/remote_execution/containers/bare",

@@ -135,6 +135,8 @@ const (
 	LinuxOperatingSystemName    = "linux"
 	defaultOperatingSystemName  = LinuxOperatingSystemName
 	DarwinOperatingSystemName   = "darwin"
+	FreeBSDOperatingSystemName  = "freebsd"
+	OpenBSDOperatingSystemName  = "openbsd"
 	WindowsOperatingSystemName  = "windows"
 
 	CPUArchitecturePropertyName = "Arch"

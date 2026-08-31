@@ -4,6 +4,7 @@ go_library(
     name = "fastcopy",
     srcs = [
         "fastcopy.go",
+        "fastcopy_bsd.go",
         "fastcopy_darwin.go",
         "fastcopy_linux.go",
         "fastcopy_windows.go",

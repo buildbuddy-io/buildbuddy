@@ -21,6 +21,14 @@ go_library(
             "//proto:vfs_go_proto",
             "//server/environment",
         ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/vfscommon",
+            "//proto:remote_execution_go_proto",
+            "//proto:vfs_go_proto",
+            "//server/cache/dirtools",
+            "//server/environment",
+        ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/container",
             "//enterprise/server/util/vfscommon",
@@ -45,6 +53,14 @@ go_library(
             "@org_golang_google_grpc//codes",
             "@org_golang_google_grpc//status",
             "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
+            "//enterprise/server/remote_execution/container",
+            "//enterprise/server/util/vfscommon",
+            "//proto:remote_execution_go_proto",
+            "//proto:vfs_go_proto",
+            "//server/cache/dirtools",
+            "//server/environment",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//enterprise/server/remote_execution/container",

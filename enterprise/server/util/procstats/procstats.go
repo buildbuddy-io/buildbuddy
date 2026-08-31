@@ -6,7 +6,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	ps "github.com/mitchellh/go-ps"
 	procutil "github.com/shirou/gopsutil/v3/process"
 )
 
@@ -22,6 +21,11 @@ const (
 // Listener is a function that is called whenever new container stats are
 // available. This can be used to live-update stats while a command is running.
 type Listener func(*repb.UsageStats)
+
+type process struct {
+	pid  int
+	ppid int
+}
 
 // Monitor polls resource usage of a process tree rooted at the given pid. The
 // process identified by pid is expected to have been started before calling
@@ -145,15 +149,15 @@ func statTree(pid int) (map[int]*repb.UsageStats, error) {
 // https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject
 // for more information.
 func pidsInTree(pid int) (set.Set[int], error) {
-	procs, err := ps.Processes()
+	procs, err := listProcesses()
 	if err != nil {
 		return nil, err
 	}
 	children := make(map[int][]int, len(procs))
 	for _, p := range procs {
-		ppid := p.PPid()
+		ppid := p.ppid
 		c := children[ppid]
-		c = append(c, p.Pid())
+		c = append(c, p.pid)
 		children[ppid] = c
 	}
 	pidsVisited := make(set.Set[int])

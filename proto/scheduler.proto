@@ -560,7 +560,8 @@ message ExecutionNode {
   // Assignable custom resources.
   repeated CustomResource assignable_custom_resources = 11;
 
-  // Node's operating system family. One of: "darwin", "linux", or "windows".
+  // Node's operating system family. One of: "darwin", "freebsd", "linux",
+  // "openbsd", or "windows".
   string os_family = 5;
 
   // Node's operating system with version info, suitable for display. This will

@@ -1,4 +1,4 @@
-//go:build (darwin || linux) && !android && !ios
+//go:build (darwin || freebsd || linux || openbsd) && !android && !ios
 
 package bare
 

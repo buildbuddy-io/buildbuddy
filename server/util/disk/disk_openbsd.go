@@ -1,4 +1,4 @@
-//go:build darwin || freebsd || linux
+//go:build openbsd
 
 package disk
 
@@ -15,10 +15,10 @@ func GetDirUsage(path string) (*DirUsage, error) {
 	if err := unix.Statfs(path, &fs); err != nil {
 		return nil, err
 	}
-	blockSize := uint64(fs.Bsize)
-	totalBlocks := uint64(fs.Blocks)
-	freeBlocks := uint64(fs.Bfree)
-	availableBlocks := uint64(fs.Bavail)
+	blockSize := uint64(fs.F_bsize)
+	totalBlocks := uint64(fs.F_blocks)
+	freeBlocks := uint64(fs.F_bfree)
+	availableBlocks := uint64(fs.F_bavail)
 	return &DirUsage{
 		TotalBytes: totalBlocks * blockSize,
 		UsedBytes:  (totalBlocks - freeBlocks) * blockSize,
