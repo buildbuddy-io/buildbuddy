@@ -1,6 +1,7 @@
 ## Overrides
 
 bazel_dep(name = "abseil-cpp", version = "20260107.1", repo_name = "com_google_absl")
+bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
 bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
 single_version_override(
     module_name = "gazelle",
@@ -29,18 +30,6 @@ bazel_dep(name = "rules_nodejs")
 single_version_override(
     module_name = "rules_nodejs",
     version = "6.7.3",
-)
-
-bazel_dep(name = "rules_go", version = "0.62.0", repo_name = "io_bazel_rules_go")
-
-# TODO: Remove once >0.62.0 is released
-archive_override(
-    module_name = "rules_go",
-    integrity = "sha256-6c4JHj82qfR0IeeittN55NPoO2Cm0ZT464crViVwuk0=",
-    strip_prefix = "rules_go-0c5b01e9f72cfc4f1c0c81bb20070f3e8cf74af6",
-    urls = [
-        "https://github.com/bazel-contrib/rules_go/archive/0c5b01e9f72cfc4f1c0c81bb20070f3e8cf74af6.tar.gz",
-    ],
 )
 
 bazel_dep(name = "rules_webtesting")
