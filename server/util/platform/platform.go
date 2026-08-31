@@ -89,7 +89,7 @@ const (
 	persistentWorkerProtocolPropertyName     = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                   = "workflow-id"
 	WorkloadIsolationPropertyName            = "workload-isolation-type"
-	PrefetchInputsPropertyName               = "prefetch-inputs"
+	VFSPrefetchModePropertyName              = "vfs-prefetch-mode"
 	initDockerdPropertyName                  = "init-dockerd"
 	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
 	enableVFSPropertyName                    = "enable-vfs"
@@ -188,8 +188,8 @@ const (
 )
 
 const (
-	PrefetchInputsAll  = "all"
-	PrefetchInputsNone = "none"
+	VFSPrefetchModeAll  = "all"
+	VFSPrefetchModeNone = "none"
 )
 
 // KnownContainerTypes are all the types that are currently supported, or were
@@ -284,9 +284,9 @@ type Properties struct {
 	// they can be retried automatically by the client.
 	TransientErrorExitCodes []int
 
-	EnableVFS      bool
-	PrefetchInputs string
-	IncludeSecrets bool
+	EnableVFS       bool
+	VFSPrefetchMode string
+	IncludeSecrets  bool
 	// EnvSecrets is a list of specific secret names to inject as env vars.
 	// Takes precedence over IncludeSecrets for targeted injection.
 	EnvSecrets []string
@@ -453,11 +453,11 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false)
-	prefetchInputs := stringProp(m, PrefetchInputsPropertyName, PrefetchInputsAll)
-	switch prefetchInputs {
-	case PrefetchInputsAll, PrefetchInputsNone:
+	vfsPrefetchMode := stringProp(m, VFSPrefetchModePropertyName, VFSPrefetchModeAll)
+	switch vfsPrefetchMode {
+	case VFSPrefetchModeAll, VFSPrefetchModeNone:
 	default:
-		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the %q platform property", prefetchInputs, PrefetchInputsPropertyName)
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the %q platform property", vfsPrefetchMode, VFSPrefetchModePropertyName)
 	}
 	// Runner recycling is not yet supported in combination with VFS workspaces.
 	// Firecracker VFS performance is not good enough yet to be enabled.
@@ -588,7 +588,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		TerminationGracePeriod:    terminationGracePeriod,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
-		PrefetchInputs:            prefetchInputs,
+		VFSPrefetchMode:           vfsPrefetchMode,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),

@@ -628,7 +628,7 @@ func TestNewRunner_FirecrackerDoesNotConfigureVFSWorkspace(t *testing.T) {
 	}
 	props := &platform.Properties{
 		EnableVFS:             true,
-		PrefetchInputs:        platform.PrefetchInputsAll,
+		VFSPrefetchMode:       platform.VFSPrefetchModeAll,
 		WorkloadIsolationType: string(platform.FirecrackerContainerType),
 	}
 	r, err := p.newRunner(t.Context(), &rnpb.RunnerKey{Platform: &repb.Platform{}}, props, newTask())
@@ -638,7 +638,7 @@ func TestNewRunner_FirecrackerDoesNotConfigureVFSWorkspace(t *testing.T) {
 	})
 
 	require.False(t, r.Workspace.Opts.UseVFS)
-	require.Empty(t, r.Workspace.Opts.PrefetchInputs)
+	require.Empty(t, r.Workspace.Opts.VFSPrefetchMode)
 }
 
 // Returns containers that only consume disk resources when paused (like firecracker).
