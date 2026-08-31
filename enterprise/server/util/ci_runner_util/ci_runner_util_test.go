@@ -32,21 +32,6 @@ const (
 	repoURL = "https://github.com/acme-inc/repo"
 )
 
-func TestIsRemoteRunnerTask(t *testing.T) {
-	for _, executable := range []string{
-		"./buildbuddy_ci_runner",
-		"./buildbuddy_ci_runner.exe",
-		`.\buildbuddy_ci_runner`,
-		`.\buildbuddy_ci_runner.exe`,
-	} {
-		task := &repb.ExecutionTask{Command: &repb.Command{Arguments: []string{executable}}}
-		require.True(t, IsRemoteRunnerTask(task))
-	}
-
-	task := &repb.ExecutionTask{Command: &repb.Command{Arguments: []string{"./something_else"}}}
-	require.False(t, IsRemoteRunnerTask(task))
-}
-
 func TestRunnerTimeout(t *testing.T) {
 	tests := []struct {
 		name                    string

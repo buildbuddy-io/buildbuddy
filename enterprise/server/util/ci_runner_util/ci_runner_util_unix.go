@@ -2,7 +2,9 @@
 
 package ci_runner_util
 
+import "github.com/buildbuddy-io/buildbuddy/server/util/platform"
+
 const (
-	ExecutableName = "buildbuddy_ci_runner"
+	ExecutableName = platform.CIRunnerExecutableBaseName
 	CLIBinaryName  = "bb"
 )

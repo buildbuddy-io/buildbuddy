@@ -27,6 +27,9 @@ import (
 )
 
 const (
+	// CIRunnerExecutableBaseName is the platform-independent CI runner binary name.
+	CIRunnerExecutableBaseName = "buildbuddy_ci_runner"
+
 	// BuildBuddy ubuntu images. When adding images here, also update
 	// the image aliases in enterprise/server/workflow/service/service.go
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
@@ -889,7 +892,8 @@ func IsCIRunnerCommand(cmd *repb.Command) bool {
 		return false
 	}
 	commandPath := strings.ReplaceAll(args[0], `\`, "/")
-	return commandPath == "./buildbuddy_ci_runner" || commandPath == "./buildbuddy_ci_runner.exe"
+	return commandPath == "./"+CIRunnerExecutableBaseName ||
+		commandPath == "./"+CIRunnerExecutableBaseName+".exe"
 }
 
 func Retryable(task *repb.ExecutionTask) bool {

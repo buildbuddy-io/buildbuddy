@@ -200,7 +200,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 // SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
 // It mutates the original task.
 func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
-	if !IsRemoteRunnerTask(task) {
+	if !platform.IsCIRunnerCommand(task.GetCommand()) {
 		return nil
 	}
 	if groupID == "" {
@@ -305,14 +305,4 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 			return
 		}
 	}
-}
-
-func IsRemoteRunnerTask(task *repb.ExecutionTask) bool {
-	args := task.GetCommand().GetArguments()
-	if len(args) == 0 {
-		return false
-	}
-	commandPath := strings.ReplaceAll(args[0], `\`, "/")
-	baseName := strings.TrimSuffix(ExecutableName, ".exe")
-	return commandPath == "./"+baseName || commandPath == "./"+baseName+".exe"
 }

@@ -11,7 +11,11 @@ package(
 
 go_library(
     name = "ci_runner_lib",
-    srcs = ["main.go"],
+    srcs = [
+        "executable_suffix_unix.go",
+        "executable_suffix_windows.go",
+        "main.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner",
     deps = [
         "//enterprise/server/bes_artifacts",

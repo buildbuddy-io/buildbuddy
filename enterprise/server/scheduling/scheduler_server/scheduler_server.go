@@ -2321,7 +2321,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 }
 
 func getWorkflowName(task *repb.ExecutionTask) string {
-	if !ci_runner_util.IsRemoteRunnerTask(task) {
+	if !platform.IsCIRunnerCommand(task.GetCommand()) {
 		return ""
 	}
 	for _, arg := range task.GetCommand().GetArguments() {
@@ -2589,7 +2589,7 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	if err := proto.Unmarshal(req.GetSerializedTask(), task); err != nil {
 		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
-	if ci_runner_util.IsRemoteRunnerTask(task) {
+	if platform.IsCIRunnerCommand(task.GetCommand()) {
 		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
@@ -2699,7 +2699,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	}
 	log.CtxDebugf(ctx, "Re-enqueueing task")
 
-	if ci_runner_util.IsRemoteRunnerTask(task) {
+	if platform.IsCIRunnerCommand(task.GetCommand()) {
 		emitRemoteRunnerMetric(ctx, task, scheduledTask.metadata, "retry")
 	}
 

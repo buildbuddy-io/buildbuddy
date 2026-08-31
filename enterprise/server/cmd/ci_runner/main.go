@@ -163,30 +163,14 @@ const (
 	freeTierTimeoutReason = "free_tier_limit"
 )
 
-var (
-	bazeliskExecutableName = executableName(bazeliskBinaryName)
-	bbExecutableName       = executableName(bbBinaryName)
-)
-
-func executableName(name string) string {
-	return executableNameForOS(name, runtime.GOOS)
-}
-
-func executableNameForOS(name, goos string) string {
-	if goos == "windows" {
-		return name + ".exe"
-	}
-	return name
+func isExecutableName(name, baseName string) bool {
+	return name == baseName || name == baseName+executableSuffix
 }
 
 func isBazelCommandToken(token string) bool {
-	return isBazelCommandTokenForOS(token, runtime.GOOS)
-}
-
-func isBazelCommandTokenForOS(token, goos string) bool {
-	return token == bazelBinaryName || token == executableNameForOS(bazelBinaryName, goos) ||
-		token == bazeliskBinaryName || token == executableNameForOS(bazeliskBinaryName, goos) ||
-		token == bbBinaryName || token == executableNameForOS(bbBinaryName, goos)
+	return isExecutableName(token, bazelBinaryName) ||
+		isExecutableName(token, bazeliskBinaryName) ||
+		isExecutableName(token, bbBinaryName)
 }
 
 func startsWithBazelCommand(cmd string) bool {
@@ -773,7 +757,7 @@ func run() error {
 		return status.WrapError(err, "compute CI runner binary abspath")
 	}
 	if filepath.Ext(absPath) == "" {
-		absPath = executableName(absPath)
+		absPath = absPath + executableSuffix
 	}
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
 
@@ -841,15 +825,15 @@ func run() error {
 
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
-		bazeliskPath := filepath.Join(rootDir, bazeliskExecutableName)
+		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName+executableSuffix)
 		if err := extractBazelisk(bazeliskPath); err != nil {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
 		*bazelCommand = bazeliskPath
 	}
 	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
-	if *bazelCommand == bbBinaryName || *bazelCommand == bbExecutableName {
-		bbPath := filepath.Join(taskWorkspaceDir, bbExecutableName)
+	if isExecutableName(*bazelCommand, bbBinaryName) {
+		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+executableSuffix)
 		if _, err := os.Stat(bbPath); err != nil {
 			backendLog.Warningf("bb binary not found in workspace: %s", err)
 		} else {
@@ -2570,7 +2554,7 @@ func parseGitFetchedBytes(trace2EventLog io.Reader) int64 {
 // all bazel commands.
 func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	bbPath := filepath.Join(taskWorkspaceDir, bbExecutableName)
+	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+executableSuffix)
 
 	wrapperBinaries := map[string]string{
 		bazelBinaryName:    *bazelCommand,
@@ -3103,7 +3087,7 @@ func runBazelWrapper() error {
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
 
 	// When using the bb CLI and running `bb run`, stream the run logs to the server.
-	if filepath.Base(bazelBin) == bbExecutableName && bazelSubcmd == "run" {
+	if isExecutableName(filepath.Base(bazelBin), bbBinaryName) && bazelSubcmd == "run" {
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--stream_run_logs")
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--on_stream_run_logs_failure=warn")
 	}
