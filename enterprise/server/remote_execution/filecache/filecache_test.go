@@ -595,6 +595,98 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 	}
 }
 
+func TestFileCacheEvictionAgeAfterReAdd(t *testing.T) {
+	ctx := context.Background()
+	// For now just assume the disk block size is 4096
+	const fsBlockSize = 4096
+	// Create a filecache that can only fit 1 physical block.
+	filecacheRoot := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	tempDir := testfs.MakeTempDir(t)
+
+	node1 := nodeFromString("A", false)
+	node2 := nodeFromString("B", false)
+
+	// Add a file, noting the time just before the add.
+	writeFileContent(t, tempDir, "file1", "A", false)
+	addTime := time.Now()
+	err = fc.AddFile(ctx, node1, filepath.Join(tempDir, "file1"))
+	require.NoError(t, err)
+
+	// Wait a little while, then add the same content again from a fresh copy,
+	// like an action re-downloading content that is already cached. The delay
+	// makes the initial add and the re-add clearly distinguishable in the
+	// recorded eviction age.
+	time.Sleep(100 * time.Millisecond)
+	writeFileContent(t, tempDir, "file1-copy", "A", false)
+	err = fc.AddFile(ctx, node1, filepath.Join(tempDir, "file1-copy"))
+	require.NoError(t, err)
+
+	// Add a different file that takes up 1 block, evicting the first file.
+	writeFileContent(t, tempDir, "file2", "B", false)
+	err = fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"))
+	require.NoError(t, err)
+	linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link"))
+	require.False(t, linked, "expected the first file to be evicted")
+
+	// The recorded eviction age should be measured from the initial add, not
+	// from the re-add, so it should include the delay between the two adds.
+	age := testmetrics.GaugeValue(t, metrics.FileCacheLastEvictionAgeUsec)
+	minAge := 100 * time.Millisecond
+	maxAge := time.Since(addTime)
+	require.GreaterOrEqual(t, age, float64(minAge.Microseconds()))
+	require.LessOrEqual(t, age, float64(maxAge.Microseconds()))
+}
+
+func TestFileCacheEvictionAgeAfterStartupScan(t *testing.T) {
+	ctx := context.Background()
+	// For now just assume the disk block size is 4096
+	const fsBlockSize = 4096
+	// Write a cache file directly into the cache directory, like a previous
+	// process would have, noting the time just before the write. The file's
+	// inode change time records when it was written.
+	filecacheRoot := testfs.MakeTempDir(t)
+	writeTime := time.Now()
+	writeFileContent(t, filecacheRoot, "ANON/"+hash.String("A"), "A", false)
+
+	// Wait a little while before starting the filecache, so that the write
+	// time and the scan time are clearly distinguishable in the recorded
+	// eviction age.
+	time.Sleep(100 * time.Millisecond)
+
+	// Create a filecache that can only fit 1 physical block, and let the
+	// startup scan discover the pre-existing file.
+	fc, err := filecache.NewFileCache(filecacheRoot, fsBlockSize, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+	tempDir := testfs.MakeTempDir(t)
+
+	node1 := nodeFromString("A", false)
+	node2 := nodeFromString("B", false)
+
+	// Add a different file that takes up 1 block, evicting the scanned file.
+	writeFileContent(t, tempDir, "file2", "B", false)
+	err = fc.AddFile(ctx, node2, filepath.Join(tempDir, "file2"))
+	require.NoError(t, err)
+	linked := fc.FastLinkFile(ctx, node1, filepath.Join(tempDir, "file1-link"))
+	require.False(t, linked, "expected the scanned file to be evicted")
+
+	// The recorded eviction age should be measured from when the file was
+	// originally written, not from the scan, so it should include the delay
+	// before the filecache was started. Allow some slack in the upper bound,
+	// because the inode change time comes from the kernel's coarse clock,
+	// which can lag time.Now() by a few milliseconds.
+	age := testmetrics.GaugeValue(t, metrics.FileCacheLastEvictionAgeUsec)
+	minAge := 100 * time.Millisecond
+	maxAge := time.Since(writeTime) + 50*time.Millisecond
+	require.GreaterOrEqual(t, age, float64(minAge.Microseconds()))
+	require.LessOrEqual(t, age, float64(maxAge.Microseconds()))
+}
+
 func TestScanWithConcurrentAdd(t *testing.T) {
 	for trial := 0; trial < 100; trial++ {
 		ctx := context.Background()
