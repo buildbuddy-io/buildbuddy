@@ -101,8 +101,9 @@ func TestMuxTUN_DNSIsolation(t *testing.T) {
 		return netip.Addr{}, false
 	}
 
-	require.NoError(t, tun.startNetworkDNS(0, "net0", net0Lookup))
-	require.NoError(t, tun.startNetworkDNS(1, "net1", net1Lookup))
+	dns := []HubService{DNSService()}
+	require.NoError(t, tun.startNetworkServices(0, "net0", dns, net0Lookup))
+	require.NoError(t, tun.startNetworkServices(1, "net1", dns, net1Lookup))
 
 	// Property 1: cross-network DNS packet dropped by dispatch before reaching
 	// the DNS stack. A net1 peer's packet to net0's hub IP is in a different

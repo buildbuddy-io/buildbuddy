@@ -3,6 +3,7 @@ syntax = "proto3";
 package gateway;
 
 import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
 
 option go_package = "gateway";
 
@@ -147,4 +148,30 @@ message WatchRequest {
 message WatchResponse {
   // The watched peer's current state. Unset in heartbeat messages.
   Peer peer = 1;
+}
+
+// RelayRequest asks the gateway's egress relay to open a TCP connection on
+// the caller's behalf.
+//
+// N.B. This proto is sent as raw bytes to the relay service over the
+// already-established WireGuard tunnel.
+// The server, likewise, sends the response proto as raw bytes before
+// shuttling bytes back and forth for the relayed connection.
+message RelayRequest {
+  // Required. Target host, as a DNS name resolved by the gateway.
+  string host = 1;
+
+  // Required. Target TCP port, 1-65535.
+  int32 port = 2;
+}
+
+// RelayResponse is the relay's one reply to a RelayRequest.
+message RelayResponse {
+  // OK means the connection to the target is open and the stream now carries
+  // its bytes.
+  google.rpc.Status status = 1;
+
+  // The address the target resolved to at the gateway, as host:port. Set on
+  // success, informational.
+  string resolved_address = 2;
 }

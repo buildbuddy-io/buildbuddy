@@ -291,6 +291,7 @@ proto_library(
     srcs = ["gateway.proto"],
     deps = [
         "@com_google_protobuf//:timestamp_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -298,6 +299,9 @@ go_proto_library(
     name = "gateway_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/gateway",
     proto = ":gateway_proto",
+    deps = [
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
 )
 
 proto_library(

@@ -79,7 +79,8 @@ type Gateway struct {
 	pubKey        string // server's base64 public key
 	networks      map[string]*networkState
 	peers         map[string]*peerInfo // WireGuard public key hex → peer info
-	nextIndex     int                  // monotonically increasing network index
+	hubServices   []HubService
+	nextIndex     int // monotonically increasing network index
 	publicHost    string
 	udpListenPort int
 	done          chan struct{}
@@ -94,7 +95,7 @@ type Gateway struct {
 }
 
 // New creates a Gateway with a single shared WireGuard device.
-func New(env environment.Env) (*Gateway, error) {
+func New(env environment.Env, hubServices ...HubService) (*Gateway, error) {
 	serverPrivKey, err := wgkeys.GeneratePrivateKey()
 	if err != nil {
 		return nil, status.InternalErrorf("generate server private key: %s", err)
@@ -107,6 +108,7 @@ func New(env environment.Env) (*Gateway, error) {
 		tun:           tunDev,
 		networks:      make(map[string]*networkState),
 		peers:         make(map[string]*peerInfo),
+		hubServices:   hubServices,
 		publicHost:    *publicHost,
 		udpListenPort: *udpListenPort,
 		done:          make(chan struct{}),
@@ -589,8 +591,8 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 		ns.namesMu.Unlock()
 		return addr, ok
 	}
-	if err := g.tun.startNetworkDNS(index, key, nameLookup); err != nil {
-		return nil, status.InternalErrorf("start DNS for network %q: %s", key, err)
+	if err := g.tun.startNetworkServices(index, key, g.hubServices, nameLookup); err != nil {
+		return nil, status.InternalErrorf("start services for network %q: %s", key, err)
 	}
 
 	g.networks[key] = ns
