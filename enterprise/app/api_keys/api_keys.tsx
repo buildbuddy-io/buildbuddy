@@ -634,7 +634,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
           onRequestClose: this.onCloseUpdateForm.bind(this),
         })}
 
-        <div className={`api-keys-list ${showCreationDetails ? "with-creation-details" : ""}`}>
+        <div className="api-keys-list">
           {!this.props.userOwnedOnly && getApiKeysResponse.apiKey.length == 0 && !this.canEdit() && (
             <div className="no-api-keys-message">
               No API keys have been made visible to developers. Only organization admins can create API keys.
@@ -648,8 +648,8 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                 ) : (
                   <span className="untitled-key">Untitled key</span>
                 )}
-                {showCreationDetails && renderCreationDetails(key)}
               </div>
+              {showCreationDetails && renderCreationDetails(key)}
               <div
                 className="api-key-capabilities"
                 title={key.visibleToDevelopers ? "Visible to non-admin members of this organization" : undefined}>
