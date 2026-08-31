@@ -60,9 +60,10 @@ func TestNew_AdditionalSyscalls(t *testing.T) {
 
 func TestNew_AdditionalSyscallsOverrideDefaultDenyRules(t *testing.T) {
 	// The default profile has deny rules covering userfaultfd and setns.
-	// (setns appears in both an allow rule and a deny rule because the
-	// cap-based conditions on those rules are dropped when parsing the JSON
-	// into specs.LinuxSeccomp.)
+	// userfaultfd's only matching rule is a deny. setns appears in three
+	// rules: the default allow list, then a cap-conditional allow and a
+	// cap-conditional deny whose conditions are dropped when parsing the JSON
+	// into specs.LinuxSeccomp.
 	defaultProfile, err := New(nil)
 	require.NoError(t, err)
 	for _, name := range []string{"userfaultfd", "setns"} {
@@ -76,10 +77,11 @@ func TestNew_AdditionalSyscallsOverrideDefaultDenyRules(t *testing.T) {
 	}
 
 	// Allow both syscalls. Expect the appended allow rule to become the only
-	// rule matching them. Keeping the default deny rules alongside the allow
-	// rule would leave the outcome to runtime-specific conflict resolution.
-	// crun keeps whichever rule for a syscall comes first, which makes the
-	// default deny rule win.
+	// rule matching them. Keeping the default rules in place would leave the
+	// outcome to runtime-specific conflict resolution. crun keeps whichever
+	// rule for a syscall comes first, so userfaultfd would stay denied.
+	// setns exercises removing a name that appears in several rules,
+	// including allow rules that precede its deny rule.
 	profile, err := New([]string{"userfaultfd", "setns"})
 	require.NoError(t, err)
 	for _, name := range []string{"userfaultfd", "setns"} {
