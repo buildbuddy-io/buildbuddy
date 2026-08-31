@@ -1006,33 +1006,17 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
-func (s *BuildBuddyServer) toDisplayUsers(ctx context.Context, userIDs []string) map[string]*uidpb.DisplayUser {
+func (s *BuildBuddyServer) toDisplayUser(ctx context.Context, userID string) *uidpb.DisplayUser {
 	udb := s.env.GetUserDB()
-	if udb == nil {
+	if udb == nil || userID == "" {
 		return nil
 	}
-	lookup := make([]string, 0, len(userIDs))
-	seen := make(map[string]bool, len(userIDs))
-	for _, id := range userIDs {
-		if id == "" || seen[id] {
-			continue
-		}
-		seen[id] = true
-		lookup = append(lookup, id)
-	}
-	if len(lookup) == 0 {
-		return nil
-	}
-	users, err := udb.GetDisplayUsersByIDWithoutAuthCheck(ctx, lookup)
+	u, err := udb.GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{})
 	if err != nil {
-		log.CtxWarningf(ctx, "Could not look up users %v: %s", lookup, err)
+		log.CtxWarningf(ctx, "Could not look up user %q: %s", userID, err)
 		return nil
 	}
-	displayUsers := make(map[string]*uidpb.DisplayUser, len(users))
-	for id, u := range users {
-		displayUsers[id] = u.ToProto()
-	}
-	return displayUsers
+	return u.ToProto()
 }
 
 type apiKeyCreationMetadata struct {
@@ -1047,21 +1031,14 @@ func (s *BuildBuddyServer) apiKeyCreationMetadataByID(ctx context.Context, keys 
 	if err != nil {
 		return nil
 	}
-	visible := make([]*tables.APIKey, 0, len(keys))
-	creatorIDs := make([]string, 0, len(keys))
+	md := make(map[string]apiKeyCreationMetadata, len(keys))
 	for _, k := range keys {
 		if err := authutil.AuthorizeOrgAdmin(u, k.GroupID); err != nil {
 			continue
 		}
-		visible = append(visible, k)
-		creatorIDs = append(creatorIDs, k.CreatedByUserID)
-	}
-	creators := s.toDisplayUsers(ctx, creatorIDs)
-	md := make(map[string]apiKeyCreationMetadata, len(visible))
-	for _, k := range visible {
 		md[k.APIKeyID] = apiKeyCreationMetadata{
 			createdAtUsec: k.CreatedAtUsec,
-			createdByUser: creators[k.CreatedByUserID],
+			createdByUser: s.toDisplayUser(ctx, k.CreatedByUserID),
 		}
 	}
 	return md

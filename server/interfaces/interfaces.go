@@ -622,10 +622,6 @@ type UserDB interface {
 	GetUserByID(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *GetUserOpts) (*tables.User, error)
 	GetUserBySubIDWithoutAuthCheck(ctx context.Context, subID string, opts *GetUserOpts) (*tables.User, error)
-	// GetDisplayUsersWithoutAuthCheck returns profile information about the
-	// given users. It does not return any group information for these users.
-	// It should only be used to get display information for requested users.
-	GetDisplayUsersByIDWithoutAuthCheck(ctx context.Context, userIDs []string) (map[string]*tables.User, error)
 	UpdateUser(ctx context.Context, u *tables.User) error
 	// DeleteUser deletes a user and associated data.
 	DeleteUser(ctx context.Context, id string) error

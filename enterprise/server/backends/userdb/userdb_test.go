@@ -1148,35 +1148,6 @@ func TestUpdateGroupUsers_UserLists(t *testing.T) {
 	}
 }
 
-func TestGetDisplayUsersWithoutAuthCheck(t *testing.T) {
-	flags.Set(t, "app.create_group_per_user", true)
-	flags.Set(t, "app.no_default_user_group", true)
-	env := newTestEnv(t)
-	udb := env.GetUserDB()
-	ctx := context.Background()
-
-	createUser(t, ctx, env, "US1", "org1.io")
-	createUser(t, ctx, env, "US2", "org2.io")
-
-	users, err := udb.GetDisplayUsersByIDWithoutAuthCheck(ctx, []string{"US1", "US2"})
-	require.NoError(t, err)
-	require.Len(t, users, 2)
-	require.Equal(t, "US1-FirstName", users["US1"].FirstName)
-	require.Equal(t, "US1@org1.io", users["US1"].Email)
-	require.Equal(t, "US2-LastName", users["US2"].LastName)
-
-	// Unknown users are omitted rather than erroring, and duplicate IDs are
-	// tolerated.
-	users, err = udb.GetDisplayUsersByIDWithoutAuthCheck(ctx, []string{"US1", "US1", "UNKNOWN"})
-	require.NoError(t, err)
-	require.Len(t, users, 1)
-	require.Contains(t, users, "US1")
-
-	users, err = udb.GetDisplayUsersByIDWithoutAuthCheck(ctx, nil)
-	require.NoError(t, err)
-	require.Empty(t, users)
-}
-
 func TestGetUserByID_DirectMembershipsOnly(t *testing.T) {
 	flags.Set(t, "app.create_group_per_user", true)
 	flags.Set(t, "app.no_default_user_group", true)
