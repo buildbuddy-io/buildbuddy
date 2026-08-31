@@ -34,8 +34,11 @@ func TestStartupDoesNotQueryTerminal(t *testing.T) {
 	}()
 
 	err = cmd.Wait()
-	_ = f.Close()
+	// The slave fd was closed in the parent by pty.Start, so the master
+	// read returns EIO once the child exits; drain it fully before closing
+	// so late output isn't discarded.
 	<-readDone
+	_ = f.Close()
 	require.NoError(t, err, "output: %q", output.String())
 	require.NotContains(t, output.String(), "\x1b]11;?", "queried terminal background color")
 	require.NotContains(t, output.String(), "\x1b[6n", "queried cursor position")
