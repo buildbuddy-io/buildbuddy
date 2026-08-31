@@ -67,6 +67,7 @@ go_library(
         "//server/util/disk",
         "//server/util/error_util",
         "//server/util/flag",
+        "//server/util/hash",
         "//server/util/log",
         "//server/util/networking",
         "//server/util/platform",

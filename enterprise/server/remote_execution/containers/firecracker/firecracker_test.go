@@ -446,6 +446,46 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
+func TestFirecrackerStartupSnapshot(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "executor.firecracker_enable_startup_snapshots", true)
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	vmConfig := &fcpb.VMConfiguration{
+		NumCpus:           1,
+		MemSizeMb:         minMemSizeMB,
+		NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+		ScratchDiskSizeMb: 100,
+	}
+	run := func(name, input string) *interfaces.CommandResult {
+		workDir := testfs.MakeDirAll(t, rootDir, name)
+		require.NoError(t, os.WriteFile(filepath.Join(workDir, "input.txt"), []byte(input), 0660))
+		task := &repb.ExecutionTask{Command: &repb.Command{
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{{Name: "startup-snapshot-test", Value: name}}},
+		}}
+		opts := firecracker.ContainerOpts{
+			ContainerImage:         busyboxImage,
+			ActionWorkingDirectory: workDir,
+			VMConfiguration:        vmConfig,
+			ExecutorConfig:         getExecutorConfig(t),
+		}
+		c, err := firecracker.NewContainer(ctx, env, task, opts)
+		require.NoError(t, err)
+		result := c.Run(ctx, &repb.Command{Arguments: []string{"cat", "input.txt"}}, workDir, oci.Credentials{})
+		require.NoError(t, result.Error)
+		require.Equal(t, input, string(result.Stdout))
+		require.Zero(t, result.VMMetrics.GetVmExecInitDurationUsec())
+		return result
+	}
+
+	first := run("first", "first input")
+	second := run("second", "second input")
+	require.Equal(t, first.VMMetadata.GetSnapshotKey().GetConfigurationHash(), second.VMMetadata.GetSnapshotKey().GetConfigurationHash())
+}
+
 func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
