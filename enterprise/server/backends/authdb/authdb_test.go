@@ -958,6 +958,70 @@ func TestAPIKeyCreationMetadata(t *testing.T) {
 	require.Equal(t, fakeClock.Now().UnixMicro(), fetched.CreatedAtUsec)
 }
 
+func TestGetApiKeysCreationMetadata(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	// Find a group that has both an admin and a non-admin member.
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin, dev *tables.User
+	for _, u := range users {
+		if !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			dev = u
+			break
+		}
+	}
+	require.NotNil(t, dev, "expected at least one non-admin user")
+	groupID := dev.Groups[0].Group.GroupID
+	for _, u := range users {
+		if u.Groups[0].Group.GroupID == groupID && u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin, "expected group %s to have an admin", groupID)
+
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	devCtx, err := auth.WithAuthenticatedUser(ctx, dev.UserID)
+	require.NoError(t, err)
+
+	created, err := adb.CreateAPIKey(adminCtx, groupID, "test key", nil, 0, true /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+
+	getKey := func(reqCtx context.Context) *akpb.ApiKey {
+		rsp, err := env.GetBuildBuddyServer().GetApiKeys(reqCtx, &akpb.GetApiKeysRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+		})
+		require.NoError(t, err)
+		for _, k := range rsp.GetApiKey() {
+			if k.GetId() == created.APIKeyID {
+				return k
+			}
+		}
+		require.FailNow(t, "created key not returned by GetApiKeys")
+		return nil
+	}
+
+	// Admins should see the creation metadata.
+	k := getKey(adminCtx)
+	require.Equal(t, fakeClock.Now().UnixMicro(), k.GetCreatedAtUsec())
+	require.Equal(t, admin.UserID, k.GetCreatedByUser().GetUserId().GetId())
+	require.Equal(t, admin.FirstName+" "+admin.LastName, k.GetCreatedByUser().GetName().GetFull())
+
+	// Non-admins should see the key, but not who created it or when.
+	k = getKey(devCtx)
+	require.Zero(t, k.GetCreatedAtUsec())
+	require.Nil(t, k.GetCreatedByUser())
+}
+
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "app.user_owned_keys_enabled", true)
 	env := enterprise_testenv.New(t)

@@ -1006,26 +1006,59 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
+// toDisplayUser looks up display information for the given user. It returns nil
+// if the user can't be looked up.
+func (s *BuildBuddyServer) toDisplayUser(ctx context.Context, userID string) *uidpb.DisplayUser {
+	udb := s.env.GetUserDB()
+	if udb == nil || userID == "" {
+		return nil
+	}
+	u, err := udb.GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{})
+	if err != nil {
+		log.CtxWarningf(ctx, "Could not look up user %q: %s", userID, err)
+		return nil
+	}
+	return u.ToProto()
+}
+
+// isOrgAdmin returns whether the authenticated user is an admin of the given
+// group.
+func (s *BuildBuddyServer) isOrgAdmin(ctx context.Context, groupID string) bool {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return false
+	}
+	return authutil.AuthorizeOrgAdmin(u, groupID) == nil
+}
+
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetRequestContext().GetGroupId())
+	groupID := req.GetRequestContext().GetGroupId()
+	tableKeys, err := authDB.GetAPIKeys(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
+	// Creation metadata names an org member, so only return it to org admins.
+	includeCreationMetadata := s.isOrgAdmin(ctx, groupID)
 	rsp := &akpb.GetApiKeysResponse{
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
 	for _, k := range tableKeys {
 		// API Key value must be retrieved via GetAPIKey API.
-		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
+		key := &akpb.ApiKey{
 			Id:                  k.APIKeyID,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
-		})
+		}
+		if includeCreationMetadata {
+			key.CreatedAtUsec = k.CreatedAtUsec
+			key.CreatedByUser = s.toDisplayUser(ctx, k.CreatedByUserID)
+		}
+		rsp.ApiKey = append(rsp.ApiKey, key)
 	}
 	return rsp, nil
 }
