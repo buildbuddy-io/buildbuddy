@@ -99,11 +99,11 @@ type Workspace struct {
 	treeFetcher *dirtools.TreeFetcher
 }
 
-type VFSInputMode string
+type PrefetchInputsMode string
 
 const (
-	VFSInputModePrefetch VFSInputMode = platform.VFSInputModePrefetch
-	VFSInputModeDemand   VFSInputMode = platform.VFSInputModeDemand
+	PrefetchInputsAll  PrefetchInputsMode = platform.PrefetchInputsAll
+	PrefetchInputsNone PrefetchInputsMode = platform.PrefetchInputsNone
 )
 
 type Opts struct {
@@ -120,14 +120,14 @@ type Opts struct {
 	// UseVFS specifies whether the workspace should use a FUSE virtual file
 	// system to serve CAS artifacts and scratch files.
 	UseVFS bool
-	// VFSInputMode controls how inputs are prepared when VFS is enabled.
-	VFSInputMode VFSInputMode
+	// PrefetchInputs controls whether VFS inputs are prefetched.
+	PrefetchInputs PrefetchInputsMode
 }
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	if opts.VFSInputMode != "" && opts.VFSInputMode != VFSInputModePrefetch && opts.VFSInputMode != VFSInputModeDemand {
-		return nil, status.InvalidArgumentErrorf("invalid VFS input mode %q", opts.VFSInputMode)
+	if opts.PrefetchInputs != "" && opts.PrefetchInputs != PrefetchInputsAll && opts.PrefetchInputs != PrefetchInputsNone {
+		return nil, status.InvalidArgumentErrorf("invalid prefetch inputs mode %q", opts.PrefetchInputs)
 	}
 	dirPerms := fs.FileMode(0777)
 	var rootDir string
@@ -333,9 +333,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		}
 	}
 
-	inputMode := ws.Opts.VFSInputMode
-	usesVFS := ws.vfs != nil || inputMode != ""
-	if inputMode == VFSInputModeDemand {
+	prefetchInputs := ws.Opts.PrefetchInputs
+	usesVFS := ws.vfs != nil || prefetchInputs != ""
+	if prefetchInputs == PrefetchInputsNone {
 		layout.InputFetcher = nil
 		ws.treeFetcher = nil
 		if ws.vfs != nil {
@@ -682,7 +682,7 @@ func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
 	tf := ws.treeFetcher
 	ws.mu.Unlock()
 	if tf == nil {
-		if ws.Opts.VFSInputMode == VFSInputModeDemand {
+		if ws.Opts.PrefetchInputs == PrefetchInputsNone {
 			return &dirtools.TransferInfo{}, nil
 		}
 		return nil, status.FailedPreconditionError("tree fetcher not set")

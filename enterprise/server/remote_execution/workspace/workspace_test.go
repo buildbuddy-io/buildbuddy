@@ -608,10 +608,10 @@ func TestDownloadInputs_WorkingDirectoryNestedMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "a/b")
 }
 
-func TestDownloadInputs_VFSInputModes(t *testing.T) {
+func TestDownloadInputs_PrefetchInputs(t *testing.T) {
 	for _, testCase := range []struct {
 		name             string
-		mode             workspace.VFSInputMode
+		mode             workspace.PrefetchInputsMode
 		wantInputFetcher bool
 		wantCached       bool
 		wantMaterialized bool
@@ -622,14 +622,14 @@ func TestDownloadInputs_VFSInputModes(t *testing.T) {
 			wantMaterialized: true,
 		},
 		{
-			name:             "prefetch",
-			mode:             workspace.VFSInputModePrefetch,
+			name:             "all",
+			mode:             workspace.PrefetchInputsAll,
 			wantInputFetcher: true,
 			wantCached:       true,
 		},
 		{
-			name: "demand",
-			mode: workspace.VFSInputModeDemand,
+			name: "none",
+			mode: workspace.PrefetchInputsNone,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -654,7 +654,7 @@ func TestDownloadInputs_VFSInputModes(t *testing.T) {
 				}},
 			}
 
-			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{VFSInputMode: testCase.mode})
+			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{PrefetchInputs: testCase.mode})
 			require.NoError(t, err)
 			ws.SetTask(ctx, &repb.ExecutionTask{})
 			require.NoError(t, ws.DownloadInputs(ctx, layout))

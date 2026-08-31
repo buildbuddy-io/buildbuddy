@@ -1293,9 +1293,9 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		return nil, err
 	}
 	useVFS := props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType
-	var vfsInputMode workspace.VFSInputMode
+	var prefetchInputs workspace.PrefetchInputsMode
 	if useVFS {
-		vfsInputMode = workspace.VFSInputMode(props.VFSInputMode)
+		prefetchInputs = workspace.PrefetchInputsMode(props.PrefetchInputs)
 	}
 	wsOpts := &workspace.Opts{
 		Preserve:        props.PreserveWorkspace,
@@ -1303,7 +1303,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		CaseInsensitive: p.caseInsensitiveFS,
 		UseOverlayfs:    useOverlayfs,
 		UseVFS:          useVFS,
-		VFSInputMode:    vfsInputMode,
+		PrefetchInputs:  prefetchInputs,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {

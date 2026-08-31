@@ -67,7 +67,7 @@ func TestParse_Arch(t *testing.T) {
 	assert.Equal(t, "amd64", platformProps.Arch)
 }
 
-func TestParse_VFSInputMode(t *testing.T) {
+func TestParse_PrefetchInputs(t *testing.T) {
 	for _, testCase := range []struct {
 		name          string
 		value         string
@@ -76,22 +76,22 @@ func TestParse_VFSInputMode(t *testing.T) {
 	}{
 		{
 			name:          "default",
-			expectedValue: VFSInputModePrefetch,
+			expectedValue: PrefetchInputsAll,
 		},
 		{
-			name:      "materialize",
-			value:     "materialize",
+			name:      "prefetch",
+			value:     "prefetch",
 			wantError: true,
 		},
 		{
-			name:          "prefetch",
-			value:         VFSInputModePrefetch,
-			expectedValue: VFSInputModePrefetch,
+			name:          "all",
+			value:         PrefetchInputsAll,
+			expectedValue: PrefetchInputsAll,
 		},
 		{
-			name:          "demand",
-			value:         VFSInputModeDemand,
-			expectedValue: VFSInputModeDemand,
+			name:          "none",
+			value:         PrefetchInputsNone,
+			expectedValue: PrefetchInputsNone,
 		},
 		{
 			name:      "invalid",
@@ -103,7 +103,7 @@ func TestParse_VFSInputMode(t *testing.T) {
 			platformProto := &repb.Platform{}
 			if testCase.value != "" {
 				platformProto.Properties = append(platformProto.Properties, &repb.Platform_Property{
-					Name:  VFSInputModePropertyName,
+					Name:  PrefetchInputsPropertyName,
 					Value: testCase.value,
 				})
 			}
@@ -113,7 +113,7 @@ func TestParse_VFSInputMode(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, testCase.expectedValue, properties.VFSInputMode)
+			require.Equal(t, testCase.expectedValue, properties.PrefetchInputs)
 		})
 	}
 }
