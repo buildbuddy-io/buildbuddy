@@ -18,15 +18,11 @@ import (
 var bbRunfilePath string
 
 func TestStartupDoesNotQueryTerminal(t *testing.T) {
-	// The regression this test guards against (terminal queries during
-	// startup) is detected by inspecting the output bytes below, not by
-	// timing: a binary that probes the terminal emits the query escape
-	// sequences whether or not it also stalls waiting for a reply. Avoid a
-	// short wall-clock deadline here; on heavily loaded CI machines just
-	// exec-ing the CLI binary can take several seconds, which made this
-	// test flaky. Instead, allow the subprocess to run until shortly
-	// before the test itself times out, so a true hang still fails with
-	// useful output instead of tripping the bazel test timeout.
+	// A regressed binary is detected by the output assertions below, not by
+	// timing. Don't use a short wall-clock deadline: cold-starting the CLI
+	// binary alone can take several seconds on loaded CI machines, which
+	// made this test flaky. Cap the subprocess just short of the test
+	// deadline so a true hang still fails with useful output.
 	ctx := t.Context()
 	if deadline, ok := t.Deadline(); ok {
 		var cancel context.CancelFunc
