@@ -144,6 +144,7 @@ go_test(
         "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4",
         "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4",
         "//enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4",
+        "@busybox",
     ],
     exec_properties = {
         "test.Pool": "bare",
@@ -163,6 +164,7 @@ go_test(
     ],
     x_defs = {
         "busyboxImage": BUSYBOX_IMAGE,
+        "busyboxOCIImageRlocationpath": "$(rlocationpath @busybox)",
         "dockerDindImage": DOCKER_DIND_IMAGE,
         "dockerHubBusyboxImage": DOCKER_HUB_BUSYBOX_IMAGE,
         "imageWithDockerInstalled": DOCKER_ENABLED_IMAGE,

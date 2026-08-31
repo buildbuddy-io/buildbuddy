@@ -89,6 +89,7 @@ var (
 	// Populated by x_defs in the BUILD file so the image references used by the
 	// tests always match the images converted by the genrules.
 	busyboxImage                        string
+	busyboxOCIImageRlocationpath        string
 	dockerDindImage                     string
 	dockerHubBusyboxImage               string
 	imageWithDockerInstalled            string
@@ -175,6 +176,14 @@ func TestGuestAPIVersion(t *testing.T) {
 	}
 }
 
+func TestPrebuiltImagesMatchPlatformImages(t *testing.T) {
+	// The Starlark image references used to build ext4 runfiles must be updated
+	// whenever the platform defaults change, or these tests would exercise stale
+	// images while continuing to pass.
+	assert.Equal(t, platform.Ubuntu24_04Image, imageWithDockerV28Installed)
+	assert.Equal(t, platform.Ubuntu20_04WorkflowsImage, workflowsImage)
+}
+
 type envOpts struct {
 	cacheRootDir     string
 	cacheSize        int64
@@ -200,12 +209,24 @@ func newTestFileCache(ctx context.Context, t testing.TB, rootDir string, maxSize
 		{ubuntuImage, ubuntu20_04Ext4ImageRlocationpath},
 		{workflowsImage, workflowsExt4ImageRlocationpath},
 	} {
-		imagePath, err := runfiles.Rlocation(image.ext4Rlocationpath)
-		require.NoError(t, err)
-		err = ociconv.AddDiskImageToFileCache(ctx, fc, image.ref, imagePath)
-		require.NoError(t, err)
+		addTestImageToFileCache(ctx, t, fc, rootDir, image.ref, image.ext4Rlocationpath)
 	}
 	return fc
+}
+
+func addTestImageToFileCache(ctx context.Context, t testing.TB, fc interfaces.FileCache, rootDir, imageRef, ext4Rlocationpath string) {
+	imagePath, err := runfiles.Rlocation(ext4Rlocationpath)
+	require.NoError(t, err)
+
+	imageInfo, err := os.Stat(imagePath)
+	require.NoError(t, err)
+	cacheInfo, err := os.Stat(rootDir)
+	require.NoError(t, err)
+
+	// Filecache preloads hardlink the runfile, so both paths must be on the same
+	// device. Fail during setup with a clear error instead of relying on EXDEV.
+	require.Equal(t, imageInfo.Sys().(*syscall.Stat_t).Dev, cacheInfo.Sys().(*syscall.Stat_t).Dev, "runfile %q and filecache root %q must be on the same device", imagePath, rootDir)
+	require.NoError(t, ociconv.AddDiskImageToFileCache(ctx, fc, imageRef, imagePath))
 }
 
 func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
@@ -477,6 +498,73 @@ func TestFirecrackerLifecycle(t *testing.T) {
 		t.Fatal(res.Error)
 	}
 	assertCommandResult(t, expectedResult, res)
+}
+
+// All other tests start with pre-warmed EXT4 images (because image conversion
+// is expensive), so this test exists just to exercise the case where we have to
+// convert an image. It uses a small image hosted locally (busybox) so it runs
+// relatively quickly.
+func TestFirecrackerRunWithColdImageCache(t *testing.T) {
+	ctx := t.Context()
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	// Serve the busybox image from a local registry under a digest-qualified
+	// reference that doesn't match any of the preloaded image references.
+	reg := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
+	image := testregistry.ImageFromRlocationpath(t, busyboxOCIImageRlocationpath)
+	imageDigest, err := image.Digest()
+	require.NoError(t, err)
+	reg.Push(t, image, "busybox", nil)
+	imageRef := reg.ImageAddress("busybox") + "@" + imageDigest.String()
+
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "world.txt"), []byte("world"), 0660))
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	expectedResult := &interfaces.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Hello world"),
+		Stderr:   []byte("foo"),
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageRef,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	// Verify the image is not cached initially.
+	cached, err := c.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.False(t, cached)
+
+	// Run the full lifecycle, which must pull and convert the image before the VM
+	// can start.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assertCommandResult(t, expectedResult, res)
+
+	// Image conversion should populate the cache for future runs.
+	cached, err = c.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.True(t, cached)
 }
 
 func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T) {
@@ -2075,9 +2163,9 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 
 	run("1", 0) // Should start clean
 
-	// Replace the filecache to evict the snapshot chunks while retaining the
-	// prebuilt base image. The next run should start clean without converting the
-	// OCI image again.
+	// Replace the filecache to evict the cached containerfs COW chunks and local
+	// VM snapshot. Preload the materialized ext4 image so rebuilding the
+	// containerfs does not require pulling and converting the OCI image.
 	fcDir := testfs.MakeTempDir(t)
 	fc := newTestFileCache(ctx, t, fcDir, fileCacheSize)
 	env.SetFileCache(fc)
