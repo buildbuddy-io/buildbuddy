@@ -29,11 +29,3 @@ platform(
         "@platforms//cpu:arm64",
     ],
 )
-
-platform(
-    name = "macos_arm64",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:arm64",
-    ],
-)

@@ -12,15 +12,9 @@ linux_arm64_alias, _linux_arm64_alias = (
         .build()
 )
 
-cross_linux_x86_64_alias, _cross_linux_x86_64_alias = (
+macos_arm64_alias, _macos_arm64_alias = (
     with_cfg(native.alias)
-        .set("platforms", [Label("//platforms:linux_x86_64")])
-        .build()
-)
-
-cross_macos_arm64_alias, _cross_macos_arm64_alias = (
-    with_cfg(native.alias)
-        .set("platforms", [Label("//platforms:macos_arm64")])
+        .set("platforms", [Label("@toolchains_buildbuddy//platforms:darwin_arm64")])
         .build()
 )
 

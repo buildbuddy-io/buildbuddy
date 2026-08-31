@@ -3,9 +3,9 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load(
     "//rules:platform_transitions.bzl",
-    "cross_linux_x86_64_alias",
-    "cross_macos_arm64_alias",
+    "linux_x86_64_alias",
     "linux_x86_64_musl_alias",
+    "macos_arm64_alias",
     "windows_386_alias",
     "windows_amd64_alias",
     "windows_arm64_alias",
@@ -106,14 +106,14 @@ go_binary(
     embed = [":executor_lib"],
 )
 
-cross_linux_x86_64_alias(
+linux_x86_64_alias(
     name = "executor_linux_amd64",
     actual = ":executor",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
-cross_macos_arm64_alias(
+macos_arm64_alias(
     name = "executor_macos_arm64",
     actual = ":executor",
     tags = ["manual"],
