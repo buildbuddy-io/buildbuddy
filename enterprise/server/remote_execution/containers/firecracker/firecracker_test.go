@@ -625,7 +625,9 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	}
 
 	// Sanity check: the image should not be cached yet.
-	coldContainer := newContainer("instance-a")
+	instanceA := snaputil.SnapshotPartitionPrefix + "/instance-a"
+	instanceB := snaputil.SnapshotPartitionPrefix + "/instance-b"
+	coldContainer := newContainer(instanceA)
 	cached, err := coldContainer.IsImageCached(ctx)
 	require.NoError(t, err)
 	require.False(t, cached)
@@ -641,7 +643,7 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	testfs.WriteRandomString(t, workDir, "containerfs.ext4", 4*chunkSize)
 	ext4Path := filepath.Join(workDir, "containerfs.ext4")
 	cow, err := snaploader.UnpackContainerImage(
-		ctx, loader, imageRef, ext4Path,
+		ctx, loader, instanceA, imageRef, ext4Path,
 		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -649,7 +651,7 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	})
 
 	// A container for a subsequent task should now see the cached containerfs.
-	c := newContainer("instance-a")
+	c := newContainer(instanceA)
 	cached, err = c.IsImageCached(ctx)
 	require.NoError(t, err)
 	require.True(t, cached)
@@ -665,7 +667,7 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 
 	// A container with a different remote instance should reuse the cached
 	// containerfs rather than converting and uploading its own copy.
-	c = newContainer("instance-b")
+	c = newContainer(instanceB)
 	require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
 	require.Equal(t, int32(0), blobRequests.Load())
 }
