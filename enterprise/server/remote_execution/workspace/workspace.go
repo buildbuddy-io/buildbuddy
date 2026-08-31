@@ -391,10 +391,6 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		log.CtxDebugf(ctx, "DownloadTree linked %d files in %s, downloaded %d bytes in %s [%2.2f MB/sec]", txInfo.LinkCount, txInfo.LinkDuration, txInfo.BytesTransferred, txInfo.TransferDuration, mbps)
 	}
 
-	if usesVFS {
-		return nil
-	}
-
 	// Now that the input tree is setup, remove any unwanted inputs.
 	// Don't touch any inputs specified by the current action as represented
 	// by inputsState.Exist

@@ -379,6 +379,7 @@ type Server struct {
 	internalTaskCtx    context.Context
 	root               *fsNode
 	inputFetcher       container.InputFetcher
+	retryInputFetcher  *casFetcher
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
 
@@ -598,12 +599,11 @@ func joinRelativePath(base, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	path, err = cleanRelativePath(path)
-	if err != nil {
-		return "", err
-	}
-	if path == "" {
+	if filepath.Clean(path) == "." {
 		return "", status.InvalidArgumentError("output path cannot be empty")
+	}
+	if filepath.IsAbs(path) {
+		return "", status.InvalidArgumentErrorf("path %q escapes the workspace", path)
 	}
 	return cleanRelativePath(filepath.Join(base, path))
 }
@@ -619,21 +619,20 @@ func (p *Server) mkdirAll(path string) error {
 
 	node := p.root
 	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
-		p.mu.Lock()
 		node.mu.Lock()
 		child := node.children[name]
+		created := child == nil
 		if child == nil {
 			if node.children == nil {
 				node.children = make(map[string]*fsNode)
 			}
 			child = newDirNode(node, name)
-			child.server = p
-			child.id = atomic.AddUint64(&p.nextId, 1)
 			node.children[name] = child
-			p.nodes[child.id] = child
 		}
 		node.mu.Unlock()
-		p.mu.Unlock()
+		if created {
+			p.addNode(child)
+		}
 		if !child.IsDirectory() {
 			return status.FailedPreconditionErrorf("cannot create output directory %q: %q is not a directory", path, child.Path())
 		}
@@ -693,9 +692,13 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	}
 	walkNode(p.root)
 	inputFetcher := p.inputFetcher
+	retryInputFetcher := p.retryInputFetcher
 	p.mu.Unlock()
 	if statsProvider, ok := inputFetcher.(interface{ UpdateIOStats(*repb.VfsStats) }); ok {
 		statsProvider.UpdateIOStats(stats)
+	}
+	if _, ok := inputFetcher.(*casFetcher); !ok && retryInputFetcher != nil {
+		retryInputFetcher.UpdateIOStats(stats)
 	}
 
 	return stats
@@ -720,10 +723,12 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	retryInputFetcher := newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	if inputFetcher == nil {
-		inputFetcher = newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
+		inputFetcher = retryInputFetcher
 	}
 	p.inputFetcher = inputFetcher
+	p.retryInputFetcher = retryInputFetcher
 	p.internalTaskCtx = ctx
 	return invalidatedInodes, nil
 }
@@ -1073,16 +1078,17 @@ func (cf *casFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
 func (cf *casFetcher) UpdateIOStats(stats *repb.VfsStats) {
 	cf.mu.Lock()
 	defer cf.mu.Unlock()
-	stats.FileDownloadSizeBytes = cf.downloadSizeBytes
-	stats.FileDownloadCount = int64(cf.downloadCount)
-	stats.FileDownloadDurationUsec = cf.downloadDuration.Microseconds()
+	stats.FileDownloadSizeBytes += cf.downloadSizeBytes
+	stats.FileDownloadCount += int64(cf.downloadCount)
+	stats.FileDownloadDurationUsec += cf.downloadDuration.Microseconds()
 }
 
 func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error) {
 	p.mu.Lock()
 	inputFetcher := p.inputFetcher
+	retryInputFetcher := p.retryInputFetcher
 	p.mu.Unlock()
-	if inputFetcher == nil {
+	if inputFetcher == nil || retryInputFetcher == nil {
 		return nil, status.FailedPreconditionError("no input fetcher is configured")
 	}
 	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
@@ -1092,7 +1098,7 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 	if err == nil {
 		return f, nil
 	}
-	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
+	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		return nil, err
 	}
 	return p.env.GetFileCache().Open(ctx, node.fileNode)

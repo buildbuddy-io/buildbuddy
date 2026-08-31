@@ -654,7 +654,7 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 				}},
 			}
 
-			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{VFSPrefetchMode: testCase.mode})
+			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{Preserve: true, VFSPrefetchMode: testCase.mode})
 			require.NoError(t, err)
 			ws.SetTask(ctx, &repb.ExecutionTask{})
 			require.NoError(t, ws.DownloadInputs(ctx, layout))
@@ -663,6 +663,9 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 
 			require.Equal(t, testCase.wantInputFetcher, layout.InputFetcher != nil)
 			require.Equal(t, testCase.wantCached, fc.ContainsFile(ctx, inputNode))
+			if testCase.mode != workspace.VFSPrefetchModeNone {
+				require.Contains(t, ws.Inputs, fspath.NewKey(inputNode.GetName(), false))
+			}
 			contents, err := os.ReadFile(filepath.Join(ws.Path(), inputNode.GetName()))
 			if testCase.wantMaterialized {
 				require.NoError(t, err)
