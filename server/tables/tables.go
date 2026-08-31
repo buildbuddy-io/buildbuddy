@@ -491,6 +491,10 @@ type APIKey struct {
 	Impersonation bool `gorm:"not null;default:0"`
 	// If set, the API key is not considered to be valid after this time.
 	ExpiryUsec int64 `gorm:"not null;default:0"`
+	// The ID of the user who created this API key, if it was created by an
+	// authenticated user. Keys created by the server or by an
+	// API-key-authenticated caller do not have this field set.
+	CreatedByUserID string `gorm:"default:''"`
 }
 
 func (k *APIKey) TableName() string {
