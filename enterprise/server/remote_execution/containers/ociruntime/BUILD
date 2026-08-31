@@ -10,7 +10,6 @@ go_library(
     data = [":crun"],
     embedsrcs = [
         "hosts",
-        "seccomp.json",
         "tini",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
@@ -25,6 +24,7 @@ go_library(
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/containers/ociruntime/seccomp",
         "//enterprise/server/remote_execution/executor_auth",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",

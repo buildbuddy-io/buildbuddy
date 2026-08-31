@@ -1581,6 +1581,22 @@ func TestRemoteReadReference(t *testing.T) {
 		require.Contains(t, err.Error(), "returned a reference for")
 	})
 
+	t.Run("stored instance name may differ", func(t *testing.T) {
+		// CAS entries are deduped across instance names, so the reference can
+		// carry the first writer's instance name without identifying
+		// different content.
+		storedRN := rn.CloneVT()
+		storedRN.InstanceName = "instance-at-first-write"
+		peer := startReferenceReadServer(t, makeReference(storedRN, blobName, repb.Compressor_IDENTITY))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		require.Equal(t, buf, got)
+	})
+
 	t.Run("cache that cannot dereference is rejected", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
 		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -1970,6 +1986,18 @@ func TestRemoteReadVerification(t *testing.T) {
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	chunks := [][]byte{buf[:40], buf[40:]}
 
+	// deltas returns the nonzero outcome-count changes between two
+	// verificationCounts snapshots.
+	deltas := func(before, after map[string]float64) map[string]float64 {
+		d := map[string]float64{}
+		for s, c := range after {
+			if diff := c - before[s]; diff != 0 {
+				d[s] = diff
+			}
+		}
+		return d
+	}
+
 	t.Run("matching bytes", func(t *testing.T) {
 		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
@@ -2006,6 +2034,42 @@ func TestRemoteReadVerification(t *testing.T) {
 		require.Equal(t, buf, got)
 	})
 
+	t.Run("mismatched reference digest is non-fatal", func(t *testing.T) {
+		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		peer, _ := startVerifyingReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY), chunks)
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := verificationCounts(t)
+		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		// The streamed bytes are authoritative.
+		require.Equal(t, buf, got)
+		// The bad reference was counted as a failure and never dereferenced.
+		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, deltas(before, verificationCounts(t)))
+		gotRN, _, _ := fake.LastDereference()
+		require.Nil(t, gotRN)
+	})
+
+	t.Run("stored instance name difference does not fail verification", func(t *testing.T) {
+		// CAS entries are deduped across instance names, so the reference can
+		// carry the first writer's instance name without identifying
+		// different content.
+		storedRN := rn.CloneVT()
+		storedRN.InstanceName = "instance-at-first-write"
+		peer, _ := startVerifyingReadServer(t, makeReference(storedRN, blobName, repb.Compressor_IDENTITY), chunks)
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := verificationCounts(t)
+		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(r)
+		require.NoError(t, err)
+		require.NoError(t, r.Close())
+		require.Equal(t, buf, got)
+		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, verificationCounts(t)))
+	})
+
 	t.Run("missing dereferencer is non-fatal", func(t *testing.T) {
 		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
 		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -2030,11 +2094,11 @@ func (e *errorReadCloser) Read(p []byte) (int, error) { return 0, e.err }
 func (e *errorReadCloser) Close() error               { return nil }
 
 // verificationCounts returns the current values of the reference verification
-// counter, keyed by outcome.
+// counter, keyed by outcome, summed across error codes.
 func verificationCounts(t *testing.T) map[string]float64 {
 	counts := map[string]float64{}
-	for _, s := range []string{distributed_client.VerificationSuccess, distributed_client.VerificationFailure, distributed_client.VerificationError} {
-		counts[s] = testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceVerificationCount, prometheus.Labels{metrics.VerificationOutcomeLabel: s})
+	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceVerificationCount) {
+		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
 	}
 	return counts
 }
@@ -2210,7 +2274,7 @@ func TestVerifyingReadCloser(t *testing.T) {
 	// the change in the verification counter, keyed by outcome.
 	run := func(t *testing.T, secondary io.ReadCloser) (gotData []byte, counted map[string]float64) {
 		before := verificationCounts(t)
-		v := distributed_client.NewVerifyingReadCloser(newRC(data), secondary, log.NamedSubLogger(t.Name()), rn, "test-peer")
+		v := distributed_client.NewVerifyingReadCloser(newRC(data), secondary, log.NamedSubLogger(t.Name()), rn, "test-peer", "GR-test")
 		got, err := io.ReadAll(v)
 		require.NoError(t, err)
 		require.NoError(t, v.Close())
@@ -2255,5 +2319,19 @@ func TestVerifyingReadCloser(t *testing.T) {
 		got, counted := run(t, &errorReadCloser{err: errors.New("gcs exploded")})
 		require.Equal(t, data, got)
 		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, counted)
+	})
+
+	t.Run("secondary read errors carry their code", func(t *testing.T) {
+		canceledLabels := prometheus.Labels{
+			metrics.GroupID:                  "GR-test",
+			metrics.VerificationOutcomeLabel: distributed_client.VerificationError,
+			metrics.StatusHumanReadableLabel: "Canceled",
+		}
+		before := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceVerificationCount, canceledLabels)
+		got, counted := run(t, &errorReadCloser{err: status.CanceledError("context canceled")})
+		require.Equal(t, data, got)
+		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, counted)
+		after := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceVerificationCount, canceledLabels)
+		require.Equal(t, before+1, after)
 	})
 }

@@ -117,26 +117,14 @@ jobs:
           }
           bazelisk --output_user_root=C:/0 `
                    --windows_enable_symlinks `
-                   build `
-                   --config=untrusted-ci-windows `
-                   @authArgs `
-                   -- `
-                   //enterprise/server/cmd/executor:executor
-          bazelisk --output_user_root=C:/0 `
-                   --windows_enable_symlinks `
-                   build `
-                   --config=untrusted-ci-windows `
-                   --platforms=@io_bazel_rules_go//go/toolchain:windows_386 `
-                   @authArgs `
-                   -- `
-                   //enterprise/server/cmd/executor:executor
-          bazelisk --output_user_root=C:/0 `
-                   --windows_enable_symlinks `
                    test `
                    --config=untrusted-ci-windows `
                    --test_tag_filters=-performance `
                    @authArgs `
                    -- `
+                   //enterprise/server/cmd/executor:executor_windows_amd64 `
+                   //enterprise/server/cmd/executor:executor_windows_386 `
+                   //enterprise/server/cmd/executor:executor_windows_arm64 `
                    //enterprise/server/remote_execution/filecache:filecache_test `
                    //enterprise/server/remote_execution/workspace:workspace_test `
                    //enterprise/server/util/procstats:procstats_test `
