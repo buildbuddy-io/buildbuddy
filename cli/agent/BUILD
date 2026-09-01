@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/agent",
     deps = [
         "//cli/agent/agentflags",
+        "//cli/agent/analyze_profile",
         "//cli/arg",
         "//cli/log",
     ],
