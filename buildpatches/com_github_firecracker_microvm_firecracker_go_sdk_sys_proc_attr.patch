@@ -1,0 +1,120 @@
+diff --git a/jailer.go b/jailer.go
+index a259981..ec0770a 100644
+--- a/jailer.go
++++ b/jailer.go
+@@ -20,6 +20,7 @@ import (
+ 	"path/filepath"
+ 	"strconv"
+ 	"strings"
++	"syscall"
+ )
+ 
+ const (
+@@ -93,6 +94,9 @@ type JailerConfig struct {
+ 	// will be placed.
+ 	ParentCgroup *string
+ 
++	// SysProcAttr specifies optional OS-specific attributes for the jailer.
++	SysProcAttr *syscall.SysProcAttr
++
+ 	// Stdout specifies the IO writer for STDOUT to use when spawning the jailer.
+ 	Stdout io.Writer
+ 	// Stderr specifies the IO writer for STDERR to use when spawning the jailer.
+@@ -119,6 +123,7 @@ type JailerCommandBuilder struct {
+ 	cgroupVersion   string
+ 	cgroupArgs      []string
+ 	parentCgroup    *string
++	sysProcAttr     *syscall.SysProcAttr
+ 
+ 	stdin  io.Reader
+ 	stdout io.Writer
+@@ -253,6 +258,12 @@ func (b JailerCommandBuilder) WithParentCgroup(parentCgroup *string) JailerComma
+ 	return b
+ }
+ 
++// WithSysProcAttr sets optional OS-specific process attributes for the jailer.
++func (b JailerCommandBuilder) WithSysProcAttr(sysProcAttr *syscall.SysProcAttr) JailerCommandBuilder {
++	b.sysProcAttr = sysProcAttr
++	return b
++}
++
+ // WithChrootBaseDir will set the given path as the chroot base directory. This
+ // specifies where chroot jails are built and defaults to /srv/jailer.
+ func (b JailerCommandBuilder) WithChrootBaseDir(path string) JailerCommandBuilder {
+@@ -305,6 +316,10 @@ func (b JailerCommandBuilder) Build(ctx context.Context) *exec.Cmd {
+ 		b.Args()...,
+ 	)
+ 
++	if b.sysProcAttr != nil {
++		cmd.SysProcAttr = b.sysProcAttr
++	}
++
+ 	if stdin := b.Stdin(); stdin != nil {
+ 		cmd.Stdin = stdin
+ 	}
+@@ -396,6 +411,7 @@ func jail(ctx context.Context, m *Machine, cfg *Config) error {
+ 		WithCgroupVersion(cfg.JailerCfg.CgroupVersion).
+ 		WithCgroupArgs(cfg.JailerCfg.CgroupArgs...).
+ 		WithParentCgroup(cfg.JailerCfg.ParentCgroup).
++		WithSysProcAttr(cfg.JailerCfg.SysProcAttr).
+ 		WithFirecrackerArgs(fcArgs...).
+ 		WithStdout(stdout).
+ 		WithStderr(stderr)
+diff --git a/jailer_test.go b/jailer_test.go
+index b0c5817..fcd2fec 100644
+--- a/jailer_test.go
++++ b/jailer_test.go
+@@ -16,6 +16,7 @@ import (
+ 	"path/filepath"
+ 	"reflect"
++	"syscall"
+ 	"testing"
+ )
+ 
+ func TestJailerBuilder(t *testing.T) {
+@@ -107,6 +108,7 @@ func TestJailerBuilder(t *testing.T) {
+ 				NumaNode:       Int(0),
+ 				CgroupArgs:     []string{"cpu.shares=10"},
+ 				ParentCgroup:   String("custom-parent"),
++				SysProcAttr:    &syscall.SysProcAttr{Setpgid: true},
+ 				ChrootStrategy: NewNaiveChrootStrategy("kernel-image-path"),
+ 				ExecFile:       "/path/to/firecracker",
+ 				ChrootBaseDir:  "/tmp",
+@@ -155,6 +157,7 @@ func TestJailerBuilder(t *testing.T) {
+ 				WithCgroupArgs(c.jailerCfg.CgroupArgs...).
+ 				WithCgroupVersion(c.jailerCfg.CgroupVersion).
+ 				WithParentCgroup(c.jailerCfg.ParentCgroup).
++				WithSysProcAttr(c.jailerCfg.SysProcAttr).
+ 				WithExecFile(c.jailerCfg.ExecFile)
+ 
+ 			if len(c.jailerCfg.JailerBinary) > 0 {
+@@ -177,6 +180,10 @@ func TestJailerBuilder(t *testing.T) {
+ 			if e, a := c.expectedArgs, cmd.Args; !reflect.DeepEqual(e, a) {
+ 				t.Errorf("expected args %v, but received %v", e, a)
+ 			}
++
++			if e, a := c.jailerCfg.SysProcAttr, cmd.SysProcAttr; !reflect.DeepEqual(e, a) {
++				t.Errorf("expected sys proc attr %v, but received %v", e, a)
++			}
+ 		})
+ 	}
+ }
+@@ -254,6 +261,7 @@ func TestJail(t *testing.T) {
+ 				ChrootBaseDir:  "/tmp",
+ 				JailerBinary:   "/path/to/the/jailer",
+ 				CgroupVersion:  "2",
++				SysProcAttr:    &syscall.SysProcAttr{Setpgid: true},
+ 			},
+ 			expectedArgs: []string{
+ 				"/path/to/the/jailer",
+@@ -401,6 +409,10 @@ func TestJail(t *testing.T) {
+ 			if e, a := c.expectedArgs, m.cmd.Args; !reflect.DeepEqual(e, a) {
+ 				t.Errorf("expected args %v, but received %v", e, a)
+ 			}
++
++			if e, a := c.jailerCfg.SysProcAttr, m.cmd.SysProcAttr; !reflect.DeepEqual(e, a) {
++				t.Errorf("expected sys proc attr %v, but received %v", e, a)
++			}
+ 
+ 			if e, a := c.expectedSockPath, cfg.SocketPath; e != a {
+ 				t.Errorf("expected socket path %q, but received %q", e, a)
