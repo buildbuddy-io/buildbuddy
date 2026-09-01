@@ -1733,12 +1733,16 @@ func TestBazelRemoteBuildWithChunkedGeneratedInputAfterChunkSizeIncrease(t *test
 	bumpPort := lis.Addr().(*net.TCPAddr).Port
 
 	const largeOutputSize = 3 * 1024 * 1024
+	largeOutputMarker := uuid.NewString()
+	largeOutput := append([]byte(largeOutputMarker), make([]byte, largeOutputSize-len(largeOutputMarker))...)
+	largeOutputZeroKiB := (largeOutputSize - len(largeOutputMarker)) / 1024
+	largeOutputZeroRemainder := (largeOutputSize - len(largeOutputMarker)) % 1024
 	ws := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": fmt.Sprintf(`
 genrule(
     name = "producer",
     outs = ["large.bin"],
-    cmd_bash = "dd if=/dev/zero of=$@ bs=1024 count=%d 2>/dev/null && { printf 'GET /bump HTTP/1.0\r\n\r\n' >&3; cat <&3 >/dev/null; } 3<>/dev/tcp/127.0.0.1/%d",
+    cmd_bash = "{ printf '%%s' '%s'; dd if=/dev/zero bs=1024 count=%d 2>/dev/null; dd if=/dev/zero bs=%d count=1 2>/dev/null; } > $@ && { printf 'GET /bump HTTP/1.0\r\n\r\n' >&3; cat <&3 >/dev/null; } 3<>/dev/tcp/127.0.0.1/%d",
     exec_properties = {
         "OSFamily": "%s",
         "Arch": "%s",
@@ -1755,7 +1759,7 @@ genrule(
         "Arch": "%s",
     },
 )
-`, largeOutputSize/1024, bumpPort, runtime.GOOS, runtime.GOARCH, runtime.GOOS, runtime.GOARCH),
+`, largeOutputMarker, largeOutputZeroKiB, largeOutputZeroRemainder, bumpPort, runtime.GOOS, runtime.GOARCH, runtime.GOOS, runtime.GOARCH),
 	})
 
 	buildFlags := func(target string) []string {
@@ -1786,7 +1790,7 @@ genrule(
 		require.Fail(t, "producer did not bump chunk size")
 	}
 
-	largeDigest, err := digest.Compute(bytes.NewReader(make([]byte, largeOutputSize)), repb.DigestFunction_SHA256)
+	largeDigest, err := digest.Compute(bytes.NewReader(largeOutput), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	casClient := rbe.GetContentAddressableStorageClient()
 	cacheCtx := metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", rbe.APIKey1)
