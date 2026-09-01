@@ -548,25 +548,6 @@ func pebbleLevelsRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}")))
 }
 
-func runnerRecyclingRow() *dashboard.RowBuilder {
-	return row("Runner recycling (${pool})").
-		Repeat("pool").
-		WithPanel(ts("Pooled runner count", "").
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Total").RefId("A")).
-			WithTarget(dash.PromQuery(`avg(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Average").RefId("B")).
-			WithTarget(dash.PromQuery(`sum(up{region="${region}", job="${pool}"})`, "Executor count (for comparison)").RefId("C"))).
-		WithPanel(ts("Runner pool evictions", dash.UnitRequestsPerSec).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region="${region}", job="${pool}"}[${window}]))`, ""))).
-		WithPanel(ts("Recycling failures by reason", dash.UnitRequestsPerSec).
-			WithTarget(dash.PromQuery(`sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region="${region}", job="${pool}"}[${window}]))`, "{{reason}}"))).
-		WithPanel(ts("Pool requests by status", dash.UnitRequestsPerSec).
-			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region="${region}", job="${pool}"}[${window}]))`, "{{status}}"))).
-		WithPanel(ts("Total memory usage", dash.UnitDecimalBytes).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region="${region}", job="${pool}"})`, ""))).
-		WithPanel(ts("Total workspace size", dash.UnitDecimalBytes).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region="${region}", job="${pool}"})`, "")))
-}
-
 func sqlRow() *dashboard.RowBuilder {
 	return row("SQL").
 		WithPanel(ts("SQL queries per second (by query template)", dash.UnitOps).
@@ -974,7 +955,21 @@ sum(rate(buildbuddy_remote_execution_file_cache_requests{region="${region}", job
 			WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource="io", stall_type="some", region="${region}", job="${pool}"}[${window}]))`))).
 		WithPanel(schemeHeatmap("PSI - io full stall").
 			YAxis(yAxisLeft(dash.UnitPercentUnit)).
-			WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource="io", stall_type="full", region="${region}", job="${pool}"}[${window}]))`)))
+			WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource="io", stall_type="full", region="${region}", job="${pool}"}[${window}]))`))).
+		WithPanel(ts("Pooled runner count", "").
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Total").RefId("A")).
+			WithTarget(dash.PromQuery(`avg(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Average").RefId("B")).
+			WithTarget(dash.PromQuery(`sum(up{region="${region}", job="${pool}"})`, "Executor count (for comparison)").RefId("C"))).
+		WithPanel(ts("Runner pool evictions", dash.UnitRequestsPerSec).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region="${region}", job="${pool}"}[${window}]))`, ""))).
+		WithPanel(ts("Recycling failures by reason", dash.UnitRequestsPerSec).
+			WithTarget(dash.PromQuery(`sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region="${region}", job="${pool}"}[${window}]))`, "{{reason}}"))).
+		WithPanel(ts("Runner pool requests by status", dash.UnitRequestsPerSec).
+			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region="${region}", job="${pool}"}[${window}]))`, "{{status}}"))).
+		WithPanel(ts("Runner pool total memory usage", dash.UnitDecimalBytes).
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region="${region}", job="${pool}"})`, ""))).
+		WithPanel(ts("Runner pool total workspace size", dash.UnitDecimalBytes).
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region="${region}", job="${pool}"})`, "")))
 }
 
 func golangRow() *dashboard.RowBuilder {
@@ -1382,7 +1377,6 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(remoteCacheRow()).
 		WithRow(pebbleRow()).
 		WithRow(pebbleLevelsRow()).
-		WithRow(runnerRecyclingRow()).
 		WithRow(sqlRow()).
 		WithRow(redisRow()).
 		WithRow(blobstoreRow()).
