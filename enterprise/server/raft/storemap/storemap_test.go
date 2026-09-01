@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/hashicorp/serf/serf"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
@@ -199,4 +200,46 @@ func (m *mockGossipManager) Leave() error {
 }
 func (m *mockGossipManager) Shutdown() error {
 	return nil
+}
+
+func TestQPSEWMASmoothing(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_load_based_rebalance", true)
+	flags.Set(t, "cache.raft.qps_ewma_time_constant", 2*time.Minute)
+	clock := clockwork.NewFakeClock()
+	mockGossipManager := &mockGossipManager{
+		members: make(map[string]serf.Member),
+	}
+	sm := New(mockGossipManager, clock, log.NamedSubLogger("test"), 3, 5, 5)
+
+	nhid := "node-1"
+	usage := &rfpb.StoreUsage{
+		Node:           &rfpb.NodeDescriptor{Nhid: nhid},
+		ReadQps:        1000,
+		RaftProposeQps: 500,
+	}
+	buf, err := proto.Marshal(usage)
+	require.NoError(t, err)
+	storeTags := map[string]string{constants.StoreUsageTag: base64.StdEncoding.EncodeToString(buf)}
+	mockGossipManager.setMemberTags(nhid, storeTags)
+	mockGossipManager.setMemberStatus(nhid, serf.StatusAlive)
+
+	// The first observation seeds the EWMA with the raw values.
+	sm.updateStoreDetail(nhid, usage, serf.StatusAlive)
+	stats := sm.GetStoresWithStatsFromIDs([]string{nhid})
+	require.Len(t, stats.Usages, 1)
+	require.EqualValues(t, 1000, stats.Usages[0].GetReadQps())
+	require.EqualValues(t, 500, stats.Usages[0].GetRaftProposeQps())
+
+	// One time constant later the load drops to zero: the smoothed value
+	// decays by 1-1/e (to ~368), it doesn't jump.
+	clock.Advance(2 * time.Minute)
+	sm.updateStoreDetail(nhid, &rfpb.StoreUsage{
+		Node: &rfpb.NodeDescriptor{Nhid: nhid},
+	}, serf.StatusAlive)
+	stats = sm.GetStoresWithStatsFromIDs([]string{nhid})
+	require.Len(t, stats.Usages, 1)
+	require.EqualValues(t, 367, stats.Usages[0].GetReadQps())
+	require.EqualValues(t, 183, stats.Usages[0].GetRaftProposeQps())
+	// The raw usage is untouched by smoothing.
+	require.EqualValues(t, 0, sm.getDetails(nhid).usage.GetReadQps())
 }

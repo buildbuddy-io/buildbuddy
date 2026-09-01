@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/registry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/replica"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/storemap"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/usagetracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
@@ -81,6 +82,7 @@ var (
 	clientSessionTTL              = flag.Duration("cache.raft.client_session_ttl", 24*time.Hour, "The duration we keep the sessions stored.")
 	txnRollbackMarkerRetention    = flag.Duration("cache.raft.txn_rollback_marker_retention", 3*24*time.Hour, "How long participant-local txn rollback markers are retained before GC. Must exceed the longest possible coordinator lifetime so no late prepare can arrive after a marker is deleted. 0 disables marker GC.")
 	enableDriver                  = flag.Bool("cache.raft.enable_driver", true, "If true, enable placement driver")
+	storeUsageUpdateInterval      = flag.Duration("cache.raft.store_usage_update_interval", 10*time.Second, "How often to re-gossip store usage regardless of events. 0 to disable periodic updates.")
 	enableTxnCleanup              = flag.Bool("cache.raft.enable_txn_cleanup", true, "If true, clean up stuck transactions periodically")
 	enableRegistryPreload         = flag.Bool("cache.raft.enable_registry_preload", false, "If true, preload the registry on start-up")
 	blockCacheSizeBytes           = flag.Int64("cache.raft.block_cache_size_bytes", 1e9, "How much ram to give the block cache")
@@ -2562,10 +2564,24 @@ func (s *Store) checkIfReplicasNeedSplitting(ctx context.Context, targetRangeSiz
 
 func (s *Store) updateStoreUsageTag(ctx context.Context) {
 	eventsCh := s.AddEventListener("updateTags")
+	// The events below all fire from write activity (log entries applied,
+	// leases changing hands). A store that mostly serves reads would go
+	// arbitrarily long without re-gossiping its usage, leaving other stores
+	// with a stale view of its read QPS, so refresh periodically as well.
+	// Only needed by (and only enabled with) load-based rebalancing — with
+	// the flag off, gossip stays purely event-driven as before.
+	var tickerCh <-chan time.Time
+	if *storemap.LoadBasedRebalance && *storeUsageUpdateInterval > 0 {
+		ticker := s.clock.NewTicker(*storeUsageUpdateInterval)
+		defer ticker.Stop()
+		tickerCh = ticker.Chan()
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-tickerCh:
+			s.updateTagsWorker.Enqueue()
 		case e := <-eventsCh:
 			switch e.EventType() {
 			case events.EventRangeUsageUpdated:
