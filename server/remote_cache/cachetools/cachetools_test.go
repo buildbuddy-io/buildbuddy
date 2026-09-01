@@ -678,6 +678,49 @@ func TestGetBlobChunked_FallsBackWithoutManifest(t *testing.T) {
 	require.Equal(t, []byte("keep me"), got)
 }
 
+func TestGetBlobChunked_RejectsMismatchedParentDigest(t *testing.T) {
+	ctx := context.Background()
+	compute := func(data []byte) *repb.Digest {
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		return d
+	}
+
+	expectedBlob := []byte("GOODGOOD")
+	mismatchedChunks := [][]byte{[]byte("EVIL"), []byte("DATA")}
+	expectedDigest := compute(expectedBlob)
+	chunkDigests := make([]*repb.Digest, 0, len(mismatchedChunks))
+	bsData := make(map[string][]byte, len(mismatchedChunks))
+	for _, chunk := range mismatchedChunks {
+		chunkDigest := compute(chunk)
+		chunkDigests = append(chunkDigests, chunkDigest)
+		chunkRN := digest.NewCASResourceName(chunkDigest, testInstance, repb.DigestFunction_BLAKE3)
+		bsData[chunkRN.DownloadString()] = chunk
+	}
+
+	rn := digest.NewCASResourceName(expectedDigest, testInstance, repb.DigestFunction_BLAKE3)
+	cas := &fakeCasClient{
+		splitBlobFn: func(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+			require.Equal(t, expectedDigest.GetHash(), req.GetBlobDigest().GetHash())
+			require.Equal(t, expectedDigest.GetSizeBytes(), req.GetBlobDigest().GetSizeBytes())
+			return &repb.SplitBlobResponse{ChunkDigests: chunkDigests}, nil
+		},
+	}
+	bs := &fakeBytestreamClient{mu: &sync.Mutex{}, data: bsData}
+	out, err := os.CreateTemp(t.TempDir(), "chunked-download-*")
+	require.NoError(t, err)
+	defer out.Close()
+
+	err = cachetools.GetBlobChunked(ctx, bs, cas, rn, &repb.FileNode{Digest: expectedDigest}, out, nil)
+	require.Error(t, err)
+	require.Equal(t, codes.DataLoss, gstatus.Code(err))
+	require.ErrorContains(t, err, "Downloaded chunked content")
+
+	got, err := os.ReadFile(out.Name())
+	require.NoError(t, err)
+	require.Equal(t, []byte("EVILDATA"), got)
+}
+
 func TestGetBlobChunked_ReusesWholeFileChunks_ZstdBLAKE3(t *testing.T) {
 	ctx := context.Background()
 	chunk1 := bytes.Repeat([]byte("a"), 1024)
