@@ -1496,6 +1496,15 @@ func newReferenceTestProxy(t *testing.T, te *testenv.TestEnv, blobs map[string][
 	return c, cache
 }
 
+// readResponseCount returns the current value of the distributed cache read
+// response counter for the given response type and status code.
+func readResponseCount(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadResponseCount, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
+}
+
 func TestRemoteReadReference(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
@@ -1507,12 +1516,14 @@ func TestRemoteReadReference(t *testing.T) {
 	t.Run("identity", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := readResponseCount(t, "reference", "OK")
 		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.NoError(t, err)
 		got, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.NoError(t, r.Close())
 		require.Equal(t, buf, got)
+		require.Equal(t, before+1, readResponseCount(t, "reference", "OK"))
 	})
 
 	t.Run("range is forwarded to Dereference", func(t *testing.T) {
@@ -1575,10 +1586,12 @@ func TestRemoteReadReference(t *testing.T) {
 		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
 		peer := startReferenceReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY))
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := readResponseCount(t, "reference", "Internal")
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsInternalError(err), "expected InternalError, got %s", err)
 		require.Contains(t, err.Error(), "returned a reference for")
+		require.Equal(t, before+1, readResponseCount(t, "reference", "Internal"))
 	})
 
 	t.Run("stored instance name may differ", func(t *testing.T) {
@@ -1611,9 +1624,14 @@ func TestRemoteReadReference(t *testing.T) {
 	t.Run("missing blob is not found", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY))
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := readResponseCount(t, "reference", "NotFound")
+		beforeOK := readResponseCount(t, "reference", "OK")
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		// The failed dereference is recorded under its status code, not OK.
+		require.Equal(t, before+1, readResponseCount(t, "reference", "NotFound"))
+		require.Equal(t, beforeOK, readResponseCount(t, "reference", "OK"))
 	})
 }
 
@@ -2016,11 +2034,13 @@ func TestRemoteReadVerification(t *testing.T) {
 	t.Run("matching bytes", func(t *testing.T) {
 		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		beforeBytesOK := readResponseCount(t, "bytes", "OK")
 		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.NoError(t, err)
 		got, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.NoError(t, r.Close())
+		require.Equal(t, beforeBytesOK+1, readResponseCount(t, "bytes", "OK"))
 		require.Equal(t, buf, got)
 	})
 

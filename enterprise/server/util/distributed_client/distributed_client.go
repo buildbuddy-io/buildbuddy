@@ -801,11 +801,12 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 				dr, err := compression.NewZstdDecompressingReader(rc)
 				if err != nil {
 					rc.Close()
+					recordReadResponseMetrics("bytes", r, gstatus.Code(err))
 					return nil, err
 				}
 				byteReader = dr
 			}
-			recordReadResponseMetrics("bytes", r)
+			recordReadResponseMetrics("bytes", r, codes.OK)
 			if !refMatches {
 				// Verification is best-effort: log bad refs, but don't fail.
 				c.log.Errorf("Reference verification failed for %q from peer %q: reference identifies %s/%d", ResourceIsolationString(r), peer, frd.GetHash(), frd.GetSizeBytes())
@@ -836,26 +837,29 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		// The reference is the whole response: dereference it.
 		if !refMatches {
 			rc.Close()
+			recordReadResponseMetrics("reference", r, codes.Internal)
 			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
 				peer, frd.GetHash(), frd.GetSizeBytes(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 		}
 		if err := rc.Close(); err != nil {
 			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
 		}
-		recordReadResponseMetrics("reference", r)
-		return c.dereference(ctx, peer, ref, requested, offset, limit)
+		refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
+		recordReadResponseMetrics("reference", r, gstatus.Code(err))
+		return refReader, err
 	}
 
 	if !decompress {
-		recordReadResponseMetrics("bytes", r)
+		recordReadResponseMetrics("bytes", r, codes.OK)
 		return rc, nil
 	}
 	dr, err := compression.NewZstdDecompressingReader(rc)
 	if err != nil {
 		rc.Close()
+		recordReadResponseMetrics("bytes", r, gstatus.Code(err))
 		return nil, err
 	}
-	recordReadResponseMetrics("bytes", r)
+	recordReadResponseMetrics("bytes", r, codes.OK)
 	return dr, nil
 }
 
@@ -869,13 +873,15 @@ func groupIDForMetrics(ctx context.Context) string {
 }
 
 // recordReadResponseMetrics records that a peer read's payload was received
-// as responseType ("reference" or "bytes"), attributing the requested
-// digest's size to it.
-func recordReadResponseMetrics(responseType string, r *rspb.ResourceName) {
-	metrics.DistributedCacheReadResponseCount.With(
-		prometheus.Labels{metrics.DistributedCacheReadResponseType: responseType}).Inc()
-	metrics.DistributedCacheReadResponseSizeBytes.With(
-		prometheus.Labels{metrics.DistributedCacheReadResponseType: responseType}).Add(float64(r.GetDigest().GetSizeBytes()))
+// as responseType ("reference" or "bytes") and the status code of turning
+// the response into a reader, attributing the requested digest's size to it.
+func recordReadResponseMetrics(responseType string, r *rspb.ResourceName, code codes.Code) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         code.String(),
+	}
+	metrics.DistributedCacheReadResponseCount.With(labels).Inc()
+	metrics.DistributedCacheReadResponseSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
 }
 
 // recordWriteRequestMetrics records that a peer write committed with its
