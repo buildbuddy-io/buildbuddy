@@ -157,8 +157,8 @@ func TestGuestAPIVersion(t *testing.T) {
 	// Note that if you go with option 1, ALL VM snapshots will be invalidated
 	// which will negatively affect customer experience. Be careful!
 	const (
-		expectedHash    = "d05983aa890b9e8c03accb437e352a20d63952e8905365796840bb385fc156c4"
-		expectedVersion = "19"
+		expectedHash    = "9e5bc31e4def169b7182943baf8cbda84da1d7ef5cd5c407cd0d2bda901943e4"
+		expectedVersion = "20"
 	)
 	assert.Equal(t, expectedHash, firecracker.GuestAPIHash)
 	assert.Equal(t, expectedVersion, firecracker.GuestAPIVersion)
@@ -691,6 +691,55 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	require.Equal(t, int32(0), blobRequests.Load())
 	// The manifest should still have been fetched, in order to authenticate with the registry.
 	require.Greater(t, manifestRequests.Load(), int32(0))
+}
+
+func TestFirecrackerVMExecReadySignalAfterSnapshotResume(t *testing.T) {
+	flags.Set(t, "executor.firecracker_vmexec_ready_signal", true)
+	ctx := context.Background()
+	env := getTestEnv(ctx, t, envOpts{})
+	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	workDir := testfs.MakeDirAll(t, testfs.MakeTempDir(t), "work")
+	cfg := getExecutorConfig(t)
+	task := &repb.ExecutionTask{
+		Command: &repb.Command{
+			Arguments: []string{"true"},
+			Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+				{Name: "recycle-runner", Value: "true"},
+				{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.AlwaysSaveSnapshot},
+			}},
+		},
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:            1,
+			MemSizeMb:          minMemSizeMB,
+			NetworkMode:        fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb:  100,
+			GuestKernelVersion: cfg.GuestKernelVersion,
+			FirecrackerVersion: cfg.FirecrackerVersion,
+			GuestApiVersion:    cfg.GuestAPIVersion,
+		},
+		ExecutorConfig: cfg,
+	}
+	c, err := firecracker.NewContainer(ctx, env, task, opts)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, c.Remove(ctx))
+	})
+	require.NoError(t, container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+	require.NoError(t, c.Create(ctx, workDir))
+
+	res := c.Exec(ctx, task.Command, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.NoError(t, c.Pause(ctx))
+	require.NoError(t, c.Unpause(ctx))
+
+	res = c.Exec(ctx, task.Command, nil /*=stdio*/)
+	require.NoError(t, res.Error)
+	require.True(t, res.VMMetrics.GetVmExecReadySignalReceived())
+	require.EqualValues(t, 1, res.VMMetrics.GetVmExecDialAttempts())
 }
 
 func TestFirecrackerSnapshotAndResume(t *testing.T) {

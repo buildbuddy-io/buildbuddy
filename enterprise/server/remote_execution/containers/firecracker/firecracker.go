@@ -103,6 +103,7 @@ var (
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
+	useVMExecReadySignal    = flag.Bool("executor.firecracker_vmexec_ready_signal", true, "Wait for a guest-initiated readiness signal before dialing vmexec after VM startup. Falls back to the existing polling dial if no signal arrives.")
 )
 
 //go:embed guest_api_hash.sha256
@@ -124,10 +125,13 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "19"
+	GuestAPIVersion = "20"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
+	// Preserve compatibility with snapshots whose guest predates the readiness
+	// notifier. When enabled, wait this long before falling back to polling.
+	vmExecReadySignalFallbackTimeout = 1 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -744,9 +748,13 @@ type FirecrackerContainer struct {
 	releaseCPUs func()
 
 	vmExec struct {
-		conn         *grpc.ClientConn
-		err          error
-		dialDuration time.Duration
+		conn                  *grpc.ClientConn
+		err                   error
+		dialDuration          time.Duration
+		transportDialDuration time.Duration
+		dialAttempts          int64
+		ready                 <-chan struct{}
+		readySignalReceived   bool
 	}
 
 	// latestGuestStats is the latest UsageStats sample streamed from vmexec.
@@ -1402,6 +1410,9 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
 		return status.UnavailableErrorf("make chroot dir: %s", err)
+	}
+	if err := c.setupVMExecReadySignal(ctx); err != nil {
+		return err
 	}
 
 	// Write the workspace drive placeholder file. Firecracker will expect this
@@ -2107,6 +2118,68 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	return nil
 }
 
+func (c *FirecrackerContainer) setupVMExecReadySignal(ctx context.Context) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	serverPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVMExecReadyPort)
+	if err := os.MkdirAll(filepath.Dir(serverPath), 0755); err != nil {
+		return status.WrapError(err, "create vmexec readiness socket directory")
+	}
+	lis, err := net.Listen("unix", serverPath)
+	if err != nil {
+		return status.WrapError(err, "listen for vmexec readiness signal")
+	}
+	ready := make(chan struct{})
+	c.vmExec.ready = ready
+	vmCtx := c.vmCtx
+	go func() {
+		<-vmCtx.Done()
+		_ = lis.Close()
+	}()
+	go serveVMExecReadySignal(vmCtx, lis, ready)
+	return nil
+}
+
+func serveVMExecReadySignal(ctx context.Context, lis net.Listener, ready chan<- struct{}) {
+	defer lis.Close()
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			if ctx.Err() == nil {
+				log.CtxWarningf(ctx, "Failed to accept vmexec readiness signal: %s", err)
+			}
+			return
+		}
+		signalReceived := func() bool {
+			defer conn.Close()
+			if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+				return false
+			}
+			message := make([]byte, len(vsock.VMExecReadyMessage))
+			_, err = io.ReadFull(conn, message)
+			if err != nil || string(message) != vsock.VMExecReadyMessage {
+				return false
+			}
+			_ = conn.SetReadDeadline(time.Time{})
+			// No second signal is needed during this VM lifecycle. The restored VM
+			// gets a new listener in its new chroot.
+			_ = lis.Close()
+			close(ready)
+			log.CtxDebugf(ctx, "Received vmexec readiness signal from guest")
+
+			// Keep the connection alive until this VM lifecycle ends. Its reset is
+			// what wakes the notifier captured in a snapshot and makes a restored
+			// guest signal its new host.
+			<-ctx.Done()
+			return true
+		}()
+		if signalReceived {
+			return
+		}
+	}
+}
+
 func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
 	if c.network == nil {
 		return nil
@@ -2286,6 +2359,9 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	}
 
 	if err := c.setupVFSServer(ctx); err != nil {
+		return err
+	}
+	if err := c.setupVMExecReadySignal(ctx); err != nil {
 		return err
 	}
 
@@ -2518,9 +2594,30 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
+	c.vmExec.readySignalReceived = false
+	if *useVMExecReadySignal && c.vmExec.ready != nil {
+		timer := time.NewTimer(vmExecReadySignalFallbackTimeout)
+		select {
+		case <-c.vmExec.ready:
+			c.vmExec.readySignalReceived = true
+			if !timer.Stop() {
+				<-timer.C
+			}
+		case <-timer.C:
+			log.CtxWarningf(ctx, "Timed out waiting for guest vmexec readiness signal; falling back to polling")
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		}
+	}
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
+	transportDialStart := time.Now()
+	conn, attempts, err := vsock.SimpleGRPCDialWithAttempts(ctx, vsockPath, vsock.VMExecPort)
+	c.vmExec.transportDialDuration = time.Since(transportDialStart)
+	c.vmExec.dialAttempts = attempts
 	if err != nil {
 		tail := string(c.vmLog.Tail())
 		if err := context.Cause(ctx); err != nil {
@@ -2620,6 +2717,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			result.VMMetrics = &espb.VMMetrics{}
 		}
 		result.VMMetrics.VmExecDialDurationUsec = c.vmExec.dialDuration.Microseconds()
+		result.VMMetrics.VmExecTransportDialDurationUsec = c.vmExec.transportDialDuration.Microseconds()
+		result.VMMetrics.VmExecDialAttempts = c.vmExec.dialAttempts
+		result.VMMetrics.VmExecReadySignalReceived = c.vmExec.readySignalReceived
 
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()

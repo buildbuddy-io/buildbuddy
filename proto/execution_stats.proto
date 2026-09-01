@@ -185,6 +185,18 @@ message VMMetrics {
   // timings above, this is set for every execution, since the connection is
   // re-established for each task.
   int64 vm_exec_dial_duration_usec = 4;
+
+  // Time spent on the successful host-to-guest gRPC transport dial, excluding
+  // any time waiting for a guest-triggered readiness signal.
+  int64 vm_exec_transport_dial_duration_usec = 5;
+
+  // Number of host-to-guest transport connection attempts made while dialing
+  // vmexec.
+  int64 vm_exec_dial_attempts = 6;
+
+  // Whether the executor received a guest-triggered vmexec readiness signal
+  // before dialing.
+  bool vm_exec_ready_signal_received = 7;
 }
 
 // Stats about work done after the COMPLETED operation is streamed back to the
