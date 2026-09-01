@@ -2610,6 +2610,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
 	if c.fsLayout != nil {
+		// Recycling is not supported for firecracker + fuse yet.
 		result.DoNotRecycle = true
 	}
 	defer func() {
@@ -2720,6 +2721,7 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 	stage = "exec"
 	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
 	if c.fsLayout != nil {
+		// Recycling is not supported for firecracker + fuse yet.
 		result.DoNotRecycle = true
 	}
 
