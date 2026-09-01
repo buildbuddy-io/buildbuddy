@@ -1032,28 +1032,35 @@ var (
 
 	// DistributedCacheReadResponseCount counts distributed cache peer reads
 	// by whether the payload was received as a reference to shared storage or
-	// as inline bytes.
+	// as inline bytes, and by the gRPC status code of turning the response
+	// into a reader ("OK" on success). Reads that fail before any response
+	// message is received have no payload type and are not counted.
 	DistributedCacheReadResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_read_response_count",
-		Help:      "Count of distributed cache peer reads, by whether the payload was received as a reference or as inline bytes.",
+		Help:      "Count of distributed cache peer reads, by whether the payload was received as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
 	})
 
 	// DistributedCacheReadResponseSizeBytes totals the sizes of the blobs
 	// read from peers, by whether the payload was received as a reference to
-	// shared storage or as inline bytes. Sizes are the requested digest's
-	// (uncompressed) size, recorded when the read is opened, so ranged reads
-	// count the full blob size rather than the exact bytes transferred.
+	// shared storage or as inline bytes, and by the gRPC status code of
+	// turning the response into a reader ("OK" on success). Sizes are the
+	// requested digest's (uncompressed) size, recorded when the read is
+	// opened, so ranged reads count the full blob size rather than the exact
+	// bytes transferred. Reads that fail before any response message is
+	// received have no payload type and are not counted.
 	DistributedCacheReadResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_read_response_size_bytes",
-		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes.",
+		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
 	})
 
 	// DistributedCacheWriteRequestCount counts distributed cache writes by
