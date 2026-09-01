@@ -40,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/seccomp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -837,9 +838,7 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 }
 
 func (c *ociContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
-	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
-		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
-	})
+	stop := c.startStatsTracking(ctx)
 	return func() (*repb.UsageStats, error) {
 		stop()
 		return c.stats.TaskStats(), nil
@@ -972,9 +971,7 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // Also incorporates cgroup events into the command result - oom_kill events
 // in particular are translated to errors.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
-	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
-		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
-	})
+	stop := c.startStatsTracking(ctx)
 	res := invokeRuntimeFn(ctx)
 	stop()
 	// statsCh will report stats for processes inside the container, and
@@ -1016,6 +1013,17 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 
 	return res
+}
+
+func (c *ociContainer) startStatsTracking(ctx context.Context) func() {
+	return c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		stats, err := c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
+		if err != nil {
+			return nil, err
+		}
+		stats.GpuUsage = gpu.CgroupUsage(c.cgroupPath())
+		return stats, nil
+	})
 }
 
 // checkOOMKill checks for oom_kill memory events in the cgroup and returns an

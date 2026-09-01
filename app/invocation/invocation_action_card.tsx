@@ -1481,6 +1481,21 @@ export default class InvocationActionCardComponent extends React.Component<Props
         <div>
           <div>Peak memory: {format.bytesIEC(usageStats.peakMemoryBytes)}</div>
           <div>MilliCPU: {computeMilliCpu(this.state.actionResult!)}</div>
+          {usageStats.gpuUsage && (
+            <div className="value-with-help-tooltip">
+              Peak GPU memory: {format.bytesIEC(usageStats.gpuUsage.peakTotalMemoryBytes)}
+              {usageStats.gpuUsage.deviceUsage.length > 0 && (
+                <HelpTooltip aria-label="Peak GPU memory by device">
+                  {usageStats.gpuUsage.deviceUsage.map((device) => (
+                    <div key={device.id}>
+                      {device.vendor === build.bazel.remote.execution.v2.GPUDeviceUsage.Vendor.NVIDIA && "NVIDIA "}
+                      {device.id}: {format.bytesIEC(device.peakMemoryBytes)}
+                    </div>
+                  ))}
+                </HelpTooltip>
+              )}
+            </div>
+          )}
           {usageStats.peakFileSystemUsage?.map((fs) => (
             <div>
               Peak disk usage: {fs.target} ({fs.fstype}): {format.bytesIEC(fs.usedBytes)} of{" "}

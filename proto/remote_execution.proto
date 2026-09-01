@@ -2854,6 +2854,48 @@ message UsageStats {
 
   // Network statistics for the network interface assigned to the action.
   NetworkStats network_stats = 10;
+
+  // GPU memory usage sampled during the task.
+  GPUUsage gpu_usage = 11;
+}
+
+// GPU memory usage sampled during a task's execution.
+message GPUUsage {
+  // GPU memory usage grouped by GPU.
+  repeated GPUDeviceUsage device_usage = 1;
+
+  // Maximum total GPU memory used by the task's processes across all GPUs.
+  int64 peak_total_memory_bytes = 2;
+
+  // Most recently recorded total GPU memory usage of the task across all
+  // GPUs. This field is only used for point-in-time readings and is not
+  // reported in task results (peak_total_memory_bytes is reported instead).
+  int64 total_memory_bytes = 3;
+}
+
+// GPU memory usage sampled on a GPU during a task's execution.
+message GPUDeviceUsage {
+  enum Vendor {
+    // The GPU vendor was not reported.
+    UNKNOWN_GPU_VENDOR = 0;
+
+    // NVIDIA Corporation.
+    NVIDIA = 1;
+  }
+
+  // GPU hardware vendor.
+  Vendor vendor = 1;
+
+  // GPU UUID reported by the GPU driver.
+  string id = 2;
+
+  // Maximum total GPU memory used by the task's processes on this GPU.
+  int64 peak_memory_bytes = 3;
+
+  // Most recently recorded GPU memory usage of the task on this GPU. This
+  // field is only used for point-in-time readings and is not reported in
+  // task results (peak_memory_bytes is reported instead).
+  int64 memory_bytes = 4;
 }
 
 // Network statistics for an action.
@@ -2915,6 +2957,17 @@ message UsageTimeline {
 
   // Delta-encoded total write operations, totaled across all block devices.
   repeated int64 wios_total_samples = 8;
+
+  // GPU memory usage timelines. This is unset when GPU memory tracking is not
+  // enabled or no GPU memory reading was available.
+  GPUUsageTimeline gpu_usage = 9;
+}
+
+// GPU memory usage sampled over a task's execution.
+message GPUUsageTimeline {
+  // Delta-encoded total GPU memory usage in kilobytes (1000 bytes). Samples
+  // correspond one-to-one with UsageTimeline.timestamps.
+  repeated int64 total_memory_kb_samples = 1;
 }
 
 // Pressure Stall Information, commonly known as PSI.

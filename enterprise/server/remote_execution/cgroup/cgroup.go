@@ -417,6 +417,12 @@ func (p *Paths) CgroupVersion() int {
 	return 0 // unknown
 }
 
+// V2Dir returns the cgroup v2 directory for the container with the given name
+// (cgroup v2 only).
+func (p *Paths) V2Dir(name string) string {
+	return strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
+}
+
 // Stats returns cgroup stats for the cgroup matching the given name. If
 // blockDevice is non-nil, IO stats are included for the device, otherwise IO
 // stats are not reported.
@@ -430,9 +436,52 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 	}
 
 	// cgroup v2 has all cgroup files under a single dir.
-	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
+	return Stats(ctx, p.V2Dir(name), blockDevice)
+}
 
-	return Stats(ctx, dir, blockDevice)
+// ReadCgroupProcs returns the process IDs of the processes in the cgroup at
+// the given path, including processes in descendant cgroups. Descendants are
+// included because a cgroup with child cgroups usually has no processes of
+// its own; for example, some container runtime configurations place container
+// processes in a child cgroup of the container's top-level cgroup.
+func ReadCgroupProcs(path string) (map[int]struct{}, error) {
+	pids := make(map[int]struct{})
+	err := filepath.WalkDir(path, func(entryPath string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			// Tolerate descendant cgroups that are removed while walking, but
+			// report a missing root so that callers can tell that the cgroup
+			// itself is gone.
+			if entryPath != path && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		b, err := os.ReadFile(filepath.Join(entryPath, "cgroup.procs"))
+		if err != nil {
+			if entryPath != path && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("read cgroup.procs: %w", err)
+		}
+		for field := range strings.FieldsSeq(string(b)) {
+			pid, err := strconv.Atoi(field)
+			if err != nil {
+				return fmt.Errorf("parse cgroup PID %q: %w", field, err)
+			}
+			if pid <= 0 {
+				return fmt.Errorf("cgroup PID is out of range (%d)", pid)
+			}
+			pids[pid] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pids, nil
 }
 
 // ReadMemoryEvents reads the "memory.events" file under the given cgroup

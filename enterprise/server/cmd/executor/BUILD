@@ -42,6 +42,7 @@ go_library(
         "//enterprise/server/remote_execution/executor/oomkiller",
         "//enterprise/server/remote_execution/executorplatform",
         "//enterprise/server/remote_execution/filecache",
+        "//enterprise/server/remote_execution/gpu",
         "//enterprise/server/remote_execution/runner",
         "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/scheduling/priority_task_scheduler",
