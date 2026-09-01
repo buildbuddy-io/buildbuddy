@@ -1,5 +1,6 @@
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
+import { tools } from "../../proto/spawn_ts_proto";
 import InvocationModel from "./invocation_model";
 
 function newInvocationModelWithBuildMetadata(metadata: Record<string, string>) {
@@ -83,5 +84,25 @@ describe("InvocationModel.getMode", () => {
     model.optionsMap.set("compilation_mode", "opt");
 
     expect(model.getMode()).toBe("opt");
+  });
+});
+
+describe("InvocationModel.getExecutionLogIndex", () => {
+  it("builds and caches one shared index for the decoded execution log", async () => {
+    const model = new InvocationModel(new invocation.Invocation());
+    const entries = [
+      new tools.protos.ExecLogEntry({
+        id: 1,
+        file: new tools.protos.ExecLogEntry.File({ path: "input.txt" }),
+      }),
+    ];
+    model.execLogEntryPromise = Promise.resolve(entries);
+
+    const first = await model.getExecutionLogIndex();
+    const second = await model.getExecutionLogIndex();
+
+    expect(second).toBe(first);
+    expect(first.entries).toBe(entries);
+    expect(first.filesById.get(1)?.path).toEqual("input.txt");
   });
 });
