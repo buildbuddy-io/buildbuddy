@@ -56,6 +56,35 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	return env
 }
 
+func TestCacheSnapshot_ValidationFailureDoesNotPublishManifest(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+	keys, err := loader.SnapshotKeySet(ctx, &repb.ExecutionTask{}, "config-hash", "")
+	require.NoError(t, err)
+
+	opts := makeFakeSnapshot(t, workDir, false /*=remoteEnabled*/, nil, "")
+	validated := false
+	opts.ValidateSnapshot = func(snapshot *snaploader.Snapshot) error {
+		validated = true
+		_, err := loader.UnpackSnapshot(ctx, snapshot, testfs.MakeTempDir(t))
+		require.NoError(t, err)
+		return fmt.Errorf("snapshot is unhealthy")
+	}
+	err = loader.CacheSnapshot(ctx, keys.GetBranchKey(), opts)
+	require.ErrorContains(t, err, "snapshot is unhealthy")
+	require.True(t, validated)
+
+	_, err = loader.GetSnapshot(ctx, keys, &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:   false,
+		SupportsRemoteManifest: false,
+		ReadPolicy:             platform.ReadLocalSnapshotOnly,
+	})
+	require.Error(t, err)
+}
+
 func TestPackAndUnpackChunkedFiles(t *testing.T) {
 	for _, enableRemote := range []bool{true, false} {
 		flags.Set(t, "executor.enable_remote_snapshot_sharing", enableRemote)

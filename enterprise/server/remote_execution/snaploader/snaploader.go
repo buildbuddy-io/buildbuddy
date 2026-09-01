@@ -376,6 +376,10 @@ type CacheSnapshotOptions struct {
 	// even if there is a newer manifest for the snapshot key available in the
 	// remote cache.
 	WriteManifestLocally bool
+
+	// If set, validate the snapshot after caching its artifacts but before
+	// publishing its manifest.
+	ValidateSnapshot func(*Snapshot) error
 }
 
 type UnpackedSnapshot struct {
@@ -813,6 +817,21 @@ func (l *FileCacheLoader) CacheSnapshot(ctx context.Context, key *fcpb.SnapshotK
 
 	if err := eg.Wait(); err != nil {
 		return err
+	}
+
+	if opts.ValidateSnapshot != nil {
+		manifest, err := l.actionResultToManifest(ctx, key.InstanceName, ar, l.env.GetFileCache().TempDir(), opts.CacheSnapshotRemotely)
+		if err != nil {
+			return err
+		}
+		snapshot := &Snapshot{
+			key:                  key,
+			manifest:             manifest,
+			supportsRemoteChunks: opts.CacheSnapshotRemotely,
+		}
+		if err := opts.ValidateSnapshot(snapshot); err != nil {
+			return status.WrapError(err, "validate snapshot")
+		}
 	}
 
 	// Write the ActionResult to the cache only after we've successfully
