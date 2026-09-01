@@ -328,6 +328,10 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
 		DigestFunction:     r.task.GetExecuteRequest().GetDigestFunction(),
 		Inputs:             inputTree,
+		WorkingDirectory:   r.task.GetCommand().GetWorkingDirectory(),
+		OutputDirectories:  r.task.GetCommand().GetOutputDirectories(),
+		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
+		OutputPaths:        r.task.GetCommand().GetOutputPaths(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
@@ -475,7 +479,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			fillStatsFromTransferInfo(ioStats, txInfo)
 			res.InputFetchMetadata = txInfo.InputFetchMetadata
 		}
-		res.VfsStats = r.Workspace.ComputeVFSStats()
+		if stats := r.Workspace.ComputeVFSStats(); stats != nil {
+			res.VfsStats = stats
+		}
 	}()
 
 	if !r.PlatformProperties.RecycleRunner {
@@ -1292,9 +1298,9 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	if err != nil {
 		return nil, err
 	}
-	useVFS := props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType
+	useHostVFS := props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType
 	var vfsPrefetchMode workspace.VFSPrefetchMode
-	if useVFS {
+	if props.EnableVFS {
 		vfsPrefetchMode = workspace.VFSPrefetchMode(props.VFSPrefetchMode)
 	}
 	wsOpts := &workspace.Opts{
@@ -1302,7 +1308,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		CleanInputs:     props.CleanWorkspaceInputs,
 		CaseInsensitive: p.caseInsensitiveFS,
 		UseOverlayfs:    useOverlayfs,
-		UseVFS:          useVFS,
+		UseVFS:          useHostVFS,
 		VFSPrefetchMode: vfsPrefetchMode,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
