@@ -103,6 +103,7 @@ export const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   // enterprise/server/execution_service/execution_service.go
   ["CPU usage (cores)", [{ argKey: "cpu" }]],
   ["Memory usage (KB)", [{ argKey: "memory" }]],
+  ["GPU memory usage (KB)", [{ argKey: "gpu-memory" }]],
   ["Disk read bandwidth (MB/s)", [{ argKey: "disk-read-bw" }]],
   ["Disk read IOPS", [{ argKey: "disk-read-iops" }]],
   ["Disk write bandwidth (MB/s)", [{ argKey: "disk-write-bw" }]],

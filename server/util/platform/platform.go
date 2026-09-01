@@ -89,6 +89,7 @@ const (
 	persistentWorkerProtocolPropertyName     = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                   = "workflow-id"
 	WorkloadIsolationPropertyName            = "workload-isolation-type"
+	VFSPrefetchModePropertyName              = "vfs-prefetch-mode"
 	initDockerdPropertyName                  = "init-dockerd"
 	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
 	enableVFSPropertyName                    = "enable-vfs"
@@ -186,6 +187,11 @@ const (
 // If you add a container type, also add it to KnownContainerTypes
 )
 
+const (
+	VFSPrefetchModeAll  = "all"
+	VFSPrefetchModeNone = "none"
+)
+
 // KnownContainerTypes are all the types that are currently supported, or were
 // previously supported.
 var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
@@ -278,8 +284,9 @@ type Properties struct {
 	// they can be retried automatically by the client.
 	TransientErrorExitCodes []int
 
-	EnableVFS      bool
-	IncludeSecrets bool
+	EnableVFS       bool
+	VFSPrefetchMode string
+	IncludeSecrets  bool
 	// EnvSecrets is a list of specific secret names to inject as env vars.
 	// Takes precedence over IncludeSecrets for targeted injection.
 	EnvSecrets []string
@@ -446,6 +453,12 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false)
+	vfsPrefetchMode := stringProp(m, VFSPrefetchModePropertyName, VFSPrefetchModeAll)
+	switch vfsPrefetchMode {
+	case VFSPrefetchModeAll, VFSPrefetchModeNone:
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the %q platform property", vfsPrefetchMode, VFSPrefetchModePropertyName)
+	}
 	// Runner recycling is not yet supported in combination with VFS workspaces.
 	// Firecracker VFS performance is not good enough yet to be enabled.
 	if ContainerType(isolationType) == FirecrackerContainerType {
@@ -575,6 +588,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		TerminationGracePeriod:    terminationGracePeriod,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
+		VFSPrefetchMode:           vfsPrefetchMode,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),

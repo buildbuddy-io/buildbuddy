@@ -131,6 +131,31 @@ func TestSettingsMap(t *testing.T) {
 	}
 }
 
+func TestReadCgroupProcs(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.procs"), []byte("123\n456\n123\n"), 0o644))
+	// Place a process in a child cgroup. Some container runtime
+	// configurations place container processes in a child cgroup of the
+	// container's top-level cgroup, which then lists no processes of its own.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "child"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "child", "cgroup.procs"), []byte("789\n"), 0o644))
+
+	// Processes listed in the cgroup and in its descendants should all appear
+	// in the returned set, with duplicate entries collapsed.
+	pids, err := ReadCgroupProcs(dir)
+	require.NoError(t, err)
+	require.Equal(t, map[int]struct{}{123: {}, 456: {}, 789: {}}, pids)
+}
+
+func TestReadCgroupProcsMissingCgroup(t *testing.T) {
+	dir := t.TempDir()
+
+	// A missing cgroup should surface as ErrNotExist so callers can
+	// distinguish a deleted cgroup from an unreadable one.
+	_, err := ReadCgroupProcs(filepath.Join(dir, "removed"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
 func TestReadMemoryMax(t *testing.T) {
 	dir := t.TempDir()
 

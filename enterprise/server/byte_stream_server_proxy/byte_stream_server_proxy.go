@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
@@ -353,7 +354,7 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 			return m, result.err
 		}
 		if len(result.data) > 0 {
-			if err := stream.Send(&bspb.ReadResponse{Data: result.data}); err != nil {
+			if err := sendChunkFrames(stream, result.data); err != nil {
 				s.bufPool.Put(result.data)
 				return m, err
 			}
@@ -401,6 +402,20 @@ func (s *ByteStreamServerProxy) readChunked(ctx context.Context, req *bspb.ReadR
 	}
 	_ = localWriteGroup.Wait()
 	return m, nil
+}
+
+// sendChunkFrames sends data to the client in safely sized frames, since a
+// whole chunk can exceed the gRPC max message size.
+func sendChunkFrames(stream bspb.ByteStream_ReadServer, data []byte) error {
+	frameSize := *config.ReadBufSizeBytes
+	for len(data) > 0 {
+		n := min(len(data), frameSize)
+		if err := stream.Send(&bspb.ReadResponse{Data: data[:n]}); err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	return nil
 }
 
 func (s *ByteStreamServerProxy) chunkDigests(ctx context.Context, rn *digest.CASResourceName, remoteOnly bool) ([]*repb.Digest, error) {

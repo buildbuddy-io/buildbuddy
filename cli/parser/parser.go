@@ -982,6 +982,21 @@ func (p *Parser) parseBBRCConfig(phase string, tokens []string) ([]arguments.Arg
 	if err != nil {
 		return nil, err
 	}
+	// Reject positional arguments (i.e. arguments that are not options prefixed with `--`).
+	// TODO: This will reject specifying options for CLI subcommands (Ex. `agent analyze-profile`).
+	// Expand the parser to support that.
+	if cli_command.GetCommand(phase) != nil {
+		for _, arg := range args {
+			positional, ok := arg.(*arguments.PositionalArgument)
+			if !ok {
+				continue
+			}
+			return nil, fmt.Errorf(
+				"positional argument %q is not allowed in the %q section of a .bbrc file",
+				positional.GetValue(), phase,
+			)
+		}
+	}
 	// Validate that all options in the config are CLI flags.
 	// Bazel options are not allowed in bbrc files.
 	for _, classified := range parsed.Classify(args) {

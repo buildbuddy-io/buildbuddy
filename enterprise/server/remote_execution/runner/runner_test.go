@@ -42,6 +42,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	wkpb "github.com/buildbuddy-io/buildbuddy/proto/worker"
 )
@@ -614,6 +615,30 @@ type providerFunc func(ctx context.Context, args *container.Init) (container.Com
 
 func (f providerFunc) New(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
 	return f(ctx, args)
+}
+
+func TestNewRunner_FirecrackerDoesNotConfigureVFSWorkspace(t *testing.T) {
+	env := newTestEnv(t)
+	p := &pool{
+		env:       env,
+		buildRoot: testfs.MakeTempDir(t),
+		overrideProvider: providerFunc(func(ctx context.Context, args *container.Init) (container.CommandContainer, error) {
+			return bare.NewBareCommandContainer(&bare.Opts{}), nil
+		}),
+	}
+	props := &platform.Properties{
+		EnableVFS:             true,
+		VFSPrefetchMode:       platform.VFSPrefetchModeAll,
+		WorkloadIsolationType: string(platform.FirecrackerContainerType),
+	}
+	r, err := p.newRunner(t.Context(), &rnpb.RunnerKey{Platform: &repb.Platform{}}, props, newTask())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, r.Remove(context.Background()))
+	})
+
+	require.False(t, r.Workspace.Opts.UseVFS)
+	require.Empty(t, r.Workspace.Opts.VFSPrefetchMode)
 }
 
 // Returns containers that only consume disk resources when paused (like firecracker).

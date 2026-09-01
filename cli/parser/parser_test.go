@@ -239,6 +239,71 @@ func TestParseBBRCFiles_RejectsInvalidStartupOptions(t *testing.T) {
 	}
 }
 
+func TestParseBBRCFiles_RejectsSubcommands(t *testing.T) {
+	agentFlags := flag.NewFlagSet("agent", flag.ContinueOnError)
+	agentFlags.String("model", "", "")
+
+	previousCommandsByName := cli_command.CommandsByName
+	cli_command.CommandsByName = map[string]*cli_command.Command{
+		"agent": {Name: "agent", Flags: agentFlags},
+	}
+	t.Cleanup(func() {
+		cli_command.CommandsByName = previousCommandsByName
+	})
+
+	for _, test := range []struct {
+		name     string
+		contents string
+	}{
+		{
+			name:     "rejects subcommands",
+			contents: "agent analyze-profile --model=claude-opus-5\n",
+		},
+		{
+			name:     "rejects subcommands after options",
+			contents: "agent --model=claude-opus-5 analyze-profile\n",
+		},
+		{
+			name:     "rejects named configs with subcommands",
+			contents: "agent:fast analyze-profile --model=claude-opus-5\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			testfs.WriteAllFileContents(t, ws, map[string]string{".bbrc": test.contents})
+
+			p, err := GetBBParserForCommand("agent")
+			require.NoError(t, err)
+			_, _, err = p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+			require.Error(t, err)
+		})
+	}
+}
+
+func TestParseBBRCFiles_AllowsSpaceSeparatedOptionValue(t *testing.T) {
+	agentFlags := flag.NewFlagSet("agent", flag.ContinueOnError)
+	agentFlags.String("model", "", "")
+
+	previousCommandsByName := cli_command.CommandsByName
+	cli_command.CommandsByName = map[string]*cli_command.Command{
+		"agent": {Name: "agent", Flags: agentFlags},
+	}
+	t.Cleanup(func() {
+		cli_command.CommandsByName = previousCommandsByName
+	})
+
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": "agent --model claude-opus-5\n",
+	})
+
+	p, err := GetBBParserForCommand("agent")
+	require.NoError(t, err)
+	_, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"--model", "claude-opus-5"}, arguments.FormatAll(defaultConfig.ByPhase["agent"]))
+}
+
 func TestConsumeBBRCFileOptions(t *testing.T) {
 	p, err := GetParser()
 	require.NoError(t, err)
@@ -454,6 +519,69 @@ run:second --second_flag
 	expanded, err := bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
 	require.NoError(t, err)
 	require.Equal(t, []string{"run", "--first_flag", "--second_flag", "//:target"}, expanded.Format())
+}
+
+func TestParseBBRCFiles_CommandWithSubcommands(t *testing.T) {
+	previousCommandsByName := cli_command.CommandsByName
+	cli_command.CommandsByName = map[string]*cli_command.Command{
+		"agent": {Name: "agent"},
+	}
+	t.Cleanup(func() {
+		cli_command.CommandsByName = previousCommandsByName
+	})
+
+	ws := testfs.MakeTempDir(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `
+agent --model=claude-opus-5
+agent:fast --effort=low
+`,
+	})
+
+	p := NewParser(
+		[]*options.Definition{
+			bbrc.NewConfigOptionDefinition("agent"),
+			options.NewDefinition("model", options.WithRequiresValue(), options.WithSupportFor("agent")),
+			options.NewDefinition("effort", options.WithRequiresValue(), options.WithSupportFor("agent")),
+		},
+		[]string{"agent"},
+		nil,
+	)
+	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
+	require.NoError(t, err)
+
+	// The `agent` flags should be applied to all subcommands.
+	for _, subcommand := range []string{"subcommand-1", "subcommand-2"} {
+		t.Run(subcommand, func(t *testing.T) {
+			args, err := p.ParseArgs([]string{"agent", subcommand, "invocation-id"})
+			require.NoError(t, err)
+			expanded, err := bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
+			require.NoError(t, err)
+			assert.Equal(t, []string{
+				"agent",
+				"--model=claude-opus-5",
+				subcommand,
+				"invocation-id",
+			}, expanded.Format())
+		})
+	}
+
+	// Unlike the default section, whose options are inserted after the command
+	// name, a named config expands in place, wherever --bb_config appeared. So
+	// options can land on either side of the subcommand name.
+	t.Run("NamedConfig", func(t *testing.T) {
+		args, err := p.ParseArgs([]string{"agent", "analyze-profile", "--bb_config=fast", "invocation-id"})
+		require.NoError(t, err)
+		expanded, err := bbrc.ExpandConfigs(args, namedConfigs, defaultConfig)
+		require.NoError(t, err)
+		assert.Equal(t, []string{
+			"agent",
+			"--model=claude-opus-5",
+			"analyze-profile",
+			"--effort=low",
+			"invocation-id",
+		}, expanded.Format())
+	})
 }
 
 func TestParseBazelrc_Simple(t *testing.T) {

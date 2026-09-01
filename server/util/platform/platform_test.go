@@ -67,6 +67,57 @@ func TestParse_Arch(t *testing.T) {
 	assert.Equal(t, "amd64", platformProps.Arch)
 }
 
+func TestParse_VFSPrefetchMode(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		value         string
+		expectedValue string
+		wantError     bool
+	}{
+		{
+			name:          "default",
+			expectedValue: VFSPrefetchModeAll,
+		},
+		{
+			name:      "prefetch",
+			value:     "prefetch",
+			wantError: true,
+		},
+		{
+			name:          "all",
+			value:         VFSPrefetchModeAll,
+			expectedValue: VFSPrefetchModeAll,
+		},
+		{
+			name:          "none",
+			value:         VFSPrefetchModeNone,
+			expectedValue: VFSPrefetchModeNone,
+		},
+		{
+			name:      "invalid",
+			value:     "invalid",
+			wantError: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			platformProto := &repb.Platform{}
+			if testCase.value != "" {
+				platformProto.Properties = append(platformProto.Properties, &repb.Platform_Property{
+					Name:  VFSPrefetchModePropertyName,
+					Value: testCase.value,
+				})
+			}
+			properties, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: platformProto}})
+			if testCase.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedValue, properties.VFSPrefetchMode)
+		})
+	}
+}
+
 func TestParse_Pool(t *testing.T) {
 	for _, testCase := range []struct {
 		rawValue      string

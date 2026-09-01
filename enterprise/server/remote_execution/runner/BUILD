@@ -91,6 +91,7 @@ go_test(
         "//enterprise/server/tasksize",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
+        "//proto:runner_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:worker_go_proto",
         "//server/interfaces",

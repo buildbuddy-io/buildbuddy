@@ -52,6 +52,7 @@ go_test(
     deps = [
         ":workspace",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/testutil/testcache",

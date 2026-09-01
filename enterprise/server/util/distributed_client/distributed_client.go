@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -35,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 
@@ -42,6 +44,7 @@ import (
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	gstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -437,9 +440,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 
 	var bytesWritten int64
 	var writeCloser interfaces.CommittedWriteCloser
-	// A reference to-be-verified received alongside data bytes, and the
-	// resource to verify it against.
-	var verifyRef *refpb.Reference
+	// The resource being written, for reference-write-verification.
 	var verifyRN *rspb.ResourceName
 	var req *dcpb.WriteRequest
 	for {
@@ -465,17 +466,13 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 					return status.AlreadyExistsError("CAS digest already exists")
 				}
 			}
-			if req.GetReference() != nil {
-				if len(req.GetData()) == 0 {
-					return c.writeReference(ctx, stream, req, up)
-				}
-				// The request carries both bytes and a reference: the bytes
-				// are written and the reference is verified. Clone these
-				// because the request proto is pooled and reused for later
-				// messages.
-				verifyRef = req.GetReference().CloneVT()
-				verifyRN = rn.CloneVT()
+
+			// If the first frame has a reference, no bytes, and finish-write
+			// set, this is the write-reference path.
+			if req.GetReference() != nil && len(req.GetData()) == 0 && req.GetFinishWrite() {
+				return c.writeReference(ctx, stream, req, up)
 			}
+			// Else, this is the normal write or reference-write-verify path.
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -483,6 +480,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			}
 			defer wc.Close()
 			writeCloser = wc
+			verifyRN = rn.CloneVT()
 		}
 		n, err := writeCloser.Write(req.GetData())
 		if err != nil {
@@ -493,18 +491,26 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if err := writeCloser.Commit(); err != nil {
 				return err
 			}
-			if verifyRef != nil {
-				if refCache, ok := c.cache.(interfaces.ReferenceCache); ok {
-					// Verification is observe-only, so don't block the
-					// write response on it. The stream context is canceled
-					// when this handler returns, so extend it.
+			if req.GetReference() != nil && verifyRN != nil {
+				// If data was written and the final message has a reference,
+				// this is the write-verify path. Perform write-verification
+				// asynchronously to avoid slowing down the write response.
+				refCache, ok := c.cache.(interfaces.ReferenceCache)
+				if ok {
+					verifyRef := req.GetReference().CloneVT()
 					vctx, cancel := background.ExtendContextForFinalization(ctx, referenceVerificationTimeout)
-					c.verificationWG.Add(1)
-					go func() {
-						defer c.verificationWG.Done()
+					c.verificationWG.Go(func() {
 						defer cancel()
 						c.verifyReferenceWrite(vctx, refCache, verifyRef, verifyRN)
-					}()
+					})
+				} else {
+					c.log.Warningf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
+					metrics.DistributedCacheReferenceWriteVerificationCount.With(
+						prometheus.Labels{
+							metrics.GroupID:                  groupIDForMetrics(ctx),
+							metrics.VerificationOutcomeLabel: VerificationError,
+							metrics.StatusHumanReadableLabel: codes.Unimplemented.String(),
+						}).Inc()
 				}
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
@@ -514,16 +520,11 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 	return nil
 }
 
-// writeReference handles a write request that carries a reference to a blob
-// in shared storage instead of data bytes.
+// writeReference handles a write that carries a reference to a blob in
+// shared storage instead of data bytes: a single message with a reference,
+// finish_write set, and no data.
 func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, userPrefix string) error {
 	rn := req.GetResource()
-	if !req.GetFinishWrite() {
-		return status.InvalidArgumentError("a write carrying a reference must be a single message with finish_write set")
-	}
-	if len(req.GetData()) > 0 {
-		return status.InvalidArgumentError("a write carrying a reference must not carry data bytes")
-	}
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
 	if !ok {
 		return status.UnimplementedErrorf("the local cache (%T) cannot accept references", c.cache)
@@ -539,10 +540,17 @@ func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache
 // verifyReferenceWrite checks that dereferencing ref yields content that
 // hashes to rn's digest, and logs and counts the outcome.
 func (c *Proxy) verifyReferenceWrite(ctx context.Context, refCache interfaces.ReferenceCache, ref *refpb.Reference, rn *rspb.ResourceName) {
+	record := func(outcome string, code codes.Code) {
+		metrics.DistributedCacheReferenceWriteVerificationCount.With(
+			prometheus.Labels{
+				metrics.GroupID:                  groupIDForMetrics(ctx),
+				metrics.VerificationOutcomeLabel: outcome,
+				metrics.StatusHumanReadableLabel: code.String(),
+			}).Inc()
+	}
 	if rn.GetCacheType() != rspb.CacheType_CAS {
 		c.log.Errorf("Reference write verification is only supported for CAS cache type, got %q", rn.GetCacheType())
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+		record(VerificationError, codes.InvalidArgument)
 		return
 	}
 
@@ -552,8 +560,7 @@ func (c *Proxy) verifyReferenceWrite(ctx context.Context, refCache interfaces.Re
 	readCloser, err := refCache.Dereference(ctx, ref, identityRN, 0, 0)
 	if err != nil {
 		c.log.Errorf("Error dereferencing %q for write verification: %s", ResourceIsolationString(rn), err)
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+		record(VerificationError, gstatus.Code(err))
 		return
 	}
 	defer readCloser.Close()
@@ -562,18 +569,15 @@ func (c *Proxy) verifyReferenceWrite(ctx context.Context, refCache interfaces.Re
 	d, err := digest.Compute(readCloser, rn.GetDigestFunction())
 	if err != nil {
 		c.log.Errorf("Reference write verification error for %q: %s", ResourceIsolationString(rn), err)
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+		record(VerificationError, gstatus.Code(err))
 		return
 	}
 	if d.GetHash() != rn.GetDigest().GetHash() || d.GetSizeBytes() != rn.GetDigest().GetSizeBytes() {
 		c.log.Errorf("Reference write verification failed for %q: expected %s/%d, got %s/%d", ResourceIsolationString(rn), rn.GetDigest().GetHash(), rn.GetDigest().GetSizeBytes(), d.GetHash(), d.GetSizeBytes())
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationFailure}).Inc()
+		record(VerificationFailure, codes.Internal)
 		return
 	}
-	metrics.DistributedCacheReferenceWriteVerificationCount.With(
-		prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationSuccess}).Inc()
+	record(VerificationSuccess, codes.OK)
 }
 
 func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
@@ -773,19 +777,18 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
 
-		// Confirm the provided reference matches what was requested.
+		// Confirm the reference identifies the requested content. Compressor,
+		// encryption, and partition/group are peer-local and may legitimately
+		// differ; the instance name is only ignored for CAS, where content is
+		// instance-independent.
 		fr := ref.GetMetadata().GetFileRecord()
-		frd := fr.GetDigest()
-		if frd.GetHash() != r.GetDigest().GetHash() ||
-			frd.GetSizeBytes() != r.GetDigest().GetSizeBytes() ||
-			fr.GetDigestFunction() != r.GetDigestFunction() ||
-			fr.GetIsolation().GetCacheType() != r.GetCacheType() ||
-			fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
-			rc.Close()
-			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d (cache type %s, instance %q), but %s/%d (cache type %s, instance %q) was requested",
-				peer,
-				frd.GetHash(), frd.GetSizeBytes(), fr.GetIsolation().GetCacheType(), fr.GetIsolation().GetRemoteInstanceName(),
-				r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes(), r.GetCacheType(), r.GetInstanceName())
+		frd := ref.GetMetadata().GetFileRecord().GetDigest()
+		refMatches := frd.GetHash() == r.GetDigest().GetHash() &&
+			frd.GetSizeBytes() == r.GetDigest().GetSizeBytes() &&
+			fr.GetDigestFunction() == r.GetDigestFunction() &&
+			fr.GetIsolation().GetCacheType() == r.GetCacheType()
+		if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS {
+			refMatches = refMatches && fr.GetIsolation().GetRemoteInstanceName() == r.GetInstanceName()
 		}
 
 		// If the server is also streaming the data, serve those bytes to the
@@ -803,19 +806,39 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 				byteReader = dr
 			}
 			recordReadResponseMetrics("bytes", r)
+			if !refMatches {
+				// Verification is best-effort: log bad refs, but don't fail.
+				c.log.Errorf("Reference verification failed for %q from peer %q: reference identifies %s/%d", ResourceIsolationString(r), peer, frd.GetHash(), frd.GetSizeBytes())
+				metrics.DistributedCacheReferenceVerificationCount.With(
+					prometheus.Labels{
+						metrics.GroupID:                  groupIDForMetrics(ctx),
+						metrics.VerificationOutcomeLabel: VerificationFailure,
+						metrics.StatusHumanReadableLabel: codes.Internal.String(),
+					}).Inc()
+				return byteReader, nil
+			}
 			refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
 			if err != nil {
 				// Verification is best-effort: the byte stream is
 				// authoritative, so log and serve it.
 				c.log.Warningf("Cannot verify reference for %q from peer %q: %s", ResourceIsolationString(r), peer, err)
 				metrics.DistributedCacheReferenceVerificationCount.With(
-					prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+					prometheus.Labels{
+						metrics.GroupID:                  groupIDForMetrics(ctx),
+						metrics.VerificationOutcomeLabel: VerificationError,
+						metrics.StatusHumanReadableLabel: gstatus.Code(err).String(),
+					}).Inc()
 				return byteReader, nil
 			}
-			return NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer), nil
+			return NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer, groupIDForMetrics(ctx)), nil
 		}
 
 		// The reference is the whole response: dereference it.
+		if !refMatches {
+			rc.Close()
+			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
+				peer, frd.GetHash(), frd.GetSizeBytes(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
+		}
 		if err := rc.Close(); err != nil {
 			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
 		}
@@ -834,6 +857,15 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	}
 	recordReadResponseMetrics("bytes", r)
 	return dr, nil
+}
+
+// groupIDForMetrics returns the authenticated group ID in ctx, for metric
+// labels.
+func groupIDForMetrics(ctx context.Context) string {
+	if c, err := claims.ClaimsFromContext(ctx); err == nil {
+		return c.GroupID
+	}
+	return interfaces.AuthAnonymousUser
 }
 
 // recordReadResponseMetrics records that a peer read's payload was received
@@ -863,19 +895,21 @@ type verifyingReadCloser struct {
 	log       log.Logger
 	resource  *rspb.ResourceName
 	peer      string
+	groupID   string
 
 	scratch  []byte
 	compared int64
 	done     bool
 }
 
-func NewVerifyingReadCloser(primary, secondary io.ReadCloser, log log.Logger, r *rspb.ResourceName, peer string) io.ReadCloser {
+func NewVerifyingReadCloser(primary, secondary io.ReadCloser, log log.Logger, r *rspb.ResourceName, peer, groupID string) io.ReadCloser {
 	return &verifyingReadCloser{
 		primary:   primary,
 		secondary: secondary,
 		log:       log,
 		resource:  r,
 		peer:      peer,
+		groupID:   groupID,
 	}
 }
 
@@ -891,7 +925,7 @@ func (v *verifyingReadCloser) verify(p []byte) {
 		if err == io.EOF || err == io.ErrUnexpectedEOF {
 			v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes ended early at offset %d", v.compared))
 		} else {
-			v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+			v.report(VerificationError, status.WrapErrorf(err, "error reading dereferenced bytes at offset %d", v.compared))
 		}
 		return
 	}
@@ -914,7 +948,7 @@ func (v *verifyingReadCloser) verifyEOF() {
 	case n != 0 || err == nil:
 		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes continue past streamed bytes at offset %d", v.compared))
 	default:
-		v.report(VerificationError, status.InternalErrorf("error reading dereferenced bytes at offset %d: %s", v.compared, err))
+		v.report(VerificationError, status.WrapErrorf(err, "error reading dereferenced bytes at offset %d", v.compared))
 	}
 }
 
@@ -927,7 +961,11 @@ func (v *verifyingReadCloser) report(verificationStatus string, err error) {
 		v.log.Warningf("Reference verification error for %q from peer %q: %s", ResourceIsolationString(v.resource), v.peer, err)
 	}
 	metrics.DistributedCacheReferenceVerificationCount.With(
-		prometheus.Labels{metrics.VerificationOutcomeLabel: verificationStatus}).Inc()
+		prometheus.Labels{
+			metrics.GroupID:                  v.groupID,
+			metrics.VerificationOutcomeLabel: verificationStatus,
+			metrics.StatusHumanReadableLabel: gstatus.Code(err).String(),
+		}).Inc()
 }
 
 func (v *verifyingReadCloser) Read(p []byte) (int, error) {
@@ -1023,12 +1061,14 @@ func (r *distributedCacheReader) Close() error {
 }
 
 type streamWriteCloser struct {
-	cancelFunc    context.CancelFunc
-	sender        rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
-	r             *rspb.ResourceName
-	peer          string
-	handoffPeer   string
-	alreadyExists bool
+	cancelFunc      context.CancelFunc
+	sender          rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	r               *rspb.ResourceName
+	ref             *refpb.Reference
+	refMustBeCloned bool
+	peer            string
+	handoffPeer     string
+	alreadyExists   bool
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
@@ -1081,10 +1121,12 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 
 	req := &dcpb.WriteRequest{
-		FinishWrite:        true,
-		CheckAlreadyExists: true,
-		HandoffPeer:        wc.handoffPeer,
-		Resource:           wc.r,
+		FinishWrite:           true,
+		CheckAlreadyExists:    true,
+		HandoffPeer:           wc.handoffPeer,
+		Resource:              wc.r,
+		Reference:             wc.ref,
+		ReferenceMustBeCloned: wc.refMustBeCloned,
 	}
 	sendErr := wc.send(req)
 	if sendErr != nil && sendErr != io.EOF {
@@ -1111,27 +1153,75 @@ func (wc *streamWriteCloser) Close() error {
 	return nil
 }
 
+// RemoteWriter returns a writer that streams the resource's bytes to the
+// given peer, where they are stored when Commit is called. A non-empty
+// handoffPeer names an unavailable peer this write was originally destined
+// for; the receiving peer records a hinted handoff so the data can be
+// forwarded once that peer returns.
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	client, err := c.getClient(ctx, peer)
+	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	return dbw, err
+}
+
+// VerifiedWriter is a CommittedWriteCloser whose write stream's final message
+// can carry a reference for the peer to verify against the written bytes.
+type VerifiedWriter struct {
+	interfaces.CommittedWriteCloser
+	swc *streamWriteCloser
+}
+
+// SetReference binds ref to the write stream's final message, for the peer to
+// verify against the written bytes. It must be called before Commit; the
+// reference can't be provided at open time because it isn't known until the
+// write has been fully streamed.
+func (w *VerifiedWriter) SetReference(ref *refpb.Reference) {
+	w.swc.ref = ref
+}
+
+// RemoteVerifiedWriter is like RemoteWriter, but returns a VerifiedWriter
+// whose final stream message carries the reference bound via SetReference, if
+// any, for the peer to verify against the written bytes.
+func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (*VerifiedWriter, error) {
+	dbw, swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 	if err != nil {
 		return nil, err
+	}
+	return &VerifiedWriter{CommittedWriteCloser: dbw, swc: swc}, nil
+}
+
+// RemoteReferenceWriter opens a write stream that writes r to the peer by
+// reference alone: no bytes are streamed, and committing it sends a single
+// message carrying ref. The caller is responsible for determining the
+// referenced blob's ownership semantics via mustClone. Like the byte path, a
+// peer that already has r is not an error.
+func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
+	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+	return dbw, err
+}
+
+func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (interfaces.CommittedWriteCloser, *streamWriteCloser, error) {
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
 		cancel()
-		return nil, err
+		return nil, nil, err
 	}
 
 	wc := &streamWriteCloser{
-		cancelFunc:  cancel,
-		sender:      rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
-		peer:        peer,
-		handoffPeer: handoffPeer,
-		r:           r,
+		cancelFunc:      cancel,
+		sender:          rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		peer:            peer,
+		handoffPeer:     handoffPeer,
+		r:               r,
+		ref:             ref,
+		refMustBeCloned: refMustBeCloned,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), nil
+	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), wc, nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

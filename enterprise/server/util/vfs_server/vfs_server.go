@@ -378,7 +378,7 @@ type Server struct {
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
 	root               *fsNode
-	treeFetcher        *dirtools.TreeFetcher
+	inputFetcher       container.InputFetcher
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
 
@@ -603,13 +603,17 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 		}
 	}
 	walkNode(p.root)
+	inputFetcher := p.inputFetcher
 	p.mu.Unlock()
+	if statsProvider, ok := inputFetcher.(interface{ UpdateIOStats(*repb.VfsStats) }); ok {
+		statsProvider.UpdateIOStats(stats)
+	}
 
 	return stats
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
-func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) (*vfscommon.InodeInvalidations, error) {
+func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, inputFetcher container.InputFetcher) (*vfscommon.InodeInvalidations, error) {
 	p.mu.Lock()
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
@@ -624,7 +628,10 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.treeFetcher = treeFetcher
+	if inputFetcher == nil {
+		inputFetcher = newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
+	}
+	p.inputFetcher = inputFetcher
 	p.internalTaskCtx = ctx
 	return invalidatedInodes, nil
 }
@@ -892,7 +899,6 @@ type casFetcher struct {
 	fetchStart        time.Time
 	fetchesInProgress int
 
-	fileCacheHits     int
 	downloadCount     int
 	downloadDuration  time.Duration
 	downloadSizeBytes int64
@@ -906,11 +912,11 @@ func newCASFetcher(env environment.Env, remoteInstanceName string, digestFunctio
 	}
 }
 
-func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *fsNode) error {
+func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *repb.FileNode) error {
 	bsClient := cf.env.GetByteStreamClient()
-	rn := digest.NewCASResourceName(node.fileNode.GetDigest(), cf.remoteInstanceName, cf.digestFunction)
+	rn := digest.NewCASResourceName(node.GetDigest(), cf.remoteInstanceName, cf.digestFunction)
 	rn.SetCompressor(repb.Compressor_ZSTD)
-	w, err := cf.env.GetFileCache().Writer(ctx, node.fileNode, cf.digestFunction)
+	w, err := cf.env.GetFileCache().Writer(ctx, node, cf.digestFunction)
 	if err != nil {
 		return err
 	}
@@ -927,7 +933,7 @@ func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *fsNode) err
 	return nil
 }
 
-func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *fsNode) error {
+func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *repb.FileNode) error {
 	cf.mu.Lock()
 	cf.fetchesInProgress++
 	// Don't include concurrent downloads in total fetch time.
@@ -947,35 +953,29 @@ func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *fsNod
 		cf.mu.Unlock()
 	}()
 
-	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.fileNode.GetDigest().GetHash()
+	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.GetDigest().GetHash()
 	_, _, err := downloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, cf.downloadToFileCache(ctx, node)
 	})
 	return err
 }
 
-func (cf *casFetcher) Open(ctx context.Context, node *fsNode) (*os.File, error) {
-	// If we can open the file directly from the file cache then use that.
-	if f, err := cf.env.GetFileCache().Open(ctx, node.fileNode); err == nil {
-		cf.mu.Lock()
-		cf.fileCacheHits++
-		cf.mu.Unlock()
-		return f, nil
+func (cf *casFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
+	if cf.env.GetFileCache().ContainsFile(ctx, node) {
+		return nil
 	}
 
 	if err := cf.dedupeDownloadToFileCache(ctx, node); err != nil {
-		return nil, err
+		return err
 	}
 
 	cf.mu.Lock()
 	// N.B. in case of deduping, the download will be counted in the stats of
 	// all deduped actions.
 	cf.downloadCount++
-	cf.downloadSizeBytes += node.fileNode.GetDigest().GetSizeBytes()
+	cf.downloadSizeBytes += node.GetDigest().GetSizeBytes()
 	cf.mu.Unlock()
-
-	// CAS downloads put the CAS artifacts directly into the file cache.
-	return cf.env.GetFileCache().Open(ctx, node.fileNode)
+	return nil
 }
 
 func (cf *casFetcher) UpdateIOStats(stats *repb.VfsStats) {
@@ -984,6 +984,26 @@ func (cf *casFetcher) UpdateIOStats(stats *repb.VfsStats) {
 	stats.FileDownloadSizeBytes = cf.downloadSizeBytes
 	stats.FileDownloadCount = int64(cf.downloadCount)
 	stats.FileDownloadDurationUsec = cf.downloadDuration.Microseconds()
+}
+
+func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error) {
+	p.mu.Lock()
+	inputFetcher := p.inputFetcher
+	p.mu.Unlock()
+	if inputFetcher == nil {
+		return nil, status.FailedPreconditionError("no input fetcher is configured")
+	}
+	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
+		return nil, err
+	}
+	f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
+	if err == nil {
+		return f, nil
+	}
+	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
+		return nil, err
+	}
+	return p.env.GetFileCache().Open(ctx, node.fileNode)
 }
 
 func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb.MknodResponse, error) {
@@ -1080,21 +1100,9 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		}
 		openedFile = f
 	} else if node.fileNode != nil {
-		p.mu.Lock()
-		tf := p.treeFetcher
-		p.mu.Unlock()
-		if tf == nil {
-			log.CtxWarningf(p.taskCtx(), "Open %d could not open file because tree fetcher is not set", request.GetId())
-			return nil, syscallErrStatus(syscall.EIO)
-		}
-		err = tf.Fetch(p.taskCtx(), node.fileNode)
+		f, err := p.openCASFile(p.taskCtx(), node)
 		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from cache: %s", node.Path(), err)
-			return nil, err
-		}
-		f, err := p.env.GetFileCache().Open(p.taskCtx(), node.fileNode)
-		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "Open %q could not open file from file cache: %s", node.Path(), err)
+			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from CAS: %s", node.Path(), err)
 			return nil, err
 		}
 		openedFile = f

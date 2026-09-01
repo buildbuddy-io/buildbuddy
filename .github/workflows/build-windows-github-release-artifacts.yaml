@@ -43,22 +43,13 @@ jobs:
             "--config=release-windows"
             "--remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
           )
-          $windows386Args = @(
-            "--config=release-windows"
-            "--remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}"
-            "--platforms=@io_bazel_rules_go//go/toolchain:windows_386"
-          )
-          $target = "//enterprise/server/cmd/executor:executor"
+          $amd64Target = "//enterprise/server/cmd/executor:executor_windows_amd64"
+          $windows386Target = "//enterprise/server/cmd/executor:executor_windows_386"
+          $windowsArm64Target = "//enterprise/server/cmd/executor:executor_windows_arm64"
 
-          bazelisk --output_user_root=C:/0 build @commonArgs $target
-          $execution_root = bazelisk --output_user_root=C:/0 info execution_root
-          $artifact_rel_path = bazelisk --output_user_root=C:/0 cquery @commonArgs --output=files $target
-          $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
-          Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-amd64-beta.exe
+          bazelisk --output_user_root=C:/0 build @commonArgs $amd64Target $windows386Target $windowsArm64Target
+          Copy-Item -Path bazel-out/windows_amd64-opt/bin/enterprise/server/cmd/executor/executor_/executor.exe -Destination executor-enterprise-windows-amd64-beta.exe
+          Copy-Item -Path bazel-out/windows_386-opt/bin/enterprise/server/cmd/executor/executor_/executor.exe -Destination executor-enterprise-windows-386-beta.exe
+          Copy-Item -Path bazel-out/windows_arm64-opt/bin/enterprise/server/cmd/executor/executor_/executor.exe -Destination executor-enterprise-windows-arm64-beta.exe
 
-          bazelisk --output_user_root=C:/0 build @windows386Args $target
-          $artifact_rel_path = bazelisk --output_user_root=C:/0 cquery @windows386Args --output=files $target
-          $artifact_abs_path = "${execution_root}\${artifact_rel_path}"
-          Copy-Item -Path $artifact_abs_path -Destination executor-enterprise-windows-386-beta.exe
-
-          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe executor-enterprise-windows-386-beta.exe --clobber
+          gh release upload ${{ inputs.version_tag }} executor-enterprise-windows-amd64-beta.exe executor-enterprise-windows-386-beta.exe executor-enterprise-windows-arm64-beta.exe --clobber
