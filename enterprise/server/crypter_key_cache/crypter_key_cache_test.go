@@ -118,14 +118,23 @@ func TestError(t *testing.T) {
 
 	opts := &crypter_key_cache.Opts{
 		KeyRefreshScanFrequency: 10 * time.Second,
-		KeyErrCacheTime:         5 * time.Second,
+		// Use a long error cache time so that the async clock advancement
+		// below cannot expire the cached error before the second lookup.
+		KeyErrCacheTime: time.Hour,
 	}
 	cache := crypter_key_cache.NewWithOpts(env, refreshFn, clock, opts)
 
-	// Advance the clock asynchronously to keep the retrier moving along.
+	// Advance the clock asynchronously to keep the retrier moving along
+	// during the first lookup.
 	done := make(chan struct{})
-	defer close(done)
+	advancerStopped := make(chan struct{})
+	stopAdvancer := sync.OnceFunc(func() {
+		close(done)
+		<-advancerStopped
+	})
+	defer stopAdvancer()
 	go func() {
+		defer close(advancerStopped)
 		for {
 			select {
 			case <-done:
@@ -139,6 +148,10 @@ func TestError(t *testing.T) {
 	// First call should trigger refresh and cache the error
 	_, err := cache.EncryptionKey(ctx)
 	require.True(t, status.IsUnavailableError(err))
+
+	// Freeze the clock so the cached error cannot expire before the second
+	// lookup below.
+	stopAdvancer()
 	refreshCount.Store(0)
 
 	// Second call within error cache time should return cached error
