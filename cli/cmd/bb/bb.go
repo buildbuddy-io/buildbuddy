@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -281,9 +282,18 @@ func runHelp(args *parsed.OrderedArgs) (int, error) {
 	startupCommandOptions := args.RemoveStartupOptions(slices.Collect(maps.Keys(helpParser.CommandOptionParser.ByName))...)
 	var toPrepend []arguments.Argument
 	for _, indexed := range startupCommandOptions {
-		o := indexed.Option
-		o.SetDefinition(helpParser.CommandOptionParser.ByName[o.Name()])
-		toPrepend = append(toPrepend, o)
+		o, n, err := helpParser.CommandOptionParser.ParseOptions(indexed.Format(), "help")
+		if err != nil {
+			return -1, err
+		}
+		if len(o) == 0 {
+			return -1, fmt.Errorf("Error converting '%v' to help option; '%s' was a positional argument.", indexed.Format(), indexed.Format()[0])
+		} else if len(o) > 1 {
+			return -1, fmt.Errorf("Error converting '%v' to help option; it was resolved to more than one option.", indexed.Format())
+		} else if len(indexed.Format()) != n {
+			return -1, fmt.Errorf("Error converting '%v' to help option; '%v' was not consumed when parsing.", indexed.Format(), indexed.Format()[n:])
+		}
+		toPrepend = append(toPrepend, o[0])
 	}
 	// Now prepend any command options extracted from the startup options to the
 	// command options.

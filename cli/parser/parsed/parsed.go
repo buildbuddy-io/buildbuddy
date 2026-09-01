@@ -94,7 +94,7 @@ type Args interface {
 	RemoveCommandOptions(...string) []*IndexedOption
 
 	// Append appends the given arguments by inserting them in the last valid
-	// location for that type of argument. Startup options
+	// location for that type of argument.
 	Append(...arguments.Argument) error
 
 	// Prepend prepends the given options by inserting them in the first valid
@@ -528,7 +528,9 @@ func (a *OrderedArgs) prependOption(option options.Option, commandIndex int) (in
 		// If this is an unknown option with no listed supported commands, assume it
 		// supports this command (or "startup" in the rare case that no command was
 		// provided.
-		option.GetDefinition().AddSupportedCommand(command)
+		if unknownOption, ok := option.(*options.UnknownOption); ok {
+			unknownOption.AssumeSupportFor(command)
+		}
 	}
 	if option.Supports("startup") {
 		a.Args = slices.Insert(a.Args, 0, arguments.Argument(option))
@@ -635,7 +637,9 @@ func (a *OrderedArgs) appendOption(option options.Option, startupOptionInsertInd
 		// If this is an unknown option with no listed supported commands, assume it
 		// supports this command (or "startup" in the rare case that no command was
 		// provided.
-		option.GetDefinition().AddSupportedCommand(command)
+		if unknownOption, ok := option.(*options.UnknownOption); ok {
+			unknownOption.AssumeSupportFor(command)
+		}
 	}
 	if option.Supports("startup") {
 		a.Args = slices.Insert(a.Args, startupOptionInsertIndex, arguments.Argument(option))
@@ -1047,7 +1051,9 @@ func (a *PartitionedArgs) Prepend(opts ...options.Option) error {
 			if a.Command != nil {
 				command = *a.Command
 			}
-			opt.GetDefinition().AddSupportedCommand(command)
+			if unknownOption, ok := opt.(*options.UnknownOption); ok {
+				unknownOption.AssumeSupportFor(command)
+			}
 		}
 		switch {
 		case opt.Supports("startup"):
@@ -1086,7 +1092,9 @@ func (a *PartitionedArgs) Append(args ...arguments.Argument) error {
 				if a.Command != nil {
 					command = *a.Command
 				}
-				arg.GetDefinition().AddSupportedCommand(command)
+				if unknownOption, ok := arg.(*options.UnknownOption); ok {
+					unknownOption.AssumeSupportFor(command)
+				}
 			}
 			switch {
 			case arg.Supports("startup"):

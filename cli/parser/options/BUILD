@@ -26,6 +26,7 @@ go_test(
         ":options",
         "//cli/parser/options/flag_form",
         "//server/util/flagutil/types",
+        "//server/util/lib/seq",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
     ],

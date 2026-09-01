@@ -65,11 +65,15 @@ var preBazel7ExpansionOptions = map[string]struct{}{
 
 type Defined interface {
 	Name() string
+	OldName() string
 	ShortName() string
 	Multi() bool
 	HasNegative() bool
 	RequiresValue() bool
+	HasExpansion() bool
+	Expansion() iter.Seq[Option]
 	HasSupportedCommands() bool
+	SupportedCommands() set.View[string]
 	Supports(string) bool
 	PluginID() string
 }
@@ -105,6 +109,8 @@ type Definition struct {
 	// --subcommands=true //false:false".
 	requiresValue bool
 
+	expansion []Option
+
 	// The list of commands that support this option.
 	supportedCommands set.Set[string]
 
@@ -138,18 +144,38 @@ func (d *Definition) RequiresValue() bool {
 	return d.requiresValue
 }
 
+func (d *Definition) HasExpansion() bool {
+	return d.expansion != nil
+}
+
+func (d *Definition) Expansion() iter.Seq[Option] {
+	return seq.Fmap(
+		d.expansion,
+		func(o Option) Option { return o.Clone() },
+	)
+}
+
+// ResolveExpansion lets us resolve the options in the expansion. These are
+// normally deferred when a definition is created, because we need
+// definitions to construct a parser, and we need a parser to resolve
+// options.
+func (d *Definition) ResolveExpansion(resolve func(Option) (Option, error)) error {
+	for i, opt := range d.expansion {
+		resolved, err := resolve(opt)
+		if err != nil {
+			return err
+		}
+		d.expansion[i] = resolved
+	}
+	return nil
+}
+
 func (d *Definition) HasSupportedCommands() bool {
 	return len(d.supportedCommands) != 0
 }
 
-func (d *Definition) SupportedCommands() iter.Seq[string] {
-	return func(yield func(string) bool) {
-		for k := range d.supportedCommands {
-			if !yield(k) {
-				return
-			}
-		}
-	}
+func (d *Definition) SupportedCommands() set.View[string] {
+	return d.supportedCommands
 }
 
 func (d *Definition) Supports(command string) bool {
@@ -160,13 +186,6 @@ func (d *Definition) Supports(command string) bool {
 	}
 
 	return false
-}
-
-func (d *Definition) AddSupportedCommand(commands ...string) {
-	if d.supportedCommands == nil {
-		d.supportedCommands = make(set.Set[string], 1)
-	}
-	d.supportedCommands.AddSeq(slices.Values(commands))
 }
 
 func (d *Definition) PluginID() string {
@@ -184,13 +203,19 @@ func WithShortName(shortName string) DefinitionOpt {
 func WithMulti() DefinitionOpt         { return func(d *Definition) { d.multi = true } }
 func WithNegative() DefinitionOpt      { return func(d *Definition) { d.hasNegative = true } }
 func WithRequiresValue() DefinitionOpt { return func(d *Definition) { d.requiresValue = true } }
+func WithExpansion(opts ...Option) DefinitionOpt {
+	return func(d *Definition) { d.expansion = opts }
+}
 func WithPluginID(pluginID string) DefinitionOpt {
 	return func(d *Definition) { d.pluginID = pluginID }
 }
 
 func WithSupportFor(commands ...string) DefinitionOpt {
 	return func(d *Definition) {
-		d.AddSupportedCommand(commands...)
+		if d.supportedCommands == nil {
+			d.supportedCommands = make(set.Set[string], len(commands))
+		}
+		d.supportedCommands.AddSeq(slices.Values(commands))
 	}
 }
 
@@ -304,15 +329,17 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 		}
 	}
 	d := &Definition{
-		name:              info.GetName(),
-		shortName:         info.GetAbbreviation(),
-		oldName:           info.GetOldName(),
-		multi:             info.GetAllowsMultiple(),
-		hasNegative:       info.GetHasNegativeFlag(),
-		requiresValue:     info.GetRequiresValue(),
-		supportedCommands: make(set.Set[string], len(info.GetCommands())),
+		name:          info.GetName(),
+		shortName:     info.GetAbbreviation(),
+		oldName:       info.GetOldName(),
+		multi:         info.GetAllowsMultiple(),
+		hasNegative:   info.GetHasNegativeFlag(),
+		requiresValue: info.GetRequiresValue(),
+		expansion: slices.Collect(
+			seq.Fmap(info.GetOptionExpansions(), Defer),
+		),
+		supportedCommands: set.From(info.GetCommands()...),
 	}
-	d.AddSupportedCommand(info.GetCommands()...)
 	return d
 }
 
@@ -326,18 +353,21 @@ func DefinitionFrom(info *bfpb.FlagInfo) *Definition {
 type Option interface {
 	arguments.Argument
 	Defined
+	Clone() Option
 	HasValue() bool
 	ExpectsValue() bool
 	ClearValue()
 	SetValue(string)
-	GetDefinition() *Definition
-	SetDefinition(*Definition)
 	UseName()
 	UseShortName()
 	UseOldName()
 	UsesName() bool
 	UsesShortName() bool
 	UsesOldName() bool
+
+	// Normalized should always return an option which returns a single entry in
+	// the slice returned by Format(). In other words, Normalized options should
+	// be a single argument.
 	Normalized() Option
 
 	// Because Options wrap other Options sometimes, we cannot depend on being
@@ -354,7 +384,7 @@ type ValueType interface {
 // The base type for all option types. Handles a lot of formatting and option
 // representation transformations.
 type optionBase struct {
-	*Definition
+	Defined
 
 	// The name this flag will use when formatted.
 	Form flag_form.Form
@@ -362,24 +392,24 @@ type optionBase struct {
 
 // Returns a new option base derived from the option string (without the leading
 // dashes) and the provided Definition.
-func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
+func NewOptionBase(opt string, d Defined) (*optionBase, error) {
 	// validate optName
 	var form flag_form.Form
 	switch opt {
-	case d.name:
+	case d.Name():
 		form = flag_form.Name
-	case d.oldName:
+	case d.OldName():
 		form = flag_form.OldName
-	case d.shortName:
+	case d.ShortName():
 		form = flag_form.ShortName
 	default:
-		if d.hasNegative {
+		if d.HasNegative() {
 			if n, cut := strings.CutPrefix(opt, "no"); cut {
-				if n == d.name {
+				if n == d.Name() {
 					form = flag_form.NegativeName
 					break
 				}
-				if n == d.oldName {
+				if n == d.OldName() {
 					form = flag_form.NegativeOldName
 					break
 				}
@@ -388,9 +418,16 @@ func NewOptionBase(opt string, d *Definition) (*optionBase, error) {
 		return nil, fmt.Errorf("option name '%s' cannot specify an option with definition '%#v'", opt, d)
 	}
 	return &optionBase{
-		Definition: d,
-		Form:       form,
+		Defined: d,
+		Form:    form,
 	}, nil
+}
+
+func (o *optionBase) Clone() *optionBase {
+	return &optionBase{
+		Defined: o.Defined,
+		Form:    o.Form,
+	}
 }
 
 // Coerce this option base to use the standard name for this option.
@@ -522,12 +559,17 @@ type RequiredValueOption struct {
 	Joined bool
 }
 
-func (o *RequiredValueOption) GetDefinition() *Definition {
-	return o.Definition
-}
-
-func (o *RequiredValueOption) SetDefinition(d *Definition) {
-	o.Definition = d
+func (o *RequiredValueOption) Clone() Option {
+	var value *string
+	if o.Value != nil {
+		v := *o.Value
+		value = &v
+	}
+	return &RequiredValueOption{
+		optionBase: o.optionBase.Clone(),
+		Value:      value,
+		Joined:     o.Joined,
+	}
 }
 
 func (o *RequiredValueOption) HasValue() bool {
@@ -565,10 +607,10 @@ func (o *RequiredValueOption) Format() []string {
 }
 
 func (o *RequiredValueOption) Normalized() Option {
-	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase := o.optionBase.Clone()
 	normalizedOptionBase.UseName()
 	return &RequiredValueOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: normalizedOptionBase,
 		Value:      o.Value,
 		Joined:     true,
 	}
@@ -594,12 +636,16 @@ type BoolOrEnumOption struct {
 	Value *string
 }
 
-func (o *BoolOrEnumOption) GetDefinition() *Definition {
-	return o.Definition
-}
-
-func (o *BoolOrEnumOption) SetDefinition(d *Definition) {
-	o.Definition = d
+func (o *BoolOrEnumOption) Clone() Option {
+	var value *string
+	if o.Value != nil {
+		v := *o.Value
+		value = &v
+	}
+	return &BoolOrEnumOption{
+		optionBase: o.optionBase.Clone(),
+		Value:      value,
+	}
 }
 
 func (o *BoolOrEnumOption) HasValue() bool {
@@ -661,7 +707,7 @@ func (o *BoolOrEnumOption) AsBool() (bool, error) {
 }
 
 func (o *BoolOrEnumOption) Normalized() Option {
-	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase := o.optionBase.Clone()
 	normalizedOptionBase.UseName()
 	if v, err := o.AsBool(); err == nil {
 		if !v {
@@ -670,12 +716,12 @@ func (o *BoolOrEnumOption) Normalized() Option {
 			normalizedOptionBase.SetNegative()
 		}
 		return &BoolOrEnumOption{
-			optionBase: &normalizedOptionBase,
+			optionBase: normalizedOptionBase,
 			Value:      nil,
 		}
 	}
 	return &BoolOrEnumOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: normalizedOptionBase,
 		Value:      o.Value,
 	}
 }
@@ -687,14 +733,19 @@ func (o *BoolOrEnumOption) BoolLike() BoolLike {
 // starlarkOption is used to represent an option that has been identified as
 // having a starlark option prefix.
 type starlarkOption struct {
-	BoolOrEnumOption
+	*BoolOrEnumOption
+}
+
+func (o *starlarkOption) Clone() Option {
+	return &starlarkOption{
+		BoolOrEnumOption: o.BoolOrEnumOption.Clone().(*BoolOrEnumOption),
+	}
 }
 
 func (o *starlarkOption) Normalized() Option {
 	// don't normalize starlark flags
-	normalizedOptionBase := *o.optionBase
 	return &BoolOrEnumOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: o.optionBase.Clone(),
 		Value:      o.Value,
 	}
 }
@@ -716,6 +767,10 @@ func (_ *starlarkOption) Supports(command string) bool {
 	return command != "startup"
 }
 
+type Expandable interface {
+	Expand() iter.Seq[Option]
+}
+
 // ExpansionOption is used to represent an option that expands to other options.
 // These options cannot take values and are not interpreted as booleans (true or
 // false).
@@ -723,12 +778,10 @@ type ExpansionOption struct {
 	*optionBase
 }
 
-func (o *ExpansionOption) GetDefinition() *Definition {
-	return o.Definition
-}
-
-func (o *ExpansionOption) SetDefinition(d *Definition) {
-	o.Definition = d
+func (o *ExpansionOption) Clone() Option {
+	return &ExpansionOption{
+		optionBase: o.optionBase.Clone(),
+	}
 }
 
 func (_ *ExpansionOption) HasValue() bool {
@@ -757,10 +810,10 @@ func (o *ExpansionOption) Format() []string {
 }
 
 func (o *ExpansionOption) Normalized() Option {
-	normalizedOptionBase := *o.optionBase
+	normalizedOptionBase := o.optionBase.Clone()
 	normalizedOptionBase.UseName()
 	return &ExpansionOption{
-		optionBase: &normalizedOptionBase,
+		optionBase: normalizedOptionBase,
 	}
 }
 
@@ -768,11 +821,60 @@ func (o *ExpansionOption) BoolLike() BoolLike {
 	return nil
 }
 
+func (o *ExpansionOption) Expand() iter.Seq[Option] {
+	return o.Expansion()
+}
+
+func ExpandAll[S seq.Sequenceable[Option]](options S) iter.Seq[Option] {
+	// The set of options, formatted as strings for hashing reasons, that are
+	// being recursively expanded. In normal circumstances, we should expect the
+	// expansion options not to expand to other expansion options, but there is no
+	// specification prohibiting this, so we need this set to protect against
+	// circular references resulting in stack overflow.
+	expanding := make(set.Set[string], 1)
+
+	// The option sequence we are currently expanding inside the closure.
+	optionSequence := seq.Sequence[Option](options)
+
+	// The function closure that actually does the work of expanding. We must
+	// define it prior to intializing it because we use it recursively.
+	var expanded iter.Seq[Option]
+	expanded = func(yield func(Option) bool) {
+		for opt := range optionSequence {
+			if e, ok := opt.(Expandable); ok {
+				s := strings.Join(opt.Format(), " ")
+				if expanding.Contains(s) {
+					log.Debugf("Encountered circular reference when expanding '%s', skipping...", s)
+					continue
+				}
+				expanding.Add(s)
+				optionSequence = e.Expand()
+				for opt := range expanded {
+					if !yield(opt) {
+						return
+					}
+				}
+				expanding.Remove(s)
+			} else if !yield(opt) {
+				return
+			}
+		}
+	}
+	return expanded
+}
+
 // UnknownOption is used to represent an option that lacks a predetermined
 // option definition. These are assumed to be plugin options, but they may also
 // be misspellings of known options by users.
 type UnknownOption struct {
 	Option
+	AssumedSupport set.Set[string]
+}
+
+func (o *UnknownOption) Clone() Option {
+	return &UnknownOption{
+		Option: o.Option.Clone(),
+	}
 }
 
 func (o *UnknownOption) Normalized() Option {
@@ -780,32 +882,142 @@ func (o *UnknownOption) Normalized() Option {
 	return o
 }
 
+func (o *UnknownOption) Supports(command string) bool {
+	return o.AssumedSupport.Contains(command) || o.Option.Supports(command)
+}
+
+func (o *UnknownOption) HasSupportedCommands() bool {
+	return o.AssumedSupport.Len()|o.SupportedCommands().Len() != 0
+}
+
+func (o *UnknownOption) AssumeSupportFor(command string) {
+	if o.AssumedSupport == nil {
+		o.AssumedSupport = make(set.Set[string], 1)
+	}
+	o.AssumedSupport.Add(command)
+}
+
+// DeferredOption is an option we declined to parse when encountering it, as we
+// do for the options in bazel_flags.FlagInfo.OptionExpansions.
+//
+// DeferredOptions only have their original, unparsed text stored, and act as
+// though their Definition is the empty Definition.
+type DeferredOption struct {
+	arguments.PositionalArgument
+}
+
+func (o *DeferredOption) Clone() Option {
+	return &DeferredOption{
+		PositionalArgument: o.PositionalArgument,
+	}
+}
+func (o *DeferredOption) Name() string {
+	return (&Definition{}).Name()
+}
+func (o *DeferredOption) OldName() string {
+	return (&Definition{}).OldName()
+}
+func (o *DeferredOption) ShortName() string {
+	return (&Definition{}).ShortName()
+}
+func (o *DeferredOption) Multi() bool {
+	return (&Definition{}).Multi()
+}
+func (o *DeferredOption) HasNegative() bool {
+	return (&Definition{}).HasNegative()
+}
+func (o *DeferredOption) RequiresValue() bool {
+	return (&Definition{}).RequiresValue()
+}
+func (o *DeferredOption) HasExpansion() bool {
+	return (&Definition{}).HasExpansion()
+}
+func (o *DeferredOption) Expansion() iter.Seq[Option] {
+	return (&Definition{}).Expansion()
+}
+func (o *DeferredOption) HasSupportedCommands() bool {
+	return (&Definition{}).HasSupportedCommands()
+}
+func (o *DeferredOption) SupportedCommands() set.View[string] {
+	return (&Definition{}).SupportedCommands()
+}
+func (o *DeferredOption) Supports(command string) bool {
+	return (&Definition{}).Supports(command)
+}
+func (o *DeferredOption) PluginID() string {
+	return (&Definition{}).PluginID()
+}
+func (o *DeferredOption) HasValue() bool {
+	return len(o.GetValue()) != 0
+}
+func (o *DeferredOption) ExpectsValue() bool {
+	return false
+}
+func (o *DeferredOption) ClearValue() {
+	o.SetValue("")
+}
+func (o *DeferredOption) SetValue(value string) {
+	o.PositionalArgument.Value = value
+}
+func (o *DeferredOption) UseName()      {}
+func (o *DeferredOption) UseShortName() {}
+func (o *DeferredOption) UseOldName()   {}
+func (o *DeferredOption) UsesName() bool {
+	return false
+}
+func (o *DeferredOption) UsesShortName() bool {
+	return false
+}
+func (o *DeferredOption) UsesOldName() bool {
+	return false
+}
+func (o *DeferredOption) Normalized() Option {
+	return o
+}
+func (o *DeferredOption) BoolLike() BoolLike {
+	return nil
+}
+
+func Defer(value string) Option {
+	return &DeferredOption{
+		PositionalArgument: arguments.PositionalArgument{
+			Value: value,
+		},
+	}
+}
+
 func Canonicalize(opts []Option) []Option {
 	lastOptionIndex := map[string]int{}
-	for i, opt := range opts {
+	i := 0
+	for opt := range ExpandAll(opts) {
 		lastOptionIndex[opt.Name()] = i
+		i++
 	}
 	// Accumulate only the last instance of a given option
-	canonical := make([]Option, 0, len(lastOptionIndex))
-	for i, opt := range opts {
+	canonical := make([]Option, 0, i)
+	i = 0
+	for opt := range ExpandAll(opts) {
 		if !opt.Multi() && lastOptionIndex[opt.Name()] > i {
+			i++
 			continue
 		}
 		canonical = append(canonical, opt.Normalized())
+		i++
 	}
 	return canonical
 }
 
-func NewStarlarkOptionDefinition(optName string) *Definition {
+func NewStarlarkOptionDefinition(optName string, supportedCommands set.Set[string]) *Definition {
 	return &Definition{
-		name:        strings.TrimPrefix(optName, "no"),
-		multi:       true,
-		hasNegative: true,
-		pluginID:    StarlarkBuiltinPluginID,
+		name:              strings.TrimPrefix(optName, "no"),
+		multi:             true,
+		hasNegative:       true,
+		pluginID:          StarlarkBuiltinPluginID,
+		supportedCommands: supportedCommands,
 	}
 }
 
-func NewOption(optName string, v *string, d *Definition) (Option, error) {
+func NewOption(optName string, v *string, d Defined) (Option, error) {
 	option, err := newOptionImpl(optName, v, d)
 	if err != nil {
 		return nil, err
@@ -816,7 +1028,20 @@ func NewOption(optName string, v *string, d *Definition) (Option, error) {
 	return option, nil
 }
 
-func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
+func NilOptionFrom(d Defined) Option {
+	if d.PluginID() == StarlarkBuiltinPluginID {
+		return (*starlarkOption)(nil)
+	}
+	if d.RequiresValue() {
+		return (*RequiredValueOption)(nil)
+	}
+	if d.HasNegative() {
+		return (*BoolOrEnumOption)(nil)
+	}
+	return (*ExpansionOption)(nil)
+}
+
+func newOptionImpl(optName string, v *string, d Defined) (Option, error) {
 	if d == nil {
 		return nil, fmt.Errorf("In NewOption: definition was nil for optname %s and value %+v", optName, v)
 	}
@@ -824,53 +1049,52 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	if d.PluginID() == StarlarkBuiltinPluginID {
+	switch t := NilOptionFrom(d).(type) {
+	case *starlarkOption:
 		return &starlarkOption{
-			BoolOrEnumOption: BoolOrEnumOption{
+			BoolOrEnumOption: &BoolOrEnumOption{
 				optionBase: base,
 				Value:      v,
 			},
 		}, nil
-	}
-	if d.RequiresValue() {
+	case *RequiredValueOption:
 		return &RequiredValueOption{
 			optionBase: base,
 			Value:      v,
 			Joined:     v != nil,
 		}, nil
-	}
-	if v != nil {
-		// A flag that didn't require a value had one anyway; this is normally okay if this
-		// isn't a startup option, but if it's an expansion option we need to emit
-		// a warning, and if it's a boolean option prefixed with "no", we need to emit an
-		// error.
-		if d.Supports("startup") {
-			// Unlike command options, startup options don't allow specifying
-			// values for options that do not require values.
-			return nil, fmt.Errorf("in option --%q: option %q does not take a value", optName, d.name)
+	case *BoolOrEnumOption:
+		if v != nil {
+			// A boolOrEnum option had a value; this is normally okay, but if it's a
+			// startup option or prefixed with "no" we need to emit an error.
+			if d.Supports("startup") {
+				// Unlike command options, startup options don't allow specifying
+				// values for options that do not require values.
+				return nil, fmt.Errorf("in option --%q: option %q does not take a value", optName, d.Name())
+			}
+			if base.Form.Negative() {
+				// This is a negative boolean value (of the form "--noNAME") with a
+				// specified value, which is only supported for starlark.
+				return nil, fmt.Errorf("Unexpected value after boolean option: %s", optName)
+			}
 		}
-		if !d.hasNegative {
-			// This is an expansion option with a specified value. Expansion options
-			// ignore values and output a warning. Since we canonicalize the options
-			// and remove the value ourselves, we should output the warning instead.
-			log.Warnf("option '%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", d.name, v)
-		}
-		if base.Form.Negative() && d.pluginID != StarlarkBuiltinPluginID {
-			// This is a negative boolean value (of the form "--noNAME") with a
-			// specified value, which is only supported for starlark.
-			return nil, fmt.Errorf("Unexpected value after boolean option: %s", optName)
-		}
-	}
-	if d.hasNegative {
 		return &BoolOrEnumOption{
 			optionBase: base,
 			Value:      v,
 		}, nil
+	case *ExpansionOption:
+		if v != nil {
+			// This is an expansion option with a specified value. Expansion options
+			// ignore values and output a warning. Since we canonicalize the options
+			// and remove the value ourselves, we should output the warning instead.
+			log.Warnf("option '%s' is an expansion option. It does not accept values, and does not change its expansion based on the value provided. Value '%s' will be ignored.", d.Name(), v)
+		}
+		return &ExpansionOption{
+			optionBase: base,
+		}, nil
+	default:
+		return nil, fmt.Errorf("Unsupported option type %T when creating an option with name %s and value %v.", t, optName, v)
 	}
-	return &ExpansionOption{
-		optionBase: base,
-	}, nil
 }
 
 type BoolOrEnum struct {

@@ -4,7 +4,6 @@ import (
 	"iter"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
@@ -351,20 +350,32 @@ func TestTake(t *testing.T) {
 		})
 	}
 	t.Run("stateful truncate", func(t *testing.T) {
-		input := "hello\nthere\ncool\nworld\n"
-		// string.Lines is a stateful sequence.
-		lines := strings.Lines(input)
-		taken := seq.Take[string](lines, 2)
+		data := []string{
+			"hello",
+			"there",
+			"cool",
+			"world",
+		}
+		i := 0
+		var sequence iter.Seq[string] = func(yield func(string) bool) {
+			for ; i < len(data); i++ {
+				if !yield(data[i]) {
+					return
+				}
+			}
+		}
+		// sequence is a stateful sequence.
+		taken := seq.Take[string](sequence, 2)
 		assert.ElementsMatch(
 			t,
-			[]string{"hello\n", "there\n"},
+			[]string{"hello", "there"},
 			slices.Collect(taken),
 		)
 
 		assert.ElementsMatch(
 			t,
-			[]string{"cool\n", "world\n"},
-			slices.Collect(lines),
+			[]string{"cool", "world"},
+			slices.Collect(sequence),
 		)
 	})
 }

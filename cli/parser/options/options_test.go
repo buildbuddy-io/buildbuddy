@@ -2,10 +2,13 @@ package options_test
 
 import (
 	"flag"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/options/flag_form"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/seq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,7 +20,7 @@ func TestDefinitionsFromFlagSet(t *testing.T) {
 	testFlags.Bool("enabled", false, "")
 	testFlags.String("name", "", "")
 	flagtypes.StringSlice(testFlags, "tags", nil, "")
-	flagtypes.JSONMap[map[string]string](testFlags, "labels", map[string]string{}, "")
+	flagtypes.JSONMap(testFlags, "labels", map[string]string{}, "")
 
 	definitions, err := options.DefinitionsFromFlagSet(testFlags, "test_command")
 	require.NoError(t, err)
@@ -2018,4 +2021,208 @@ func TestExpansionOptionBase(t *testing.T) {
 		)
 		assert.Error(t, err)
 	})
+}
+
+func TestCloneRequiredValueOption(t *testing.T) {
+	value := "value"
+	otherValue := "other"
+
+	name := "name"
+	oldName := "experimental_name"
+	shortName := "n"
+	definition := RequiredValueDefinition(name, oldName, shortName)
+
+	otherName := "other_name"
+	otherOldName := "experimental_other_name"
+	otherShortName := "o"
+	otherDefinition := RequiredValueDefinition(otherName, otherOldName, otherShortName)
+
+	opt, err := options.NewOption(name, nil, definition)
+	opt.SetValue(value)
+	opt = opt.Normalized()
+	require.NoError(t, err)
+	require.NotNil(t, opt)
+
+	requiredOpt, ok := opt.(*options.RequiredValueOption)
+	require.True(t, ok)
+	require.NotNil(t, requiredOpt)
+
+	clone := opt.Clone()
+	require.NotNil(t, clone)
+
+	requiredClone, ok := clone.(*options.RequiredValueOption)
+	require.True(t, ok)
+	require.NotNil(t, requiredClone)
+
+	assert.Equal(t, value, clone.GetValue())
+	assert.Equal(t, definition, requiredClone.Defined)
+	assert.True(t, clone.UsesName())
+	assert.True(t, requiredClone.Joined)
+
+	clone.SetValue(otherValue)
+	assert.Equal(t, value, opt.GetValue())
+	assert.Equal(t, otherValue, clone.GetValue())
+
+	requiredClone.Defined = otherDefinition
+	assert.Equal(t, definition, requiredOpt.Defined)
+	assert.Equal(t, otherDefinition, requiredClone.Defined)
+
+	clone.UseOldName()
+	assert.True(t, opt.UsesName())
+	assert.True(t, clone.UsesOldName())
+
+	requiredClone.Joined = false
+	assert.True(t, requiredOpt.Joined)
+}
+
+func TestExpansionOption(t *testing.T) {
+	e1e1b1Def := BoolOrEnumDefinition("e1e1b1", "", "")
+	e1e1b1Opt, err := options.NewOption(
+		e1e1b1Def.Name(), nil, e1e1b1Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e1e1b1Opt)
+
+	e1e1b2Def := BoolOrEnumDefinition("e1e1b2", "", "")
+	e1e1b2Opt, err := options.NewOption(
+		e1e1b2Def.Name(), nil, e1e1b2Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e1e1b2Opt)
+
+	e1e1Def := ExpansionDefinition("e1e1", "", "", options.WithExpansion(
+		e1e1b1Opt,
+		e1e1b2Opt,
+	))
+	e1e1Opt, err := options.NewOption(
+		e1e1Def.Name(), nil, e1e1Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e1e1Opt)
+
+	e1b1Def := BoolOrEnumDefinition("e1b1", "", "")
+	e1b1Opt, err := options.NewOption(
+		e1b1Def.Name(), nil, e1b1Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e1b1Opt)
+
+	e1b2Def := BoolOrEnumDefinition("e1b2", "", "")
+	e1b2Opt, err := options.NewOption(
+		e1b2Def.Name(), nil, e1b2Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e1b2Opt)
+
+	e1Def := ExpansionDefinition("e1", "", "", options.WithExpansion(
+		e1b1Opt,
+		e1e1Opt,
+		e1b2Opt,
+	))
+	e1Opt, err := options.NewOption(
+		e1Def.Name(), nil, e1Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e1Opt)
+
+	e2b1Def := BoolOrEnumDefinition("e2b1", "", "")
+	e2b1Opt, err := options.NewOption(
+		e2b1Def.Name(), nil, e2b1Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e2b1Opt)
+
+	e2Def := ExpansionDefinition("e2", "", "", options.WithExpansion(
+		e2b1Opt,
+	))
+	e2Opt, err := options.NewOption(
+		e2Def.Name(), nil, e2Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, e2Opt)
+
+	eb3Def := BoolOrEnumDefinition("eb3", "", "")
+	eb3Opt, err := options.NewOption(
+		eb3Def.Name(), nil, eb3Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, eb3Opt)
+
+	eb2Def := BoolOrEnumDefinition("eb2", "", "")
+	eb2Opt, err := options.NewOption(
+		eb2Def.Name(), nil, eb2Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, eb2Opt)
+
+	eb1Def := BoolOrEnumDefinition("eb1", "", "")
+	eb1Opt, err := options.NewOption(
+		eb1Def.Name(), nil, eb1Def,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, eb1Opt)
+
+	eDef := ExpansionDefinition("e", "", "", options.WithExpansion(
+		eb1Opt,
+		e1Opt,
+		eb2Opt,
+		eb3Opt,
+		e2Opt,
+		eb2Opt,
+	))
+	eOpt, err := options.NewOption(
+		eDef.Name(), nil, eDef,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, eOpt)
+
+	assert.Equal(
+		t,
+		[]options.Option{
+			eb1Opt,
+			e1b1Opt,
+			e1e1b1Opt,
+			e1e1b2Opt,
+			e1b2Opt,
+			eb2Opt,
+			eb3Opt,
+			e2b1Opt,
+			eb2Opt,
+		},
+		slices.Collect(options.ExpandAll(slices.Values([]options.Option{eOpt}))),
+	)
+
+	var truncated []options.Option
+	for o := range options.ExpandAll([]options.Option{eOpt}) {
+		if seq.Equal[string](o.Format(), e1e1b2Opt.Format()) {
+			break
+		}
+		truncated = append(truncated, o)
+	}
+
+	expected := slices.Collect(
+		seq.Fmap(
+			[]options.Option{
+				eb1Opt,
+				e1b1Opt,
+				e1e1b1Opt,
+			},
+			func(o options.Option) string {
+				return strings.Join(o.Format(), " ")
+			},
+		),
+	)
+	actual := slices.Collect(
+		seq.Fmap(
+			truncated,
+			func(o options.Option) string {
+				return strings.Join(o.Format(), " ")
+			},
+		),
+	)
+	assert.Equal(
+		t,
+		expected,
+		actual,
+	)
 }
