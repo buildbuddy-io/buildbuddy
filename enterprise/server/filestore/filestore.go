@@ -657,10 +657,10 @@ func (fs *fileStorer) FilePath(fileDir string, f *sgpb.StorageMetadata_FileMetad
 func (fs *fileStorer) fileKey(r *sgpb.FileRecord) (string, error) {
 	// This function cannot change without a data migration.
 	// filekeys look like this:
-	//   // {partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // {partitionID}/{groupID/ac|cas}/{hashPrefix:4}/{hash}
 	//   // for example:
 	//   //   PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
-	//   //   PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   PART123/cas/abcd/abcd12345asdasdasd123123123asdasdasd
 	partID, groupID, isolation, remoteInstanceHash, hash, err := fileRecordSegments(r)
 	if err != nil {
 		return "", err
@@ -682,10 +682,10 @@ func (fs *fileStorer) fileKey(r *sgpb.FileRecord) (string, error) {
 func blobKey(appName string, r *sgpb.FileRecord) ([]byte, error) {
 	// This function cannot change without a data migration.
 	// blobkeys look like this:
-	//   // {appName}/{partitionID}/{groupID}/{ac|cas}/{hashPrefix:4}/{hash}
+	//   // {appName}/{partitionID}/{groupID/ac|cas}/{hashPrefix:4}/{hash}
 	//   // for example:
 	//   //   buildbuddy-app-0/PART123/GR123/ac/44321/abcd/abcd12345asdasdasd123123123asdasdasd
-	//   //   buildbuddy-app-0/PART123/GR124/cas/abcd/abcd12345asdasdasd123123123asdasdasd
+	//   //   buildbuddy-app-0/PART123/cas/abcd/abcd12345asdasdasd123123123asdasdasd
 	if appName == "" {
 		return nil, status.FailedPreconditionErrorf("Invalid app name: %q (cannot be empty)", appName)
 	}
