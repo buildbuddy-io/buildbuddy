@@ -11,12 +11,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bazelbuild/bazel-gazelle/config"
-	"github.com/bazelbuild/bazel-gazelle/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/config"
+	"github.com/bazel-contrib/bazel-gazelle/v2/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/resolve"
+	"github.com/bazel-contrib/bazel-gazelle/v2/rule"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/bazelbuild/bazel-gazelle/repo"
-	"github.com/bazelbuild/bazel-gazelle/resolve"
-	"github.com/bazelbuild/bazel-gazelle/rule"
+
+	// TODO: remove once language.Language's Resolve takes the v2 RuleIndex.
+	resolvev1 "github.com/bazelbuild/bazel-gazelle/resolve"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/typescript/tsx"
@@ -194,7 +197,7 @@ func (t *TS) Embeds(r *rule.Rule, from label.Label) []label.Label {
 // language.GenerateResult.Imports. Resolve generates a "deps" attribute (or
 // the appropriate language-specific equivalent) for each import according to
 // language-specific rules and heuristics.
-func (t *TS) Resolve(c *config.Config, ix *resolve.RuleIndex, rc *repo.RemoteCache, r *rule.Rule, imports any, from label.Label) {
+func (t *TS) Resolve(c *config.Config, ix *resolvev1.RuleIndex, rc *repo.RemoteCache, r *rule.Rule, imports any, from label.Label) {
 	config := c.Exts[languageName].(tsConfig)
 	if config.Mode == disableMode {
 		return
