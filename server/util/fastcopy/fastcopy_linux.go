@@ -3,6 +3,7 @@
 package fastcopy
 
 import (
+	"fmt"
 	"os"
 
 	"golang.org/x/sys/unix"
@@ -46,7 +47,9 @@ func reflink(source, destination string) error {
 			os.Remove(destination)
 		}
 	}()
-
+	if *logReflinks {
+		fmt.Printf("reflinking %s -> %s\n", source, destination)
+	}
 	sourceConn, err := sourceFile.SyscallConn()
 	if err != nil {
 		return err
