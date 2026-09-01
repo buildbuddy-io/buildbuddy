@@ -478,6 +478,55 @@ func TestContainerImageNameRewrite(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			flags.Set(t, "executor.container_image_name_rewrites", tc.rewriteRules)
 			flags.Set(t, "executor.container_registry_region", "us-west1")
+			// Disable default rewrites so they don't interfere with explicit rule tests.
+			flags.Set(t, "executor.enable_default_image_rewrites", false)
+			result := containerImageName(tc.input)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
+
+func TestContainerImageNameRewrite_DefaultRules(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		defaultEnabled bool
+		input          string
+		expected       string
+	}{
+		{
+			name:           "default rules rewrite flame-public",
+			defaultEnabled: true,
+			input:          "docker://gcr.io/flame-public/my-image:latest",
+			expected:       "buildbuddy.bbcr.io/public/my-image:latest",
+		},
+		{
+			name:           "default rules disabled",
+			defaultEnabled: false,
+			input:          "docker://gcr.io/flame-public/my-image:latest",
+			expected:       "gcr.io/flame-public/my-image:latest",
+		},
+		{
+			name:           "default rules do not affect non-matching images",
+			defaultEnabled: true,
+			input:          "docker://gcr.io/my-project/my-image:latest",
+			expected:       "gcr.io/my-project/my-image:latest",
+		},
+		{
+			name:           "explicit rules take priority over default rules",
+			defaultEnabled: true,
+			input:          "docker://gcr.io/flame-public/my-image:latest",
+			expected:       "custom.registry.io/my-image:latest",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.enable_default_image_rewrites", tc.defaultEnabled)
+			if tc.name == "explicit rules take priority over default rules" {
+				flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{
+					{Prefix: "gcr.io/flame-public/", Replacement: "custom.registry.io/"},
+				})
+			} else {
+				flags.Set(t, "executor.container_image_name_rewrites", []ImageRewrite{})
+			}
 			result := containerImageName(tc.input)
 			assert.Equal(t, tc.expected, result)
 		})
