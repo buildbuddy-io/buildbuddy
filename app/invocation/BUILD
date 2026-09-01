@@ -493,6 +493,7 @@ ts_library(
         "//app/service:rpc_service",
         "//app/util:cache",
         "//app/util:exit_codes",
+        "//app/util:git",
         "//app/util:proto",
         "//app/util:shlex",
         "//proto:build_event_stream_ts_proto",
@@ -518,6 +519,7 @@ ts_jasmine_node_test(
         ":invocation_model",
         "//:node_modules/tslib",
         "//proto:build_event_stream_ts_proto",
+        "//proto:command_line_ts_proto",
         "//proto:invocation_ts_proto",
     ],
 )
