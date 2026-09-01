@@ -506,7 +506,11 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 				} else {
 					c.log.Warningf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
 					metrics.DistributedCacheReferenceWriteVerificationCount.With(
-						prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+						prometheus.Labels{
+							metrics.GroupID:                  groupIDForMetrics(ctx),
+							metrics.VerificationOutcomeLabel: VerificationError,
+							metrics.StatusHumanReadableLabel: codes.Unimplemented.String(),
+						}).Inc()
 				}
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
@@ -536,10 +540,17 @@ func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache
 // verifyReferenceWrite checks that dereferencing ref yields content that
 // hashes to rn's digest, and logs and counts the outcome.
 func (c *Proxy) verifyReferenceWrite(ctx context.Context, refCache interfaces.ReferenceCache, ref *refpb.Reference, rn *rspb.ResourceName) {
+	record := func(outcome string, code codes.Code) {
+		metrics.DistributedCacheReferenceWriteVerificationCount.With(
+			prometheus.Labels{
+				metrics.GroupID:                  groupIDForMetrics(ctx),
+				metrics.VerificationOutcomeLabel: outcome,
+				metrics.StatusHumanReadableLabel: code.String(),
+			}).Inc()
+	}
 	if rn.GetCacheType() != rspb.CacheType_CAS {
 		c.log.Errorf("Reference write verification is only supported for CAS cache type, got %q", rn.GetCacheType())
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+		record(VerificationError, codes.InvalidArgument)
 		return
 	}
 
@@ -549,8 +560,7 @@ func (c *Proxy) verifyReferenceWrite(ctx context.Context, refCache interfaces.Re
 	readCloser, err := refCache.Dereference(ctx, ref, identityRN, 0, 0)
 	if err != nil {
 		c.log.Errorf("Error dereferencing %q for write verification: %s", ResourceIsolationString(rn), err)
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+		record(VerificationError, gstatus.Code(err))
 		return
 	}
 	defer readCloser.Close()
@@ -559,18 +569,15 @@ func (c *Proxy) verifyReferenceWrite(ctx context.Context, refCache interfaces.Re
 	d, err := digest.Compute(readCloser, rn.GetDigestFunction())
 	if err != nil {
 		c.log.Errorf("Reference write verification error for %q: %s", ResourceIsolationString(rn), err)
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+		record(VerificationError, gstatus.Code(err))
 		return
 	}
 	if d.GetHash() != rn.GetDigest().GetHash() || d.GetSizeBytes() != rn.GetDigest().GetSizeBytes() {
 		c.log.Errorf("Reference write verification failed for %q: expected %s/%d, got %s/%d", ResourceIsolationString(rn), rn.GetDigest().GetHash(), rn.GetDigest().GetSizeBytes(), d.GetHash(), d.GetSizeBytes())
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationFailure}).Inc()
+		record(VerificationFailure, codes.Internal)
 		return
 	}
-	metrics.DistributedCacheReferenceWriteVerificationCount.With(
-		prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationSuccess}).Inc()
+	record(VerificationSuccess, codes.OK)
 }
 
 func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
