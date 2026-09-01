@@ -49,6 +49,7 @@ go_library(
         "//enterprise/server/remote_execution/vmexec_client",
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
+        "//enterprise/server/util/ext4writer",
         "//enterprise/server/util/oci",
         "//enterprise/server/util/vfs_server",
         "//enterprise/server/util/vsock",
