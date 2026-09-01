@@ -506,7 +506,11 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 				} else {
 					c.log.Warningf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
 					metrics.DistributedCacheReferenceWriteVerificationCount.With(
-						prometheus.Labels{metrics.VerificationOutcomeLabel: VerificationError}).Inc()
+						prometheus.Labels{
+							metrics.GroupID:                  groupIDForMetrics(ctx),
+							metrics.VerificationOutcomeLabel: VerificationError,
+							metrics.StatusHumanReadableLabel: codes.Unimplemented.String(),
+						}).Inc()
 				}
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)

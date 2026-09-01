@@ -35,7 +35,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -4096,8 +4095,8 @@ func setWriteReferenceExperiments(t *testing.T, writeReferences bool, verifyRefe
 
 func writeVerificationCounts(t *testing.T) map[string]float64 {
 	counts := map[string]float64{}
-	for _, s := range []string{distributed_client.VerificationSuccess, distributed_client.VerificationFailure, distributed_client.VerificationError} {
-		counts[s] = testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceWriteVerificationCount, prometheus.Labels{metrics.VerificationOutcomeLabel: s})
+	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceWriteVerificationCount) {
+		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
 	}
 	return counts
 }
