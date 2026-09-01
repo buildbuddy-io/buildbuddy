@@ -878,6 +878,18 @@ func recordReadResponseMetrics(responseType string, r *rspb.ResourceName) {
 		prometheus.Labels{metrics.DistributedCacheReadResponseType: responseType}).Add(float64(r.GetDigest().GetSizeBytes()))
 }
 
+// recordWriteRequestMetrics records that a peer write committed with its
+// payload sent as requestType ("reference" or "bytes") and the commit's
+// status code, attributing the written digest's size to it.
+func recordWriteRequestMetrics(requestType string, r *rspb.ResourceName, code codes.Code) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheWriteRequestType: requestType,
+		metrics.StatusHumanReadableLabel:         code.String(),
+	}
+	metrics.DistributedCacheWriteRequestCount.With(labels).Inc()
+	metrics.DistributedCacheWriteRequestSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
+}
+
 func (c *Proxy) dereference(ctx context.Context, peer string, ref *refpb.Reference, requested *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
 	if !ok {
@@ -1069,6 +1081,10 @@ type streamWriteCloser struct {
 	peer            string
 	handoffPeer     string
 	alreadyExists   bool
+	// requestType records how this write's payload is sent, for metrics:
+	// "reference" for a reference-only write, "bytes" otherwise (a reference
+	// bound late via SetReference rides along on a byte write).
+	requestType string
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
@@ -1116,6 +1132,19 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 }
 
 func (wc *streamWriteCloser) Commit() error {
+	err := wc.commit()
+	code := gstatus.Code(err)
+	if err == nil && wc.alreadyExists {
+		// The peer already had the blob and short-circuited the write.
+		// Callers see success, but record it under AlreadyExists so that
+		// status="OK" counts only blobs the peer actually stored.
+		code = codes.AlreadyExists
+	}
+	recordWriteRequestMetrics(wc.requestType, wc.r, code)
+	return err
+}
+
+func (wc *streamWriteCloser) commit() error {
 	if wc.alreadyExists {
 		return nil
 	}
@@ -1134,6 +1163,7 @@ func (wc *streamWriteCloser) Commit() error {
 	}
 	_, err := wc.closeAndRecv()
 	if status.IsAlreadyExistsError(err) {
+		wc.alreadyExists = true
 		return nil
 	}
 	if err != nil {
@@ -1212,6 +1242,10 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 		return nil, nil, err
 	}
 
+	requestType := "bytes"
+	if ref != nil {
+		requestType = "reference"
+	}
 	wc := &streamWriteCloser{
 		cancelFunc:      cancel,
 		sender:          rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
@@ -1220,6 +1254,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 		r:               r,
 		ref:             ref,
 		refMustBeCloned: refMustBeCloned,
+		requestType:     requestType,
 	}
 	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), wc, nil
 }
