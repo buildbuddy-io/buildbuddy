@@ -380,6 +380,8 @@ The following execution properties provide more customization.
   removes the limit on `/dev/shm` size. Note that `/dev/shm` memory usage always
   counts towards process memory and is subject to process memory constraints,
   regardless of this property's value.
+- `shm-exec`: for `oci` isolation, determines whether executables can be run
+  from `/dev/shm`. Available options are `true` and `false`. Defaults to `false`.
 
 The following properties apply to `oci`, `podman` and `docker` isolation,
 and are currently unsupported by `firecracker`. (The `docker` prefix is

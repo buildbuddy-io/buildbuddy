@@ -2457,6 +2457,46 @@ func TestShmSize(t *testing.T) {
 	assert.Empty(t, string(res.Stderr))
 	assert.Equal(t, 0, res.ExitCode)
 	assert.Contains(t, string(res.Stdout), "size=3108k")
+	assert.Contains(t, string(res.Stdout), "noexec")
+}
+
+func TestShmExec(t *testing.T) {
+	setupNetworking(t)
+	image := busyboxImage(t)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	installLeaserInEnv(t, env)
+	installFileCacheInEnv(t, env)
+	runtimeRoot := testfs.MakeTempDir(t)
+	flags.Set(t, "executor.oci.runtime_root", runtimeRoot)
+	buildRoot := testfs.MakeTempDir(t)
+	cacheRoot := testfs.MakeTempDir(t)
+	provider, err := ociruntime.NewProvider(env, buildRoot, cacheRoot)
+	require.NoError(t, err)
+	wd := testfs.MakeDirAll(t, buildRoot, "work")
+
+	// Opt into executing files from /dev/shm for this container.
+	c, err := provider.New(ctx, &container.Init{Props: &platform.Properties{
+		ContainerImage: image,
+		ShmExec:        true,
+	}})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		err := c.Remove(ctx)
+		require.NoError(t, err)
+	})
+
+	// Write an executable into /dev/shm and verify that the kernel allows it to
+	// run from the mount.
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `printf '#!/bin/sh\necho shm-exec-ok\n' > /dev/shm/test && chmod +x /dev/shm/test && /dev/shm/test`},
+	}
+	res := c.Run(ctx, cmd, wd, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assert.Empty(t, string(res.Stderr))
+	assert.Equal(t, 0, res.ExitCode)
+	assert.Equal(t, "shm-exec-ok\n", string(res.Stdout))
 }
 
 func TestCDIDevicesMountsFromCDISpec(t *testing.T) {
