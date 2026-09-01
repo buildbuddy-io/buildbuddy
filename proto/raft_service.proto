@@ -31,4 +31,9 @@ service Api {
 
   rpc CheckRangeOverlaps(raft.CheckRangeOverlapsRequest)
       returns (raft.CheckRangeOverlapsResponse);
+
+  // Raw key browse/query, used by the mdcli debug tool. These route
+  // through the store's Sender, so the caller needs no range/routing state.
+  rpc DebugGet(raft.DebugGetRequest) returns (raft.DebugGetResponse);
+  rpc DebugScan(raft.DebugScanRequest) returns (raft.DebugScanResponse);
 }

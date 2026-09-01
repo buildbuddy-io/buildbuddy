@@ -607,6 +607,17 @@ func (s *Store) queryForMetarange(ctx context.Context) {
 	}
 }
 func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
+	// GetRangeDebugInfo reads node-local raft state (leader/lease/membership),
+	// so it only works on a node that hosts the range. If this node doesn't,
+	// forward to a replica that does, so a caller connected to any single node
+	// (e.g. mdcli) can get debug info for any range. SkipForward bounds this to
+	// one hop.
+	if _, err := s.GetReplica(req.GetRangeId()); err != nil {
+		if req.GetSkipForward() {
+			return nil, err
+		}
+		return s.forwardGetRangeDebugInfo(ctx, req)
+	}
 	leaderID, term, valid, _ := s.nodeHost.GetLeaderID(req.GetRangeId())
 	lastReplicaIDKey := keys.MakeKey(constants.LastReplicaIDKeyPrefix, []byte(fmt.Sprintf("%d", req.GetRangeId())))
 	lastReplicaIDBytes, err := s.sender.DirectRead(ctx, lastReplicaIDKey)
@@ -665,6 +676,149 @@ func (s *Store) GetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugIn
 	}
 	rsp.Membership = membershipRsp
 	return rsp, nil
+}
+
+// forwardGetRangeDebugInfo forwards a GetRangeDebugInfo request to a replica
+// that hosts the range, for when the local node does not. It looks the range's
+// replicas up from the meta range and sets SkipForward so the target answers
+// locally rather than forwarding again.
+func (s *Store) forwardGetRangeDebugInfo(ctx context.Context, req *rfpb.GetRangeDebugInfoRequest) (*rfpb.GetRangeDebugInfoResponse, error) {
+	rds, err := s.sender.LookupRangeDescriptorsByIDs(ctx, []uint64{req.GetRangeId()})
+	if err != nil {
+		return nil, status.WrapErrorf(err, "failed to look up range %d in meta range", req.GetRangeId())
+	}
+	if len(rds) == 0 {
+		return nil, status.NotFoundErrorf("range %d not found", req.GetRangeId())
+	}
+	fwd := &rfpb.GetRangeDebugInfoRequest{RangeId: req.GetRangeId(), SkipForward: true}
+	var lastErr error
+	for _, replica := range rds[0].GetReplicas() {
+		if replica.GetNhid() == s.NHID() {
+			continue
+		}
+		c, err := s.apiClient.GetForReplica(ctx, replica)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		rsp, err := c.GetRangeDebugInfo(ctx, fwd)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return rsp, nil
+	}
+	if lastErr == nil {
+		lastErr = status.NotFoundErrorf("no reachable replica hosts range %d", req.GetRangeId())
+	}
+	return nil, status.WrapErrorf(lastErr, "failed to get debug info for range %d from any replica", req.GetRangeId())
+}
+
+// DebugGet reads a single raw key through the Sender, so the caller needs no
+// routing state. Used by the mdcli debug tool.
+func (s *Store) DebugGet(ctx context.Context, req *rfpb.DebugGetRequest) (*rfpb.DebugGetResponse, error) {
+	buf, err := s.sender.DirectRead(ctx, req.GetKey())
+	if err != nil {
+		return nil, err
+	}
+	return &rfpb.DebugGetResponse{
+		Kv: &rfpb.KV{
+			Key:   req.GetKey(),
+			Value: buf,
+		},
+	}, nil
+}
+
+const (
+	// defaultDebugScanPageSize bounds a DebugScan page when the caller passes
+	// no (or a non-positive) limit, so a scan never buffers a whole range.
+	defaultDebugScanPageSize = 1000
+	// maxDebugScanPageSize caps the per-page result count regardless of the
+	// requested limit.
+	maxDebugScanPageSize = 10000
+)
+
+// DebugScan does a forward, paginated raw key scan over [start, end) through
+// the Sender. Each call is bounded to the range that owns `start`; the returned
+// next_start cursor steps across range boundaries so repeated calls walk the
+// whole span. Reads are linearizable, matching DebugGet, so scan and get
+// present a consistent view. Used by the mdcli debug tool.
+func (s *Store) DebugScan(ctx context.Context, req *rfpb.DebugScanRequest) (*rfpb.DebugScanResponse, error) {
+	start := req.GetStart()
+	if len(start) == 0 {
+		// Empty start means "from the beginning of the routable keyspace",
+		// which is the meta range; LookupRangeDescriptor rejects an empty key.
+		start = constants.MetaRangePrefix
+	}
+	end := req.GetEnd()
+
+	limit := req.GetLimit()
+	if limit <= 0 {
+		limit = defaultDebugScanPageSize
+	}
+	if limit > maxDebugScanPageSize {
+		limit = maxDebugScanPageSize
+	}
+
+	// Bound the scan to the range that owns `start` so a single routed read
+	// stays within one range's keyspace. skipCache=true so the range end comes
+	// from a fresh descriptor: a stale cached descriptor from before a split
+	// would make the cursor jump past a newly-created range. This is
+	// best-effort — a split racing this call can still skip keys, which is
+	// acceptable for a browse tool.
+	rd, err := s.sender.LookupRangeDescriptor(ctx, start, true /*=skipCache*/)
+	if err != nil {
+		return nil, status.WrapErrorf(err, "failed to look up range for key %q", start)
+	}
+	rangeEnd := rd.GetEnd()
+	// rangeEnd bounds the current range; boundedByRange is true when the range
+	// ends before the caller's end (or the caller has no end).
+	boundedByRange := len(rangeEnd) > 0 && (len(end) == 0 || bytes.Compare(rangeEnd, end) < 0)
+	scanEnd := end
+	if boundedByRange {
+		scanEnd = rangeEnd
+	}
+
+	// Fetch one extra KV beyond the page so we can tell whether the range has
+	// more keys past this page without an empty round-trip at the range
+	// boundary.
+	scanReq := &rfpb.ScanRequest{
+		Start:    start,
+		End:      scanEnd,
+		ScanType: rfpb.ScanRequest_SEEKGE_SCAN_TYPE,
+		Limit:    limit + 1,
+	}
+	batch, err := rbuilder.NewBatchBuilder().Add(scanReq).ToProto()
+	if err != nil {
+		return nil, err
+	}
+	rsp, err := s.sender.SyncRead(ctx, start, batch)
+	if err != nil {
+		return nil, err
+	}
+	scanRsp, err := rbuilder.NewBatchResponseFromProto(rsp).ScanResponse(0)
+	if err != nil {
+		return nil, err
+	}
+	kvs := scanRsp.GetKvs()
+
+	// Compute the cursor. If we got the extra KV, the range has more keys past
+	// this page: trim to the page size and continue just past the last returned
+	// key (Next() == SEEKGT). Otherwise this range is exhausted for
+	// [start, scanEnd): step to the range end, unless the caller's end is
+	// reached.
+	var nextStart []byte
+	if int64(len(kvs)) > limit {
+		kvs = kvs[:limit]
+		nextStart = keys.Key(kvs[len(kvs)-1].GetKey()).Next()
+	} else if boundedByRange {
+		nextStart = rangeEnd
+	}
+
+	return &rfpb.DebugScanResponse{
+		Kvs:       kvs,
+		NextStart: nextStart,
+	}, nil
 }
 
 func (s *Store) AdminUpdateDescriptor(ctx context.Context, req *rfpb.AdminUpdateDescriptorRequest) (*rfpb.AdminUpdateDescriptorResponse, error) {
