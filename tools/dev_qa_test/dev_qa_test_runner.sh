@@ -16,6 +16,9 @@ extra_bazel_flags="${QA_EXTRA_BAZEL_FLAGS:-}"
 api_key="${BB_API_KEY:-}"
 bb_app_endpoint="${BB_APP_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 bb_grpc_endpoint="${BB_GRPC_ENDPOINT:-buildbuddy.buildbuddy.dev}"
+exec_platform="${QA_EXEC_PLATFORM:-@toolchains_buildbuddy//platforms:linux_x86_64}"
+cc_toolchain="${QA_CC_TOOLCHAIN-@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64}"
+jobs="${QA_JOBS:-100}"
 
 if [[ -z "${bazel}" ]]; then
   echo >&2 "ERROR: BIT_BAZEL_BINARY not set"
@@ -54,6 +57,13 @@ echo "Workspace: ${workspace_dir}"
 echo "Tarball URL: ${tarball_url}"
 echo "Strip prefix: ${strip_prefix}"
 echo "Bazel command: ${bazel_command}"
+echo "Execution platform: ${exec_platform}"
+if [[ -n "${cc_toolchain}" ]]; then
+  echo "C++ toolchain: ${cc_toolchain}"
+else
+  echo "C++ toolchain: auto-detected"
+fi
+echo "Jobs: ${jobs}"
 echo "Run ID: ${run_id}"
 echo "=================================================="
 
@@ -114,7 +124,7 @@ build:dev_qa_test --remote_executor=grpcs://${bb_grpc_endpoint}
 build:dev_qa_test --bes_backend=grpcs://${bb_grpc_endpoint}
 build:dev_qa_test --bes_results_url=https://${bb_app_endpoint}/invocation/
 build:dev_qa_test --remote_timeout=10m
-build:dev_qa_test --jobs=100
+build:dev_qa_test --jobs=${jobs}
 build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
 test:dev_qa_test --flaky_test_attempts=3
@@ -125,10 +135,12 @@ build:dev_qa_test --remote_instance_name=dev-qa-test/${run_id}
 build:dev_qa_test --modify_execution_info=.*=+no-remote-cache
 EOF
 
+if [[ -n "${cc_toolchain}" ]]; then
+  echo "build:dev_qa_test --extra_toolchains=${cc_toolchain}" >> .bazelrc
+fi
 cat >> .bazelrc <<EOF
-build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
-build:dev_qa_test --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-build:dev_qa_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+build:dev_qa_test --platforms=${exec_platform}
+build:dev_qa_test --extra_execution_platforms=${exec_platform}
 EOF
 
 if [[ -n "${api_key}" ]]; then
