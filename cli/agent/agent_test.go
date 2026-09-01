@@ -197,3 +197,20 @@ func TestFindSubcommand(t *testing.T) {
 		})
 	}
 }
+
+// TestRegisteredSubcommands checks the real subcommand table, which the tests
+// above replace with a fake subcommand.
+func TestRegisteredSubcommands(t *testing.T) {
+	for _, s := range subcommands {
+		t.Run(s.name, func(t *testing.T) {
+			require.NotEmpty(t, s.usage, "usage")
+			require.NotNil(t, s.flags, "flags")
+			require.NotNil(t, s.handler, "handler")
+
+			// Make sure the shared flags are mirrored onto every subcommand's flag set.
+			for _, name := range []string{"agent", "model", "effort", "target", "url"} {
+				assert.NotNil(t, s.flags.Lookup(name), "shared flag --%s", name)
+			}
+		})
+	}
+}

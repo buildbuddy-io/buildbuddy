@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
+	"github.com/buildbuddy-io/buildbuddy/cli/agent/analyze_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 )
@@ -14,6 +15,9 @@ const usage = `
 usage: bb agent <subcommand> [args]
 
 Runs an AI coding agent to analyze data.
+
+Subcommands:
+	analyze-profile   Analyzes the timing profile for an invocation.
 `
 
 // subcommand is a `bb agent` subcommand.
@@ -26,7 +30,14 @@ type subcommand struct {
 }
 
 var (
-	subcommands = []*subcommand{}
+	subcommands = []*subcommand{
+		{
+			name:    "analyze-profile",
+			usage:   analyze_profile.Usage,
+			flags:   analyze_profile.Flags,
+			handler: analyze_profile.HandleAnalyzeProfile,
+		},
+	}
 )
 
 // Mirror the common agent flags onto every subcommand's flag set, so that each
