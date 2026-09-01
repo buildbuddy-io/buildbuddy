@@ -1073,15 +1073,18 @@ var (
 	// references received alongside authoritative data bytes on distributed
 	// cache writes, by outcome: "success" (the dereferenced content hashed to
 	// the written digest), "failure" (the hashes differed), or "error"
-	// (verification could not be run or completed). Verification is
-	// observe-only and never affects the write itself.
+	// (verification could not be run or completed). The status label carries
+	// the gRPC code of the error that produced the outcome ("OK" on success).
+	// Verification is observe-only and never affects the write itself.
 	DistributedCacheReferenceWriteVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_reference_write_verification_count",
-		Help:      "Count of reference verifications on distributed cache writes, by outcome.",
+		Help:      "Count of reference verifications on distributed cache writes, by group, outcome, and error code.",
 	}, []string{
+		GroupID,
 		VerificationOutcomeLabel,
+		StatusHumanReadableLabel,
 	})
 
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
