@@ -9,7 +9,6 @@ go_library(
     deps = [
         "//cli/arg",
         "//cli/explain/compactgraph",
-        "//cli/explain/timing_profile",
         "//cli/flaghistory",
         "//cli/log",
         "//cli/login",
