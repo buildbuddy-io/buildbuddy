@@ -4,6 +4,8 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
+	"github.com/buildbuddy-io/buildbuddy/cli/agent"
+	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/box"
@@ -47,6 +49,12 @@ func register() {
 			Help:    "Adds a dependency to your WORKSPACE file.",
 			Handler: add.HandleAdd,
 			Flags:   add.Flags,
+		},
+		{
+			Name:    "agent",
+			Help:    "Runs an AI coding agent to analyze data.",
+			Handler: agent.HandleAgent,
+			Flags:   agentflags.SharedAgentFlags,
 		},
 		{
 			Name:    "analyze",

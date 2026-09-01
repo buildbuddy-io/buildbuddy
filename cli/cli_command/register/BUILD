@@ -9,6 +9,8 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//cli/add",
+        "//cli/agent",
+        "//cli/agent/agentflags",
         "//cli/analyze",
         "//cli/ask",
         "//cli/box",
