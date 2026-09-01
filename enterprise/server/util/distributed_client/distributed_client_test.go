@@ -2365,9 +2365,23 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		ref := makeReference(rn, "blobs/rpc-blob", repb.Compressor_IDENTITY)
 		require.NoError(t, te.GetCache().Set(ctx, rn, buf))
 		peer, cache, _ := newPeer(t)
+		dedupedLabels := prometheus.Labels{
+			metrics.DistributedCacheWriteRequestType: "reference",
+			metrics.StatusHumanReadableLabel:         "AlreadyExists",
+		}
+		okLabels := prometheus.Labels{
+			metrics.DistributedCacheWriteRequestType: "reference",
+			metrics.StatusHumanReadableLabel:         "OK",
+		}
+		beforeDeduped := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, dedupedLabels)
+		beforeOK := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, okLabels)
 		require.NoError(t, writeRef(t, peer, "", rn, ref, false))
 		_, gotRN, _ := cache.lastWriteReference()
 		require.Nil(t, gotRN)
+		// The deduped commit succeeds but is recorded under AlreadyExists,
+		// not OK.
+		require.Equal(t, beforeDeduped+1, testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, dedupedLabels))
+		require.Equal(t, beforeOK, testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, okLabels))
 	})
 
 	t.Run("handoff peer is propagated", func(t *testing.T) {
@@ -2394,9 +2408,17 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		cache.mu.Lock()
 		cache.writeRefErr = status.NotFoundError("backing object may have expired")
 		cache.mu.Unlock()
+		notFoundLabels := prometheus.Labels{
+			metrics.DistributedCacheWriteRequestType: "reference",
+			metrics.StatusHumanReadableLabel:         "NotFound",
+		}
+		before := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, notFoundLabels)
 		err := writeRef(t, peer, "", rn, ref, false)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		// The failed commit is counted under its status code.
+		after := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, notFoundLabels)
+		require.Equal(t, before+1, after)
 	})
 }
 

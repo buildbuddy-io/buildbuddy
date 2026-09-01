@@ -879,13 +879,15 @@ func recordReadResponseMetrics(responseType string, r *rspb.ResourceName) {
 }
 
 // recordWriteRequestMetrics records that a peer write committed with its
-// payload sent as requestType ("reference" or "bytes"), attributing the
-// written digest's size to it.
-func recordWriteRequestMetrics(requestType string, r *rspb.ResourceName) {
-	metrics.DistributedCacheWriteRequestCount.With(
-		prometheus.Labels{metrics.DistributedCacheWriteRequestType: requestType}).Inc()
-	metrics.DistributedCacheWriteRequestSizeBytes.With(
-		prometheus.Labels{metrics.DistributedCacheWriteRequestType: requestType}).Add(float64(r.GetDigest().GetSizeBytes()))
+// payload sent as requestType ("reference" or "bytes") and the commit's
+// status code, attributing the written digest's size to it.
+func recordWriteRequestMetrics(requestType string, r *rspb.ResourceName, code codes.Code) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheWriteRequestType: requestType,
+		metrics.StatusHumanReadableLabel:         code.String(),
+	}
+	metrics.DistributedCacheWriteRequestCount.With(labels).Inc()
+	metrics.DistributedCacheWriteRequestSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
 }
 
 func (c *Proxy) dereference(ctx context.Context, peer string, ref *refpb.Reference, requested *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
@@ -1131,9 +1133,14 @@ func (wc *streamWriteCloser) Write(data []byte) (int, error) {
 
 func (wc *streamWriteCloser) Commit() error {
 	err := wc.commit()
-	if err == nil {
-		recordWriteRequestMetrics(wc.requestType, wc.r)
+	code := gstatus.Code(err)
+	if err == nil && wc.alreadyExists {
+		// The peer already had the blob and short-circuited the write.
+		// Callers see success, but record it under AlreadyExists so that
+		// status="OK" counts only blobs the peer actually stored.
+		code = codes.AlreadyExists
 	}
+	recordWriteRequestMetrics(wc.requestType, wc.r, code)
 	return err
 }
 
@@ -1156,6 +1163,7 @@ func (wc *streamWriteCloser) commit() error {
 	}
 	_, err := wc.closeAndRecv()
 	if status.IsAlreadyExistsError(err) {
+		wc.alreadyExists = true
 		return nil
 	}
 	if err != nil {
