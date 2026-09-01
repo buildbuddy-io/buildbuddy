@@ -746,8 +746,8 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 		value = ""
 	}
 
-	// This insert bypasses gorm's BeforeCreate hook, so set the timestamps
-	// ourselves.
+	// Because this insert invokes Exec() directly, it bypasses gorm's
+	// BeforeCreate hook, so we need to set the timestamps explicitly.
 	nowUsec := d.clock.Now().UnixMicro()
 	ak.CreatedAtUsec = nowUsec
 	ak.UpdatedAtUsec = nowUsec
