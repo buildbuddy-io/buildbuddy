@@ -1006,26 +1006,76 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
+func (s *BuildBuddyServer) isOrgAdmin(ctx context.Context, groupID string) bool {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return false
+	}
+	return authutil.AuthorizeOrgAdmin(u, groupID) == nil
+}
+
+// displayName returns a human-readable name for the given user, or "" if the
+// user can't be looked up.
+func (s *BuildBuddyServer) displayName(ctx context.Context, userID string) string {
+	udb := s.env.GetUserDB()
+	if udb == nil || userID == "" {
+		return ""
+	}
+	u, err := udb.GetUserByIDWithoutAuthCheck(ctx, userID, &interfaces.GetUserOpts{})
+	if err != nil {
+		log.CtxWarningf(ctx, "Could not look up user %q: %s", userID, err)
+		return ""
+	}
+	if name := u.ToProto().GetName().GetFull(); name != "" {
+		return name
+	}
+	return u.Email
+}
+
+func (s *BuildBuddyServer) apiKeyCreationMetadata(ctx context.Context, k *tables.APIKey) string {
+	creator := s.displayName(ctx, k.CreatedByUserID)
+	createdAt := ""
+	if k.CreatedAtUsec != 0 {
+		createdAt = time.UnixMicro(k.CreatedAtUsec).UTC().Format("3:04PM January 2, 2006")
+	}
+	switch {
+	case creator != "" && createdAt != "":
+		return fmt.Sprintf("Created by %s at %s", creator, createdAt)
+	case creator != "":
+		return fmt.Sprintf("Created by %s", creator)
+	case createdAt != "":
+		return fmt.Sprintf("Created at %s", createdAt)
+	default:
+		return ""
+	}
+}
+
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetRequestContext().GetGroupId())
+	groupID := req.GetRequestContext().GetGroupId()
+	tableKeys, err := authDB.GetAPIKeys(ctx, groupID)
 	if err != nil {
 		return nil, err
 	}
+	includeCreationMetadata := s.isOrgAdmin(ctx, groupID)
 	rsp := &akpb.GetApiKeysResponse{
 		ApiKey: make([]*akpb.ApiKey, 0, len(tableKeys)),
 	}
 	for _, k := range tableKeys {
 		// API Key value must be retrieved via GetAPIKey API.
-		rsp.ApiKey = append(rsp.ApiKey, &akpb.ApiKey{
+		key := &akpb.ApiKey{
 			Id:                  k.APIKeyID,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
-		})
+		}
+		if includeCreationMetadata {
+			key.CreationMetadata = s.apiKeyCreationMetadata(ctx, k)
+		}
+		rsp.ApiKey = append(rsp.ApiKey, key)
 	}
 	return rsp, nil
 }

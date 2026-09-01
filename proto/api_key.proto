@@ -34,6 +34,10 @@ message ApiKey {
   // Optional certificate corresponding to this API key, if
   // requested.
   Certificate certificate = 8;
+
+  // Details about the creation of this API key. Only returned to organization
+  // administrators because it identifies an organization member.
+  string creation_metadata = 9;
 }
 
 message Certificate {
