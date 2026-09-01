@@ -70,7 +70,11 @@ __debug_*
 
 # Claude Code
 .claude
-CLAUDE.md
+CLAUDE.local.md
+
+# Codex
+# Note: this OVERRIDES contents of AGENTS.md
+AGENTS.override.md
 
 # Cursor
 .cursor
