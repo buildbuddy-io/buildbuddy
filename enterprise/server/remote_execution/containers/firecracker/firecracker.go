@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vmexec_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4writer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vfs_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/vsock"
@@ -88,6 +89,9 @@ var (
 	debugTerminal                         = flag.Bool("executor.firecracker_debug_terminal", false, "Run an interactive terminal in the Firecracker VM connected to the executor's controlling terminal. For debugging only.")
 	dieOnFirecrackerFailure               = flag.Bool("executor.die_on_firecracker_failure", false, "Makes the host executor process die if any command orchestrating or running Firecracker fails. Useful for capturing failures preemptively. WARNING: using this option MAY leave the host machine in an unhealthy state on Firecracker failure; some post-hoc cleanup may be necessary.")
 	workspaceDiskSlackSpaceMB             = flag.Int64("executor.firecracker_workspace_disk_slack_space_mb", 2_000, "Extra space to allocate to firecracker workspace disks, in megabytes. ** Experimental **")
+	workspaceImageWriter                  = flag.String("executor.firecracker_workspace_image_writer", "mke2fs", "How to build the per-action workspace ext4 image: 'mke2fs' (shell out to mke2fs -d) or 'native' (in-process ext4 writer; much faster for large input trees). 'native' additionally requires the "+NativeWorkspaceWriterExperiment+" experiment to be enabled for the task. ** Experimental **")
+	workspaceImageWriterConcurrency       = flag.Int("executor.firecracker_workspace_image_writer_concurrency", 0, "Number of parallel data-copy workers for the native workspace image writer (0 = min(8, NumCPU)).")
+	workspaceImageCopyMode                = flag.String("executor.firecracker_workspace_image_copy_mode", "cfr", "Data copy strategy for the native workspace image writer: 'cfr' (copy_file_range) or 'mmap'.")
 	healthCheckInterval                   = flag.Duration("executor.firecracker_health_check_interval", 10*time.Second, "How often to run VM health checks while tasks are executing.")
 	healthCheckTimeout                    = flag.Duration("executor.firecracker_health_check_timeout", 30*time.Second, "Timeout for VM health check requests.")
 	overprovisionCPUs                     = flag.Int("executor.firecracker_overprovision_cpus", 3, "Number of CPUs to overprovision for VMs. This allows VMs to more effectively utilize CPU resources on the host machine. Set to -1 to allow all VMs to use max CPU.")
@@ -1555,6 +1559,22 @@ func (c *FirecrackerContainer) resizeRootfs(ctx context.Context, cf *copy_on_wri
 	return nil
 }
 
+// NativeWorkspaceWriterExperiment gates the native (in-process) workspace
+// image writer. The native writer is only used when
+// --executor.firecracker_workspace_image_writer=native AND this experiment
+// name is present in the task's experiments (the app appends it when the
+// experiment flag of the same name evaluates to true). If either is missing,
+// the executor falls back to mke2fs.
+const NativeWorkspaceWriterExperiment = "executor.firecracker_native_workspace_writer"
+
+// useNativeWorkspaceImageWriter returns whether the native in-process ext4
+// writer should be used to build this task's workspace image. Requires both
+// the executor flag and the task-level experiment.
+func (c *FirecrackerContainer) useNativeWorkspaceImageWriter() bool {
+	return *workspaceImageWriter == "native" &&
+		slices.Contains(c.task.GetExperiments(), NativeWorkspaceWriterExperiment)
+}
+
 // createWorkspaceImage creates a new ext4 image from the action working dir.
 func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspaceDir, ext4ImagePath string) error {
 	ctx, span := tracing.StartSpan(ctx)
@@ -1566,6 +1586,33 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	if err := os.RemoveAll(ext4ImagePath); err != nil {
 		return status.WrapError(err, "failed to delete existing workspace disk image")
 	}
+	switch *workspaceImageWriter {
+	case "native", "mke2fs":
+	default:
+		return status.InvalidArgumentErrorf("invalid --executor.firecracker_workspace_image_writer %q (want native or mke2fs)", *workspaceImageWriter)
+	}
+	if c.useNativeWorkspaceImageWriter() {
+		stats, err := ext4writer.DirectoryToImage(ctx, workspaceDir, ext4ImagePath, &ext4writer.Options{
+			SlackBytes:  ext4.MinDiskImageSizeBytes + *workspaceDiskSlackSpaceMB*1e6,
+			Concurrency: *workspaceImageWriterConcurrency,
+			CopyMode:    *workspaceImageCopyMode,
+		})
+		if err != nil {
+			return status.WrapError(err, "failed to convert workspace dir to ext4 image (native writer)")
+		}
+		log.CtxDebugf(ctx, "Native workspace image writer: %s", stats)
+		span.SetAttributes(
+			attribute.String("workspace_image_writer", "native"),
+			attribute.Int64("walk_ms", stats.WalkDuration.Milliseconds()),
+			attribute.Int64("layout_ms", stats.LayoutDuration.Milliseconds()),
+			attribute.Int64("metadata_ms", stats.MetadataDuration.Milliseconds()),
+			attribute.Int64("data_copy_ms", stats.DataDuration.Milliseconds()),
+			attribute.Int64("data_bytes", stats.DataBytes),
+			attribute.Int64("files", int64(stats.Files)),
+		)
+		return nil
+	}
+	span.SetAttributes(attribute.String("workspace_image_writer", "mke2fs"))
 	workspaceSizeBytes, err := ext4.DiskSizeBytes(ctx, workspaceDir)
 	if err != nil {
 		return err

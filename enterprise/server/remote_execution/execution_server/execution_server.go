@@ -969,6 +969,14 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
 	}
 
+	// Native firecracker workspace image writer rollout: executors only use
+	// the native writer for a task when this experiment name is present on
+	// the task AND the executor is running with
+	// --executor.firecracker_workspace_image_writer=native.
+	if efp != nil && efp.Boolean(ctx, "executor.firecracker_native_workspace_writer", false) {
+		executionTask.Experiments = append(executionTask.Experiments, "executor.firecracker_native_workspace_writer")
+	}
+
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
