@@ -301,6 +301,12 @@ func distributedCacheRow() *dashboard.RowBuilder {
 			"request_type",
 			"buildbuddy_remote_cache_distributed_cache_write_request_count",
 			"buildbuddy_remote_cache_distributed_cache_write_request_size_bytes")).
+		WithPanel(ts("Read and Write Errors by Status", dash.UnitRequestsPerSec).
+			Description("Distributed cache peer reads and writes that did not succeed. Writes deduped by the peer report \"AlreadyExists\" and are counted as successes, not errors.").
+			Legend(rightLegend()).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (status, response_type) (rate(buildbuddy_remote_cache_distributed_cache_read_response_count{region="${region}", job="buildbuddy-app", status!="OK"}[${window}]))`, "read {{response_type}} {{status}}").RefId("A")).
+			WithTarget(dash.PromQuery(`sum by (status, request_type) (rate(buildbuddy_remote_cache_distributed_cache_write_request_count{region="${region}", job="buildbuddy-app", status!~"OK|AlreadyExists"}[${window}]))`, "write {{request_type}} {{status}}").RefId("B"))).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
 			Legend(rightLegend()).
