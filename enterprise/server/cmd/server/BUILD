@@ -199,7 +199,6 @@ image_layer(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
-    compress = "gzip",
     # Do not include runfiles so that we can separate configuration files out
     # into a separate layer. This lets us use a base image without those files
     # when building our production images.
@@ -215,7 +214,6 @@ pkg_tar(
     ],
     include_runfiles = True,
     package_dir = APP_PACKAGE_ROOT,
-    portable_mtime = False,
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
@@ -233,7 +231,10 @@ layer_from_tar(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
-    compress = "gzip",
+    optimize = select({
+        "//:opt": True,
+        "//conditions:default": False,
+    }),
     tags = ["manual"],
 )
 
@@ -304,6 +305,10 @@ layer_from_tar(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
+    optimize = select({
+        "//:opt": True,
+        "//conditions:default": False,
+    }),
     tags = ["manual"],
 )
 
@@ -337,6 +342,8 @@ image_load(
     # with the expected digest.
     daemon = "containerd",
     image = ":image_manifest",
-    tag = "buildbuddy_image:latest",
+    registry = "buildbuddy.io",
+    repository = "enterprise/app",
+    tag = "latest",
     tags = ["manual"],
 )

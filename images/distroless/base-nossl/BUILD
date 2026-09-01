@@ -39,7 +39,10 @@ package(default_visibility = ["//visibility:public"])
             ),
             "org.opencontainers.image.vendor": "BuildBuddy",
         },
-        compress = "gzip",
+        optimize = select({
+            "//:opt": True,
+            "//conditions:default": False,
+        }),
         tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
@@ -97,6 +100,8 @@ image_load(
     # with the expected digest.
     daemon = "containerd",
     image = ":index",  # References an image_index
-    tag = "bb-distroless_base-nossl:latest",
+    registry = "buildbuddy.io",
+    repository = "distroless/base-nossl",
+    tag = "latest",
     tags = ["manual"],
 )
