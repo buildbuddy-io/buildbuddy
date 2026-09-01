@@ -76,6 +76,14 @@ const (
 	CachedActionExecUsec
 	UncachedActionExecUsec
 
+	// Exec metrics are a subset of the upload and download stats above.
+	ExecDownloadSizeBytes
+	ExecUploadSizeBytes
+	ExecDownloadTransferredSizeBytes
+	ExecUploadTransferredSizeBytes
+	ExecDownloadUsec
+	ExecUploadUsec
+
 	// New counter types go here!
 )
 
@@ -125,6 +133,18 @@ func counterField(actionCache bool, ct counterType) string {
 		return "compressed-download-size-bytes"
 	case UploadTransferredSizeBytes:
 		return "compressed-upload-size-bytes"
+	case ExecDownloadSizeBytes:
+		return "exec-download-size-bytes"
+	case ExecUploadSizeBytes:
+		return "exec-upload-size-bytes"
+	case ExecDownloadTransferredSizeBytes:
+		return "exec-compressed-download-size-bytes"
+	case ExecUploadTransferredSizeBytes:
+		return "exec-compressed-upload-size-bytes"
+	case ExecDownloadUsec:
+		return "exec-download-usec"
+	case ExecUploadUsec:
+		return "exec-upload-usec"
 	case DownloadUsec:
 		return "download-usec"
 	case UploadUsec:
@@ -631,6 +651,26 @@ func (t *transferTimer) Record(bytesTransferred int64, duration time.Duration, c
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(compressedSizeCounter), bytesTransferred); err != nil {
 		return err
 	}
+
+	if h.requestMetadata.GetExecutorDetails().GetExecutorHostId() != "" {
+		execSizeCounter := ExecDownloadSizeBytes
+		execCompressedSizeCounter := ExecDownloadTransferredSizeBytes
+		execTimeCounter := ExecDownloadUsec
+		if t.sizeCounter == UploadSizeBytes {
+			execSizeCounter = ExecUploadSizeBytes
+			execCompressedSizeCounter = ExecUploadTransferredSizeBytes
+			execTimeCounter = ExecUploadUsec
+		}
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(execSizeCounter), t.d.GetSizeBytes()); err != nil {
+			return err
+		}
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(execCompressedSizeCounter), bytesTransferred); err != nil {
+			return err
+		}
+		if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(execTimeCounter), duration.Microseconds()); err != nil {
+			return err
+		}
+	}
 	if err := h.c.IncrementCount(h.ctx, h.counterKey(), h.counterField(t.timeCounter), duration.Microseconds()); err != nil {
 		return err
 	}
@@ -869,6 +909,12 @@ func CollectCacheStats(ctx context.Context, env environment.Env, iid string) *ca
 	cs.TotalUploadSizeBytes = counts[counterField(false, UploadSizeBytes)]
 	cs.TotalDownloadTransferredSizeBytes = counts[counterField(false, DownloadTransferredSizeBytes)]
 	cs.TotalUploadTransferredSizeBytes = counts[counterField(false, UploadTransferredSizeBytes)]
+	cs.ExecDownloadSizeBytes = counts[counterField(false, ExecDownloadSizeBytes)]
+	cs.ExecUploadSizeBytes = counts[counterField(false, ExecUploadSizeBytes)]
+	cs.ExecDownloadTransferredSizeBytes = counts[counterField(false, ExecDownloadTransferredSizeBytes)]
+	cs.ExecUploadTransferredSizeBytes = counts[counterField(false, ExecUploadTransferredSizeBytes)]
+	cs.ExecDownloadUsec = counts[counterField(false, ExecDownloadUsec)]
+	cs.ExecUploadUsec = counts[counterField(false, ExecUploadUsec)]
 	cs.TotalDownloadUsec = counts[counterField(false, DownloadUsec)]
 	cs.TotalUploadUsec = counts[counterField(false, UploadUsec)]
 
