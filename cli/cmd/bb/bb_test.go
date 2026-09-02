@@ -16,9 +16,6 @@ import (
 var bbRunfilePath string
 
 func TestStartupDoesNotQueryTerminal(t *testing.T) {
-	// No explicit deadline here: cold-starting the CLI binary can take
-	// several seconds on loaded machines, so rely on the test timeout to
-	// catch hangs. t.Context() kills the subprocess on cleanup.
 	// version --cli exits without starting Bazel, but it still imports the CLI
 	// command registry and the UI package, covering package-level initialization.
 	cmd := exec.CommandContext(t.Context(), testfs.RunfilePath(t, bbRunfilePath), "version", "--cli")
