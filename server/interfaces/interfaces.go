@@ -1173,6 +1173,20 @@ type TaskSizer interface {
 	// scheduledSize is the size the task was scheduled with, and
 	// observedMemoryBytes is the memory usage observed by the OOM killer.
 	UpdateForOOM(ctx context.Context, cmd *repb.Command, props *platform.Properties, scheduledSize *scpb.TaskSize, observedMemoryBytes int64) error
+
+	// UnusedInputsForTask returns, for a task about to be dispatched, the
+	// digest of the CAS blob listing the input files that a previous execution
+	// of the command did not open while running on a VFS-backed workspace (see
+	// ExecutionTask.vfs_unused_inputs_digest), or nil if none is stored, and
+	// whether the executor should record the inputs the task leaves unopened.
+	// Both are unset when the store is disabled or the task does not prefetch
+	// used inputs.
+	UnusedInputsForTask(ctx context.Context, cmd *repb.Command, props *platform.Properties) (*repb.Digest, bool)
+
+	// UpdateUnusedInputsDigest records the digest of the unused inputs blob that
+	// an execution of the command produced, replacing any previously recorded
+	// digest. Nothing is recorded for tasks that do not prefetch used inputs.
+	UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, props *platform.Properties, d *repb.Digest) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata
@@ -1372,6 +1386,11 @@ type CommandResult struct {
 	// InputFetchMetadata describes which action inputs were fetched from
 	// remote CAS while preparing or serving the workspace.
 	InputFetchMetadata *espb.InputFetchMetadata
+
+	// VfsUnusedInputsDigest is the digest of the CAS blob listing the action
+	// inputs that the command did not open while running on a VFS-backed
+	// workspace. Only set if the task tracks unused inputs.
+	VfsUnusedInputsDigest *repb.Digest
 
 	// VMMetadata associated with the VM that ran the task, if applicable.
 	VMMetadata *fcpb.VMMetadata

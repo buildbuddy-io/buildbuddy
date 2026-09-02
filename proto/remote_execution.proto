@@ -2727,6 +2727,29 @@ message ExecutionTask {
   RequestMetadata request_metadata = 9;
   repeated string experiments = 10;
   FastCdc2020Params fast_cdc_2020_params = 11;
+
+  // The digest of a CAS blob listing the input files that a previous
+  // execution of this task's command did not open while running on a
+  // VFS-backed workspace, if known. The blob holds the input root-relative
+  // paths of the unopened files, sorted, joined with newlines, and then
+  // zstd-compressed, and is stored under this task's instance name and digest
+  // function. Files are identified by path rather than by digest or by
+  // position in the tree so that the list stays valid across source edits,
+  // which change file contents and shift tree positions but rarely change
+  // which paths an action reads. Only set for tasks whose vfs-prefetch-mode
+  // platform property is "used". When set, the executor prefetches every
+  // input except the listed files, which are fetched on demand if the action
+  // opens them after all. Listing the unopened files rather than the opened
+  // ones means that files added since the previous execution are prefetched,
+  // since whether the action needs them is unknown.
+  Digest vfs_unused_inputs_digest = 12;
+
+  // Whether the executor should record the input files this task leaves
+  // unopened and report the digest of the resulting list, in the format
+  // above, in its execution metadata. Set by the app for tasks whose
+  // vfs-prefetch-mode platform property is "used" while the app stores such
+  // lists, so that executors record nothing when the feature is disabled.
+  bool track_vfs_unused_inputs = 13;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well
@@ -2794,6 +2817,13 @@ message VfsStats {
 
   // The total size of CAS files in the filesystem that were actually accessed.
   int64 cas_files_accessed_bytes = 7;
+
+  // The number of CAS files that the action opened but the prefetch left
+  // out, so that they were fetched on demand. Files evicted from the file
+  // cache after being prefetched are also fetched on demand but are not
+  // counted here, so this isolates the misses caused by leaving previously
+  // unused inputs out of the prefetch.
+  int64 prefetch_miss_count = 8;
 }
 
 // Compute usage sampled throughout a task's execution.

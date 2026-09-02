@@ -468,9 +468,10 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		metrics.VFSCASFilesAccessedCount.Add(float64(vs.CasFilesAccessedCount))
 		metrics.VFSCASFilesSizeBytes.Add(float64(vs.CasFilesSizeBytes))
 		metrics.VFSCASFilesAccessedBytes.Add(float64(vs.CasFilesAccessedBytes))
-		log.CtxInfof(ctx, "VFS CAS inputs used count %d/%d (%.2f) used size %s/%s (%.2f)",
+		log.CtxInfof(ctx, "VFS CAS inputs used count %d/%d (%.2f) used size %s/%s (%.2f) prefetch misses %d",
 			vs.CasFilesAccessedCount, vs.CasFilesCount, float64(vs.CasFilesAccessedCount)/float64(vs.CasFilesCount),
-			units.HumanSize(float64(vs.CasFilesAccessedBytes)), units.HumanSize(float64(vs.CasFilesSizeBytes)), float64(vs.CasFilesAccessedBytes)/float64(vs.CasFilesSizeBytes))
+			units.HumanSize(float64(vs.CasFilesAccessedBytes)), units.HumanSize(float64(vs.CasFilesSizeBytes)), float64(vs.CasFilesAccessedBytes)/float64(vs.CasFilesSizeBytes),
+			vs.PrefetchMissCount)
 	}
 
 	if cmdResult.ExitCode != 0 {
@@ -499,6 +500,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
 	auxMetadata.InputFetchDetailedStats = cmdResult.InputFetchMetadata
+	auxMetadata.VfsUnusedInputsDigest = cmdResult.VfsUnusedInputsDigest
 	auxMetadata.VmMetrics = cmdResult.VMMetrics
 
 	// Note: we continue to upload outputs, stderr, etc. below even if

@@ -1021,6 +1021,14 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Platform overrides applied above can switch a task to the "used" VFS
+	// prefetch mode, so decide from the effective properties.
+	if effectiveProps, err := platform.ParseProperties(executionTask); err != nil {
+		log.CtxWarningf(ctx, "Failed to parse effective platform properties: %s", err)
+	} else {
+		executionTask.VfsUnusedInputsDigest, executionTask.TrackVfsUnusedInputs = s.taskSizer.UnusedInputsForTask(ctx, command, effectiveProps)
+	}
+
 	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
@@ -1712,6 +1720,9 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
+		if err := s.taskSizer.UpdateUnusedInputsDigest(ctx, cmd, properties, auxMeta.GetVfsUnusedInputsDigest()); err != nil {
+			log.CtxWarningf(ctx, "Failed to update unused inputs: %s", err)
 		}
 	} else if details, ok := oom.DetailsFromError(execErr); ok {
 		// The task was killed by the executor OOM killer. Record a higher memory

@@ -332,6 +332,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		OutputDirectories:  r.task.GetCommand().GetOutputDirectories(),
 		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
 		OutputPaths:        r.task.GetCommand().GetOutputPaths(),
+		TrackUnusedInputs:  r.task.GetTrackVfsUnusedInputs(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
@@ -481,6 +482,11 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		}
 		if stats := r.Workspace.ComputeVFSStats(); stats != nil {
 			res.VfsStats = stats
+		}
+		if d, err := r.Workspace.VFSUnusedInputsDigest(); err != nil {
+			log.CtxWarningf(ctx, "Failed to record VFS unused inputs: %s", err)
+		} else if d != nil {
+			res.VfsUnusedInputsDigest = d
 		}
 	}()
 
