@@ -198,18 +198,19 @@ func (t *NoOpTransferTimer) Record(bytesTransferred int64, duration time.Duratio
 }
 
 type HitTrackerClient struct {
-	ctx             context.Context
-	enqueueFn       func(context.Context, *hitpb.CacheHit)
-	client          hitpb.HitTrackerServiceClient
-	requestMetadata *repb.RequestMetadata
-	cacheType       rspb.CacheType
+	ctx                    context.Context
+	enqueueFn              func(context.Context, *hitpb.CacheHit)
+	client                 hitpb.HitTrackerServiceClient
+	requestMetadata        *repb.RequestMetadata
+	executedActionMetadata *repb.ExecutedActionMetadata
+	cacheType              rspb.CacheType
 }
 
-// TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/4875) Implement
 func (h *HitTrackerClient) SetExecutedActionMetadata(md *repb.ExecutedActionMetadata) {
-	// This is used to track action durations and is not used for non-RBE executions.
-	// Currently skip-remote behavior is not used for RBE, so do nothing in this case.
+	// Attach the metadata to reported hits so the backend records cached
+	// execution duration usage for AC hits served without consulting it.
 	if proxy_util.SkipRemote(h.ctx) {
+		h.executedActionMetadata = md
 		return
 	}
 	// By default, AC hit tracking should be handled by the remote cache.
@@ -306,6 +307,9 @@ type TransferTimer struct {
 	client           hitpb.HitTrackerServiceClient
 	cacheType        rspb.CacheType
 	cacheRequestType capb.RequestType
+	// onClose is called with the hit before it is enqueued, to attach fields
+	// that may only be known after the timer starts.
+	onClose func(*hitpb.CacheHit)
 }
 
 func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTransferredClient int64, compressor repb.Compressor_Value, serverLabel string) error {
@@ -320,12 +324,23 @@ func (t *TransferTimer) CloseWithBytesTransferred(bytesTransferredCache, bytesTr
 		Duration:         durationpb.New(time.Since(t.start)),
 		CacheRequestType: t.cacheRequestType,
 	}
+	if t.onClose != nil {
+		t.onClose(hit)
+	}
 	t.enqueueFn(t.ctx, hit)
 	return nil
 }
 
 func (t *TransferTimer) Record(bytesTransferred int64, duration time.Duration, compressor repb.Compressor_Value) error {
 	return status.InternalError("Unxpected call to hit_tracker_client.Record()")
+}
+
+// attachExecutedActionMetadata copies the client's executed action metadata
+// onto the hit. It runs when a transfer timer closes because the metadata may
+// only be set after the timer starts (e.g. GetActionResult tracks the download
+// before fetching the ActionResult that carries the metadata).
+func (h *HitTrackerClient) attachExecutedActionMetadata(hit *hitpb.CacheHit) {
+	hit.ExecutedActionMetadata = h.executedActionMetadata
 }
 
 func (h *HitTrackerClient) TrackDownload(digest *repb.Digest) interfaces.TransferTimer {
@@ -338,6 +353,7 @@ func (h *HitTrackerClient) TrackDownload(digest *repb.Digest) interfaces.Transfe
 		client:           h.client,
 		cacheType:        h.cacheType,
 		cacheRequestType: capb.RequestType_READ,
+		onClose:          h.attachExecutedActionMetadata,
 	}
 }
 
@@ -352,6 +368,7 @@ func (h *HitTrackerClient) TrackUpload(digest *repb.Digest) interfaces.TransferT
 			client:           h.client,
 			cacheType:        h.cacheType,
 			cacheRequestType: capb.RequestType_WRITE,
+			onClose:          h.attachExecutedActionMetadata,
 		}
 	}
 	// If writes hit the backing cache, it will handle hit tracking.
