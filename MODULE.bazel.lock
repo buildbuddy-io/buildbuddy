@@ -937,13 +937,13 @@
     "@@toolchains_buildbuddy+//:extensions.bzl%buildbuddy": {
       "general": {
         "bzlTransitiveDigest": "lWa6Z0bfkK+GLxGpbRuJ/rFqT50PcvllkL8aIGUpSc4=",
-        "usagesDigest": "0aqGArWWoTiJTvk7EUVZOtOj+zrO+Ns5dO+UJ8AHFvg=",
+        "usagesDigest": "8/KE2qqH9tCyyG1SrEetb86YjMxaTzx7ysvgHvTfSTo=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "buildbuddy_toolchain": {
             "repoRuleId": "@@toolchains_buildbuddy+//:rules.bzl%_buildbuddy_toolchain",
             "attributes": {
-              "container_image": "gcr.io/flame-public/rbe-ubuntu20-04:latest",
+              "container_image": "docker://buildpack-deps@sha256:fa56fe73b4475655b2f39d6376b6a6664d24b5c43227f709d4a923609f3286a1",
               "llvm": false,
               "java_version": "",
               "gcc_version": "",
