@@ -32,12 +32,12 @@ var (
 )
 
 const (
-	blobOutputFilePath          = "_bb_ociregistry_blob_"
-	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
-	blobInstanceName            = interfaces.OCIImageInstanceNamePrefix
+	blobOutputFilePath         = "_bb_ociregistry_blob_"
+	blobMetadataOutputFilePath = "_bb_ociregistry_blob_metadata_"
+	blobInstanceName           = interfaces.OCIImageInstanceNamePrefix
 	// BlobInstanceName is the remote instance name under which OCI blobs are
 	// stored in the CAS.
-	BlobInstanceName = blobInstanceName
+	BlobInstanceName            = blobInstanceName
 	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
 
 	maxManifestSize = 10000000

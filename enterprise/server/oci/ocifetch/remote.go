@@ -6,6 +6,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	"google.golang.org/protobuf/proto"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -78,28 +79,35 @@ func (u *RemoteFetcherUpstream) BlobMetadata(ctx context.Context, ref ctrname.Di
 	return &ctr.Descriptor{Digest: h, Size: resp.GetSize(), MediaType: types.MediaType(resp.GetMediaType())}, nil
 }
 
-// Blob opens a FetchBlob stream. The remote service does not report a size or
-// media type on the stream, so the returned descriptor only carries
-// opts.SizeBytes; callers that need the size and do not know it should call
-// BlobMetadata first.
+// Blob opens a FetchBlob stream, forwarding the size and media type hints
+// when the caller has them. The stream itself carries no size or media type,
+// so the returned descriptor only echoes the hints; callers that need the
+// size and do not have it should call BlobMetadata first.
 func (u *RemoteFetcherUpstream) Blob(ctx context.Context, ref ctrname.Digest, creds *rgpb.Credentials, opts Options) (io.ReadCloser, *ctr.Descriptor, error) {
 	h, err := blobHash(ref)
 	if err != nil {
 		return nil, nil, err
 	}
-	// A cancellable context lets Close abort the stream if the caller does
-	// not read to EOF.
-	ctx, cancel := context.WithCancel(ctx)
-	stream, err := u.client.FetchBlob(ctx, &ofpb.FetchBlobRequest{
+	req := &ofpb.FetchBlobRequest{
 		Ref:            ref.String(),
 		Credentials:    creds,
 		BypassRegistry: opts.BypassRegistry,
-	})
+	}
+	if opts.SizeBytes > 0 {
+		req.Size = proto.Int64(opts.SizeBytes)
+	}
+	if opts.MediaType != "" {
+		req.MediaType = proto.String(opts.MediaType)
+	}
+	// A cancellable context lets Close abort the stream if the caller does
+	// not read to EOF.
+	ctx, cancel := context.WithCancel(ctx)
+	stream, err := u.client.FetchBlob(ctx, req)
 	if err != nil {
 		cancel()
 		return nil, nil, err
 	}
-	return &streamReader{stream: stream, cancel: cancel}, &ctr.Descriptor{Digest: h, Size: opts.SizeBytes}, nil
+	return &streamReader{stream: stream, cancel: cancel}, &ctr.Descriptor{Digest: h, Size: opts.SizeBytes, MediaType: types.MediaType(opts.MediaType)}, nil
 }
 
 // streamReader adapts a FetchBlob stream to an io.ReadCloser.

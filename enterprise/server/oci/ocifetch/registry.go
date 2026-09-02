@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	ctrname "github.com/google/go-containerregistry/pkg/name"
@@ -143,10 +144,9 @@ func (u *RegistryUpstream) BlobMetadata(ctx context.Context, ref ctrname.Digest,
 	})
 }
 
-// Blob opens the blob. When opts.SizeBytes is set it is used as the size;
-// otherwise the size is looked up (one HEAD). Size and media type are
-// best-effort: if either is unavailable the blob is still returned with the
-// corresponding descriptor field zero.
+// Blob opens the blob. The returned descriptor carries opts.SizeBytes and
+// the layer media type; Blob makes no request of its own to learn the size,
+// so callers that need it and do not have it should call BlobMetadata first.
 func (u *RegistryUpstream) Blob(ctx context.Context, ref ctrname.Digest, creds *rgpb.Credentials, opts Options) (io.ReadCloser, *ctr.Descriptor, error) {
 	if opts.BypassRegistry {
 		return nil, nil, bypassError("blob", ref)
@@ -155,26 +155,19 @@ func (u *RegistryUpstream) Blob(ctx context.Context, ref ctrname.Digest, creds *
 	if err != nil {
 		return nil, nil, err
 	}
-	// All HTTP-triggering calls (Size, Compressed) must be inside the retry
-	// scope so that token refresh covers them, not just the lazy Layer()
-	// reference creation. Size is fetched before Compressed so that there is
-	// no open ReadCloser to leak if it fails and triggers a retry.
-	desc := &ctr.Descriptor{Digest: h, Size: opts.SizeBytes}
+	desc := &ctr.Descriptor{Digest: h, Size: opts.SizeBytes, MediaType: types.MediaType(opts.MediaType)}
+	// Compressed is the HTTP-triggering call, so it must be inside the retry
+	// scope for token refresh to cover it.
 	rc, err := withPullerRetry(ctx, u, ref, creds, func(puller *remote.Puller) (io.ReadCloser, error) {
 		layer, err := puller.Layer(ctx, ref)
 		if err != nil {
 			return nil, err
 		}
-		if mt, err := layer.MediaType(); err != nil {
-			log.CtxWarningf(ctx, "Could not get media type for layer %s: %s", ref, err)
-		} else {
-			desc.MediaType = mt
-		}
-		if desc.Size == 0 {
-			if sz, err := layer.Size(); err != nil {
-				log.CtxWarningf(ctx, "Could not get size for layer %s: %s", ref, err)
+		if desc.MediaType == "" {
+			if mt, err := layer.MediaType(); err != nil {
+				log.CtxWarningf(ctx, "Could not get media type for layer %s: %s", ref, err)
 			} else {
-				desc.Size = sz
+				desc.MediaType = mt
 			}
 		}
 		return layer.Compressed()

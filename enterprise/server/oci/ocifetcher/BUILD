@@ -22,7 +22,10 @@ go_library(
 
 go_test(
     name = "ocifetcher_test",
-    srcs = ["ocifetcher_test.go"],
+    srcs = [
+        "ocifetcher_test.go",
+        "proxy_test.go",
+    ],
     deps = [
         ":ocifetcher",
         "//enterprise/server/oci/ocicache",
@@ -49,5 +52,7 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

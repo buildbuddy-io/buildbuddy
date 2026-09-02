@@ -114,7 +114,9 @@ func RegisterProxyServer(env *real_environment.RealEnv) error {
 
 // FetchBlob streams an OCI blob from the store if present, otherwise from
 // upstream, writing it to the store at the same time. Concurrent requests
-// for the same blob share one upstream fetch.
+// for the same blob share one upstream fetch. The optional size and
+// media_type fields let a caller that has the manifest descriptor skip the
+// store's metadata lookup; they are hints for addressing the store only.
 //
 // Requests may have a bypass_registry flag set. Server admins can bypass the
 // registry: the blob is streamed from the store if present, and FetchBlob
@@ -130,6 +132,8 @@ func (s *ociFetcherServer) FetchBlob(req *ofpb.FetchBlobRequest, stream ofpb.OCI
 	}
 	_, err = s.fetcher.FetchBlob(ctx, &grpcStreamWriter{stream: stream}, digestRef, req.GetCredentials(), ocifetch.Options{
 		BypassRegistry: req.GetBypassRegistry(),
+		SizeBytes:      req.GetSize(),
+		MediaType:      req.GetMediaType(),
 	})
 	return err
 }

@@ -51,11 +51,13 @@ type Options struct {
 	// so that the fetcher on the far side applies the same rule.
 	BypassRegistry bool
 
-	// SizeBytes is the blob's size when the caller already knows it from a
-	// manifest descriptor, and 0 when unknown. It is only used to address the
-	// cache; it is never treated as proof that the blob exists or that the
-	// caller may access it.
+	// SizeBytes and MediaType describe the blob when the caller already knows
+	// them from a manifest descriptor; zero when unknown. They are only used
+	// to address the cache and to write the cache metadata row; they are
+	// never treated as proof that the blob exists or that the caller may
+	// access it.
 	SizeBytes int64
+	MediaType string
 }
 
 // Upstream is where content comes from when the Store does not have it.
@@ -285,15 +287,36 @@ func (f *Fetcher) FetchBlob(ctx context.Context, w io.Writer, ref ctrname.Digest
 func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctrname.Digest, h ctr.Hash, creds *rgpb.Credentials, opts Options) (int64, error) {
 	repo := ref.Context()
 
-	size, mediaType := opts.SizeBytes, ""
+	// The Store addresses blobs by digest and size, so learn the size: from
+	// the caller, else from the Store's metadata row, else from the Upstream.
+	size, mediaType := opts.SizeBytes, opts.MediaType
 	if size == 0 {
 		md, err := f.store.BlobMetadata(ctx, repo, h)
 		if err == nil {
-			size, mediaType = md.GetContentLength(), md.GetContentType()
+			size = md.GetContentLength()
+			if mediaType == "" {
+				mediaType = md.GetContentType()
+			}
 		} else if !status.IsNotFoundError(err) {
-			log.CtxWarningf(ctx, "Error reading blob metadata %s@%s from cache; falling back to upstream: %s", repo, h, err)
+			log.CtxWarningf(ctx, "Error reading blob metadata %s@%s from cache: %s", repo, h, err)
 		}
 	}
+	if size == 0 {
+		desc, err := f.upstream.BlobMetadata(ctx, ref, creds, opts)
+		if err == nil {
+			f.addProof(repo, creds)
+			size = desc.Size
+			if mediaType == "" {
+				mediaType = string(desc.MediaType)
+			}
+		} else if isAccessError(err) {
+			// The blob fetch would fail the same way; do not try it.
+			return 0, err
+		} else {
+			log.CtxWarningf(ctx, "Error fetching blob metadata %s@%s from upstream; the blob will be streamed without caching: %s", repo, h, err)
+		}
+	}
+
 	if size > 0 {
 		// Cached bytes may exist. Prove that the caller may access the
 		// repository before serving any of them.
@@ -316,18 +339,9 @@ func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctr
 		}
 	}
 
-	// Miss. The Store needs the size to address the blob, so learn it from
-	// the Upstream first when nobody told us. This also proves access.
-	if size == 0 {
-		desc, err := f.upstream.BlobMetadata(ctx, ref, creds, opts)
-		if err != nil {
-			return 0, err
-		}
-		f.addProof(repo, creds)
-		size, mediaType = desc.Size, string(desc.MediaType)
-	}
+	// Miss: stream from the Upstream and write through to the Store.
 	upstreamOpts := opts
-	upstreamOpts.SizeBytes = size
+	upstreamOpts.SizeBytes, upstreamOpts.MediaType = size, mediaType
 	rc, desc, err := f.upstream.Blob(ctx, ref, creds, upstreamOpts)
 	if err != nil {
 		return 0, err
@@ -343,7 +357,6 @@ func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctr
 		}
 	}
 	if size <= 0 {
-		log.CtxWarningf(ctx, "Blob %s@%s has unknown size; streaming without caching", repo, h)
 		if _, err := io.Copy(cw, rc); err != nil {
 			return 0, status.WrapError(err, "stream blob")
 		}
@@ -361,6 +374,12 @@ func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctr
 		return 0, err
 	}
 	return size, nil
+}
+
+// isAccessError reports whether err means the upstream will not serve the
+// repository to this caller at all, as opposed to a transient failure.
+func isAccessError(err error) bool {
+	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsNotFoundError(err)
 }
 
 // copyThrough copies upstream to both the caller and the Store. A failure to

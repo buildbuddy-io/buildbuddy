@@ -830,9 +830,9 @@ func TestResolve_WithCache(t *testing.T) {
 				// layer contents.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":             1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/latest":              1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_image/manifests/latest":                 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/manifests/" + imageDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_image/blobs/" + layerDigest.String():     1,
 				}
 				resolveAndCheck(t, tc, te, imageAddress, expected, counter)
 
@@ -875,24 +875,21 @@ func TestResolve_WithCache(t *testing.T) {
 				indexAddress := registry.ImageAddress(tc.args.imageName + "_index")
 				imageDigest, err := pushedImage.Digest()
 				require.NoError(t, err)
-				pushedLayers, err := pushedImage.Layers()
-				require.NoError(t, err)
-				require.Len(t, pushedLayers, 1)
-				layerDigest, err := pushedLayers[0].Digest()
+				indexDigest, err := index.Digest()
 				require.NoError(t, err)
 
-				// Initially, nothing is cached, and we expect to make requests
-				// to resolve the manifest, as well as to fetch the manifest and
-				// layer contents. Note that we have one more GET request here
-				// compared to the non-index manifest case, since the index
-				// manifest points to the platform-specific image manifest.
+				// Initially, the index and image manifests are not cached, and
+				// we expect to make requests to resolve the tag and to fetch
+				// both manifests. The HEAD on the tag proves access to the
+				// repository, so the child manifest needs no HEAD of its own.
+				// The layer is the same blob that the "_image" repository above
+				// already put in the CAS, and its digest and size come from the
+				// manifest, so it is served from the CAS without a GET.
 				expected := map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/latest":                   1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String():  1,
-					http.MethodGet + " /v2/" + tc.args.imageName + "_index/blobs/" + layerDigest.String():      1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + indexDigest.String(): 1,
+					http.MethodGet + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -902,8 +899,7 @@ func TestResolve_WithCache(t *testing.T) {
 				// digest.
 				expected = map[string]int{
 					http.MethodGet + " /v2/": 1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest":                  1,
-					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/" + imageDigest.String(): 1,
+					http.MethodHead + " /v2/" + tc.args.imageName + "_index/manifests/latest": 1,
 				}
 				resolveAndCheck(t, tc, te, indexAddress, expected, counter)
 
@@ -1019,14 +1015,18 @@ func TestResolve_Concurrency(t *testing.T) {
 
 	configDigest, err := pushedImage.ConfigName()
 	require.NoError(t, err)
+	pushedDigest, err := pushedImage.Digest()
+	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
+	// The tag is resolved with a HEAD, the manifest is fetched by that digest,
+	// and every blob (config included) is fetched with the size from its
+	// manifest descriptor, so no blob needs a HEAD.
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":                  1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/" + pushedDigest.String(): 1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():     1,
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
@@ -1403,8 +1403,8 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, pushedDigest.String(), resolvedDigest.DigestStr())
 
+	// The puller (and its /v2/ ping) is reused across resolutions.
 	expectedRefresh := map[string]int{
-		http.MethodGet + " /v2/":                                    1,
 		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
 	}
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
@@ -1683,11 +1683,15 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 				require.NoError(t, err)
 				// With OCIFetcher, fetching the config blob uses FetchBlob which:
 				// - Reuses the puller from Resolve() (no additional GET /v2/)
-				// - Makes a HEAD request for the config blob to get size for caching
-				// - Makes a GET request for the config blob data
-				expected = map[string]int{
-					http.MethodHead + " /v2/" + nameToResolve + "/blobs/" + configDigest.String(): 1,
-					http.MethodGet + " /v2/" + nameToResolve + "/blobs/" + configDigest.String():  1,
+				// - Sends the size from the manifest descriptor, so the server
+				//   needs no HEAD request for the config blob
+				// - Makes a GET request for the config blob data, unless the
+				//   blob is already in the CAS: the "_index" repository shares
+				//   its config blob with the "_image" repository resolved
+				//   just before it.
+				expected = map[string]int{}
+				if nameToResolve == tc.args.imageName+"_image" {
+					expected[http.MethodGet+" /v2/"+nameToResolve+"/blobs/"+configDigest.String()] = 1
 				}
 
 				// To make the DiffID() request counts always be zero,
@@ -1744,25 +1748,27 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 
 	configDigest, err := pushedImage.ConfigName()
 	require.NoError(t, err)
+	pushedDigest, err := pushedImage.Digest()
+	require.NoError(t, err)
 
 	imageAddress := registry.ImageAddress(imageName + "_image")
 	// With OCIFetcher, there are:
 	// - 1 GET /v2/: From OCIFetcher server (puller is cached after first request)
 	// - 1 HEAD manifest: From FetchManifest (which does HEAD before GET)
 	//   Note: We skip the separate FetchManifestMetadata call when using OCIFetcher
-	// - 1 GET manifest
-	// - 1 HEAD + 1 GET for config blob
-	// - 1 HEAD + 1 GET for each layer blob (HEAD is for getting size for caching)
+	// - 1 GET manifest, by the digest the HEAD resolved
+	// - 1 GET for the config blob and for each layer blob. The executor sends
+	//   the size from the manifest descriptor with each FetchBlob, so the
+	//   server needs no HEAD to learn it, and access was proven by the
+	//   manifest HEAD.
 	expected := map[string]int{
 		http.MethodGet + " /v2/": 1,
-		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":               1,
-		http.MethodGet + " /v2/" + imageName + "_image/manifests/latest":                1,
-		http.MethodHead + " /v2/" + imageName + "_image/blobs/" + configDigest.String(): 1,
-		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():  1,
+		http.MethodHead + " /v2/" + imageName + "_image/manifests/latest":                  1,
+		http.MethodGet + " /v2/" + imageName + "_image/manifests/" + pushedDigest.String(): 1,
+		http.MethodGet + " /v2/" + imageName + "_image/blobs/" + configDigest.String():     1,
 	}
 	for digest := range pushedDigestToFiles {
 		expected[http.MethodGet+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
-		expected[http.MethodHead+" /v2/"+imageName+"_image/blobs/"+digest.String()] = 1
 	}
 	counter.Reset()
 	c := &claims.Claims{UserID: "US123"}

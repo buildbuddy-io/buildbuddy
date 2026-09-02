@@ -95,12 +95,14 @@ type image struct {
 
 var _ ctr.Image = (*image)(nil)
 
-func (i *image) Digest() (ctr.Hash, error)               { return i.desc.Digest, nil }
-func (i *image) RawManifest() ([]byte, error)            { return i.rawManifest, nil }
-func (i *image) MediaType() (types.MediaType, error)     { return i.desc.MediaType, nil }
-func (i *image) Size() (int64, error)                    { return i.desc.Size, nil }
-func (i *image) RawConfigFile() ([]byte, error)          { return i.rawConfigOnce() }
-func (i *image) Manifest() (*ctr.Manifest, error)        { return ctr.ParseManifest(bytes.NewReader(i.rawManifest)) }
+func (i *image) Digest() (ctr.Hash, error)           { return i.desc.Digest, nil }
+func (i *image) RawManifest() ([]byte, error)        { return i.rawManifest, nil }
+func (i *image) MediaType() (types.MediaType, error) { return i.desc.MediaType, nil }
+func (i *image) Size() (int64, error)                { return i.desc.Size, nil }
+func (i *image) RawConfigFile() ([]byte, error)      { return i.rawConfigOnce() }
+func (i *image) Manifest() (*ctr.Manifest, error) {
+	return ctr.ParseManifest(bytes.NewReader(i.rawManifest))
+}
 func (i *image) ConfigFile() (*ctr.ConfigFile, error) {
 	raw, err := i.RawConfigFile()
 	if err != nil {
@@ -183,6 +185,7 @@ func (l *layer) Compressed() (io.ReadCloser, error) {
 	opts := l.image.opts
 	if l.desc != nil {
 		opts.SizeBytes = l.desc.Size
+		opts.MediaType = string(l.desc.MediaType)
 	}
 	ctx, cancel := context.WithCancel(l.image.ctx)
 	pr, pw := io.Pipe()
