@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1496,7 +1497,7 @@ func groupID(ctx context.Context, env environment.Env) (string, error) {
 func containerImageSnapshotKey(instanceName, imageRef string) *fcpb.SnapshotKeySet {
 	return &fcpb.SnapshotKeySet{BranchKey: &fcpb.SnapshotKey{
 		InstanceName:      instanceName,
-		ConfigurationHash: hashStrings("__UnpackContainerImage", imageRef),
+		ConfigurationHash: hashStrings("__UnpackContainerImage", runtime.GOOS, runtime.GOARCH, imageRef),
 	}}
 }
 
