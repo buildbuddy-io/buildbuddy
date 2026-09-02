@@ -28,7 +28,7 @@ go_library(
 
 go_test(
     name = "grpc_client_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "grpc_client_internal_test.go",
         "grpc_client_test.go",
@@ -37,10 +37,14 @@ go_test(
     deps = [
         "//proto:ping_service_go_proto",
         "//server/environment",
+        "//server/metrics",
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/util/grpc_server",
+        "//server/util/status",
         "//server/util/testing/flags",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -209,7 +209,7 @@ func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCac
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
 		if err := client.Check(ctx); err != nil {
-			return nil, status.UnavailableErrorf("no connections to peer %q are ready: ", peer, err)
+			return nil, status.UnavailableErrorf("no connections to peer %q are ready: %v", peer, err)
 		}
 		return dcpb.NewDistributedCacheClient(client), nil
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -45,6 +46,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
+	dto "github.com/prometheus/client_model/go"
 )
 
 // spyCache records the resource compressor passed to Reader/GetMulti so tests
@@ -2256,4 +2258,92 @@ func TestVerifyingReadCloser(t *testing.T) {
 		require.Equal(t, data, got)
 		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, counted)
 	})
+}
+
+// pendingRPCSeriesByPool returns, for each pool id, the number of series in
+// the PendingClientRPCsPerConnection gauge vec that carry the given target
+// label. A series persists at value 0 after its RPC finishes, so this observes
+// which pools ever carried an RPC to the target — and, since ClientConnPool
+// deletes its series on Close, which pools have been closed.
+func pendingRPCSeriesByPool(t *testing.T, target string) map[string]int {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		metrics.PendingClientRPCsPerConnection.Collect(ch)
+		close(ch)
+	}()
+	counts := make(map[string]int)
+	for m := range ch {
+		d := &dto.Metric{}
+		require.NoError(t, m.Write(d))
+		labels := make(map[string]string, len(d.GetLabel()))
+		for _, lp := range d.GetLabel() {
+			labels[lp.GetName()] = lp.GetValue()
+		}
+		if labels[metrics.GRPCTargetLabel] == target {
+			counts[labels[metrics.GRPCPoolIDLabel]]++
+		}
+	}
+	return counts
+}
+
+func onlyPoolID(t *testing.T, series map[string]int) string {
+	require.Len(t, series, 1)
+	for id := range series {
+		return id
+	}
+	return ""
+}
+
+func TestCloseInactiveClients(t *testing.T) {
+	ctx := context.Background()
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Two peers, plus a local proxy that holds client pools to them.
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	p1 := distributed_client.New(te, te.GetCache(), peer1)
+	require.NoError(t, p1.StartListening())
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	p2 := distributed_client.New(te, te.GetCache(), peer2)
+	require.NoError(t, p2.StartListening())
+	waitUntilServerIsAlive(peer1)
+	waitUntilServerIsAlive(peer2)
+	local := distributed_client.New(te, te.GetCache(), fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+
+	// The gauge's target label is the dial target, which prefixes the peer.
+	target1 := "grpc://" + peer1
+	target2 := "grpc://" + peer2
+
+	rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+	_, err = local.RemoteContains(ctx, peer1, rn)
+	require.NoError(t, err)
+	_, err = local.RemoteContains(ctx, peer2, rn)
+	require.NoError(t, err)
+	pool1 := onlyPoolID(t, pendingRPCSeriesByPool(t, target1))
+	pool2 := onlyPoolID(t, pendingRPCSeriesByPool(t, target2))
+
+	// Keep only peer1: peer2's pool must be closed (observable through its
+	// metric series being deleted) and peer1's left alone.
+	local.CloseInactiveClients(set.From(peer1))
+	require.Equal(t, pool1, onlyPoolID(t, pendingRPCSeriesByPool(t, target1)))
+	require.Empty(t, pendingRPCSeriesByPool(t, target2))
+
+	// The surviving pool still works.
+	_, err = local.RemoteContains(ctx, peer1, rn)
+	require.NoError(t, err)
+	require.Equal(t, pool1, onlyPoolID(t, pendingRPCSeriesByPool(t, target1)))
+
+	// A removed peer is re-dialed on demand, creating a fresh pool; the closed
+	// pool's series must not come back.
+	_, err = local.RemoteContains(ctx, peer2, rn)
+	require.NoError(t, err)
+	require.NotEqual(t, pool2, onlyPoolID(t, pendingRPCSeriesByPool(t, target2)))
+
+	// An update in which every dialed peer is still active closes nothing.
+	local.CloseInactiveClients(set.From(peer1, peer2))
+	_, err = local.RemoteContains(ctx, peer1, rn)
+	require.NoError(t, err)
+	_, err = local.RemoteContains(ctx, peer2, rn)
+	require.NoError(t, err)
 }
