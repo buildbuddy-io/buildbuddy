@@ -1571,6 +1571,11 @@ func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspa
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
+	start := time.Now()
+	defer func() {
+		c.observeStageDuration("create_workspace_image", time.Since(start))
+	}()
+
 	// The existing workspace disk may still be mounted in the VM, so we unlink
 	// it then create a new file rather than overwriting the existing file
 	// to avoid corruption.
@@ -1941,6 +1946,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "copyOutputsToWorkspace took %s", time.Since(start))
+		c.observeStageDuration("copy_outputs", time.Since(start))
 	}()
 	if exists, err := disk.FileExists(ctx, workspaceExt4Path); err != nil || !exists {
 		return status.FailedPreconditionErrorf("workspacefs path %q not found", workspaceExt4Path)
