@@ -170,20 +170,23 @@ PR base branch `users-api`:
    The `users-api` and `main` branch snapshots will not be
    affected.
 
+For more technical details on our VM implementation, see our BazelCon
+talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
+
 ##### The universal snapshot
 
 The universal snapshot exists so that repos which never run on their default
 branch still have something to resume from. Without it, every new PR branch
 boots a VM from scratch.
 
-**NOTE:** We strongly recommend triggering a remote run on every push to the default branch to improve performance. See [Optimal usage of remote runners](#optimal-usage-of-remote-runners). The universal snapshot can be helpful as a fallback,
-but performance will not be as good.
-
 Resuming from the universal snapshot is enabled by default. To opt out, set the
 `allow-universal-snapshot=false` platform property.
 
-For more technical details on our VM implementation, see our BazelCon
-talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
+**NOTE:** We strongly recommend triggering a remote run on every push to the default branch to improve performance. See [Optimal usage of remote runners](#optimal-usage-of-remote-runners). The universal snapshot can be helpful as a fallback,
+but performance will not be as good.
+
+When `allow-universal-snapshot=true` and `remote-snapshot-save-policy=none-available`,
+runs won't write remote snapshots if a universal snapshot is available.
 
 #### Recommended configuration
 
@@ -257,7 +260,8 @@ Valid values are:
     snapshot. It will not resume from the second run of the `my-feature` branch, and
     it will not save a snapshot.
 - `none-available`: A snapshot on a non-default ref will only be saved if
-  there are no snapshots available. If there is any fallback snapshot,
+  there are no snapshots available. If there is any fallback snapshot (including the
+  [universal snapshot](#the-universal-snapshot)),
   a snapshot will not be saved. All runs on default refs will still save a snapshot.
   - Every run on the default branch (Ex. `main` or `master`) will save a snapshot.
   - For the first run on your feature branch `my-feature`, if there is snapshot

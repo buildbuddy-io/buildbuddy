@@ -1508,6 +1508,8 @@ func TestFirecracker_SnapshotSharing_UniversalFallback(t *testing.T) {
 
 func TestFirecracker_SnapshotSharing_UniversalFallback_SavePolicy(t *testing.T) {
 	// Disable local snapshot sharing with filecache to simplify the setup.
+	// We're testing remote cache behavior, so there's no need to also write snapshots to the local filecache,
+	// especially because we'd need to clear it to guarantee we're hitting the remote cache.
 	flags.Set(t, "executor.enable_local_snapshot_sharing", false)
 
 	for _, tc := range []struct {

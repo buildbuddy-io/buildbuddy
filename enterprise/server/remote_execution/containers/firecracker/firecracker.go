@@ -1199,7 +1199,7 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 			return true
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
-		age := c.env.GetClock().Now().Sub(snapshotLastSavedTime.AsTime())
+		age := c.env.GetClock().Since(snapshotLastSavedTime.AsTime())
 		if age > minWriteDuration {
 			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 			return true
@@ -1249,7 +1249,7 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 			return true
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
-		age := c.env.GetClock().Now().Sub(snapshotLastSavedTime.AsTime())
+		age := c.env.GetClock().Since(snapshotLastSavedTime.AsTime())
 		if age > minWriteDuration {
 			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 			return true
@@ -3695,6 +3695,7 @@ func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, load
 	}
 	return loader.ValidateSnapshot(ctx, manifest, key, opts, true /*isRemote*/, isFallback)
 }
+
 func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
 	_, err := loader.GetLocalManifest(ctx, key, c.supportsRemoteSnapshots)
 	return err == nil
