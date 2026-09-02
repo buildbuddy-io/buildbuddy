@@ -259,10 +259,10 @@ func run() error {
 }
 
 func k8sContext(namespace string) string {
-	if strings.Contains(namespace, "dev") {
-		return "gke_flame-build_us-west1_dev-nv8eh"
+	if strings.Contains(namespace, "prod") {
+		return "gke_flame-build_us-west1_prod-hs6in"
 	}
-	return "gke_flame-build_us-west1_prod-hs6in"
+	return "gke_flame-build_us-west1_dev-nv8eh"
 }
 
 func getSecret(secret string) ([]byte, error) {
