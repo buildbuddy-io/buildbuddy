@@ -94,6 +94,55 @@ func TestRelay_ConnectByName(t *testing.T) {
 	require.Equal(t, want, string(got))
 }
 
+func TestRelay_PeerRemovalClosesConnection(t *testing.T) {
+	// A client that vanishes (laptop asleep, network gone) never closes its
+	// relay connection, and the gVisor side of the relay has no keepalive, so
+	// the gateway removing the peer is the only signal the relay gets. Stand
+	// in an upstream that never sends and never closes on its own: without
+	// that signal, the relay would hold this connection open forever.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	upstreamDone := make(chan error, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			upstreamDone <- err
+			return
+		}
+		defer c.Close()
+		_, err = c.Read(make([]byte, 1))
+		upstreamDone <- err
+	}()
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupRelayGateway(t, ta)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	peer := testgateway.RegisterAndConnect(t, gw, ctx, "net1", "")
+
+	conn, err := dialRelay(t, peer, "localhost", ln.Addr().(*net.TCPAddr).Port)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	select {
+	case err := <-upstreamDone:
+		t.Fatalf("upstream connection ended before the peer was removed: %v", err)
+	default:
+	}
+
+	// Drop the peer without closing the relay connection.
+	peer.Disconnect()
+
+	select {
+	case err := <-upstreamDone:
+		require.ErrorIs(t, err, io.EOF, "the relay should close its upstream connection")
+	case <-time.After(30 * time.Second):
+		t.Fatal("upstream connection was not closed after the peer was removed")
+	}
+}
+
 func TestRelay_NotComposedMeansNoListener(t *testing.T) {
 	// A gateway that does not compose the relay (the customer-facing shape)
 	// must not have a relay listener at all.

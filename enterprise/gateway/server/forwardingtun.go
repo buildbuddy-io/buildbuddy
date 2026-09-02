@@ -16,6 +16,7 @@ package server
 // hub services answer them rather than forwarding (see hub.go).
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/netip"
@@ -116,7 +117,7 @@ func (t *muxTUN) unregisterIP(addr netip.Addr) {
 // startNetworkServices creates a gVisor stack for the network at index and
 // starts each composed hub service on its hub IP. networkKey is used for
 // logging only.
-func (t *muxTUN) startNetworkServices(index int, networkKey string, services []HubService, lookupName func(string) (netip.Addr, bool)) error {
+func (t *muxTUN) startNetworkServices(index int, networkKey string, services []HubService, lookupName func(string) (netip.Addr, bool), peerContext func(netip.Addr) (context.Context, bool)) error {
 	hubIP := networkHubIP(index)
 
 	opts := stack.Options{
@@ -151,10 +152,11 @@ func (t *muxTUN) startNetworkServices(index int, networkKey string, services []H
 	ns.notifyHandle = ep.AddNotify(ns)
 
 	hub := &HubNetwork{
-		IP:         hubIP,
-		NetworkKey: networkKey,
-		LookupName: lookupName,
-		stack:      s,
+		IP:          hubIP,
+		NetworkKey:  networkKey,
+		LookupName:  lookupName,
+		PeerContext: peerContext,
+		stack:       s,
 	}
 	for _, svc := range services {
 		closer, err := svc.Start(hub)

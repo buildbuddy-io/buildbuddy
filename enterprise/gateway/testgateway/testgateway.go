@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -57,6 +58,11 @@ type Peer struct {
 	GatewayIP    netip.Addr // the network's hub IP, where hub services listen
 	AssignedName string
 	SessionID    string
+	// Disconnect closes the peer's Connect stream, as if its gRPC connection
+	// had dropped, and returns once the gateway has removed the
+	// registration. The peer's WireGuard device is left running, so from the
+	// gateway's point of view the client simply went dark.
+	Disconnect func()
 }
 
 // sessionCounter generates unique session IDs for peers.
@@ -86,7 +92,7 @@ func RegisterAndConnectWithSessionID(t testing.TB, gw *server.Gateway, ctx conte
 	privKey, err := wgkeys.GeneratePrivateKey()
 	require.NoError(t, err)
 
-	resp, _, _ := StartConnect(t, gw, ctx, &gwpb.ConnectRequest{
+	resp, cancel, done := StartConnect(t, gw, ctx, &gwpb.ConnectRequest{
 		NetworkName: networkName,
 		PeerName:    peerName,
 		PublicKey:   privKey.PublicKey().Hex(),
@@ -120,7 +126,17 @@ func RegisterAndConnectWithSessionID(t testing.TB, gw *server.Gateway, ctx conte
 
 	// Peer names are unique under Connect, so the assigned name is always
 	// the requested name.
-	return Peer{Net: tnet, Addr: addr, GatewayIP: gatewayIP, AssignedName: peerName, SessionID: sessionID}
+	return Peer{
+		Net:          tnet,
+		Addr:         addr,
+		GatewayIP:    gatewayIP,
+		AssignedName: peerName,
+		SessionID:    sessionID,
+		Disconnect: sync.OnceFunc(func() {
+			cancel()
+			<-done
+		}),
+	}
 }
 
 // connectStream implements gwsvcpb.GatewayService_ConnectServer. Only Context

@@ -5,6 +5,7 @@ package server
 // gateway offers is decided by composition at construction time — see New.
 
 import (
+	"context"
 	"io"
 	"net"
 	"net/netip"
@@ -24,8 +25,13 @@ type HubNetwork struct {
 	IP netip.Addr
 	// NetworkKey identifies the network in logs ("owner/network").
 	NetworkKey string
+
 	// LookupName resolves a peer name registered in this network.
 	LookupName func(name string) (netip.Addr, bool)
+
+	// PeerContext returns a context that is canceled when the peer at ip is
+	// removed from this network.
+	PeerContext func(ip netip.Addr) (ctx context.Context, ok bool)
 
 	stack *stack.Stack
 }

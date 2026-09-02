@@ -48,25 +48,35 @@ func (relayService) Start(hub *server.HubNetwork) (io.Closer, error) {
 	if err != nil {
 		return nil, err
 	}
-	go serveRelay(ln, hub.NetworkKey)
+	go serveRelay(ln, hub)
 	return ln, nil
 }
 
 // serveRelay accepts relay handshakes on the hub listener until it is closed.
-func serveRelay(ln net.Listener, networkKey string) {
+func serveRelay(ln net.Listener, hub *server.HubNetwork) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			return // stack or listener closed
 		}
-		go handleRelayConn(conn, networkKey)
+		go handleRelayConn(conn, hub)
 	}
 }
 
-func handleRelayConn(conn net.Conn, networkKey string) {
+func handleRelayConn(conn net.Conn, hub *server.HubNetwork) {
 	defer conn.Close()
+	networkKey := hub.NetworkKey
 
 	srcAddr, _ := netip.ParseAddrPort(conn.RemoteAddr().String())
+
+	// Get the context for the client so we can kill the relay connection if the client goes away.
+	peerCtx, ok := hub.PeerContext(srcAddr.Addr())
+	if !ok {
+		return // peer already removed
+	}
+	// Make sure we clean up the connection if the client disappears from the gateway.
+	stopClosingConn := context.AfterFunc(peerCtx, func() { conn.Close() })
+	defer stopClosingConn()
 
 	req, err := relaywire.ReadRequest(conn)
 	if err != nil {
@@ -84,7 +94,7 @@ func handleRelayConn(conn net.Conn, networkKey string) {
 	}
 
 	start := time.Now()
-	ctx, cancel := context.WithTimeout(context.Background(), *relayDialTimeout)
+	ctx, cancel := context.WithTimeout(peerCtx, *relayDialTimeout)
 	defer cancel()
 	var dialer net.Dialer
 	upstream, err := dialer.DialContext(ctx, "tcp", target)
@@ -95,6 +105,9 @@ func handleRelayConn(conn net.Conn, networkKey string) {
 		return
 	}
 	defer upstream.Close()
+	// Make sure we clean up the relayed connection if the gateway client disappears.
+	stopClosingUpstream := context.AfterFunc(peerCtx, func() { upstream.Close() })
+	defer stopClosingUpstream()
 
 	resolved := upstream.RemoteAddr().String()
 	if err := relaywire.Accept(conn, resolved); err != nil {
@@ -114,9 +127,12 @@ func handleRelayConn(conn net.Conn, networkKey string) {
 // error for the client.
 func refusalForDialError(err error, target string) error {
 	var dnsErr *net.DNSError
+	isDNS := errors.As(err, &dnsErr)
 	switch {
-	case errors.As(err, &dnsErr):
+	case isDNS && dnsErr.IsNotFound:
 		return status.NotFoundErrorf("%q does not resolve at the gateway: %s", dnsErr.Name, dnsErr.Err)
+	case isDNS && errors.Is(err, context.DeadlineExceeded):
+		return status.DeadlineExceededErrorf("resolving %q at the gateway timed out after %s", dnsErr.Name, *relayDialTimeout)
 	case errors.Is(err, context.DeadlineExceeded):
 		return status.DeadlineExceededErrorf("dialing %s from the gateway timed out after %s", target, *relayDialTimeout)
 	default:
@@ -128,35 +144,42 @@ func refusalForDialError(err error, target string) error {
 type closeWriter interface{ CloseWrite() error }
 
 // splice copies bytes in both directions until both halves are done, and
-// returns the number of bytes sent to and received from upstream.
+// returns the number of bytes sent to and received from upstream. A clean EOF
+// on one side is propagated as a half-close so the other side can finish
+// what it was sending.
 func splice(client, upstream net.Conn) (sent, received int64) {
 	var toUpstream, fromUpstream atomic.Int64
 	done := make(chan struct{}, 2)
 
 	go func() {
-		n, _ := io.Copy(upstream, client)
+		n, err := io.Copy(upstream, client)
 		toUpstream.Store(n)
-		if cw, ok := upstream.(closeWriter); ok {
-			cw.CloseWrite()
-		} else {
-			upstream.Close()
-		}
+		closeAfterCopy(upstream, err)
 		done <- struct{}{}
 	}()
 	go func() {
-		n, _ := io.Copy(client, upstream)
+		n, err := io.Copy(client, upstream)
 		fromUpstream.Store(n)
-		if cw, ok := client.(closeWriter); ok {
-			cw.CloseWrite()
-		} else {
-			client.Close()
-		}
+		closeAfterCopy(client, err)
 		done <- struct{}{}
 	}()
 
 	<-done
 	<-done
 	return toUpstream.Load(), fromUpstream.Load()
+}
+
+// closeAfterCopy ends the write side of dst once a copy into it has finished:
+// a half-close if the copy ended cleanly (err == nil), a full close if it
+// failed.
+func closeAfterCopy(dst net.Conn, err error) {
+	if err == nil {
+		if cw, ok := dst.(closeWriter); ok {
+			cw.CloseWrite()
+			return
+		}
+	}
+	dst.Close()
 }
 
 // relayTargetAllowed reports whether host is covered by the configured suffix
