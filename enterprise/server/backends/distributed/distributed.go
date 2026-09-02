@@ -288,8 +288,9 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			dc.log.Infof("distributed cache peer set changed to %v", peers)
 			if err := chash.SetFromMap(peers); err != nil {
 				dc.log.Errorf("Error setting peers in consistent hash: %s", err)
+			} else {
+				dc.distributedProxy.CloseInactiveClients(set.FromSeq(maps.Values(peers)))
 			}
-			dc.distributedProxy.CloseInactiveClients(set.FromSeq(maps.Values(peers)))
 		})
 	} else {
 		// No nodes were hardcoded, use redis for discovery.
