@@ -177,8 +177,11 @@ echo "[$(date -u +%H:%M:%S)] Running Bazel command: ${bazel_command}"
 echo "=================================================="
 
 set -x
-${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}
-exit_code=$?
+if ${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}; then
+  exit_code=0
+else
+  exit_code=$?
+fi
 set +x
 
 echo "=================================================="
