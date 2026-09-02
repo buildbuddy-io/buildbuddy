@@ -156,6 +156,10 @@ func run() error {
 		cmd.Dir = dockerComposeDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		go func() {
+			<-ctx.Done()
+			cmd.Process.Signal(syscall.SIGTERM)
+		}()
 		return cmd.Run()
 	})
 	eg.Go(func() error {
@@ -175,21 +179,23 @@ func run() error {
 		}
 		return err
 	})
-	eg.Go(func() error {
-		namespace := "clickhouse-operator-" + *clickhouse
-		service := "chi-repl-" + *clickhouse + "-replicated-0-0-0"
-		// Start kubectl port-forward for clickhouse
-		cmd := exec.CommandContext(
-			ctx, "kubectl", "--context", k8sContext(namespace), "--namespace", namespace, "port-forward", service,
-			"--address=0.0.0.0", "9001:9000")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err := cmd.Run()
-		if err != nil {
-			log.Printf("*********** Failed to port forward clickhouse connection: %s", err)
-		}
-		return err
-	})
+	if *clickhouse != "" {
+		eg.Go(func() error {
+			namespace := "clickhouse-operator-" + *clickhouse
+			service := "chi-repl-" + *clickhouse + "-replicated-0-0-0"
+			// Start kubectl port-forward for clickhouse
+			cmd := exec.CommandContext(
+				ctx, "kubectl", "--context", k8sContext(namespace), "--namespace", namespace, "port-forward", service,
+				"--address=0.0.0.0", "9001:9000")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			err := cmd.Run()
+			if err != nil {
+				log.Printf("*********** Failed to port forward clickhouse connection: %s", err)
+			}
+			return err
+		})
+	}
 	eg.Go(func() error {
 		// Watch the generated dashboards directory for source changes and
 		// rebuild + restage the JSON outputs live. Failures are logged.
