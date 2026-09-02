@@ -372,22 +372,15 @@ func TestCancel(t *testing.T) {
 func TestFetchRemoteBuildOutputs(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
-load("@rules_cc//cc:defs.bzl", "cc_binary")
-cc_binary(
+genrule(
     name = "main",
-    srcs = ["main.c"],
+    srcs = ["main.in"],
+    outs = ["main.sh"],
+    cmd = "cp $< $@",
+    executable = True,
 )
 `,
-		"main.c": `
-#include <stdio.h>
-
-int main() {
-    printf("Hello from main!");
-    return 0;
-}
-`,
-		"MODULE.bazel": `bazel_dep(name = "rules_cc", version = "0.0.17")` + "\n",
-		".bazelrc":     "common --lockfile_mode=off --check_direct_dependencies=off\n",
+		"main.in": "#!/bin/sh\nprintf 'Hello from main!'\n",
 	})
 
 	// Run a server and executor locally to run remote bazel against
@@ -424,7 +417,7 @@ int main() {
 		return outputPath, err
 	}
 	t.Chdir(repoDir)
-	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "main")
+	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "main.sh")
 	require.NoError(t, err)
 
 	// Make sure we can successfully run the fetched binary.
@@ -442,22 +435,23 @@ int main() {
 func TestBuildRemotelyRunLocally(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
-load("@rules_cc//cc:defs.bzl", "cc_binary")
-cc_binary(
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+genrule(
+    name = "generated_script",
+    srcs = ["main.in"],
+    outs = ["main-generated.sh"],
+    cmd = "cp $< $@",
+    executable = True,
+)
+
+sh_binary(
     name = "main",
-    srcs = ["main.c"],
+    srcs = [":generated_script"],
 )
 `,
-		"main.c": `
-#include <stdio.h>
-
-int main() {
-    printf("Hello from main!");
-    return 0;
-}
-`,
-		"MODULE.bazel": `bazel_dep(name = "rules_cc", version = "0.0.17")` + "\n",
-		".bazelrc":     "common --lockfile_mode=off --check_direct_dependencies=off\n",
+		"main.in":  "#!/bin/sh\nprintf 'Hello from main!'\n",
+		".bazelrc": "common --lockfile_mode=off --check_direct_dependencies=off\n",
 	})
 
 	// Run a server and executor locally to run remote bazel against
@@ -465,7 +459,7 @@ int main() {
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
-	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		// Ensure the build is happening on a clean runner, because if the build
 		// artifact is locally cached, we won't upload it to the remote cache
 		// and we won't be able to fetch it.
@@ -476,6 +470,7 @@ int main() {
 		"run",
 		":main",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+	require.Contains(t, output, "Hello from main!")
 
 	// Check that the remote runner didn't run the script
 	bbClient := env.GetBuildBuddyServiceClient()
