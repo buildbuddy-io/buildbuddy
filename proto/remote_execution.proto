@@ -2714,7 +2714,7 @@ message OriginMetadata {
   string invocation_id = 1;
 }
 
-// Next tag: 9
+// Next tag: 13
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
@@ -2727,6 +2727,12 @@ message ExecutionTask {
   RequestMetadata request_metadata = 9;
   repeated string experiments = 10;
   FastCdc2020Params fast_cdc_2020_params = 11;
+
+  // The Action Cache key for the synthetic action that produced the ext4
+  // image used as the Firecracker root filesystem. When set, the executor
+  // fetches the image from the action result instead of converting the OCI
+  // image locally.
+  Digest firecracker_ext4_image_action_digest = 12;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well

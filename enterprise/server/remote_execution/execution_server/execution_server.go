@@ -7,7 +7,9 @@ package execution_server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/olapdbconfig"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/action_cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
@@ -66,11 +69,13 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
@@ -87,6 +92,20 @@ const (
 	// be discarded after this time. There may be multiple waiters for a single
 	// action so we cannot discard the channel immediately.
 	completedPubSubChanExpiration = 15 * time.Minute
+
+	// firecrackerExt4ConversionExperiment names the experiment, and the flag
+	// it falls back to, holding a FirecrackerExt4ConversionConfig.
+	firecrackerExt4ConversionExperiment = "remote_execution.firecracker_ext4_conversion_config"
+	// firecrackerExt4ConversionMnemonic is the action mnemonic recorded for
+	// synthetic ext4 conversion actions.
+	firecrackerExt4ConversionMnemonic = "BuildBuddyCreateVMDiskImage"
+	// firecrackerExt4ConverterName is the converter binary's name in the
+	// synthetic action's input root.
+	firecrackerExt4ConverterName = "oci_to_ext4"
+	// firecrackerExt4ImageOutputPath is the ext4 image path in the synthetic
+	// action's output root. Executors fetch the first output path of the
+	// action result and require it to have an ext4 extension.
+	firecrackerExt4ImageOutputPath = "containerfs.ext4"
 )
 
 var (
@@ -96,6 +115,8 @@ var (
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
 
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
+
+	firecrackerExt4Conversion = flag.Struct("remote_execution.firecracker_ext4_conversion_config", FirecrackerExt4ConversionConfig{}, "Converts Firecracker container images to ext4 with a cached remote action instead of on each executor. The experiment with the same name takes precedence when it evaluates to a non-empty object.", flag.Internal)
 )
 
 func fillExecutionFromActionMetadata(md *repb.ExecutedActionMetadata, execution *tables.Execution) {
@@ -693,6 +714,226 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 	return s.execute(req, stream)
 }
 
+// FirecrackerExt4ConversionConfig configures the synthetic action that
+// converts a Firecracker action's container image to an ext4 root filesystem
+// image. The converter binary is fetched from the configured URL into CAS via
+// the remote asset API and becomes an input of the synthetic action, so the
+// action digest only changes when the binary, image ref, credentials, or salt
+// change.
+type FirecrackerExt4ConversionConfig struct {
+	AMD64BinaryURL    string `json:"amd64_binary_url" yaml:"amd64_binary_url" usage:"URL of the static linux/amd64 oci_to_ext4 binary. Leave empty to convert amd64 images on the executor."`
+	AMD64BinarySHA256 string `json:"amd64_binary_sha256" yaml:"amd64_binary_sha256" usage:"Hex SHA256 of the linux/amd64 binary, which lets the app reuse the copy already in CAS instead of re-downloading it."`
+	ARM64BinaryURL    string `json:"arm64_binary_url" yaml:"arm64_binary_url" usage:"URL of the static linux/arm64 oci_to_ext4 binary. Leave empty to convert arm64 images on the executor."`
+	ARM64BinarySHA256 string `json:"arm64_binary_sha256" yaml:"arm64_binary_sha256" usage:"Hex SHA256 of the linux/arm64 binary, which lets the app reuse the copy already in CAS instead of re-downloading it."`
+	ActionSalt        string `json:"action_salt" yaml:"action_salt" usage:"Salt mixed into the synthetic action digest. Change it to invalidate all cached images."`
+	// PlatformOverrides is applied after the built-in platform properties, so
+	// it can replace any of them (for example the container image or pool) in
+	// an emergency without a deploy. These are part of the synthetic Action,
+	// so changing them invalidates cached images.
+	PlatformOverrides map[string]string `json:"platform_overrides" yaml:"platform_overrides" usage:"Platform properties set on the synthetic action, replacing built-in properties with the same name. Changing these invalidates cached images."`
+	// PlatformHeaderOverrides are sent as remote header overrides on the
+	// synthetic Execute request instead of being part of the Action, so they
+	// change where and how the conversion runs without invalidating cached
+	// images.
+	PlatformHeaderOverrides map[string]string `json:"platform_header_overrides" yaml:"platform_header_overrides" usage:"Platform properties applied to the synthetic action via remote header overrides. Changing these does not invalidate cached images."`
+}
+
+// firecrackerExt4Image identifies the synthetic action whose result holds a
+// Firecracker action's root filesystem image.
+type firecrackerExt4Image struct {
+	actionDigest *repb.Digest
+	// experiment is the "<name>:<variant>" label recorded on the task, or
+	// empty when the config came from the flag.
+	experiment string
+}
+
+// prepareFirecrackerExt4Image converts a Firecracker action's container image
+// to ext4 by running the conversion as a separate action and waiting for it.
+// The conversion is deduped across executors through action merging and the
+// Action Cache, instead of every executor converting the same image. It
+// returns nil when the action is not a Firecracker action or conversion is not
+// configured for its architecture.
+func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, actionResourceName *digest.CASResourceName) (*firecrackerExt4Image, error) {
+	config := *firecrackerExt4Conversion
+	experiment := ""
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		object, details := fp.ObjectDetails(ctx, firecrackerExt4ConversionExperiment, nil)
+		if len(object) > 0 {
+			config = FirecrackerExt4ConversionConfig{}
+			if err := experiments.ObjectToStruct(object, &config); err != nil {
+				return nil, status.InvalidArgumentErrorf("parse %s experiment: %s", firecrackerExt4ConversionExperiment, err)
+			}
+			if details.Variant() != "" {
+				experiment = firecrackerExt4ConversionExperiment + ":" + details.Variant()
+			}
+		}
+	}
+	if config.AMD64BinaryURL == "" && config.ARM64BinaryURL == "" {
+		return nil, nil
+	}
+
+	command, err := s.fetchCommand(ctx, actionResourceName, action)
+	if err != nil {
+		return nil, err
+	}
+	props, err := platform.ParseProperties(&repb.ExecutionTask{
+		Action:  action,
+		Command: command,
+		PlatformOverrides: &repb.Platform{
+			Properties: platform.RemoteHeaderOverrides(ctx),
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType {
+		return nil, nil
+	}
+	// An unset image means the executor's default image, which only the
+	// executor knows, so let it convert that image locally.
+	containerImage := strings.TrimPrefix(props.ContainerImage, platform.DockerPrefix)
+	if containerImage == "" || strings.EqualFold(containerImage, "none") {
+		return nil, nil
+	}
+	var binaryURL, binarySHA256 string
+	switch props.Arch {
+	case platform.AMD64ArchitectureName:
+		binaryURL, binarySHA256 = config.AMD64BinaryURL, config.AMD64BinarySHA256
+	case platform.ARM64ArchitectureName:
+		binaryURL, binarySHA256 = config.ARM64BinaryURL, config.ARM64BinarySHA256
+	}
+	if binaryURL == "" {
+		return nil, nil
+	}
+	sha256Bytes, err := hex.DecodeString(binarySHA256)
+	if err != nil || len(sha256Bytes) != sha256.Size {
+		return nil, status.InvalidArgumentErrorf("%s: %s binary sha256 must be a 64 character hex string", firecrackerExt4ConversionExperiment, props.Arch)
+	}
+	fetchServer := s.env.GetFetchServer()
+	if fetchServer == nil {
+		return nil, status.FailedPreconditionError("Firecracker ext4 conversion requires the remote asset API")
+	}
+
+	// The checksum qualifier lets the fetch server return the binary digest
+	// directly from CAS, so the binary is only downloaded when it is missing.
+	digestFunction := actionResourceName.GetDigestFunction()
+	fetchRsp, err := fetchServer.FetchBlob(ctx, &rapb.FetchBlobRequest{
+		InstanceName:   req.GetInstanceName(),
+		Uris:           []string{binaryURL},
+		Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: "sha256-" + base64.StdEncoding.EncodeToString(sha256Bytes)}},
+		DigestFunction: digestFunction,
+	})
+	if err != nil {
+		return nil, status.WrapError(err, "fetch ext4 converter")
+	}
+	if fetchRsp.GetStatus().GetCode() != int32(gcodes.OK) {
+		return nil, status.UnavailableErrorf("fetch ext4 converter from %s: %s", binaryURL, fetchRsp.GetStatus().GetMessage())
+	}
+	inputRootDigest, err := cachetools.UploadProto(ctx, s.env.GetByteStreamClient(), req.GetInstanceName(), digestFunction, &repb.Directory{
+		Files: []*repb.FileNode{{
+			Name:         firecrackerExt4ConverterName,
+			Digest:       fetchRsp.GetBlobDigest(),
+			IsExecutable: true,
+		}},
+	})
+	if err != nil {
+		return nil, status.WrapError(err, "upload ext4 converter input root")
+	}
+
+	env, err := rexec.MakeEnv(
+		"BUILDBUDDY_OCI_USERNAME="+props.ContainerRegistryUsername,
+		"BUILDBUDDY_OCI_PASSWORD="+props.ContainerRegistryPassword,
+	)
+	if err != nil {
+		return nil, err
+	}
+	// The conversion needs tar and mke2fs, which the Ubuntu image provides.
+	platformPairs := []string{
+		platform.OperatingSystemPropertyName + "=" + platform.LinuxOperatingSystemName,
+		platform.CPUArchitecturePropertyName + "=" + props.Arch,
+		platform.WorkloadIsolationPropertyName + "=" + string(platform.OCIContainerType),
+		"container-image=" + platform.DockerPrefix + platform.Ubuntu24_04Image,
+		platform.EstimatedComputeUnitsPropertyName + "=3",
+		platform.EstimatedFreeDiskPropertyName + "=20GB",
+	}
+	if props.Pool != "" {
+		platformPairs = append(platformPairs, "Pool="+props.Pool)
+	}
+	if props.PoolType == platform.PoolTypeSelfHosted {
+		platformPairs = append(platformPairs, platform.UseSelfHostedExecutorsPropertyName+"=true")
+	}
+	// MakePlatform keeps the last value for a repeated name, so configured
+	// overrides win.
+	for name, value := range config.PlatformOverrides {
+		platformPairs = append(platformPairs, name+"="+value)
+	}
+	syntheticPlatform, err := rexec.MakePlatform(platformPairs...)
+	if err != nil {
+		return nil, err
+	}
+	syntheticCommand := &repb.Command{
+		Arguments: []string{
+			"./" + firecrackerExt4ConverterName,
+			"--image=" + containerImage,
+			"--output=" + firecrackerExt4ImageOutputPath,
+		},
+		EnvironmentVariables: env,
+		OutputPaths:          []string{firecrackerExt4ImageOutputPath},
+	}
+	syntheticAction := &repb.Action{
+		InputRootDigest: inputRootDigest,
+		Platform:        syntheticPlatform,
+		Timeout:         durationpb.New(30 * time.Minute),
+		Salt:            []byte(config.ActionSalt),
+	}
+	syntheticActionResourceName, err := rexec.Prepare(ctx, s.env, req.GetInstanceName(), digestFunction, syntheticAction, syntheticCommand, "")
+	if err != nil {
+		return nil, status.WrapError(err, "prepare ext4 conversion action")
+	}
+
+	// Attribute the synthetic execution to its own mnemonic and action ID so
+	// it is distinguishable in the invocation's execution list. The gRPC
+	// client interceptor appends the original request metadata header after
+	// this one, and the server only reads the first value.
+	rmd := bazel_request.GetRequestMetadata(ctx).CloneVT()
+	if rmd == nil {
+		rmd = &repb.RequestMetadata{}
+	}
+	rmd.ActionMnemonic = firecrackerExt4ConversionMnemonic
+	rmd.ActionId = syntheticActionResourceName.GetDigest().GetHash()
+	rmdBytes, err := proto.Marshal(rmd)
+	if err != nil {
+		return nil, status.WrapError(err, "marshal ext4 conversion request metadata")
+	}
+	syntheticCtx := metadata.AppendToOutgoingContext(ctx, bazel_request.RequestMetadataKey, string(rmdBytes))
+	for name, value := range config.PlatformHeaderOverrides {
+		syntheticCtx = platform.WithRemoteHeaderOverride(syntheticCtx, name, value)
+	}
+	stream, err := rexec.Start(syntheticCtx, s.env, syntheticActionResourceName, rexec.WithSkipCacheLookup(false))
+	if err != nil {
+		return nil, status.WrapError(err, "start ext4 conversion action")
+	}
+	defer stream.CloseSend()
+	rsp, err := rexec.Wait(stream)
+	if err != nil {
+		return nil, status.WrapError(err, "wait for ext4 conversion action")
+	}
+	if rsp.Err != nil {
+		return nil, status.WrapError(rsp.Err, "ext4 conversion action")
+	}
+	if exitCode := rsp.ExecuteResponse.GetResult().GetExitCode(); exitCode != 0 {
+		result, err := rexec.GetResult(ctx, s.env, req.GetInstanceName(), digestFunction, rsp.ExecuteResponse.GetResult())
+		if err != nil {
+			return nil, status.UnknownErrorf("ext4 conversion action exited with code %d (stderr unavailable: %s)", exitCode, err)
+		}
+		return nil, status.UnknownErrorf("ext4 conversion action exited with code %d: %s", exitCode, result.Stderr)
+	}
+	return &firecrackerExt4Image{
+		actionDigest: syntheticActionResourceName.GetDigest(),
+		experiment:   experiment,
+	}, nil
+}
+
 func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {
 	if *teeInstanceNamePrefix == "" {
 		return nil
@@ -773,7 +1014,11 @@ func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID 
 }
 
 func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string) error {
-	pool, err := s.dispatch(ctx, req, action, executionID, &dispatchOpts{recordActionMergingState: true})
+	return s.dispatchExecution(ctx, req, action, executionID, nil)
+}
+
+func (s *ExecutionServer) dispatchExecution(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string, ext4Image *firecrackerExt4Image) error {
+	pool, err := s.dispatch(ctx, req, action, executionID, &dispatchOpts{recordActionMergingState: true, firecrackerExt4Image: ext4Image})
 	if err == nil && pool.IsShared && pool.Name == "" {
 		if err := s.teeExecution(ctx, executionID, req, action); err != nil {
 			log.CtxWarningf(ctx, "Could not tee execution: %s", err)
@@ -782,14 +1027,17 @@ func (s *ExecutionServer) Dispatch(ctx context.Context, req *repb.ExecuteRequest
 	return err
 }
 
-func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string) error {
-	_, err := s.dispatch(ctx, req, action, executionID, &dispatchOpts{recordActionMergingState: false})
+func (s *ExecutionServer) dispatchHedge(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string, ext4Image *firecrackerExt4Image) error {
+	_, err := s.dispatch(ctx, req, action, executionID, &dispatchOpts{recordActionMergingState: false, firecrackerExt4Image: ext4Image})
 	return err
 }
 
 type dispatchOpts struct {
 	recordActionMergingState bool
 	teedRequest              bool
+	// firecrackerExt4Image is set when the root filesystem image for a
+	// Firecracker action was already produced by a synthetic action.
+	firecrackerExt4Image *firecrackerExt4Image
 }
 
 func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, executionID string, opts *dispatchOpts) (*interfaces.PoolInfo, error) {
@@ -838,6 +1086,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		Action:          action,
 		Command:         command,
 		RequestMetadata: rmd,
+	}
+	if opts.firecrackerExt4Image != nil {
+		executionTask.FirecrackerExt4ImageActionDigest = opts.firecrackerExt4Image.actionDigest
+		if opts.firecrackerExt4Image.experiment != "" {
+			executionTask.Experiments = append(executionTask.Experiments, opts.firecrackerExt4Image.experiment)
+		}
 	}
 	// Allow execution worker to auth to cache (if necessary).
 	if jwt, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
@@ -1125,6 +1379,10 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	if err != nil {
 		return err
 	}
+	ext4Image, err := s.prepareFirecrackerExt4Image(ctx, req, action, adInstanceDigest)
+	if err != nil {
+		return err
+	}
 
 	// Check if there's already an identical action pending execution that this request can be merged into.
 	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
@@ -1140,7 +1398,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			}
 		}
 
-		if err := s.Dispatch(ctx, req, action, executionID); err != nil {
+		if err := s.dispatchExecution(ctx, req, action, executionID, ext4Image); err != nil {
 			log.CtxWarningf(ctx, "Error dispatching execution for %q: %s", downloadString, err)
 			if err := s.MarkExecutionFailed(ctx, executionID, err); err != nil {
 				log.CtxWarningf(ctx, "Error marking execution failed: %s", err)
@@ -1169,7 +1427,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			// in the background.
 			action_merger.RecordHedgedExecution(ctx, s.rdb, adInstanceDigest, s.getGroupIDForMetrics(ctx))
 			hedgedExecutionID := adInstanceDigest.NewUploadString()
-			if err := s.dispatchHedge(ctx, req, action, hedgedExecutionID); err != nil {
+			if err := s.dispatchHedge(ctx, req, action, hedgedExecutionID, ext4Image); err != nil {
 				return status.WrapError(err, "dispatch hedged execution")
 			}
 			log.CtxInfof(ctx, "Dispatched new hedged execution %q for action %q and invocation %q", hedgedExecutionID, downloadString, invocationID)

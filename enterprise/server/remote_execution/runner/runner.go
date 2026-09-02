@@ -1231,10 +1231,11 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 
 	persistentWorkerKey, _ := persistentworker.Key(props, task.GetCommand().GetArguments())
 	key := &rnpb.RunnerKey{
-		GroupId:             groupID,
-		InstanceName:        task.GetExecuteRequest().GetInstanceName(),
-		Platform:            platform.GetProto(task.GetAction(), task.GetCommand()),
-		PersistentWorkerKey: persistentWorkerKey,
+		GroupId:                          groupID,
+		InstanceName:                     task.GetExecuteRequest().GetInstanceName(),
+		Platform:                         platform.GetProto(task.GetAction(), task.GetCommand()),
+		PersistentWorkerKey:              persistentWorkerKey,
+		FirecrackerExt4ImageActionDigest: task.GetFirecrackerExt4ImageActionDigest(),
 	}
 
 	// If snapshot sharing is enabled, a firecracker VM can be cloned from the

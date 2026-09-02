@@ -13,9 +13,13 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -45,6 +49,95 @@ func sharedDiskImageNode(containerImage string) *repb.FileNode {
 			SizeBytes: 1,
 		},
 	}
+}
+
+func setupRemoteCache(t *testing.T) *testenv.TestEnv {
+	te := testenv.GetTestEnv(t)
+	enterprise_testenv.AddClientIdentity(t, te, "app")
+	_, runServer, listener := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, listener)
+	go runServer()
+	return te
+}
+
+func uploadExt4ActionResult(t *testing.T, te *testenv.TestEnv, actionDigest *repb.Digest, outputPath string, contents []byte) {
+	const instanceName = "ext4-images"
+	outputDigest, err := cachetools.UploadBlobToCAS(t.Context(), te.GetByteStreamClient(), instanceName, repb.DigestFunction_SHA256, contents)
+	require.NoError(t, err)
+	err = cachetools.UploadActionResult(t.Context(), te.GetActionCacheClient(), digest.NewACResourceName(actionDigest, instanceName, repb.DigestFunction_SHA256), &repb.ActionResult{
+		OutputFiles: []*repb.OutputFile{{
+			Path:   outputPath,
+			Digest: outputDigest,
+		}},
+	})
+	require.NoError(t, err)
+}
+
+func TestCreateDiskImageFromActionCache(t *testing.T) {
+	flags.Set(t, "executor.local_cache_store_ext4_images", true)
+	te := setupRemoteCache(t)
+	root := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filepath.Join(root, "filecache"), 1_000_000_000, false)
+	require.NoError(t, err)
+	te.SetFileCache(fc)
+
+	// Populate an Action Cache result containing the synthetic action's ext4
+	// output, as the app would after waiting for conversion to finish.
+	actionDigest, err := digest.Compute(strings.NewReader("synthetic action"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	want := []byte("ext4 image contents")
+	uploadExt4ActionResult(t, te, actionDigest, "containerfs.ext4", want)
+	task := &repb.ExecutionTask{
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName:   "ext4-images",
+			DigestFunction: repb.DigestFunction_SHA256,
+		},
+		FirecrackerExt4ImageActionDigest: actionDigest,
+	}
+
+	outputPath := filepath.Join(root, "materialized.ext4")
+	err = ociconv.CreateDiskImageFromActionCache(t.Context(), te, fc, root, task, outputPath)
+	require.NoError(t, err)
+	got, err := os.ReadFile(outputPath)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+
+	// The downloaded image is now in the executor-local cache under the
+	// synthetic action digest, so a task with a different digest (for example
+	// after the app changes the salt) does not reuse it.
+	cached, err := ociconv.IsImageCached(t.Context(), fc, root, ociconv.DiskImageCacheKey(task, "example.com/image:latest"))
+	require.NoError(t, err)
+	require.True(t, cached)
+	changedActionDigest, err := digest.Compute(strings.NewReader("synthetic action with new salt"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	task.FirecrackerExt4ImageActionDigest = changedActionDigest
+	cached, err = ociconv.IsImageCached(t.Context(), fc, root, ociconv.DiskImageCacheKey(task, "example.com/image:latest"))
+	require.NoError(t, err)
+	require.False(t, cached)
+}
+
+func TestCreateDiskImageFromActionCache_RejectsNonExt4Output(t *testing.T) {
+	flags.Set(t, "executor.local_cache_store_ext4_images", true)
+	te := setupRemoteCache(t)
+	root := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(filepath.Join(root, "filecache"), 1_000_000_000, false)
+	require.NoError(t, err)
+	te.SetFileCache(fc)
+
+	// Reject a malformed synthetic result before downloading its output.
+	actionDigest, err := digest.Compute(strings.NewReader("malformed synthetic action"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	uploadExt4ActionResult(t, te, actionDigest, "containerfs.img", []byte("not accepted"))
+	task := &repb.ExecutionTask{
+		ExecuteRequest: &repb.ExecuteRequest{
+			InstanceName:   "ext4-images",
+			DigestFunction: repb.DigestFunction_SHA256,
+		},
+		FirecrackerExt4ImageActionDigest: actionDigest,
+	}
+
+	err = ociconv.CreateDiskImageFromActionCache(t.Context(), te, fc, root, task, filepath.Join(root, "materialized.ext4"))
+	require.ErrorContains(t, err, `output path "containerfs.img" does not have an .ext4 extension`)
 }
 
 func TestOciconv(t *testing.T) {
