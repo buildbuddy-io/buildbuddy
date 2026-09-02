@@ -164,7 +164,7 @@ func run() error {
 		}
 		// Start kubectl port-forward for victoria metrics
 		cmd := exec.CommandContext(
-			ctx, "kubectl", "--namespace", *namespace,
+			ctx, "kubectl", "--context", k8sContext(*namespace), "--namespace", *namespace,
 			"port-forward", "service/"+*service,
 			"--address=0.0.0.0", "8481:8481")
 		cmd.Stdout = os.Stdout
@@ -188,7 +188,7 @@ func run() error {
 		service := "chi-repl-" + *clickhouse + "-replicated-0-0-0"
 		// Start kubectl port-forward for clickhouse
 		cmd := exec.CommandContext(
-			ctx, "kubectl", "--namespace", namespace, "port-forward", service,
+			ctx, "kubectl", "--context", k8sContext(namespace), "--namespace", namespace, "port-forward", service,
 			"--context="+context, "--address=0.0.0.0", "9001:9000")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
@@ -264,6 +264,13 @@ func run() error {
 		}
 	})
 	return eg.Wait()
+}
+
+func k8sContext(namespace string) string {
+	if strings.Contains(namespace, "dev") {
+		return "gke_flame-build_us-west1_dev-nv8eh"
+	}
+	return "gke_flame-build_us-west1_prod-hs6in"
 }
 
 func getSecret(secret string) ([]byte, error) {
