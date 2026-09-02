@@ -257,15 +257,18 @@ func (f *Fetcher) FetchBlob(ctx context.Context, w io.Writer, ref ctrname.Digest
 		return 0, err
 	}
 	cw := &countingWriter{w: w}
+	// cw.n is read after the fetch, not in the return expression, where Go
+	// would evaluate it first.
 	if f.store == nil {
-		return cw.n, f.streamFromUpstream(ctx, cw, ref, creds, opts)
+		err := f.streamFromUpstream(ctx, cw, ref, creds, opts)
+		return cw.n, err
 	}
 	if opts.BypassRegistry {
 		_, err := f.leadBlobFetch(ctx, cw, ref, h, creds, opts)
 		return cw.n, err
 	}
-
-	return cw.n, f.fetchBlobShared(ctx, cw, ref, h, creds, opts, 2)
+	err = f.fetchBlobShared(ctx, cw, ref, h, creds, opts, 2)
+	return cw.n, err
 }
 
 // fetchBlobShared runs one singleflight round for the blob. The leader

@@ -223,8 +223,9 @@ func TestFetchBlob_MissThenHit(t *testing.T) {
 	f := newFetcher(t, up, store)
 
 	var out bytes.Buffer
-	_, err := f.FetchBlob(context.Background(), &out, testRef, testCreds, ocifetch.Options{})
+	n, err := f.FetchBlob(context.Background(), &out, testRef, testCreds, ocifetch.Options{})
 	require.NoError(t, err)
+	require.Equal(t, int64(len(testBlob)), n, "bytes written on a miss")
 	require.Equal(t, testBlob, out.String())
 	require.Equal(t, int32(1), up.metadatas.Load(), "size learned from upstream")
 	require.Equal(t, int32(1), up.blobs.Load())
@@ -233,8 +234,9 @@ func TestFetchBlob_MissThenHit(t *testing.T) {
 	// Second fetch: served from the store. Access was proven by the first
 	// fetch, so no upstream request at all.
 	out.Reset()
-	_, err = f.FetchBlob(context.Background(), &out, testRef, testCreds, ocifetch.Options{})
+	n, err = f.FetchBlob(context.Background(), &out, testRef, testCreds, ocifetch.Options{})
 	require.NoError(t, err)
+	require.Equal(t, int64(len(testBlob)), n, "bytes written on a hit")
 	require.Equal(t, testBlob, out.String())
 	require.Equal(t, int32(1), up.metadatas.Load())
 	require.Equal(t, int32(1), up.blobs.Load())
