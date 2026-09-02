@@ -31,6 +31,8 @@ import (
 var (
 	kube = flag.Bool("kube", false, "Use kubectl port-forward to point Grafana at real data.")
 
+	kubectlContext = flag.String("context", "", "Override for the inferred k8s context. The default uses us-west1 prod or dev context.")
+
 	// Note: these flags only take effect when setting -kube=true:
 	namespace = flag.String("namespace", "monitor-dev", "k8s namespace")
 	service   = flag.String("service", "victoria-metrics-cluster-global-vmselect", "k8s VictoriaMetrics service name")
@@ -179,7 +181,7 @@ func run() error {
 		}
 		return err
 	})
-	if *clickhouse != "" {
+	if *clickhouse != "" && *clickhouse != "local" {
 		eg.Go(func() error {
 			namespace := "clickhouse-operator-" + *clickhouse
 			service := "chi-repl-" + *clickhouse + "-replicated-0-0-0"
@@ -265,6 +267,9 @@ func run() error {
 }
 
 func k8sContext(namespace string) string {
+	if *kubectlContext != "" {
+		return *kubectlContext
+	}
 	if strings.Contains(namespace, "prod") {
 		return "gke_flame-build_us-west1_prod-hs6in"
 	}
