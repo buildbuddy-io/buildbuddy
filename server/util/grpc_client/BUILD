@@ -14,6 +14,7 @@ go_library(
         "//server/util/log",
         "//server/util/rpcutil",
         "//server/util/status",
+        "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_contrib_instrumentation_google_golang_org_grpc_otelgrpc//:otelgrpc",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//connectivity",

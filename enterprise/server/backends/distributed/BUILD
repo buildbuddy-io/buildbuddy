@@ -28,6 +28,7 @@ go_library(
         "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/kubediscovery",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/lru",
         "//server/util/peerset",
