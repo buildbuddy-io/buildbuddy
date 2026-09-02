@@ -1,25 +1,73 @@
-bazel_dep(name = "rules_img", version = "0.3.9")
-bazel_dep(name = "rules_img_tool", version = "0.3.9")
+bazel_dep(name = "rules_img", version = "0.3.19")
+bazel_dep(name = "rules_img_tool", version = "0.3.19")
 
 register_toolchains("@rules_img_tool//toolchain:all")
 
-bazel_dep(name = "rules_distroless", version = "0.6.2")
-single_version_override(
+bazel_dep(name = "rules_distroless", version = "0.9.4")
+archive_override(
     module_name = "rules_distroless",
+    integrity = "sha256-9dFC6tHiNx2zP1VpG2q0B3RKusVuuSzndDF2yZJ+dwU=",
     patch_strip = 1,
     patches = ["//buildpatches:rules_distroless.patch"],
+    strip_prefix = "rules_distroless-a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3",
+    urls = ["https://github.com/bazel-contrib/rules_distroless/archive/a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3.tar.gz"],
 )
 
 # Configure apt for Debian packages
 apt = use_extension("@rules_distroless//apt:extensions.bzl", "apt")
 
+snapshot = "20260318T142916Z"
+
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = [
+        "main",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+    ],
+    types = ["deb"],
+    uris = ["https://snapshot.debian.org/archive/debian/{}".format(snapshot)],
+)
+apt.sources_list(
+    architectures = [
+        "amd64",
+        "arm64",
+    ],
+    components = ["main"],
+    suites = ["trixie-security"],
+    types = ["deb"],
+    uris = ["https://snapshot.debian.org/archive/debian-security/{}".format(snapshot)],
+)
+
 # Configure Debian debian13 packages
 apt.install(
-    name = "debian13",
-    lock = "//apt:debian13.lock.json",
-    manifest = "//apt:debian13.yaml",
+    dependency_set = "debian13",
+    include_transitive = False,
     mergedusr = True,
     package_template = "apt/package.BUILD.tmpl",
-    resolve_transitive = False,
+    packages = [
+        # Base system packages
+        "base-files",
+        "netbase",
+        "tzdata",
+        "tzdata-legacy",
+        "media-types",
+
+        # CA certificates package
+        "ca-certificates",
+
+        # base-nossl packages
+        "libc6",
+    ],
+    suites = [
+        "trixie",
+        "trixie-updates",
+        "trixie-security",
+    ],
 )
 use_repo(apt, "debian13")

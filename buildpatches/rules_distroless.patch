@@ -1,11 +1,92 @@
-diff -Naur a/apt/private/deb_translate_lock.bzl b/apt/private/deb_translate_lock.bzl
---- a/apt/private/deb_translate_lock.bzl	2025-10-09 13:25:37.354124020 +0200
-+++ b/apt/private/deb_translate_lock.bzl	2025-10-09 13:26:34.816428768 +0200
-@@ -229,6 +229,7 @@
-         packages = starlark_codegen_utils.to_dict_list_attr(architectures),
-         architectures = starlark_codegen_utils.to_list_attr(architectures.keys()),
-     ))
-+    rctx.file("REPO.bazel", """repo(default_visibility = ["//visibility:public"])""")
+diff --git a/apt/extensions.bzl b/apt/extensions.bzl
+index 5969d27..4eccfc9 100644
+--- a/apt/extensions.bzl
++++ b/apt/extensions.bzl
+@@ -325,6 +325,7 @@ def _distroless_extension(mctx):
+     resolution_queue = []
+     already_resolved = {}
+     dependency_set_mergedusr = {}
++    dependency_set_package_template = {}
+     package_repo_roots = {
+         False: {},
+         True: {},
+@@ -335,6 +336,8 @@ def _distroless_extension(mctx):
+             if install.dependency_set:
+                 current_mergedusr = dependency_set_mergedusr.get(install.dependency_set, False)
+                 dependency_set_mergedusr[install.dependency_set] = current_mergedusr or install.mergedusr
++                if install.dependency_set not in dependency_set_package_template and install.package_template != None:
++                    dependency_set_package_template[install.dependency_set] = install.package_template
+ 
+             for dep_constraint in install.packages:
+                 constraint = version_constraint.parse_dep(dep_constraint)
+@@ -364,6 +367,7 @@ def _distroless_extension(mctx):
+                             constraint["version"],
+                             "amd64",
+                             install.suites,
++                            install.include_transitive,
+                             install.mergedusr,
+                             False,
+                         ))
+@@ -379,6 +383,7 @@ def _distroless_extension(mctx):
+                         constraint["version"],
+                         arch,
+                         install.suites,
++                        install.include_transitive,
+                         install.mergedusr,
+                         False,
+                     ))
+@@ -389,7 +394,7 @@ def _distroless_extension(mctx):
+         if i == ITERATION_MAX:
+             fail("apt.install exhausted, please file a bug")
+ 
+-        (dependency_set_name, name, version, arch, suites, mergedusr, is_transitive_dependency) = resolution_queue.pop()
++        (dependency_set_name, name, version, arch, suites, include_transitive, mergedusr, is_transitive_dependency) = resolution_queue.pop()
+ 
+         mctx.report_progress("Resolving %s:%s" % (name, arch))
+ 
+@@ -398,7 +403,7 @@ def _distroless_extension(mctx):
+             name = name,
+             version = version,
+             arch = arch,
+-            include_transitive = True,
++            include_transitive = include_transitive,
+             suites = suites,
+         )
+ 
+@@ -459,6 +464,7 @@ def _distroless_extension(mctx):
+                     ("=", dep["Version"]),
+                     arch,
+                     suites,
++                    include_transitive,
+                     mergedusr,
+                     True,
+                 ))
+@@ -477,11 +483,15 @@ def _distroless_extension(mctx):
+     package_repo_modes = compute_package_repo_modes(glock.packages(), package_repo_roots)
+     for depset_name in dependency_sets.keys():
+         depset_mergedusr = dependency_set_mergedusr.get(depset_name, False)
++        kwargs = {}
++        if depset_name in dependency_set_package_template:
++            kwargs["package_template"] = dependency_set_package_template[depset_name]
+         translate_dependency_set(
+             name = depset_name,
+             depset_name = depset_name,
+             lock_content = lock_content,
+             mergedusr = depset_mergedusr,
++            **kwargs
+         )
+ 
+     # Generate a repo per package which will be aliased by hub repo.
+@@ -657,6 +667,9 @@ install = tag_class(
+         "suites": attr.string_list(),
+         "include_transitive": attr.bool(default = True),
+         "mergedusr": attr.bool(default = False),
++        "package_template": attr.label(
++            allow_single_file = True,
++        ),
+     },
+ )
+ 
+-- 
+2.47.3
 
- deb_translate_lock = repository_rule(
-     implementation = _deb_translate_lock_impl,
