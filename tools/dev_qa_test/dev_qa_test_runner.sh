@@ -69,11 +69,14 @@ echo "=================================================="
 
 cd "${workspace_dir}"
 
+# Timestamps make it possible to see where a slow test spends its time.
+echo "[$(date -u +%H:%M:%S)] Downloading tarball"
 if ! curl -L "${tarball_url}" -o repo.tar.gz; then
   echo >&2 "ERROR: Failed to download tarball from ${tarball_url}"
   exit 1
 fi
 
+echo "[$(date -u +%H:%M:%S)] Extracting tarball"
 if ! tar -xzf repo.tar.gz; then
   echo >&2 "ERROR: Failed to extract tarball"
   exit 1
@@ -161,16 +164,16 @@ echo "Remote execution configuration created"
 echo "=================================================="
 
 if [[ "${UPDATE_LOCKFILE:-true}" == "true" ]]; then
-  echo "Updating lockfile with injected BuildBuddy toolchain..."
+  echo "[$(date -u +%H:%M:%S)] Updating lockfile with injected BuildBuddy toolchain..."
   ${bazel} mod deps --lockfile_mode=update
-  echo "Lockfile updated successfully"
+  echo "[$(date -u +%H:%M:%S)] Lockfile updated successfully"
   echo "=================================================="
 else
   echo "Skipping lockfile update (UPDATE_LOCKFILE=false)"
   echo "=================================================="
 fi
 
-echo "Running Bazel command: ${bazel_command}"
+echo "[$(date -u +%H:%M:%S)] Running Bazel command: ${bazel_command}"
 echo "=================================================="
 
 set -x
@@ -179,6 +182,7 @@ exit_code=$?
 set +x
 
 echo "=================================================="
+echo "[$(date -u +%H:%M:%S)] Bazel command finished"
 if [[ ${exit_code} -eq 0 ]]; then
   echo "✓ Test PASSED"
 else
