@@ -48,11 +48,12 @@ var (
 // networkState holds IP allocation and peer name state for one
 // (groupID, networkName) pair.
 type networkState struct {
-	groupID  string                // group that owns this network
-	index    int                   // assigned network index; determines the /48 prefix
-	namesMu  sync.Mutex            // protects names
-	names    map[string]netip.Addr // peer_name → assigned IP
-	nextHost int                   // next host number to assign; starts at 2 (.1 is the hub)
+	groupID  string                   // group that owns this network
+	index    int                      // assigned network index; determines the /48 prefix
+	mu       sync.Mutex               // protects names and peers
+	names    map[string]netip.Addr    // peer_name → assigned IP
+	peers    map[netip.Addr]*peerInfo // assigned IP → peer, for HubNetwork.PeerContext
+	nextHost int                      // next host number to assign; starts at 2 (.1 is the hub)
 }
 
 // peerInfo tracks per-peer state needed for cleanup.
@@ -63,10 +64,15 @@ type peerInfo struct {
 	sessionID    string    // uniquely identifies this connection
 	registeredAt time.Time // used as last-seen baseline if peer never completed a handshake
 
-	// cancel, if set, closes the Connect stream that owns this registration.
-	// removePeerLocked calls it so that a peer removed by another path (e.g.
-	// the stale-peer sweep) doesn't leave its stream dangling.
-	cancel context.CancelFunc
+	// ctx lives as long as the registration.
+	ctx       context.Context
+	cancelCtx context.CancelFunc
+
+	// closeStream, if set, closes the Connect stream that owns this
+	// registration. removePeerLocked calls it so that a peer removed by
+	// another path (e.g. the stale-peer sweep) doesn't leave its stream
+	// dangling.
+	closeStream context.CancelFunc
 }
 
 // Gateway manages a single WireGuard device shared across all groups.
@@ -79,7 +85,8 @@ type Gateway struct {
 	pubKey        string // server's base64 public key
 	networks      map[string]*networkState
 	peers         map[string]*peerInfo // WireGuard public key hex → peer info
-	nextIndex     int                  // monotonically increasing network index
+	hubServices   []HubService
+	nextIndex     int // monotonically increasing network index
 	publicHost    string
 	udpListenPort int
 	done          chan struct{}
@@ -94,7 +101,7 @@ type Gateway struct {
 }
 
 // New creates a Gateway with a single shared WireGuard device.
-func New(env environment.Env) (*Gateway, error) {
+func New(env environment.Env, hubServices ...HubService) (*Gateway, error) {
 	serverPrivKey, err := wgkeys.GeneratePrivateKey()
 	if err != nil {
 		return nil, status.InternalErrorf("generate server private key: %s", err)
@@ -107,6 +114,7 @@ func New(env environment.Env) (*Gateway, error) {
 		tun:           tunDev,
 		networks:      make(map[string]*networkState),
 		peers:         make(map[string]*peerInfo),
+		hubServices:   hubServices,
 		publicHost:    *publicHost,
 		udpListenPort: *udpListenPort,
 		done:          make(chan struct{}),
@@ -186,20 +194,20 @@ func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwp
 		// Find an available name: try the requested name first, then append
 		// numeric suffixes until we find a free slot.
 		assignedName = requested
-		ns.namesMu.Lock()
+		ns.mu.Lock()
 		for i := 1; ; i++ {
 			if _, taken := ns.names[assignedName]; !taken {
 				break
 			}
 			assignedName = fmt.Sprintf("%s-%d", requested, i)
 		}
-		ns.namesMu.Unlock()
+		ns.mu.Unlock()
 	}
 
 	// Note: session_id is left empty for Register peers — it is a Connect
 	// concept, and leaving it unset lets List callers distinguish legacy
 	// registrations.
-	assignedIP, err := g.addPeerLocked(ns, clientPubKey.Hex(), assignedName, "" /*=sessionID*/, nil /*=cancel*/)
+	assignedIP, err := g.addPeerLocked(ns, clientPubKey.Hex(), assignedName, "" /*=sessionID*/, nil /*=closeStream*/)
 	if err != nil {
 		return nil, err
 	}
@@ -261,9 +269,9 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 		return err
 	}
 	if name != "" {
-		ns.namesMu.Lock()
+		ns.mu.Lock()
 		_, taken := ns.names[name]
-		ns.namesMu.Unlock()
+		ns.mu.Unlock()
 		if taken {
 			g.mu.Unlock()
 			return status.AlreadyExistsErrorf("peer name %q is already in use", name)
@@ -459,7 +467,7 @@ func (g *Gateway) snapshotPeer(groupID, sessionID string) (*gwpb.Peer, error) {
 // WireGuard device, and records the peer. assignedName and sessionID must
 // already be validated (and checked for conflicts) by the caller. Must be
 // called with g.mu held.
-func (g *Gateway) addPeerLocked(ns *networkState, pubKeyHex, assignedName, sessionID string, cancel context.CancelFunc) (netip.Addr, error) {
+func (g *Gateway) addPeerLocked(ns *networkState, pubKeyHex, assignedName, sessionID string, closeStream context.CancelFunc) (netip.Addr, error) {
 	if _, ok := g.peers[pubKeyHex]; ok {
 		return netip.Addr{}, status.AlreadyExistsErrorf("public key %s... is already registered", pubKeyHex[:8])
 	}
@@ -480,19 +488,24 @@ func (g *Gateway) addPeerLocked(ns *networkState, pubKeyHex, assignedName, sessi
 		return netip.Addr{}, status.InternalErrorf("add WireGuard peer: %s", err)
 	}
 
-	if assignedName != "" {
-		ns.namesMu.Lock()
-		ns.names[assignedName] = assignedIP
-		ns.namesMu.Unlock()
-	}
-	g.peers[pubKeyHex] = &peerInfo{
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	info := &peerInfo{
 		ip:           assignedIP,
 		networkState: ns,
 		assignedName: assignedName,
 		sessionID:    sessionID,
 		registeredAt: time.Now(),
-		cancel:       cancel,
+		ctx:          ctx,
+		cancelCtx:    cancelCtx,
+		closeStream:  closeStream,
 	}
+	ns.mu.Lock()
+	if assignedName != "" {
+		ns.names[assignedName] = assignedIP
+	}
+	ns.peers[assignedIP] = info
+	ns.mu.Unlock()
+	g.peers[pubKeyHex] = info
 	g.notifyWatchers()
 	return assignedIP, nil
 }
@@ -580,17 +593,27 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 		groupID:  groupID,
 		index:    index,
 		names:    make(map[string]netip.Addr),
+		peers:    make(map[netip.Addr]*peerInfo),
 		nextHost: 2,
 	}
 
 	nameLookup := func(name string) (netip.Addr, bool) {
-		ns.namesMu.Lock()
+		ns.mu.Lock()
 		addr, ok := ns.names[name]
-		ns.namesMu.Unlock()
+		ns.mu.Unlock()
 		return addr, ok
 	}
-	if err := g.tun.startNetworkDNS(index, key, nameLookup); err != nil {
-		return nil, status.InternalErrorf("start DNS for network %q: %s", key, err)
+	peerContext := func(ip netip.Addr) (context.Context, bool) {
+		ns.mu.Lock()
+		info, ok := ns.peers[ip]
+		ns.mu.Unlock()
+		if !ok {
+			return nil, false
+		}
+		return info.ctx, true
+	}
+	if err := g.tun.startNetworkServices(index, key, g.hubServices, nameLookup, peerContext); err != nil {
+		return nil, status.InternalErrorf("start services for network %q: %s", key, err)
 	}
 
 	g.networks[key] = ns
@@ -674,21 +697,24 @@ func (g *Gateway) lastHandshakeTimes() (map[string]time.Time, error) {
 }
 
 // removePeerLocked removes a peer from the WireGuard device, the TUN, and the
-// DNS name map, and closes the peer's Connect stream if it has one. Must be
-// called with g.mu held.
+// network's name and IP maps, cancels the peer's context, and closes its
+// Connect stream if it has one. Must be called with g.mu held.
 func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
 	if err := g.dev.IpcSet(fmt.Sprintf("public_key=%s\nremove=true\n", pubKeyHex)); err != nil {
 		log.Errorf("Remove WireGuard peer %s...: %s", pubKeyHex[:8], err)
 	}
 	g.tun.unregisterIP(info.ip)
+	ns := info.networkState
+	ns.mu.Lock()
 	if info.assignedName != "" {
-		info.networkState.namesMu.Lock()
-		delete(info.networkState.names, info.assignedName)
-		info.networkState.namesMu.Unlock()
+		delete(ns.names, info.assignedName)
 	}
+	delete(ns.peers, info.ip)
+	ns.mu.Unlock()
 	delete(g.peers, pubKeyHex)
-	if info.cancel != nil {
-		info.cancel()
+	info.cancelCtx()
+	if info.closeStream != nil {
+		info.closeStream()
 	}
 	g.notifyWatchers()
 	log.Infof("Removed peer %s... (ip=%s name=%q session=%s)", pubKeyHex[:8], info.ip, info.assignedName, info.sessionID)

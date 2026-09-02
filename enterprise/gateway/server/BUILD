@@ -7,6 +7,7 @@ go_library(
     srcs = [
         "forwardingtun.go",
         "gateway.go",
+        "hub.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server",
     visibility = ["//visibility:public"],
@@ -47,6 +48,7 @@ go_test(
     ],
     embed = [":server"],
     deps = [
+        "//enterprise/gateway/testgateway",
         "//proto:gateway_go_proto",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
@@ -54,9 +56,6 @@ go_test(
         "//server/util/testing/flags",
         "//server/util/wgkeys",
         "@com_github_stretchr_testify//require",
-        "@com_zx2c4_golang_wireguard//conn",
-        "@com_zx2c4_golang_wireguard//device",
-        "@com_zx2c4_golang_wireguard//tun/netstack",
         "@dev_gvisor_gvisor//pkg/tcpip",
         "@dev_gvisor_gvisor//pkg/tcpip/header",
         "@org_golang_google_grpc//:grpc",

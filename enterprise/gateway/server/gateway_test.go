@@ -53,7 +53,7 @@ func setupGateway(t testing.TB, ta *testauth.TestAuthenticator) *Gateway {
 	env := testenv.GetTestEnv(t)
 	env.SetAuthenticator(ta)
 
-	gw, err := New(env)
+	gw, err := New(env, DNSService())
 	require.NoError(t, err)
 	t.Cleanup(gw.Close)
 	return gw
