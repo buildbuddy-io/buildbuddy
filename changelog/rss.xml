@@ -17,11 +17,11 @@
             <category>bazel</category>
         </item>
         <item>
-            <title><![CDATA[Analyze slow builds with bb explain profile]]></title>
+            <title><![CDATA[Analyze slow builds with bb agent analyze-profile]]></title>
             <link>https://www.buildbuddy.io/changelog/bb-explain-profile</link>
             <guid>https://www.buildbuddy.io/changelog/bb-explain-profile</guid>
             <pubDate>Wed, 12 Aug 2026 10:00:00 GMT</pubDate>
-            <description><![CDATA[You can now use the bb CLI to analyze a Bazel timing profile with an AI coding agent using bb explain profile.]]></description>
+            <description><![CDATA[You can now use the bb CLI to analyze a Bazel timing profile with an AI coding agent using bb agent analyze-profile.]]></description>
             <category>AI</category>
             <category>debugging</category>
         </item>

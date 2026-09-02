@@ -20,11 +20,11 @@
         <category label="bazel" term="bazel"/>
     </entry>
     <entry>
-        <title type="html"><![CDATA[Analyze slow builds with bb explain profile]]></title>
+        <title type="html"><![CDATA[Analyze slow builds with bb agent analyze-profile]]></title>
         <id>https://www.buildbuddy.io/changelog/bb-explain-profile</id>
         <link href="https://www.buildbuddy.io/changelog/bb-explain-profile"/>
         <updated>2026-08-12T10:00:00.000Z</updated>
-        <summary type="html"><![CDATA[You can now use the bb CLI to analyze a Bazel timing profile with an AI coding agent using bb explain profile.]]></summary>
+        <summary type="html"><![CDATA[You can now use the bb CLI to analyze a Bazel timing profile with an AI coding agent using bb agent analyze-profile.]]></summary>
         <author>
             <name>Maggie Lou</name>
             <uri>https://www.linkedin.com/in/maggie-lou-4a3bb110a/</uri>
