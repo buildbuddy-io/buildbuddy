@@ -35,6 +35,9 @@ const (
 	blobOutputFilePath          = "_bb_ociregistry_blob_"
 	blobMetadataOutputFilePath  = "_bb_ociregistry_blob_metadata_"
 	blobInstanceName            = interfaces.OCIImageInstanceNamePrefix
+	// BlobInstanceName is the remote instance name under which OCI blobs are
+	// stored in the CAS.
+	BlobInstanceName = blobInstanceName
 	manifestContentInstanceName = interfaces.OCIImageInstanceNamePrefix + "_manifest_content_"
 
 	maxManifestSize = 10000000
@@ -219,16 +222,13 @@ func blobHit(ctx context.Context) {
 }
 
 func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, hash ctr.Hash, contentLength int64) error {
-	blobCASDigest := &repb.Digest{
-		Hash:      hash.Hex,
-		SizeBytes: contentLength,
-	}
-	blobRN := digest.NewCASResourceName(
-		blobCASDigest,
-		blobInstanceName,
-		cacheDigestFunction,
-	)
-	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	return ReadBlob(ctx, w, bsClient, blobInstanceName, hash, contentLength)
+}
+
+// ReadBlob streams the blob with the given hash and size from the CAS under
+// the given remote instance name to w.
+func ReadBlob(ctx context.Context, w io.Writer, bsClient bspb.ByteStreamClient, instanceName string, hash ctr.Hash, contentLength int64) error {
+	blobRN := blobResourceName(instanceName, hash, contentLength)
 	counter := &ioutil.Counter{}
 	mw := io.MultiWriter(w, counter)
 	defer func() {
@@ -242,6 +242,23 @@ func FetchBlobFromCache(ctx context.Context, w io.Writer, bsClient bspb.ByteStre
 	}
 	blobHit(ctx)
 	return nil
+}
+
+func blobResourceName(instanceName string, hash ctr.Hash, contentLength int64) *digest.CASResourceName {
+	blobRN := digest.NewCASResourceName(
+		&repb.Digest{Hash: hash.Hex, SizeBytes: contentLength},
+		instanceName,
+		cacheDigestFunction,
+	)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+	return blobRN
+}
+
+// NewCASBlobUploader returns a writer that stores exactly contentLength
+// bytes of the blob in the CAS under the given remote instance name, with no
+// action cache metadata row.
+func NewCASBlobUploader(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, hash ctr.Hash, contentLength int64) (*cachetools.UploadWriter, error) {
+	return cachetools.NewUploadWriter(ctx, bsClient, blobResourceName(instanceName, hash, contentLength))
 }
 
 func writeBlobMetadataToCache(ctx context.Context, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, contentType string, contentLength int64) error {

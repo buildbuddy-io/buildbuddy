@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
@@ -83,7 +84,7 @@ func newTestServer(t *testing.T) ofpb.OCIFetcherServer {
 }
 
 func TestRemoteRegistryErrorPreservesHTTPStatusAndRegistryMessage(t *testing.T) {
-	err := ocifetcher.RemoteRegistryError(&transport.Error{
+	err := ocifetch.RemoteRegistryError(&transport.Error{
 		StatusCode: http.StatusUnauthorized,
 		Errors: []transport.Diagnostic{{
 			Code:    transport.UnauthorizedErrorCode,
@@ -99,7 +100,7 @@ func TestRemoteRegistryErrorPreservesHTTPStatusAndRegistryMessage(t *testing.T) 
 
 func newTestServerWithCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherServer {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewAppServer(bsClient, acClient)
 	require.NoError(t, err)
 	return server
 }
@@ -951,7 +952,7 @@ func TestBlobHeadFallbackToRangedGet(t *testing.T) {
 // testHTTPClient returns an httpclient-package client that is allowed to reach test servers on loopback.
 func testHTTPClient(t *testing.T) *http.Client {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	allowedPrivateIPs, err := ocifetcher.ParseAllowedPrivateIPs()
+	allowedPrivateIPs, err := ocifetch.ParseAllowedPrivateIPs()
 	require.NoError(t, err)
 	return httpclient.New(allowedPrivateIPs, "test")
 }
@@ -993,7 +994,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", "Bearer registry-token")
@@ -1029,7 +1030,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		resp, err := tr.RoundTrip(req)
@@ -1078,11 +1079,11 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		// Wire the transports the way getRemoteOpts does: the mirror transport inside the
 		// client, the fallback transport outside.
 		client := testHTTPClient(t)
-		client.Transport = ocifetcher.NewMirrorTransport(client.Transport, []interfaces.MirrorConfig{{
+		client.Transport = ocifetch.NewMirrorTransport(client.Transport, []interfaces.MirrorConfig{{
 			OriginalURL: "http://" + originHost,
 			MirrorURL:   mirror.URL,
 		}})
-		tr := ocifetcher.NewBlobHeadFallbackTransport(client)
+		tr := ocifetch.NewBlobHeadFallbackTransport(client)
 
 		req, err := http.NewRequest(http.MethodHead, "http://"+originHost+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
@@ -1119,7 +1120,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 				}))
 				defer registry.Close()
 
-				tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+				tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 				req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 				require.NoError(t, err)
 				resp, err := tr.RoundTrip(req)
@@ -1145,7 +1146,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		resp, err := tr.RoundTrip(req)
@@ -1171,7 +1172,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		resp, err := tr.RoundTrip(req)
@@ -1196,7 +1197,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		require.NoError(t, err)
 		req, err := http.NewRequest(http.MethodHead, "http://localhost:"+registryURL.Port()+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		resp, err := tr.RoundTrip(req)
 		require.NoError(t, err)
 		resp.Body.Close()
@@ -1225,7 +1226,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 
 		// Successful blob HEAD: no fallback needed.
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)

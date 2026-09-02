@@ -1118,7 +1118,7 @@ func setupTestEnvWithCache(t *testing.T) *testenv.TestEnv {
 	testcache.Setup(t, te, localGRPClis)
 
 	// Set up OCI fetcher server and client
-	ociFetcherServer, err := ocifetcher.NewServer(te.GetByteStreamClient(), te.GetActionCacheClient())
+	ociFetcherServer, err := ocifetcher.NewAppServer(te.GetByteStreamClient(), te.GetActionCacheClient())
 	require.NoError(t, err)
 	ofpb.RegisterOCIFetcherServer(grpcServer, ociFetcherServer)
 
@@ -1172,6 +1172,7 @@ func TestResolveImageDigest_TagExists(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 
@@ -1192,6 +1193,7 @@ func TestResolveImageDigest_TagDoesNotExist(t *testing.T) {
 		nonexistent,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
@@ -1223,6 +1225,7 @@ func TestResolveImageDigest_AlreadyDigest_NoHTTPRequests(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1259,6 +1262,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			nameToResolve,
 			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false,
 		)
 		require.NoError(t, err)
 		resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1279,6 +1283,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			nameToResolve,
 			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false,
 		)
 		require.NoError(t, err)
 
@@ -1299,6 +1304,7 @@ func TestResolveImageDigest_CacheHit_NoHTTPRequests(t *testing.T) {
 			registryAndRepoNoTag,
 			oci.RuntimePlatform(),
 			oci.Credentials{},
+			false,
 		)
 		require.NoError(t, err)
 
@@ -1338,6 +1344,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err := name.NewDigest(nameWithDigest)
@@ -1357,6 +1364,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
@@ -1372,6 +1380,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)
@@ -1387,6 +1396,7 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 		nameToResolve,
 		oci.RuntimePlatform(),
 		oci.Credentials{},
+		false,
 	)
 	require.NoError(t, err)
 	resolvedDigest, err = name.NewDigest(nameWithDigest)

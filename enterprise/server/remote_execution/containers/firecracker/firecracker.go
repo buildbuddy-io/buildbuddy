@@ -2956,7 +2956,7 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		log.CtxDebugf(ctx, "PullImage took %s", time.Since(start))
 	}()
 
-	if err := c.resolver.AuthenticateWithRegistry(ctx, c.containerImage, oci.RuntimePlatform(), creds); err != nil {
+	if err := c.resolver.AuthenticateWithRegistry(ctx, c.containerImage, oci.RuntimePlatform(), creds, c.useOCIFetcher); err != nil {
 		return status.WrapError(err, "authenticate with registry")
 	}
 
