@@ -965,6 +965,24 @@ func TestEnvForLocalRun(t *testing.T) {
 	}, envForLocalRun(env, "/new/runfiles", "/new/workspace", "/new/working-directory"))
 }
 
+func TestEnvForLocalRun_NoRunfiles(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"RUNFILES_DIR=/old/runfiles",
+		"RUNFILES_MANIFEST_FILE=/old/MANIFEST",
+		"BUILD_WORKSPACE_DIRECTORY=/old/workspace",
+		"BUILD_WORKING_DIRECTORY=/old/working-directory",
+		"USER=test",
+	}
+
+	require.Equal(t, []string{
+		"PATH=/usr/bin",
+		"USER=test",
+		"BUILD_WORKSPACE_DIRECTORY=/new/workspace",
+		"BUILD_WORKING_DIRECTORY=/new/working-directory",
+	}, envForLocalRun(env, "", "/new/workspace", "/new/working-directory"))
+}
+
 func TestQuoteRemoteBazelArgs_RunScriptEnvVarExpanded(t *testing.T) {
 	// This flag should not be quoted with shlex.Quote, which explicitly prevents env var expansion.
 	// The path should be quoted with double quotes, so the remote shell expands the BUILDBUDDY_CI_RUNNER_ROOT_DIR

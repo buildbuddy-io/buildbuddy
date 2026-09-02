@@ -990,8 +990,10 @@ func envForLocalRun(env []string, runfilesDir, workspaceDir, workingDir string) 
 		}
 		filteredEnv = append(filteredEnv, entry)
 	}
+	if runfilesDir != "" {
+		filteredEnv = append(filteredEnv, "RUNFILES_DIR="+runfilesDir)
+	}
 	return append(filteredEnv,
-		"RUNFILES_DIR="+runfilesDir,
 		"BUILD_WORKSPACE_DIRECTORY="+workspaceDir,
 		"BUILD_WORKING_DIRECTORY="+workingDir,
 	)
@@ -1284,23 +1286,30 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 					return 1, fmt.Errorf("prepare binary %q for execution: %w", absBinPath, err)
 				}
 
-				// runfilesWorkDir is the working directory inside the downloaded runfiles tree.
-				runfilesWorkDir, err := filepath.Abs(filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot))
-				if err != nil {
-					return 1, fmt.Errorf("compute absolute runfiles working directory: %w", err)
-				}
-				// runfilesDir is the absolute path to the downloaded runfiles directory.
-				// This is one level up from the working directory `runfilesWorkDir`.
-				runfilesDir := filepath.Dir(runfilesWorkDir)
-				info, err := os.Stat(runfilesDir)
-				if err != nil {
-					return 1, fmt.Errorf("locate downloaded runfiles directory %q: %w", runfilesDir, err)
-				}
-				if !info.IsDir() {
-					return 1, fmt.Errorf("downloaded runfiles path %q is not a directory", runfilesDir)
-				}
-				if err := removeRunfilesManifests(absBinPath, runfilesDir); err != nil {
-					return 1, err
+				// Targets without runfiles, such as executable genrules, should run from
+				// the directory where remote Bazel was invoked. For targets with
+				// runfiles, use the working directory from Bazel's run script, mapped
+				// into the downloaded runfiles tree.
+				runfilesWorkDir := opts.AbsLocalWorkingDirectory
+				runfilesDir := ""
+				if runfilesRoot != "" {
+					runfilesWorkDir, err = filepath.Abs(filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot))
+					if err != nil {
+						return 1, fmt.Errorf("compute absolute runfiles working directory: %w", err)
+					}
+					// runfilesDir is the absolute path to the downloaded runfiles directory.
+					// This is one level up from the working directory `runfilesWorkDir`.
+					runfilesDir = filepath.Dir(runfilesWorkDir)
+					info, err := os.Stat(runfilesDir)
+					if err != nil {
+						return 1, fmt.Errorf("locate downloaded runfiles directory %q: %w", runfilesDir, err)
+					}
+					if !info.IsDir() {
+						return 1, fmt.Errorf("downloaded runfiles path %q is not a directory", runfilesDir)
+					}
+					if err := removeRunfilesManifests(absBinPath, runfilesDir); err != nil {
+						return 1, err
+					}
 				}
 
 				execArgs := defaultRunArgs
