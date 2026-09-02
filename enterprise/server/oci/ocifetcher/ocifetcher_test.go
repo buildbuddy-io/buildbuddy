@@ -2293,7 +2293,8 @@ func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 }
 
 // TestFetchBlobSingleflightCacheSetupFailure validates that when caching setup fails,
-// the leader streams data but followers miss the cache and return NotFound after waiting.
+// the leader streams data to its caller, and the followers, which have
+// nothing to read from the cache, fetch the blob from upstream themselves.
 func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	reg, counter := setupRegistry(t, nil, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -2323,18 +2324,12 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	)
 
 	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
-	require.Equal(t, 1, counter.Snapshot()[blobPath], "requests should be deduped even when caching fails")
+	require.Equal(t, numRequests, counter.Snapshot()[blobPath], "when caching fails, each follower fetches the blob itself")
 
-	successes := 0
 	for i, r := range results {
-		if r.err == nil {
-			successes++
-			require.Equal(t, expectedData, r.data, "request %d should stream data", i)
-		} else {
-			require.True(t, status.IsNotFoundError(r.err) || status.IsFailedPreconditionError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
-		}
+		require.NoError(t, r.err, "request %d", i)
+		require.Equal(t, expectedData, r.data, "request %d should stream data", i)
 	}
-	require.Equal(t, 1, successes, "only the leader should succeed when caching fails")
 }
 
 // TestFetchBlobSingleflightDifferentCredentials validates requests with different

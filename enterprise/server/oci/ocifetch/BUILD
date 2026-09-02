@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -37,6 +37,24 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1/remote/transport",
         "@com_github_google_go_containerregistry//pkg/v1/types",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "ocifetch_test",
+    size = "small",
+    srcs = ["ocifetch_test.go"],
+    deps = [
+        ":ocifetch",
+        "//proto:ociregistry_go_proto",
+        "//proto:registry_go_proto",
+        "//server/interfaces",
+        "//server/util/status",
+        "@com_github_google_go_containerregistry//pkg/name",
+        "@com_github_google_go_containerregistry//pkg/v1:pkg",
+        "@com_github_google_go_containerregistry//pkg/v1/types",
+        "@com_github_stretchr_testify//require",
     ],
 )

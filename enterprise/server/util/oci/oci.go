@@ -3,6 +3,7 @@ package oci
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"runtime"
 	"slices"
@@ -37,7 +38,10 @@ var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
 
-	_ = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.", flag.Deprecated("The executor always uses the remote cache for authenticated pulls that it makes from registries itself, and never for anonymous ones; this flag has no effect."))
+	// cacheEnabledPercent only matters when the executor fetches from
+	// registries itself (OCI fetcher off). It never applies to anonymous
+	// tasks, which cannot share a cache.
+	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
 
 type Registry struct {
@@ -226,11 +230,12 @@ func NewResolver(env environment.Env) (*Resolver, error) {
 //   - useOCIFetcher: the OCIFetcher service on the cache target fetches from
 //     the registry and caches. The executor keeps no cache of its own and
 //     makes no registry requests.
-//   - fetcher off, authenticated task: the executor fetches from the registry
-//     itself and reads and writes the remote cache directly. Groups excluded
-//     from the OCI fetcher take this path.
-//   - fetcher off, anonymous task: the executor fetches from the registry
-//     itself and caches nothing, since anonymous tasks cannot share a cache.
+//   - fetcher off, authenticated task, cache enabled by
+//     executor.container_registry.use_cache_percent: the executor fetches
+//     from the registry itself and reads and writes the remote cache
+//     directly. Groups excluded from the OCI fetcher take this path.
+//   - fetcher off, anonymous task (or cache disabled): the executor fetches
+//     from the registry itself and caches nothing.
 func (r *Resolver) fetcherFor(ctx context.Context, useOCIFetcher bool) (*ocifetch.Fetcher, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -252,7 +257,7 @@ func (r *Resolver) fetcherFor(ctx context.Context, useOCIFetcher bool) (*ocifetc
 			r.remoteFetcher = f
 		}
 		return r.remoteFetcher, nil
-	case isAnonymousUser(ctx):
+	case !cacheEnabled() || isAnonymousUser(ctx):
 		if r.directFetcher == nil {
 			f, err := ocifetch.New(r.registry, nil)
 			if err != nil {
@@ -275,6 +280,16 @@ func (r *Resolver) fetcherFor(ctx context.Context, useOCIFetcher bool) (*ocifetc
 		}
 		return r.cachedFetcher, nil
 	}
+}
+
+func cacheEnabled() bool {
+	if *cacheEnabledPercent >= 100 {
+		return true
+	}
+	if *cacheEnabledPercent <= 0 {
+		return false
+	}
+	return rand.Intn(100) < *cacheEnabledPercent
 }
 
 // AuthenticateWithRegistry checks that the credentials grant access to the

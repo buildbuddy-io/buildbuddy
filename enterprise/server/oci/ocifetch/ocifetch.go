@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/google/go-containerregistry/pkg/v1/types"
+	gstatus "google.golang.org/grpc/status"
 
 	ocipb "github.com/buildbuddy-io/buildbuddy/proto/ociregistry"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
@@ -233,8 +234,12 @@ func (f *Fetcher) FetchBlobMetadata(ctx context.Context, ref ctrname.Digest, cre
 // With a Store, concurrent fetches of the same blob with the same
 // credentials are coalesced: the leader streams from the Upstream to w and
 // into the Store at the same time, and waiters read from the Store once the
-// leader has finished. Cached bytes are only served behind proof that creds
-// grant access to the repository.
+// leader has finished. If the leader could not cache the blob, each waiter
+// fetches it from the Upstream itself. Cached bytes are only served behind
+// proof that creds grant access to the repository.
+//
+// Requests that bypass the registry never join the group: they must neither
+// wait on, nor be served by, a fetch that contacts a registry.
 //
 // Without a Store the blob is streamed straight from the Upstream.
 func (f *Fetcher) FetchBlob(ctx context.Context, w io.Writer, ref ctrname.Digest, creds *rgpb.Credentials, opts Options) (int64, error) {
@@ -243,22 +248,16 @@ func (f *Fetcher) FetchBlob(ctx context.Context, w io.Writer, ref ctrname.Digest
 	if err != nil {
 		return 0, err
 	}
+	cw := &countingWriter{w: w}
 	if f.store == nil {
-		rc, _, err := f.upstream.Blob(ctx, ref, creds, opts)
-		if err != nil {
-			return 0, err
-		}
-		defer rc.Close()
-		f.addProof(repo, creds)
-		n, err := io.Copy(w, rc)
-		if err != nil {
-			return n, status.WrapError(err, "stream blob")
-		}
-		return n, nil
+		return cw.n, f.streamFromUpstream(ctx, cw, ref, creds, opts)
+	}
+	if opts.BypassRegistry {
+		_, err := f.leadBlobFetch(ctx, cw, ref, h, creds, opts)
+		return cw.n, err
 	}
 
 	start := time.Now()
-	cw := &countingWriter{w: w}
 	isLeader := false
 	size, _, err := f.blobGroup.Do(ctx, ocicache.NewBlobFetchKey(repo, h, creds), func(ctx context.Context) (int64, error) {
 		isLeader = true
@@ -268,16 +267,30 @@ func (f *Fetcher) FetchBlob(ctx context.Context, w io.Writer, ref ctrname.Digest
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
 		return cw.n, err
 	}
-	if err == nil && size == 0 {
-		// The leader streamed the blob without caching it (its size was
-		// unknown), so there is nothing for a waiter to read.
-		err = status.NotFoundErrorf("blob %s was not cached by the concurrent fetch that served it", ref)
-	}
-	if err == nil {
+	if err == nil && size > 0 {
 		err = f.store.ReadBlob(ctx, cw, h, size)
+	}
+	if (err == nil && size == 0) || (status.IsNotFoundError(err) && cw.n == 0) {
+		// The leader served its caller but could not cache the blob (or it
+		// was evicted already). Fetch it ourselves rather than fail.
+		err = f.streamFromUpstream(ctx, cw, ref, creds, opts)
 	}
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
 	return cw.n, err
+}
+
+// streamFromUpstream copies the blob from the Upstream to w without caching.
+func (f *Fetcher) streamFromUpstream(ctx context.Context, w io.Writer, ref ctrname.Digest, creds *rgpb.Credentials, opts Options) error {
+	rc, _, err := f.upstream.Blob(ctx, ref, creds, opts)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	f.addProof(ref.Context(), creds)
+	if _, err := io.Copy(w, rc); err != nil {
+		return upstreamReadError(err)
+	}
+	return nil
 }
 
 // leadBlobFetch serves the blob to cw from the Store when it is present and
@@ -358,7 +371,7 @@ func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctr
 	}
 	if size <= 0 {
 		if _, err := io.Copy(cw, rc); err != nil {
-			return 0, status.WrapError(err, "stream blob")
+			return 0, upstreamReadError(err)
 		}
 		return 0, nil
 	}
@@ -366,12 +379,16 @@ func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctr
 	if err != nil {
 		log.CtxWarningf(ctx, "Error creating cache writer for blob %s@%s; streaming without caching: %s", repo, h, err)
 		if _, err := io.Copy(cw, rc); err != nil {
-			return 0, status.WrapError(err, "stream blob")
+			return 0, upstreamReadError(err)
 		}
 		return 0, nil
 	}
-	if err := copyThrough(ctx, rc, cw, bw); err != nil {
+	cached, err := copyThrough(ctx, rc, cw, bw)
+	if err != nil {
 		return 0, err
+	}
+	if !cached {
+		return 0, nil
 	}
 	return size, nil
 }
@@ -382,11 +399,12 @@ func isAccessError(err error) bool {
 	return status.IsUnauthenticatedError(err) || status.IsPermissionDeniedError(err) || status.IsNotFoundError(err)
 }
 
-// copyThrough copies upstream to both the caller and the Store. A failure to
-// write to the caller does not stop the copy into the Store: waiters of the
-// same fetch, and every later caller, still get the blob. A failure to write
-// to the Store is logged and the caller keeps being served.
-func copyThrough(ctx context.Context, upstream io.Reader, caller io.Writer, store interfaces.CommittedWriteCloser) error {
+// copyThrough copies upstream to both the caller and the Store. It reports
+// whether the blob was committed to the Store. A failure to write to the
+// caller does not stop the copy into the Store: waiters of the same fetch,
+// and every later caller, still get the blob. A failure to write to or
+// commit the Store is logged and the caller keeps being served.
+func copyThrough(ctx context.Context, upstream io.Reader, caller io.Writer, store interfaces.CommittedWriteCloser) (cached bool, err error) {
 	defer func() {
 		if err := store.Close(); err != nil {
 			log.CtxWarningf(ctx, "Error closing cache writer: %s", err)
@@ -415,7 +433,7 @@ func copyThrough(ctx context.Context, upstream io.Reader, caller io.Writer, stor
 				}
 			}
 			if callerErr != nil && storeErr != nil {
-				return callerErr
+				return false, callerErr
 			}
 		}
 		if readErr == io.EOF {
@@ -423,17 +441,33 @@ func copyThrough(ctx context.Context, upstream io.Reader, caller io.Writer, stor
 		}
 		if readErr != nil {
 			if callerErr != nil {
-				return callerErr
+				return false, callerErr
 			}
-			return status.UnavailableErrorf("read blob from upstream: %s", readErr)
+			return false, upstreamReadError(readErr)
 		}
 	}
-	if storeErr == nil {
-		if err := store.Commit(); err != nil {
-			log.CtxWarningf(ctx, "Error committing blob to cache: %s", err)
-		}
+	if storeErr != nil {
+		return false, callerErr
 	}
-	return callerErr
+	if err := store.Commit(); err != nil {
+		log.CtxWarningf(ctx, "Error committing blob to cache: %s", err)
+		return false, callerErr
+	}
+	return true, callerErr
+}
+
+// upstreamReadError classifies an error from reading an upstream blob
+// stream. Context errors and errors that already carry a status (for
+// example a gRPC status from a RemoteFetcherUpstream) are returned as they
+// are; anything else becomes Unavailable.
+func upstreamReadError(err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	if _, ok := gstatus.FromError(err); ok {
+		return err
+	}
+	return status.UnavailableErrorf("read blob from upstream: %s", err)
 }
 
 func (f *Fetcher) proveManifestAccess(ctx context.Context, ref ctrname.Reference, creds *rgpb.Credentials, opts Options) error {
