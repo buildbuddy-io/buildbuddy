@@ -1,5 +1,5 @@
 buildbuddy = use_extension("@toolchains_buildbuddy//:extensions.bzl", "buildbuddy")
-buildbuddy.platform(buildbuddy_container_image = "UBUNTU20_04_IMAGE")
+buildbuddy.platform(container_image = "docker://buildpack-deps@sha256:fa56fe73b4475655b2f39d6376b6a6664d24b5c43227f709d4a923609f3286a1")
 buildbuddy.msvc_toolchain(
     # This is the MSVC available on Github Action win22 image
     # https://github.com/actions/runner-images/blob/win25/20250727.1/images/windows/Windows2025-Readme.md#visual-studio-enterprise-2022
