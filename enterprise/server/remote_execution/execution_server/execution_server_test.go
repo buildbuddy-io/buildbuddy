@@ -1,9 +1,8 @@
 package execution_server_test
 
 import (
+	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -271,7 +270,8 @@ func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			env, conn, _ := setupEnv(t)
 			converter := []byte("static arm64 converter")
-			converterSHA256 := sha256.Sum256(converter)
+			converterDigest, err := digest.Compute(bytes.NewReader(converter), repb.DigestFunction_BLAKE3)
+			require.NoError(t, err)
 			binaryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				require.Equal(t, "/arm64", r.URL.Path)
 				_, _ = w.Write(converter)
@@ -287,9 +287,9 @@ func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
 
 			config := execution_server.FirecrackerExt4ConversionConfig{
 				AMD64BinaryURL:    binaryServer.URL + "/amd64",
-				AMD64BinarySHA256: strings.Repeat("0", 64),
+				AMD64BinaryBLAKE3: strings.Repeat("0", 64),
 				ARM64BinaryURL:    binaryServer.URL + "/arm64",
-				ARM64BinarySHA256: hex.EncodeToString(converterSHA256[:]),
+				ARM64BinaryBLAKE3: converterDigest.GetHash(),
 				ActionSalt:        "invalidate-1",
 				PlatformOverrides: map[string]string{platform.EstimatedComputeUnitsPropertyName: "6"},
 				// Header overrides steer the execution without changing the
@@ -308,9 +308,9 @@ func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
 						Variants: map[string]any{
 							"enabled": map[string]any{
 								"amd64_binary_url":          config.AMD64BinaryURL,
-								"amd64_binary_sha256":       config.AMD64BinarySHA256,
+								"amd64_binary_blake3":       config.AMD64BinaryBLAKE3,
 								"arm64_binary_url":          config.ARM64BinaryURL,
-								"arm64_binary_sha256":       config.ARM64BinarySHA256,
+								"arm64_binary_blake3":       config.ARM64BinaryBLAKE3,
 								"action_salt":               config.ActionSalt,
 								"platform_overrides":        map[string]any{platform.EstimatedComputeUnitsPropertyName: "6"},
 								"platform_header_overrides": map[string]any{"Pool": "emergency"},
@@ -373,24 +373,27 @@ func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
 
 			// The synthetic action runs the fetched arm64 converter on the
 			// original image, salted so the app can invalidate cached images.
+			// It uses BLAKE3 even though the client used SHA256, because
+			// executors look up snapshot chunks in CAS by BLAKE3 digest.
+			require.Equal(t, repb.DigestFunction_BLAKE3, syntheticExecuteRequest.GetDigestFunction())
 			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 			require.NoError(t, err)
 			syntheticAction := &repb.Action{}
-			syntheticActionRN := digest.NewCASResourceName(syntheticExecuteRequest.GetActionDigest(), instanceName, repb.DigestFunction_SHA256)
+			syntheticActionRN := digest.NewCASResourceName(syntheticExecuteRequest.GetActionDigest(), instanceName, repb.DigestFunction_BLAKE3)
 			require.NoError(t, cachetools.GetBlobAsProto(cacheCtx, env.GetByteStreamClient(), syntheticActionRN, syntheticAction))
 			require.Equal(t, []byte("invalidate-1"), syntheticAction.GetSalt())
 			syntheticCommand := &repb.Command{}
-			syntheticCommandRN := digest.NewCASResourceName(syntheticAction.GetCommandDigest(), instanceName, repb.DigestFunction_SHA256)
+			syntheticCommandRN := digest.NewCASResourceName(syntheticAction.GetCommandDigest(), instanceName, repb.DigestFunction_BLAKE3)
 			require.NoError(t, cachetools.GetBlobAsProto(cacheCtx, env.GetByteStreamClient(), syntheticCommandRN, syntheticCommand))
-			require.Equal(t, []string{"./oci_to_ext4", "--image=example.com/private/image:latest", "--output=containerfs.ext4"}, syntheticCommand.GetArguments())
-			require.Equal(t, []string{"containerfs.ext4"}, syntheticCommand.GetOutputPaths())
+			require.Equal(t, []string{"./oci_to_ext4", "--image=example.com/private/image:latest", "--manifest=containerfs.manifest", "--chunks_dir=containerfs"}, syntheticCommand.GetArguments())
+			require.Equal(t, []string{"containerfs.manifest", "containerfs"}, syntheticCommand.GetOutputPaths())
 			inputRoot := &repb.Directory{}
-			inputRootRN := digest.NewCASResourceName(syntheticAction.GetInputRootDigest(), instanceName, repb.DigestFunction_SHA256)
+			inputRootRN := digest.NewCASResourceName(syntheticAction.GetInputRootDigest(), instanceName, repb.DigestFunction_BLAKE3)
 			require.NoError(t, cachetools.GetBlobAsProto(cacheCtx, env.GetByteStreamClient(), inputRootRN, inputRoot))
 			require.Len(t, inputRoot.GetFiles(), 1)
 			converterFile := inputRoot.GetFiles()[0]
 			require.Equal(t, "oci_to_ext4", converterFile.GetName())
-			require.Equal(t, hex.EncodeToString(converterSHA256[:]), converterFile.GetDigest().GetHash())
+			require.Equal(t, converterDigest.GetHash(), converterFile.GetDigest().GetHash())
 			platformProperties := make(map[string]string)
 			for _, property := range syntheticAction.GetPlatform().GetProperties() {
 				platformProperties[property.GetName()] = property.GetValue()
@@ -404,7 +407,7 @@ func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
 			require.NotContains(t, platformProperties, "Pool")
 
 			// The original task carries the synthetic action digest so the
-			// executor fetches the image from the Action Cache.
+			// executor uses its result as the containerfs snapshot.
 			scheduler := env.GetSchedulerService().(*schedulerServerMock)
 			require.Len(t, scheduler.scheduleReqs, 1)
 			task := &repb.ExecutionTask{}

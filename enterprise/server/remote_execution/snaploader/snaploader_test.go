@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -894,4 +895,72 @@ func mustReadStore(t *testing.T, store *copy_on_write.COWStore) []byte {
 	b, err := io.ReadAll(r)
 	require.NoError(t, err)
 	return b
+}
+
+func TestGetContainerImageFromActionResult(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	ctx := context.Background()
+	env := setupEnv(t)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	const instanceName = "test-instance"
+	const chunkSize = int64(4 * 4096)
+
+	// The app's image conversion action writes the image as chunk files named
+	// by offset, omitting all-zero chunks, plus a manifest listing the chunk
+	// digests. Make an image whose second chunk is a hole and upload it the
+	// way the executor running that action would.
+	image := make([]byte, 3*chunkSize+123)
+	rand.Read(image[:chunkSize])
+	rand.Read(image[2*chunkSize:])
+	rootfs := &fcpb.ChunkedFile{Name: "containerfs.ext4", Size: int64(len(image)), ChunkSize: chunkSize}
+	chunksDir := &repb.Directory{}
+	for _, offset := range []int64{0, 2 * chunkSize, 3 * chunkSize} {
+		chunk := image[offset:min(offset+chunkSize, int64(len(image)))]
+		d, err := cachetools.UploadBlob(ctx, env.GetByteStreamClient(), instanceName, repb.DigestFunction_BLAKE3, bytes.NewReader(chunk))
+		require.NoError(t, err)
+		rootfs.Chunks = append(rootfs.Chunks, &fcpb.Chunk{Offset: offset, Digest: d})
+		chunksDir.Files = append(chunksDir.Files, &repb.FileNode{Name: strconv.FormatInt(offset, 10), Digest: d})
+	}
+	manifestDigest, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, repb.DigestFunction_BLAKE3, rootfs)
+	require.NoError(t, err)
+	treeDigest, err := cachetools.UploadProto(ctx, env.GetByteStreamClient(), instanceName, repb.DigestFunction_BLAKE3, &repb.Tree{Root: chunksDir})
+	require.NoError(t, err)
+	actionDigest, err := digest.Compute(bytes.NewReader([]byte("conversion action")), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	actionResourceName := digest.NewACResourceName(actionDigest, instanceName, repb.DigestFunction_BLAKE3)
+	err = cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), actionResourceName, &repb.ActionResult{
+		OutputFiles:       []*repb.OutputFile{{Path: snaputil.ContainerImageManifestOutputPath, Digest: manifestDigest}},
+		OutputDirectories: []*repb.OutputDirectory{{Path: snaputil.ContainerImageChunksOutputPath, TreeDigest: treeDigest}},
+	})
+	require.NoError(t, err)
+
+	// An executor uses the action result as the containerfs snapshot. Reading
+	// the unpacked store fetches the chunks lazily from the remote cache and
+	// fills the hole with zeros, reproducing the original image.
+	snap, err := snaploader.GetContainerImageFromActionResult(ctx, loader, instanceName, actionDigest)
+	require.NoError(t, err)
+	cow, err := snaploader.UnpackContainerImageSnapshot(ctx, loader, snap, testfs.MakeTempDir(t))
+	require.NoError(t, err)
+	t.Cleanup(func() { cow.Close() })
+	size, err := cow.SizeBytes()
+	require.NoError(t, err)
+	require.Equal(t, int64(len(image)), size)
+	unpacked := make([]byte, len(image))
+	_, err = cow.ReadAt(unpacked, 0)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(image, unpacked), "unpacked image differs from original")
+
+	// A conversion result without a manifest output is rejected rather than
+	// treated as an empty image.
+	brokenActionDigest, err := digest.Compute(bytes.NewReader([]byte("broken conversion action")), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	brokenResourceName := digest.NewACResourceName(brokenActionDigest, instanceName, repb.DigestFunction_BLAKE3)
+	err = cachetools.UploadActionResult(ctx, env.GetActionCacheClient(), brokenResourceName, &repb.ActionResult{
+		OutputDirectories: []*repb.OutputDirectory{{Path: snaputil.ContainerImageChunksOutputPath, TreeDigest: treeDigest}},
+	})
+	require.NoError(t, err)
+	_, err = snaploader.GetContainerImageFromActionResult(ctx, loader, instanceName, brokenActionDigest)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), snaputil.ContainerImageManifestOutputPath)
 }

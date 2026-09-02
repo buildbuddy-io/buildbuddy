@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/remote_execution/action_merger",
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/operation",
+        "//enterprise/server/remote_execution/snaputil",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/execution",

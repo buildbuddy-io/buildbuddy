@@ -11,7 +11,11 @@ go_library(
     deps = [
         "//enterprise/server/oci/ociconv",
         "//enterprise/server/util/oci",
+        "//proto:firecracker_go_proto",
+        "//proto:remote_execution_go_proto",
         "//server/real_environment",
+        "//server/remote_cache/digest",
+        "//server/util/proto",
     ],
 )
 

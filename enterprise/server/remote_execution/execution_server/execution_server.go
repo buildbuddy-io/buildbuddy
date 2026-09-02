@@ -7,7 +7,6 @@ package execution_server
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -28,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -93,6 +93,9 @@ const (
 	// action so we cannot discard the channel immediately.
 	completedPubSubChanExpiration = 15 * time.Minute
 
+	// blake3HashSize is the size in bytes of a BLAKE3 hash.
+	blake3HashSize = 32
+
 	// firecrackerExt4ConversionExperiment names the experiment, and the flag
 	// it falls back to, holding a FirecrackerExt4ConversionConfig.
 	firecrackerExt4ConversionExperiment = "remote_execution.firecracker_ext4_conversion_config"
@@ -102,10 +105,6 @@ const (
 	// firecrackerExt4ConverterName is the converter binary's name in the
 	// synthetic action's input root.
 	firecrackerExt4ConverterName = "oci_to_ext4"
-	// firecrackerExt4ImageOutputPath is the ext4 image path in the synthetic
-	// action's output root. Executors fetch the first output path of the
-	// action result and require it to have an ext4 extension.
-	firecrackerExt4ImageOutputPath = "containerfs.ext4"
 )
 
 var (
@@ -715,16 +714,20 @@ func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Executio
 }
 
 // FirecrackerExt4ConversionConfig configures the synthetic action that
-// converts a Firecracker action's container image to an ext4 root filesystem
-// image. The converter binary is fetched from the configured URL into CAS via
-// the remote asset API and becomes an input of the synthetic action, so the
-// action digest only changes when the binary, image ref, credentials, or salt
-// change.
+// converts a Firecracker action's container image to a chunked ext4 root
+// filesystem image. The converter binary is fetched from the configured URL
+// into CAS via the remote asset API and becomes an input of the synthetic
+// action, so the action digest only changes when the binary, image ref,
+// credentials, or salt change.
+//
+// Binary hashes are BLAKE3 rather than SHA256 because the synthetic action
+// uses the BLAKE3 digest function, and a matching checksum lets the fetch
+// server find the binary in CAS without re-hashing it on every request.
 type FirecrackerExt4ConversionConfig struct {
 	AMD64BinaryURL    string `json:"amd64_binary_url" yaml:"amd64_binary_url" usage:"URL of the static linux/amd64 oci_to_ext4 binary. Leave empty to convert amd64 images on the executor."`
-	AMD64BinarySHA256 string `json:"amd64_binary_sha256" yaml:"amd64_binary_sha256" usage:"Hex SHA256 of the linux/amd64 binary, which lets the app reuse the copy already in CAS instead of re-downloading it."`
+	AMD64BinaryBLAKE3 string `json:"amd64_binary_blake3" yaml:"amd64_binary_blake3" usage:"Hex BLAKE3 hash of the linux/amd64 binary, which lets the app reuse the copy already in CAS instead of re-downloading it."`
 	ARM64BinaryURL    string `json:"arm64_binary_url" yaml:"arm64_binary_url" usage:"URL of the static linux/arm64 oci_to_ext4 binary. Leave empty to convert arm64 images on the executor."`
-	ARM64BinarySHA256 string `json:"arm64_binary_sha256" yaml:"arm64_binary_sha256" usage:"Hex SHA256 of the linux/arm64 binary, which lets the app reuse the copy already in CAS instead of re-downloading it."`
+	ARM64BinaryBLAKE3 string `json:"arm64_binary_blake3" yaml:"arm64_binary_blake3" usage:"Hex BLAKE3 hash of the linux/arm64 binary, which lets the app reuse the copy already in CAS instead of re-downloading it."`
 	ActionSalt        string `json:"action_salt" yaml:"action_salt" usage:"Salt mixed into the synthetic action digest. Change it to invalidate all cached images."`
 	// PlatformOverrides is applied after the built-in platform properties, so
 	// it can replace any of them (for example the container image or pool) in
@@ -739,7 +742,7 @@ type FirecrackerExt4ConversionConfig struct {
 }
 
 // firecrackerExt4Image identifies the synthetic action whose result holds a
-// Firecracker action's root filesystem image.
+// Firecracker action's chunked root filesystem image.
 type firecrackerExt4Image struct {
 	actionDigest *repb.Digest
 	// experiment is the "<name>:<variant>" label recorded on the task, or
@@ -748,9 +751,10 @@ type firecrackerExt4Image struct {
 }
 
 // prepareFirecrackerExt4Image converts a Firecracker action's container image
-// to ext4 by running the conversion as a separate action and waiting for it.
-// The conversion is deduped across executors through action merging and the
-// Action Cache, instead of every executor converting the same image. It
+// to a chunked ext4 image by running the conversion as a separate action and
+// waiting for it. The conversion is deduped across executors through action
+// merging and the Action Cache, instead of every executor converting the same
+// image, and executors use the action result as the containerfs snapshot. It
 // returns nil when the action is not a Firecracker action or conversion is not
 // configured for its architecture.
 func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *repb.ExecuteRequest, action *repb.Action, actionResourceName *digest.CASResourceName) (*firecrackerExt4Image, error) {
@@ -769,6 +773,11 @@ func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *
 		}
 	}
 	if config.AMD64BinaryURL == "" && config.ARM64BinaryURL == "" {
+		return nil, nil
+	}
+	// Never convert the image of a conversion action itself, which would
+	// recurse without bound if an override made it a Firecracker action.
+	if bazel_request.GetRequestMetadata(ctx).GetActionMnemonic() == firecrackerExt4ConversionMnemonic {
 		return nil, nil
 	}
 
@@ -795,32 +804,35 @@ func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *
 	if containerImage == "" || strings.EqualFold(containerImage, "none") {
 		return nil, nil
 	}
-	var binaryURL, binarySHA256 string
+	var binaryURL, binaryBLAKE3 string
 	switch props.Arch {
 	case platform.AMD64ArchitectureName:
-		binaryURL, binarySHA256 = config.AMD64BinaryURL, config.AMD64BinarySHA256
+		binaryURL, binaryBLAKE3 = config.AMD64BinaryURL, config.AMD64BinaryBLAKE3
 	case platform.ARM64ArchitectureName:
-		binaryURL, binarySHA256 = config.ARM64BinaryURL, config.ARM64BinarySHA256
+		binaryURL, binaryBLAKE3 = config.ARM64BinaryURL, config.ARM64BinaryBLAKE3
 	}
 	if binaryURL == "" {
 		return nil, nil
 	}
-	sha256Bytes, err := hex.DecodeString(binarySHA256)
-	if err != nil || len(sha256Bytes) != sha256.Size {
-		return nil, status.InvalidArgumentErrorf("%s: %s binary sha256 must be a 64 character hex string", firecrackerExt4ConversionExperiment, props.Arch)
+	binaryHash, err := hex.DecodeString(binaryBLAKE3)
+	if err != nil || len(binaryHash) != blake3HashSize {
+		return nil, status.InvalidArgumentErrorf("%s: %s binary blake3 hash must be a 64 character hex string", firecrackerExt4ConversionExperiment, props.Arch)
 	}
 	fetchServer := s.env.GetFetchServer()
 	if fetchServer == nil {
 		return nil, status.FailedPreconditionError("Firecracker ext4 conversion requires the remote asset API")
 	}
 
+	// Executors fetch snapshot chunks from CAS by BLAKE3 digest, so the
+	// synthetic action uses BLAKE3 regardless of the client's digest function
+	// so that its chunk outputs land where the executor looks for them.
+	digestFunction := repb.DigestFunction_BLAKE3
 	// The checksum qualifier lets the fetch server return the binary digest
 	// directly from CAS, so the binary is only downloaded when it is missing.
-	digestFunction := actionResourceName.GetDigestFunction()
 	fetchRsp, err := fetchServer.FetchBlob(ctx, &rapb.FetchBlobRequest{
 		InstanceName:   req.GetInstanceName(),
 		Uris:           []string{binaryURL},
-		Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: "sha256-" + base64.StdEncoding.EncodeToString(sha256Bytes)}},
+		Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: "blake3-" + base64.StdEncoding.EncodeToString(binaryHash)}},
 		DigestFunction: digestFunction,
 	})
 	if err != nil {
@@ -875,10 +887,11 @@ func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *
 		Arguments: []string{
 			"./" + firecrackerExt4ConverterName,
 			"--image=" + containerImage,
-			"--output=" + firecrackerExt4ImageOutputPath,
+			"--manifest=" + snaputil.ContainerImageManifestOutputPath,
+			"--chunks_dir=" + snaputil.ContainerImageChunksOutputPath,
 		},
 		EnvironmentVariables: env,
-		OutputPaths:          []string{firecrackerExt4ImageOutputPath},
+		OutputPaths:          []string{snaputil.ContainerImageManifestOutputPath, snaputil.ContainerImageChunksOutputPath},
 	}
 	syntheticAction := &repb.Action{
 		InputRootDigest: inputRootDigest,
