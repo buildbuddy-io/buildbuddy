@@ -16,7 +16,8 @@ extra_bazel_flags="${QA_EXTRA_BAZEL_FLAGS:-}"
 api_key="${BB_API_KEY:-}"
 bb_app_endpoint="${BB_APP_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 bb_grpc_endpoint="${BB_GRPC_ENDPOINT:-buildbuddy.buildbuddy.dev}"
-exec_platform="${QA_EXEC_PLATFORM:-@toolchains_buildbuddy//platforms:linux_x86_64}"
+platform="${QA_PLATFORM:-@toolchains_buildbuddy//platforms:linux_x86_64}"
+# An explicitly empty QA_CC_TOOLCHAIN opts into the host's native toolchain.
 cc_toolchain="${QA_CC_TOOLCHAIN-@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64}"
 jobs="${QA_JOBS:-100}"
 
@@ -57,12 +58,8 @@ echo "Workspace: ${workspace_dir}"
 echo "Tarball URL: ${tarball_url}"
 echo "Strip prefix: ${strip_prefix}"
 echo "Bazel command: ${bazel_command}"
-echo "Execution platform: ${exec_platform}"
-if [[ -n "${cc_toolchain}" ]]; then
-  echo "C++ toolchain: ${cc_toolchain}"
-else
-  echo "C++ toolchain: auto-detected"
-fi
+echo "Execution platform: ${platform}"
+echo "C++ toolchain: ${cc_toolchain:-auto-detected}"
 echo "Jobs: ${jobs}"
 echo "Run ID: ${run_id}"
 echo "=================================================="
@@ -133,15 +130,13 @@ build:dev_qa_test --noremote_accept_cached
 build:dev_qa_test --noremote_upload_local_results
 build:dev_qa_test --remote_instance_name=dev-qa-test/${run_id}
 build:dev_qa_test --modify_execution_info=.*=+no-remote-cache
+build:dev_qa_test --platforms=${platform}
+build:dev_qa_test --extra_execution_platforms=${platform}
 EOF
 
 if [[ -n "${cc_toolchain}" ]]; then
   echo "build:dev_qa_test --extra_toolchains=${cc_toolchain}" >> .bazelrc
 fi
-cat >> .bazelrc <<EOF
-build:dev_qa_test --platforms=${exec_platform}
-build:dev_qa_test --extra_execution_platforms=${exec_platform}
-EOF
 
 if [[ -n "${api_key}" ]]; then
   echo "build:dev_qa_test --remote_header=x-buildbuddy-api-key=${api_key}" >> .bazelrc
