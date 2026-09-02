@@ -1,11 +1,11 @@
 // Package server implements the BuildBuddy WireGuard gateway.
 //
-// A single WireGuard device listens on one UDP port and serves all groups.
-// Each (groupID, networkName) pair is assigned a unique /48 IPv6 prefix,
+// A single WireGuard device listens on one UDP port and serves all callers.
+// Each (namespace, networkName) pair is assigned a unique /48 IPv6 prefix,
 // derived from a monotonically increasing index:
 //
 //	fd00:bb:N::/48  — network N's prefix
-//	fd00:bb:N::1    — network N's hub (DNS)
+//	fd00:bb:N::1    — network N's hub (hub services; see hub.go)
 //	fd00:bb:N::2+   — network N's clients, assigned sequentially
 //
 // Group isolation is enforced inside muxTUN.Write(): packets whose source
@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/gatewayauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -46,14 +46,14 @@ var (
 )
 
 // networkState holds IP allocation and peer name state for one
-// (groupID, networkName) pair.
+// (namespace, networkName) pair.
 type networkState struct {
-	groupID  string                   // group that owns this network
-	index    int                      // assigned network index; determines the /48 prefix
-	mu       sync.Mutex               // protects names and peers
-	names    map[string]netip.Addr    // peer_name → assigned IP
-	peers    map[netip.Addr]*peerInfo // assigned IP → peer, for HubNetwork.PeerContext
-	nextHost int                      // next host number to assign; starts at 2 (.1 is the hub)
+	namespace string                   // namespace for this network (groupID for api key users)
+	index     int                      // assigned network index; determines the /48 prefix
+	mu        sync.Mutex               // protects names and peers
+	names     map[string]netip.Addr    // peer_name → assigned IP
+	peers     map[netip.Addr]*peerInfo // assigned IP → peer, for HubNetwork.PeerContext
+	nextHost  int                      // next host number to assign; starts at 2 (.1 is the hub)
 }
 
 // peerInfo tracks per-peer state needed for cleanup.
@@ -62,7 +62,11 @@ type peerInfo struct {
 	networkState *networkState
 	assignedName string    // empty if peer registered without a name
 	sessionID    string    // uniquely identifies this connection
+	user         string    // authenticated user that registered this peer
 	registeredAt time.Time // used as last-seen baseline if peer never completed a handshake
+	// expiresAt is when the registering credential stops being valid.
+	// Zero means no deadline.
+	expiresAt time.Time
 
 	// ctx lives as long as the registration.
 	ctx    context.Context
@@ -73,7 +77,7 @@ type peerInfo struct {
 // Network isolation is enforced in the muxTUN layer.
 type Gateway struct {
 	mu            sync.Mutex
-	env           environment.Env
+	auth          gatewayauth.Authenticator
 	dev           *device.Device
 	tun           *muxTUN
 	pubKey        string // server's base64 public key
@@ -94,8 +98,19 @@ type Gateway struct {
 	stateChanged chan struct{}
 }
 
+type Options struct {
+	// Authenticator resolves RPC callers to principals. Required.
+	Authenticator gatewayauth.Authenticator
+	// HubServices are started on each network's hub IP as networks are
+	// created (see hub.go).
+	HubServices []HubService
+}
+
 // New creates a Gateway with a single shared WireGuard device.
-func New(env environment.Env, hubServices ...HubService) (*Gateway, error) {
+func New(opts Options) (*Gateway, error) {
+	if opts.Authenticator == nil {
+		return nil, status.InvalidArgumentError("an Authenticator is required")
+	}
 	serverPrivKey, err := wgkeys.GeneratePrivateKey()
 	if err != nil {
 		return nil, status.InternalErrorf("generate server private key: %s", err)
@@ -104,11 +119,11 @@ func New(env environment.Env, hubServices ...HubService) (*Gateway, error) {
 	tunDev := newMuxTUN(1420)
 
 	gw := &Gateway{
-		env:           env,
+		auth:          opts.Authenticator,
 		tun:           tunDev,
 		networks:      make(map[string]*networkState),
 		peers:         make(map[string]*peerInfo),
-		hubServices:   hubServices,
+		hubServices:   opts.HubServices,
 		publicHost:    *publicHost,
 		udpListenPort: *udpListenPort,
 		done:          make(chan struct{}),
@@ -159,18 +174,17 @@ func New(env environment.Env, hubServices ...HubService) (*Gateway, error) {
 // remains open. Peer names are unique within a network: a name held by a
 // connected peer causes ALREADY_EXISTS.
 func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayService_ConnectServer) error {
-	claims, err := g.env.GetAuthenticator().AuthenticatedUser(stream.Context())
-	if err != nil {
-		return err
-	}
-	groupID := claims.GetGroupID()
-
 	if req.GetPublicKey() == "" {
 		return status.InvalidArgumentError("public_key is required")
 	}
 	clientPubKey, err := wgkeys.ParseHexKey(req.GetPublicKey())
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid public_key: %s", err)
+	}
+
+	principal, err := g.auth.Authenticate(stream.Context(), req.GetPublicKey())
+	if err != nil {
+		return err
 	}
 	name := req.GetPeerName()
 	if name != "" {
@@ -191,7 +205,7 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 	defer cancel()
 
 	g.mu.Lock()
-	ns, err := g.getOrCreateNetwork(groupID, req.GetNetworkName())
+	ns, err := g.getOrCreateNetwork(principal.Namespace, req.GetNetworkName())
 	if err != nil {
 		g.mu.Unlock()
 		return err
@@ -205,16 +219,16 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 			return status.AlreadyExistsErrorf("peer name %q is already in use", name)
 		}
 	}
-	// Session IDs uniquely identify connections within a group, so that
+	// Session IDs uniquely identify connections within a namespace, so that
 	// removal below (and deregistration by session ID, eventually) is
 	// unambiguous.
 	for _, info := range g.peers {
-		if info.sessionID == sessionID && info.networkState.groupID == groupID {
+		if info.sessionID == sessionID && info.networkState.namespace == principal.Namespace {
 			g.mu.Unlock()
 			return status.AlreadyExistsErrorf("session_id %q is already in use", sessionID)
 		}
 	}
-	assignedIP, err := g.addPeerLocked(ctx, cancel, ns, clientPubKey.Hex(), name, sessionID)
+	assignedIP, err := g.addPeerLocked(ctx, cancel, ns, clientPubKey.Hex(), name, sessionID, principal)
 	g.mu.Unlock()
 	if err != nil {
 		return err
@@ -239,8 +253,8 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 		return err
 	}
 
-	log.Infof("Connected peer %s in group %q network %q, assigned %s (name=%q session=%s)",
-		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, name, sessionID)
+	log.Infof("Connected peer %s for %q network %q, assigned %s (name=%q session=%s expires=%s)",
+		clientPubKey.String()[:8]+"...", principal.Namespace, req.GetNetworkName(), assignedIP, name, sessionID, formatExpiry(principal.ExpiresAt))
 
 	// Send periodic (empty) heartbeat messages. These keep the stream from
 	// being closed by idle-sensitive intermediaries while the tunnel is
@@ -280,11 +294,10 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 // While the watched peer is quiet the stream carries periodic empty
 // heartbeat messages (as Connect does); clients ignore them.
 func (g *Gateway) Watch(req *gwpb.WatchRequest, stream gwsvcpb.GatewayService_WatchServer) error {
-	claims, err := g.env.GetAuthenticator().AuthenticatedUser(stream.Context())
+	p, err := g.auth.Authenticate(stream.Context(), "" /*=wgPublicKey*/)
 	if err != nil {
 		return err
 	}
-	groupID := claims.GetGroupID()
 	sessionID := req.GetSessionId()
 	if sessionID == "" {
 		return status.InvalidArgumentError("session_id is required")
@@ -302,7 +315,7 @@ func (g *Gateway) Watch(req *gwpb.WatchRequest, stream gwsvcpb.GatewayService_Wa
 		// the snapshot closes the already-obtained channel, so the select
 		// below wakes instead of missing it.
 		signal := g.watchSignal()
-		peer, err := g.snapshotPeer(groupID, sessionID)
+		peer, err := g.snapshotPeer(p.Namespace, sessionID)
 		if err != nil && !loggedSnapshotErr {
 			// Log once per stream: this runs on every wake, and a
 			// persistently failing IpcGet would otherwise flood the log.
@@ -354,10 +367,10 @@ func (g *Gateway) watchSignal() <-chan struct{} {
 }
 
 // snapshotPeer returns the current state of the peer with the given session
-// ID in groupID, or nil if no such peer is registered. A non-nil error
-// reports a failure to read handshake state; the returned peer is still
-// valid, with last_handshake_time left unset.
-func (g *Gateway) snapshotPeer(groupID, sessionID string) (*gwpb.Peer, error) {
+// ID in the namespace, or nil if no such peer is registered. A non-nil
+// error reports a failure to read handshake state; the returned peer is
+// still valid, with last_handshake_time left unset.
+func (g *Gateway) snapshotPeer(namespace, sessionID string) (*gwpb.Peer, error) {
 	// Locate the peer before touching the WireGuard device: dumping device
 	// state (lastHandshakeTimes) is O(all peers), and the common case for a
 	// watch on a still-booting session is that the peer doesn't exist yet.
@@ -365,7 +378,7 @@ func (g *Gateway) snapshotPeer(groupID, sessionID string) (*gwpb.Peer, error) {
 	var pubKeyHex string
 	g.mu.Lock()
 	for k, info := range g.peers {
-		if info.sessionID != sessionID || info.networkState.groupID != groupID {
+		if info.sessionID != sessionID || info.networkState.namespace != namespace {
 			continue
 		}
 		pubKeyHex = k
@@ -395,7 +408,7 @@ func (g *Gateway) snapshotPeer(groupID, sessionID string) (*gwpb.Peer, error) {
 // registration's lifetime (see peerInfo.ctx). assignedName and sessionID
 // must already be validated (and checked for conflicts) by the caller. Must
 // be called with g.mu held.
-func (g *Gateway) addPeerLocked(ctx context.Context, cancel context.CancelFunc, ns *networkState, pubKeyHex, assignedName, sessionID string) (netip.Addr, error) {
+func (g *Gateway) addPeerLocked(ctx context.Context, cancel context.CancelFunc, ns *networkState, pubKeyHex, assignedName, sessionID string, p *gatewayauth.Principal) (netip.Addr, error) {
 	if _, ok := g.peers[pubKeyHex]; ok {
 		return netip.Addr{}, status.AlreadyExistsErrorf("public key %s... is already registered", pubKeyHex[:8])
 	}
@@ -421,7 +434,9 @@ func (g *Gateway) addPeerLocked(ctx context.Context, cancel context.CancelFunc, 
 		networkState: ns,
 		assignedName: assignedName,
 		sessionID:    sessionID,
+		user:         p.User,
 		registeredAt: time.Now(),
+		expiresAt:    p.ExpiresAt,
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -439,11 +454,10 @@ func (g *Gateway) addPeerLocked(ctx context.Context, cancel context.CancelFunc, 
 // List returns the peers currently registered by the caller's group, named
 // or not.
 func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListResponse, error) {
-	claims, err := g.env.GetAuthenticator().AuthenticatedUser(ctx)
+	p, err := g.auth.Authenticate(ctx, "" /*=wgPublicKey*/)
 	if err != nil {
 		return nil, err
 	}
-	groupID := claims.GetGroupID()
 
 	handshakeTimes, err := g.lastHandshakeTimes()
 	if err != nil {
@@ -457,7 +471,7 @@ func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListRe
 	peers := make([]*gwpb.Peer, 0)
 	for pubKeyHex, info := range g.peers {
 		ns := info.networkState
-		if ns.groupID != groupID {
+		if ns.namespace != p.Namespace {
 			continue
 		}
 		p := &gwpb.Peer{
@@ -473,10 +487,10 @@ func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListRe
 	return &gwpb.ListResponse{Peers: peers}, nil
 }
 
-// getOrCreateNetwork returns the networkState for (groupID, networkName),
+// getOrCreateNetwork returns the networkState for (namespace, networkName),
 // creating it if it doesn't exist. Must be called with g.mu held.
-func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState, error) {
-	key := groupID + "/" + networkName
+func (g *Gateway) getOrCreateNetwork(namespace, networkName string) (*networkState, error) {
+	key := namespace + "/" + networkName
 	if ns, ok := g.networks[key]; ok {
 		return ns, nil
 	}
@@ -485,11 +499,11 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 	g.nextIndex++
 
 	ns := &networkState{
-		groupID:  groupID,
-		index:    index,
-		names:    make(map[string]netip.Addr),
-		peers:    make(map[netip.Addr]*peerInfo),
-		nextHost: 2,
+		namespace: namespace,
+		index:     index,
+		names:     make(map[string]netip.Addr),
+		peers:     make(map[netip.Addr]*peerInfo),
+		nextHost:  2,
 	}
 
 	nameLookup := func(name string) (netip.Addr, bool) {
@@ -537,9 +551,10 @@ func (g *Gateway) cleanupLoop() {
 
 // cleanupStalePeers removes peers whose last WireGuard handshake (or
 // registration time, if they never completed one) is older than
-// stalePeerTimeout. For Connect-based peers this is a backstop: their
-// registrations are normally removed when their stream closes, but this
-// catches peers whose stream is somehow alive while their tunnel is dark.
+// stalePeerTimeout, and peers whose registering credential has expired. For
+// Connect-based peers this is a backstop: their registrations are normally
+// removed when their stream closes, but this catches peers whose stream is
+// somehow alive while their tunnel is dark.
 func (g *Gateway) cleanupStalePeers() {
 	handshakeTimes, err := g.lastHandshakeTimes()
 	if err != nil {
@@ -552,6 +567,16 @@ func (g *Gateway) cleanupStalePeers() {
 	defer g.mu.Unlock()
 
 	for pubKeyHex, info := range g.peers {
+		// An expired credential ends the tunnel regardless of how active it
+		// is. WireGuard re-handshakes forever, so without this an expired
+		// credential would buy indefinite access.
+		if !info.expiresAt.IsZero() && now.After(info.expiresAt) {
+			log.Infof("Found EXPIRED peer %s... (ip=%s name=%q user=%s): credential expired at %s",
+				pubKeyHex[:8], info.ip, info.assignedName, info.user, formatExpiry(info.expiresAt))
+			g.removePeerLocked(pubKeyHex, info)
+			continue
+		}
+
 		lastSeen, ok := handshakeTimes[pubKeyHex]
 		if !ok {
 			// Peer never completed a handshake; use registration time as baseline.
@@ -589,6 +614,13 @@ func (g *Gateway) lastHandshakeTimes() (map[string]time.Time, error) {
 		}
 	}
 	return handshakeTimes, nil
+}
+
+func formatExpiry(t time.Time) string {
+	if t.IsZero() {
+		return "never"
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // removePeerLocked removes a peer from the WireGuard device, the TUN, and the

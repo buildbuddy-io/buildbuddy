@@ -12,9 +12,9 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server",
     visibility = ["//visibility:public"],
     deps = [
+        "//enterprise/gateway/gatewayauth",
         "//proto:gateway_go_proto",
         "//proto:gateway_service_go_proto",
-        "//server/environment",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
@@ -48,10 +48,11 @@ go_test(
     ],
     embed = [":server"],
     deps = [
+        "//enterprise/gateway/apikeyauth",
+        "//enterprise/gateway/gatewayauth",
         "//enterprise/gateway/testgateway",
         "//proto:gateway_go_proto",
         "//server/testutil/testauth",
-        "//server/testutil/testenv",
         "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/wgkeys",
