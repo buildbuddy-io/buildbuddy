@@ -20,6 +20,8 @@ platform="${QA_PLATFORM:-@toolchains_buildbuddy//platforms:linux_x86_64}"
 # An explicitly empty QA_CC_TOOLCHAIN opts into the host's native toolchain.
 cc_toolchain="${QA_CC_TOOLCHAIN-@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64}"
 jobs="${QA_JOBS:-100}"
+# On macOS, pin the Xcode used by remote actions to the one selected here.
+developer_dir="${DEVELOPER_DIR:-}"
 
 if [[ -z "${bazel}" ]]; then
   echo >&2 "ERROR: BIT_BAZEL_BINARY not set"
@@ -61,6 +63,7 @@ echo "Bazel command: ${bazel_command}"
 echo "Execution platform: ${platform}"
 echo "C++ toolchain: ${cc_toolchain:-auto-detected}"
 echo "Jobs: ${jobs}"
+echo "DEVELOPER_DIR: ${developer_dir:-unset}"
 echo "Run ID: ${run_id}"
 echo "=================================================="
 
@@ -136,6 +139,15 @@ EOF
 
 if [[ -n "${cc_toolchain}" ]]; then
   echo "build:dev_qa_test --extra_toolchains=${cc_toolchain}" >> .bazelrc
+fi
+
+if [[ -n "${developer_dir}" ]]; then
+  # Bazel validates absolute header paths reported by the remote compiler
+  # against the include directories it discovered locally, so remote Mac
+  # actions must run with the same Xcode, at the same path, as this host.
+  # Forwarding DEVELOPER_DIR makes that explicit instead of relying on the
+  # executor's xcode-select default.
+  echo "build:dev_qa_test --action_env=DEVELOPER_DIR=${developer_dir}" >> .bazelrc
 fi
 
 if [[ -n "${api_key}" ]]; then
