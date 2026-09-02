@@ -699,7 +699,7 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	require.NoError(t, err)
 	cache := te.GetCache()
 
-	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
 	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
@@ -732,7 +732,7 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 }
 
 func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1)
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -745,7 +745,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 	tree := &repb.Tree{
 		Root: &repb.Directory{
 			Files: []*repb.FileNode{
-				{Name: "output.bin", Digest: outputRN.GetDigest()},
+				{Name: strings.Repeat("x", 5*1024), Digest: outputRN.GetDigest()},
 			},
 		},
 	}
@@ -773,7 +773,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 
-	tree.Root.Files[0].Name = "xutput.bin"
+	tree.Root.Files[0].Name = "y" + tree.Root.Files[0].GetName()[1:]
 	corruptTreeData, err := proto.Marshal(tree)
 	require.NoError(t, err)
 	require.Len(t, corruptTreeData, len(treeData))
@@ -795,7 +795,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 }
 
 func TestValidateActionResult_ChunkedOutputDirectoryTreeInfersDigestFunction(t *testing.T) {
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1)
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -803,7 +803,9 @@ func TestValidateActionResult_ChunkedOutputDirectoryTreeInfersDigestFunction(t *
 	require.NoError(t, err)
 	cache := te.GetCache()
 
-	treeData, err := proto.Marshal(&repb.Tree{Root: &repb.Directory{}})
+	treeData, err := proto.Marshal(&repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{{Name: strings.Repeat("x", 5*1024)}},
+	}})
 	require.NoError(t, err)
 	treeDigest, _ := storeChunkedBlob(t, ctx, cache, treeData, repb.DigestFunction_SHA1)
 	ar := &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{TreeDigest: treeDigest}}}
@@ -836,7 +838,7 @@ func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *
 }
 
 func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1024)
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -878,8 +880,8 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 	assert.True(t, status.IsNotFoundError(err))
 }
 
-func TestValidateActionResult_DiscardsLegacyChunkedOutputFileForAvgChunkSizeOverride(t *testing.T) {
-	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+func TestValidateActionResult_DiscardsChunkedOutputFileBelowCurrentWriteThreshold(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
 
 	ctx := context.Background()
@@ -913,23 +915,9 @@ func TestValidateActionResult_DiscardsLegacyChunkedOutputFileForAvgChunkSizeOver
 		},
 	}
 
-	efp := actionCacheFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, efp, ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
-}
-
-type actionCacheFlagProvider struct {
-	interfaces.ExperimentFlagProvider
-	intValues map[string]int64
-}
-
-func (p actionCacheFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
-	v, ok := p.intValues[flagName]
-	if ok {
-		return v
-	}
-	return defaultValue
 }
 
 func TestRecordOriginScorecard(t *testing.T) {

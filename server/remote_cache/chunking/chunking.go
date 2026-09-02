@@ -34,7 +34,7 @@ import (
 
 var (
 	chunkedManifestSalt             = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
+	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 1024*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value.")
 	minChunkedReadFallbackSizeBytes = flag.Int64("cache.min_chunked_read_fallback_size_bytes", 2*1024*1024, "Only blobs larger (non-inclusive) than this value will use the server-side chunked read fallback after a normal blob lookup misses.")
 )
 
@@ -88,9 +88,8 @@ func MaxChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvide
 }
 
 // MaxSupportedChunkSizeBytes is the process-wide chunk size buffer consumers
-// must support. This supports temporarily doubling cache.avg_chunk_size_override
-// from the default 512KiB to 1MiB; do not set the override higher without
-// increasing this and auditing buffer consumers.
+// must support. Before doubling the average chunk size to 2MiB, raise this to
+// 8MiB and audit all buffer consumers.
 func MaxSupportedChunkSizeBytes() int64 {
 	return 4 * 1024 * 1024
 }
@@ -103,22 +102,11 @@ func MaxCompressedChunkReadSizeBytes() int64 {
 // MinChunkedReadFallbackSizeBytes can be configured independently from the
 // write threshold so server-side miss fallback paths can still read older
 // chunked blobs that were written with a smaller chunk size, but is clamped to
-// at most MaxChunkSizeBytes().
+// at most MaxChunkSizeBytes(). Presence and AC validation should instead use
+// MaxChunkSizeBytes(), so blobs below the current write threshold are not
+// accepted as manifest-only.
 func MinChunkedReadFallbackSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
 	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes(ctx, efp))
-}
-
-// ShouldDiscardLegacyChunkedBlob reports whether a missing whole CAS blob should
-// skip manifest fallback while migrating to a larger avg chunk-size override.
-func ShouldDiscardLegacyChunkedBlob(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes int64) bool {
-	if efp == nil {
-		return false
-	}
-	if AvgChunkSizeBytes(ctx, efp) <= *avgChunkSizeBytes {
-		return false
-	}
-	return digestSizeBytes > MinChunkedReadFallbackSizeBytes(ctx, efp) &&
-		digestSizeBytes <= MaxChunkSizeBytes(ctx, efp)
 }
 
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
