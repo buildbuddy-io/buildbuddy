@@ -100,22 +100,20 @@ func TestNetworkClientIP(t *testing.T) {
 	}
 }
 
-func TestRegister_AssignsSequentialIPs(t *testing.T) {
+func TestConnect_AssignsSequentialIPs(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	gw := setupGateway(t, ta)
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	resp1, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "peer1", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
+	resp1, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{NetworkName: "net1", PeerName: "peer1", PublicKey: newPubKeyHex(t), SessionId: "session-1"})
 	require.Equal(t, "fd00:bb::2", resp1.GetAssignedIp())
 	require.Equal(t, "fd00:bb::1", resp1.GetGatewayIp())
 	require.Equal(t, "fd00:bb::/48", resp1.GetNetworkCidr())
 	require.NotEmpty(t, resp1.GetServerPublicKey())
 
-	resp2, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "peer2", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
+	resp2, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{NetworkName: "net1", PeerName: "peer2", PublicKey: newPubKeyHex(t), SessionId: "session-2"})
 	require.Equal(t, "fd00:bb::3", resp2.GetAssignedIp())
 
 	// Peers in the same network share the same server endpoint and public key.
@@ -123,7 +121,7 @@ func TestRegister_AssignsSequentialIPs(t *testing.T) {
 	require.Equal(t, resp1.GetServerEndpoint(), resp2.GetServerEndpoint())
 }
 
-func TestRegister_IsolatedNetworks(t *testing.T) {
+func TestConnect_IsolatedNetworks(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers(
 		"user1", "group1",
 		"user2", "group2",
@@ -135,10 +133,8 @@ func TestRegister_IsolatedNetworks(t *testing.T) {
 	ctx2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
 	require.NoError(t, err)
 
-	resp1, err := gw.Register(ctx1, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
-	resp2, err := gw.Register(ctx2, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
+	resp1, _, _ := startConnect(t, gw, ctx1, &gwpb.ConnectRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t), SessionId: "session-1"})
+	resp2, _, _ := startConnect(t, gw, ctx2, &gwpb.ConnectRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t), SessionId: "session-2"})
 
 	// All clients share the same WireGuard device and server public key.
 	require.Equal(t, resp1.GetServerPublicKey(), resp2.GetServerPublicKey())
@@ -153,59 +149,40 @@ func TestRegister_IsolatedNetworks(t *testing.T) {
 	require.Equal(t, "fd00:bb:1::2", resp2.GetAssignedIp())
 }
 
-func TestRegister_Unauthenticated(t *testing.T) {
+func TestConnect_Unauthenticated(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers())
 	gw := setupGateway(t, ta)
 
-	_, err := gw.Register(context.Background(), &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t)})
+	stream := &fakeConnectStream{ctx: context.Background(), responses: make(chan *gwpb.ConnectResponse, 1)}
+	err := gw.Connect(&gwpb.ConnectRequest{NetworkName: "net1", PublicKey: newPubKeyHex(t), SessionId: "session-1"}, stream)
 	require.Error(t, err)
 }
 
-func TestRegister_MissingPublicKey(t *testing.T) {
+func TestConnect_MissingPublicKey(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	gw := setupGateway(t, ta)
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1"})
-	require.Error(t, err)
+	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	err = gw.Connect(&gwpb.ConnectRequest{NetworkName: "net1", SessionId: "session-1"}, stream)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
 }
 
-func TestRegister_InvalidPublicKey(t *testing.T) {
+func TestConnect_InvalidPublicKey(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	gw := setupGateway(t, ta)
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: "notahexkey"})
-	require.Error(t, err)
+	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	err = gw.Connect(&gwpb.ConnectRequest{NetworkName: "net1", PublicKey: "notahexkey", SessionId: "session-1"}, stream)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got: %v", err)
 }
 
-func TestRegister_PeerNameConflict(t *testing.T) {
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(t, ta)
-
-	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
-	require.NoError(t, err)
-
-	resp1, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "foo", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
-	require.Equal(t, "foo", resp1.GetAssignedPeerName())
-
-	// Second peer requesting the same name gets a suffixed name.
-	resp2, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "foo", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
-	require.Equal(t, "foo-1", resp2.GetAssignedPeerName())
-
-	// Third peer gets foo-2 since foo-1 is now also taken.
-	resp3, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "foo", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
-	require.Equal(t, "foo-2", resp3.GetAssignedPeerName())
-}
-
-func TestRegister_InvalidPeerName(t *testing.T) {
+func TestConnect_InvalidPeerName(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	gw := setupGateway(t, ta)
 
@@ -213,59 +190,10 @@ func TestRegister_InvalidPeerName(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, name := range []string{"foo.bar", "foo.bar.baz"} {
-		_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: name, PublicKey: newPubKeyHex(t)})
+		stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+		err = gw.Connect(&gwpb.ConnectRequest{NetworkName: "net1", PeerName: name, PublicKey: newPubKeyHex(t), SessionId: "session-" + name}, stream)
 		require.Errorf(t, err, "expected error for peer_name %q", name)
 	}
-}
-
-func TestDeregister(t *testing.T) {
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(t, ta)
-
-	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
-	require.NoError(t, err)
-
-	pubKey := newPubKeyHex(t)
-	resp, err := gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "mypeer", PublicKey: pubKey})
-	require.NoError(t, err)
-	assignedIP := netip.MustParseAddr(resp.GetAssignedIp())
-
-	_, err = gw.Deregister(ctx, &gwpb.DeregisterRequest{PublicKey: pubKey})
-	require.NoError(t, err)
-
-	gw.mu.Lock()
-	defer gw.mu.Unlock()
-
-	// Peer must be gone from the peer map.
-	require.NotContains(t, gw.peers, pubKey)
-
-	// IP must be unregistered from the TUN.
-	_, inTUN := gw.tun.ipToNetwork.Load(assignedIP)
-	require.False(t, inTUN, "IP should be unregistered after deregister")
-
-	// DNS name must be freed.
-	ns := gw.networks["group1/net1"]
-	_, nameExists := ns.names["mypeer"]
-	require.False(t, nameExists, "DNS name should be removed after deregister")
-}
-
-func TestDeregister_Unauthenticated(t *testing.T) {
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(t, ta)
-
-	_, err := gw.Deregister(context.Background(), &gwpb.DeregisterRequest{PublicKey: newPubKeyHex(t)})
-	require.Error(t, err)
-}
-
-func TestDeregister_UnknownKey(t *testing.T) {
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(t, ta)
-
-	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
-	require.NoError(t, err)
-
-	_, err = gw.Deregister(ctx, &gwpb.DeregisterRequest{PublicKey: newPubKeyHex(t)})
-	require.Error(t, err)
 }
 
 func TestList(t *testing.T) {
@@ -287,11 +215,6 @@ func TestList(t *testing.T) {
 		PublicKey:   newPubKeyHex(t),
 		SessionId:   "session-2",
 	})
-	// A peer registered via the deprecated Register RPC has no session ID
-	// and must be omitted.
-	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PeerName: "legacy", PublicKey: newPubKeyHex(t)})
-	require.NoError(t, err)
-
 	list, err := gw.List(ctx, &gwpb.ListRequest{})
 	require.NoError(t, err)
 	require.Len(t, list.GetPeers(), 2)
@@ -701,23 +624,6 @@ func TestConnect_RefusesDuplicateSessionID(t *testing.T) {
 	require.NoError(t, <-done2)
 }
 
-func TestRegister_RefusesDuplicatePublicKey(t *testing.T) {
-	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(t, ta)
-
-	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
-	require.NoError(t, err)
-
-	pubKey := newPubKeyHex(t)
-	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: pubKey})
-	require.NoError(t, err)
-
-	// Re-registering the same public key is refused rather than silently
-	// overwriting (and leaking) the previous registration.
-	_, err = gw.Register(ctx, &gwpb.RegisterRequest{NetworkName: "net1", PublicKey: pubKey})
-	require.True(t, status.IsAlreadyExistsError(err), "expected AlreadyExists, got: %v", err)
-}
-
 func TestConnect_UnnamedPeer(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	gw := setupGateway(t, ta)
@@ -864,22 +770,22 @@ func TestCleanupStalePeers(t *testing.T) {
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	// Register two peers in the same network.
+	// Connect two peers in the same network.
 	stalePubKey := newPubKeyHex(t)
-	staleResp, err := gw.Register(ctx, &gwpb.RegisterRequest{
+	staleResp, _, _ := startConnect(t, gw, ctx, &gwpb.ConnectRequest{
 		NetworkName: "net1",
 		PeerName:    "stale",
 		PublicKey:   stalePubKey,
+		SessionId:   "session-stale",
 	})
-	require.NoError(t, err)
 
 	freshPubKey := newPubKeyHex(t)
-	_, err = gw.Register(ctx, &gwpb.RegisterRequest{
+	startConnect(t, gw, ctx, &gwpb.ConnectRequest{
 		NetworkName: "net1",
 		PeerName:    "fresh",
 		PublicKey:   freshPubKey,
+		SessionId:   "session-fresh",
 	})
-	require.NoError(t, err)
 
 	// Backdate the stale peer's registration time so it appears old enough to
 	// be reaped.
