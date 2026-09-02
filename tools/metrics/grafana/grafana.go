@@ -176,20 +176,12 @@ func run() error {
 		return err
 	})
 	eg.Go(func() error {
-		var context string
-		if *clickhouse == "dev" {
-			context = "gke_flame-build_us-west1_dev-nv8eh"
-		} else if *clickhouse == "prod" {
-			context = "gke_flame-build_us-west1_prod-hs6in"
-		} else {
-			return nil
-		}
 		namespace := "clickhouse-operator-" + *clickhouse
 		service := "chi-repl-" + *clickhouse + "-replicated-0-0-0"
 		// Start kubectl port-forward for clickhouse
 		cmd := exec.CommandContext(
 			ctx, "kubectl", "--context", k8sContext(namespace), "--namespace", namespace, "port-forward", service,
-			"--context="+context, "--address=0.0.0.0", "9001:9000")
+			"--address=0.0.0.0", "9001:9000")
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		err := cmd.Run()
