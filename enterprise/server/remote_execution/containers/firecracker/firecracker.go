@@ -1123,17 +1123,27 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	writeManifestLocally := snapshotDetails.saveLocalSnapshot && (!snapshotDetails.saveRemoteSnapshot ||
 		readPolicy != platform.AlwaysReadNewestSnapshot)
 
+	// Only trunk-based runs that had no better snapshot to resume from update
+	// the universal snapshot, so repos that maintain a default branch snapshot
+	// never write it and pay none of its cost.
+	var resumedFrom *fcpb.SnapshotKey
+	if c.snapshot != nil {
+		resumedFrom = c.snapshot.GetKey()
+	}
+	writeUniversalManifest := snaploader.IsEligibleToUpdateUniversalSnapshot(c.task, resumedFrom)
+
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:            vmd,
-		VMConfiguration:       c.vmConfig,
-		VMStateSnapshotPath:   filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:       c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:       c.executorConfig.InitrdImagePath,
-		ChunkedFiles:          map[string]*copy_on_write.COWStore{},
-		Recycled:              c.recycled,
-		CacheSnapshotRemotely: snapshotDetails.saveRemoteSnapshot,
-		CacheSnapshotLocally:  snapshotDetails.saveLocalSnapshot,
-		WriteManifestLocally:  writeManifestLocally,
+		VMMetadata:                       vmd,
+		VMConfiguration:                  c.vmConfig,
+		VMStateSnapshotPath:              filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:                  c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:                  c.executorConfig.InitrdImagePath,
+		ChunkedFiles:                     map[string]*copy_on_write.COWStore{},
+		Recycled:                         c.recycled,
+		CacheSnapshotRemotely:            snapshotDetails.saveRemoteSnapshot,
+		CacheSnapshotLocally:             snapshotDetails.saveLocalSnapshot,
+		WriteManifestLocally:             writeManifestLocally,
+		EligibleToWriteUniversalManifest: writeUniversalManifest,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
@@ -1178,7 +1188,7 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
 		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
-		CompletedTimestamp:    tspb.Now(),
+		CompletedTimestamp:    tspb.New(c.env.GetClock().Now()),
 	}
 }
 
@@ -1208,16 +1218,17 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 			return true
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
-		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
-			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		age := c.env.GetClock().Since(snapshotLastSavedTime.AsTime())
+		if age > minWriteDuration {
+			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 			return true
 		}
-		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 		return false
 	}
 
 	if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
-		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
+		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey(), false /*isFallback*/)
 	}
 
 	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable
@@ -1257,11 +1268,12 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 			return true
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
-		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
-			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		age := c.env.GetClock().Since(snapshotLastSavedTime.AsTime())
+		if age > minWriteDuration {
+			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 			return true
 		}
-		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 		return false
 	}
 
@@ -1366,25 +1378,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	readPolicy, err := snapshotReadPolicy(c.task)
+	getSnapshotOpts, err := c.getSnapshotOptions()
 	if err != nil {
 		return err
 	}
-	maxFallbackAgeStr := platform.FindEffectiveValue(c.task, platform.MaxStaleFallbackSnapshotAgePropertyName)
-	maxFallbackAge := snaputil.DefaultMaxStaleFallbackSnapshotAge
-	if maxFallbackAgeStr != "" {
-		d, err := time.ParseDuration(maxFallbackAgeStr)
-		if err != nil {
-			return status.InvalidArgumentErrorf("invalid max fallback snapshot age %s: %s", maxFallbackAgeStr, err)
-		}
-		maxFallbackAge = d
-	}
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
-		SupportsRemoteChunks:        c.supportsRemoteSnapshots,
-		SupportsRemoteManifest:      c.supportsRemoteSnapshots,
-		ReadPolicy:                  readPolicy,
-		MaxStaleFallbackSnapshotAge: maxFallbackAge,
-	})
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, getSnapshotOpts)
 	if err != nil {
 		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
@@ -3865,6 +3863,30 @@ func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
 	return err == nil
 }
 
+// getSnapshotOptions builds the options describing which snapshots this task
+// is willing to read
+func (c *FirecrackerContainer) getSnapshotOptions() (*snaploader.GetSnapshotOptions, error) {
+	readPolicy, err := snapshotReadPolicy(c.task)
+	if err != nil {
+		return nil, err
+	}
+	maxFallbackAgeStr := platform.FindEffectiveValue(c.task, platform.MaxStaleFallbackSnapshotAgePropertyName)
+	maxFallbackAge := snaputil.DefaultMaxStaleFallbackSnapshotAge
+	if maxFallbackAgeStr != "" {
+		d, err := time.ParseDuration(maxFallbackAgeStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid max fallback snapshot age %s: %s", maxFallbackAgeStr, err)
+		}
+		maxFallbackAge = d
+	}
+	return &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:        c.supportsRemoteSnapshots,
+		SupportsRemoteManifest:      c.supportsRemoteSnapshots,
+		ReadPolicy:                  readPolicy,
+		MaxStaleFallbackSnapshotAge: maxFallbackAge,
+	}, nil
+}
+
 // hasRemoteSnapshot returns whether a remote snapshot exists for any
 // valid snapshot keys, including fallback keys.
 func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *snaploader.FileCacheLoader) bool {
@@ -3877,11 +3899,11 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *sn
 	// branch. Merge queue snapshots are never written under the
 	// gh-readonly-queue/... ref, so checking the branch key would always miss and
 	// incorrectly make us think no remote snapshot exists yet.
-	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetWriteKey()}
-	allKeys = append(allKeys, c.SnapshotKeySet().GetFallbackKeys()...)
-
-	for _, k := range allKeys {
-		if hasSnapshot := c.hasRemoteSnapshotForKey(ctx, loader, k); hasSnapshot {
+	if c.hasRemoteSnapshotForKey(ctx, loader, c.SnapshotKeySet().GetWriteKey(), false /*isFallback*/) {
+		return true
+	}
+	for _, k := range c.SnapshotKeySet().GetFallbackKeys() {
+		if c.hasRemoteSnapshotForKey(ctx, loader, k, true /*isFallback*/) {
 			return true
 		}
 	}
@@ -3889,10 +3911,19 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *sn
 	return false
 }
 
-func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
-	_, _, err := loader.FetchRemoteManifest(ctx, key)
-	return err == nil
+func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey, isFallback bool) bool {
+	manifest, _, err := loader.FetchRemoteManifest(ctx, key)
+	if err != nil {
+		return false
+	}
+	opts, err := c.getSnapshotOptions()
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to compute snapshot options: %s", err)
+		return false
+	}
+	return loader.ValidateSnapshot(ctx, manifest, key, opts, true /*isRemote*/, isFallback)
 }
+
 func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
 	_, err := loader.GetLocalManifest(ctx, key, c.supportsRemoteSnapshots)
 	return err == nil

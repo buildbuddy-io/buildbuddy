@@ -64,6 +64,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
+	"github.com/jonboulle/clockwork"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1575,6 +1576,237 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 
 			// Resume from snapshot on executor 1.
 			resumeFromSnapshot(getEnvWithFC(fc), workDir1, "Resume", tc.expectedOutputAfterResume)
+		})
+	}
+}
+
+func TestFirecracker_SnapshotSharing_UniversalFallback(t *testing.T) {
+	fakeClock := clockwork.NewFakeClock()
+	tests := []struct {
+		name              string
+		testStaleSnapshot bool
+	}{
+		{
+			name: "Successful resume from universal snapshot",
+		},
+		{
+			name:              "Failure - Universal snapshot was too old",
+			testStaleSnapshot: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			env.SetClock(fakeClock)
+			rootDir := testfs.MakeTempDir(t)
+			cfg := getExecutorConfig(t)
+
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+			filecacheRoot := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			env.SetFileCache(fc)
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					err := vm.Remove(ctx)
+					assert.NoError(t, err)
+				}
+			})
+
+			workDir := testfs.MakeDirAll(t, rootDir, "work")
+			opts := firecracker.ContainerOpts{
+				ContainerImage:         busyboxImage,
+				ActionWorkingDirectory: workDir,
+				VMConfiguration: &fcpb.VMConfiguration{
+					NumCpus:           1,
+					MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+					NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+					ScratchDiskSizeMb: 100,
+				},
+				ExecutorConfig: cfg,
+			}
+
+			instanceName := "test-instance-name"
+			taskTemplate := &repb.ExecutionTask{
+				Command: &repb.Command{
+					Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+						{Name: "recycle-runner", Value: "true"},
+					}},
+					Arguments: []string{"./buildbuddy_ci_runner"},
+					EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+						{Name: "GIT_REPO_DEFAULT_BRANCH", Value: "main"},
+					},
+				},
+				ExecuteRequest: &repb.ExecuteRequest{
+					InstanceName: instanceName,
+				},
+			}
+
+			// pr-1 saves a snapshot
+			taskPR1 := taskTemplate.CloneVT()
+			taskPR1.Command.EnvironmentVariables = append(taskPR1.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name: "GIT_BRANCH", Value: "pr-1",
+			})
+			vm, err := firecracker.NewContainer(ctx, env, taskPR1, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, vm)
+			require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+			err = vm.Create(ctx, workDir)
+			require.NoError(t, err)
+			cmd := appendToLog("pr-1")
+			res := vm.Exec(ctx, cmd, nil /*=stdio*/)
+			require.NoError(t, res.Error)
+			require.Equal(t, "pr-1\n", string(res.Stdout))
+			err = vm.Pause(ctx)
+			require.NoError(t, err)
+
+			if tc.testStaleSnapshot {
+				fakeClock.Advance(snaputil.DefaultMaxStaleFallbackSnapshotAge + 1*time.Hour)
+			}
+
+			// pr-2 tries to resume from a snapshot. Should only succeed if the universal
+			// snapshot is still valid.
+			taskPR2 := taskTemplate.CloneVT()
+			taskPR2.Command.EnvironmentVariables = append(taskPR2.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name: "GIT_BRANCH", Value: "pr-2",
+			})
+			vm2, err := firecracker.NewContainer(ctx, env, taskPR2, opts)
+			require.NoError(t, err)
+			containersToCleanup = append(containersToCleanup, vm2)
+			require.NoError(t, container.PullImageIfNecessary(ctx, env, vm2, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+
+			if tc.testStaleSnapshot {
+				// The universal snapshot is too old to read, so pr-2 should have to boot cold.
+				err = vm2.Create(ctx, workDir)
+				require.NoError(t, err)
+				cmd = appendToLog("pr-2")
+				res = vm2.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, "pr-2\n", string(res.Stdout))
+			} else {
+				// The universal snapshot is still valid, so pr-2 should be able to resume from it.
+				err = vm2.Unpause(ctx)
+				require.NoError(t, err)
+				cmd = appendToLog("pr-2")
+				res = vm2.Exec(ctx, cmd, nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.Equal(t, "pr-1\npr-2\n", string(res.Stdout))
+			}
+		})
+	}
+}
+
+func TestFirecracker_SnapshotSharing_UniversalFallback_SavePolicy(t *testing.T) {
+	// Disable local snapshot sharing with filecache to simplify the setup.
+	// We're testing remote cache behavior, so there's no need to also write snapshots to the local filecache,
+	// especially because we'd need to clear it to guarantee we're hitting the remote cache.
+	flags.Set(t, "executor.enable_local_snapshot_sharing", false)
+
+	for _, tc := range []struct {
+		name                    string
+		expireUniversalSnapshot bool
+		expectedFinalLogs       string
+	}{
+		{
+			// pr-2 resumes from the universal snapshot and does not save one
+			// of its own, so re-running it resumes from the universal snapshot
+			// again and prints exactly what it printed the first time.
+			name:                    "valid universal snapshot, don't write another one",
+			expireUniversalSnapshot: false,
+			expectedFinalLogs:       "pr-1\npr-2\n",
+		},
+		{
+			// The universal snapshot is too stale to read, so pr-2 boots cold
+			// and saves a new snapshot. Re-running it resumes from that newly written snapshot.
+			name:                    "stale universal snapshot, should save a snapshot",
+			expireUniversalSnapshot: true,
+			expectedFinalLogs:       "pr-2\npr-2\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			env := getTestEnv(ctx, t, envOpts{})
+			cfg := getExecutorConfig(t)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+
+			fakeClock := clockwork.NewFakeClock()
+			env.SetClock(fakeClock)
+
+			var containersToCleanup []*firecracker.FirecrackerContainer
+			t.Cleanup(func() {
+				for _, vm := range containersToCleanup {
+					assert.NoError(t, vm.Remove(ctx))
+				}
+			})
+
+			const defaultBranch = "main"
+			prTask := func(branch string) *repb.ExecutionTask {
+				return &repb.ExecutionTask{
+					Command: &repb.Command{
+						Arguments: []string{"./buildbuddy_ci_runner"},
+						Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+							{Name: "recycle-runner", Value: "true"},
+							{Name: platform.SnapshotSavePolicyPropertyName, Value: platform.OnlySaveNonDefaultSnapshotIfNoneAvailable},
+						}},
+						EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+							{Name: "GIT_BRANCH", Value: branch},
+							{Name: "GIT_REPO_DEFAULT_BRANCH", Value: defaultBranch},
+						},
+					},
+				}
+			}
+
+			rootDir := testfs.MakeTempDir(t)
+			run := func(name, branch, expectedLogs string) {
+				workDir := testfs.MakeDirAll(t, rootDir, name)
+				opts := firecracker.ContainerOpts{
+					ContainerImage:         busyboxImage,
+					ActionWorkingDirectory: workDir,
+					VMConfiguration: &fcpb.VMConfiguration{
+						NumCpus:           1,
+						MemSizeMb:         minMemSizeMB, // small to make snapshotting faster.
+						NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+						ScratchDiskSizeMb: 100,
+					},
+					ExecutorConfig: cfg,
+				}
+				vm, err := firecracker.NewContainer(ctx, env, prTask(branch), opts)
+				require.NoError(t, err)
+				containersToCleanup = append(containersToCleanup, vm)
+				require.NoError(t, container.PullImageIfNecessary(ctx, env, vm, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher))
+				require.NoError(t, vm.Create(ctx, workDir))
+				res := vm.Exec(ctx, appendToLog(branch), nil /*=stdio*/)
+				require.NoError(t, res.Error)
+				require.NoError(t, vm.Pause(ctx))
+				assert.Equal(t, expectedLogs, string(res.Stdout))
+			}
+
+			// pr-1 has nothing to resume from, so it boots cold. It should save a universal snapshot.
+			run("pr-1", "pr-1", "pr-1\n")
+
+			if tc.expireUniversalSnapshot {
+				fakeClock.Advance(snaputil.DefaultMaxStaleFallbackSnapshotAge + time.Hour)
+			}
+
+			// Start a run from pr-2.
+			if tc.expireUniversalSnapshot {
+				// The universal snapshot is too old to read, so pr-2 boots cold.
+				run("pr-2", "pr-2", "pr-2\n")
+			} else {
+				// The universal snapshot is still valid, so pr-2 should be able to resume from it.
+				// The snapshot should contain the log from pr-1.
+				run("pr-2", "pr-2", "pr-1\npr-2\n")
+			}
+
+			// Start a second run from pr-2.
+			// Depending on the test case, it should either resume from the universal snapshot written by pr-1,
+			// or the newly written snapshot written by pr-2.
+			run("pr-2-again", "pr-2", tc.expectedFinalLogs)
 		})
 	}
 }

@@ -77,6 +77,7 @@ const (
 	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
 	transientErrorExitCodes                  = "transient-error-exit-codes"
 	AllowRemoteSnapshotsPropertyName         = "allow-remote-snapshots"
+	EnableUniversalSnapshotPropertyName      = "allow-universal-snapshot"
 	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName           = "snapshot-read-policy"
 	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"
@@ -334,6 +335,13 @@ type Properties struct {
 	HostedBazelAffinityKey   string
 	RemoteSnapshotSavePolicy string
 	SnapshotReadPolicy       string
+
+	// EnableUniversalSnapshot controls whether a run may resume from, and
+	// write to, the "universal" snapshot. It is only ever consulted as a last resort,
+	// for remote runs that don't write default branch snapshots and have no other fallback snapshots available.
+	//
+	// Defaults to true if unset.
+	EnableUniversalSnapshot bool
 
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
@@ -602,6 +610,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,
 		SnapshotReadPolicy:        snapshotReadPolicy,
+		EnableUniversalSnapshot:   boolProp(m, EnableUniversalSnapshotPropertyName, true),
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
 		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),

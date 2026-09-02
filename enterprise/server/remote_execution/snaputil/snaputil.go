@@ -50,6 +50,14 @@ const (
 	// change!
 	MemoryFileName = "memory"
 
+	// UniversalSnapshotRef is a sentinel git ref for the "universal"
+	// snapshot. It is used as a last-resort fallback for runs that have no other
+	// fallback snapshots available, and can be written from any git branch.
+	//
+	// This must not collide with a real git ref. In particular, non-workflow
+	// tasks have an empty Ref, so the empty string cannot be used here.
+	UniversalSnapshotRef = "BB_UNIVERSAL_SNAPSHOT"
+
 	// DefaultMaxStaleFallbackSnapshotAge is the max age of a valid fallback snapshot.
 	// This is used to prevent using very stale local snapshots that may cause performance degradation.
 	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour

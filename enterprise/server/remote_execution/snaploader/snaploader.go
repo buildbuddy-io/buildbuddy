@@ -180,7 +180,47 @@ func gitRefs(task *repb.ExecutionTask) (branchRef string, fallbackRefs []string)
 			fallbackRefs = append(fallbackRefs, v)
 		}
 	}
+
+	// As a last resort, fall back to a snapshot saved by any branch. This is
+	// what keeps repos that never run on their default branch from booting a
+	// cold VM on every run.
+	if universalFallbackEnabled(task) {
+		fallbackRefs = append(fallbackRefs, snaputil.UniversalSnapshotRef)
+	}
+
 	return branchRef, fallbackRefs
+}
+
+func universalFallbackEnabled(task *repb.ExecutionTask) bool {
+	v := platform.FindEffectiveValue(task, platform.EnableUniversalSnapshotPropertyName)
+	return v == "" || platform.IsTrue(v)
+}
+
+// IsEligibleToUpdateUniversalSnapshot returns whether this run is allowed to
+// update the universal snapshot - the last-resort fallback for runs that have
+// no other snapshot available.
+//
+// This is an eligibility check, not an outcome: the universal manifest is only
+// updated if this returns true *and* the save policy decides to write a
+// snapshot at all.
+//
+// resumedFrom is the key this run resumed from, or nil if it booted cold.
+func IsEligibleToUpdateUniversalSnapshot(task *repb.ExecutionTask, resumedFrom *fcpb.SnapshotKey) bool {
+	if !universalFallbackEnabled(task) {
+		return false
+	}
+	branch := getEnv(task, "GIT_BRANCH")
+	if branch == "" {
+		// Fallback behavior is intended to optimize runs on git branches.
+		return false
+	}
+	// If we resumed from a non-universal snapshot, a better fallback exists.
+	// Don't write a universal snapshot.
+	if resumedFrom != nil && resumedFrom.GetRef() != snaputil.UniversalSnapshotRef {
+		return false
+	}
+
+	return true
 }
 
 func getEnv(task *repb.ExecutionTask, name string) string {
@@ -376,6 +416,12 @@ type CacheSnapshotOptions struct {
 	// even if there is a newer manifest for the snapshot key available in the
 	// remote cache.
 	WriteManifestLocally bool
+
+	// EligibleToWriteUniversalManifest is whether the universal snapshot manifest
+	// is eligible to be updated.
+	//
+	// The snapshot write policy determines whether the snapshot is actually written.
+	EligibleToWriteUniversalManifest bool
 }
 
 type UnpackedSnapshot struct {
@@ -470,7 +516,7 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 		supportsRemoteFallback := opts.SupportsRemoteChunks && *snaputil.EnableRemoteSnapshotSharing
 		manifest, err := l.GetLocalManifest(ctx, key, supportsRemoteFallback)
 		if err == nil {
-			if validateLocalSnapshot(ctx, manifest, opts, isFallback) {
+			if l.ValidateSnapshot(ctx, manifest, key, opts, false /*isRemote*/, isFallback) {
 				log.CtxInfof(ctx, "Using local manifest for key %s", key)
 				return manifest, snaputil.ChunkSourceLocalFilecache, nil
 			}
@@ -496,13 +542,16 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	if err != nil {
 		return nil, snaputil.ChunkSourceUnmapped, status.WrapError(err, "fetch remote manifest")
 	}
+	if !l.ValidateSnapshot(ctx, manifest, key, opts, true /*isRemote*/, isFallback) {
+		return nil, snaputil.ChunkSourceUnmapped, status.NotFoundErrorf("remote snapshot for key %s is stale", key)
+	}
 
 	// Unless reading the newest snapshot from the remote cache is requested,
 	// save the newly fetched manifest locally. This will increase the odds that
 	// future runs on this executor will use that snapshot, which will already
 	// have snapshot chunks locally.
 	if opts.ReadPolicy != platform.AlwaysReadNewestSnapshot {
-		if err := l.cacheManifestLocally(ctx, key, acResult, "" /* snapshotID */); err != nil {
+		if err := l.cacheManifestLocally(ctx, key, acResult, "" /* snapshotID */, false /*writeUniversal*/); err != nil {
 			log.Warningf("Failed to cache snapshot manifest locally during get %s: %s", snapshotDebugString(ctx, l.env, key, false, ""), err)
 		}
 	}
@@ -511,17 +560,30 @@ func (l *FileCacheLoader) getSnapshot(ctx context.Context, key *fcpb.SnapshotKey
 	return manifest, snaputil.ChunkSourceRemoteCache, nil
 }
 
-func validateLocalSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest, opts *GetSnapshotOptions, isFallback bool) bool {
+// ValidateSnapshot checks that a snapshot is still valid to use - i.e. is not too stale, given the
+// configured max staleness.
+func (l *FileCacheLoader) ValidateSnapshot(ctx context.Context, manifest *fcpb.SnapshotManifest, key *fcpb.SnapshotKey, opts *GetSnapshotOptions, isRemote bool, isFallback bool) bool {
 	if !isFallback {
 		return true
 	}
+
+	// For local snapshots, we check the staleness of the snapshot because we may be able to fallback to a fresher remote snapshot
+	// that was written by a different executor.
+	// For universal snapshots, we check for staleness to prevent environment drift from very old snapshots.
+	shouldCheckAge := !isRemote || key.GetRef() == snaputil.UniversalSnapshotRef
+	if !shouldCheckAge {
+		return true
+	}
+
 	snapshotLastSavedTime := manifest.GetVmMetadata().GetLastExecutedTask().GetCompletedTimestamp()
 	if snapshotLastSavedTime == nil {
 		log.CtxErrorf(ctx, "snapshot last saved timestamp for %+v is unexpectedly nil", manifest.GetVmMetadata().GetSnapshotKey())
 		return false
 	}
-	if time.Since(snapshotLastSavedTime.AsTime()) > opts.MaxStaleFallbackSnapshotAge {
-		log.CtxInfof(ctx, "local fallback snapshot was created %s ago, which is longer than the max age %s - not using", time.Since(snapshotLastSavedTime.AsTime()), opts.MaxStaleFallbackSnapshotAge)
+
+	age := l.env.GetClock().Since(snapshotLastSavedTime.AsTime())
+	if age > opts.MaxStaleFallbackSnapshotAge {
+		log.CtxInfof(ctx, "Fallback snapshot was created %s ago, which is longer than the max age %s - not using", age, opts.MaxStaleFallbackSnapshotAge)
 		return false
 	}
 	return true
@@ -857,16 +919,24 @@ func (l *FileCacheLoader) cacheActionResult(ctx context.Context, key *fcpb.Snaps
 			}
 			log.CtxInfof(ctx, "Cached remote snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, true /*remote*/, snapshotID))
 		}
+
+		// Cache a universal snapshot as a last-resort fallback for runs that
+		// have no other fallback snapshot available.
+		if opts.EligibleToWriteUniversalManifest {
+			if err := l.cacheUniversalManifestRemotely(ctx, key, ar); err != nil {
+				log.CtxWarningf(ctx, "Failed to cache remote universal snapshot manifest: %s", err)
+			}
+		}
 	}
 
 	if !opts.WriteManifestLocally || !opts.CacheSnapshotLocally {
 		return nil
 	}
 
-	return l.cacheManifestLocally(ctx, key, ar, opts.VMMetadata.GetSnapshotId())
+	return l.cacheManifestLocally(ctx, key, ar, opts.VMMetadata.GetSnapshotId(), opts.EligibleToWriteUniversalManifest)
 }
 
-func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.SnapshotKey, manifestACResult *repb.ActionResult, snapshotID string) error {
+func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.SnapshotKey, manifestACResult *repb.ActionResult, snapshotID string, writeUniversal bool) error {
 	gid, err := groupID(ctx, l.env)
 	if err != nil {
 		return err
@@ -875,12 +945,12 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 	if err != nil {
 		return err
 	}
-	b, err := proto.Marshal(manifestACResult)
+	manifestBytes, err := proto.Marshal(manifestACResult)
 	if err != nil {
 		return err
 	}
 	manifestNode := &repb.FileNode{Digest: d}
-	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, b); err != nil {
+	if _, err := l.env.GetFileCache().Write(ctx, manifestNode, manifestBytes); err != nil {
 		return err
 	}
 	log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, key, false /*remote*/, "" /*=snapshotID*/))
@@ -899,7 +969,7 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 		}
 
 		snapshotSpecificManifestNode := &repb.FileNode{Digest: snapshotSpecificManifestKey}
-		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, b); err != nil {
+		if _, err := l.env.GetFileCache().Write(ctx, snapshotSpecificManifestNode, manifestBytes); err != nil {
 			log.Warningf("Failed to cache local snapshot manifest for snapshot ID %s: %s", snapshotID, err)
 			return nil
 		}
@@ -907,6 +977,40 @@ func (l *FileCacheLoader) cacheManifestLocally(ctx context.Context, key *fcpb.Sn
 		log.CtxInfof(ctx, "Cached local snapshot manifest %s", snapshotDebugString(ctx, l.env, snapshotSpecificKey, false /*remote*/, snapshotID))
 	}
 
+	// Cache a universal snapshot as a last-resort fallback for runs that
+	// have no other fallback snapshot available.
+	if writeUniversal {
+		universalKey := key.CloneVT()
+		universalKey.Ref = snaputil.UniversalSnapshotRef
+		universalD, err := LocalManifestKey(gid, universalKey)
+		if err != nil {
+			log.CtxWarningf(ctx, "Failed to generate local universal manifest key: %s", err)
+			return nil
+		}
+		universalManifestNode := &repb.FileNode{Digest: universalD}
+		if _, err := l.env.GetFileCache().Write(ctx, universalManifestNode, manifestBytes); err != nil {
+			log.CtxWarningf(ctx, "Failed to cache local universal snapshot manifest: %s", err)
+			return nil
+		}
+		log.CtxInfof(ctx, "Updated local universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, false /*remote*/, "" /*=snapshotID*/))
+	}
+	return nil
+}
+
+// cacheUniversalManifestRemotely points the universal snapshot key at the
+// manifest that was just saved for key.
+func (l *FileCacheLoader) cacheUniversalManifestRemotely(ctx context.Context, key *fcpb.SnapshotKey, ar *repb.ActionResult) error {
+	universalKey := key.CloneVT()
+	universalKey.Ref = snaputil.UniversalSnapshotRef
+	universalD, err := RemoteManifestKey(universalKey)
+	if err != nil {
+		return status.WrapError(err, "generate universal remote manifest key")
+	}
+	universalDigest := digest.NewACResourceName(universalD, universalKey.InstanceName, repb.DigestFunction_BLAKE3)
+	if err := cachetools.UploadActionResult(ctx, l.env.GetActionCacheClient(), universalDigest, ar); err != nil {
+		return status.WrapError(err, "upload universal manifest")
+	}
+	log.CtxInfof(ctx, "Updated remote universal snapshot manifest %s", snapshotDebugString(ctx, l.env, universalKey, true /*remote*/, "" /*=snapshotID*/))
 	return nil
 }
 
@@ -1475,7 +1579,12 @@ func IsLikelyDefaultSnapshot(keys *fcpb.SnapshotKeySet, task *repb.ExecutionTask
 	}
 
 	// The default snapshot is the fallback key for non-default branches,
-	// so if a run does not have a fallback key, it's likely running on
-	// the default branch.
-	return len(keys.GetFallbackKeys()) == 0
+	// so if a run does not have a fallback key (or if its only fallback is the
+	// universal snapshot), it's likely running on the default branch.
+	for _, k := range keys.GetFallbackKeys() {
+		if k.GetRef() != snaputil.UniversalSnapshotRef {
+			return false
+		}
+	}
+	return true
 }
