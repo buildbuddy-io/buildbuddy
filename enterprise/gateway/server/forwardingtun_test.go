@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"net/netip"
 	"testing"
 	"time"
@@ -23,6 +24,45 @@ func makeIPv6Packet(src, dst netip.Addr) []byte {
 		DstAddr:           tcpip.AddrFrom16(dst.As16()),
 	})
 	return pkt
+}
+
+func TestMuxTUN_ReadBatch(t *testing.T) {
+	tun := newMuxTUN(1420)
+	defer tun.Close()
+
+	src := netip.MustParseAddr("fd00:bb::2")
+	dst := netip.MustParseAddr("fd00:bb::3")
+	tun.registerIP(src, 0)
+	tun.registerIP(dst, 0)
+
+	const packetCount = 4
+	packets := make([][]byte, packetCount)
+	for i := range packets {
+		packets[i] = makeIPv6Packet(src, dst)
+		packets[i][len(packets[i])-1] = byte(i)
+	}
+	require.Equal(t, packetCount, mustWrite(t, tun, packets))
+
+	const offset = 16
+	bufs := make([][]byte, tun.BatchSize())
+	sizes := make([]int, tun.BatchSize())
+	for i := range bufs {
+		bufs[i] = make([]byte, offset+1420)
+	}
+	n, err := tun.Read(bufs, sizes, offset)
+	require.NoError(t, err)
+	require.Equal(t, packetCount, n)
+	for i, want := range packets {
+		require.Equal(t, len(want), sizes[i])
+		require.True(t, bytes.Equal(want, bufs[i][offset:offset+sizes[i]]))
+	}
+}
+
+func mustWrite(t *testing.T, tun *muxTUN, packets [][]byte) int {
+	t.Helper()
+	n, err := tun.Write(packets, 0)
+	require.NoError(t, err)
+	return n
 }
 
 // TestMuxTUN_CrossNetworkForwarding verifies that muxTUN only forwards packets

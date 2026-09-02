@@ -223,14 +223,15 @@ func TestEndToEnd_DNSResolution(t *testing.T) {
 	require.Equal(t, want, string(got))
 }
 
-// BenchmarkGatewayThroughput measures TCP throughput between two peers routed
-// through the gateway. Each iteration sends a 64 KiB chunk from peer-b to
-// peer-a and waits for peer-a to echo it back, so b.SetBytes reports
-// one-way bytes per second.
+// BenchmarkGatewayThroughput measures sustained one-way TCP throughput between
+// two peers routed through the gateway. The receiver drains the connection in
+// parallel so the benchmark measures the forwarding path rather than the
+// round-trip latency of a request/response loop.
 //
 // Run with:
 //
-//	bazel test //enterprise/gateway/server:server_test \
+//	bazel test //enterprise/gateway/server:server_test --test_output=streamed \
+//	  --test_arg=--app.log_level=warn \
 //	  --test_arg=-test.bench=BenchmarkGatewayThroughput \
 //	  --test_arg=-test.benchtime=10s \
 //	  --test_arg=-test.run='^$'
@@ -261,30 +262,23 @@ func BenchmarkGatewayThroughput(b *testing.B) {
 
 	const chunkSize = 64 * 1024
 	b.SetBytes(chunkSize)
+	b.ReportAllocs()
 
-	// peer-a echoes every chunk it receives.
+	readErr := make(chan error, 1)
 	go func() {
-		buf := make([]byte, chunkSize)
-		for {
-			if _, err := io.ReadFull(connA, buf); err != nil {
-				return
-			}
-			if _, err := connA.Write(buf); err != nil {
-				return
-			}
-		}
+		_, err := io.CopyN(io.Discard, connA, int64(b.N)*int64(chunkSize))
+		readErr <- err
 	}()
 
 	payload := make([]byte, chunkSize)
-	recv := make([]byte, chunkSize)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := connB.Write(payload); err != nil {
 			b.Fatalf("write: %v", err)
 		}
-		if _, err := io.ReadFull(connB, recv); err != nil {
-			b.Fatalf("read: %v", err)
-		}
+	}
+	if err := <-readErr; err != nil {
+		b.Fatalf("read: %v", err)
 	}
 	b.StopTimer()
 }
