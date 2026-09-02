@@ -104,7 +104,16 @@ type Fetcher struct {
 	// blobGroup deduplicates concurrent fetches of the same blob with the
 	// same credentials. The leader streams from upstream into the Store and
 	// to its own caller; waiters read from the Store once the leader is done.
-	blobGroup singleflight.Group[ocicache.BlobFetchKey, int64]
+	blobGroup singleflight.Group[blobGroupKey, int64]
+}
+
+// blobGroupKey identifies one round of a coalesced blob fetch. Rounds have
+// distinct keys because the singleflight keeps a finished call in its map
+// until its last waiter has left, so a waiter that re-entered under the same
+// key could join the stale result instead of starting a new fetch.
+type blobGroupKey struct {
+	key   ocicache.BlobFetchKey
+	round int
 }
 
 // New returns a Fetcher. store may be nil, in which case nothing is cached
@@ -145,7 +154,7 @@ func (f *Fetcher) ResolveDigest(ctx context.Context, ref ctrname.Reference, cred
 	if err != nil {
 		return ctr.Hash{}, err
 	}
-	f.addProof(ref.Context(), creds)
+	f.addProof(ref.Context(), creds, opts)
 	return desc.Digest, nil
 }
 
@@ -157,7 +166,7 @@ func (f *Fetcher) FetchManifestMetadata(ctx context.Context, ref ctrname.Referen
 	if err != nil {
 		return nil, err
 	}
-	f.addProof(ref.Context(), creds)
+	f.addProof(ref.Context(), creds, opts)
 	return desc, nil
 }
 
@@ -172,7 +181,7 @@ func (f *Fetcher) FetchManifest(ctx context.Context, ref ctrname.Reference, cred
 		if err != nil {
 			return nil, nil, err
 		}
-		f.addProof(repo, creds)
+		f.addProof(repo, creds, opts)
 		return desc, raw, nil
 	}
 
@@ -196,7 +205,7 @@ func (f *Fetcher) FetchManifest(ctx context.Context, ref ctrname.Reference, cred
 	if err != nil {
 		return nil, nil, err
 	}
-	f.addProof(repo, creds)
+	f.addProof(repo, creds, opts)
 	if err := f.store.PutManifest(ctx, repo, desc.Digest, string(desc.MediaType), raw); err != nil {
 		log.CtxWarningf(ctx, "Error writing manifest %s@%s to cache: %s", repo, desc.Digest, err)
 	}
@@ -225,7 +234,7 @@ func (f *Fetcher) FetchBlobMetadata(ctx context.Context, ref ctrname.Digest, cre
 	if err != nil {
 		return nil, err
 	}
-	f.addProof(repo, creds)
+	f.addProof(repo, creds, opts)
 	return desc, nil
 }
 
@@ -234,16 +243,15 @@ func (f *Fetcher) FetchBlobMetadata(ctx context.Context, ref ctrname.Digest, cre
 // With a Store, concurrent fetches of the same blob with the same
 // credentials are coalesced: the leader streams from the Upstream to w and
 // into the Store at the same time, and waiters read from the Store once the
-// leader has finished. If the leader could not cache the blob, each waiter
-// fetches it from the Upstream itself. Cached bytes are only served behind
-// proof that creds grant access to the repository.
+// leader has finished (see fetchBlobShared for what happens when the leader
+// could not cache the blob). Cached bytes are only served behind proof that
+// creds grant access to the repository.
 //
 // Requests that bypass the registry never join the group: they must neither
 // wait on, nor be served by, a fetch that contacts a registry.
 //
 // Without a Store the blob is streamed straight from the Upstream.
 func (f *Fetcher) FetchBlob(ctx context.Context, w io.Writer, ref ctrname.Digest, creds *rgpb.Credentials, opts Options) (int64, error) {
-	repo := ref.Context()
 	h, err := blobHash(ref)
 	if err != nil {
 		return 0, err
@@ -257,26 +265,40 @@ func (f *Fetcher) FetchBlob(ctx context.Context, w io.Writer, ref ctrname.Digest
 		return cw.n, err
 	}
 
+	return cw.n, f.fetchBlobShared(ctx, cw, ref, h, creds, opts, 2)
+}
+
+// fetchBlobShared runs one singleflight round for the blob. The leader
+// streams from the Upstream into the Store and to its caller; waiters read
+// the Store afterwards. A waiter that finds nothing to read (the leader could
+// not cache the blob, or it was evicted already) runs another round while
+// rounds remain, so that a transient cache failure still coalesces, and
+// finally fetches the blob from the Upstream itself. Bytes cannot be shared
+// without a Store, so a persistent cache outage costs one upstream fetch per
+// caller, as it did before when waiters failed and their clients retried.
+func (f *Fetcher) fetchBlobShared(ctx context.Context, cw *countingWriter, ref ctrname.Digest, h ctr.Hash, creds *rgpb.Credentials, opts Options, rounds int) error {
 	start := time.Now()
 	isLeader := false
-	size, _, err := f.blobGroup.Do(ctx, ocicache.NewBlobFetchKey(repo, h, creds), func(ctx context.Context) (int64, error) {
+	key := blobGroupKey{key: ocicache.NewBlobFetchKey(ref.Context(), h, creds), round: rounds}
+	size, _, err := f.blobGroup.Do(ctx, key, func(ctx context.Context) (int64, error) {
 		isLeader = true
 		return f.leadBlobFetch(ctx, cw, ref, h, creds, opts)
 	})
 	if isLeader {
 		recordFetchBlobMetrics(metrics.OCIFetcherRoleLeader, err, time.Since(start))
-		return cw.n, err
+		return err
 	}
 	if err == nil && size > 0 {
 		err = f.store.ReadBlob(ctx, cw, h, size)
 	}
 	if (err == nil && size == 0) || (status.IsNotFoundError(err) && cw.n == 0) {
-		// The leader served its caller but could not cache the blob (or it
-		// was evicted already). Fetch it ourselves rather than fail.
+		if rounds > 1 {
+			return f.fetchBlobShared(ctx, cw, ref, h, creds, opts, rounds-1)
+		}
 		err = f.streamFromUpstream(ctx, cw, ref, creds, opts)
 	}
 	recordFetchBlobMetrics(metrics.OCIFetcherRoleWaiter, err, time.Since(start))
-	return cw.n, err
+	return err
 }
 
 // streamFromUpstream copies the blob from the Upstream to w without caching.
@@ -286,7 +308,7 @@ func (f *Fetcher) streamFromUpstream(ctx context.Context, w io.Writer, ref ctrna
 		return err
 	}
 	defer rc.Close()
-	f.addProof(ref.Context(), creds)
+	f.addProof(ref.Context(), creds, opts)
 	if _, err := io.Copy(w, rc); err != nil {
 		return upstreamReadError(err)
 	}
@@ -317,7 +339,7 @@ func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctr
 	if size == 0 {
 		desc, err := f.upstream.BlobMetadata(ctx, ref, creds, opts)
 		if err == nil {
-			f.addProof(repo, creds)
+			f.addProof(repo, creds, opts)
 			size = desc.Size
 			if mediaType == "" {
 				mediaType = string(desc.MediaType)
@@ -360,7 +382,7 @@ func (f *Fetcher) leadBlobFetch(ctx context.Context, cw *countingWriter, ref ctr
 		return 0, err
 	}
 	defer rc.Close()
-	f.addProof(repo, creds)
+	f.addProof(repo, creds, opts)
 	if desc != nil {
 		if desc.Size > 0 {
 			size = desc.Size
@@ -478,7 +500,7 @@ func (f *Fetcher) proveManifestAccess(ctx context.Context, ref ctrname.Reference
 	if _, err := f.upstream.Head(ctx, ref, creds, opts); err != nil {
 		return err
 	}
-	f.addProof(repo, creds)
+	f.addProof(repo, creds, opts)
 	return nil
 }
 
@@ -490,7 +512,7 @@ func (f *Fetcher) proveBlobAccess(ctx context.Context, ref ctrname.Digest, creds
 	if _, err := f.upstream.BlobMetadata(ctx, ref, creds, opts); err != nil {
 		return err
 	}
-	f.addProof(repo, creds)
+	f.addProof(repo, creds, opts)
 	return nil
 }
 
@@ -498,7 +520,13 @@ func (f *Fetcher) hasProof(repo ctrname.Repository, creds *rgpb.Credentials) boo
 	return f.proofs.Contains(repoAccessKey(repo, creds))
 }
 
-func (f *Fetcher) addProof(repo ctrname.Repository, creds *rgpb.Credentials) {
+// addProof records that creds were just accepted for repo, unless the request
+// bypassed the registry: a bypass read is served by a cache (possibly through
+// another fetcher) and proves nothing about the registry's authorisation.
+func (f *Fetcher) addProof(repo ctrname.Repository, creds *rgpb.Credentials, opts Options) {
+	if opts.BypassRegistry {
+		return
+	}
 	f.proofs.Add(repoAccessKey(repo, creds), struct{}{})
 }
 

@@ -42,11 +42,14 @@ func mustDigestRef(content string) ctrname.Digest {
 }
 
 // fakeUpstream serves one blob and counts requests. Like a registry upstream
-// it refuses every request made with BypassRegistry set. Errors can be
-// injected per method. gate, when set, blocks Blob until released.
+// it refuses every request made with BypassRegistry set, unless
+// forwardsBypass is set, in which case it behaves like a remote fetcher that
+// served the request from its own cache. Errors can be injected per method.
+// gate, when set, blocks Blob until released.
 type fakeUpstream struct {
-	blob      []byte
-	mediaType string
+	blob           []byte
+	mediaType      string
+	forwardsBypass bool
 
 	headErr, metadataErr, blobErr error
 	// blobReadErr is returned from the blob reader after blobReadErrAfter bytes.
@@ -59,7 +62,7 @@ type fakeUpstream struct {
 
 func (u *fakeUpstream) Head(ctx context.Context, ref ctrname.Reference, creds *rgpb.Credentials, opts ocifetch.Options) (*ctr.Descriptor, error) {
 	u.heads.Add(1)
-	if opts.BypassRegistry {
+	if opts.BypassRegistry && !u.forwardsBypass {
 		return nil, status.NotFoundError("bypassing registry")
 	}
 	if u.headErr != nil {
@@ -74,7 +77,7 @@ func (u *fakeUpstream) Manifest(ctx context.Context, ref ctrname.Reference, cred
 
 func (u *fakeUpstream) BlobMetadata(ctx context.Context, ref ctrname.Digest, creds *rgpb.Credentials, opts ocifetch.Options) (*ctr.Descriptor, error) {
 	u.metadatas.Add(1)
-	if opts.BypassRegistry {
+	if opts.BypassRegistry && !u.forwardsBypass {
 		return nil, status.NotFoundError("bypassing registry")
 	}
 	if u.metadataErr != nil {
@@ -86,7 +89,7 @@ func (u *fakeUpstream) BlobMetadata(ctx context.Context, ref ctrname.Digest, cre
 
 func (u *fakeUpstream) Blob(ctx context.Context, ref ctrname.Digest, creds *rgpb.Credentials, opts ocifetch.Options) (io.ReadCloser, *ctr.Descriptor, error) {
 	u.blobs.Add(1)
-	if opts.BypassRegistry {
+	if opts.BypassRegistry && !u.forwardsBypass {
 		return nil, nil, status.NotFoundError("bypassing registry")
 	}
 	if u.blobErr != nil {
@@ -120,14 +123,14 @@ func (f *failingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// fakeStore keeps blobs and metadata rows in memory. commitErr makes every
-// blob write fail at commit time.
+// fakeStore keeps blobs and metadata rows in memory. commitFailures makes
+// that many blob writes fail at commit time (negative: all of them).
 type fakeStore struct {
-	mu        sync.Mutex
-	blobs     map[string][]byte // key: hex/size
-	metadata  map[string]*ocipb.OCIBlobMetadata
-	commitErr error
-	reads     atomic.Int32
+	mu             sync.Mutex
+	blobs          map[string][]byte // key: hex/size
+	metadata       map[string]*ocipb.OCIBlobMetadata
+	commitFailures atomic.Int32
+	reads          atomic.Int32
 }
 
 func newFakeStore() *fakeStore {
@@ -180,8 +183,11 @@ type fakeWriter struct {
 func (w *fakeWriter) Write(p []byte) (int, error) { return w.buf.Write(p) }
 func (w *fakeWriter) Close() error                { return nil }
 func (w *fakeWriter) Commit() error {
-	if w.store.commitErr != nil {
-		return w.store.commitErr
+	if n := w.store.commitFailures.Load(); n != 0 {
+		if n > 0 {
+			w.store.commitFailures.Add(-1)
+		}
+		return status.UnavailableError("cache down")
 	}
 	if int64(w.buf.Len()) != w.size {
 		return status.DataLossErrorf("wrote %d bytes, expected %d", w.buf.Len(), w.size)
@@ -315,35 +321,76 @@ func TestFetchBlob_BypassNeverContactsUpstreamOrJoinsSingleflight(t *testing.T) 
 }
 
 func TestFetchBlob_CommitFailureDoesNotStrandWaiters(t *testing.T) {
-	up := &fakeUpstream{blob: []byte(testBlob), gate: make(chan struct{})}
+	for _, tc := range []struct {
+		name           string
+		commitFailures int32
+		callers        int
+		wantFetches    int32
+	}{
+		// One failed commit: the first waiter to retry becomes the leader of
+		// a second coalesced round, caches the blob, and the rest read it.
+		{"transient", 1, 4, 2},
+		// The cache stays down: after the retry round every caller fetches
+		// for itself. Bytes cannot be shared without a store.
+		{"persistent", -1, 4, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up := &fakeUpstream{blob: []byte(testBlob), gate: make(chan struct{})}
+			store := newFakeStore()
+			store.commitFailures.Store(tc.commitFailures)
+			f := newFetcher(t, up, store)
+			ctx := context.Background()
+			opts := ocifetch.Options{SizeBytes: int64(len(testBlob))}
+
+			outs := make([]bytes.Buffer, tc.callers)
+			errs := make([]error, tc.callers)
+			var wg sync.WaitGroup
+			for i := 0; i < tc.callers; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					_, errs[i] = f.FetchBlob(ctx, &outs[i], testRef, testCreds, opts)
+				}(i)
+			}
+			// Exactly one caller reaches upstream while the gate is closed.
+			require.Eventually(t, func() bool { return up.blobs.Load() == 1 }, 5e9, 1e6)
+			close(up.gate)
+			wg.Wait()
+
+			for i := range errs {
+				require.NoError(t, errs[i], "caller %d", i)
+				require.Equal(t, testBlob, outs[i].String(), "caller %d", i)
+			}
+			require.Equal(t, tc.wantFetches, up.blobs.Load())
+		})
+	}
+}
+
+func TestFetchBlob_BypassDoesNotRecordProof(t *testing.T) {
+	// A remote-fetcher-like upstream serves bypass requests from its own
+	// cache. That must not count as proof of registry access.
+	up := &fakeUpstream{blob: []byte(testBlob), forwardsBypass: true}
 	store := newFakeStore()
-	store.commitErr = status.UnavailableError("cache down")
 	f := newFetcher(t, up, store)
 	ctx := context.Background()
 	opts := ocifetch.Options{SizeBytes: int64(len(testBlob))}
+	anon := &rgpb.Credentials{}
 
-	const callers = 3
-	outs := make([]bytes.Buffer, callers)
-	errs := make([]error, callers)
-	var wg sync.WaitGroup
-	for i := 0; i < callers; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, errs[i] = f.FetchBlob(ctx, &outs[i], testRef, testCreds, opts)
-		}(i)
-	}
-	// Exactly one caller reaches upstream while the gate is closed.
-	require.Eventually(t, func() bool { return up.blobs.Load() == 1 }, 5e9, 1e6)
-	close(up.gate)
-	wg.Wait()
+	var out bytes.Buffer
+	bypass := opts
+	bypass.BypassRegistry = true
+	_, err := f.FetchBlob(ctx, &out, testRef, anon, bypass)
+	require.NoError(t, err)
+	require.Equal(t, testBlob, out.String())
+	require.Equal(t, int32(0), up.metadatas.Load())
 
-	for i := range errs {
-		require.NoError(t, errs[i], "caller %d", i)
-		require.Equal(t, testBlob, outs[i].String(), "caller %d", i)
-	}
-	// The leader could not cache the blob, so each waiter fetched it itself.
-	require.Equal(t, int32(callers), up.blobs.Load())
+	// The blob is now in the store. An ordinary request with the same
+	// credentials must still prove access before it is served.
+	out.Reset()
+	_, err = f.FetchBlob(ctx, &out, testRef, anon, opts)
+	require.NoError(t, err)
+	require.Equal(t, testBlob, out.String())
+	require.Equal(t, int32(1), up.metadatas.Load(), "access must be proven; the bypass read proved nothing")
 }
 
 func TestFetchBlob_WaitersReadFromStore(t *testing.T) {
