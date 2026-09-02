@@ -13,11 +13,11 @@ import (
 	"io"
 
 	"google.golang.org/grpc/codes"
-	gstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 	spb "google.golang.org/genproto/googleapis/rpc/status"
+	gstatus "google.golang.org/grpc/status"
 )
 
 // DefaultPort is the TCP port the gateway relay listens on, on each network's
