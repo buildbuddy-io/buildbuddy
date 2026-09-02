@@ -975,6 +975,19 @@ func downloadedExecutablePath(downloadedFiles map[string]struct{}, outputBaseDir
 	return binPath, nil
 }
 
+func hasSupportingRunfiles(runfiles []*bespb.Runfile, runfileDirectories []*bespb.Tree, executablePath string) bool {
+	if len(runfileDirectories) > 0 {
+		return true
+	}
+	executablePath = filepath.Clean(executablePath)
+	for _, runfile := range runfiles {
+		if filepath.Clean(runfile.GetFile().GetName()) != executablePath {
+			return true
+		}
+	}
+	return false
+}
+
 // envForLocalRun ensures a locally-run target (build-remotely-run-locally)
 // resolves runfiles from the downloaded runfiles directory and sees the local
 // Bazel workspace. The runfiles manifest contains absolute paths from the
@@ -1292,7 +1305,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 				// into the downloaded runfiles tree.
 				runfilesWorkDir := opts.AbsLocalWorkingDirectory
 				runfilesDir := ""
-				if runfilesRoot != "" {
+				if runfilesRoot != "" && hasSupportingRunfiles(runfiles, runfileDirectories, executablePath) {
 					runfilesWorkDir, err = filepath.Abs(filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot))
 					if err != nil {
 						return 1, fmt.Errorf("compute absolute runfiles working directory: %w", err)
