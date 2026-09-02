@@ -274,10 +274,9 @@ func distributedCacheRow() *dashboard.RowBuilder {
 		return ts(title, dash.UnitRequestsPerSec).
 			Description(description).
 			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
 			Tooltip(multiTooltip()).
 			OverrideByQuery("B", rightAxisProps(dash.UnitBytesPerSec)).
-			WithTarget(dash.PromQuery(fmt.Sprintf(`sum by (%s) (rate(%s{%s}[${window}]))`, typeLabel, countMetric, filters), fmt.Sprintf("{{%s}} rate", typeLabel)).RefId("A")).
+			WithTarget(dash.PromQuery(fmt.Sprintf(`sum by (%s) (rate(%s{%s}[${window}]))`, typeLabel, countMetric, filters), fmt.Sprintf("{{%s}} requests", typeLabel)).RefId("A")).
 			WithTarget(dash.PromQuery(fmt.Sprintf(`sum by (%s) (rate(%s{%s}[${window}]))`, typeLabel, sizeMetric, filters), fmt.Sprintf("{{%s}} throughput", typeLabel)).RefId("B"))
 	}
 	return row("Distributed Cache").
@@ -303,7 +302,6 @@ func distributedCacheRow() *dashboard.RowBuilder {
 			"buildbuddy_remote_cache_distributed_cache_write_request_size_bytes")).
 		WithPanel(ts("Read and Write Errors by Status", dash.UnitRequestsPerSec).
 			Description("Distributed cache peer reads and writes that did not succeed. Writes deduped by the peer report \"AlreadyExists\" and are counted as successes, not errors.").
-			Legend(rightLegend()).
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (status, response_type) (rate(buildbuddy_remote_cache_distributed_cache_read_response_count{region="${region}", job="buildbuddy-app", status!="OK"}[${window}]))`, "read {{response_type}} {{status}}").RefId("A")).
 			WithTarget(dash.PromQuery(`sum by (status, request_type) (rate(buildbuddy_remote_cache_distributed_cache_write_request_count{region="${region}", job="buildbuddy-app", status!~"OK|AlreadyExists"}[${window}]))`, "write {{request_type}} {{status}}").RefId("B"))).
