@@ -399,7 +399,7 @@ genrule(
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 	// Check that the remote build output was fetched locally.
 	// The outputs will be downloaded to a directory that may change with the platform,
-	// so recursively search for the build output named `hello_world_go`.
+	// so recursively search for the build output named `main.sh`.
 	findFile := func(rootDir, targetFile string) (string, error) {
 		var outputPath string
 		err := filepath.WalkDir(rootDir, func(path string, d os.DirEntry, err error) error {
@@ -435,23 +435,15 @@ genrule(
 func TestBuildRemotelyRunLocally(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
-load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-
 genrule(
-    name = "generated_script",
+    name = "main",
     srcs = ["main.in"],
-    outs = ["main-generated.sh"],
+    outs = ["main.sh"],
     cmd = "cp $< $@",
     executable = True,
 )
-
-sh_binary(
-    name = "main",
-    srcs = [":generated_script"],
-)
 `,
-		"main.in":  "#!/bin/sh\nprintf 'Hello from main!'\n",
-		".bazelrc": "common --lockfile_mode=off --check_direct_dependencies=off\n",
+		"main.in": "#!/bin/sh\nprintf 'Hello from main!'\n",
 	})
 
 	// Run a server and executor locally to run remote bazel against
