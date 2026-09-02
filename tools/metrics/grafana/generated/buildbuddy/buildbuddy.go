@@ -266,6 +266,20 @@ func distributedCacheRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{`+filters+`}[${window}])) by (le))`, "P50").RefId("C")).
 			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{`+filters+`}[${window}])) by (grpc_service)`, "QPS").RefId("D"))
 	}
+	// transmissionPanel plots op rate against throughput, both broken down by
+	// whether the payload moved as a reference to shared storage or as inline
+	// bytes. Rates go on the left axis, bytes/sec on the right.
+	transmissionPanel := func(title, description, typeLabel, countMetric, sizeMetric string) *timeseries.PanelBuilder {
+		filters := `region="${region}", job="buildbuddy-app"`
+		return ts(title, dash.UnitRequestsPerSec).
+			Description(description).
+			AxisPlacement(common.AxisPlacementLeft).
+			Legend(rightLegend()).
+			Tooltip(multiTooltip()).
+			OverrideByQuery("B", rightAxisProps(dash.UnitBytesPerSec)).
+			WithTarget(dash.PromQuery(fmt.Sprintf(`sum by (%s) (rate(%s{%s}[${window}]))`, typeLabel, countMetric, filters), fmt.Sprintf("{{%s}} rate", typeLabel)).RefId("A")).
+			WithTarget(dash.PromQuery(fmt.Sprintf(`sum by (%s) (rate(%s{%s}[${window}]))`, typeLabel, sizeMetric, filters), fmt.Sprintf("{{%s}} throughput", typeLabel)).RefId("B"))
+	}
 	return row("Distributed Cache").
 		WithPanel(ts("Request Mix", "").
 			WithTarget(dash.PromQuery(`sum(rate(grpc_server_started_total{region="${region}", job="buildbuddy-app",grpc_service="distributed_cache.DistributedCache"}[${window}])) by (grpc_method)`, "{{grpc_method}}"))).
@@ -275,6 +289,24 @@ func distributedCacheRow() *dashboard.RowBuilder {
 		WithPanel(methodPanel("FindMissing")).
 		WithPanel(methodPanel("Write")).
 		WithPanel(methodPanel("Read")).
+		WithPanel(transmissionPanel(
+			"Reads by Transmission Mechanism",
+			"Distributed cache peer reads, split by whether the payload came back as a reference to shared storage or as inline bytes.",
+			"response_type",
+			"buildbuddy_remote_cache_distributed_cache_read_response_count",
+			"buildbuddy_remote_cache_distributed_cache_read_response_size_bytes")).
+		WithPanel(transmissionPanel(
+			"Writes by Transmission Mechanism",
+			"Distributed cache peer writes, split by whether the payload was sent as a reference to shared storage or as inline bytes.",
+			"request_type",
+			"buildbuddy_remote_cache_distributed_cache_write_request_count",
+			"buildbuddy_remote_cache_distributed_cache_write_request_size_bytes")).
+		WithPanel(ts("Read and Write Errors by Status", dash.UnitRequestsPerSec).
+			Description("Distributed cache peer reads and writes that did not succeed. Writes deduped by the peer report \"AlreadyExists\" and are counted as successes, not errors.").
+			Legend(rightLegend()).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (status, response_type) (rate(buildbuddy_remote_cache_distributed_cache_read_response_count{region="${region}", job="buildbuddy-app", status!="OK"}[${window}]))`, "read {{response_type}} {{status}}").RefId("A")).
+			WithTarget(dash.PromQuery(`sum by (status, request_type) (rate(buildbuddy_remote_cache_distributed_cache_write_request_count{region="${region}", job="buildbuddy-app", status!~"OK|AlreadyExists"}[${window}]))`, "write {{request_type}} {{status}}").RefId("B"))).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
 			Legend(rightLegend()).
