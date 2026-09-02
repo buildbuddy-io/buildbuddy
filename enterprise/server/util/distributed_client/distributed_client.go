@@ -189,11 +189,26 @@ func digestToKey(d *repb.Digest) *dcpb.Key {
 	}
 }
 
+func (c *Proxy) CloseInactiveClients(stillActive set.View[string]) {
+	c.mu.Lock()
+	var poolsToClose []*grpc_client.ClientConnPool
+	for peer, pool := range c.clients {
+		if !stillActive.Contains(peer) {
+			delete(c.clients, peer)
+			poolsToClose = append(poolsToClose, pool)
+		}
+	}
+	c.mu.Unlock()
+	for _, p := range poolsToClose {
+		p.Close()
+	}
+}
+
 func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCacheClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
-		_, err := client.GetReadyConnection()
+		err := client.Check(ctx)
 		if err != nil {
 			return nil, status.UnavailableErrorf("no connections to peer %q are ready", peer)
 		}

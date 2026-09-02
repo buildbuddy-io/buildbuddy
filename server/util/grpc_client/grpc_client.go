@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -104,6 +105,10 @@ func logConnPoolState(target string, conns []*clientConn) {
 
 func (p *ClientConnPool) Close() error {
 	for _, c := range p.conns {
+		metrics.PendingClientRPCsPerConnection.DeletePartialMatch(prometheus.Labels{
+			metrics.GRPCTargetLabel: p.targetForLogging,
+			metrics.GRPCPoolIDLabel: p.id,
+		})
 		// In practice, this only errors out if you call Close twice.
 		if err := c.Close(); err != nil {
 			log.Warningf("could not close connection: %s", err)
