@@ -4,6 +4,7 @@ load("@rules_distroless//distroless:defs.bzl", "cacerts", "flatten", "group", "j
 load("@rules_img//img:image.bzl", "image_index", "image_manifest")
 load("@rules_img//img:layer.bzl", "layer_from_tar")
 load("@rules_img//img:load.bzl", "image_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -50,6 +51,15 @@ cacerts(
     }),
 )
 
+pkg_tar(
+    name = "nsswitch_conf",
+    srcs = [
+        "nsswitch.conf",
+    ],
+    package_dir = "etc",
+    tags = ["manual"],
+)
+
 [
     flatten(
         name = "tar_%s" % arch,
@@ -69,6 +79,7 @@ cacerts(
             "@debian13//media-types/%s" % arch,
             ":groups",
             ":passwd",
+            ":nsswitch_conf",
             ":ca_certificates",
         ],
     )
