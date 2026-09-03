@@ -39,6 +39,11 @@ common:ci-shared --build_metadata=VISIBILITY=PUBLIC
 common:ci --config=ci-shared
 common:ci --config=remote-minimal
 common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci/rin20260818
+# --config=remote-minimal (via remote-prod-shared) resets --test_tag_filters to
+# "-performance", which silently re-enables the bare (firecracker) tests on
+# GitHub Actions. Those already run in the "Baremetal tests" workflow, so
+# exclude them here, matching the "Test" workflow.
+common:ci --test_tag_filters=-performance,-bare
 
 # Configuration used for GitHub actions-based CI for anonymous users (e.g. external contributors)
 common:ci-anon --config=ci
