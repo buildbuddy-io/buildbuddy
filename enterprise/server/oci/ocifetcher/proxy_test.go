@@ -1,4 +1,4 @@
-package ocifetcher_server_proxy
+package ocifetcher_test
 
 import (
 	"context"
@@ -28,34 +28,33 @@ import (
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gproto "google.golang.org/protobuf/proto"
 )
 
-func TestNew_MissingOCIFetcherClient(t *testing.T) {
+func TestProxy_MissingOCIFetcherClient(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 	// Don't set OCIFetcherClient
 
-	_, err := New(env)
+	_, err := ocifetcher.NewProxyServer(env.GetOCIFetcherClient(), env.GetLocalByteStreamClient())
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
-func TestNew_MissingLocalBSClient(t *testing.T) {
+func TestProxy_MissingLocalBSClient(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	// Set a dummy OCIFetcherClient but no LocalByteStreamClient
 	ctx := context.Background()
 	_, bsClient, acClient := setupCacheEnv(t)
 	env.SetOCIFetcherClient(runOCIFetcherServer(ctx, t, bsClient, acClient))
 
-	_, err := New(env)
+	_, err := ocifetcher.NewProxyServer(env.GetOCIFetcherClient(), env.GetLocalByteStreamClient())
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
 // FetchManifestMetadata calls with no credentials and with credentials.
-func TestHappyPath(t *testing.T) {
+func TestProxyHappyPath(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		withCreds bool
@@ -196,7 +195,11 @@ func TestHappyPath(t *testing.T) {
 	}
 }
 
-func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
+// TestProxyFetchBlob_ForwardsRequestWithSize verifies that the proxy forwards
+// FetchBlob requests to the app unchanged, except that it fills in the blob
+// size when the caller did not send one: the proxy has to learn the size to
+// address its local cache, and passing it on lets the app skip its own lookup.
+func TestProxyFetchBlob_ForwardsRequestWithSize(t *testing.T) {
 	const ref = "example.com/repo@sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
 	blobData := []byte("hello")
 
@@ -226,7 +229,13 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, blobData, collectBlobData(t, stream))
 			require.NotNil(t, remoteClient.fetchBlobRequest)
-			require.Empty(t, cmp.Diff(req, remoteClient.fetchBlobRequest, protocmp.Transform()))
+
+			want := gproto.Clone(req).(*ofpb.FetchBlobRequest)
+			if tc.size == nil {
+				// The size the recording client's FetchBlobMetadata reports.
+				want.Size = gproto.Int64(int64(len(blobData)))
+			}
+			require.Empty(t, cmp.Diff(want, remoteClient.fetchBlobRequest, protocmp.Transform()))
 		})
 	}
 }
@@ -234,7 +243,7 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 // TestFetchBlob_LocalCacheWriteThrough verifies that after a FetchBlob call,
 // the blob is written to the proxy's local BS cache and can be served from
 // there on a subsequent request.
-func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
+func TestProxyFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 	ctx := context.Background()
 
 	reg := setupTestRegistry(t, nil)
@@ -275,7 +284,7 @@ func TestFetchBlob_LocalCacheWriteThrough(t *testing.T) {
 
 // TestBypassRegistry tests the bypass_registry flag crossed with server admin claims
 // for all Fetch methods.
-func TestBypassRegistry(t *testing.T) {
+func TestProxyBypassRegistry(t *testing.T) {
 	const adminGroupID = "GR123"
 
 	adminUser := &claims.Claims{
@@ -487,7 +496,7 @@ func TestBypassRegistry(t *testing.T) {
 
 // TestInvalidOrMissingCredentials tests all Fetch methods with invalid and
 // missing credentials to verify auth errors are propagated correctly.
-func TestInvalidOrMissingCredentials(t *testing.T) {
+func TestProxyInvalidOrMissingCredentials(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		creds *rgpb.Credentials // nil for missing, wrong values for invalid
@@ -602,7 +611,7 @@ func TestInvalidOrMissingCredentials(t *testing.T) {
 	}
 }
 
-func TestPrivateRegistryCacheHitsRequireValidCredentials(t *testing.T) {
+func TestProxyPrivateRegistryCacheHitsRequireValidCredentials(t *testing.T) {
 	ctx := context.Background()
 	registryCreds := &testregistry.BasicAuthCreds{Username: "testuser", Password: "testpass"}
 	validRequestCreds := &rgpb.Credentials{Username: "testuser", Password: "testpass"}
@@ -701,7 +710,7 @@ func TestPrivateRegistryCacheHitsRequireValidCredentials(t *testing.T) {
 // TestFetchBlob_Singleflight verifies that concurrent FetchBlob requests for
 // the same blob are deduplicated: only one upstream FetchBlob RPC is made and
 // all callers receive the correct data.
-func TestFetchBlob_Singleflight(t *testing.T) {
+func TestProxyFetchBlob_Singleflight(t *testing.T) {
 	ctx := context.Background()
 
 	reg := setupTestRegistry(t, nil)
@@ -773,27 +782,6 @@ func setupTestRegistry(t *testing.T, creds *testregistry.BasicAuthCreds) *testre
 	})
 }
 
-// imageMetadata extracts digest, size, and media type from an image.
-func imageMetadata(t *testing.T, img ctr.Image) (digest string, size int64, mediaType string) {
-	d, err := img.Digest()
-	require.NoError(t, err)
-	s, err := img.Size()
-	require.NoError(t, err)
-	m, err := img.MediaType()
-	require.NoError(t, err)
-	return d.String(), s, string(m)
-}
-
-// setupCacheEnv creates ByteStream and ActionCache clients for caching.
-func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.ActionCacheClient) {
-	te := testenv.GetTestEnv(t)
-	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
-	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
-	testcache.Setup(t, te, localGRPClis)
-	go runServer()
-	return te, te.GetByteStreamClient(), te.GetActionCacheClient()
-}
-
 // setupLocalBSClient creates a standalone local BS cache env and returns
 // a ByteStream client connected to it.
 func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
@@ -808,7 +796,7 @@ func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
 func runOCIFetcherServer(ctx context.Context, t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherClient {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewAppServer(bsClient, acClient)
 	require.NoError(t, err)
 
 	env := testenv.GetTestEnv(t)
@@ -833,7 +821,7 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCI
 	env.SetOCIFetcherClient(remoteClient)
 	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 
-	proxy, err := New(env)
+	proxy, err := ocifetcher.NewProxyServer(env.GetOCIFetcherClient(), env.GetLocalByteStreamClient())
 	require.NoError(t, err)
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -845,25 +833,6 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCI
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close() })
 	return ofpb.NewOCIFetcherClient(conn)
-}
-
-// layerMetadata extracts size and media type from an image layer.
-func layerMetadata(t *testing.T, layer ctr.Layer) (size int64, mediaType string) {
-	s, err := layer.Size()
-	require.NoError(t, err)
-	mt, err := layer.MediaType()
-	require.NoError(t, err)
-	return s, string(mt)
-}
-
-// layerData reads the compressed data from an image layer.
-func layerData(t *testing.T, layer ctr.Layer) []byte {
-	rc, err := layer.Compressed()
-	require.NoError(t, err)
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
-	require.NoError(t, err)
-	return data
 }
 
 // countingOCIFetcherClient wraps an OCIFetcherClient and counts FetchBlob calls.
@@ -940,7 +909,7 @@ func collectBlobData(t *testing.T, stream ofpb.OCIFetcher_FetchBlobClient) []byt
 
 // TestPrivateImageManifestCacheRequiresCredentials confirms the cached
 // manifest is not served through the proxy to a caller without valid creds.
-func TestPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
+func TestProxyPrivateImageManifestCacheRequiresCredentials(t *testing.T) {
 	registryCreds := &testregistry.BasicAuthCreds{Username: "good", Password: "secret"}
 	validRequestCreds := &rgpb.Credentials{Username: "good", Password: "secret"}
 	wrongRequestCreds := &rgpb.Credentials{Username: "good", Password: "wrong"}

@@ -23,7 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/hit_tracker_client"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ocifetcher_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/routing/routing_action_cache_client"
@@ -367,7 +367,7 @@ func registerGRPCServices(grpcServer *grpc.Server, env *real_environment.RealEnv
 	if err := content_addressable_storage_server_proxy.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if err := ocifetcher_server_proxy.Register(env); err != nil {
+	if err := ocifetcher.RegisterProxyServer(env); err != nil {
 		log.Fatalf("%v", err)
 	}
 	if err := cache_server.Register(env); err != nil {

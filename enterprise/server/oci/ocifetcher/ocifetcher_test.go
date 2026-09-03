@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetch"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
@@ -83,7 +84,7 @@ func newTestServer(t *testing.T) ofpb.OCIFetcherServer {
 }
 
 func TestRemoteRegistryErrorPreservesHTTPStatusAndRegistryMessage(t *testing.T) {
-	err := ocifetcher.RemoteRegistryError(&transport.Error{
+	err := ocifetch.RemoteRegistryError(&transport.Error{
 		StatusCode: http.StatusUnauthorized,
 		Errors: []transport.Diagnostic{{
 			Code:    transport.UnauthorizedErrorCode,
@@ -99,7 +100,7 @@ func TestRemoteRegistryErrorPreservesHTTPStatusAndRegistryMessage(t *testing.T) 
 
 func newTestServerWithCache(t *testing.T, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient) ofpb.OCIFetcherServer {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	server, err := ocifetcher.NewServer(bsClient, acClient)
+	server, err := ocifetcher.NewAppServer(bsClient, acClient)
 	require.NoError(t, err)
 	return server
 }
@@ -791,10 +792,9 @@ func TestFetchBlobRetryOnCompressedError(t *testing.T) {
 		// Two blob GETs: first fails with 401 (simulating expired token),
 		// second succeeds after puller eviction and retry.
 		http.MethodGet + " " + blobPath: 2,
-		// Two blob HEADs for layer.Size(): one per attempt (Size is
-		// fetched before Compressed to avoid leaking the reader on
-		// retry).
-		http.MethodHead + " " + blobPath: 2,
+		// One blob HEAD to learn the size before the first attempt; the
+		// retry reuses it rather than asking again.
+		http.MethodHead + " " + blobPath: 1,
 	})
 }
 
@@ -828,12 +828,16 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 
 	blobPath := "/v2/test-metadata-fallback/blobs/" + layerDigest.String()
 	assertRequests(t, counter, map[string]int{
-		http.MethodGet + " /v2/": 1,
+		// Three /v2/ pings: the initial puller, the fresh puller the metadata
+		// lookup retries with after the HEADs fail, and the fresh puller the
+		// blob GET uses after that one is evicted too.
+		http.MethodGet + " /v2/": 3,
 		// Blob data streams despite metadata failures; no ranged GET fallbacks for 500s.
 		http.MethodGet + " " + blobPath: 1,
 		// go-containerregistry's retry transport makes up to three attempts for the
-		// Size() HEAD since 500 is a retryable status.
-		http.MethodHead + " " + blobPath: 3,
+		// size HEAD since 500 is a retryable status, and the metadata lookup is
+		// retried once with a fresh puller.
+		http.MethodHead + " " + blobPath: 6,
 	})
 
 	// Metadata lookup failures should skip read-through caching, so a subsequent
@@ -844,9 +848,11 @@ func TestFetchBlobStreamsDirectlyWhenBlobMetadataLookupFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedLayerData, stream.collectData())
 	assertRequests(t, counter, map[string]int{
-		// No /v2/ ping: puller stays cached across metadata failures.
+		// The puller from the previous blob GET is reused for the first
+		// metadata attempt; the retry and the blob GET each ping again.
+		http.MethodGet + " /v2/":         2,
 		http.MethodGet + " " + blobPath:  1,
-		http.MethodHead + " " + blobPath: 3,
+		http.MethodHead + " " + blobPath: 6,
 	})
 }
 
@@ -951,7 +957,7 @@ func TestBlobHeadFallbackToRangedGet(t *testing.T) {
 // testHTTPClient returns an httpclient-package client that is allowed to reach test servers on loopback.
 func testHTTPClient(t *testing.T) *http.Client {
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
-	allowedPrivateIPs, err := ocifetcher.ParseAllowedPrivateIPs()
+	allowedPrivateIPs, err := ocifetch.ParseAllowedPrivateIPs()
 	require.NoError(t, err)
 	return httpclient.New(allowedPrivateIPs, "test")
 }
@@ -993,7 +999,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		req.Header.Set("Authorization", "Bearer registry-token")
@@ -1029,7 +1035,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		resp, err := tr.RoundTrip(req)
@@ -1078,11 +1084,11 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		// Wire the transports the way getRemoteOpts does: the mirror transport inside the
 		// client, the fallback transport outside.
 		client := testHTTPClient(t)
-		client.Transport = ocifetcher.NewMirrorTransport(client.Transport, []interfaces.MirrorConfig{{
+		client.Transport = ocifetch.NewMirrorTransport(client.Transport, []interfaces.MirrorConfig{{
 			OriginalURL: "http://" + originHost,
 			MirrorURL:   mirror.URL,
 		}})
-		tr := ocifetcher.NewBlobHeadFallbackTransport(client)
+		tr := ocifetch.NewBlobHeadFallbackTransport(client)
 
 		req, err := http.NewRequest(http.MethodHead, "http://"+originHost+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
@@ -1119,7 +1125,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 				}))
 				defer registry.Close()
 
-				tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+				tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 				req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 				require.NoError(t, err)
 				resp, err := tr.RoundTrip(req)
@@ -1145,7 +1151,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		resp, err := tr.RoundTrip(req)
@@ -1171,7 +1177,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
 		resp, err := tr.RoundTrip(req)
@@ -1196,7 +1202,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		require.NoError(t, err)
 		req, err := http.NewRequest(http.MethodHead, "http://localhost:"+registryURL.Port()+"/v2/test-image/blobs/sha256:abc", nil)
 		require.NoError(t, err)
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 		resp, err := tr.RoundTrip(req)
 		require.NoError(t, err)
 		resp.Body.Close()
@@ -1225,7 +1231,7 @@ func TestBlobHeadFallbackTransport(t *testing.T) {
 		}))
 		defer registry.Close()
 
-		tr := ocifetcher.NewBlobHeadFallbackTransport(testHTTPClient(t))
+		tr := ocifetch.NewBlobHeadFallbackTransport(testHTTPClient(t))
 
 		// Successful blob HEAD: no fallback needed.
 		req, err := http.NewRequest(http.MethodHead, registry.URL+"/v2/test-image/blobs/sha256:abc", nil)
@@ -1337,7 +1343,8 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	require.True(t, errors.Is(err, context.DeadlineExceeded), "expected DeadlineExceeded, got: %v", err)
 	require.Equal(t, int32(1), getAttempts.Load(), "should not retry on context error")
 
-	// FetchManifest: Puller should still be cached (but HEAD and GET both happen for tag refs)
+	// FetchManifest: Puller should still be cached (but HEAD and GET both
+	// happen for tag refs; the GET is by the digest the HEAD resolved)
 	blockGet.Store(false)
 	counter.Reset()
 	manifestResp, err := server.FetchManifest(context.Background(), &ofpb.FetchManifestRequest{Ref: imageName})
@@ -1347,8 +1354,8 @@ func TestServerNoRetryOnContextErrors(t *testing.T) {
 	require.Equal(t, expectedMediaType, manifestResp.GetMediaType())
 	require.Equal(t, expectedManifest, manifestResp.GetManifest())
 	assertRequests(t, counter, map[string]int{
-		http.MethodHead + " /v2/test-image/manifests/latest": 1,
-		http.MethodGet + " /v2/test-image/manifests/latest":  1,
+		http.MethodHead + " /v2/test-image/manifests/latest":           1,
+		http.MethodGet + " /v2/test-image/manifests/" + expectedDigest: 1,
 	})
 
 	// FetchBlobMetadata: establish cached layer access
@@ -1734,9 +1741,9 @@ func TestServerBypassRegistry(t *testing.T) {
 		require.Equal(t, expectedManifest, resp.GetManifest())
 		require.Equal(t, digest, resp.GetDigest())
 
-		// Verify registry was hit (HEAD + GET)
+		// Verify registry was hit (HEAD the tag, then GET by the resolved digest)
 		require.Greater(t, counter.Snapshot()[http.MethodHead+" /v2/test-image/manifests/latest"], 0)
-		require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/latest"], 0)
+		require.Greater(t, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/"+digest], 0)
 
 		// Second fetch by tag - should only HEAD (cache hit avoids GET)
 		counter.Reset()
@@ -1749,6 +1756,7 @@ func TestServerBypassRegistry(t *testing.T) {
 		// Verify only HEAD was made (cache hit), no GET
 		require.Greater(t, counter.Snapshot()[http.MethodHead+" /v2/test-image/manifests/latest"], 0)
 		require.Equal(t, 0, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/latest"])
+		require.Equal(t, 0, counter.Snapshot()[http.MethodGet+" /v2/test-image/manifests/"+digest])
 	})
 
 	// Test that FetchManifest with bypass_registry serves from cache when manifest is cached (digest ref)
@@ -2039,8 +2047,11 @@ func TestServerCacheAccessProof(t *testing.T) {
 
 		blobPath := "/v2/test-image/blobs/" + digest.String()
 		assertRequests(t, counter, map[string]int{
-			http.MethodGet + " /v2/":         1,
-			http.MethodHead + " " + blobPath: 2,
+			http.MethodGet + " /v2/": 1,
+			// One HEAD proves access before the cached bytes are tried; the
+			// size is already known from the metadata row, so the blob GET
+			// needs no HEAD of its own.
+			http.MethodHead + " " + blobPath: 1,
 			http.MethodGet + " " + blobPath:  1,
 		})
 	})
@@ -2282,7 +2293,8 @@ func TestFetchBlobSingleflightLeaderSendFails(t *testing.T) {
 }
 
 // TestFetchBlobSingleflightCacheSetupFailure validates that when caching setup fails,
-// the leader streams data but followers miss the cache and return NotFound after waiting.
+// the leader streams data to its caller, and the followers, which have
+// nothing to read from the cache, fetch the blob from upstream themselves.
 func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	reg, counter := setupRegistry(t, nil, nil)
 	imageName, img := reg.PushNamedImage(t, "test-image", nil)
@@ -2312,18 +2324,12 @@ func TestFetchBlobSingleflightCacheSetupFailure(t *testing.T) {
 	)
 
 	blobPath := http.MethodGet + " /v2/test-image/blobs/" + digest.String()
-	require.Equal(t, 1, counter.Snapshot()[blobPath], "requests should be deduped even when caching fails")
+	require.Equal(t, numRequests, counter.Snapshot()[blobPath], "when caching fails, each follower fetches the blob itself")
 
-	successes := 0
 	for i, r := range results {
-		if r.err == nil {
-			successes++
-			require.Equal(t, expectedData, r.data, "request %d should stream data", i)
-		} else {
-			require.True(t, status.IsNotFoundError(r.err) || status.IsFailedPreconditionError(r.err), "request %d should fail with cache miss, got %v", i, r.err)
-		}
+		require.NoError(t, r.err, "request %d", i)
+		require.Equal(t, expectedData, r.data, "request %d should stream data", i)
 	}
-	require.Equal(t, 1, successes, "only the leader should succeed when caching fails")
 }
 
 // TestFetchBlobSingleflightDifferentCredentials validates requests with different
@@ -2394,13 +2400,11 @@ func TestFetchBlobSingleflightDifferentCredentials(t *testing.T) {
 		// Three /v2/ pings: one for each initial puller (creds1, creds2),
 		// plus one more when creds2 retries with a fresh puller after 401.
 		http.MethodGet + " /v2/": 3,
-		// Three blob GETs: one for creds1 (succeeds), two for creds2
-		// (first attempt 401, retry 401). The blob HEAD fallback does not
-		// fire: this registry is not on the fallback allowlist.
-		http.MethodGet + " " + blobPath: 3,
-		// Three blob HEADs for layer.Size(): one for creds1 (succeeds),
-		// two for creds2 (Size is fetched before Compressed, so each
-		// attempt calls it before the blob GET fails).
+		// One blob GET, for creds1. creds2's size HEAD fails with 401, and
+		// an access failure on the HEAD is not followed by a doomed GET.
+		http.MethodGet + " " + blobPath: 1,
+		// Three blob HEADs to learn the size: one for creds1 (succeeds),
+		// two for creds2 (401, then 401 again with a fresh puller).
 		http.MethodHead + " " + blobPath: 3,
 	})
 }
