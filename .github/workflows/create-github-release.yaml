@@ -20,17 +20,8 @@ jobs:
           prerelease: false
           draft: true
 
-  build-linux-amd64-artifacts:
-    uses: ./.github/workflows/build-linux-amd64-github-release-artifacts.yaml
-    if: "!contains(github.event.head_commit.message, 'release skip')"
-    needs: create-release
-    with:
-      release_branch: ${{ github.ref }}
-      version_tag: ${{ github.ref_name }}
-    secrets: inherit
-
-  build-linux-arm64-artifacts:
-    uses: ./.github/workflows/build-linux-arm64-github-release-artifacts.yaml
+  build-linux-artifacts:
+    uses: ./.github/workflows/build-linux-github-release-artifacts.yaml
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
@@ -70,8 +61,7 @@ jobs:
     needs:
       [
         create-release,
-        build-linux-arm64-artifacts,
-        build-linux-amd64-artifacts,
+        build-linux-artifacts,
         build-mac-intel-artifacts,
         build-mac-m1-artifacts,
       ]
