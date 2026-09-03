@@ -13,24 +13,6 @@ service GatewayService {
   // The peer stays registered exactly as long as the stream is open.
   rpc Connect(ConnectRequest) returns (stream ConnectResponse);
 
-  // Register assigns the caller a WireGuard identity that is not tied to a
-  // connection: the peer stays registered until Deregister is called or the
-  // stale-peer sweep reclaims it after its tunnel goes quiet.
-  //
-  // Deprecated: use Connect instead, which cleans up promptly and enforces
-  // peer name uniqueness.
-  rpc Register(RegisterRequest) returns (RegisterResponse) {
-    option deprecated = true;
-  }
-
-  // Deregister removes a peer created by Register.
-  //
-  // Deprecated: use Connect instead; closing the Connect stream deregisters
-  // the peer.
-  rpc Deregister(DeregisterRequest) returns (DeregisterResponse) {
-    option deprecated = true;
-  }
-
   // Returns the set of currently connected peers owned by the user associated
   // with the provided authentication credentials.
   rpc List(ListRequest) returns (ListResponse);

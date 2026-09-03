@@ -29,8 +29,8 @@ type HubNetwork struct {
 	// LookupName resolves a peer name registered in this network.
 	LookupName func(name string) (netip.Addr, bool)
 
-	// PeerContext returns a context that is canceled when the peer at ip is
-	// removed from this network.
+	// PeerContext returns a context that is canceled when the registration
+	// of the peer at ip ends — it is evicted, or its Connect stream closes.
 	PeerContext func(ip netip.Addr) (ctx context.Context, ok bool)
 
 	stack *stack.Stack
