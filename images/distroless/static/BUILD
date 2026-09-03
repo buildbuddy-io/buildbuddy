@@ -65,6 +65,7 @@ cacerts(
             "@debian13//base-files/%s" % arch,
             "@debian13//netbase/%s" % arch,
             "@debian13//tzdata/%s" % arch,
+            "@debian13//tzdata-legacy/%s" % arch,
             "@debian13//media-types/%s" % arch,
             ":groups",
             ":passwd",
