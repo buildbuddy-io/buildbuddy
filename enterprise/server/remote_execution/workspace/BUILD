@@ -38,7 +38,13 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "@com_github_google_uuid//:uuid",
         ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "@com_github_google_uuid//:uuid",
+        ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "@com_github_google_uuid//:uuid",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
             "@com_github_google_uuid//:uuid",
         ],
         "//conditions:default": [],

@@ -6,6 +6,7 @@ go_library(
         "disk.go",
         "disk_linux.go",
         "disk_notlinux.go",
+        "disk_openbsd.go",
         "disk_unix.go",
         "disk_windows.go",
     ],
@@ -23,7 +24,13 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "@org_golang_x_sys//unix",
         ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "@org_golang_x_sys//unix",
+        ],
         "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
             "@org_golang_x_sys//unix",
         ],
         "@io_bazel_rules_go//go/platform:windows": [

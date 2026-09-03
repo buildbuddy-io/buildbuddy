@@ -6,6 +6,8 @@ go_library(
     name = "commandutil",
     srcs = [
         "commandutil.go",
+        "commandutil_openbsd.go",
+        "commandutil_ps.go",
         "commandutil_unix.go",
         "commandutil_windows.go",
     ],
@@ -17,8 +19,14 @@ go_library(
         "//server/interfaces",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_mitchellh_go_ps//:go-ps",
     ] + select({
+        "@io_bazel_rules_go//go/platform:openbsd": [
+            "//enterprise/server/util/processlist",
+        ],
+        "//conditions:default": [
+            "@com_github_mitchellh_go_ps//:go-ps",
+        ],
+    }) + select({
         "@io_bazel_rules_go//go/platform:windows": [
             "@com_github_shirou_gopsutil_v3//process",
             "@org_golang_x_sys//windows",

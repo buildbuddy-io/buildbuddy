@@ -236,7 +236,7 @@ are not officially supported and can break at any time.
 These execution properties affect how BuildBuddy's scheduler selects an executor for action execution:
 
 - `Pool`: selects which [executor pool](rbe-pools) to use.
-- `OSFamily`: selects which operating system the executor must be running. Available options are `linux` (default), `darwin`, and `windows` (`darwin` and `windows` are currently only available for self-hosted executors).
+- `OSFamily`: selects which operating system the executor must be running. Available options are `linux` (default), `darwin`, `freebsd`, `openbsd`, and `windows` (all non-Linux options are currently only available for self-hosted executors).
 - `Arch`: selects which CPU architecture the executor must be running on. Available options are `amd64` (default) and `arm64`.
 - `use-self-hosted-executors`: use [self-hosted executors](enterprise-rbe) instead of BuildBuddy's managed executor pool. Available options are `true` and `false`. The default value is configurable from [organization settings](https://app.buildbuddy.io/settings/).
 

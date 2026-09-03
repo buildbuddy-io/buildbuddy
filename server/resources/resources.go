@@ -106,6 +106,14 @@ func setSysMilliCPUCapacityFromEnvOrSystem() error {
 		return nil
 	}
 
+	// gosigar reads /proc/stat on FreeBSD, where linprocfs is optional and is
+	// typically not mounted. The Go runtime obtains the logical CPU count from
+	// sysctl on both BSDs without requiring a compatibility filesystem.
+	if runtime.GOOS == "freebsd" || runtime.GOOS == "openbsd" {
+		allocatedCPUMillis = int64(runtime.NumCPU() * 1000)
+		return nil
+	}
+
 	cpuList := gosigar.CpuList{}
 	if err := cpuList.Get(); err != nil {
 		return fmt.Errorf("get CPU list: %w", err)

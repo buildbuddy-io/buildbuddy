@@ -24,6 +24,18 @@ linux_arm64_musl_alias, _linux_arm64_musl_alias = (
         .build()
 )
 
+freebsd_x86_64_alias, _freebsd_x86_64_alias = (
+    with_cfg(native.alias)
+        .set("platforms", [Label("//platforms:freebsd_x86_64")])
+        .build()
+)
+
+openbsd_x86_64_alias, _openbsd_x86_64_alias = (
+    with_cfg(native.alias)
+        .set("platforms", [Label("//platforms:openbsd_x86_64")])
+        .build()
+)
+
 macos_arm64_alias, _macos_arm64_alias = (
     with_cfg(native.alias)
         .set("platforms", [Label("@toolchains_buildbuddy//platforms:darwin_arm64")])

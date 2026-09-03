@@ -26,7 +26,8 @@ message CacheProxyNode {
   // Ex. "23894af6-a540-430a-962e-a14b1f398472"
   string proxy_host_id = 3;
 
-  // Proxy's operating system family. One of: "darwin", "linux", or "windows".
+  // Proxy's operating system family. One of: "darwin", "freebsd", "linux",
+  // "openbsd", or "windows".
   string os_family = 4;
 
   // Architecture of the cache proxy node.

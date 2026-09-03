@@ -14,6 +14,16 @@ alias(
     actual = "@llvm//platforms:linux_arm64_musl",
 )
 
+alias(
+    name = "freebsd_x86_64",
+    actual = "@llvm//platforms:freebsd_x86_64",
+)
+
+alias(
+    name = "openbsd_x86_64",
+    actual = "@llvm//platforms:openbsd_x86_64",
+)
+
 platform(
     name = "linux_x86_64",
     constraint_values = [

@@ -1637,7 +1637,7 @@ func emitCancellationMetric(groupID string, action *config.Action, stage string)
 	switch os {
 	case "":
 		os = platform.LinuxOperatingSystemName
-	case platform.LinuxOperatingSystemName, platform.DarwinOperatingSystemName, platform.WindowsOperatingSystemName:
+	case platform.LinuxOperatingSystemName, platform.DarwinOperatingSystemName, platform.FreeBSDOperatingSystemName, platform.OpenBSDOperatingSystemName, platform.WindowsOperatingSystemName:
 	default:
 		os = "unknown"
 	}

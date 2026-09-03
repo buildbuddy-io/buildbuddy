@@ -15,10 +15,16 @@ go_library(
         "@io_bazel_rules_go//go/platform:darwin": [
             "//server/util/status",
         ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "//server/util/status",
+        ],
         "@io_bazel_rules_go//go/platform:linux": [
             "//server/util/disk",
             "//server/util/status",
             "//server/util/tracing",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
+            "//server/util/status",
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//server/util/status",

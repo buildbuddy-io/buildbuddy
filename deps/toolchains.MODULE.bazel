@@ -32,7 +32,12 @@ osx.frameworks(names = [
 ])
 
 go_sdk = use_extension("@io_bazel_rules_go//go:extensions.bzl", "go_sdk")
-go_sdk.from_file(go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod")
+go_sdk.from_file(
+    experimental_build_compiler_from_source = True,
+    go_mod = "@com_github_buildbuddy_io_buildbuddy//:go.mod",
+    patch_strip = 1,
+    patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:go_openbsd_nopie_flag.patch"],
+)
 go_sdk.nogo(nogo = "@com_github_buildbuddy_io_buildbuddy//:vet")
 use_repo(
     go_sdk,

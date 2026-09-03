@@ -31,3 +31,19 @@ config_setting(
         "@platforms//cpu:arm64",
     ],
 )
+
+config_setting(
+    name = "freebsd_x86_64",
+    constraint_values = [
+        "@platforms//os:freebsd",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "openbsd_x86_64",
+    constraint_values = [
+        "@platforms//os:openbsd",
+        "@platforms//cpu:x86_64",
+    ],
+)

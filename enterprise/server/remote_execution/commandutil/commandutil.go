@@ -19,7 +19,6 @@ import (
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
-	ps "github.com/mitchellh/go-ps"
 )
 
 const (
@@ -333,22 +332,6 @@ func forwardSignals(ctx context.Context, process *process, ch <-chan syscall.Sig
 // Returns the total CPU time in nanoseconds from the given rusage measurement.
 func rusageCPUNanos(rusage *espb.Rusage) int64 {
 	return (rusage.GetUserCpuTimeUsec() + rusage.GetSysCpuTimeUsec()) * 1e3
-}
-
-// ChildPids returns all *direct* child pids of a process identified by pid.
-func ChildPids(pid int) ([]int, error) {
-	procs, err := ps.Processes()
-	if err != nil {
-		return nil, err
-	}
-	var out []int
-	for _, proc := range procs {
-		if proc.PPid() != pid {
-			continue
-		}
-		out = append(out, proc.Pid())
-	}
-	return out, nil
 }
 
 func ErrorResult(err error) *interfaces.CommandResult {

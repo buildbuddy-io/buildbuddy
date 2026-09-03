@@ -3,12 +3,14 @@ load("@io_bazel_rules_docker//go:image.bzl", "go_image")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 load(
     "//rules:platform_transitions.bzl",
+    "freebsd_x86_64_alias",
     "linux_arm64_alias",
     "linux_arm64_musl_alias",
     "linux_x86_64_alias",
     "linux_x86_64_musl_alias",
     "macos_arm64_alias",
     "macos_x86_64_alias",
+    "openbsd_x86_64_alias",
     "windows_386_alias",
     "windows_amd64_alias",
     "windows_arm64_alias",
@@ -133,6 +135,20 @@ macos_arm64_alias(
 
 macos_x86_64_alias(
     name = "executor_macos_x86_64",
+    actual = ":executor",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+freebsd_x86_64_alias(
+    name = "executor_freebsd_amd64",
+    actual = ":executor",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+openbsd_x86_64_alias(
+    name = "executor_openbsd_amd64",
     actual = ":executor",
     tags = ["manual"],
     visibility = ["//visibility:public"],

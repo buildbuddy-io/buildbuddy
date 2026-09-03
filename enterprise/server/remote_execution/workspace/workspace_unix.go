@@ -1,4 +1,4 @@
-//go:build (linux || darwin) && !android && !ios
+//go:build (linux || darwin || freebsd || openbsd) && !android && !ios
 
 package workspace
 
