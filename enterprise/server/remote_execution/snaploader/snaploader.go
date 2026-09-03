@@ -1589,6 +1589,52 @@ func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceNa
 	return snap, nil
 }
 
+// GetContainerImageFromActionResult returns the containerfs snapshot described
+// by the result of the app's container image conversion action. The action
+// writes a manifest listing the image chunks and uploads the chunks as an
+// output directory, so they are already in CAS under the group's instance name
+// and are fetched on demand like any other snapshot chunk. The result is read
+// with the same access rules as snapshot manifests, so in clusters that keep
+// snapshots local it is only used when the action outputs are present there.
+func GetContainerImageFromActionResult(ctx context.Context, l *FileCacheLoader, instanceName string, actionDigest *repb.Digest) (*Snapshot, error) {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+	ctx = snaputil.GetSnapshotAccessContext(ctx)
+
+	rn := digest.NewACResourceName(actionDigest, instanceName, repb.DigestFunction_BLAKE3)
+	actionResult, err := cachetools.GetActionResult(ctx, l.env.GetActionCacheClient(), rn)
+	if err != nil {
+		return nil, status.WrapError(err, "get container image conversion result")
+	}
+	var manifestDigest *repb.Digest
+	for _, f := range actionResult.GetOutputFiles() {
+		if f.GetPath() == snaputil.ContainerImageManifestOutputPath {
+			manifestDigest = f.GetDigest()
+		}
+	}
+	if manifestDigest == nil {
+		return nil, status.FailedPreconditionErrorf("container image conversion result has no %q output", snaputil.ContainerImageManifestOutputPath)
+	}
+	b, err := snaputil.GetBytes(ctx, l.env.GetFileCache(), l.env.GetByteStreamClient(), true /*=remoteEnabled*/, manifestDigest, instanceName, l.env.GetFileCache().TempDir())
+	if err != nil {
+		return nil, status.WrapError(err, "read container image manifest")
+	}
+	rootfs := &fcpb.ChunkedFile{}
+	if err := proto.Unmarshal(b, rootfs); err != nil {
+		return nil, status.WrapError(err, "unmarshal container image manifest")
+	}
+	if rootfs.GetSize() <= 0 || rootfs.GetChunkSize() <= 0 || rootfs.GetChunkSize()%int64(os.Getpagesize()) != 0 {
+		return nil, status.FailedPreconditionErrorf("container image manifest has invalid size %d or chunk size %d", rootfs.GetSize(), rootfs.GetChunkSize())
+	}
+	rootfs.Name = rootfsFileName
+	return &Snapshot{
+		key:                  containerImageSnapshotKey(instanceName, digest.String(actionDigest)).GetBranchKey(),
+		manifest:             &fcpb.SnapshotManifest{ChunkedFiles: []*fcpb.ChunkedFile{rootfs}},
+		supportsRemoteChunks: true,
+		manifestFetchSource:  snaputil.ChunkSourceRemoteCache,
+	}, nil
+}
+
 // UnpackContainerImageSnapshot returns a ChunkedFile from a container image snapshot.
 func UnpackContainerImageSnapshot(ctx context.Context, l *FileCacheLoader, snap *Snapshot, outDir string) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)

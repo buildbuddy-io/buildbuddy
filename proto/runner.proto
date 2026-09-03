@@ -139,6 +139,11 @@ message RunnerKey {
   // command-line configuration (non-flagfile arguments).
   string persistent_worker_key = 4;
 
+  // Prevents a recycled Firecracker runner from being reused after the
+  // synthetic ext4 image action has been invalidated.
+  build.bazel.remote.execution.v2.Digest firecracker_ext4_image_action_digest =
+      5;
+
   // NOTE: if adding more fields to this proto, consider also updating
   // execution_stats.RunnerMetadata (as well as adding the field to ClickHouse)
   // so that all runner key fields are queryable.

@@ -295,7 +295,7 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher)
+	tmpImagePath, err := ConvertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher)
 	if err != nil {
 		return "", err
 	}
@@ -327,9 +327,10 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	return "", nil
 }
 
-// convertContainerToExt4FS generates an ext4 filesystem image from an OCI
-// container image reference.
-func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+// ConvertContainerToExt4FS generates an ext4 filesystem image from an OCI
+// container image reference. The image and its temporary files are written to
+// workspaceDir, and the image path is returned.
+func ConvertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
 	start := time.Now()
 
@@ -346,7 +347,19 @@ func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
-	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
+	cmd := exec.CommandContext(
+		ctx,
+		"tar",
+		"--extract",
+		"--directory", tempUnpackDir,
+		// Skip device nodes under /dev, which tar cannot create without
+		// CAP_MKNOD when the conversion runs as a remote action in an OCI
+		// container. Guest init mounts devtmpfs over /dev anyway, so the
+		// image does not need them. Exclusion patterns are unanchored by
+		// default, so anchor this one to avoid dropping paths like
+		// usr/lib/foo/dev/bar.
+		"--anchored", "--exclude", "dev/*",
+	)
 	var stderr bytes.Buffer
 	cmd.Stdin = rc
 	cmd.Stderr = &stderr

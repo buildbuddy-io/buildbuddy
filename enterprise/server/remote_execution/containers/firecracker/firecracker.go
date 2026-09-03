@@ -867,12 +867,18 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 		if err != nil {
 			return nil, err
 		}
+		// Snapshots built on an app-converted root filesystem image must not
+		// be reused after the app invalidates that image.
+		configurationHash := cd.GetHash()
+		if d := task.GetFirecrackerExt4ImageActionDigest(); d != nil {
+			configurationHash += ":" + digest.String(d)
+		}
 
 		runnerID := c.id
 		if snaputil.IsChunkedSnapshotSharingEnabled() {
 			runnerID = ""
 		}
-		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, cd.GetHash(), runnerID)
+		c.snapshotKeySet, err = loader.SnapshotKeySet(ctx, task, configurationHash, runnerID)
 		if err != nil {
 			return nil, err
 		}
@@ -1512,7 +1518,17 @@ func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploade
 	}
 	c.containerfsSnapshotOnce.Do(func() {
 		instanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
-		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage, c.remoteContainerImageAccess.RemoteReadsEnabled)
+		var snap *snaploader.Snapshot
+		var err error
+		if d := c.task.GetFirecrackerExt4ImageActionDigest(); d != nil && c.remoteContainerImageAccess.RemoteReadsEnabled {
+			// The app already converted and chunked the image with a remote
+			// action, so its result serves as the containerfs snapshot and
+			// the chunks are fetched from CAS on demand. If the result is
+			// gone, returning nil makes PullImage convert the image locally.
+			snap, err = snaploader.GetContainerImageFromActionResult(ctx, c.loader, instanceName, d)
+		} else {
+			snap, err = snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage, c.remoteContainerImageAccess.RemoteReadsEnabled)
+		}
 		if err != nil {
 			if !status.IsNotFoundError(err) {
 				log.CtxWarningf(ctx, "Failed to look up cached containerfs for image %q: %s", c.containerImage, err)

@@ -1,12 +1,16 @@
 package execution_server_test
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
@@ -20,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -54,6 +59,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -67,6 +73,48 @@ const (
 	sharedPoolGroupID     = "GR000"
 	selfHostedPoolGroupID = "GR123"
 )
+
+type completedExecutionClient struct {
+	repb.ExecutionClient
+
+	executeRequest  *repb.ExecuteRequest
+	executeMetadata metadata.MD
+	executeCount    int
+}
+
+func (c *completedExecutionClient) Execute(ctx context.Context, req *repb.ExecuteRequest, _ ...grpc.CallOption) (repb.Execution_ExecuteClient, error) {
+	c.executeCount++
+	c.executeRequest = req.CloneVT()
+	c.executeMetadata, _ = metadata.FromOutgoingContext(ctx)
+	response, err := anypb.New(&repb.ExecuteResponse{Result: &repb.ActionResult{}})
+	if err != nil {
+		return nil, err
+	}
+	return &completedExecuteStream{operation: &longrunningpb.Operation{
+		Done: true,
+		Result: &longrunningpb.Operation_Response{
+			Response: response,
+		},
+	}}, nil
+}
+
+type completedExecuteStream struct {
+	grpc.ClientStream
+	operation *longrunningpb.Operation
+}
+
+func (s *completedExecuteStream) CloseSend() error {
+	return nil
+}
+
+func (s *completedExecuteStream) Recv() (*longrunningpb.Operation, error) {
+	if s.operation == nil {
+		return nil, io.EOF
+	}
+	op := s.operation
+	s.operation = nil
+	return op, nil
+}
 
 type schedulerServerMock struct {
 	interfaces.SchedulerService
@@ -209,6 +257,190 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
+}
+
+func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		// configureFlag selects whether conversion is configured through the
+		// flag instead of the experiment.
+		configureFlag bool
+	}{
+		{name: "experiment", configureFlag: false},
+		{name: "flag_fallback", configureFlag: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env, conn, _ := setupEnv(t)
+			converter := []byte("static arm64 converter")
+			converterDigest, err := digest.Compute(bytes.NewReader(converter), repb.DigestFunction_BLAKE3)
+			require.NoError(t, err)
+			binaryServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/arm64", r.URL.Path)
+				_, _ = w.Write(converter)
+			}))
+			t.Cleanup(binaryServer.Close)
+			// The app fetches the converter into CAS through the remote asset
+			// API so it can be an input of the synthetic action.
+			flags.Set(t, "remote_asset.allowed_private_ips", []string{"127.0.0.1/32"})
+			env.SetCacheClient(cspb.NewCacheClient(conn))
+			fetchServer, err := fetch_server.NewFetchServer(env)
+			require.NoError(t, err)
+			env.SetFetchServer(fetchServer)
+
+			config := execution_server.FirecrackerExt4ConversionConfig{
+				AMD64BinaryURL:    binaryServer.URL + "/amd64",
+				AMD64BinaryBLAKE3: strings.Repeat("0", 64),
+				ARM64BinaryURL:    binaryServer.URL + "/arm64",
+				ARM64BinaryBLAKE3: converterDigest.GetHash(),
+				ActionSalt:        "invalidate-1",
+				PlatformOverrides: map[string]string{platform.EstimatedComputeUnitsPropertyName: "6"},
+				// Header overrides steer the execution without changing the
+				// synthetic action digest.
+				PlatformHeaderOverrides: map[string]string{"Pool": "emergency"},
+			}
+			if test.configureFlag {
+				// Without an experiment provider, the flag alone enables
+				// conversion.
+				flags.Set(t, "remote_execution.firecracker_ext4_conversion_config", config)
+			} else {
+				provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+					"remote_execution.firecracker_ext4_conversion_config": {
+						State:          memprovider.Enabled,
+						DefaultVariant: "enabled",
+						Variants: map[string]any{
+							"enabled": map[string]any{
+								"amd64_binary_url":          config.AMD64BinaryURL,
+								"amd64_binary_blake3":       config.AMD64BinaryBLAKE3,
+								"arm64_binary_url":          config.ARM64BinaryURL,
+								"arm64_binary_blake3":       config.ARM64BinaryBLAKE3,
+								"action_salt":               config.ActionSalt,
+								"platform_overrides":        map[string]any{platform.EstimatedComputeUnitsPropertyName: "6"},
+								"platform_header_overrides": map[string]any{"Pool": "emergency"},
+							},
+						},
+					},
+				})
+				require.NoError(t, openfeature.SetProviderAndWait(provider))
+				fp, err := experiments.NewFlagProvider("test")
+				require.NoError(t, err)
+				env.SetExperimentFlagProvider(fp)
+			}
+
+			remoteExecutionClient := &completedExecutionClient{}
+			env.SetRemoteExecutionClient(remoteExecutionClient)
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+			clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+				ToolInvocationId: "1827af88-64e4-4f34-a472-c6bbfc609c89",
+				ActionMnemonic:   "OriginalMnemonic",
+			})
+			require.NoError(t, err)
+
+			// A Firecracker action waits for the synthetic conversion action
+			// before its task is sent to the scheduler.
+			const instanceName = "firecracker-test"
+			firecrackerPlatform := func(containerImage string) *repb.Platform {
+				return &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: platform.WorkloadIsolationPropertyName, Value: string(platform.FirecrackerContainerType)},
+					{Name: platform.CPUArchitecturePropertyName, Value: platform.ARM64ArchitectureName},
+					{Name: "container-image", Value: containerImage},
+					{Name: "container-registry-username", Value: "user"},
+					{Name: "container-registry-password", Value: "password"},
+				}}
+			}
+			client := repb.NewExecutionClient(conn)
+			execute := func(action *repb.Action, command *repb.Command) {
+				actionResourceName := uploadActionWithCommand(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, action, command)
+				executionStream, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+					InstanceName:   instanceName,
+					ActionDigest:   actionResourceName.GetDigest(),
+					DigestFunction: repb.DigestFunction_SHA256,
+				})
+				require.NoError(t, err)
+				_, err = executionStream.Recv()
+				require.NoError(t, err)
+				require.NoError(t, executionStream.CloseSend())
+			}
+			execute(&repb.Action{Platform: firecrackerPlatform("docker://example.com/private/image:latest")}, &repb.Command{Arguments: []string{"original"}})
+
+			// The nested Execute call allows an Action Cache lookup so a
+			// previously converted image is reused, and it is attributed to
+			// the conversion mnemonic rather than the original action's.
+			syntheticExecuteRequest := remoteExecutionClient.executeRequest
+			require.NotNil(t, syntheticExecuteRequest)
+			require.False(t, syntheticExecuteRequest.GetSkipCacheLookup())
+			rmdValues := remoteExecutionClient.executeMetadata.Get(bazel_request.RequestMetadataKey)
+			require.Len(t, rmdValues, 1)
+			rmd := &repb.RequestMetadata{}
+			require.NoError(t, proto.Unmarshal([]byte(rmdValues[0]), rmd))
+			require.Equal(t, "BuildBuddyCreateVMDiskImage", rmd.GetActionMnemonic())
+			poolHeaderValues := remoteExecutionClient.executeMetadata.Get(platform.OverrideHeaderPrefix + "Pool")
+			require.Equal(t, []string{"emergency"}, poolHeaderValues)
+
+			// The synthetic action runs the fetched arm64 converter on the
+			// original image, salted so the app can invalidate cached images.
+			// It uses BLAKE3 even though the client used SHA256, because
+			// executors look up snapshot chunks in CAS by BLAKE3 digest.
+			require.Equal(t, repb.DigestFunction_BLAKE3, syntheticExecuteRequest.GetDigestFunction())
+			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			syntheticAction := &repb.Action{}
+			syntheticActionRN := digest.NewCASResourceName(syntheticExecuteRequest.GetActionDigest(), instanceName, repb.DigestFunction_BLAKE3)
+			require.NoError(t, cachetools.GetBlobAsProto(cacheCtx, env.GetByteStreamClient(), syntheticActionRN, syntheticAction))
+			require.Equal(t, []byte("invalidate-1"), syntheticAction.GetSalt())
+			syntheticCommand := &repb.Command{}
+			syntheticCommandRN := digest.NewCASResourceName(syntheticAction.GetCommandDigest(), instanceName, repb.DigestFunction_BLAKE3)
+			require.NoError(t, cachetools.GetBlobAsProto(cacheCtx, env.GetByteStreamClient(), syntheticCommandRN, syntheticCommand))
+			require.Equal(t, []string{"./oci_to_ext4", "--image=example.com/private/image:latest", "--manifest=containerfs.manifest", "--chunks_dir=containerfs"}, syntheticCommand.GetArguments())
+			require.Equal(t, []string{"containerfs.manifest", "containerfs"}, syntheticCommand.GetOutputPaths())
+			inputRoot := &repb.Directory{}
+			inputRootRN := digest.NewCASResourceName(syntheticAction.GetInputRootDigest(), instanceName, repb.DigestFunction_BLAKE3)
+			require.NoError(t, cachetools.GetBlobAsProto(cacheCtx, env.GetByteStreamClient(), inputRootRN, inputRoot))
+			require.Len(t, inputRoot.GetFiles(), 1)
+			converterFile := inputRoot.GetFiles()[0]
+			require.Equal(t, "oci_to_ext4", converterFile.GetName())
+			require.Equal(t, converterDigest.GetHash(), converterFile.GetDigest().GetHash())
+			platformProperties := make(map[string]string)
+			for _, property := range syntheticAction.GetPlatform().GetProperties() {
+				platformProperties[property.GetName()] = property.GetValue()
+			}
+			require.Equal(t, platform.ARM64ArchitectureName, platformProperties[platform.CPUArchitecturePropertyName])
+			require.Equal(t, string(platform.OCIContainerType), platformProperties[platform.WorkloadIsolationPropertyName])
+			require.Equal(t, platform.DockerPrefix+platform.Ubuntu24_04Image, platformProperties["container-image"])
+			// Configured platform overrides replace the built-in properties,
+			// while header overrides stay out of the action.
+			require.Equal(t, "6", platformProperties[platform.EstimatedComputeUnitsPropertyName])
+			require.NotContains(t, platformProperties, "Pool")
+
+			// The original task carries the synthetic action digest so the
+			// executor uses its result as the containerfs snapshot.
+			scheduler := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, scheduler.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(scheduler.scheduleReqs[0].GetSerializedTask(), task))
+			require.True(t, proto.Equal(syntheticExecuteRequest.GetActionDigest(), task.GetFirecrackerExt4ImageActionDigest()))
+			if test.configureFlag {
+				require.Empty(t, task.GetExperiments())
+			} else {
+				require.Contains(t, task.GetExperiments(), "remote_execution.firecracker_ext4_conversion_config:enabled")
+			}
+
+			// A different action using the same image reuses the remembered
+			// conversion digest instead of running the synthetic action again.
+			execute(&repb.Action{Platform: firecrackerPlatform("docker://example.com/private/image:latest")}, &repb.Command{Arguments: []string{"second"}})
+			require.Equal(t, 1, remoteExecutionClient.executeCount)
+			require.Len(t, scheduler.scheduleReqs, 2)
+			secondTask := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(scheduler.scheduleReqs[1].GetSerializedTask(), secondTask))
+			require.True(t, proto.Equal(syntheticExecuteRequest.GetActionDigest(), secondTask.GetFirecrackerExt4ImageActionDigest()))
+
+			// A different image is a different conversion, so it runs its own
+			// synthetic action.
+			execute(&repb.Action{Platform: firecrackerPlatform("docker://example.com/private/other:latest")}, &repb.Command{Arguments: []string{"original"}})
+			require.Equal(t, 2, remoteExecutionClient.executeCount)
+			require.NotEqual(t, syntheticExecuteRequest.GetActionDigest().GetHash(), remoteExecutionClient.executeRequest.GetActionDigest().GetHash())
+		})
+	}
 }
 
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {

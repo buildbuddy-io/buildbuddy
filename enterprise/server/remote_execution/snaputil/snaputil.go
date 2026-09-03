@@ -73,6 +73,16 @@ const (
 	// write its chunked container image in the remote cache, regardless of whether remote snapshots are enabled.
 	RemoteContainerImageReadsExperiment  = "executor.remote_container_image_reads_enabled"
 	RemoteContainerImageWritesExperiment = "executor.remote_container_image_writes_enabled"
+
+	// ContainerImageManifestOutputPath and ContainerImageChunksOutputPath are
+	// the outputs of the app's container image conversion action. The
+	// manifest is a serialized ChunkedFile proto describing the chunk files
+	// in the chunks directory, which are named by byte offset. Executors use
+	// the action result as a containerfs snapshot and fetch chunks from CAS
+	// on demand, so the action must use the BLAKE3 digest function like all
+	// other snapshot artifacts.
+	ContainerImageManifestOutputPath = "containerfs.manifest"
+	ContainerImageChunksOutputPath   = "containerfs"
 )
 
 // ChunkSource represents how a snapshot chunk was initialized
