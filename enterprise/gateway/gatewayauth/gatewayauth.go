@@ -14,9 +14,10 @@ type Principal struct {
 	User string
 
 	// Namespace keys network and IP allocation, and scopes what List reveals. It
-	// is a group ID for API-key callers. Since the gateway drops packets that
-	// cross networks, principals with different namespaces can never reach each
-	// other's peers.
+	// is a group ID for API-key callers and "cert:<email>" for certificate
+	// callers.
+	// Since the gateway drops packets that cross networks,
+	// principals with different namespaces can never reach each other's peers.
 	Namespace string
 
 	// ExpiresAt bounds a registered peer's lifetime to the credential's own.
