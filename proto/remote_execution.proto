@@ -2797,13 +2797,15 @@ message IOStats {
 }
 
 message VfsStats {
-  // The number of inputs that needed to be fetched remotely.
+  // The number of inputs that were downloaded lazily, when the action opened
+  // them, because the prefetch had left them out or they had been evicted
+  // from the file cache after being prefetched.
   int64 file_download_count = 1;
 
-  // The total size of inputs that needed to be fetched remotely.
+  // The total size of the lazily downloaded inputs.
   int64 file_download_size_bytes = 2;
 
-  // The total time it took to fetch inputs remotely.
+  // The total time spent on lazy downloads.
   int64 file_download_duration_usec = 3;
 
   // The total number of CAS files in the input tree.
@@ -2824,6 +2826,12 @@ message VfsStats {
   // counted here, so this isolates the misses caused by leaving previously
   // unused inputs out of the prefetch.
   int64 prefetch_miss_count = 8;
+
+  // The number and total size of inputs that the prefetch downloaded before
+  // the action could open them. Together with the lazy downloads above, this
+  // accounts for every input the task downloaded.
+  int64 prefetched_file_count = 9;
+  int64 prefetched_file_size_bytes = 10;
 }
 
 // Compute usage sampled throughout a task's execution.

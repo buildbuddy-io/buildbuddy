@@ -47,6 +47,10 @@ const (
 	// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
+	// Whether a VFS input download was part of the prefetch ("prefetched") or
+	// happened lazily when the action opened the file ("lazy").
+	VFSDownloadTypeLabel = "download_type"
+
 	// Cache event type: `hit`, `miss`, or `upload`.
 	CacheEventTypeLabel = "cache_event_type"
 
@@ -1790,6 +1794,24 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "vfs_cas_files_accessed_bytes",
 		Help:      "Size of CAS files in VFS filesystems that were accessed by the action.",
+	})
+
+	VFSFileDownloadCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_file_download_count",
+		Help:      "Number of CAS input files downloaded for VFS-backed actions, by whether the download was part of the prefetch or lazy, meaning on demand when the action opened the file.",
+	}, []string{
+		VFSDownloadTypeLabel,
+	})
+
+	VFSFileDownloadSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "vfs_file_download_size_bytes",
+		Help:      "Size of CAS input files downloaded for VFS-backed actions, by whether the download was part of the prefetch or lazy, meaning on demand when the action opened the file.",
+	}, []string{
+		VFSDownloadTypeLabel,
 	})
 
 	RemoteRunnerRequests = promauto.NewCounterVec(prometheus.CounterOpts{

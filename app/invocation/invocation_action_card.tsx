@@ -936,13 +936,27 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   private renderExecutionDownloads() {
     const ioStats = this.state.actionResult?.executionMetadata?.ioStats;
+    const vfsStats = this.getAuxiliaryMetadata(execution_stats.ExecutionAuxiliaryMetadata)?.vfsStats;
     const fetchSummary = ioStats && (
       <div className="action-downloads-summary">
         Downloaded {format.bytes(ioStats.fileDownloadSizeBytes ?? 0)} ({format.count(ioStats.fileDownloadCount ?? 0)}{" "}
         cache misses, {format.count(ioStats.localCacheHits ?? 0)} cache hits)
       </div>
     );
-    if (!fetchSummary && !this.state.executionDownloadsLoading && !this.state.executionDownloads.length) {
+    const vfsSummary = vfsStats && (
+      <div className="action-downloads-summary">
+        VFS prefetched {format.bytes(vfsStats.prefetchedFileSizeBytes ?? 0)} (
+        {format.count(vfsStats.prefetchedFileCount ?? 0)} files) and lazily fetched{" "}
+        {format.bytes(vfsStats.fileDownloadSizeBytes ?? 0)} ({format.count(vfsStats.fileDownloadCount ?? 0)} files,{" "}
+        {format.count(vfsStats.prefetchMissCount ?? 0)} left out of the prefetch)
+      </div>
+    );
+    if (
+      !fetchSummary &&
+      !vfsSummary &&
+      !this.state.executionDownloadsLoading &&
+      !this.state.executionDownloads.length
+    ) {
       return null;
     }
     return (
@@ -950,6 +964,7 @@ export default class InvocationActionCardComponent extends React.Component<Props
         <div className="metadata-title">Inputs fetched</div>
         <div className="action-downloads">
           {fetchSummary}
+          {vfsSummary}
           {this.state.executionDownloadsLoading && !this.state.executionDownloads.length ? (
             <div className="action-downloads-loading">
               <Spinner />
