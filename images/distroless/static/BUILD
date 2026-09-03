@@ -88,7 +88,10 @@ cacerts(
             ),
             "org.opencontainers.image.vendor": "BuildBuddy",
         },
-        compress = "gzip",
+        optimize = select({
+            "//:opt": True,
+            "//conditions:default": False,
+        }),
         tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
