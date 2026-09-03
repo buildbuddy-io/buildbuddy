@@ -111,9 +111,17 @@ message GetWithMetadataResponse {
   MetadataResponse metadata = 2;
 }
 
+// Next Tag: 4
 message KV {
   Key key = 1;
-  bytes value = 2;
+
+  oneof value_or_reference {
+    // The bytes of the value.
+    bytes value = 2;
+
+    // A reference to the value.
+    reference.Reference value_reference = 3;
+  }
 }
 
 message GetMultiRequest {
