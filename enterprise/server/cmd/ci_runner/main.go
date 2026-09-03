@@ -1727,6 +1727,12 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	}
 
 	runfilesDir := bin + ".runfiles"
+	// Executable genrules do not have a runfiles tree. In that case, the cd
+	// command in points into the remote checkout, which is not valid for a
+	// local run.
+	if _, err := os.Stat(runfilesDir); os.IsNotExist(err) {
+		runfilesRoot = ""
+	}
 	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, wsRoot, runfilesDir, bin)
 	if err != nil {
 		return nil, err

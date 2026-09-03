@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 )
@@ -963,6 +964,40 @@ func TestEnvForLocalRun(t *testing.T) {
 		"BUILD_WORKSPACE_DIRECTORY=/new/workspace",
 		"BUILD_WORKING_DIRECTORY=/new/working-directory",
 	}, envForLocalRun(env, "/new/runfiles", "/new/workspace", "/new/working-directory"))
+}
+
+func TestEnvForLocalRun_NoRunfiles(t *testing.T) {
+	env := []string{
+		"PATH=/usr/bin",
+		"RUNFILES_DIR=/old/runfiles",
+		"RUNFILES_MANIFEST_FILE=/old/MANIFEST",
+		"BUILD_WORKSPACE_DIRECTORY=/old/workspace",
+		"BUILD_WORKING_DIRECTORY=/old/working-directory",
+		"USER=test",
+	}
+
+	require.Equal(t, []string{
+		"PATH=/usr/bin",
+		"USER=test",
+		"BUILD_WORKSPACE_DIRECTORY=/new/workspace",
+		"BUILD_WORKING_DIRECTORY=/new/working-directory",
+	}, envForLocalRun(env, "", "/new/workspace", "/new/working-directory"))
+}
+
+func TestHasSupportingRunfiles(t *testing.T) {
+	executablePath := "bazel-out/k8-fastbuild/bin/main.sh"
+	executable := &bespb.Runfile{File: &bespb.File{Name: executablePath}}
+
+	require.False(t, hasSupportingRunfiles([]*bespb.Runfile{executable}, nil, executablePath))
+	require.True(t, hasSupportingRunfiles([]*bespb.Runfile{
+		executable,
+		{File: &bespb.File{Name: "bazel-out/k8-fastbuild/bin/main.sh.runfiles/_main/data.txt"}},
+	}, nil, executablePath))
+	require.True(t, hasSupportingRunfiles(
+		[]*bespb.Runfile{executable},
+		[]*bespb.Tree{{Name: "bazel-out/k8-fastbuild/bin/main.sh.runfiles/_main/data"}},
+		executablePath,
+	))
 }
 
 func TestQuoteRemoteBazelArgs_RunScriptEnvVarExpanded(t *testing.T) {
