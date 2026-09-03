@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -34,15 +35,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
@@ -391,6 +395,126 @@ func TestDeleteInvocation(t *testing.T) {
 			Lookup:         &inpb.InvocationLookup{InvocationId: iid}},
 	)
 	require.Error(t, err)
+}
+
+type fakeAuthDB struct {
+	interfaces.AuthDB
+	keys []*tables.APIKey
+}
+
+func (f *fakeAuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIKey, error) {
+	return f.keys, nil
+}
+
+type fakeUserDB struct {
+	interfaces.UserDB
+	users map[string]*tables.User
+	errs  map[string]error
+}
+
+func (f *fakeUserDB) GetUserByIDWithoutAuthCheck(ctx context.Context, id string, opts *interfaces.GetUserOpts) (*tables.User, error) {
+	if err, ok := f.errs[id]; ok {
+		return nil, err
+	}
+	if u, ok := f.users[id]; ok {
+		return u, nil
+	}
+	return nil, status.NotFoundError("user not found")
+}
+
+func testUserWithCapabilities(userID, groupID string, caps ...cappb.Capability) *testauth.TestUser {
+	u := testauth.User(userID, groupID)
+	u.GroupMemberships[0].Capabilities = caps
+	return u
+}
+
+func groupMember(userID, firstName, lastName, groupID string) *tables.User {
+	return &tables.User{
+		UserID:    userID,
+		FirstName: firstName,
+		LastName:  lastName,
+		Email:     userID + "@example.com",
+		Groups:    []*tables.GroupRole{{Group: tables.Group{GroupID: groupID}}},
+	}
+}
+
+func TestGetApiKeys_CreationMetadata(t *testing.T) {
+	const (
+		adminID    = "ADMIN"
+		devID      = "DEV"
+		outsiderID = "OUTSIDER"
+		deletedID  = "DELETED"
+		brokenID   = "BROKEN"
+	)
+	createdAt := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
+	model := tables.Model{CreatedAtUsec: createdAt.UnixMicro()}
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		adminID: testUserWithCapabilities(adminID, group1, cappb.Capability_ORG_ADMIN),
+		devID:   testUserWithCapabilities(devID, group1, cappb.Capability_CACHE_WRITE),
+	})
+	te.SetAuthenticator(auth)
+	te.SetAuthDB(&fakeAuthDB{keys: []*tables.APIKey{
+		{APIKeyID: "member", Model: model, CreatedByUserID: adminID},
+		{APIKeyID: "outsider", Model: model, CreatedByUserID: outsiderID},
+		{APIKeyID: "deleted", Model: model, CreatedByUserID: deletedID},
+		{APIKeyID: "broken", Model: model, CreatedByUserID: brokenID},
+		{APIKeyID: "time-only", Model: model},
+		{APIKeyID: "legacy"},
+	}})
+	te.SetUserDB(&fakeUserDB{
+		users: map[string]*tables.User{
+			adminID:    groupMember(adminID, "Ada", "Admin", group1),
+			outsiderID: groupMember(outsiderID, "Olive", "Outsider", group2),
+		},
+		errs: map[string]error{brokenID: status.UnavailableError("db unavailable")},
+	})
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	getKeys := func(t *testing.T, userID string) map[string]*akpb.ApiKey {
+		ctx, err := auth.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		rsp, err := server.GetApiKeys(ctx, &akpb.GetApiKeysRequest{
+			RequestContext: testauth.RequestContext(userID, group1),
+		})
+		require.NoError(t, err)
+		keys := map[string]*akpb.ApiKey{}
+		for _, k := range rsp.GetApiKey() {
+			keys[k.GetId()] = k
+		}
+		require.Len(t, keys, 6)
+		return keys
+	}
+
+	t.Run("admin", func(t *testing.T) {
+		keys := getKeys(t, adminID)
+
+		md := keys["member"].GetCreationMetadata()
+		require.NotNil(t, md)
+		require.Equal(t, "Ada Admin", md.GetCreatedBy())
+		require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro())
+
+		// Creators who aren't group members, no longer exist, or can't be
+		// looked up are not attributed, but the timestamp is still returned.
+		for _, id := range []string{"outsider", "deleted", "broken", "time-only"} {
+			md := keys[id].GetCreationMetadata()
+			require.NotNil(t, md, id)
+			require.Empty(t, md.GetCreatedBy(), id)
+			require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro(), id)
+		}
+
+		// Keys with nothing to show get no metadata at all.
+		require.Nil(t, keys["legacy"].GetCreationMetadata())
+	})
+
+	t.Run("developer", func(t *testing.T) {
+		keys := getKeys(t, devID)
+		for id, k := range keys {
+			require.Nil(t, k.GetCreationMetadata(), id)
+		}
+	})
 }
 
 func TestGetTree(t *testing.T) {
