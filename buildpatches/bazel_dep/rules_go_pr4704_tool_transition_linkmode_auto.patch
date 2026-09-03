@@ -1,0 +1,21 @@
+diff --git a/go/private/rules/transition.bzl b/go/private/rules/transition.bzl
+index e3b2e713f5..a8c95cd6a8 100644
+--- a/go/private/rules/transition.bzl
++++ b/go/private/rules/transition.bzl
+@@ -19,7 +19,6 @@ load(
+ load(
+     "//go/private:mode.bzl",
+     "LINKMODES",
+-    "LINKMODE_NORMAL",
+ )
+ load(
+     "//go/private:platforms.bzl",
+@@ -198,7 +197,7 @@ _common_reset_transition_dict = dict({
+     "//go/config:race": False,
+     "//go/config:pure": False,
+     "//go/config:debug": False,
+-    "//go/config:linkmode": LINKMODE_NORMAL,
++    "//go/config:linkmode": "auto",
+     "//go/config:tags": [],
+     "//go/config:pgoprofile": Label("//go/config:empty"),
+ }, **{setting: "" for setting in _SETTING_KEY_TO_ORIGINAL_SETTING_KEY.values()})

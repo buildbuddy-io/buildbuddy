@@ -1,0 +1,150 @@
+diff --git a/go/private/actions/link.bzl b/go/private/actions/link.bzl
+index ad8769eac6..2f10c5c521 100644
+--- a/go/private/actions/link.bzl
++++ b/go/private/actions/link.bzl
+@@ -88,7 +88,7 @@ def emit_link(
+     else:
+         extld = extld_from_cc_toolchain(go)
+         tool_args.add_all(extld)
+-        if extld and (go.mode.static or
++        if extld and (go.static_link or
+                       go.mode.race or
+                       go.mode.linkmode != LINKMODE_NORMAL or
+                       go.mode.goos == "windows" and go.mode.msan):
+@@ -108,7 +108,7 @@ def emit_link(
+             #       runtime/cgo(.text): relocation target memset not defined
+             tool_args.add("-linkmode", "external")
+ 
+-    if go.mode.static:
++    if go.static_link:
+         extldflags.append("-static")
+     if go.mode.linkmode != LINKMODE_NORMAL:
+         builder_args.add("-buildmode", go.mode.linkmode)
+diff --git a/go/private/context.bzl b/go/private/context.bzl
+index 16eb0b2d67..f4bcd159f4 100644
+--- a/go/private/context.bzl
++++ b/go/private/context.bzl
+@@ -600,7 +600,8 @@ def go_context(
+         go_context_data = None,
+         maybe_needs_cc_toolchain = True,
+         goos = "auto",
+-        goarch = "auto"):
++        goarch = "auto",
++        static = "auto"):
+     """Returns an API used to build Go code.
+ 
+     See /go/toolchains.rst#go-context
+@@ -662,6 +663,15 @@ def go_context(
+         mode = GoConfigInfo(**mode_kwargs)
+         validate_mode(mode)
+ 
++    if static not in ("on", "off", "auto"):
++        fail('static: must be "on", "off", or "auto", got "{}"'.format(static))
++
++    # Static linking only affects the link action of the rule it is set on, so
++    # the static attribute is applied here rather than through a configuration
++    # transition, which would give every dependency a configuration of its own.
++    # It is kept out of mode since that describes how archives are compiled.
++    static_link = mode.static if static == "auto" else static == "on"
++
+     if stdlib:
+         goroot = stdlib.root_file.dirname
+     else:
+@@ -761,6 +771,7 @@ def go_context(
+         toolchain = toolchain,
+         sdk = toolchain.sdk,
+         mode = mode,
++        static_link = static_link,
+         stdlib = stdlib,
+         actions = ctx.actions,
+         cc_toolchain_files = cc_toolchain_files,
+diff --git a/go/private/rules/binary.bzl b/go/private/rules/binary.bzl
+index 232171806c..74ad855659 100644
+--- a/go/private/rules/binary.bzl
++++ b/go/private/rules/binary.bzl
+@@ -132,6 +132,7 @@ def _go_binary_impl(ctx):
+         maybe_needs_cc_toolchain = maybe_needs_cc_toolchain(ctx.attr, go_infos = ctx.attr.deps),
+         goos = ctx.attr.goos,
+         goarch = ctx.attr.goarch,
++        static = ctx.attr.static,
+     )
+ 
+     generated_srcs = []
+diff --git a/go/private/rules/test.bzl b/go/private/rules/test.bzl
+index 70a7d2a711..bae7cdba30 100644
+--- a/go/private/rules/test.bzl
++++ b/go/private/rules/test.bzl
+@@ -68,6 +68,7 @@ def _go_test_impl(ctx):
+         maybe_needs_cc_toolchain = maybe_needs_cc_toolchain(ctx.attr, go_infos = ctx.attr.deps),
+         goos = ctx.attr.goos,
+         goarch = ctx.attr.goarch,
++        static = ctx.attr.static,
+     )
+ 
+     validation_outputs = []
+diff --git a/go/private/rules/transition.bzl b/go/private/rules/transition.bzl
+index e3b2e713f5..3f937f5588 100644
+--- a/go/private/rules/transition.bzl
++++ b/go/private/rules/transition.bzl
+@@ -36,7 +36,6 @@ load(
+ # Keep their package name in sync with the implementation of
+ # _original_setting_key.
+ TRANSITIONED_GO_SETTING_KEYS = [
+-    "//go/config:static",
+     "//go/config:msan",
+     "//go/config:race",
+     "//go/config:pure",
+@@ -70,9 +69,11 @@ TOOL_INHERITED_SETTING_KEYS = [
+ 
+ def _setting_before_go_transition(settings, key):
+     """Returns the value of key from before the last go_transition."""
+-    original_value = settings[_SETTING_KEY_TO_ORIGINAL_SETTING_KEY[key]]
+-    if original_value:
+-        return json.decode(original_value)
++    original_key = _SETTING_KEY_TO_ORIGINAL_SETTING_KEY.get(key)
++    if original_key:
++        original_value = settings[original_key]
++        if original_value:
++            return json.decode(original_value)
+     return settings[key]
+ 
+ def _go_transition_impl(settings, attr):
+@@ -87,7 +88,9 @@ def _go_transition_impl(settings, attr):
+     original_settings = settings
+     settings = dict(settings)
+ 
+-    _set_ternary(settings, attr, "static")
++    # The static attribute is deliberately not applied here: it only affects
++    # the link action of the rule it is set on and is thus read directly by
++    # go_context rather than propagated to all dependencies as a setting.
+     race = _set_ternary(settings, attr, "race")
+     msan = _set_ternary(settings, attr, "msan")
+     pure = _set_ternary(settings, attr, "pure")
+@@ -354,8 +357,8 @@ intermediate rule that allows users to apply these transitions.
+ 
+ The '//go/config:static' and '//go/config:pure' settings are an exception: they are
+ inherited from the value set on the command line, as they determine whether the tool
+-can run on the execution platform. The 'static' and 'pure' attributes of an enclosing
+-rule are still reset.
++can run on the execution platform. The 'pure' attribute of an enclosing rule is still
++reset.
+ """,
+ )
+ 
+diff --git a/go/toolchains.rst b/go/toolchains.rst
+index 717a790cc2..1d795e0f4e 100644
+--- a/go/toolchains.rst
++++ b/go/toolchains.rst
+@@ -674,6 +674,12 @@ Fields
+ | Controls the compilation setup affecting things like enabling profilers and sanitizers.          |
+ | See `compilation modes`_ for more information about the allowed values.                          |
+ +--------------------------------+-----------------------------------------------------------------+
++| :param:`static_link`           | :type:`bool`                                                    |
+++--------------------------------+-----------------------------------------------------------------+
++| Whether binaries linked through this context are statically linked. This is the value of the     |
++| ``static`` mode after applying the ``static`` attribute of the rule, which only affects linking  |
++| and thus isn't part of :param:`mode`.                                                            |
+++--------------------------------+-----------------------------------------------------------------+
+ | :param:`stdlib`                | :type:`GoStdLib`                                                |
+ +--------------------------------+-----------------------------------------------------------------+
+ | The standard library and tools to use in this build mode. This may be the                        |

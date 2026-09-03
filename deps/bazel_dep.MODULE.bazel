@@ -2,6 +2,22 @@
 
 bazel_dep(name = "abseil-cpp", version = "20260107.1", repo_name = "com_google_absl")
 bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
+single_version_override(
+    module_name = "rules_go",
+    patch_strip = 1,
+    patches = [
+        # Upstream fixes for configuration forking (each fork rebuilds the
+        # hermetic LLVM C runtimes from source once more). Drop these once
+        # they ship in a rules_go release:
+        # https://github.com/bazel-contrib/rules_go/pull/4704
+        "//buildpatches/bazel_dep:rules_go_pr4704_tool_transition_linkmode_auto.patch",
+        # https://github.com/bazel-contrib/rules_go/pull/4705
+        "//buildpatches/bazel_dep:rules_go_pr4705_stdlib_keep_request_nogo.patch",
+        # https://github.com/bazel-contrib/rules_go/pull/4706 (merged upstream)
+        "//buildpatches/bazel_dep:rules_go_pr4706_static_link_only.patch",
+    ],
+    version = "0.63.0",
+)
 bazel_dep(name = "gazelle", repo_name = "bazel_gazelle")
 single_version_override(
     module_name = "gazelle",
