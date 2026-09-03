@@ -31,3 +31,14 @@ config_setting(
         "@platforms//cpu:arm64",
     ],
 )
+
+# Matches Linux builds that set the "static" Go build tag, which the musl
+# platforms in //platforms apply. Use this in a select() alongside
+# @io_bazel_rules_go//go/platform:linux to drop deps that cannot be built or
+# linked statically. Bazel picks this setting over the plain linux one when
+# both match, because it is a strict specialization of it.
+config_setting(
+    name = "linux_static",
+    constraint_values = ["@platforms//os:linux"],
+    flag_values = {"@io_bazel_rules_go//go/config:tags": "static"},
+)

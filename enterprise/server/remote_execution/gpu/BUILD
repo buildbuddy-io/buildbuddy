@@ -14,6 +14,9 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/util/flag",
     ] + select({
+        # Static builds compile gpu_unsupported.go instead of gpu_linux.go,
+        # because go-nvml needs glibc-only dlfcn symbols that musl lacks.
+        "//platforms/configs:linux_static": [],
         "@io_bazel_rules_go//go/platform:linux": [
             "//enterprise/server/remote_execution/cgroup",
             "//server/util/log",
@@ -32,6 +35,8 @@ go_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = select({
+        # gpu_linux_test.go is excluded from static builds along with gpu_linux.go.
+        "//platforms/configs:linux_static": [],
         "@io_bazel_rules_go//go/platform:linux": [
             "//proto:remote_execution_go_proto",
             "//server/util/testing/flags",
