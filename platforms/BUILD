@@ -23,18 +23,12 @@ platform(
     parents = ["@llvm//platforms:linux_arm64_musl"],
 )
 
-platform(
+alias(
     name = "linux_x86_64",
-    constraint_values = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-    ],
+    actual = "@llvm//platforms:linux_x86_64_gnu.2.28",
 )
 
-platform(
+alias(
     name = "linux_arm64",
-    constraint_values = [
-        "@platforms//os:linux",
-        "@platforms//cpu:arm64",
-    ],
+    actual = "@llvm//platforms:linux_arm64_gnu.2.28",
 )
