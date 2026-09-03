@@ -1717,6 +1717,22 @@ var (
 		Help:      "Per-file download duration during remote execution, in **microseconds**.",
 	})
 
+	LocalCacheHits = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "local_cache_hits",
+		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
+		Help:      "Number of input files per task that were found in the local file cache and linked into the workspace, or checked as present ahead of a VFS prefetch.",
+	})
+
+	LocalCacheLinkDurationUsec = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_execution",
+		Name:      "local_cache_link_duration_usec",
+		Buckets:   durationUsecBuckets(1*time.Microsecond, 1*time.Hour, 10),
+		Help:      "Time per task spent checking inputs against the local file cache and linking them into the workspace, in **microseconds**.",
+	})
+
 	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

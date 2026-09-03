@@ -651,6 +651,8 @@ func (m *ActionMetrics) Report(ctx context.Context) {
 		metrics.FileDownloadCount.Observe(float64(md.IoStats.FileDownloadCount))
 		metrics.FileDownloadSizeBytes.Observe(float64(md.IoStats.FileDownloadSizeBytes))
 		metrics.FileDownloadDurationUsec.Observe(float64(md.IoStats.FileDownloadDurationUsec))
+		metrics.LocalCacheHits.Observe(float64(md.IoStats.LocalCacheHits))
+		metrics.LocalCacheLinkDurationUsec.Observe(float64(md.IoStats.GetLocalCacheLinkDuration().AsDuration().Microseconds()))
 		metrics.FileUploadCount.Observe(float64(md.IoStats.FileUploadCount))
 		metrics.FileUploadSizeBytes.Observe(float64(md.IoStats.FileUploadSizeBytes))
 		metrics.FileUploadDurationUsec.Observe(float64(md.IoStats.FileUploadDurationUsec))
