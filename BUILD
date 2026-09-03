@@ -262,6 +262,13 @@ config_setting(
 )
 
 config_setting(
+    name = "opt",
+    values = {
+        "compilation_mode": "opt",
+    },
+)
+
+config_setting(
     name = "release_build",
     values = {"define": "release=true"},
 )

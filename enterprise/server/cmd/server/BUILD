@@ -199,7 +199,6 @@ image_layer(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
-    compress = "gzip",
     # Do not include runfiles so that we can separate configuration files out
     # into a separate layer. This lets us use a base image without those files
     # when building our production images.
@@ -232,7 +231,10 @@ layer_from_tar(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
-    compress = "gzip",
+    optimize = select({
+        "//:opt": True,
+        "//conditions:default": False,
+    }),
     tags = ["manual"],
 )
 
@@ -303,6 +305,10 @@ layer_from_tar(
         ),
         "org.opencontainers.image.vendor": "BuildBuddy",
     },
+    optimize = select({
+        "//:opt": True,
+        "//conditions:default": False,
+    }),
     tags = ["manual"],
 )
 
