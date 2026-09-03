@@ -64,6 +64,10 @@ common --execution_log_compact_file=%workspace%/bazel_compact_exec_log.binpb.zst
 # Disable https://github.com/aspect-build/tools_telemetry.
 common --repo_env=DO_NOT_TRACK=1
 
+# Use a temporary Go module cache for Gazelle repository fetches unless an
+# explicit host module cache is configured.
+common --repo_env=GO_REPOSITORY_EPHEMERAL_MODCACHE=1
+
 #############################
 # TESTING/DEVELOPMENT FLAGS #
 #############################
