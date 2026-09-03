@@ -215,7 +215,6 @@ pkg_tar(
     ],
     include_runfiles = True,
     package_dir = APP_PACKAGE_ROOT,
-    portable_mtime = False,
     remap_paths = {
         ".runfiles/": "%s.runfiles/" % BINARY_NAME,
     },
