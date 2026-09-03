@@ -1,4 +1,4 @@
-//go:build linux && !android && cgo
+//go:build linux && !android && cgo && !static
 
 package gpu
 

@@ -17,7 +17,8 @@ var (
 // Configure validates the GPU memory tracking configuration and initializes
 // its platform implementation when tracking is enabled. The configure and
 // cgroupUsage functions are defined per platform in gpu_linux.go and
-// gpu_unsupported.go.
+// gpu_unsupported.go. Static builds use gpu_unsupported.go, since the NVML
+// bindings cannot be linked statically.
 func Configure() error {
 	if !*gpuMemoryTrackingEnabled {
 		return nil
