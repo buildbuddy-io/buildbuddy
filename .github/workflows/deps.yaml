@@ -35,7 +35,6 @@ jobs:
           cp buildbuddy/bazel_downloader.cfg buildbuddy-internal/bazel_downloader.cfg
           mkdir -p buildbuddy-internal/buildpatches/bazel_dep
           cp buildbuddy/buildpatches/bazel_dep/* buildbuddy-internal/buildpatches/bazel_dep/
-          cp buildbuddy/buildpatches/rules_distroless.patch buildbuddy-internal/buildpatches/rules_distroless.patch
           mkdir -p buildbuddy-internal/deps
           cp buildbuddy/deps/* buildbuddy-internal/deps/
           cp buildbuddy/MODULE.bazel.lock buildbuddy-internal/MODULE.bazel.lock
