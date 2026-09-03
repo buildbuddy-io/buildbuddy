@@ -454,7 +454,7 @@ func (g *Gateway) addPeerLocked(ctx context.Context, cancel context.CancelFunc, 
 // List returns the peers currently registered by the caller's group, named
 // or not.
 func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListResponse, error) {
-	p, err := g.auth.Authenticate(ctx, "" /*=wgPublicKey*/)
+	principal, err := g.auth.Authenticate(ctx, "" /*=wgPublicKey*/)
 	if err != nil {
 		return nil, err
 	}
@@ -471,18 +471,18 @@ func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListRe
 	peers := make([]*gwpb.Peer, 0)
 	for pubKeyHex, info := range g.peers {
 		ns := info.networkState
-		if ns.namespace != p.Namespace {
+		if ns.namespace != principal.Namespace {
 			continue
 		}
-		p := &gwpb.Peer{
+		peer := &gwpb.Peer{
 			Name:      info.assignedName,
 			Ip:        info.ip.String(),
 			SessionId: info.sessionID,
 		}
 		if t, ok := handshakeTimes[pubKeyHex]; ok {
-			p.LastHandshakeTime = timestamppb.New(t)
+			peer.LastHandshakeTime = timestamppb.New(t)
 		}
-		peers = append(peers, p)
+		peers = append(peers, peer)
 	}
 	return &gwpb.ListResponse{Peers: peers}, nil
 }
@@ -549,19 +549,9 @@ func (g *Gateway) cleanupLoop() {
 	}
 }
 
-// cleanupStalePeers removes peers whose last WireGuard handshake (or
-// registration time, if they never completed one) is older than
-// stalePeerTimeout, and peers whose registering credential has expired. For
-// Connect-based peers this is a backstop: their registrations are normally
-// removed when their stream closes, but this catches peers whose stream is
-// somehow alive while their tunnel is dark.
-func (g *Gateway) cleanupStalePeers() {
-	handshakeTimes, err := g.lastHandshakeTimes()
-	if err != nil {
-		log.Errorf("Cleanup: %s", err)
-		return
-	}
-
+// cleanupExpiredCredPeers disconnects any peers that are connected with creds
+// that are past their expiry.
+func (g *Gateway) cleanupExpiredCredPeers() {
 	now := time.Now()
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -574,9 +564,30 @@ func (g *Gateway) cleanupStalePeers() {
 			log.Infof("Found EXPIRED peer %s... (ip=%s name=%q user=%s): credential expired at %s",
 				pubKeyHex[:8], info.ip, info.assignedName, info.user, formatExpiry(info.expiresAt))
 			g.removePeerLocked(pubKeyHex, info)
-			continue
 		}
+	}
+}
 
+// cleanupStalePeers removes peers whose last WireGuard handshake (or
+// registration time, if they never completed one) is older than
+// stalePeerTimeout, and peers whose registering credential has expired. For
+// Connect-based peers this is a backstop: their registrations are normally
+// removed when their stream closes, but this catches peers whose stream is
+// somehow alive while their tunnel is dark.
+func (g *Gateway) cleanupStalePeers() {
+	g.cleanupExpiredCredPeers()
+
+	handshakeTimes, err := g.lastHandshakeTimes()
+	if err != nil {
+		log.Errorf("Cleanup: %s", err)
+		return
+	}
+
+	now := time.Now()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for pubKeyHex, info := range g.peers {
 		lastSeen, ok := handshakeTimes[pubKeyHex]
 		if !ok {
 			// Peer never completed a handshake; use registration time as baseline.
