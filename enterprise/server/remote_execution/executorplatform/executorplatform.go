@@ -30,6 +30,7 @@ var (
 	enableBareRunner           = flag.Bool("executor.enable_bare_runner", false, "Enables running execution commands directly on the host without isolation.")
 	enablePodman               = flag.Bool("executor.enable_podman", false, "Enables running execution commands inside podman containers.")
 	enableOCI                  = flag.Bool("executor.enable_oci", false, "Enables running execution commands using an OCI runtime directly.")
+	useOCIFetcher              = flag.Bool("executor.use_oci_fetcher", false, "Whether to use the OCI fetcher service for pulling container images.")
 	enableSandbox              = flag.Bool("executor.enable_sandbox", false, "Enables running execution commands inside of sandbox-exec.")
 	EnableFirecracker          = flag.Bool("executor.enable_firecracker", false, "Enables running execution commands inside of firecracker VMs")
 	containerRegistryRegion    = flag.String("executor.container_registry_region", "", "All occurrences of '{{region}}' in container image names will be replaced with this string, if specified.")
@@ -226,6 +227,11 @@ func ApplyOverrides(env environment.Env, executorProps *ExecutorProperties, plat
 	if !*enableVFS {
 		platformProps.EnableVFS = false
 	}
+
+	// The app sets UseOCIFetcher according to the disable_oci_fetcher
+	// experiment. Also require the executor-local flag so that the OCI fetcher
+	// can be enabled independently on each executor deployment.
+	platformProps.UseOCIFetcher = *useOCIFetcher && platformProps.UseOCIFetcher
 
 	// If forcedNetworkIsolationType is set, force isolation (usually to
 	// firecracker) for this command.

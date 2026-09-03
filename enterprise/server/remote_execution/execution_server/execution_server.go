@@ -928,29 +928,19 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	// Inject use-oci-fetcher platform property via experiment.
+	// Inject use-oci-fetcher platform property via experiment. The executor
+	// additionally gates this property on its executor.use_oci_fetcher flag.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
 		const disableOCIFetcherExperiment = "remote_execution.disable_oci_fetcher"
-		useOCIFetcher, details := fp.BooleanDetails(ctx, useOCIFetcherExperiment, false)
-		disableOCIFetcher := fp.Boolean(ctx, disableOCIFetcherExperiment, true)
-		if useOCIFetcher == disableOCIFetcher {
-			log.CtxWarningf(
-				ctx,
-				"OCI fetcher experiment flags do not match: %s=%t, %s=%t; expected the values to be logical opposites",
-				useOCIFetcherExperiment, useOCIFetcher, disableOCIFetcherExperiment, disableOCIFetcher,
-			)
-		}
-		if useOCIFetcher {
+		disableOCIFetcher, details := fp.BooleanDetails(ctx, disableOCIFetcherExperiment, true)
+		if details.Variant() != "" {
 			executionTask.PlatformOverrides.Properties = append(
 				executionTask.PlatformOverrides.Properties,
 				&repb.Platform_Property{
 					Name:  "use-oci-fetcher",
-					Value: "true",
+					Value: strconv.FormatBool(!disableOCIFetcher),
 				})
-		}
-		if details.Variant() != "" {
-			executionTask.Experiments = append(executionTask.Experiments, useOCIFetcherExperiment+":"+details.Variant())
+			executionTask.Experiments = append(executionTask.Experiments, disableOCIFetcherExperiment+":"+details.Variant())
 		}
 	}
 

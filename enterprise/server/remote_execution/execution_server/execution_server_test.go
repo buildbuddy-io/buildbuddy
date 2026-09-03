@@ -561,6 +561,41 @@ func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 	}
 }
 
+func TestDispatch_DisableOCIFetcherExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		disableOCIFetcher bool
+		wantUseOCIFetcher string
+	}{
+		{name: "enabled", disableOCIFetcher: false, wantUseOCIFetcher: "true"},
+		{name: "disabled", disableOCIFetcher: true, wantUseOCIFetcher: "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			configureExperiments(t, env, map[string]bool{
+				"remote_execution.disable_oci_fetcher": tc.disableOCIFetcher,
+			})
+
+			ctx := context.Background()
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+			action := &repb.Action{}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			assert.Equal(t, tc.wantUseOCIFetcher, platform.FindValue(task.GetPlatformOverrides(), "use-oci-fetcher"))
+			assert.Contains(t, task.GetExperiments(), "remote_execution.disable_oci_fetcher:default")
+		})
+	}
+}
+
 func TestCancel(t *testing.T) {
 	env, _, _ := setupEnv(t)
 	ctx := context.Background()
