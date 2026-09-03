@@ -159,7 +159,7 @@ type VFS struct {
 
 	root *Node
 
-	mu             sync.Mutex
+	mu             sync.RWMutex
 	internalTaskID string
 	rpcCtx         context.Context
 	inodeCache     *inodeCache
@@ -217,8 +217,8 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 }
 
 func (vfs *VFS) getRPCContext() context.Context {
-	vfs.mu.Lock()
-	defer vfs.mu.Unlock()
+	vfs.mu.RLock()
+	defer vfs.mu.RUnlock()
 	return vfs.rpcCtx
 }
 
@@ -680,7 +680,7 @@ func rpcErrToSyscallErrno(rpcErr error) syscall.Errno {
 func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
 	if n.vfs.verbose {
 		fp := filepath.Join(n.relativePath(), name)
-		log.CtxDebugf(n.vfs.rpcCtx, "Lookup %q", fp)
+		log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q", fp)
 		defer func() {
 			if errno == 0 {
 				log.CtxDebugf(n.vfs.getRPCContext(), "Lookup %q: %s", fp, attrDebugString(node, &out.Attr))
@@ -764,7 +764,7 @@ type dirHandle struct {
 func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, errno syscall.Errno) {
 	d.node.startOP("Readdirent")
 	if d.vfs.verbose {
-		log.CtxDebugf(d.vfs.rpcCtx, "Readdirent %q", d.node.relativePath())
+		log.CtxDebugf(d.vfs.getRPCContext(), "Readdirent %q", d.node.relativePath())
 		defer func() {
 			if errno == 0 {
 				if dirEntry == nil {
@@ -780,7 +780,7 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 	if d.pos == -1 {
 		directoryGeneration, directoryCacheable := d.node.directorySnapshotGeneration()
 		attrsGeneration, attrsCacheable := d.vfs.attrsSnapshotGeneration()
-		rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
+		rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.getRPCContext(), &vfspb.GetDirectoryContentsRequest{
 			Id: d.node.StableAttr().Ino,
 		})
 		if err != nil {
@@ -815,7 +815,7 @@ func (d *dirHandle) Fsyncdir(ctx context.Context, flags uint32) syscall.Errno {
 func (n *Node) OpendirHandle(ctx context.Context, flags uint32) (fs.FileHandle, uint32, syscall.Errno) {
 	n.startOP("OpendirHandle")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "OpendirHandle %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "OpendirHandle %q", n.relativePath())
 	}
 
 	// FOPEN_CACHE_DIR allows kernel to cache directory contents to avoid
@@ -839,7 +839,7 @@ func (f *remoteFile) PassthroughFd() (int, bool) {
 		return -1, false
 	}
 	if f.node.vfs.verbose {
-		log.CtxDebugf(f.node.vfs.rpcCtx, "PassthroughFd %q", f.path)
+		log.CtxDebugf(f.node.vfs.getRPCContext(), "PassthroughFd %q", f.path)
 	}
 	return int(f.id), true
 }
@@ -847,7 +847,7 @@ func (f *remoteFile) PassthroughFd() (int, bool) {
 func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
 	f.startOP("Allocate")
 	if f.node.vfs.verbose {
-		log.CtxDebugf(f.node.vfs.rpcCtx, "Allocate %q", f.path)
+		log.CtxDebugf(f.node.vfs.getRPCContext(), "Allocate %q", f.path)
 	}
 	f.node.vfs.beginAttrsMutation()
 	defer f.node.vfs.endAttrsMutation()
@@ -867,8 +867,9 @@ func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode
 func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
 	f.startOP("Flush")
 	if f.node.vfs.verbose {
+		rpcCtx := f.node.vfs.getRPCContext()
 		f.mu.Lock()
-		log.CtxDebugf(f.node.vfs.rpcCtx, "Flush %q (ino %d), read %s (%d RPCs), wrote %s (%d RPCs)", f.path, f.node.StableAttr().Ino, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		log.CtxDebugf(rpcCtx, "Flush %q (ino %d), read %s (%d RPCs), wrote %s (%d RPCs)", f.path, f.node.StableAttr().Ino, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
 		f.mu.Unlock()
 	}
 
@@ -881,7 +882,7 @@ func (f *remoteFile) Flush(ctx context.Context) syscall.Errno {
 func (f *remoteFile) Fsync(ctx context.Context, flags uint32) syscall.Errno {
 	f.startOP("Fsync")
 	if f.node.vfs.verbose {
-		log.CtxDebugf(f.node.vfs.rpcCtx, "Fsync %q", f.path)
+		log.CtxDebugf(f.node.vfs.getRPCContext(), "Fsync %q", f.path)
 	}
 	if _, err := f.vfsClient.Fsync(f.ctx, &vfspb.FsyncRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
@@ -896,8 +897,9 @@ func (f *remoteFile) Fsyncdir(ctx context.Context, flags uint32) syscall.Errno {
 func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
 	f.startOP("Release")
 	if f.node.vfs.verbose {
+		rpcCtx := f.node.vfs.getRPCContext()
 		f.mu.Lock()
-		log.CtxDebugf(f.node.vfs.rpcCtx, "Release %q (ino %d) handle ID %d, read %s (%d RPCs), wrote %s (%d RPCs)", f.path, f.node.StableAttr().Ino, f.id, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
+		log.CtxDebugf(rpcCtx, "Release %q (ino %d) handle ID %d, read %s (%d RPCs), wrote %s (%d RPCs)", f.path, f.node.StableAttr().Ino, f.id, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
 		f.mu.Unlock()
 	}
 	f.node.vfs.beginAttrsMutation()
@@ -1038,12 +1040,12 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 	}
 
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, describeOpenFlags(flags))
+		log.CtxDebugf(n.vfs.getRPCContext(), "Open %q (ino %d) with flags %q", n.relativePath(), n.StableAttr().Ino, describeOpenFlags(flags))
 		defer func() {
 			if errno == 0 {
-				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: OK", n.relativePath())
+				log.CtxDebugf(n.vfs.getRPCContext(), "Open %q: OK", n.relativePath())
 			} else {
-				log.CtxDebugf(n.vfs.rpcCtx, "Open %q: %s", n.relativePath(), errno)
+				log.CtxDebugf(n.vfs.getRPCContext(), "Open %q: %s", n.relativePath(), errno)
 			}
 		}()
 	}
@@ -1077,7 +1079,7 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 	n.startOP("Create")
 
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Create %q", filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(n.vfs.getRPCContext(), "Create %q", filepath.Join(n.relativePath(), name))
 	}
 
 	child := &Node{vfs: n.vfs}
@@ -1115,12 +1117,12 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, out *fuse.EntryOut) (node *fs.Inode, errno syscall.Errno) {
 	if n.vfs.verbose {
 		newPath := filepath.Join(n.relativePath(), name)
-		log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q mode %s dev %d", newPath, modeDebugString(mode), dev)
+		log.CtxDebugf(n.vfs.getRPCContext(), "Mknod %q mode %s dev %d", newPath, modeDebugString(mode), dev)
 		defer func() {
 			if errno == 0 {
-				log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q: %s", newPath, attrDebugString(node, &out.Attr))
+				log.CtxDebugf(n.vfs.getRPCContext(), "Mknod %q: %s", newPath, attrDebugString(node, &out.Attr))
 			} else {
-				log.CtxDebugf(n.vfs.rpcCtx, "Mknod %q: %s", newPath, errno)
+				log.CtxDebugf(n.vfs.getRPCContext(), "Mknod %q: %s", newPath, errno)
 			}
 		}()
 	}
@@ -1161,7 +1163,7 @@ func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint
 	}
 
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "CopyFileRange %q => %q", rf.path, wf.path)
+		log.CtxDebugf(n.vfs.getRPCContext(), "CopyFileRange %q => %q", rf.path, wf.path)
 	}
 
 	rsp, err := n.vfs.vfsClient.CopyFileRange(n.vfs.getRPCContext(), &vfspb.CopyFileRangeRequest{
@@ -1300,7 +1302,7 @@ func (n *Node) setattr(req *vfspb.SetAttrRequest) (*vfspb.Attrs, error) {
 func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn, out *fuse.AttrOut) syscall.Errno {
 	n.startOP("Setattr")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Setattr %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Setattr %q", n.relativePath())
 	}
 
 	// Do not allow modifying attributes of input files.
@@ -1336,7 +1338,7 @@ func (n *Node) Setattr(ctx context.Context, f fs.FileHandle, in *fuse.SetAttrIn,
 func (n *Node) Getxattr(ctx context.Context, attr string, dest []byte) (uint32, syscall.Errno) {
 	n.startOP("Getxattr")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Getxattr %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Getxattr %q", n.relativePath())
 	}
 
 	attrs, err := n.vfs.getattr(n.StableAttr().Ino)
@@ -1389,7 +1391,7 @@ func (n *Node) Listxattr(ctx context.Context, dest []byte) (uint32, syscall.Errn
 func (n *Node) Setxattr(ctx context.Context, attr string, data []byte, flags uint32) syscall.Errno {
 	n.startOP("Setxattr")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Setxattr %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Setxattr %q", n.relativePath())
 	}
 
 	req := &vfspb.SetAttrRequest{
@@ -1452,7 +1454,7 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	n.startOP("Rmdir")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Rmdir %q", filepath.Join(n.relativePath(), name))
+		log.CtxDebugf(n.vfs.getRPCContext(), "Rmdir %q", filepath.Join(n.relativePath(), name))
 	}
 	n.beginDirectoryMutation()
 	defer n.endDirectoryMutation()
@@ -1466,7 +1468,7 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 func (n *Node) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
 	n.startOP("Readdir")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Readdir %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Readdir %q", n.relativePath())
 	}
 	// The default implementation in the fuse library has a bug that can return entries in a different order across
 	// multiple readdir calls. This can cause filesystem users to get incorrect directory listings.
@@ -1499,7 +1501,7 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 	}
 	if n.vfs.verbose {
 		newPath := filepath.Join(n.relativePath(), name)
-		log.CtxDebugf(n.vfs.rpcCtx, "Link %q -> %q", newPath, targetNode.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Link %q -> %q", newPath, targetNode.relativePath())
 		defer func() {
 			if errno == 0 {
 				log.CtxDebugf(n.vfs.getRPCContext(), "Link %q -> %q: %s", newPath, targetNode.relativePath(), attrDebugString(node, &out.Attr))
@@ -1537,7 +1539,7 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 	n.startOP("Symlink")
 	if n.vfs.verbose {
 		src := filepath.Join(n.relativePath(), name)
-		log.CtxDebugf(n.vfs.rpcCtx, "Symlink %q -> %q", src, target)
+		log.CtxDebugf(n.vfs.getRPCContext(), "Symlink %q -> %q", src, target)
 	}
 
 	reqTarget := target
@@ -1558,19 +1560,21 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 
 func (n *Node) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 	n.startOP("Readlink")
+	var rpcCtx context.Context
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Readlink %q", n.relativePath())
+		rpcCtx = n.vfs.getRPCContext()
+		log.CtxDebugf(rpcCtx, "Readlink %q", n.relativePath())
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.symlinkTarget != "" {
 		if n.vfs.verbose {
-			log.CtxDebugf(n.vfs.rpcCtx, "Readlink %q returning %q", n.relativePath(), n.symlinkTarget)
+			log.CtxDebugf(rpcCtx, "Readlink %q returning %q", n.relativePath(), n.symlinkTarget)
 		}
 		return []byte(n.symlinkTarget), 0
 	}
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Readlink %q returning invalid", n.relativePath())
+		log.CtxDebugf(rpcCtx, "Readlink %q returning invalid", n.relativePath())
 	}
 	return nil, syscall.EINVAL
 }
@@ -1579,7 +1583,7 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 	n.startOP("Unlink")
 	relPath := filepath.Join(n.relativePath(), name)
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Unlink %q", relPath)
+		log.CtxDebugf(n.vfs.getRPCContext(), "Unlink %q", relPath)
 	}
 	existingTargetNode := n.GetChild(name)
 	if existingTargetNode == nil {
@@ -1625,7 +1629,7 @@ func (n *Node) Getlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 	}
 	n.startOP("Getlk")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Getlk %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Getlk %q", n.relativePath())
 	}
 	req := &vfspb.GetLkRequest{
 		HandleId: rf.id,
@@ -1653,7 +1657,7 @@ func (n *Node) Setlk(ctx context.Context, f fs.FileHandle, owner uint64, lk *fus
 	}
 	n.startOP("Setlk")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Setlk %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Setlk %q", n.relativePath())
 	}
 	req := &vfspb.SetLkRequest{
 		HandleId: rf.id,
@@ -1676,7 +1680,7 @@ func (n *Node) Setlkw(ctx context.Context, f fs.FileHandle, owner uint64, lk *fu
 	}
 	n.startOP("Setlkw")
 	if n.vfs.verbose {
-		log.CtxDebugf(n.vfs.rpcCtx, "Setlkw %q", n.relativePath())
+		log.CtxDebugf(n.vfs.getRPCContext(), "Setlkw %q", n.relativePath())
 	}
 	req := &vfspb.SetLkRequest{
 		HandleId: rf.id,
