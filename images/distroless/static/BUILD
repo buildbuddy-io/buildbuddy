@@ -56,8 +56,8 @@ pkg_tar(
     srcs = [
         "nsswitch.conf",
     ],
-    package_dir = "etc",
     mode = "0644",
+    package_dir = "etc",
     tags = ["manual"],
 )
 
