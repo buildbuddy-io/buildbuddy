@@ -103,6 +103,7 @@ var (
 	forceRemoteSnapshotting = flag.Bool("debug_force_remote_snapshots", false, "When remote snapshotting is enabled, force remote snapshotting even for tasks which otherwise wouldn't support it.")
 	disableWorkspaceSync    = flag.Bool("debug_disable_firecracker_workspace_sync", false, "Do not sync the action workspace to the guest, instead using the existing workspace from the VM snapshot.")
 	debugDisableCgroup      = flag.Bool("debug_disable_cgroup", false, "Disable firecracker cgroup setup.")
+	useVMExecReadySignal    = flag.Bool("executor.firecracker_vmexec_ready_signal", true, "Wait for a guest-initiated readiness signal before dialing vmexec after VM startup. Falls back to the existing polling dial if no signal arrives.")
 )
 
 //go:embed guest_api_hash.sha256
@@ -124,10 +125,13 @@ const (
 	//
 	// NOTE: this is part of the snapshot cache key, so bumping this version
 	// will make existing cached snapshots unusable.
-	GuestAPIVersion = "19"
+	GuestAPIVersion = "20"
 
 	// How long to wait when dialing the vmexec server inside the VM.
 	vSocketDialTimeout = 60 * time.Second
+	// Preserve compatibility with snapshots whose guest predates the readiness
+	// notifier. When enabled, wait this long before falling back to polling.
+	vmExecReadySignalFallbackTimeout = 1 * time.Second
 
 	// How long to wait for the jailer directory to be created.
 	jailerDirectoryCreationTimeout = 1 * time.Second
@@ -693,6 +697,11 @@ type FirecrackerContainer struct {
 	supportsRemoteSnapshots bool
 	recyclingEnabled        bool
 
+	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
+	// remoteContainerImageAccess is resolved once per container so the remote
+	// cache is used consistently for its chunked container image.
+	remoteContainerImageAccess snaploader.RemoteContainerImageAccessOptions
+
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
 
@@ -744,9 +753,13 @@ type FirecrackerContainer struct {
 	releaseCPUs func()
 
 	vmExec struct {
-		conn         *grpc.ClientConn
-		err          error
-		dialDuration time.Duration
+		conn                  *grpc.ClientConn
+		err                   error
+		dialDuration          time.Duration
+		transportDialDuration time.Duration
+		dialAttempts          int64
+		ready                 <-chan struct{}
+		readySignalReceived   bool
 	}
 
 	// latestGuestStats is the latest UsageStats sample streamed from vmexec.
@@ -839,6 +852,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	taskPlatform := platform.GetProto(task.GetAction(), task.GetCommand())
 	allowsRemoteSnapshots := platform.AllowsRemoteSnapshots(task.GetCommand(), taskPlatform, task.GetPlatformOverrides())
 	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (allowsRemoteSnapshots || *forceRemoteSnapshotting)
+	c.remoteContainerImageAccess = snaploader.GetRemoteContainerImageAccessOptions(ctx, task, c.supportsRemoteSnapshots)
 	if span.IsRecording() {
 		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
 	}
@@ -1121,17 +1135,27 @@ func (c *FirecrackerContainer) saveSnapshot(ctx context.Context, snapshotDetails
 	writeManifestLocally := snapshotDetails.saveLocalSnapshot && (!snapshotDetails.saveRemoteSnapshot ||
 		readPolicy != platform.AlwaysReadNewestSnapshot)
 
+	// Only trunk-based runs that had no better snapshot to resume from update
+	// the universal snapshot, so repos that maintain a default branch snapshot
+	// never write it and pay none of its cost.
+	var resumedFrom *fcpb.SnapshotKey
+	if c.snapshot != nil {
+		resumedFrom = c.snapshot.GetKey()
+	}
+	writeUniversalManifest := snaploader.IsEligibleToUpdateUniversalSnapshot(c.task, resumedFrom)
+
 	opts := &snaploader.CacheSnapshotOptions{
-		VMMetadata:            vmd,
-		VMConfiguration:       c.vmConfig,
-		VMStateSnapshotPath:   filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
-		KernelImagePath:       c.executorConfig.GuestKernelImagePath,
-		InitrdImagePath:       c.executorConfig.InitrdImagePath,
-		ChunkedFiles:          map[string]*copy_on_write.COWStore{},
-		Recycled:              c.recycled,
-		CacheSnapshotRemotely: snapshotDetails.saveRemoteSnapshot,
-		CacheSnapshotLocally:  snapshotDetails.saveLocalSnapshot,
-		WriteManifestLocally:  writeManifestLocally,
+		VMMetadata:                       vmd,
+		VMConfiguration:                  c.vmConfig,
+		VMStateSnapshotPath:              filepath.Join(c.getChroot(), snapshotDetails.vmStateSnapshotName),
+		KernelImagePath:                  c.executorConfig.GuestKernelImagePath,
+		InitrdImagePath:                  c.executorConfig.InitrdImagePath,
+		ChunkedFiles:                     map[string]*copy_on_write.COWStore{},
+		Recycled:                         c.recycled,
+		CacheSnapshotRemotely:            snapshotDetails.saveRemoteSnapshot,
+		CacheSnapshotLocally:             snapshotDetails.saveLocalSnapshot,
+		WriteManifestLocally:             writeManifestLocally,
+		EligibleToWriteUniversalManifest: writeUniversalManifest,
 	}
 	if snapshotSharingEnabled {
 		if c.rootStore != nil {
@@ -1176,7 +1200,7 @@ func (c *FirecrackerContainer) getVMTask() *fcpb.VMMetadata_VMTask {
 		ActionDigest:          c.task.GetExecuteRequest().GetActionDigest(),
 		ExecuteResponseDigest: d,
 		SnapshotId:            c.snapshotID, // Unique ID pertaining to this execution run
-		CompletedTimestamp:    tspb.Now(),
+		CompletedTimestamp:    tspb.New(c.env.GetClock().Now()),
 	}
 }
 
@@ -1206,16 +1230,17 @@ func (c *FirecrackerContainer) shouldSaveRemoteSnapshot(ctx context.Context) boo
 			return true
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
-		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
-			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		age := c.env.GetClock().Since(snapshotLastSavedTime.AsTime())
+		if age > minWriteDuration {
+			log.CtxInfof(ctx, "Should write remote snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 			return true
 		}
-		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		log.CtxDebugf(ctx, "Skipping remote snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 		return false
 	}
 
 	if remoteSavePolicy == platform.OnlySaveFirstNonDefaultSnapshot {
-		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey())
+		return !c.hasRemoteSnapshotForKey(ctx, c.loader, c.SnapshotKeySet().GetWriteKey(), false /*isFallback*/)
 	}
 
 	// By default, savePolicy=OnlySaveNonDefaultSnapshotIfNoneAvailable
@@ -1255,11 +1280,12 @@ func (c *FirecrackerContainer) shouldSaveLocalSnapshot(ctx context.Context) bool
 			return true
 		}
 		minWriteDuration := snapshotWriteInterval(ctx, c.task)
-		if time.Since(snapshotLastSavedTime.AsTime()) > minWriteDuration {
-			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		age := c.env.GetClock().Since(snapshotLastSavedTime.AsTime())
+		if age > minWriteDuration {
+			log.CtxInfof(ctx, "Should write local snapshot for key %+v; existing snapshot is %s old (> %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 			return true
 		}
-		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), time.Since(snapshotLastSavedTime.AsTime()), minWriteDuration)
+		log.CtxDebugf(ctx, "Skipping local snapshot write for key %+v; existing snapshot is %s old (< %s)", c.SnapshotKeySet().GetWriteKey(), age, minWriteDuration)
 		return false
 	}
 
@@ -1364,25 +1390,11 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 	}
 	log.CtxDebugf(ctx, "Command: %v", reflect.Indirect(reflect.Indirect(reflect.ValueOf(machine)).FieldByName("cmd")).FieldByName("Args"))
 
-	readPolicy, err := snapshotReadPolicy(c.task)
+	getSnapshotOpts, err := c.getSnapshotOptions()
 	if err != nil {
 		return err
 	}
-	maxFallbackAgeStr := platform.FindEffectiveValue(c.task, platform.MaxStaleFallbackSnapshotAgePropertyName)
-	maxFallbackAge := snaputil.DefaultMaxStaleFallbackSnapshotAge
-	if maxFallbackAgeStr != "" {
-		d, err := time.ParseDuration(maxFallbackAgeStr)
-		if err != nil {
-			return status.InvalidArgumentErrorf("invalid max fallback snapshot age %s: %s", maxFallbackAgeStr, err)
-		}
-		maxFallbackAge = d
-	}
-	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, &snaploader.GetSnapshotOptions{
-		SupportsRemoteChunks:        c.supportsRemoteSnapshots,
-		SupportsRemoteManifest:      c.supportsRemoteSnapshots,
-		ReadPolicy:                  readPolicy,
-		MaxStaleFallbackSnapshotAge: maxFallbackAge,
-	})
+	snap, err := c.loader.GetSnapshot(ctx, c.snapshotKeySet, getSnapshotOpts)
 	if err != nil {
 		return error_util.SnapshotNotFoundError(fmt.Sprintf("failed to get snapshot %s: %s", snaploader.KeysetDebugString(ctx, c.env, c.snapshotKeySet, c.supportsRemoteSnapshots), err))
 	}
@@ -1408,6 +1420,9 @@ func (c *FirecrackerContainer) LoadSnapshot(ctx context.Context) error {
 
 	if err := os.MkdirAll(c.getChroot(), 0777); err != nil {
 		return status.UnavailableErrorf("make chroot dir: %s", err)
+	}
+	if err := c.setupVMExecReadySignal(ctx); err != nil {
+		return err
 	}
 
 	// Write the workspace drive placeholder file. Firecracker will expect this
@@ -1505,14 +1520,14 @@ func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploade
 		instanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
 		var snap *snaploader.Snapshot
 		var err error
-		if d := c.task.GetFirecrackerExt4ImageActionDigest(); d != nil && *snaputil.EnableRemoteSnapshotSharing {
+		if d := c.task.GetFirecrackerExt4ImageActionDigest(); d != nil && c.remoteContainerImageAccess.RemoteReadsEnabled {
 			// The app already converted and chunked the image with a remote
 			// action, so its result serves as the containerfs snapshot and
 			// the chunks are fetched from CAS on demand. If the result is
 			// gone, returning nil makes PullImage convert the image locally.
 			snap, err = snaploader.GetContainerImageFromActionResult(ctx, c.loader, instanceName, d)
 		} else {
-			snap, err = snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage, c.supportsRemoteSnapshots)
+			snap, err = snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage, c.remoteContainerImageAccess.RemoteReadsEnabled)
 		}
 		if err != nil {
 			if !status.IsNotFoundError(err) {
@@ -1539,7 +1554,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 	} else {
 		// If a chunked containerfs is not cached, we need to convert the ext4 image into chunks.
 		containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.supportsRemoteSnapshots)
+		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
 	}
 	if err != nil {
 		return status.WrapError(err, "unpack container image")
@@ -1575,6 +1590,11 @@ func (c *FirecrackerContainer) resizeRootfs(ctx context.Context, cf *copy_on_wri
 func (c *FirecrackerContainer) createWorkspaceImage(ctx context.Context, workspaceDir, ext4ImagePath string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
+
+	start := time.Now()
+	defer func() {
+		c.observeStageDuration("create_workspace_image", time.Since(start))
+	}()
 
 	// The existing workspace disk may still be mounted in the VM, so we unlink
 	// it then create a new file rather than overwriting the existing file
@@ -1946,6 +1966,7 @@ func (c *FirecrackerContainer) copyOutputsToWorkspace(ctx context.Context) error
 	start := time.Now()
 	defer func() {
 		log.CtxDebugf(ctx, "copyOutputsToWorkspace took %s", time.Since(start))
+		c.observeStageDuration("copy_outputs", time.Since(start))
 	}()
 	if exists, err := disk.FileExists(ctx, workspaceExt4Path); err != nil || !exists {
 		return status.FailedPreconditionErrorf("workspacefs path %q not found", workspaceExt4Path)
@@ -2104,7 +2125,11 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(vsockServerPath), 0755); err != nil {
 		return err
 	}
-	vfsSrv, err := vfs_server.New(c.env, c.actionWorkingDir)
+	vfsScratchDir := c.actionWorkingDir + ".vfs-scratch"
+	if err := os.MkdirAll(vfsScratchDir, 0755); err != nil {
+		return status.WrapError(err, "create VFS scratch directory")
+	}
+	vfsSrv, err := vfs_server.New(c.env, vfsScratchDir)
 	if err != nil {
 		return err
 	}
@@ -2117,6 +2142,68 @@ func (c *FirecrackerContainer) setupVFSServer(ctx context.Context) error {
 		return status.InternalErrorf("Could not start VFS server: %s", err)
 	}
 	return nil
+}
+
+func (c *FirecrackerContainer) setupVMExecReadySignal(ctx context.Context) error {
+	_, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	serverPath := vsock.HostListenSocketPath(filepath.Join(c.getChroot(), firecrackerVSockPath), vsock.HostVMExecReadyPort)
+	if err := os.MkdirAll(filepath.Dir(serverPath), 0755); err != nil {
+		return status.WrapError(err, "create vmexec readiness socket directory")
+	}
+	lis, err := net.Listen("unix", serverPath)
+	if err != nil {
+		return status.WrapError(err, "listen for vmexec readiness signal")
+	}
+	ready := make(chan struct{})
+	c.vmExec.ready = ready
+	vmCtx := c.vmCtx
+	go func() {
+		<-vmCtx.Done()
+		_ = lis.Close()
+	}()
+	go serveVMExecReadySignal(vmCtx, lis, ready)
+	return nil
+}
+
+func serveVMExecReadySignal(ctx context.Context, lis net.Listener, ready chan<- struct{}) {
+	defer lis.Close()
+	for {
+		conn, err := lis.Accept()
+		if err != nil {
+			if ctx.Err() == nil {
+				log.CtxWarningf(ctx, "Failed to accept vmexec readiness signal: %s", err)
+			}
+			return
+		}
+		signalReceived := func() bool {
+			defer conn.Close()
+			if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+				return false
+			}
+			message := make([]byte, len(vsock.VMExecReadyMessage))
+			_, err = io.ReadFull(conn, message)
+			if err != nil || string(message) != vsock.VMExecReadyMessage {
+				return false
+			}
+			_ = conn.SetReadDeadline(time.Time{})
+			// No second signal is needed during this VM lifecycle. The restored VM
+			// gets a new listener in its new chroot.
+			_ = lis.Close()
+			close(ready)
+			log.CtxDebugf(ctx, "Received vmexec readiness signal from guest")
+
+			// Keep the connection alive until this VM lifecycle ends. Its reset is
+			// what wakes the notifier captured in a snapshot and makes a restored
+			// guest signal its new host.
+			<-ctx.Done()
+			return true
+		}()
+		if signalReceived {
+			return
+		}
+	}
 }
 
 func (c *FirecrackerContainer) cleanupNetworking(ctx context.Context) error {
@@ -2298,6 +2385,9 @@ func (c *FirecrackerContainer) create(ctx context.Context) error {
 	}
 
 	if err := c.setupVFSServer(ctx); err != nil {
+		return err
+	}
+	if err := c.setupVMExecReadySignal(ctx); err != nil {
 		return err
 	}
 
@@ -2530,9 +2620,30 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 
 	ctx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
 	defer cancel()
+	c.vmExec.readySignalReceived = false
+	if *useVMExecReadySignal && c.vmExec.ready != nil {
+		timer := time.NewTimer(vmExecReadySignalFallbackTimeout)
+		select {
+		case <-c.vmExec.ready:
+			c.vmExec.readySignalReceived = true
+			if !timer.Stop() {
+				<-timer.C
+			}
+		case <-timer.C:
+			log.CtxWarningf(ctx, "Timed out waiting for guest vmexec readiness signal; falling back to polling")
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		}
+	}
 
 	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
-	conn, err := vsock.SimpleGRPCDial(ctx, vsockPath, vsock.VMExecPort)
+	transportDialStart := time.Now()
+	conn, attempts, err := vsock.SimpleGRPCDialWithAttempts(ctx, vsockPath, vsock.VMExecPort)
+	c.vmExec.transportDialDuration = time.Since(transportDialStart)
+	c.vmExec.dialAttempts = attempts
 	if err != nil {
 		tail := string(c.vmLog.Tail())
 		if err := context.Cause(ctx); err != nil {
@@ -2553,7 +2664,34 @@ func (c *FirecrackerContainer) dialVMExecServer(ctx context.Context) (*grpc.Clie
 }
 
 func (c *FirecrackerContainer) SendPrepareFileSystemRequestToGuest(ctx context.Context, req *vmfspb.PrepareRequest) (*vmfspb.PrepareResponse, error) {
-	return nil, status.UnimplementedErrorf("VFS support not available for firecracker")
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	if c.vfsServer == nil || c.fsLayout == nil {
+		return nil, status.FailedPreconditionError("Firecracker VFS server is not configured")
+	}
+	if _, err := c.vfsServer.Prepare(ctx, c.fsLayout, c.fsLayout.InputFetcher); err != nil {
+		return nil, status.WrapError(err, "prepare host VFS server")
+	}
+
+	dialCtx, cancel := context.WithTimeout(ctx, vSocketDialTimeout)
+	defer cancel()
+	vsockPath := filepath.Join(c.getChroot(), firecrackerVSockPath)
+	conn, err := vsock.SimpleGRPCDial(dialCtx, vsockPath, vsock.VMVFSPort)
+	if err != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return nil, cause
+		}
+		return nil, status.WrapError(err, "dial guest VFS server")
+	}
+	defer conn.Close()
+
+	client := vmfspb.NewFileSystemClient(conn)
+	rsp, err := client.Prepare(ctx, req)
+	if err != nil {
+		return nil, status.WrapError(err, "prepare guest VFS")
+	}
+	return rsp, nil
 }
 
 // monitorVMContext returns a context that is cancelled if the VM exits. The
@@ -2594,6 +2732,10 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage := "init"
 	result := &interfaces.CommandResult{ExitCode: commandutil.NoExitCode}
+	if c.fsLayout != nil {
+		// Recycling is not supported for firecracker + fuse yet.
+		result.DoNotRecycle = true
+	}
 	defer func() {
 		ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 		defer cancel()
@@ -2601,6 +2743,9 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			result.VMMetrics = &espb.VMMetrics{}
 		}
 		result.VMMetrics.VmExecDialDurationUsec = c.vmExec.dialDuration.Microseconds()
+		result.VMMetrics.VmExecTransportDialDurationUsec = c.vmExec.transportDialDuration.Microseconds()
+		result.VMMetrics.VmExecDialAttempts = c.vmExec.dialAttempts
+		result.VMMetrics.VmExecReadySignalReceived = c.vmExec.readySignalReceived
 
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
@@ -2701,12 +2846,22 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 
 	stage = "exec"
 	result, vmHealthy := c.sendExecRequestToGuest(ctx, conn, cmd, filepath.Join(guestWorkspaceMountDir, cmd.GetWorkingDirectory()), stdio)
+	if c.fsLayout != nil {
+		// Recycling is not supported for firecracker + fuse yet.
+		result.DoNotRecycle = true
+	}
 
 	ctx, cancel = background.ExtendContextForFinalization(ctx, finalizationTimeout)
 	defer cancel()
 
-	// If FUSE is enabled then outputs are already in the workspace.
-	if c.fsLayout == nil && !*disableWorkspaceSync {
+	if c.fsLayout != nil {
+		stage = "materialize_vfs_outputs"
+		if err := c.vfsServer.MaterializeOutputs(ctx, c.fsLayout, c.actionWorkingDir); err != nil {
+			result.Error = status.WrapError(err, "materialize VFS outputs")
+			return result
+		}
+		result.VfsStats = c.vfsServer.ComputeStats()
+	} else if !*disableWorkspaceSync {
 		c.emitCOWAndUFFDMetrics(stage)
 		stage = "copy_workspace_outputs"
 		// Unmount the workspace and pause the VM before syncing to ensure that
@@ -2911,8 +3066,12 @@ func (c *FirecrackerContainer) remove(ctx context.Context) error {
 	}
 
 	if c.vfsServer != nil {
+		vfsScratchDir := c.vfsServer.Path()
 		c.vfsServer.Stop()
 		c.vfsServer = nil
+		if err := os.RemoveAll(vfsScratchDir); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove VFS scratch directory %q: %s", vfsScratchDir, err)
+		}
 	}
 
 	if err := c.unmountAllVBDs(ctx, true /*fromRemove*/); err != nil {
@@ -3726,6 +3885,30 @@ func (c *FirecrackerContainer) machineHasBalloon(ctx context.Context) bool {
 	return err == nil
 }
 
+// getSnapshotOptions builds the options describing which snapshots this task
+// is willing to read
+func (c *FirecrackerContainer) getSnapshotOptions() (*snaploader.GetSnapshotOptions, error) {
+	readPolicy, err := snapshotReadPolicy(c.task)
+	if err != nil {
+		return nil, err
+	}
+	maxFallbackAgeStr := platform.FindEffectiveValue(c.task, platform.MaxStaleFallbackSnapshotAgePropertyName)
+	maxFallbackAge := snaputil.DefaultMaxStaleFallbackSnapshotAge
+	if maxFallbackAgeStr != "" {
+		d, err := time.ParseDuration(maxFallbackAgeStr)
+		if err != nil {
+			return nil, status.InvalidArgumentErrorf("invalid max fallback snapshot age %s: %s", maxFallbackAgeStr, err)
+		}
+		maxFallbackAge = d
+	}
+	return &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:        c.supportsRemoteSnapshots,
+		SupportsRemoteManifest:      c.supportsRemoteSnapshots,
+		ReadPolicy:                  readPolicy,
+		MaxStaleFallbackSnapshotAge: maxFallbackAge,
+	}, nil
+}
+
 // hasRemoteSnapshot returns whether a remote snapshot exists for any
 // valid snapshot keys, including fallback keys.
 func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *snaploader.FileCacheLoader) bool {
@@ -3738,11 +3921,11 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *sn
 	// branch. Merge queue snapshots are never written under the
 	// gh-readonly-queue/... ref, so checking the branch key would always miss and
 	// incorrectly make us think no remote snapshot exists yet.
-	allKeys := []*fcpb.SnapshotKey{c.SnapshotKeySet().GetWriteKey()}
-	allKeys = append(allKeys, c.SnapshotKeySet().GetFallbackKeys()...)
-
-	for _, k := range allKeys {
-		if hasSnapshot := c.hasRemoteSnapshotForKey(ctx, loader, k); hasSnapshot {
+	if c.hasRemoteSnapshotForKey(ctx, loader, c.SnapshotKeySet().GetWriteKey(), false /*isFallback*/) {
+		return true
+	}
+	for _, k := range c.SnapshotKeySet().GetFallbackKeys() {
+		if c.hasRemoteSnapshotForKey(ctx, loader, k, true /*isFallback*/) {
 			return true
 		}
 	}
@@ -3750,10 +3933,19 @@ func (c *FirecrackerContainer) hasRemoteSnapshot(ctx context.Context, loader *sn
 	return false
 }
 
-func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
-	_, _, err := loader.FetchRemoteManifest(ctx, key)
-	return err == nil
+func (c *FirecrackerContainer) hasRemoteSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey, isFallback bool) bool {
+	manifest, _, err := loader.FetchRemoteManifest(ctx, key)
+	if err != nil {
+		return false
+	}
+	opts, err := c.getSnapshotOptions()
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to compute snapshot options: %s", err)
+		return false
+	}
+	return loader.ValidateSnapshot(ctx, manifest, key, opts, true /*isRemote*/, isFallback)
 }
+
 func (c *FirecrackerContainer) hasLocalSnapshotForKey(ctx context.Context, loader *snaploader.FileCacheLoader, key *fcpb.SnapshotKey) bool {
 	_, err := loader.GetLocalManifest(ctx, key, c.supportsRemoteSnapshots)
 	return err == nil

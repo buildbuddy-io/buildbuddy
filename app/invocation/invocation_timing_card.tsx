@@ -49,9 +49,9 @@ interface State {
   eventPageSize: number;
   localProfileName: string;
   viewerKey: number;
-  explainProfileAgent: RemoteRunnerAgent;
-  isExplainProfileMenuOpen: boolean;
-  isExplainProfileDialogOpen: boolean;
+  analyzeProfileAgent: RemoteRunnerAgent;
+  isAnalyzeProfileMenuOpen: boolean;
+  isAnalyzeProfileDialogOpen: boolean;
 }
 
 interface TraceEventRef {
@@ -89,9 +89,9 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
     viewerKey: 0,
-    explainProfileAgent: "codex",
-    isExplainProfileMenuOpen: false,
-    isExplainProfileDialogOpen: false,
+    analyzeProfileAgent: "codex",
+    isAnalyzeProfileMenuOpen: false,
+    isAnalyzeProfileDialogOpen: false,
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
@@ -435,42 +435,42 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return refs;
   }
 
-  private getExplainProfileCommand() {
-    return `bb explain profile --agent=${this.state.explainProfileAgent} ${this.props.model.getInvocationId()}`;
+  private getAnalyzeProfileCommand() {
+    return `bb agent analyze-profile --agent=${this.state.analyzeProfileAgent} ${this.props.model.getInvocationId()}`;
   }
 
-  // suggestSpeedups runs `bb explain profile` on a remote runner.
+  // suggestSpeedups runs `bb agent analyze-profile` on a remote runner.
   private suggestSpeedups() {
     triggerRemoteRun(
       this.props.model,
-      this.getExplainProfileCommand(),
+      this.getAnalyzeProfileCommand(),
       true,
       new Map<string, string>([
-        ["env-secrets", this.state.explainProfileAgent === "claude" ? "ANTHROPIC_API_KEY" : "CODEX_API_KEY"],
+        ["env-secrets", this.state.analyzeProfileAgent === "claude" ? "ANTHROPIC_API_KEY" : "CODEX_API_KEY"],
       ]),
       ["--skip_auto_checkout=true"],
-      "explain profile",
-      this.state.explainProfileAgent
+      "agent analyze-profile",
+      this.state.analyzeProfileAgent
     );
   }
 
-  private copyExplainProfileCommand() {
-    this.setState({ isExplainProfileMenuOpen: false });
+  private copyAnalyzeProfileCommand() {
+    this.setState({ isAnalyzeProfileMenuOpen: false });
     try {
-      copyToClipboard(this.getExplainProfileCommand());
+      copyToClipboard(this.getAnalyzeProfileCommand());
       alertService.success("Copied command to clipboard");
     } catch (e) {
       errorService.handleError(e);
     }
   }
 
-  private selectExplainProfileAgent(agent: RemoteRunnerAgent) {
-    this.setState({ explainProfileAgent: agent, isExplainProfileMenuOpen: false });
+  private selectAnalyzeProfileAgent(agent: RemoteRunnerAgent) {
+    this.setState({ analyzeProfileAgent: agent, isAnalyzeProfileMenuOpen: false });
   }
 
-  private renderExplainProfileActions() {
+  private renderAnalyzeProfileActions() {
     return (
-      <PopupContainer className="timing-explain-actions">
+      <PopupContainer className="timing-analyze-profile-actions">
         <OutlinedButtonGroup>
           <OutlinedButton onClick={this.suggestSpeedups.bind(this)}>
             <Sparkles className="icon" />
@@ -478,41 +478,41 @@ export default class InvocationTimingCardComponent extends React.Component<Props
           </OutlinedButton>
           <OutlinedButton
             className="icon-button"
-            aria-label="More ways to run bb explain profile"
+            aria-label="More ways to run bb agent analyze-profile"
             aria-haspopup="menu"
-            aria-expanded={this.state.isExplainProfileMenuOpen}
-            onClick={() => this.setState({ isExplainProfileMenuOpen: true })}>
+            aria-expanded={this.state.isAnalyzeProfileMenuOpen}
+            onClick={() => this.setState({ isAnalyzeProfileMenuOpen: true })}>
             <ChevronDown />
           </OutlinedButton>
           <OutlinedButton
             className="icon-button"
             aria-label="How AI profile analysis works"
-            onClick={() => this.setState({ isExplainProfileDialogOpen: true })}>
+            onClick={() => this.setState({ isAnalyzeProfileDialogOpen: true })}>
             <Info />
           </OutlinedButton>
         </OutlinedButtonGroup>
         <Popup
-          isOpen={this.state.isExplainProfileMenuOpen}
-          onRequestClose={() => this.setState({ isExplainProfileMenuOpen: false })}
+          isOpen={this.state.isAnalyzeProfileMenuOpen}
+          onRequestClose={() => this.setState({ isAnalyzeProfileMenuOpen: false })}
           anchor="right">
-          <Menu className="timing-explain-menu">
-            <li className="timing-explain-menu-label" role="presentation">
+          <Menu className="timing-analyze-profile-menu">
+            <li className="timing-analyze-profile-menu-label" role="presentation">
               Run with
             </li>
             {(["claude", "codex"] as RemoteRunnerAgent[]).map((agent) => (
               <MenuItem
                 key={agent}
-                className={this.state.explainProfileAgent === agent ? "selected" : ""}
+                className={this.state.analyzeProfileAgent === agent ? "selected" : ""}
                 role="menuitemradio"
-                aria-checked={this.state.explainProfileAgent === agent}
-                onClick={() => this.selectExplainProfileAgent(agent)}>
-                <Check className="timing-explain-menu-icon check" />
+                aria-checked={this.state.analyzeProfileAgent === agent}
+                onClick={() => this.selectAnalyzeProfileAgent(agent)}>
+                <Check className="timing-analyze-profile-menu-icon check" />
                 <span>{agent === "claude" ? "Claude" : "Codex"}</span>
               </MenuItem>
             ))}
-            <li className="timing-explain-menu-divider" role="separator" />
-            <MenuItem onClick={this.copyExplainProfileCommand.bind(this)}>
-              <Copy className="timing-explain-menu-icon" />
+            <li className="timing-analyze-profile-menu-divider" role="separator" />
+            <MenuItem onClick={this.copyAnalyzeProfileCommand.bind(this)}>
+              <Copy className="timing-analyze-profile-menu-icon" />
               <span>Copy command to run locally</span>
             </MenuItem>
           </Menu>
@@ -521,19 +521,19 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     );
   }
 
-  private renderExplainProfileDialog() {
+  private renderAnalyzeProfileDialog() {
     return (
       <Modal
-        isOpen={this.state.isExplainProfileDialogOpen}
-        onRequestClose={() => this.setState({ isExplainProfileDialogOpen: false })}>
-        <Dialog className="timing-explain-dialog">
+        isOpen={this.state.isAnalyzeProfileDialogOpen}
+        onRequestClose={() => this.setState({ isAnalyzeProfileDialogOpen: false })}>
+        <Dialog className="timing-analyze-profile-dialog">
           <DialogHeader>
             <DialogTitle>AI timing profile analysis</DialogTitle>
           </DialogHeader>
           <DialogBody>
             <p>
-              <span className="inline-code">bb explain profile</span> uses AI to analyze the timing profile uploaded
-              with this build and recommend ways to improve build performance.
+              <span className="inline-code">bb agent analyze-profile</span> uses AI to analyze the timing profile
+              uploaded with this build and recommend ways to improve build performance.
             </p>
             <p>
               <b>Run from the UI</b>
@@ -553,14 +553,14 @@ export default class InvocationTimingCardComponent extends React.Component<Props
             </p>
             <p>
               Relevant profile data is sent to the AI provider, and provider charges may apply.{" "}
-              <TextLink href="https://www.buildbuddy.io/docs/cli-commands#bb-explain-profile" target="_blank">
+              <TextLink href="https://www.buildbuddy.io/docs/cli-commands#bb-agent-analyze-profile" target="_blank">
                 See the docs for more info.
               </TextLink>
             </p>
           </DialogBody>
           <DialogFooter>
             <DialogFooterButtons>
-              <Button onClick={() => this.setState({ isExplainProfileDialogOpen: false })}>Done</Button>
+              <Button onClick={() => this.setState({ isAnalyzeProfileDialogOpen: false })}>Done</Button>
             </DialogFooterButtons>
           </DialogFooter>
         </Dialog>
@@ -619,7 +619,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
               <div className="title">All events</div>
               <div className="button timing-events-actions">
                 {/* Suggest speedups downloads a timing profile from the cache. Disable it for local profiles. */}
-                {!this.state.localProfileName && this.renderExplainProfileActions()}
+                {!this.state.localProfileName && this.renderAnalyzeProfileActions()}
 
                 {downloadHref && (
                   <LinkButton href={downloadHref} target="_blank">
@@ -798,7 +798,7 @@ export default class InvocationTimingCardComponent extends React.Component<Props
               )}
           </div>
         </div>
-        {this.renderExplainProfileDialog()}
+        {this.renderAnalyzeProfileDialog()}
       </>
     );
   }

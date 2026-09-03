@@ -498,6 +498,10 @@ type FileSystemLayout struct {
 	DigestFunction     repb.DigestFunction_Value
 	Inputs             *repb.Tree
 	InputFetcher       InputFetcher
+	WorkingDirectory   string
+	OutputDirectories  []string
+	OutputFiles        []string
+	OutputPaths        []string
 }
 
 // InputFetcher ensures that an input file is available in the local file cache.

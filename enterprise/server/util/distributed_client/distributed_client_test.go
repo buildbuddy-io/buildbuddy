@@ -1496,6 +1496,15 @@ func newReferenceTestProxy(t *testing.T, te *testenv.TestEnv, blobs map[string][
 	return c, cache
 }
 
+// readResponseCount returns the current value of the distributed cache read
+// response counter for the given response type and status code.
+func readResponseCount(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReadResponseCount, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
+}
+
 func TestRemoteReadReference(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
@@ -1507,12 +1516,14 @@ func TestRemoteReadReference(t *testing.T) {
 	t.Run("identity", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := readResponseCount(t, "reference", "OK")
 		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.NoError(t, err)
 		got, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.NoError(t, r.Close())
 		require.Equal(t, buf, got)
+		require.Equal(t, before+1, readResponseCount(t, "reference", "OK"))
 	})
 
 	t.Run("range is forwarded to Dereference", func(t *testing.T) {
@@ -1575,10 +1586,12 @@ func TestRemoteReadReference(t *testing.T) {
 		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
 		peer := startReferenceReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY))
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := readResponseCount(t, "reference", "Internal")
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsInternalError(err), "expected InternalError, got %s", err)
 		require.Contains(t, err.Error(), "returned a reference for")
+		require.Equal(t, before+1, readResponseCount(t, "reference", "Internal"))
 	})
 
 	t.Run("stored instance name may differ", func(t *testing.T) {
@@ -1611,9 +1624,14 @@ func TestRemoteReadReference(t *testing.T) {
 	t.Run("missing blob is not found", func(t *testing.T) {
 		peer := startReferenceReadServer(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY))
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := readResponseCount(t, "reference", "NotFound")
+		beforeOK := readResponseCount(t, "reference", "OK")
 		_, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		// The failed dereference is recorded under its status code, not OK.
+		require.Equal(t, before+1, readResponseCount(t, "reference", "NotFound"))
+		require.Equal(t, beforeOK, readResponseCount(t, "reference", "OK"))
 	})
 }
 
@@ -2016,11 +2034,13 @@ func TestRemoteReadVerification(t *testing.T) {
 	t.Run("matching bytes", func(t *testing.T) {
 		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		beforeBytesOK := readResponseCount(t, "bytes", "OK")
 		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
 		require.NoError(t, err)
 		got, err := io.ReadAll(r)
 		require.NoError(t, err)
 		require.NoError(t, r.Close())
+		require.Equal(t, beforeBytesOK+1, readResponseCount(t, "bytes", "OK"))
 		require.Equal(t, buf, got)
 	})
 
@@ -2292,6 +2312,20 @@ func TestWriteReferenceVerification(t *testing.T) {
 	})
 }
 
+// writeRequestCounts returns the current values of the distributed cache
+// write request count and size counters, keyed by request type.
+func writeRequestCounts(t *testing.T) (counts, sizes map[string]float64) {
+	counts = map[string]float64{}
+	sizes = map[string]float64{}
+	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheWriteRequestCount) {
+		counts[v.Labels[metrics.DistributedCacheWriteRequestType]] += v.Value
+	}
+	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheWriteRequestSizeBytes) {
+		sizes[v.Labels[metrics.DistributedCacheWriteRequestType]] += v.Value
+	}
+	return counts, sizes
+}
+
 func TestRemoteReferenceWriter(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
@@ -2324,12 +2358,17 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		ref := makeReference(rn, "blobs/rpc-blob", repb.Compressor_IDENTITY)
 		peer, cache, _ := newPeer(t)
+		beforeCounts, beforeSizes := writeRequestCounts(t)
 		require.NoError(t, writeRef(t, peer, "", rn, ref, false /*=mustClone*/))
 		gotRef, gotRN, gotCloned := cache.lastWriteReference()
 		require.Empty(t, cmp.Diff(ref, gotRef, protocmp.Transform()))
 		require.Empty(t, cmp.Diff(rn, gotRN, protocmp.Transform()))
 		// mustClone=false lets the peer take ownership of the blob.
 		require.False(t, gotCloned)
+		afterCounts, afterSizes := writeRequestCounts(t)
+		require.Equal(t, beforeCounts["reference"]+1, afterCounts["reference"])
+		require.Equal(t, beforeSizes["reference"]+float64(rn.GetDigest().GetSizeBytes()), afterSizes["reference"])
+		require.Equal(t, beforeCounts["bytes"], afterCounts["bytes"])
 	})
 
 	t.Run("must-be-cloned is passed through", func(t *testing.T) {
@@ -2346,9 +2385,23 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		ref := makeReference(rn, "blobs/rpc-blob", repb.Compressor_IDENTITY)
 		require.NoError(t, te.GetCache().Set(ctx, rn, buf))
 		peer, cache, _ := newPeer(t)
+		dedupedLabels := prometheus.Labels{
+			metrics.DistributedCacheWriteRequestType: "reference",
+			metrics.StatusHumanReadableLabel:         "AlreadyExists",
+		}
+		okLabels := prometheus.Labels{
+			metrics.DistributedCacheWriteRequestType: "reference",
+			metrics.StatusHumanReadableLabel:         "OK",
+		}
+		beforeDeduped := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, dedupedLabels)
+		beforeOK := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, okLabels)
 		require.NoError(t, writeRef(t, peer, "", rn, ref, false))
 		_, gotRN, _ := cache.lastWriteReference()
 		require.Nil(t, gotRN)
+		// The deduped commit succeeds but is recorded under AlreadyExists,
+		// not OK.
+		require.Equal(t, beforeDeduped+1, testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, dedupedLabels))
+		require.Equal(t, beforeOK, testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, okLabels))
 	})
 
 	t.Run("handoff peer is propagated", func(t *testing.T) {
@@ -2375,9 +2428,17 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		cache.mu.Lock()
 		cache.writeRefErr = status.NotFoundError("backing object may have expired")
 		cache.mu.Unlock()
+		notFoundLabels := prometheus.Labels{
+			metrics.DistributedCacheWriteRequestType: "reference",
+			metrics.StatusHumanReadableLabel:         "NotFound",
+		}
+		before := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, notFoundLabels)
 		err := writeRef(t, peer, "", rn, ref, false)
 		require.Error(t, err)
 		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		// The failed commit is counted under its status code.
+		after := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, notFoundLabels)
+		require.Equal(t, before+1, after)
 	})
 }
 
@@ -2418,6 +2479,7 @@ func TestRemoteVerifiedWriter(t *testing.T) {
 		ref := makeReference(rn, blobName, repb.Compressor_IDENTITY)
 		peer, cache, proxy := newPeer(t, map[string][]byte{blobName: buf})
 		before := writeVerificationCounts(t)
+		beforeCounts, beforeSizes := writeRequestCounts(t)
 		writeAll(t, peer, rn, ref, buf)
 		proxy.WaitForPendingVerificationsForTesting()
 		// The bytes are the write and the reference was verified.
@@ -2428,6 +2490,11 @@ func TestRemoteVerifiedWriter(t *testing.T) {
 		require.Nil(t, gotRN)
 		after := writeVerificationCounts(t)
 		require.Equal(t, before[distributed_client.VerificationSuccess]+1, after[distributed_client.VerificationSuccess])
+		// A verified write is a byte write; the reference only rides along.
+		afterCounts, afterSizes := writeRequestCounts(t)
+		require.Equal(t, beforeCounts["bytes"]+1, afterCounts["bytes"])
+		require.Equal(t, beforeSizes["bytes"]+float64(rn.GetDigest().GetSizeBytes()), afterSizes["bytes"])
+		require.Equal(t, beforeCounts["reference"], afterCounts["reference"])
 	})
 
 	t.Run("an unbound reference is a plain byte write", func(t *testing.T) {

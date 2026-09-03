@@ -40,6 +40,7 @@ go_test(
     srcs = ["snaploader_test.go"],
     deps = [
         ":snaploader",
+        "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/remote_execution/copy_on_write",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/snaputil",
@@ -54,11 +55,15 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/disk",
         "//server/util/log",
         "//server/util/platform",
         "//server/util/prefix",
         "//server/util/random",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//:grpc",
     ],
 )

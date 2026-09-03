@@ -57,6 +57,7 @@ go_test(
         "//cli/parser",
         "//cli/parser/test_data",
         "//cli/storage",
+        "//proto:build_event_stream_go_proto",
         "//proto:buildbuddy_service_go_proto",
         "//proto:eventlog_go_proto",
         "//server/testutil/testgit",

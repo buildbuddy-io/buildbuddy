@@ -326,6 +326,11 @@ const (
 	// "bytes" (the blob's bytes, streamed inline).
 	DistributedCacheReadResponseType = "response_type"
 
+	// How a distributed cache write's payload was sent:
+	// "reference" (a pointer to the blob in shared storage) or
+	// "bytes" (the blob's bytes, streamed inline).
+	DistributedCacheWriteRequestType = "request_type"
+
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
 	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
 	CASOperation = "op"
@@ -1027,28 +1032,70 @@ var (
 
 	// DistributedCacheReadResponseCount counts distributed cache peer reads
 	// by whether the payload was received as a reference to shared storage or
-	// as inline bytes.
+	// as inline bytes, and by the gRPC status code of turning the response
+	// into a reader ("OK" on success). Reads that fail before any response
+	// message is received have no payload type and are not counted.
 	DistributedCacheReadResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_read_response_count",
-		Help:      "Count of distributed cache peer reads, by whether the payload was received as a reference or as inline bytes.",
+		Help:      "Count of distributed cache peer reads, by whether the payload was received as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
 	})
 
 	// DistributedCacheReadResponseSizeBytes totals the sizes of the blobs
 	// read from peers, by whether the payload was received as a reference to
-	// shared storage or as inline bytes. Sizes are the requested digest's
-	// (uncompressed) size, recorded when the read is opened, so ranged reads
-	// count the full blob size rather than the exact bytes transferred.
+	// shared storage or as inline bytes, and by the gRPC status code of
+	// turning the response into a reader ("OK" on success). Sizes are the
+	// requested digest's (uncompressed) size, recorded when the read is
+	// opened, so ranged reads count the full blob size rather than the exact
+	// bytes transferred. Reads that fail before any response message is
+	// received have no payload type and are not counted.
 	DistributedCacheReadResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_read_response_size_bytes",
-		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes.",
+		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheWriteRequestCount counts distributed cache writes by
+	// whether the payload was sent as a reference or as inline bytes, and by
+	// the commit's gRPC status code ("OK" on success). Writes short-circuited
+	// because the peer already had the blob are recorded under
+	// "AlreadyExists" (though callers see success), so "OK" counts only
+	// blobs the peer actually stored.
+	DistributedCacheWriteRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_write_request_count",
+		Help:      "Count of distributed cache peer writes, by whether the payload was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheWriteRequestSizeBytes counts the number of bytes written
+	// to the distributed cache by whether the payload was sent as a reference
+	// or as inline bytes, and by the commit's gRPC status code ("OK" on
+	// success, "AlreadyExists" for writes deduped by the peer, so "OK"
+	// counts only blobs actually stored). The size is the requested digest's
+	// (uncompressed) size,
+	// recorded when the write is opened, so ranged writes and compressed writes
+	// count the full, uncompressed blob size rather than the exact number of
+	// bytes transferred.
+	DistributedCacheWriteRequestSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_write_request_size_bytes",
+		Help:      "Total digest sizes of blobs written to distributed cache peers, by whether the payload was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
 	})
 
 	// DistributedCacheReferenceVerificationCount counts verifications of

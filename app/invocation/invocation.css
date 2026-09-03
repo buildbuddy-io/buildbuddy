@@ -1036,35 +1036,35 @@
   align-self: flex-start;
 }
 
-.timing-explain-actions {
+.timing-analyze-profile-actions {
   align-self: flex-start;
 }
 
-.timing-explain-menu {
+.timing-analyze-profile-menu {
   min-width: 260px;
 }
 
-.timing-explain-menu .menu-list-item {
+.timing-analyze-profile-menu .menu-list-item {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.timing-explain-menu .menu-list-item.selected {
+.timing-analyze-profile-menu .menu-list-item.selected {
   background: var(--color-menu-hover-bg);
 }
 
-.timing-explain-menu .menu-list-item:not(.selected) .check {
+.timing-analyze-profile-menu .menu-list-item:not(.selected) .check {
   visibility: hidden;
 }
 
-.timing-explain-menu-icon {
+.timing-analyze-profile-menu-icon {
   width: 16px;
   height: 16px;
   flex-shrink: 0;
 }
 
-.timing-explain-menu-label {
+.timing-analyze-profile-menu-label {
   padding: 4px 16px 6px;
   color: var(--color-text-secondary);
   font-size: 12px;
@@ -1073,13 +1073,13 @@
   text-transform: uppercase;
 }
 
-.timing-explain-menu-divider {
+.timing-analyze-profile-menu-divider {
   height: 1px;
   margin: 6px 12px;
   background: var(--color-border-secondary);
 }
 
-.timing-explain-dialog {
+.timing-analyze-profile-dialog {
   width: 600px;
 }
 

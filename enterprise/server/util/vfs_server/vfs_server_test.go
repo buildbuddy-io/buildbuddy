@@ -186,14 +186,11 @@ type evictingFileCache struct {
 	once sync.Once
 }
 
-func (fc *evictingFileCache) ContainsFile(ctx context.Context, node *repb.FileNode) bool {
-	contains := fc.FileCache.ContainsFile(ctx, node)
-	if contains {
-		fc.once.Do(func() {
-			fc.FileCache.DeleteFile(ctx, node)
-		})
-	}
-	return contains
+func (fc *evictingFileCache) Open(ctx context.Context, node *repb.FileNode) (*os.File, error) {
+	fc.once.Do(func() {
+		fc.FileCache.DeleteFile(ctx, node)
+	})
+	return fc.FileCache.Open(ctx, node)
 }
 
 func TestCASFileFetchedOnDemand(t *testing.T) {
@@ -239,6 +236,107 @@ func TestCASFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, contents, readFromVFS(t, server, "input.txt"))
+}
+
+func TestPrefetchedFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	contents := "refetched after prefetch eviction"
+	d := setFile(t, env, ctx, "", contents)
+	fileNode := &repb.FileNode{Name: "input.txt", Digest: d}
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{
+			Files: []*repb.FileNode{fileNode},
+		}},
+	}
+	tf, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, layout.Inputs, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+	_, err = tf.Wait()
+	require.NoError(t, err)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, fileNode))
+	env.SetFileCache(&evictingFileCache{FileCache: env.GetFileCache()})
+
+	_, err = server.Prepare(ctx, layout, tf)
+	require.NoError(t, err)
+	require.Equal(t, contents, readFromVFS(t, server, "input.txt"))
+}
+
+func TestMaterializeOutputs(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	layout := &container.FileSystemLayout{
+		DigestFunction:   repb.DigestFunction_SHA256,
+		Inputs:           &repb.Tree{Root: &repb.Directory{}},
+		WorkingDirectory: "work",
+		OutputFiles:      []string{"out/result.txt"},
+	}
+	_, err := server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+
+	workRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "work"})
+	require.NoError(t, err)
+	outRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: workRsp.GetId(), Name: "out"})
+	require.NoError(t, err)
+	createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
+		ParentId: outRsp.GetId(),
+		Name:     "result.txt",
+		Flags:    uint32(os.O_CREATE | os.O_RDWR),
+		Mode:     0755,
+	})
+	require.NoError(t, err)
+	_, err = server.Write(ctx, &vfspb.WriteRequest{HandleId: createRsp.GetHandleId(), Data: []byte("result")})
+	require.NoError(t, err)
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: createRsp.GetHandleId()})
+	require.NoError(t, err)
+
+	outputRoot := testfs.MakeTempDir(t)
+	require.NoError(t, server.MaterializeOutputs(ctx, layout, outputRoot))
+	b, err := os.ReadFile(filepath.Join(outputRoot, "work", "out", "result.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "result", string(b))
+}
+
+func TestMaterializeOutputsOutsideWorkingDirectory(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	layout := &container.FileSystemLayout{
+		DigestFunction:   repb.DigestFunction_SHA256,
+		Inputs:           &repb.Tree{Root: &repb.Directory{}},
+		WorkingDirectory: "out/Default",
+		OutputPaths:      []string{"../../gen/result.txt"},
+	}
+	_, err := server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+
+	genRsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "gen"})
+	require.NoError(t, err)
+	createRsp, err := server.Create(ctx, &vfspb.CreateRequest{
+		ParentId: genRsp.GetId(),
+		Name:     "result.txt",
+		Flags:    uint32(os.O_CREATE | os.O_RDWR),
+		Mode:     0644,
+	})
+	require.NoError(t, err)
+	_, err = server.Write(ctx, &vfspb.WriteRequest{HandleId: createRsp.GetHandleId(), Data: []byte("result")})
+	require.NoError(t, err)
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: createRsp.GetHandleId()})
+	require.NoError(t, err)
+
+	outputRoot := testfs.MakeTempDir(t)
+	require.NoError(t, server.MaterializeOutputs(ctx, layout, outputRoot))
+	b, err := os.ReadFile(filepath.Join(outputRoot, "gen", "result.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "result", string(b))
+}
+
+func TestPrepareRejectsEscapingOutputPath(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	_, err := server.Prepare(ctx, &container.FileSystemLayout{
+		Inputs:           &repb.Tree{Root: &repb.Directory{}},
+		WorkingDirectory: "work",
+		OutputFiles:      []string{"../../escape"},
+	}, nil)
+	require.Error(t, err)
 }
 
 func TestGetLayout(t *testing.T) {

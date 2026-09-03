@@ -1,0 +1,338 @@
+From 27dd3f30b694b8bb39723b57fa9ec9b262e9f47d Mon Sep 17 00:00:00 2001
+From: Zoey Greer <zoey@buildbuddy.io>
+Date: Wed, 2 Sep 2026 12:23:10 -0400
+Subject: [PATCH] almost
+
+---
+ internal/envconfig/envconfig.go       | 11 ----
+ internal/transport/controlbuf.go      | 89 +++++++++++++++------------
+ internal/transport/controlbuf_test.go | 85 -------------------------
+ 3 files changed, 49 insertions(+), 136 deletions(-)
+ delete mode 100644 internal/transport/controlbuf_test.go
+
+diff --git a/internal/envconfig/envconfig.go b/internal/envconfig/envconfig.go
+index 33344812..5be265e1 100644
+--- a/internal/envconfig/envconfig.go
++++ b/internal/envconfig/envconfig.go
+@@ -142,17 +142,6 @@ var (
+ 	// release.
+ 	EnableHTTPFramerReadBufferPooling = boolFromEnv("GRPC_GO_EXPERIMENTAL_HTTP_FRAMER_READ_BUFFER_POOLING", true)
+ 
+-	// ControlBufferThrottleLimit is the maximum number of control frames that can
+-	// be queued in the control buffer before throttling is applied. The value
+-	// must be between 1 and 10,000, and is set to 100 by default.
+-	//
+-	// This environment variable serves as an escape hatch to increase the
+-	// throttling limit if unforeseen issues arise, and it will be removed in a
+-	// future release.
+-	//
+-	// TODO: Remove this env var once v1.83.0 is released.
+-	ControlBufferThrottleLimit = uint64FromEnv("GRPC_GO_EXPERIMENTAL_CONTROL_BUFFER_THROTTLE_LIMIT", 100, 1, 10000)
+-
+ 	// EnableReceiveBufferCompaction enables the compaction of data buffers
+ 	// to reduce the number of buffers in the receive buffer.
+ 	//
+diff --git a/internal/transport/controlbuf.go b/internal/transport/controlbuf.go
+index b9bae024..b7b69300 100644
+--- a/internal/transport/controlbuf.go
++++ b/internal/transport/controlbuf.go
+@@ -29,7 +29,6 @@ import (
+ 
+ 	"golang.org/x/net/http2"
+ 	"golang.org/x/net/http2/hpack"
+-	"google.golang.org/grpc/internal/envconfig"
+ 	"google.golang.org/grpc/internal/grpclog"
+ 	"google.golang.org/grpc/mem"
+ )
+@@ -97,44 +96,40 @@ func (il *itemList) isEmpty() bool {
+ 	return il.head == nil
+ }
+ 
+-// maxQueuedControlBufferItems is the maximum number of frames (other than
+-// HEADERS and DATA) that we will buffer before preventing new reads from
+-// occurring on the transport.  These are control frames sent in response to
+-// client requests, or frames that result in work being scheduled, such as
+-// RST_STREAM due to bad headers or settings acks.
+-var maxQueuedControlBufferItems = int(envconfig.ControlBufferThrottleLimit)
+-
+-type cbItem interface {
+-	isThrottled() bool
+-}
+-
+-// throttledItem represents every item in the controlBuffer to which the overall
+-// throttling limit applies, other than outgoing HEADERS and DATA frames.
+-type throttledItem struct{}
+-
+-func (throttledItem) isThrottled() bool { return true }
+-
+ // The following defines various control items which could flow through
+ // the control buffer of transport. They represent different aspects of
+ // control tasks, e.g., flow control, settings, streaming resetting, etc.
+ 
++// maxQueuedTransportResponseFrames is the most queued "transport response"
++// frames we will buffer before preventing new reads from occurring on the
++// transport.  These are control frames sent in response to client requests,
++// such as RST_STREAM due to bad headers or settings acks.
++const maxQueuedTransportResponseFrames = 50
++
++type cbItem interface {
++	isTransportResponseFrame() bool
++}
++
+ // registerStream is used to register an incoming stream with loopy writer.
+ type registerStream struct {
+-	throttledItem
+ 	streamID uint32
+ 	wq       *writeQuota
+ }
+ 
++func (*registerStream) isTransportResponseFrame() bool { return false }
++
+ type clientHeaders struct {
+ 	streamID   uint32
+ 	hf         []hpack.HeaderField
+ 	initStream func(uint32) error
+ 	onWrite    func()
+-	wq         *writeQuota
++	wq         *writeQuota    // write quota for the stream created.
+ 	onOrphaned func(error)
+ }
+ 
+-func (*clientHeaders) isThrottled() bool { return false }
++func (_ *clientHeaders) isTransportResponseFrame() bool {
++	return false
++}
+ 
+ type serverHeaders struct {
+ 	streamID  uint32
+@@ -144,23 +139,27 @@ type serverHeaders struct {
+ 	cleanup   *cleanupStream
+ }
+ 
+-func (h *serverHeaders) isThrottled() bool { return false }
++func (s *serverHeaders) isTransportResponseFrame() bool {
++	return s.cleanup != nil && s.cleanup.rst // Results in a RST_STREAM
++}
+ 
+ type cleanupStream struct {
+-	throttledItem
+ 	streamID uint32
+ 	rst      bool
+ 	rstCode  http2.ErrCode
+ 	onWrite  func()
+ }
+ 
++func (c *cleanupStream) isTransportResponseFrame() bool { return c.rst } // Results in a RST_STREAM
++
+ type earlyAbortStream struct {
+-	throttledItem
+ 	streamID uint32
+ 	rst      bool
+ 	hf       []hpack.HeaderField // Pre-built header fields
+ }
+ 
++func (*earlyAbortStream) isTransportResponseFrame() bool { return false }
++
+ type dataFrame struct {
+ 	streamID   uint32
+ 	endStream  bool
+@@ -172,60 +171,70 @@ type dataFrame struct {
+ 	onEachWrite func()
+ }
+ 
+-func (*dataFrame) isThrottled() bool { return false }
++func (*dataFrame) isTransportResponseFrame() bool { return false }
+ 
+ type incomingWindowUpdate struct {
+-	throttledItem
+ 	streamID  uint32
+ 	increment uint32
+ }
+ 
++func (*incomingWindowUpdate) isTransportResponseFrame() bool { return false }
++
+ type outgoingWindowUpdate struct {
+-	throttledItem
+ 	streamID  uint32
+ 	increment uint32
+ }
+ 
++func (*outgoingWindowUpdate) isTransportResponseFrame() bool {
++	return false // window updates are throttled by thresholds
++}
++
+ type incomingSettings struct {
+-	throttledItem
+ 	ss []http2.Setting
+ }
+ 
++func (*incomingSettings) isTransportResponseFrame() bool { return true } // Results in a settings ACK
++
+ type outgoingSettings struct {
+-	throttledItem
+ 	ss []http2.Setting
+ }
+ 
++func (*outgoingSettings) isTransportResponseFrame() bool { return false }
++
+ type incomingGoAway struct {
+-	throttledItem
+ }
+ 
++func (*incomingGoAway) isTransportResponseFrame() bool { return false }
++
+ type goAway struct {
+-	throttledItem
+ 	code      http2.ErrCode
+ 	debugData []byte
+ 	headsUp   bool
+ 	closeConn error // if set, loopyWriter will exit with this error
+ }
+ 
++func (*goAway) isTransportResponseFrame() bool { return false }
++
+ type ping struct {
+-	throttledItem
+ 	ack  bool
+ 	data [8]byte
+ }
+ 
++func (*ping) isTransportResponseFrame() bool { return true }
++
+ type outFlowControlSizeRequest struct {
+-	throttledItem
+ 	resp chan uint32
+ }
+ 
++func (*outFlowControlSizeRequest) isTransportResponseFrame() bool { return false }
++
+ // closeConnection is an instruction to tell the loopy writer to flush the
+ // framer and exit, which will cause the transport's connection to be closed
+ // (by the client or server).  The transport itself will close after the reader
+ // encounters the EOF caused by the connection closure.
+-type closeConnection struct {
+-	throttledItem
+-}
++type closeConnection struct{}
++
++func (closeConnection) isTransportResponseFrame() bool { return false }
+ 
+ type outStreamState int
+ 
+@@ -379,9 +388,9 @@ func (c *controlBuffer) executeAndPut(f func() bool, it cbItem) (bool, error) {
+ 		c.consumerWaiting = false
+ 	}
+ 	c.list.enqueue(it)
+-	if it.isThrottled() {
++	if it.isTransportResponseFrame() {
+ 		c.transportResponseFrames++
+-		if c.transportResponseFrames == maxQueuedControlBufferItems {
++		if c.transportResponseFrames == maxQueuedTransportResponseFrames {
+ 			// We are adding the frame that puts us over the threshold; create
+ 			// a throttling channel.
+ 			ch := make(chan struct{})
+@@ -436,8 +445,8 @@ func (c *controlBuffer) getOnceLocked() (any, error) {
+ 		return nil, nil
+ 	}
+ 	h := c.list.dequeue().(cbItem)
+-	if h.isThrottled() {
+-		if c.transportResponseFrames == maxQueuedControlBufferItems {
++	if h.isTransportResponseFrame() {
++		if c.transportResponseFrames == maxQueuedTransportResponseFrames {
+ 			// We are removing the frame that put us over the
+ 			// threshold; close and clear the throttling channel.
+ 			ch := c.trfChan.Swap(nil)
+diff --git a/internal/transport/controlbuf_test.go b/internal/transport/controlbuf_test.go
+deleted file mode 100644
+index eb71ddf2..00000000
+--- a/internal/transport/controlbuf_test.go
++++ /dev/null
+@@ -1,85 +0,0 @@
+-/*
+- *
+- * Copyright 2026 gRPC authors.
+- *
+- * Licensed under the Apache License, Version 2.0 (the "License");
+- * you may not use this file except in compliance with the License.
+- * You may obtain a copy of the License at
+- *
+- *     http://www.apache.org/licenses/LICENSE-2.0
+- *
+- * Unless required by applicable law or agreed to in writing, software
+- * distributed under the License is distributed on an "AS IS" BASIS,
+- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+- * See the License for the specific language governing permissions and
+- * limitations under the License.
+- *
+- */
+-
+-package transport
+-
+-import (
+-	"testing"
+-	"time"
+-)
+-
+-func (s) TestControlBuffer_Throttle(t *testing.T) {
+-	done := make(chan struct{})
+-	defer close(done)
+-	cb := newControlBuffer(done)
+-
+-	// Fill the control buffer up to the limit with throttled items.
+-	for i := 0; i < maxQueuedControlBufferItems; i++ {
+-		cb.put(&ping{})
+-	}
+-
+-	// The next call to throttle should block.
+-	throttleDone := make(chan struct{})
+-	go func() {
+-		cb.throttle()
+-		close(throttleDone)
+-	}()
+-
+-	select {
+-	case <-throttleDone:
+-		t.Fatal("throttle() did not block when the buffer was full")
+-	case <-time.After(defaultTestShortTimeout):
+-	}
+-
+-	// Consume one item from the control buffer.
+-	if _, err := cb.get(true); err != nil {
+-		t.Fatalf("cb.get(true) failed: %v", err)
+-	}
+-
+-	// Now throttle() should unblock.
+-	select {
+-	case <-throttleDone:
+-	case <-time.After(time.Second):
+-		t.Fatal("throttle() did not unblock after an item was consumed")
+-	}
+-}
+-
+-func (s) TestControlBuffer_NoThrottleForNonThrottledItems(t *testing.T) {
+-	done := make(chan struct{})
+-	defer close(done)
+-	cb := newControlBuffer(done)
+-
+-	// Fill the control buffer with many more than limit number of non-throttled
+-	// items.
+-	for i := 0; i < maxQueuedControlBufferItems+10; i++ {
+-		cb.put(&dataFrame{})
+-	}
+-
+-	// throttle() should not block.
+-	throttled := make(chan struct{})
+-	go func() {
+-		cb.throttle()
+-		close(throttled)
+-	}()
+-
+-	select {
+-	case <-throttled:
+-	case <-time.After(defaultTestShortTimeout):
+-		t.Fatal("throttle() blocked for non-throttled items")
+-	}
+-}
+-- 
+2.47.3
+

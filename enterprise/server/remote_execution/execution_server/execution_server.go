@@ -1283,6 +1283,15 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
 	}
 
+	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
+		if efp.Boolean(ctx, snaputil.RemoteContainerImageReadsExperiment, false) {
+			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageReadsExperiment)
+		}
+		if efp.Boolean(ctx, snaputil.RemoteContainerImageWritesExperiment, false) {
+			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageWritesExperiment)
+		}
+	}
+
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {

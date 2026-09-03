@@ -118,6 +118,16 @@ func TestParse_VFSPrefetchMode(t *testing.T) {
 	}
 }
 
+func TestParse_FirecrackerVFS(t *testing.T) {
+	platformProto := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: enableVFSPropertyName, Value: "true"},
+		{Name: WorkloadIsolationPropertyName, Value: string(FirecrackerContainerType)},
+	}}
+	properties, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: platformProto}})
+	require.NoError(t, err)
+	require.True(t, properties.EnableVFS)
+}
+
 func TestParse_Pool(t *testing.T) {
 	for _, testCase := range []struct {
 		rawValue      string

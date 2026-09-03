@@ -1215,6 +1215,63 @@ func TestSplitBlobNotFound(t *testing.T) {
 	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
 }
 
+func TestSplitBlobRejectsLayeredManifest(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	cache := te.GetCache()
+
+	leaf1RN, leaf1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	leaf2RN, leaf2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	leaf3RN, leaf3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	nestedData := bytes.Join([][]byte{leaf1, leaf2, leaf3}, nil)
+	nestedDigest, err := digest.Compute(bytes.NewReader(nestedData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	for i, leaf := range []struct {
+		rn   *rspb.ResourceName
+		data []byte
+	}{
+		{leaf1RN, leaf1},
+		{leaf2RN, leaf2},
+		{leaf3RN, leaf3},
+	} {
+		require.NoError(t, cache.Set(ctx, leaf.rn, leaf.data), "store leaf %d", i)
+	}
+	require.NoError(t, (&chunking.Manifest{
+		BlobDigest:     nestedDigest,
+		ChunkDigests:   []*repb.Digest{leaf1RN.GetDigest(), leaf2RN.GetDigest(), leaf3RN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}).Store(ctx, cache))
+
+	directRN, directData := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	require.NoError(t, cache.Set(ctx, directRN, directData))
+	parentData := bytes.Join([][]byte{nestedData, directData}, nil)
+	parentDigest, err := digest.Compute(bytes.NewReader(parentData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	// Inject a legacy layered manifest directly. Normal manifest storage rejects
+	// this because nestedDigest is not itself present in the CAS.
+	require.NoError(t, (&chunking.Manifest{
+		BlobDigest:     parentDigest,
+		ChunkDigests:   []*repb.Digest{nestedDigest, directRN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}).StoreWithoutVerification(ctx, cache))
+
+	_, err = casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     parentDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+}
+
 func TestSpliceBlobSingleChunk(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {
@@ -1301,7 +1358,9 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+	chunk4RN, chunk4 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk5RN, chunk5 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := bytes.Join([][]byte{chunk1, chunk2, chunk3, chunk4, chunk5}, nil)
 
 	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
@@ -1309,10 +1368,15 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
 	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+	require.NoError(t, cache.Set(ctx, chunk4RN, chunk4))
+	require.NoError(t, cache.Set(ctx, chunk5RN, chunk5))
 
 	manifest := &chunking.Manifest{
-		BlobDigest:     blobDigest,
-		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		BlobDigest: blobDigest,
+		ChunkDigests: []*repb.Digest{
+			chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest(),
+			chunk4RN.GetDigest(), chunk5RN.GetDigest(),
+		},
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
@@ -1337,40 +1401,25 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.ElementsMatch(t, digestStrings(blobDigest, regularDigest), digestStrings(rsp.MissingBlobDigests...))
 }
 
-func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
+func TestChunkedBlobAtCurrentWriteThresholdIsMissingButReadable(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
 	cache := te.GetCache()
 
 	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+	chunk4RN, chunk4 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := bytes.Join([][]byte{chunk1, chunk2, chunk3, chunk4}, nil)
 
 	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
@@ -1378,74 +1427,11 @@ func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
 	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+	require.NoError(t, cache.Set(ctx, chunk4RN, chunk4))
 
 	manifest := &chunking.Manifest{
 		BlobDigest:     blobDigest,
-		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
-		InstanceName:   "",
-		DigestFunction: repb.DigestFunction_SHA256,
-	}
-	require.NoError(t, manifest.Store(ctx, cache))
-
-	rsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
-		BlobDigests: []*repb.Digest{blobDigest},
-	})
-	require.NoError(t, err)
-
-	require.Empty(t, rsp.MissingBlobDigests)
-
-	rsp, err = casClient.FindMissingBlobs(cdc.ContextWithChunked(ctx), &repb.FindMissingBlobsRequest{
-		BlobDigests: []*repb.Digest{blobDigest},
-	})
-	require.NoError(t, err)
-	require.Len(t, rsp.MissingBlobDigests, 1)
-	require.Equal(t, blobDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
-}
-
-func TestFindMissingBlobsDiscardsLegacyChunkedBlobForAvgChunkSizeOverride(t *testing.T) {
-	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
-
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.avg_chunk_size_override": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "one_mb",
-			Variants: map[string]any{
-				"one_mb": 1 * 1024 * 1024,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
-	require.NoError(t, err)
-
-	clientConn := runCASServer(ctx, t, te)
-	casClient := repb.NewContentAddressableStorageClient(clientConn)
-	cache := te.GetCache()
-
-	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	fullBlob := append(append(chunk1, chunk2...), chunk3...)
-
-	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
-	require.NoError(t, err)
-
-	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
-	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
-	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
-
-	manifest := &chunking.Manifest{
-		BlobDigest:     blobDigest,
-		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest(), chunk4RN.GetDigest()},
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
@@ -1457,6 +1443,11 @@ func TestFindMissingBlobsDiscardsLegacyChunkedBlobForAvgChunkSizeOverride(t *tes
 	require.NoError(t, err)
 	require.Len(t, rsp.MissingBlobDigests, 1)
 	require.Equal(t, blobDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
+
+	var downloaded bytes.Buffer
+	rn := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, cachetools.GetBlob(ctx, bsClient, rn, &downloaded))
+	require.Equal(t, fullBlob, downloaded.Bytes())
 }
 
 func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {

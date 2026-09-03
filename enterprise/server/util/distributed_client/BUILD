@@ -39,7 +39,6 @@ go_library(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//reflection",
-        "@org_golang_google_grpc//status",
     ],
 )
 

@@ -48,11 +48,12 @@ var (
 // networkState holds IP allocation and peer name state for one
 // (groupID, networkName) pair.
 type networkState struct {
-	groupID  string                // group that owns this network
-	index    int                   // assigned network index; determines the /48 prefix
-	namesMu  sync.Mutex            // protects names
-	names    map[string]netip.Addr // peer_name → assigned IP
-	nextHost int                   // next host number to assign; starts at 2 (.1 is the hub)
+	groupID  string                   // group that owns this network
+	index    int                      // assigned network index; determines the /48 prefix
+	mu       sync.Mutex               // protects names and peers
+	names    map[string]netip.Addr    // peer_name → assigned IP
+	peers    map[netip.Addr]*peerInfo // assigned IP → peer, for HubNetwork.PeerContext
+	nextHost int                      // next host number to assign; starts at 2 (.1 is the hub)
 }
 
 // peerInfo tracks per-peer state needed for cleanup.
@@ -63,9 +64,8 @@ type peerInfo struct {
 	sessionID    string    // uniquely identifies this connection
 	registeredAt time.Time // used as last-seen baseline if peer never completed a handshake
 
-	// cancel, if set, closes the Connect stream that owns this registration.
-	// removePeerLocked calls it so that a peer removed by another path (e.g.
-	// the stale-peer sweep) doesn't leave its stream dangling.
+	// ctx lives as long as the registration.
+	ctx    context.Context
 	cancel context.CancelFunc
 }
 
@@ -79,7 +79,8 @@ type Gateway struct {
 	pubKey        string // server's base64 public key
 	networks      map[string]*networkState
 	peers         map[string]*peerInfo // WireGuard public key hex → peer info
-	nextIndex     int                  // monotonically increasing network index
+	hubServices   []HubService
+	nextIndex     int // monotonically increasing network index
 	publicHost    string
 	udpListenPort int
 	done          chan struct{}
@@ -94,7 +95,7 @@ type Gateway struct {
 }
 
 // New creates a Gateway with a single shared WireGuard device.
-func New(env environment.Env) (*Gateway, error) {
+func New(env environment.Env, hubServices ...HubService) (*Gateway, error) {
 	serverPrivKey, err := wgkeys.GeneratePrivateKey()
 	if err != nil {
 		return nil, status.InternalErrorf("generate server private key: %s", err)
@@ -107,6 +108,7 @@ func New(env environment.Env) (*Gateway, error) {
 		tun:           tunDev,
 		networks:      make(map[string]*networkState),
 		peers:         make(map[string]*peerInfo),
+		hubServices:   hubServices,
 		publicHost:    *publicHost,
 		udpListenPort: *udpListenPort,
 		done:          make(chan struct{}),
@@ -151,77 +153,11 @@ func New(env environment.Env) (*Gateway, error) {
 	return gw, nil
 }
 
-// Register authenticates the caller, assigns them an IP within their network,
-// registers the client as a peer on the shared device, and returns the config.
-// The client is responsible for generating its own WireGuard keypair and
-// supplying its public key in the request.
-func (g *Gateway) Register(ctx context.Context, req *gwpb.RegisterRequest) (*gwpb.RegisterResponse, error) {
-	claims, err := g.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	groupID := claims.GetGroupID()
-
-	if req.GetPublicKey() == "" {
-		return nil, status.InvalidArgumentError("public_key is required")
-	}
-	clientPubKey, err := wgkeys.ParseHexKey(req.GetPublicKey())
-	if err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid public_key: %s", err)
-	}
-
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	ns, err := g.getOrCreateNetwork(groupID, req.GetNetworkName())
-	if err != nil {
-		return nil, err
-	}
-
-	var assignedName string
-	if requested := req.GetPeerName(); requested != "" {
-		if labels, ok := dns.IsDomainName(requested); !ok || labels != 1 {
-			return nil, status.InvalidArgumentErrorf("peer_name %q is not a valid DNS label", requested)
-		}
-		// Find an available name: try the requested name first, then append
-		// numeric suffixes until we find a free slot.
-		assignedName = requested
-		ns.namesMu.Lock()
-		for i := 1; ; i++ {
-			if _, taken := ns.names[assignedName]; !taken {
-				break
-			}
-			assignedName = fmt.Sprintf("%s-%d", requested, i)
-		}
-		ns.namesMu.Unlock()
-	}
-
-	// Note: session_id is left empty for Register peers — it is a Connect
-	// concept, and leaving it unset lets List callers distinguish legacy
-	// registrations.
-	assignedIP, err := g.addPeerLocked(ns, clientPubKey.Hex(), assignedName, "" /*=sessionID*/, nil /*=cancel*/)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Infof("Registered peer %s in group %q network %q, assigned %s (name=%q)",
-		clientPubKey.String()[:8]+"...", groupID, req.GetNetworkName(), assignedIP, assignedName)
-
-	return &gwpb.RegisterResponse{
-		ServerPublicKey:  g.pubKey,
-		ServerEndpoint:   fmt.Sprintf("%s:%d", g.publicHost, g.udpListenPort),
-		AssignedIp:       assignedIP.String(),
-		GatewayIp:        networkHubIP(ns.index).String(),
-		NetworkCidr:      networkPrefix(ns.index).String(),
-		AssignedPeerName: assignedName,
-	}, nil
-}
-
 // Connect implements the streaming registration API. The peer's registration
 // is leased to the stream: the first response carries the tunnel
 // configuration, and the peer stays registered exactly as long as the stream
-// remains open. Unlike the deprecated Register RPC, peer names are unique
-// within a network: a name held by a connected peer causes ALREADY_EXISTS.
+// remains open. Peer names are unique within a network: a name held by a
+// connected peer causes ALREADY_EXISTS.
 func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayService_ConnectServer) error {
 	claims, err := g.env.GetAuthenticator().AuthenticatedUser(stream.Context())
 	if err != nil {
@@ -247,10 +183,10 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 		return status.InvalidArgumentError("session_id is required")
 	}
 
-	// ctx is canceled when the client goes away (stream closed, connection
-	// lost, gateway shutdown). removePeerLocked also cancels it when the peer
-	// is removed by another path (e.g. the stale-peer sweep), which closes
-	// this stream and lets the client observe its own eviction.
+	// ctx is the registration's lifetime. It is canceled when the client
+	// goes away (stream closed, connection lost), and by removePeerLocked
+	// when the peer is evicted by another path (e.g. the stale-peer sweep),
+	// which ends this stream and lets the client observe its own eviction.
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 
@@ -261,9 +197,9 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 		return err
 	}
 	if name != "" {
-		ns.namesMu.Lock()
+		ns.mu.Lock()
 		_, taken := ns.names[name]
-		ns.namesMu.Unlock()
+		ns.mu.Unlock()
 		if taken {
 			g.mu.Unlock()
 			return status.AlreadyExistsErrorf("peer name %q is already in use", name)
@@ -271,15 +207,14 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 	}
 	// Session IDs uniquely identify connections within a group, so that
 	// removal below (and deregistration by session ID, eventually) is
-	// unambiguous. Note: peers registered via the deprecated Register RPC
-	// have an empty session ID and can never conflict.
+	// unambiguous.
 	for _, info := range g.peers {
 		if info.sessionID == sessionID && info.networkState.groupID == groupID {
 			g.mu.Unlock()
 			return status.AlreadyExistsErrorf("session_id %q is already in use", sessionID)
 		}
 	}
-	assignedIP, err := g.addPeerLocked(ns, clientPubKey.Hex(), name, sessionID, cancel)
+	assignedIP, err := g.addPeerLocked(ctx, cancel, ns, clientPubKey.Hex(), name, sessionID)
 	g.mu.Unlock()
 	if err != nil {
 		return err
@@ -321,8 +256,8 @@ func (g *Gateway) Connect(req *gwpb.ConnectRequest, stream gwsvcpb.GatewayServic
 			}
 		case <-ctx.Done():
 			// If the registration is no longer this session's, another path
-			// (the stale-peer sweep, Deregister) evicted this peer; tell the
-			// client so it can distinguish eviction from a clean shutdown.
+			// (e.g. the stale-peer sweep) evicted this peer; tell the client
+			// so it can distinguish eviction from a clean shutdown.
 			g.mu.Lock()
 			info, ok := g.peers[clientPubKey.Hex()]
 			evicted := !ok || info.sessionID != sessionID
@@ -456,10 +391,11 @@ func (g *Gateway) snapshotPeer(groupID, sessionID string) (*gwpb.Peer, error) {
 }
 
 // addPeerLocked allocates an IP in ns, registers it with the TUN and the
-// WireGuard device, and records the peer. assignedName and sessionID must
-// already be validated (and checked for conflicts) by the caller. Must be
-// called with g.mu held.
-func (g *Gateway) addPeerLocked(ns *networkState, pubKeyHex, assignedName, sessionID string, cancel context.CancelFunc) (netip.Addr, error) {
+// WireGuard device, and records the peer. ctx and cancel bound the
+// registration's lifetime (see peerInfo.ctx). assignedName and sessionID
+// must already be validated (and checked for conflicts) by the caller. Must
+// be called with g.mu held.
+func (g *Gateway) addPeerLocked(ctx context.Context, cancel context.CancelFunc, ns *networkState, pubKeyHex, assignedName, sessionID string) (netip.Addr, error) {
 	if _, ok := g.peers[pubKeyHex]; ok {
 		return netip.Addr{}, status.AlreadyExistsErrorf("public key %s... is already registered", pubKeyHex[:8])
 	}
@@ -480,53 +416,28 @@ func (g *Gateway) addPeerLocked(ns *networkState, pubKeyHex, assignedName, sessi
 		return netip.Addr{}, status.InternalErrorf("add WireGuard peer: %s", err)
 	}
 
-	if assignedName != "" {
-		ns.namesMu.Lock()
-		ns.names[assignedName] = assignedIP
-		ns.namesMu.Unlock()
-	}
-	g.peers[pubKeyHex] = &peerInfo{
+	info := &peerInfo{
 		ip:           assignedIP,
 		networkState: ns,
 		assignedName: assignedName,
 		sessionID:    sessionID,
 		registeredAt: time.Now(),
+		ctx:          ctx,
 		cancel:       cancel,
 	}
+	ns.mu.Lock()
+	if assignedName != "" {
+		ns.names[assignedName] = assignedIP
+	}
+	ns.peers[assignedIP] = info
+	ns.mu.Unlock()
+	g.peers[pubKeyHex] = info
 	g.notifyWatchers()
 	return assignedIP, nil
 }
 
-// Deregister removes the calling peer from the gateway immediately. Well-behaved
-// clients should call this on clean shutdown rather than waiting for the
-// stale-peer cleanup cycle to reclaim the IP and DNS name.
-func (g *Gateway) Deregister(ctx context.Context, req *gwpb.DeregisterRequest) (*gwpb.DeregisterResponse, error) {
-	if _, err := g.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
-		return nil, err
-	}
-
-	if req.GetPublicKey() == "" {
-		return nil, status.InvalidArgumentError("public_key is required")
-	}
-	pubKeyHex := req.GetPublicKey()
-	if _, err := wgkeys.ParseHexKey(pubKeyHex); err != nil {
-		return nil, status.InvalidArgumentErrorf("invalid public_key: %s", err)
-	}
-
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	info, ok := g.peers[pubKeyHex]
-	if !ok {
-		return nil, status.NotFoundErrorf("peer %s... not registered", pubKeyHex[:8])
-	}
-	g.removePeerLocked(pubKeyHex, info)
-	return &gwpb.DeregisterResponse{}, nil
-}
-
-// List returns the peers currently registered by the caller's group. Every
-// Connect-registered peer has a session ID and is included, named or not;
-// peers from the deprecated Register RPC have no session ID and are omitted.
+// List returns the peers currently registered by the caller's group, named
+// or not.
 func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListResponse, error) {
 	claims, err := g.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
@@ -545,9 +456,6 @@ func (g *Gateway) List(ctx context.Context, req *gwpb.ListRequest) (*gwpb.ListRe
 
 	peers := make([]*gwpb.Peer, 0)
 	for pubKeyHex, info := range g.peers {
-		if info.sessionID == "" {
-			continue
-		}
 		ns := info.networkState
 		if ns.groupID != groupID {
 			continue
@@ -580,17 +488,27 @@ func (g *Gateway) getOrCreateNetwork(groupID, networkName string) (*networkState
 		groupID:  groupID,
 		index:    index,
 		names:    make(map[string]netip.Addr),
+		peers:    make(map[netip.Addr]*peerInfo),
 		nextHost: 2,
 	}
 
 	nameLookup := func(name string) (netip.Addr, bool) {
-		ns.namesMu.Lock()
+		ns.mu.Lock()
 		addr, ok := ns.names[name]
-		ns.namesMu.Unlock()
+		ns.mu.Unlock()
 		return addr, ok
 	}
-	if err := g.tun.startNetworkDNS(index, key, nameLookup); err != nil {
-		return nil, status.InternalErrorf("start DNS for network %q: %s", key, err)
+	peerContext := func(ip netip.Addr) (context.Context, bool) {
+		ns.mu.Lock()
+		info, ok := ns.peers[ip]
+		ns.mu.Unlock()
+		if !ok {
+			return nil, false
+		}
+		return info.ctx, true
+	}
+	if err := g.tun.startNetworkServices(index, key, g.hubServices, nameLookup, peerContext); err != nil {
+		return nil, status.InternalErrorf("start services for network %q: %s", key, err)
 	}
 
 	g.networks[key] = ns
@@ -674,22 +592,23 @@ func (g *Gateway) lastHandshakeTimes() (map[string]time.Time, error) {
 }
 
 // removePeerLocked removes a peer from the WireGuard device, the TUN, and the
-// DNS name map, and closes the peer's Connect stream if it has one. Must be
+// network's name and IP maps, and cancels the peer's context — ending its
+// Connect stream and any hub-service connections held on its behalf. Must be
 // called with g.mu held.
 func (g *Gateway) removePeerLocked(pubKeyHex string, info *peerInfo) {
 	if err := g.dev.IpcSet(fmt.Sprintf("public_key=%s\nremove=true\n", pubKeyHex)); err != nil {
 		log.Errorf("Remove WireGuard peer %s...: %s", pubKeyHex[:8], err)
 	}
 	g.tun.unregisterIP(info.ip)
+	ns := info.networkState
+	ns.mu.Lock()
 	if info.assignedName != "" {
-		info.networkState.namesMu.Lock()
-		delete(info.networkState.names, info.assignedName)
-		info.networkState.namesMu.Unlock()
+		delete(ns.names, info.assignedName)
 	}
+	delete(ns.peers, info.ip)
+	ns.mu.Unlock()
 	delete(g.peers, pubKeyHex)
-	if info.cancel != nil {
-		info.cancel()
-	}
+	info.cancel()
 	g.notifyWatchers()
 	log.Infof("Removed peer %s... (ip=%s name=%q session=%s)", pubKeyHex[:8], info.ip, info.assignedName, info.sessionID)
 }

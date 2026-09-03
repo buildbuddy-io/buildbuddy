@@ -617,7 +617,7 @@ func (f providerFunc) New(ctx context.Context, args *container.Init) (container.
 	return f(ctx, args)
 }
 
-func TestNewRunner_FirecrackerDoesNotConfigureVFSWorkspace(t *testing.T) {
+func TestNewRunner_FirecrackerConfiguresGuestVFSWorkspace(t *testing.T) {
 	env := newTestEnv(t)
 	p := &pool{
 		env:       env,
@@ -638,7 +638,7 @@ func TestNewRunner_FirecrackerDoesNotConfigureVFSWorkspace(t *testing.T) {
 	})
 
 	require.False(t, r.Workspace.Opts.UseVFS)
-	require.Empty(t, r.Workspace.Opts.VFSPrefetchMode)
+	require.Equal(t, workspace.VFSPrefetchModeAll, r.Workspace.Opts.VFSPrefetchMode)
 }
 
 // Returns containers that only consume disk resources when paused (like firecracker).
