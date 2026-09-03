@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -581,13 +582,23 @@ func (q *PriorityTaskScheduler) CancelTaskReservation(ctx context.Context, taskI
 	}
 }
 
-func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, execTask *repb.ExecutionTask) context.Context {
+func (q *PriorityTaskScheduler) propagateExecutionTaskValuesToContext(ctx context.Context, scheduledTask *repb.ScheduledTask) context.Context {
 	// Make sure we identify any executor cache requests as being from the
 	// executor, and also set the client origin (e.g. internal / external).
 	ctx = usageutil.WithLocalServerLabels(ctx)
 
+	execTask := scheduledTask.GetExecutionTask()
 	if execTask.GetJwt() != "" {
 		ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, execTask.GetJwt())
+		if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+			jwtGroupID := u.GetGroupID()
+			taskGroupID := scheduledTask.GetSchedulingMetadata().GetTaskGroupId()
+			if jwtGroupID != "" && jwtGroupID != interfaces.AuthAnonymousUser && jwtGroupID == taskGroupID {
+				ctx = claims.AuthContext(ctx, &claims.Claims{GroupID: jwtGroupID})
+			} else if jwtGroupID != taskGroupID {
+				log.CtxWarningf(ctx, "Ignoring trusted JWT group ID %q because it does not match scheduled task group ID %q", jwtGroupID, taskGroupID)
+			}
+		}
 	}
 	rmd := execTask.GetRequestMetadata()
 	if rmd == nil {
@@ -615,7 +626,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 	}
 
 	execTask := st.ExecutionTask
-	ctx = q.propagateExecutionTaskValuesToContext(ctx, execTask)
+	ctx = q.propagateExecutionTaskValuesToContext(ctx, st)
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		ctx = log.EnrichContext(ctx, "group_id", u.GetGroupID())
 	}

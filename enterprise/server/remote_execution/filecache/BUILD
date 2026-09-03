@@ -57,6 +57,7 @@ go_test(
     deps = [
         ":filecache",
         "//proto:remote_execution_go_proto",
+        "//server/interfaces",
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/testutil/testdigest",

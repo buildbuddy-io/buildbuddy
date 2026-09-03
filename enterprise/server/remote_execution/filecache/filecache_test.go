@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -109,6 +110,25 @@ func TestFilecache(t *testing.T) {
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
+}
+
+func TestFileCacheUsesTrustedTaskGroupID(t *testing.T) {
+	const groupID = "GR12345"
+	ctx := claims.AuthContext(t.Context(), &claims.Claims{GroupID: groupID})
+	fcDir := testfs.MakeTempDir(t)
+	fc, err := filecache.NewFileCache(fcDir, 100_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc.Close() })
+	fc.WaitForDirectoryScanToComplete()
+
+	workspaceDir := testfs.MakeTempDir(t)
+	source := writeFileContent(t, workspaceDir, "source", "source", false)
+	node := nodeFromString("source", false)
+	require.NoError(t, fc.AddFile(ctx, node, source))
+
+	cacheFileName := node.GetDigest().GetHash()
+	require.FileExists(t, filepath.Join(fcDir, groupID, cacheFileName))
+	require.NoFileExists(t, filepath.Join(fcDir, interfaces.AuthAnonymousUser, cacheFileName))
 }
 
 func TestFileCacheGroupIsolation(t *testing.T) {

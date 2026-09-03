@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -36,6 +38,77 @@ func newTaskReservationRequest(taskID, taskGroupID string, priority int32) *scpb
 			TaskGroupId: taskGroupID,
 			Priority:    priority,
 		},
+	}
+}
+
+func jwtForGroup(t *testing.T, groupID string) string {
+	authCtx := claims.AuthContextWithJWT(t.Context(), &claims.Claims{GroupID: groupID}, nil)
+	token, ok := authCtx.Value(authutil.ContextTokenStringKey).(string)
+	require.True(t, ok)
+	require.NotEmpty(t, token)
+	return token
+}
+
+func TestPropagateExecutionTaskValuesToContext_TrustedGroupID(t *testing.T) {
+	const authenticatedGroupID = "GR12345"
+	flags.Set(t, "auth.jwt_key", "server-test-key")
+	authenticatedJWT := jwtForGroup(t, authenticatedGroupID)
+	anonymousJWT := jwtForGroup(t, interfaces.AuthAnonymousUser)
+	// Model a self-hosted executor which does not have the server's signing key.
+	flags.Set(t, "auth.jwt_key", "executor-test-key")
+
+	for _, test := range []struct {
+		name        string
+		jwt         string
+		taskGroupID string
+		wantGroupID string
+	}{
+		{
+			name:        "matching authenticated group",
+			jwt:         authenticatedJWT,
+			taskGroupID: authenticatedGroupID,
+			wantGroupID: authenticatedGroupID,
+		},
+		{
+			name:        "mismatched scheduled group",
+			jwt:         authenticatedJWT,
+			taskGroupID: "GR67890",
+		},
+		{
+			name:        "anonymous group",
+			jwt:         anonymousJWT,
+			taskGroupID: interfaces.AuthAnonymousUser,
+		},
+		{
+			name:        "missing JWT",
+			taskGroupID: authenticatedGroupID,
+		},
+		{
+			name:        "invalid JWT",
+			jwt:         "invalid",
+			taskGroupID: authenticatedGroupID,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			q := &PriorityTaskScheduler{exec: NewFakeExecutor()}
+			ctx := q.propagateExecutionTaskValuesToContext(t.Context(), &repb.ScheduledTask{
+				ExecutionTask: &repb.ExecutionTask{Jwt: test.jwt},
+				SchedulingMetadata: &scpb.SchedulingMetadata{
+					TaskGroupId: test.taskGroupID,
+				},
+			})
+
+			c, err := claims.ClaimsFromContext(ctx)
+			if test.wantGroupID == "" {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, test.wantGroupID, c.GetGroupID())
+			require.NotEqual(t, interfaces.AuthAnonymousUser, c.GetGroupID())
+			require.Empty(t, c.GetUserID())
+			require.Empty(t, c.GetCapabilities())
+		})
 	}
 }
 
