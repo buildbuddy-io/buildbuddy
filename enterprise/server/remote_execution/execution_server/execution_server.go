@@ -53,7 +53,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -105,6 +107,14 @@ const (
 	// firecrackerExt4ConverterName is the converter binary's name in the
 	// synthetic action's input root.
 	firecrackerExt4ConverterName = "oci_to_ext4"
+	// firecrackerExt4ImageCacheMaxEntries bounds the number of remembered
+	// conversion action digests.
+	firecrackerExt4ImageCacheMaxEntries = 1000
+	// firecrackerExt4ImageCacheTTL bounds how long a conversion action digest
+	// is reused without re-running the nested Execute. Re-running it renews
+	// the Action Cache entry and notices if the result was evicted, in which
+	// case executors would otherwise keep converting the image locally.
+	firecrackerExt4ImageCacheTTL = 10 * time.Minute
 )
 
 var (
@@ -208,6 +218,10 @@ type ExecutionServer struct {
 	taskSizer                         interfaces.TaskSizer
 	actionCacheClient                 repb.ActionCacheClient
 	clock                             clockwork.Clock
+	// firecrackerExt4Images remembers the digests of recent image conversion
+	// actions so that Executes reusing an image skip preparing and running
+	// the conversion again.
+	firecrackerExt4Images lru.LRU[*firecrackerExt4Image]
 
 	mu          sync.Mutex
 	teeLimiters map[string]*rate.Limiter
@@ -260,7 +274,18 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 	if actionCacheClient == nil {
 		return nil, status.FailedPreconditionErrorf("An action cache client is required for remote execution")
 	}
+	firecrackerExt4Images, err := lru.New[*firecrackerExt4Image](&lru.Config[*firecrackerExt4Image]{
+		SizeFn:     func(*firecrackerExt4Image) int64 { return 1 },
+		MaxSize:    firecrackerExt4ImageCacheMaxEntries,
+		TTL:        firecrackerExt4ImageCacheTTL,
+		Clock:      env.GetClock(),
+		ThreadSafe: true,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &ExecutionServer{
+		firecrackerExt4Images:             firecrackerExt4Images,
 		env:                               env,
 		cache:                             cache,
 		rdb:                               env.GetRemoteExecutionRedisClient(),
@@ -823,35 +848,6 @@ func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *
 		return nil, status.FailedPreconditionError("Firecracker ext4 conversion requires the remote asset API")
 	}
 
-	// Executors fetch snapshot chunks from CAS by BLAKE3 digest, so the
-	// synthetic action uses BLAKE3 regardless of the client's digest function
-	// so that its chunk outputs land where the executor looks for them.
-	digestFunction := repb.DigestFunction_BLAKE3
-	// The checksum qualifier lets the fetch server return the binary digest
-	// directly from CAS, so the binary is only downloaded when it is missing.
-	fetchRsp, err := fetchServer.FetchBlob(ctx, &rapb.FetchBlobRequest{
-		InstanceName:   req.GetInstanceName(),
-		Uris:           []string{binaryURL},
-		Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: "blake3-" + base64.StdEncoding.EncodeToString(binaryHash)}},
-		DigestFunction: digestFunction,
-	})
-	if err != nil {
-		return nil, status.WrapError(err, "fetch ext4 converter")
-	}
-	if fetchRsp.GetStatus().GetCode() != int32(gcodes.OK) {
-		return nil, status.UnavailableErrorf("fetch ext4 converter from %s: %s", binaryURL, fetchRsp.GetStatus().GetMessage())
-	}
-	inputRootDigest, err := cachetools.UploadProto(ctx, s.env.GetByteStreamClient(), req.GetInstanceName(), digestFunction, &repb.Directory{
-		Files: []*repb.FileNode{{
-			Name:         firecrackerExt4ConverterName,
-			Digest:       fetchRsp.GetBlobDigest(),
-			IsExecutable: true,
-		}},
-	})
-	if err != nil {
-		return nil, status.WrapError(err, "upload ext4 converter input root")
-	}
-
 	env, err := rexec.MakeEnv(
 		"BUILDBUDDY_OCI_USERNAME="+props.ContainerRegistryUsername,
 		"BUILDBUDDY_OCI_PASSWORD="+props.ContainerRegistryPassword,
@@ -893,12 +889,61 @@ func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *
 		EnvironmentVariables: env,
 		OutputPaths:          []string{snaputil.ContainerImageManifestOutputPath, snaputil.ContainerImageChunksOutputPath},
 	}
+	// The input root is filled in once the converter has been fetched.
 	syntheticAction := &repb.Action{
-		InputRootDigest: inputRootDigest,
-		Platform:        syntheticPlatform,
-		Timeout:         durationpb.New(30 * time.Minute),
-		Salt:            []byte(config.ActionSalt),
+		Platform: syntheticPlatform,
+		Timeout:  durationpb.New(30 * time.Minute),
+		Salt:     []byte(config.ActionSalt),
 	}
+
+	// Firecracker actions tend to reuse a few images, so remember recent
+	// digests rather than fetching the converter, uploading the action, and
+	// running the nested Execute for every Execute. The key covers everything
+	// that determines the digest, with the converter URL and hash standing in
+	// for the input root, plus the group and instance name because the result
+	// lives in their Action Cache.
+	commandBytes, err := proto.Marshal(syntheticCommand)
+	if err != nil {
+		return nil, status.WrapError(err, "marshal ext4 conversion command")
+	}
+	actionBytes, err := proto.Marshal(syntheticAction)
+	if err != nil {
+		return nil, status.WrapError(err, "marshal ext4 conversion action")
+	}
+	cacheKey := hash.Strings(s.getGroupIDForMetrics(ctx), req.GetInstanceName(), binaryURL, binaryBLAKE3, string(commandBytes), string(actionBytes))
+	if image, ok := s.firecrackerExt4Images.Get(cacheKey); ok {
+		return image, nil
+	}
+
+	// Executors fetch snapshot chunks from CAS by BLAKE3 digest, so the
+	// synthetic action uses BLAKE3 regardless of the client's digest function
+	// so that its chunk outputs land where the executor looks for them.
+	digestFunction := repb.DigestFunction_BLAKE3
+	// The checksum qualifier lets the fetch server return the binary digest
+	// directly from CAS, so the binary is only downloaded when it is missing.
+	fetchRsp, err := fetchServer.FetchBlob(ctx, &rapb.FetchBlobRequest{
+		InstanceName:   req.GetInstanceName(),
+		Uris:           []string{binaryURL},
+		Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: "blake3-" + base64.StdEncoding.EncodeToString(binaryHash)}},
+		DigestFunction: digestFunction,
+	})
+	if err != nil {
+		return nil, status.WrapError(err, "fetch ext4 converter")
+	}
+	if fetchRsp.GetStatus().GetCode() != int32(gcodes.OK) {
+		return nil, status.UnavailableErrorf("fetch ext4 converter from %s: %s", binaryURL, fetchRsp.GetStatus().GetMessage())
+	}
+	inputRootDigest, err := cachetools.UploadProto(ctx, s.env.GetByteStreamClient(), req.GetInstanceName(), digestFunction, &repb.Directory{
+		Files: []*repb.FileNode{{
+			Name:         firecrackerExt4ConverterName,
+			Digest:       fetchRsp.GetBlobDigest(),
+			IsExecutable: true,
+		}},
+	})
+	if err != nil {
+		return nil, status.WrapError(err, "upload ext4 converter input root")
+	}
+	syntheticAction.InputRootDigest = inputRootDigest
 	syntheticActionResourceName, err := rexec.Prepare(ctx, s.env, req.GetInstanceName(), digestFunction, syntheticAction, syntheticCommand, "")
 	if err != nil {
 		return nil, status.WrapError(err, "prepare ext4 conversion action")
@@ -941,10 +986,12 @@ func (s *ExecutionServer) prepareFirecrackerExt4Image(ctx context.Context, req *
 		}
 		return nil, status.UnknownErrorf("ext4 conversion action exited with code %d: %s", exitCode, result.Stderr)
 	}
-	return &firecrackerExt4Image{
+	image := &firecrackerExt4Image{
 		actionDigest: syntheticActionResourceName.GetDigest(),
 		experiment:   experiment,
-	}, nil
+	}
+	s.firecrackerExt4Images.Add(cacheKey, image)
+	return image, nil
 }
 
 func (s *ExecutionServer) teeExecution(ctx context.Context, originalExecutionID string, req *repb.ExecuteRequest, action *repb.Action) error {

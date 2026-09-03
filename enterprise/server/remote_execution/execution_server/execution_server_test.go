@@ -79,9 +79,11 @@ type completedExecutionClient struct {
 
 	executeRequest  *repb.ExecuteRequest
 	executeMetadata metadata.MD
+	executeCount    int
 }
 
 func (c *completedExecutionClient) Execute(ctx context.Context, req *repb.ExecuteRequest, _ ...grpc.CallOption) (repb.Execution_ExecuteClient, error) {
+	c.executeCount++
 	c.executeRequest = req.CloneVT()
 	c.executeMetadata, _ = metadata.FromOutgoingContext(ctx)
 	response, err := anypb.New(&repb.ExecuteResponse{Result: &repb.ActionResult{}})
@@ -337,25 +339,29 @@ func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
 			// A Firecracker action waits for the synthetic conversion action
 			// before its task is sent to the scheduler.
 			const instanceName = "firecracker-test"
-			actionResourceName := uploadActionWithCommand(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, &repb.Action{
-				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			firecrackerPlatform := func(containerImage string) *repb.Platform {
+				return &repb.Platform{Properties: []*repb.Platform_Property{
 					{Name: platform.WorkloadIsolationPropertyName, Value: string(platform.FirecrackerContainerType)},
 					{Name: platform.CPUArchitecturePropertyName, Value: platform.ARM64ArchitectureName},
-					{Name: "container-image", Value: "docker://example.com/private/image:latest"},
+					{Name: "container-image", Value: containerImage},
 					{Name: "container-registry-username", Value: "user"},
 					{Name: "container-registry-password", Value: "password"},
-				}},
-			}, &repb.Command{Arguments: []string{"original"}})
+				}}
+			}
 			client := repb.NewExecutionClient(conn)
-			executionStream, err := client.Execute(clientCtx, &repb.ExecuteRequest{
-				InstanceName:   instanceName,
-				ActionDigest:   actionResourceName.GetDigest(),
-				DigestFunction: repb.DigestFunction_SHA256,
-			})
-			require.NoError(t, err)
-			_, err = executionStream.Recv()
-			require.NoError(t, err)
-			require.NoError(t, executionStream.CloseSend())
+			execute := func(action *repb.Action, command *repb.Command) {
+				actionResourceName := uploadActionWithCommand(clientCtx, t, env, instanceName, repb.DigestFunction_SHA256, action, command)
+				executionStream, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+					InstanceName:   instanceName,
+					ActionDigest:   actionResourceName.GetDigest(),
+					DigestFunction: repb.DigestFunction_SHA256,
+				})
+				require.NoError(t, err)
+				_, err = executionStream.Recv()
+				require.NoError(t, err)
+				require.NoError(t, executionStream.CloseSend())
+			}
+			execute(&repb.Action{Platform: firecrackerPlatform("docker://example.com/private/image:latest")}, &repb.Command{Arguments: []string{"original"}})
 
 			// The nested Execute call allows an Action Cache lookup so a
 			// previously converted image is reused, and it is attributed to
@@ -418,6 +424,21 @@ func TestExecute_FirecrackerExt4ConversionAction(t *testing.T) {
 			} else {
 				require.Contains(t, task.GetExperiments(), "remote_execution.firecracker_ext4_conversion_config:enabled")
 			}
+
+			// A different action using the same image reuses the remembered
+			// conversion digest instead of running the synthetic action again.
+			execute(&repb.Action{Platform: firecrackerPlatform("docker://example.com/private/image:latest")}, &repb.Command{Arguments: []string{"second"}})
+			require.Equal(t, 1, remoteExecutionClient.executeCount)
+			require.Len(t, scheduler.scheduleReqs, 2)
+			secondTask := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(scheduler.scheduleReqs[1].GetSerializedTask(), secondTask))
+			require.True(t, proto.Equal(syntheticExecuteRequest.GetActionDigest(), secondTask.GetFirecrackerExt4ImageActionDigest()))
+
+			// A different image is a different conversion, so it runs its own
+			// synthetic action.
+			execute(&repb.Action{Platform: firecrackerPlatform("docker://example.com/private/other:latest")}, &repb.Command{Arguments: []string{"original"}})
+			require.Equal(t, 2, remoteExecutionClient.executeCount)
+			require.NotEqual(t, syntheticExecuteRequest.GetActionDigest().GetHash(), remoteExecutionClient.executeRequest.GetActionDigest().GetHash())
 		})
 	}
 }
