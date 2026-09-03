@@ -17,9 +17,11 @@ import TextInput from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
+import format from "../../../app/format/format";
 import rpcService, { CancelablePromise, UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
+import { timestampToDate } from "../../../app/util/proto";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
 import { withKey } from "../../../app/util/react";
@@ -646,6 +648,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                   <span className="untitled-key">Untitled key</span>
                 )}
               </div>
+              {renderCreationDetails(key)}
               <div
                 className="api-key-capabilities"
                 title={key.visibleToDevelopers ? "Visible to non-admin members of this organization" : undefined}>
@@ -769,6 +772,17 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities += " (*)";
   }
   return capabilities;
+}
+
+// Renders creation details as a subtitle under the key label.
+function renderCreationDetails(apiKey: api_key.ApiKey) {
+  const metadata = apiKey.creationMetadata;
+  if (!metadata) return null;
+  const parts = ["Created"];
+  if (metadata.createdBy) parts.push(`by ${metadata.createdBy}`);
+  if (metadata.createdAt) parts.push(`on ${format.formatDate(timestampToDate(metadata.createdAt))}`);
+  if (parts.length == 1) return null;
+  return <div className="api-key-creation-details">{parts.join(" ")}</div>;
 }
 
 function newFormState<T extends ApiKeyFields>(request: T): FormState<T> {
