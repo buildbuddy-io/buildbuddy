@@ -72,6 +72,7 @@ type sharedDirectoryContextKey struct{}
 
 var (
 	enableAlwaysClone                = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
+	alwaysAllowHardlinks             = flag.Bool("executor.local_cache_always_allow_hardlinks", false, "If true, always permit hardlinks to and from the local filecache, regardless of authentication status. Only enable this on trusted, single-tenant executors.")
 	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
 	subdirPrefixLength               = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
 	enableDiskFallbackOnStartup      = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
@@ -1139,7 +1140,7 @@ func (c *fileCache) tempPath(name string) (string, error) {
 }
 
 func cloneOrLink(keyPrefix, source, destination string) error {
-	if keyPrefix == interfaces.AuthAnonymousUser || *enableAlwaysClone {
+	if *enableAlwaysClone || (keyPrefix == interfaces.AuthAnonymousUser && !*alwaysAllowHardlinks) {
 		if err := fastcopy.Clone(source, destination); err != nil {
 			return wrapOSError(err, "clone")
 		}

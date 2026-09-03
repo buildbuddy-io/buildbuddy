@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
@@ -109,6 +110,59 @@ func TestFilecache(t *testing.T) {
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
+}
+
+func TestFilecacheAlwaysAllowHardlinksDarwin(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("test runs on macOS only")
+	}
+	flags.Set(t, "executor.local_cache_use_hardlinks", true)
+
+	for _, test := range []struct {
+		name                 string
+		alwaysAllowHardlinks bool
+		expectHardlinks      bool
+	}{
+		{
+			name:                 "disabled",
+			alwaysAllowHardlinks: false,
+			expectHardlinks:      false,
+		},
+		{
+			name:                 "enabled",
+			alwaysAllowHardlinks: true,
+			expectHardlinks:      true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.local_cache_always_allow_hardlinks", test.alwaysAllowHardlinks)
+
+			ctx := context.Background()
+			fcDir := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(fcDir, 100_000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+
+			workspaceDir := testfs.MakeTempDir(t)
+			source := writeFileContent(t, workspaceDir, "source", "source", false)
+			node := nodeFromString("source", false)
+			require.NoError(t, fc.AddFile(ctx, node, source))
+
+			cached := filepath.Join(fcDir, interfaces.AuthAnonymousUser, node.GetDigest().GetHash())
+			output := filepath.Join(workspaceDir, "output")
+			require.True(t, fc.FastLinkFile(ctx, node, output))
+
+			sourceInfo, err := os.Stat(source)
+			require.NoError(t, err)
+			cachedInfo, err := os.Stat(cached)
+			require.NoError(t, err)
+			outputInfo, err := os.Stat(output)
+			require.NoError(t, err)
+			require.Equal(t, test.expectHardlinks, os.SameFile(sourceInfo, cachedInfo))
+			require.Equal(t, test.expectHardlinks, os.SameFile(cachedInfo, outputInfo))
+		})
+	}
 }
 
 func TestFileCacheGroupIsolation(t *testing.T) {
