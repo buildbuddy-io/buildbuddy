@@ -131,10 +131,14 @@ go_test(
         "test.Pool": "bare",
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
-        # These tests can get pretty expensive when running on a cold executor
-        # because of OCI image conversion. Size the task manually to avoid OOM.
+        # Size the task manually so the scheduler packs shards sensibly on the
+        # bare pool. Measured over a day of CI runs (2026-09-03): shards peak
+        # at ~2.5 cores and 4.8GB RSS (with --config=race), p90 2.2GB. The old
+        # "10 compute units" (10 CPU / 25GB) reserved ~4x what shards use and
+        # capped each bare executor at 4 concurrent shards.
         # TODO: include test ext4 images as deps to avoid conversion.
-        "test.EstimatedComputeUnits": "10",
+        "test.EstimatedCPU": "4",
+        "test.EstimatedMemory": "8GB",
         "test.no-sandbox": "",  # Firecracker is not compatible with Bazel's sandbox environment
     },
     shard_count = 30,
