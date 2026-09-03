@@ -8,7 +8,7 @@ archive_override(
     module_name = "rules_distroless",
     integrity = "sha256-9dFC6tHiNx2zP1VpG2q0B3RKusVuuSzndDF2yZJ+dwU=",
     patch_strip = 1,
-    patches = ["//buildpatches:rules_distroless.patch"],
+    patches = ["//buildpatches/bazel_dep:rules_distroless.patch"],
     strip_prefix = "rules_distroless-a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3",
     urls = ["https://github.com/bazel-contrib/rules_distroless/archive/a9e2012bf5935f7a8fa9c17a768abbbbd135f2a3.tar.gz"],
 )
