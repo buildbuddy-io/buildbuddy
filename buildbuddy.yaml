@@ -103,6 +103,17 @@ actions:
           - "*"
         merge_with_base_interval: 3h
     steps:
+      # The race detector makes firecracker_test ~5x slower (85 min of bare
+      # executor time per run vs 17 min). Run the fast variant on every PR and
+      # push; the race variant runs nightly below.
+      - run: "bazel test //... --config=linux-workflows --test_tag_filters=+bare --build_tag_filters=+bare"
+    allow_concurrent_runs: false
+  - name: Baremetal tests (race)
+    container_image: ubuntu-22.04
+    triggers:
+      schedule:
+        crons: ["0 6 * * *"] # 6:00 UTC nightly
+    steps:
       - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare"
     allow_concurrent_runs: false
   - name: Nightly non-determinism check
