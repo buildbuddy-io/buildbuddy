@@ -1,0 +1,10 @@
+--- a/go/private/rules/transition.bzl	2026-09-02 14:06:04.684973639 +0000
++++ b/go/private/rules/transition.bzl	2026-09-02 14:06:04.684973639 +0000
+@@ -192,7 +192,6 @@
+ )
+ 
+ _common_reset_transition_dict = dict({
+-    "//go/private:request_nogo": False,
+     "//go/config:static": False,
+     "//go/config:msan": False,
+     "//go/config:race": False,
