@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaploader"
@@ -21,19 +23,39 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 const maxFilecacheSizeBytes = 20_000_000
+
+type failingGetActionCacheClient struct {
+	repb.ActionCacheClient
+}
+
+func (f failingGetActionCacheClient) GetActionResult(context.Context, *repb.GetActionResultRequest, ...grpc.CallOption) (*repb.ActionResult, error) {
+	return nil, status.InternalError("action cache lookup failed")
+}
+
+type failingWriteByteStreamClient struct {
+	bspb.ByteStreamClient
+}
+
+func (f failingWriteByteStreamClient) Write(context.Context, ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	return nil, status.InternalError("bytestream write failed")
+}
 
 func init() {
 	// Ensure that we allocate enough memory for the mmap LRU.
@@ -43,6 +65,36 @@ func init() {
 }
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
+	env := setupBaseEnv(t)
+	setupCacheRPC(t, env)
+	return env
+}
+
+func setupPebbleEnv(t *testing.T) *testenv.TestEnv {
+	env := setupBaseEnv(t)
+	const snapshotPartitionID = "snapshots"
+	const devboxPartitionID = "devbox"
+	pc, err := pebble_cache.NewPebbleCache(env, &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  1_000_000_000,
+		Partitions: []disk.Partition{
+			{ID: snapshotPartitionID, MaxSizeBytes: 1_000_000_000},
+			{ID: devboxPartitionID, MaxSizeBytes: 1_000_000_000},
+		},
+		PartitionMappings: []disk.PartitionMapping{
+			{Prefix: snaputil.SnapshotPartitionPrefix, PartitionID: snapshotPartitionID},
+			{Prefix: snaputil.DevboxPartitionPrefix, PartitionID: devboxPartitionID},
+		},
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	t.Cleanup(func() { require.NoError(t, pc.Stop()) })
+	env.SetCache(pc)
+	setupCacheRPC(t, env)
+	return env
+}
+
+func setupBaseEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
 	env := testenv.GetTestEnv(t)
 	filecacheDir := testfs.MakeTempDir(t)
@@ -50,10 +102,13 @@ func setupEnv(t *testing.T) *testenv.TestEnv {
 	require.NoError(t, err)
 	fc.WaitForDirectoryScanToComplete()
 	env.SetFileCache(fc)
+	return env
+}
+
+func setupCacheRPC(t *testing.T, env *testenv.TestEnv) {
 	_, run, lis := testenv.RegisterLocalGRPCServer(t, env)
 	testcache.Setup(t, env, lis)
 	go run()
-	return env
 }
 
 func TestPackAndUnpackChunkedFiles(t *testing.T) {
@@ -783,6 +838,182 @@ func TestGetSnapshot_MixOfLocalAndRemoteChunks(t *testing.T) {
 		expectedBuf := []byte("2645")
 		require.ElementsMatch(t, expectedBuf, readBufC)
 	}
+}
+
+func TestUnpackContainerImage_RemoteSnapshotDisabledExceptUndirtiedRootfsChunks(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+	flags.Set(t, "executor.snaploader_max_eager_fetches_per_sec", 0)
+
+	env := setupPebbleEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+	resetLocalFileCache := func() {
+		fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), maxFilecacheSizeBytes, false)
+		require.NoError(t, err)
+		fc.WaitForDirectoryScanToComplete()
+		env.SetFileCache(fc)
+	}
+
+	instanceName := "rbe-instance"
+	workDir := testfs.MakeTempDir(t)
+	imageRef := "example.com/image:latest"
+	const imageContents = "0123456789"
+	const chunkSize = 1
+	imagePath := testfs.WriteFile(t, workDir, "rootfs.ext4", imageContents)
+
+	// Cache the image using the task's original instance name.
+	imageCOW, err := snaploader.UnpackContainerImage(
+		ctx, loader, instanceName, imageRef, imagePath,
+		testfs.MakeDirAll(t, workDir, "image-chunks"), chunkSize,
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
+	require.NoError(t, err)
+	require.NoError(t, imageCOW.Close())
+
+	// Force subsequent image lookups and chunk reads to use the remote cache.
+	resetLocalFileCache()
+
+	// Container image manifests are scoped to the original instance name.
+	// Lookups from other instance names should fail.
+	_, err = snaploader.GetCachedContainerImage(ctx, loader, "other-instance", imageRef, true)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err))
+
+	// Lookups from the original instance name should succeed.
+	imageSnapshot, err := snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, true)
+	require.NoError(t, err)
+	rootfs, err := snaploader.UnpackContainerImageSnapshot(
+		ctx, loader, imageSnapshot, testfs.MakeDirAll(t, workDir, "rootfs-chunks"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, rootfs.Close()) })
+
+	// Dirty one chunk without reading the rest, then cache the task
+	// snapshot locally. Its untouched chunks remain only in Pebble.
+	_, err = rootfs.WriteAt([]byte("X"), 1)
+	require.NoError(t, err)
+	taskKeys := keysWithInstanceName(t, ctx, loader, instanceName)
+	localSnapshotOpts := makeFakeSnapshot(t, workDir, false /*remoteEnabled*/, map[string]*copy_on_write.COWStore{
+		"rootfs.ext4": rootfs,
+	}, "")
+	require.NoError(t, loader.CacheSnapshot(ctx, taskKeys.GetBranchKey(), localSnapshotOpts))
+
+	// Simulate a RBE action that doesn't support remote snapshots for dirtied chunks.
+	// Immutable rootfs chunks should still be readable from the remote cache.
+	localSnapshot, err := loader.GetSnapshot(ctx, taskKeys, &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:   false,
+		SupportsRemoteManifest: false,
+		ReadPolicy:             platform.ReadLocalSnapshotFirst,
+	})
+	require.NoError(t, err)
+	localRootfs, err := snaploader.UnpackContainerImageSnapshot(
+		ctx, loader, localSnapshot, testfs.MakeDirAll(t, workDir, "local-snapshot-chunks"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, localRootfs.Close()) })
+	require.Equal(t, []byte("0X23456789"), mustReadStore(t, localRootfs))
+
+	// Saving the mixed rootfs remotely should produce a self-contained
+	// snapshot: immutable image chunks and the dirty chunk are all visible
+	// through the task instance's partition.
+	remoteSnapshotOpts := makeFakeSnapshot(t, workDir, true /*remoteEnabled*/, map[string]*copy_on_write.COWStore{
+		"rootfs.ext4": localRootfs,
+	}, "")
+	require.NoError(t, loader.CacheSnapshot(ctx, taskKeys.GetBranchKey(), remoteSnapshotOpts))
+	resetLocalFileCache()
+	remoteSnapshot, err := loader.GetSnapshot(ctx, taskKeys, &snaploader.GetSnapshotOptions{
+		SupportsRemoteChunks:   true,
+		SupportsRemoteManifest: true,
+		ReadPolicy:             platform.AlwaysReadNewestSnapshot,
+	})
+	require.NoError(t, err)
+	remoteRootfs, err := snaploader.UnpackContainerImageSnapshot(
+		ctx, loader, remoteSnapshot, testfs.MakeDirAll(t, workDir, "remote-snapshot-chunks"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, remoteRootfs.Close()) })
+	require.Equal(t, []byte("0X23456789"), mustReadStore(t, remoteRootfs))
+}
+
+func TestUnpackContainerImage_UnpackingFromCacheIsBestEffort(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+	for _, tc := range []struct {
+		name      string
+		failCache func(env *testenv.TestEnv)
+	}{
+		{
+			name: "cache read error",
+			failCache: func(env *testenv.TestEnv) {
+				env.SetActionCacheClient(failingGetActionCacheClient{env.GetActionCacheClient()})
+			},
+		},
+		{
+			name: "cache write error",
+			failCache: func(env *testenv.TestEnv) {
+				env.SetByteStreamClient(failingWriteByteStreamClient{env.GetByteStreamClient()})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := setupPebbleEnv(t)
+			ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+			require.NoError(t, err)
+			tc.failCache(env)
+			loader, err := snaploader.New(env)
+			require.NoError(t, err)
+
+			workDir := testfs.MakeTempDir(t)
+			imagePath := makeRandomFile(t, workDir, "rootfs.ext4", 10)
+			expected, err := os.ReadFile(imagePath)
+			require.NoError(t, err)
+			cow, err := snaploader.UnpackContainerImage(
+				ctx, loader, "task-instance", "example.com/image:latest", imagePath,
+				testfs.MakeDirAll(t, workDir, "chunks"), 1,
+				snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
+
+			// Even though there was a cache error, the image should still be unpacked, falling back to re-pulling and
+			// converting the image.
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, cow.Close()) })
+			require.Equal(t, expected, mustReadStore(t, cow))
+		})
+	}
+}
+
+func TestUnpackContainerImage_CleansOutputDirBeforeUnpack(t *testing.T) {
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", true)
+
+	env := setupPebbleEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), env.GetAuthenticator())
+	require.NoError(t, err)
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+
+	workDir := testfs.MakeTempDir(t)
+	const imageRef = "example.com/image:latest"
+	const imageContents = "0123456789"
+	imagePath := testfs.WriteFile(t, workDir, "rootfs.ext4", imageContents)
+
+	// Populate the container-image cache.
+	cow, err := snaploader.UnpackContainerImage(
+		ctx, loader, "task-instance", imageRef, imagePath,
+		testfs.MakeDirAll(t, workDir, "initial-chunks"), 1,
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
+	require.NoError(t, err)
+	require.NoError(t, cow.Close())
+
+	// Leave a stale output directory. This should not cause unpack failures.
+	outDir := testfs.MakeDirAll(t, workDir, "cached-chunks")
+	staleRootfsDir := testfs.MakeDirAll(t, outDir, "rootfs.ext4")
+	testfs.WriteFile(t, staleRootfsDir, "partial", "stale")
+
+	// Use a nonexistent EXT4 path to prove the cached snapshot is used. If the
+	// stale directory caused a fallback conversion, this call would fail.
+	cow, err = snaploader.UnpackContainerImage(
+		ctx, loader, "task-instance", imageRef, filepath.Join(workDir, "missing.ext4"), outDir, 1,
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cow.Close()) })
+	require.Equal(t, []byte(imageContents), mustReadStore(t, cow))
 }
 
 func TestMergeQueueBranch(t *testing.T) {

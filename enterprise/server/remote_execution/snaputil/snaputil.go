@@ -68,6 +68,11 @@ const (
 
 	ConvertToCOWConcurrency       = 8
 	WriteSnapshotChunkConcurrency = 8
+
+	// Experiment names controlling whether a Firecracker task may read and
+	// write its chunked container image in the remote cache, regardless of whether remote snapshots are enabled.
+	RemoteContainerImageReadsExperiment  = "executor.remote_container_image_reads_enabled"
+	RemoteContainerImageWritesExperiment = "executor.remote_container_image_writes_enabled"
 )
 
 // ChunkSource represents how a snapshot chunk was initialized

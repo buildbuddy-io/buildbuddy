@@ -213,6 +213,7 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 		t.Error(err)
 	}
 	env.SetCache(dc)
+
 	casServer, err := content_addressable_storage_server.NewContentAddressableStorageServer(env)
 	if err != nil {
 		t.Error(err)
@@ -600,8 +601,6 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 
 func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	ctx := context.Background()
-	// Keep snapshot sharing local-only to simplify test setup.
-	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 
 	// Mock requests to the container registry.
@@ -641,10 +640,13 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 		},
 		ExecutorConfig: getExecutorConfig(t),
 	}
+	instanceName := snaputil.SnapshotPartitionPrefix + "/instance"
 	newContainer := func() *firecracker.FirecrackerContainer {
 		containerOpts := opts
 		containerOpts.ActionWorkingDirectory = testfs.MakeTempDir(t)
-		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, containerOpts)
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+			ExecuteRequest: &repb.ExecuteRequest{InstanceName: instanceName},
+		}, containerOpts)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, c.Remove(context.Background()))
@@ -668,11 +670,10 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	// of the cache entry matters.
 	testfs.WriteRandomString(t, workDir, "containerfs.ext4", 4*chunkSize)
 	ext4Path := filepath.Join(workDir, "containerfs.ext4")
-	instanceName := coldContainer.SnapshotKeySet().GetBranchKey().GetInstanceName()
 	cow, err := snaploader.UnpackContainerImage(
 		ctx, loader, instanceName, imageRef, ext4Path,
 		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize,
-		false /*=remoteEnabled*/)
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cow.Close()
