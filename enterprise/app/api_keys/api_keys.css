@@ -63,6 +63,22 @@
   white-space: nowrap;
 }
 
+.api-keys .api-key-creation-details {
+  /* Own row spanning the full width, so the rest of the key's details stay
+   * inline with the label. The width/min-width pair keeps the text from
+   * contributing to the max-content width of any column it spans. */
+  grid-row: 2;
+  grid-column: 1 / -1;
+  width: 0;
+  min-width: 100%;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 16px;
+  color: var(--color-text-emphasis);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .api-keys .untitled-key {
   color: #757575;
 }
