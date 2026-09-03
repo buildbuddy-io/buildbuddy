@@ -143,8 +143,13 @@ echo "Running Bazel command: ${bazel_command}"
 echo "=================================================="
 
 set -x
-${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}
-exit_code=$?
+# Capture the status instead of letting `set -e` abort here, so the summary
+# below still runs on failure.
+if ${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}; then
+  exit_code=0
+else
+  exit_code=$?
+fi
 set +x
 
 echo "=================================================="
