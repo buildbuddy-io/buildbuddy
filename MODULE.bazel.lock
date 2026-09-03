@@ -783,7 +783,7 @@
     "@@rules_distroless+//apt:extensions.bzl%apt": {
       "general": {
         "bzlTransitiveDigest": "6nZ3vuoFpmOAr1KXTbU/02r7C+IxEs2xu/gelFXKYGY=",
-        "usagesDigest": "VluC7Mte+D/YWtewPci/3q7DtCeJAsHDA4xNP/D2nLk=",
+        "usagesDigest": "vW6Z6sZhPqYTBsS1i1alxQQdqe32pRz9kuX7XiN3Mbs=",
         "recordedInputs": [
           "REPO_MAPPING:rules_distroless+,bazel_lib bazel_lib+",
           "REPO_MAPPING:rules_distroless+,bazel_tools bazel_tools"
