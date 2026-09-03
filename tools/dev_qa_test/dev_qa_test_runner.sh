@@ -20,8 +20,13 @@ platform="${QA_PLATFORM:-@toolchains_buildbuddy//platforms:linux_x86_64}"
 # An explicitly empty QA_CC_TOOLCHAIN opts into the host's native toolchain.
 cc_toolchain="${QA_CC_TOOLCHAIN-@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64}"
 jobs="${QA_JOBS:-100}"
-# On macOS, pin the Xcode used by remote actions to the one selected here.
+# On macOS, pin remote actions to the Xcode selected on this host. Prefer an
+# explicit DEVELOPER_DIR, but do not require callers to forward it through the
+# Bazel test environment.
 developer_dir="${DEVELOPER_DIR:-}"
+if [[ -z "${developer_dir}" && "$(uname -s)" == "Darwin" ]]; then
+  developer_dir="$(xcode-select -p)"
+fi
 
 if [[ -z "${bazel}" ]]; then
   echo >&2 "ERROR: BIT_BAZEL_BINARY not set"
@@ -150,7 +155,7 @@ if [[ -n "${developer_dir}" ]]; then
   # actions must run with the same Xcode, at the same path, as this host.
   # Forwarding DEVELOPER_DIR makes that explicit instead of relying on the
   # executor's xcode-select default.
-  echo "build:dev_qa_test --action_env=DEVELOPER_DIR=${developer_dir}" >> .bazelrc
+  printf 'build:dev_qa_test --action_env="DEVELOPER_DIR=%s"\n' "${developer_dir}" >> .bazelrc
 fi
 
 if [[ -n "${api_key}" ]]; then
