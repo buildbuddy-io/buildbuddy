@@ -1424,29 +1424,54 @@ func containerImageSnapshotKey(instanceName, imageRef string) *fcpb.SnapshotKeyS
 	}}
 }
 
-// remoteContainerImageReadsEnabled returns whether chunked container images can
-// be read from the remote cache.
+// TODO: Remove once remote container image reads/writes are fully rolled out.
+// RemoteContainerImageAccessOptions controls whether a task uses the remote
+// cache for its chunked container image.
 //
-// Caching container images remotely is beneficial because another executor
-// using the same image can share the cached chunks, skipping the expensive image pull
-// and ext4 conversion phases. Enable it as long as remote snapshot sharing is enabled.
-func remoteContainerImageReadsEnabled() bool {
-	return *snaputil.EnableRemoteSnapshotSharing
+// Caching container images remotely lets another executor using the same image
+// share the cached chunks, skipping the expensive image pull and ext4
+// conversion phases.
+//
+// This should be resolved once per VM and reused, so the decision is applied
+// consistently across the manifest lookup, the conversion, and the cache write.
+type RemoteContainerImageAccessOptions struct {
+	// RemoteReadsEnabled allows reading chunked EXT4s from the remote cache.
+	RemoteReadsEnabled bool
+	// RemoteWritesEnabled allows caching a chunked EXT4 remotely.
+	RemoteWritesEnabled bool
 }
 
-// remoteContainerImageWritesEnabled returns whether chunked container images
-// should be written to the remote cache.
-func remoteContainerImageWritesEnabled() bool {
-	return remoteContainerImageReadsEnabled() && !*snaputil.RemoteSnapshotReadonly
+// GetRemoteContainerImageAccessOptions decides whether this task should use the
+// remote cache for its chunked container image.
+//
+// Tasks that support remote snapshots always do. Other tasks follow their experiment assignment.
+func GetRemoteContainerImageAccessOptions(ctx context.Context, task *repb.ExecutionTask, supportsRemoteSnapshots bool) RemoteContainerImageAccessOptions {
+	if !*snaputil.EnableRemoteSnapshotSharing {
+		return RemoteContainerImageAccessOptions{}
+	}
+	if supportsRemoteSnapshots {
+		return RemoteContainerImageAccessOptions{
+			RemoteReadsEnabled:  true,
+			RemoteWritesEnabled: true,
+		}
+	}
+	reads := slices.Contains(task.GetExperiments(), snaputil.RemoteContainerImageReadsExperiment)
+	writes := slices.Contains(task.GetExperiments(), snaputil.RemoteContainerImageWritesExperiment)
+	log.CtxInfof(ctx, "Using remote chunked EXT4 access options: reads=%t writes=%t", reads, writes)
+	return RemoteContainerImageAccessOptions{
+		RemoteReadsEnabled: reads,
+		// Writes do not require reads: populating the remote cache ahead of
+		// enabling reads is a valid way to ramp.
+		RemoteWritesEnabled: writes && !*snaputil.RemoteSnapshotReadonly,
+	}
 }
 
 // GetCachedContainerImage returns the cached snapshot for the given
 // container image.
-func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string) (*Snapshot, error) {
+func GetCachedContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef string, remoteEnabled bool) (*Snapshot, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	remoteEnabled := remoteContainerImageReadsEnabled()
 	snap, err := l.GetSnapshot(ctx, containerImageSnapshotKey(instanceName, imageRef), &GetSnapshotOptions{
 		SupportsRemoteManifest: remoteEnabled,
 		SupportsRemoteChunks:   remoteEnabled,
@@ -1493,7 +1518,7 @@ func resetContainerImageOutputDir(outDir string) error {
 //
 // If the image is not cached, this func will split up the given ext4 image
 // file and create a new ChunkedFile from it, then add that to cache.
-func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path string, outDir string, chunkSize int64) (*copy_on_write.COWStore, error) {
+func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path string, outDir string, chunkSize int64, imageOpts RemoteContainerImageAccessOptions) (*copy_on_write.COWStore, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1504,7 +1529,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	}
 
 	// First check if all chunks for the image are available from the cache.
-	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef)
+	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef, imageOpts.RemoteReadsEnabled)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, status.FromContextError(ctx)
@@ -1531,7 +1556,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
 	start := time.Now()
-	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, remoteContainerImageReadsEnabled(), snaputil.ConvertToCOWConcurrency)
+	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, imageOpts.RemoteReadsEnabled, snaputil.ConvertToCOWConcurrency)
 	if err != nil {
 		return nil, status.WrapError(err, "convert image to COW")
 	}
@@ -1539,7 +1564,7 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	opts := &CacheSnapshotOptions{
 		ChunkedFiles:          map[string]*copy_on_write.COWStore{rootfsFileName: cow},
 		Recycled:              false,
-		CacheSnapshotRemotely: remoteContainerImageWritesEnabled(),
+		CacheSnapshotRemotely: imageOpts.RemoteWritesEnabled,
 		CacheSnapshotLocally:  true,
 		// Always write the manifest locally too. Future lookups can reuse locally
 		// cached chunks and fetch missing immutable chunks from the remote cache.

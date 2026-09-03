@@ -693,6 +693,11 @@ type FirecrackerContainer struct {
 	supportsRemoteSnapshots bool
 	recyclingEnabled        bool
 
+	// TODO: Cleanup after remote container image reads/writes are fully rolled out.
+	// remoteContainerImageAccess is resolved once per container so the remote
+	// cache is used consistently for its chunked container image.
+	remoteContainerImageAccess snaploader.RemoteContainerImageAccessOptions
+
 	// If set, the snapshot used to load the VM
 	snapshot *snaploader.Snapshot
 
@@ -839,6 +844,7 @@ func NewContainer(ctx context.Context, env environment.Env, task *repb.Execution
 	taskPlatform := platform.GetProto(task.GetAction(), task.GetCommand())
 	allowsRemoteSnapshots := platform.AllowsRemoteSnapshots(task.GetCommand(), taskPlatform, task.GetPlatformOverrides())
 	c.supportsRemoteSnapshots = *snaputil.EnableRemoteSnapshotSharing && (allowsRemoteSnapshots || *forceRemoteSnapshotting)
+	c.remoteContainerImageAccess = snaploader.GetRemoteContainerImageAccessOptions(ctx, task, c.supportsRemoteSnapshots)
 	if span.IsRecording() {
 		span.SetAttributes(attribute.Bool("supports_remote_snapshots", c.supportsRemoteSnapshots))
 	}
@@ -1497,7 +1503,7 @@ func (c *FirecrackerContainer) cachedContainerfs(ctx context.Context) *snaploade
 	}
 	c.containerfsSnapshotOnce.Do(func() {
 		instanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
-		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage)
+		snap, err := snaploader.GetCachedContainerImage(ctx, c.loader, instanceName, c.containerImage, c.remoteContainerImageAccess.RemoteReadsEnabled)
 		if err != nil {
 			if !status.IsNotFoundError(err) {
 				log.CtxWarningf(ctx, "Failed to look up cached containerfs for image %q: %s", c.containerImage, err)
@@ -1523,7 +1529,7 @@ func (c *FirecrackerContainer) initRootfsStore(ctx context.Context) error {
 	} else {
 		// If a chunked containerfs is not cached, we need to convert the ext4 image into chunks.
 		containerExt4Path := filepath.Join(c.getChroot(), containerFSName)
-		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes())
+		cf, err = snaploader.UnpackContainerImage(c.vmCtx, c.loader, c.snapshotKeySet.GetBranchKey().GetInstanceName(), c.containerImage, containerExt4Path, cowChunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess)
 	}
 	if err != nil {
 		return status.WrapError(err, "unpack container image")

@@ -807,7 +807,8 @@ func TestUnpackContainerImage_RemoteSnapshotDisabledExceptUndirtiedRootfsChunks(
 	// Cache the image using the task's original instance name.
 	imageCOW, err := snaploader.UnpackContainerImage(
 		ctx, loader, instanceName, imageRef, imagePath,
-		testfs.MakeDirAll(t, workDir, "image-chunks"), chunkSize)
+		testfs.MakeDirAll(t, workDir, "image-chunks"), chunkSize,
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
 	require.NoError(t, imageCOW.Close())
 
@@ -816,12 +817,12 @@ func TestUnpackContainerImage_RemoteSnapshotDisabledExceptUndirtiedRootfsChunks(
 
 	// Container image manifests are scoped to the original instance name.
 	// Lookups from other instance names should fail.
-	_, err = snaploader.GetCachedContainerImage(ctx, loader, "other-instance", imageRef)
+	_, err = snaploader.GetCachedContainerImage(ctx, loader, "other-instance", imageRef, true)
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err))
 
 	// Lookups from the original instance name should succeed.
-	imageSnapshot, err := snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef)
+	imageSnapshot, err := snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, true)
 	require.NoError(t, err)
 	rootfs, err := snaploader.UnpackContainerImageSnapshot(
 		ctx, loader, imageSnapshot, testfs.MakeDirAll(t, workDir, "rootfs-chunks"))
@@ -907,7 +908,8 @@ func TestUnpackContainerImage_UnpackingFromCacheIsBestEffort(t *testing.T) {
 			require.NoError(t, err)
 			cow, err := snaploader.UnpackContainerImage(
 				ctx, loader, "task-instance", "example.com/image:latest", imagePath,
-				testfs.MakeDirAll(t, workDir, "chunks"), 1)
+				testfs.MakeDirAll(t, workDir, "chunks"), 1,
+				snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 
 			// Even though there was a cache error, the image should still be unpacked, falling back to re-pulling and
 			// converting the image.
@@ -935,7 +937,8 @@ func TestUnpackContainerImage_CleansOutputDirBeforeUnpack(t *testing.T) {
 	// Populate the container-image cache.
 	cow, err := snaploader.UnpackContainerImage(
 		ctx, loader, "task-instance", imageRef, imagePath,
-		testfs.MakeDirAll(t, workDir, "initial-chunks"), 1)
+		testfs.MakeDirAll(t, workDir, "initial-chunks"), 1,
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
 	require.NoError(t, cow.Close())
 
@@ -947,7 +950,8 @@ func TestUnpackContainerImage_CleansOutputDirBeforeUnpack(t *testing.T) {
 	// Use a nonexistent EXT4 path to prove the cached snapshot is used. If the
 	// stale directory caused a fallback conversion, this call would fail.
 	cow, err = snaploader.UnpackContainerImage(
-		ctx, loader, "task-instance", imageRef, filepath.Join(workDir, "missing.ext4"), outDir, 1)
+		ctx, loader, "task-instance", imageRef, filepath.Join(workDir, "missing.ext4"), outDir, 1,
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, cow.Close()) })
 	require.Equal(t, []byte(imageContents), mustReadStore(t, cow))

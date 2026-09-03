@@ -621,7 +621,8 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	ext4Path := filepath.Join(workDir, "containerfs.ext4")
 	cow, err := snaploader.UnpackContainerImage(
 		ctx, loader, instanceName, imageRef, ext4Path,
-		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize)
+		testfs.MakeDirAll(t, workDir, "chunks"), chunkSize,
+		snaploader.RemoteContainerImageAccessOptions{RemoteReadsEnabled: true, RemoteWritesEnabled: true})
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		cow.Close()
