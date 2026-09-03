@@ -16,17 +16,6 @@ extra_bazel_flags="${QA_EXTRA_BAZEL_FLAGS:-}"
 api_key="${BB_API_KEY:-}"
 bb_app_endpoint="${BB_APP_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 bb_grpc_endpoint="${BB_GRPC_ENDPOINT:-buildbuddy.buildbuddy.dev}"
-platform="${QA_PLATFORM:-@toolchains_buildbuddy//platforms:linux_x86_64}"
-# An explicitly empty QA_CC_TOOLCHAIN opts into the host's native toolchain.
-cc_toolchain="${QA_CC_TOOLCHAIN-@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64}"
-jobs="${QA_JOBS:-100}"
-# On macOS, pin remote actions to the Xcode selected on this host. Prefer an
-# explicit DEVELOPER_DIR, but do not require callers to forward it through the
-# Bazel test environment.
-developer_dir="${DEVELOPER_DIR:-}"
-if [[ -z "${developer_dir}" && "$(uname -s)" == "Darwin" ]]; then
-  developer_dir="$(xcode-select -p)"
-fi
 
 if [[ -z "${bazel}" ]]; then
   echo >&2 "ERROR: BIT_BAZEL_BINARY not set"
@@ -53,10 +42,6 @@ if [[ -z "${bazel_command}" ]]; then
   exit 1
 fi
 
-# Generate a unique run ID to ensure a fresh remote cache namespace.
-# This prevents AC (action cache) and CAS hits from previous runs.
-run_id="$(date +%s)-${RANDOM}"
-
 echo "=================================================="
 echo "Dev QA Test Runner"
 echo "=================================================="
@@ -65,23 +50,15 @@ echo "Workspace: ${workspace_dir}"
 echo "Tarball URL: ${tarball_url}"
 echo "Strip prefix: ${strip_prefix}"
 echo "Bazel command: ${bazel_command}"
-echo "Execution platform: ${platform}"
-echo "C++ toolchain: ${cc_toolchain:-auto-detected}"
-echo "Jobs: ${jobs}"
-echo "DEVELOPER_DIR: ${developer_dir:-unset}"
-echo "Run ID: ${run_id}"
 echo "=================================================="
 
 cd "${workspace_dir}"
 
-# Timestamps make it possible to see where a slow test spends its time.
-echo "[$(date -u +%H:%M:%S)] Downloading tarball"
 if ! curl -L "${tarball_url}" -o repo.tar.gz; then
   echo >&2 "ERROR: Failed to download tarball from ${tarball_url}"
   exit 1
 fi
 
-echo "[$(date -u +%H:%M:%S)] Extracting tarball"
 if ! tar -xzf repo.tar.gz; then
   echo >&2 "ERROR: Failed to extract tarball"
   exit 1
@@ -132,31 +109,15 @@ build:dev_qa_test --remote_executor=grpcs://${bb_grpc_endpoint}
 build:dev_qa_test --bes_backend=grpcs://${bb_grpc_endpoint}
 build:dev_qa_test --bes_results_url=https://${bb_app_endpoint}/invocation/
 build:dev_qa_test --remote_timeout=10m
-build:dev_qa_test --jobs=${jobs}
+build:dev_qa_test --jobs=100
 build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
 test:dev_qa_test --flaky_test_attempts=3
 build:dev_qa_test --nocache_test_results
-build:dev_qa_test --noremote_accept_cached
-build:dev_qa_test --noremote_upload_local_results
-build:dev_qa_test --remote_instance_name=dev-qa-test/${run_id}
-build:dev_qa_test --modify_execution_info=.*=+no-remote-cache
-build:dev_qa_test --platforms=${platform}
-build:dev_qa_test --extra_execution_platforms=${platform}
+build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
+build:dev_qa_test --platforms=@toolchains_buildbuddy//platforms:host_compatible
+build:dev_qa_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:host_compatible
 EOF
-
-if [[ -n "${cc_toolchain}" ]]; then
-  echo "build:dev_qa_test --extra_toolchains=${cc_toolchain}" >> .bazelrc
-fi
-
-if [[ -n "${developer_dir}" ]]; then
-  # Bazel validates absolute header paths reported by the remote compiler
-  # against the include directories it discovered locally, so remote Mac
-  # actions must run with the same Xcode, at the same path, as this host.
-  # Forwarding DEVELOPER_DIR makes that explicit instead of relying on the
-  # executor's xcode-select default.
-  printf 'build:dev_qa_test --action_env="DEVELOPER_DIR=%s"\n' "${developer_dir}" >> .bazelrc
-fi
 
 if [[ -n "${api_key}" ]]; then
   echo "build:dev_qa_test --remote_header=x-buildbuddy-api-key=${api_key}" >> .bazelrc
@@ -169,28 +130,24 @@ echo "Remote execution configuration created"
 echo "=================================================="
 
 if [[ "${UPDATE_LOCKFILE:-true}" == "true" ]]; then
-  echo "[$(date -u +%H:%M:%S)] Updating lockfile with injected BuildBuddy toolchain..."
+  echo "Updating lockfile with injected BuildBuddy toolchain..."
   ${bazel} mod deps --lockfile_mode=update
-  echo "[$(date -u +%H:%M:%S)] Lockfile updated successfully"
+  echo "Lockfile updated successfully"
   echo "=================================================="
 else
   echo "Skipping lockfile update (UPDATE_LOCKFILE=false)"
   echo "=================================================="
 fi
 
-echo "[$(date -u +%H:%M:%S)] Running Bazel command: ${bazel_command}"
+echo "Running Bazel command: ${bazel_command}"
 echo "=================================================="
 
 set -x
-if ${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}; then
-  exit_code=0
-else
-  exit_code=$?
-fi
+${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}
+exit_code=$?
 set +x
 
 echo "=================================================="
-echo "[$(date -u +%H:%M:%S)] Bazel command finished"
 if [[ ${exit_code} -eq 0 ]]; then
   echo "✓ Test PASSED"
 else
