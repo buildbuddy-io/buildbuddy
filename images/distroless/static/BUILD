@@ -150,6 +150,8 @@ image_load(
     # with the expected digest.
     daemon = "containerd",
     image = ":index",  # References an image_index
-    tag = "bb-distroless_static:latest",
+    registry = "buildbuddy.io",
+    repository = "distroless/static",
+    tag = "latest",
     tags = ["manual"],
 )

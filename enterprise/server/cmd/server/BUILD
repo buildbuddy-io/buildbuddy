@@ -336,6 +336,8 @@ image_load(
     # with the expected digest.
     daemon = "containerd",
     image = ":image_manifest",
-    tag = "buildbuddy_image:latest",
+    registry = "buildbuddy.io",
+    repository = "enterprise/app",
+    tag = "latest",
     tags = ["manual"],
 )

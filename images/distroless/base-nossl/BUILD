@@ -97,6 +97,8 @@ image_load(
     # with the expected digest.
     daemon = "containerd",
     image = ":index",  # References an image_index
-    tag = "bb-distroless_base-nossl:latest",
+    registry = "buildbuddy.io",
+    repository = "distroless/base-nossl",
+    tag = "latest",
     tags = ["manual"],
 )
