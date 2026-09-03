@@ -63,7 +63,7 @@ archive_override(
     urls = ["https://github.com/buildbuddy-io/rules_k8s/archive/7de36041347622e4d59a94eac9ba2bf93528fb5e.tar.gz"],
 )
 
-bazel_dep(name = "protobuf", version = "34.0.bcr.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "protobuf", version = "35.1", repo_name = "com_google_protobuf")
 
 ## Regular bazel_deps
 
