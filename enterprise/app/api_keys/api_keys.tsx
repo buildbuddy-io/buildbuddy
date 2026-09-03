@@ -22,6 +22,7 @@ import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
+import { withKey } from "../../../app/util/react";
 
 export interface ApiKeysComponentProps {
   /** The authenticated user. */
@@ -788,40 +789,25 @@ interface ApiKeyFieldState {
   displayValue: string;
 }
 
-class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
+class ApiKeyFieldInner extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
   static INITIAL_STATE: ApiKeyFieldState = {
     isCopied: false,
     hideValue: true,
     displayValue: "••••••••••••••••••••",
   };
 
-  state = ApiKeyField.INITIAL_STATE;
+  state = ApiKeyFieldInner.INITIAL_STATE;
 
   private copyTimeout: number | undefined;
   private value: string = this.props.apiKey.value;
-  private rpc: CancelablePromise | undefined;
-
-  componentDidUpdate(prevProps: ApiKeyFieldProps) {
-    if (prevProps.apiKey.id !== this.props.apiKey.id) {
-      // Reinitialize component.
-      this.setState(ApiKeyField.INITIAL_STATE);
-      clearTimeout(this.copyTimeout);
-      this.value = this.props.apiKey.value;
-      this.rpc?.cancel();
-      this.rpc = undefined;
-    }
-  }
 
   componentWillUnmount() {
-    this.rpc?.cancel();
     clearTimeout(this.copyTimeout);
   }
 
-  private retrieveValue(): CancelablePromise<string> {
-    this.rpc?.cancel();
-    this.rpc = undefined;
+  private async retrieveValue() {
     if (this.value) {
-      return new CancelablePromise(Promise.resolve(this.value));
+      return this.value;
     }
     return rpcService.service.getApiKey({ apiKeyId: this.props.apiKey.id }).then((response) => {
       this.value = response.apiKey?.value ?? "";
@@ -831,7 +817,7 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
 
   // onClick handler function for the copy button
   private handleCopyClick() {
-    this.rpc = this.retrieveValue()
+    this.retrieveValue()
       .then((val) => {
         copyToClipboard(val);
         this.setState({ isCopied: true }, () => {
@@ -847,11 +833,11 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
 
   // onClick handler function for the hide/reveal button
   private toggleHideValue() {
-    this.rpc = this.retrieveValue()
+    this.retrieveValue()
       .then((val) => {
         this.setState({
           hideValue: !this.state.hideValue,
-          displayValue: this.state.hideValue ? val : ApiKeyField.INITIAL_STATE.displayValue,
+          displayValue: this.state.hideValue ? val : ApiKeyFieldInner.INITIAL_STATE.displayValue,
         });
       })
       .catch((e) => errorService.handleError(e));
@@ -873,3 +859,5 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
     );
   }
 }
+
+class ApiKeyField extends withKey(ApiKeyFieldInner, (props) => props.apiKey.id) {}

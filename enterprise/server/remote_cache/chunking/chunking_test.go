@@ -38,9 +38,9 @@ func TestAvgChunkSizeOverride(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.avg_chunk_size_override": {
 			State:          memprovider.Enabled,
-			DefaultVariant: "one_mb",
+			DefaultVariant: "half_mb",
 			Variants: map[string]any{
-				"one_mb": 1 * 1024 * 1024,
+				"half_mb": 512 * 1024,
 			},
 		},
 	})
@@ -50,7 +50,7 @@ func TestAvgChunkSizeOverride(t *testing.T) {
 
 	ctx := context.Background()
 
-	require.Equal(t, uint64(1*1024*1024), chunking.FastCDCParams(ctx, fp).GetAvgChunkSizeBytes())
+	require.Equal(t, uint64(512*1024), chunking.FastCDCParams(ctx, fp).GetAvgChunkSizeBytes())
 }
 
 func TestStore_SharedValidationMarkerSkipsRehashForIdenticalManifest(t *testing.T) {

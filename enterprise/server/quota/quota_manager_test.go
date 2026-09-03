@@ -13,14 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 type testBucket struct {
@@ -381,68 +378,6 @@ func TestConcurrentBucketAccess(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		<-done
 	}
-}
-
-func TestCheckGroupBlocked(t *testing.T) {
-	env := testenv.GetTestEnv(t)
-	ctx := context.Background()
-
-	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{})
-	domain := t.Name()
-	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-	fp, err := experiments.NewFlagProvider(domain)
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-
-	qm, err := newQuotaManager(env, createTestBucket)
-	require.NoError(t, err)
-
-	t.Run("blocked group", func(t *testing.T) {
-		blockedClaims := &claims.Claims{
-			APIKeyID:    "AK001",
-			UserID:      "US001",
-			GroupID:     "GR001",
-			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, blockedClaims)
-
-		err = qm.checkGroupBlocked(authedCtx)
-		assert.Error(t, err)
-		assert.Equal(t, errBlocked, err)
-	})
-
-	t.Run("enterprise group", func(t *testing.T) {
-		enterpriseClaims := &claims.Claims{
-			APIKeyID:    "AK001",
-			UserID:      "US001",
-			GroupID:     "GR001",
-			GroupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, enterpriseClaims)
-		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
-	})
-
-	t.Run("request without API key", func(t *testing.T) {
-		webClaims := &claims.Claims{
-			UserID:      "US001",
-			GroupID:     "GR001",
-			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, webClaims)
-		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
-	})
-
-	t.Run("impersonating request", func(t *testing.T) {
-		impersonatingClaims := &claims.Claims{
-			APIKeyID:      "AK001",
-			UserID:        "US001",
-			GroupID:       "GR001",
-			GroupStatus:   grpb.Group_BLOCKED_GROUP_STATUS,
-			Impersonating: true,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, impersonatingClaims)
-		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
-	})
 }
 
 func TestCreateGCRABucket_RateLimit(t *testing.T) {

@@ -33,10 +33,6 @@ common --incompatible_strict_action_env
 # avoid outputs being wiped and rewritten when switching between platforms.
 common --experimental_platform_in_output_dir
 
-# TODO(tyler-french): Remove once toolchains_musl is updated to load cc symbols explicitly.
-# See https://github.com/bazel-contrib/musl-toolchain/pull/65
-common --incompatible_autoload_externally=+cc_common,+CcToolchainConfigInfo,+cc_toolchain
-
 # Workaround for Bazel 7,8:
 # rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
 # Reference: https://github.com/bazelbuild/rules_docker/pull/1963
@@ -67,6 +63,10 @@ common --execution_log_compact_file=%workspace%/bazel_compact_exec_log.binpb.zst
 
 # Disable https://github.com/aspect-build/tools_telemetry.
 common --repo_env=DO_NOT_TRACK=1
+
+# Use a temporary Go module cache for Gazelle repository fetches unless an
+# explicit host module cache is configured.
+common --repo_env=GO_REPOSITORY_EPHEMERAL_MODCACHE=1
 
 #############################
 # TESTING/DEVELOPMENT FLAGS #
@@ -160,16 +160,13 @@ common:linux --workspace_status_command=$(pwd)/workspace_status.sh
 common:macos --workspace_status_command=$(pwd)/workspace_status.sh
 common:windows --workspace_status_command="bash workspace_status.sh"
 
-# XCode flags
-common:macos --action_env=DEVELOPER_DIR
-common:macos --host_action_env=DEVELOPER_DIR
+# Ensure that we don't use any default toolchains and instead get @llvm's
+common --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
-# Ensure that we don't use the apple_support cc_toolchain
-common:macos --repo_env=BAZEL_NO_APPLE_CPP_TOOLCHAIN=1
-
-# Ensure that our executors can run on macOS 11.0+
-common:macos --macos_minimum_os=12.0
-common:macos --host_macos_minimum_os=12.0
+# Set the minimum OS version for macOS binaries
+common --macos_minimum_os=12.0
+common --host_macos_minimum_os=12.0
 
 # Silence noise about -lm -lm which has no functional downside
 #
@@ -225,19 +222,18 @@ common:cache-shared --remote_timeout=10m
 
 common:cache-dev --config=cache-shared
 common:cache-dev --config=dev
+common:cache-dev --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.dev
 common:cache-dev --remote_cache=grpcs://buildbuddy.buildbuddy.dev
 
 # Build with --config=cache to use prod cache.
 common:cache --config=cache-shared
+common:cache --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.io
 common:cache --remote_cache=grpcs://buildbuddy.buildbuddy.io
 
 # Target+Exec Platforms configuration
 common:target-darwin-arm64 --platforms=@toolchains_buildbuddy//platforms:darwin_arm64
-common:target-darwin-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:darwin_arm64
 common:target-linux-x86 --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-common:target-linux-x86 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:target-linux-arm64 --platforms=@toolchains_buildbuddy//platforms:linux_arm64
-common:target-linux-arm64 --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:target-linux-x86-exec-multiarch --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:target-linux-x86-exec-multiarch --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64
 
@@ -250,9 +246,11 @@ common:remote-shared --config=cache-shared
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
 common:remote-shared --rewind_lost_inputs
+common:remote-shared --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
+common:remote-prod-shared --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.io
 common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
 # Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
 # but performance tests should not be run remotely since the environment
@@ -263,6 +261,7 @@ common:remote-prod-shared --test_tag_filters=-performance
 # Note: Dev BES needed to override the default prod BES urls.
 common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
+common:remote-dev-shared --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.dev
 common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 # Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
 # but performance tests should not be run remotely since the environment
@@ -272,21 +271,17 @@ common:remote-dev-shared --test_tag_filters=-performance
 # Build with --config=remote to use BuildBuddy RBE, generally as a human from
 # the command line. Other configs shoudn't embed this.
 common:remote --config=remote-prod-shared
-common:remote --config=target-linux-x86
 common:remote --remote_download_toplevel
 # Build with --config=remote-dev to use BuildBuddy RBE.
 common:remote-dev --config=remote-dev-shared
-common:remote-dev --config=target-linux-x86
 common:remote-dev --remote_download_toplevel
 
 # Build with --config=remote-minimal to use BuildBuddy RBE in automated
 # processes, (probers, workflows, ci, etc.) where the outputs shouldn't be
 # downloaded.
 common:remote-minimal --config=remote-prod-shared
-common:remote-minimal --config=target-linux-x86
 common:remote-minimal --config=download-minimal
 common:remote-dev-minimal --config=remote-dev-shared
-common:remote-dev-minimal --config=target-linux-x86
 common:remote-dev-minimal --config=download-minimal
 
 # Specify arch to do cross-platform builds on remote until the go toolchain can
@@ -373,6 +368,7 @@ common:untrusted-ci --config=ci-shared
 common:untrusted-ci --config=remote-minimal
 common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci/rin20260818
 common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
+common:untrusted-ci --experimental_remote_downloader=grpcs://remote.buildbuddy.io
 common:untrusted-ci --bes_results_url=https://app.buildbuddy.io/invocation/
 common:untrusted-ci --bes_backend=grpcs://remote.buildbuddy.io
 common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io

@@ -37,6 +37,7 @@ jobs:
           common --repository_cache=~/repo-cache
           common --bes_backend=remote.buildbuddy.io
           common --bes_results_url=https://app.buildbuddy.io/invocation/
+          common --experimental_remote_downloader=remote.buildbuddy.io
           common --remote_cache=remote.buildbuddy.io
           common --flaky_test_attempts=3
           common --local_test_jobs=1

@@ -41,7 +41,9 @@ const (
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
 
-	vmDNSInitTimeout = 5 * time.Second
+	vmDNSInitTimeout                   = 5 * time.Second
+	vmExecReadySignalInitialRetryDelay = 2 * time.Millisecond
+	vmExecReadySignalMaxRetryDelay     = 1 * time.Second
 )
 
 func init() {
@@ -142,7 +144,40 @@ func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd b
 	}
 
 	vmService.metrics.VmExecInitDurationUsec = time.Since(processStartTime).Microseconds()
+	go maintainVMExecReadySignal(ctx)
 	return server.Serve(listener)
+}
+
+// maintainVMExecReadySignal tells the host that vmexec is ready, then keeps the
+// connection open. Firecracker resets vsock connections across snapshot
+// restore, so the read below unblocks in a restored guest and causes it to
+// reconnect and send a fresh readiness signal.
+func maintainVMExecReadySignal(ctx context.Context) {
+	r := retry.New(ctx, &retry.Options{
+		InitialBackoff: vmExecReadySignalInitialRetryDelay,
+		MaxBackoff:     vmExecReadySignalMaxRetryDelay,
+		Multiplier:     2,
+		MaxRetries:     math.MaxInt,
+	})
+	for r.Next() {
+		conn, err := vsock.DialGuestToHost(vsock.HostVMExecReadyPort)
+		if err == nil {
+			_, err = io.WriteString(conn, vsock.VMExecReadyMessage)
+		}
+		if err == nil {
+			log.Debugf("Signaled vmexec readiness to host")
+			r.Reset()
+			// The host deliberately sends no data. This read returns when the
+			// connection is reset, including after snapshot restore.
+			var buf [1]byte
+			for err == nil && ctx.Err() == nil {
+				_, err = conn.Read(buf[:])
+			}
+		}
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}
 }
 
 func waitForDockerd(ctx context.Context, enableDockerdTCP bool) error {

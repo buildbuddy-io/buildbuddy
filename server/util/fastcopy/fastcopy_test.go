@@ -2,6 +2,7 @@ package fastcopy_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
@@ -63,6 +64,36 @@ func TestFastCopyFileExist(t *testing.T) {
 	require.Equal(t, before.ModTime(), after.ModTime(), "target should not have been modified")
 }
 
+func TestFastCopyDarwinForceHardlinks(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("test runs on macOS only")
+	}
+
+	ws := testfs.MakeTempDir(t)
+	source := testfs.MakeTempFile(t, ws, "source")
+
+	clone := path.Join(ws, "clone")
+	require.NoError(t, fastcopy.FastCopy(source, clone))
+	sourceInfo, err := os.Stat(source)
+	require.NoError(t, err)
+	cloneInfo, err := os.Stat(clone)
+	require.NoError(t, err)
+	require.False(t, os.SameFile(sourceInfo, cloneInfo))
+
+	flags.Set(t, "executor.local_cache_use_hardlinks", true)
+	hardlink := path.Join(ws, "hardlink")
+	require.NoError(t, fastcopy.FastCopy(source, hardlink))
+	hardlinkInfo, err := os.Stat(hardlink)
+	require.NoError(t, err)
+	require.True(t, os.SameFile(sourceInfo, hardlinkInfo))
+
+	forcedClone := path.Join(ws, "forced-clone")
+	require.NoError(t, fastcopy.Clone(source, forcedClone))
+	forcedCloneInfo, err := os.Stat(forcedClone)
+	require.NoError(t, err)
+	require.False(t, os.SameFile(sourceInfo, forcedCloneInfo))
+}
+
 func TestFastCopySymlink(t *testing.T) {
 	ws := testfs.MakeTempDir(t)
 	linkTarget := testfs.MakeTempFile(t, ws, "foo")
@@ -81,6 +112,38 @@ func TestFastCopySymlink(t *testing.T) {
 
 	_, err = os.Stat(target)
 	require.NoError(t, err, "target symlink should exist")
+}
+
+func TestFastCopyDarwinHardlinksSymlinkWithoutFollowing(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("test runs on macOS only")
+	}
+	flags.Set(t, "executor.local_cache_use_hardlinks", true)
+
+	for _, dangling := range []bool{false, true} {
+		t.Run(fmt.Sprintf("dangling=%t", dangling), func(t *testing.T) {
+			ws := testfs.MakeTempDir(t)
+			linkTarget := path.Join(ws, "link-target")
+			if !dangling {
+				testfs.MakeTempFile(t, ws, "link-target")
+			}
+			source := path.Join(ws, "source")
+			require.NoError(t, os.Symlink(linkTarget, source))
+
+			target := path.Join(ws, "target")
+			require.NoError(t, fastcopy.FastCopy(source, target))
+
+			sourceInfo, err := os.Lstat(source)
+			require.NoError(t, err)
+			targetInfo, err := os.Lstat(target)
+			require.NoError(t, err)
+			require.True(t, targetInfo.Mode()&os.ModeSymlink != 0, "target should be a symlink")
+			require.True(t, os.SameFile(sourceInfo, targetInfo), "source and target should hardlink the same symlink inode")
+			actualLinkTarget, err := os.Readlink(target)
+			require.NoError(t, err)
+			require.Equal(t, linkTarget, actualLinkTarget)
+		})
+	}
 }
 
 func TestFastCopyXFSReflink(t *testing.T) {

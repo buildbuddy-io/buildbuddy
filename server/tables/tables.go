@@ -491,6 +491,10 @@ type APIKey struct {
 	Impersonation bool `gorm:"not null;default:0"`
 	// If set, the API key is not considered to be valid after this time.
 	ExpiryUsec int64 `gorm:"not null;default:0"`
+	// The ID of the user who created this API key, if it was created by an
+	// authenticated user. Keys created by the server or by an
+	// API-key-authenticated caller do not have this field set.
+	CreatedByUserID string `gorm:"default:''"`
 }
 
 func (k *APIKey) TableName() string {
@@ -1035,6 +1039,21 @@ func (*IPRule) TableName() string {
 	return "IPRules"
 }
 
+// MetronomeBillingExportDestination is the BillingExportState primary key used
+// by the Metronome usage export cron.
+const MetronomeBillingExportDestination = "metronome"
+
+type BillingExportState struct {
+	Model
+	// Destination is the billing system usage is exported to, e.g. "metronome".
+	Destination                 string `gorm:"primaryKey"`
+	LastSuccessfulPeriodEndUsec int64
+}
+
+func (*BillingExportState) TableName() string {
+	return "BillingExportState"
+}
+
 type PostAutoMigrateLogic func() error
 
 // Manual migration called before auto-migration.
@@ -1521,6 +1540,7 @@ func RegisterTables() {
 	// Keep these sorted by two-letter prefix (and when adding new tables,
 	// use a unique prefix if possible):
 	registerTable("AK", &APIKey{})
+	registerTable("BE", &BillingExportState{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
 	registerTable("EK", &EncryptionKey{})

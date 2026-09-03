@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
@@ -605,4 +606,73 @@ func TestDownloadInputs_WorkingDirectoryNestedMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 	assert.Contains(t, err.Error(), "a/b")
+}
+
+func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		mode             workspace.VFSPrefetchMode
+		wantInputFetcher bool
+		wantCached       bool
+		wantMaterialized bool
+	}{
+		{
+			name:             "materialized_without_vfs",
+			wantCached:       true,
+			wantMaterialized: true,
+		},
+		{
+			name:             "all",
+			mode:             workspace.VFSPrefetchModeAll,
+			wantInputFetcher: true,
+			wantCached:       true,
+		},
+		{
+			name: "none",
+			mode: workspace.VFSPrefetchModeNone,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := t.Context()
+			te := testenv.GetTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+			testcache.Setup(t, te, lis)
+			go runServer()
+
+			fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1e9, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			te.SetFileCache(fc)
+
+			inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"))
+			require.NoError(t, err)
+			inputNode := &repb.FileNode{Name: "input.txt", Digest: inputDigest}
+			layout := &container.FileSystemLayout{
+				DigestFunction: repb.DigestFunction_SHA256,
+				Inputs: &repb.Tree{Root: &repb.Directory{
+					Files: []*repb.FileNode{inputNode},
+				}},
+			}
+
+			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{Preserve: true, VFSPrefetchMode: testCase.mode})
+			require.NoError(t, err)
+			ws.SetTask(ctx, &repb.ExecutionTask{})
+			require.NoError(t, ws.DownloadInputs(ctx, layout))
+			_, err = ws.TaskFinished()
+			require.NoError(t, err)
+
+			require.Equal(t, testCase.wantInputFetcher, layout.InputFetcher != nil)
+			require.Equal(t, testCase.wantCached, fc.ContainsFile(ctx, inputNode))
+			if testCase.mode != workspace.VFSPrefetchModeNone {
+				require.Contains(t, ws.Inputs, fspath.NewKey(inputNode.GetName(), false))
+			}
+			contents, err := os.ReadFile(filepath.Join(ws.Path(), inputNode.GetName()))
+			if testCase.wantMaterialized {
+				require.NoError(t, err)
+				require.Equal(t, "input", string(contents))
+			} else {
+				require.ErrorIs(t, err, os.ErrNotExist)
+			}
+		})
+	}
 }

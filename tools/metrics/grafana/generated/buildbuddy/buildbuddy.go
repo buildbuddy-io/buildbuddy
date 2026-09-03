@@ -2,6 +2,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/buildbuddy-io/buildbuddy/tools/metrics/grafana/generated/dash"
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
@@ -252,56 +254,57 @@ func workflowsRow() *dashboard.RowBuilder {
 }
 
 func distributedCacheRow() *dashboard.RowBuilder {
+	methodPanel := func(method string) *timeseries.PanelBuilder {
+		filters := fmt.Sprintf(`region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="%s"`, method)
+		return ts("/"+method, dash.UnitSeconds).
+			AxisPlacement(common.AxisPlacementLeft).
+			Legend(rightLegend()).
+			Tooltip(multiTooltip()).
+			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
+			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{`+filters+`}[${window}])) by (le))`, "P99").RefId("A")).
+			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{`+filters+`}[${window}])) by (le))`, "P95").RefId("B")).
+			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{`+filters+`}[${window}])) by (le))`, "P50").RefId("C")).
+			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{`+filters+`}[${window}])) by (grpc_service)`, "QPS").RefId("D"))
+	}
+	// transmissionPanel plots op rate against throughput, both broken down by
+	// whether the payload moved as a reference to shared storage or as inline
+	// bytes. Rates go on the left axis, bytes/sec on the right.
+	transmissionPanel := func(title, description, typeLabel, countMetric, sizeMetric string) *timeseries.PanelBuilder {
+		filters := `region="${region}", job="buildbuddy-app"`
+		return ts(title, dash.UnitRequestsPerSec).
+			Description(description).
+			AxisPlacement(common.AxisPlacementLeft).
+			Tooltip(multiTooltip()).
+			OverrideByQuery("B", rightAxisProps(dash.UnitBytesPerSec)).
+			WithTarget(dash.PromQuery(fmt.Sprintf(`sum by (%s) (rate(%s{%s}[${window}]))`, typeLabel, countMetric, filters), fmt.Sprintf("{{%s}} requests", typeLabel)).RefId("A")).
+			WithTarget(dash.PromQuery(fmt.Sprintf(`sum by (%s) (rate(%s{%s}[${window}]))`, typeLabel, sizeMetric, filters), fmt.Sprintf("{{%s}} throughput", typeLabel)).RefId("B"))
+	}
 	return row("Distributed Cache").
 		WithPanel(ts("Request Mix", "").
 			WithTarget(dash.PromQuery(`sum(rate(grpc_server_started_total{region="${region}", job="buildbuddy-app",grpc_service="distributed_cache.DistributedCache"}[${window}])) by (grpc_method)`, "{{grpc_method}}"))).
-		WithPanel(ts("/GetMulti", dash.UnitSeconds).
-			Legend(rightLegend()).
+		WithPanel(methodPanel("Metadata")).
+		WithPanel(methodPanel("GetWithMetadata")).
+		WithPanel(methodPanel("GetMulti")).
+		WithPanel(methodPanel("FindMissing")).
+		WithPanel(methodPanel("Write")).
+		WithPanel(methodPanel("Read")).
+		WithPanel(transmissionPanel(
+			"Reads by Transmission Mechanism",
+			"Distributed cache peer reads, split by whether the payload came back as a reference to shared storage or as inline bytes.",
+			"response_type",
+			"buildbuddy_remote_cache_distributed_cache_read_response_count",
+			"buildbuddy_remote_cache_distributed_cache_read_response_size_bytes")).
+		WithPanel(transmissionPanel(
+			"Writes by Transmission Mechanism",
+			"Distributed cache peer writes, split by whether the payload was sent as a reference to shared storage or as inline bytes.",
+			"request_type",
+			"buildbuddy_remote_cache_distributed_cache_write_request_count",
+			"buildbuddy_remote_cache_distributed_cache_write_request_size_bytes")).
+		WithPanel(ts("Read and Write Errors by Status", dash.UnitRequestsPerSec).
+			Description("Distributed cache peer reads and writes that did not succeed. Writes deduped by the peer report \"AlreadyExists\" and are counted as successes, not errors.").
 			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="GetMulti"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
-		WithPanel(ts("/FindMissing", dash.UnitSeconds).
-			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="FindMissing"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
-		WithPanel(ts("/Write", dash.UnitSeconds).
-			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Write"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
-		WithPanel(ts("/Read", dash.UnitSeconds).
-			AxisPlacement(common.AxisPlacementLeft).
-			Legend(rightLegend()).
-			Tooltip(multiTooltip()).
-			OverrideByName("QPS", rightAxisProps(dash.UnitRequestsPerSec)).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.99, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (le)
-)`, "P99").RefId("A")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.95, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (le)
-)`, "P95").RefId("B")).
-			WithTarget(dash.PromQuery(`histogram_quantile(0.50, sum(rate(grpc_server_handling_seconds_bucket{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (le)
-)`, "P50").RefId("C")).
-			WithTarget(dash.PromQuery(`sum(rate(grpc_server_handled_total{region="${region}", job="buildbuddy-app", grpc_service="distributed_cache.DistributedCache", grpc_method="Read"}[${window}])) by (grpc_service)`, "QPS").RefId("D"))).
+			WithTarget(dash.PromQuery(`sum by (status, response_type) (rate(buildbuddy_remote_cache_distributed_cache_read_response_count{region="${region}", job="buildbuddy-app", status!="OK"}[${window}]))`, "read {{response_type}} {{status}}").RefId("A")).
+			WithTarget(dash.PromQuery(`sum by (status, request_type) (rate(buildbuddy_remote_cache_distributed_cache_write_request_count{region="${region}", job="buildbuddy-app", status!~"OK|AlreadyExists"}[${window}]))`, "write {{request_type}} {{status}}").RefId("B"))).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
 			Legend(rightLegend()).
@@ -573,25 +576,6 @@ func pebbleLevelsRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_ingested_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}"))).
 		WithPanel(ts("Tables moved (by level)", dash.UnitNone).
 			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_pebble_cache_pebble_level_tables_moved_count{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[1m])) by (level)`, "{{level}}")))
-}
-
-func runnerRecyclingRow() *dashboard.RowBuilder {
-	return row("Runner recycling (${pool})").
-		Repeat("pool").
-		WithPanel(ts("Pooled runner count", "").
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Total").RefId("A")).
-			WithTarget(dash.PromQuery(`avg(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Average").RefId("B")).
-			WithTarget(dash.PromQuery(`sum(up{region="${region}", job="${pool}"})`, "Executor count (for comparison)").RefId("C"))).
-		WithPanel(ts("Runner pool evictions", dash.UnitRequestsPerSec).
-			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region="${region}", job="${pool}"}[${window}]))`, ""))).
-		WithPanel(ts("Recycling failures by reason", dash.UnitRequestsPerSec).
-			WithTarget(dash.PromQuery(`sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region="${region}", job="${pool}"}[${window}]))`, "{{reason}}"))).
-		WithPanel(ts("Pool requests by status", dash.UnitRequestsPerSec).
-			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region="${region}", job="${pool}"}[${window}]))`, "{{status}}"))).
-		WithPanel(ts("Total memory usage", dash.UnitDecimalBytes).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region="${region}", job="${pool}"})`, ""))).
-		WithPanel(ts("Total workspace size", dash.UnitDecimalBytes).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region="${region}", job="${pool}"})`, "")))
 }
 
 func sqlRow() *dashboard.RowBuilder {
@@ -1001,7 +985,21 @@ sum(rate(buildbuddy_remote_execution_file_cache_requests{region="${region}", job
 			WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource="io", stall_type="some", region="${region}", job="${pool}"}[${window}]))`))).
 		WithPanel(schemeHeatmap("PSI - io full stall").
 			YAxis(yAxisLeft(dash.UnitPercentUnit)).
-			WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource="io", stall_type="full", region="${region}", job="${pool}"}[${window}]))`)))
+			WithTarget(dash.PromHeatmapQuery(`sum by (le) (rate(buildbuddy_remote_execution_task_pressure_stall_duration_fraction_bucket{resource="io", stall_type="full", region="${region}", job="${pool}"}[${window}]))`))).
+		WithPanel(ts("Pooled runner count", "").
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Total").RefId("A")).
+			WithTarget(dash.PromQuery(`avg(buildbuddy_remote_execution_runner_pool_count{region="${region}", job="${pool}"})`, "Average").RefId("B")).
+			WithTarget(dash.PromQuery(`sum(up{region="${region}", job="${pool}"})`, "Executor count (for comparison)").RefId("C"))).
+		WithPanel(ts("Runner pool evictions", dash.UnitRequestsPerSec).
+			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_execution_runner_pool_evictions{region="${region}", job="${pool}"}[${window}]))`, ""))).
+		WithPanel(ts("Recycling failures by reason", dash.UnitRequestsPerSec).
+			WithTarget(dash.PromQuery(`sum by (reason) (rate(buildbuddy_remote_execution_runner_pool_failed_recycle_attempts{region="${region}", job="${pool}"}[${window}]))`, "{{reason}}"))).
+		WithPanel(ts("Runner pool requests by status", dash.UnitRequestsPerSec).
+			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_recycle_runner_requests{region="${region}", job="${pool}"}[${window}]))`, "{{status}}"))).
+		WithPanel(ts("Runner pool total memory usage", dash.UnitDecimalBytes).
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_memory_usage_bytes{region="${region}", job="${pool}"})`, ""))).
+		WithPanel(ts("Runner pool total workspace size", dash.UnitDecimalBytes).
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_runner_pool_disk_usage_bytes{region="${region}", job="${pool}"})`, "")))
 }
 
 func golangRow() *dashboard.RowBuilder {
@@ -1409,7 +1407,6 @@ func build() (dashboard.Dashboard, error) {
 		WithRow(remoteCacheRow()).
 		WithRow(pebbleRow()).
 		WithRow(pebbleLevelsRow()).
-		WithRow(runnerRecyclingRow()).
 		WithRow(sqlRow()).
 		WithRow(redisRow()).
 		WithRow(blobstoreRow()).

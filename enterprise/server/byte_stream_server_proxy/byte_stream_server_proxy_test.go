@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -100,6 +101,44 @@ func (c *fakeByteStreamReadClient) Recv() (*bspb.ReadResponse, error) {
 	}
 	c.done = true
 	return &bspb.ReadResponse{Data: c.data}, nil
+}
+
+type recordingByteStreamReadServer struct {
+	grpc.ServerStream
+	responses []*bspb.ReadResponse
+}
+
+func (s *recordingByteStreamReadServer) Send(response *bspb.ReadResponse) error {
+	s.responses = append(s.responses, response)
+	return nil
+}
+
+func TestSendChunkFramesSplitsLargeChunks(t *testing.T) {
+	frameSize := *config.ReadBufSizeBytes
+	for _, tc := range []struct {
+		name      string
+		sizeBytes int
+	}{
+		{name: "single_frame", sizeBytes: frameSize},
+		{name: "partial_last_frame", sizeBytes: 2*frameSize + 123},
+		{name: "max_chunk", sizeBytes: int(chunking.MaxSupportedChunkSizeBytes())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := make([]byte, tc.sizeBytes)
+			for i := range data {
+				data[i] = byte(i)
+			}
+			stream := &recordingByteStreamReadServer{}
+			require.NoError(t, sendChunkFrames(stream, data))
+			require.Len(t, stream.responses, (tc.sizeBytes+frameSize-1)/frameSize)
+			var reconstructed bytes.Buffer
+			for _, response := range stream.responses {
+				require.LessOrEqual(t, len(response.GetData()), frameSize)
+				reconstructed.Write(response.GetData())
+			}
+			require.Equal(t, data, reconstructed.Bytes())
+		})
+	}
 }
 
 func (c *noOpCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {

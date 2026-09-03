@@ -1850,6 +1850,9 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		if ctx.Err() != nil {
+			return -1, ctx.Err()
+		}
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
 			return -1, err
@@ -2151,9 +2154,6 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	foundMap := make(map[*repb.Digest][]byte, len(resources))
 	handleBatch := func() error {
 		for {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
 			i := int(next.Add(1)) - 1
 			if i >= len(resources) {
 				return nil
@@ -2169,6 +2169,9 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 			buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
 			_, copyErr := io.Copy(buf, rc)
 			closeErr := rc.Close()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if copyErr != nil {
 				log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
 				continue
@@ -2274,7 +2277,27 @@ func (p *PebbleCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (
 	return &refpb.Reference{Metadata: md}, nil
 }
 
-func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error) {
+type referenceWriter struct {
+	wc interfaces.CommittedWriteCloser
+	md *sgpb.FileMetadata
+}
+
+func (w *referenceWriter) Write(p []byte) (int, error) {
+	return w.wc.Write(p)
+}
+
+func (w *referenceWriter) Close() error {
+	return w.wc.Close()
+}
+
+func (w *referenceWriter) Commit() (*refpb.Reference, error) {
+	if err := w.wc.Commit(); err != nil {
+		return nil, err
+	}
+	return &refpb.Reference{Metadata: w.md}, nil
+}
+
+func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
 	if p.gcsBlobstore == nil {
 		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot create references")
 	}
@@ -2298,23 +2321,16 @@ func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName,
 
 	// Commit only captures the blob's metadata instead of registering it in
 	// this cache.
-	var md *sgpb.FileMetadata
-	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, nil, func(m *sgpb.FileMetadata) error {
-		md = m
+	rw := &referenceWriter{}
+	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, nil, func(md *sgpb.FileMetadata) error {
+		rw.md = md
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	defer wc.Close()
-
-	if _, err := io.Copy(wc, reader); err != nil {
-		return nil, err
-	}
-	if err := wc.Commit(); err != nil {
-		return nil, err
-	}
-	return &refpb.Reference{Metadata: md}, nil
+	rw.wc = wc
+	return rw, nil
 }
 
 func validateReference(ref *refpb.Reference) error {
@@ -3477,7 +3493,9 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	err = pebble.GetProto(db, sample.Key.bytes, md)
 	defer md.ReturnToVTPool()
 	if err != nil {
-		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
+		if !status.IsNotFoundError(err) && !os.IsNotExist(err) {
+			log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
+		}
 		return
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())

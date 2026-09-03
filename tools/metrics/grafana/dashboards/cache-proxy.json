@@ -691,6 +691,102 @@
           ],
           "title": "Memory usage",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vm"
+          },
+          "description": "Fraction of CFS scheduling periods (100ms) in which the cache-proxy container exhausted its CPU quota and was throttled. CPU usage alone cannot show demand above the limit; this shows how often the container hit the wall. Sustained values above ~0.5 have caused liveness-probe freezes.",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "dashed"
+                }
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 0.5
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 164
+          },
+          "id": 10743,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{region=\"${region}\", namespace=~\"cache-proxy-.*\", container=\"cache-proxy\"}[1m])) / sum by (pod) (rate(container_cpu_cfs_periods_total{region=\"${region}\", namespace=~\"cache-proxy-.*\", container=\"cache-proxy\"}[1m]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "CPU throttled period fraction",
+          "type": "timeseries"
         }
       ],
       "title": "System Status",

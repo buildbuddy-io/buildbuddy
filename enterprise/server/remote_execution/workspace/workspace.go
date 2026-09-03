@@ -99,6 +99,13 @@ type Workspace struct {
 	treeFetcher *dirtools.TreeFetcher
 }
 
+type VFSPrefetchMode string
+
+const (
+	VFSPrefetchModeAll  VFSPrefetchMode = platform.VFSPrefetchModeAll
+	VFSPrefetchModeNone VFSPrefetchMode = platform.VFSPrefetchModeNone
+)
+
 type Opts struct {
 	// Preserve specifies whether to preserve all files in the workspace except
 	// for output paths.
@@ -113,10 +120,15 @@ type Opts struct {
 	// UseVFS specifies whether the workspace should use a FUSE virtual file
 	// system to serve CAS artifacts and scratch files.
 	UseVFS bool
+	// VFSPrefetchMode controls whether VFS inputs are prefetched.
+	VFSPrefetchMode VFSPrefetchMode
 }
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
+	if opts.VFSPrefetchMode != "" && opts.VFSPrefetchMode != VFSPrefetchModeAll && opts.VFSPrefetchMode != VFSPrefetchModeNone {
+		return nil, status.InvalidArgumentErrorf("invalid VFS prefetch mode %q", opts.VFSPrefetchMode)
+	}
 	dirPerms := fs.FileMode(0777)
 	var rootDir string
 	maxAttempts := 10
@@ -188,6 +200,7 @@ func startVFS(env environment.Env, path string) (*vfs.VFS, *vfs_server.Server, e
 		return nil, nil, err
 	}
 	fs := vfs.New(vfs_server.NewDirectClient(vfsServer), path, &vfs.Options{
+		EnablePassthrough:   true,
 		Verbose:             *vfsVerbose,
 		LogFUSEOps:          *vfsVerboseFUSEOps,
 		LogFUSELatencyStats: *vfsLogFUSELatencyStats,
@@ -250,12 +263,12 @@ func (ws *Workspace) CreateOutputDirs() error {
 	return ws.dirHelper.CreateOutputDirs()
 }
 
-func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout) error {
+func (ws *Workspace) prepareVFS(ctx context.Context, layout *container.FileSystemLayout, inputFetcher container.InputFetcher) error {
 	if ws.vfs == nil {
 		return status.FailedPreconditionError("vfs cannot be null if vfsServer is set")
 	}
 
-	invalidatedInodes, err := ws.vfsServer.Prepare(ctx, layout, ws.treeFetcher)
+	invalidatedInodes, err := ws.vfsServer.Prepare(ctx, layout, inputFetcher)
 	if err != nil {
 		return err
 	}
@@ -320,8 +333,21 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		}
 	}
 
+	vfsPrefetchMode := ws.Opts.VFSPrefetchMode
+	usesVFS := ws.vfs != nil || vfsPrefetchMode != ""
+	if vfsPrefetchMode == VFSPrefetchModeNone {
+		layout.InputFetcher = nil
+		ws.treeFetcher = nil
+		if ws.vfs != nil {
+			if err := ws.prepareVFS(ctx, layout, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	opts := &dirtools.DownloadTreeOpts{CaseInsensitive: ws.Opts.CaseInsensitive}
-	if ws.vfs == nil {
+	if !usesVFS {
 		opts.RootDir = ws.inputRoot()
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
@@ -335,6 +361,9 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 		return status.WrapErrorf(err, "could not create tree fetcher")
 	}
 	ws.treeFetcher = tf
+	if usesVFS {
+		layout.InputFetcher = tf
+	}
 
 	// Start fetching inputs.
 	inputsState, err := tf.Start()
@@ -344,9 +373,11 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 
 	// Inform VFS about the layout of the input tree and give it access to the
 	// running tree fetcher.
-	if ws.vfs != nil {
-		if err := ws.prepareVFS(ctx, layout); err != nil {
-			return err
+	if usesVFS {
+		if ws.vfs != nil {
+			if err := ws.prepareVFS(ctx, layout, tf); err != nil {
+				return err
+			}
 		}
 	} else {
 		// If we're not using FUSE, wait for the input tree to be fully downloaded.
@@ -647,6 +678,9 @@ func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {
 	tf := ws.treeFetcher
 	ws.mu.Unlock()
 	if tf == nil {
+		if ws.Opts.VFSPrefetchMode == VFSPrefetchModeNone {
+			return &dirtools.TransferInfo{}, nil
+		}
 		return nil, status.FailedPreconditionError("tree fetcher not set")
 	}
 	// TODO(vadim): cancel unfinished transfers instead of waiting for them

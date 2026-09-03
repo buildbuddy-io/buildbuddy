@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/dns/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/maxmind"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -24,6 +25,8 @@ import (
 	"github.com/miekg/dns"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // zone is a small stand-in for the real buildbuddy.io zone, exercising exact
@@ -144,6 +147,46 @@ func serve(t *testing.T, h dns.Handler, req *dns.Msg, remoteIP string) *dns.Msg 
 func query(t *testing.T, h dns.Handler, name string, qType uint16) *dns.Msg {
 	t.Helper()
 	return serve(t, h, newQuery(name, qType), "")
+}
+
+func TestRequestMetricResolverProvider(t *testing.T) {
+	metrics.DNSServerRequestCount.Reset()
+	t.Cleanup(metrics.DNSServerRequestCount.Reset)
+	h := newTestHandler(t)
+
+	for _, tc := range []struct {
+		name     string
+		remoteIP string
+		provider string
+	}{
+		{name: "cloudflare", remoteIP: "1.1.1.1", provider: "cloudflare"},
+		{name: "google", remoteIP: "8.8.8.8", provider: "google"},
+		{name: "aws", remoteIP: "3.5.140.1", provider: "aws"},
+		{name: "azure", remoteIP: "20.0.0.1", provider: "azure"},
+		{name: "other", remoteIP: "9.9.9.9", provider: "other"},
+		{name: "unknown", provider: "unknown"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			serve(t, h, newQuery("cache.buildbuddy.io.", dns.TypeA), tc.remoteIP)
+			got := testutil.ToFloat64(metrics.DNSServerRequestCount.With(prometheus.Labels{
+				metrics.DNSRecordTypeLabel:       "A",
+				metrics.DNSResponseCodeLabel:     "NOERROR",
+				metrics.DNSResolverProviderLabel: tc.provider,
+			}))
+			assert.Equal(t, float64(1), got)
+		})
+	}
+
+	// Resolver-provider classification must use the transport peer, not ECS.
+	// Here Google is the advertised end-client network, while Cloudflare is the
+	// recursive resolver that actually sent the query.
+	serve(t, h, withECS(t, newQuery("cache.buildbuddy.io.", dns.TypeA), "8.8.8.8"), "1.1.1.1")
+	got := testutil.ToFloat64(metrics.DNSServerRequestCount.With(prometheus.Labels{
+		metrics.DNSRecordTypeLabel:       "A",
+		metrics.DNSResponseCodeLabel:     "NOERROR",
+		metrics.DNSResolverProviderLabel: "cloudflare",
+	}))
+	assert.Equal(t, float64(2), got)
 }
 
 // queryFromIP issues a query carrying an EDNS Client Subnet option advertising

@@ -1727,6 +1727,12 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	}
 
 	runfilesDir := bin + ".runfiles"
+	// Executable genrules do not have a runfiles tree. In that case, the cd
+	// command in points into the remote checkout, which is not valid for a
+	// local run.
+	if _, err := os.Stat(runfilesDir); os.IsNotExist(err) {
+		runfilesRoot = ""
+	}
 	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, wsRoot, runfilesDir, bin)
 	if err != nil {
 		return nil, err
@@ -2088,7 +2094,8 @@ func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTrigger
 	}
 
 	// TODO: Display merge commit in UI
-	if _, err := git(ctx, ws.log, "merge", "--no-edit", mergeBase); err != nil && !isAlreadyUpToDate(err) {
+	// git merge may fetch objects due to git_fetch_filters; run with fetch stats.
+	if err := ws.runGitWithFetchStats(ctx, "merge", "--no-edit", mergeBase); err != nil && !isAlreadyUpToDate(err) {
 		errMsg := err.Output
 		if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
 			errMsg += "\n" + err.Output
@@ -2273,15 +2280,16 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 		}
 	}
 
+	checkoutArgs := []string{"checkout", "--force"}
 	if checkoutLocalBranchName != "" {
 		// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
-		if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
-			return err
-		}
-	} else {
-		if _, err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
-			return err
-		}
+		checkoutArgs = append(checkoutArgs, "-B", checkoutLocalBranchName)
+	}
+	checkoutArgs = append(checkoutArgs, checkoutRef)
+	// The checkout may result in a fetch due to git_fetch_filters; run it with
+	// fetch stats.
+	if err := ws.runGitWithFetchStats(ctx, checkoutArgs...); err != nil {
+		return err
 	}
 	return nil
 }
@@ -2403,10 +2411,35 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	fetchArgs = append(fetchArgs, remoteName)
 	fetchArgs = append(fetchArgs, refs...)
 
+	if fetchErr := ws.runGitWithFetchStats(ctx, fetchArgs...); fetchErr != nil {
+		return status.WrapError(fetchErr, fetchErr.Output)
+	}
+	return nil
+}
+
+// runGitWithFetchStats runs a git command that fetches data from the remote,
+// adding the time spent and bytes fetched to the workspace git fetch stats,
+// and retrying the command if git aborted a transfer because the rate was too
+// slow (see --git_fetch_low_speed_retries). Besides `git fetch` itself, this
+// applies to `git checkout` and `git merge`, because when refs were fetched
+// with a filter such as blob:none, those commands lazily fetch the
+// filtered-out objects they need.
+//
+// TODO: lazy fetch stats (e.g. fetches triggered by `git checkout`) currently
+// rely on git's output being a tty, because git only logs the "total_bytes"
+// trace2 events that byte counting parses when progress meters are shown.
+// Explicit fetches force meters with --progress, but lazy fetches run as git
+// child processes whose argv we don't control, so their meters are enabled
+// only by git's isatty check, which passes because runCommand runs git on a
+// pty that the children inherit. If commands ever stop running on a pty,
+// lazily fetched bytes would silently go uncounted. A tty-independent
+// approach would be to measure new pack files created during the command,
+// since lazy fetches always store fetched objects as kept packs.
+func (ws *workspace) runGitWithFetchStats(ctx context.Context, args ...string) *commandError {
 	// Have git log trace2 events to a file under .git/info, from which the
-	// exact number of fetched bytes is parsed once the fetch completes. The
-	// log is deleted after parsing.
-	fetchEnv := map[string]string{}
+	// number of fetched bytes is parsed once the command completes. The log is
+	// deleted after parsing.
+	env := map[string]string{}
 	// GIT_TRACE2 requires an abspath.
 	trace2Path, err := filepath.Abs(filepath.Join(".git", "info", "fetch_trace2.jsonl"))
 	if err != nil {
@@ -2415,10 +2448,10 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 		// Remove any leftover log (e.g. if a previous run was interrupted
 		// mid-fetch), since git appends to the log file.
 		_ = os.Remove(trace2Path)
-		fetchEnv["GIT_TRACE2_EVENT"] = trace2Path
+		env["GIT_TRACE2_EVENT"] = trace2Path
 		// Progress data events can be nested inside other trace2 regions;
 		// raise the nesting limit (default 2) so they aren't dropped.
-		fetchEnv["GIT_TRACE2_EVENT_NESTING"] = "5"
+		env["GIT_TRACE2_EVENT_NESTING"] = "5"
 	}
 
 	lowSpeedRetries := 0
@@ -2431,32 +2464,32 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 		// Respect low-speed settings that are already present in the
 		// environment (e.g. set on the image or in the action env).
 		if os.Getenv("GIT_HTTP_LOW_SPEED_LIMIT") == "" {
-			fetchEnv["GIT_HTTP_LOW_SPEED_LIMIT"] = strconv.FormatInt(*gitFetchLowSpeedLimit, 10)
+			env["GIT_HTTP_LOW_SPEED_LIMIT"] = strconv.FormatInt(*gitFetchLowSpeedLimit, 10)
 		}
 		if os.Getenv("GIT_HTTP_LOW_SPEED_TIME") == "" {
 			// Git configures the low-speed window in whole seconds; round up
 			// so that a sub-second value doesn't truncate to 0, which would
 			// disable the low-speed check entirely.
-			fetchEnv["GIT_HTTP_LOW_SPEED_TIME"] = strconv.Itoa(int(math.Ceil(gitFetchLowSpeedTime.Seconds())))
+			env["GIT_HTTP_LOW_SPEED_TIME"] = strconv.Itoa(int(math.Ceil(gitFetchLowSpeedTime.Seconds())))
 		}
 	}
 
-	var fetchErr *commandError
+	var cmdErr *commandError
 	for attempt := 0; ; attempt++ {
-		fetchStart := time.Now()
-		_, fetchErr = gitWithEnv(ctx, ws.log, fetchEnv, fetchArgs...)
-		ws.gitFetchDuration += time.Since(fetchStart)
-		if fetchErr == nil || attempt >= lowSpeedRetries || !isTransferTooSlow(fetchErr) {
+		start := time.Now()
+		_, cmdErr = gitWithEnv(ctx, ws.log, env, args...)
+		ws.gitFetchDuration += time.Since(start)
+		if cmdErr == nil || attempt >= lowSpeedRetries || !isTransferTooSlow(cmdErr) {
 			break
 		}
 		ws.gitFetchRetryCount++
 		writeCommandSummary(ws.log, "The fetch was aborted because the transfer rate was too slow. Retrying (attempt %d of %d)...", attempt+1, lowSpeedRetries)
 	}
-	// Count fetched bytes even if the fetch failed, since a failed fetch may
+	// Count fetched bytes even if the command failed, since a failed fetch may
 	// be retried (e.g. with a different depth) and we want the total to
 	// reflect all data transferred. Retried attempts append to the same log,
 	// so any bytes they recorded before being aborted are counted too.
-	if fetchEnv["GIT_TRACE2_EVENT"] != "" {
+	if env["GIT_TRACE2_EVENT"] != "" {
 		if f, err := os.Open(trace2Path); err != nil {
 			backendLog.Warningf("Could not open the git trace2 event log; git fetch stats may be undercounted: %s", err)
 		} else {
@@ -2465,10 +2498,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 		}
 		_ = os.Remove(trace2Path)
 	}
-	if fetchErr != nil {
-		return status.WrapError(fetchErr, fetchErr.Output)
-	}
-	return nil
+	return cmdErr
 }
 
 // parseGitFetchedBytes returns the total number of bytes fetched by a git

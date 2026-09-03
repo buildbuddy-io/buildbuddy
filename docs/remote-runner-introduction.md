@@ -151,27 +151,42 @@ the following snapshot keys in order:
    the run.
 1. The latest snapshot matching the default branch of the repo associated
    with the run.
+1. The latest snapshot that was saved by any branch (the "universal"
+   snapshot).
 
 For example, consider a remote run that runs on pull requests
-(PRs). Given a PR that is attempting to merge the branch `users-ui` into a
-PR base branch `users-api`, BuildBuddy will first try to resume the latest
-snapshot associated with the `users-ui` branch. If that doesn't exist,
-we'll try to resume from the snapshot associated with the `users-api`
-branch. If that doesn't exist, we'll look for a snapshot for the `main`
-branch (the repo's default branch). If all of that fails, only then do we
-boot a new VM from scratch. When the remote run finishes and we save a
-snapshot, we only overwrite the snapshot for the `users-ui` branch,
-meaning that the `users-api` and `main` branch snapshots will not be
-affected.
+(PRs). Imagine a PR that is attempting to merge the branch `users-ui` into a
+PR base branch `users-api`:
 
-One common issue is not running any remote runs on your default branch.
-Every time there is a new PR branch, for example, the remote run will start from
-scratch because there is not a shared default snapshot for them to start from. One
-solution is to trigger a remote run on every push to the default branch, to make sure
-the default snapshot stays up to date.
+1. BuildBuddy will first try to resume the latest snapshot associated with the `users-ui` branch.
+1. If that doesn't exist, we'll try to resume from the snapshot associated with the `users-api` branch.
+1. If that doesn't exist, we'll look for a snapshot for the `main`
+   branch (the repo's default branch).
+1. If that doesn't exist, we'll look for the universal snapshot - the most
+   recent snapshot saved by any branch of the repo.
+1. If all of that fails, only then do we boot a new VM from scratch.
+1. When the remote run finishes and we save a
+   snapshot, we only overwrite the snapshot for the `users-ui` branch.
+   The `users-api` and `main` branch snapshots will not be
+   affected.
 
 For more technical details on our VM implementation, see our BazelCon
 talk [Reusing Bazel's Analysis Cache by Cloning Micro-VMs](https://www.youtube.com/watch?v=YycEXBlv7ZA).
+
+##### The universal snapshot
+
+The universal snapshot exists so that repos which never run on their default
+branch still have something to resume from. Without it, every new PR branch
+boots a VM from scratch.
+
+Resuming from the universal snapshot is enabled by default. To opt out, set the
+`allow-universal-snapshot=false` platform property.
+
+**NOTE:** We strongly recommend triggering a remote run on every push to the default branch to improve performance. See [Optimal usage of remote runners](#optimal-usage-of-remote-runners). The universal snapshot can be helpful as a fallback,
+but performance will not be as good.
+
+When `allow-universal-snapshot=true` and `remote-snapshot-save-policy=none-available`,
+runs won't write remote snapshots if a universal snapshot is available.
 
 #### Recommended configuration
 
@@ -245,7 +260,8 @@ Valid values are:
     snapshot. It will not resume from the second run of the `my-feature` branch, and
     it will not save a snapshot.
 - `none-available`: A snapshot on a non-default ref will only be saved if
-  there are no snapshots available. If there is any fallback snapshot,
+  there are no snapshots available. If there is any fallback snapshot (including the
+  [universal snapshot](#the-universal-snapshot)),
   a snapshot will not be saved. All runs on default refs will still save a snapshot.
   - Every run on the default branch (Ex. `main` or `master`) will save a snapshot.
   - For the first run on your feature branch `my-feature`, if there is snapshot
@@ -414,6 +430,16 @@ on disks for remote runners.
 
 It's more effective when a smaller remote runner is used to orchestrate farming out most computation to
 traditional Bazel remote executors.
+
+### Running on the default branch
+
+We strongly recommend triggering a remote run on every push to the default branch (typically `main` or `master`) to improve performance.
+
+When a run starts on a PR branch, it will attempt to resume from a snapshot on the default branch. If there is not a snapshot to resume from, new workloads will always start from new slow runners and may incur higher snapshot write costs. See more details in the [Runner recycling](#runner-recycling) section.
+
+The more recent your default branch snapshot, the smaller the delta for the incoming workload and the less work each PR run repeats. For example, git only fetches code that has changed, Bazel only re-analyzes targets that have changed, and Bazel outputs and external artifacts that are unchanged will already be on disk.
+
+If your builds use remote caching, execution on the default branch run is cached and reused by future runs, so nothing is executed twice, even with the additional run.
 
 ### Reducing disk snapshot size
 

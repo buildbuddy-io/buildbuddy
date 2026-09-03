@@ -846,12 +846,21 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 	checkVethRoute(ctx, vp)
 
 	if IsSecondaryNetworkEnabled() {
-		err = runCommand(ctx, "ip", "rule", "add", "from", vp.network.NamespacedIP(), "lookup", routingTableName)
+		// Capture the IP rather than reading vp.network in the cleanup func.
+		// Pooling nils vp.network (and assigns a different IP on reuse), so
+		// reading it at cleanup time would panic or delete the wrong rule.
+		//
+		// TODO: manage this rule in the pool transitions (delete on pool add,
+		// re-add for the new IP on pool get). Currently a network reused from
+		// the pool has no rt1 rule for its new IP, so its traffic routes over
+		// the primary interface instead of the secondary one.
+		namespacedIP := vp.network.NamespacedIP()
+		err = runCommand(ctx, "ip", "rule", "add", "from", namespacedIP, "lookup", routingTableName)
 		if err != nil {
 			return nil, err
 		}
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, "ip", "rule", "del", "from", vp.network.NamespacedIP())
+			return runCommand(ctx, "ip", "rule", "del", "from", namespacedIP)
 		})
 	}
 

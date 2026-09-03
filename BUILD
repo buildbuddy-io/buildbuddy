@@ -213,22 +213,12 @@ gazelle_python_manifest(
 # gazelle:resolve go kythe.io/kythe/proto/graph_go_proto @io_kythe//kythe/proto:graph_go_proto
 # gazelle:resolve go kythe.io/kythe/proto/xref_go_proto @io_kythe//kythe/proto:xref_go_proto
 #
-## This is a list of default when using Gazelle from BzlMod.
-## We force these mapping manually so that we do not oscillate during migrating to BzlMod
-## (and potentially any revert back to WORKSPACE mode).
-## TODO(sluongng): remove these once we deem BzlMod stable enough
-#
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/config @bazel_gazelle//config
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/label @bazel_gazelle//label
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language @bazel_gazelle//language
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/bazel/visibility @bazel_gazelle//language/bazel/visibility
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/go @bazel_gazelle//language/go
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/language/proto @bazel_gazelle//language/proto
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/repo @bazel_gazelle//repo
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/resolve @bazel_gazelle//resolve
-# gazelle:resolve go github.com/bazelbuild/bazel-gazelle/rule @bazel_gazelle//rule
-# gazelle:resolve go github.com/bazelbuild/rules_go/go/runfiles @io_bazel_rules_go//go/runfiles
-# gazelle:resolve go github.com/bazelbuild/rules_go/go/tools/bazel @io_bazel_rules_go//go/tools/bazel
+## Gazelle's bzlmod extension does not yet map its own v2 Go module, which
+## lives in the v2/ subdirectory of the gazelle repo, so resolve it manually.
+# gazelle:resolve go github.com/bazel-contrib/bazel-gazelle/v2/config @bazel_gazelle//v2/config
+# gazelle:resolve go github.com/bazel-contrib/bazel-gazelle/v2/label @bazel_gazelle//v2/label
+# gazelle:resolve go github.com/bazel-contrib/bazel-gazelle/v2/resolve @bazel_gazelle//v2/resolve
+# gazelle:resolve go github.com/bazel-contrib/bazel-gazelle/v2/rule @bazel_gazelle//v2/rule
 gazelle(
     name = "gazelle",
     gazelle = ":bb_gazelle_binary",

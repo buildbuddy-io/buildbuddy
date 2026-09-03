@@ -142,6 +142,12 @@ type UsageStats struct {
 	// execution. This is reset between tasks so that we can determine a task's
 	// peak memory usage when using a recycled runner.
 	peakMemoryUsageBytes int64
+	// peakGPUUsage is the peak GPU memory usage observed during the current
+	// task execution. It is tracked separately from the live reading, which
+	// drops to zero once the task's processes exit. This is reset between
+	// tasks so that we can determine a task's peak GPU usage when using a
+	// recycled runner.
+	peakGPUUsage *repb.GPUUsage
 	// baselineCPUNanos is the CPU usage from when a task last finished
 	// executing. This is needed so that we can determine a task's CPU usage
 	// when using a recycled runner.
@@ -166,6 +172,7 @@ type timelineState struct {
 	lastTimestampUnixMillis int64
 	lastCPUMillis           int64
 	lastMemoryKB            int64
+	lastGPUMemoryKB         int64
 	lastDiskRbytes          int64
 	lastWbytes              int64
 	lastDiskRios            int64
@@ -174,7 +181,7 @@ type timelineState struct {
 	// - The size calculation in updateTimeline()
 	// - The test
 	// - The trace format adapter logic in execution_service.go
-	// - TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS in trace_events.ts
+	// - TIME_SERIES_METADATA in trace_events.ts
 }
 
 func (s *UsageStats) clock() clockwork.Clock {
@@ -193,6 +200,7 @@ func (s *UsageStats) Reset() {
 
 	if s.last != nil {
 		s.last.MemoryBytes = 0
+		s.last.GpuUsage = nil
 	}
 	s.baselineCPUNanos = s.last.GetCpuNanos()
 	s.baselineCPUPressure = s.last.GetCpuPressure()
@@ -200,6 +208,7 @@ func (s *UsageStats) Reset() {
 	s.baselineIOPressure = s.last.GetIoPressure()
 	s.baselineIOStats = s.last.GetCgroupIoStats()
 	s.peakMemoryUsageBytes = 0
+	s.peakGPUUsage = nil
 
 	now := s.clock().Now()
 	if *recordUsageTimelines {
@@ -239,6 +248,7 @@ func (s *UsageStats) taskStatsLocked(includeTimeline bool) *repb.UsageStats {
 
 	taskStats.CpuNanos -= s.baselineCPUNanos
 	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
+	taskStats.GpuUsage = s.peakGPUUsage.CloneVT()
 
 	// Update all IO stats to be relative to the baseline
 	ioStats := taskStats.CgroupIoStats
@@ -289,6 +299,9 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 		len(st.GetRbytesTotalSamples()) +
 		len(st.GetWiosTotalSamples()) +
 		len(st.GetRiosTotalSamples())
+	if gpuTimeline := st.GetGpuUsage(); gpuTimeline != nil {
+		totalLength += len(gpuTimeline.GetTotalMemoryKbSamples())
+	}
 	if 8*totalLength > timeseriesSizeLimitBytes {
 		return
 	}
@@ -310,6 +323,32 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 	memDelta := mem - s.timelineState.lastMemoryKB
 	s.timeline.MemoryKbSamples = append(s.timeline.MemoryKbSamples, memDelta)
 	s.timelineState.lastMemoryKB = mem
+
+	// Update GPU memory samples with the current total usage across GPUs, in
+	// KB (1000 bytes).
+	gpuUsage := s.last.GetGpuUsage()
+	gpuTimeline := s.timeline.GetGpuUsage()
+	if gpuUsage.GetTotalMemoryBytes() > 0 && gpuTimeline == nil {
+		// Start the GPU series lazily on the first nonzero reading, so that
+		// tasks which never use a GPU don't record an all-zero series.
+		// Backfill zeros for the samples recorded before this one; the current
+		// sample's timestamp was already appended above, hence the minus one.
+		gpuTimeline = &repb.GPUUsageTimeline{
+			TotalMemoryKbSamples: make([]int64, len(s.timeline.GetTimestamps())-1),
+		}
+		s.timeline.GpuUsage = gpuTimeline
+	}
+	if gpuTimeline != nil {
+		// A nil reading means GPU usage was unavailable at this poll (e.g. an
+		// NVML query failed), so carry the last observation forward rather
+		// than record a false zero.
+		gpuMemoryKB := s.timelineState.lastGPUMemoryKB
+		if gpuUsage != nil {
+			gpuMemoryKB = gpuUsage.GetTotalMemoryBytes() / 1e3
+		}
+		gpuTimeline.TotalMemoryKbSamples = append(gpuTimeline.TotalMemoryKbSamples, gpuMemoryKB-s.timelineState.lastGPUMemoryKB)
+		s.timelineState.lastGPUMemoryKB = gpuMemoryKB
+	}
 
 	// Update disk rbytes samples with cumulative bytes read.
 	diskRbytes := s.last.GetCgroupIoStats().GetRbytes()
@@ -347,6 +386,37 @@ func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
 	s.last = lifetimeStats.CloneVT()
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
+	}
+	// Fold the latest point-in-time GPU reading into the task peaks. The
+	// total tracks the largest sum observed in a single reading while each
+	// device entry tracks its own high-water mark, so the total can be less
+	// than the sum of device peaks.
+	if gpuUsage := lifetimeStats.GetGpuUsage(); gpuUsage.GetTotalMemoryBytes() > 0 {
+		if s.peakGPUUsage == nil {
+			s.peakGPUUsage = &repb.GPUUsage{}
+		}
+		if gpuUsage.GetTotalMemoryBytes() > s.peakGPUUsage.GetPeakTotalMemoryBytes() {
+			s.peakGPUUsage.PeakTotalMemoryBytes = gpuUsage.GetTotalMemoryBytes()
+		}
+		for _, device := range gpuUsage.GetDeviceUsage() {
+			if device.GetMemoryBytes() <= 0 {
+				continue
+			}
+			var peakDevice *repb.GPUDeviceUsage
+			for _, d := range s.peakGPUUsage.GetDeviceUsage() {
+				if d.GetId() == device.GetId() {
+					peakDevice = d
+					break
+				}
+			}
+			if peakDevice == nil {
+				peakDevice = &repb.GPUDeviceUsage{Id: device.GetId(), Vendor: device.GetVendor()}
+				s.peakGPUUsage.DeviceUsage = append(s.peakGPUUsage.DeviceUsage, peakDevice)
+			}
+			if device.GetMemoryBytes() > peakDevice.GetPeakMemoryBytes() {
+				peakDevice.PeakMemoryBytes = device.GetMemoryBytes()
+			}
+		}
 	}
 	if *recordUsageTimelines && s.timeline != nil {
 		s.updateTimeline(s.clock().Now())
@@ -427,6 +497,16 @@ type FileSystemLayout struct {
 	RemoteInstanceName string
 	DigestFunction     repb.DigestFunction_Value
 	Inputs             *repb.Tree
+	InputFetcher       InputFetcher
+	WorkingDirectory   string
+	OutputDirectories  []string
+	OutputFiles        []string
+	OutputPaths        []string
+}
+
+// InputFetcher ensures that an input file is available in the local file cache.
+type InputFetcher interface {
+	Fetch(ctx context.Context, node *repb.FileNode) error
 }
 
 // CommandContainer provides an execution environment for commands.

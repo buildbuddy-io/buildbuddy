@@ -31,6 +31,8 @@ import (
 var (
 	kube = flag.Bool("kube", false, "Use kubectl port-forward to point Grafana at real data.")
 
+	kubectlContext = flag.String("context", "", "Override for the inferred k8s context. The default uses us-west1 prod or dev context.")
+
 	// Note: these flags only take effect when setting -kube=true:
 	namespace = flag.String("namespace", "monitor-dev", "k8s namespace")
 	service   = flag.String("service", "victoria-metrics-cluster-global-vmselect", "k8s VictoriaMetrics service name")
@@ -156,6 +158,10 @@ func run() error {
 		cmd.Dir = dockerComposeDir
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+		go func() {
+			<-ctx.Done()
+			cmd.Process.Signal(syscall.SIGTERM)
+		}()
 		return cmd.Run()
 	})
 	eg.Go(func() error {
@@ -164,7 +170,7 @@ func run() error {
 		}
 		// Start kubectl port-forward for victoria metrics
 		cmd := exec.CommandContext(
-			ctx, "kubectl", "--namespace", *namespace,
+			ctx, "kubectl", "--context", k8sContext(*namespace), "--namespace", *namespace,
 			"port-forward", "service/"+*service,
 			"--address=0.0.0.0", "8481:8481")
 		cmd.Stdout = os.Stdout
@@ -175,29 +181,23 @@ func run() error {
 		}
 		return err
 	})
-	eg.Go(func() error {
-		var context string
-		if *clickhouse == "dev" {
-			context = "gke_flame-build_us-west1_dev-nv8eh"
-		} else if *clickhouse == "prod" {
-			context = "gke_flame-build_us-west1_prod-hs6in"
-		} else {
-			return nil
-		}
-		namespace := "clickhouse-operator-" + *clickhouse
-		service := "chi-repl-" + *clickhouse + "-replicated-0-0-0"
-		// Start kubectl port-forward for clickhouse
-		cmd := exec.CommandContext(
-			ctx, "kubectl", "--namespace", namespace, "port-forward", service,
-			"--context="+context, "--address=0.0.0.0", "9001:9000")
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err := cmd.Run()
-		if err != nil {
-			log.Printf("*********** Failed to port forward clickhouse connection: %s", err)
-		}
-		return err
-	})
+	if *clickhouse != "" && *clickhouse != "local" {
+		eg.Go(func() error {
+			namespace := "clickhouse-operator-" + *clickhouse
+			service := "chi-repl-" + *clickhouse + "-replicated-0-0-0"
+			// Start kubectl port-forward for clickhouse
+			cmd := exec.CommandContext(
+				ctx, "kubectl", "--context", k8sContext(namespace), "--namespace", namespace, "port-forward", service,
+				"--address=0.0.0.0", "9001:9000")
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			err := cmd.Run()
+			if err != nil {
+				log.Printf("*********** Failed to port forward clickhouse connection: %s", err)
+			}
+			return err
+		})
+	}
 	eg.Go(func() error {
 		// Watch the generated dashboards directory for source changes and
 		// rebuild + restage the JSON outputs live. Failures are logged.
@@ -264,6 +264,16 @@ func run() error {
 		}
 	})
 	return eg.Wait()
+}
+
+func k8sContext(namespace string) string {
+	if *kubectlContext != "" {
+		return *kubectlContext
+	}
+	if strings.Contains(namespace, "prod") {
+		return "gke_flame-build_us-west1_prod-hs6in"
+	}
+	return "gke_flame-build_us-west1_dev-nv8eh"
 }
 
 func getSecret(secret string) ([]byte, error) {

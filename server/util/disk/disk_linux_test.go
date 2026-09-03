@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmount"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,52 +23,62 @@ import (
 // FileWriterWithTmpDir is using O_TMPFILE + linkat instead of an
 // open/write/rename cycle through a named temp file.
 func TestFileWriter_UsesOTmpfile(t *testing.T) {
-	dir := testfs.MakeTempDir(t)
-	finalPath := filepath.Join(dir, "out.bin")
+	for _, syncOnCommit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sync=%v", syncOnCommit), func(t *testing.T) {
+			flags.Set(t, "file_writer_sync_on_commit", syncOnCommit)
+			dir := testfs.MakeTempDir(t)
+			finalPath := filepath.Join(dir, "out.bin")
 
-	w, err := disk.FileWriter(context.Background(), finalPath)
-	require.NoError(t, err)
+			w, err := disk.FileWriter(context.Background(), finalPath)
+			require.NoError(t, err)
 
-	_, err = w.Write([]byte("hello world"))
-	require.NoError(t, err)
+			_, err = w.Write([]byte("hello world"))
+			require.NoError(t, err)
 
-	// Before Commit, the directory should be empty: O_TMPFILE has no name.
-	entries, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	require.Empty(t, entries, "expected no temp file in tmp dir while writing with O_TMPFILE")
+			// Before Commit, the directory should be empty: O_TMPFILE has no name.
+			entries, err := os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Empty(t, entries, "expected no temp file in tmp dir while writing with O_TMPFILE")
 
-	require.NoError(t, w.Commit())
-	require.NoError(t, w.Close())
+			require.NoError(t, w.Commit())
+			require.NoError(t, w.Close())
 
-	// After Commit, only the final file should exist.
-	entries, err = os.ReadDir(dir)
-	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	require.Equal(t, "out.bin", entries[0].Name())
+			// After Commit, only the final file should exist.
+			entries, err = os.ReadDir(dir)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			require.Equal(t, "out.bin", entries[0].Name())
 
-	got, err := os.ReadFile(finalPath)
-	require.NoError(t, err)
-	require.Equal(t, "hello world", string(got))
+			got, err := os.ReadFile(finalPath)
+			require.NoError(t, err)
+			require.Equal(t, "hello world", string(got))
+		})
+	}
 }
 
 // TestFileWriter_OverwritesExisting verifies that committing the writer
 // overwrites a pre-existing file at the destination, matching the previous
 // rename-based behavior.
 func TestFileWriter_OverwritesExisting(t *testing.T) {
-	dir := testfs.MakeTempDir(t)
-	finalPath := filepath.Join(dir, "out.bin")
-	require.NoError(t, os.WriteFile(finalPath, []byte("old"), 0644))
+	for _, syncOnCommit := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sync=%v", syncOnCommit), func(t *testing.T) {
+			flags.Set(t, "file_writer_sync_on_commit", syncOnCommit)
+			dir := testfs.MakeTempDir(t)
+			finalPath := filepath.Join(dir, "out.bin")
+			require.NoError(t, os.WriteFile(finalPath, []byte("old"), 0644))
 
-	w, err := disk.FileWriter(context.Background(), finalPath)
-	require.NoError(t, err)
-	_, err = w.Write([]byte("new"))
-	require.NoError(t, err)
-	require.NoError(t, w.Commit())
-	require.NoError(t, w.Close())
+			w, err := disk.FileWriter(context.Background(), finalPath)
+			require.NoError(t, err)
+			_, err = w.Write([]byte("new"))
+			require.NoError(t, err)
+			require.NoError(t, w.Commit())
+			require.NoError(t, w.Close())
 
-	got, err := os.ReadFile(finalPath)
-	require.NoError(t, err)
-	require.Equal(t, "new", string(got))
+			got, err := os.ReadFile(finalPath)
+			require.NoError(t, err)
+			require.Equal(t, "new", string(got))
+		})
+	}
 }
 
 func TestMain(m *testing.M) {

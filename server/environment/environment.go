@@ -96,6 +96,7 @@ type Env interface {
 	GetUsageTracker() interfaces.UsageTracker
 	GetXcodeLocator() interfaces.XcodeLocator
 	GetQuotaManager() interfaces.QuotaManager
+	GetGroupStatusChecker() interfaces.GroupStatusChecker
 	GetMux() interfaces.HttpServeMux
 	GetHTTPServerWaitGroup() *sync.WaitGroup
 	GetInternalHTTPMux() interfaces.HttpServeMux

@@ -38,7 +38,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime/seccomp"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -76,23 +78,24 @@ const (
 )
 
 var (
-	Runtime                 = flag.String("executor.oci.runtime", "", "OCI runtime")
-	runtimeRoot             = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
-	dns                     = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
-	netPoolSize             = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
-	defaultNetworkMode      = flag.String("executor.oci.default_network_mode", "", "Default network mode: either 'bridge' or 'off'. Can be overridden per-action with the 'dockerNetwork' platform property.")
-	enableLxcfs             = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
-	capAdd                  = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
-	mounts                  = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
-	devices                 = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
-	cdiDevices              = flag.Slice("executor.oci.cdi_devices", []string{}, "Fully-qualified CDI device names to inject into all OCI containers (for example: 'nvidia.com/gpu=all', 'nvidia.com/gpu=0').")
-	cdiSpecDirs             = flag.Slice("executor.oci.cdi_spec_dirs", cdi.DefaultSpecDirs, "Directories containing CDI specs used to resolve executor.oci.cdi_devices.")
-	enablePersistentVolumes = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
-	enableTini              = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
-	enableCgroupMemoryLimit = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
-	minPIDsLimit            = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
-	cgroupMemoryCushion     = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
-	enableImageEviction     = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
+	Runtime                   = flag.String("executor.oci.runtime", "", "OCI runtime")
+	runtimeRoot               = flag.String("executor.oci.runtime_root", "", "Root directory for storage of container state (see <runtime> --help for default)")
+	dns                       = flag.String("executor.oci.dns", "8.8.8.8", "Specifies a custom DNS server for use inside OCI containers. If set to the empty string, mount /etc/resolv.conf from the host.")
+	netPoolSize               = flag.Int("executor.oci.network_pool_size", -1, "Limit on the number of networks to be reused between containers. Setting to 0 disables pooling. Setting to -1 uses the recommended default.")
+	defaultNetworkMode        = flag.String("executor.oci.default_network_mode", "", "Default network mode: either 'bridge' or 'off'. Can be overridden per-action with the 'dockerNetwork' platform property.")
+	enableLxcfs               = flag.Bool("executor.oci.enable_lxcfs", false, "Use lxcfs to fake cpu info inside containers.")
+	capAdd                    = flag.Slice("executor.oci.cap_add", []string{}, "Capabilities to add to all OCI containers.")
+	seccompAdditionalSyscalls = flag.Slice("executor.oci.seccomp_additional_syscalls", []string{}, "Additional syscalls to allow for all OCI containers. Adding syscalls weakens syscall-level sandboxing. This executor-wide setting cannot be controlled per action.")
+	mounts                    = flag.Slice("executor.oci.mounts", []specs.Mount{}, "Additional mounts to add to all OCI containers. This is an array of OCI mount specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#mounts")
+	devices                   = flag.Slice("executor.oci.devices", []specs.LinuxDevice{}, "Additional devices to add to all OCI containers. This is an array of OCI linux device specs as described here: https://github.com/opencontainers/runtime-spec/blob/main/config.md#configuration-schema-example")
+	cdiDevices                = flag.Slice("executor.oci.cdi_devices", []string{}, "Fully-qualified CDI device names to inject into all OCI containers (for example: 'nvidia.com/gpu=all', 'nvidia.com/gpu=0').")
+	cdiSpecDirs               = flag.Slice("executor.oci.cdi_spec_dirs", cdi.DefaultSpecDirs, "Directories containing CDI specs used to resolve executor.oci.cdi_devices.")
+	enablePersistentVolumes   = flag.Bool("executor.oci.enable_persistent_volumes", false, "Enables persistent volumes that can be shared between actions within a group. Only supported for OCI isolation type.")
+	enableTini                = flag.Bool("executor.oci.enable_tini", false, "If true, run all OCI containers with tini as pid 1.")
+	enableCgroupMemoryLimit   = flag.Bool("executor.oci.enable_cgroup_memory_limit", false, "If true, sets cgroup memory.max based on resource requests to limit how much memory a task can claim.")
+	minPIDsLimit              = flag.Int64("executor.oci.min_pids_limit", 0, "Min value to use for pids.max (PID limit). The scheduler may set a higher value for larger tasks. This can be used for rare cases where the scheduler does not provide a high enough limit.")
+	cgroupMemoryCushion       = flag.Float64("executor.oci.cgroup_memory_limit_cushion", 0, "If executor.oci.enable_cgroup_memory_limit is true, allow tasks to consume (1 + cgroup_memory_limit_cushion) * EstimatedMemoryBytes")
+	enableImageEviction       = flag.Bool("executor.oci.image_eviction_enabled", false, "If true, track OCI image layers in the filecache LRU for eviction. When enabled, unused image layers can be evicted to make room for other cached files.")
 
 	errSIGSEGV = status.UnavailableErrorf("command was terminated by SIGSEGV, likely due to a memory issue")
 )
@@ -134,21 +137,11 @@ var (
 	crunRlocationpath string
 )
 
-//go:embed seccomp.json
-var seccompJSON []byte
-var seccomp specs.LinuxSeccomp
-
 //go:embed hosts
 var hostsFile []byte
 
 //go:embed tini
 var tini []byte
-
-func init() {
-	if err := json.Unmarshal(seccompJSON, &seccomp); err != nil {
-		panic("Embedded seccomp profile is not valid JSON: " + err.Error())
-	}
-}
 
 var (
 	// Allowed capabilities.
@@ -232,6 +225,9 @@ type provider struct {
 	// CDI registry used for resolving configured CDI devices.
 	// This is initialized once at startup when CDI devices are configured.
 	cdiRegistry *cdi.Cache
+
+	// Seccomp profile attached to all OCI containers created by this provider.
+	seccompProfile *specs.LinuxSeccomp
 }
 
 func startLxcfs(ctx context.Context, lxcfsMountDir string) (*exec.Cmd, error) {
@@ -257,6 +253,15 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 	if !slices.Contains([]string{"", "bridge", "off"}, *defaultNetworkMode) {
 		return nil, fmt.Errorf("unsupported 'executor.oci.default_network_mode' setting %q", *defaultNetworkMode)
 	}
+	seccompProfile, err := seccomp.New(*seccompAdditionalSyscalls)
+	if err != nil {
+		return nil, fmt.Errorf("configure OCI seccomp profile: %w", err)
+	}
+	profileJSON, err := json.Marshal(seccompProfile)
+	if err != nil {
+		return nil, fmt.Errorf("marshal effective OCI seccomp profile: %w", err)
+	}
+	log.Infof("Configured OCI seccomp profile source=%q additional_syscalls=%v sha256=%x", "embedded default", *seccompAdditionalSyscalls, sha256.Sum256(profileJSON))
 
 	// Enable masquerading on the host if it isn't enabled already.
 	if err := networking.EnableMasquerading(env.GetServerContext()); err != nil {
@@ -439,6 +444,7 @@ func NewProvider(env environment.Env, buildRoot, cacheRoot string) (*provider, e
 		networkPool:    networkPool,
 		lxcfsMount:     lxcfsMount,
 		cdiRegistry:    cdiRegistry,
+		seccompProfile: seccompProfile,
 	}, nil
 }
 
@@ -477,6 +483,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 		networkPool:    p.networkPool,
 		lxcfsMount:     p.lxcfsMount,
 		cdiRegistry:    p.cdiRegistry,
+		seccompProfile: p.seccompProfile,
 
 		blockDevice:        args.BlockDevice,
 		cgroupParent:       args.CgroupParent,
@@ -542,6 +549,8 @@ type ociContainer struct {
 	useOCIFetcher bool
 
 	cdiRegistry *cdi.Cache
+
+	seccompProfile *specs.LinuxSeccomp
 }
 
 // Assert [*ociContainer] implements [container.StatsRecorder].
@@ -829,9 +838,7 @@ func (c *ociContainer) Exec(ctx context.Context, cmd *repb.Command, stdio *inter
 }
 
 func (c *ociContainer) RecordStats(ctx context.Context) func() (*repb.UsageStats, error) {
-	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
-		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
-	})
+	stop := c.startStatsTracking(ctx)
 	return func() (*repb.UsageStats, error) {
 		stop()
 		return c.stats.TaskStats(), nil
@@ -964,9 +971,7 @@ func (c *ociContainer) Stats(ctx context.Context) (*repb.UsageStats, error) {
 // Also incorporates cgroup events into the command result - oom_kill events
 // in particular are translated to errors.
 func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn func(ctx context.Context) *interfaces.CommandResult) *interfaces.CommandResult {
-	stop := c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
-		return c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
-	})
+	stop := c.startStatsTracking(ctx)
 	res := invokeRuntimeFn(ctx)
 	stop()
 	// statsCh will report stats for processes inside the container, and
@@ -1008,6 +1013,17 @@ func (c *ociContainer) doWithStatsTracking(ctx context.Context, invokeRuntimeFn 
 	}
 
 	return res
+}
+
+func (c *ociContainer) startStatsTracking(ctx context.Context) func() {
+	return c.stats.TrackExecution(ctx, func(ctx context.Context) (*repb.UsageStats, error) {
+		stats, err := c.cgroupPaths.Stats(ctx, c.cid, c.blockDevice)
+		if err != nil {
+			return nil, err
+		}
+		stats.GpuUsage = gpu.CgroupUsage(c.cgroupPath())
+		return stats, nil
+	})
 }
 
 // checkOOMKill checks for oom_kill memory events in the cgroup and returns an
@@ -1308,7 +1324,7 @@ func (c *ociContainer) createSpec(ctx context.Context, cmd *repb.Command) (*spec
 					Path: c.network.NamespacePath(),
 				},
 			},
-			Seccomp: &seccomp,
+			Seccomp: c.seccompProfile,
 			Devices: []specs.LinuxDevice{},
 			Sysctl: map[string]string{
 				"net.ipv4.ping_group_range": fmt.Sprintf("%d %d", user.GID, user.GID),

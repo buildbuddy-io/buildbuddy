@@ -13,9 +13,11 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -169,6 +171,60 @@ func TestCOW_OnWriteHook(t *testing.T) {
 		{Offset: 10, Length: 2, ChunkIndex: 2},
 		{Offset: 12, Length: 3, ChunkIndex: 3},
 	}, events)
+}
+
+func TestCOW_EagerFetchChunksOption(t *testing.T) {
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, fc.Close()) })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	const chunkSizeBytes = int64(4096)
+	digests := make([]*repb.Digest, 3)
+	for i := range digests {
+		data := bytes.Repeat([]byte{byte(i + 1)}, int(chunkSizeBytes))
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		digests[i] = d
+		path := filepath.Join(testfs.MakeTempDir(t), fmt.Sprintf("chunk-%d", i))
+		require.NoError(t, os.WriteFile(path, data, 0644))
+		require.NoError(t, fc.AddFile(ctx, &repb.FileNode{Digest: d}, path))
+	}
+
+	newStore := func(eagerFetchChunks int) (*copy_on_write.COWStore, []*copy_on_write.Mmap) {
+		dataDir := testfs.MakeTempDir(t)
+		lru, err := copy_on_write.GetSharedMmapLRU(dataDir)
+		require.NoError(t, err)
+		chunks := make([]*copy_on_write.Mmap, 0, len(digests))
+		for i, d := range digests {
+			chunk, err := copy_on_write.NewLazyMmap(ctx, env, dataDir, int64(i)*chunkSizeBytes, d, "", false, lru)
+			require.NoError(t, err)
+			chunks = append(chunks, chunk)
+		}
+		cow, err := copy_on_write.NewCOWStore(ctx, env, "test", chunks, copy_on_write.COWOptions{
+			ChunkSizeBytes:   chunkSizeBytes,
+			TotalSizeBytes:   int64(len(chunks)) * chunkSizeBytes,
+			DataDir:          dataDir,
+			EagerFetchChunks: eagerFetchChunks,
+		})
+		require.NoError(t, err)
+		return cow, chunks
+	}
+
+	enabled, enabledChunks := newStore(1)
+	t.Cleanup(func() { require.NoError(t, enabled.Close()) })
+	_, err = enabled.ReadAt(make([]byte, 1), 0)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return enabledChunks[1].Source() == snaputil.ChunkSourceLocalFilecache
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, snaputil.ChunkSourceUnmapped, enabledChunks[2].Source())
 }
 
 func TestCOW_Concurrency(t *testing.T) {

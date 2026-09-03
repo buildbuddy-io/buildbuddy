@@ -1685,13 +1685,18 @@ message RunTargetAnalyzed {
 // --skip_auto_checkout). Fetches performed by the action itself, such as
 // bazel-triggered fetches of external git repos, are not counted.
 message GitFetchCompleted {
-  // Total number of bytes fetched, parsed from git trace2 event logs.
+  // Total number of bytes fetched, parsed from git trace2 event logs. This
+  // includes objects fetched lazily during checkout and merge, which happens
+  // when fetch filters such as blob:none are used.
   int64 total_bytes = 1;
 
-  // Total time spent running git fetch commands.
+  // Total time spent running git commands that fetch from the remote. In
+  // addition to git fetch commands, this counts git checkout and git merge
+  // commands in full, since with fetch filters in use the bulk of their time
+  // is typically spent lazily fetching filtered-out objects.
   google.protobuf.Duration duration = 2;
 
-  // Total number of git fetch retries after low-speed aborts.
+  // Total number of git command retries after low-speed transfer aborts.
   int64 retry_count = 3;
 }
 

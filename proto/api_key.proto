@@ -3,6 +3,7 @@ syntax = "proto3";
 import "proto/capability.proto";
 import "proto/context.proto";
 import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 
 package api_key;
 
@@ -34,6 +35,18 @@ message ApiKey {
   // Optional certificate corresponding to this API key, if
   // requested.
   Certificate certificate = 8;
+
+  // Metadata about the creation of this API key.
+  CreationMetadata creation_metadata = 9;
+}
+
+message CreationMetadata {
+  // The time at which the API key was created, if known.
+  google.protobuf.Timestamp created_at = 1;
+
+  // The display name of the user who created this API key. Only provided if
+  // known and if the requesting user may view this information.
+  string created_by = 2;
 }
 
 message Certificate {

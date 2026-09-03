@@ -73,6 +73,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/groupstatus"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -247,6 +248,7 @@ func main() {
 	if err := quota.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	realEnv.SetGroupStatusChecker(groupstatus.New())
 
 	if err := redis_client.RegisterRemoteExecutionRedisClient(realEnv); err != nil {
 		log.Fatalf("%v", err)

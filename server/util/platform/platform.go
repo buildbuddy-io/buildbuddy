@@ -77,6 +77,7 @@ const (
 	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
 	transientErrorExitCodes                  = "transient-error-exit-codes"
 	AllowRemoteSnapshotsPropertyName         = "allow-remote-snapshots"
+	EnableUniversalSnapshotPropertyName      = "allow-universal-snapshot"
 	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName           = "snapshot-read-policy"
 	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"
@@ -89,6 +90,7 @@ const (
 	persistentWorkerProtocolPropertyName     = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                   = "workflow-id"
 	WorkloadIsolationPropertyName            = "workload-isolation-type"
+	VFSPrefetchModePropertyName              = "vfs-prefetch-mode"
 	initDockerdPropertyName                  = "init-dockerd"
 	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
 	enableVFSPropertyName                    = "enable-vfs"
@@ -186,6 +188,11 @@ const (
 // If you add a container type, also add it to KnownContainerTypes
 )
 
+const (
+	VFSPrefetchModeAll  = "all"
+	VFSPrefetchModeNone = "none"
+)
+
 // KnownContainerTypes are all the types that are currently supported, or were
 // previously supported.
 var KnownContainerTypes []ContainerType = []ContainerType{BareContainerType, PodmanContainerType, DockerContainerType, FirecrackerContainerType, OCIContainerType, SandboxContainerType}
@@ -278,8 +285,9 @@ type Properties struct {
 	// they can be retried automatically by the client.
 	TransientErrorExitCodes []int
 
-	EnableVFS      bool
-	IncludeSecrets bool
+	EnableVFS       bool
+	VFSPrefetchMode string
+	IncludeSecrets  bool
 	// EnvSecrets is a list of specific secret names to inject as env vars.
 	// Takes precedence over IncludeSecrets for targeted injection.
 	EnvSecrets []string
@@ -327,6 +335,13 @@ type Properties struct {
 	HostedBazelAffinityKey   string
 	RemoteSnapshotSavePolicy string
 	SnapshotReadPolicy       string
+
+	// EnableUniversalSnapshot controls whether a run may resume from, and
+	// write to, the "universal" snapshot. It is only ever consulted as a last resort,
+	// for remote runs that don't write default branch snapshots and have no other fallback snapshots available.
+	//
+	// Defaults to true if unset.
+	EnableUniversalSnapshot bool
 
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
@@ -446,12 +461,12 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false)
-	// Runner recycling is not yet supported in combination with VFS workspaces.
-	// Firecracker VFS performance is not good enough yet to be enabled.
-	if ContainerType(isolationType) == FirecrackerContainerType {
-		vfsEnabled = false
+	vfsPrefetchMode := stringProp(m, VFSPrefetchModePropertyName, VFSPrefetchModeAll)
+	switch vfsPrefetchMode {
+	case VFSPrefetchModeAll, VFSPrefetchModeNone:
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the %q platform property", vfsPrefetchMode, VFSPrefetchModePropertyName)
 	}
-
 	envOverrides := stringListProp(m, EnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
 		b, err := base64.StdEncoding.DecodeString(prop)
@@ -575,6 +590,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		TerminationGracePeriod:    terminationGracePeriod,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
+		VFSPrefetchMode:           vfsPrefetchMode,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
@@ -594,6 +610,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,
 		SnapshotReadPolicy:        snapshotReadPolicy,
+		EnableUniversalSnapshot:   boolProp(m, EnableUniversalSnapshotPropertyName, true),
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
 		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),

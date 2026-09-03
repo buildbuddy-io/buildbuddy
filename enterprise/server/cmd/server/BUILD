@@ -94,6 +94,7 @@ go_library(
         "//server/remote_cache/capabilities_server",
         "//server/telemetry",
         "//server/util/clickhouse",
+        "//server/util/groupstatus",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
         "//server/util/kuberesolver",

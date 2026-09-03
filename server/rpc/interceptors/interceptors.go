@@ -475,6 +475,28 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
+func groupStatusUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if gs := env.GetGroupStatusChecker(); gs != nil {
+			if err := gs.CheckAllowed(ctx); err != nil {
+				return nil, err
+			}
+		}
+		return handler(ctx, req)
+	}
+}
+
+func groupStatusStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if gs := env.GetGroupStatusChecker(); gs != nil {
+			if err := gs.CheckAllowed(stream.Context()); err != nil {
+				return err
+			}
+		}
+		return handler(srv, stream)
+	}
+}
+
 func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		if qm := env.GetQuotaManager(); qm != nil {
@@ -702,6 +724,7 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		interceptors = append(interceptors, extraInterceptors...)
 	}
 	interceptors = append(interceptors, authUnaryServerInterceptor(env),
+		groupStatusUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env))
@@ -729,6 +752,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		interceptors = append(interceptors, extraInterceptors...)
 	}
 	interceptors = append(interceptors, authStreamServerInterceptor(env),
+		groupStatusStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env))

@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -39,8 +40,9 @@ type inodeCacheEntry struct {
 	// We track how many open handles there are for each inode and don't cache
 	// any attribute data if there are open handles since we assume that the
 	// inode attributes can change behind the scenes.
-	numHandles int
-	attrs      *vfspb.Attrs
+	numHandles      int
+	attrs           *vfspb.Attrs
+	attrsGeneration uint64
 }
 
 type inodeCache struct {
@@ -60,9 +62,8 @@ func (ic *inodeCache) opened(inode uint64) {
 		e = &inodeCacheEntry{}
 		ic.data[inode] = e
 	}
-	if e.numHandles == 0 {
-		e.attrs = nil
-	}
+	e.attrsGeneration++
+	e.attrs = nil
 	e.numHandles++
 }
 
@@ -74,6 +75,8 @@ func (ic *inodeCache) released(inode uint64) {
 		log.Warningf("release for unknown inode %d", inode)
 		return
 	}
+	e.attrsGeneration++
+	e.attrs = nil
 	e.numHandles--
 }
 
@@ -104,22 +107,49 @@ func (ic *inodeCache) cacheAttrs(inode uint64, attrs *vfspb.Attrs) {
 	e.attrs = attrs
 }
 
+func (ic *inodeCache) cacheAttrsForGeneration(inode uint64, generation uint64, attrs *vfspb.Attrs) bool {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	e := ic.data[inode]
+	if e == nil {
+		e = &inodeCacheEntry{}
+		ic.data[inode] = e
+	}
+	if e.attrsGeneration != generation || e.numHandles > 0 {
+		return false
+	}
+	e.attrs = attrs
+	return true
+}
+
+func (ic *inodeCache) attrsGenerations(nodes []*vfspb.Node) map[uint64]uint64 {
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	generations := make(map[uint64]uint64, len(nodes))
+	for _, node := range nodes {
+		if e := ic.data[node.GetId()]; e != nil {
+			generations[node.GetId()] = e.attrsGeneration
+		}
+	}
+	return generations
+}
+
 func (ic *inodeCache) removeCachedAttrs(inode uint64) {
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
 	e := ic.data[inode]
 	if e == nil {
-		return
+		e = &inodeCacheEntry{}
+		ic.data[inode] = e
 	}
+	e.attrsGeneration++
 	e.attrs = nil
-	if e.numHandles == 0 {
-		delete(ic.data, inode)
-	}
 }
 
 type VFS struct {
 	vfsClient           vfspb.FileSystemClient
 	mountDir            string
+	enablePassthrough   bool
 	verbose             bool
 	logFUSEOps          bool
 	logFUSELatencyStats bool
@@ -136,9 +166,18 @@ type VFS struct {
 	nodesByInodeID map[uint64]*fs.Inode
 	opStats        map[string]*opStats
 	perFileStats   map[string]perOpStats
+
+	// These detect attribute mutations that overlap a directory snapshot.
+	attrsGeneration        atomic.Uint64
+	attrsMutationsInFlight atomic.Int64
 }
 
 type Options struct {
+	// EnablePassthrough lets the kernel access file descriptors returned by
+	// the VFS server directly. This is only valid when the client and server
+	// run in the same process; file descriptor numbers cannot be transferred
+	// over gRPC or across a VM boundary.
+	EnablePassthrough bool
 	// Verbose enables logging of most per-file operations.
 	Verbose bool
 	// LogFUSEOps enabled logging of all operations received by the go fuse
@@ -160,6 +199,7 @@ func New(vfsClient vfspb.FileSystemClient, mountDir string, options *Options) *V
 	vfs := &VFS{
 		vfsClient:           vfsClient,
 		mountDir:            mountDir,
+		enablePassthrough:   options.EnablePassthrough,
 		verbose:             options.Verbose,
 		logFUSEOps:          options.LogFUSEOps,
 		logFUSELatencyStats: options.LogFUSELatencyStats,
@@ -180,6 +220,32 @@ func (vfs *VFS) getRPCContext() context.Context {
 	vfs.mu.Lock()
 	defer vfs.mu.Unlock()
 	return vfs.rpcCtx
+}
+
+func (vfs *VFS) beginAttrsMutation() {
+	vfs.attrsMutationsInFlight.Add(1)
+	vfs.attrsGeneration.Add(1)
+}
+
+func (vfs *VFS) endAttrsMutation() {
+	vfs.attrsGeneration.Add(1)
+	vfs.attrsMutationsInFlight.Add(-1)
+}
+
+func (vfs *VFS) attrsSnapshotGeneration() (uint64, bool) {
+	generation := vfs.attrsGeneration.Load()
+	return generation, vfs.attrsMutationsInFlight.Load() == 0
+}
+
+func (vfs *VFS) attrsGenerationsForSnapshot(generation uint64, nodes []*vfspb.Node) (map[uint64]uint64, bool) {
+	if vfs.attrsGeneration.Load() != generation || vfs.attrsMutationsInFlight.Load() != 0 {
+		return nil, false
+	}
+	attrsGenerations := vfs.inodeCache.attrsGenerations(nodes)
+	if vfs.attrsGeneration.Load() != generation || vfs.attrsMutationsInFlight.Load() != 0 {
+		return nil, false
+	}
+	return attrsGenerations, true
 }
 
 func (vfs *VFS) GetMountDir() string {
@@ -263,7 +329,21 @@ func (vfs *VFS) PrepareForTask(ctx context.Context, taskID string, invalidatedIn
 	vfs.mu.Lock()
 	vfs.internalTaskID = taskID
 	vfs.rpcCtx = ctx
+	var nodes []*fs.Inode
+	for _, node := range vfs.nodesByInodeID {
+		nodes = append(nodes, node)
+	}
 	vfs.mu.Unlock()
+	// Directory entries are snapshots returned by GetDirectoryContents for the
+	// previous task. Do not carry unconsumed entries across task boundaries.
+	for _, inode := range nodes {
+		if node, ok := inode.Operations().(*Node); ok {
+			node.clearCachedDirectoryEntries()
+		}
+	}
+	if invalidatedInodes == nil {
+		invalidatedInodes = &vfscommon.InodeInvalidations{}
+	}
 
 	// If the list of inodes to invalidate is sufficiently large, it might
 	// be more efficient to remount the filesystem? Newer kernels also have
@@ -473,8 +553,16 @@ type Node struct {
 	vfs       *VFS
 	immutable bool
 
-	mu            sync.Mutex
-	symlinkTarget string
+	mu                         sync.Mutex
+	symlinkTarget              string
+	directoryGeneration        uint64
+	directoryMutationsInFlight int
+	cachedDirectoryEntries     map[string]*cachedDirectoryEntry
+}
+
+type cachedDirectoryEntry struct {
+	node            *vfspb.Node
+	attrsGeneration uint64
 }
 
 func (n *Node) relativePath() string {
@@ -483,6 +571,75 @@ func (n *Node) relativePath() string {
 
 func (n *Node) resetCachedAttrs() {
 	n.vfs.inodeCache.removeCachedAttrs(n.StableAttr().Ino)
+}
+
+func (n *Node) directorySnapshotGeneration() (uint64, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.directoryGeneration, n.directoryMutationsInFlight == 0
+}
+
+func (n *Node) beginDirectoryMutation() {
+	n.mu.Lock()
+	n.directoryGeneration++
+	n.directoryMutationsInFlight++
+	n.cachedDirectoryEntries = nil
+	n.mu.Unlock()
+}
+
+func (n *Node) endDirectoryMutation() {
+	n.mu.Lock()
+	n.directoryGeneration++
+	n.directoryMutationsInFlight--
+	n.cachedDirectoryEntries = nil
+	n.mu.Unlock()
+}
+
+func (n *Node) cacheDirectoryEntries(entries []*vfspb.Node, directoryGeneration uint64, attrsGenerations map[uint64]uint64) {
+	cached := make(map[string]*cachedDirectoryEntry, len(entries))
+	for _, entry := range entries {
+		// GetDirectoryContents does not include symlink targets, which are
+		// required to instantiate a symlink node correctly. Keep symlinks on
+		// the regular Lookup RPC path.
+		if entry.GetMode()&unix.S_IFMT == unix.S_IFLNK {
+			continue
+		}
+		cached[entry.GetName()] = &cachedDirectoryEntry{
+			node:            entry,
+			attrsGeneration: attrsGenerations[entry.GetId()],
+		}
+	}
+
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.directoryGeneration != directoryGeneration || n.directoryMutationsInFlight != 0 {
+		return
+	}
+	n.cachedDirectoryEntries = cached
+}
+
+func (n *Node) takeCachedDirectoryEntry(name string) (*cachedDirectoryEntry, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.directoryMutationsInFlight != 0 {
+		return nil, false
+	}
+	entry, ok := n.cachedDirectoryEntries[name]
+	if !ok {
+		return nil, false
+	}
+	delete(n.cachedDirectoryEntries, name)
+	if len(n.cachedDirectoryEntries) == 0 {
+		n.cachedDirectoryEntries = nil
+	}
+	return entry, true
+}
+
+func (n *Node) clearCachedDirectoryEntries() {
+	n.mu.Lock()
+	n.directoryGeneration++
+	n.cachedDirectoryEntries = nil
+	n.mu.Unlock()
 }
 
 type remoteFile struct {
@@ -532,16 +689,31 @@ func (n *Node) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (nod
 			}
 		}()
 	}
-	req := &vfspb.LookupRequest{
-		ParentId: n.StableAttr().Ino,
-		Name:     name,
+	var rsp *vfspb.LookupResponse
+	attrsCached := false
+	if entry, ok := n.takeCachedDirectoryEntry(name); ok && n.vfs.inodeCache.cacheAttrsForGeneration(entry.node.GetId(), entry.attrsGeneration, entry.node.GetAttrs()) {
+		rsp = &vfspb.LookupResponse{
+			Mode:  entry.node.GetMode(),
+			Attrs: entry.node.GetAttrs(),
+			Id:    entry.node.GetId(),
+		}
+		attrsCached = true
 	}
-	rsp, err := n.vfs.vfsClient.Lookup(n.vfs.getRPCContext(), req)
-	if err != nil {
-		return nil, rpcErrToSyscallErrno(err)
+	if rsp == nil {
+		req := &vfspb.LookupRequest{
+			ParentId: n.StableAttr().Ino,
+			Name:     name,
+		}
+		var err error
+		rsp, err = n.vfs.vfsClient.Lookup(n.vfs.getRPCContext(), req)
+		if err != nil {
+			return nil, rpcErrToSyscallErrno(err)
+		}
 	}
 
-	n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
+	if !attrsCached {
+		n.vfs.inodeCache.cacheAttrs(rsp.Id, rsp.Attrs)
+	}
 	// getAttr takes care of refreshing the attributes if there are currently
 	// any open file handles.
 	// For performance reasons, Lookup does not refresh attributes on every call as it's
@@ -606,6 +778,8 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 		}()
 	}
 	if d.pos == -1 {
+		directoryGeneration, directoryCacheable := d.node.directorySnapshotGeneration()
+		attrsGeneration, attrsCacheable := d.vfs.attrsSnapshotGeneration()
 		rsp, err := d.vfs.vfsClient.GetDirectoryContents(d.vfs.rpcCtx, &vfspb.GetDirectoryContentsRequest{
 			Id: d.node.StableAttr().Ino,
 		})
@@ -613,6 +787,12 @@ func (d *dirHandle) Readdirent(ctx context.Context) (dirEntry *fuse.DirEntry, er
 			return nil, rpcErrToSyscallErrno(err)
 		}
 		d.children = rsp.Nodes
+		if directoryCacheable && attrsCacheable {
+			attrsGenerations, ok := d.vfs.attrsGenerationsForSnapshot(attrsGeneration, rsp.Nodes)
+			if ok {
+				d.node.cacheDirectoryEntries(rsp.Nodes, directoryGeneration, attrsGenerations)
+			}
+		}
 		d.pos = 0
 	}
 
@@ -655,6 +835,9 @@ func (f *remoteFile) startOP(op string) {
 
 func (f *remoteFile) PassthroughFd() (int, bool) {
 	f.startOP("PassthroughFd")
+	if !f.node.vfs.enablePassthrough {
+		return -1, false
+	}
 	if f.node.vfs.verbose {
 		log.CtxDebugf(f.node.vfs.rpcCtx, "PassthroughFd %q", f.path)
 	}
@@ -666,6 +849,8 @@ func (f *remoteFile) Allocate(ctx context.Context, off uint64, size uint64, mode
 	if f.node.vfs.verbose {
 		log.CtxDebugf(f.node.vfs.rpcCtx, "Allocate %q", f.path)
 	}
+	f.node.vfs.beginAttrsMutation()
+	defer f.node.vfs.endAttrsMutation()
 	f.node.resetCachedAttrs()
 	allocReq := &vfspb.AllocateRequest{
 		HandleId: f.id,
@@ -715,6 +900,8 @@ func (f *remoteFile) Release(ctx context.Context) syscall.Errno {
 		log.CtxDebugf(f.node.vfs.rpcCtx, "Release %q (ino %d) handle ID %d, read %s (%d RPCs), wrote %s (%d RPCs)", f.path, f.node.StableAttr().Ino, f.id, units.HumanSize(float64(f.readBytes)), f.readRPCs, units.HumanSize(float64(f.wroteBytes)), f.writeRPCs)
 		f.mu.Unlock()
 	}
+	f.node.vfs.beginAttrsMutation()
+	defer f.node.vfs.endAttrsMutation()
 	if _, err := f.vfsClient.Release(f.ctx, &vfspb.ReleaseRequest{HandleId: f.id}); err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
@@ -865,6 +1052,8 @@ func (n *Node) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFl
 		Id:    n.StableAttr().Ino,
 		Flags: flags,
 	}
+	n.vfs.beginAttrsMutation()
+	defer n.vfs.endAttrsMutation()
 	rsp, err := n.vfs.vfsClient.Open(ctx, req)
 	if err != nil {
 		if n.vfs.verbose {
@@ -899,6 +1088,8 @@ func (n *Node) Create(ctx context.Context, name string, flags uint32, mode uint3
 		Flags:    flags,
 		Mode:     mode,
 	}
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
 	rsp, err := n.vfs.vfsClient.Create(ctx, req)
 	if err != nil {
 		return nil, nil, 0, rpcErrToSyscallErrno(err)
@@ -934,6 +1125,8 @@ func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, 
 		}()
 	}
 
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
 	rsp, err := n.vfs.vfsClient.Mknod(n.vfs.getRPCContext(), &vfspb.MknodRequest{
 		ParentId: n.StableAttr().Ino,
 		Name:     name,
@@ -943,7 +1136,6 @@ func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, 
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
-
 	fillFuseAttr(&out.Attr, rsp.GetAttrs())
 
 	child := &Node{vfs: n.vfs}
@@ -954,6 +1146,8 @@ func (n *Node) Mknod(ctx context.Context, name string, mode uint32, dev uint32, 
 
 func (n *Node) CopyFileRange(ctx context.Context, fhIn fs.FileHandle, offIn uint64, out *fs.Inode, fhOut fs.FileHandle, offOut uint64, len uint64, flags uint64) (uint32, syscall.Errno) {
 	n.startOP("CopyFileRange")
+	n.vfs.beginAttrsMutation()
+	defer n.vfs.endAttrsMutation()
 	n.resetCachedAttrs()
 
 	rf, ok := fhIn.(*remoteFile)
@@ -1003,8 +1197,16 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 			}
 		}()
 	}
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
+	if newParentNode != n {
+		newParentNode.beginDirectoryMutation()
+		defer newParentNode.endDirectoryMutation()
+	}
+	n.vfs.beginAttrsMutation()
+	defer n.vfs.endAttrsMutation()
 
-	_, err := n.vfs.vfsClient.Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
+	rsp, err := n.vfs.vfsClient.Rename(n.vfs.getRPCContext(), &vfspb.RenameRequest{
 		OldParentId: n.StableAttr().Ino,
 		OldName:     name,
 		NewParentId: newParent.EmbeddedInode().StableAttr().Ino,
@@ -1014,7 +1216,9 @@ func (n *Node) Rename(ctx context.Context, name string, newParent fs.InodeEmbedd
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
-
+	if rsp.GetReplacedId() != 0 {
+		n.vfs.inodeCache.removeCachedAttrs(rsp.GetReplacedId())
+	}
 	return fs.OK
 }
 
@@ -1081,11 +1285,14 @@ func (n *Node) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrOut) 
 }
 
 func (n *Node) setattr(req *vfspb.SetAttrRequest) (*vfspb.Attrs, error) {
+	n.vfs.beginAttrsMutation()
+	defer n.vfs.endAttrsMutation()
 	rsp, err := n.vfs.vfsClient.SetAttr(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return nil, err
 	}
 
+	n.vfs.inodeCache.removeCachedAttrs(n.StableAttr().Ino)
 	n.vfs.inodeCache.cacheAttrs(n.StableAttr().Ino, rsp.GetAttrs())
 	return rsp.Attrs, nil
 }
@@ -1230,11 +1437,12 @@ func (n *Node) Mkdir(ctx context.Context, name string, mode uint32, out *fuse.En
 		}()
 	}
 
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
 	rsp, err := n.vfs.vfsClient.Mkdir(n.vfs.getRPCContext(), &vfspb.MkdirRequest{ParentId: n.StableAttr().Ino, Name: name, Perms: mode})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
-
 	child := &Node{vfs: n.vfs}
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFDIR, Ino: rsp.Id})
 	fillFuseAttr(&out.Attr, rsp.Attrs)
@@ -1246,6 +1454,8 @@ func (n *Node) Rmdir(ctx context.Context, name string) syscall.Errno {
 	if n.vfs.verbose {
 		log.CtxDebugf(n.vfs.rpcCtx, "Rmdir %q", filepath.Join(n.relativePath(), name))
 	}
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
 	_, err := n.vfs.vfsClient.Rmdir(n.vfs.getRPCContext(), &vfspb.RmdirRequest{ParentId: n.StableAttr().Ino, Name: name})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
@@ -1304,11 +1514,14 @@ func (n *Node) Link(ctx context.Context, target fs.InodeEmbedder, name string, o
 		Name:     name,
 		TargetId: target.EmbeddedInode().StableAttr().Ino,
 	}
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
+	n.vfs.beginAttrsMutation()
+	defer n.vfs.endAttrsMutation()
 	res, err := n.vfs.vfsClient.Link(n.vfs.getRPCContext(), req)
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
-
 	n.vfs.inodeCache.removeCachedAttrs(targetNode.StableAttr().Ino)
 
 	child := &Node{vfs: n.vfs}
@@ -1332,11 +1545,12 @@ func (n *Node) Symlink(ctx context.Context, target, name string, out *fuse.Entry
 		reqTarget = after
 	}
 
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
 	rsp, err := n.vfs.vfsClient.Symlink(n.vfs.getRPCContext(), &vfspb.SymlinkRequest{ParentId: n.StableAttr().Ino, Name: name, Target: reqTarget})
 	if err != nil {
 		return nil, rpcErrToSyscallErrno(err)
 	}
-
 	child := &Node{vfs: n.vfs, symlinkTarget: target}
 	inode := n.vfs.NewInode(ctx, child, fs.StableAttr{Mode: fuse.S_IFLNK, Ino: rsp.GetId()})
 	return inode, 0
@@ -1384,11 +1598,14 @@ func (n *Node) Unlink(ctx context.Context, name string) syscall.Errno {
 		return syscall.EPERM
 	}
 
+	n.beginDirectoryMutation()
+	defer n.endDirectoryMutation()
+	n.vfs.beginAttrsMutation()
+	defer n.vfs.endAttrsMutation()
 	_, err := n.vfs.vfsClient.Unlink(n.vfs.getRPCContext(), &vfspb.UnlinkRequest{ParentId: n.StableAttr().Ino, Name: name})
 	if err != nil {
 		return rpcErrToSyscallErrno(err)
 	}
-
 	n.vfs.inodeCache.removeCachedAttrs(existingTargetNode.StableAttr().Ino)
 
 	n.mu.Lock()

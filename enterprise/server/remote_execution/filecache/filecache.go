@@ -218,20 +218,6 @@ func (h *directoryHandle) moveToTrash() error {
 	return h.filecache.trash(h.path)
 }
 
-// syncDir fsyncs the directory at path to ensure any pending metadata changes
-// (e.g. file creation or deletion) are durable on disk.
-func syncDir(path string) error {
-	dir, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	start := time.Now()
-	err = dir.Sync()
-	log.Infof("filecache: syncDir(%q) took %s (err: %v)", path, time.Since(start), err)
-	return err
-}
-
 // NewFileCache constructs an fileCache with maxSize that will cache files
 // in rootDir.
 // If deleteContent is true, the root dir will be deleted and recreated.
@@ -241,6 +227,7 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if maxSizeBytes <= 0 {
 		return nil, errors.New("Must provide a positive size")
 	}
+	rootDir = filepath.Clean(rootDir)
 
 	if deleteContent {
 		log.CtxInfof(ctx, "Deleting cache directory %q", rootDir)
@@ -461,11 +448,11 @@ func validateFilecacheHash(hash string) error {
 const sep = string(filepath.Separator)
 
 func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (string, *repb.FileNode, error) {
-	if !strings.HasPrefix(fullPath, c.rootDir) {
+	subdirPath, ok := relativePathWithinRootDir(c.rootDir, fullPath)
+	if !ok {
 		return "", nil, status.FailedPreconditionErrorf("Path %q not in rootDir: %q", fullPath, c.rootDir)
 	}
 
-	subdirPath := strings.TrimPrefix(fullPath, c.rootDir)
 	keyPrefix, name := filepath.Split(subdirPath)
 	keyPrefix = strings.Trim(keyPrefix, sep)
 
@@ -486,6 +473,19 @@ func (c *fileCache) nodeFromPathAndSize(fullPath string, sizeBytes int64) (strin
 			Hash:      nameParts[0],
 			SizeBytes: sizeBytes,
 		}}, nil
+}
+
+func relativePathWithinRootDir(rootDir, fullPath string) (string, bool) {
+	rel, err := filepath.Rel(rootDir, fullPath)
+	if err != nil || !filepath.IsLocal(rel) {
+		return "", false
+	}
+	return rel, true
+}
+
+func samePath(a, b string) bool {
+	rel, err := filepath.Rel(a, b)
+	return err == nil && rel == "."
 }
 
 func (c *fileCache) scanDir() {
@@ -749,13 +749,14 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 		return err
 	}
 	fp := filecachePath(c.rootDir, k)
+	existingFileIsInPlace := samePath(fp, existingFilePath)
 
 	// Ensure the parent directory exists. (We can skip this if the source and
 	// dest are the same, which happens during the initial directory scan.)
 	// TODO(vanja) Consider doing this ahead of time, or just once per
 	// group. With includeSubdirPrefix=false, this could make the Add path
 	// 7% faster, but it's more complicated with includeSubdirPrefix=true.
-	if fp != existingFilePath {
+	if !existingFileIsInPlace {
 		start := time.Now()
 		if err := disk.EnsureDirectoryExists(filepath.Dir(fp)); err != nil {
 			return err
@@ -770,7 +771,7 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 	// (i.e. during the initial directory scan), and if it's already tracked in
 	// the LRU (i.e. another action added it concurrently with the scan), then
 	// short-circuit to avoid evicting the file.
-	if fp == existingFilePath {
+	if existingFileIsInPlace {
 		if c.l.Contains(k) {
 			return nil
 		}
@@ -788,7 +789,8 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 
 		// If the file being added is inside the filecache dir, and it
 		// is stored in an "old-style" location, then remove it.
-		if strings.HasPrefix(existingFilePath, c.rootDir) && filepath.Base(fp) == filepath.Base(existingFilePath) {
+		_, existingFileIsInCache := relativePathWithinRootDir(c.rootDir, existingFilePath)
+		if existingFileIsInCache && filepath.Base(fp) == filepath.Base(existingFilePath) {
 			if err := syscall.Unlink(existingFilePath); err != nil {
 				log.Errorf("Failed to unlink existing filecache path: %q: %s", existingFilePath, err)
 			}

@@ -476,6 +476,51 @@ func TestUsageStats(t *testing.T) {
 	}, s.TaskStats(), protocmp.Transform()))
 }
 
+func TestUsageStats_GPUUsageReportsPeaks(t *testing.T) {
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	// Observe two GPUs whose per-device peaks occur during different samples.
+	// The peak total should be the largest simultaneous sum, not the sum of the
+	// independent per-device peaks.
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 300,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 100, Vendor: repb.GPUDeviceUsage_NVIDIA},
+			{Id: "GPU-b", MemoryBytes: 200, Vendor: repb.GPUDeviceUsage_NVIDIA},
+		},
+	}})
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 300,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 250},
+			{Id: "GPU-b", MemoryBytes: 50},
+		},
+	}})
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 400,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 200},
+			{Id: "GPU-b", MemoryBytes: 200},
+		},
+	}})
+
+	// A final empty sample after the processes exit should not discard the GPU
+	// peaks observed while the task was running.
+	stats.Update(&repb.UsageStats{})
+	require.Empty(t, cmp.Diff(&repb.GPUUsage{
+		PeakTotalMemoryBytes: 400,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", PeakMemoryBytes: 250, Vendor: repb.GPUDeviceUsage_NVIDIA},
+			{Id: "GPU-b", PeakMemoryBytes: 200, Vendor: repb.GPUDeviceUsage_NVIDIA},
+		},
+	}, stats.TaskStats().GetGpuUsage(), protocmp.Transform()))
+
+	// A recycled runner should not carry GPU peaks into the next task.
+	stats.Reset()
+	require.Nil(t, stats.TaskStats().GetGpuUsage())
+}
+
 func TestUsageStats_ConcurrentUpdateAndBasicTaskStats(t *testing.T) {
 	flags.Set(t, "executor.record_usage_timelines", true)
 
@@ -571,6 +616,73 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	}, timestamps, "timestamps")
 	assert.Equal(t, []int64{0, 7000, 9500}, cpuSamples, "cpu samples")
 	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
+}
+
+func TestUsageStats_ZeroGPUUsageOmitted(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	// Successful GPU readings that never observe any memory should not add an
+	// empty summary or an all-zero timeline to the task stats.
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a"},
+		},
+	}})
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{}})
+
+	taskStats := stats.TaskStats()
+	require.Nil(t, taskStats.GetGpuUsage())
+	require.Nil(t, taskStats.GetTimeline().GetGpuUsage())
+}
+
+func TestUsageStats_GPUTimeseries(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	start := time.Unix(100, 0)
+	clock := clockwork.NewFakeClockAt(start)
+	stats := &container.UsageStats{Clock: clock}
+	stats.Reset()
+
+	// GPU tracking starts after the initial timeline sample. The total GPU
+	// series should be backfilled with zero for that initial sample.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 100_000,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 100_000},
+		},
+	}})
+
+	// An unavailable reading should preserve the last observation instead of
+	// reporting a false zero.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{})
+
+	// A larger reading spread across two devices should be recorded as the
+	// new total.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 400_000,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 150_000},
+			{Id: "GPU-b", MemoryBytes: 250_000},
+		},
+	}})
+
+	// A successful empty reading should bring total GPU usage back to zero.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{}})
+
+	timeline := stats.TaskStats().GetTimeline()
+	assert.Equal(t, []int64{0, 100, 100, 400, 0}, timeseries.DeltaDecode(timeline.GetGpuUsage().GetTotalMemoryKbSamples()))
+
+	// Recycled runners should begin the next task without the previous task's
+	// final GPU reading or timeline.
+	stats.Reset()
+	require.Nil(t, stats.TaskStats().GetTimeline().GetGpuUsage())
 }
 
 // fakePausableContainer is a FakeContainer whose Pause sleeps for a

@@ -326,6 +326,11 @@ const (
 	// "bytes" (the blob's bytes, streamed inline).
 	DistributedCacheReadResponseType = "response_type"
 
+	// How a distributed cache write's payload was sent:
+	// "reference" (a pointer to the blob in shared storage) or
+	// "bytes" (the blob's bytes, streamed inline).
+	DistributedCacheWriteRequestType = "request_type"
+
 	// ContentAddressableStorage Server operation: "FindMissingBlobs",
 	// "BatchUpdateBlobs", "BatchReadBlobs", or "GetTree".
 	CASOperation = "op"
@@ -444,6 +449,10 @@ const (
 
 	// The DNS response code, such as "NOERROR", "NXDOMAIN", or "FORMERR".
 	DNSResponseCodeLabel = "rcode"
+
+	// The provider operating the recursive resolver that sent the query, inferred
+	// from the transport peer's ASN. Values are bounded by the DNS server.
+	DNSResolverProviderLabel = "resolver_provider"
 
 	// The apex of a served DNS zone, such as "buildbuddy.io.". Zones come from
 	// operator-controlled zone files, so cardinality is bounded. Named
@@ -1023,57 +1032,106 @@ var (
 
 	// DistributedCacheReadResponseCount counts distributed cache peer reads
 	// by whether the payload was received as a reference to shared storage or
-	// as inline bytes.
+	// as inline bytes, and by the gRPC status code of turning the response
+	// into a reader ("OK" on success). Reads that fail before any response
+	// message is received have no payload type and are not counted.
 	DistributedCacheReadResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_read_response_count",
-		Help:      "Count of distributed cache peer reads, by whether the payload was received as a reference or as inline bytes.",
+		Help:      "Count of distributed cache peer reads, by whether the payload was received as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
 	})
 
 	// DistributedCacheReadResponseSizeBytes totals the sizes of the blobs
 	// read from peers, by whether the payload was received as a reference to
-	// shared storage or as inline bytes. Sizes are the requested digest's
-	// (uncompressed) size, recorded when the read is opened, so ranged reads
-	// count the full blob size rather than the exact bytes transferred.
+	// shared storage or as inline bytes, and by the gRPC status code of
+	// turning the response into a reader ("OK" on success). Sizes are the
+	// requested digest's (uncompressed) size, recorded when the read is
+	// opened, so ranged reads count the full blob size rather than the exact
+	// bytes transferred. Reads that fail before any response message is
+	// received have no payload type and are not counted.
 	DistributedCacheReadResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_read_response_size_bytes",
-		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes.",
+		Help:      "Total digest sizes of blobs read from distributed cache peers, by whether the payload was received as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheWriteRequestCount counts distributed cache writes by
+	// whether the payload was sent as a reference or as inline bytes, and by
+	// the commit's gRPC status code ("OK" on success). Writes short-circuited
+	// because the peer already had the blob are recorded under
+	// "AlreadyExists" (though callers see success), so "OK" counts only
+	// blobs the peer actually stored.
+	DistributedCacheWriteRequestCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_write_request_count",
+		Help:      "Count of distributed cache peer writes, by whether the payload was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheWriteRequestSizeBytes counts the number of bytes written
+	// to the distributed cache by whether the payload was sent as a reference
+	// or as inline bytes, and by the commit's gRPC status code ("OK" on
+	// success, "AlreadyExists" for writes deduped by the peer, so "OK"
+	// counts only blobs actually stored). The size is the requested digest's
+	// (uncompressed) size,
+	// recorded when the write is opened, so ranged writes and compressed writes
+	// count the full, uncompressed blob size rather than the exact number of
+	// bytes transferred.
+	DistributedCacheWriteRequestSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_write_request_size_bytes",
+		Help:      "Total digest sizes of blobs written to distributed cache peers, by whether the payload was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
 	})
 
 	// DistributedCacheReferenceVerificationCount counts verifications of
 	// references received alongside streamed bytes on distributed cache
 	// reads, by outcome: "success" (the dereferenced bytes matched the
 	// streamed bytes through EOF), "failure" (the two streams diverged), or
-	// "error" (verification could not be run or completed).
+	// "error" (verification could not be run or completed). The status label
+	// carries the gRPC code of the error that produced the outcome ("OK" on
+	// success).
 	DistributedCacheReferenceVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_reference_verification_count",
-		Help:      "Count of reference verifications on distributed cache reads, by outcome.",
+		Help:      "Count of reference verifications on distributed cache reads, by group, outcome, and error code.",
 	}, []string{
+		GroupID,
 		VerificationOutcomeLabel,
+		StatusHumanReadableLabel,
 	})
 
 	// DistributedCacheReferenceWriteVerificationCount counts verifications of
 	// references received alongside authoritative data bytes on distributed
 	// cache writes, by outcome: "success" (the dereferenced content hashed to
 	// the written digest), "failure" (the hashes differed), or "error"
-	// (verification could not be run or completed). Verification is
-	// observe-only and never affects the write itself.
+	// (verification could not be run or completed). The status label carries
+	// the gRPC code of the error that produced the outcome ("OK" on success).
+	// Verification is observe-only and never affects the write itself.
 	DistributedCacheReferenceWriteVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
 		Name:      "distributed_cache_reference_write_verification_count",
-		Help:      "Count of reference verifications on distributed cache writes, by outcome.",
+		Help:      "Count of reference verifications on distributed cache writes, by group, outcome, and error code.",
 	}, []string{
+		GroupID,
 		VerificationOutcomeLabel,
+		StatusHumanReadableLabel,
 	})
 
 	MigrationNotFoundErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
@@ -4605,10 +4663,11 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "dns",
 		Name:      "server_request_count",
-		Help:      "The total number of DNS queries handled, by record type and response code.",
+		Help:      "The total number of DNS queries handled, by record type, response code, and recursive resolver provider.",
 	}, []string{
 		DNSRecordTypeLabel,
 		DNSResponseCodeLabel,
+		DNSResolverProviderLabel,
 	})
 
 	// #### Examples
@@ -4616,6 +4675,9 @@ var (
 	// ```promql
 	// # DNS queries per second by record type
 	// sum by (record_type) (rate(buildbuddy_dns_server_request_count[5m]))
+	//
+	// # DNS queries per second by recursive resolver provider
+	// sum by (resolver_provider) (rate(buildbuddy_dns_server_request_count[5m]))
 	//
 	// # NXDOMAIN rate
 	// sum(rate(buildbuddy_dns_server_request_count{rcode="NXDOMAIN"}[5m]))

@@ -326,18 +326,28 @@ type StoppableCache interface {
 	Stop() error
 }
 
+// A WriteCloser whose Commit finalizes and returns a reference.
+type ReferenceWriter interface {
+	io.Writer
+	io.Closer
+	Commit() (*refpb.Reference, error)
+}
+
 // A Cache implementation that supports reading and writing refpb.References.
 type ReferenceCache interface {
 	Cache
 
-	// Creates a reference to the resource named by r from the bytes read from
-	// reader by writing them to shared storage, without writing r as an entry
-	// in this cache (so that the created reference can be claimed by another
-	// cache). The returned reference can be dereferenced with Dereference() or
+	// Returns a writer that stages the written bytes as the resource named by
+	// r in shared storage, without writing r as an entry in this cache (so
+	// that the created reference can be claimed by another cache). The
+	// reference returned by Commit can be dereferenced with Dereference() or
 	// stored with WriteReference() by an identically-configured ReferenceCache;
 	// no cache owns the staged blob until a cache stores the reference, and at
 	// most one may do so without cloning.
-	CreateReference(ctx context.Context, r *rspb.ResourceName, reader io.Reader) (*refpb.Reference, error)
+	//
+	// To release resources, callers *must* call Close() on the returned
+	// ReferenceWriter regardless of whether the commit succeeds or not.
+	CreateReference(ctx context.Context, r *rspb.ResourceName) (ReferenceWriter, error)
 
 	// Reads the provided resource from the cache and returns a reference to it.
 	// The provided reference can be dereferenced into an io.ReadCloser using
@@ -1509,6 +1519,12 @@ type DistributedLock interface {
 
 	// Unlock releases the lock.
 	Unlock(ctx context.Context) error
+}
+
+// GroupStatusChecker rejects API requests from groups whose status does not
+// allow them.
+type GroupStatusChecker interface {
+	CheckAllowed(ctx context.Context) error
 }
 
 // QuotaManager manages quota.

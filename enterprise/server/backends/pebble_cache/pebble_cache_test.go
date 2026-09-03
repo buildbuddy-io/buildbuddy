@@ -2912,6 +2912,14 @@ func TestSampling(t *testing.T) {
 	require.NoError(t, err)
 
 	minEvictionAge := 1 * time.Hour
+	evictionTimeout := 15 * time.Second
+	evictionPollInterval := 100 * time.Millisecond
+	// Each unsuccessful poll advances the fake clock to wake the sampler. Keep
+	// newer entries ineligible throughout the entire polling window.
+	maxClockAdvance := time.Duration(evictionTimeout/evictionPollInterval) * pebble_cache.SamplerSleepDuration
+	newerAtimeGap := maxClockAdvance + time.Minute
+	require.Less(t, newerAtimeGap, minEvictionAge)
+
 	clock := clockwork.NewFakeClock()
 	opts := &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -2941,9 +2949,9 @@ func TestSampling(t *testing.T) {
 
 	// Advance time (to force newer atime) and write the same digest
 	// encrypted. The encrypted key should have the same digest prefix as the
-	// unencrypted key and come before the unencrypted key in lexicographical f
+	// unencrypted key and come before the unencrypted key in lexicographical
 	// order.
-	clock.Advance(5 * time.Minute)
+	clock.Advance(newerAtimeGap)
 	err = pc.Set(ctx, rn, buf)
 	require.NoError(t, err)
 
@@ -2957,27 +2965,28 @@ func TestSampling(t *testing.T) {
 		randomResources = append(randomResources, rn)
 	}
 
-	// Now advance the clock past the min eviction age to allow eviction to
-	// kick in. The unencrypted test digest should be evicted.
-	clock.Advance(minEvictionAge - 1*time.Minute)
+	// Now advance the clock to the min eviction age to allow eviction to
+	// kick in. The unencrypted test digest should be evicted. Keep the newer
+	// entries younger by the full atime gap, since waitForEviction advances the
+	// fake clock while waking the sampler.
+	clock.Advance(minEvictionAge - newerAtimeGap)
 
-	waitForEviction := func(timeout time.Duration) {
-		interval := 100 * time.Millisecond
-		for i := 0; i < int(timeout/interval); i++ {
+	waitForEviction := func() {
+		for i := 0; i < int(evictionTimeout/evictionPollInterval); i++ {
 			if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 				log.Infof("i = %d: unencrypted test digest is evicted", i)
 				return
 			}
-			time.Sleep(interval)
+			time.Sleep(evictionPollInterval)
 			// generateSamplesForEviction might be sleeping, so advance
 			// enough to wake it up. Alternatively, we could call
 			// pc.Start() after the cache already has some data so that
 			// generateSamplesForEviction never sleeps.
 			clock.Advance(pebble_cache.SamplerSleepDuration)
 		}
-		t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, timeout)
+		t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, evictionTimeout)
 	}
-	waitForEviction(15 * time.Second)
+	waitForEviction()
 
 	// The unencrypted key should no longer exist.
 	unencryptedExists, err := pc.Contains(anonCtx, rn)
@@ -3201,7 +3210,12 @@ func TestCreateReference(t *testing.T) {
 
 	// Blobs at or above minGCSFileSize are staged in GCS and referenceable.
 	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
-	ref, err := pc.CreateReference(ctx, gcsRN, bytes.NewReader(gcsBuf))
+	w, err := pc.CreateReference(ctx, gcsRN)
+	require.NoError(t, err)
+	defer w.Close()
+	_, err = w.Write(gcsBuf)
+	require.NoError(t, err)
+	ref, err := w.Commit()
 	require.NoError(t, err)
 	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
 	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
@@ -3229,8 +3243,8 @@ func TestCreateReference(t *testing.T) {
 
 	// Blobs below minGCSFileSize cannot be referenced, and nothing is
 	// written anywhere for them.
-	diskRN, diskBuf := testdigest.RandomCASResourceBuf(t, 50)
-	_, err = pc.CreateReference(ctx, diskRN, bytes.NewReader(diskBuf))
+	diskRN, _ := testdigest.RandomCASResourceBuf(t, 50)
+	_, err = pc.CreateReference(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
 	_, err = pc.Get(ctx, diskRN)
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)

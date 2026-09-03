@@ -10,7 +10,6 @@ go_library(
     data = [":crun"],
     embedsrcs = [
         "hosts",
-        "seccomp.json",
         "tini",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime",
@@ -25,7 +24,9 @@ go_library(
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
+        "//enterprise/server/remote_execution/containers/ociruntime/seccomp",
         "//enterprise/server/remote_execution/executor_auth",
+        "//enterprise/server/remote_execution/gpu",
         "//enterprise/server/util/oci",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
@@ -141,11 +142,20 @@ go_test(
 # - Install `nvidia-container-toolkit` (need `nvidia-ctk` in PATH)
 # - Run `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml` which
 #   creates a CDI spec.
-# - Run the executor with OCI runtime enabled and --executor.oci.cdi_devices=nvidia.com/gpu=all
+# - Run the executor with OCI runtime enabled and these flags:
+#   --executor.oci.cdi_devices=nvidia.com/gpu=all
+#   --executor.gpu_memory_tracking_enabled
+#   --executor.record_usage_timelines
 # - Run this test against the executor with bazel, e.g. --config=local-rbe-linux
 sh_test(
     name = "nvidia_gpu_test",
     srcs = ["nvidia_gpu_test.sh"],
+    # Bazel sets PATH on the action, which overrides the CUDA image's PATH.
+    # Preserve the image's declared PATH so nvcc and entrypoint tools such as
+    # ldconfig remain available.
+    env = {
+        "PATH": "/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    },
     exec_properties = {
         "test.workload-isolation-type": "oci",
         "test.container-image": "docker://nvidia/cuda:12.4.1-devel-ubuntu22.04",

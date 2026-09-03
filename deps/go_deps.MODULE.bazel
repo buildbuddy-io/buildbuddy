@@ -70,14 +70,9 @@ go_deps.module_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        # Remove panic() from serverHandlerTransport.Drain
-        # gRPC GracefulStop stops accepting new requests and lets any existing
-        # requests finish. For "grpc-over-http" requests, gRPC does not control
-        # the connection lifetime so they choose to panic in Drain if there are
-        # inflight "grpc-over-http" requests. Since we also shutdown the HTTP
-        # server gracefully, it's safe for us to allow gRPC to wait for all
-        # ongoing requests to finish.
-        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_remove_drain_panic.patch",
+        # Throttling can cause deadlocks, and we don't need it, so patch it out
+        # until the problem is resolved.
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:org_golang_google_grpc_remove_throttle.patch",
     ],
     path = "google.golang.org/grpc",
 )
@@ -292,6 +287,7 @@ use_repo(
     "com_github_mwitkow_grpc_proxy",
     "com_github_ncruces_go_sqlite3",
     "com_github_nishanths_exhaustive",
+    "com_github_nvidia_go_nvml",
     "com_github_open_feature_flagd_core",
     "com_github_open_feature_go_sdk",
     "com_github_open_feature_go_sdk_contrib_providers_flagd",

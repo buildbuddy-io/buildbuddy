@@ -4,6 +4,10 @@ package filecache
 
 import "errors"
 
+func syncDir(path string) error {
+	return nil
+}
+
 func syncFilesystem(path string) error {
 	return nil
 }

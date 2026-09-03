@@ -543,23 +543,47 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	}
 	groupID := c.userGroupID(ctx)
 	req := &mdpb.FindRequest{
-		FileRecords: make([]*sgpb.FileRecord, len(resources)),
+		FileRecords: make([]*sgpb.FileRecord, 0, len(resources)),
 	}
+	// Resources with invalid digests are reported as missing rather than
+	// failing the whole batch. They are excluded from the Find request.
+	var missing []*repb.Digest
+	// requestedResources aliases resources until the first invalid digest,
+	// then diverges to a copy holding only the valid ones, so it stays
+	// index-aligned with req.FileRecords (and the FindResponses).
+	requestedResources := resources
 	for i, r := range resources {
 		fileRecord, err := c.makeFileRecord(groupID, encryption, r)
 		if err != nil {
-			return nil, err
+			missing = append(missing, r.GetDigest())
+			if len(requestedResources) == len(resources) {
+				// First invalid digest: all prior resources were valid,
+				// so seed the copy with them.
+				requestedResources = append(make([]*rspb.ResourceName, 0, len(resources)-1), resources[:i]...)
+			}
+			continue
 		}
-		req.FileRecords[i] = fileRecord
+		if len(requestedResources) != len(resources) {
+			requestedResources = append(requestedResources, r)
+		}
+		req.FileRecords = append(req.FileRecords, fileRecord)
+	}
+	if len(req.GetFileRecords()) == 0 {
+		return missing, nil // no valid digests to check
 	}
 	rsp, err := c.opts.MetadataClient.Find(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	missing := make([]*repb.Digest, 0)
-	for i, findRsp := range rsp.GetFindResponses() {
+	responses := rsp.GetFindResponses()
+	if len(responses) != len(requestedResources) {
+		// Aligned 1:1 is the server contract; a mismatch is a server bug.
+		log.CtxErrorf(ctx, "[%s] FindMissing metadata length %d != request length %d", c.opts.Name, len(responses), len(requestedResources))
+		return nil, status.InternalErrorf("metadata response length %d does not match request length %d", len(responses), len(requestedResources))
+	}
+	for i, findRsp := range responses {
 		if !findRsp.GetPresent() {
-			missing = append(missing, resources[i].GetDigest())
+			missing = append(missing, requestedResources[i].GetDigest())
 		}
 	}
 	return missing, nil
@@ -688,9 +712,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	foundMap := make(map[*repb.Digest][]byte, len(hits))
 	handleBatch := func() error {
 		for {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
 			i := int(next.Add(1)) - 1
 			if i >= len(hits) {
 				return nil
@@ -707,6 +728,9 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md, rc)))
 			_, copyErr := io.Copy(buf, rc)
 			closeErr := rc.Close()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if copyErr != nil {
 				log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
 				continue

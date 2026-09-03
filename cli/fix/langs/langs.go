@@ -23,11 +23,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/fix/typescript"
 )
 
-var languages = []language.Language{
+var Languages = []language.Language{
 	proto.NewLanguage(),
 	golang.NewLanguage(),
 	typescript.NewLanguage(),
 	visibility.NewLanguage(),
 }
 
-var Languages = languages
+// Populate `languages`, declared in the upstream main.go, just like the
+// upstream langs.go this file replaces does (bazel-gazelle#2386).
+func init() {
+	languages = Languages
+}

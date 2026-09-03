@@ -378,7 +378,8 @@ type Server struct {
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
 	root               *fsNode
-	treeFetcher        *dirtools.TreeFetcher
+	inputFetcher       container.InputFetcher
+	retryInputFetcher  *casFetcher
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
 
@@ -582,6 +583,93 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	}, nil
 }
 
+func cleanRelativePath(path string) (string, error) {
+	path = filepath.Clean(path)
+	if path == "." {
+		return "", nil
+	}
+	if filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, ".."+string(filepath.Separator)) {
+		return "", status.InvalidArgumentErrorf("path %q escapes the workspace", path)
+	}
+	return path, nil
+}
+
+func joinRelativePath(base, path string) (string, error) {
+	base, err := cleanRelativePath(base)
+	if err != nil {
+		return "", err
+	}
+	if filepath.Clean(path) == "." {
+		return "", status.InvalidArgumentError("output path cannot be empty")
+	}
+	if filepath.IsAbs(path) {
+		return "", status.InvalidArgumentErrorf("path %q escapes the workspace", path)
+	}
+	return cleanRelativePath(filepath.Join(base, path))
+}
+
+func (p *Server) mkdirAll(path string) error {
+	path, err := cleanRelativePath(path)
+	if err != nil {
+		return err
+	}
+	if path == "" {
+		return nil
+	}
+
+	node := p.root
+	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
+		node.mu.Lock()
+		child := node.children[name]
+		created := child == nil
+		if child == nil {
+			if node.children == nil {
+				node.children = make(map[string]*fsNode)
+			}
+			child = newDirNode(node, name)
+			node.children[name] = child
+		}
+		node.mu.Unlock()
+		if created {
+			p.addNode(child)
+		}
+		if !child.IsDirectory() {
+			return status.FailedPreconditionErrorf("cannot create output directory %q: %q is not a directory", path, child.Path())
+		}
+		node = child
+	}
+	return nil
+}
+
+func outputPaths(layout *container.FileSystemLayout) []string {
+	if len(layout.OutputPaths) > 0 {
+		return layout.OutputPaths
+	}
+	return slices.Concat(layout.OutputFiles, layout.OutputDirectories)
+}
+
+func (p *Server) createOutputDirectories(layout *container.FileSystemLayout) error {
+	for _, outputPath := range outputPaths(layout) {
+		path, err := joinRelativePath(layout.WorkingDirectory, outputPath)
+		if err != nil {
+			return err
+		}
+		if err := p.mkdirAll(filepath.Dir(path)); err != nil {
+			return err
+		}
+	}
+	for _, outputDirectory := range layout.OutputDirectories {
+		path, err := joinRelativePath(layout.WorkingDirectory, outputDirectory)
+		if err != nil {
+			return err
+		}
+		if err := p.mkdirAll(path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (p *Server) ComputeStats() *repb.VfsStats {
 	stats := &repb.VfsStats{
 		CasFilesCount:     p.casFileCount,
@@ -603,13 +691,21 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 		}
 	}
 	walkNode(p.root)
+	inputFetcher := p.inputFetcher
+	retryInputFetcher := p.retryInputFetcher
 	p.mu.Unlock()
+	if statsProvider, ok := inputFetcher.(interface{ UpdateIOStats(*repb.VfsStats) }); ok {
+		statsProvider.UpdateIOStats(stats)
+	}
+	if _, ok := inputFetcher.(*casFetcher); !ok && retryInputFetcher != nil {
+		retryInputFetcher.UpdateIOStats(stats)
+	}
 
 	return stats
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
-func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, treeFetcher *dirtools.TreeFetcher) (*vfscommon.InodeInvalidations, error) {
+func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, inputFetcher container.InputFetcher) (*vfscommon.InodeInvalidations, error) {
 	p.mu.Lock()
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
@@ -621,10 +717,18 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	if err != nil {
 		return nil, err
 	}
+	if err := p.createOutputDirectories(layout); err != nil {
+		return nil, err
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.treeFetcher = treeFetcher
+	retryInputFetcher := newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
+	if inputFetcher == nil {
+		inputFetcher = retryInputFetcher
+	}
+	p.inputFetcher = inputFetcher
+	p.retryInputFetcher = retryInputFetcher
 	p.internalTaskCtx = ctx
 	return invalidatedInodes, nil
 }
@@ -892,7 +996,6 @@ type casFetcher struct {
 	fetchStart        time.Time
 	fetchesInProgress int
 
-	fileCacheHits     int
 	downloadCount     int
 	downloadDuration  time.Duration
 	downloadSizeBytes int64
@@ -906,11 +1009,11 @@ func newCASFetcher(env environment.Env, remoteInstanceName string, digestFunctio
 	}
 }
 
-func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *fsNode) error {
+func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *repb.FileNode) error {
 	bsClient := cf.env.GetByteStreamClient()
-	rn := digest.NewCASResourceName(node.fileNode.GetDigest(), cf.remoteInstanceName, cf.digestFunction)
+	rn := digest.NewCASResourceName(node.GetDigest(), cf.remoteInstanceName, cf.digestFunction)
 	rn.SetCompressor(repb.Compressor_ZSTD)
-	w, err := cf.env.GetFileCache().Writer(ctx, node.fileNode, cf.digestFunction)
+	w, err := cf.env.GetFileCache().Writer(ctx, node, cf.digestFunction)
 	if err != nil {
 		return err
 	}
@@ -927,7 +1030,7 @@ func (cf *casFetcher) downloadToFileCache(ctx context.Context, node *fsNode) err
 	return nil
 }
 
-func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *fsNode) error {
+func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *repb.FileNode) error {
 	cf.mu.Lock()
 	cf.fetchesInProgress++
 	// Don't include concurrent downloads in total fetch time.
@@ -947,43 +1050,176 @@ func (cf *casFetcher) dedupeDownloadToFileCache(ctx context.Context, node *fsNod
 		cf.mu.Unlock()
 	}()
 
-	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.fileNode.GetDigest().GetHash()
+	dedupeKey := groupIDStringFromContext(ctx) + "-" + node.GetDigest().GetHash()
 	_, _, err := downloadDeduper.Do(ctx, dedupeKey, func(ctx context.Context) (struct{}, error) {
 		return struct{}{}, cf.downloadToFileCache(ctx, node)
 	})
 	return err
 }
 
-func (cf *casFetcher) Open(ctx context.Context, node *fsNode) (*os.File, error) {
-	// If we can open the file directly from the file cache then use that.
-	if f, err := cf.env.GetFileCache().Open(ctx, node.fileNode); err == nil {
-		cf.mu.Lock()
-		cf.fileCacheHits++
-		cf.mu.Unlock()
-		return f, nil
+func (cf *casFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
+	if cf.env.GetFileCache().ContainsFile(ctx, node) {
+		return nil
 	}
 
 	if err := cf.dedupeDownloadToFileCache(ctx, node); err != nil {
-		return nil, err
+		return err
 	}
 
 	cf.mu.Lock()
 	// N.B. in case of deduping, the download will be counted in the stats of
 	// all deduped actions.
 	cf.downloadCount++
-	cf.downloadSizeBytes += node.fileNode.GetDigest().GetSizeBytes()
+	cf.downloadSizeBytes += node.GetDigest().GetSizeBytes()
 	cf.mu.Unlock()
-
-	// CAS downloads put the CAS artifacts directly into the file cache.
-	return cf.env.GetFileCache().Open(ctx, node.fileNode)
+	return nil
 }
 
 func (cf *casFetcher) UpdateIOStats(stats *repb.VfsStats) {
 	cf.mu.Lock()
 	defer cf.mu.Unlock()
-	stats.FileDownloadSizeBytes = cf.downloadSizeBytes
-	stats.FileDownloadCount = int64(cf.downloadCount)
-	stats.FileDownloadDurationUsec = cf.downloadDuration.Microseconds()
+	stats.FileDownloadSizeBytes += cf.downloadSizeBytes
+	stats.FileDownloadCount += int64(cf.downloadCount)
+	stats.FileDownloadDurationUsec += cf.downloadDuration.Microseconds()
+}
+
+func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error) {
+	p.mu.Lock()
+	inputFetcher := p.inputFetcher
+	retryInputFetcher := p.retryInputFetcher
+	p.mu.Unlock()
+	if inputFetcher == nil || retryInputFetcher == nil {
+		return nil, status.FailedPreconditionError("no input fetcher is configured")
+	}
+	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
+		return nil, err
+	}
+	f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
+	if err == nil {
+		return f, nil
+	}
+	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
+		return nil, err
+	}
+	return p.env.GetFileCache().Open(ctx, node.fileNode)
+}
+
+func (p *Server) lookupPath(path string) (*fsNode, error) {
+	path, err := cleanRelativePath(path)
+	if err != nil {
+		return nil, err
+	}
+	node := p.root
+	if path == "" {
+		return node, nil
+	}
+	for name := range strings.SplitSeq(path, string(filepath.Separator)) {
+		node.mu.Lock()
+		child := node.children[name]
+		node.mu.Unlock()
+		if child == nil {
+			return nil, nil
+		}
+		node = child
+	}
+	return node, nil
+}
+
+func copyFile(source *os.File, destination string, mode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(destination); err != nil {
+		return err
+	}
+	if _, err := source.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	destinationFile, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(destinationFile, source)
+	closeErr := destinationFile.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	return closeErr
+}
+
+func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination string) error {
+	node.mu.Lock()
+	nodeType := node.nodeType
+	mode := os.FileMode(node.attrs.GetPerm())
+	target := node.target
+	backingPath := node.backingPath
+	children := make(map[string]*fsNode, len(node.children))
+	for name, child := range node.children {
+		children[name] = child
+	}
+	node.mu.Unlock()
+
+	switch nodeType {
+	case fsDirectoryNode:
+		if info, err := os.Lstat(destination); err == nil && !info.IsDir() {
+			if err := os.RemoveAll(destination); err != nil {
+				return err
+			}
+		}
+		if err := os.MkdirAll(destination, mode); err != nil {
+			return err
+		}
+		for name, child := range children {
+			if err := p.materializeNode(ctx, child, filepath.Join(destination, name)); err != nil {
+				return err
+			}
+		}
+		return nil
+	case fsFileNode:
+		var source *os.File
+		var err error
+		if backingPath != "" {
+			source, err = os.Open(backingPath)
+		} else {
+			source, err = p.openCASFile(ctx, node)
+		}
+		if err != nil {
+			return err
+		}
+		defer source.Close()
+		return copyFile(source, destination, mode)
+	case fsSymlinkNode:
+		if err := os.MkdirAll(filepath.Dir(destination), 0755); err != nil {
+			return err
+		}
+		if err := os.RemoveAll(destination); err != nil {
+			return err
+		}
+		return os.Symlink(target, destination)
+	default:
+		return status.UnimplementedErrorf("cannot materialize VFS node type %d", nodeType)
+	}
+}
+
+// MaterializeOutputs copies declared outputs into the action workspace.
+func (p *Server) MaterializeOutputs(ctx context.Context, layout *container.FileSystemLayout, outputRoot string) error {
+	for _, outputPath := range outputPaths(layout) {
+		relativePath, err := joinRelativePath(layout.WorkingDirectory, outputPath)
+		if err != nil {
+			return err
+		}
+		node, err := p.lookupPath(relativePath)
+		if err != nil {
+			return err
+		}
+		if node == nil {
+			continue
+		}
+		if err := p.materializeNode(ctx, node, filepath.Join(outputRoot, relativePath)); err != nil {
+			return status.WrapErrorf(err, "materialize output %q", outputPath)
+		}
+	}
+	return nil
 }
 
 func (p *Server) Mknod(ctx context.Context, request *vfspb.MknodRequest) (*vfspb.MknodResponse, error) {
@@ -1080,21 +1316,9 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 		}
 		openedFile = f
 	} else if node.fileNode != nil {
-		p.mu.Lock()
-		tf := p.treeFetcher
-		p.mu.Unlock()
-		if tf == nil {
-			log.CtxWarningf(p.taskCtx(), "Open %d could not open file because tree fetcher is not set", request.GetId())
-			return nil, syscallErrStatus(syscall.EIO)
-		}
-		err = tf.Fetch(p.taskCtx(), node.fileNode)
+		f, err := p.openCASFile(p.taskCtx(), node)
 		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from cache: %s", node.Path(), err)
-			return nil, err
-		}
-		f, err := p.env.GetFileCache().Open(p.taskCtx(), node.fileNode)
-		if err != nil {
-			log.CtxWarningf(p.taskCtx(), "Open %q could not open file from file cache: %s", node.Path(), err)
+			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from CAS: %s", node.Path(), err)
 			return nil, err
 		}
 		openedFile = f
@@ -1347,7 +1571,9 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	newParentNode.mu.Lock()
 	newChildNode, newExists := newParentNode.children[request.GetNewName()]
 	newParentNode.mu.Unlock()
+	var replacedID uint64
 	if newExists {
+		replacedID = newChildNode.id
 		if err := unlink(newParentNode, newChildNode, request.GetNewName()); err != nil {
 			return nil, err
 		}
@@ -1373,7 +1599,7 @@ func (p *Server) Rename(ctx context.Context, request *vfspb.RenameRequest) (*vfs
 	newParentNode.children[request.GetNewName()] = oldChildNode
 	newParentNode.mu.Unlock()
 
-	return &vfspb.RenameResponse{}, nil
+	return &vfspb.RenameResponse{ReplacedId: replacedID}, nil
 }
 
 func (p *Server) Mkdir(ctx context.Context, request *vfspb.MkdirRequest) (*vfspb.MkdirResponse, error) {

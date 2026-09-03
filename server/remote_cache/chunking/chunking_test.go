@@ -26,6 +26,25 @@ import (
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
+type getMultiBatchRecordingCache struct {
+	interfaces.Cache
+	batchSizes []int
+	batches    [][]*rspb.ResourceName
+}
+
+func TestAvgChunkSizeDefault(t *testing.T) {
+	ctx := context.Background()
+	require.Equal(t, int64(1024*1024), chunking.AvgChunkSizeBytes(ctx, nil))
+	require.Equal(t, uint64(1024*1024), chunking.FastCDCParams(ctx, nil).GetAvgChunkSizeBytes())
+	require.Equal(t, int64(4*1024*1024), chunking.MaxChunkSizeBytes(ctx, nil))
+}
+
+func (c *getMultiBatchRecordingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	c.batchSizes = append(c.batchSizes, len(resources))
+	c.batches = append(c.batches, resources)
+	return c.Cache.GetMulti(ctx, resources)
+}
+
 func TestChunker_ReassemblesOriginalData(t *testing.T) {
 	ctx := context.Background()
 
@@ -136,6 +155,51 @@ func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
 	ctx := context.Background()
 	efp := booleanFlagProvider{}
 	require.Equal(t, chunking.MaxChunkSizeBytes(ctx, efp), chunking.MinChunkedReadFallbackSizeBytes(ctx, efp))
+}
+
+func TestGetBlobRejectsForgedManifestSizes(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	firstChunkRN, firstChunkData := testdigest.RandomCASResourceBuf(t, 128)
+	require.NoError(t, cache.Set(ctx, firstChunkRN, firstChunkData))
+	lastChunkRN, lastChunkData := testdigest.RandomCASResourceBuf(t, 128)
+	require.NoError(t, cache.Set(ctx, lastChunkRN, lastChunkData))
+	const chunkCount = 21
+	firstForgedChunkDigest := &repb.Digest{
+		Hash:      firstChunkRN.GetDigest().GetHash(),
+		SizeBytes: 1024 * 1024,
+	}
+	lastForgedChunkDigest := &repb.Digest{
+		Hash:      lastChunkRN.GetDigest().GetHash(),
+		SizeBytes: firstForgedChunkDigest.GetSizeBytes(),
+	}
+	forgedBlobDigest := &repb.Digest{
+		Hash:      firstChunkRN.GetDigest().GetHash(),
+		SizeBytes: chunkCount * firstForgedChunkDigest.GetSizeBytes(),
+	}
+	chunkDigests := make([]*repb.Digest, chunkCount)
+	for i := 0; i < chunkCount-1; i++ {
+		chunkDigests[i] = firstForgedChunkDigest
+	}
+	chunkDigests[chunkCount-1] = lastForgedChunkDigest
+	manifest := &chunking.Manifest{
+		BlobDigest:     forgedBlobDigest,
+		ChunkDigests:   chunkDigests,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	require.NoError(t, manifest.StoreWithoutVerification(ctx, cache))
+
+	recordingCache := &getMultiBatchRecordingCache{Cache: cache}
+	_, err = chunking.GetBlob(ctx, recordingCache, forgedBlobDigest, "", repb.DigestFunction_SHA256, repb.Compressor_IDENTITY)
+	require.Error(t, err)
+	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
+	require.Equal(t, []int{20, 1}, recordingCache.batchSizes)
+	require.Equal(t, firstChunkRN.GetDigest().GetHash(), recordingCache.batches[0][0].GetDigest().GetHash())
+	require.Equal(t, lastChunkRN.GetDigest().GetHash(), recordingCache.batches[1][0].GetDigest().GetHash())
 }
 
 func TestChunker_DeterministicChunking(t *testing.T) {
@@ -606,20 +670,6 @@ func (p booleanFlagProvider) Int64(ctx context.Context, flagName string, default
 		return v
 	}
 	return defaultValue
-}
-
-func TestShouldDiscardLegacyChunkedBlob(t *testing.T) {
-	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
-
-	ctx := context.Background()
-	efp := booleanFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, nil, 3*1024*1024))
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, booleanFlagProvider{}, 3*1024*1024))
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 2*1024*1024))
-	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 3*1024*1024))
-	assert.True(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024))
-	assert.False(t, chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, 4*1024*1024+1))
 }
 
 func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {

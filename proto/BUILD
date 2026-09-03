@@ -56,6 +56,7 @@ proto_library(
         ":capability_proto",
         ":context_proto",
         "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -291,6 +292,7 @@ proto_library(
     srcs = ["gateway.proto"],
     deps = [
         "@com_google_protobuf//:timestamp_proto",
+        "@googleapis//google/rpc:status_proto",
     ],
 )
 
@@ -298,6 +300,9 @@ go_proto_library(
     name = "gateway_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/gateway",
     proto = ":gateway_proto",
+    deps = [
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
 )
 
 proto_library(
@@ -1989,6 +1994,7 @@ ts_proto_library(
         ":capability_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
+        ":timestamp_ts_proto",
     ],
 )
 

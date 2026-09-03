@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -45,6 +47,42 @@ import (
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 	gcodes "google.golang.org/grpc/codes"
 )
+
+type getErrorCache struct {
+	interfaces.Cache
+	match func(*rspb.ResourceName) bool
+	err   error
+}
+
+func (c *getErrorCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	if c.match(r) {
+		return nil, c.err
+	}
+	return c.Cache.Get(ctx, r)
+}
+
+func storeChunkedBlob(t testing.TB, ctx context.Context, cache interfaces.Cache, data []byte, digestFunction repb.DigestFunction_Value) (*repb.Digest, []*rspb.ResourceName) {
+	t.Helper()
+	blobDigest, err := digest.Compute(bytes.NewReader(data), digestFunction)
+	require.NoError(t, err)
+
+	split := len(data) / 2
+	chunkData := [][]byte{data[:split], data[split:]}
+	chunkRNs := make([]*rspb.ResourceName, 0, len(chunkData))
+	for _, data := range chunkData {
+		d, err := digest.Compute(bytes.NewReader(data), digestFunction)
+		require.NoError(t, err)
+		rn := digest.NewCASResourceName(d, "", digestFunction).ToProto()
+		require.NoError(t, cache.Set(ctx, rn, data))
+		chunkRNs = append(chunkRNs, rn)
+	}
+	require.NoError(t, (&chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunkRNs[0].GetDigest(), chunkRNs[1].GetDigest()},
+		DigestFunction: digestFunction,
+	}).Store(ctx, cache))
+	return blobDigest, chunkRNs
+}
 
 func TestInlineSingleFile(t *testing.T) {
 	resetMetrics()
@@ -661,7 +699,7 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	require.NoError(t, err)
 	cache := te.GetCache()
 
-	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 3*1024*1024)
 	chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2Data))
@@ -693,8 +731,114 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 	assert.True(t, status.IsNotFoundError(err))
 }
 
+func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	outputRN, outputData := testdigest.RandomCASResourceBuf(t, 128)
+	require.NoError(t, cache.Set(ctx, outputRN, outputData))
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{Name: strings.Repeat("x", 5*1024), Digest: outputRN.GetDigest()},
+			},
+		},
+	}
+	treeData, err := proto.Marshal(tree)
+	require.NoError(t, err)
+	split := len(treeData) / 2
+	chunkData := [][]byte{treeData[:split], treeData[split:]}
+	treeDigest, chunkRNs := storeChunkedBlob(t, ctx, cache, treeData, repb.DigestFunction_SHA256)
+
+	ar := &repb.ActionResult{
+		OutputDirectories: []*repb.OutputDirectory{
+			{Path: "output", TreeDigest: treeDigest},
+		},
+	}
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, &getErrorCache{
+		Cache: cache,
+		match: func(r *rspb.ResourceName) bool {
+			return r.GetCacheType() == rspb.CacheType_CAS && digest.Equal(r.GetDigest(), treeDigest)
+		},
+		err: os.ErrNotExist,
+	}, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, false, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+
+	tree.Root.Files[0].Name = "y" + tree.Root.Files[0].GetName()[1:]
+	corruptTreeData, err := proto.Marshal(tree)
+	require.NoError(t, err)
+	require.Len(t, corruptTreeData, len(treeData))
+	corruptChunkData := [][]byte{corruptTreeData[:split], corruptTreeData[split:]}
+	for i, data := range corruptChunkData {
+		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
+	}
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
+
+	for i, data := range chunkData {
+		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
+	}
+	require.NoError(t, cache.Delete(ctx, chunkRNs[1]))
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+}
+
+func TestValidateActionResult_ChunkedOutputDirectoryTreeInfersDigestFunction(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := te.GetCache()
+
+	treeData, err := proto.Marshal(&repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{{Name: strings.Repeat("x", 5*1024)}},
+	}})
+	require.NoError(t, err)
+	treeDigest, _ := storeChunkedBlob(t, ctx, cache, treeData, repb.DigestFunction_SHA1)
+	ar := &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{TreeDigest: treeDigest}}}
+
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_UNKNOWN, true, te.GetExperimentFlagProvider(), ar))
+}
+
+func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *testing.T) {
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	cache := &getErrorCache{
+		Cache: te.GetCache(),
+		match: func(r *rspb.ResourceName) bool {
+			return r.GetCacheType() == rspb.CacheType_AC
+		},
+		err: status.InternalError("unexpected manifest read"),
+	}
+	ar := &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{TreeDigest: &repb.Digest{
+		Hash:      strings.Repeat("a", 64),
+		SizeBytes: rpcutil.GRPCMaxSizeBytes + 1,
+	}}}}
+
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	require.Error(t, err)
+	assert.True(t, status.IsNotFoundError(err))
+}
+
 func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
-	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 1024)
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
@@ -736,8 +880,8 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 	assert.True(t, status.IsNotFoundError(err))
 }
 
-func TestValidateActionResult_DiscardsLegacyChunkedOutputFileForAvgChunkSizeOverride(t *testing.T) {
-	flags.Set(t, "cache.avg_chunk_size_bytes", 512*1024)
+func TestValidateActionResult_DiscardsChunkedOutputFileBelowCurrentWriteThreshold(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
 
 	ctx := context.Background()
@@ -771,23 +915,9 @@ func TestValidateActionResult_DiscardsLegacyChunkedOutputFileForAvgChunkSizeOver
 		},
 	}
 
-	efp := actionCacheFlagProvider{intValues: map[string]int64{"cache.avg_chunk_size_override": 1024 * 1024}}
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, efp, ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
-}
-
-type actionCacheFlagProvider struct {
-	interfaces.ExperimentFlagProvider
-	intValues map[string]int64
-}
-
-func (p actionCacheFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
-	v, ok := p.intValues[flagName]
-	if ok {
-		return v
-	}
-	return defaultValue
 }
 
 func TestRecordOriginScorecard(t *testing.T) {

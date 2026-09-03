@@ -140,11 +140,12 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 
 	// The chunked-manifest fallback lookup is skipped when the caller signals
 	// that these digests are individual content-defined chunks, not whole blobs.
-	// Otherwise, use the read fallback threshold so old chunked blobs still
-	// count as present, except for the override-only chunk-size migration range.
+	// Otherwise, only check manifests for blobs above the current whole-blob
+	// write threshold. Blobs at or below the threshold should be uploaded as
+	// whole blobs.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
 		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
-		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
+		maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
 
 		var mu sync.Mutex
 		stillMissing := make([]*repb.Digest, 0, len(missing))
@@ -163,7 +164,7 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		eg, egCtx := errgroup.WithContext(ctx)
 		eg.SetLimit(concurrency)
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes || chunking.ShouldDiscardLegacyChunkedBlob(ctx, efp, d.GetSizeBytes()) {
+			if d.GetSizeBytes() <= maxChunkSizeBytes {
 				markMissing(d)
 				continue
 			}
@@ -1327,31 +1328,11 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
 		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
 	}
-	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
-	if err != nil {
-		return nil, err
+	compressor := repb.Compressor_IDENTITY
+	if readZstd {
+		compressor = repb.Compressor_ZSTD
 	}
-	rns := make([]*rspb.ResourceName, 0, len(manifest.ChunkDigests))
-	for _, d := range manifest.ChunkDigests {
-		rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
-		if readZstd {
-			rn.SetCompressor(repb.Compressor_ZSTD)
-		}
-		rns = append(rns, rn.ToProto())
-	}
-	chunkData, err := s.cache.GetMulti(ctx, rns)
-	if err != nil {
-		return nil, err
-	}
-	buf := make([]byte, 0, blobDigest.GetSizeBytes())
-	for _, d := range manifest.ChunkDigests {
-		data, ok := chunkData[d]
-		if !ok {
-			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
-		}
-		buf = append(buf, data...)
-	}
-	return buf, nil
+	return chunking.GetBlob(ctx, s.cache, blobDigest, instanceName, digestFunction, compressor)
 }
 
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
