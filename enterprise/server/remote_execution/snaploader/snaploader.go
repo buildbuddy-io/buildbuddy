@@ -1618,6 +1618,43 @@ func resetContainerImageOutputDir(outDir string) error {
 	return os.MkdirAll(outDir, 0755)
 }
 
+// CacheContainerImage converts the EXT4 image at imageExt4Path into a chunked
+// containerfs snapshot and adds it to cache.
+func CacheContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path, chunkDir string, chunkSize int64, imageOpts RemoteContainerImageAccessOptions) error {
+	ctx, span := tracing.StartSpan(ctx)
+	defer span.End()
+
+	// Exit early if the container image is already cached.
+	// We re-check this here so we can avoid duplicate conversion work if another caller populated the cache since this caller's initial lookup.
+	// EXT4 conversion can be slow, so there's a good chance another executor already converted the image and cached it.
+	snap, err := GetCachedContainerImage(ctx, l, instanceName, imageRef, imageOpts.RemoteReadsEnabled)
+	if err != nil {
+		if ctx.Err() != nil {
+			return status.FromContextError(ctx)
+		}
+		if !status.IsNotFoundError(err) {
+			log.CtxWarningf(ctx, "Failed to read cached container image %q; converting the pulled image instead: %s", imageRef, err)
+		}
+	}
+	if snap != nil {
+		return nil
+	}
+
+	// ConvertFileToCOW requires an empty data directory.
+	if err := resetContainerImageOutputDir(chunkDir); err != nil {
+		return status.WrapError(err, "prepare container image chunk directory")
+	}
+	cow, err := convertAndCacheContainerImage(ctx, l, instanceName, imageRef, imageExt4Path, chunkDir, chunkSize, imageOpts)
+	if err != nil {
+		return err
+	}
+	// Each VM lazily maps its own chunks from the cache, so this COW is not needed.
+	if err := cow.Close(); err != nil {
+		log.CtxWarningf(ctx, "Failed to close container image COW: %s", err)
+	}
+	return nil
+}
+
 // UnpackContainerImage returns a ChunkedFile representing the given container
 // image. The chunk dir is stored as a child directory of the given outDir.
 //
@@ -1660,6 +1697,14 @@ func UnpackContainerImage(ctx context.Context, l *FileCacheLoader, instanceName,
 	}
 	// containerfs is not available in cache; convert the EXT4 image to a
 	// ChunkedFile then add it to cache.
+	return convertAndCacheContainerImage(ctx, l, instanceName, imageRef, imageExt4Path, outDir, chunkSize, imageOpts)
+}
+
+// convertAndCacheContainerImage splits the EXT4 image into a chunked
+// containerfs in outDir and adds it to cache, returning the new COWStore.
+//
+// Caching is best-effort. If it fails, the returned COWStore is still usable.
+func convertAndCacheContainerImage(ctx context.Context, l *FileCacheLoader, instanceName, imageRef, imageExt4Path, outDir string, chunkSize int64, imageOpts RemoteContainerImageAccessOptions) (*copy_on_write.COWStore, error) {
 	start := time.Now()
 	cow, err := copy_on_write.ConvertFileToCOW(ctx, l.env, imageExt4Path, chunkSize, outDir, instanceName, imageOpts.RemoteReadsEnabled, snaputil.ConvertToCOWConcurrency)
 	if err != nil {

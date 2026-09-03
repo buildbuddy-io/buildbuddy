@@ -196,6 +196,9 @@ const (
 	// The containerfs drive ID.
 	containerFSName  = "containerfs.ext4"
 	containerDriveID = "containerfs"
+	// containerfsScratchDirName is scratch space for chunking the container
+	// image; the chunks themselves live in the filecache.
+	containerfsScratchDirName = "containerfs-chunk-scratchspace"
 
 	// The networking deets for host and vm interfaces.
 	// All VMs are configured with the same IP and tap device via boot args,
@@ -2999,7 +3002,40 @@ func (c *FirecrackerContainer) PullImage(ctx context.Context, creds oci.Credenti
 		return err
 	}
 
+	c.cacheContainerfs(ctx, containerFSPath)
+
 	return nil
+}
+
+// cacheContainerfs converts the pulled EXT4 image into a chunked containerfs
+// snapshot and caches it.
+//
+// This runs here, rather than when the VM's rootfs is created, so that it is
+// covered by the per-image lock that container.PullImageIfNecessary holds.
+// Otherwise every VM starting from the same uncached image would convert and
+// re-cache it independently.
+//
+// It is best-effort.
+func (c *FirecrackerContainer) cacheContainerfs(ctx context.Context, containerFSPath string) {
+	if !snaputil.IsChunkedSnapshotSharingEnabled() {
+		return
+	}
+	chunkDir := filepath.Join(c.getChroot(), containerfsScratchDirName)
+	defer func() {
+		// When the VM starts, chunks are lazily loaded from the filecache, so this scratch copy is
+		// no longer needed.
+		if err := os.RemoveAll(chunkDir); err != nil {
+			log.CtxWarningf(ctx, "Failed to remove containerfs chunk dir: %s", err)
+		}
+	}()
+	instanceName := c.snapshotKeySet.GetBranchKey().GetInstanceName()
+	if err := snaploader.CacheContainerImage(ctx, c.loader, instanceName, c.containerImage, containerFSPath, chunkDir, cowChunkSizeBytes(), c.remoteContainerImageAccess); err != nil {
+		log.CtxWarningf(ctx, "Failed to cache chunked containerfs for image %q: %s", c.containerImage, err)
+		return
+	}
+	// The chunked containerfs is cached now, so drop the memoized lookup from
+	// before the pull and let initRootfsStore pick it up.
+	c.containerfsSnapshotOnce = sync.Once{}
 }
 
 // Remove kills any processes currently running inside the container and

@@ -695,6 +695,87 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	require.Greater(t, manifestRequests.Load(), int32(0))
 }
 
+func TestFirecrackerPullImage_CachesChunkedContainerfs(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	// Mock requests to the container registry.
+	var blobRequests atomic.Int32
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if strings.Contains(r.URL.Path, "/blobs/") {
+				blobRequests.Add(1)
+			}
+			return true
+		},
+	})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
+
+	// The test registry listens on a random port, so this image ref is unique
+	// to this test run and is guaranteed not to be present in the executor
+	// image cache, which may be shared across runs.
+	imageRef, _ := reg.PushNamedImage(t, "firecracker-cache-containerfs:latest", nil)
+	blobRequests.Store(0)
+
+	env := getTestEnv(ctx, t, envOpts{})
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageRef,
+		ActionWorkingDirectory: testfs.MakeTempDir(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	instanceName := snaputil.SnapshotPartitionPrefix + "/instance"
+	newContainer := func() *firecracker.FirecrackerContainer {
+		containerOpts := opts
+		containerOpts.ActionWorkingDirectory = testfs.MakeTempDir(t)
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+			ExecuteRequest: &repb.ExecuteRequest{InstanceName: instanceName},
+		}, containerOpts)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, c.Remove(context.Background()))
+		})
+		return c
+	}
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+
+	// Sanity check: neither the image nor a chunked containerfs is cached yet.
+	c := newContainer()
+	cached, err := c.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.False(t, cached)
+	_, err = snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, true /*=remoteEnabled*/)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+
+	// Pull the image, as a clean VM run would. This converts it to EXT4 and
+	// should also cache a chunked containerfs, so that VMs starting from this
+	// image later don't each have to convert it themselves.
+	require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+	require.Greater(t, blobRequests.Load(), int32(0), "expected the image layers to be pulled")
+
+	snap, err := snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, true /*=remoteEnabled*/)
+	require.NoError(t, err)
+	require.NotNil(t, snap)
+
+	// A container for a subsequent task should now be satisfied by the cached
+	// chunked containerfs, and skip the pull entirely.
+	blobRequests.Store(0)
+	next := newContainer()
+	cached, err = next.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.True(t, cached)
+	require.NoError(t, next.PullImage(ctx, oci.Credentials{}))
+	require.Equal(t, int32(0), blobRequests.Load(), "expected no layer pulls once the containerfs is cached")
+}
+
 func TestFirecrackerVMExecReadySignalAfterSnapshotResume(t *testing.T) {
 	flags.Set(t, "executor.firecracker_vmexec_ready_signal", true)
 	ctx := context.Background()
