@@ -2933,16 +2933,14 @@ func (c *FirecrackerContainer) IsImageCached(ctx context.Context) (bool, error) 
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	// Checking for the EXT4 image on local disk is cheap, so do it first.
-	cached, err := ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
-	if err != nil || cached {
-		return cached, err
+	// We check whether there is a valid snapshot first, because even if the EXT4 image is cached
+	// (the ociconv.IsImageCached check below), we might still need to chunk it and cache the chunks.
+	// That work happens in PullImage, and we don't want to skip it if there's no snapshot.
+	if snaputil.IsChunkedSnapshotSharingEnabled() {
+		return c.cachedContainerfs(ctx) != nil, nil
 	}
 
-	// The image also doesn't need to be pulled if the chunked containerfs is
-	// cached, since then the VM reads rootfs chunks over VBD rather than
-	// reading the EXT4 image.
-	return c.cachedContainerfs(ctx) != nil, nil
+	return ociconv.IsImageCached(ctx, c.env.GetFileCache(), c.executorConfig.CacheRoot, c.containerImage)
 }
 
 // PullImage pulls the container image from the remote. It always
