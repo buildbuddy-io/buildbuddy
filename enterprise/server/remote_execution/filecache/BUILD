@@ -24,7 +24,6 @@ go_library(
         "//server/metrics",
         "//server/remote_cache/digest",
         "//server/util/alert",
-        "//server/util/claims",
         "//server/util/disk",
         "//server/util/fastcopy",
         "//server/util/flag",

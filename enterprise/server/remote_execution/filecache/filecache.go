@@ -23,7 +23,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -667,15 +666,9 @@ func namespacedKey(keyPrefix string, node *repb.FileNode) (string, error) {
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		if len(c.GroupID) == 0 {
-			log.CtxWarning(ctx, "Empty group id")
-		}
-		return c.GroupID
-	}
 	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
 		groupID := u.GetGroupID()
-		if groupID != "" && groupID != interfaces.AuthAnonymousUser {
+		if groupID != "" {
 			return groupID
 		}
 	}
