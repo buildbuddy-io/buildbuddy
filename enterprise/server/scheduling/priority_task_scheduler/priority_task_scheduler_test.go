@@ -306,6 +306,275 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
 }
 
+func TestPriorityTaskScheduler_MaxConcurrentTasks(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	// Give the executor far more CPU and memory than the tasks need, so that
+	// the concurrency limit is the only thing that can hold tasks back.
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.max_concurrent_tasks", 2)
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	oneCPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+	}
+
+	// Enqueue three small tasks. Only two should start, since starting the
+	// third would exceed the concurrency limit even though there is plenty of
+	// CPU and memory to spare.
+	var taskIDs []string
+	for i := range 3 {
+		taskID := fakeTaskID(fmt.Sprintf("task-%d", i))
+		taskIDs = append(taskIDs, taskID)
+		_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+			TaskId:             taskID,
+			TaskSize:           oneCPU,
+			SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+		})
+		require.NoError(t, err)
+	}
+	execution1 := <-executor.StartedExecutions
+	execution2 := <-executor.StartedExecutions
+
+	// Give the scheduler a chance to (incorrectly) start the third task.
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no more tasks should start until a running task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	queueLen := scheduler.q.Len()
+	require.Equal(t, 1, queueLen)
+
+	// Complete one of the running tasks. This frees up a concurrency slot, so
+	// the third task should start.
+	execution1.Complete()
+	execution3 := <-executor.StartedExecutions
+	queueLen = scheduler.q.Len()
+	require.Equal(t, 0, queueLen)
+
+	startedTaskIDs := []string{
+		execution1.ScheduledTask.GetExecutionTask().GetExecutionId(),
+		execution2.ScheduledTask.GetExecutionTask().GetExecutionId(),
+		execution3.ScheduledTask.GetExecutionTask().GetExecutionId(),
+	}
+	require.ElementsMatch(t, taskIDs, startedTaskIDs)
+
+	// Complete the remaining executions to allow a clean shutdown.
+	execution2.Complete()
+	execution3.Complete()
+}
+
+func TestPriorityTaskScheduler_MaxConcurrentTasks_PreventsQueueSkipping(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	// Give the executor far more CPU and memory than the tasks need, along
+	// with a single GPU and a concurrency limit of 2. Custom resources enable
+	// the queue skipping logic, which is where concurrency reservations for
+	// queued tasks come into play.
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "gpu", Value: 1.0},
+	})
+	flags.Set(t, "executor.max_concurrent_tasks", 2)
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	oneCPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+	}
+	oneCPUAndOneGPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 1.0}},
+	}
+	gpuTask1ID := fakeTaskID("gpu-task-1")
+	gpuTask2ID := fakeTaskID("gpu-task-2")
+	cpuTask1ID := fakeTaskID("cpu-task-1")
+
+	// Start a GPU task, which takes the only GPU and one of the two
+	// concurrency slots.
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuTask1ID,
+		TaskSize:           oneCPUAndOneGPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPUAndOneGPU},
+	})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	startedTaskID := execution1.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, gpuTask1ID, startedTaskID)
+
+	// Enqueue a second GPU task, then a CPU-only task. The second GPU task
+	// is blocked waiting for the GPU, and it reserves the remaining
+	// concurrency slot while it waits. So even though the CPU-only task
+	// would fit in terms of CPU, memory, and GPU, it must not skip ahead.
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuTask2ID,
+		TaskSize:           oneCPUAndOneGPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPUAndOneGPU},
+	})
+	require.NoError(t, err)
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             cpuTask1ID,
+		TaskSize:           oneCPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+	})
+	require.NoError(t, err)
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no tasks should start until the first GPU task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	queueLen := scheduler.q.Len()
+	require.Equal(t, 2, queueLen)
+
+	// Complete the first GPU task. The second GPU task is at the front of the
+	// queue and can now take the GPU, so it should start before the CPU-only
+	// task.
+	execution1.Complete()
+	execution2 := <-executor.StartedExecutions
+	startedTaskID = execution2.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, gpuTask2ID, startedTaskID)
+
+	// Complete the second GPU task, which lets the CPU-only task start.
+	execution2.Complete()
+	execution3 := <-executor.StartedExecutions
+	startedTaskID = execution3.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, cpuTask1ID, startedTaskID)
+	queueLen = scheduler.q.Len()
+	require.Equal(t, 0, queueLen)
+	execution3.Complete()
+}
+
+func TestPriorityTaskScheduler_ExclusiveTaskScheduling(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	// Give the executor far more CPU and memory than the tasks need, so that
+	// exclusive scheduling is the only thing that can hold tasks back.
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.exclusive_task_scheduling", true)
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	oneCPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+	}
+
+	// Enqueue two small tasks. Only the first should start, since exclusive
+	// task scheduling allows a single task at a time.
+	task1ID := fakeTaskID("task-1")
+	task2ID := fakeTaskID("task-2")
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             task1ID,
+		TaskSize:           oneCPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+	})
+	require.NoError(t, err)
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             task2ID,
+		TaskSize:           oneCPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+	})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	startedTaskID := execution1.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, task1ID, startedTaskID)
+
+	// Give the scheduler a chance to (incorrectly) start the second task.
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no more tasks should start until the running task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	queueLen := scheduler.q.Len()
+	require.Equal(t, 1, queueLen)
+
+	// Complete the running task. The second task should start.
+	execution1.Complete()
+	execution2 := <-executor.StartedExecutions
+	startedTaskID = execution2.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, task2ID, startedTaskID)
+	queueLen = scheduler.q.Len()
+	require.Equal(t, 0, queueLen)
+	execution2.Complete()
+}
+
+func TestNewPriorityTaskScheduler_RejectsInvalidConcurrencyLimit(t *testing.T) {
+	for _, testCase := range []struct {
+		name                    string
+		exclusiveTaskScheduling bool
+		maxConcurrentTasks      int
+	}{
+		{name: "both flags set", exclusiveTaskScheduling: true, maxConcurrentTasks: 1},
+		{name: "negative max_concurrent_tasks", maxConcurrentTasks: -1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			flags.Set(t, "executor.exclusive_task_scheduling", testCase.exclusiveTaskScheduling)
+			flags.Set(t, "executor.max_concurrent_tasks", testCase.maxConcurrentTasks)
+
+			// The scheduler should refuse to start up with a concurrency limit
+			// that is either conflicting or nonsensical, rather than picking
+			// an interpretation on its own.
+			_, err := NewPriorityTaskScheduler(env, NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{})
+			require.Error(t, err)
+			isInvalidArgument := status.IsInvalidArgumentError(err)
+			require.True(t, isInvalidArgument, "unexpected error: %s", err)
+		})
+	}
+}
+
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 	for _, test := range []struct {
 		name string
