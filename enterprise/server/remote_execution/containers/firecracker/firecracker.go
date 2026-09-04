@@ -2845,6 +2845,11 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 			return result
 		}
 		result.VfsStats = c.vfsServer.ComputeStats()
+		if d, err := c.vfsServer.UnusedInputsDigest(); err != nil {
+			log.CtxWarningf(ctx, "Failed to record VFS unused inputs: %s", err)
+		} else {
+			result.VfsUnusedInputsDigest = d
+		}
 	} else if !*disableWorkspaceSync {
 		c.emitCOWAndUFFDMetrics(stage)
 		stage = "copy_workspace_outputs"

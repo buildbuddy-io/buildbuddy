@@ -1562,6 +1562,14 @@ func (f *FakeTaskSizer) Predict(ctx context.Context, action *repb.Action, cmd *r
 	return nil
 }
 
+func (f *FakeTaskSizer) UnusedInputsForTask(ctx context.Context, cmd *repb.Command, props *platform.Properties) (*repb.Digest, bool) {
+	return nil, false
+}
+
+func (f *FakeTaskSizer) UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, props *platform.Properties, d *repb.Digest) error {
+	return nil
+}
+
 // WaitForAnyPooledRunner waits for the runner pool count across all executors
 // to be at least 1. This can be called after a command is complete,
 // to ensure that the runner has been made available for recycling.

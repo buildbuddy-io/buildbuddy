@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -610,8 +611,11 @@ func TestDownloadInputs_WorkingDirectoryNestedMissing(t *testing.T) {
 
 func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 	for _, testCase := range []struct {
-		name             string
-		mode             workspace.VFSPrefetchMode
+		name string
+		mode workspace.VFSPrefetchMode
+		// unusedRecord gives the task a list from a previous execution that
+		// names input.txt as unopened.
+		unusedRecord     bool
 		wantInputFetcher bool
 		wantCached       bool
 		wantMaterialized bool
@@ -624,6 +628,22 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 		{
 			name:             "all",
 			mode:             workspace.VFSPrefetchModeAll,
+			wantInputFetcher: true,
+			wantCached:       true,
+		},
+		{
+			// A previous execution of the task didn't open the input, so it
+			// isn't prefetched.
+			name:             "used",
+			mode:             workspace.VFSPrefetchModeUsed,
+			unusedRecord:     true,
+			wantInputFetcher: true,
+		},
+		{
+			// No previous execution has been recorded, so every input is
+			// prefetched.
+			name:             "used_without_record",
+			mode:             workspace.VFSPrefetchModeUsed,
 			wantInputFetcher: true,
 			wantCached:       true,
 		},
@@ -656,7 +676,13 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 
 			ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{Preserve: true, VFSPrefetchMode: testCase.mode})
 			require.NoError(t, err)
-			ws.SetTask(ctx, &repb.ExecutionTask{})
+			task := &repb.ExecutionTask{}
+			if testCase.unusedRecord {
+				record := compression.CompressZstd(nil, []byte(inputNode.GetName()))
+				task.VfsUnusedInputsDigest, err = cachetools.UploadBlobToCAS(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, record)
+				require.NoError(t, err)
+			}
+			ws.SetTask(ctx, task)
 			require.NoError(t, ws.DownloadInputs(ctx, layout))
 			_, err = ws.TaskFinished()
 			require.NoError(t, err)

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -1201,7 +1202,10 @@ func (ff *BatchFileFetcher) bytestreamReadToFilecache(ctx context.Context, bsCli
 	return nil
 }
 
-// Fetch blocks until the specified input has been fetched.
+// Fetch blocks until the specified input has been fetched. It returns
+// immediately for inputs that are not part of the fetch, such as files left
+// out by DownloadTreeOpts.UnusedInputsDigest, so callers that need such a file
+// must fetch it themselves.
 // TODO(vadim): prioritize fetches referenced through this call since this is
 // a signal that this input is immediately needed.
 func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
@@ -1277,6 +1281,16 @@ type DownloadTreeOpts struct {
 	// RecordInputFetchMetadata controls whether to record which inputs were
 	// fetched from remote CAS while materializing the tree.
 	RecordInputFetchMetadata bool
+	// UnusedInputsDigest, if set, leaves out of the fetch the files listed in
+	// the CAS blob with this digest, which holds the input root-relative
+	// paths that a previous execution of the action did not open (see
+	// repb.ExecutionTask.vfs_unused_inputs_digest), so that a VFS-backed
+	// workspace only prefetches inputs that are likely to be needed. Files
+	// left out are not fetched at all and must be fetched on demand by the
+	// caller. If the blob cannot be read, every file is fetched. Only
+	// supported when RootDir is unset, since a materialized tree must contain
+	// every file.
+	UnusedInputsDigest *repb.Digest
 }
 
 type inputTreeRequest interface {
@@ -1538,6 +1552,9 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	}
 
 	onlyDownloadToFileCache := f.opts.RootDir == ""
+	if f.opts.UnusedInputsDigest != nil && !onlyDownloadToFileCache {
+		return nil, status.InvalidArgumentError("unused inputs can only be left out of fetches into the file cache")
+	}
 	dirPerms := fs.FileMode(0777)
 	f.filesToFetch = make(map[fetchKey][]*FilePointer, 0)
 	nextBitsetIndex := uint32(0)
@@ -1611,6 +1628,9 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], f.opts.RootDir); err != nil {
 		return nil, err
 	}
+	if f.opts.UnusedInputsDigest != nil {
+		f.dropUnusedInputs()
+	}
 
 	ff, err := newBatchFileFetcher(ctx, f.env, f.instanceName, f.digestFunction, f.filesToFetch, f.opts)
 	if err != nil {
@@ -1625,6 +1645,50 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	}()
 
 	return &InputsState{NeedFetching: needFetching, Exist: exist}, nil
+}
+
+// dropUnusedInputs drops files that a previous execution of the action
+// did not open from the set of files to fetch. The list is read from the file
+// cache when this executor already has it, and from the CAS otherwise.
+func (f *TreeFetcher) dropUnusedInputs() {
+	d := f.opts.UnusedInputsDigest
+	node := &repb.FileNode{Digest: d}
+	fc := f.env.GetFileCache()
+	record, err := fc.Read(f.ctx, node)
+	if err != nil {
+		rn := digest.NewCASResourceName(d, f.instanceName, f.digestFunction)
+		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
+		if err := cachetools.GetBlob(f.ctx, f.env.GetByteStreamClient(), rn, buf); err != nil {
+			log.CtxWarningf(f.ctx, "Failed to fetch unused inputs list; fetching all inputs: %s", err)
+			return
+		}
+		record = buf.Bytes()
+		if _, err := fc.Write(f.ctx, node, record); err != nil {
+			log.CtxWarningf(f.ctx, "Failed to add unused inputs list to the file cache: %s", err)
+		}
+	}
+	pathList, err := compression.DecompressZstd(nil, record)
+	if err != nil {
+		log.CtxWarningf(f.ctx, "Failed to decompress unused inputs list; fetching all inputs: %s", err)
+		return
+	}
+	unusedPaths := make(map[string]struct{})
+	for path := range strings.SplitSeq(string(pathList), "\n") {
+		unusedPaths[path] = struct{}{}
+	}
+	for key, filePointers := range f.filesToFetch {
+		kept := filePointers[:0]
+		for _, fp := range filePointers {
+			if _, unused := unusedPaths[fp.RelativePath]; !unused {
+				kept = append(kept, fp)
+			}
+		}
+		if len(kept) == 0 {
+			delete(f.filesToFetch, key)
+		} else {
+			f.filesToFetch[key] = kept
+		}
+	}
 }
 
 // Wait blocks until all transfers are complete.
@@ -1659,6 +1723,13 @@ func (f *TreeFetcher) Wait() (*TransferInfo, error) {
 // Fetch blocks until the specified node has been fetched.
 func (f *TreeFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
 	return f.ff.Fetch(ctx, node)
+}
+
+// Prefetching returns whether the file is part of the fetch. Files left out
+// by DownloadTreeOpts.UnusedInputsDigest are not.
+func (f *TreeFetcher) Prefetching(node *repb.FileNode) bool {
+	_, ok := f.ff.filesToFetch[newFetchKey(node.GetDigest(), node.GetIsExecutable())]
+	return ok
 }
 
 func nodesEqual(a *repb.FileNode, b *repb.FileNode) bool {

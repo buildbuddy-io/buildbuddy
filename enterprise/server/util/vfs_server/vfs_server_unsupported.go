@@ -21,6 +21,10 @@ func (s *Server) ComputeStats() *repb.VfsStats {
 	return nil
 }
 
+func (s *Server) UnusedInputsDigest() (*repb.Digest, error) {
+	return nil, nil
+}
+
 func New(env environment.Env, workspacePath string) (*Server, error) {
 	return nil, fmt.Errorf("not implemented")
 }

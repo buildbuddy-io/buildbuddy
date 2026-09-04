@@ -103,6 +103,7 @@ type VFSPrefetchMode string
 
 const (
 	VFSPrefetchModeAll  VFSPrefetchMode = platform.VFSPrefetchModeAll
+	VFSPrefetchModeUsed VFSPrefetchMode = platform.VFSPrefetchModeUsed
 	VFSPrefetchModeNone VFSPrefetchMode = platform.VFSPrefetchModeNone
 )
 
@@ -126,7 +127,9 @@ type Opts struct {
 
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
-	if opts.VFSPrefetchMode != "" && opts.VFSPrefetchMode != VFSPrefetchModeAll && opts.VFSPrefetchMode != VFSPrefetchModeNone {
+	switch opts.VFSPrefetchMode {
+	case "", VFSPrefetchModeAll, VFSPrefetchModeUsed, VFSPrefetchModeNone:
+	default:
 		return nil, status.InvalidArgumentErrorf("invalid VFS prefetch mode %q", opts.VFSPrefetchMode)
 	}
 	dirPerms := fs.FileMode(0777)
@@ -352,6 +355,12 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
 	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
+	if vfsPrefetchMode == VFSPrefetchModeUsed {
+		// Skip prefetching the inputs that a previous execution of this
+		// command left unopened, if known. The VFS fetches them on demand if
+		// this execution opens them after all.
+		opts.UnusedInputsDigest = ws.task.GetVfsUnusedInputsDigest()
+	}
 	if ws.Opts.Preserve {
 		opts.Skip = ws.Inputs
 		opts.TrackTransfers = true
@@ -673,6 +682,16 @@ func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 		return nil
 	}
 	return ws.vfsServer.ComputeStats()
+}
+
+// VFSUnusedInputsDigest records the CAS inputs that the current task left
+// unopened as a CAS blob and returns its digest, or nil if the workspace does
+// not serve inputs through VFS or the task does not track unused inputs.
+func (ws *Workspace) VFSUnusedInputsDigest() (*repb.Digest, error) {
+	if ws.vfsServer == nil {
+		return nil, nil
+	}
+	return ws.vfsServer.UnusedInputsDigest()
 }
 
 // TaskFinished informs the workspace that task execution is done.

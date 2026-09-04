@@ -103,6 +103,11 @@ func TestParse_VFSPrefetchMode(t *testing.T) {
 			expectedValue: VFSPrefetchModeAll,
 		},
 		{
+			name:          "used",
+			value:         VFSPrefetchModeUsed,
+			expectedValue: VFSPrefetchModeUsed,
+		},
+		{
 			name:          "none",
 			value:         VFSPrefetchModeNone,
 			expectedValue: VFSPrefetchModeNone,
