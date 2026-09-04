@@ -61,6 +61,9 @@ common --noslim_profile
 # TODO(sluongng): make Bazel writes this to output_base automatically
 common --execution_log_compact_file=%workspace%/bazel_compact_exec_log.binpb.zst
 
+# When using --remote_downloader, fallback to local downloads if it fails
+common --experimental_remote_downloader_local_fallback
+
 # Disable https://github.com/aspect-build/tools_telemetry.
 common --repo_env=DO_NOT_TRACK=1
 
