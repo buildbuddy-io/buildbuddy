@@ -306,6 +306,227 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
 }
 
+func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "apple_simulator", Value: 2.0},
+		{Name: "sim_version_26_5", Value: 2.0, Parent: "apple_simulator", ParentAccounting: "ceil"},
+		{Name: "sim_version_18_0", Value: 2.0, Parent: "apple_simulator", ParentAccounting: "ceil"},
+	})
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	simSize := func(name string, value float32) *scpb.TaskSize {
+		return &scpb.TaskSize{
+			EstimatedMilliCpu:    1000,
+			EstimatedMemoryBytes: 1000,
+			CustomResources:      []*scpb.CustomResource{{Name: name, Value: value}},
+		}
+	}
+	enqueue := func(taskID string, size *scpb.TaskSize) {
+		_, err := scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+			TaskId:             taskID,
+			TaskSize:           size,
+			SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size},
+		})
+		require.NoError(t, err)
+	}
+	waitForStart := func(taskID string) *FakeExecution {
+		select {
+		case execution := <-executor.StartedExecutions:
+			require.Equal(t, taskID, execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+			return execution
+		case <-time.After(1 * time.Second):
+			require.FailNowf(t, "timed out waiting for task to start", "task %q did not start", taskID)
+			return nil
+		}
+	}
+	requireNoStart := func() {
+		select {
+		case execution := <-executor.StartedExecutions:
+			require.FailNowf(t, "no task should have started", "task %q started", execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	sim26UIID := fakeTaskID("sim-26-5-ui")
+	sim26Small1ID := fakeTaskID("sim-26-5-small-1")
+	sim26Small2ID := fakeTaskID("sim-26-5-small-2")
+	sim18SmallID := fakeTaskID("sim-18-0-small")
+
+	// 1 + 0.1 + 0.1 for the same simulator version should consume 2 parent
+	// simulator slots after summing and ceiling the version bucket.
+	enqueue(sim26UIID, simSize("sim_version_26_5", 1.0))
+	sim26UI := waitForStart(sim26UIID)
+	enqueue(sim26Small1ID, simSize("sim_version_26_5", 0.1))
+	sim26Small1 := waitForStart(sim26Small1ID)
+	enqueue(sim26Small2ID, simSize("sim_version_26_5", 0.1))
+	sim26Small2 := waitForStart(sim26Small2ID)
+
+	// A different simulator version would need a third parent simulator slot,
+	// so it should wait.
+	enqueue(sim18SmallID, simSize("sim_version_18_0", 0.1))
+	requireNoStart()
+	require.Equal(t, 1, scheduler.q.Len())
+
+	// Dropping from 1.2 to 1.1 still rounds to 2 parent simulator slots.
+	sim26Small1.Complete()
+	requireNoStart()
+	require.Equal(t, 1, scheduler.q.Len())
+
+	// Dropping to 1.0 rounds to 1 parent simulator slot, leaving room for the
+	// 18.0 simulator version bucket.
+	sim26Small2.Complete()
+	sim18Small := waitForStart(sim18SmallID)
+
+	sim26UI.Complete()
+	sim18Small.Complete()
+}
+
+func TestPriorityTaskScheduler_CanFitTaskWithParentResources(t *testing.T) {
+	q := &PriorityTaskScheduler{
+		resourceCapacity: &resourceCounts{
+			RAMBytes:  100,
+			CPUMillis: 100,
+			Custom: map[string]customResourceCount{
+				"parent": customResource(2),
+				"a":      customResource(1.5),
+				"b":      customResource(3),
+				"other":  customResource(1),
+			},
+		},
+		customResourceParents: map[string]resources.CustomResourceParent{
+			"a": {Name: "parent", Accounting: "ceil"},
+			"b": {Name: "parent", Accounting: "ceil"},
+		},
+	}
+	for _, test := range []struct {
+		name     string
+		reserved map[string]float32
+		request  map[string]float32
+		wantFit  bool
+	}{
+		{
+			name: "unused children consume no parent units", wantFit: true,
+			request: map[string]float32{"parent": 2},
+		},
+		{
+			name:    "child capacity still applies",
+			request: map[string]float32{"a": 1.6},
+		},
+		{
+			name: "same child shares parent units", wantFit: true,
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"a": 0.1},
+		},
+		{
+			name:     "different children use separate parent units",
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"b": 0.1},
+		},
+		{
+			name: "exact whole unit leaves room for sibling", wantFit: true,
+			reserved: map[string]float32{"a": 1}, request: map[string]float32{"b": 0.1},
+		},
+		{
+			name:     "smallest fraction rounds up",
+			reserved: map[string]float32{"a": 1, "b": 0.1}, request: map[string]float32{"a": 0.000001},
+		},
+		{
+			name:     "direct parent request includes child usage",
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"parent": 0.1},
+		},
+		{
+			name:     "child request includes direct parent usage",
+			reserved: map[string]float32{"parent": 1.1}, request: map[string]float32{"a": 0.1},
+		},
+		{
+			name:    "parent and children in one request",
+			request: map[string]float32{"parent": 0.1, "a": 0.1, "b": 0.1},
+		},
+		{
+			name: "siblings in one request fit", wantFit: true,
+			request: map[string]float32{"a": 0.1, "b": 0.1},
+		},
+		{
+			name: "unrelated reserved resources do not block task", wantFit: true,
+			reserved: map[string]float32{"a": 3}, request: map[string]float32{"other": 1},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reserved := &resourceCounts{Custom: make(map[string]customResourceCount)}
+			for name, value := range test.reserved {
+				reserved.Custom[name] = customResource(value)
+			}
+			size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1}
+			for name, value := range test.request {
+				size.CustomResources = append(size.CustomResources, &scpb.CustomResource{Name: name, Value: value})
+			}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{TaskSize: size}}
+			before := reserved.Clone()
+			require.Equal(t, test.wantFit, q.canFitTask(task, reserved))
+			require.Equal(t, before, reserved, "checking capacity must not change reservations")
+		})
+	}
+}
+
+func TestPriorityTaskScheduler_CustomResourceParentAccountingModes(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		modeA     string
+		modeB     string
+		wantUsage float32
+		wantFit   bool
+	}{
+		{name: "default sum", wantUsage: 1.45, wantFit: true},
+		{name: "explicit sum", modeA: "sum", modeB: "sum", wantUsage: 1.45, wantFit: true},
+		{name: "ceil", modeA: "ceil", modeB: "ceil", wantUsage: 3.25},
+		{name: "mixed ceil and sum", modeA: "ceil", modeB: "sum", wantUsage: 2.35},
+		{name: "mixed default and ceil", modeB: "ceil", wantUsage: 2.35},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+				{Name: "parent", Value: 2},
+				{Name: "a", Value: 2, Parent: "parent", ParentAccounting: test.modeA},
+				{Name: "b", Value: 2, Parent: "parent", ParentAccounting: test.modeB},
+			})
+			q, err := NewPriorityTaskScheduler(testenv.GetTestEnv(t), NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{
+				RAMBytesCapacityOverride:  100,
+				CPUMillisCapacityOverride: 100,
+			})
+			require.NoError(t, err)
+			size := &scpb.TaskSize{
+				EstimatedMemoryBytes: 1,
+				EstimatedMilliCpu:    1,
+				CustomResources: []*scpb.CustomResource{
+					{Name: "a", Value: 1.1},
+					{Name: "b", Value: 0.1},
+					{Name: "parent", Value: 0.25},
+				},
+			}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{TaskSize: size}}
+			require.Equal(t, test.wantFit, q.canFitTask(task, q.resourcesUsed))
+			require.Equal(t, customResource(test.wantUsage), q.customResourceUsed(q.taskResourceCounts(size), "parent"))
+		})
+	}
+}
+
 func TestPriorityTaskScheduler_MaxConcurrentTasks(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})

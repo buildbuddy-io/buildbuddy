@@ -249,8 +249,10 @@ func GetAllocatedDiskBytes() int64 {
 
 // Struct version of scpb.CustomResource (for YAML configuration).
 type CustomResource struct {
-	Name  string  `yaml:"name" json:"name"`
-	Value float64 `yaml:"value" json:"value"`
+	Name             string  `yaml:"name" json:"name"`
+	Value            float64 `yaml:"value" json:"value"`
+	Parent           string  `yaml:"parent" json:"parent"`
+	ParentAccounting string  `yaml:"parent_accounting" json:"parent_accounting"`
 }
 
 func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
@@ -267,6 +269,52 @@ func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 		})
 	}
 	return out, nil
+}
+
+// CustomResourceParent describes how a child's usage is charged to its parent.
+type CustomResourceParent struct {
+	Name       string
+	Accounting string
+}
+
+const (
+	ParentAccountingSum  = "sum"
+	ParentAccountingCeil = "ceil"
+)
+
+func GetCustomResourceParentMap() (map[string]CustomResourceParent, error) {
+	configured := make(map[string]CustomResource, len(*customResources))
+	for _, r := range *customResources {
+		configured[r.Name] = r
+	}
+
+	parentByChild := make(map[string]CustomResourceParent)
+	for _, r := range *customResources {
+		if r.Parent == "" {
+			if r.ParentAccounting != "" {
+				return nil, status.InvalidArgumentErrorf("Custom resource %q sets parent_accounting without a parent", r.Name)
+			}
+			continue
+		}
+		parent, ok := configured[r.Parent]
+		if !ok {
+			return nil, status.InvalidArgumentErrorf("Custom resource %q parent %q is not configured", r.Name, r.Parent)
+		}
+		if r.Parent == r.Name {
+			return nil, status.InvalidArgumentErrorf("Custom resource %q cannot be its own parent", r.Name)
+		}
+		if parent.Parent != "" {
+			return nil, status.InvalidArgumentErrorf("Custom resource %q parent %q cannot itself have a parent", r.Name, r.Parent)
+		}
+		if r.ParentAccounting == "" {
+			r.ParentAccounting = ParentAccountingSum
+		}
+		if r.ParentAccounting != ParentAccountingSum && r.ParentAccounting != ParentAccountingCeil {
+			return nil, status.InvalidArgumentErrorf("Custom resource %q has unsupported parent_accounting %q", r.Name, r.ParentAccounting)
+		}
+		parentByChild[r.Name] = CustomResourceParent{Name: r.Parent, Accounting: r.ParentAccounting}
+	}
+	return parentByChild, nil
 }
 
 func GetK8sNodeName() string {
