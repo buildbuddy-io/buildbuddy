@@ -12,9 +12,3 @@ type RunRequest struct {
 	Prompt          string
 	AllowedTools    []string
 }
-
-type RunResponse struct {
-	Output        string
-	SessionID     string
-	ResumeCommand string
-}
