@@ -116,13 +116,6 @@ actions:
       memory: 16GB
     steps:
       - run: |
-          # Use the same endpoints/config as the other workflows (cache and
-          # executor both at remote.buildbuddy.io); with --config=remote the
-          # cache (remote.buildbuddy.io) and executor (buildbuddy.buildbuddy.io)
-          # were split, and most nightly runs since 2026-08-19 failed on the
-          # first remote action with "FAILED_PRECONDITION: Digest ... not found".
-          # --remote_download_minimal: bb explain only needs the compact
-          # execution logs, not every top-level output of //... downloaded twice.
           bb detect nondeterminism --bazel_command='build //... --config=linux-workflows --remote_download_minimal' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
   - name: Code review
     container_image: ubuntu-22.04
