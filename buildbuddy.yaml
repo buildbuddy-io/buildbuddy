@@ -116,7 +116,7 @@ actions:
       memory: 16GB
     steps:
       - run: |
-          bb detect nondeterminism --bazel_command='build //... --config=linux-workflows --remote_download_minimal' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
+          bb detect nondeterminism --bazel_command='build //... --config=linux-workflows' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
   - name: Code review
     container_image: ubuntu-22.04
     triggers:
