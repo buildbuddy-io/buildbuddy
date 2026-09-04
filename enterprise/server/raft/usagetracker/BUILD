@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -20,8 +20,8 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/util/alert",
-        "//server/util/approxlru",
         "//server/util/disk",
+        "//server/util/lib/set",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/status",
@@ -31,5 +31,34 @@ go_library(
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_x_sync//errgroup",
         "@org_golang_x_sync//semaphore",
+        "@org_golang_x_time//rate",
+    ],
+)
+
+go_test(
+    name = "usagetracker_test",
+    size = "medium",
+    srcs = [
+        "usagetracker_benchmark_test.go",
+        "usagetracker_test.go",
+    ],
+    embed = [":usagetracker"],
+    deps = [
+        "//enterprise/server/filestore",
+        "//enterprise/server/raft/keys",
+        "//enterprise/server/util/pebble",
+        "//proto:resource_go_proto",
+        "//proto:storage_go_proto",
+        "//server/metrics",
+        "//server/testutil/testdigest",
+        "//server/testutil/testfs",
+        "//server/util/disk",
+        "//server/util/lib/set",
+        "@com_github_cockroachdb_pebble//:pebble",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_x_time//rate",
     ],
 )

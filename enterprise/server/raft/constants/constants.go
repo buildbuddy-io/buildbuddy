@@ -26,7 +26,9 @@ const (
 // Key range contants
 const (
 	// Anything written between \x01 and \x02 is a localstore only key so
-	// will not be replicated.
+	// will not be replicated. This region also holds the node-local atime
+	// eviction index under '\x01atidx/' (defined in the keys package as
+	// AtimeIndexPrefix; it can't live here because constants imports keys).
 	localPrefixByte = '\x01'
 	localMaxByte    = '\x02'
 

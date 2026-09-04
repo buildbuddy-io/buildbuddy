@@ -3409,15 +3409,6 @@ var (
 		RaftTxnRecordProcessStatus,
 	})
 
-	RaftEvictionSamplesChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "raft",
-		Name:      "eviction_samples_chan_size",
-		Help:      "Num of items in eviction samples chan",
-	}, []string{
-		PartitionID,
-	})
-
 	RaftEvictionGCSChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "raft",
@@ -3432,6 +3423,34 @@ var (
 		Subsystem: "raft",
 		Name:      "gcs_delete_dropped",
 		Help:      "The total number of dropped gcs deletes",
+	}, []string{
+		PartitionID,
+	})
+
+	RaftAtimeIndexMissingEntriesRepaired = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_index_missing_entries_repaired",
+		Help:      "Missing atime-index entries found and repaired by the background verifier. Should stay at zero; a sustained rate means the apply path is failing to maintain the index somewhere and records are (temporarily) invisible to eviction.",
+	}, []string{
+		PartitionID,
+	})
+
+	RaftAtimeIndexOrphansDropped = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_index_orphans_dropped",
+		Help:      "Orphaned atime-index entries (record gone or atime moved on) dropped in place by the eviction sweep. Orphans are an expected byproduct of snapshot recovery, crash windows, and backfill/verifier races -- this counts the healing, not a fault; the dangerous direction is atime_index_missing_entries_repaired.",
+	}, []string{
+		PartitionID,
+	})
+
+	RaftAtimeIndexSweepSeekDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "raft",
+		Name:      "atime_index_sweep_seek_usec",
+		Buckets:   durationUsecBuckets(10*time.Microsecond, 10*time.Second, 2),
+		Help:      "Time for the eviction sweep's initial seek into the atime index. Healthy seeks take microseconds; a growing tail means the sweep is skipping an uncompacted tombstone field left by prior evictions at the index's cold front.",
 	}, []string{
 		PartitionID,
 	})
