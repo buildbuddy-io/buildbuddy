@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -74,9 +75,22 @@ sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
 
 func TestInvokeViaBazelisk(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
+	overrideMarker := "BB_USE_BAZEL_VERSION override selected"
+	overrideBazelPath := filepath.Join(ws, "override-bazel")
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		".bazelversion": fmt.Sprintf("%s\n%s\n", testcli.BinaryPath(t), testbazel.BinaryPath(t)),
+		"override-bazel": fmt.Sprintf(`#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  if [[ "$arg" == "version" ]]; then
+    echo %q
+    break
+  fi
+done
+exec "$TEST_BAZEL_BINARY" "$@"
+`, overrideMarker),
 	})
+	testfs.MakeExecutable(t, ws, "override-bazel")
 
 	{
 		// Make sure we can invoke the CLI under bazelisk, using the
@@ -90,18 +104,20 @@ func TestInvokeViaBazelisk(t *testing.T) {
 	}
 	{
 		// Make sure that if we're using the .bazelversion trick, we still have
-		// a way to override the bazel version via env var
-		// (BB_USE_BAZEL_VERSION).
+		// a way to override Bazel via BB_USE_BAZEL_VERSION. Use a wrapper around
+		// the hermetic test Bazel so this test does not fetch a separate Bazel
+		// release from the network.
 		cmd := testcli.BazeliskCommand(t, ws, "version")
-		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION=6.0.0")
-		// Sanity check: make sure testbazel.Version is different from the one
-		// we're testing here.
-		require.NotEqual(t, "6.0.0", testbazel.Version)
+		cmd.Env = append(os.Environ(),
+			"BB_USE_BAZEL_VERSION="+overrideBazelPath,
+			"TEST_BAZEL_BINARY="+testbazel.BinaryPath(t),
+		)
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
 		require.Regexp(t, `(?m)^bb (unknown|\d+\.\d+\.\d+)$`, string(b))
-		require.Contains(t, string(b), "Build label: 6.0.0")
+		require.Contains(t, string(b), overrideMarker)
+		require.Contains(t, string(b), "Build label: "+testbazel.Version)
 	}
 }
 
