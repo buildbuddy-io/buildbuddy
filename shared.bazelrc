@@ -100,8 +100,8 @@ common --downloader_config=bazel_downloader.cfg
 
 # We should probably only build the images we're going to use, so let's always
 # compress images the way we will in production.
-common:release-shared --@rules_img//img/settings:compress=zstd
-common:release-shared --@rules_img//img/settings:compression_level=4
+common --@rules_img//img/settings:compress=zstd
+common --@rules_img//img/settings:compression_level=4
 
 common:race --@io_bazel_rules_go//go/config:race
 common:race --test_timeout=120,600,-1,-1
