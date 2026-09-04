@@ -5,6 +5,11 @@ package commandutil_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +17,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +34,15 @@ func TestRun_Win_NormalExit_NoError(t *testing.T) {
 	}
 }
 
-func TestRun_Win_CompletedJobCurrentlyReportsStaleMemory(t *testing.T) {
+func TestRun_Win_NegativeExitIsNotReportedAsKilled(t *testing.T) {
+	cmd := &repb.Command{Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", "Exit -1"}}
+
+	res := commandutil.Run(context.Background(), cmd, ".", nopStatsListener, &interfaces.Stdio{})
+
+	require.NoError(t, res.Error)
+}
+
+func TestRun_Win_CompletedJobReportsNoCurrentMemory(t *testing.T) {
 	cmd := &repb.Command{Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", `
 		Start-Process powershell -ArgumentList '-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 300' | Out-Null
 		Start-Sleep -Seconds 1
@@ -37,34 +51,88 @@ func TestRun_Win_CompletedJobCurrentlyReportsStaleMemory(t *testing.T) {
 	res := commandutil.Run(context.Background(), cmd, ".", nopStatsListener, &interfaces.Stdio{})
 
 	require.NoError(t, res.Error)
-	// Document the current deficiency: the descendant is killed during final
-	// cleanup, but the returned current memory remains at its last live sample.
-	require.Positive(t, res.UsageStats.GetMemoryBytes())
+	require.Zero(t, res.UsageStats.GetMemoryBytes())
+}
+
+func TestRun_Win_TimeoutReturnsDeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	cmd := &repb.Command{Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 300"}}
+
+	res := commandutil.Run(ctx, cmd, ".", nopStatsListener, &interfaces.Stdio{})
+
+	require.True(t, status.IsDeadlineExceededError(res.Error), "expected deadline exceeded, got %v", res.Error)
+	require.Equal(t, commandutil.KilledExitCode, res.ExitCode)
+}
+
+func useCPUPowerShellScript(dur time.Duration) string {
+	return fmt.Sprintf(`
+$timer = [System.Diagnostics.Stopwatch]::StartNew()
+while ($timer.ElapsedMilliseconds -lt %d) {}
+`, dur.Milliseconds())
+}
+
+func useMemoryPowerShellScript(memoryBytes int64, dur time.Duration) string {
+	return fmt.Sprintf(`
+$memory = New-Object byte[] %d
+for ($i = 0; $i -lt $memory.Length; $i += 4096) { $memory[$i] = 1 }
+Start-Sleep -Milliseconds %d
+if ($memory.Length -ne %d) { exit 1 }
+`, memoryBytes, dur.Milliseconds(), memoryBytes)
 }
 
 func TestComplexProcessTree(t *testing.T) {
 	// Setup
 	workDir := testfs.MakeTempDir(t)
 	testfs.WriteAllFileContents(t, workDir, map[string]string{
-		"cpu1.py": useCPUPythonScript(3 * time.Second),
-		"cpu2.py": useCPUPythonScript(1 * time.Second),
-		"mem1.py": useMemPythonScript(500e6, 3*time.Second),
-		"mem2.py": useMemPythonScript(250e6, 2*time.Second),
+		"cpu1.ps1": useCPUPowerShellScript(3 * time.Second),
+		"cpu2.ps1": useCPUPowerShellScript(1 * time.Second),
+		"mem1.ps1": useMemoryPowerShellScript(500e6, 3*time.Second),
+		"mem2.ps1": useMemoryPowerShellScript(250e6, 2*time.Second),
 	})
 
 	// Run
 	cmd := &repb.Command{
-		Arguments: []string{"powershell", "-c", `
-		Start-Job -Name cpu1 -ScriptBlock { python cpu1.py }
-		Start-Job -Name cpu2 -ScriptBlock { python cpu2.py }
-		Start-Job -Name mem1 -ScriptBlock { python mem1.py }
-		Start-Job -Name mem2 -ScriptBlock { python mem2.py }
-		Get-Job | Wait-Job
+		Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", `
+		$processes = @(
+			Start-Process powershell -ArgumentList '-NoProfile','-NonInteractive','-File','cpu1.ps1' -WorkingDirectory '.' -PassThru
+			Start-Process powershell -ArgumentList '-NoProfile','-NonInteractive','-File','cpu2.ps1' -WorkingDirectory '.' -PassThru
+			Start-Process powershell -ArgumentList '-NoProfile','-NonInteractive','-File','mem1.ps1' -WorkingDirectory '.' -PassThru
+			Start-Process powershell -ArgumentList '-NoProfile','-NonInteractive','-File','mem2.ps1' -WorkingDirectory '.' -PassThru
+		)
+		$processes | Wait-Process
 		`},
 	}
 	res := commandutil.Run(context.Background(), cmd, workDir, nopStatsListener, &interfaces.Stdio{})
 
 	// Assert
-	assert.NoError(t, res.Error)
-	assert.Equal(t, 0, res.ExitCode)
+	require.NoError(t, res.Error)
+	require.Equal(t, 0, res.ExitCode)
+	require.GreaterOrEqual(t, res.UsageStats.GetCpuNanos(), int64(1e9), "expected CPU usage from child processes")
+	require.LessOrEqual(t, res.UsageStats.GetCpuNanos(), int64(10e9), "unexpectedly high CPU usage")
+	require.GreaterOrEqual(t, res.UsageStats.GetPeakMemoryBytes(), int64(750e6), "expected peak memory from child processes")
+	require.LessOrEqual(t, res.UsageStats.GetPeakMemoryBytes(), int64(2e9), "unexpectedly high peak memory")
+}
+
+func TestRun_Win_NormalExit_KillsDescendants(t *testing.T) {
+	workDir := testfs.MakeTempDir(t)
+	pidPath := filepath.Join(workDir, "child.pid")
+	script := fmt.Sprintf(`
+		$child = Start-Process powershell -ArgumentList '-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 300' -PassThru
+		Set-Content -LiteralPath '%s' -Value $child.Id
+	`, pidPath)
+	cmd := &repb.Command{Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", script}}
+
+	res := commandutil.Run(context.Background(), cmd, workDir, nopStatsListener, &interfaces.Stdio{})
+
+	require.NoError(t, res.Error)
+	pidBytes, err := os.ReadFile(pidPath)
+	require.NoError(t, err)
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	require.NoError(t, err)
+	defer exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
+	require.Eventually(t, func() bool {
+		check := fmt.Sprintf("if (Get-Process -Id %d -ErrorAction SilentlyContinue) { exit 1 }", pid)
+		return exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", check).Run() == nil
+	}, 5*time.Second, 50*time.Millisecond, "descendant process %d was left running", pid)
 }

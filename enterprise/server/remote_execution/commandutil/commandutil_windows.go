@@ -4,6 +4,7 @@ package commandutil
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"sync"
@@ -29,6 +30,11 @@ const (
 	// - https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-assignprocesstojobobject#parameters
 	// - https://learn.microsoft.com/en-us/windows/win32/procthread/process-security-and-access-rights
 	processWithJobObjPerm = windows.PROCESS_SET_QUOTA | windows.PROCESS_TERMINATE | windows.PROCESS_QUERY_LIMITED_INFORMATION
+
+	// Windows process exit codes are DWORDs. Preserve the low 32 bits when Go's
+	// ProcessState.ExitCode returns the value as an int on 64-bit systems.
+	// https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-terminatejobobject#parameters
+	windowsKilledExitCode = ^uint32(0)
 )
 
 // process struct is a wrapper around exec.Cmd that adds support for killing the
@@ -43,6 +49,34 @@ type process struct {
 
 	jobMu     sync.Mutex
 	jobHandle windows.Handle
+	killed    bool
+}
+
+type processKilledError struct {
+	err error
+}
+
+func (e *processKilledError) Error() string {
+	return e.err.Error()
+}
+
+func (e *processKilledError) Unwrap() error {
+	return e.err
+}
+
+// jobObjectBasicAccountingInformation mirrors the Windows
+// JOBOBJECT_BASIC_ACCOUNTING_INFORMATION structure. CPU times are expressed in
+// 100-nanosecond ticks.
+// https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_basic_accounting_information
+type jobObjectBasicAccountingInformation struct {
+	TotalUserTime             int64
+	TotalKernelTime           int64
+	ThisPeriodTotalUserTime   int64
+	ThisPeriodTotalKernelTime int64
+	TotalPageFaultCount       uint32
+	TotalProcesses            uint32
+	ActiveProcesses           uint32
+	TotalTerminatedProcesses  uint32
 }
 
 func createJobObjInfo() (uintptr, uint32) {
@@ -100,7 +134,45 @@ func (p *process) postStart() error {
 }
 
 func (p *process) monitorUsage(listener procstats.Listener) *repb.UsageStats {
-	return procstats.Monitor(p.cmd.Process.Pid, listener, p.terminated)
+	treeStats := procstats.NewTreeStats(p.cmd.Process.Pid)
+	return procstats.MonitorProvider(func() (*repb.UsageStats, error) {
+		// Job Objects retain cumulative CPU accounting for processes that have
+		// already exited. Keep using process-tree RSS for memory so it has the
+		// same semantics as task sizing on other platforms.
+		cpuStats, cpuErr := p.jobUsageStats()
+		memoryErr := treeStats.Update()
+		stats := treeStats.Total()
+		if cpuStats != nil {
+			stats.CpuNanos = cpuStats.GetCpuNanos()
+		}
+		if cpuErr != nil {
+			return stats, cpuErr
+		}
+		return stats, memoryErr
+	}, listener, p.terminated)
+}
+
+func (p *process) jobUsageStats() (*repb.UsageStats, error) {
+	p.jobMu.Lock()
+	defer p.jobMu.Unlock()
+	if p.jobHandle == 0 {
+		return nil, fmt.Errorf("job object is closed")
+	}
+
+	accounting := &jobObjectBasicAccountingInformation{}
+	if err := windows.QueryInformationJobObject(
+		p.jobHandle,
+		windows.JobObjectBasicAccountingInformation,
+		uintptr(unsafe.Pointer(accounting)),
+		uint32(unsafe.Sizeof(*accounting)),
+		nil,
+	); err != nil {
+		return nil, fmt.Errorf("query job object accounting information: %w", err)
+	}
+
+	return &repb.UsageStats{
+		CpuNanos: (accounting.TotalUserTime + accounting.TotalKernelTime) * 100,
+	}, nil
 }
 
 func (p *process) cleanup() error {
@@ -116,9 +188,26 @@ func (p *process) cleanup() error {
 	return nil
 }
 
+func (p *process) finalizeUsage(stats *repb.UsageStats) {
+	if stats != nil {
+		stats.MemoryBytes = 0
+	}
+}
+
+func isKilledExitCode(exitCode int, err error) bool {
+	var killedErr *processKilledError
+	return uint32(exitCode) == windowsKilledExitCode && errors.As(err, &killedErr)
+}
+
 func (p *process) wait() (*espb.Rusage, error) {
 	defer close(p.terminated)
 	err := p.cmd.Wait()
+	p.jobMu.Lock()
+	killed := p.killed
+	p.jobMu.Unlock()
+	if killed && err != nil {
+		err = &processKilledError{err: err}
+	}
 	return nil, err
 }
 
@@ -133,7 +222,18 @@ func (p *process) signal(sig syscall.Signal) error {
 // and https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs
 // for more details.
 func (p *process) killProcessTree() error {
-	return p.cleanup()
+	p.jobMu.Lock()
+	defer p.jobMu.Unlock()
+	if p.jobHandle == 0 {
+		return nil
+	}
+	// Keep the job handle open until wait() completes so the stats monitor can
+	// take an authoritative final sample, including terminated descendants.
+	if err := windows.TerminateJobObject(p.jobHandle, windowsKilledExitCode); err != nil {
+		return err
+	}
+	p.killed = true
+	return nil
 }
 
 // SetCredential adds credentials to the cmd by resolving a "USER[:GROUP]" string
