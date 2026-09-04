@@ -2242,8 +2242,7 @@ actions:
       push: { branches: [ master ] }
     steps:
       - run: |
-          output_base=$(bazel info output_base)
-          bazel run :simulate_oom "$output_base"
+          bazel run :simulate_oom "$PWD/../output-base"
 `,
 	}
 
@@ -2322,8 +2321,7 @@ actions:
       push: { branches: [ master ] }
     steps:
       - run: |
-          output_base=$(bazel info output_base)
-          bazel run :write_java_log "$output_base"
+          bazel run :write_java_log "$PWD/../output-base"
 `,
 	}
 
