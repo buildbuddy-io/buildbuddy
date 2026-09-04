@@ -204,6 +204,12 @@ func (u *Updater) Apply(ctx context.Context, m *Manifest) error {
 		tmp.Close()
 		return fmt.Errorf("downloading %s: %w", url, err)
 	}
+	// Flush the download before the rename makes it live, so a crash cannot
+	// leave a truncated executable in its place.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}

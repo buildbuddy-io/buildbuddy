@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -107,13 +108,7 @@ func updateKubectlConfig(ctx context.Context, kc *cgpb.KubernetesClusterCredenti
 }
 
 func main() {
-	// The subcommand is positional and precedes the flags, so peel it off
-	// before parsing.
-	args := os.Args[1:]
-	var command string
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		command, args = args[0], args[1:]
-	}
+	command, args := splitCommand(os.Args[1:])
 	os.Args = append(os.Args[:1], args...)
 
 	switch command {
@@ -137,6 +132,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", command)
 		os.Exit(1)
 	}
+}
+
+// splitCommand peels the subcommand, which is positional and precedes the
+// flags, off the arguments.
+func splitCommand(argv []string) (command string, flags []string) {
+	if len(argv) > 0 && !strings.HasPrefix(argv[0], "-") {
+		command, argv = argv[0], argv[1:]
+	}
+	return command, slices.Clone(argv)
 }
 
 // selfUpdate replaces this binary with the latest published one and restarts
