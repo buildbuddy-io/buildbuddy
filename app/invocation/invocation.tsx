@@ -7,6 +7,7 @@ import { eventlog } from "../../proto/eventlog_ts_proto";
 import { execution_stats } from "../../proto/execution_stats_ts_proto";
 import { google as google_grpc_code } from "../../proto/grpc_code_ts_proto";
 import { google as google_grpc_status } from "../../proto/grpc_status_ts_proto";
+import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
@@ -51,6 +52,7 @@ import ScorecardCardComponent from "./scorecard_card";
 interface State {
   loading: boolean;
   error: BuildBuddyError | null;
+  missingAPIKey: boolean;
 
   model?: InvocationModel;
 
@@ -86,6 +88,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   state: State = {
     loading: true,
     error: null,
+    missingAPIKey: false,
     keyboardShortcutHandle: "",
     childInvocations: [],
   };
@@ -284,6 +287,10 @@ export default class InvocationComponent extends React.Component<Props, State> {
           throw new BuildBuddyError("NotFound", "Invocation not found.");
         }
         const inv = response.invocation[0];
+        if (inv.invocationStatus === invocation_status.InvocationStatus.MISSING_API_KEY_INVOCATION_STATUS) {
+          this.setState({ model: undefined, error: null, missingAPIKey: true, childInvocations: [] });
+          return;
+        }
         const model = new InvocationModel(inv);
         this.updateGroupIdOverride(model);
 
@@ -292,6 +299,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         this.setState({
           model: model,
           error: null,
+          missingAPIKey: false,
           childInvocations: childInvocations,
         });
 
@@ -303,7 +311,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
       })
       .catch((error: any) => {
         console.error("Failed to fetch invocation:", error);
-        this.setState({ error: BuildBuddyError.parse(error) });
+        this.setState({ error: BuildBuddyError.parse(error), missingAPIKey: false });
       })
       .finally(() => this.setState({ loading: false }));
   }
@@ -373,7 +381,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
   }
 
   isQueued(props = this.props, state = this.state) {
-    return !state.model && props.search.get("queued") === "true";
+    return !state.model && !state.missingAPIKey && props.search.get("queued") === "true";
   }
 
   isCIRunnerBuild() {
@@ -564,6 +572,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
         <InvocationNotFoundComponent
           invocationId={this.props.invocationId}
           error={this.state.error}
+          missingAPIKey={this.state.missingAPIKey}
           user={this.props.user}
         />
       );
