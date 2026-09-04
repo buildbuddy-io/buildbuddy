@@ -835,6 +835,16 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			},
 		},
 		{
+			// The on-prem default configuration: execution progress state is
+			// not written to Redis, so the collector only ever sees the single
+			// COMPLETED update. The EOF flush and usage recording must work
+			// from that merged row alone.
+			name:                   "PublishMoreMetadata_NoProgressStateInRedis",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			publishMoreMetadata:    true,
+			noRedisProgressState:   true,
+		},
+		{
 			// Restarting Redis wipes the per-execution invocation links
 			// before the COMPLETED operation arrives, exercising the same
 			// "empty invocation links" path that normal-flow executions
@@ -867,17 +877,9 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			invalidTestSize:        "extra-large",
 		},
 	} {
-		for _, flushAfterCleanup := range []bool{false, true} {
-			test := test
-			test.flushAfterCleanup = flushAfterCleanup
-			name := test.name
-			if flushAfterCleanup {
-				name += "/FlushAfterCleanup"
-			}
-			t.Run(name, func(t *testing.T) {
-				testExecuteAndPublishOperation(t, test)
-			})
-		}
+		t.Run(test.name, func(t *testing.T) {
+			testExecuteAndPublishOperation(t, test)
+		})
 	}
 }
 
@@ -894,7 +896,7 @@ type publishTest struct {
 	redisRestart             bool
 	useDefaultPool           bool
 	recycleRunner            bool
-	flushAfterCleanup        bool
+	noRedisProgressState     bool
 	invalidTestSize          string
 	// flexibleCompute routes the execution into the flexible-compute branch
 	// of incrementOLAPExecutionUsage.
@@ -904,14 +906,11 @@ type publishTest struct {
 func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
-	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
+	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", !test.noRedisProgressState)
 	for k, v := range test.flagOverrides {
 		flags.Set(t, k, v)
 	}
 	env, conn, r := setupEnv(t)
-	if test.flushAfterCleanup {
-		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
-	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -1296,6 +1295,11 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.RequestedPool = "test-pool"
 		expectedExecution.EffectivePool = "test-pool"
 	}
+	if test.noRedisProgressState {
+		// The output path is only captured by the dispatch-time write to
+		// Redis, which is disabled in this configuration.
+		expectedExecution.OutputPath = ""
+	}
 	if test.publishMoreMetadata {
 		expectedExecution.ExecutionPriority = 999
 		expectedExecution.SkipCacheLookup = true
@@ -1340,20 +1344,14 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 // server should flush the OLAP row and record usage exactly once across the
 // retry chain.
 //
-// Only run with the flush_executions_after_cleanup experiment enabled: that's
-// where the exactly-once guarantee comes from. The recv loop only calls
-// flushAndRecordUsage on io.EOF, and the retryingClient only opens a new
-// stream after a non-EOF error — so at most one stream in the chain ever
-// triggers the flush. Under the legacy COMPLETED-flush path the flush runs
-// inline with the COMPLETED handler regardless of how the stream ends, so
-// retries are inherently subject to over-counting; that's pre-existing
-// behavior and not what this test pins down.
+// The recv loop only calls flushAndRecordUsage on io.EOF, and the
+// retryingClient only opens a new stream after a non-EOF error — so at most one
+// stream in the chain ever triggers the flush.
 func TestPublishOperation_RetriedStream(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
-	configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -1493,25 +1491,10 @@ func TestPublishOperation_RetriedStream(t *testing.T) {
 // convenient mechanism; the contract applies regardless of how the links
 // list ends up empty.
 func TestPublishOperation_FlushWithEmptyLinks(t *testing.T) {
-	for _, flushOnEOF := range []bool{false, true} {
-		name := "FlushOnComplete"
-		if flushOnEOF {
-			name = "FlushAfterCleanup"
-		}
-		t.Run(name, func(t *testing.T) {
-			testPublishOperationFlushWithEmptyLinks(t, flushOnEOF)
-		})
-	}
-}
-
-func testPublishOperationFlushWithEmptyLinks(t *testing.T, flushOnEOF bool) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, r := setupEnv(t)
-	if flushOnEOF {
-		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
-	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -1615,13 +1598,127 @@ func testPublishOperationFlushWithEmptyLinks(t *testing.T, flushOnEOF bool) {
 	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
 }
 
+// TestPublishOperation_UsageRecordedWhenOLAPDisabled verifies that usage
+// recording does not depend on app.enable_write_executions_to_olap_db: the
+// EOF flush must record usage from the merged StoredExecution in Redis and
+// clean up the in-progress state even when OLAP writes are disabled. The
+// cleanup is what guarantees usage is recorded at most once, so it must not
+// be skipped along with the OLAP write.
+//
+// Runs with the on-prem default of no execution progress state in Redis,
+// since deployments without ClickHouse are typically on-prem apps.
+func TestPublishOperation_UsageRecordedWhenOLAPDisabled(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "app.enable_write_executions_to_olap_db", false)
+	env, conn, _ := setupEnv(t)
+	client := repb.NewExecutionClient(conn)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+
+	const instanceName = "test-instance"
+	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
+	const digestFunction = repb.DigestFunction_SHA256
+
+	clientCtx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ToolInvocationId: invocationID,
+		TargetId:         "//some:test",
+		ActionMnemonic:   "TestRunner",
+	})
+	require.NoError(t, err)
+	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+		Timeout: &durationpb.Duration{Seconds: 10},
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "pool", Value: "test-pool"},
+		}},
+	})
+	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
+		InstanceName:   arn.GetInstanceName(),
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, executionClient.CloseSend())
+	initialOp, err := executionClient.Recv()
+	require.NoError(t, err)
+	taskID := initialOp.GetName()
+
+	executorCtx := metadata.AppendToOutgoingContext(clientCtx, usageutil.ClientHeaderName, "executor")
+	executorCtx = metadata.AppendToOutgoingContext(executorCtx, "x-buildbuddy-executor-region", "test-region")
+	stream, err := client.PublishOperation(executorCtx)
+	require.NoError(t, err)
+
+	workerStartTime := time.Unix(100, 0)
+	workerEndTime := workerStartTime.Add(5 * time.Second)
+	durationUsec := workerEndTime.Sub(workerStartTime).Microseconds()
+	aux := &espb.ExecutionAuxiliaryMetadata{
+		SchedulingMetadata: &scpb.SchedulingMetadata{
+			ExecutorGroupId: sharedPoolGroupID,
+			Pool:            "test-pool",
+		},
+	}
+	auxAny, err := anypb.New(aux)
+	require.NoError(t, err)
+	completedOp, err := operation.Assemble(
+		taskID,
+		operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+		&repb.ExecuteResponse{
+			Result: &repb.ActionResult{
+				ExecutionMetadata: &repb.ExecutedActionMetadata{
+					WorkerStartTimestamp:     tspb.New(workerStartTime),
+					WorkerCompletedTimestamp: tspb.New(workerEndTime),
+					AuxiliaryMetadata:        []*anypb.Any{auxAny},
+				},
+			},
+			Status: gstatus.Convert(nil).Proto(),
+		},
+	)
+	require.NoError(t, err)
+	require.NoError(t, stream.Send(completedOp))
+	_, err = stream.CloseAndRecv()
+	require.NoError(t, err)
+
+	// Usage must be recorded even though OLAP writes are disabled.
+	ut := env.GetUsageTracker().(*testusage.Tracker)
+	var foundExecutorUsage *testusage.Total
+	for _, u := range ut.Totals() {
+		if u.Labels.Client == "executor" {
+			foundExecutorUsage = &u
+			break
+		}
+	}
+	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded with OLAP writes disabled")
+	assert.Equal(t, durationUsec, foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+	var foundOLAPExecutorUsage *testusage.OLAPTotal
+	for _, u := range ut.OLAPTotals() {
+		if _, ok := u.Counts[sku.RemoteExecutionExecuteWorkerDurationNanos]; ok {
+			foundOLAPExecutorUsage = &u
+		}
+	}
+	require.NotNil(t, foundOLAPExecutorUsage, "expected usage SKU counters to be recorded with OLAP writes disabled")
+
+	// No rows may be buffered for the OLAP flush.
+	collectedExecutions, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	assert.Empty(t, collectedExecutions, "no OLAP rows should be buffered when OLAP writes are disabled")
+
+	// The in-progress state must still be cleaned up: the deleted in-progress
+	// execution is what makes a duplicate flush a NotFound no-op.
+	_, err = env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	assert.True(t, status.IsNotFoundError(err), "expected in-progress execution to be cleaned up, got: %v", err)
+	links, err := env.GetExecutionCollector().GetExecutionInvocationLinks(ctx, taskID)
+	require.NoError(t, err)
+	assert.Empty(t, links, "expected invocation links to be cleaned up")
+}
+
 // TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow exercises the
 // race where the periodic flush goroutine fires more than 5 seconds after
 // PublishOperation's main loop has already written the authoritative
-// COMPLETED row. With the bug, the goroutine wakes up, sees `lastWrite`
+// COMPLETED update. With the bug, the goroutine wakes up, sees `lastWrite`
 // is stale, and pushes a partial update (auxMeta/properties/action/cmd
-// all nil) back into Redis — resurrecting an in-progress entry that
-// flushExecutionToOLAP had already cleaned up.
+// all nil) into Redis on top of the authoritative COMPLETED update — which
+// would then be merged into the row flushed to OLAP when the stream closes.
 func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
@@ -1694,33 +1791,51 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 	require.NoError(t, err)
 	require.NoError(t, stream.Send(completedOp))
 
-	// Wait for the main loop's COMPLETED write + flushExecutionToOLAP to
-	// land. The flush appends the merged execution to the per-invocation
-	// list and deletes the in-progress updates list.
+	// Wait for the main loop's COMPLETED write to land in Redis. The OLAP
+	// flush doesn't happen until the stream is closed, so until then the
+	// in-progress entry holds the authoritative COMPLETED row.
+	var completedRow *repb.StoredExecution
 	require.Eventually(t, func() bool {
-		execs, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
-		return err == nil && len(execs) == 1
-	}, 5*time.Second, 10*time.Millisecond, "main loop's COMPLETED write never landed in the per-invocation list")
+		ex, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+		if err != nil || ex.GetStage() != int64(repb.ExecutionStage_COMPLETED) {
+			return false
+		}
+		completedRow = ex
+		return true
+	}, 5*time.Second, 10*time.Millisecond, "main loop's COMPLETED write never landed in the in-progress entry")
 
-	// Sanity check: in-progress data was cleaned up by flushExecutionToOLAP.
-	require.Eventually(t, func() bool {
-		_, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
-		return status.IsNotFoundError(err)
-	}, 5*time.Second, 10*time.Millisecond, "expected in-progress data to be cleaned up after flush")
-
-	// Advance past the 5s flush threshold to let the periodic goroutine wake up
+	// Advance past the 5s flush threshold to let the periodic goroutine wake
+	// up while the stream is still open.
 	fakeClock.Advance(6 * time.Second)
 
-	// Give the periodic goroutine real wall-clock time to fire. With the
-	// fix in place it skips the write; with the bug it resurrects the
-	// in-progress entry.
+	// Give the periodic goroutine real wall-clock time to fire. With the fix
+	// in place it sees the COMPLETED stage and skips the write; with the bug
+	// it appends a partial update on top of the authoritative COMPLETED row.
+	require.Never(t, func() bool {
+		ex, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+		return err != nil || !proto.Equal(ex, completedRow)
+	}, 500*time.Millisecond, 25*time.Millisecond, "periodic flush wrote on top of the authoritative COMPLETED update")
+
+	// Close the stream; the EOF handler flushes the merged execution to the
+	// per-invocation list and deletes the in-progress entry.
+	_, err = stream.CloseAndRecv()
+	require.NoError(t, err)
+
+	execs, err := env.GetExecutionCollector().GetExecutions(ctx, invocationID, 0, -1)
+	require.NoError(t, err)
+	require.Len(t, execs, 1, "expected exactly one flushed execution row")
+	assert.Equal(t, int64(repb.ExecutionStage_COMPLETED), execs[0].GetStage())
+	assert.Equal(t, "exec-host-1", execs[0].GetExecutorHostname())
+
+	_, err = env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
+	require.True(t, status.IsNotFoundError(err), "expected in-progress data to be cleaned up after flush")
+
+	// The in-progress entry must stay deleted: a straggler periodic write
+	// after the flush would resurrect it.
 	require.Never(t, func() bool {
 		_, err := env.GetExecutionCollector().GetInProgressExecution(ctx, taskID)
 		return err == nil
-	}, 500*time.Millisecond, 25*time.Millisecond, "periodic flush resurrected the in-progress entry after the authoritative COMPLETED write")
-
-	// Close the stream cleanly so PublishOperation returns.
-	_, _ = stream.CloseAndRecv()
+	}, 500*time.Millisecond, 25*time.Millisecond, "periodic flush resurrected the in-progress entry after the flush")
 }
 
 // TestPublishOperation_SecondCompletedCarriesSnapshotStats verifies that a
@@ -1728,37 +1843,17 @@ func TestPublishOperation_PeriodicFlushDoesNotClobberCompletedRow(t *testing.T) 
 // carrying a PostCompletionStats entry in auxiliary_metadata, is handled
 // correctly under both experiment values.
 //
-// Under flush_executions_after_cleanup=true (the path this PR exists to
-// enable), the snapshot fields get merged into the recorded
-// StoredExecution. The first COMPLETED's other fields survive the merge
+// The snapshot fields get merged into the recorded StoredExecution on the
+// second COMPLETED event. The first COMPLETED's other fields survive the merge
 // (proto.Merge semantics).
 //
-// Under flush_executions_after_cleanup=false (legacy path), the OLAP flush
-// already ran on the first COMPLETED, so the second COMPLETED is dropped
-// server-side and the snapshot fields don't appear in the recorded row.
-//
-// In both modes the action result must not be re-cached and usage must be
-// recorded exactly once.
+// The action result must not be re-cached and usage must be recorded exactly
+// once.
 func TestPublishOperation_SecondCompletedCarriesSnapshotStats(t *testing.T) {
-	for _, flushAfterCleanup := range []bool{false, true} {
-		name := "FlushOnComplete"
-		if flushAfterCleanup {
-			name = "FlushAfterCleanup"
-		}
-		t.Run(name, func(t *testing.T) {
-			testPublishOperationSecondCompletedCarriesSnapshotStats(t, flushAfterCleanup)
-		})
-	}
-}
-
-func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flushAfterCleanup bool) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
-	if flushAfterCleanup {
-		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
-	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
@@ -1874,23 +1969,12 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	assert.Equal(t, "//some:test", got.GetTargetLabel())
 	assert.Equal(t, workerStartTime.UnixMicro(), got.GetWorkerStartTimestampUsec())
 	assert.Equal(t, workerEndTime.UnixMicro(), got.GetWorkerCompletedTimestampUsec())
-	if flushAfterCleanup {
-		// Second-COMPLETED snapshot stats were merged in.
-		assert.True(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally")
-		assert.True(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely")
-		assert.True(t, got.GetSnapshotIsDiff(), "snapshot_is_diff")
-		assert.Equal(t, int64(12345), got.GetSnapshotSavedBytes())
-		assert.Equal(t, int64(67890), got.GetPauseDurationUsec())
-	} else {
-		// Legacy path: the OLAP flush already ran on the first COMPLETED, so
-		// the second COMPLETED is dropped server-side and its snapshot
-		// fields don't make it to the recorded row.
-		assert.False(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally should be unset on legacy path")
-		assert.False(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely should be unset on legacy path")
-		assert.False(t, got.GetSnapshotIsDiff(), "snapshot_is_diff should be unset on legacy path")
-		assert.Zero(t, got.GetSnapshotSavedBytes(), "snapshot_saved_bytes should be unset on legacy path")
-		assert.Zero(t, got.GetPauseDurationUsec(), "pause_duration_usec should be unset on legacy path")
-	}
+	// Second-COMPLETED snapshot stats were merged in.
+	assert.True(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally")
+	assert.True(t, got.GetSnapshotSavedRemotely(), "snapshot_saved_remotely")
+	assert.True(t, got.GetSnapshotIsDiff(), "snapshot_is_diff")
+	assert.Equal(t, int64(12345), got.GetSnapshotSavedBytes())
+	assert.Equal(t, int64(67890), got.GetPauseDurationUsec())
 
 	// Action cache should hold the result from the first COMPLETED only.
 	// The sparse second COMPLETED must not have triggered another cache write.
@@ -1915,22 +1999,15 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 
 	// OLAP snapshot bytes are only recorded when the snapshot fields actually
 	// reach the StoredExecution that updateUsageFromStoredExecution reads.
-	// That only happens on the flushAfterCleanup path; on the legacy path
-	// the second COMPLETED is dropped before the OLAP flush runs.
 	var foundRemoteSnapshotBytes, foundLocalSnapshotBytes int64
 	for _, u := range ut.OLAPTotals() {
 		foundRemoteSnapshotBytes += u.Counts[sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes]
 		foundLocalSnapshotBytes += u.Counts[sku.RemoteExecutionExecuteLocalSnapshotSavedBytes]
 	}
-	if flushAfterCleanup {
-		// Both snapshot_saved_locally and snapshot_saved_remotely were sent,
-		// but the remote branch takes precedence in incrementOLAPExecutionUsage.
-		assert.Equal(t, int64(12345), foundRemoteSnapshotBytes, "expected remote snapshot bytes SKU to be recorded")
-		assert.Zero(t, foundLocalSnapshotBytes, "local snapshot bytes SKU should not be recorded when remote takes precedence")
-	} else {
-		assert.Zero(t, foundRemoteSnapshotBytes, "no snapshot SKUs should be recorded on the legacy path")
-		assert.Zero(t, foundLocalSnapshotBytes, "no snapshot SKUs should be recorded on the legacy path")
-	}
+	// Both snapshot_saved_locally and snapshot_saved_remotely were sent,
+	// but the remote branch takes precedence in incrementOLAPExecutionUsage.
+	assert.Equal(t, int64(12345), foundRemoteSnapshotBytes, "expected remote snapshot bytes SKU to be recorded")
+	assert.Zero(t, foundLocalSnapshotBytes, "local snapshot bytes SKU should not be recorded when remote takes precedence")
 }
 
 // TestPublishOperation_RetryStreamWithOnlyPostCompletionStats simulates the
@@ -1941,25 +2018,10 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 // COMPLETED — otherwise it would clobber the cached action result with a
 // sparse one, double-count usage, and emit a duplicate StoredExecution row.
 func TestPublishOperation_RetryStreamWithOnlyPostCompletionStats(t *testing.T) {
-	for _, flushAfterCleanup := range []bool{false, true} {
-		name := "FlushOnComplete"
-		if flushAfterCleanup {
-			name = "FlushAfterCleanup"
-		}
-		t.Run(name, func(t *testing.T) {
-			testPublishOperationRetryStreamWithOnlyPostCompletionStats(t, flushAfterCleanup)
-		})
-	}
-}
-
-func testPublishOperationRetryStreamWithOnlyPostCompletionStats(t *testing.T, flushAfterCleanup bool) {
 	ctx := context.Background()
 	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
 	flags.Set(t, "remote_execution.write_execution_progress_state_to_redis", true)
 	env, conn, _ := setupEnv(t)
-	if flushAfterCleanup {
-		configureExperiments(t, env, map[string]bool{"remote_execution.flush_executions_after_cleanup": true})
-	}
 	client := repb.NewExecutionClient(conn)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
 	env.SetAuthenticator(ta)
