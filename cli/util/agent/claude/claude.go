@@ -49,9 +49,9 @@ func commandArgs(request *agentutil.RunRequest) []string {
 	if request.ReasoningEffort != "" {
 		args = append(args, "--effort", request.ReasoningEffort)
 	}
-	if len(request.AllowedTools) > 0 {
+	if len(request.ClaudeAllowedTools) > 0 {
 		args = append(args, "--allowedTools")
-		args = append(args, request.AllowedTools...)
+		args = append(args, request.ClaudeAllowedTools...)
 	}
 	return args
 }

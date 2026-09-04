@@ -101,11 +101,11 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	prompt := fmt.Sprintf(analysisPrompt, profilePath, skillContents)
 	log.Printf("%sRunning agent (this may take a minute)...%s", terminal.Esc(90), terminal.Esc())
 	rsp, err := agent.Run(ctx, &agentutil.RunRequest{
-		Agent:           *profileAgent,
-		Model:           *profileModel,
-		ReasoningEffort: *profileEffort,
-		Prompt:          prompt,
-		AllowedTools:    []string{"Bash(ztracing *)"},
+		Agent:              *profileAgent,
+		Model:              *profileModel,
+		ReasoningEffort:    *profileEffort,
+		Prompt:             prompt,
+		ClaudeAllowedTools: []string{"Bash(ztracing *)"},
 	})
 	if err != nil {
 		return -1, fmt.Errorf("analyze timing profile: %w", err)
