@@ -22,7 +22,6 @@ package main
 import (
 	"bytes"
 	"context"
-	cryptorand "crypto/rand"
 	"flag"
 	"fmt"
 	"io"
@@ -43,6 +42,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
+	cryptorand "crypto/rand"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
