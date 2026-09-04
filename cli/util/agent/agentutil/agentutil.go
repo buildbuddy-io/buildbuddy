@@ -23,6 +23,9 @@ type RunRequest struct {
 	// CodexSandbox is the filesystem access Codex runs with, defaulting to
 	// SandboxReadOnly.
 	CodexSandbox string
+
+	// CodexArgs contains additional arguments passed directly to Codex.
+	CodexArgs []string
 }
 
 type RunResponse struct {

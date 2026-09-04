@@ -67,6 +67,9 @@ func commandArgs(request *agentutil.RunRequest) []string {
 	if request.ReasoningEffort != "" {
 		args = append(args, "--config", fmt.Sprintf("model_reasoning_effort=%q", request.ReasoningEffort))
 	}
+	if len(request.CodexArgs) > 0 {
+		args = append(args, request.CodexArgs...)
+	}
 	return args
 }
 

@@ -170,7 +170,7 @@ func stripRedacted(args []string) []string {
 		kept = append(kept, arg)
 	}
 	if len(dropped) > 0 {
-		log.Warnf(
+		log.Debugf(
 			"Omitting %d redacted argument(s) from the recorded command line; the reproduction may not match the original run: %s",
 			len(dropped), strings.Join(dropped, " "))
 	}
