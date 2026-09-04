@@ -338,8 +338,8 @@ func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.
 			c.log.Warningf("returned a zero-length response for digest %q", d.GetHash())
 		}
 		rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
-			Key:   digestToKey(d),
-			Value: buf,
+			Key:              digestToKey(d),
+			ValueOrReference: &dcpb.KV_Value{Value: buf},
 		})
 	}
 	return rsp, nil
