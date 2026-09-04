@@ -46,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
@@ -71,6 +72,7 @@ import (
 
 	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -691,7 +693,25 @@ type streamLike interface {
 	Send(*longrunningpb.Operation) error
 }
 
+func (s *ExecutionServer) checkExecutionPermission(ctx context.Context) error {
+	u, err := s.authenticator.AuthenticatedUser(ctx)
+	if err != nil {
+		if authutil.IsAnonymousUserError(err) && s.authenticator.AnonymousUsageEnabled(ctx) &&
+			int32(cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)&capabilities.AnonymousUserCapabilitiesMask != 0 {
+			return nil
+		}
+		return err
+	}
+	if !u.HasCapability(cappb.Capability_CACHE_WRITE | cappb.Capability_CAS_WRITE) {
+		return status.PermissionDeniedError("The provided API key does not have permission to use remote execution")
+	}
+	return nil
+}
+
 func (s *ExecutionServer) Execute(req *repb.ExecuteRequest, stream repb.Execution_ExecuteServer) error {
+	if err := s.checkExecutionPermission(stream.Context()); err != nil {
+		return err
+	}
 	return s.execute(req, stream)
 }
 
@@ -1207,6 +1227,9 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 // server MAY choose to stream additional updates as execution progresses,
 // such as to provide an update as to the state of the execution.
 func (s *ExecutionServer) WaitExecution(req *repb.WaitExecutionRequest, stream repb.Execution_WaitExecutionServer) error {
+	if err := s.checkExecutionPermission(stream.Context()); err != nil {
+		return err
+	}
 	ctx := log.EnrichContext(stream.Context(), log.ExecutionIDKey, req.GetName())
 	return s.waitExecution(ctx, req, stream, waitOpts{isExecuteRequest: false})
 }

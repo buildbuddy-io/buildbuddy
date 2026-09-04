@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -148,6 +149,52 @@ func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *
 
 func setupEnv(t *testing.T) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	return setupEnvWithClock(t, clockwork.NewRealClock())
+}
+
+func TestExecuteAndWaitExecution_Permissions(t *testing.T) {
+	env, conn, _ := setupEnv(t)
+	env.GetAuthenticator().(*testauth.TestAuthenticator).NullAuthenticator = nullauth.NewNullAuthenticator(false)
+	client := repb.NewExecutionClient(conn)
+	readOnlyUser := testauth.User("read-only-user", "GR1")
+	readOnlyUser.Capabilities = nil
+	ctx := testauth.WithAuthenticatedUserInfo(context.Background(), readOnlyUser)
+
+	t.Run("Execute", func(t *testing.T) {
+		stream, err := client.Execute(ctx, &repb.ExecuteRequest{
+			ActionDigest: &repb.Digest{
+				Hash:      strings.Repeat("a", 64),
+				SizeBytes: 1,
+			},
+		})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Equal(t, codes.PermissionDenied, gstatus.Code(err))
+		require.Contains(t, gstatus.Convert(err).Message(), "does not have permission to use remote execution")
+	})
+
+	t.Run("WaitExecution", func(t *testing.T) {
+		stream, err := client.WaitExecution(ctx, &repb.WaitExecutionRequest{
+			Name: "blobs/" + strings.Repeat("a", 64) + "/1",
+		})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Equal(t, codes.PermissionDenied, gstatus.Code(err))
+		require.Contains(t, gstatus.Convert(err).Message(), "does not have permission to use remote execution")
+	})
+
+	t.Run("ExecuteUnauthenticated", func(t *testing.T) {
+		stream, err := client.Execute(context.Background(), &repb.ExecuteRequest{})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Equal(t, codes.Unauthenticated, gstatus.Code(err))
+	})
+
+	t.Run("WaitExecutionUnauthenticated", func(t *testing.T) {
+		stream, err := client.WaitExecution(context.Background(), &repb.WaitExecutionRequest{})
+		require.NoError(t, err)
+		_, err = stream.Recv()
+		require.Equal(t, codes.Unauthenticated, gstatus.Code(err))
+	})
 }
 
 func createExecution(ctx context.Context, t *testing.T, db interfaces.DB, execution *tables.Execution) {
