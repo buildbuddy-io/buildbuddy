@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/api/v1/common"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -59,6 +62,9 @@ func TestGetTargetHistory(t *testing.T) {
 			Label:                   "//:flaky_test",
 			Status:                  int32(bespb.TestStatus_FLAKY),
 			InvocationUUID:          iid1Hex,
+			CachedCount:             1,
+			CachedLocallyCount:      1,
+			TotalRunCount:           2,
 			InvocationStartTimeUsec: 1e6,
 			StartTimeUsec:           1e6 + 1,
 		},
@@ -71,6 +77,10 @@ func TestGetTargetHistory(t *testing.T) {
 			Label:                   "//:passing_test",
 			Status:                  int32(bespb.TestStatus_PASSED),
 			InvocationUUID:          iid2Hex,
+			Cached:                  true,
+			CachedCount:             1,
+			CachedRemotelyCount:     1,
+			TotalRunCount:           1,
 			InvocationStartTimeUsec: 2e6,
 			StartTimeUsec:           2e6,
 		},
@@ -129,6 +139,11 @@ func TestGetTargetHistory(t *testing.T) {
 							{
 								InvocationId:            iid2,
 								InvocationCreatedAtUsec: 2e6,
+								Cached:                  false,
+								CachedCount:             0,
+								CachedLocallyCount:      0,
+								CachedRemotelyCount:     0,
+								TotalRunCount:           0,
 								Timing:                  timingUsec(2e6+1, 0),
 								CommitSha:               "commit2",
 								Status:                  common.Status_PASSED,
@@ -136,6 +151,11 @@ func TestGetTargetHistory(t *testing.T) {
 							{
 								InvocationId:            iid1,
 								InvocationCreatedAtUsec: 1e6,
+								Cached:                  false,
+								CachedCount:             1,
+								CachedLocallyCount:      1,
+								CachedRemotelyCount:     0,
+								TotalRunCount:           2,
 								Timing:                  timingUsec(1e6+1, 0),
 								CommitSha:               "commit1",
 								Status:                  common.Status_FLAKY,
@@ -151,6 +171,11 @@ func TestGetTargetHistory(t *testing.T) {
 							{
 								InvocationId:            iid2,
 								InvocationCreatedAtUsec: 2e6,
+								Cached:                  true,
+								CachedCount:             1,
+								CachedLocallyCount:      0,
+								CachedRemotelyCount:     1,
+								TotalRunCount:           1,
 								Timing:                  timingUsec(2e6, 0),
 								CommitSha:               "commit2",
 								Status:                  common.Status_PASSED,
@@ -158,6 +183,11 @@ func TestGetTargetHistory(t *testing.T) {
 							{
 								InvocationId:            iid1,
 								InvocationCreatedAtUsec: 1e6,
+								Cached:                  false,
+								CachedCount:             0,
+								CachedLocallyCount:      0,
+								CachedRemotelyCount:     0,
+								TotalRunCount:           0,
 								Timing:                  timingUsec(1e6, 0),
 								CommitSha:               "commit1",
 								Status:                  common.Status_PASSED,
@@ -190,6 +220,11 @@ func TestGetTargetHistory(t *testing.T) {
 							{
 								InvocationId:            iid2,
 								InvocationCreatedAtUsec: 2e6,
+								Cached:                  false,
+								CachedCount:             0,
+								CachedLocallyCount:      0,
+								CachedRemotelyCount:     0,
+								TotalRunCount:           0,
 								Timing:                  timingUsec(2e6+1, 0),
 								CommitSha:               "commit2",
 								Status:                  common.Status_PASSED,
@@ -205,6 +240,11 @@ func TestGetTargetHistory(t *testing.T) {
 							{
 								InvocationId:            iid2,
 								InvocationCreatedAtUsec: 2e6,
+								Cached:                  true,
+								CachedCount:             1,
+								CachedLocallyCount:      0,
+								CachedRemotelyCount:     1,
+								TotalRunCount:           1,
 								Timing:                  timingUsec(2e6, 0),
 								CommitSha:               "commit2",
 								Status:                  common.Status_PASSED,
@@ -232,6 +272,105 @@ func TestGetTargetHistory(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestGetTargetHistory_PrimaryDBIncludesLegacyCachedStatus(t *testing.T) {
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "app.enable_read_target_statuses_from_olap_db", false)
+
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	testAuth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(testAuth)
+
+	iid := uuid.New()
+	invocationUUID, err := uuid.StringToBytes(iid)
+	require.NoError(t, err)
+	repoURL := "https://github.com/gr1/primary-cached-repo"
+	targetID := int64(1194801)
+
+	for _, row := range []any{
+		&tables.Invocation{
+			Model: tables.Model{
+				CreatedAtUsec: 2e6,
+			},
+			InvocationID:   iid,
+			InvocationUUID: invocationUUID,
+			UserID:         "US1",
+			GroupID:        "GR1",
+			RepoURL:        repoURL,
+			CommitSHA:      "commit-cached",
+			BranchName:     "main",
+			Role:           "CI",
+			Command:        "test",
+			Perms:          perms.GROUP_READ,
+		},
+		&tables.Target{
+			TargetID: targetID,
+			UserID:   "US1",
+			GroupID:  "GR1",
+			RepoURL:  repoURL,
+			Label:    "//:cached_test",
+			RuleType: "go_test rule",
+			Perms:    perms.GROUP_READ,
+		},
+		&tables.TargetStatus{
+			TargetID:       targetID,
+			InvocationUUID: invocationUUID,
+			TargetType:     int32(common.TargetType_TEST),
+			TestSize:       int32(common.TestSize_MEDIUM),
+			Status:         int32(bespb.TestStatus_PASSED),
+			Cached:         true,
+			StartTimeUsec:  2e6,
+			DurationUsec:   123,
+		},
+	} {
+		err := env.GetDBHandle().GORM(ctx, "insert_primary_target_history").Create(row).Error
+		require.NoError(t, err)
+	}
+
+	gr1Ctx, err := testAuth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	response, err := target.GetTargetHistory(gr1Ctx, env, &trpb.GetTargetHistoryRequest{
+		RequestContext:       &ctxpb.RequestContext{GroupId: "GR1"},
+		ServerSidePagination: true,
+		Query: &trpb.TargetQuery{
+			RepoUrl: repoURL,
+		},
+	})
+
+	require.NoError(t, err)
+	expectedResponse := &trpb.GetTargetHistoryResponse{
+		InvocationTargets: []*trpb.TargetHistory{
+			{
+				Target: &trpb.TargetMetadata{
+					Id:         "1194801",
+					Label:      "//:cached_test",
+					RuleType:   "go_test rule",
+					TargetType: common.TargetType_TEST,
+					TestSize:   common.TestSize_MEDIUM,
+				},
+				RepoUrl: repoURL,
+				TargetStatus: []*trpb.TargetStatus{
+					{
+						InvocationId:            iid,
+						InvocationCreatedAtUsec: 2e6,
+						Cached:                  true,
+						Timing:                  timingUsec(2e6, 123),
+						CommitSha:               "commit-cached",
+						Status:                  common.Status_PASSED,
+					},
+				},
+			},
+		},
+	}
+	require.Empty(t, cmp.Diff(
+		expectedResponse,
+		response,
+		protocmp.Transform(),
+		protocmp.IgnoreFields(&trpb.GetTargetHistoryResponse{}, "next_page_token"),
+		protocmp.IgnoreFields(&trpb.TargetStatus{}, "invocation_created_at_usec"),
+	))
 }
 
 func timingUsec(startUsec, durationUsec int64) *common.Timing {
