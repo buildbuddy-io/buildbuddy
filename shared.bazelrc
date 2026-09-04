@@ -198,11 +198,13 @@ common:local --config=cache-shared
 # containerized execution, such as docker (the default), podman, or oci.
 common:local-rbe-linux --remote_executor=grpc://localhost:1985
 common:local-rbe-linux --config=target-linux-x86
+common:local-rbe-linux --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
 common:local-rbe-linux --config=local
 
 # Build with --config=local-rbe-mac to target a local executor on macOS.
 common:local-rbe-mac --remote_executor=grpc://localhost:1985
 common:local-rbe-mac --config=target-darwin-arm64
+common:local-rbe-mac --extra_execution_platforms=@toolchains_buildbuddy//platforms:darwin_arm64
 common:local-rbe-mac --config=local
 
 # Build with --config=dev to send build logs to the dev server
