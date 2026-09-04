@@ -231,9 +231,15 @@ func startNewProcess(ctx context.Context, cmd *exec.Cmd) (*process, error) {
 		return nil, fmt.Errorf("fail to setup preStart: %w", err)
 	}
 	if err := p.cmd.Start(); err != nil {
+		_ = p.cleanup()
 		return nil, err
 	}
 	if err := p.postStart(); err != nil {
+		// Even if Kill reports that the process is already done, Wait is still
+		// required to release exec.Cmd's parent-side resources and I/O goroutines.
+		_ = p.cmd.Process.Kill()
+		_, _ = p.wait()
+		_ = p.cleanup()
 		return nil, fmt.Errorf("fail to setup postStart: %w", err)
 	}
 
@@ -260,7 +266,7 @@ func (p *process) monitor(statsListener procstats.Listener) chan *repb.UsageStat
 		if statsListener == nil {
 			return
 		}
-		statsCh <- procstats.Monitor(p.cmd.Process.Pid, statsListener, p.terminated)
+		statsCh <- p.monitorUsage(statsListener)
 	}()
 
 	return statsCh
@@ -294,6 +300,9 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 
 	rusage, err := p.wait()
 	stats := <-statsCh
+	if cleanupErr := p.cleanup(); cleanupErr != nil {
+		log.CtxWarningf(ctx, "Failed to clean up process resources: %s", cleanupErr)
+	}
 	if rusage != nil {
 		// If process tree monitoring was not requested, then the stats returned
 		// by the channel will be nil. At least return the top-level process

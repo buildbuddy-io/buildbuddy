@@ -10,9 +10,11 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
 type process struct {
@@ -25,6 +27,14 @@ func (p *process) preStart() error {
 }
 
 func (p *process) postStart() error {
+	return nil
+}
+
+func (p *process) monitorUsage(listener procstats.Listener) *repb.UsageStats {
+	return procstats.Monitor(p.cmd.Process.Pid, listener, p.terminated)
+}
+
+func (p *process) cleanup() error {
 	return nil
 }
 

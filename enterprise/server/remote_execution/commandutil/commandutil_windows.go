@@ -6,13 +6,16 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"sync"
 	"syscall"
 	"unsafe"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/procstats"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/sys/windows"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	putil "github.com/shirou/gopsutil/v3/process"
 )
 
@@ -38,6 +41,7 @@ type process struct {
 	cmd        *exec.Cmd
 	terminated chan struct{}
 
+	jobMu     sync.Mutex
 	jobHandle windows.Handle
 }
 
@@ -63,9 +67,12 @@ func (p *process) preStart() error {
 		windows.JobObjectExtendedLimitInformation,
 		jobObjInfo,
 		jobObjInfoLength); err != nil {
+		_ = windows.CloseHandle(job)
 		return fmt.Errorf("failed to set job object info: %w", err)
 	}
+	p.jobMu.Lock()
 	p.jobHandle = job
+	p.jobMu.Unlock()
 
 	return nil
 }
@@ -92,6 +99,23 @@ func (p *process) postStart() error {
 	return proc.ResumeWithContext(context.TODO())
 }
 
+func (p *process) monitorUsage(listener procstats.Listener) *repb.UsageStats {
+	return procstats.Monitor(p.cmd.Process.Pid, listener, p.terminated)
+}
+
+func (p *process) cleanup() error {
+	p.jobMu.Lock()
+	defer p.jobMu.Unlock()
+	if p.jobHandle == 0 {
+		return nil
+	}
+	if err := windows.CloseHandle(p.jobHandle); err != nil {
+		return err
+	}
+	p.jobHandle = 0
+	return nil
+}
+
 func (p *process) wait() (*espb.Rusage, error) {
 	defer close(p.terminated)
 	err := p.cmd.Wait()
@@ -109,7 +133,7 @@ func (p *process) signal(sig syscall.Signal) error {
 // and https://learn.microsoft.com/en-us/windows/win32/procthread/nested-jobs
 // for more details.
 func (p *process) killProcessTree() error {
-	return windows.CloseHandle(p.jobHandle)
+	return p.cleanup()
 }
 
 // SetCredential adds credentials to the cmd by resolving a "USER[:GROUP]" string
