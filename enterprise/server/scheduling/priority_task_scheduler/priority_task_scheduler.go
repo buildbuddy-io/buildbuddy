@@ -3,7 +3,6 @@ package priority_task_scheduler
 import (
 	"container/list"
 	"context"
-	"flag"
 	"fmt"
 	"maps"
 	"math"
@@ -22,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -40,7 +40,8 @@ import (
 )
 
 var (
-	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time. Default is false")
+	exclusiveTaskScheduling = flag.Bool("executor.exclusive_task_scheduling", false, "If true, only one task will be scheduled at a time.", flag.Deprecated("Set executor.max_concurrent_tasks=1 instead."))
+	maxConcurrentTasks      = flag.Int("executor.max_concurrent_tasks", 0, "The maximum number of tasks that can execute at the same time on this executor. If 0, the number of concurrent tasks is limited only by the CPU, memory, and custom resource capacity.")
 	shutdownCleanupDuration = flag.Duration("executor.shutdown_cleanup_duration", 15*time.Second, "The minimum duration during the shutdown window to allocate for cleaning up containers. This is capped to the value of `max_shutdown_duration`.")
 	queueTrimInterval       = flag.Duration("executor.queue_trim_interval", 15*time.Second, "The interval between attempts to prune tasks that have already been completed by other executors.  A value <= 0 disables this feature.")
 	excessCapacityThreshold = flag.Float64("executor.excess_capacity_threshold", .40, "A percentage (of RAM and CPU) utilization below which this executor may request additional work")
@@ -363,14 +364,13 @@ type PriorityTaskScheduler struct {
 	rootContext      context.Context
 	rootCancel       context.CancelFunc
 
-	mu                      sync.Mutex
-	q                       *taskQueue
-	activeTaskCancelFuncs   sync.WaitGroup
-	activeCancelFuncsCount  atomic.Int64
-	resourceCapacity        *resourceCounts
-	resourcesUsed           *resourceCounts
-	customResourceParents   map[string]string
-	exclusiveTaskScheduling bool
+	mu                     sync.Mutex
+	q                      *taskQueue
+	activeTaskCancelFuncs  sync.WaitGroup
+	activeCancelFuncsCount atomic.Int64
+	resourceCapacity       *resourceCounts
+	resourcesUsed          *resourceCounts
+	customResourceParents  map[string]string
 
 	// activeTaskStartTimes contains, for each currently running task, the
 	// time at which the task started executing.
@@ -378,6 +378,18 @@ type PriorityTaskScheduler struct {
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) (*PriorityTaskScheduler, error) {
+	// Both flags configure the same concurrency limit, so refuse to start
+	// when both are set rather than silently letting one win.
+	if *exclusiveTaskScheduling && *maxConcurrentTasks != 0 {
+		return nil, status.InvalidArgumentError("executor.exclusive_task_scheduling and executor.max_concurrent_tasks cannot both be set. executor.exclusive_task_scheduling is deprecated; set executor.max_concurrent_tasks=1 instead.")
+	}
+	if *maxConcurrentTasks < 0 {
+		return nil, status.InvalidArgumentErrorf("executor.max_concurrent_tasks must not be negative (got %d)", *maxConcurrentTasks)
+	}
+	concurrencyCapacity := int64(*maxConcurrentTasks)
+	if *exclusiveTaskScheduling {
+		concurrencyCapacity = 1
+	}
 	ramBytesCapacity := options.RAMBytesCapacityOverride
 	if ramBytesCapacity == 0 {
 		ramBytesCapacity = int64(float64(resources.GetAllocatedRAMBytes()) * tasksize.MaxResourceCapacityRatio)
@@ -413,18 +425,19 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 		rootCancel:       rootCancel,
 		shuttingDown:     false,
 		resourceCapacity: &resourceCounts{
-			RAMBytes:  ramBytesCapacity,
-			CPUMillis: cpuMillisCapacity,
-			Custom:    customResourcesCapacity,
+			RAMBytes:    ramBytesCapacity,
+			CPUMillis:   cpuMillisCapacity,
+			Concurrency: concurrencyCapacity,
+			Custom:      customResourcesCapacity,
 		},
 		resourcesUsed: &resourceCounts{
-			RAMBytes:  0,
-			CPUMillis: 0,
-			Custom:    customResourcesUsed,
+			RAMBytes:    0,
+			CPUMillis:   0,
+			Concurrency: 0,
+			Custom:      customResourcesUsed,
 		},
-		customResourceParents:   customResourceParents,
-		exclusiveTaskScheduling: *exclusiveTaskScheduling,
-		activeTaskStartTimes:    make(map[string]time.Time),
+		customResourceParents: customResourceParents,
+		activeTaskStartTimes:  make(map[string]time.Time),
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
 
@@ -655,6 +668,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(1)
 	q.activeTaskStartTimes[res.GetTaskId()] = q.clock.Now()
+	q.resourcesUsed.Concurrency++
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
@@ -677,6 +691,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(-1)
 	delete(q.activeTaskStartTimes, res.GetTaskId())
+	q.resourcesUsed.Concurrency--
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
@@ -723,12 +738,16 @@ func (q *PriorityTaskScheduler) stats() string {
 	if len(customResourcesStrs) > 0 {
 		customResourcesDesc = fmt.Sprintf(" %s", strings.Join(customResourcesStrs, ", "))
 	}
+	maxConcurrentTasksDesc := ""
+	if q.resourceCapacity.Concurrency > 0 {
+		maxConcurrentTasksDesc = fmt.Sprintf(" of %d max", q.resourceCapacity.Concurrency)
+	}
 	return message.NewPrinter(language.English).Sprintf(
-		"CPU: %d of %d milliCPU allocated (%d remaining), Memory: %d of %d bytes allocated (%d remaining),%s Tasks: %d active, %d queued",
+		"CPU: %d of %d milliCPU allocated (%d remaining), Memory: %d of %d bytes allocated (%d remaining),%s Tasks: %d active%s, %d queued",
 		q.resourcesUsed.CPUMillis, q.resourceCapacity.CPUMillis, cpuMillisRemaining,
 		q.resourcesUsed.RAMBytes, q.resourceCapacity.RAMBytes, ramBytesRemaining,
 		customResourcesDesc,
-		q.activeCancelFuncsCount.Load(), q.q.Len())
+		q.activeCancelFuncsCount.Load(), maxConcurrentTasksDesc, q.q.Len())
 }
 
 // canFitTask returns whether the task can fit, given the resource capacity and
@@ -736,9 +755,9 @@ func (q *PriorityTaskScheduler) stats() string {
 // are currently assigned to executing tasks, plus the resources needed by tasks
 // that are in front of this task in the queue.
 func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *resourceCounts) bool {
-	// If we're running in exclusiveTaskScheduling mode, only ever allow one
-	// task to run at a time. Otherwise fall through to the logic below.
-	if q.exclusiveTaskScheduling && q.activeCancelFuncsCount.Load() >= 1 {
+	// Every task consumes one unit of concurrency, so if a limit is
+	// configured, the task only fits if a concurrency slot is unreserved.
+	if q.resourceCapacity.Concurrency > 0 && reservedResources.Concurrency >= q.resourceCapacity.Concurrency {
 		return false
 	}
 
@@ -1082,7 +1101,11 @@ func (c customResourceCount) String() string {
 type resourceCounts struct {
 	RAMBytes  int64
 	CPUMillis int64
-	Custom    map[string]customResourceCount
+	// Concurrency counts tasks. Every task consumes one unit regardless of
+	// its size, so as a capacity it is the maximum number of tasks that can
+	// execute at the same time. A capacity of 0 means unlimited.
+	Concurrency int64
+	Custom      map[string]customResourceCount
 }
 
 func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resourceCounts {
@@ -1095,9 +1118,10 @@ func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resource
 		custom[r.GetName()] = customResource(r.GetValue())
 	}
 	return &resourceCounts{
-		RAMBytes:  res.GetEstimatedMemoryBytes(),
-		CPUMillis: res.GetEstimatedMilliCpu(),
-		Custom:    custom,
+		RAMBytes:    res.GetEstimatedMemoryBytes(),
+		CPUMillis:   res.GetEstimatedMilliCpu(),
+		Concurrency: 1,
+		Custom:      custom,
 	}
 }
 
@@ -1124,6 +1148,7 @@ func (r *resourceCounts) Clone() *resourceCounts {
 func (r *resourceCounts) Add(other *resourceCounts) {
 	r.RAMBytes += other.RAMBytes
 	r.CPUMillis += other.CPUMillis
+	r.Concurrency += other.Concurrency
 	for k, v := range other.Custom {
 		r.Custom[k] += v
 	}
@@ -1136,6 +1161,9 @@ func (r *resourceCounts) AllGTE(other *resourceCounts) bool {
 		return false
 	}
 	if r.CPUMillis < other.CPUMillis {
+		return false
+	}
+	if r.Concurrency < other.Concurrency {
 		return false
 	}
 	for k, v := range r.Custom {
