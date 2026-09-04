@@ -48,6 +48,11 @@ dockerfile_image(
 )
 
 dockerfile_image(
+    name = "rbe-ubuntu20-04-minimal_image",
+    dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04-minimal:Dockerfile",
+)
+
+dockerfile_image(
     name = "rbe-ubuntu20-04-webtest_image",
     dockerfile = "@com_github_buildbuddy_io_buildbuddy//dockerfiles/rbe-ubuntu20-04-webtest:Dockerfile",
 )

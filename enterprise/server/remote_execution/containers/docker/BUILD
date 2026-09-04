@@ -37,7 +37,6 @@ go_test(
     exec_properties = {
         # TODO(https://github.com/buildbuddy-io/buildbuddy-internal/issues/1094): Require less manual configuration here.
         "test.workload-isolation-type": "firecracker",
-        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
         "test.init-dockerd": "true",
     },
     shard_count = 2,
