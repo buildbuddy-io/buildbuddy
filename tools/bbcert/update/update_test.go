@@ -199,6 +199,11 @@ func TestForCommit_FetchesACanary(t *testing.T) {
 	require.Equal(t, "bbb", canary.Commit)
 }
 
+func TestRun_RejectsPositionalArguments(t *testing.T) {
+	// A commit is selected with -commit; a bare one must not quietly install latest.
+	require.Equal(t, 2, Run(context.Background(), []string{"abc123"}))
+}
+
 func TestParsePublicKey(t *testing.T) {
 	pub, _, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)

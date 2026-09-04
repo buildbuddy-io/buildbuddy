@@ -28,6 +28,11 @@ func Run(ctx context.Context, args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "unexpected argument %q\n", fs.Arg(0))
+		fs.Usage()
+		return 2
+	}
 
 	u, err := Default()
 	if err != nil {
