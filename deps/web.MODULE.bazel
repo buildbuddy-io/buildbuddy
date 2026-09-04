@@ -17,8 +17,6 @@ swc.toolchain(
 )
 use_repo(swc, "swc_toolchains")
 
-register_toolchains("@swc_toolchains//:linux-arm64-musl_toolchain")
-
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(
     ts_version_from = "@com_github_buildbuddy_io_buildbuddy//:package.json",
