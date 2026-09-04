@@ -413,7 +413,10 @@ func TestPriorityTaskScheduler_CanFitTaskWithParentResources(t *testing.T) {
 				"other":  customResource(1),
 			},
 		},
-		customResourceParents: map[string]string{"a": "parent", "b": "parent"},
+		customResourceParents: map[string]resources.CustomResourceParent{
+			"a": {Name: "parent", Accounting: "ceil"},
+			"b": {Name: "parent", Accounting: "ceil"},
+		},
 	}
 	for _, test := range []struct {
 		name     string
@@ -479,6 +482,47 @@ func TestPriorityTaskScheduler_CanFitTaskWithParentResources(t *testing.T) {
 			before := reserved.Clone()
 			require.Equal(t, test.wantFit, q.canFitTask(task, reserved))
 			require.Equal(t, before, reserved, "checking capacity must not change reservations")
+		})
+	}
+}
+
+func TestPriorityTaskScheduler_CustomResourceParentAccountingModes(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		modeA     string
+		modeB     string
+		wantUsage float32
+		wantFit   bool
+	}{
+		{name: "default sum", wantUsage: 1.45, wantFit: true},
+		{name: "explicit sum", modeA: "sum", modeB: "sum", wantUsage: 1.45, wantFit: true},
+		{name: "ceil", modeA: "ceil", modeB: "ceil", wantUsage: 3.25},
+		{name: "mixed ceil and sum", modeA: "ceil", modeB: "sum", wantUsage: 2.35},
+		{name: "mixed default and ceil", modeB: "ceil", wantUsage: 2.35},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+				{Name: "parent", Value: 2},
+				{Name: "a", Value: 2, Parent: "parent", ParentAccounting: test.modeA},
+				{Name: "b", Value: 2, Parent: "parent", ParentAccounting: test.modeB},
+			})
+			q, err := NewPriorityTaskScheduler(testenv.GetTestEnv(t), NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{
+				RAMBytesCapacityOverride:  100,
+				CPUMillisCapacityOverride: 100,
+			})
+			require.NoError(t, err)
+			size := &scpb.TaskSize{
+				EstimatedMemoryBytes: 1,
+				EstimatedMilliCpu:    1,
+				CustomResources: []*scpb.CustomResource{
+					{Name: "a", Value: 1.1},
+					{Name: "b", Value: 0.1},
+					{Name: "parent", Value: 0.25},
+				},
+			}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{TaskSize: size}}
+			require.Equal(t, test.wantFit, q.canFitTask(task, q.resourcesUsed))
+			require.Equal(t, customResource(test.wantUsage), q.customResourceUsed(q.taskResourceCounts(size), "parent"))
 		})
 	}
 }

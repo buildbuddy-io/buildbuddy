@@ -370,7 +370,7 @@ type PriorityTaskScheduler struct {
 	activeCancelFuncsCount atomic.Int64
 	resourceCapacity       *resourceCounts
 	resourcesUsed          *resourceCounts
-	customResourceParents  map[string]string
+	customResourceParents  map[string]resources.CustomResourceParent
 
 	// activeTaskStartTimes contains, for each currently running task, the
 	// time at which the task started executing.
@@ -785,7 +785,7 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *r
 		if q.customResourceUsed(candidateResources, r.GetName()) > q.resourceCapacity.Custom[r.GetName()] {
 			return false
 		}
-		if parent, ok := q.customResourceParents[r.GetName()]; ok && q.customResourceUsed(candidateResources, parent) > q.resourceCapacity.Custom[parent] {
+		if parent, ok := q.customResourceParents[r.GetName()]; ok && q.customResourceUsed(candidateResources, parent.Name) > q.resourceCapacity.Custom[parent.Name] {
 			return false
 		}
 	}
@@ -1127,11 +1127,15 @@ func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resource
 
 func (q *PriorityTaskScheduler) customResourceUsed(res *resourceCounts, name string) customResourceCount {
 	used := res.Custom[name]
-	// Round each child's aggregate usage, so fractional requests for the same
-	// child can share a parent unit. Direct requests for the parent add to this.
+	// Sum each child's aggregate usage, rounding up only for children configured
+	// with ceil accounting. Direct requests for the parent add without rounding.
 	for child, parent := range q.customResourceParents {
-		if parent == name {
-			used += ceilCustomResource(res.Custom[child])
+		if parent.Name == name {
+			childUsed := res.Custom[child]
+			if parent.Accounting == resources.ParentAccountingCeil {
+				childUsed = ceilCustomResource(childUsed)
+			}
+			used += childUsed
 		}
 	}
 	return used

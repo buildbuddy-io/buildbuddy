@@ -81,13 +81,15 @@ func TestGetCustomResourceParentMap(t *testing.T) {
 		{Name: "apple_simulator", Value: 2},
 		{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator", ParentAccounting: "ceil"},
 		{Name: "sim_version_18_0", Value: 2, Parent: "apple_simulator"},
+		{Name: "sim_version_17_0", Value: 2, Parent: "apple_simulator", ParentAccounting: "sum"},
 	})
 
 	parentMap, err := resources.GetCustomResourceParentMap()
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{
-		"sim_version_26_5": "apple_simulator",
-		"sim_version_18_0": "apple_simulator",
+	require.Equal(t, map[string]resources.CustomResourceParent{
+		"sim_version_26_5": {Name: "apple_simulator", Accounting: "ceil"},
+		"sim_version_18_0": {Name: "apple_simulator", Accounting: "sum"},
+		"sim_version_17_0": {Name: "apple_simulator", Accounting: "sum"},
 	}, parentMap)
 }
 

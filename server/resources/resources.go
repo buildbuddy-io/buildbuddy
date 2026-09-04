@@ -271,13 +271,24 @@ func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 	return out, nil
 }
 
-func GetCustomResourceParentMap() (map[string]string, error) {
+// CustomResourceParent describes how a child's usage is charged to its parent.
+type CustomResourceParent struct {
+	Name       string
+	Accounting string
+}
+
+const (
+	ParentAccountingSum  = "sum"
+	ParentAccountingCeil = "ceil"
+)
+
+func GetCustomResourceParentMap() (map[string]CustomResourceParent, error) {
 	configured := make(map[string]CustomResource, len(*customResources))
 	for _, r := range *customResources {
 		configured[r.Name] = r
 	}
 
-	parentByChild := make(map[string]string)
+	parentByChild := make(map[string]CustomResourceParent)
 	for _, r := range *customResources {
 		if r.Parent == "" {
 			if r.ParentAccounting != "" {
@@ -295,10 +306,13 @@ func GetCustomResourceParentMap() (map[string]string, error) {
 		if parent.Parent != "" {
 			return nil, status.InvalidArgumentErrorf("Custom resource %q parent %q cannot itself have a parent", r.Name, r.Parent)
 		}
-		if r.ParentAccounting != "" && r.ParentAccounting != "ceil" {
+		if r.ParentAccounting == "" {
+			r.ParentAccounting = ParentAccountingSum
+		}
+		if r.ParentAccounting != ParentAccountingSum && r.ParentAccounting != ParentAccountingCeil {
 			return nil, status.InvalidArgumentErrorf("Custom resource %q has unsupported parent_accounting %q", r.Name, r.ParentAccounting)
 		}
-		parentByChild[r.Name] = r.Parent
+		parentByChild[r.Name] = CustomResourceParent{Name: r.Parent, Accounting: r.ParentAccounting}
 	}
 	return parentByChild, nil
 }
