@@ -4245,7 +4245,7 @@ func TestWriteReference(t *testing.T) {
 		require.Equal(t, blobName(ref), blobName(dstRef))
 	})
 
-	t.Run("take ownership refreshes the blob TTL", func(t *testing.T) {
+	t.Run("take ownership inherits the blob TTL", func(t *testing.T) {
 		te := testenv.GetTestEnv(t)
 		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 		ctx := getAnonContext(t, te)
@@ -4260,12 +4260,18 @@ func TestWriteReference(t *testing.T) {
 		clock.Advance(20 * time.Hour)
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
 
-		// Taking ownership stamped a fresh custom time, so the entry stays
-		// readable past the blob's original deletion horizon.
-		clock.Advance(20 * time.Hour)
-		got, err := dst.Get(ctx, rn)
+		// Taking ownership does not touch the blob, so the record keeps the
+		// custom time it was written with.
+		dstRef, err := dst.ReadReference(ctx, rn)
 		require.NoError(t, err)
-		require.Equal(t, buf, got)
+		require.Equal(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec(), dstRef.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetLastCustomTimeUsec())
+
+		// Past the blob's original deletion horizon, the entry is treated as
+		// expired.
+		clock.Advance(20 * time.Hour)
+		_, err = dst.Get(ctx, rn)
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
 	})
 
 	t.Run("clone", func(t *testing.T) {
