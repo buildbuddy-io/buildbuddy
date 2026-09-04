@@ -1,4 +1,5 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -32,4 +33,18 @@ go_binary(
     # depend on a userspace dynamic linker. Keep it pure in every Linux build,
     # including builds whose outer platform is musl.
     pure = "on",
+)
+
+sh_test(
+    name = "goinit_size_test",
+    srcs = ["goinit_size_test.sh"],
+    args = [
+        "$(rootpath :goinit)",
+        # The current Linux amd64 binary is 37,609,632 bytes. Keep a small
+        # amount of headroom for toolchain movement while catching accidental
+        # dependency or embedded-data growth.
+        "40000000",
+    ],
+    data = [":goinit"],
+    target_compatible_with = ["@platforms//os:linux"],
 )
