@@ -100,6 +100,12 @@ func register() {
 			Flags:   execution.Flags,
 		},
 		{
+			Name:    "explain",
+			Help:    "Explains your build using collected profiles and compact execution logs.",
+			Handler: explain.HandleExplain,
+			Flags:   explain.Flags,
+		},
+		{
 			Name:    "fix",
 			Help:    "Applies fixes to WORKSPACE and BUILD files.",
 			Handler: fix.HandleFix,
@@ -107,6 +113,12 @@ func register() {
 		},
 		// Handle 'help' command separately to avoid circular dependency with `cli_command`
 		// package
+		{
+			Name:    "index",
+			Help:    "Sends updates to the remote codesearch index.",
+			Handler: index.HandleIndex,
+			Flags:   index.Flags,
+		},
 		{
 			Name:    "install",
 			Help:    "Installs a bb plugin (https://buildbuddy.io/plugins).",
@@ -167,12 +179,6 @@ func register() {
 			Flags:   ssh_server.Flags,
 		},
 		{
-			Name:    "index",
-			Help:    "Sends updates to the remote codesearch index.",
-			Handler: index.HandleIndex,
-			Flags:   index.Flags,
-		},
-		{
 			Name:    "ui",
 			Help:    "Opens an interactive terminal UI for viewing builds.",
 			Handler: ui.HandleUI,
@@ -200,12 +206,6 @@ func register() {
 			Help:    "Views build logs from BuildBuddy.",
 			Handler: view.HandleView,
 			Flags:   view.Flags,
-		},
-		{
-			Name:    "explain",
-			Help:    "Explains your build using collected profiles and compact execution logs.",
-			Handler: explain.HandleExplain,
-			Flags:   explain.Flags,
 		},
 	}
 	cli_command.CommandsByName = make(
