@@ -345,6 +345,67 @@ func TestParse_CustomResources_Invalid(t *testing.T) {
 	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %s", gstatus.Code(err))
 }
 
+func TestParse_BazelResourceProperties(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "resources:cpu", Value: "2.5"},
+		{Name: "resources:memory", Value: "512"},
+		{Name: "resources:gpu", Value: "1"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	p, err := ParseProperties(task)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(2500), p.EstimatedMilliCPU)
+	assert.Equal(t, int64(512*1024*1024), p.EstimatedMemoryBytes)
+	// Resource names Bazel doesn't define stay custom resources.
+	require.Empty(t, cmp.Diff([]*scpb.CustomResource{{
+		Name: "gpu", Value: 1,
+	}}, p.CustomResources, protocmp.Transform()))
+}
+
+func TestParse_BazelResourceProperties_UnusableValuesIgnored(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "resources:cpu", Value: "-1"},
+		{Name: "resources:memory", Value: "0"},
+		{Name: "resources:gpu", Value: "NaN"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	p, err := ParseProperties(task)
+	require.NoError(t, err)
+
+	// Values that can't produce a usable estimate are treated as unset rather
+	// than yielding a negative, zero or NaN task size, and a NaN custom
+	// resource is dropped instead of being sent to the scheduler.
+	assert.Equal(t, int64(0), p.EstimatedMilliCPU)
+	assert.Equal(t, int64(0), p.EstimatedMemoryBytes)
+	assert.Empty(t, p.CustomResources)
+}
+
+func TestParse_BazelResourceProperties_ExplicitEstimatesWin(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "resources:cpu", Value: "4"},
+		{Name: "resources:memory", Value: "512"},
+		{Name: "EstimatedCPU", Value: "1"},
+		{Name: "EstimatedMemory", Value: "1GB"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	p, err := ParseProperties(task)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(1000), p.EstimatedMilliCPU)
+	assert.Equal(t, int64(1024*1024*1024), p.EstimatedMemoryBytes)
+	assert.Empty(t, p.CustomResources)
+}
+
+func TestParse_BazelResourceProperties_InvalidValue(t *testing.T) {
+	props := []*repb.Platform_Property{
+		{Name: "resources:cpu", Value: "blah"},
+	}
+	task := &repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{Properties: props}}}
+	_, err := ParseProperties(task)
+	require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgument, got %s", gstatus.Code(err))
+}
+
 func TestParse_OverrideSnapshotKey(t *testing.T) {
 	key := &fcpb.SnapshotKey{
 		SnapshotId:        "snapshot-id",
