@@ -25,6 +25,37 @@ func TestGetDirUsage(t *testing.T) {
 	require.GreaterOrEqual(t, usage.FreeBytes, usage.AvailBytes)
 }
 
+func TestResolveSizeBytes(t *testing.T) {
+	dir := testfs.MakeTempDir(t)
+	usage, err := disk.GetDirUsage(dir)
+	require.NoError(t, err)
+	total := int64(usage.TotalBytes)
+
+	for _, tc := range []struct {
+		value string
+		path  string
+		want  int64
+	}{
+		{value: "1000000000", path: dir, want: 1_000_000_000},
+		{value: " 42 ", path: dir, want: 42},
+		{value: "100%", path: dir, want: total},
+		{value: "50%", path: dir, want: total / 2},
+		{value: "12.5%", path: dir, want: total / 8},
+		{value: " 25 % ", path: dir, want: total / 4},
+		// Non-existent path: falls back to the closest existing ancestor.
+		{value: "100%", path: filepath.Join(dir, "does", "not", "exist"), want: total},
+	} {
+		got, err := disk.ResolveSizeBytes(tc.value, tc.path)
+		require.NoError(t, err, "value %q", tc.value)
+		require.Equal(t, tc.want, got, "value %q", tc.value)
+	}
+
+	for _, value := range []string{"", "abc", "1.5", "10GB", "%", "0%", "-5%", "101%", "50%%"} {
+		_, err := disk.ResolveSizeBytes(value, dir)
+		require.Error(t, err, "value %q", value)
+	}
+}
+
 func TestWriteMover_CloseCleansUp(t *testing.T) {
 	for _, syncOnCommit := range []bool{false, true} {
 		t.Run(fmt.Sprintf("sync=%v", syncOnCommit), func(t *testing.T) {

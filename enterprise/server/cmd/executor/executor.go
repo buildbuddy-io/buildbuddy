@@ -80,7 +80,7 @@ var (
 	deleteBuildRootOnStartup  = flag.Bool("executor.delete_build_root_on_startup", false, "If true, delete the build root on startup")
 	executorMedadataDirectory = flag.String("executor.metadata_directory", "", "Location where executor host_id and other metadata is stored. Defaults to executor.local_cache_directory/../")
 	localCacheDirectory       = flag.String("executor.local_cache_directory", "/tmp/buildbuddy/filecache", "A local on-disk cache directory. Must be on the same device (disk partition, Docker volume, etc.) as the configured root_directory, since files are hard-linked to this cache for performance reasons. Otherwise, 'Invalid cross-device link' errors may result.")
-	localCacheSizeBytes       = flag.Int64("executor.local_cache_size_bytes", 1_000_000_000 /* 1 GB */, "The maximum size, in bytes, to use for the local on-disk cache")
+	localCacheSize            = flag.String("executor.local_cache_size_bytes", "1000000000" /* 1 GB */, "The maximum size to use for the local on-disk cache. Either an absolute number of bytes, or a percentage of the total size of the filesystem containing executor.local_cache_directory (e.g. \"80%\").")
 	startupWarmupMaxWaitSecs  = flag.Int64("executor.startup_warmup_max_wait_secs", 0, "Maximum time to block startup while waiting for default image to be pulled. Default is no wait.")
 	maximumDiskFullness       = flag.Float64("executor.maximum_disk_fullness", 1.01, "Fail health check if device containing executor.local_cache_directory is more than this full")
 	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
@@ -206,12 +206,18 @@ func getExecutorHostName() string {
 	return name
 }
 
-func filecacheMaxSizeBytesForRegistration() *int64 {
-	size := int64(0)
-	if !*disableLocalCache {
-		size = *localCacheSizeBytes
+// localCacheSizeBytes returns the resolved value of
+// --executor.local_cache_size_bytes for the given cache root, or 0 if the local
+// cache is disabled.
+func localCacheSizeBytes(cacheRoot string) (int64, error) {
+	if *disableLocalCache {
+		return 0, nil
 	}
-	return &size
+	size, err := disk.ResolveSizeBytes(*localCacheSize, cacheRoot)
+	if err != nil {
+		return 0, status.WrapError(err, "invalid --executor.local_cache_size_bytes")
+	}
+	return size, nil
 }
 
 func warmupImagesForRegistration() []*scpb.WarmupImage {
@@ -226,7 +232,7 @@ func warmupImagesForRegistration() []*scpb.WarmupImage {
 	return warmupImages
 }
 
-func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
+func GetConfiguredEnvironmentOrDie(cacheRoot string, filecacheSizeBytes int64, healthChecker *healthcheck.HealthChecker) *real_environment.RealEnv {
 	realEnv := real_environment.NewRealEnv(healthChecker)
 
 	mmapLRUEnabled := *executorplatform.EnableFirecracker && snaputil.IsChunkedSnapshotSharingEnabled()
@@ -286,8 +292,8 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, healthChecker *healthcheck.
 	initializeCacheClientsOrDie(*appTarget, *cacheTarget, *cacheTargetTrafficPercent, realEnv)
 
 	if !*disableLocalCache {
-		log.Infof("Enabling filecache in %q (size %d bytes)", cacheRoot, *localCacheSizeBytes)
-		fc, err := filecache.NewFileCache(cacheRoot, *localCacheSizeBytes, *deleteFileCacheOnStartup)
+		log.Infof("Enabling filecache in %q (size %d bytes, configured as %q)", cacheRoot, filecacheSizeBytes, *localCacheSize)
+		fc, err := filecache.NewFileCache(cacheRoot, filecacheSizeBytes, *deleteFileCacheOnStartup)
 		if err != nil {
 			log.Fatalf("Error initializing file cache: %s", err)
 		}
@@ -386,8 +392,12 @@ func main() {
 	setupNetworking(rootContext)
 
 	cacheRoot := filepath.Join(*localCacheDirectory, getExecutorHostID())
+	filecacheSizeBytes, err := localCacheSizeBytes(cacheRoot)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 	healthChecker := healthcheck.NewHealthChecker(*serverType)
-	env := GetConfiguredEnvironmentOrDie(cacheRoot, healthChecker)
+	env := GetConfiguredEnvironmentOrDie(cacheRoot, filecacheSizeBytes, healthChecker)
 
 	dshc := disk.NewUsageMonitor(cacheRoot, *maximumDiskFullness)
 	healthChecker.AddHealthCheck("executor_disk_usage", dshc)
@@ -470,7 +480,7 @@ func main() {
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	schedulerOpts := &scheduler_client.Options{
-		FilecacheMaxSizeBytes: filecacheMaxSizeBytesForRegistration(),
+		FilecacheMaxSizeBytes: &filecacheSizeBytes,
 		WarmupImages:          warmupImagesForRegistration(),
 		StartTime:             timestamppb.New(executorStartTime),
 	}
