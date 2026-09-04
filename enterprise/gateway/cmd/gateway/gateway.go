@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/apikeyauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/configsecrets"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remoteauth"
@@ -119,7 +120,10 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
-	gw, err := server.New(env, server.DNSService())
+	gw, err := server.New(server.Options{
+		Authenticator: apikeyauth.New(env.GetAuthenticator()),
+		HubServices:   []server.HubService{server.DNSService()},
+	})
 	if err != nil {
 		return err
 	}

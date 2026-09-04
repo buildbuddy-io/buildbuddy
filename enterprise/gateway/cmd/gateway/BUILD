@@ -10,6 +10,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/gateway/cmd/gateway",
     visibility = ["//visibility:private"],
     deps = [
+        "//enterprise/gateway/apikeyauth",
         "//enterprise/gateway/server",
         "//enterprise/server/backends/configsecrets",
         "//enterprise/server/remoteauth",

@@ -23,6 +23,7 @@ go_test(
     ],
     embed = [":relay"],
     deps = [
+        "//enterprise/gateway/apikeyauth",
         "//enterprise/gateway/server",
         "//enterprise/gateway/testgateway",
         "//server/testutil/testauth",

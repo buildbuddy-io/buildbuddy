@@ -11,8 +11,6 @@ go_library(
         "//enterprise/gateway/server",
         "//proto:gateway_go_proto",
         "//proto:gateway_service_go_proto",
-        "//server/testutil/testauth",
-        "//server/testutil/testenv",
         "//server/util/testing/flags",
         "//server/util/wgkeys",
         "@com_github_stretchr_testify//require",
