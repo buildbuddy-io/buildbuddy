@@ -284,7 +284,7 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 		recordGetWithMetadataResponseMetrics("reference", rn, codes.OK.String())
 		md := ref.GetMetadata()
 		return &dcpb.GetWithMetadataResponse{
-			Reference: ref,
+			DataOrReference: &dcpb.GetWithMetadataResponse_Reference{Reference: ref},
 			Metadata: &dcpb.MetadataResponse{
 				StoredSizeBytes: md.GetStoredSizeBytes(),
 				DigestSizeBytes: md.GetFileRecord().GetDigest().GetSizeBytes(),
