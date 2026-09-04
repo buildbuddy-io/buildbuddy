@@ -529,10 +529,13 @@ type DirUsage struct {
 // (e.g. "10000000000") or a percentage of the total size of the filesystem
 // containing path (e.g. "80%"). If path does not exist yet, the closest
 // existing ancestor directory is used to look up the filesystem size.
+//
+// Absolute values are parsed the same way as an int64 flag, so Go-style digit
+// separators (e.g. "1_000_000_000") and base prefixes are accepted.
 func ResolveSizeBytes(value, path string) (int64, error) {
 	value = strings.TrimSpace(value)
 	if !strings.HasSuffix(value, "%") {
-		n, err := strconv.ParseInt(value, 10, 64)
+		n, err := strconv.ParseInt(value, 0, 64)
 		if err != nil {
 			return 0, status.InvalidArgumentErrorf("invalid size %q: expected a number of bytes or a percentage like \"80%%\"", value)
 		}

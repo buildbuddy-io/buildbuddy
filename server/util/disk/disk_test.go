@@ -37,6 +37,8 @@ func TestResolveSizeBytes(t *testing.T) {
 		want  int64
 	}{
 		{value: "1000000000", path: dir, want: 1_000_000_000},
+		{value: "1_150_000_000_000", path: dir, want: 1_150_000_000_000},
+		{value: "0x10", path: dir, want: 16},
 		{value: " 42 ", path: dir, want: 42},
 		{value: "100%", path: dir, want: total},
 		{value: "50%", path: dir, want: total / 2},
