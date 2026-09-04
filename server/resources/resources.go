@@ -315,10 +315,14 @@ func GetMyHostname() (string, error) {
 }
 
 func GetMyPort() (int32, error) {
+	return GetMyPortFromEnvOrFlag("grpc_port")
+}
+
+func GetMyPortFromEnvOrFlag(flagName string) (int32, error) {
 	portStr := ""
 	if v := os.Getenv(portEnvVarName); v != "" {
 		portStr = v
-	} else if p, err := flagutil.GetDereferencedValue[int]("grpc_port"); err == nil {
+	} else if p, err := flagutil.GetDereferencedValue[int](flagName); err == nil {
 		portStr = strconv.Itoa(p)
 	}
 	i, err := strconv.ParseInt(portStr, 10, 32)
