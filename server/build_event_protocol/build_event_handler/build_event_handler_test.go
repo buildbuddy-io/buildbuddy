@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/nullauth"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/protofile"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -302,7 +304,17 @@ func assertAPIKeyRedacted(t *testing.T, invocation *inpb.Invocation, apiKey stri
 	assert.NotContains(t, string(txt), "x-buildbuddy-api-key", "All remote headers should be redacted")
 }
 
+type failingInvocationDB struct {
+	interfaces.InvocationDB
+}
+
+func (d *failingInvocationDB) CreateInvocation(ctx context.Context, in *tables.Invocation) (bool, error) {
+	return false, status.InternalError("failed to create invocation")
+}
+
 func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_build_event_streams", false)
+
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
 	te.SetAuthenticator(auth)
@@ -325,6 +337,121 @@ func TestUnauthenticatedHandleEventWithStartedFirst(t *testing.T) {
 	invocation, err := build_event_handler.LookupInvocation(te, ctx, testInvocationID)
 	assert.NoError(t, err)
 	assert.Equal(t, inpb.InvocationPermission_PUBLIC, invocation.ReadPermission)
+	assert.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, invocation.GetInvocationStatus())
+}
+
+func TestAnonymousBuildBlackhole(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_build_event_streams", true)
+
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/))
+	testInvocationID := uuid.New().String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(t.Context(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1)
+	require.NoError(t, channel.HandleEvent(request))
+	require.NoError(t, channel.HandleEvent(streamRequest(finishedEvent(), testInvocationID, 2)))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	rsp, err := te.GetBuildBuddyServer().GetInvocation(t.Context(), &inpb.GetInvocationRequest{
+		Lookup: &inpb.InvocationLookup{InvocationId: testInvocationID},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetInvocation(), 1)
+	inv := rsp.GetInvocation()[0]
+	require.Equal(t, inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS, inv.GetInvocationStatus())
+	require.Empty(t, inv.GetEvent())
+}
+
+func TestAnonymousBuildBlackhole_AnonymousUsageDisabled(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_build_event_streams", true)
+
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(false /*anonymousUsageEnabled*/))
+	testInvocationID := uuid.New().String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.True(t, status.IsPermissionDeniedError(err), "expected anonymous build to fail, got %v", err)
+}
+
+func TestAnonymousBuildBlackhole_InvalidAPIKeyStillFails(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_build_event_streams", true)
+
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	auth.NullAuthenticator = nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/)
+	te.SetAuthenticator(auth)
+	testInvocationID := uuid.New().String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(context.Background(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=INVALID'"), testInvocationID, 1)
+	err = channel.HandleEvent(request)
+	require.True(t, status.IsUnauthenticatedError(err), "expected invalid API key to fail, got %v", err)
+}
+
+func TestAnonymousBuildBlackhole_DoesNotOverwriteExistingInvocation(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_build_event_streams", true)
+
+	te := testenv.GetTestEnv(t)
+	testUsers := testauth.TestUsers("USER1", "GROUP1")
+	testUsers["APIKEY1"] = testUsers["USER1"]
+	auth := testauth.NewTestAuthenticator(t, testUsers)
+	auth.NullAuthenticator = nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/)
+	te.SetAuthenticator(auth)
+	testInvocationID := uuid.New().String()
+	handler := build_event_handler.NewBuildEventHandler(te)
+
+	authCtx := auth.AuthContextFromAPIKey(t.Context(), "APIKEY1")
+	created, err := te.GetInvocationDB().CreateInvocation(authCtx, &tables.Invocation{
+		InvocationID:     testInvocationID,
+		InvocationStatus: int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	anonymousChannel, err := handler.OpenChannel(t.Context(), testInvocationID)
+	require.NoError(t, err)
+	defer anonymousChannel.Close()
+	require.NoError(t, anonymousChannel.HandleEvent(
+		streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1)))
+
+	inv, err := build_event_handler.LookupInvocation(te, authCtx, testInvocationID)
+	require.NoError(t, err)
+	require.Equal(t, inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS, inv.GetInvocationStatus())
+	require.Equal(t, "USER1", inv.GetAcl().GetUserId().GetId())
+	require.Equal(t, inpb.InvocationPermission_GROUP, inv.GetReadPermission())
+	require.Equal(t, uint64(1), inv.GetAttempt())
+}
+
+func TestAnonymousBuildBlackhole_ReturnsInvocationWriteError(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_build_event_streams", true)
+
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(nullauth.NewNullAuthenticator(true /*anonymousUsageEnabled*/))
+	te.SetInvocationDB(&failingInvocationDB{InvocationDB: te.GetInvocationDB()})
+	testInvocationID := uuid.New().String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(t.Context(), testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	err = channel.HandleEvent(streamRequest(startedEvent("--remote_upload_local_results"), testInvocationID, 1))
+	require.True(t, status.IsInternalError(err), "expected invocation write to fail, got %v", err)
 }
 
 func TestAuthenticatedHandleEventWithStartedFirst(t *testing.T) {

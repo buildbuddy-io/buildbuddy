@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
@@ -218,6 +219,9 @@ func recordMetrics(op, status string, cm *cacheMetrics) {
 }
 
 func (s *CASServerProxy) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.local.FindMissingBlobs(ctx, req)
+	}
 	if proxy_util.SkipRemote(ctx) {
 		return s.local.FindMissingBlobs(ctx, req)
 	}
@@ -325,6 +329,9 @@ func (s *CASServerProxy) findMissingBlobsCacheKey(groupID string, req *repb.Find
 }
 
 func (s *CASServerProxy) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.local.BatchUpdateBlobs(ctx, req)
+	}
 	if proxy_util.SkipRemote(ctx) {
 		return nil, status.UnimplementedError("Skip remote not implemented")
 	}
@@ -368,6 +375,9 @@ func bytesInResponse(resp *repb.BatchReadBlobsResponse) int {
 }
 
 func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchReadBlobsRequest) (*repb.BatchReadBlobsResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.local.BatchReadBlobs(ctx, req)
+	}
 	if proxy_util.SkipRemote(ctx) {
 		return nil, status.UnimplementedError("Skip remote not implemented")
 	}
@@ -488,6 +498,9 @@ func (s *CASServerProxy) batchReadBlobsRemote(ctx context.Context, readReq *repb
 }
 
 func (s *CASServerProxy) GetTree(req *repb.GetTreeRequest, stream repb.ContentAddressableStorage_GetTreeServer) error {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(stream.Context(), s.authenticator) {
+		return s.local.GetTree(req, stream)
+	}
 	if proxy_util.SkipRemote(stream.Context()) {
 		return status.UnimplementedError("Skip remote not implemented")
 	}
@@ -575,6 +588,9 @@ func (s *CASServerProxy) getTree(req *repb.GetTreeRequest, stream repb.ContentAd
 }
 
 func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.local.SpliceBlob(ctx, req)
+	}
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 
@@ -586,6 +602,9 @@ func (s *CASServerProxy) SpliceBlob(ctx context.Context, req *repb.SpliceBlobReq
 }
 
 func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.local.SplitBlob(ctx, req)
+	}
 	ctx, spn := tracing.StartSpan(ctx)
 	defer spn.End()
 

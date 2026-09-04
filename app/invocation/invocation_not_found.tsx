@@ -4,6 +4,7 @@ import authService, { User } from "../auth/auth_service";
 import capabilities from "../capabilities/capabilities";
 import Breadcrumbs from "../components/breadcrumbs/breadcrumbs";
 import FilledButton from "../components/button/button";
+import { TextLink } from "../components/link/link";
 import errorService from "../errors/error_service";
 import rpcService from "../service/rpc_service";
 import { BuildBuddyError } from "../util/errors";
@@ -11,6 +12,7 @@ import { BuildBuddyError } from "../util/errors";
 interface Props {
   invocationId: string;
   error: BuildBuddyError | null;
+  missingAPIKey: boolean;
   user?: User;
 }
 
@@ -61,7 +63,7 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
   }
 
   render() {
-    const invocationExists = this.props.error?.code !== "NotFound";
+    const invocationExists = !this.props.missingAPIKey && this.props.error?.code !== "NotFound";
     const canLogin = capabilities.auth && !this.props.user;
 
     if (invocationExists && canLogin) {
@@ -73,7 +75,21 @@ export default class InvocationNotFoundComponent extends React.Component<Props, 
         <div className="shelf">
           <div className="container">
             <Breadcrumbs>Invocation {this.props.invocationId}</Breadcrumbs>
-            {this.props.error?.code === "NotFound" && (
+            {this.props.missingAPIKey && (
+              <>
+                <div className="titles">
+                  <div className="title">Missing API Key</div>
+                </div>
+                <div className="details">
+                  <div>
+                    This invocation was not recorded because the build did not provide a BuildBuddy API key.{" "}
+                    <TextLink href="https://www.buildbuddy.io/docs/guide-auth/">Configure an API key</TextLink>, then
+                    run the build again.
+                  </div>
+                </div>
+              </>
+            )}
+            {!this.props.missingAPIKey && this.props.error?.code === "NotFound" && (
               <>
                 <div className="titles">
                   <div className="title">Invocation not found!</div>

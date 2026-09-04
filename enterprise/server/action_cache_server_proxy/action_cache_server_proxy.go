@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
@@ -230,6 +231,9 @@ func (s *ActionCacheServerProxy) recordLocalACHit(ctx context.Context, req *repb
 // send a hash of the last value we received to avoid transferring data on
 // unmodified actions.
 func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest) (*repb.ActionResult, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.localACServer.GetActionResult(ctx, req)
+	}
 	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}
@@ -375,6 +379,9 @@ func (s *ActionCacheServerProxy) GetActionResult(ctx context.Context, req *repb.
 }
 
 func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *repb.UpdateActionResultRequest) (*repb.ActionResult, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.localACServer.UpdateActionResult(ctx, req)
+	}
 	if err := authutil.ValidateRestrictedACAccess(ctx, s.env, req.GetInstanceName()); err != nil {
 		return nil, err
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -131,6 +132,12 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, rn.ToProto())
 	}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		for _, rn := range digestsToLookup {
+			rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, rn.GetDigest())
+		}
+		return rsp, nil
+	}
 	// Forward the incoming request's purpose so present/absent metrics are
 	// attributed to the originating code path.
 	missing, err := s.cache.FindMissing(findmissing.ContextWithPurpose(ctx, req.GetPurpose()), digestsToLookup)
@@ -222,6 +229,15 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 // provided data.
 func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	rsp := &repb.BatchUpdateBlobsResponse{}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		for _, uploadRequest := range req.Requests {
+			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+				Digest: uploadRequest.GetDigest(),
+				Status: &statuspb.Status{Code: int32(codes.OK)},
+			})
+		}
+		return rsp, nil
+	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
@@ -389,6 +405,23 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 			return nil, status.InvalidArgumentErrorf("BatchReadBlobs request exceeds server limit of %d bytes", rpcutil.GRPCMaxSizeBytes)
 		}
 		totalDownloadSize += size
+	}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		for _, readDigest := range req.GetDigests() {
+			rn := digest.NewResourceName(readDigest, req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
+			if err := rn.Validate(); err != nil {
+				return nil, err
+			}
+			code := codes.NotFound
+			if rn.IsEmpty() {
+				code = codes.OK
+			}
+			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
+				Digest: rn.GetDigest(),
+				Status: &statuspb.Status{Code: int32(code)},
+			})
+		}
+		return rsp, nil
 	}
 	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
@@ -855,6 +888,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if rootDirRN.IsEmpty() {
 		return nil
 	}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(stream.Context(), s.env.GetAuthenticator()) {
+		return status.NotFoundError("tree root not found")
+	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
 	if err != nil {
@@ -1224,6 +1260,11 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 }
 
 func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		return &repb.SpliceBlobResponse{
+			BlobDigest: req.GetBlobDigest(),
+		}, nil
+	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
@@ -1349,6 +1390,9 @@ func (s *ContentAddressableStorageServer) RegisterChunkMapping(stream repb.Conte
 }
 
 func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		return nil, status.NotFoundError("blob not found")
+	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
