@@ -7,6 +7,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//codesearch/annotations",
+        "//codesearch/gitclient",
         "//codesearch/indexprofile",
         "//codesearch/schema",
         "//codesearch/types",
@@ -14,7 +15,6 @@ go_library(
         "//server/util/git",
         "//server/util/log",
         "//server/util/status",
-        "@com_github_gabriel_vasile_mimetype//:mimetype",
         "@com_github_go_enry_go_enry_v2//:go-enry",
     ],
 )

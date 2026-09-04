@@ -12,7 +12,7 @@ go_library(
         "//cli/log",
         "//cli/login",
         "//cli/storage",
-        "//codesearch/github",
+        "//codesearch/gitclient",
         "//proto:buildbuddy_service_go_proto",
         "//proto:git_go_proto",
         "//proto:index_go_proto",
@@ -28,7 +28,7 @@ go_test(
     srcs = ["index_test.go"],
     embed = [":index"],
     deps = [
-        "//codesearch/github",
+        "//codesearch/gitclient",
         "//proto:buildbuddy_service_go_proto",
         "//proto:git_go_proto",
         "//proto:index_go_proto",
