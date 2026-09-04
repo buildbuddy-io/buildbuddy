@@ -278,7 +278,23 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 		return nil, err
 	}
 	rn := req.GetResource()
+	if ref := c.getWithMetadataReference(ctx, rn); ref != nil {
+		up, _ := prefix.UserPrefixFromContext(ctx)
+		c.readRefLogger.Debugf("GetWithMetadata(%q) succeeded by reference (user prefix: %s)", ResourceIsolationString(rn), up)
+		recordGetWithMetadataResponseMetrics("reference", rn, codes.OK.String())
+		md := ref.GetMetadata()
+		return &dcpb.GetWithMetadataResponse{
+			Reference: ref,
+			Metadata: &dcpb.MetadataResponse{
+				StoredSizeBytes: md.GetStoredSizeBytes(),
+				DigestSizeBytes: md.GetFileRecord().GetDigest().GetSizeBytes(),
+				LastModifyUsec:  md.GetLastModifyUsec(),
+				LastAccessUsec:  md.GetLastAccessUsec(),
+			},
+		}, nil
+	}
 	data, md, err := c.cache.GetWithMetadata(ctx, rn)
+	recordGetWithMetadataResponseMetrics("bytes", rn, status.MetricsLabel(err))
 	if err != nil {
 		return nil, err
 	}
@@ -291,6 +307,22 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 			LastAccessUsec:  md.LastAccessTimeUsec,
 		},
 	}, nil
+}
+
+func (c *Proxy) getWithMetadataReference(ctx context.Context, rn *rspb.ResourceName) *refpb.Reference {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil || !fp.Boolean(ctx, "distributed_cache.get_with_metadata_gcs_references", false) {
+		return nil
+	}
+	refCache, ok := c.cache.(interfaces.ReferenceCache)
+	if !ok {
+		return nil
+	}
+	ref, err := refCache.ReadReference(ctx, rn)
+	if err != nil {
+		return nil
+	}
+	return ref
 }
 
 type resourceIsolationStringer struct{ *rspb.ResourceName }
@@ -881,6 +913,19 @@ func recordReadResponseMetrics(responseType string, r *rspb.ResourceName, status
 	}
 	metrics.DistributedCacheReadResponseCount.With(labels).Inc()
 	metrics.DistributedCacheReadResponseSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
+}
+
+// recordGetWithMetadataResponseMetrics records that this node served a peer's
+// GetWithMetadata request with its payload sent as responseType ("reference"
+// or "bytes") and the status of the response, attributing the requested
+// digest's size to it.
+func recordGetWithMetadataResponseMetrics(responseType string, r *rspb.ResourceName, statusLabel string) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusLabel,
+	}
+	metrics.DistributedCacheGetWithMetadataResponseCount.With(labels).Inc()
+	metrics.DistributedCacheGetWithMetadataResponseSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
 }
 
 // recordWriteRequestMetrics records that a peer write committed with its

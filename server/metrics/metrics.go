@@ -1098,6 +1098,36 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	// DistributedCacheGetWithMetadataResponseCount counts distributed cache
+	// peer GetWithMetadata requests served, by whether the payload was sent
+	// as a reference to shared storage or as inline bytes, and by the gRPC
+	// status code of the response ("OK" on success).
+	DistributedCacheGetWithMetadataResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_with_metadata_response_count",
+		Help:      "Count of distributed cache peer GetWithMetadata requests served, by whether the payload was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheGetWithMetadataResponseSizeBytes totals the digest
+	// sizes of blobs served to peers via GetWithMetadata, by whether the
+	// payload was sent as a reference to shared storage or as inline bytes,
+	// and by the gRPC status code of the response ("OK" on success). Sizes
+	// are the requested digest's (uncompressed) size rather than the exact
+	// bytes transferred.
+	DistributedCacheGetWithMetadataResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_with_metadata_response_size_bytes",
+		Help:      "Total digest sizes of blobs served to distributed cache peers via GetWithMetadata, by whether the payload was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
 	// DistributedCacheReferenceVerificationCount counts verifications of
 	// references received alongside streamed bytes on distributed cache
 	// reads, by outcome: "success" (the dereferenced bytes matched the
