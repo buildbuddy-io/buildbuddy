@@ -1,14 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library")
-load("//rules:platform_transitions.bzl", "linux_arm64_musl_alias", "linux_x86_64_musl_alias")
 
-# Embeds the bb CLI binary for Linux and mac. On Windows, we create an empty
-# file instead because the CLI depends on tree-sitter which requires CGo, and
-# our Windows build environment doesn't have a C compiler available.
+# Embeds the bb CLI binary for Linux and macOS. //cli/cmd/bb is pure Go, so
+# the Linux output is already static and does not need a separate musl build.
+# On Windows, keep producing an empty file until executor embedding there is
+# deliberately enabled and tested.
 genrule(
     name = "bb-crossplatform",
     srcs = select({
-        "//platforms/configs:linux_x86_64": [":bb-linux-x86_64"],
-        "//platforms/configs:linux_arm64": [":bb-linux-arm64"],
+        "//platforms/configs:linux_x86_64": ["//cli/cmd/bb"],
+        "//platforms/configs:linux_arm64": ["//cli/cmd/bb"],
         "//platforms/configs:macos_x86_64": ["//cli/cmd/bb"],
         "//platforms/configs:macos_arm64": ["//cli/cmd/bb"],
         "//conditions:default": [],
@@ -24,16 +24,4 @@ go_library(
     embedsrcs = ["bb-bin"],
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/bb",
     visibility = ["//visibility:public"],
-)
-
-linux_arm64_musl_alias(
-    name = "bb-linux-arm64",
-    actual = "//cli/cmd/bb",
-    tags = ["manual"],
-)
-
-linux_x86_64_musl_alias(
-    name = "bb-linux-x86_64",
-    actual = "//cli/cmd/bb",
-    tags = ["manual"],
 )
