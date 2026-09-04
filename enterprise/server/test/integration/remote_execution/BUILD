@@ -51,6 +51,7 @@ go_test(
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_google_go_cmp//cmp",
         "@com_github_google_uuid//:uuid",
+        "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
