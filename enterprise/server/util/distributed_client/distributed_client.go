@@ -283,7 +283,7 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 		return nil, err
 	}
 	return &dcpb.GetWithMetadataResponse{
-		Data: data,
+		DataOrReference: &dcpb.GetWithMetadataResponse_Data{Data: data},
 		Metadata: &dcpb.MetadataResponse{
 			StoredSizeBytes: md.StoredSizeBytes,
 			DigestSizeBytes: md.DigestSizeBytes,

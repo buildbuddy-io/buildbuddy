@@ -106,8 +106,16 @@ message GetWithMetadataRequest {
   resource.ResourceName resource = 1;
 }
 
+// Next Tag: 4
 message GetWithMetadataResponse {
-  bytes data = 1;
+  oneof data_or_reference {
+    // The bytes of the data.
+    bytes data = 1;
+
+    // A reference to the data.
+    reference.Reference reference = 3;
+  }
+
   MetadataResponse metadata = 2;
 }
 
