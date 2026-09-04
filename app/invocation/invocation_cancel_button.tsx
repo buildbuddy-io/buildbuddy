@@ -1,4 +1,4 @@
-import { Slash as SlashIcon } from "lucide-react";
+import { Ban } from "lucide-react";
 import React from "react";
 import { invocation } from "../../proto/invocation_ts_proto";
 import { OutlinedButton } from "../components/button/button";
@@ -38,7 +38,7 @@ export default class InvocationCancelButtonComponent extends React.Component<Inv
           disabled={isLoading || alreadyCancelled}
           onClick={this.onClick.bind(this)}
           title={alreadyCancelled ? "Invocation has already been cancelled and is now being cleaned up." : undefined}>
-          {isLoading ? <Spinner className="icon" /> : <SlashIcon />}
+          {isLoading ? <Spinner className="icon" /> : <Ban />}
           <div>Cancel</div>
         </OutlinedButton>
       </div>
