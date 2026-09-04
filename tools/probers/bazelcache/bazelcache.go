@@ -42,6 +42,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
+	cryptorand "crypto/rand"
+
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -200,15 +202,21 @@ func (p *prober) checkActionCache() error {
 
 func (p *prober) checkCAS(compressor repb.Compressor_Value) error {
 	c := compressorName(compressor)
-	gen := digest.RandomGenerator(rand.Int63())
 	const numBlobs = 3
 
 	var digests []*repb.Digest
 	blobsByHash := make(map[string][]byte, numBlobs)
 	for i := 0; i < numBlobs; i++ {
-		d, buf, err := gen.RandomDigestBuf(1024)
-		if err != nil {
+		// math/rand.NewSource only has about 2^31 distinct seeds, so using
+		// digest.RandomGenerator can repeat batches from previous probe runs.
+		buf := make([]byte, 1024)
+		if _, err := cryptorand.Read(buf); err != nil {
 			log.Errorf("failed to generate random data: %s", err)
+			return err
+		}
+		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+		if err != nil {
+			log.Errorf("failed to compute digest: %s", err)
 			return err
 		}
 		digests = append(digests, d)
