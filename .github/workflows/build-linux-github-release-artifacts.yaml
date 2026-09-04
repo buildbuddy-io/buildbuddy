@@ -1,4 +1,4 @@
-name: "Build Linux amd64 Github Release Artifacts"
+name: "Build Linux Github Release Artifacts"
 
 on:
   workflow_dispatch:
@@ -25,7 +25,20 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04-16cpu
+    name: "Build Linux ${{ matrix.arch }} artifacts"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04-16cpu
+            musl_output_platform: linux_x86_64_musl
+            static_executor_target: executor_linux_amd64_static
+          - arch: arm64
+            runner: ubuntu-22.04-16cpu-arm64-arm-limited
+            musl_output_platform: linux_arm64_musl
+            static_executor_target: executor_linux_arm64_static
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -45,15 +58,15 @@ jobs:
             //server/cmd/buildbuddy:buildbuddy \
             //enterprise/server/cmd/server:buildbuddy \
             //enterprise/server/cmd/executor:executor \
-            //enterprise/server/cmd/executor:executor_linux_amd64_static
-          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-amd64
-          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64
-          cp bazel-out/linux_x86_64_musl-opt/bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-amd64-static
+            //enterprise/server/cmd/executor:${{ matrix.static_executor_target }}
+          cp bazel-bin/server/cmd/**/**/buildbuddy buildbuddy-linux-${{ matrix.arch }}
+          cp bazel-bin/enterprise/server/cmd/**/**/buildbuddy buildbuddy-enterprise-linux-${{ matrix.arch }}
+          cp bazel-bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-${{ matrix.arch }}
+          cp bazel-out/${{ matrix.musl_output_platform }}-opt/bin/enterprise/server/cmd/**/**/executor executor-enterprise-linux-${{ matrix.arch }}-static
           gh release upload \
             ${{ inputs.version_tag }} \
-            buildbuddy-linux-amd64 \
-            buildbuddy-enterprise-linux-amd64 \
-            executor-enterprise-linux-amd64 \
-            executor-enterprise-linux-amd64-static \
+            buildbuddy-linux-${{ matrix.arch }} \
+            buildbuddy-enterprise-linux-${{ matrix.arch }} \
+            executor-enterprise-linux-${{ matrix.arch }} \
+            executor-enterprise-linux-${{ matrix.arch }}-static \
             --clobber
