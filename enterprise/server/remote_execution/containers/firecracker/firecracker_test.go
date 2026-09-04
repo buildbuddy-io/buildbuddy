@@ -23,9 +23,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bazelbuild/rules_go/go/runfiles"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/action_cache_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
@@ -77,15 +79,6 @@ import (
 )
 
 const (
-	busyboxImage = "mirror.gcr.io/library/busybox:latest"
-	// Alternate image to use if getting rate-limited by docker hub
-	// busyboxImage = "gcr.io/google-containers/busybox:latest"
-
-	ubuntuImage                 = "mirror.gcr.io/library/ubuntu:20.04"
-	imageWithDockerInstalled    = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
-	imageWithDockerV28Installed = platform.Ubuntu24_04Image
-	dockerDindImage             = "gcr.io/flame-public/test-docker-dind@sha256:68f6d9ab84623d1116c5432a3b924a07ee09960e6129ca1cb03ef14010588cb4"
-
 	// Minimum memory needed for a firecracker VM.
 	// The tasksize constant may need to be increased if the size of initrd.cpio increases.
 	minMemSizeMB = tasksize.FirecrackerAdditionalMemEstimateBytes / 1e6
@@ -95,6 +88,23 @@ const (
 )
 
 var (
+	// Populated by x_defs in the BUILD file so the image references used by the
+	// tests always match the images converted by the genrules.
+	busyboxImage                        string
+	busyboxOCIImageRlocationpath        string
+	dockerDindImage                     string
+	dockerHubBusyboxImage               string
+	imageWithDockerInstalled            string
+	imageWithDockerV28Installed         string
+	ubuntuImage                         string
+	workflowsImage                      string
+	busyboxExt4ImageRlocationpath       string
+	dockerDindExt4ImageRlocationpath    string
+	dockerEnabledExt4ImageRlocationpath string
+	ubuntu20_04Ext4ImageRlocationpath   string
+	ubuntu24_04Ext4ImageRlocationpath   string
+	workflowsExt4ImageRlocationpath     string
+
 	testExecutorRoot = flag.String("test_executor_root", "/tmp/test-executor-root", "If set, use this as the executor root data dir. Helps avoid excessive image pulling when re-running tests.")
 	// TODO(bduffany): make the bazel test a benchmark, and run it for both
 	// NBD and non-NBD.
@@ -168,11 +178,57 @@ func TestGuestAPIVersion(t *testing.T) {
 	}
 }
 
+func TestPrebuiltImagesMatchPlatformImages(t *testing.T) {
+	// The Starlark image references used to build ext4 runfiles must be updated
+	// whenever the platform defaults change, or these tests would exercise stale
+	// images while continuing to pass.
+	assert.Equal(t, platform.Ubuntu24_04Image, imageWithDockerV28Installed)
+	assert.Equal(t, platform.Ubuntu20_04WorkflowsImage, workflowsImage)
+}
+
 type envOpts struct {
 	cacheRootDir     string
 	cacheSize        int64
 	filecacheRootDir string
 	runProxy         bool
+}
+
+// newTestFileCache preloads the ext4 images used by Firecracker tests so a new
+// cache does not trigger slow OCI downloads and conversion.
+func newTestFileCache(ctx context.Context, t testing.TB, rootDir string, maxSizeBytes int64) interfaces.FileCache {
+	fc, err := filecache.NewFileCache(rootDir, maxSizeBytes, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+
+	for _, image := range []struct {
+		ref               string
+		ext4Rlocationpath string
+	}{
+		{busyboxImage, busyboxExt4ImageRlocationpath},
+		{dockerDindImage, dockerDindExt4ImageRlocationpath},
+		{imageWithDockerInstalled, dockerEnabledExt4ImageRlocationpath},
+		{imageWithDockerV28Installed, ubuntu24_04Ext4ImageRlocationpath},
+		{ubuntuImage, ubuntu20_04Ext4ImageRlocationpath},
+		{workflowsImage, workflowsExt4ImageRlocationpath},
+	} {
+		addTestImageToFileCache(ctx, t, fc, rootDir, image.ref, image.ext4Rlocationpath)
+	}
+	return fc
+}
+
+func addTestImageToFileCache(ctx context.Context, t testing.TB, fc interfaces.FileCache, rootDir, imageRef, ext4Rlocationpath string) {
+	imagePath, err := runfiles.Rlocation(ext4Rlocationpath)
+	require.NoError(t, err)
+
+	imageInfo, err := os.Stat(imagePath)
+	require.NoError(t, err)
+	cacheInfo, err := os.Stat(rootDir)
+	require.NoError(t, err)
+
+	// Filecache preloads hardlink the runfile, so both paths must be on the same
+	// device. Fail during setup with a clear error instead of relying on EXDEV.
+	require.Equal(t, imageInfo.Sys().(*syscall.Stat_t).Dev, cacheInfo.Sys().(*syscall.Stat_t).Dev, "runfile %q and filecache root %q must be on the same device", imagePath, rootDir)
+	require.NoError(t, ociconv.AddDiskImageToFileCache(ctx, fc, imageRef, imagePath))
 }
 
 func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEnv {
@@ -281,9 +337,7 @@ func getTestEnv(ctx context.Context, t testing.TB, opts envOpts) *testenv.TestEn
 	} else if fcDir == "" {
 		fcDir = testRootDir
 	}
-	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
+	fc := newTestFileCache(ctx, t, fcDir, fileCacheSize)
 	env.SetFileCache(fc)
 
 	leaser, err := cpuset.NewLeaser(cpuset.LeaserOpts{})
@@ -498,6 +552,73 @@ func TestFirecrackerLifecycle(t *testing.T) {
 	assertCommandResult(t, expectedResult, res)
 }
 
+// All other tests start with pre-warmed EXT4 images (because image conversion
+// is expensive), so this test exists just to exercise the case where we have to
+// convert an image. It uses a small image hosted locally (busybox) so it runs
+// relatively quickly.
+func TestFirecrackerRunWithColdImageCache(t *testing.T) {
+	ctx := t.Context()
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	// Serve the busybox image from a local registry under a digest-qualified
+	// reference that doesn't match any of the preloaded image references.
+	reg := testregistry.Run(t, testregistry.Opts{})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
+	image := testregistry.ImageFromRlocationpath(t, busyboxOCIImageRlocationpath)
+	imageDigest, err := image.Digest()
+	require.NoError(t, err)
+	reg.Push(t, image, "busybox", nil)
+	imageRef := reg.ImageAddress("busybox") + "@" + imageDigest.String()
+
+	env := getTestEnv(ctx, t, envOpts{})
+	rootDir := testfs.MakeTempDir(t)
+	workDir := testfs.MakeDirAll(t, rootDir, "work")
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "world.txt"), []byte("world"), 0660))
+
+	cmd := &repb.Command{
+		Arguments: []string{"sh", "-c", `printf "$GREETING $(cat world.txt)" && printf "foo" >&2`},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "GREETING", Value: "Hello"},
+		},
+	}
+	expectedResult := &interfaces.CommandResult{
+		ExitCode: 0,
+		Stdout:   []byte("Hello world"),
+		Stderr:   []byte("foo"),
+	}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageRef,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
+	require.NoError(t, err)
+
+	// Verify the image is not cached initially.
+	cached, err := c.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.False(t, cached)
+
+	// Run the full lifecycle, which must pull and convert the image before the VM
+	// can start.
+	res := c.Run(ctx, cmd, opts.ActionWorkingDirectory, oci.Credentials{})
+	require.NoError(t, res.Error)
+	assertCommandResult(t, expectedResult, res)
+
+	// Image conversion should populate the cache for future runs.
+	cached, err = c.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.True(t, cached)
+}
+
 func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T) {
 	ctx := context.Background()
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
@@ -516,7 +637,10 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 	t.Cleanup(func() {
 		require.NoError(t, reg.Shutdown())
 	})
-	imageRef, _ := reg.PushNamedImage(t, "firecracker-private-image:latest", registryCreds)
+	imageRef, image := reg.PushNamedImage(t, "firecracker-private-image:latest", registryCreds)
+	imageDigest, err := image.Digest()
+	require.NoError(t, err)
+	imageRef = strings.TrimSuffix(imageRef, ":latest") + "@" + imageDigest.String()
 
 	opts := firecracker.ContainerOpts{
 		ContainerImage:         imageRef,
@@ -1132,9 +1256,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave_RemoteChunkFallback(t *test
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 	filecacheRoot := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
+	fc := newTestFileCache(ctx, t, filecacheRoot, fileCacheSize)
 	env.SetFileCache(fc)
 
 	rootDir := testfs.MakeTempDir(t)
@@ -1288,9 +1410,7 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 			filecacheRoot := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
-			require.NoError(t, err)
-			fc.WaitForDirectoryScanToComplete()
+			fc := newTestFileCache(ctx, t, filecacheRoot, fileCacheSize)
 			env.SetFileCache(fc)
 
 			var containersToCleanup []*firecracker.FirecrackerContainer
@@ -1378,12 +1498,10 @@ func TestFirecracker_RemoteSnapshotSharing_SavePolicy(t *testing.T) {
 
 			// Clear the local filecache. Vms should still be able to unpause the snapshot
 			// by pulling artifacts from the remote cache
-			err = os.RemoveAll(filecacheRoot)
+			err := os.RemoveAll(filecacheRoot)
 			require.NoError(t, err)
 			filecacheRoot2 := testfs.MakeTempDir(t)
-			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
-			require.NoError(t, err)
-			fc2.WaitForDirectoryScanToComplete()
+			fc2 := newTestFileCache(ctx, t, filecacheRoot2, fileCacheSize)
 			env.SetFileCache(fc2)
 
 			// Start a VM from the remote snapshot.
@@ -1473,13 +1591,9 @@ func TestFirecracker_SnapshotSharing_ReadPolicy(t *testing.T) {
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 			filecacheRoot1 := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
-			require.NoError(t, err)
-			fc.WaitForDirectoryScanToComplete()
+			fc := newTestFileCache(ctx, t, filecacheRoot1, fileCacheSize/2)
 			filecacheRoot2 := testfs.MakeTempDir(t)
-			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false)
-			require.NoError(t, err)
-			fc2.WaitForDirectoryScanToComplete()
+			fc2 := newTestFileCache(ctx, t, filecacheRoot2, fileCacheSize/2)
 
 			getEnvWithFC := func(fc interfaces.FileCache) *testenv.TestEnv {
 				env.SetFileCache(fc)
@@ -1853,13 +1967,9 @@ func TestFirecracker_SnapshotSharing_ReadPolicy_FallbackSnapshot(t *testing.T) {
 			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 
 			filecacheRoot1 := testfs.MakeTempDir(t)
-			fc, err := filecache.NewFileCache(filecacheRoot1, fileCacheSize/2, false)
-			require.NoError(t, err)
-			fc.WaitForDirectoryScanToComplete()
+			fc := newTestFileCache(ctx, t, filecacheRoot1, fileCacheSize/2)
 			filecacheRoot2 := testfs.MakeTempDir(t)
-			fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize/2, false)
-			require.NoError(t, err)
-			fc2.WaitForDirectoryScanToComplete()
+			fc2 := newTestFileCache(ctx, t, filecacheRoot2, fileCacheSize/2)
 
 			getEnvWithFC := func(fc interfaces.FileCache) *testenv.TestEnv {
 				env.SetFileCache(fc)
@@ -2095,7 +2205,7 @@ func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
 		// The image name here matters - the issue which originally prompted
 		// this test didn't reproduce on busybox, likely because the image is
 		// smaller and disk chunks were more likely to be dirtied.
-		ContainerImage: platform.Ubuntu20_04WorkflowsImage,
+		ContainerImage: workflowsImage,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         minMemSizeMB,
@@ -2148,9 +2258,7 @@ func TestFirecracker_RemoteSnapshotSharing_Devbox(t *testing.T) {
 	// Manage our own filecache so we can clear it between runs to force
 	// remote snapshot lookups.
 	filecacheRoot := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
+	fc := newTestFileCache(ctx, t, filecacheRoot, fileCacheSize)
 	env.SetFileCache(fc)
 
 	// Set up a non-CI task with a devbox instance name. The devbox instance
@@ -2213,12 +2321,10 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 	run("1", 0)
 
 	// Clear the local filecache to force the next run to fetch from remote.
-	err = os.RemoveAll(filecacheRoot)
+	err := os.RemoveAll(filecacheRoot)
 	require.NoError(t, err)
 	filecacheRoot2 := testfs.MakeTempDir(t)
-	fc2, err := filecache.NewFileCache(filecacheRoot2, fileCacheSize, false)
-	require.NoError(t, err)
-	fc2.WaitForDirectoryScanToComplete()
+	fc2 := newTestFileCache(ctx, t, filecacheRoot2, fileCacheSize)
 	env.SetFileCache(fc2)
 
 	// Second run: resumes from the remote snapshot despite empty local cache,
@@ -2349,7 +2455,7 @@ func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t
 	workdir := testfs.MakeTempDir(t)
 	opts := firecracker.ContainerOpts{
 		ExecutorConfig: cfg,
-		ContainerImage: platform.Ubuntu20_04WorkflowsImage,
+		ContainerImage: workflowsImage,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           1,
 			MemSizeMb:         minMemSizeMB,
@@ -2389,11 +2495,11 @@ printf '%s' $ATTEMPT_NUMBER | tee ./attempts
 
 	run("1", 0) // Should start clean
 
-	// Evict all artifacts from filecache, which should expire the base image.
+	// Replace the filecache to evict the cached containerfs COW chunks and local
+	// VM snapshot. Preload the materialized ext4 image so rebuilding the
+	// containerfs does not require pulling and converting the OCI image.
 	fcDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(fcDir, fileCacheSize, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
+	fc := newTestFileCache(ctx, t, fcDir, fileCacheSize)
 	env.SetFileCache(fc)
 
 	run("1", 0) // Should start clean
@@ -2445,9 +2551,7 @@ func TestFirecracker_RemoteSnapshotSharing_CacheProxy(t *testing.T) {
 
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	filecacheRoot := testfs.MakeDirAll(t, cfg.JailerRoot, "filecache")
-	fc, err := filecache.NewFileCache(filecacheRoot, fileCacheSize, false)
-	require.NoError(t, err)
-	fc.WaitForDirectoryScanToComplete()
+	fc := newTestFileCache(ctx, t, filecacheRoot, fileCacheSize)
 	env.SetFileCache(fc)
 
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
@@ -3641,6 +3745,8 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 		t.Skip()
 	}
 
+	// Pulling by digest avoids a tag resolution request, so these counts cover
+	// only the registry and content requests needed for the pinned image.
 	tests := []struct {
 		name                 string
 		return404            bool
@@ -3649,12 +3755,12 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 		{
 			name:                 "pull_busybox_through_mirror",
 			return404:            false,
-			expectedRequestCount: 6,
+			expectedRequestCount: 5,
 		},
 		{
 			name:                 "mirror_404_fallback",
 			return404:            true,
-			expectedRequestCount: 3,
+			expectedRequestCount: 2,
 		},
 	}
 
@@ -3729,7 +3835,7 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 					"bash",
 					"-c",
 					`set -e
-					docker pull busybox`,
+					docker pull ` + dockerHubBusyboxImage,
 				},
 			}
 
@@ -3739,7 +3845,7 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			assert.Equal(t, 0, res.ExitCode)
 			assert.Equal(t, "", string(res.Stderr))
 			stdoutString := strings.Trim(string(res.Stdout), "\n")
-			assert.Truef(t, strings.HasSuffix(stdoutString, "docker.io/library/busybox:latest"), "did not find busyboxy:latest in `%s`", stdoutString)
+			assert.Truef(t, strings.HasSuffix(stdoutString, dockerHubBusyboxImage), "did not find pinned busybox image in `%s`", stdoutString)
 
 			actualRequestCount := mirrorCounter.Load()
 			assert.Equal(t, tc.expectedRequestCount, actualRequestCount)
@@ -4786,7 +4892,7 @@ func TestBazelBuild(t *testing.T) {
 		bazelisk test //...
 	`}}
 	opts := firecracker.ContainerOpts{
-		ContainerImage:         platform.Ubuntu20_04WorkflowsImage,
+		ContainerImage:         workflowsImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
 			NumCpus:           6,
