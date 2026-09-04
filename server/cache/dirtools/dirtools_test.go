@@ -724,6 +724,38 @@ func TestUploadTree(t *testing.T) {
 	}
 }
 
+func TestUploadTreeSkipsTestLogsInFileCache(t *testing.T) {
+	env, ctx := testEnv(t)
+	rootDir := testfs.MakeTempDir(t)
+	outputPath := "bazel-out/k8-fastbuild/bin/output.txt"
+	testLogPath := "bazel-out/k8-fastbuild/testlogs/pkg/test/test.log"
+	contents := map[string]string{
+		outputPath:  "output",
+		testLogPath: "test log",
+	}
+	testfs.WriteAllFileContents(t, rootDir, contents)
+
+	cmd := &repb.Command{OutputFiles: []string{outputPath, testLogPath}}
+	dirHelper := dirtools.NewDirHelper(rootDir, cmd, 0o755)
+	_, err := dirtools.UploadTree(ctx, env, dirHelper, "", repb.DigestFunction_SHA256, rootDir, cmd, &repb.ActionResult{}, true /*=addToFileCache*/, nil /*=chunkingParams*/)
+	require.NoError(t, err)
+
+	outputDigest, err := digest.Compute(strings.NewReader(contents[outputPath]), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	testLogDigest, err := digest.Compute(strings.NewReader(contents[testLogPath]), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	outputNode := &repb.FileNode{Digest: outputDigest}
+	testLogNode := &repb.FileNode{Digest: testLogDigest}
+	require.True(t, env.GetFileCache().ContainsFile(ctx, outputNode))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, testLogNode))
+
+	for _, d := range []*repb.Digest{outputDigest, testLogDigest} {
+		cached, err := env.GetCache().Contains(ctx, &rspb.ResourceName{Digest: d, CacheType: rspb.CacheType_CAS})
+		require.NoError(t, err)
+		require.True(t, cached)
+	}
+}
+
 func getDigestForMsg(t *testing.T, in proto.Message) *repb.Digest {
 	d, err := digest.ComputeForMessage(in, repb.DigestFunction_SHA256)
 	require.NoError(t, err)

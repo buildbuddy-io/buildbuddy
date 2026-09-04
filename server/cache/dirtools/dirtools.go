@@ -271,20 +271,23 @@ func (d *dirToUpload) DirectoryNode() *repb.DirectoryNode {
 
 // fileToUpload represents a regular file to be uploaded to cache.
 type fileToUpload struct {
-	fullPath string
-	digest   *repb.Digest
-	info     os.FileInfo
+	fullPath  string
+	digest    *repb.Digest
+	info      os.FileInfo
+	isTestLog bool
 }
 
-func newFileToUpload(digestFunction repb.DigestFunction_Value, fullPath string, info os.FileInfo) (*fileToUpload, error) {
+func newFileToUpload(digestFunction repb.DigestFunction_Value, rootDir, fullPath string, info os.FileInfo) (*fileToUpload, error) {
 	d, err := digest.ComputeForFile(fullPath, digestFunction)
 	if err != nil {
 		return nil, err
 	}
+	relativePath := trimPathPrefix(fullPath, rootDir)
 	return &fileToUpload{
-		digest:   d,
-		fullPath: fullPath,
-		info:     info,
+		digest:    d,
+		fullPath:  fullPath,
+		info:      info,
+		isTestLog: slices.Contains(strings.Split(relativePath, string(os.PathSeparator)), "testlogs"),
 	}, nil
 }
 
@@ -374,7 +377,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 func uploadFiles(ctx context.Context, uploader *cachetools.BatchCASUploader, fc interfaces.FileCache, filesToUpload []*fileToUpload, addToFileCache bool) error {
 	for _, uploadableFile := range filesToUpload {
 		// Add output files to the filecache.
-		if fc != nil && addToFileCache {
+		if fc != nil && addToFileCache && !uploadableFile.isTestLog {
 			node := uploadableFile.FileNode()
 			if err := fc.AddFile(ctx, node, uploadableFile.fullPath); err != nil {
 				log.Warningf("Error adding file to filecache: %s", err)
@@ -466,7 +469,7 @@ func UploadTree(ctx context.Context, env environment.Env, dirHelper *DirHelper, 
 	visitedDirectories := make([]*dirToUpload, 0)
 
 	visitFile := func(fullPath string, info os.FileInfo) (*repb.FileNode, error) {
-		uploadableFile, err := newFileToUpload(digestFunction, fullPath, info)
+		uploadableFile, err := newFileToUpload(digestFunction, rootDir, fullPath, info)
 		if err != nil {
 			return nil, err
 		}
