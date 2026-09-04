@@ -57,6 +57,7 @@ ts_library(
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",
+        "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto/api/v1:common_ts_proto",
     ],
@@ -549,6 +550,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/breadcrumbs",
         "//app/components/button",
+        "//app/components/link",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//app/util:errors",
@@ -961,5 +963,18 @@ ts_library(
         "//app/components/button:link_button",
         "//app/components/dialog",
         "//app/components/modal",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "invocation_not_found_test",
+    srcs = ["invocation_not_found_test.ts"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//app/capabilities",
+        "//app/invocation:invocation_not_found",
     ],
 )
