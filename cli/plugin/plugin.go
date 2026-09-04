@@ -49,8 +49,10 @@ Usage: bb install [REPO[@VERSION]][:PATH] [--user]
 
 Installs a remote or local CLI plugin for the current bazel workspace.
 
-The --user flag installs the plugin globally for your user in ~/buildbuddy.yaml,
-instead of just for the current workspace.
+The --user flag installs the plugin globally for your user, instead of just for
+the current workspace. The plugin is added to
+$XDG_CONFIG_HOME/buildbuddy/bb.yaml (defaulting to
+~/.config/buildbuddy/bb.yaml) or ~/buildbuddy.yaml, whichever exists.
 
 A local plugin can be installed by omitting the repo argument and specifying
 just :PATH, or the flag --path=PATH.
@@ -124,12 +126,12 @@ func HandleInstall(args []string) (exitCode int, err error) {
 
 	configPath := ""
 	if *installForUser {
-		home := os.Getenv("HOME")
-		if home == "" {
-			log.Printf("Could not locate user config path: $HOME not set")
+		p, err := config.UserConfigPath()
+		if err != nil {
+			log.Printf("Could not locate user config path: %s", err)
 			return 1, nil
 		}
-		configPath = filepath.Join(home, config.HomeRelativeUserConfigPath)
+		configPath = p
 	} else {
 		ws, err := workspace.Path()
 		if err != nil {
@@ -214,6 +216,9 @@ func installPlugin(plugin *config.PluginConfig, configPath string) error {
 	if _, err := os.Stat(configPath); err != nil {
 		if !os.IsNotExist(err) {
 			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+			return fmt.Errorf("failed to create config directory: %s", err)
 		}
 		f, err := os.Create(configPath)
 		if err != nil {
@@ -355,9 +360,9 @@ func LoadAll(tempDir string) ([]*Plugin, error) {
 	return loadAll(ws, tempDir)
 }
 
-// loadAll gets all of the configured plugins from the user's ~/buildbuddy.yaml
-// and workspace buildbuddy.yaml, and prepares them for use by ensuring all
-// files and directories needed for correct operation are present on disk.
+// loadAll gets all of the configured plugins from the user and workspace
+// buildbuddy.yaml files, and prepares them for use by ensuring all files and
+// directories needed for correct operation are present on disk.
 func loadAll(workspaceDir, tempDir string) ([]*Plugin, error) {
 	plugins, err := getConfiguredPlugins(workspaceDir)
 	if err != nil {
@@ -376,9 +381,8 @@ func loadAll(workspaceDir, tempDir string) ([]*Plugin, error) {
 	return plugins, nil
 }
 
-// getConfiguredPlugins parses the user's ~/buildbuddy.yaml as well as the
-// workspace buildbuddy.yaml and returns the set of plugins. The returned
-// plugins are not yet ready to use.
+// getConfiguredPlugins parses the user and workspace buildbuddy.yaml files and
+// returns the set of plugins. The returned plugins are not yet ready to use.
 func getConfiguredPlugins(workspaceDir string) ([]*Plugin, error) {
 	configFiles, err := config.LoadAllFiles(workspaceDir)
 	if err != nil {
