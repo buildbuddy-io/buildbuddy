@@ -52,7 +52,8 @@ jobs:
             //enterprise/server/remote_execution/... \
             //enterprise/server/test/integration/remote_execution/... \
             -//enterprise/server/remote_execution/containers/firecracker/... \
-            -//enterprise/server/test/integration/remote_execution:remote_execution_test
+            -//enterprise/server/test/integration/remote_execution:remote_execution_test \
+            //app/util:shlex_test
 
           # Run a separate bazel invocation to invoke tests with the "docker" tag.
           # TODO: improve platform setup so that we can run this whenever the
@@ -63,5 +64,4 @@ jobs:
           # Make sure the executor binary builds.
           bazel build \
             //enterprise/server/cmd/executor \
-            //enterprise/server/cmd/executor:executor_linux_arm64_static \
-            //app/util:url_transpile
+            //enterprise/server/cmd/executor:executor_linux_arm64_static
