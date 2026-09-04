@@ -254,7 +254,7 @@ necessary to extend the executor image or mount them from the host.
 
 In addition to the config.yaml, there are also environment variables that executors consume. To get more information about their environment. All of these are optional, but can be useful for more complex configurations.
 
-- `SYS_MEMORY_BYTES`: The amount of memory (in bytes) that this executor is allowed to consume. Defaults to free system memory.
+- `SYS_MEMORY_BYTES`: The amount of memory (in bytes) that this executor is allowed to consume. Defaults to total system memory.
 - `SYS_CPU`: The amount of CPU that this executor is allowed to consume. Can be a core count such as `1.5` or a milli-CPU count such as `1500m`. Defaults to system CPU.
 - `MY_HOSTNAME`: The hostname by which the app can communicate to this executor. Defaults to machine hostname.
 - `MY_PORT`: The port over which the app can communicate with this executor. Defaults to the executor's gRPC port.
