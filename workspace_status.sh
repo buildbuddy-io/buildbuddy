@@ -50,3 +50,10 @@ echo "STABLE_COMMIT_SHA $commit_sha"
 
 latest_cli_version_tag=$(./tools/latest_cli_version_tag.sh)
 echo "STABLE_CLI_VERSION_TAG $latest_cli_version_tag"
+
+if [ -n "${BBCERT_DEFAULT_SERVERS:-}" ]; then
+  echo "STABLE_BBCERT_DEFAULT_SERVERS $BBCERT_DEFAULT_SERVERS"
+fi
+if [ -n "${BBCERT_UPDATE_URL:-}" ]; then
+  echo "STABLE_BBCERT_UPDATE_URL $BBCERT_UPDATE_URL"
+fi
