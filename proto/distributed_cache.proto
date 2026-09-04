@@ -106,8 +106,14 @@ message GetWithMetadataRequest {
   resource.ResourceName resource = 1;
 }
 
+// Next Tag: 4
 message GetWithMetadataResponse {
   bytes data = 1;
+
+  // If set, this response carries no data bytes. The data should be retrieved
+  // using the provided reference.
+  reference.Reference reference = 3;
+
   MetadataResponse metadata = 2;
 }
 
