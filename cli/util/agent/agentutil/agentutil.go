@@ -1,5 +1,7 @@
 package agentutil
 
+import "io"
+
 const (
 	Claude = "claude"
 	Codex  = "codex"
@@ -17,6 +19,9 @@ type RunRequest struct {
 	ReasoningEffort string
 	Prompt          string
 
+	// Output overrides the default output stream for the agent.
+	Output io.Writer
+
 	// ClaudeAllowedTools restricts which tools Claude may call.
 	ClaudeAllowedTools []string
 
@@ -26,10 +31,4 @@ type RunRequest struct {
 
 	// CodexArgs contains additional arguments passed directly to Codex.
 	CodexArgs []string
-}
-
-type RunResponse struct {
-	Output        string
-	SessionID     string
-	ResumeCommand string
 }
