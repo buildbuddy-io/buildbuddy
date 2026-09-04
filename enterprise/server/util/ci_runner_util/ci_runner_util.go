@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,11 +27,13 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const ExecutableName = "buildbuddy_ci_runner"
-const CLIBinaryName = "bb"
-const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
-const LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
-const FreeTierTimeoutReason = "free_tier_limit"
+const (
+	ExecutableName                    = platform.CIRunnerExecutableBaseName + platform.ExecutableSuffix
+	CLIBinaryName                     = "bb" + platform.ExecutableSuffix
+	DefaultTimeoutExperimentName      = "remote_execution.remote_runner_default_timeout"
+	LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
+	FreeTierTimeoutReason             = "free_tier_limit"
+)
 
 type RunnerTimeoutResult struct {
 	Duration time.Duration
@@ -181,11 +182,10 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, err
 		}
 
-		runnerName := filepath.Base(ExecutableName)
 		dir := &repb.Directory{
 			Files: []*repb.FileNode{
 				{
-					Name:         runnerName,
+					Name:         ExecutableName,
 					Digest:       runnerBinDigest,
 					IsExecutable: true,
 				},
@@ -204,7 +204,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 // SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
 // It mutates the original task.
 func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
-	if !(IsRemoteRunnerTask(task)) {
+	if !platform.IsCIRunnerCommand(task.GetCommand()) {
 		return nil
 	}
 	if groupID == "" {
@@ -309,9 +309,4 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 			return
 		}
 	}
-}
-
-func IsRemoteRunnerTask(task *repb.ExecutionTask) bool {
-	args := task.GetCommand().GetArguments()
-	return len(args) > 0 && args[0] == "./"+ExecutableName
 }

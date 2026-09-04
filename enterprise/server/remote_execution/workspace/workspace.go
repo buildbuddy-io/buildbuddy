@@ -411,8 +411,12 @@ func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {
 	if err := ws.AddCIRunner(ctx); err != nil {
 		return err
 	}
-	if err := ws.AddCLI(ctx); err != nil {
-		return err
+	// The bb CLI is not embedded on Windows, but the CI runner can still use
+	// its embedded Bazelisk binary.
+	if len(cli_bundle.CLIBytes) > 0 {
+		if err := ws.AddCLI(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }

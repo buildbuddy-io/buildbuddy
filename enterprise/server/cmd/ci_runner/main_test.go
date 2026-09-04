@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,10 +19,42 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestIsBazelCommandToken(t *testing.T) {
+	for _, baseName := range []string{
+		bazelBinaryName,
+		bazeliskBinaryName,
+		bbBinaryName,
+	} {
+		require.True(t, isBazelCommandToken(baseName))
+		require.True(t, isBazelCommandToken(baseName+platform.ExecutableSuffix))
+	}
+	require.Equal(t, platform.ExecutableSuffix == ".exe", isBazelCommandToken("bazel.exe"))
+	require.False(t, isBazelCommandToken("bazelisk-custom"))
+}
+
+func TestStartsWithBazelCommand(t *testing.T) {
+	for _, cmd := range []string{
+		"bazel build //...",
+		"bazelisk-custom build //...",
+		"bb.exe test //...",
+	} {
+		require.True(t, startsWithBazelCommand(cmd))
+	}
+	require.False(t, startsWithBazelCommand("build //..."))
+}
+
+func TestBazelChildProcessResult_StartError(t *testing.T) {
+	err := bazelChildProcessResult(errors.New("executable not found"))
+	require.ErrorContains(t, err, "failed to start Bazel")
+	var result *actionResult
+	require.False(t, errors.As(err, &result))
+}
 
 func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	rootDir := t.TempDir()

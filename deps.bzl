@@ -242,6 +242,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
+        name = "com_github_bazelbuild_bazelisk-bazelisk-windows-amd64",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-windows-amd64.exe"],
+        sha256 = "641a3dfebd717703675f912917735c44b45cf6300bfdfb924537f3cfbffcdd92",
+        executable = True,
+    )
+    http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
         sha256 = "0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f"],
