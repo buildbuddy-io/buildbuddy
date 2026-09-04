@@ -1819,6 +1819,113 @@ func TestReadReferenceExperiments(t *testing.T) {
 	})
 }
 
+func setGetWithMetadataReferenceExperiment(t *testing.T, te *testenv.TestEnv, enabled bool) {
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"distributed_cache.get_with_metadata_gcs_references": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": enabled},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	te.SetExperimentFlagProvider(fp)
+	t.Cleanup(func() {
+		te.SetExperimentFlagProvider(nil)
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+}
+
+func TestGetWithMetadataReferenceExperiment(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	noRefRN, noRefBuf := testdigest.RandomCASResourceBuf(t, 100)
+	expectedRef := &refpb.Reference{
+		Metadata: &sgpb.FileMetadata{
+			FileRecord:      &sgpb.FileRecord{Digest: rn.GetDigest()},
+			StoredSizeBytes: 100,
+			LastAccessUsec:  1234,
+			LastModifyUsec:  5678,
+			StorageMetadata: &sgpb.StorageMetadata{
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: "blobs/test-blob"},
+			},
+		},
+	}
+	cache := &serverReferenceCache{
+		Cache: te.GetCache(),
+		refs:  map[string]*refpb.Reference{rn.GetDigest().GetHash(): expectedRef},
+	}
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, cache, peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
+	require.NoError(t, te.GetCache().Set(ctx, noRefRN, noRefBuf))
+
+	responseCount := func(responseType string) float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetWithMetadataResponseCount, prometheus.Labels{
+			metrics.DistributedCacheReadResponseType: responseType,
+			metrics.StatusHumanReadableLabel:         "OK",
+		})
+	}
+	responseSize := func(responseType string) float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetWithMetadataResponseSizeBytes, prometheus.Labels{
+			metrics.DistributedCacheReadResponseType: responseType,
+			metrics.StatusHumanReadableLabel:         "OK",
+		})
+	}
+	expectBytes := func(t *testing.T, rn *rspb.ResourceName, buf []byte) {
+		bytesBefore, refBefore := responseCount("bytes"), responseCount("reference")
+		sizeBefore := responseSize("bytes")
+		rsp, err := c.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: rn})
+		require.NoError(t, err)
+		require.Nil(t, rsp.GetReference())
+		require.Equal(t, buf, rsp.GetData())
+		require.Equal(t, bytesBefore+1, responseCount("bytes"))
+		require.Equal(t, refBefore, responseCount("reference"))
+		require.Equal(t, sizeBefore+float64(len(buf)), responseSize("bytes"))
+		cacheMD, err := te.GetCache().Metadata(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, cacheMD.StoredSizeBytes, rsp.GetMetadata().GetStoredSizeBytes())
+		require.Equal(t, cacheMD.DigestSizeBytes, rsp.GetMetadata().GetDigestSizeBytes())
+	}
+
+	t.Run("no experiment provider", func(t *testing.T) {
+		expectBytes(t, rn, buf)
+	})
+
+	t.Run("experiment off", func(t *testing.T) {
+		setGetWithMetadataReferenceExperiment(t, te, false)
+		expectBytes(t, rn, buf)
+	})
+
+	t.Run("experiment on sends reference and metadata only", func(t *testing.T) {
+		setGetWithMetadataReferenceExperiment(t, te, true)
+		bytesBefore, refBefore := responseCount("bytes"), responseCount("reference")
+		sizeBefore := responseSize("reference")
+		rsp, err := c.GetWithMetadata(ctx, &dcpb.GetWithMetadataRequest{Resource: rn})
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(expectedRef, rsp.GetReference(), protocmp.Transform()))
+		require.Empty(t, rsp.GetData())
+		require.Equal(t, bytesBefore, responseCount("bytes"))
+		require.Equal(t, refBefore+1, responseCount("reference"))
+		require.Equal(t, sizeBefore+float64(len(buf)), responseSize("reference"))
+		require.Equal(t, int64(100), rsp.GetMetadata().GetStoredSizeBytes())
+		require.Equal(t, rn.GetDigest().GetSizeBytes(), rsp.GetMetadata().GetDigestSizeBytes())
+		require.Equal(t, int64(1234), rsp.GetMetadata().GetLastAccessUsec())
+		require.Equal(t, int64(5678), rsp.GetMetadata().GetLastModifyUsec())
+	})
+
+	t.Run("experiment on falls back to bytes when no reference can be minted", func(t *testing.T) {
+		setGetWithMetadataReferenceExperiment(t, te, true)
+		expectBytes(t, noRefRN, noRefBuf)
+	})
+}
+
 // writeRawRequests writes the given requests to peer with a raw gRPC client
 // and returns the server's response.
 func writeRawRequests(t *testing.T, peer string, reqs []*dcpb.WriteRequest) (*dcpb.WriteResponse, error) {
