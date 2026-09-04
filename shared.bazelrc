@@ -365,6 +365,8 @@ common:ci-shared --color=yes
 # Configuration used for untrusted GitHub actions-based CI
 common:untrusted-ci --config=ci-shared
 common:untrusted-ci --config=remote-minimal
+# See the note on --test_tag_filters in .bazelrc (common:ci).
+common:untrusted-ci --test_tag_filters=-performance,-bare
 common:untrusted-ci --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci/rin20260818
 common:untrusted-ci --remote_executor=grpcs://remote.buildbuddy.io
 common:untrusted-ci --experimental_remote_downloader=grpcs://remote.buildbuddy.io
