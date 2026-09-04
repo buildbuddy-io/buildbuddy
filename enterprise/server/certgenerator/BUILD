@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -31,4 +31,16 @@ go_library(
 go_binary(
     name = "certgenerator",
     embed = [":certgenerator_lib"],
+)
+
+go_test(
+    name = "certgenerator_test",
+    srcs = ["certgenerator_test.go"],
+    embed = [":certgenerator_lib"],
+    deps = [
+        "//proto:certgenerator_go_proto",
+        "//server/util/relayauth",
+        "//server/util/status",
+        "@com_github_stretchr_testify//require",
+    ],
 )
