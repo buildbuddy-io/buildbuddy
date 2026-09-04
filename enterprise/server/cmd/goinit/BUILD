@@ -28,14 +28,8 @@ go_library(
 go_binary(
     name = "goinit",
     embed = [":goinit_lib"],
-    # "pure" causes the init file to require an ELF interpreter which the kernel
-    # does not have access to if we are bulding statically.
-    pure = select({
-        "//:static": "auto",
-        "//conditions:default": "on",
-    }),
-    # static = select({
-    #    "//:static": "on",
-    #    "//conditions:default": "auto",
-    # }),
+    # goinit is copied directly into the Firecracker initrd, so it must not
+    # depend on a userspace dynamic linker. Keep it pure in every Linux build,
+    # including builds whose outer platform is musl.
+    pure = "on",
 )

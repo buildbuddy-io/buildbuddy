@@ -47,6 +47,10 @@ go_library(
 go_binary(
     name = "bb",
     embed = [":bb_lib"],
+    # The CLI has no CGo dependencies. Keeping the default binary pure makes
+    # the Linux artifact static via the Go internal linker and lets embedded
+    # copies share a configuration with goinit and ci_runner.
+    pure = "on",
     visibility = ["//visibility:public"],
 )
 
