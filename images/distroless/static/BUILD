@@ -101,10 +101,7 @@ pkg_tar(
             ),
             "org.opencontainers.image.vendor": "BuildBuddy",
         },
-        optimize = select({
-            "//:opt": True,
-            "//conditions:default": False,
-        }),
+        optimize = True,
         tags = ["manual"],
         target_compatible_with = [
             "@platforms//os:linux",
