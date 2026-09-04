@@ -15,7 +15,6 @@ swc.toolchain(
     name = "swc",
     swc_version = "v1.15.46",
 )
-use_repo(swc, "swc_toolchains")
 
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(
