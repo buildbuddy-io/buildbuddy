@@ -193,6 +193,16 @@ func shouldUseSynchronousBESProxy(synchronousWrites bool, args *arg.BazelArgs) b
 	return arg.Get(bazelArgs, "bes_upload_mode") == waitForBESUploadMode
 }
 
+func appendSynchronousProxyArgs(sidecarArgs []string, synchronousWrites, synchronousBESProxy bool) []string {
+	if synchronousWrites || synchronousBESProxy {
+		sidecarArgs = append(sidecarArgs, "--local_cache_proxy.synchronous_write")
+	}
+	if synchronousBESProxy {
+		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
+	}
+	return sidecarArgs
+}
+
 // Instance holds information about the running sidecar instance.
 type Instance struct {
 	// SockPath is the path to the sidecar socket.
@@ -312,14 +322,12 @@ func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 		return nil, nil
 	}
 
+	synchronousBESProxy := sidecarBESEnabled && shouldUseSynchronousBESProxy(synchronousWrites, args)
+	sidecarArgs = appendSynchronousProxyArgs(sidecarArgs, synchronousWrites, synchronousBESProxy)
 	if synchronousWrites {
-		sidecarArgs = append(sidecarArgs, "--local_cache_proxy.synchronous_write")
 		if err := args.Append("--bes_upload_mode=" + waitForBESUploadMode); err != nil {
 			return nil, err
 		}
-	}
-	if sidecarBESEnabled && shouldUseSynchronousBESProxy(synchronousWrites, args) {
-		sidecarArgs = append(sidecarArgs, "--bes_synchronous")
 	}
 
 	sidecarArgs = append(sidecarArgs, []string{

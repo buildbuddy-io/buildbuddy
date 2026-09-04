@@ -83,3 +83,42 @@ func TestShouldUseSynchronousBESProxy(t *testing.T) {
 		})
 	}
 }
+
+func TestAppendSynchronousProxyArgs(t *testing.T) {
+	for _, test := range []struct {
+		name                string
+		synchronousWrites   bool
+		synchronousBESProxy bool
+		want                []string
+	}{
+		{
+			name: "asynchronous",
+		},
+		{
+			name:              "synchronous writes only",
+			synchronousWrites: true,
+			want:              []string{"--local_cache_proxy.synchronous_write"},
+		},
+		{
+			name:                "synchronous BES also synchronizes cache writes",
+			synchronousBESProxy: true,
+			want: []string{
+				"--local_cache_proxy.synchronous_write",
+				"--bes_synchronous",
+			},
+		},
+		{
+			name:                "bb sync does not duplicate flags",
+			synchronousWrites:   true,
+			synchronousBESProxy: true,
+			want: []string{
+				"--local_cache_proxy.synchronous_write",
+				"--bes_synchronous",
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, appendSynchronousProxyArgs(nil, test.synchronousWrites, test.synchronousBESProxy))
+		})
+	}
+}
