@@ -100,6 +100,12 @@ func register() {
 			Flags:   execution.Flags,
 		},
 		{
+			Name:    "explain",
+			Help:    "Explains your build using collected profiles and compact execution logs.",
+			Handler: explain.HandleExplain,
+			Flags:   explain.Flags,
+		},
+		{
 			Name:    "fix",
 			Help:    "Applies fixes to WORKSPACE and BUILD files.",
 			Handler: fix.HandleFix,
@@ -200,12 +206,6 @@ func register() {
 			Help:    "Views build logs from BuildBuddy.",
 			Handler: view.HandleView,
 			Flags:   view.Flags,
-		},
-		{
-			Name:    "explain",
-			Help:    "Explains your build using collected profiles and compact execution logs.",
-			Handler: explain.HandleExplain,
-			Flags:   explain.Flags,
 		},
 	}
 	cli_command.CommandsByName = make(
