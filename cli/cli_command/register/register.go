@@ -4,6 +4,8 @@ import (
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
+	"github.com/buildbuddy-io/buildbuddy/cli/agent"
+	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
 	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/box"
@@ -49,6 +51,12 @@ func register() {
 			Flags:   add.Flags,
 		},
 		{
+			Name:    "agent",
+			Help:    "Runs an AI coding agent to analyze data.",
+			Handler: agent.HandleAgent,
+			Flags:   agentflags.SharedAgentFlags,
+		},
+		{
 			Name:    "analyze",
 			Help:    "Analyzes the dependency graph.",
 			Handler: analyze.HandleAnalyze,
@@ -63,7 +71,7 @@ func register() {
 		},
 		{
 			Name:    "box",
-			Help:    "Manages remote Firecracker VM boxes.",
+			Help:    "Starts a remote Firecracker VM box and opens a session in it.",
 			Handler: box.HandleBox,
 			Flags:   box.Flags,
 		},
@@ -195,7 +203,7 @@ func register() {
 		},
 		{
 			Name:    "explain",
-			Help:    "Explains the difference between two compact execution logs.",
+			Help:    "Explains your build using collected profiles and compact execution logs.",
 			Handler: explain.HandleExplain,
 			Flags:   explain.Flags,
 		},

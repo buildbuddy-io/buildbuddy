@@ -31,6 +31,7 @@ func findMissingInSecondary(ctx context.Context, router interfaces.CacheRoutingS
 		InstanceName:   b.InstanceName,
 		DigestFunction: b.DigestFunction,
 		BlobDigests:    b.Digests,
+		Purpose:        repb.FindMissingBlobsRequest_CACHE_MIGRATION,
 	})
 	if err != nil {
 		return nil, err

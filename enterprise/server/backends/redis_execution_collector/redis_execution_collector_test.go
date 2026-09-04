@@ -103,9 +103,13 @@ func TestCollectExecutionUpdates(t *testing.T) {
 		},
 	}, executions, protocmp.Transform()))
 
-	// Delete reverse invocation links; should no longer be able to look up
+	// Delete reverse invocation link; should no longer be able to look up
 	// in-progress executions by invocation ID.
-	err = collector.DeleteInvocationExecutionLinks(ctx, invocationID)
+	err = collector.DeleteInvocationExecutionLink(ctx, &sipb.StoredInvocationLink{
+		ExecutionId:  executionID,
+		InvocationId: invocationID,
+		Type:         sipb.StoredInvocationLink_NEW,
+	})
 	require.NoError(t, err)
 	executions, err = collector.GetInProgressExecutions(ctx, invocationID)
 	require.NoError(t, err)

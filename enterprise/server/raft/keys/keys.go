@@ -3,8 +3,13 @@ package keys
 import (
 	"bytes"
 	"math"
+	"strconv"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/prometheus/client_golang/prometheus"
+
+	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
 )
 
 type Key []byte
@@ -59,4 +64,28 @@ func PartitionIDFromRangeStart(key []byte) string {
 		return ""
 	}
 	return string(before)
+}
+
+// RangeMetricLabels builds the standard per-range label set used by raft
+// metrics (e.g. RaftRangeReplica, RaftBytes, RaftLeases, RaftLeaders,
+// RaftProposals), so they can all be sliced by the same dimensions: range,
+// nodehost, partition, and zone.
+func RangeMetricLabels(rd *rfpb.RangeDescriptor, nhid, zone string) prometheus.Labels {
+	partitionID := rd.GetPartitionId()
+	if partitionID == "" {
+		partitionID = PartitionIDFromRangeStart(rd.GetStart())
+	}
+	if partitionID == "" {
+		if rd.GetRangeId() == 1 {
+			partitionID = "meta"
+		} else {
+			partitionID = "unknown"
+		}
+	}
+	return prometheus.Labels{
+		metrics.RaftRangeIDLabel:    strconv.FormatUint(rd.GetRangeId(), 10),
+		metrics.RaftNodeHostIDLabel: nhid,
+		metrics.PartitionID:         partitionID,
+		metrics.ZoneLabel:           zone,
+	}
 }

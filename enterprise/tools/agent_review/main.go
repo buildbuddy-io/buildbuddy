@@ -35,7 +35,7 @@ const parsePrompt = `Parse the code review below and output ONLY a valid JSON ob
 
 Schema:
 {
-  "summary": "<concise overall summary as markdown, max ~3 sentences>",
+  "summary": "<concise summary of the diff as markdown, max ~3 sentences but aim for fewer>",
   "comments": [
     {
       "file": "<file path relative to repo root, e.g. server/foo.go>",
@@ -54,6 +54,7 @@ Rules:
 - Remove any footnote-style numeric references such as "(#1)" or "(#2)" from comment bodies and the summary — GitHub interprets these as issue/PR links.
 - Omit comments that only praise, affirm, or acknowledge a change without raising an actionable concern or suggesting an improvement (e.g. "good cleanup", "no callers found — safe to remove", "looks correct").
 - Avoid "introductory" or summary phrases with labels or categorizations like "Performance improvement: strings.Split allocates. Use strings.SplitSeq instead.". Just write the comment directly, like "strings.Split allocates. Use strings.SplitSeq instead."
+- The summary section should not summarize any of the individual comments. It should only explain the purpose of the diff and findings with no file reference.
 - Output ONLY the JSON object. No other text before or after it.
 
 REVIEW:
@@ -162,9 +163,16 @@ func main() {
 	}
 	log.Infof("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repoName, headShort, pr.GetBase().GetRef())
 
-	// To prevent spamming the PR with reviews, we only post a review if the PR doesn't already have a bot review.
-	// Set AGENT_REVIEW_FORCE=1 to override and post a new review.
+	// We review a PR once, when it's ready for review. The workflow triggers on
+	// the "opened" and "ready_for_review" pull_request actions, but "opened" also
+	// fires for PRs opened directly as drafts, so skip drafts here. We also skip
+	// if the PR already has a bot review, to avoid spamming it with reviews.
+	// Set AGENT_REVIEW_FORCE=1 to override both checks and post a new review.
 	if os.Getenv("AGENT_REVIEW_FORCE") != "1" {
+		if pr.GetDraft() {
+			log.Infof("PR #%d is a draft — skipping (set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
+			os.Exit(0)
+		}
 		log.Info("Checking for existing reviews...")
 		reviews, _, err := gh.PullRequests.ListReviews(ctx, owner, repoName, pr.GetNumber(), nil)
 		if err != nil {
@@ -172,7 +180,7 @@ func main() {
 		}
 		for _, r := range reviews {
 			if r.GetUser().GetType() == "Bot" {
-				log.Infof("PR #%d already has a bot review — skipping (set FORCE=1 to override).", pr.GetNumber())
+				log.Infof("PR #%d already has a bot review — skipping (set AGENT_REVIEW_FORCE=1 to override).", pr.GetNumber())
 				os.Exit(0)
 			}
 		}

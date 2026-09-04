@@ -2,7 +2,6 @@ package memory_kvstore
 
 import (
 	"context"
-	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -16,8 +15,7 @@ const (
 )
 
 type MemoryKeyValStore struct {
-	l  *lru.Cache
-	mu sync.Mutex
+	l *lru.Cache
 }
 
 func NewMemoryKeyValStore() (*MemoryKeyValStore, error) {
@@ -47,4 +45,29 @@ func (m *MemoryKeyValStore) Get(ctx context.Context, key string) ([]byte, error)
 		return nil, status.InternalErrorf("Value in the KeyValStore for key %s was not a byte slice.", key)
 	}
 	return nil, status.NotFoundErrorf("No message found in the KeyValStore for key %s.", key)
+}
+
+func (m *MemoryKeyValStore) ReplaceSuffix(ctx context.Context, key string, expectedLength, offset int64, data []byte) error {
+	if offset < 0 || offset > expectedLength {
+		return status.InvalidArgumentErrorf("offset %d out of range for value of length %d", offset, expectedLength)
+	}
+	// Treat a missing key as an empty value, matching the redis
+	// implementation.
+	var existing []byte
+	if existingValIface, ok := m.l.Get(key); ok {
+		val, ok := existingValIface.([]byte)
+		if !ok {
+			return status.InternalErrorf("Value in the KeyValStore for key %s was not a byte slice.", key)
+		}
+		existing = val
+	}
+	if int64(len(existing)) != expectedLength {
+		return status.FailedPreconditionErrorf("value at key %q has length %d, expected %d", key, len(existing), expectedLength)
+	}
+	// Copy rather than modify in place, since callers may still hold slices
+	// returned by Get.
+	val := make([]byte, 0, offset+int64(len(data)))
+	val = append(append(val, existing[:offset]...), data...)
+	m.l.Add(key, val)
+	return nil
 }

@@ -31,6 +31,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/codes"
+	gstatus "google.golang.org/grpc/status"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	fcpb "github.com/buildbuddy-io/buildbuddy/proto/firecracker"
@@ -129,6 +131,8 @@ type Init struct {
 type UsageStats struct {
 	Clock clockwork.Clock
 
+	mu sync.RWMutex
+
 	// last is the last stats update we observed.
 	last *repb.UsageStats
 	// taskStats is the usage stats relative to when Reset() was last called
@@ -138,6 +142,12 @@ type UsageStats struct {
 	// execution. This is reset between tasks so that we can determine a task's
 	// peak memory usage when using a recycled runner.
 	peakMemoryUsageBytes int64
+	// peakGPUUsage is the peak GPU memory usage observed during the current
+	// task execution. It is tracked separately from the live reading, which
+	// drops to zero once the task's processes exit. This is reset between
+	// tasks so that we can determine a task's peak GPU usage when using a
+	// recycled runner.
+	peakGPUUsage *repb.GPUUsage
 	// baselineCPUNanos is the CPU usage from when a task last finished
 	// executing. This is needed so that we can determine a task's CPU usage
 	// when using a recycled runner.
@@ -162,6 +172,7 @@ type timelineState struct {
 	lastTimestampUnixMillis int64
 	lastCPUMillis           int64
 	lastMemoryKB            int64
+	lastGPUMemoryKB         int64
 	lastDiskRbytes          int64
 	lastWbytes              int64
 	lastDiskRios            int64
@@ -170,7 +181,7 @@ type timelineState struct {
 	// - The size calculation in updateTimeline()
 	// - The test
 	// - The trace format adapter logic in execution_service.go
-	// - TIME_SERIES_EVENT_NAMES_AND_ARG_KEYS in trace_events.ts
+	// - TIME_SERIES_METADATA in trace_events.ts
 }
 
 func (s *UsageStats) clock() clockwork.Clock {
@@ -184,8 +195,12 @@ func (s *UsageStats) clock() clockwork.Clock {
 // the new task's resource usage can be accounted for.
 // TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.last != nil {
 		s.last.MemoryBytes = 0
+		s.last.GpuUsage = nil
 	}
 	s.baselineCPUNanos = s.last.GetCpuNanos()
 	s.baselineCPUPressure = s.last.GetCpuPressure()
@@ -193,6 +208,7 @@ func (s *UsageStats) Reset() {
 	s.baselineIOPressure = s.last.GetIoPressure()
 	s.baselineIOStats = s.last.GetCgroupIoStats()
 	s.peakMemoryUsageBytes = 0
+	s.peakGPUUsage = nil
 
 	now := s.clock().Now()
 	if *recordUsageTimelines {
@@ -202,8 +218,28 @@ func (s *UsageStats) Reset() {
 	}
 }
 
-// TaskStats returns the usage stats for an executed task.
+// TaskStats returns the usage stats for an executed task, including the usage
+// timeline if one was recorded. The returned timeline is not cloned, so callers
+// that need to read stats while they are being updated should use
+// BasicTaskStats.
 func (s *UsageStats) TaskStats() *repb.UsageStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.taskStatsLocked(true /*=includeTimeline*/)
+}
+
+// BasicTaskStats returns the usage stats for an executed task without the
+// usage timeline. This is intended for live stats polling while usage stats are
+// being updated.
+func (s *UsageStats) BasicTaskStats() *repb.UsageStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.taskStatsLocked(false /*=includeTimeline*/)
+}
+
+func (s *UsageStats) taskStatsLocked(includeTimeline bool) *repb.UsageStats {
 	if s.last == nil {
 		return &repb.UsageStats{}
 	}
@@ -212,6 +248,7 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 
 	taskStats.CpuNanos -= s.baselineCPUNanos
 	taskStats.PeakMemoryBytes = s.peakMemoryUsageBytes
+	taskStats.GpuUsage = s.peakGPUUsage.CloneVT()
 
 	// Update all IO stats to be relative to the baseline
 	ioStats := taskStats.CgroupIoStats
@@ -243,8 +280,12 @@ func (s *UsageStats) TaskStats() *repb.UsageStats {
 		taskStats.IoPressure.Full.Total -= s.baselineIOPressure.GetFull().GetTotal()
 	}
 
-	// Note: we don't clone the timeline because it's expensive.
-	taskStats.Timeline = s.timeline
+	if includeTimeline {
+		// Note: we don't clone the timeline because it's expensive. Callers
+		// that need to access stats while they are being updated should use
+		// BasicTaskStats instead.
+		taskStats.Timeline = s.timeline
+	}
 
 	return taskStats
 }
@@ -258,6 +299,9 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 		len(st.GetRbytesTotalSamples()) +
 		len(st.GetWiosTotalSamples()) +
 		len(st.GetRiosTotalSamples())
+	if gpuTimeline := st.GetGpuUsage(); gpuTimeline != nil {
+		totalLength += len(gpuTimeline.GetTotalMemoryKbSamples())
+	}
 	if 8*totalLength > timeseriesSizeLimitBytes {
 		return
 	}
@@ -279,6 +323,32 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 	memDelta := mem - s.timelineState.lastMemoryKB
 	s.timeline.MemoryKbSamples = append(s.timeline.MemoryKbSamples, memDelta)
 	s.timelineState.lastMemoryKB = mem
+
+	// Update GPU memory samples with the current total usage across GPUs, in
+	// KB (1000 bytes).
+	gpuUsage := s.last.GetGpuUsage()
+	gpuTimeline := s.timeline.GetGpuUsage()
+	if gpuUsage.GetTotalMemoryBytes() > 0 && gpuTimeline == nil {
+		// Start the GPU series lazily on the first nonzero reading, so that
+		// tasks which never use a GPU don't record an all-zero series.
+		// Backfill zeros for the samples recorded before this one; the current
+		// sample's timestamp was already appended above, hence the minus one.
+		gpuTimeline = &repb.GPUUsageTimeline{
+			TotalMemoryKbSamples: make([]int64, len(s.timeline.GetTimestamps())-1),
+		}
+		s.timeline.GpuUsage = gpuTimeline
+	}
+	if gpuTimeline != nil {
+		// A nil reading means GPU usage was unavailable at this poll (e.g. an
+		// NVML query failed), so carry the last observation forward rather
+		// than record a false zero.
+		gpuMemoryKB := s.timelineState.lastGPUMemoryKB
+		if gpuUsage != nil {
+			gpuMemoryKB = gpuUsage.GetTotalMemoryBytes() / 1e3
+		}
+		gpuTimeline.TotalMemoryKbSamples = append(gpuTimeline.TotalMemoryKbSamples, gpuMemoryKB-s.timelineState.lastGPUMemoryKB)
+		s.timelineState.lastGPUMemoryKB = gpuMemoryKB
+	}
 
 	// Update disk rbytes samples with cumulative bytes read.
 	diskRbytes := s.last.GetCgroupIoStats().GetRbytes()
@@ -310,9 +380,43 @@ func (s *UsageStats) updateTimeline(now time.Time) {
 // created).
 // TODO: make this private - it should only be used by TrackExecution.
 func (s *UsageStats) Update(lifetimeStats *repb.UsageStats) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.last = lifetimeStats.CloneVT()
 	if lifetimeStats.GetMemoryBytes() > s.peakMemoryUsageBytes {
 		s.peakMemoryUsageBytes = lifetimeStats.GetMemoryBytes()
+	}
+	// Fold the latest point-in-time GPU reading into the task peaks. The
+	// total tracks the largest sum observed in a single reading while each
+	// device entry tracks its own high-water mark, so the total can be less
+	// than the sum of device peaks.
+	if gpuUsage := lifetimeStats.GetGpuUsage(); gpuUsage.GetTotalMemoryBytes() > 0 {
+		if s.peakGPUUsage == nil {
+			s.peakGPUUsage = &repb.GPUUsage{}
+		}
+		if gpuUsage.GetTotalMemoryBytes() > s.peakGPUUsage.GetPeakTotalMemoryBytes() {
+			s.peakGPUUsage.PeakTotalMemoryBytes = gpuUsage.GetTotalMemoryBytes()
+		}
+		for _, device := range gpuUsage.GetDeviceUsage() {
+			if device.GetMemoryBytes() <= 0 {
+				continue
+			}
+			var peakDevice *repb.GPUDeviceUsage
+			for _, d := range s.peakGPUUsage.GetDeviceUsage() {
+				if d.GetId() == device.GetId() {
+					peakDevice = d
+					break
+				}
+			}
+			if peakDevice == nil {
+				peakDevice = &repb.GPUDeviceUsage{Id: device.GetId(), Vendor: device.GetVendor()}
+				s.peakGPUUsage.DeviceUsage = append(s.peakGPUUsage.DeviceUsage, peakDevice)
+			}
+			if device.GetMemoryBytes() > peakDevice.GetPeakMemoryBytes() {
+				peakDevice.PeakMemoryBytes = device.GetMemoryBytes()
+			}
+		}
 	}
 	if *recordUsageTimelines && s.timeline != nil {
 		s.updateTimeline(s.clock().Now())
@@ -393,6 +497,16 @@ type FileSystemLayout struct {
 	RemoteInstanceName string
 	DigestFunction     repb.DigestFunction_Value
 	Inputs             *repb.Tree
+	InputFetcher       InputFetcher
+	WorkingDirectory   string
+	OutputDirectories  []string
+	OutputFiles        []string
+	OutputPaths        []string
+}
+
+// InputFetcher ensures that an input file is available in the local file cache.
+type InputFetcher interface {
+	Fetch(ctx context.Context, node *repb.FileNode) error
 }
 
 // CommandContainer provides an execution environment for commands.
@@ -463,9 +577,9 @@ type CommandContainer interface {
 	//
 	// A `nil` value may be returned if the resource usage is unknown.
 	//
-	// Implementations may assume that this will only be called when the
-	// container is paused, for the purposes of computing resources used for
-	// pooled runners.
+	// Live stats are used by the OOM killer to decide which tasks to kill when
+	// the executor is running low on memory. Paused stats are used for pooled
+	// runner accounting.
 	Stats(ctx context.Context) (*repb.UsageStats, error)
 }
 
@@ -498,20 +612,10 @@ type VM interface {
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
-	statusLabel := metrics.OCIFetcherStatusOK
-	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
-			statusLabel = metrics.OCIFetcherStatusTimeout
-		} else if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
-			statusLabel = metrics.OCIFetcherStatusCanceled
-		} else {
-			statusLabel = metrics.OCIFetcherStatusError
-		}
-	}
 	labels := prometheus.Labels{
 		metrics.IsolationTypeLabel:           isolation,
 		metrics.ImageFetchRegistryLabel:      registry,
-		metrics.StatusLabel:                  statusLabel,
+		metrics.StatusLabel:                  ImagePullMetricStatus(err),
 		metrics.ImageFetchOnDiskLabel:        strconv.FormatBool(onDisk),
 		metrics.ImageFetchHasCredsLabel:      strconv.FormatBool(hasCreds),
 		metrics.ImageFetchTriggerLabel:       trigger,
@@ -521,12 +625,44 @@ func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCre
 }
 
 func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string, useOCIFetcher bool, err error, duration time.Duration) {
-	if err == nil {
+	if !ShouldCountImagePullError(err) {
 		return
 	}
 	log.CtxWarningf(ctx,
 		"image_pull_error: image=%q registry=%s isolation=%s trigger=%s use_oci_fetcher=%v duration=%s err=%s",
 		imageRef, oci.RegistryETLDPlusOne(imageRef), isolation, trigger, useOCIFetcher, duration, err)
+}
+
+// ImagePullMetricStatus returns the metrics status label for an image pull result.
+func ImagePullMetricStatus(err error) string {
+	if err == nil {
+		return metrics.OCIFetcherStatusOK
+	}
+	if errors.Is(err, context.DeadlineExceeded) || status.IsDeadlineExceededError(err) {
+		return metrics.OCIFetcherStatusTimeout
+	}
+	if errors.Is(err, context.Canceled) || status.IsCanceledError(err) {
+		return metrics.OCIFetcherStatusCanceled
+	}
+	if !ShouldCountImagePullError(err) {
+		return metrics.OCIFetcherStatusUserError
+	}
+	return metrics.OCIFetcherStatusError
+}
+
+// ShouldCountImagePullError reports whether a failed image pull should count as
+// an image pull error in metrics and logs. This is based on the gRPC status code
+// intentionally constructed at the call site, not the error message text.
+func ShouldCountImagePullError(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch gstatus.Code(err) {
+	case codes.InvalidArgument, codes.NotFound, codes.AlreadyExists, codes.PermissionDenied, codes.Unauthenticated, codes.FailedPrecondition, codes.OutOfRange:
+		return false
+	default:
+		return true
+	}
 }
 
 // PullImageIfNecessary pulls the image configured for the container if it

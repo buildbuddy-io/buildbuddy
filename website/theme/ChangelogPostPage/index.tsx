@@ -29,6 +29,11 @@ export default function ChangelogPostPage(props: Props): JSX.Element {
               </>
             )}
           </div>
+          <div className="markdown">
+            <MDXProvider components={MDXComponents}>
+              <ChangelogContent />
+            </MDXProvider>
+          </div>
           {metadata.tags.length > 0 && (
             <div className={styles.tags}>
               {metadata.tags.map(({ label }) => (
@@ -38,11 +43,6 @@ export default function ChangelogPostPage(props: Props): JSX.Element {
               ))}
             </div>
           )}
-          <div className="markdown">
-            <MDXProvider components={MDXComponents}>
-              <ChangelogContent />
-            </MDXProvider>
-          </div>
         </article>
       </div>
     </Layout>

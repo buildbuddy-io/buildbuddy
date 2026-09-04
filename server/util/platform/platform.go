@@ -27,6 +27,9 @@ import (
 )
 
 const (
+	// CIRunnerExecutableBaseName is the platform-independent CI runner binary name.
+	CIRunnerExecutableBaseName = "buildbuddy_ci_runner"
+
 	// BuildBuddy ubuntu images. When adding images here, also update
 	// the image aliases in enterprise/server/workflow/service/service.go
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
@@ -76,6 +79,8 @@ const (
 	RunnerRecyclingMaxWaitPropertyName       = "runner-recycling-max-wait"
 	runnerCrashedExitCodesPropertyName       = "runner-crashed-exit-codes"
 	transientErrorExitCodes                  = "transient-error-exit-codes"
+	AllowRemoteSnapshotsPropertyName         = "allow-remote-snapshots"
+	EnableUniversalSnapshotPropertyName      = "allow-universal-snapshot"
 	SnapshotSavePolicyPropertyName           = "remote-snapshot-save-policy"
 	SnapshotReadPolicyPropertyName           = "snapshot-read-policy"
 	MaxStaleFallbackSnapshotAgePropertyName  = "max-stale-fallback-snapshot-age"
@@ -88,6 +93,7 @@ const (
 	persistentWorkerProtocolPropertyName     = "persistentWorkerProtocol"
 	WorkflowIDPropertyName                   = "workflow-id"
 	WorkloadIsolationPropertyName            = "workload-isolation-type"
+	VFSPrefetchModePropertyName              = "vfs-prefetch-mode"
 	initDockerdPropertyName                  = "init-dockerd"
 	enableDockerdTCPPropertyName             = "enable-dockerd-tcp"
 	enableVFSPropertyName                    = "enable-vfs"
@@ -108,6 +114,15 @@ const (
 	RetryPropertyName                        = "retry"
 	PersistentVolumesPropertyName            = "persistent-volumes"
 	execrootPathPropertyName                 = "execroot-path"
+
+	// CacheProxyActionCacheTTLPropertyName lets clients opt into caching
+	// action results in the cache proxy, rather than always revalidating them
+	// with the authoritative remote cache. The value is the duration to serve
+	// locally cached results for before revalidating, formatted as a Go
+	// duration string (e.g. "15m" or "1h"). A non-positive or unparseable value
+	// disables local caching.
+	CacheProxyActionCacheTTLPropertyName = "cache-proxy-action-cache-ttl"
+
 	// RunUnderPropertyName specifies a wrapper command to run the action
 	// under. The value is shell-tokenized and the resulting tokens are
 	// prepended to the command arguments, so the original executable becomes
@@ -174,6 +189,11 @@ const (
 	customResourcePrefix = "resources:"
 
 // If you add a container type, also add it to KnownContainerTypes
+)
+
+const (
+	VFSPrefetchModeAll  = "all"
+	VFSPrefetchModeNone = "none"
 )
 
 // KnownContainerTypes are all the types that are currently supported, or were
@@ -268,8 +288,9 @@ type Properties struct {
 	// they can be retried automatically by the client.
 	TransientErrorExitCodes []int
 
-	EnableVFS      bool
-	IncludeSecrets bool
+	EnableVFS       bool
+	VFSPrefetchMode string
+	IncludeSecrets  bool
 	// EnvSecrets is a list of specific secret names to inject as env vars.
 	// Takes precedence over IncludeSecrets for targeted injection.
 	EnvSecrets []string
@@ -317,6 +338,13 @@ type Properties struct {
 	HostedBazelAffinityKey   string
 	RemoteSnapshotSavePolicy string
 	SnapshotReadPolicy       string
+
+	// EnableUniversalSnapshot controls whether a run may resume from, and
+	// write to, the "universal" snapshot. It is only ever consulted as a last resort,
+	// for remote runs that don't write default branch snapshots and have no other fallback snapshots available.
+	//
+	// Defaults to true if unset.
+	EnableUniversalSnapshot bool
 
 	// DisableMeasuredTaskSize disables measurement-based task sizing, even if
 	// it is enabled via flag, and instead uses the default / platform based
@@ -436,12 +464,12 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	isolationType := stringProp(m, WorkloadIsolationPropertyName, "")
 
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false)
-	// Runner recycling is not yet supported in combination with VFS workspaces.
-	// Firecracker VFS performance is not good enough yet to be enabled.
-	if ContainerType(isolationType) == FirecrackerContainerType {
-		vfsEnabled = false
+	vfsPrefetchMode := stringProp(m, VFSPrefetchModePropertyName, VFSPrefetchModeAll)
+	switch vfsPrefetchMode {
+	case VFSPrefetchModeAll, VFSPrefetchModeNone:
+	default:
+		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the %q platform property", vfsPrefetchMode, VFSPrefetchModePropertyName)
 	}
-
 	envOverrides := stringListProp(m, EnvOverridesPropertyName)
 	for _, prop := range stringListProp(m, EnvOverridesBase64PropertyName) {
 		b, err := base64.StdEncoding.DecodeString(prop)
@@ -565,6 +593,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		TerminationGracePeriod:    terminationGracePeriod,
 		RunnerRecyclingMaxWait:    runnerRecyclingMaxWait,
 		EnableVFS:                 vfsEnabled,
+		VFSPrefetchMode:           vfsPrefetchMode,
 		IncludeSecrets:            boolProp(m, IncludeSecretsPropertyName, false),
 		EnvSecrets:                stringListProp(m, EnvSecretsPropertyName),
 		PreserveWorkspace:         boolProp(m, PreserveWorkspacePropertyName, false),
@@ -584,6 +613,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 		Retry:                     boolProp(m, RetryPropertyName, true),
 		PersistentVolumes:         persistentVolumes,
 		SnapshotReadPolicy:        snapshotReadPolicy,
+		EnableUniversalSnapshot:   boolProp(m, EnableUniversalSnapshotPropertyName, true),
 		RemoteSnapshotSavePolicy:  snapshotSavePolicy,
 		ContainerRegistryBypass:   boolProp(m, containerRegistryBypassPropertyName, false),
 		UseOCIFetcher:             boolProp(m, useOCIFetcherPropertyName, false),
@@ -844,17 +874,43 @@ func IsRecyclingEnabled(task *repb.ExecutionTask) bool {
 	return parsed.RecycleRunner
 }
 
-// IsCICommand returns whether the given command is either a BuildBuddy workflow
+// AllowsRemoteSnapshots returns whether the given command may use remote
+// snapshots. This is true if the `allow-remote-snapshots` platform property is
+// set, and for CI runner commands, which have always been allowed to use them.
+// Platform overrides take precedence over the command platform.
+func AllowsRemoteSnapshots(cmd *repb.Command, platform, platformOverrides *repb.Platform) bool {
+	value := FindValue(platform, AllowRemoteSnapshotsPropertyName)
+	if override, ok := findValue(platformOverrides, AllowRemoteSnapshotsPropertyName); ok {
+		value = override
+	}
+	if IsTrue(value) {
+		return true
+	}
+	return IsCIRunner(cmd, platform)
+}
+
+// IsCIRunner returns whether the given command is either a BuildBuddy workflow
 // or a GitHub Actions runner task. These commands are longer-running and may
 // themselves invoke bazel.
-func IsCICommand(cmd *repb.Command, platform *repb.Platform) bool {
-	if len(cmd.GetArguments()) > 0 && cmd.GetArguments()[0] == "./buildbuddy_ci_runner" {
+func IsCIRunner(cmd *repb.Command, platform *repb.Platform) bool {
+	if IsCIRunnerCommand(cmd) {
 		return true
 	}
 	if FindValue(platform, "github-actions-runner-labels") != "" {
 		return true
 	}
 	return false
+}
+
+// IsCIRunnerCommand returns whether the command invokes the BuildBuddy CI runner.
+func IsCIRunnerCommand(cmd *repb.Command) bool {
+	args := cmd.GetArguments()
+	if len(args) == 0 {
+		return false
+	}
+	commandPath := strings.ReplaceAll(args[0], `\`, "/")
+	return commandPath == "./"+CIRunnerExecutableBaseName ||
+		commandPath == "./"+CIRunnerExecutableBaseName+".exe"
 }
 
 func Retryable(task *repb.ExecutionTask) bool {

@@ -56,6 +56,23 @@ func TestInvalidJWTKey(t *testing.T) {
 	require.ErrorContains(t, err, "signature is invalid")
 }
 
+func TestIsJWTKeySet(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		key  string
+		set  bool
+	}{
+		{name: "default", key: "set_the_jwt_in_config", set: false},
+		{name: "empty", key: "", set: false},
+		{name: "configured", key: "secret", set: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "auth.jwt_key", test.key)
+			require.Equal(t, test.set, claims.IsJWTKeySet())
+		})
+	}
+}
+
 func TestJWTKeyRotation(t *testing.T) {
 	c := &claims.Claims{UserID: "US123"}
 

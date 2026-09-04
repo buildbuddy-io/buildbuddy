@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/cache_config"
@@ -60,6 +61,7 @@ const (
 	defaultMaxInlineFileSizeBytes      = int64(1024)
 	defaultMinBytesAutoZstdCompression = int64(100)
 	defaultMaxWriteGoroutines          = 10
+	defaultMaxReadGoroutines           = 10
 )
 
 type Options struct {
@@ -74,6 +76,7 @@ type Options struct {
 	MaxInlineFileSizeBytes      int64
 
 	MaxWriteGoroutines int
+	MaxReadGoroutines  int
 
 	MetadataBackend string
 
@@ -126,6 +129,7 @@ func GetOptionsFromConfig(env environment.Env, cfg *cache_config.MetaCacheConfig
 		PartitionMappings:           cfg.PartitionMappings,
 		MaxInlineFileSizeBytes:      cfg.MaxInlineFileSizeBytes,
 		MinBytesAutoZstdCompression: cfg.MinBytesAutoZstdCompression,
+		MaxReadGoroutines:           cfg.MaxReadGoroutines,
 		MaxWriteGoroutines:          cfg.MaxWriteGoroutines,
 		GCSBucket:                   cfg.GCSConfig.Bucket,
 		GCSCredentials:              cfg.GCSConfig.Credentials,
@@ -152,6 +156,9 @@ func setOptionDefaults(opts *Options) {
 	}
 	if opts.MaxWriteGoroutines == 0 {
 		opts.MaxWriteGoroutines = defaultMaxWriteGoroutines
+	}
+	if opts.MaxReadGoroutines == 0 {
+		opts.MaxReadGoroutines = defaultMaxReadGoroutines
 	}
 	if opts.Clock == nil {
 		opts.Clock = clockwork.NewRealClock()
@@ -247,64 +254,60 @@ func (c *Cache) lookupPartitionID(remoteInstanceName, groupID string) string {
 	return DefaultPartitionID
 }
 
-func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, pr *rspb.ResourceName) (*sgpb.FileRecord, error) {
-	r := digest.ResourceNameFromProto(pr)
-	if err := r.Validate(); err != nil {
+func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
+	digestFunction := r.GetDigestFunction()
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		digestFunction = repb.DigestFunction_SHA256
+	}
+	if err := digest.Validate(r.GetDigest(), digestFunction); err != nil {
 		return nil, err
 	}
-
-	partID := c.lookupPartitionID(r.GetInstanceName(), groupID)
 
 	return &sgpb.FileRecord{
 		Isolation: &sgpb.Isolation{
 			CacheType:          r.GetCacheType(),
 			RemoteInstanceName: r.GetInstanceName(),
-			PartitionId:        partID,
+			PartitionId:        c.lookupPartitionID(r.GetInstanceName(), groupID),
 			GroupId:            groupID,
 		},
 		Digest:         r.GetDigest(),
-		DigestFunction: r.GetDigestFunction(),
+		DigestFunction: digestFunction,
 		Compressor:     r.GetCompressor(),
 		Encryption:     encryption,
 	}, nil
 }
 
-// key is a comparable key for uniquely identifying a ResourceName/FileRecord.
-// Note: groupID, partitionID, and encryptionKeyID are deliberately omitted
-// because these fields are set by the server based on request context.
-type key struct {
-	cacheType          rspb.CacheType
-	remoteInstanceName string
-	hash               string
-	sizeBytes          int64
-	digestFunction     repb.DigestFunction_Value
-}
-
-// keyFromFileRecord creates a key from a FileRecord.
-func keyFromFileRecord(fr *sgpb.FileRecord) key {
-	iso := fr.GetIsolation()
-	d := fr.GetDigest()
-	return key{
-		cacheType:          iso.GetCacheType(),
-		remoteInstanceName: iso.GetRemoteInstanceName(),
-		hash:               string(d.GetHash()),
-		sizeBytes:          d.GetSizeBytes(),
-		digestFunction:     fr.GetDigestFunction(),
+// lookupMetadata returns the file metadata for r, or a NotFound error if it
+// does not exist.
+func (c *Cache) lookupMetadata(ctx context.Context, r *rspb.ResourceName, encryption *sgpb.Encryption) (*sgpb.FileMetadata, error) {
+	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return nil, err
 	}
-}
 
-// keyFromResourceName creates a key from a ResourceName.
-func keyFromResourceName(r *rspb.ResourceName) key {
-	d := r.GetDigest()
-	return key{
-		cacheType:          r.GetCacheType(),
-		remoteInstanceName: r.GetInstanceName(),
-		hash:               string(d.GetHash()),
-		sizeBytes:          d.GetSizeBytes(),
-		digestFunction:     r.GetDigestFunction(),
+	mds, err := c.lookupMetadatas(ctx, fileRecord)
+	if err != nil {
+		return nil, err
 	}
+	if len(mds) != 1 {
+		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
+		return nil, status.InternalError("only one metadata record should match query")
+	}
+	md := mds[0]
+	if md.GetFileRecord() == nil {
+		// MetadataService.Get doesn't have an explicit "not found" response,
+		// but it returns an empty FileMetadata if the record is not found.
+		// Because proto marshalling and unmarshalling turns a repeated field
+		// with nils into a repeated field with empty structs, we need to check
+		// if the proto is empty rather than nil. The easiest way to do this is
+		// check if a field that should always be set is nil.
+		return nil, status.NotFoundErrorf("File metadata not found for %v", r)
+	}
+	return md, nil
 }
 
+// lookupMetadatas returns metadata index-aligned to records; a not-found entry
+// carries a nil FileRecord (an empty FileMetadata after proto round-trip).
 func (c *Cache) lookupMetadatas(ctx context.Context, records ...*sgpb.FileRecord) ([]*sgpb.FileMetadata, error) {
 	req := &mdpb.GetRequest{
 		FileRecords: records,
@@ -515,22 +518,9 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (cm *interfa
 	if err != nil {
 		return nil, err
 	}
-	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
+	md, err := c.lookupMetadata(ctx, r, encryption)
 	if err != nil {
 		return nil, err
-	}
-	mds, err := c.lookupMetadatas(ctx, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(mds) != 1 {
-		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalError("only one metadata record should match query")
-	}
-	md := mds[0]
-	if md.GetFileRecord() == nil {
-		return nil, status.NotFoundErrorf("Metadata not found for %v", r)
 	}
 	return &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
@@ -553,26 +543,72 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	}
 	groupID := c.userGroupID(ctx)
 	req := &mdpb.FindRequest{
-		FileRecords: make([]*sgpb.FileRecord, len(resources)),
+		FileRecords: make([]*sgpb.FileRecord, 0, len(resources)),
 	}
+	// Resources with invalid digests are reported as missing rather than
+	// failing the whole batch. They are excluded from the Find request.
+	var missing []*repb.Digest
+	// requestedResources aliases resources until the first invalid digest,
+	// then diverges to a copy holding only the valid ones, so it stays
+	// index-aligned with req.FileRecords (and the FindResponses).
+	requestedResources := resources
 	for i, r := range resources {
 		fileRecord, err := c.makeFileRecord(groupID, encryption, r)
 		if err != nil {
-			return nil, err
+			missing = append(missing, r.GetDigest())
+			if len(requestedResources) == len(resources) {
+				// First invalid digest: all prior resources were valid,
+				// so seed the copy with them.
+				requestedResources = append(make([]*rspb.ResourceName, 0, len(resources)-1), resources[:i]...)
+			}
+			continue
 		}
-		req.FileRecords[i] = fileRecord
+		if len(requestedResources) != len(resources) {
+			requestedResources = append(requestedResources, r)
+		}
+		req.FileRecords = append(req.FileRecords, fileRecord)
+	}
+	if len(req.GetFileRecords()) == 0 {
+		return missing, nil // no valid digests to check
 	}
 	rsp, err := c.opts.MetadataClient.Find(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	missing := make([]*repb.Digest, 0)
-	for i, findRsp := range rsp.GetFindResponses() {
+	responses := rsp.GetFindResponses()
+	if len(responses) != len(requestedResources) {
+		// Aligned 1:1 is the server contract; a mismatch is a server bug.
+		log.CtxErrorf(ctx, "[%s] FindMissing metadata length %d != request length %d", c.opts.Name, len(responses), len(requestedResources))
+		return nil, status.InternalErrorf("metadata response length %d does not match request length %d", len(responses), len(requestedResources))
+	}
+	for i, findRsp := range responses {
 		if !findRsp.GetPresent() {
-			missing = append(missing, resources[i].GetDigest())
+			missing = append(missing, requestedResources[i].GetDigest())
 		}
 	}
 	return missing, nil
+}
+
+// readBufSize returns the buffer size to allocate to hold the full contents
+// of r, whose stored metadata is md.
+func (c *Cache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata, reader io.Reader) int64 {
+	// If the requested compression matches the stored compression, the
+	// data is returned as stored, so the stored size from the file
+	// metadata is the right buffer size. Otherwise the data is compressed
+	// or decompressed while reading, so fall back to estimating.
+	var bufSize int64
+	if r.GetCompressor() == md.GetFileRecord().GetCompressor() {
+		bufSize = min(md.GetStoredSizeBytes(), maxReadBufferSize)
+	} else {
+		bufSize = int64(digest.SafeBufferSize(r, maxReadBufferSize))
+	}
+	// WriteTo allows copying without a second read to get EOF. Without that
+	// bytes.Buffer.ReadFrom will allocate an extra bytes.MinRead unless we
+	// oversize it.
+	if _, ok := reader.(io.WriterTo); !ok {
+		bufSize += bytes.MinRead
+	}
+	return bufSize
 }
 
 func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resultErr error) {
@@ -582,13 +618,21 @@ func (c *Cache) Get(ctx context.Context, r *rspb.ResourceName) (res []byte, resu
 	defer spn.End()
 	setSingleResourceTraceAttributes(spn, r)
 
-	rc, err := c.Reader(ctx, r, 0, 0)
+	encryption, err := c.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	md, err := c.lookupMetadata(ctx, r, encryption)
+	if err != nil {
+		return nil, err
+	}
+	rc, err := c.reader(ctx, md, r, 0, 0, encryption)
 	if err != nil {
 		return nil, err
 	}
 	defer rc.Close()
 
-	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+	buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, md, rc)))
 	_, err = io.Copy(buf, rc)
 	return buf.Bytes(), err
 }
@@ -613,6 +657,10 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 	start := c.opts.Clock.Now()
 	defer c.recordMetrics("GetMulti", resultErr, start)
 
+	if len(resources) == 0 {
+		return map[*repb.Digest][]byte{}, nil
+	}
+
 	encryption, err := c.activeEncryption(ctx)
 	if err != nil {
 		return nil, err
@@ -633,42 +681,89 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		return nil, err
 	}
 
-	keyToMetadata := make(map[key]*sgpb.FileMetadata, len(mds))
-	for _, md := range mds {
+	// mds is index-aligned to resources (see metadata.proto GetResponse), nil
+	// FileRecord on a miss. Pairing by position mirrors the server's match: CAS
+	// by content hash (size/instance excluded, like Get), AC instance-isolated.
+	if len(mds) != len(resources) {
+		// Aligned 1:1 is the server contract; a mismatch is a server bug.
+		log.CtxErrorf(ctx, "[%s] GetMulti metadata length %d != request length %d", c.opts.Name, len(mds), len(resources))
+		return nil, status.InternalErrorf("metadata response length %d does not match request length %d", len(mds), len(resources))
+	}
+	type resourceMetadata struct {
+		resource *rspb.ResourceName
+		md       *sgpb.FileMetadata
+	}
+	hits := make([]resourceMetadata, 0, len(resources))
+	nonInlineCount := 0
+	for i, r := range resources {
+		md := mds[i]
 		if md.GetFileRecord() == nil {
 			// Missing metadata, skip
 			continue
 		}
-		k := keyFromFileRecord(md.GetFileRecord())
-		keyToMetadata[k] = md
+		hits = append(hits, resourceMetadata{resource: r, md: md})
+		if md.GetStorageMetadata().GetInlineMetadata() == nil {
+			nonInlineCount++
+		}
 	}
 
-	foundMap := make(map[*repb.Digest][]byte, len(resources))
-	for _, r := range resources {
-		k := keyFromResourceName(r)
-		md, ok := keyToMetadata[k]
-		if !ok {
-			continue
-		}
-		rc, err := c.reader(ctx, md, r, 0, 0, encryption)
-		if err != nil {
-			if status.IsNotFoundError(err) || os.IsNotExist(err) {
+	var next atomic.Int64
+	var foundMu sync.Mutex
+	foundMap := make(map[*repb.Digest][]byte, len(hits))
+	handleBatch := func() error {
+		for {
+			i := int(next.Add(1)) - 1
+			if i >= len(hits) {
+				return nil
+			}
+			hit := hits[i]
+			r := hit.resource
+			rc, err := c.reader(ctx, hit.md, r, 0, 0, encryption)
+			if err != nil {
+				if status.IsNotFoundError(err) || os.IsNotExist(err) {
+					continue
+				}
+				return err
+			}
+			buf := bytes.NewBuffer(make([]byte, 0, c.readBufSize(r, hit.md, rc)))
+			_, copyErr := io.Copy(buf, rc)
+			closeErr := rc.Close()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if copyErr != nil {
+				log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
 				continue
 			}
+			if closeErr != nil {
+				log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
+				continue
+			}
+			foundMu.Lock()
+			foundMap[r.GetDigest()] = buf.Bytes()
+			foundMu.Unlock()
+		}
+	}
+
+	// Add 1 goroutine per non-inline resource, since they can be slow. The
+	// inline blobs don't require any more I/O.
+	maxGoroutines := min(c.opts.MaxReadGoroutines, nonInlineCount)
+	if maxGoroutines <= 1 {
+		// Don't start goroutines if we don't have to.
+		if err := handleBatch(); err != nil {
 			return nil, err
 		}
-		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
-		_, copyErr := io.Copy(buf, rc)
-		closeErr := rc.Close()
-		if copyErr != nil {
-			log.Warningf("[%s] GetMulti encountered error when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), copyErr)
-			continue
-		}
-		if closeErr != nil {
-			log.Warningf("[%s] GetMulti cannot close reader when copying %s: %s", c.opts.Name, r.GetDigest().GetHash(), closeErr)
-			continue
-		}
-		foundMap[r.GetDigest()] = buf.Bytes()
+		return foundMap, nil
+	}
+
+	// Make sure to set the ctx used inside handleBatch (don't shadow it).
+	var eg *errgroup.Group
+	eg, ctx = errgroup.WithContext(ctx)
+	for range maxGoroutines {
+		eg.Go(handleBatch)
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
 	}
 	return foundMap, nil
 }
@@ -754,7 +849,9 @@ func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.Resou
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if gcsutil.ObjectIsPastTTL(c.opts.Clock, gcsMetadata, c.opts.GCSTTLDays) {
+		// GCSTTLDays==0 disables the check (no TTL, nothing reaped); kept in
+		// lockstep with the metadata server's Find.
+		if c.opts.GCSTTLDays > 0 && gcsutil.ObjectIsPastTTL(c.opts.Clock, gcsMetadata, c.opts.GCSTTLDays) {
 			return nil, status.NotFoundError("backing object may have expired")
 		}
 	}
@@ -840,28 +937,9 @@ func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOf
 	if err != nil {
 		return nil, err
 	}
-	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
+	md, err := c.lookupMetadata(ctx, r, encryption)
 	if err != nil {
 		return nil, err
-	}
-
-	mds, err := c.lookupMetadatas(ctx, fileRecord)
-	if err != nil {
-		return nil, err
-	}
-	if len(mds) != 1 {
-		log.CtxErrorf(ctx, "File record %v found multiple metadatas: %v", fileRecord, mds)
-		return nil, status.InternalError("only one metadata record should match query")
-	}
-	md := mds[0]
-	if md.GetFileRecord() == nil {
-		// MetadataService.Get doesn't have an explicit "not found" response,
-		// but it returns an empty FileMetadata if the record is not found.
-		// Because proto marshalling and unmarshalling turns a repeated field
-		// with nils into a repeated field with empty structs, we need to check
-		// if the proto is empty rather than nil. The easiest way to do this is
-		// check if a field that should always be set is nil.
-		return nil, status.NotFoundErrorf("File metadata not found for %v", r)
 	}
 	return c.reader(ctx, md, r, uncompressedOffset, uncompressedLimit, encryption)
 }

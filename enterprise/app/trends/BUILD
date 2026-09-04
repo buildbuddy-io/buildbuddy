@@ -1,8 +1,19 @@
-load("//rules/typescript:index.bzl", "ts_library")
+load("//rules/typescript:index.bzl", "ts_jasmine_node_test", "ts_library")
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 exports_files(["trends.css"])
+
+ts_library(
+    name = "chart_series",
+    srcs = ["chart_series.ts"],
+)
+
+ts_jasmine_node_test(
+    name = "chart_series_test",
+    srcs = ["chart_series_test.ts"],
+    deps = [":chart_series"],
+)
 
 ts_library(
     name = "trends",
@@ -83,6 +94,7 @@ ts_library(
         "//:node_modules/recharts",
         "//:node_modules/tslib",
         "//app/format",
+        "//enterprise/app/trends:chart_series",
     ],
 )
 
@@ -149,6 +161,7 @@ ts_library(
         "//:node_modules/recharts",
         "//:node_modules/tslib",
         "//app/format",
+        "//enterprise/app/trends:chart_series",
     ],
 )
 
@@ -174,5 +187,6 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/recharts",
         "//app/router",
+        "//enterprise/app/trends:chart_series",
     ],
 )

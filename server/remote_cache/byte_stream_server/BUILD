@@ -23,6 +23,7 @@ go_library(
         "//server/util/capabilities",
         "//server/util/clientip",
         "//server/util/compression",
+        "//server/util/findmissing",
         "//server/util/flag",
         "//server/util/ioutil",
         "//server/util/log",

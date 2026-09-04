@@ -248,6 +248,7 @@ func (ut *tracker) Increment(ctx context.Context, labels *tables.UsageLabels, uc
 		Origin:  labels.Origin,
 		Client:  labels.Client,
 		Server:  labels.Server,
+		Proxy:   labels.Proxy,
 	}
 	// Increment the hash values
 	encodedCollection := usageutil.EncodeCollection(collection)
@@ -337,7 +338,7 @@ func (ut *tracker) startDBFlush() {
 			select {
 			case <-ticker.C:
 				if err := ut.FlushToDB(ctx); err != nil {
-					alert.UnexpectedEvent("usage_data_flush_failed", "Error flushing usage data to DB: %s", err)
+					log.CtxErrorf(ctx, "Error flushing usage data to DB: %s", err)
 				}
 			case <-ut.stopFlush:
 				return
@@ -611,6 +612,7 @@ func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p
 				AND origin = ?
 				AND client = ?
 				AND server = ?
+				AND proxy = ?
 			`+dbh.SelectForUpdateModifier(),
 			tu.Region,
 			tu.GroupID,
@@ -618,6 +620,7 @@ func (ut *tracker) flushCountsToPrimaryDB(ctx context.Context, groupID string, p
 			tu.Origin,
 			tu.Client,
 			tu.Server,
+			tu.Proxy,
 		).Take(&tables.Usage{})
 		if err != nil && !db.IsRecordNotFound(err) {
 			return err

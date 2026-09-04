@@ -1,0 +1,47 @@
+diff --git a/command.go b/command.go
+index b523783..a5f059e 100644
+--- a/command.go
++++ b/command.go
+@@ -3231,13 +3231,10 @@ func commandInfoParser(rd *proto.Reader, n int64) (interface{}, error) {
+ 	const numArgRedis5 = 6
+ 	const numArgRedis6 = 7
+ 
+-	switch n {
+-	case numArgRedis5, numArgRedis6:
+-		// continue
+-	default:
+-		return nil, fmt.Errorf("redis: got %d elements in COMMAND reply, wanted 7", n)
++	if n < numArgRedis5 {
++		return nil, fmt.Errorf("redis: got %d elements in COMMAND reply, wanted at least 6", n)
+ 	}
+ 
+ 	var cmd CommandInfo
+ 	var err error
+@@ -3317,10 +3314,27 @@ func commandInfoParser(rd *proto.Reader, n int64) (interface{}, error) {
+ 	if err != nil {
+ 		return nil, err
+ 	}
++
++	// Redis 7 and Valkey 7 append tips, key specifications, and subcommands.
++	// They are not needed for the first-key routing performed by this client.
++	for i := int64(numArgRedis6); i < n; i++ {
++		if _, err := rd.ReadReply(discardCommandMetadata); err != nil {
++			return nil, err
++		}
++	}
+ 
+ 	return &cmd, nil
+ }
+ 
++func discardCommandMetadata(rd *proto.Reader, n int64) (interface{}, error) {
++	for i := int64(0); i < n; i++ {
++		if _, err := rd.ReadReply(discardCommandMetadata); err != nil {
++			return nil, err
++		}
++	}
++	return nil, nil
++}
++
+ //------------------------------------------------------------------------------
+ 
+ type cmdsInfoCache struct {

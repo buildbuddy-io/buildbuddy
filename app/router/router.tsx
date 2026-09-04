@@ -491,6 +491,10 @@ class Router {
     return Boolean(user?.canCall("listSecrets"));
   }
 
+  canAccessOrgSSOPage(user?: User) {
+    return Boolean(user?.canCall("setSSOConfig"));
+  }
+
   canAccessAuditLogsPage(user?: User) {
     return Boolean(user?.canCall("getAuditLogs"));
   }
@@ -581,6 +585,9 @@ class Router {
     if (path === Path.settingsOrgGitHubLinkPath && !this.canAccessOrgGitHubLinkPage(user)) {
       return new URL(Path.settingsPath, window.location.href);
     }
+    if (path === Path.settingsOrgSSOPath && !this.canAccessOrgSSOPage(user)) {
+      return new URL(Path.settingsPath, window.location.href);
+    }
 
     return null;
   }
@@ -642,6 +649,7 @@ export class Path {
   static settingsOrgMembersPath = "/settings/org/members";
   static settingsOrgUserListsPath = "/settings/org/user-lists";
   static settingsOrgGitHubLinkPath = "/settings/org/github";
+  static settingsOrgSSOPath = "/settings/org/sso";
   static joinOrgPath = "/join";
   static createOrgPath = "/org/create";
   static editOrgPath = "/org/edit";

@@ -15,11 +15,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -109,6 +111,62 @@ func TestFilecache(t *testing.T) {
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
+}
+
+func jwtForGroup(t *testing.T, groupID string) string {
+	authCtx := claims.AuthContextWithJWT(t.Context(), &claims.Claims{GroupID: groupID}, nil)
+	token, ok := authCtx.Value(authutil.ContextTokenStringKey).(string)
+	require.True(t, ok)
+	require.NotEmpty(t, token)
+	return token
+}
+
+func TestFileCacheGroupFromTrustedJWT(t *testing.T) {
+	const authenticatedGroupID = "GR12345"
+	flags.Set(t, "auth.jwt_key", "server-test-key")
+	authenticatedJWT := jwtForGroup(t, authenticatedGroupID)
+	anonymousJWT := jwtForGroup(t, interfaces.AuthAnonymousUser)
+	// Model a self-hosted executor which does not have the server's signing key.
+	flags.Set(t, "auth.jwt_key", "executor-test-key")
+
+	for _, test := range []struct {
+		name        string
+		jwt         string
+		wantGroupID string
+	}{
+		{name: "authenticated", jwt: authenticatedJWT, wantGroupID: authenticatedGroupID},
+		{name: "anonymous", jwt: anonymousJWT, wantGroupID: interfaces.AuthAnonymousUser},
+		{name: "invalid", jwt: "invalid", wantGroupID: interfaces.AuthAnonymousUser},
+		{name: "missing", wantGroupID: interfaces.AuthAnonymousUser},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			if test.jwt != "" {
+				ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, test.jwt)
+			}
+			if test.name == "authenticated" {
+				_, err := claims.ClaimsFromContext(ctx)
+				require.Error(t, err, "JWT should not be verifiable with the executor key")
+			}
+
+			fcDir := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(fcDir, 100_000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+
+			workspaceDir := testfs.MakeTempDir(t)
+			source := writeFileContent(t, workspaceDir, "source", "source", false)
+			node := nodeFromString("source", false)
+			require.NoError(t, fc.AddFile(ctx, node, source))
+
+			cacheFileName := node.GetDigest().GetHash()
+			require.FileExists(t, filepath.Join(fcDir, test.wantGroupID, cacheFileName))
+			if test.wantGroupID != interfaces.AuthAnonymousUser {
+				require.NoFileExists(t, filepath.Join(fcDir, interfaces.AuthAnonymousUser, cacheFileName))
+			}
+		})
+	}
 }
 
 func TestFileCacheGroupIsolation(t *testing.T) {
@@ -303,6 +361,7 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 		sharedDirName           string
 		startupDir              string
 		unexpectedSharedDirName string
+		skipWindows             bool
 	}{
 		{
 			name:          "empty",
@@ -313,11 +372,17 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 			name:          "dot",
 			sharedDirName: ".",
 			startupDir:    "_SHARED_.",
+			// Windows strips the trailing dot from this directory name, so the
+			// malformed startup fixture cannot be represented on disk.
+			skipWindows: true,
 		},
 		{
 			name:          "dotdot",
 			sharedDirName: "..",
 			startupDir:    "_SHARED_..",
+			// Windows strips the trailing dots from this directory name, so the
+			// malformed startup fixture cannot be represented on disk.
+			skipWindows: true,
 		},
 		{
 			name:          "anon",
@@ -349,6 +414,9 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 
 	// Seed malformed shared-directory layouts on disk before startup scanning.
 	for _, test := range tests {
+		if test.skipWindows && runtime.GOOS == "windows" {
+			continue
+		}
 		node := nodeFromString("invalid-shared-"+test.name, false)
 		writeFileContent(
 			t,
@@ -366,6 +434,9 @@ func TestFileCacheInvalidSharedDirectoryNamesAreIgnored(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			if test.skipWindows && runtime.GOOS == "windows" {
+				t.Skip("malformed startup fixture cannot be represented on Windows")
+			}
 			node := nodeFromString("invalid-shared-"+test.name, false)
 			invalidSharedDirectoryCtx := fc.WithSharedDirectory(group1Ctx, test.sharedDirName)
 
@@ -835,33 +906,134 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 	}
 }
 
-func TestFileCacheUncleanShutdown(t *testing.T) {
+func TestFileCacheProcessCrash(t *testing.T) {
 	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
 	ctx := context.Background()
 	fcDir := testfs.MakeTempDir(t)
 	baseDir := testfs.MakeTempDir(t)
 
-	// Create a filecache, add a file, then simulate an unclean shutdown by
-	// NOT calling Close() (leaving the lock file in place).
+	// Create a filecache and add a file.
 	fc, err := filecache.NewFileCache(fcDir, 100000, false)
 	require.NoError(t, err)
+	// Note: this deferred Close runs after all of the test assertions; it is
+	// here to clean up background goroutines, not to simulate a clean
+	// shutdown.
 	defer fc.Close()
-
 	fc.WaitForDirectoryScanToComplete()
 	writeFile(t, baseDir, "file", false)
 	node := nodeFromString("file", false)
 	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
-	// Intentionally skip fc.Close() to simulate unclean shutdown.
+	// Intentionally skip fc.Close() to simulate a process crash.
 
-	// Re-open the filecache. The lock file should be detected, the cache
-	// directory wiped, and the previously-added file should no longer be found.
+	// Re-open the filecache. The recorded boot ID matches the current boot ID,
+	// meaning the machine did not reboot since the crash, so the cache
+	// contents are still good and should not be wiped.
 	fc2, err := filecache.NewFileCache(fcDir, 100000, false)
 	require.NoError(t, err)
 	t.Cleanup(func() { fc2.Close() })
 	fc2.WaitForDirectoryScanToComplete()
 
 	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
-	assert.False(t, linked, "cache should have been wiped after unclean shutdown")
+	require.True(t, linked, "cache should be preserved after a process crash within the same boot session")
+}
+
+func TestFileCacheRebootWithoutCleanShutdown(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	// Create a filecache and add a file.
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	// Note: this deferred Close runs after all of the test assertions; it is
+	// here to clean up background goroutines, not to simulate a clean
+	// shutdown.
+	defer fc.Close()
+	fc.WaitForDirectoryScanToComplete()
+	writeFile(t, baseDir, "file", false)
+	node := nodeFromString("file", false)
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	// Simulate the machine rebooting without a clean shutdown (e.g. power
+	// loss) by skipping fc.Close() and overwriting the recorded boot ID with
+	// one from a different boot session.
+	err = os.WriteFile(filepath.Join(fcDir, "boot_id"), []byte("boot-id-from-previous-boot"), 0644)
+	require.NoError(t, err)
+
+	// Re-open the filecache. The recorded boot ID does not match the current
+	// boot ID, so the cache may contain corrupted files and should be wiped.
+	fc2, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	require.False(t, linked, "cache should be wiped after a reboot without a clean shutdown")
+}
+
+func TestFileCacheCleanShutdown(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	// Create a filecache, add a file, then shut down cleanly.
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	writeFile(t, baseDir, "file", false)
+	node := nodeFromString("file", false)
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	require.NoError(t, fc.Close())
+
+	// The clean shutdown should have removed the boot ID file, so that the
+	// cache is not wiped even if the machine reboots before the next startup.
+	require.NoFileExists(t, filepath.Join(fcDir, "boot_id"))
+
+	// Re-open the filecache. The cache contents should be preserved.
+	fc2, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	require.True(t, linked, "cache should be preserved after a clean shutdown")
+}
+
+func TestFileCacheBootIDFileRemovedWhenDetectionDisabled(t *testing.T) {
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", true)
+	ctx := context.Background()
+	fcDir := testfs.MakeTempDir(t)
+	baseDir := testfs.MakeTempDir(t)
+
+	// With unclean shutdown detection enabled, create a filecache, add a
+	// file, then simulate a process crash by skipping fc.Close(). This leaves
+	// the boot ID file in place.
+	fc, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	// Note: this deferred Close runs after all of the test assertions; it is
+	// here to clean up background goroutines, not to simulate a clean
+	// shutdown.
+	defer fc.Close()
+	fc.WaitForDirectoryScanToComplete()
+	writeFile(t, baseDir, "file", false)
+	node := nodeFromString("file", false)
+	require.NoError(t, fc.AddFile(ctx, node, filepath.Join(baseDir, "file")))
+	require.FileExists(t, filepath.Join(fcDir, "boot_id"))
+
+	// Re-open the filecache with detection disabled. The leftover boot ID
+	// file should be removed so that re-enabling the flag after a normal
+	// reboot does not wipe the cache, and the cache contents should be
+	// preserved.
+	flags.Set(t, "executor.delete_filecache_on_unclean_shutdown", false)
+	fc2, err := filecache.NewFileCache(fcDir, 100000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { fc2.Close() })
+	fc2.WaitForDirectoryScanToComplete()
+
+	require.NoFileExists(t, filepath.Join(fcDir, "boot_id"))
+	linked := fc2.FastLinkFile(ctx, node, filepath.Join(baseDir, "linked-file"))
+	require.True(t, linked, "cache should be preserved when detection is disabled")
 }
 
 func TestFileCacheAddFileAfterClose(t *testing.T) {

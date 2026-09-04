@@ -242,6 +242,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
+        name = "com_github_bazelbuild_bazelisk-bazelisk-windows-amd64",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-windows-amd64.exe"],
+        sha256 = "641a3dfebd717703675f912917735c44b45cf6300bfdfb924537f3cfbffcdd92",
+        executable = True,
+    )
+    http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
         sha256 = "0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f"],
@@ -259,20 +265,6 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e"],
         executable = True,
     )
-    http_file(
-        name = "org_llvm_llvm_clang-format_linux-x86_64",
-        executable = True,
-        integrity = "sha256-BQxgAlbiJeq+lgjSj0kv6Gc8bn9d6sWcbalzIjx2TWw=",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_linux-x86_64"],
-    )
-
-    http_file(
-        name = "org_llvm_llvm_clang-format_macos-x86_64",
-        executable = True,
-        integrity = "sha256-lxFvZNl/socLSqKXWLuo+w/n87HtikvBL6qSfs/ewZY=",
-        urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/clang-format/clang-format-15_darwin-x86_64"],
-    )
-
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-arm64",
         executable = True,
@@ -313,19 +305,17 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = PODMAN_STATIC_SHA256_ARM64,
     )
 
-    # NOTE: crun 1.16.1 has a double-free bug. Before upgrading, be sure the
-    # release includes a fix for https://github.com/containers/crun/issues/1537
     http_file(
         name = "com_github_containers_crun_crun-linux-amd64",
-        urls = ["https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-amd64-disable-systemd"],
-        sha256 = "03fd3ec6a7799183eaeefba5ebd3f66f9b5fb41a5b080c196285879631ff5dc1",
+        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-amd64-disable-systemd"],
+        sha256 = "137bce17e4a102683e9b6974f4141cf6c30da61c8ade43c8f2b2d6961a8b858b",
         downloaded_file_path = "crun",
         executable = True,
     )
     http_file(
         name = "com_github_containers_crun_crun-linux-arm64",
-        urls = ["https://github.com/containers/crun/releases/download/1.15/crun-1.15-linux-arm64-disable-systemd"],
-        sha256 = "1bd840c95e9ae8edc25654dcf2481309724b9ff18ce95dbcd2535da9b026a47d",
+        urls = ["https://github.com/containers/crun/releases/download/1.28/crun-1.28-linux-arm64-disable-systemd"],
+        sha256 = "decac16cacbc570a1d7739d2ba47da4ffe0d3918adb10e47712bd1da0a110a78",
         downloaded_file_path = "crun",
         executable = True,
     )
@@ -447,6 +437,17 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         sha256 = "3c9a8e9e6dafd00db61f4611692447ebab4a56388bae4f82192aed67b66df712",
         downloaded_file_path = "runc",
         executable = True,
+    )
+
+    # DB-IP ASN Lite database, embedded into the binary by
+    # //server/util/maxmind for offline IP -> ASN lookups. The file is a
+    # monthly snapshot mirrored from db-ip.com into our GCS bucket; bump the
+    # URL and sha256 to update it.
+    http_file(
+        name = "dbip_asn_lite",
+        downloaded_file_path = "dbip-asn-lite.mmdb.gz",
+        sha256 = "12b694a1aeeeee3d87478682fa89a1aae43869f7c33264c7515fd1f92992013e",
+        urls = ["https://storage.googleapis.com/buildbuddy-tools/dbip/dbip-asn-lite-2026-08.mmdb.gz"],
     )
 
 install_static_dependencies_ext = modules.as_extension(install_static_dependencies)

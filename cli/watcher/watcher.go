@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 )
 
+const lockfilePathEnvVar = "BB_WATCHER_LOCKFILE_PATH"
+
 var (
 	settings = struct {
 		watch        bool
@@ -26,6 +28,12 @@ func Configure(watch bool, watcherFlags []string) {
 // CLI as a subprocess on changes to source files.
 func Watch(args []string) (exitCode int, err error) {
 	if !settings.watch {
+		return -1, nil
+	}
+	// Godemon's child inherits the lockfile path from the original bb process.
+	// Do not recursively start another watcher if the child re-enables --watch
+	// (can happen on accident through a rc file, for example).
+	if os.Getenv(lockfilePathEnvVar) != "" {
 		return -1, nil
 	}
 	// Notes on FS watcher solutions:
@@ -75,7 +83,7 @@ func initLockfile() (string, error) {
 	if err := os.Remove(f.Name()); err != nil {
 		return "", err
 	}
-	os.Setenv("BB_WATCHER_LOCKFILE_PATH", f.Name())
+	os.Setenv(lockfilePathEnvVar, f.Name())
 	return f.Name(), nil
 }
 
@@ -83,7 +91,7 @@ func initLockfile() (string, error) {
 // is called. Any FS events received while paused will be buffered, then flushed
 // when unpaused.
 func Pause() {
-	lockfilePath := os.Getenv("BB_WATCHER_LOCKFILE_PATH")
+	lockfilePath := os.Getenv(lockfilePathEnvVar)
 	if lockfilePath == "" {
 		// We're not running in watch mode.
 		return
@@ -100,7 +108,7 @@ func Pause() {
 // triggered immediately if any events were buffered while the watcher was
 // paused.
 func Unpause() {
-	lockfilePath := os.Getenv("BB_WATCHER_LOCKFILE_PATH")
+	lockfilePath := os.Getenv(lockfilePathEnvVar)
 	if lockfilePath == "" {
 		// We're not running in watch mode.
 		return

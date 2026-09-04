@@ -417,6 +417,12 @@ func (p *Paths) CgroupVersion() int {
 	return 0 // unknown
 }
 
+// V2Dir returns the cgroup v2 directory for the container with the given name
+// (cgroup v2 only).
+func (p *Paths) V2Dir(name string) string {
+	return strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
+}
+
 // Stats returns cgroup stats for the cgroup matching the given name. If
 // blockDevice is non-nil, IO stats are included for the device, otherwise IO
 // stats are not reported.
@@ -430,9 +436,52 @@ func (p *Paths) Stats(ctx context.Context, name string, blockDevice *block_io.De
 	}
 
 	// cgroup v2 has all cgroup files under a single dir.
-	dir := strings.ReplaceAll(p.V2DirTemplate, cidPlaceholder, name)
+	return Stats(ctx, p.V2Dir(name), blockDevice)
+}
 
-	return Stats(ctx, dir, blockDevice)
+// ReadCgroupProcs returns the process IDs of the processes in the cgroup at
+// the given path, including processes in descendant cgroups. Descendants are
+// included because a cgroup with child cgroups usually has no processes of
+// its own; for example, some container runtime configurations place container
+// processes in a child cgroup of the container's top-level cgroup.
+func ReadCgroupProcs(path string) (map[int]struct{}, error) {
+	pids := make(map[int]struct{})
+	err := filepath.WalkDir(path, func(entryPath string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			// Tolerate descendant cgroups that are removed while walking, but
+			// report a missing root so that callers can tell that the cgroup
+			// itself is gone.
+			if entryPath != path && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return err
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		b, err := os.ReadFile(filepath.Join(entryPath, "cgroup.procs"))
+		if err != nil {
+			if entryPath != path && errors.Is(err, fs.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("read cgroup.procs: %w", err)
+		}
+		for field := range strings.FieldsSeq(string(b)) {
+			pid, err := strconv.Atoi(field)
+			if err != nil {
+				return fmt.Errorf("parse cgroup PID %q: %w", field, err)
+			}
+			if pid <= 0 {
+				return fmt.Errorf("cgroup PID is out of range (%d)", pid)
+			}
+			pids[pid] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return pids, nil
 }
 
 // ReadMemoryEvents reads the "memory.events" file under the given cgroup
@@ -447,6 +496,73 @@ func ReadMemoryEvents(dir string) (map[string]int64, error) {
 // be an absolute path, including the /sys/fs/cgroup prefix.
 func ReadMemoryCurrent(dir string) (int64, error) {
 	return readInt64FromFile(filepath.Join(dir, "memory.current"))
+}
+
+// ReadMemoryMax reads the "memory.max" file under the given cgroup directory
+// and returns the configured memory limit in bytes, or nil if the limit is
+// "max" (unlimited). The directory should be an absolute path, including the
+// /sys/fs/cgroup prefix.
+func ReadMemoryMax(dir string) (*int64, error) {
+	b, err := os.ReadFile(filepath.Join(dir, "memory.max"))
+	if err != nil {
+		return nil, err
+	}
+	s := strings.TrimSpace(string(b))
+	if s == "max" {
+		return nil, nil
+	}
+	v, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// ReadEffectiveMemoryLimit returns the smallest "memory.max" limit in effect
+// for the cgroup at the given absolute path and the absolute path of the
+// cgroup setting that limit, taking ancestor cgroup limits into account. It
+// returns an empty path and nil limit if neither the cgroup nor any of its
+// ancestors sets a limit. When the same smallest limit is set at multiple
+// levels, it returns the outermost such cgroup, because memory charged to an
+// ancestor by siblings counts against the shared limit and should be included
+// when the returned cgroup's usage is measured. The walk includes the cgroupfs
+// root. The real cgroup v2 root has no memory.max file and is treated as
+// unlimited, but under a cgroup namespace the root directory is a non-root
+// cgroup on the host, and any limit set on it applies.
+func ReadEffectiveMemoryLimit(dir string) (string, *int64, error) {
+	var limitCgroupPath string
+	var limit *int64
+	for dir = filepath.Clean(dir); dir == RootPath || strings.HasPrefix(dir, RootPath+string(os.PathSeparator)); dir = ParentPath(dir) {
+		v, err := ReadMemoryMax(dir)
+		if err != nil {
+			if dir == RootPath && os.IsNotExist(err) {
+				break
+			}
+			return "", nil, err
+		}
+		if v != nil && (limit == nil || *v <= *limit) {
+			limitCgroupPath = dir
+			limit = v
+		}
+		if dir == RootPath {
+			break
+		}
+	}
+	return limitCgroupPath, limit, nil
+}
+
+// ReadMemoryStatField reads the given field from the "memory.stat" file under
+// the given cgroup directory. The directory should be an absolute path,
+// including the /sys/fs/cgroup prefix.
+func ReadMemoryStatField(dir, field string) (int64, error) {
+	return readCgroupInt64Field(filepath.Join(dir, "memory.stat"), field)
+}
+
+// ReadMemoryStat reads the "memory.stat" file under the given cgroup directory
+// and returns the field values as a map. The directory should be an absolute
+// path, including the /sys/fs/cgroup prefix.
+func ReadMemoryStat(dir string) (map[string]int64, error) {
+	return readAllInt64Fields(filepath.Join(dir, "memory.stat"))
 }
 
 // ReadPidsEvents reads the "pids.events" file under the given cgroup

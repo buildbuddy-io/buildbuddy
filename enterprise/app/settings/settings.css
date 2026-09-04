@@ -45,8 +45,7 @@
 }
 
 .settings-option-warning .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   flex-shrink: 0;
   color: var(--color-banner-warning-icon);
 }
@@ -132,11 +131,18 @@
   align-self: flex-start;
 }
 
+.settings {
+  /* Settings tab sidebar dimensions on large screens. Also used to cap the
+   * autosized content width so it never overlaps the tabs. */
+  --settings-tabs-width: 200px;
+  --settings-tabs-margin: 32px;
+}
+
 /* Large screen */
 @media (min-width: 1281px) {
   .settings .settings-tabs {
-    margin-right: 32px;
-    width: 200px;
+    margin-right: var(--settings-tabs-margin);
+    width: var(--settings-tabs-width);
   }
 }
 
@@ -216,6 +222,23 @@
   max-width: 100%;
 }
 
+/* The API keys tabs start at the default width but grow to fit long key
+ * names on one line, up to the space left by the settings tabs. */
+@media (min-width: 1281px) {
+  .settings .settings-content.settings-content-autosize {
+    width: fit-content;
+    min-width: 800px;
+    max-width: calc(100% - var(--settings-tabs-width) - var(--settings-tabs-margin));
+  }
+
+  /* Cap text blocks at the default width so only the key list drives the
+   * growth. */
+  .settings .settings-content.settings-content-autosize > :not(.api-keys),
+  .settings .settings-content.settings-content-autosize .api-keys > :not(.api-keys-list) {
+    max-width: 800px;
+  }
+}
+
 .settings .settings-tab-group {
   --border: 1px solid var(--color-settings-tab-group-border);
 
@@ -265,8 +288,7 @@
 }
 
 .settings .settings-tab .icon {
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
 }
 
 .settings .settings-tab:hover {
@@ -355,15 +377,31 @@
   color: var(--color-settings-tab-active-text);
 }
 
-.sso-config-form {
+.sso-config {
   margin-top: 16px;
 }
 
-.sso-config-form .sso-config-input {
+.sso-config-field {
+  margin-top: 12px;
+}
+
+.sso-config-label {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.sso-config-input {
   width: 100%;
   max-width: 640px;
 }
 
-.sso-config-form .sso-config-actions {
-  margin-top: 12px;
+.sso-config-input[readonly] {
+  opacity: 0.7;
+}
+
+.sso-config-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }

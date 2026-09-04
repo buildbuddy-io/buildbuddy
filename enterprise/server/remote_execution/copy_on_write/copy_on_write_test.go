@@ -13,9 +13,11 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write/cow_cgo_testutil"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -136,6 +138,93 @@ func TestCOW_Basic(t *testing.T) {
 	// Don't validate against the backing file, since COWFromFile makes a copy
 	// of the underlying file.
 	testStore(t, s, "" /*=path*/)
+}
+
+func TestCOW_OnWriteHook(t *testing.T) {
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	dataDir := testfs.MakeTempDir(t)
+
+	chunkSizeBytes := int64(4)
+	cow, err := copy_on_write.NewCOWStore(ctx, env, "test", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes * 4,
+		DataDir:        dataDir,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, cow.Close()) })
+
+	var events []copy_on_write.WriteEvent
+	cow.SetWriteCallback(func(event copy_on_write.WriteEvent) {
+		events = append(events, event)
+	})
+
+	// Write to the first, third, fourth chunks (skip chunk 2).
+	n, err := cow.WriteAt([]byte{1}, 2)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	n, err = cow.WriteAt([]byte{1, 2, 3, 4, 5}, 10)
+	require.NoError(t, err)
+	require.Equal(t, 5, n)
+	require.Equal(t, []copy_on_write.WriteEvent{
+		{Offset: 2, Length: 1, ChunkIndex: 0},
+		{Offset: 10, Length: 2, ChunkIndex: 2},
+		{Offset: 12, Length: 3, ChunkIndex: 3},
+	}, events)
+}
+
+func TestCOW_EagerFetchChunksOption(t *testing.T) {
+	flags.Set(t, "executor.enable_local_snapshot_sharing", true)
+	flags.Set(t, "executor.enable_remote_snapshot_sharing", false)
+
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1_000_000, false)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, fc.Close()) })
+	fc.WaitForDirectoryScanToComplete()
+	env.SetFileCache(fc)
+
+	const chunkSizeBytes = int64(4096)
+	digests := make([]*repb.Digest, 3)
+	for i := range digests {
+		data := bytes.Repeat([]byte{byte(i + 1)}, int(chunkSizeBytes))
+		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_BLAKE3)
+		require.NoError(t, err)
+		digests[i] = d
+		path := filepath.Join(testfs.MakeTempDir(t), fmt.Sprintf("chunk-%d", i))
+		require.NoError(t, os.WriteFile(path, data, 0644))
+		require.NoError(t, fc.AddFile(ctx, &repb.FileNode{Digest: d}, path))
+	}
+
+	newStore := func(eagerFetchChunks int) (*copy_on_write.COWStore, []*copy_on_write.Mmap) {
+		dataDir := testfs.MakeTempDir(t)
+		lru, err := copy_on_write.GetSharedMmapLRU(dataDir)
+		require.NoError(t, err)
+		chunks := make([]*copy_on_write.Mmap, 0, len(digests))
+		for i, d := range digests {
+			chunk, err := copy_on_write.NewLazyMmap(ctx, env, dataDir, int64(i)*chunkSizeBytes, d, "", false, lru)
+			require.NoError(t, err)
+			chunks = append(chunks, chunk)
+		}
+		cow, err := copy_on_write.NewCOWStore(ctx, env, "test", chunks, copy_on_write.COWOptions{
+			ChunkSizeBytes:   chunkSizeBytes,
+			TotalSizeBytes:   int64(len(chunks)) * chunkSizeBytes,
+			DataDir:          dataDir,
+			EagerFetchChunks: eagerFetchChunks,
+		})
+		require.NoError(t, err)
+		return cow, chunks
+	}
+
+	enabled, enabledChunks := newStore(1)
+	t.Cleanup(func() { require.NoError(t, enabled.Close()) })
+	_, err = enabled.ReadAt(make([]byte, 1), 0)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return enabledChunks[1].Source() == snaputil.ChunkSourceLocalFilecache
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(t, snaputil.ChunkSourceUnmapped, enabledChunks[2].Source())
 }
 
 func TestCOW_Concurrency(t *testing.T) {
@@ -391,6 +480,65 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 		t, metrics.COWSnapshotMemoryMappedBytes,
 		prometheus.Labels{metrics.FileName: filepath.Base(chunkDir)})
 	require.Equal(t, float64(0), n)
+}
+
+func TestCOW_DisableLRUEviction_PreventsSharedLRUEviction(t *testing.T) {
+	chunkSizeBytes := int64(32 * 1024 * 1024)
+	lruSizeBytes := 2 * chunkSizeBytes
+
+	// Set the size of the shared LRU.
+	flags.Set(t, "executor.mmap_memory_bytes", lruSizeBytes)
+	err := resources.Configure(true /*=enableSnapshotSharing*/)
+	require.NoError(t, err)
+	copy_on_write.ResetSharedLRUForTest()
+	copy_on_write.ResetMmmapedBytesMetricForTest()
+
+	ctx := t.Context()
+	env := testenv.GetTestEnv(t)
+
+	disabledDataDir := testfs.MakeTempDir(t)
+	disabledCOW, err := copy_on_write.NewCOWStore(ctx, env, "disabled", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: chunkSizeBytes,
+		DataDir:        disabledDataDir,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, disabledCOW.Close()) })
+
+	// Write to a chunk, which should add it to the shared LRU.
+	n, err := disabledCOW.WriteAt([]byte{1}, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+
+	// Disable the shared LRU for the store. The chunk should be removed from the shared LRU.
+	disabledCOW.DisableLRUEviction()
+
+	// Initialize a new store, that puts pressure on the shared LRU to begin evicting chunks.
+	pressureDataDir := testfs.MakeTempDir(t)
+	pressureCOW, err := copy_on_write.NewCOWStore(ctx, env, "pressure", nil, copy_on_write.COWOptions{
+		ChunkSizeBytes: chunkSizeBytes,
+		TotalSizeBytes: 2 * chunkSizeBytes,
+		DataDir:        pressureDataDir,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, pressureCOW.Close()) })
+
+	for off := int64(0); off < 2*chunkSizeBytes; off += chunkSizeBytes {
+		n, err := pressureCOW.WriteAt([]byte{1}, off)
+		require.NoError(t, err)
+		require.Equal(t, 1, n)
+	}
+
+	// Closing the shared LRU waits for any queued eviction workers. If the
+	// disabled store's chunk is still tracked by the LRU, the pressure store's
+	// second chunk queues it for eviction and this call lets that eviction run.
+	copy_on_write.ResetSharedLRUForTest()
+
+	// The chunk from the first store should not have been evicted, despite
+	// being mapped before the pressure store's chunks.
+	disabledLabels := prometheus.Labels{metrics.FileName: filepath.Base(disabledDataDir)}
+	mappedBytes := testmetrics.GaugeValueForLabels(t, metrics.COWSnapshotMemoryMappedBytes, disabledLabels)
+	require.Equal(t, float64(chunkSizeBytes), mappedBytes)
 }
 
 func BenchmarkCOW_ReadWritePerformance(b *testing.B) {

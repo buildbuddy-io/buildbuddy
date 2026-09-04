@@ -65,7 +65,9 @@ const (
 
 	// Name of the dir where the remote runner should write bazel run scripts
 	// (used to facilitate building a target remotely and running it locally).
-	runScriptDirName = "bazel-run-scripts"
+	runScriptDirName  = "bazel-run-scripts"
+	runScriptPathFlag = "--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/" +
+		runScriptDirName + "/run.sh"
 
 	// `git remote` output is expected to look like:
 	// `origin	git@github.com:buildbuddy-io/buildbuddy.git (fetch)`
@@ -89,6 +91,7 @@ var (
 	useSystemGitCredentials = RemoteFlagset.Bool("use_system_git_credentials", false, "Whether to use github auth pre-configured on the remote runner. If false, require https and an access token for git access.")
 	runFromBranch           = RemoteFlagset.String("run_from_branch", "", "A GitHub branch to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
 	runFromCommit           = RemoteFlagset.String("run_from_commit", "", "A GitHub commit SHA to base the remote run off. If unset, the remote workspace will mirror your local workspace.")
+	gitFetchDepth           = RemoteFlagset.Int("git_fetch_depth", -1, "Git fetch depth. Defaults to 'smart' behavior chosen by the remote runner. Can be set to 0 to fetch the full history, or N >= 1 to fetch the last N commits.")
 	// From a shell, pass the JSON in single quotes.
 	// Ex. --run_from_snapshot='{"snapshotId":"XXX","instanceName":""}'
 	runFromSnapshot = RemoteFlagset.String("run_from_snapshot", "", "JSON for a snapshot key that the remote runner should be resumed from. If unset, the snapshot key is determined programatically.")
@@ -137,9 +140,16 @@ type RunOpts struct {
 	// Whether the remotely built target should be fetched and run locally.
 	RunOutputLocally bool
 	// If RunOutputLocally=true, execution arguments for running the target locally.
-	ExecArgs          []string
-	WorkingDirectory  string
-	WorkspaceFilePath string
+	ExecArgs []string
+
+	// RelativeWorkspaceDir is the Bazel workspace directory relative to the Git repository root (applies to both the remote runner and the local machine).
+	// This is a relative path so that the remote runner can navigate to it, despite having a different absolute filesystem path.
+	RelativeWorkspaceDir string
+	// AbsLocalWorkspaceDir is the absolute path to the Bazel workspace on the local machine.
+	AbsLocalWorkspaceDir string
+	// AbsLocalWorkingDirectory is the absolute path from which the user invoked the CLI on the local machine.
+	// This can be different from AbsWorkspaceDir if the CLI was invoked from a subdirectory.
+	AbsLocalWorkingDirectory string
 }
 
 type gitRemote struct {
@@ -335,26 +345,8 @@ func runCommand(name string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
-func isBinaryFile(path string) (bool, error) {
-	fileDetails, err := runCommand("file", "--mime", path)
-	if err != nil {
-		return false, fmt.Errorf("inspect file mime: %w", err)
-	}
-	isBinary := strings.Contains(fileDetails, "charset=binary")
-	return isBinary, nil
-}
-
 func diffUntrackedFile(path string) (string, error) {
-	isBinary, err := isBinaryFile(path)
-	if err != nil {
-		return "", fmt.Errorf("check whether %q is binary: %w", path, err)
-	}
-
-	args := []string{"diff", "--no-index", "/dev/null", path}
-	if isBinary {
-		args = append(args, "--binary")
-	}
-	patch, err := runGit(args...)
+	patch, err := runGit("diff", "--no-index", "--binary", "/dev/null", path)
 	if err != nil {
 		// `git diff` returns exit code 1 if there is (valid) diff. Explicitly
 		// check for this case.
@@ -465,12 +457,12 @@ func getCurrentRef() (string, error) {
 
 	// Handle detached head state
 	detachedHeadOutput, _ := runGit("branch")
-	regex := regexp.MustCompile(".*detached at ([^)]+).*")
+	regex := regexp.MustCompile(".*detached (at|from) ([^)]+).*")
 	matches := regex.FindStringSubmatch(detachedHeadOutput)
-	if len(matches) != 2 {
+	if len(matches) != 3 {
 		return "", status.UnknownErrorf("unexpected branch state %s", detachedHeadOutput)
 	}
-	return strings.TrimSpace(matches[1]), nil
+	return strings.TrimSpace(matches[2]), nil
 }
 
 // branchTrackedRemotely returns whether the given branch exists remotely, as reflected in
@@ -542,50 +534,13 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 			duration.String(), totalSizeMB)
 	}()
 
-	modifiedFiles, err := runGit("diff", baseCommit, "--name-only")
-	if err != nil {
-		return nil, status.WrapError(err, "get modified files")
-	}
-	modifiedFiles = strings.Trim(modifiedFiles, "\n")
-
-	binaryFilesToExclude := make([]string, 0)
-	binaryFiles := make([]string, 0)
-	if modifiedFiles != "" {
-		for mf := range strings.SplitSeq(modifiedFiles, "\n") {
-			isBinary, err := isBinaryFile(mf)
-			if err != nil {
-				return nil, status.WrapError(err, "check binary file")
-			}
-			if isBinary {
-				binaryFilesToExclude = append(binaryFilesToExclude, fmt.Sprintf(":!%s", mf))
-				binaryFiles = append(binaryFiles, mf)
-			}
-		}
-	}
-
-	// Generate patches for non-binary files
-	args := []string{"diff", baseCommit}
-	if len(binaryFilesToExclude) > 0 {
-		args = append(args, binaryFilesToExclude...)
-	}
-	patch, err := runGit(args...)
+	// `--binary` is inert for a text diff and the only applyable form for a binary one.
+	patch, err := runGit("diff", "--binary", baseCommit)
 	if err != nil {
 		return nil, status.WrapError(err, "git diff")
 	}
 	if patch != "" {
 		patches = append(patches, []byte(patch))
-	}
-
-	// Generate patches for binary files
-	if len(binaryFiles) > 0 {
-		binaryArgs := append([]string{"diff", baseCommit, "--binary", "--"}, binaryFiles...)
-		binaryPatch, err := runGit(binaryArgs...)
-		if err != nil {
-			return nil, status.WrapError(err, "git diff --binary")
-		}
-		if binaryPatch != "" {
-			patches = append(patches, []byte(binaryPatch))
-		}
 	}
 
 	// Generate patches for non-tracked files
@@ -612,12 +567,13 @@ func generatePatches(baseCommit string) ([][]byte, error) {
 
 func getTermWidth() int {
 	size, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err != nil {
+	if err != nil || size.Col == 0 {
 		return 80
 	}
 	return int(size.Col)
 }
 
+// splitLogBuffer converts a byte buffer from the log API into terminal rows.
 func splitLogBuffer(buf []byte) []string {
 	var lines []string
 
@@ -632,105 +588,245 @@ func splitLogBuffer(buf []byte) []string {
 	return lines
 }
 
+func commonPrefixLineCount(a, b []string) int {
+	n := min(len(a), len(b))
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+// liveLogUpdate returns the number of previously printed terminal rows to
+// remove, and the index in the current log buffer to start printing from.
+func liveLogUpdate(previous, current []string) (deleteCount int, printFrom int) {
+	commonPrefixLines := commonPrefixLineCount(previous, current)
+	return len(previous) - commonPrefixLines, commonPrefixLines
+}
+
+type logChunk struct {
+	id       string
+	response *elpb.GetEventLogChunkResponse
+}
+
+func logChunkID(requestedChunkID string, response *elpb.GetEventLogChunkResponse) string {
+	if response.GetLive() {
+		return response.GetNextChunkId()
+	}
+	return requestedChunkID
+}
+
+// logStream tails an invocation's log via the streaming GetEventLog API,
+// transparently reconnecting when the stream is dropped by a transient error
+// (e.g. the app restarting during a deploy).
+type logStream struct {
+	ctx          context.Context
+	client       bbspb.BuildBuddyServiceClient
+	invocationID string
+
+	stream bbspb.BuildBuddyService_GetEventLogClient
+	// ID of the chunk the next received response corresponds to, mirroring
+	// the server's read cursor. Responses do not identify their chunk, and
+	// reconnects resume reading from this chunk.
+	// TODO: this could be simplified if the server returned a chunk ID
+	// with each response.
+	chunkID string
+}
+
+func openLogStream(ctx context.Context, client bbspb.BuildBuddyServiceClient, invocationID string) (*logStream, error) {
+	s := &logStream{ctx: ctx, client: client, invocationID: invocationID}
+	if err := s.connect(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *logStream) connect() error {
+	stream, err := s.client.GetEventLog(s.ctx, &elpb.GetEventLogChunkRequest{
+		InvocationId: s.invocationID,
+		ChunkId:      s.chunkID,
+		MinLines:     100,
+	})
+	if err != nil {
+		return err
+	}
+	s.stream = stream
+	return nil
+}
+
+// Recv returns the next log chunk response along with the ID of the chunk it
+// corresponds to. It returns io.EOF once the end of the log is reached.
+func (s *logStream) Recv() (string, *elpb.GetEventLogChunkResponse, error) {
+	l, err := retry.Do(s.ctx, &retry.Options{
+		InitialBackoff:        500 * time.Millisecond,
+		MaxBackoff:            10 * time.Second,
+		Multiplier:            2,
+		MaxRetries:            10,
+		DontLogFailedAttempts: true,
+	}, func(ctx context.Context) (*elpb.GetEventLogChunkResponse, error) {
+		l, err := s.stream.Recv()
+		if err == nil {
+			return l, nil
+		}
+		if err == io.EOF || !status.IsUnavailableError(err) {
+			return nil, retry.NonRetryableError(err)
+		}
+		log.Debugf("Log stream interrupted, reconnecting: %s", err)
+		// Reconnect so the next attempt reads from the new stream. If
+		// reconnecting fails, stay on the broken stream: its next Recv
+		// returns the same error, consuming another retry attempt.
+		if err := s.connect(); err != nil {
+			log.Debugf("Log stream reconnect failed: %s", err)
+		}
+		return nil, err
+	})
+	if err != nil {
+		return "", nil, err
+	}
+	chunkID := s.chunkID
+	if l.GetNextChunkId() != "" {
+		s.chunkID = l.GetNextChunkId()
+	}
+	return chunkID, l, nil
+}
+
 // streamLogs streams the logs with real-time progress updates. It uses ANSI
 // escape sequences to delete and rewrite outdated progress messages
 func streamLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
+	// Disable printing input to the terminal, which could corrupt the log stream and break log de-duplication.
 	defer resetTerminalStyles()
+	restoreTerminalEcho, err := terminal.DisableEcho(os.Stdin)
+	if err != nil {
+		log.Warnf("Failed to disable terminal echo; typed input may interfere with remote log streaming: %s", err)
+	} else {
+		defer func() {
+			if err := restoreTerminalEcho(); err != nil {
+				log.Warnf("Failed to restore terminal echo: %s", err)
+			}
+		}()
+	}
 
-	chunkID := ""
-	moveBack := 0
+	// ID of the live chunk currently drawn on the terminal.
+	liveChunkID := ""
+	// Buffer of lines currently printed to the terminal, kept so redraws do
+	// not reprint log lines that are already on screen.
+	var liveLines []string
 
-	drawChunk := func(chunk *elpb.GetEventLogChunkResponse) {
-		// Are we redrawing the current chunk?
-		if moveBack > 0 {
-			consoleCursorMoveUp(moveBack)
+	drawChunk := func(chunk logChunk) {
+		// Skip empty responses, which the server sends while waiting for log
+		// chunks to be written. Drawing one would print a spurious blank row,
+		// since splitLogBuffer returns one empty row for an empty buffer.
+		if len(chunk.response.GetBuffer()) == 0 {
+			return
+		}
+		logLines := splitLogBuffer(chunk.response.GetBuffer())
+		// Index of the log to start printing from. If earlier lines are
+		// already on screen, do not print them again.
+		printFrom := 0
+
+		// Are we redrawing the current live chunk?
+		if liveChunkID == chunk.id {
+			deleteCount := 0
+			deleteCount, printFrom = liveLogUpdate(liveLines, logLines)
+			if deleteCount > 0 {
+				consoleCursorMoveUp(deleteCount)
+				consoleCursorMoveBeginningLine()
+				consoleDeleteLines(deleteCount)
+			}
+		} else if len(liveLines) > 0 {
+			// If we're printing logs from a new chunk, delete volatile log lines
+			// from the previous chunk.
+			consoleCursorMoveUp(len(liveLines))
 			consoleCursorMoveBeginningLine()
-			consoleDeleteLines(moveBack)
+			consoleDeleteLines(len(liveLines))
 		}
 
-		logLines := splitLogBuffer(chunk.GetBuffer())
-		if !chunk.GetLive() {
-			moveBack = 0
+		if !chunk.response.GetLive() {
+			liveChunkID = ""
+			liveLines = nil
 		} else {
-			moveBack = len(logLines)
+			liveChunkID = chunk.id
+			liveLines = logLines
 		}
 
-		for _, l := range logLines {
+		for _, l := range logLines[printFrom:] {
 			_, _ = os.Stdout.Write([]byte(l))
 			_, _ = os.Stdout.Write([]byte("\n"))
 		}
 	}
 
-	var chunks []*elpb.GetEventLogChunkResponse
+	stream, err := openLogStream(ctx, bbClient, invocationID)
+	if err != nil {
+		return status.WrapError(err, "get event log")
+	}
+
+	// Chunks received but not yet drawn (see comment below re. flicker)
+	var chunks []logChunk
 	wasLive := false
 	for {
-		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-			InvocationId: invocationID,
-			ChunkId:      chunkID,
-			MinLines:     100,
-		})
+		requestedChunkID, l, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return status.WrapError(err, "get event log chunk")
+			return status.WrapError(err, "read log stream")
 		}
 
-		chunks = append(chunks, l)
+		chunks = append(chunks, logChunk{id: logChunkID(requestedChunkID, l), response: l})
 		// If the current chunk was live but is no longer then delay redraw
 		// until the next chunk is retrieved. The "volatile" part of the
 		// chunk moves to the next chunk when a chunk is finalized. Without
 		// the delay, we would print the chunk without the volatile portion
 		// which will look like a "flicker" once the volatile portion is
 		// printed again.
-		if !wasLive || l.GetLive() {
+		delayRedraw := wasLive && !l.GetLive()
+		if !delayRedraw {
 			for _, chunk := range chunks {
 				drawChunk(chunk)
 			}
 			chunks = nil
 		}
 		wasLive = l.GetLive()
+	}
 
-		if l.GetNextChunkId() == "" {
-			break
-		}
-
-		if l.GetNextChunkId() == chunkID {
-			time.Sleep(1 * time.Second)
-		}
-		chunkID = l.GetNextChunkId()
+	// The final chunk's redraw may have been delayed (see above) if it
+	// finalized a previously live chunk. Flush anything still pending so the
+	// last lines of the log are not dropped when the stream ends.
+	for _, chunk := range chunks {
+		drawChunk(chunk)
 	}
 	return nil
 }
 
-// printLogs prints the logs with real-time streaming updates disabled
+// printLogs prints logs for non-interactive mode, where we can't redraw the
+// live chunk. Each chunk is printed only when it is finalized.
 func printLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) error {
 	defer resetTerminalStyles()
 
-	chunkID := ""
+	stream, err := openLogStream(ctx, bbClient, invocationID)
+	if err != nil {
+		return status.WrapError(err, "get event log")
+	}
 
 	for {
-		l, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
-			InvocationId: invocationID,
-			ChunkId:      chunkID,
-			MinLines:     100,
-		})
-		if err != nil {
-			return status.WrapError(err, "get event log chunk")
+		_, l, err := stream.Recv()
+		if err == io.EOF {
+			return nil
 		}
-
+		if err != nil {
+			return status.WrapError(err, "read log stream")
+		}
+		// Live chunks are still subject to change; only print each chunk once
+		// the server finalizes it, so lines are printed exactly once.
 		if l.GetLive() {
-			time.Sleep(1 * time.Second)
 			continue
 		}
 		os.Stdout.Write(l.GetBuffer())
-
-		if l.GetNextChunkId() == "" {
-			break
-		}
-		chunkID = l.GetNextChunkId()
 	}
-	return nil
 }
 
-func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string) error {
+func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceName *digest.CASResourceName, outFile string, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(outFile), 0755); err != nil {
 		return fmt.Errorf("create output dir for %q: %w", outFile, err)
 	}
@@ -741,6 +837,9 @@ func downloadFile(ctx context.Context, bsClient bspb.ByteStreamClient, resourceN
 	defer out.Close()
 	if err := cachetools.GetBlob(ctx, bsClient, resourceName, out); err != nil {
 		return status.WrapError(err, "download blob")
+	}
+	if err := out.Chmod(mode); err != nil {
+		return fmt.Errorf("set permissions on output file %q: %w", outFile, err)
 	}
 	return nil
 }
@@ -786,11 +885,12 @@ func bytestreamURIToResourceName(uri string) (*digest.CASResourceName, error) {
 
 // TODO(vadim): add interactive progress bar for downloads
 // TODO(vadim): parallelize downloads
-func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, supportingOutputs []*bespb.File, supportingDirs []*bespb.Tree, outputBaseDir string) ([]string, error) {
+func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*bespb.File, runfiles []*bespb.Runfile, supportingDirs []*bespb.Tree, outputBaseDir string) (map[string]struct{}, error) {
 	bsClient := env.GetByteStreamClient()
 
 	var mainLocalArtifacts []string
-	download := func(f *bespb.File) (string, error) {
+	downloadedFiles := make(map[string]struct{})
+	download := func(f *bespb.File, mode os.FileMode) (string, error) {
 		r, err := bytestreamURIToResourceName(f.GetUri())
 		if err != nil {
 			return "", fmt.Errorf("resolve output uri for %q: %w", f.GetName(), err)
@@ -800,22 +900,28 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 			outFile = filepath.Join(outFile, p)
 		}
 		outFile = filepath.Join(outFile, f.GetName())
-		if err := downloadFile(ctx, bsClient, r, outFile); err != nil {
+		log.Debugf("Downloading output %q to %q with mode %s", f.GetName(), outFile, mode)
+		if err := downloadFile(ctx, bsClient, r, outFile, mode); err != nil {
 			return "", fmt.Errorf("download output %q: %w", f.GetName(), err)
 		}
+		downloadedFiles[filepath.Clean(outFile)] = struct{}{}
 		return outFile, nil
 	}
 	for _, f := range mainOutputs {
-		outFile, err := download(f)
+		outFile, err := download(f, 0644)
 		if err != nil {
 			return nil, fmt.Errorf("download main output %q: %w", f.GetName(), err)
 		}
 		mainLocalArtifacts = append(mainLocalArtifacts, outFile)
 	}
-	// Supporting outputs (i.e. runtime files) are downloaded but not displayed to the user.
-	for _, f := range supportingOutputs {
-		if _, err := download(f); err != nil {
-			return nil, fmt.Errorf("download supporting output %q: %w", f.GetName(), err)
+	// Runfiles are downloaded but not displayed to the user.
+	for _, rf := range runfiles {
+		mode := os.FileMode(0644)
+		if rf.GetIsExecutable() {
+			mode = 0755
+		}
+		if _, err := download(rf.GetFile(), mode); err != nil {
+			return nil, fmt.Errorf("download runfile %q: %w", rf.GetFile().GetName(), err)
 		}
 	}
 	for _, d := range supportingDirs {
@@ -845,8 +951,82 @@ func downloadOutputs(ctx context.Context, env environment.Env, mainOutputs []*be
 		}
 		relArtifacts = append(relArtifacts, "  "+rp)
 	}
-	fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
-	return mainLocalArtifacts, nil
+	if len(relArtifacts) > 0 {
+		fmt.Printf("Downloaded artifacts:\n%s\n", strings.Join(relArtifacts, "\n"))
+	}
+	return downloadedFiles, nil
+}
+
+func downloadedExecutablePath(downloadedFiles map[string]struct{}, outputBaseDir, executablePath string) (string, error) {
+	if executablePath == "" {
+		return "", fmt.Errorf("run executable path is empty")
+	}
+	binPath := filepath.Join(outputBaseDir, BuildBuddyArtifactDir, executablePath)
+	if _, ok := downloadedFiles[filepath.Clean(binPath)]; !ok {
+		return "", fmt.Errorf("run executable %q was not downloaded", executablePath)
+	}
+	info, err := os.Lstat(binPath)
+	if err != nil {
+		return "", fmt.Errorf("locate downloaded executable %q: %w", binPath, err)
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("downloaded executable %q is not a regular file", binPath)
+	}
+	return binPath, nil
+}
+
+func hasSupportingRunfiles(runfiles []*bespb.Runfile, runfileDirectories []*bespb.Tree, executablePath string) bool {
+	if len(runfileDirectories) > 0 {
+		return true
+	}
+	executablePath = filepath.Clean(executablePath)
+	for _, runfile := range runfiles {
+		if filepath.Clean(runfile.GetFile().GetName()) != executablePath {
+			return true
+		}
+	}
+	return false
+}
+
+// envForLocalRun ensures a locally-run target (build-remotely-run-locally)
+// resolves runfiles from the downloaded runfiles directory and sees the local
+// Bazel workspace. The runfiles manifest contains absolute paths from the
+// remote runner, and inherited runfiles and workspace variables may refer to
+// the bb binary's own environment, so replace them with local values.
+func envForLocalRun(env []string, runfilesDir, workspaceDir, workingDir string) []string {
+	filteredEnv := make([]string, 0, len(env)+3)
+	for _, entry := range env {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "RUNFILES_DIR", "RUNFILES_MANIFEST_FILE", "RUNFILES_MANIFEST_ONLY", "PYTHON_RUNFILES", "JAVA_RUNFILES", "BUILD_WORKSPACE_DIRECTORY", "BUILD_WORKING_DIRECTORY":
+			continue
+		}
+		filteredEnv = append(filteredEnv, entry)
+	}
+	if runfilesDir != "" {
+		filteredEnv = append(filteredEnv, "RUNFILES_DIR="+runfilesDir)
+	}
+	return append(filteredEnv,
+		"BUILD_WORKSPACE_DIRECTORY="+workspaceDir,
+		"BUILD_WORKING_DIRECTORY="+workingDir,
+	)
+}
+
+// removeRunfilesManifests removes runfile manifests whose absolute paths refer to the
+// remote runner. These manifests exist because we download the complete runfiles directory.
+// Removing them ensures the executable will use the downloaded local runfiles directory instead.
+func removeRunfilesManifests(binPath, runfilesDir string) error {
+	manifestPaths := []string{
+		filepath.Join(runfilesDir, "MANIFEST"),
+		binPath + ".runfiles_manifest",
+		binPath + ".exe.runfiles_manifest",
+	}
+	for _, path := range manifestPaths {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove runfiles manifest %q: %w", path, err)
+		}
+	}
+	return nil
 }
 
 func getWorkingDirectory(workspaceFilePath string) (string, error) {
@@ -968,7 +1148,7 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	req := &rnpb.RunRequest{
 		Name:             opts.Name,
-		WorkingDirectory: opts.WorkingDirectory,
+		WorkingDirectory: opts.RelativeWorkspaceDir,
 		GitRepo: &gitpb.GitRepo{
 			RepoUrl:                 repoConfig.URL,
 			UseSystemGitCredentials: *useSystemGitCredentials,
@@ -992,6 +1172,11 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		},
 		RunnerFlags: []string{fmt.Sprintf("--skip_auto_checkout=%v", *skipAutomaticCheckout)},
 	}
+
+	if *gitFetchDepth >= 0 {
+		req.RunnerFlags = append(req.RunnerFlags, fmt.Sprintf("--git_fetch_depth=%d", *gitFetchDepth))
+	}
+
 	req.GetRepoState().Patch = append(req.GetRepoState().Patch, repoConfig.Patches...)
 
 	if *timeout != 0 {
@@ -1056,9 +1241,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 
 	childIID := ""
 	runfilesRoot := ""
-	var runfiles []*bespb.File
+	var runfiles []*bespb.Runfile
 	var runfileDirectories []*bespb.Tree
 	var defaultRunArgs []string
+	executablePath := ""
 	for _, e := range inRsp.GetInvocation()[0].GetEvent() {
 		if _, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_ChildInvocationCompleted); ok {
 			childIID = e.GetBuildEvent().GetId().GetChildInvocationCompleted().GetInvocationId()
@@ -1066,9 +1252,10 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 		if opts.RunOutputLocally {
 			if rta, ok := e.GetBuildEvent().GetPayload().(*bespb.BuildEvent_RunTargetAnalyzed); ok {
 				runfilesRoot = rta.RunTargetAnalyzed.GetRunfilesRoot()
-				runfiles = rta.RunTargetAnalyzed.GetRunfiles()
+				runfiles = rta.RunTargetAnalyzed.GetRunfileEntries()
 				runfileDirectories = rta.RunTargetAnalyzed.GetRunfileDirectories()
 				defaultRunArgs = rta.RunTargetAnalyzed.GetArguments()
+				executablePath = rta.RunTargetAnalyzed.GetExecutablePath()
 			}
 		}
 	}
@@ -1083,29 +1270,68 @@ func Run(ctx context.Context, opts RunOpts, repoConfig *RepoConfig) (int, error)
 			env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 			env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 
-			mainOutputs, err := lookupBazelInvocationOutputs(ctx, bbClient, childIID)
-			if err != nil {
-				return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
+			// For build-remotely run-locally, the main output is the executable and will be included
+			// by the ci_runner in the runfiles entries, so doesn't need to be explicitly downloaded as a
+			// `mainOutput`. (Even though the executable's path is not
+			// within the runfiles directory, we do this to ensure it is always uploaded to the cache).
+			var mainOutputs []*bespb.File
+			if !opts.RunOutputLocally {
+				mainOutputs, err = lookupBazelInvocationOutputs(ctx, bbClient, childIID)
+				if err != nil {
+					return 1, fmt.Errorf("lookup invocation outputs for %q: %w", childIID, err)
+				}
 			}
-			outputsBaseDir := filepath.Dir(opts.WorkspaceFilePath)
-			outputs, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
+			outputsBaseDir := opts.AbsLocalWorkspaceDir
+			downloadedFiles, err := downloadOutputs(ctx, env, mainOutputs, runfiles, runfileDirectories, outputsBaseDir)
 			if err != nil {
 				return 1, fmt.Errorf("download invocation outputs for %q: %w", childIID, err)
 			}
 			if opts.RunOutputLocally {
-				if len(outputs) > 1 {
-					return 1, fmt.Errorf("run requested but target produced more than one artifact")
+				binPath, err := downloadedExecutablePath(downloadedFiles, outputsBaseDir, executablePath)
+				if err != nil {
+					return 1, err
 				}
-				binPath := outputs[0]
-				if err := os.Chmod(binPath, 0755); err != nil {
-					return 1, fmt.Errorf("prepare binary %q for execution: %w", binPath, err)
+				absBinPath, err := filepath.Abs(binPath)
+				if err != nil {
+					return 1, fmt.Errorf("compute absolute path for %q: %w", binPath, err)
 				}
+				if err := os.Chmod(absBinPath, 0755); err != nil {
+					return 1, fmt.Errorf("prepare binary %q for execution: %w", absBinPath, err)
+				}
+
+				// Targets without runfiles, such as executable genrules, should run from
+				// the directory where remote Bazel was invoked. For targets with
+				// runfiles, use the working directory from Bazel's run script, mapped
+				// into the downloaded runfiles tree.
+				runfilesWorkDir := opts.AbsLocalWorkingDirectory
+				runfilesDir := ""
+				if runfilesRoot != "" && hasSupportingRunfiles(runfiles, runfileDirectories, executablePath) {
+					runfilesWorkDir, err = filepath.Abs(filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot))
+					if err != nil {
+						return 1, fmt.Errorf("compute absolute runfiles working directory: %w", err)
+					}
+					// runfilesDir is the absolute path to the downloaded runfiles directory.
+					// This is one level up from the working directory `runfilesWorkDir`.
+					runfilesDir = filepath.Dir(runfilesWorkDir)
+					info, err := os.Stat(runfilesDir)
+					if err != nil {
+						return 1, fmt.Errorf("locate downloaded runfiles directory %q: %w", runfilesDir, err)
+					}
+					if !info.IsDir() {
+						return 1, fmt.Errorf("downloaded runfiles path %q is not a directory", runfilesDir)
+					}
+					if err := removeRunfilesManifests(absBinPath, runfilesDir); err != nil {
+						return 1, err
+					}
+				}
+
 				execArgs := defaultRunArgs
 				// Pass through extra arguments (-- --foo=bar) from the command line.
 				execArgs = append(execArgs, opts.ExecArgs...)
-				log.Debugf("Executing %q with arguments %s", binPath, execArgs)
-				cmd := exec.CommandContext(ctx, binPath, execArgs...)
-				cmd.Dir = filepath.Join(outputsBaseDir, BuildBuddyArtifactDir, runfilesRoot)
+				log.Printf("Running downloaded executable %q locally (working directory %q)", absBinPath, runfilesWorkDir)
+				cmd := exec.CommandContext(ctx, absBinPath, execArgs...)
+				cmd.Dir = runfilesWorkDir
+				cmd.Env = envForLocalRun(os.Environ(), runfilesDir, opts.AbsLocalWorkspaceDir, opts.AbsLocalWorkingDirectory)
 				cmd.Stdout = os.Stdout
 				cmd.Stderr = os.Stderr
 				err = cmd.Run()
@@ -1278,6 +1504,10 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	if err != nil {
 		return 1, status.WrapError(err, "determine working directory")
 	}
+	localWorkingDirectory, err := os.Getwd()
+	if err != nil {
+		return 1, status.WrapError(err, "determine local working directory")
+	}
 
 	cmd := ""
 	remoteRunName := "remote run"
@@ -1313,19 +1543,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		// If we are running the target locally, remove the exec arguments for now,
 		// and append them when we actually run it
 		if runOutputLocally {
-			// Use shlex.Quote so that the command will be correctly parsed by the shell
-			// command line.
-			quotedArgs := shlex.Quote(bazelArgs...)
-
-			// To support building the target on the remote runner and running it locally,
-			// have Bazel write out a run script using the --script_path flag so we can
-			// extract run options (i.e. args, runfile information) from the generated run script.
-			//
-			// We do not pass this to shlex.Quote, or the env var won't be expanded
-			// correctly.
-			extraFlags := fmt.Sprintf("--script_path=$BUILDBUDDY_CI_RUNNER_ROOT_DIR/%s/run.sh", runScriptDirName)
-
-			cmd = fmt.Sprintf("bazel %s %s", quotedArgs, extraFlags)
+			cmd = fmt.Sprintf("bazel %s", quoteRemoteBazelArgs(bazelArgs))
 			localExecArgs = execArgs
 		} else {
 			cmd = fmt.Sprintf("bazel %s", shlex.Quote(arg.JoinExecutableArgs(bazelArgs, execArgs)...))
@@ -1343,14 +1561,15 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", apiKey)
 
 	exitCode, err := Run(ctx, RunOpts{
-		Server:            runner,
-		Name:              remoteRunName,
-		Command:           cmd,
-		RunOutputLocally:  runOutputLocally,
-		ExecArgs:          localExecArgs,
-		WorkingDirectory:  workingDirectory,
-		FetchOutputs:      fetchOutputs,
-		WorkspaceFilePath: wsFilePath,
+		Server:                   runner,
+		Name:                     remoteRunName,
+		Command:                  cmd,
+		RunOutputLocally:         runOutputLocally,
+		ExecArgs:                 localExecArgs,
+		RelativeWorkspaceDir:     workingDirectory,
+		FetchOutputs:             fetchOutputs,
+		AbsLocalWorkspaceDir:     filepath.Dir(wsFilePath),
+		AbsLocalWorkingDirectory: localWorkingDirectory,
 	}, repoConfig)
 	if err != nil && strings.Contains(err.Error(), "context canceled") {
 		return exitCode, nil
@@ -1368,12 +1587,9 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	}
 
 	// Because Remote Bazel just forwards the command to a remote runner, it
-	// doesn't need to use the traditional CLI parser, which attempts
-	// to expand --config and --bazelrc flags for an internal view of resolved flags.
+	// doesn't need to expand --config and --bazelrc flags for an internal view of resolved flags.
 	// (Attempting to use the parser would actually fail, because we add --config flags that
 	// are only defined on the remote runners.)
-	// Manually construct a BazelArgs struct because the login code expects it.
-	// TODO: Find a less hacky way to handle this.
 	bazelArgsStruct, err := arg.NewBazelArgsNoResolve(bazelArgs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse bazel args: %w", err)
@@ -1381,24 +1597,69 @@ func parseArgs(commandLineArgs []string) ([]string, []string, error) {
 	if err := login.ConfigureAPIKey(bazelArgsStruct); err != nil {
 		return nil, nil, fmt.Errorf("configure api key: %w", err)
 	}
-	bazelArgs = bazelArgsStruct.Resolved()
 
 	// Ensure all bazel remote runs use the remote cache.
 	// The goal is to keep remote workloads close to our servers, so use the same
 	// app backend as the remote runner.
-	bazelArgs = arg.Remove(bazelArgs, "bes_backend")
-	bazelArgs = arg.Remove(bazelArgs, "remote_cache")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_backend")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_bes_results_url")
-	bazelArgs = append(bazelArgs, "--config=buildbuddy_remote_cache")
+	if _, err := bazelArgsStruct.Pop("bes_backend"); err != nil {
+		return nil, nil, fmt.Errorf("remove BES backend: %w", err)
+	}
+	if _, err := bazelArgsStruct.Pop("remote_cache"); err != nil {
+		return nil, nil, fmt.Errorf("remove remote cache: %w", err)
+	}
+	extraArgs := []string{
+		"--config=buildbuddy_bes_backend",
+		"--config=buildbuddy_bes_results_url",
+		"--config=buildbuddy_remote_cache",
+	}
+	var requiredArgs []string
 
 	// If the CLI needs to fetch build outputs, make sure the remote runner uploads them.
-	bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
+	bazelCmd := bazelArgsStruct.GetCommand()
 	if (!*runRemotely && bazelCmd == "run") || bazelCmd == "build" {
-		bazelArgs = append(bazelArgs, "--remote_upload_local_results")
+		requiredArgs = append(requiredArgs,
+			"--remote_upload_local_results",
+		)
+	}
+	// To support building the target on the remote runner and running it locally,
+	// have Bazel write out a run script using the --script_path flag so we can
+	// extract run options (i.e. args, runfile information) from the generated run script.
+	if !*runRemotely && bazelCmd == "run" {
+		requiredArgs = append(requiredArgs, runScriptPathFlag)
+	}
+	for _, extraArg := range extraArgs {
+		if err := bazelArgsStruct.Prepend(extraArg); err != nil {
+			return nil, nil, fmt.Errorf("add remote bazel arg: %w", err)
+		}
+	}
+	// These flags are required for fetching or locally running outputs, so append
+	// them after user flags and config expansions to ensure they take precedence.
+	for _, requiredArg := range requiredArgs {
+		if err := bazelArgsStruct.Append(requiredArg); err != nil {
+			return nil, nil, fmt.Errorf("add required remote bazel arg: %w", err)
+		}
 	}
 
-	return bazelArgs, execArgs, nil
+	return bazelArgsStruct.Forwarded(), execArgs, nil
+}
+
+// quoteRemoteBazelArgs quotes Bazel args for the remote shell so that the command will be correctly parsed by the shell
+// command line.
+func quoteRemoteBazelArgs(args []string) string {
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		// The run script path flag contains an env var that we *want* expanded on the remote runner.
+		// We do not want to use shlex.Quote, which explicitly prevents env var expansion.
+		if path, ok := strings.CutPrefix(arg, "--script_path="); ok {
+			runnerRoot := "$BUILDBUDDY_CI_RUNNER_ROOT_DIR"
+			if relativePath, ok := strings.CutPrefix(path, runnerRoot+"/"); ok {
+				quoted = append(quoted, `--script_path="`+runnerRoot+`"`+shlex.Quote("/"+relativePath))
+				continue
+			}
+		}
+		quoted = append(quoted, shlex.Quote(arg))
+	}
+	return strings.Join(quoted, " ")
 }
 
 // parseRemoteCliFlags parses flags that affect configuration of remote bazel.
@@ -1443,7 +1704,14 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 		if err == nil {
 			// flagset.Args() contains the list of any unparsed arguments
 			// Keep parsing them in a loop until we process all the args
-			unparsedArgs = RemoteFlagset.Args()
+			remainingArgs := RemoteFlagset.Args()
+
+			// If the flag parser didn't consume any arguments (which can happen if there's an unexpected syntax error),
+			// return an error so there's not an infinite loop.
+			if len(remainingArgs) == len(unparsedArgs) {
+				return nil, status.InvalidArgumentErrorf("unexpected argument %q before bazel command; use `bb remote <bazel command> ...` (for example, `bb remote build //...`)", remainingArgs[0])
+			}
+			unparsedArgs = remainingArgs
 		} else {
 			// Parsing undefined flags could happen if there are bazel startup flags set
 			// Remove them from the list of unparsed arguments and keep parsing

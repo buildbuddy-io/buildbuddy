@@ -24,13 +24,3 @@ diff --git a/cmd/gazelle/main.go b/cmd/gazelle/main.go
  	log.SetPrefix("gazelle: ")
  	log.SetFlags(0) // don't print timestamps
  
-diff --git a/internal/module/BUILD.bazel b/internal/module/BUILD.bazel
---- a/internal/module/BUILD.bazel
-+++ b/internal/module/BUILD.bazel
-@@ -4,5 +4,5 @@ go_library(
-     name = "module",
-     srcs = ["module.go"],
-     importpath = "github.com/bazelbuild/bazel-gazelle/internal/module",
--    visibility = ["//:__subpackages__"],
-+    visibility = ["//visibility:public"],
-     deps = [

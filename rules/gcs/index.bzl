@@ -1,3 +1,6 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
 # Handles uploading files to GCS.
 #
 # Example usage:
@@ -22,49 +25,123 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     if prefix != "" and not prefix.endswith("/"):
         prefix += "/"
 
-    # Add the given sha to the prefix if provided.
-    if sha_prefix:
-        prefix += "$$(cat $(location %s))/" % sha_prefix
-        srcs = srcs + [sha_prefix]
-
     # Zip the files if requested.
     copy_options = "-r"
     if zip:
         copy_options += " -Z"
 
-    util_options = ""
+    util_options = "-m"
     if disable_caching:
         util_options += " -h 'Cache-Control:no-store'"
 
-    # Generate an .apply rule for uploading.
-    native.genrule(
+    # Generate a .push_only rule for uploading.
+    write_file(
+        name = name + ".push_only.script",
+        out = name + ".push_only.out",
+        content = [
+            "set -e",
+            "unset -v PYTHONSAFEPATH",
+            "read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
+            "shift",
+            "{gsutil} {util_options} cp {copy_options} \"${{@}}\" \"gs://{bucket}/{prefix}${{SHA_PREFIX}}\"".format(
+                gsutil = gsutil,
+                util_options = util_options,
+                copy_options = copy_options,
+                bucket = bucket,
+                prefix = prefix,
+            ),
+        ],
+        is_executable = True,
+        **kwargs
+    )
+
+    to_copy = ["../$(rlocationpath {})".format(src) for src in srcs]
+    if sha_prefix != "":
+        sha_prefix_location = "../$(rlocationpath {})".format(sha_prefix)
+
+        # copy the sha_prefix file if it exists.
+        to_copy.append(sha_prefix_location)
+    else:
+        sha_prefix_location = "/dev/null"
+
+    sh_binary(
+        name = name + ".push_only",
+        # the first argument is where to read the sha_prefix from.
+        args = [sha_prefix_location] + to_copy,
+        srcs = [":" + name + ".push_only.script"],
+        data = srcs + ([sha_prefix] if sha_prefix != "" else []),
+        use_bash_launcher = True,
+        **kwargs
+    )
+
+    # gcs has no apply_only step; it just pushes.
+    native.alias(
         name = name + ".apply",
-        srcs = srcs,
-        outs = [name + ".apply.out"],
-        cmd = "echo \"%s -m %s cp %s $(SRCS) gs://%s/%s\" > $@" % (gsutil, util_options, copy_options, bucket, prefix),
-        local = 1,
-        executable = 1,
+        actual = ":" + name + ".push_only",
+    )
+
+    # Uploading is the only deployment operation for a GCS bundle, so there
+    # is nothing left to do during the apply-only phase.
+    write_file(
+        name = name + ".apply_only.script",
+        out = name + ".apply_only.out",
+        content = [
+            "true",
+        ],
+        is_executable = True,
+        **kwargs
+    )
+
+    sh_binary(
+        name = name + ".apply_only",
+        srcs = [
+            ":" + name + ".apply_only.script",
+        ],
+        use_bash_launcher = True,
         **kwargs
     )
 
     # Generate a .diff rule for diffing.
-    native.genrule(
+    write_file(
+        name = name + ".diff.script",
+        out = name + ".diff.out",
+        content = [
+            "echo 'Diff not yet implemented for gcs uploads.'",
+        ],
+        is_executable = True,
+        **kwargs
+    )
+
+    sh_binary(
         name = name + ".diff",
-        srcs = srcs,
-        outs = [name + ".diff.out"],
-        cmd = "echo \"echo 'Diff not yet implemented for gcs uploads.'\" > $@",
-        local = 1,
-        executable = 1,
+        srcs = [":" + name + ".diff.script"],
+        use_bash_launcher = True,
         **kwargs
     )
 
     # Generate a .delete rule for deleting.
-    native.genrule(
+    write_file(
+        name = name + ".delete.script",
+        out = name + ".delete.out",
+        content = [
+            "set -e",
+            "unset -v PYTHONSAFEPATH",
+            "read SHA_PREFIX < \"${1}\" && export SHA_PREFIX=\"${SHA_PREFIX}/\"",
+            "{gsutil} -m rm -r gs://{bucket}/{prefix}${{SHA_PREFIX}}".format(
+                gsutil = gsutil,
+                bucket = bucket,
+                prefix = prefix,
+            ),
+        ],
+        is_executable = True,
+        **kwargs
+    )
+
+    sh_binary(
         name = name + ".delete",
-        srcs = srcs,
-        outs = [name + ".delete.out"],
-        cmd = "echo \"%s -m rm -r gs://%s/%s\" > $@" % (gsutil, bucket, prefix),
-        local = 1,
-        executable = 1,
+        args = ["../$(rlocationpath %s)" % sha_prefix if sha_prefix != "" else ""],
+        srcs = [":" + name + ".delete.script"],
+        data = [sha_prefix] if sha_prefix != "" else [],
+        use_bash_launcher = True,
         **kwargs
     )

@@ -8,7 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/help/option_definitions",
     visibility = ["//visibility:public"],
     deps = [
-        "//cli/parser/bazelrc",
+        "//cli/parser/bazel_command",
         "//cli/parser/options",
     ],
 )

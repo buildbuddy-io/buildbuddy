@@ -114,17 +114,27 @@ func addRequestIdToContext(ctx context.Context) context.Context {
 	return ctx
 }
 
+func clientIsGRPCProxy(env environment.Env, ctx context.Context) bool {
+	cis := env.GetClientIdentityService()
+	if cis == nil {
+		return false
+	}
+	si, err := cis.IdentityFromContext(ctx)
+	if err != nil || si == nil {
+		return false
+	}
+	return si.Client == interfaces.ClientIdentityGRPCProxy
+}
+
 func addClientIPToContext(ctx context.Context, env environment.Env) context.Context {
 	// Use the gRPC proxy-supplied client IP if it is provided and the caller
 	// is trusted, as verified by its clientidentity.
-	if cis := env.GetClientIdentityService(); cis != nil {
-		if si, err := cis.IdentityFromContext(ctx); err == nil && si != nil && si.Client == interfaces.ClientIdentityGRPCProxy {
-			// Require exactly one value: a trusted proxy sets a single header.
-			if hdrs := metadata.ValueFromIncomingContext(ctx, clientip.HeaderName); len(hdrs) == 1 {
-				return context.WithValue(ctx, clientip.ContextKey, hdrs[0])
-			} else if len(hdrs) > 1 {
-				log.CtxWarningf(ctx, "Multiple %q headers present in request from trusted proxy; ignoring", clientip.HeaderName)
-			}
+	if clientIsGRPCProxy(env, ctx) {
+		// Require exactly one value: a trusted proxy sets a single header.
+		if hdrs := metadata.ValueFromIncomingContext(ctx, clientip.HeaderName); len(hdrs) == 1 {
+			return context.WithValue(ctx, clientip.ContextKey, hdrs[0])
+		} else if len(hdrs) > 1 {
+			log.CtxWarningf(ctx, "Multiple %q headers present in request from trusted proxy; ignoring", clientip.HeaderName)
 		}
 	}
 
@@ -134,13 +144,25 @@ func addClientIPToContext(ctx context.Context, env environment.Env) context.Cont
 		return addPeerIPToContext(ctx)
 	}
 
-	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0])
+	ctx, ok := clientip.SetFromXForwardedForHeader(ctx, hdrs[0], peerIPFromContext(ctx))
 	if ok {
 		return ctx
 	}
 
 	// X-Forwarded-For header is present but not trusted. Fall back to peer.
 	return addPeerIPToContext(ctx)
+}
+
+func peerIPFromContext(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr.Network() == "unix" {
+		return ""
+	}
+	ap, err := netip.ParseAddrPort(p.Addr.String())
+	if err != nil {
+		return ""
+	}
+	return ap.Addr().String()
 }
 
 func addPeerIPToContext(ctx context.Context) context.Context {
@@ -158,7 +180,16 @@ func addPeerIPToContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-func addSubdomainToContext(ctx context.Context) context.Context {
+func addSubdomainToContext(ctx context.Context, env environment.Env) context.Context {
+	// Use internal-header-provided subdomains from trusted callers.
+	if clientIsGRPCProxy(env, ctx) {
+		if hdrs := metadata.ValueFromIncomingContext(ctx, subdomain.HeaderName); len(hdrs) == 1 {
+			return subdomain.SetResolved(ctx, hdrs[0])
+		} else if len(hdrs) > 1 {
+			log.CtxWarningf(ctx, "Multiple %q headers present in request from trusted proxy; ignoring", subdomain.HeaderName)
+		}
+	}
+
 	hdrs := metadata.ValueFromIncomingContext(ctx, ":authority")
 	if len(hdrs) == 0 {
 		return ctx
@@ -374,8 +405,10 @@ func clientIPStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 
 // subdomainStreamServerInterceptor adds customer subdomain information to the
 // context.
-func subdomainStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return contextReplacingStreamServerInterceptor(addSubdomainToContext)
+func subdomainStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return contextReplacingStreamServerInterceptor(func(ctx context.Context) context.Context {
+		return addSubdomainToContext(ctx, env)
+	})
 }
 
 // clientIPUnaryInterceptor is a server interceptor that inserts the client IP
@@ -388,8 +421,10 @@ func clientIPUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 
 // subdomainUnaryServerInterceptor adds customer subdomain information to the
 // context.
-func subdomainUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return contextReplacingUnaryServerInterceptor(addSubdomainToContext)
+func subdomainUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return contextReplacingUnaryServerInterceptor(func(ctx context.Context) context.Context {
+		return addSubdomainToContext(ctx, env)
+	})
 }
 
 func addInvocationIdToLog(ctx context.Context) context.Context {
@@ -437,6 +472,28 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 		err := handler(srv, stream)
 		log.LogGRPCRequest(stream.Context(), info.FullMethod, time.Since(start), err)
 		return err
+	}
+}
+
+func groupStatusUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if gs := env.GetGroupStatusChecker(); gs != nil {
+			if err := gs.CheckAllowed(ctx); err != nil {
+				return nil, err
+			}
+		}
+		return handler(ctx, req)
+	}
+}
+
+func groupStatusStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if gs := env.GetGroupStatusChecker(); gs != nil {
+			if err := gs.CheckAllowed(stream.Context()); err != nil {
+				return err
+			}
+		}
+		return handler(srv, stream)
 	}
 }
 
@@ -654,7 +711,7 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		identityUnaryServerInterceptor(env),
 		stripInternalHeadersUnaryServerInterceptor(env),
 		clientIPUnaryServerInterceptor(env),
-		subdomainUnaryServerInterceptor(),
+		subdomainUnaryServerInterceptor(env),
 		requestIDUnaryServerInterceptor(),
 		invocationIDLoggerUnaryServerInterceptor(),
 		logRequestUnaryServerInterceptor(),
@@ -667,6 +724,7 @@ func GetUnaryInterceptor(env environment.Env, extraInterceptors ...grpc.UnarySer
 		interceptors = append(interceptors, extraInterceptors...)
 	}
 	interceptors = append(interceptors, authUnaryServerInterceptor(env),
+		groupStatusUnaryServerInterceptor(env),
 		quotaUnaryServerInterceptor(env),
 		ipAuthUnaryServerInterceptor(env),
 		roleAuthUnaryServerInterceptor(env))
@@ -682,7 +740,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		identityStreamServerInterceptor(env),
 		stripInternalHeadersStreamServerInterceptor(env),
 		clientIPStreamServerInterceptor(env),
-		subdomainStreamServerInterceptor(),
+		subdomainStreamServerInterceptor(env),
 		requestIDStreamServerInterceptor(),
 		invocationIDLoggerStreamServerInterceptor(),
 		logRequestStreamServerInterceptor(),
@@ -694,6 +752,7 @@ func GetStreamInterceptor(env environment.Env, extraInterceptors ...grpc.StreamS
 		interceptors = append(interceptors, extraInterceptors...)
 	}
 	interceptors = append(interceptors, authStreamServerInterceptor(env),
+		groupStatusStreamServerInterceptor(env),
 		quotaStreamServerInterceptor(env),
 		ipAuthStreamServerInterceptor(env),
 		roleAuthStreamServerInterceptor(env))

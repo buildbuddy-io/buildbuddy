@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -17,6 +19,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -37,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
@@ -53,6 +57,7 @@ import (
 
 	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	clpb "github.com/buildbuddy-io/buildbuddy/proto/command_line"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -105,6 +110,9 @@ const (
 	// depth required.
 	smartFetchDepth = -1
 
+	// maxGitFetchLowSpeedRetries caps --git_fetch_low_speed_retries.
+	maxGitFetchLowSpeedRetries = 3
+
 	// Env vars set by workflow runner
 	// NOTE: These env vars are not populated for non-private repos.
 
@@ -131,9 +139,10 @@ const (
 	// Bazel exit codes
 	// https://github.com/bazelbuild/bazel/blob/master/src/main/java/com/google/devtools/build/lib/util/ExitCode.java
 
-	bazelOOMErrorExitCode                = 33
-	bazelLocalEnvironmentalErrorExitCode = 36
-	bazelInternalErrorExitCode           = 37
+	bazelOOMErrorExitCode                              = 33
+	bazelLocalEnvironmentalErrorExitCode               = 36
+	bazelInternalErrorExitCode                         = 37
+	bazelTransientBuildEventServiceUploadErrorExitCode = 38
 
 	// ANSI codes for cases where the aurora equivalent is not supported by our UI
 	// (ex: aurora's "grayscale" mode results in some ANSI codes that we don't currently
@@ -154,6 +163,22 @@ const (
 	// Keep in sync with ci_runner_util.FreeTierTimeoutReason.
 	freeTierTimeoutReason = "free_tier_limit"
 )
+
+func isExecutableName(name, baseName string) bool {
+	return name == baseName || name == baseName+platform.ExecutableSuffix
+}
+
+func isBazelCommandToken(token string) bool {
+	return isExecutableName(token, bazelBinaryName) ||
+		isExecutableName(token, bazeliskBinaryName) ||
+		isExecutableName(token, bbBinaryName)
+}
+
+func startsWithBazelCommand(cmd string) bool {
+	return strings.HasPrefix(cmd, bazeliskBinaryName) ||
+		strings.HasPrefix(cmd, bazelBinaryName) ||
+		strings.HasPrefix(cmd, bbBinaryName)
+}
 
 var (
 	// Subcommands of the ci_runner.
@@ -188,9 +213,15 @@ var (
 	commitSHA             = flag.String("commit_sha", "", "Commit SHA to report statuses for.")
 	prNumber              = flag.Int64("pull_request_number", 0, "PR number, if applicable (0 if not triggered by a PR).")
 	patchURIs             = flag.Slice("patch_uri", []string{}, "URIs of patches to apply to the repo after checkout. Can be specified multiple times to apply multiple patches.")
-	gitCleanExclude       = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from `git clean` while setting up the repo.")
-	gitFetchFilters       = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to `git fetch` commands.")
-	gitFetchDepth         = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for `git fetch` commands.")
+	gitCleanExclude       = flag.Slice("git_clean_exclude", []string{}, "Directories to exclude from git clean while setting up the repo.")
+
+	// Flags to configure git fetch behavior
+	gitFetchFilters         = flag.Slice("git_fetch_filters", []string{}, "Filters to apply to git fetch commands.")
+	gitFetchDepth           = flag.Int("git_fetch_depth", smartFetchDepth, "Depth to use for git fetch commands.")
+	gitFetchLowSpeedRetries = flag.Int("git_fetch_low_speed_retries", 0, "Number of times to retry git fetch commands that were aborted because the transfer rate was too slow.")
+	gitFetchLowSpeedLimit   = flag.Int64("git_fetch_low_speed_limit", 1024, "Transfer rate in bytes per second below which a git fetch transfer is considered too slow. Only applies if git_fetch_low_speed_retries is set.")
+	gitFetchLowSpeedTime    = flag.Duration("git_fetch_low_speed_time", 30*time.Second, "How long a git fetch transfer must stay below git_fetch_low_speed_limit before it is aborted. Only applies if git_fetch_low_speed_retries is set.")
+
 	// Flags to configure merge-with-base behavior
 	targetRepoURL = flag.String("target_repo_url", "", "If different from pushed_repo_url, indicates a fork (`pushed_repo_url`) is being merged into this repo.")
 	targetBranch  = flag.String("target_branch", "", "If different from pushed_branch, pushed_branch should be merged into this branch in the target repo.")
@@ -271,6 +302,16 @@ type workspace struct {
 	// reported for all action logs instead of actually executing the action.
 	setupError error
 
+	// Total bytes fetched by git fetch commands run during setup, parsed from
+	// git trace2 event logs.
+	gitFetchTotalBytes int64
+
+	// Total time spent running git fetch commands during setup.
+	gitFetchDuration time.Duration
+
+	// Total number of git fetch retries after low-speed aborts during setup.
+	gitFetchRetryCount int64
+
 	// The start time of the setup phase.
 	startTime time.Time
 
@@ -303,6 +344,7 @@ type buildEventReporter struct {
 	isWorkflow bool
 	apiKey     string
 	bep        *build_event_publisher.Publisher
+	besConn    *grpc_client.ClientConnPool
 	uploader   *bes_artifacts.Uploader
 	log        *invocationLog
 
@@ -327,8 +369,13 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		}
 	}
 
-	bep, err := build_event_publisher.New(besBackend, apiKey, iid)
+	conn, err := grpc_client.DialSimple(besBackend)
 	if err != nil {
+		return nil, status.UnavailableErrorf("dial BES backend: %s", err)
+	}
+	bep, err := build_event_publisher.New(pepb.NewPublishBuildEventClient(conn), apiKey, iid)
+	if err != nil {
+		conn.Close()
 		return nil, status.UnavailableErrorf("failed to initialize build event publisher: %s", err)
 	}
 	bep.Start(ctx)
@@ -342,7 +389,7 @@ func newBuildEventReporter(ctx context.Context, besBackend string, apiKey string
 		uploader = ul
 	}
 
-	return &buildEventReporter{apiKey: apiKey, bep: bep, uploader: uploader, log: newInvocationLog(redactionValues), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
+	return &buildEventReporter{apiKey: apiKey, bep: bep, besConn: conn, uploader: uploader, log: newInvocationLog(redactionValues), invocationID: iid, isWorkflow: isWorkflow, childInvocations: []string{}}, nil
 }
 
 func (r *buildEventReporter) InvocationID() string {
@@ -507,7 +554,12 @@ func (r *buildEventReporter) Stop() error {
 		LastMessage: true,
 	})
 
-	if err := r.bep.Finish(); err != nil {
+	err := r.bep.Finish()
+	if r.besConn != nil {
+		r.besConn.Close()
+		r.besConn = nil
+	}
+	if err != nil {
 		// If we don't publish a build event successfully, then the status may not be
 		// reported to the Git provider successfully. Terminate with a code indicating
 		// that the executor can retry the action, so that we have another chance.
@@ -706,6 +758,9 @@ func run() error {
 	if err != nil {
 		return status.WrapError(err, "compute CI runner binary abspath")
 	}
+	if filepath.Ext(absPath) == "" {
+		absPath = absPath + platform.ExecutableSuffix
+	}
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ABSPATH", absPath)
 
 	// Store the original task workspace dir since we change directories later.
@@ -772,15 +827,15 @@ func run() error {
 
 	// Make sure we have a bazel / bazelisk binary available.
 	if *bazelCommand == "" {
-		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName)
+		bazeliskPath := filepath.Join(rootDir, bazeliskBinaryName+platform.ExecutableSuffix)
 		if err := extractBazelisk(bazeliskPath); err != nil {
 			return status.WrapError(err, "failed to extract bazelisk")
 		}
 		*bazelCommand = bazeliskPath
 	}
 	// (TODO): Once bb CLI is stable, stop extracting bazelisk and use bb by default.
-	if *bazelCommand == bbBinaryName {
-		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+	if isExecutableName(*bazelCommand, bbBinaryName) {
+		bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+platform.ExecutableSuffix)
 		if _, err := os.Stat(bbPath); err != nil {
 			backendLog.Warningf("bb binary not found in workspace: %s", err)
 		} else {
@@ -1077,8 +1132,25 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		return err
 	}
 	if !*skipAutomaticCheckout {
-		if err := ws.setup(ctx); err != nil {
-			return status.WrapError(err, "failed to set up git repo")
+		setupErr := ws.setup(ctx)
+		// Report git fetch stats even if setup failed, since the time spent
+		// fetching may help diagnose the failure.
+		gitFetchEvent := &bespb.BuildEvent{
+			Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_GitFetchCompleted{GitFetchCompleted: &bespb.BuildEventId_GitFetchCompletedId{}}},
+			Payload: &bespb.BuildEvent_GitFetchCompleted{GitFetchCompleted: &bespb.GitFetchCompleted{
+				TotalBytes: ws.gitFetchTotalBytes,
+				Duration:   durationpb.New(ws.gitFetchDuration),
+				RetryCount: ws.gitFetchRetryCount,
+			}},
+		}
+		publishErr := ar.reporter.Publish(gitFetchEvent)
+		// Return the setup error before handling any publish error, so that a
+		// broken build event stream doesn't mask a real setup failure.
+		if setupErr != nil {
+			return status.WrapError(setupErr, "failed to set up git repo")
+		}
+		if publishErr != nil {
+			return nil
 		}
 	}
 	action, err := getActionToRun()
@@ -1128,8 +1200,8 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 		action.Steps = make([]*rnpb.Step, 0)
 	}
 	for _, cmd := range action.DeprecatedBazelCommands {
-		if !(strings.HasPrefix(cmd, bazeliskBinaryName) || strings.HasPrefix(cmd, bazelBinaryName) || strings.HasPrefix(cmd, bbBinaryName)) {
-			cmd = "bazel " + cmd
+		if !startsWithBazelCommand(cmd) {
+			cmd = bazelBinaryName + " " + cmd
 		}
 		action.Steps = append(action.Steps, &rnpb.Step{
 			Run: cmd,
@@ -1231,6 +1303,14 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 				}
 			}
 		}
+		if exitCode == bazelTransientBuildEventServiceUploadErrorExitCode {
+			javaLogPath := filepath.Join(ar.rootDir, outputBaseDirName, "java.log")
+			// java.log is normally a symlink to a file that the Bazel server keeps
+			// open, so copy it rather than hard-linking it like the crash outputs.
+			if err := disk.CopyViaTmpSibling(javaLogPath, filepath.Join(artifactsDir, "java.log")); err != nil {
+				ar.reporter.Printf("%sfailed to preserve java.log: %s%s\n", ansiGray, err, ansiReset)
+			}
+		}
 
 		// Kick off background uploads for the action that just completed
 		if uploader != nil {
@@ -1256,7 +1336,9 @@ func (ar *actionRunner) Run(ctx context.Context, ws *workspace) error {
 							Arguments:          runScriptInfo.args,
 							RunfilesRoot:       runScriptInfo.runfilesRoot,
 							Runfiles:           runScriptInfo.runfiles,
+							RunfileEntries:     runScriptInfo.runfileEntries,
 							RunfileDirectories: runScriptInfo.runfileDirs,
+							ExecutablePath:     runScriptInfo.executablePath,
 						}},
 					}
 					ar.reporter.Publish(e)
@@ -1372,15 +1454,34 @@ func deserializeAction(actionString string) (*config.Action, error) {
 }
 
 type runInfo struct {
-	args         []string
-	runfiles     []*bespb.File
-	runfileDirs  []*bespb.Tree
-	runfilesRoot string
+	args           []string
+	runfiles       []*bespb.File
+	runfileEntries []*bespb.Runfile
+	runfileDirs    []*bespb.Tree
+	runfilesRoot   string
+	executablePath string
 }
 
-func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]string, error) {
-	fileDigestMap := make(map[digest.Key]string)
+type runfile struct {
+	// logicalPath is the path the executable expects to find inside its runfiles tree
+	// For a symlink, this could be different from the physical path where the file's bytes
+	// physically live on the remote runner. Many logical paths can map to the same physical path.
+	logicalPath string
+	// physicalPath is the path where the file's bytes actually live.
+	physicalPath string
+	digest       *repb.Digest
+	isExecutable bool
+}
+
+func collectRunfiles(runfilesDir string) ([]*runfile, map[string]string, error) {
+	var runfiles []*runfile
 	dirsToUpload := make(map[string]string)
+	if _, err := os.Stat(runfilesDir); err != nil {
+		if os.IsNotExist(err) {
+			return runfiles, dirsToUpload, nil
+		}
+		return nil, nil, status.UnknownErrorf("could not setup runtime files: %s", err)
+	}
 	err := filepath.WalkDir(runfilesDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -1388,44 +1489,57 @@ func collectRunfiles(runfilesDir string) (map[digest.Key]string, map[string]stri
 		if d.IsDir() {
 			return nil
 		}
+
+		// Get file metadata for symlinks.
+		physicalPath := path
 		if d.Type()&fs.ModeSymlink != 0 {
-			t, err := os.Readlink(path)
+			// Resolve all symlinks.
+			physicalPath, err = filepath.EvalSymlinks(path)
 			if err != nil {
 				return err
 			}
-			fi, err := os.Stat(t)
+			info, err := os.Stat(physicalPath)
 			if err != nil {
 				return err
 			}
-			if fi.IsDir() {
-				dirsToUpload[path] = t
+			if info.IsDir() {
+				dirsToUpload[path] = physicalPath
 				return nil
 			}
 		}
-		rn, err := cachetools.ComputeFileDigest(path, *remoteInstanceName, repb.DigestFunction_SHA256)
+		info, err := os.Stat(physicalPath)
 		if err != nil {
 			return err
 		}
-		fileDigestMap[digest.NewKey(rn.GetDigest())] = path
+		rn, err := cachetools.ComputeFileDigest(physicalPath, *remoteInstanceName, repb.DigestFunction_SHA256)
+		if err != nil {
+			return err
+		}
+		runfiles = append(runfiles, &runfile{
+			logicalPath:  path,
+			physicalPath: physicalPath,
+			digest:       rn.GetDigest(),
+			isExecutable: info.Mode()&0111 != 0,
+		})
 		return nil
 	})
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil {
 		return nil, nil, status.UnknownErrorf("could not setup runtime files: %s", err)
 	}
-	return fileDigestMap, dirsToUpload, err
+	return runfiles, dirsToUpload, nil
 }
 
-func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*bespb.File, []*bespb.Tree, error) {
+func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir, executablePath string) ([]*bespb.File, []*bespb.Tree, []*bespb.Runfile, error) {
 	healthChecker := healthcheck.NewHealthChecker("ci-runner")
 	env := real_environment.NewRealEnv(healthChecker)
 
-	fileDigestMap, dirs, err := collectRunfiles(runfilesDir)
+	runfileMetadata, dirs, err := collectRunfiles(runfilesDir)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	conn, err := grpc_client.DialSimple(*cacheBackend)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	env.SetByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
@@ -1433,35 +1547,93 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 
 	backendURL, err := url.Parse(*cacheBackend)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	bytestreamURIPrefix := "bytestream://" + backendURL.Host
 
-	var digests []*repb.Digest
+	// We keep separate fields for digests to upload because the same digest may appear at multiple logical paths,
+	// but only needs one upload.
+	digestToPhysicalPath := make(map[string]string)
+	var digestsToUpload []*repb.Digest
+	// The runfiles slices should contain an entry for every logical path, even if the same digest appears multiple times,
+	// so we can recreate the entire runfiles tree.
 	var runfiles []*bespb.File
-	for d, runfilePath := range fileDigestMap {
-		digests = append(digests, d.ToDigest())
-		relPath, err := filepath.Rel(workspaceRoot, runfilePath)
-		if err != nil {
-			return nil, nil, err
+	var runfileEntries []*bespb.Runfile
+	for _, runfileInfo := range runfileMetadata {
+		d := runfileInfo.digest
+		if _, ok := digestToPhysicalPath[d.GetHash()]; !ok {
+			digestToPhysicalPath[d.GetHash()] = runfileInfo.physicalPath
+			digestsToUpload = append(digestsToUpload, d)
 		}
-		downloadString := digest.NewCASResourceName(d.ToDigest(), *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
+		relPath, err := filepath.Rel(workspaceRoot, runfileInfo.logicalPath)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		downloadString := digest.NewCASResourceName(d, *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
 		if !strings.HasPrefix(downloadString, "/") {
 			downloadString = "/" + downloadString
 		}
-		runfiles = append(runfiles, &bespb.File{
-			Name: relPath,
+		runfile := &bespb.File{
+			Name:   relPath,
+			Digest: d.GetHash(),
+			Length: d.GetSizeBytes(),
 			File: &bespb.File_Uri{
 				Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, downloadString),
 			},
+		}
+		runfiles = append(runfiles, runfile)
+		runfileEntries = append(runfileEntries, &bespb.Runfile{
+			File:         runfile,
+			IsExecutable: runfileInfo.isExecutable,
 		})
 	}
+
+	// The executable may itself be a symlink. Ensure its physical contents are uploaded
+	// to the cache so that they can be downloaded.
+	resolvedExecutablePath, err := filepath.EvalSymlinks(executablePath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	executableRN, err := cachetools.ComputeFileDigest(resolvedExecutablePath, *remoteInstanceName, repb.DigestFunction_SHA256)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	executableDigest := executableRN.GetDigest()
+	if _, ok := digestToPhysicalPath[executableDigest.GetHash()]; !ok {
+		digestToPhysicalPath[executableDigest.GetHash()] = resolvedExecutablePath
+		digestsToUpload = append(digestsToUpload, executableDigest)
+	}
+	executableRelPath, err := filepath.Rel(workspaceRoot, executablePath)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	executableDownloadString := digest.NewCASResourceName(executableDigest, *remoteInstanceName, repb.DigestFunction_SHA256).DownloadString()
+	if !strings.HasPrefix(executableDownloadString, "/") {
+		executableDownloadString = "/" + executableDownloadString
+	}
+	executableFile := &bespb.File{
+		Name:   executableRelPath,
+		Digest: executableDigest.GetHash(),
+		Length: executableDigest.GetSizeBytes(),
+		File: &bespb.File_Uri{
+			Uri: fmt.Sprintf("%s%s", bytestreamURIPrefix, executableDownloadString),
+		},
+	}
+	// Include the executable in the runfiles event, even though it's a top-level output and
+	// is uploaded separately by bazel, to guarantee it is always uploaded to the cache.
+	runfiles = append(runfiles, executableFile)
+	runfileEntries = append(runfileEntries, &bespb.Runfile{
+		File:         executableFile,
+		IsExecutable: true,
+	})
+
 	rsp, err := env.GetContentAddressableStorageClient().FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
 		InstanceName: *remoteInstanceName,
-		BlobDigests:  digests,
+		BlobDigests:  digestsToUpload,
+		Purpose:      repb.FindMissingBlobsRequest_CI_RUNNER_UPLOAD,
 	})
 	if err != nil {
-		return nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)
+		return nil, nil, nil, status.UnknownErrorf("could not check digest existence: %s", err)
 	}
 	missingDigests := rsp.GetMissingBlobDigests()
 
@@ -1469,17 +1641,17 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	u := cachetools.NewBatchCASUploader(ctx, env, *remoteInstanceName, repb.DigestFunction_SHA256, nil /*=chunkingParams*/)
 
 	for _, d := range missingDigests {
-		runfilePath, ok := fileDigestMap[digest.NewKey(d)]
+		uploadPath, ok := digestToPhysicalPath[d.GetHash()]
 		if !ok {
 			// not supposed to happen...
-			return nil, nil, status.InternalErrorf("missing digest not in our digest map")
+			return nil, nil, nil, status.InternalErrorf("missing digest not in our digest map")
 		}
-		f, err := os.Open(runfilePath)
+		f, err := os.Open(uploadPath)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if err := u.Upload(d, f); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
@@ -1515,10 +1687,9 @@ func uploadRunfiles(ctx context.Context, workspaceRoot, runfilesDir string) ([]*
 	}
 
 	if err := eg.Wait(); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-
-	return runfiles, runfileDirs, nil
+	return runfiles, runfileDirs, runfileEntries, nil
 }
 
 // processRunScript processes the contents of a bazel run script (produced via bazel run --script_path) and extracts
@@ -1551,6 +1722,10 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 		return nil, status.UnknownErrorf("could not detect binary workspace root: %s", err)
 	}
 	wsRoot := filepath.Dir(wsFile)
+	executablePath, err := filepath.Rel(wsRoot, bin)
+	if err != nil {
+		return nil, status.UnknownErrorf("could not determine workspace-relative binary path: %s", err)
+	}
 
 	// The second line changes the working directory to within the runfiles directory.
 	cdLine := runScriptLines[1]
@@ -1572,16 +1747,25 @@ func processRunScript(ctx context.Context, runScript string) (*runInfo, error) {
 	}
 
 	runfilesDir := bin + ".runfiles"
-	runfiles, runfileDirs, err := uploadRunfiles(ctx, wsRoot, runfilesDir)
+	// Executable genrules do not have a runfiles tree. In that case, the cd
+	// command in points into the remote checkout, which is not valid for a
+	// local run.
+	if _, err := os.Stat(runfilesDir); os.IsNotExist(err) {
+		runfilesRoot = ""
+	}
+	runfiles, runfileDirs, runfileEntries, err := uploadRunfiles(ctx, wsRoot, runfilesDir, bin)
 	if err != nil {
 		return nil, err
 	}
 
 	return &runInfo{
-		args:         args,
-		runfiles:     runfiles,
-		runfileDirs:  runfileDirs,
-		runfilesRoot: runfilesRoot,
+		args: args,
+		// TODO(Maggie): Delete deprecated field
+		runfiles:       runfiles,
+		runfileEntries: runfileEntries,
+		runfileDirs:    runfileDirs,
+		runfilesRoot:   runfilesRoot,
+		executablePath: executablePath,
 	}, nil
 }
 
@@ -1611,7 +1795,7 @@ func (ws *workspace) bazelArgsWithCustomBazelrc(cmd string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if tokens[0] == bazelBinaryName || tokens[0] == bazeliskBinaryName || tokens[0] == bbBinaryName {
+	if isBazelCommandToken(tokens[0]) {
 		tokens = tokens[1:]
 	}
 	bazelWorkspacePath, err := ws.bazelWorkspacePath()
@@ -1883,35 +2067,11 @@ func (ws *workspace) sync(ctx context.Context) error {
 		return err
 	}
 
-	if *pushedTag != "" && ws.shouldMergeBranches(action.GetTriggers()) {
-		return status.InvalidArgumentError("tags cannot be merged with base")
-	}
-
 	// If enabled, merge the target branch (if different from the
 	// pushed branch) so that the workflow can pick up any changes not yet
 	// incorporated into the pushed branch.
-	if ws.shouldMergeBranches(action.GetTriggers()) {
-		if err := ws.fetchTargetRef(ctx); err != nil {
-			return status.WrapError(err, "fetch target ref")
-		}
-		targetRef := fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
-		if _, err := git(ctx, ws.log, "merge", "--no-edit", targetRef); err != nil && !isAlreadyUpToDate(err) {
-			errMsg := err.Output
-			if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
-				errMsg += "\n" + err.Output
-			}
-			// Make note of the merge conflict and abort. We'll run all actions and each
-			// one will just fail with the merge conflict error.
-			ws.setupError = status.FailedPreconditionErrorf(
-				"Merge conflict between branches %q and %q.\n\n%s",
-				*pushedBranch, *targetBranch, errMsg,
-			)
-		}
-		mergedCommitSHA, err := git(ctx, io.Discard, "rev-parse", "HEAD")
-		if err != nil {
-			return err
-		}
-		writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
+	if err := ws.mergeWithBaseIfRequested(ctx, action.GetTriggers()); err != nil {
+		return err
 	}
 
 	if len(*patchURIs) > 0 {
@@ -1930,15 +2090,145 @@ func (ws *workspace) sync(ctx context.Context) error {
 	return nil
 }
 
-func (ws *workspace) shouldMergeBranches(actionTriggers *config.Triggers) bool {
-	return actionTriggers.GetPullRequestTrigger().GetMergeWithBase() &&
-		ws.hasMultipleBranches()
+func (ws *workspace) mergeWithBaseIfRequested(ctx context.Context, actionTriggers *config.Triggers) error {
+	if !ws.mergeWithBaseEnabled(actionTriggers) {
+		return nil
+	}
+
+	if *pushedTag != "" {
+		return status.InvalidArgumentError("tags cannot be merged with base")
+	}
+
+	if err := ws.fetchTargetRef(ctx); err != nil {
+		return status.WrapError(err, "fetch target ref")
+	}
+
+	// Determine which base branch commit to merge with, based on the configured
+	// merge with base interval.
+	mergeBase, err := ws.mergeBaseCommit(ctx, actionTriggers)
+	if err != nil {
+		return err
+	}
+	if mergeBase == "" {
+		return nil
+	}
+
+	// TODO: Display merge commit in UI
+	// git merge may fetch objects due to git_fetch_filters; run with fetch stats.
+	if err := ws.runGitWithFetchStats(ctx, "merge", "--no-edit", mergeBase); err != nil && !isAlreadyUpToDate(err) {
+		errMsg := err.Output
+		if _, err := git(ctx, ws.log, "merge", "--abort"); err != nil {
+			errMsg += "\n" + err.Output
+		}
+		// Make note of the merge conflict and abort. We'll run all actions and each
+		// one will just fail with the merge conflict error.
+		ws.setupError = status.FailedPreconditionErrorf(
+			"Merge conflict between branches %q and %q.\n\n%s",
+			*pushedBranch, *targetBranch, errMsg,
+		)
+	}
+	mergedCommitSHA, cmdErr := git(ctx, io.Discard, "rev-parse", "HEAD")
+	if cmdErr != nil {
+		return cmdErr
+	}
+	writeCommandSummary(ws.log, "Merged into the target branch %s. HEAD is now at %s.", *targetBranch, mergedCommitSHA)
+	return nil
+}
+
+// mergeBaseCommit returns the base branch commit that the PR should be merged
+// with, or an empty string if the merge with base should be skipped.
+//
+// When no merge with base interval is configured, the runner merges with the current
+// base branch tip. When an interval is configured, the runner instead merges
+// with the oldest base branch commit in the current interval (UTC).
+// If there are no base branch commits in the interval, the runner merges with
+// the base branch tip.
+func (ws *workspace) mergeBaseCommit(ctx context.Context, actionTriggers *config.Triggers) (string, error) {
+	interval, err := actionTriggers.GetPullRequestTrigger().GetMergeWithBaseInterval()
+	if err != nil {
+		return "", err
+	}
+	if interval == nil {
+		// No interval configured: merge with the current base branch tip.
+		return ws.targetRef(), nil
+	}
+	cutoff := time.Now().UTC().Truncate(*interval)
+
+	// Find the oldest base branch commit after the cutoff.
+	out, cmdErr := git(ctx, io.Discard, "--no-pager", "rev-list", "--reverse", "--after="+cutoff.Format(time.RFC3339), ws.targetRef())
+	if cmdErr != nil {
+		writeCommandSummary(ws.log, "Could not determine the oldest %s commit after %s; defaulting to merging with the %s tip: %s", *targetBranch, cutoff.Format(time.RFC3339), *targetBranch, cmdErr.Output)
+		return ws.targetRef(), nil
+	}
+	mergeBase, baseDescription := ws.targetRef(), fmt.Sprintf("%s tip", *targetBranch)
+	if commits := strings.Fields(out); len(commits) > 0 {
+		mergeBase = commits[0]
+		baseDescription = fmt.Sprintf("oldest %s commit after %s", *targetBranch, cutoff.Format(time.RFC3339))
+	} else {
+		writeCommandSummary(ws.log, "No %s commits found after %s; using the %s tip.", *targetBranch, cutoff.Format(time.RFC3339), *targetBranch)
+	}
+
+	inHistory, ancErr := ws.isAncestor(ctx, mergeBase, "HEAD")
+	if ancErr != nil {
+		writeCommandSummary(ws.log, "Could not determine whether the %s (%s) is already in the PR's history: %s", baseDescription, mergeBase, ancErr)
+	}
+	if inHistory {
+		writeCommandSummary(ws.log, "Skipping merge with %s: the PR's merge base is already at or newer than the %s (%s).", *targetBranch, baseDescription, mergeBase)
+		return "", nil
+	}
+
+	writeCommandSummary(ws.log, "Merging with %s: %s (%s).", *targetBranch, baseDescription, mergeBase)
+	return mergeBase, nil
+}
+
+// isAncestor reports whether the ancestor commit is an ancestor of (or equal
+// to) the descendant commit.
+func (ws *workspace) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	_, err := git(ctx, io.Discard, "merge-base", "--is-ancestor", ancestor, descendant)
+	if err == nil {
+		return true, nil
+	}
+	// Exit code 1 specifically means "not an ancestor"; any other code is a
+	// real error.
+	if getExitCode(err) == 1 {
+		return false, nil
+	}
+	return false, err
 }
 
 func (ws *workspace) hasMultipleBranches() bool {
 	return *targetRepoURL != "" &&
 		*targetBranch != "" &&
 		(*pushedRepoURL != *targetRepoURL || *pushedBranch != *targetBranch)
+}
+
+func (ws *workspace) mergeWithBaseEnabled(actionTriggers *config.Triggers) bool {
+	return *pushedTag == "" &&
+		ws.hasMultipleBranches() &&
+		actionTriggers.GetPullRequestTrigger().GetMergeWithBase()
+}
+
+func (ws *workspace) mergeWithBaseRequested() bool {
+	// Tags are never merged with the base branch.
+	if *pushedTag != "" || !ws.hasMultipleBranches() {
+		return false
+	}
+
+	// If the serialized action is not available, we conservatively assume a merge may be needed
+	// because the merge_with_base config is not readable yet (it's read from the repo after checkout).
+	if *serializedAction == "" {
+		return true
+	}
+	action, err := deserializeAction(*serializedAction)
+	if err != nil {
+		writeCommandSummary(ws.log, "Could not parse serialized action; defaulting to fetching full history: %s", err)
+		return true
+	}
+	return ws.mergeWithBaseEnabled(action.GetTriggers())
+}
+
+func (ws *workspace) targetRef() string {
+	return fmt.Sprintf("%s/%s", gitRemoteName(*targetRepoURL), *targetBranch)
 }
 
 func (ws *workspace) fetchPushedRef(ctx context.Context) error {
@@ -1958,12 +2248,14 @@ func (ws *workspace) fetchPushedRef(ctx context.Context) error {
 		}
 	}
 
-	// If the merge commit has not been generated, fetch the full history
-	// to ensure the merge base commit is fetched, so we can manually merge the branches
-	// TODO(Maggie): Only do this if merge_with_base is enabled
-	// If we serialize the action in serializedAction, we won't need to checkout
-	// the repo in the ci_runner to read the config
-	if ws.hasMultipleBranches() && *gitFetchDepth == smartFetchDepth {
+	// If the pushed branch will be merged with the base branch, fetch the full
+	// history to ensure the merge base commit is fetched. We must
+	// do this even if a shallow fetch was explicitly requested, since
+	// otherwise the merge base may not be reachable and the merge would fail.
+	if ws.mergeWithBaseRequested() {
+		if fetchDepth != 0 {
+			writeCommandSummary(ws.log, "Fetching full history of %q instead of the requested depth %d, since it is needed to merge with the base branch.", refToFetch, fetchDepth)
+		}
 		fetchDepth = 0
 	}
 
@@ -2008,15 +2300,16 @@ func (ws *workspace) checkoutRef(ctx context.Context) error {
 		}
 	}
 
+	checkoutArgs := []string{"checkout", "--force"}
 	if checkoutLocalBranchName != "" {
 		// Create the local branch if it doesn't already exist, then update it to point to the checkout ref
-		if _, err := git(ctx, ws.log, "checkout", "--force", "-B", checkoutLocalBranchName, checkoutRef); err != nil {
-			return err
-		}
-	} else {
-		if _, err := git(ctx, ws.log, "checkout", "--force", checkoutRef); err != nil {
-			return err
-		}
+		checkoutArgs = append(checkoutArgs, "-B", checkoutLocalBranchName)
+	}
+	checkoutArgs = append(checkoutArgs, checkoutRef)
+	// The checkout may result in a fetch due to git_fetch_filters; run it with
+	// fetch stats.
+	if err := ws.runGitWithFetchStats(ctx, checkoutArgs...); err != nil {
+		return err
 	}
 	return nil
 }
@@ -2113,7 +2406,10 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 			return status.UnknownErrorf("Command `git remote add %q <url>` failed.", remoteName)
 		}
 	}
-	fetchArgs := []string{"fetch", "--force"}
+	// Force progress reporting (rather than relying on stderr being a
+	// terminal), since git only logs fetched byte totals to the trace2 event
+	// log when progress meters are active.
+	fetchArgs := []string{"fetch", "--force", "--progress"}
 	for _, filter := range *gitFetchFilters {
 		fetchArgs = append(fetchArgs, "--filter="+filter)
 	}
@@ -2134,10 +2430,130 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 	}
 	fetchArgs = append(fetchArgs, remoteName)
 	fetchArgs = append(fetchArgs, refs...)
-	if _, err := git(ctx, ws.log, fetchArgs...); err != nil {
-		return status.WrapError(err, err.Output)
+
+	if fetchErr := ws.runGitWithFetchStats(ctx, fetchArgs...); fetchErr != nil {
+		return status.WrapError(fetchErr, fetchErr.Output)
 	}
 	return nil
+}
+
+// runGitWithFetchStats runs a git command that fetches data from the remote,
+// adding the time spent and bytes fetched to the workspace git fetch stats,
+// and retrying the command if git aborted a transfer because the rate was too
+// slow (see --git_fetch_low_speed_retries). Besides `git fetch` itself, this
+// applies to `git checkout` and `git merge`, because when refs were fetched
+// with a filter such as blob:none, those commands lazily fetch the
+// filtered-out objects they need.
+//
+// TODO: lazy fetch stats (e.g. fetches triggered by `git checkout`) currently
+// rely on git's output being a tty, because git only logs the "total_bytes"
+// trace2 events that byte counting parses when progress meters are shown.
+// Explicit fetches force meters with --progress, but lazy fetches run as git
+// child processes whose argv we don't control, so their meters are enabled
+// only by git's isatty check, which passes because runCommand runs git on a
+// pty that the children inherit. If commands ever stop running on a pty,
+// lazily fetched bytes would silently go uncounted. A tty-independent
+// approach would be to measure new pack files created during the command,
+// since lazy fetches always store fetched objects as kept packs.
+func (ws *workspace) runGitWithFetchStats(ctx context.Context, args ...string) *commandError {
+	// Have git log trace2 events to a file under .git/info, from which the
+	// number of fetched bytes is parsed once the command completes. The log is
+	// deleted after parsing.
+	env := map[string]string{}
+	// GIT_TRACE2 requires an abspath.
+	trace2Path, err := filepath.Abs(filepath.Join(".git", "info", "fetch_trace2.jsonl"))
+	if err != nil {
+		backendLog.Warningf("Could not resolve the git trace2 event log path; git fetch stats will not be collected: %s", err)
+	} else {
+		// Remove any leftover log (e.g. if a previous run was interrupted
+		// mid-fetch), since git appends to the log file.
+		_ = os.Remove(trace2Path)
+		env["GIT_TRACE2_EVENT"] = trace2Path
+		// Progress data events can be nested inside other trace2 regions;
+		// raise the nesting limit (default 2) so they aren't dropped.
+		env["GIT_TRACE2_EVENT_NESTING"] = "5"
+	}
+
+	lowSpeedRetries := 0
+	if *gitFetchLowSpeedRetries > 0 {
+		lowSpeedRetries = *gitFetchLowSpeedRetries
+		if lowSpeedRetries > maxGitFetchLowSpeedRetries {
+			writeCommandSummary(ws.log, "Warning: --git_fetch_low_speed_retries=%d exceeds the maximum of %d; using %d.", lowSpeedRetries, maxGitFetchLowSpeedRetries, maxGitFetchLowSpeedRetries)
+			lowSpeedRetries = maxGitFetchLowSpeedRetries
+		}
+		// Respect low-speed settings that are already present in the
+		// environment (e.g. set on the image or in the action env).
+		if os.Getenv("GIT_HTTP_LOW_SPEED_LIMIT") == "" {
+			env["GIT_HTTP_LOW_SPEED_LIMIT"] = strconv.FormatInt(*gitFetchLowSpeedLimit, 10)
+		}
+		if os.Getenv("GIT_HTTP_LOW_SPEED_TIME") == "" {
+			// Git configures the low-speed window in whole seconds; round up
+			// so that a sub-second value doesn't truncate to 0, which would
+			// disable the low-speed check entirely.
+			env["GIT_HTTP_LOW_SPEED_TIME"] = strconv.Itoa(int(math.Ceil(gitFetchLowSpeedTime.Seconds())))
+		}
+	}
+
+	var cmdErr *commandError
+	for attempt := 0; ; attempt++ {
+		start := time.Now()
+		_, cmdErr = gitWithEnv(ctx, ws.log, env, args...)
+		ws.gitFetchDuration += time.Since(start)
+		if cmdErr == nil || attempt >= lowSpeedRetries || !isTransferTooSlow(cmdErr) {
+			break
+		}
+		ws.gitFetchRetryCount++
+		writeCommandSummary(ws.log, "The fetch was aborted because the transfer rate was too slow. Retrying (attempt %d of %d)...", attempt+1, lowSpeedRetries)
+	}
+	// Count fetched bytes even if the command failed, since a failed fetch may
+	// be retried (e.g. with a different depth) and we want the total to
+	// reflect all data transferred. Retried attempts append to the same log,
+	// so any bytes they recorded before being aborted are counted too.
+	if env["GIT_TRACE2_EVENT"] != "" {
+		if f, err := os.Open(trace2Path); err != nil {
+			backendLog.Warningf("Could not open the git trace2 event log; git fetch stats may be undercounted: %s", err)
+		} else {
+			ws.gitFetchTotalBytes += parseGitFetchedBytes(f)
+			f.Close()
+		}
+		_ = os.Remove(trace2Path)
+	}
+	return cmdErr
+}
+
+// parseGitFetchedBytes returns the total number of bytes fetched by a git
+// command, parsed from its trace2 event log. Progress meters that display
+// throughput (such as "Receiving objects") log a "total_bytes" data event
+// when they complete. Child processes such as git-index-pack inherit
+// GIT_TRACE2_EVENT and append their events to the same log file. Returns 0
+// if the log contains no such events (e.g. everything was already up to
+// date).
+func parseGitFetchedBytes(trace2EventLog io.Reader) int64 {
+	var total int64
+	scanner := bufio.NewScanner(trace2EventLog)
+	// Trace2 event lines are small (typically well under 1KiB); a line
+	// exceeding this limit would stop the scan and drop the remaining events.
+	scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024)
+	for scanner.Scan() {
+		var event struct {
+			Event    string `json:"event"`
+			Category string `json:"category"`
+			Key      string `json:"key"`
+			Value    string `json:"value"`
+		}
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+		if event.Event != "data" || event.Category != "progress" || event.Key != "total_bytes" {
+			continue
+		}
+		n, err := strconv.ParseInt(event.Value, 10, 64)
+		if err != nil {
+			continue
+		}
+		total += n
+	}
+	return total
 }
 
 // Writes a wrapper script that invokes the ci_runner with the bazel_wrapper subcommand.
@@ -2146,7 +2562,7 @@ func (ws *workspace) fetch(ctx context.Context, remoteURL string, refs []string,
 // all bazel commands.
 func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 	wrapperDir := filepath.Join(ws.rootDir, "wrappers")
-	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName)
+	bbPath := filepath.Join(taskWorkspaceDir, bbBinaryName+platform.ExecutableSuffix)
 
 	wrapperBinaries := map[string]string{
 		bazelBinaryName:    *bazelCommand,
@@ -2169,7 +2585,7 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 		}
 
 		cmd := fmt.Sprintf(
-			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %s \"$@\"",
+			"BAZEL_WRAPPER_MODE=1 BAZEL_BIN=%q CI_RUNNER_ROOT=%q exec %q \"$@\"",
 			binaryPath,
 			ws.rootDir,
 			os.Getenv("BUILDBUDDY_CI_RUNNER_ABSPATH"),
@@ -2184,7 +2600,7 @@ func (ws *workspace) writeBazelWrapperScript(taskWorkspaceDir string) error {
 
 	prevPath := os.Getenv("PATH")
 	if !strings.Contains(prevPath, wrapperDir) {
-		if err := os.Setenv("PATH", fmt.Sprintf("%s:%s", wrapperDir, prevPath)); err != nil {
+		if err := os.Setenv("PATH", strings.Join([]string{wrapperDir, prevPath}, string(os.PathListSeparator))); err != nil {
 			return status.WrapError(err, "failed to include wrapper dir in PATH")
 		}
 	}
@@ -2214,11 +2630,24 @@ func isAlreadyUpToDate(err error) bool {
 	return ok && strings.Contains(gitErr.Output, "up to date")
 }
 
+// isTransferTooSlow returns whether git aborted a transfer because its rate
+// stayed below GIT_HTTP_LOW_SPEED_LIMIT for longer than
+// GIT_HTTP_LOW_SPEED_TIME. The message is libcurl's error string for a
+// low-speed abort (curl error 28).
+func isTransferTooSlow(err error) bool {
+	gitErr, ok := err.(*commandError)
+	return ok && strings.Contains(gitErr.Output, "Operation too slow. Less than")
+}
+
 func git(ctx context.Context, out io.Writer, args ...string) (string, *commandError) {
+	return gitWithEnv(ctx, out, nil /*=env*/, args...)
+}
+
+func gitWithEnv(ctx context.Context, out io.Writer, env map[string]string, args ...string) (string, *commandError) {
 	if err := printCommandLine(out, "git", args...); err != nil {
 		return "", &commandError{err, ""}
 	}
-	return runCommandWithOutput(ctx, "git", args, map[string]string{} /*=env*/, "" /*=dir*/, out)
+	return runCommandWithOutput(ctx, "git", args, env, "" /*=dir*/, out)
 }
 
 func isPushedRefInFork() bool {
@@ -2330,7 +2759,7 @@ func writeBazelrc(path, invocationID, runID, rootDir string) error {
 		lines = append(lines, "common:buildbuddy_remote_executor --remote_executor="+*rbeBackend)
 	}
 
-	outputBase := filepath.Join(rootDir, outputBaseDirName)
+	outputBase := filepath.ToSlash(filepath.Join(rootDir, outputBaseDirName))
 	lines = append(lines, "startup --output_base="+outputBase)
 	startupFlags, err := shlex.Split(*bazelStartupFlags)
 	if err != nil {
@@ -2409,19 +2838,29 @@ func runCommand(ctx context.Context, executable string, args []string, env map[s
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	size := &pty.Winsize{Rows: uint16(*ptyRows), Cols: uint16(*ptyCols)}
-	f, err := pty.StartWithSize(cmd, size)
-	if err != nil {
-		return err
+	var err error
+	if runtime.GOOS == "windows" {
+		// TODO: https://github.com/creack/pty/issues/95
+		// github.com/creack/pty does not support Windows. Attach the child
+		// directly to the log writer instead so Git, Bash, and Bazel can run.
+		cmd.Stdout = outputSink
+		cmd.Stderr = outputSink
+		err = cmd.Run()
+	} else {
+		size := &pty.Winsize{Rows: uint16(*ptyRows), Cols: uint16(*ptyCols)}
+		f, startErr := pty.StartWithSize(cmd, size)
+		if startErr != nil {
+			return startErr
+		}
+		defer f.Close()
+		copyOutputDone := make(chan struct{})
+		go func() {
+			io.Copy(outputSink, f)
+			copyOutputDone <- struct{}{}
+		}()
+		err = cmd.Wait()
+		<-copyOutputDone
 	}
-	defer f.Close()
-	copyOutputDone := make(chan struct{})
-	go func() {
-		io.Copy(outputSink, f)
-		copyOutputDone <- struct{}{}
-	}()
-	err = cmd.Wait()
-	<-copyOutputDone
 
 	if ctx.Err() == context.DeadlineExceeded {
 		// Go to the next line so we don't clobber partial output from the
@@ -2620,14 +3059,14 @@ func runBazelWrapper() error {
 	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
 	bazelSubcmd, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs)
 	if cmdIdx == -1 {
-		return syscall.Exec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
+		return runOrExec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
 	}
 
 	// Pass the original command as metadata, stripping the custom flags we've set,
 	// so that it can be displayed in the UI
 	filteredOriginalArgs := make([]string, 0, len(originalArgs))
 	for i, arg := range originalArgs {
-		if i == 0 && (arg == bazelBinaryName || arg == bazeliskBinaryName || arg == bbBinaryName) {
+		if i == 0 && isBazelCommandToken(arg) {
 			continue
 		}
 		if strings.Contains(arg, "--invocation_id") ||
@@ -2656,7 +3095,7 @@ func runBazelWrapper() error {
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
 
 	// When using the bb CLI and running `bb run`, stream the run logs to the server.
-	if filepath.Base(bazelBin) == bbBinaryName && bazelSubcmd == "run" {
+	if isExecutableName(filepath.Base(bazelBin), bbBinaryName) && bazelSubcmd == "run" {
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--stream_run_logs")
 		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--on_stream_run_logs_failure=warn")
 	}
@@ -2668,9 +3107,35 @@ func runBazelWrapper() error {
 		backendLog.Errorf("Failed to cache startup options for bazel command %v: %v", originalArgs, err)
 	}
 
-	// Replace the process running the bazel wrapper with the process running bazel,
-	// so there are no remaining traces of the wrapper script.
-	return syscall.Exec(bazelBin, bazelCmd, os.Environ())
+	return runOrExec(bazelBin, bazelCmd, os.Environ())
+}
+
+// Replaces the current process with argv on Unix. Since syscall.Exec is not
+// supported on Windows, runs argv as a child process there instead.
+func runOrExec(executable string, argv, env []string) error {
+	if runtime.GOOS != "windows" {
+		return syscall.Exec(executable, argv, env)
+	}
+	if len(argv) == 0 {
+		return status.InvalidArgumentError("missing command arguments")
+	}
+	cmd := exec.Command(executable, argv[1:]...)
+	cmd.Env = env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return bazelChildProcessResult(cmd.Run())
+}
+
+func bazelChildProcessResult(err error) error {
+	if err == nil {
+		return nil
+	}
+	exitCode := getExitCode(err)
+	if exitCode == noExitCode {
+		return status.WrapError(err, "failed to start Bazel")
+	}
+	return &actionResult{exitCode: exitCode, exitCodeName: failedExitCodeName}
 }
 
 // Parse and save the startup options for a bazel command in a file on disk.

@@ -48,9 +48,10 @@ type testConfig struct {
 	env    *testenv.TestEnv
 	ta     *testauth.TestAuthenticator
 	config *config.ServerConfig
+	opts   []metadata.Option
 }
 
-func getTestConfigs(t *testing.T, n int) []testConfig {
+func getTestConfigs(t testing.TB, n int) []testConfig {
 	res := make([]testConfig, 0, n)
 	for i := 0; i < n; i++ {
 		c := testConfig{
@@ -64,11 +65,11 @@ func getTestConfigs(t *testing.T, n int) []testConfig {
 	return res
 }
 
-func localAddr(t *testing.T) string {
+func localAddr(t testing.TB) string {
 	return fmt.Sprintf("127.0.0.1:%d", testport.FindFree(t))
 }
 
-func getCacheConfig(t *testing.T) *config.ServerConfig {
+func getCacheConfig(t testing.TB) *config.ServerConfig {
 	id, err := guuid.NewRandom()
 	require.NoError(t, err)
 	httpPort := testport.FindFree(t)
@@ -115,7 +116,7 @@ func parallelShutdown(caches ...*metadata.Server) {
 	eg.Wait()
 }
 
-func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
+func waitForHealthy(t testing.TB, caches ...*metadata.Server) {
 	log.Infof("wait for healthy")
 	start := time.Now()
 	timeout := 30 * time.Second
@@ -138,7 +139,7 @@ func waitForHealthy(t *testing.T, caches ...*metadata.Server) {
 	}
 }
 
-func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
+func waitForShutdown(t testing.TB, caches ...*metadata.Server) {
 	timeout := 30 * time.Second
 	done := make(chan struct{})
 	go func() {
@@ -154,7 +155,7 @@ func waitForShutdown(t *testing.T, caches ...*metadata.Server) {
 	}
 }
 
-func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
+func startNodes(t testing.TB, configs []testConfig) []*metadata.Server {
 	eg := errgroup.Group{}
 	n := len(configs)
 	caches := make([]*metadata.Server, n)
@@ -172,7 +173,7 @@ func startNodes(t *testing.T, configs []testConfig) []*metadata.Server {
 		require.NoError(t, err)
 		config.config.GossipManager = gs
 		eg.Go(func() error {
-			n, err := metadata.New(config.env, config.config)
+			n, err := metadata.New(config.env, config.config, config.opts...)
 			if err != nil {
 				return err
 			}
@@ -225,6 +226,73 @@ func randomFileMetadata(t testing.TB, sizeBytes int64, groupID string) *sgpb.Fil
 		LastModifyUsec:     now,
 	}
 	return md
+}
+
+// gcsFileMetadata builds a GCS-backed record with the given custom time.
+func gcsFileMetadata(t testing.TB, groupID string, customTime time.Time) *sgpb.FileMetadata {
+	t.Helper()
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	rn := digest.ResourceNameFromProto(r)
+	require.NoError(t, rn.Validate())
+	return &sgpb.FileMetadata{
+		FileRecord: &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:          rn.GetCacheType(),
+				RemoteInstanceName: rn.GetInstanceName(),
+				PartitionId:        "default",
+				GroupId:            groupID,
+			},
+			Digest:         rn.GetDigest(),
+			DigestFunction: rn.GetDigestFunction(),
+		},
+		StorageMetadata: &sgpb.StorageMetadata{
+			GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+				BlobName:           "test-blob",
+				LastCustomTimeUsec: customTime.UnixMicro(),
+			},
+		},
+		StoredSizeBytes: 100,
+		LastAccessUsec:  customTime.UnixMicro(),
+	}
+}
+
+// End-to-end: a GCS record past the bucket TTL must report absent from Find even
+// though it exists (covers replica.find + the Find TTL check wiring).
+func TestFindReportsExpiredGCSObjectAbsent(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	configs := getTestConfigs(t, 1)
+	configs[0].env.SetClock(clock)
+	configs[0].opts = []metadata.Option{metadata.WithGCSTTLDays(7)}
+	caches := startNodes(t, configs)
+	rc1 := caches[0]
+
+	ctx, err := configs[0].ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	set := func(md *sgpb.FileMetadata) {
+		_, err := rc1.Set(ctx, &mdpb.SetRequest{
+			SetOperations: []*mdpb.SetRequest_SetOperation{{FileMetadata: md}},
+		})
+		require.NoError(t, err)
+	}
+	present := func(md *sgpb.FileMetadata) bool {
+		findRsp, err := rc1.Find(ctx, &mdpb.FindRequest{
+			FileRecords: []*sgpb.FileRecord{md.GetFileRecord()},
+		})
+		require.NoError(t, err)
+		require.Len(t, findRsp.GetFindResponses(), 1)
+		return findRsp.GetFindResponses()[0].GetPresent()
+	}
+
+	// A GCS object past the 7d TTL is reported absent though its record exists.
+	expired := gcsFileMetadata(t, "group1", clock.Now().Add(-8*24*time.Hour))
+	set(expired)
+	require.False(t, present(expired), "past-TTL GCS record must report absent")
+
+	// Control: a fresh GCS record is still reported present.
+	fresh := gcsFileMetadata(t, "group1", clock.Now())
+	set(fresh)
+	require.True(t, present(fresh))
 }
 
 func TestAutoBringup(t *testing.T) {
@@ -480,9 +548,19 @@ func TestLRU(t *testing.T) {
 	// and (2) stale-atime samples making recently-Find()'d records appear
 	// old enough to evict.
 	flags.Set(t, "cache.raft.min_eviction_age", 18*time.Minute)
-	// Force the sampler to refresh its pebble iterator on
-	// every read so that samples have up-to-date atimes.
-	flags.Set(t, "cache.raft.samples_per_batch", 0)
+	// Read a small batch forward per random seek instead of refreshing the
+	// iterator on every single read. The records this test evicts (18-24) are
+	// never Find()'d, so their atimes are set once and never change -- a short
+	// batch keeps them fresh while avoiding the per-record db.NewIter churn
+	// that, under the race detector, starves the evictor and makes the sampler
+	// take far too long to randomly land on the last few eligible records.
+	flags.Set(t, "cache.raft.samples_per_batch", 10)
+	// Disable the sampler's idle sleep. In production the sampler sleeps when
+	// it can't find an eligible entry (e.g. a random key landing past the end
+	// of a small partition) to avoid wasting CPU. That sleep uses the fake
+	// clock here, which the test doesn't advance during the GC wait below, so
+	// it would stall the sampler and time out eviction.
+	flags.Set(t, "cache.raft.sampler_sleep_duration", time.Duration(0))
 	// Make the sample channel unbuffered so it can't hold stale samples
 	// produced before atime updates from the test's Find() calls were
 	// applied to pebble. Without this, the eviction consumer reads stale

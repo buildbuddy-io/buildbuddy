@@ -2,6 +2,7 @@ package clientidentity
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -23,31 +24,101 @@ const (
 )
 
 var (
-	signingKey = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
-	client     = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
-	origin     = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
-	expiration = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
-	required   = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
+	signingKey                = flag.String("app.client_identity.key", "", "The key used to sign and verify identity JWTs.", flag.Secret)
+	additionalVerificationKey = flag.String("app.client_identity.additional_verification_key", "", "An additional key accepted when verifying identity JWTs. Used to keep old and new keys trusted simultaneously during key rotation.", flag.Secret)
+	client                    = flag.String("app.client_identity.client", "", "The client identifier to place in the identity header.")
+	origin                    = flag.String("app.client_identity.origin", "", "The origin identifier to place in the identity header.")
+	expiration                = flag.Duration("app.client_identity.expiration", DefaultExpiration, "The expiration time for the identity header.")
+	required                  = flag.Bool("app.client_identity.required", false, "If set, a client identity is required.")
 )
+
+type cachedHeader struct {
+	header   string
+	cachedAt time.Time
+}
+
+// headerCache caches a signed identity header per client identity, re-signing
+// each at most once per cachedHeaderExpiration.
+type headerCache struct {
+	clock clockwork.Clock
+	sign  func(si *interfaces.ClientIdentity) (string, error)
+
+	mu      sync.RWMutex
+	entries map[interfaces.ClientIdentity]cachedHeader
+}
+
+func newHeaderCache(clock clockwork.Clock, expiration time.Duration, sign func(*interfaces.ClientIdentity) (string, error)) (*headerCache, error) {
+	// A cached header is reused for up to cachedHeaderExpiration, so if the
+	// signed JWT's own lifetime doesn't exceed that window we could hand out a
+	// token that has already expired. Require expiration > cachedHeaderExpiration
+	// rather than silently serving stale identities.
+	if expiration <= cachedHeaderExpiration {
+		return nil, status.InvalidArgumentErrorf("app.client_identity.expiration (%s) must be greater than the header cache expiration (%s)", expiration, cachedHeaderExpiration)
+	}
+	return &headerCache{
+		clock:   clock,
+		sign:    sign,
+		entries: make(map[interfaces.ClientIdentity]cachedHeader),
+	}, nil
+}
+
+// Get returns the cached header for si, signing and caching a fresh one when the
+// cached value is missing or older than cachedHeaderExpiration.
+func (c *headerCache) Get(si *interfaces.ClientIdentity) (string, error) {
+	key := *si
+	c.mu.RLock()
+	e, ok := c.entries[key]
+	c.mu.RUnlock()
+	if ok && c.clock.Since(e.cachedAt) < cachedHeaderExpiration {
+		return e.header, nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Check again in case it was updated while we were waiting for the lock.
+	if e, ok := c.entries[key]; ok && c.clock.Since(e.cachedAt) < cachedHeaderExpiration {
+		return e.header, nil
+	}
+	header, err := c.sign(si)
+	if err != nil {
+		return "", err
+	}
+	c.entries[key] = cachedHeader{header: header, cachedAt: c.clock.Now()}
+	return header, nil
+}
 
 type Service struct {
 	signingKey []byte
+	// verificationKeys holds the signing key followed by the optional additional
+	// verification key; incoming JWTs are accepted if either key verifies them.
+	verificationKeys [][]byte
 
 	clock clockwork.Clock
 
-	mu               sync.RWMutex
-	cachedHeader     string
-	cachedHeaderTime time.Time
+	headerCache *headerCache
 }
 
 func New(clock clockwork.Clock) (*Service, error) {
 	if *signingKey == "" {
 		return nil, status.InvalidArgumentError("ClientIdentityService requires a signing key")
 	}
-	return &Service{
-		signingKey: []byte(*signingKey),
-		clock:      clock,
-	}, nil
+	verificationKeys := [][]byte{[]byte(*signingKey)}
+	if *additionalVerificationKey != "" {
+		verificationKeys = append(verificationKeys, []byte(*additionalVerificationKey))
+	}
+	s := &Service{
+		signingKey:       []byte(*signingKey),
+		verificationKeys: verificationKeys,
+		clock:            clock,
+	}
+	headerCache, err := newHeaderCache(clock, *expiration, func(si *interfaces.ClientIdentity) (string, error) {
+		return s.NewIdentityHeader(si, *expiration)
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.headerCache = headerCache
+	return s, nil
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -79,7 +150,7 @@ func ClearIdentity(ctx context.Context) context.Context {
 	return ctx
 }
 
-func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
+func (s *Service) NewIdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
 	expirationTime := s.clock.Now().Add(expiration)
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{
 		StandardClaims: jwt.StandardClaims{ExpiresAt: expirationTime.Unix()},
@@ -88,30 +159,10 @@ func (s *Service) IdentityHeader(si *interfaces.ClientIdentity, expiration time.
 	return t.SignedString(s.signingKey)
 }
 
-func (s *Service) getCachedHeader() (string, error) {
-	s.mu.RLock()
-	headerTime := s.cachedHeaderTime
-	header := s.cachedHeader
-	s.mu.RUnlock()
-	if s.clock.Since(headerTime) < cachedHeaderExpiration {
-		return header, nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	// Check again in case it was updated while we were waiting for the lock.
-	if s.clock.Since(s.cachedHeaderTime) < cachedHeaderExpiration {
-		return s.cachedHeader, nil
-	}
-	header, err := s.IdentityHeader(&interfaces.ClientIdentity{
-		Origin: *origin,
-		Client: *client,
-	}, *expiration)
-	if err != nil {
-		return "", err
-	}
-	s.cachedHeader = header
-	s.cachedHeaderTime = s.clock.Now()
-	return header, nil
+// CachedIdentityHeader returns a signed identity header for the given identity,
+// re-signing it at most once per cachedHeaderExpiration.
+func (s *Service) CachedIdentityHeader(si *interfaces.ClientIdentity) (string, error) {
+	return s.headerCache.Get(si)
 }
 
 func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, error) {
@@ -120,7 +171,10 @@ func (s *Service) AddIdentityToContext(ctx context.Context) (context.Context, er
 			return ctx, nil
 		}
 	}
-	header, err := s.getCachedHeader()
+	header, err := s.CachedIdentityHeader(&interfaces.ClientIdentity{
+		Origin: *origin,
+		Client: *client,
+	})
 	if err != nil {
 		return ctx, err
 	}
@@ -144,14 +198,22 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 		}
 	}
 	headerValue := vals[0]
-	c := &claims{}
-	if _, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (interface{}, error) {
-		return s.signingKey, nil
-	}); err != nil {
-		return ctx, status.PermissionDeniedErrorf("invalid identity header: %s", err)
+	var verifyErr error
+	for _, key := range s.verificationKeys {
+		c := &claims{}
+		_, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (interface{}, error) {
+			return key, nil
+		})
+		if err == nil {
+			return context.WithValue(ctx, validatedIdentityContextKey, &c.ClientIdentity), nil
+		}
+		verifyErr = err
+		// Only a signature mismatch can be resolved by trying another key.
+		if !errors.Is(err, jwt.ErrTokenSignatureInvalid) {
+			break
+		}
 	}
-
-	return context.WithValue(ctx, validatedIdentityContextKey, &c.ClientIdentity), nil
+	return ctx, status.PermissionDeniedErrorf("invalid identity header: %s", verifyErr)
 }
 
 func (s *Service) IdentityFromContext(ctx context.Context) (*interfaces.ClientIdentity, error) {

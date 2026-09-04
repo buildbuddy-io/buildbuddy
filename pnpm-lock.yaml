@@ -7,52 +7,52 @@ importers:
     configDependencies: {}
     packageManagerDependencies:
       '@pnpm/exe':
-        specifier: 11.7.0
-        version: 11.7.0
+        specifier: 11.8.0
+        version: 11.8.0
       pnpm:
-        specifier: 11.7.0
-        version: 11.7.0
+        specifier: 11.8.0
+        version: 11.8.0
 
 packages:
 
-  '@pnpm/exe@11.7.0':
-    resolution: {integrity: sha512-3CujpSSp2PIDE0pwu7mWSdjhdDqaZa7OppVooECWWaNEoA/z66s9FZts1MhDO+2yq1XER4gBHh84DVbFN/r1rA==}
+  '@pnpm/exe@11.8.0':
+    resolution: {integrity: sha512-Z4yxxE+Q2bi36Ol/hNN/420TLk6MG1LxB80sIFvwFq2cr8zRkO446c8Ho+jFaBOxdFiGE7RPT5a3tvu9JQarsg==}
     hasBin: true
 
-  '@pnpm/linux-arm64@11.7.0':
-    resolution: {integrity: sha512-ANTX2SlMO+d2y/4bYQhHCwHPX7gSSADJ5+pMUIiDFzIsybnFFaJdZboaFfq9NOxCbETcnDxqZ95Rz3+NHx1JIw==}
+  '@pnpm/linux-arm64@11.8.0':
+    resolution: {integrity: sha512-GynFy14/J4CBFnAl0yIAZofHFjVT9O630/6SQizF+g/tmtgA/LD8LNydlaqp0IqJHLpAYgP6NCz1GpNjAXDSFw==}
     cpu: [arm64]
     os: [linux]
 
-  '@pnpm/linux-x64@11.7.0':
-    resolution: {integrity: sha512-fr75tqixXoS8cnA81HQIomjOGEPnsOsd3xCDL5pMNY5raOXbKurtgRV+RjATvjxlJxSLIVFKegABlxAiB7q72A==}
+  '@pnpm/linux-x64@11.8.0':
+    resolution: {integrity: sha512-t8xZUgi1+3zUDKD7vVv+njzEE22KKVsEx8mDOnHhcrvdk0VQjlXw1gsBRr5qgHm1mSLBHM59p8HYskbIvKs2Bg==}
     cpu: [x64]
     os: [linux]
 
-  '@pnpm/linuxstatic-arm64@11.7.0':
-    resolution: {integrity: sha512-Q++pgzvXkGeqnVRl26/uqmpMGdttQus0rGyL3XIfYGLCi8ZfajYUaCKdZID2MH7+CNOuugWDdFDup3r7BR7Rfg==}
+  '@pnpm/linuxstatic-arm64@11.8.0':
+    resolution: {integrity: sha512-sImQtnqan8mkTE4PPil9Kz3pPtQ+pBvhYEMUFBgOzhHAWloxVRDKK0pJvUXJmx+NqQNng5SiEvhjoAUdm5p34g==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/linuxstatic-x64@11.7.0':
-    resolution: {integrity: sha512-z1+exW6ocU/rmOvJnmU3FUBJYaryCUqFoaXN6KZW5BqTj7BPJb7HJcAyXRlirNZMJlEiUY5rXbfStGPQJhGsVA==}
+  '@pnpm/linuxstatic-x64@11.8.0':
+    resolution: {integrity: sha512-/amFWeX2wOmsuCpEHs+65RBgniuncIE0eCqWdOI7nBk3rcu8SniVeZ8Lq5rABjqNBYUU65zKwHJ5NyWwc+BrKg==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/macos-arm64@11.7.0':
-    resolution: {integrity: sha512-gD34/k3JT5oab4BYaqrUor3e4VdwXvkfLNlEI+lvDtX1MHT+2Nauc9p9NsQnpn1zE8blQEflzbF8wAUQ6Dmvkw==}
+  '@pnpm/macos-arm64@11.8.0':
+    resolution: {integrity: sha512-r7OWbYzpvO3CPCozezysoAfpYvUNX0w/2DpqA+lX4HcuBQi7GAR4xx6Gdhbg52uPA7Qux+7kHUj3gL/Mn8DEAA==}
     cpu: [arm64]
     os: [darwin]
 
-  '@pnpm/win-arm64@11.7.0':
-    resolution: {integrity: sha512-hRTcDmm2j7KoRwbqNo0rUAu9A1kVJN98Eob7H09U0uPJbEMax85JGOmERkT3Lf6HjVJuFNBvfaJ3OTI3HmlVGg==}
+  '@pnpm/win-arm64@11.8.0':
+    resolution: {integrity: sha512-BGXgcCdDX1QHv7D3QbQnP4aY/jr9DkSV/fqiiCTaYsgDF4/bOqcjlCr+Md6Az7HL/PJ8bxyjPIqHhdBzZh2TSg==}
     cpu: [arm64]
     os: [win32]
 
-  '@pnpm/win-x64@11.7.0':
-    resolution: {integrity: sha512-r/1NuKY7Z+6ZXVIzVrUEMj6TTEBdR63geV4Rlm8HKEhgQTdxyIsJoqV3FJGqoyzbRaScObqAwRfMaK9dskPddQ==}
+  '@pnpm/win-x64@11.8.0':
+    resolution: {integrity: sha512-J6inRM26+P1hL3DLWLBLI/imW2VlxjSFJsnSlaVvPC6PiGJbC96JhGZ+7l9Oag8loWjb9Z1DbcOf3ibDA9XRJA==}
     cpu: [x64]
     os: [win32]
 
@@ -116,45 +116,45 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  pnpm@11.7.0:
-    resolution: {integrity: sha512-GcyFLBIMcSV2DyRD7mvgyltA+fUFmN4aCaHxd1A+AQ5Xwjx3ZG4B52HeWb+HT7IqM5jDOrlpH8E+uUa28PTWIA==}
+  pnpm@11.8.0:
+    resolution: {integrity: sha512-wfXnxMskHI8XS3Q4UdgvQrgCMkr8iw8Ra5atsVqgZmSUjd42lgo7oQebpbSyndAUATW5S1tfUmNZIknWjlVfJg==}
     engines: {node: '>=22.13'}
     hasBin: true
 
 snapshots:
 
-  '@pnpm/exe@11.7.0':
+  '@pnpm/exe@11.8.0':
     dependencies:
       '@reflink/reflink': 0.1.19
       detect-libc: 2.1.2
     optionalDependencies:
-      '@pnpm/linux-arm64': 11.7.0
-      '@pnpm/linux-x64': 11.7.0
-      '@pnpm/linuxstatic-arm64': 11.7.0
-      '@pnpm/linuxstatic-x64': 11.7.0
-      '@pnpm/macos-arm64': 11.7.0
-      '@pnpm/win-arm64': 11.7.0
-      '@pnpm/win-x64': 11.7.0
+      '@pnpm/linux-arm64': 11.8.0
+      '@pnpm/linux-x64': 11.8.0
+      '@pnpm/linuxstatic-arm64': 11.8.0
+      '@pnpm/linuxstatic-x64': 11.8.0
+      '@pnpm/macos-arm64': 11.8.0
+      '@pnpm/win-arm64': 11.8.0
+      '@pnpm/win-x64': 11.8.0
 
-  '@pnpm/linux-arm64@11.7.0':
+  '@pnpm/linux-arm64@11.8.0':
     optional: true
 
-  '@pnpm/linux-x64@11.7.0':
+  '@pnpm/linux-x64@11.8.0':
     optional: true
 
-  '@pnpm/linuxstatic-arm64@11.7.0':
+  '@pnpm/linuxstatic-arm64@11.8.0':
     optional: true
 
-  '@pnpm/linuxstatic-x64@11.7.0':
+  '@pnpm/linuxstatic-x64@11.8.0':
     optional: true
 
-  '@pnpm/macos-arm64@11.7.0':
+  '@pnpm/macos-arm64@11.8.0':
     optional: true
 
-  '@pnpm/win-arm64@11.7.0':
+  '@pnpm/win-arm64@11.8.0':
     optional: true
 
-  '@pnpm/win-x64@11.7.0':
+  '@pnpm/win-x64@11.8.0':
     optional: true
 
   '@reflink/reflink-darwin-arm64@0.1.19':
@@ -194,7 +194,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  pnpm@11.7.0: {}
+  pnpm@11.8.0: {}
 
 ---
 lockfileVersion: '9.0'
@@ -239,9 +239,6 @@ importers:
       '@types/react':
         specifier: ^16.14.63
         version: 16.14.63
-      '@types/react-date-range':
-        specifier: ^1.4.10
-        version: 1.4.10
       '@types/react-dom':
         specifier: ^16.9.25
         version: 16.9.25(@types/react@16.14.63)
@@ -300,8 +297,8 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0
       lucide-react:
-        specifier: ^0.545.0
-        version: 0.545.0(react@18.3.1)
+        specifier: ^1.21.0
+        version: 1.21.0(react@18.3.1)
       memoize-one:
         specifier: ^6.0.0
         version: 6.0.0
@@ -317,18 +314,12 @@ importers:
       prettier:
         specifier: 3.3.3
         version: 3.3.3
-      prettier-plugin-organize-imports:
-        specifier: ^4.1.0
-        version: 4.1.0(prettier@3.3.3)(typescript@5.8.2)
       protobufjs:
         specifier: ^7.5.6
         version: 7.5.6
       react:
         specifier: ^18.3.1
         version: 18.3.1
-      react-date-range:
-        specifier: ^2.0.1
-        version: 2.0.1(date-fns@4.1.0)(react@18.3.1)
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
@@ -357,8 +348,8 @@ importers:
         specifier: ^2.8.1
         version: 2.8.1
       typescript:
-        specifier: 5.8.2
-        version: 5.8.2
+        specifier: 7.0.2
+        version: 7.0.2
       uuid:
         specifier: ^14.0.0
         version: 14.0.0
@@ -475,9 +466,6 @@ packages:
   '@types/prop-types@15.7.14':
     resolution: {integrity: sha512-gNMvNH49DJ7OJYv+KAKn0Xp45p8PLl6zo2YnvDIbTd4J6MER2BmWN49TG7n9LvkyihINxeKW8+3bfS2yDC9dzQ==}
 
-  '@types/react-date-range@1.4.10':
-    resolution: {integrity: sha512-1g3SUKak9ShCH8ZAcLrYT/Ln3t5sI0iDKesAkuAuAXtagpgoI89RTh1APH4RV1IQ0YZQSBQvcQGC2oYaZ++2jw==}
-
   '@types/react-dom@16.9.25':
     resolution: {integrity: sha512-ZK//eAPhwft9Ul2/Zj+6O11YR6L4JX0J2sVeBC9Ft7x7HFN7xk7yUV/zDxqV6rjvqgl6r8Dq7oQImxtyf/Mzcw==}
     peerDependencies:
@@ -504,6 +492,126 @@ packages:
   '@types/varint@6.0.3':
     resolution: {integrity: sha512-DHukoGWdJ2aYkveZJTB2rN2lp6m7APzVsoJQ7j/qy1fQxyamJTPD5xQzCMoJ2Qtgn0mE3wWeNOpbTyBFvF+dyA==}
 
+  '@typescript/typescript-aix-ppc64@7.0.2':
+    resolution: {integrity: sha512-MTKKkWB7p/0E9xi1d1tHtZ5PiLkGEMIq88pK2CubZjOsLtYTLqhgIgi6zepFa+9GHZ6h05NMCkQxGKiPXMxXtQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [ppc64]
+    os: [aix]
+
+  '@typescript/typescript-darwin-arm64@7.0.2':
+    resolution: {integrity: sha512-gowzar9MwS/aRWp6f3a4KUqzRjAZjOsmGNCM6LcTgXum+dBfgsBVMN+AgvOCCbguXyick6LJhpBszxMebJ8syA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@typescript/typescript-darwin-x64@7.0.2':
+    resolution: {integrity: sha512-SZ9xZInqApNlNGc9s0W1VSsktYSOe9cFqNOIqmN1Gs8SmkjKZYFt017G4VwPxASInODuAdbTW7sXiFUf893RgA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@typescript/typescript-freebsd-arm64@7.0.2':
+    resolution: {integrity: sha512-W5NH4y/J0plIIS5b2xvTEkU7JFxyqdMAOgf+Ilhl0vHQXKO5dZoxd+C/jEtq56c4F3wk71RB4BMRQ2XdI+bwYQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [freebsd]
+
+  '@typescript/typescript-freebsd-x64@7.0.2':
+    resolution: {integrity: sha512-UMGDx5sTpzNw3WiPebH7l90IWfJggEd+egHt/q6p7/Cm3zqoV7VxkGXt+3DxPIw8CcmvAB0j3sVVfbhX+M4Tpw==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [freebsd]
+
+  '@typescript/typescript-linux-arm64@7.0.2':
+    resolution: {integrity: sha512-Qh4eU4/y3yDjnfjjyPYihMj5/ODIlmt+Bzu17OI+fiSRDW57QmU5SiN63exPRNJPKUzcc1INa1NXdrJ+MqHjUQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@typescript/typescript-linux-arm@7.0.2':
+    resolution: {integrity: sha512-gffT3xPz9sR7j/YJExkyPntrI0P2EP9XbOyWzth2/Gs0RstK+90RBcO0ncXoXy/beYll1SXw846Nf2zdnEz0QQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm]
+    os: [linux]
+
+  '@typescript/typescript-linux-loong64@7.0.2':
+    resolution: {integrity: sha512-uEHck9i8hoAzXPiYRib1O7miOnz23SxIeVl6F4LXox+qov1K35jHcEW6VHKvZI+pyvl7fZEP4MCU5LYvIq1GuQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [loong64]
+    os: [linux]
+
+  '@typescript/typescript-linux-mips64el@7.0.2':
+    resolution: {integrity: sha512-R4KvAMnE43W5Qeqb0Ly56O3mWMWIAgsMyz36DCaycd5nbg/9kzm0liw3JocfRqyJY0KPmzFjbswozXyW0DnIYA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [mips64el]
+    os: [linux]
+
+  '@typescript/typescript-linux-ppc64@7.0.2':
+    resolution: {integrity: sha512-DORx5b3sd/4S7eayxm4FQv+A7CrkUIGRaHiwI8oiHTAI1fAPWhF4J0vAlkC8biAlHSVVwxMQ3tjZ2/DVbnQiiA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [ppc64]
+    os: [linux]
+
+  '@typescript/typescript-linux-riscv64@7.0.2':
+    resolution: {integrity: sha512-wf0jqEDOjrPRnKwYRyyJDRo11KMbvMFrU+q4zqKyChODBzvlkbhNQfKvLxQCcwTpdDaXSHZTVuh0JoCrKCUMHQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [riscv64]
+    os: [linux]
+
+  '@typescript/typescript-linux-s390x@7.0.2':
+    resolution: {integrity: sha512-IkwJc3L7yhytWd/ewjyxNDfOmswCm9GWMJT/ue/dU4aZNbwZeYAetq42VyLmsmSjvoX7z74X6ZaYCtzAr0EuGw==}
+    engines: {node: '>=16.20.0'}
+    cpu: [s390x]
+    os: [linux]
+
+  '@typescript/typescript-linux-x64@7.0.2':
+    resolution: {integrity: sha512-EYdf2cNg7rgCWJnxCdJ+F3V39O8ihb37eHAu1LK8oAFizgTQbPOK7zHHXbPt8rX24COqODXeI3sIf0fCXG7H/A==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [linux]
+
+  '@typescript/typescript-netbsd-arm64@7.0.2':
+    resolution: {integrity: sha512-+polYF4MF04aPpO5FTkHran9yUQDSXqy5GiSDKpsll5jy3l3+g9QLhpf39T+ePtefhXLOGrLl0QIjkQP6VnelA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [netbsd]
+
+  '@typescript/typescript-netbsd-x64@7.0.2':
+    resolution: {integrity: sha512-8YIT0EHM/3dq10ZOVF/A7pc/YSMtbcecct4rWtexrnSCHOPcpC2KTLXfTCR6vDpnSiY12heNb1GiN/wu+T/FyA==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [netbsd]
+
+  '@typescript/typescript-openbsd-arm64@7.0.2':
+    resolution: {integrity: sha512-APT8+ClYnuYm1u9+kgGXoMj2VzWzcymwh2gNSQVySHfkRDGOTVkoWLjCmOQSaO+PoqQ57B0flRp9SA+7GnnkzQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [openbsd]
+
+  '@typescript/typescript-openbsd-x64@7.0.2':
+    resolution: {integrity: sha512-yX7s+Q0Dln0Dt9tEzZsAjXXR/+ytBM7AlglaqyeMPxQszJ1JhlJdZ6jLA+IzldHtflX81em7lDao1xXu+aRRkg==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [openbsd]
+
+  '@typescript/typescript-sunos-x64@7.0.2':
+    resolution: {integrity: sha512-dLJDGaLZ1D4HPQn62u1n8mBDkJREwMsAkCdkwd4Ieqw+x3TUyTsqY0YiBCtE6H6OzzgGk3iuZ3vFWRS+E8/d1g==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [sunos]
+
+  '@typescript/typescript-win32-arm64@7.0.2':
+    resolution: {integrity: sha512-Gyl1Vy6OsWesLzmq+EP0Fb7b4Nid5232AvcA2SFcdYreldpNtYFFofPjnt62y9hQy7VTaZp65ICJjuAQRaVcIQ==}
+    engines: {node: '>=16.20.0'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@typescript/typescript-win32-x64@7.0.2':
+    resolution: {integrity: sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g==}
+    engines: {node: '>=16.20.0'}
+    cpu: [x64]
+    os: [win32]
+
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
@@ -518,9 +626,6 @@ packages:
 
   browser-headers@0.4.1:
     resolution: {integrity: sha512-CA9hsySZVo9371qEHjHZtYxV2cFtVj5Wj/ZHi8ooEsrtm4vOnl9Y9HmyYWk9q+05d7K3rdoAE0j3MVEFVvtQtg==}
-
-  classnames@2.5.1:
-    resolution: {integrity: sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==}
 
   clsx@2.1.1:
     resolution: {integrity: sha512-eYm0QWBtUrBWZWG0d386OGAw16Z995PiOVo2B7bjWSbHedGl5e0ZWaq65kOGgUSNesEIDkB9ISbTg/JK9dhCZA==}
@@ -583,10 +688,6 @@ packages:
     peerDependencies:
       react: 16.9.0
       react-dom: 16.9.0
-
-  date-fns@2.30.0:
-    resolution: {integrity: sha512-fnULvOpxnC5/Vg3NCiWelDsLiUc9bRwAPs/+LfTLNvetFCtCTN+yQz15C/fs4AwX1R9K5GLtLfn8QW+dWisaAw==}
-    engines: {node: '>=0.11'}
 
   date-fns@4.1.0:
     resolution: {integrity: sha512-Ukq0owbQXxa/U3EGtsdVBkR1w7KOQ5gIBqdH2hkvknzZPYvBxb/aa6E8L7tmjFtkwZBu3UXBbjIgPo/Ez4xaNg==}
@@ -664,8 +765,8 @@ packages:
     resolution: {integrity: sha512-ESL2CrkS/2wTPfuend7Zhkzo2u0daGJ/A2VucJOgQ/C48S/zB8MMeMHSGKYpXhIjbPxfuezITkaBH1wqv00DDQ==}
     engines: {node: 20 || >=22}
 
-  lucide-react@0.545.0:
-    resolution: {integrity: sha512-7r1/yUuflQDSt4f1bpn5ZAocyIxcTyVyBBChSVtBKn5M+392cPmI5YJMWOJKk/HUWGm5wg83chlAZtCcGbEZtw==}
+  lucide-react@1.21.0:
+    resolution: {integrity: sha512-reEZMXq8Qdd5jg5XYkQ5TR1fB/GiQ7ih4vcrthYDtgjSDwh0i6/YLiGjsWsIwgN49gpAnd4J2elSNzncMEEUUQ==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -705,16 +806,6 @@ packages:
     resolution: {integrity: sha512-3O/iVVsJAPsOnpwWIeD+d6z/7PmqApyQePUtCndjatj/9I5LylHvt5qluFaBT3I5h3r1ejfR056c+FCv+NnNXg==}
     engines: {node: 18 || 20 || >=22}
 
-  prettier-plugin-organize-imports@4.1.0:
-    resolution: {integrity: sha512-5aWRdCgv645xaa58X8lOxzZoiHAldAPChljr/MT0crXVOWTZ+Svl4hIWlz+niYSlO6ikE5UXkN1JrRvIP2ut0A==}
-    peerDependencies:
-      prettier: '>=2.0'
-      typescript: '>=2.9'
-      vue-tsc: ^2.1.0
-    peerDependenciesMeta:
-      vue-tsc:
-        optional: true
-
   prettier@3.3.3:
     resolution: {integrity: sha512-i2tDNA0O5IrMO757lfrdQZCc2jPNDVntV0m/+4whiDfWaTKfMNgR7Qz0NAeGz/nRqF4m5/6CLzbP4/liHt12Ew==}
     engines: {node: '>=14'}
@@ -726,12 +817,6 @@ packages:
   protobufjs@7.5.6:
     resolution: {integrity: sha512-M71sTMB146U3u0di3yup8iM+zv8yPRNQVr1KK4tyBitl3qFvEGucq/rGDRShD2rsJhtN02RJaJ7j5X5hmy8SJg==}
     engines: {node: '>=12.0.0'}
-
-  react-date-range@2.0.1:
-    resolution: {integrity: sha512-jwKYc9zcjYMg2hWbPht+6BF2wjGG5DkRVNJLRXn2Y0B/QCOOnvQX6YXziZVujVADWmgsBaoQnILdmzYw+Bwh0g==}
-    peerDependencies:
-      date-fns: 3.0.6 || >=3.0.0
-      react: ^0.14 || ^15.0.0-rc || >=15.0
 
   react-dom@18.3.1:
     resolution: {integrity: sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}
@@ -746,11 +831,6 @@ packages:
 
   react-lifecycles-compat@3.0.4:
     resolution: {integrity: sha512-fBASbA6LnOU9dOU2eW7aQ8xmYBSXUIWr+UmF9b1efZBazGNO+rcXT/icdKnYm2pTwcRylVUYwW7H1PHfLekVzA==}
-
-  react-list@0.8.18:
-    resolution: {integrity: sha512-1OSdDvzuKuwDJvQNuhXxxL+jTmmdtKg1i6KtYgxI9XR98kbOql1FcSGP+Lcvo91fk3cYng+Z6YkC6X9HRJwxfw==}
-    peerDependencies:
-      react: 0.14 || 15 - 19
 
   react-modal@3.16.3:
     resolution: {integrity: sha512-yCYRJB5YkeQDQlTt17WGAgFJ7jr2QYcWa1SHqZ3PluDmnKJ/7+tVU+E6uKyZ0nODaeEj+xCpK4LcSnKXLMC0Nw==}
@@ -818,9 +898,6 @@ packages:
   scheduler@0.23.2:
     resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
 
-  shallow-equal@1.2.1:
-    resolution: {integrity: sha512-S4vJDjHHMBaiZuT9NPb616CSmLf618jawtv3sufLl6ivK8WocjAo58cXwbRV1cgqxH0Qbv+iUt6m05eqEa2IRA==}
-
   tiny-invariant@1.3.3:
     resolution: {integrity: sha512-+FbBPE1o9QAYvviau/qC5SE3caw21q3xkvWKBtja5vgqOWIHHJ3ioaq1VPfn/Szqctz2bU/oYeKd9/z5BL+PVg==}
 
@@ -830,9 +907,9 @@ packages:
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
-  typescript@5.8.2:
-    resolution: {integrity: sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==}
-    engines: {node: '>=14.17'}
+  typescript@7.0.2:
+    resolution: {integrity: sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA==}
+    engines: {node: '>=16.20.0'}
     hasBin: true
 
   undici-types@7.24.6:
@@ -943,11 +1020,6 @@ snapshots:
 
   '@types/prop-types@15.7.14': {}
 
-  '@types/react-date-range@1.4.10':
-    dependencies:
-      '@types/react': 16.14.63
-      date-fns: 2.30.0
-
   '@types/react-dom@16.9.25(@types/react@16.14.63)':
     dependencies:
       '@types/react': 16.14.63
@@ -978,6 +1050,66 @@ snapshots:
     dependencies:
       '@types/node': 12.20.55
 
+  '@typescript/typescript-aix-ppc64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-darwin-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-darwin-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-freebsd-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-freebsd-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-arm@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-loong64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-mips64el@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-ppc64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-riscv64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-s390x@7.0.2':
+    optional: true
+
+  '@typescript/typescript-linux-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-netbsd-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-netbsd-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-openbsd-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-openbsd-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-sunos-x64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-win32-arm64@7.0.2':
+    optional: true
+
+  '@typescript/typescript-win32-x64@7.0.2':
+    optional: true
+
   '@xmldom/xmldom@0.8.13': {}
 
   balanced-match@4.0.4: {}
@@ -987,8 +1119,6 @@ snapshots:
       balanced-match: 4.0.4
 
   browser-headers@0.4.1: {}
-
-  classnames@2.5.1: {}
 
   clsx@2.1.1: {}
 
@@ -1038,10 +1168,6 @@ snapshots:
     dependencies:
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-
-  date-fns@2.30.0:
-    dependencies:
-      '@babel/runtime': 7.27.0
 
   date-fns@4.1.0: {}
 
@@ -1107,7 +1233,7 @@ snapshots:
 
   lru-cache@11.2.6: {}
 
-  lucide-react@0.545.0(react@18.3.1):
+  lucide-react@1.21.0(react@18.3.1):
     dependencies:
       react: 18.3.1
 
@@ -1136,11 +1262,6 @@ snapshots:
       lru-cache: 11.2.6
       minipass: 7.1.3
 
-  prettier-plugin-organize-imports@4.1.0(prettier@3.3.3)(typescript@5.8.2):
-    dependencies:
-      prettier: 3.3.3
-      typescript: 5.8.2
-
   prettier@3.3.3: {}
 
   prop-types@15.8.1:
@@ -1164,15 +1285,6 @@ snapshots:
       '@types/node': 25.8.0
       long: 5.3.2
 
-  react-date-range@2.0.1(date-fns@4.1.0)(react@18.3.1):
-    dependencies:
-      classnames: 2.5.1
-      date-fns: 4.1.0
-      prop-types: 15.8.1
-      react: 18.3.1
-      react-list: 0.8.18(react@18.3.1)
-      shallow-equal: 1.2.1
-
   react-dom@18.3.1(react@18.3.1):
     dependencies:
       loose-envify: 1.4.0
@@ -1184,10 +1296,6 @@ snapshots:
   react-is@18.3.1: {}
 
   react-lifecycles-compat@3.0.4: {}
-
-  react-list@0.8.18(react@18.3.1):
-    dependencies:
-      react: 18.3.1
 
   react-modal@3.16.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
@@ -1269,15 +1377,34 @@ snapshots:
     dependencies:
       loose-envify: 1.4.0
 
-  shallow-equal@1.2.1: {}
-
   tiny-invariant@1.3.3: {}
 
   tslib@1.14.1: {}
 
   tslib@2.8.1: {}
 
-  typescript@5.8.2: {}
+  typescript@7.0.2:
+    optionalDependencies:
+      '@typescript/typescript-aix-ppc64': 7.0.2
+      '@typescript/typescript-darwin-arm64': 7.0.2
+      '@typescript/typescript-darwin-x64': 7.0.2
+      '@typescript/typescript-freebsd-arm64': 7.0.2
+      '@typescript/typescript-freebsd-x64': 7.0.2
+      '@typescript/typescript-linux-arm': 7.0.2
+      '@typescript/typescript-linux-arm64': 7.0.2
+      '@typescript/typescript-linux-loong64': 7.0.2
+      '@typescript/typescript-linux-mips64el': 7.0.2
+      '@typescript/typescript-linux-ppc64': 7.0.2
+      '@typescript/typescript-linux-riscv64': 7.0.2
+      '@typescript/typescript-linux-s390x': 7.0.2
+      '@typescript/typescript-linux-x64': 7.0.2
+      '@typescript/typescript-netbsd-arm64': 7.0.2
+      '@typescript/typescript-netbsd-x64': 7.0.2
+      '@typescript/typescript-openbsd-arm64': 7.0.2
+      '@typescript/typescript-openbsd-x64': 7.0.2
+      '@typescript/typescript-sunos-x64': 7.0.2
+      '@typescript/typescript-win32-arm64': 7.0.2
+      '@typescript/typescript-win32-x64': 7.0.2
 
   undici-types@7.24.6: {}
 

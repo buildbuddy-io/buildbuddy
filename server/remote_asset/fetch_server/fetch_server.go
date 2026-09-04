@@ -389,6 +389,7 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 		InstanceName:   instanceName,
 		BlobDigests:    []*repb.Digest{blobDigest},
 		DigestFunction: checksumFunc,
+		Purpose:        repb.FindMissingBlobsRequest_REMOTE_ASSET_FETCH,
 	})
 	if err != nil {
 		log.CtxErrorf(ctx, "Failed to renew %s: %s", digest.String(blobDigest), err)

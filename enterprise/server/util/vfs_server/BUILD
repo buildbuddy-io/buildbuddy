@@ -19,7 +19,6 @@ go_library(
             "//enterprise/server/util/vfscommon",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
-            "//server/cache/dirtools",
             "//server/environment",
         ],
         "@io_bazel_rules_go//go/platform:linux": [
@@ -52,7 +51,6 @@ go_library(
             "//enterprise/server/util/vfscommon",
             "//proto:remote_execution_go_proto",
             "//proto:vfs_go_proto",
-            "//server/cache/dirtools",
             "//server/environment",
         ],
         "//conditions:default": [],
@@ -76,6 +74,7 @@ go_test(
         "//proto:vfs_go_proto",
         "//server/cache/dirtools",
         "//server/environment",
+        "//server/interfaces",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",

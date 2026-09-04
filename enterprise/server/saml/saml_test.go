@@ -118,6 +118,7 @@ func startBuildBuddy(t *testing.T, idp *testIDP, extraArgs ...string) *app.App {
 		"--auth.saml.cert=" + string(encodeCertPEM(spCert)),
 		"--auth.saml.key=" + string(encodeKeyPEM(spKey)),
 		"--app.build_buddy_url=" + bbURL,
+		"--http.client.allow_localhost=true",
 	}
 	args = append(args, extraArgs...)
 	bb := buildbuddy_enterprise.RunWithConfig(

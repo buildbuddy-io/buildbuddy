@@ -23,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/byte_stream"
@@ -77,6 +78,67 @@ type noOpCAS struct {
 
 type noOpCASClient struct {
 	repb.ContentAddressableStorageClient
+}
+
+type fakeByteStreamClient struct {
+	bspb.ByteStreamClient
+	data []byte
+}
+
+func (c *fakeByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	return &fakeByteStreamReadClient{data: c.data}, nil
+}
+
+type fakeByteStreamReadClient struct {
+	grpc.ClientStream
+	data []byte
+	done bool
+}
+
+func (c *fakeByteStreamReadClient) Recv() (*bspb.ReadResponse, error) {
+	if c.done {
+		return nil, io.EOF
+	}
+	c.done = true
+	return &bspb.ReadResponse{Data: c.data}, nil
+}
+
+type recordingByteStreamReadServer struct {
+	grpc.ServerStream
+	responses []*bspb.ReadResponse
+}
+
+func (s *recordingByteStreamReadServer) Send(response *bspb.ReadResponse) error {
+	s.responses = append(s.responses, response)
+	return nil
+}
+
+func TestSendChunkFramesSplitsLargeChunks(t *testing.T) {
+	frameSize := *config.ReadBufSizeBytes
+	for _, tc := range []struct {
+		name      string
+		sizeBytes int
+	}{
+		{name: "single_frame", sizeBytes: frameSize},
+		{name: "partial_last_frame", sizeBytes: 2*frameSize + 123},
+		{name: "max_chunk", sizeBytes: int(chunking.MaxSupportedChunkSizeBytes())},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := make([]byte, tc.sizeBytes)
+			for i := range data {
+				data[i] = byte(i)
+			}
+			stream := &recordingByteStreamReadServer{}
+			require.NoError(t, sendChunkFrames(stream, data))
+			require.Len(t, stream.responses, (tc.sizeBytes+frameSize-1)/frameSize)
+			var reconstructed bytes.Buffer
+			for _, response := range stream.responses {
+				require.LessOrEqual(t, len(response.GetData()), frameSize)
+				reconstructed.Write(response.GetData())
+			}
+			require.Equal(t, data, reconstructed.Bytes())
+		})
+	}
 }
 
 func (c *noOpCAS) FindMissingBlobs(ctx context.Context, req *repb.FindMissingBlobsRequest) (*repb.FindMissingBlobsResponse, error) {
@@ -136,6 +198,35 @@ func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 	})
 	require.True(t, status.IsUnimplementedError(err))
 	require.NotNil(t, result.firstReq)
+}
+
+func TestWriteChunkedValidatesBlobForUnvalidatedSplice(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs(cdc.SpliceWithoutValidationHeaderName, "true"))
+	_, casClient, _, _ := runRemoteServices(ctx, env, t)
+	local, err := byte_stream_server.NewByteStreamServer(env)
+	require.NoError(t, err)
+	s := &ByteStreamServerProxy{
+		authenticator: env.GetAuthenticator(),
+		local:         local,
+		localCache:    env.GetCache(),
+		remoteCAS:     casClient,
+		bufPool:       bytebufferpool.VariableSize(int(chunking.MaxCompressedChunkReadSizeBytes())),
+	}
+
+	data := make([]byte, 5*1024*1024)
+	d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	data[0] = 'x'
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	_, err = s.writeChunked(ctx, &rawWriteStream{
+		ctx:          ctx,
+		resourceName: rn.NewUploadString(),
+		data:         data,
+	})
+	require.Error(t, err)
+	require.True(t, status.IsInvalidArgumentError(err), "want InvalidArgumentError, got %+#v", err)
+	require.Contains(t, err.Error(), "computed chunked blob digest")
 }
 
 func TestWriteChunkingEnabledSkipsBESUpload(t *testing.T) {
@@ -2056,6 +2147,48 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	require.Equal(t, float64(len(chunkDigests)), readChunksTotalAfter-readChunksTotalBefore, "total chunks = number of chunks in manifest")
 	require.Equal(t, float64(len(chunkDigests)), readChunksLocalAfter-readChunksLocalBefore, "second read: all chunks served from local cache")
 	require.Equal(t, float64(0), readChunksRemoteAfter-readChunksRemoteBefore, "second read: no remote chunk fetches")
+}
+
+func TestReadChunkZstdLargerThanInitialBuffer(t *testing.T) {
+	chunk := bytes.Repeat([]byte("x"), 646321)
+	chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	chunkRN := digest.NewCASResourceName(chunkDigest, "", repb.DigestFunction_BLAKE3)
+	chunkRN.SetCompressor(repb.Compressor_ZSTD)
+
+	bufPool := bytebufferpool.VariableSize(int(chunking.MaxCompressedChunkReadSizeBytes()))
+	initialBuf := bufPool.Get(compression.ZstdCompressBound(int64(len(chunk))))
+	initialCap := cap(initialBuf)
+	bufPool.Put(initialBuf)
+
+	compressed := compression.CompressZstd(nil, chunk)
+	payloadSize := initialCap - len(compressed) + 1
+	require.Greater(t, payloadSize, 0)
+	compressed = appendZstdSkippableFrame(compressed, payloadSize)
+	// Old proxy chunk reads failed once the compressed stream exceeded the initial buffer.
+	require.Greater(t, len(compressed), initialCap)
+	require.LessOrEqual(t, len(compressed), int(chunking.MaxCompressedChunkReadSizeBytes()))
+	decompressed, err := compression.DecompressZstd(nil, compressed)
+	require.NoError(t, err)
+	require.Equal(t, chunk, decompressed)
+
+	s := &ByteStreamServerProxy{
+		remote:  &fakeByteStreamClient{data: compressed},
+		bufPool: bufPool,
+	}
+	result := s.readChunk(context.Background(), chunkRN, 0, true)
+	require.NoError(t, result.err)
+	require.True(t, result.remote)
+	// The proxy should return the complete compressed chunk, not a short-buffer error.
+	require.Equal(t, compressed, result.data)
+	bufPool.Put(result.data)
+}
+
+func appendZstdSkippableFrame(dst []byte, payloadSize int) []byte {
+	// Zstd skippable frame magic 0x184D2A50, little-endian.
+	dst = append(dst, 0x50, 0x2a, 0x4d, 0x18)
+	dst = append(dst, byte(payloadSize), byte(payloadSize>>8), byte(payloadSize>>16), byte(payloadSize>>24))
+	return append(dst, make([]byte, payloadSize)...)
 }
 
 type faultyCache struct {

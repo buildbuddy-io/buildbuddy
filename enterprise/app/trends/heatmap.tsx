@@ -10,6 +10,7 @@ import { stats } from "../../../proto/stats_ts_proto";
 interface HeatmapProps {
   heatmapData: stats.GetStatHeatmapResponse;
 
+  colorByTotal: boolean;
   valueFormatter: (value: number) => string;
   metricBucketName: string;
   metricBucketFormatter: (value: number) => string;
@@ -630,17 +631,21 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
     let min = 0;
     let max = 0;
     this.props.heatmapData.column.forEach((column) => {
-      column.value.forEach((value) => {
-        min = Math.min(+value, min);
-        max = Math.max(+value, max);
+      column.value.forEach((value, yIndex) => {
+        const colorValue = this.props.colorByTotal ? +(column.total[yIndex] ?? 0) : +value;
+        min = Math.min(colorValue, min);
+        max = Math.max(colorValue, max);
       });
     });
 
     const selection = this.computeSelectionData();
-    const interpolator = (v: number, selected: boolean) =>
-      selected
-        ? heatmapGreens[Math.floor(((heatmapGreens.length - 1) * (v - min)) / (max - min))]
-        : heatmapPurples[Math.floor(((heatmapPurples.length - 1) * (v - min)) / (max - min))];
+    const interpolator = (v: number, selected: boolean) => {
+      const colors = selected ? heatmapGreens : heatmapPurples;
+      if (max <= min) {
+        return colors[0];
+      }
+      return colors[Math.floor(((colors.length - 1) * (v - min)) / (max - min))];
+    };
 
     return (
       <div>
@@ -664,7 +669,13 @@ class HeatmapComponentInternal extends React.Component<ResizableHeatmapProps, St
                             y={this.yScaleTops[yIndex] ?? 0}
                             width={this.xScaleBand.bandwidth() || 0}
                             height={this.yScaleHeights[yIndex] ?? 0}
-                            fill={this.getCellColor(xIndex, yIndex, +value, interpolator, selection)}></rect>
+                            fill={this.getCellColor(
+                              xIndex,
+                              yIndex,
+                              this.props.colorByTotal ? +(column.total[yIndex] ?? 0) : +value,
+                              interpolator,
+                              selection
+                            )}></rect>
                         )
                       )}
                     </>

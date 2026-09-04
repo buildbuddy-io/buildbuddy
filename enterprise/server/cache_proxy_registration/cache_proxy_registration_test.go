@@ -2,6 +2,7 @@ package cache_proxy_registration
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -15,7 +16,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/redact"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,7 +62,7 @@ func startTestRegistry(t *testing.T, users map[string]interfaces.UserInfo) (*cac
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
 
-	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env)
+	registry, err := cache_proxy_registry_server.NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(registry)
 
@@ -236,9 +241,9 @@ func TestStreamHeartbeats_UnreachableTarget(t *testing.T) {
 	}
 }
 
-func TestSumByHitMiss(t *testing.T) {
+func TestSumByStatus(t *testing.T) {
 	cv := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "test_sum_by_hit_miss",
+		Name: "test_sum_by_status",
 	}, []string{metrics.CacheHitMissStatus, "other"})
 
 	// Two "hit" series across different "other" labels — these should be
@@ -247,21 +252,99 @@ func TestSumByHitMiss(t *testing.T) {
 	cv.WithLabelValues(metrics.HitStatusLabel, "b").Add(4)
 	// One "miss" series.
 	cv.WithLabelValues(metrics.MissStatusLabel, "a").Add(10)
+	// One "uncacheable" series.
+	cv.WithLabelValues(metrics.UncacheableStatusLabel, "a").Add(5)
 	// A series with a status value the helper doesn't recognize — must be
-	// ignored, not double-counted into either bucket.
+	// ignored, not double-counted into any bucket.
 	cv.WithLabelValues("unknown", "a").Add(99)
 
-	hits, misses := sumByHitMiss(cv)
+	hits, misses, uncacheable := sumByStatus(cv)
 	assert.Equal(t, int64(7), hits)
 	assert.Equal(t, int64(10), misses)
+	assert.Equal(t, int64(5), uncacheable)
 }
 
-func TestSumByHitMiss_Empty(t *testing.T) {
+func TestSumByStatus_Empty(t *testing.T) {
 	cv := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "test_sum_by_hit_miss_empty",
+		Name: "test_sum_by_status_empty",
 	}, []string{metrics.CacheHitMissStatus})
 
-	hits, misses := sumByHitMiss(cv)
+	hits, misses, uncacheable := sumByStatus(cv)
 	assert.Equal(t, int64(0), hits)
 	assert.Equal(t, int64(0), misses)
+	assert.Equal(t, int64(0), uncacheable)
+}
+
+func TestConfiguredFlags(t *testing.T) {
+	flags.Set(t, "cache_proxy.app_target", "grpcs://app.example.com")
+	flags.Set(t, "cache_proxy.api_key", "SUPER_SECRET_KEY")
+
+	configured := redact.GetConfiguredFlags()
+
+	assert.Contains(t, configured, "--cache_proxy.app_target=grpcs://app.example.com")
+	// Secret flags are reported, but with their values redacted.
+	assert.Contains(t, configured, "--cache_proxy.api_key=<redacted>")
+	for _, f := range configured {
+		assert.NotContains(t, f, "SUPER_SECRET_KEY")
+		// Flags left at their defaults are omitted.
+		assert.NotContains(t, f, "--cache_proxy.metadata_directory")
+	}
+}
+
+// fakeHeartbeatStream records sent requests; the embedded interface panics on
+// any other method, which sendHeartbeat won't call as long as Send succeeds.
+type fakeHeartbeatStream struct {
+	cppb.CacheProxyRegistry_RegisterAndStreamHeartbeatClient
+	sent []*cppb.RegisterCacheProxyRequest
+}
+
+func (f *fakeHeartbeatStream) Send(req *cppb.RegisterCacheProxyRequest) error {
+	// Clone the request: real gRPC streams serialize at Send time, but
+	// sendHeartbeat mutates the shared node between sends.
+	f.sent = append(f.sent, proto.Clone(req).(*cppb.RegisterCacheProxyRequest))
+	return nil
+}
+
+// Flag values can change at runtime (the config file is re-read on SIGHUP),
+// so heartbeats should report the latest configuration snapshot, which
+// config.OnReload refreshes after each completed reload.
+func TestSendHeartbeat_RefreshesConfiguredFlags(t *testing.T) {
+	stream := &fakeHeartbeatStream{}
+	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
+
+	flags.Set(t, "cache_proxy.app_target", "grpcs://before.example.com")
+	refreshConfiguredFlags()
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+
+	// After a config reload (e.g. on SIGHUP), config.OnReload triggers
+	// refreshConfiguredFlags and subsequent heartbeats pick up the change.
+	flags.Set(t, "cache_proxy.app_target", "grpcs://after.example.com")
+	refreshConfiguredFlags()
+	require.NoError(t, sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node}))
+
+	require.Len(t, stream.sent, 2)
+	assert.Contains(t, stream.sent[0].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://before.example.com")
+	assert.Contains(t, stream.sent[1].GetNode().GetConfiguredFlags(), "--cache_proxy.app_target=grpcs://after.example.com")
+}
+
+func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
+	stream := &fakeHeartbeatStream{}
+	node := &cppb.CacheProxyNode{Host: "h", ProxyId: "id"}
+	refreshConfiguredFlags()
+
+	const iterations = 1_000
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < iterations; i++ {
+			_ = sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node})
+		}
+	}()
+
+	for i := 0; i < iterations; i++ {
+		flags.Set(t, "cache_proxy.app_target", fmt.Sprintf("grpcs://app-%d.example.com", i))
+	}
+	<-done
+
+	assert.Len(t, stream.sent, iterations)
 }

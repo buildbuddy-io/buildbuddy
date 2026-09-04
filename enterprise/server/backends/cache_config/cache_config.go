@@ -47,6 +47,9 @@ type GCSConfig struct {
 	AppName             string `yaml:"app_name" usage:"The app name, under which blobstore data will be stored."`
 	MinGCSFileSizeBytes *int64 `yaml:"min_gcs_file_size_bytes" usage:"Files larger than this may be stored in GCS (0 is disabled)."`
 	TTLDays             *int64 `yaml:"ttl_days" usage:"An object TTL, specified in days, to apply to the GCS bucket (0 means disabled)."`
+	// Must be well below TTLDays: the custom time lags the real access time by
+	// up to this much, and is treated as expired once past the TTL.
+	AtimeUpdateThreshold *time.Duration `yaml:"atime_update_threshold" usage:"Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update). Only applies to the pebble cache and the raft metadata server; for the meta cache, set this on its metadata server instead."`
 }
 
 type PebbleCacheConfig struct {
@@ -75,6 +78,7 @@ type MetaCacheConfig struct {
 	MaxInlineFileSizeBytes      int64                   `yaml:"max_inline_file_size_bytes" usage:"Files smaller than this may be inlined directly into metadata storage."`
 	MinBytesAutoZstdCompression int64                   `yaml:"min_bytes_auto_zstd_compression" usage:"Blobs larger than this will be zstd compressed before written to disk."`
 	MaxWriteGoroutines          int                     `yaml:"max_write_goroutines" usage:"The maximum number of goroutines to write data in SetMulti."`
+	MaxReadGoroutines           int                     `yaml:"max_read_goroutines" usage:"The maximum number of goroutines to read data in GetMulti."`
 	GCSConfig                   GCSConfig               `yaml:"gcs" usage:"GCS configuration for storing large files."`
 }
 

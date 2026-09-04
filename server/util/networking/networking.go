@@ -185,28 +185,25 @@ func DeleteNetNamespaces(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	output := strings.TrimSpace(string(b))
-	if len(output) == 0 {
-		return nil
-	}
 	var lastErr error
-	for ns := range strings.SplitSeq(output, "\n") {
+	found, deleted := 0, 0
+	for ns := range strings.SplitSeq(strings.TrimSpace(string(b)), "\n") {
 		// Sometimes the output contains spaces, like
-		//     bb-executor-1
-		//     bb-executor-2
-		//     3fe4313e-eb76-4b6d-9d61-53caf12b87e6 (id: 344)
-		//     2ab15e85-d1c3-47bc-ad40-74e2941157a4 (id: 332)
+		//     bb-executor-1 (id: 344)
 		// So we get just the first column here.
 		fields := strings.Fields(ns)
-		if len(fields) > 0 {
-			ns = fields[0]
-		}
-		if !strings.HasPrefix(ns, netNamespacePrefix) {
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], netNamespacePrefix) {
 			continue
 		}
-		if _, err := sudoCommand(ctx, "ip", "netns", "delete", ns); err != nil {
+		found++
+		if _, err := sudoCommand(ctx, "ip", "netns", "delete", fields[0]); err != nil {
 			lastErr = err
+			continue
 		}
+		deleted++
+	}
+	if found > 0 {
+		log.CtxWarningf(ctx, "Cleaned up %d of %d stale executor network namespaces left by a previous process.", deleted, found)
 	}
 	return lastErr
 }
@@ -288,6 +285,57 @@ func cleanupStaleVeths(ctx context.Context, ipWithCIDR string) error {
 		}
 	}
 	return nil
+}
+
+// checkVethRoute checks whether return traffic to the namespaced end of a veth
+// pair will be routed through the expected host device. A stale veth left by a
+// killed executor process can install the same connected route and silently
+// blackhole return traffic to the task, including DNS responses.
+//
+// This is a diagnostic only: it logs what it finds and never fails the network
+// setup.
+func checkVethRoute(ctx context.Context, veth *vethPair) {
+	if veth == nil || veth.network == nil {
+		log.CtxWarningf(ctx, "Network route check failed: cannot check veth route without an assigned network")
+		return
+	}
+
+	expectedLink, err := netlink.LinkByName(veth.hostDevice)
+	if err != nil {
+		log.CtxWarningf(ctx, "Network route check failed: could not look up expected host device %q: %s", veth.hostDevice, err)
+		return
+	}
+
+	guestIP := net.ParseIP(veth.network.NamespacedIP())
+	routes, err := netlink.RouteGet(guestIP)
+	if err != nil {
+		log.CtxWarningf(ctx, "Network route check failed: could not resolve host route to guest IP %s via expected device %q: %s", guestIP, veth.hostDevice, err)
+		return
+	}
+	if len(routes) == 0 {
+		log.CtxWarningf(ctx, "Network route check failed: no host route found to guest IP %s via expected device %q", guestIP, veth.hostDevice)
+		return
+	}
+
+	actualRoute := routes[0]
+	if actualRoute.LinkIndex == expectedLink.Attrs().Index {
+		return
+	}
+
+	actualDevice := fmt.Sprintf("ifindex-%d", actualRoute.LinkIndex)
+	if actualLink, err := netlink.LinkByIndex(actualRoute.LinkIndex); err == nil {
+		actualDevice = actualLink.Attrs().Name
+	}
+	log.CtxWarningf(
+		ctx,
+		"Network route conflict: host route to guest IP %s uses device %q (ifindex %d), expected device %q (ifindex %d); route: %+v",
+		guestIP,
+		actualDevice,
+		actualRoute.LinkIndex,
+		veth.hostDevice,
+		expectedLink.Attrs().Index,
+		actualRoute,
+	)
 }
 
 // createRandomVethPair attempts to create a veth pair with random names, the
@@ -439,6 +487,7 @@ func (p *VethNetworkPool[T]) Get(ctx context.Context) T {
 		log.CtxWarningf(ctx, "Failed to set up default route in namespace: %s", err)
 		return zero
 	}
+	checkVethRoute(ctx, n.getVethPair())
 
 	// Record a new baseline for network stats, so that the stats reported for
 	// the action only reflect the accumulated stats relative to the baseline.
@@ -794,14 +843,24 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 	if err != nil {
 		return nil, status.WrapError(err, "add default route in namespace")
 	}
+	checkVethRoute(ctx, vp)
 
 	if IsSecondaryNetworkEnabled() {
-		err = runCommand(ctx, "ip", "rule", "add", "from", vp.network.NamespacedIP(), "lookup", routingTableName)
+		// Capture the IP rather than reading vp.network in the cleanup func.
+		// Pooling nils vp.network (and assigns a different IP on reuse), so
+		// reading it at cleanup time would panic or delete the wrong rule.
+		//
+		// TODO: manage this rule in the pool transitions (delete on pool add,
+		// re-add for the new IP on pool get). Currently a network reused from
+		// the pool has no rt1 rule for its new IP, so its traffic routes over
+		// the primary interface instead of the secondary one.
+		namespacedIP := vp.network.NamespacedIP()
+		err = runCommand(ctx, "ip", "rule", "add", "from", namespacedIP, "lookup", routingTableName)
 		if err != nil {
 			return nil, err
 		}
 		cleanupStack = append(cleanupStack, func(ctx context.Context) error {
-			return runCommand(ctx, "ip", "rule", "del", "from", vp.network.NamespacedIP())
+			return runCommand(ctx, "ip", "rule", "del", "from", namespacedIP)
 		})
 	}
 
@@ -852,6 +911,22 @@ func setupVethPair(ctx context.Context, netns *Namespace, enableExternalNetworki
 			return runCommand(ctx, append([]string{"iptables", "--wait", "--delete"}, rule...)...)
 		})
 	}
+
+	// Exempt guest traffic from destination NAT in the host's nat PREROUTING
+	// chain. Service proxies like kube-proxy install rules there that rewrite
+	// load balancer VIPs to backend pod IPs; a guest packet addressed to a
+	// public VIP would be rewritten to a private IP and then rejected by the
+	// private-range rules above. Guest traffic must leave the host addressed
+	// exactly as the guest sent it, like traffic from any external client.
+	// (ACCEPT only ends nat PREROUTING traversal; POSTROUTING masquerading
+	// still applies.)
+	natRule := []string{"-t", "nat", "-I", "PREROUTING", "-i", vp.hostDevice, "-j", "ACCEPT"}
+	if err := runCommand(ctx, append([]string{"iptables", "--wait"}, natRule...)...); err != nil {
+		return nil, err
+	}
+	cleanupStack = append(cleanupStack, func(ctx context.Context) error {
+		return runCommand(ctx, "iptables", "--wait", "-t", "nat", "--delete", "PREROUTING", "-i", vp.hostDevice, "-j", "ACCEPT")
+	})
 
 	vp.Cleanup = cleanupStack.Cleanup
 	return vp, nil

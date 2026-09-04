@@ -66,6 +66,7 @@ type RealEnv struct {
 	invocationSearchService              interfaces.InvocationSearchService
 	invocationStatService                interfaces.InvocationStatService
 	usageService                         interfaces.UsageService
+	notificationService                  interfaces.NotificationService
 	usageTracker                         interfaces.UsageTracker
 	splashPrinter                        interfaces.SplashPrinter
 	actionCacheClient                    repb.ActionCacheClient
@@ -103,6 +104,7 @@ type RealEnv struct {
 	localCacheClient                     cspb.CacheClient
 	sslService                           interfaces.SSLService
 	quotaManager                         interfaces.QuotaManager
+	groupStatusChecker                   interfaces.GroupStatusChecker
 	buildEventServer                     pepb.PublishBuildEventServer
 	localCASServer                       repb.ContentAddressableStorageServer
 	casServer                            repb.ContentAddressableStorageServer
@@ -238,6 +240,13 @@ func (r *RealEnv) GetUsageService() interfaces.UsageService {
 }
 func (r *RealEnv) SetUsageService(s interfaces.UsageService) {
 	r.usageService = s
+}
+
+func (r *RealEnv) GetNotificationService() interfaces.NotificationService {
+	return r.notificationService
+}
+func (r *RealEnv) SetNotificationService(s interfaces.NotificationService) {
+	r.notificationService = s
 }
 
 func (r *RealEnv) GetUsageTracker() interfaces.UsageTracker {
@@ -589,6 +598,14 @@ func (r *RealEnv) GetQuotaManager() interfaces.QuotaManager {
 
 func (r *RealEnv) SetQuotaManager(quotaManager interfaces.QuotaManager) {
 	r.quotaManager = quotaManager
+}
+
+func (r *RealEnv) GetGroupStatusChecker() interfaces.GroupStatusChecker {
+	return r.groupStatusChecker
+}
+
+func (r *RealEnv) SetGroupStatusChecker(groupStatusChecker interfaces.GroupStatusChecker) {
+	r.groupStatusChecker = groupStatusChecker
 }
 
 func (r *RealEnv) GetBuildEventServer() pepb.PublishBuildEventServer {

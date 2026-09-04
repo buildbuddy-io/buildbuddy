@@ -39,6 +39,7 @@ func main() {
 
 	ctx := context.Background()
 	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
 	conn, err := grpc_client.DialSimple(*target)
 	if err != nil {
 		log.Fatalf("Error dialing BB target: %s", err)
@@ -76,10 +77,10 @@ func main() {
 			},
 		})
 		if err != nil {
-			log.Fatalf("Error getting invocation: %s", err)
+			log.Fatalf("Error getting invocation %s: %s", invocationID, err)
 		}
 		if len(invocationResp.Invocation) != 1 {
-			log.Fatalf("Unexpected number of invocations: %d", len(invocationResp.Invocation))
+			log.Fatalf("Unexpected number of invocations %s: %d", invocationID, len(invocationResp.Invocation))
 		}
 		inv := invocationResp.Invocation[0]
 
@@ -88,7 +89,7 @@ func main() {
 			if inv.Success && inv.BazelExitCode == "OK" {
 				os.Exit(0)
 			} else {
-				log.Fatalf("Remote run failed: %v", invocationResp)
+				log.Fatalf("Remote run %s failed: %v", invocationID, invocationResp)
 			}
 		}
 		// If the invocation hasn't completed yet, sleep and retry

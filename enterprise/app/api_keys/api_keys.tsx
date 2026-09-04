@@ -17,11 +17,12 @@ import TextInput from "../../../app/components/input/input";
 import Modal from "../../../app/components/modal/modal";
 import Spinner from "../../../app/components/spinner/spinner";
 import errorService from "../../../app/errors/error_service";
-import rpcService, { UnaryRpcMethod } from "../../../app/service/rpc_service";
+import rpcService, { CancelablePromise, UnaryRpcMethod } from "../../../app/service/rpc_service";
 import { copyToClipboard } from "../../../app/util/clipboard";
 import { BuildBuddyError } from "../../../app/util/errors";
 import { api_key } from "../../../proto/api_key_ts_proto";
 import { capability } from "../../../proto/capability_ts_proto";
+import { withKey } from "../../../app/util/react";
 
 export interface ApiKeysComponentProps {
   /** The authenticated user. */
@@ -327,6 +328,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
     onChange("capability", [capability.Capability.AUDIT_LOG_READ]);
   }
 
+  private onSelectSendNotification(onChange: (name: string, value: any) => any) {
+    onChange("capability", [capability.Capability.SEND_NOTIFICATION]);
+  }
+
   private onChangeVisibility(onChange: (name: string, value: any) => any, e: React.ChangeEvent<HTMLInputElement>) {
     onChange("visibleToDevelopers", e.target.checked);
   }
@@ -488,6 +493,22 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     />
                     <span>
                       Audit log reader key <span className="field-description">(for reading audit logs)</span>
+                    </span>
+                  </label>
+                </div>
+              )}
+              {/* User-owned keys cannot be used to send notifications. */}
+              {!this.props.userOwnedOnly && (
+                <div className="field-container">
+                  <label className="checkbox-row">
+                    <input
+                      type="radio"
+                      onChange={this.onSelectSendNotification.bind(this, onChange)}
+                      checked={isSendNotificationKey(request)}
+                    />
+                    <span>
+                      Notification key{" "}
+                      <span className="field-description">(for sending notifications via the API)</span>
                     </span>
                   </label>
                 </div>
@@ -719,6 +740,10 @@ function isAuditLogReader<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.AUDIT_LOG_READ]);
 }
 
+function isSendNotificationKey<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [capability.Capability.SEND_NOTIFICATION]);
+}
+
 function isReadOnly<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, []);
 }
@@ -737,6 +762,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "Org admin";
   } else if (isAuditLogReader(apiKey)) {
     capabilities = "Audit log reader";
+  } else if (isSendNotificationKey(apiKey)) {
+    capabilities = "Send notifications";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " (*)";
@@ -762,35 +789,30 @@ interface ApiKeyFieldState {
   displayValue: string;
 }
 
-const ApiKeyFieldDefaultState: ApiKeyFieldState = {
-  isCopied: false,
-  hideValue: true,
-  displayValue: "••••••••••••••••••••",
-};
+class ApiKeyFieldInner extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
+  static INITIAL_STATE: ApiKeyFieldState = {
+    isCopied: false,
+    hideValue: true,
+    displayValue: "••••••••••••••••••••",
+  };
 
-class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
-  state = ApiKeyFieldDefaultState;
+  state = ApiKeyFieldInner.INITIAL_STATE;
 
   private copyTimeout: number | undefined;
-  private value: string | undefined;
+  private value: string = this.props.apiKey.value;
 
-  componentDidMount() {
-    if (this.props.apiKey.value) {
-      this.value = this.props.apiKey.value;
-    }
+  componentWillUnmount() {
+    clearTimeout(this.copyTimeout);
   }
 
   private async retrieveValue() {
     if (this.value) {
       return this.value;
     }
-    const response = await rpcService.service.getApiKey(
-      api_key.GetApiKeyRequest.create({
-        apiKeyId: this.props.apiKey.id,
-      })
-    );
-    this.value = response.apiKey?.value;
-    return this.value!;
+    return rpcService.service.getApiKey({ apiKeyId: this.props.apiKey.id }).then((response) => {
+      this.value = response.apiKey?.value ?? "";
+      return this.value;
+    });
   }
 
   // onClick handler function for the copy button
@@ -815,7 +837,7 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
       .then((val) => {
         this.setState({
           hideValue: !this.state.hideValue,
-          displayValue: this.state.hideValue ? val : ApiKeyFieldDefaultState.displayValue,
+          displayValue: this.state.hideValue ? val : ApiKeyFieldInner.INITIAL_STATE.displayValue,
         });
       })
       .catch((e) => errorService.handleError(e));
@@ -828,12 +850,14 @@ class ApiKeyField extends React.Component<ApiKeyFieldProps, ApiKeyFieldState> {
       <div className="api-key-value">
         <span className="display-value">{displayValue}</span>
         <OutlinedButton className="api-key-value-copy icon-button" onClick={this.handleCopyClick.bind(this)}>
-          {isCopied ? <Check style={{ stroke: "green" }} className="icon" /> : <Copy className="icon" />}
+          {isCopied ? <Check style={{ stroke: "green" }} /> : <Copy />}
         </OutlinedButton>
         <OutlinedButton className="api-key-value-hide icon-button" onClick={this.toggleHideValue.bind(this)}>
-          {hideValue ? <Eye className="icon" /> : <EyeOff className="icon" />}
+          {hideValue ? <Eye /> : <EyeOff />}
         </OutlinedButton>
       </div>
     );
   }
 }
+
+class ApiKeyField extends withKey(ApiKeyFieldInner, (props) => props.apiKey.id) {}

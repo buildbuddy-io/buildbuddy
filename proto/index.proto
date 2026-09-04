@@ -2,7 +2,6 @@ syntax = "proto3";
 
 import "proto/context.proto";
 import "proto/git.proto";
-import "proto/resource.proto";
 
 package index;
 
@@ -65,22 +64,6 @@ message RepoStatusResponse {
 
   // The SHA of the most recently indexed commit
   string last_indexed_commit_sha = 2;
-}
-
-message IngestAnnotationsRequest {
-  context.RequestContext request_context = 1;
-
-  // The resource name of the sstable to index.
-  resource.ResourceName sstable_name = 2;
-
-  // If true, the request will return immediately, even before indexing is
-  // complete. This is useful if you don't care about the results and can
-  // tolerate errors.
-  bool async = 3;
-}
-
-message IngestAnnotationsResponse {
-  context.ResponseContext response_context = 1;
 }
 
 message IncrementalUpdate {

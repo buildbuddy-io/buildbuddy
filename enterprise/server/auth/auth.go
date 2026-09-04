@@ -29,6 +29,9 @@ func Register(ctx context.Context, env *real_environment.RealEnv) error {
 	if err != nil {
 		return status.InternalErrorf("OIDC authenticator failed to configure: %v", err)
 	}
+	if !claims.IsJWTKeySet() {
+		log.Errorf("Authentication is configured, but auth.jwt_key is not set - this will fail in future versions.")
+	}
 	httpAuthenticators = append(httpAuthenticators, oidc)
 	userAuthenticators = append(userAuthenticators, oidc)
 

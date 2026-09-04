@@ -118,6 +118,14 @@ func Extract(ctx context.Context, lang, filename string, content []byte, rctx *R
 		res, err = extractGo(ctx, filename, content, rctx)
 	case "java":
 		res, err = extractJava(ctx, filename, content, rctx)
+	case "python":
+		res, err = extractPython(ctx, filename, content, rctx)
+	case "rust":
+		res, err = extractRust(ctx, filename, content, rctx)
+	case "typescript", "tsx", "javascript", "jsx":
+		res, err = extractTypeScript(ctx, lang, filename, content, rctx)
+	case "c", "c++":
+		res, err = extractCpp(ctx, lang, filename, content, rctx)
 	default:
 		return nil, nil
 	}

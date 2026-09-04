@@ -11,6 +11,7 @@ go_library(
     ],
     deps = [
         "//proto:scheduler_go_proto",
+        "//server/util/disk",
         "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/log",

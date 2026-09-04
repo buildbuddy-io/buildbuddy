@@ -1,6 +1,8 @@
 syntax = "proto3";
 
+import "proto/reference.proto";
 import "proto/resource.proto";
+import "proto/remote_execution.proto";
 import "github.com/planetscale/vtprotobuf/vtproto/ext.proto";
 
 package distributed_cache;
@@ -17,13 +19,19 @@ message ReadRequest {
   resource.ResourceName resource = 6;
 }
 
+// Next Tag: 3
 message ReadResponse {
   option (vtproto.mempool) = true;
   bytes data = 1;
+
+  // If set, this read carries no data bytes. The data should be retrieved
+  // using the provided reference.
+  reference.Reference reference = 2;
 }
 
-// Next Tag: 9
+// Next Tag: 11
 message WriteRequest {
+  option (vtproto.mempool) = true;
   reserved 1, 2, 6;
   bool finish_write = 3;
 
@@ -36,6 +44,25 @@ message WriteRequest {
   // A node that this data should eventually be handed off to.
   // Clients should attempt to replicate this data when possible.
   string handoff_peer = 5;
+
+  // A reference to the written data's location in shared storage. If no data
+  // bytes accompany the write, the write must be performed from the
+  // reference. If data bytes are also present, the bytes should be written
+  // and the reference should be verified. Because a write's reference is not
+  // known until all of its bytes have been seen, the reference will arrive
+  // on the final message of a write stream (the one with finish_write set).
+  reference.Reference reference = 9;
+
+  // If true, the provided reference must be cloned by the server that handles
+  // this request. Because eviction is not synchronized across distributed cache
+  // peers, each peer must store its own copy of data in GCS to coordinate
+  // eviction between its pebble cache and GCS. This means that if writes are
+  // done using references, at most one of the distributed cache peers may
+  // assume ownership of the reference that is written. The other peers must
+  // clone the reference to obtain their own copy. This bit is set by the
+  // distributed cache coordinator (the pod serving the client's write) to
+  // indicate which peers must clone the provided reference.
+  bool reference_must_be_cloned = 10;
 }
 
 message WriteResponse {
@@ -52,6 +79,11 @@ message DeleteResponse {}
 message FindMissingRequest {
   reserved 1, 2;
   repeated resource.ResourceName resources = 3;
+
+  // Propagates the originating FindMissing purpose across the distributed-cache
+  // peer protocol so the authoritative node can attribute present/absent
+  // metrics to the right code path. Observability only; does not affect lookup.
+  build.bazel.remote.execution.v2.FindMissingBlobsRequest.Purpose purpose = 4;
 }
 
 message FindMissingResponse {

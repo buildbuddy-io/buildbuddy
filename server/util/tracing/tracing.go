@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -134,6 +135,31 @@ func (s *fractionSampler) ShouldSample(parameters sdktrace.SamplingParameters) s
 
 func (s *fractionSampler) Description() string {
 	return s.description
+}
+
+// identityGatedPropagator only propagates tracing metadata internally.
+type identityGatedPropagator struct {
+	inner propagation.TextMapPropagator
+	env   environment.Env
+}
+
+func (p *identityGatedPropagator) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+	p.inner.Inject(ctx, carrier)
+}
+
+func (p *identityGatedPropagator) Fields() []string {
+	return p.inner.Fields()
+}
+
+func (p *identityGatedPropagator) Extract(ctx context.Context, carrier propagation.TextMapCarrier) context.Context {
+	if p.env.GetClientIdentityService() == nil {
+		return p.inner.Extract(ctx, carrier)
+	}
+	// Only propagate if client identity header is present.
+	if carrier.Get(authutil.ClientIdentityHeaderName) != "" {
+		return p.inner.Extract(ctx, carrier)
+	}
+	return ctx
 }
 
 // noopExporter is a span exporter that does nothing, used for testing/benchmarking.
@@ -294,8 +320,8 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	//
 	// tracer := otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	// octrace.DefaultTracer = opencensus.NewTracer(tracer)
-	propagator := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
-	otel.SetTextMapPropagator(propagator)
+	inner := propagation.NewCompositeTextMapPropagator(propagation.Baggage{}, propagation.TraceContext{})
+	otel.SetTextMapPropagator(&identityGatedPropagator{inner: inner, env: env})
 	log.Infof("Tracing enabled with sampler: %s, resource detectors: %s", sampler.Description(), strings.Join(*traceResourceDetectors, ", "))
 	tracer = otel.GetTracerProvider().Tracer(buildBuddyInstrumentationName)
 	return nil
@@ -365,6 +391,12 @@ func InjectProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata, setMe
 
 func ExtractProtoTraceMetadata(ctx context.Context, metadata *tpb.Metadata) context.Context {
 	p := otel.GetTextMapPropagator()
+	// Trace metadata embedded in internal protos (e.g. queued execution
+	// tasks) only flows over authenticated internal channels, and its carrier
+	// has no client-identity header, so bypass the identity gate.
+	if gp, ok := p.(*identityGatedPropagator); ok {
+		p = gp.inner
+	}
 	return p.Extract(ctx, newTraceMetadataProtoCarrier(metadata, nil))
 }
 
@@ -451,6 +483,17 @@ func AddStringAttributeToCurrentSpan(ctx context.Context, key, value string) {
 		return
 	}
 	span.SetAttributes(attribute.String(key, value))
+}
+
+func AddErrorEventToCurrentSpan(ctx context.Context, name string, err error) {
+	if err == nil {
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() {
+		return
+	}
+	span.AddEvent(name, trace.WithAttributes(attribute.String("error", err.Error())))
 }
 
 // RecordErrorToSpan records a non-nil error to the span; and does nothing if

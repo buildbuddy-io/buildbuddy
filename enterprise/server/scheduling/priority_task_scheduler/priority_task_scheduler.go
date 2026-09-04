@@ -156,7 +156,7 @@ func (t *taskQueue) GetAll(ctx context.Context) []*scpb.EnqueueTaskReservationRe
 			log.CtxError(ctx, "not a *groupPriorityQueue!??!")
 			continue
 		}
-		for _, t := range pq.GetAll() {
+		for _, t := range pq.GetAllUnordered() {
 			reservations = append(reservations, t.EnqueueTaskReservationRequest)
 		}
 	}
@@ -371,6 +371,10 @@ type PriorityTaskScheduler struct {
 	resourcesUsed           *resourceCounts
 	customResourceParents   map[string]string
 	exclusiveTaskScheduling bool
+
+	// activeTaskStartTimes contains, for each currently running task, the
+	// time at which the task started executing.
+	activeTaskStartTimes map[string]time.Time
 }
 
 func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool interfaces.RunnerPool, taskLeaser interfaces.TaskLeaser, options *Options) (*PriorityTaskScheduler, error) {
@@ -420,6 +424,7 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 		},
 		customResourceParents:   customResourceParents,
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
+		activeTaskStartTimes:    make(map[string]time.Time),
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
 
@@ -540,7 +545,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 			// yet.
 			return
 		}
-		log.CtxInfof(ctx, "Added task %+v to pq.", req)
+		log.CtxDebugf(ctx, "Added task %+v to pq.", req)
 		// Wake up the scheduling loop so that it can run the task if there are
 		// enough resources available.
 		q.checkQueueSignal <- struct{}{}
@@ -649,6 +654,7 @@ func (q *PriorityTaskScheduler) runTask(ctx context.Context, st *repb.ScheduledT
 
 func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(1)
+	q.activeTaskStartTimes[res.GetTaskId()] = q.clock.Now()
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes += size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis += size.GetEstimatedMilliCpu()
@@ -670,6 +676,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 
 func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequest, cancel *context.CancelFunc) {
 	q.activeCancelFuncsCount.Add(-1)
+	delete(q.activeTaskStartTimes, res.GetTaskId())
 	if size := res.GetTaskSize(); size != nil {
 		q.resourcesUsed.RAMBytes -= size.GetEstimatedMemoryBytes()
 		q.resourcesUsed.CPUMillis -= size.GetEstimatedMilliCpu()
@@ -687,6 +694,21 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		}
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
+}
+
+// TotalRunningTaskExecutionDuration returns the total time that currently
+// running tasks have collectively spent executing. This approximates the
+// execution progress that would be lost if this executor were shut down,
+// since tasks that get killed are re-enqueued and restart from scratch.
+func (q *PriorityTaskScheduler) TotalRunningTaskExecutionDuration() time.Duration {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	now := q.clock.Now()
+	var total time.Duration
+	for _, startedAt := range q.activeTaskStartTimes {
+		total += now.Sub(startedAt)
+	}
+	return total
 }
 
 func (q *PriorityTaskScheduler) stats() string {
@@ -902,7 +924,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 	ctx, cancel := context.WithCancel(ctx)
 	ctx = tracing.ExtractProtoTraceMetadata(ctx, reservation.GetTraceMetadata())
 	ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, reservation.GetJwt())
-	log.CtxInfof(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
+	log.CtxDebugf(ctx, "Scheduling task of size %s", tasksize.String(nextTask.GetTaskSize()))
 
 	q.trackTask(reservation.EnqueueTaskReservationRequest, &cancel)
 
@@ -921,7 +943,7 @@ func (q *PriorityTaskScheduler) handleTask() {
 		if err != nil {
 			// NotFound means the task is already claimed.
 			if status.IsNotFoundError(err) {
-				log.CtxInfof(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
+				log.CtxDebugf(ctx, "Could not claim task %q: %s", reservation.GetTaskId(), err)
 			} else {
 				log.CtxWarningf(ctx, "Error leasing task %q: %s", reservation.GetTaskId(), err)
 			}

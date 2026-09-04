@@ -83,7 +83,7 @@ export default class TargetsCardComponent extends React.Component<Props, State> 
                       className="target">
                       <span className="target-status-icon">{this.props.icon}</span>{" "}
                       <span className="chevron-icon">
-                        <ChevronRight className="icon" />
+                        <ChevronRight />
                       </span>
                       <span className="target-label">{target.id?.targetCompleted?.label}</span>{" "}
                       {this.props.model.rootCauseTargetLabels.has(target.id?.targetCompleted?.label ?? "") && (

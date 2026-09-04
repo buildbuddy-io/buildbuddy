@@ -60,10 +60,10 @@ ts_library(
     srcs = ["pull_request_header.tsx"],
     deps = [
         "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//app/components/button",
         "//app/components/link",
+        "//app/icons:github_lucide",
         "//app/router",
         "//enterprise/app/review:review_controller",
         "//enterprise/app/review:review_model",

@@ -25,9 +25,6 @@ Changes will not be synced automatically!
 
 ## View metrics from a Kubernetes cluster in a local Grafana instance
 
-Switch to your desired context with `kubectl config set-context`, then
-run:
-
 ```
 bazel run tools/metrics/grafana -- -kube -namespace=monitor-{dev,prod}
 ```

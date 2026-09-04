@@ -21,6 +21,10 @@ func init() {
 func setup(t *testing.T) {
 	// Flag history is written to this dir.
 	t.Setenv("BUILDBUDDY_CACHE_DIR", t.TempDir())
+	// Keep user bbrc settings from affecting resolved args.
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
 }
 
 func TestMain(m *testing.M) {

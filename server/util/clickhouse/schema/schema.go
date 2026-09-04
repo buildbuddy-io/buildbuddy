@@ -136,6 +136,12 @@ type Invocation struct {
 	RunID                             string
 	ParentRunID                       string
 	RunStatus                         int64
+
+	// Git fetch stats reported by the remote runner (i.e. Workflows or remote
+	// bazel), if any.
+	GitFetchTotalBytes   int64
+	GitFetchDurationUsec int64
+	GitFetchRetryCount   int64
 }
 
 func (i *Invocation) ExcludedFields() []string {
@@ -198,6 +204,13 @@ type Execution struct {
 	// RequestMetadata
 	TargetLabel    string `gorm:"codec:ZSTD(1)"`
 	ActionMnemonic string `gorm:"codec:ZSTD(1)"`
+	// ConfigurationID identifies the configuration in which the target was built.
+	ConfigurationID string `gorm:"codec:ZSTD(1)"`
+
+	// Test metadata
+	TestSize        string `gorm:"type:LowCardinality(String)"`
+	TestShardIndex  uint32 `gorm:"codec:T64,ZSTD(1)"`
+	TestTotalShards uint32 `gorm:"codec:T64,ZSTD(1)"`
 
 	// IOStats
 	FileDownloadCount        int64 `gorm:"codec:T64,ZSTD(1)"`
@@ -285,6 +298,20 @@ type Execution struct {
 	SnapshotSavedBytes    int64 `gorm:"codec:T64,ZSTD(1)"`
 	PauseDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
 
+	// Guest VM boot wait timings. Only set for executions that booted a fresh
+	// firecracker VM.
+	VMDockerdWaitDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+	VMDnsWaitDurationUsec     int64 `gorm:"codec:T64,ZSTD(1)"`
+	VMExecInitDurationUsec    int64 `gorm:"codec:T64,ZSTD(1)"`
+	// Time the executor spent dialing the guest VM's vmexec server. Set for
+	// every firecracker execution, not just fresh boots.
+	VMExecDialDurationUsec int64 `gorm:"codec:T64,ZSTD(1)"`
+
+	// Disk usage of the task's workspace (buildroot), measured after the task
+	// finishes. Only populated when executor.workspace.measure_disk_usage is
+	// enabled.
+	BuildrootDiskUsageBytes int64 `gorm:"codec:T64,ZSTD(1)"`
+
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
 
 	// Long string fields
@@ -349,6 +376,10 @@ func (e *Execution) AdditionalFields() []string {
 		"OutputPath",
 		"TargetLabel",
 		"ActionMnemonic",
+		"ConfigurationID",
+		"TestSize",
+		"TestShardIndex",
+		"TestTotalShards",
 		"DiskBytesRead",
 		"DiskBytesWritten",
 		"DiskReadOperations",
@@ -396,6 +427,11 @@ func (e *Execution) AdditionalFields() []string {
 		"SnapshotIsDiff",
 		"SnapshotSavedBytes",
 		"PauseDurationUsec",
+		"VMDockerdWaitDurationUsec",
+		"VMDnsWaitDurationUsec",
+		"VMExecInitDurationUsec",
+		"VMExecDialDurationUsec",
+		"BuildrootDiskUsageBytes",
 		"ExecutorHostname",
 		"Experiments",
 		"ClientIP",
@@ -797,5 +833,8 @@ func ToInvocationFromPrimaryDB(ti *tables.Invocation) *Invocation {
 		RunID:                             ti.RunID,
 		ParentRunID:                       ti.ParentRunID,
 		RunStatus:                         ti.RunStatus,
+		GitFetchTotalBytes:                ti.GitFetchTotalBytes,
+		GitFetchDurationUsec:              ti.GitFetchDurationUsec,
+		GitFetchRetryCount:                ti.GitFetchRetryCount,
 	}
 }

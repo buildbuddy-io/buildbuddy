@@ -326,11 +326,7 @@ export default class InvocationExecLogCardComponent extends React.Component<Prop
                 {spawns.slice(0, this.state.limit).map((spawn) => (
                   <Link key={spawn.id} className="invocation-execution-row" href={this.getActionPageLink(spawn)}>
                     <div className="invocation-execution-row-image">
-                      {spawn.spawn?.exitCode == 0 ? (
-                        <CheckCircle className="icon green" />
-                      ) : (
-                        <AlertCircle className="icon red" />
-                      )}
+                      {spawn.spawn?.exitCode == 0 ? <CheckCircle className="green" /> : <AlertCircle className="red" />}
                     </div>
                     <div>
                       <div className="invocation-execution-row-header">

@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -33,7 +34,7 @@ import (
 
 var (
 	chunkedManifestSalt             = flag.String("cache.chunking.ac_key_salt", "", "If set, salt the AC key with this value.")
-	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 512*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value (default 512KB).")
+	avgChunkSizeBytes               = flag.Int64("cache.avg_chunk_size_bytes", 1024*1024, "This is the average size of a chunk. Only blobs larger (non-inclusive) than 4x this value will be chunked. The maximum chunk size will be 4x this value, and the minimum will be 1/4 this value.")
 	minChunkedReadFallbackSizeBytes = flag.Int64("cache.min_chunked_read_fallback_size_bytes", 2*1024*1024, "Only blobs larger (non-inclusive) than this value will use the server-side chunked read fallback after a normal blob lookup misses.")
 )
 
@@ -87,17 +88,23 @@ func MaxChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvide
 }
 
 // MaxSupportedChunkSizeBytes is the process-wide chunk size buffer consumers
-// must support. This supports temporarily doubling cache.avg_chunk_size_override
-// from the default 512KiB to 1MiB; do not set the override higher without
-// increasing this and auditing buffer consumers.
+// must support. Before doubling the average chunk size to 2MiB, raise this to
+// 8MiB and audit all buffer consumers.
 func MaxSupportedChunkSizeBytes() int64 {
 	return 4 * 1024 * 1024
+}
+
+// MaxCompressedChunkReadSizeBytes is the per-chunk compressed read buffer cap.
+func MaxCompressedChunkReadSizeBytes() int64 {
+	return 4 * MaxSupportedChunkSizeBytes()
 }
 
 // MinChunkedReadFallbackSizeBytes can be configured independently from the
 // write threshold so server-side miss fallback paths can still read older
 // chunked blobs that were written with a smaller chunk size, but is clamped to
-// at most MaxChunkSizeBytes().
+// at most MaxChunkSizeBytes(). Presence and AC validation should instead use
+// MaxChunkSizeBytes(), so blobs below the current write threshold are not
+// accepted as manifest-only.
 func MinChunkedReadFallbackSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
 	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes(ctx, efp))
 }
@@ -320,14 +327,7 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	// avoiding the cost of reading all chunk data for verification.
 	g, goCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		missing, err := cache.FindMissing(goCtx, cm.ChunkResourceNames())
-		if err != nil {
-			return err
-		}
-		if len(missing) > 0 {
-			return status.InvalidArgumentErrorf("required chunks not found in CAS: %+v", DigestsSummary(missing))
-		}
-		return nil
+		return cm.checkChunksExist(goCtx, cache)
 	})
 	g.Go(func() error {
 		return cm.checkOrVerifyChunks(goCtx, cache)
@@ -339,6 +339,22 @@ func (cm *Manifest) Store(ctx context.Context, cache interfaces.Cache) error {
 	return cm.store(ctx, cache)
 }
 
+// StoreWithoutContentVerification stores the manifest after checking that all
+// referenced chunks exist and their declared sizes add up to the blob size,
+// without reading their contents or verifying their combined hash.
+func (cm *Manifest) StoreWithoutContentVerification(ctx context.Context, cache interfaces.Cache) error {
+	if len(cm.ChunkDigests) == 0 {
+		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
+	}
+	if err := cm.checkChunkSizes(); err != nil {
+		return err
+	}
+	if err := cm.checkChunksExist(ctx, cache); err != nil {
+		return err
+	}
+	return cm.store(ctx, cache)
+}
+
 // StoreWithoutVerification saves the chunked manifest to the cache without
 // checking that all chunks exist or that their combined hash matches the blob
 // digest.
@@ -347,6 +363,36 @@ func (cm *Manifest) StoreWithoutVerification(ctx context.Context, cache interfac
 		return status.InvalidArgumentError("chunked manifest must have at least one chunk")
 	}
 	return cm.store(ctx, cache)
+}
+
+func (cm *Manifest) checkChunksExist(ctx context.Context, cache interfaces.Cache) error {
+	missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CDC_MANIFEST_STORE), cm.ChunkResourceNames())
+	if err != nil {
+		return err
+	}
+	if len(missing) > 0 {
+		return status.InvalidArgumentErrorf("required chunks not found in CAS: %+v", DigestsSummary(missing))
+	}
+	return nil
+}
+
+func (cm *Manifest) checkChunkSizes() error {
+	blobSize := cm.BlobDigest.GetSizeBytes()
+	if blobSize < 0 {
+		return status.InvalidArgumentErrorf("invalid manifest: blob has invalid size %d", blobSize)
+	}
+	var totalSize int64
+	for _, chunkDigest := range cm.ChunkDigests {
+		chunkSize := chunkDigest.GetSizeBytes()
+		if chunkSize < 0 || chunkSize > blobSize-totalSize {
+			return status.InvalidArgumentErrorf("invalid manifest: chunk sizes exceed blob size %d", blobSize)
+		}
+		totalSize += chunkSize
+	}
+	if totalSize != blobSize {
+		return status.InvalidArgumentErrorf("invalid manifest: chunk sizes total %d, expected blob size %d", totalSize, blobSize)
+	}
+	return nil
 }
 
 func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
@@ -379,7 +425,9 @@ func (cm *Manifest) store(ctx context.Context, cache interfaces.Cache) error {
 	return nil
 }
 
-// LoadManifest retrieves a chunked manifest from the cache. It does NOT validate existence of the chunks.
+// LoadManifest retrieves a chunked manifest from the cache. It returns an error
+// if the blob does not have a chunked representation and does not validate the
+// existence of the chunks.
 func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value) (*Manifest, error) {
 	rn, err := acResourceName(blobDigest, instanceName, digestFunction)
 	if err != nil {
@@ -391,6 +439,50 @@ func LoadManifest(ctx context.Context, cache interfaces.Cache, blobDigest *repb.
 	}
 	metrics.ChunkedManifestLoadCount.WithLabelValues(chunkedManifestPrefix).Inc()
 	return manifest, nil
+}
+
+// GetBlob reconstructs a blob from its chunked representation in bounded
+// batches. It validates the manifest's declared sizes and, for identity reads,
+// the reconstructed size. It returns an error if the blob does not have a
+// chunked representation.
+func GetBlob(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, compressor repb.Compressor_Value) ([]byte, error) {
+	manifest, err := LoadManifest(ctx, cache, blobDigest, instanceName, digestFunction)
+	if err != nil {
+		return nil, err
+	}
+	if err := manifest.checkChunkSizes(); err != nil {
+		return nil, err
+	}
+
+	// Avoid trusting the blob's declared size for an unbounded allocation. The
+	// previous BatchReadBlobs caller already capped reads below this value, so
+	// this preserves its allocation behavior while keeping larger callers safe.
+	initialCapacity := min(blobDigest.GetSizeBytes(), MaxSupportedChunkSizeBytes())
+	buf := make([]byte, 0, initialCapacity)
+	const batchSize = 20
+	for chunkDigests := range slices.Chunk(manifest.ChunkDigests, batchSize) {
+		rns := make([]*rspb.ResourceName, 0, len(chunkDigests))
+		for _, d := range chunkDigests {
+			rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
+			rn.SetCompressor(compressor)
+			rns = append(rns, rn.ToProto())
+		}
+		chunkData, err := cache.GetMulti(ctx, rns)
+		if err != nil {
+			return nil, err
+		}
+		for _, d := range chunkDigests {
+			data, ok := chunkData[d]
+			if !ok {
+				return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
+			}
+			buf = append(buf, data...)
+		}
+	}
+	if compressor == repb.Compressor_IDENTITY && int64(len(buf)) != blobDigest.GetSizeBytes() {
+		return nil, status.DataLossErrorf("reconstructed blob %s has size %d, expected %d", blobDigest.GetHash(), len(buf), blobDigest.GetSizeBytes())
+	}
+	return buf, nil
 }
 
 func loadManifestFrom(ctx context.Context, cache interfaces.Cache, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, acRNProto *rspb.ResourceName) (*Manifest, error) {
@@ -664,15 +756,21 @@ func digestsStrings(digests ...*repb.Digest) []string {
 
 // MissingChunkChecker is used to check to make sure all of the chunks that make up a blob
 // are present in the cache, and to de-duplicate excess calls to FindMissing.
+// Safe for concurrent use.
 type MissingChunkChecker struct {
-	cache        interfaces.Cache
+	cache interfaces.Cache
+
+	mu           sync.Mutex
 	chunkPresent map[string]bool
+	// For observability only.
+	purpose repb.FindMissingBlobsRequest_Purpose
 }
 
-func NewMissingChunkChecker(cache interfaces.Cache) *MissingChunkChecker {
+func NewMissingChunkChecker(cache interfaces.Cache, purpose repb.FindMissingBlobsRequest_Purpose) *MissingChunkChecker {
 	return &MissingChunkChecker{
 		cache:        cache,
 		chunkPresent: make(map[string]bool),
+		purpose:      purpose,
 	}
 }
 
@@ -684,25 +782,32 @@ func NewMissingChunkChecker(cache interfaces.Cache) *MissingChunkChecker {
 // update them as missing if they're returned from FindMissing.
 func (c *MissingChunkChecker) AnyChunkMissing(ctx context.Context, manifest *Manifest) (bool, error) {
 	var unknownChunks []*rspb.ResourceName
+	c.mu.Lock()
 	for _, rn := range manifest.ChunkResourceNames() {
 		if present, known := c.chunkPresent[rn.GetDigest().GetHash()]; known {
 			if !present {
+				c.mu.Unlock()
 				return true, nil
 			}
 			continue
 		}
 		unknownChunks = append(unknownChunks, rn)
 	}
+	c.mu.Unlock()
 
 	if len(unknownChunks) == 0 {
 		return false, nil
 	}
 
-	missingDigests, err := c.cache.FindMissing(ctx, unknownChunks)
+	// Issue the FindMissing network call outside the lock so concurrent
+	// callers don't serialize on it.
+	missingDigests, err := c.cache.FindMissing(findmissing.ContextWithPurpose(ctx, c.purpose), unknownChunks)
 	if err != nil {
 		return false, err
 	}
 
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	// To prevent unbounded growth, just clear the chunk
 	// cache if its >1000 entries. Checking the len(map)
 	// is O(1) since Go stores the map length in the map

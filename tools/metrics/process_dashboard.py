@@ -46,13 +46,6 @@ def main(args):
     # UI. Hard-code it here to prevent accidental updates.
     dashboard["refresh"] = DASHBOARD_REFRESH_INTERVAL
 
-    # Grafana updates "collapsed" state when expanding panels in the UI. Ensure
-    # all panels are collapsed to prevent accidental updates.
-    # (For the main buildbuddy dashboard only).
-    if args.name == "buildbuddy.json":
-        for panel in dashboard["panels"]:
-            panel["collapsed"] = True
-
     # Note: ensure_ascii=False keeps strings like "µs" as-is.
     json.dump(dashboard, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")

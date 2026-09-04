@@ -1216,7 +1216,7 @@ func TestGetMultiWithCopying(t *testing.T) {
 			mc.Start() // Starts copying in background
 			defer mc.Stop()
 
-			eg, ctx := errgroup.WithContext(ctx)
+			eg := &errgroup.Group{}
 			lock := sync.RWMutex{}
 			resourceNames := make([]*rspb.ResourceName, 50)
 			expected := make(map[*repb.Digest][]byte, 50)
@@ -1262,7 +1262,7 @@ func TestSetMulti(t *testing.T) {
 	config.SetConfigDefaults()
 	mc := migration_cache.NewMigrationCache(te, config, srcCache, destCache)
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg := &errgroup.Group{}
 	lock := sync.RWMutex{}
 	dataToSet := make(map[*rspb.ResourceName][]byte, 50)
 	for i := 0; i < 50; i++ {

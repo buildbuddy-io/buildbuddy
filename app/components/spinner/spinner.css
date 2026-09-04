@@ -10,6 +10,10 @@
   justify-content: center;
 }
 
+.spinner.icon {
+  --size: var(--icon-size, 24px);
+}
+
 .spinner:before {
   content: "";
   display: block;

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -16,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,10 +28,14 @@ import (
 	cppb "github.com/buildbuddy-io/buildbuddy/proto/cache_proxy"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	uppb "github.com/buildbuddy-io/buildbuddy/proto/upgrade"
 )
 
 const (
 	testGroupID = "GR1"
+	// The group whose proxies are operated by BuildBuddy; the newest version
+	// among its registrations sets the bar for upgrade prompts.
+	testSharedPoolGroupID = "GR-SHARED"
 )
 
 // newServer wires up a registry server backed by a real Redis and the
@@ -41,11 +48,22 @@ func newServer(t *testing.T, users map[string]interfaces.UserInfo) (*CacheProxyR
 		RedisTarget: redisTarget,
 	})
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+	flags.Set(t, "cache_proxy.shared_pool_group_id", testSharedPoolGroupID)
 
-	s, err := NewCacheProxyRegistryServer(env)
+	s, err := NewCacheProxyRegistryServer(env, testDetector())
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(s)
 	return s, env
+}
+
+// testDetector prompts an upgrade when a proxy is more than 10 minor
+// versions behind the newest registered version, escalating at 20 and 40.
+func testDetector() *upgrade.Detector {
+	return upgrade.NewDetector(map[uppb.Prompt_Urgency]upgrade.Trigger{
+		uppb.Prompt_LOW:    {MaxLag: semver.MustParse("0.10.0")},
+		uppb.Prompt_MEDIUM: {MaxLag: semver.MustParse("0.20.0")},
+		uppb.Prompt_HIGH:   {MaxLag: semver.MustParse("0.40.0")},
+	})
 }
 
 func userWithCapabilities(userID, groupID string, caps ...cappb.Capability) interfaces.UserInfo {
@@ -123,6 +141,153 @@ func TestGetCacheProxies(t *testing.T) {
 	require.Len(t, resp.GetCacheProxy(), 2)
 	assert.Equal(t, "host-a", resp.GetCacheProxy()[0].GetNode().GetHost())
 	assert.Equal(t, "host-b", resp.GetCacheProxy()[1].GetNode().GetHost())
+}
+
+func TestUpgradeTriggersFromFlags(t *testing.T) {
+	flags.Set(t, "cache_proxy.upgrade_prompt_max_lags", map[string]string{"low": "0.10.0", "HIGH": "0.40.0"})
+	flags.Set(t, "cache_proxy.upgrade_prompt_min_versions", map[string]string{"HIGH": "2.100.0", "critical": "2.50.0"})
+
+	triggers, err := upgradeTriggersFromFlags()
+	require.NoError(t, err)
+	require.Len(t, triggers, 3)
+	assert.Equal(t, "0.10.0", triggers[uppb.Prompt_LOW].MaxLag.String())
+	assert.Nil(t, triggers[uppb.Prompt_LOW].MinVersion)
+	// Both criteria land on the same trigger.
+	assert.Equal(t, "0.40.0", triggers[uppb.Prompt_HIGH].MaxLag.String())
+	assert.Equal(t, "2.100.0", triggers[uppb.Prompt_HIGH].MinVersion.String())
+	assert.Nil(t, triggers[uppb.Prompt_CRITICAL].MaxLag)
+	assert.Equal(t, "2.50.0", triggers[uppb.Prompt_CRITICAL].MinVersion.String())
+}
+
+func TestUpgradeTriggersFromFlags_Invalid(t *testing.T) {
+	// An urgency that isn't part of the enum.
+	flags.Set(t, "cache_proxy.upgrade_prompt_max_lags", map[string]string{"URGENT": "0.10.0"})
+	_, err := upgradeTriggersFromFlags()
+	require.Error(t, err)
+
+	// UNKNOWN_URGENCY is not a valid prompt level.
+	flags.Set(t, "cache_proxy.upgrade_prompt_max_lags", map[string]string{"UNKNOWN_URGENCY": "0.10.0"})
+	_, err = upgradeTriggersFromFlags()
+	require.Error(t, err)
+
+	// A version value that doesn't parse as semver.
+	flags.Set(t, "cache_proxy.upgrade_prompt_max_lags", map[string]string{"LOW": "ten minors"})
+	_, err = upgradeTriggersFromFlags()
+	require.Error(t, err)
+
+	flags.Set(t, "cache_proxy.upgrade_prompt_max_lags", map[string]string{})
+	flags.Set(t, "cache_proxy.upgrade_prompt_min_versions", map[string]string{"LOW": "not-a-version"})
+	_, err = upgradeTriggersFromFlags()
+	require.Error(t, err)
+}
+
+func TestGetCacheProxies_UpgradePrompt(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// The newest version is registered by the shared executor pool group
+	// (BuildBuddy's own proxies); the prompt compares against it.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
+		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	require.Len(t, resp.GetCacheProxy(), 1)
+	require.NotNil(t, resp.GetUpgradePrompt())
+	assert.Equal(t, uppb.Prompt_LOW, resp.GetUpgradePrompt().GetUrgency())
+}
+
+func TestGetCacheProxies_UpgradePrompt_WithinAllowance(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
+		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.152.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
+}
+
+func TestGetCacheProxies_UpgradePrompt_IgnoresOtherGroups(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// A newer version registered outside the shared executor pool group
+	// shouldn't set the bar.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), "GR-OTHER", &cppb.CacheProxyNode{
+		Host: "host-new", ProxyId: "id-new", Version: "v2.153.0",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.140.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
+}
+
+func TestGetCacheProxies_UpgradePrompt_SkipsUnparseableVersions(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// Dev builds report "unknown"; they should neither count as the newest
+	// version nor trigger the prompt themselves.
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testSharedPoolGroupID, &cppb.CacheProxyNode{
+		Host: "host-dev", ProxyId: "id-dev", Version: "unknown",
+	}, nil))
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "unknown",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
+}
+
+func TestGetCacheProxies_UpgradePrompt_IgnoresStaleRegistrations(t *testing.T) {
+	user := userWithCapabilities("U1", testGroupID, cappb.Capability_REGISTER_CACHE_PROXY)
+	s, _ := newServer(t, map[string]interfaces.UserInfo{"CP_KEY": user})
+
+	// A long-gone proxy with a very new version shouldn't set the bar.
+	stale := &cppb.RegisteredCacheProxy{
+		Registration: &cppb.CacheProxyNode{Host: "host-new", ProxyId: "id-new", Version: "v2.199.0"},
+		GroupId:      testSharedPoolGroupID,
+		LastPingTime: timestamppb.New(time.Now().Add(-2 * maxRegistrationStaleness)),
+	}
+	b, err := proto.Marshal(stale)
+	require.NoError(t, err)
+	require.NoError(t, s.rdb.HSet(context.Background(), redisKeyForCacheProxies(testSharedPoolGroupID), "id-new", b).Err())
+	require.NoError(t, s.insertOrUpdateProxy(context.Background(), testGroupID, &cppb.CacheProxyNode{
+		Host: "host-old", ProxyId: "id-old", Version: "v2.150.0",
+	}, nil))
+
+	ctx := claims.AuthContextWithJWT(context.Background(), user.(*claims.Claims), nil)
+	resp, err := s.GetCacheProxies(ctx, &cppb.GetCacheProxiesRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: testGroupID},
+	})
+	require.NoError(t, err)
+	assert.Nil(t, resp.GetUpgradePrompt())
 }
 
 func TestGetCacheProxies_Isolation(t *testing.T) {
@@ -464,7 +629,7 @@ func TestStreamHeartbeat_AccessRevoked(t *testing.T) {
 	}
 	env.SetAuthenticator(auth)
 
-	s, err := NewCacheProxyRegistryServer(env)
+	s, err := NewCacheProxyRegistryServer(env, upgrade.NewDetector(nil))
 	require.NoError(t, err)
 	env.SetCacheProxyRegistryService(s)
 

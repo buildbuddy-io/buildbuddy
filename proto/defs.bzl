@@ -4,7 +4,7 @@ load("@io_bazel_rules_go//proto:def.bzl", _go_proto_library = "go_proto_library"
 
 GO_PROTO_MODES = ["messages_only", "services_only", "messages_and_services"]
 
-def go_proto_library(name, mode = "messages_only", **kwargs):
+def go_proto_library(name, mode = "messages_only", views = False, **kwargs):
     """Wrapper for go_proto_library that ensures vtprotobuf support.
 
     Args:
@@ -13,6 +13,8 @@ def go_proto_library(name, mode = "messages_only", **kwargs):
             - "messages_only": go_proto + vtprotobuf (default, for protos with only messages)
             - "services_only": go_grpc_v2 only (for protos with only services, no messages)
             - "messages_and_services": go_proto + vtprotobuf + go_grpc_v2 (for protos with both)
+        views: also generate wire view structs for fields annotated with
+            (view.name) (see //tools/protoc-gen-go-vtproto-view)
         **kwargs: passed through to go_proto_library
     """
     if mode not in GO_PROTO_MODES:
@@ -34,6 +36,9 @@ def go_proto_library(name, mode = "messages_only", **kwargs):
             "@io_bazel_rules_go//proto:go_proto",
             "//proto:vtprotobuf_compiler",
         ]
+
+    if views:
+        all_compilers = all_compilers + ["//proto:vtprotobuf_view_compiler"]
 
     _go_proto_library(
         name = name,

@@ -10,7 +10,9 @@ datasources:
     version: 1
     editable: false
     jsonData:
-      timeInterval: 1s
+      # Must match the real scrape interval of the data being queried, since
+      # Grafana derives $__rate_interval from it.
+      timeInterval: ${GF_DATASOURCE_SCRAPE_INTERVAL}
   - name: ClickHouse
     type: grafana-clickhouse-datasource
     uid: clickhouse

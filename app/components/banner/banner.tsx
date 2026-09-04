@@ -3,10 +3,10 @@ import React from "react";
 import { OutlinedButton } from "../button/button";
 
 const ICONS = {
-  info: <Info className="icon blue" />,
-  success: <CheckCircle className="icon green" />,
-  warning: <AlertCircle className="icon orange" />,
-  error: <XCircle className="icon red" />,
+  info: <Info className="blue" />,
+  success: <CheckCircle className="green" />,
+  warning: <AlertCircle className="orange" />,
+  error: <XCircle className="red" />,
 } as const;
 
 type BannerType = keyof typeof ICONS;
@@ -30,7 +30,7 @@ export const Banner = React.forwardRef((props: BannerProps, ref: React.Ref<HTMLD
       <div className="banner-content">{children}</div>
       {onDismiss && (
         <OutlinedButton className="icon-button banner-dismiss-button" onClick={onDismiss} title="Dismiss" type="button">
-          <X className="icon" />
+          <X />
         </OutlinedButton>
       )}
     </div>

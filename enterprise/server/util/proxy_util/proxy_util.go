@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/usageutil"
 	"google.golang.org/grpc/metadata"
 )
@@ -27,6 +28,10 @@ var (
 		usageutil.OriginHeaderName,
 		bazel_request.RequestMetadataKey,
 		cdc.ChunkedHeaderName,
+		cdc.SpliceWithoutValidationHeaderName,
+		// Forward the client's opt-in for local AC caching so it survives
+		// proxy-to-proxy hops and every proxy in the chain honors it.
+		platform.OverrideHeaderPrefix + platform.CacheProxyActionCacheTTLPropertyName,
 	}
 )
 
@@ -37,6 +42,17 @@ func SkipRemote(ctx context.Context) bool {
 
 func SetSkipRemote(ctx context.Context) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, SkipRemoteKey, "true")
+}
+
+type skipRemoteAtimeUpdateContextKey struct{}
+
+func SetSkipRemoteAtimeUpdate(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipRemoteAtimeUpdateContextKey{}, true)
+}
+
+func SkipRemoteAtimeUpdate(ctx context.Context) bool {
+	v, _ := ctx.Value(skipRemoteAtimeUpdateContextKey{}).(bool)
+	return v
 }
 
 func RequestTypeLabelFromContext(ctx context.Context) string {

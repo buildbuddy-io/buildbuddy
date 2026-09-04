@@ -1486,6 +1486,25 @@ func TestBatchCASUploader_ChunkedUpload(t *testing.T) {
 	require.Equal(t, buf, out.Bytes())
 }
 
+func TestBatchCASUploader_ChunkedUploadDetectsConcurrentMutation(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, localGRPClis)
+	go runServer()
+
+	buf := make([]byte, 5*1024*1024)
+	d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	buf[0] = 'x'
+
+	ul := cachetools.NewBatchCASUploader(t.Context(), te, "", repb.DigestFunction_SHA256, chunking.FastCDCParams(t.Context(), nil))
+	require.NoError(t, ul.Upload(d, cachetools.NewBytesReadSeekCloser(buf)))
+	err = ul.Wait()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "concurrent mutation detected while chunking")
+	assert.True(t, status.IsInvalidArgumentError(err), "want InvalidArgumentError, got %+#v", err)
+}
+
 func TestBatchCASUploader_SkipsChunkedUploadAboveMaxSize(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {

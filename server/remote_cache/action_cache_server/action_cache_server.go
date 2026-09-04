@@ -1,9 +1,11 @@
 package action_cache_server
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
@@ -17,13 +19,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -35,6 +40,15 @@ var (
 	checkClientActionResultDigests = flag.Bool("cache.check_client_action_result_digests", false, "If true, the server will check (and honor) the bb-specific cached_action_result_digest field on ActionCache.getActionResult requests to reduce bandwidth")
 	recordOrigin                   = flag.Bool("cache.record_action_result_origin", true, "If true, the origin of the action result will be added to it's auxiliary metadata.")
 )
+
+// chunkCheckConcurrency bounds how many chunked-manifest fallback lookups
+// checkFilesExist performs in parallel. Each lookup issues independent cache
+// reads, so the work is I/O-bound.
+const chunkCheckConcurrency = 8
+
+// Set high enough to avoid affecting normal requests while still preventing
+// abusive fan-out.
+const chunkedTreeReadConcurrency = 32
 
 type ActionCacheServer struct {
 	env   environment.Env
@@ -65,8 +79,8 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, digests []*rspb.ResourceName) error {
-	missing, err := cache.FindMissing(ctx, digests)
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, maxChunkSizeBytes int64, digests []*rspb.ResourceName) error {
+	missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_AC_VALIDATION), digests)
 	if err != nil {
 		return err
 	}
@@ -76,27 +90,71 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	if !chunkingEnabled {
 		return status.NotFoundErrorf("ActionResult output file %q not found in cache", chunking.DigestsSummary(missing))
 	}
-	checker := chunking.NewMissingChunkChecker(cache)
 	for _, d := range missing {
-		if d.GetSizeBytes() <= chunking.MinChunkedReadFallbackSizeBytes(ctx, efp) {
+		if d.GetSizeBytes() <= maxChunkSizeBytes {
 			return status.NotFoundErrorf("ActionResult output file %q not found in cache", digest.String(d))
 		}
-		manifest, err := chunking.LoadManifest(ctx, cache, d, instanceName, digestFunction)
-		if err != nil {
-			return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
+	}
+	checker := chunking.NewMissingChunkChecker(cache, repb.FindMissingBlobsRequest_AC_MISSING_CHUNK_VALIDATION)
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(chunkCheckConcurrency)
+	for _, d := range missing {
+		eg.Go(func() error {
+			manifest, err := chunking.LoadManifest(egCtx, cache, d, instanceName, digestFunction)
+			if err != nil {
+				return status.WrapErrorf(err, "ActionResult output file %q: load chunk manifest", digest.String(d))
+			}
+			anyMissing, err := checker.AnyChunkMissing(egCtx, manifest)
+			if err != nil {
+				return status.WrapErrorf(err, "ActionResult output file %q: failed to check chunks", digest.String(d))
+			}
+			if anyMissing {
+				return status.NotFoundErrorf("ActionResult output file %q: missing chunks", digest.String(d))
+			}
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, maxChunkSizeBytes int64, chunkedReadLimiter *semaphore.Weighted, treeDigest *repb.Digest) (*repb.Tree, error) {
+	rn := digest.NewResourceName(treeDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
+	blob, err := cache.Get(ctx, rn)
+	if err != nil {
+		isNotFound := status.IsNotFoundError(err) || os.IsNotExist(err)
+		treeSizeBytes := treeDigest.GetSizeBytes()
+		if !isNotFound ||
+			!chunkingEnabled ||
+			treeSizeBytes <= maxChunkSizeBytes ||
+			treeSizeBytes > rpcutil.GRPCMaxSizeBytes {
+			return nil, err
 		}
-		anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
-		if err != nil {
-			return status.WrapErrorf(err, "ActionResult output file %q: failed to check chunks", digest.String(d))
+		// Avoid unbounded fan-out across chunked Tree reconstructions.
+		if err := chunkedReadLimiter.Acquire(ctx, 1); err != nil {
+			return nil, err
 		}
-		if anyMissing {
-			return status.NotFoundErrorf("ActionResult output file %q: missing chunks", digest.String(d))
+		defer chunkedReadLimiter.Release(1)
+		blob, err = chunking.GetBlob(ctx, cache, treeDigest, instanceName, rn.GetDigestFunction(), repb.Compressor_IDENTITY)
+		if err != nil {
+			return nil, err
+		}
+		computedDigest, err := digest.Compute(bytes.NewReader(blob), rn.GetDigestFunction())
+		if err != nil {
+			return nil, err
+		}
+		if !digest.Equal(computedDigest, treeDigest) {
+			return nil, status.DataLossErrorf("reconstructed output Tree digest %s does not match expected %s", digest.String(computedDigest), digest.String(treeDigest))
 		}
 	}
-	return nil
+	tree := &repb.Tree{}
+	if err := proto.Unmarshal(blob, tree); err != nil {
+		return nil, err
+	}
+	return tree, nil
 }
 
 func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, r *repb.ActionResult) error {
+	maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -112,16 +170,12 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
+	chunkedTreeReadLimiter := semaphore.NewWeighted(chunkedTreeReadConcurrency)
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			rn := digest.NewResourceName(dc.GetTreeDigest(), remoteInstanceName, rspb.CacheType_CAS, digestFunction).ToProto()
-			blob, err := cache.Get(gCtx, rn)
+			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, chunkingEnabled, maxChunkSizeBytes, chunkedTreeReadLimiter, dc.GetTreeDigest())
 			if err != nil {
-				return err
-			}
-			tree := &repb.Tree{}
-			if err := proto.Unmarshal(blob, tree); err != nil {
 				return err
 			}
 			for _, f := range tree.GetRoot().GetFiles() {
@@ -139,7 +193,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 		return err
 	}
 
-	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingEnabled, efp, outputFileDigests)
+	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingEnabled, maxChunkSizeBytes, outputFileDigests)
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {

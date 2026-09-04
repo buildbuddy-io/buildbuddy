@@ -2,6 +2,7 @@ package container_test
 
 import (
 	"context"
+	"fmt"
 	"syscall"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -28,6 +30,7 @@ import (
 type FakeContainer struct {
 	RequiredPullCredentials oci.Credentials
 	PullCount               int
+	PullErr                 error
 	pullDelay               time.Duration
 }
 
@@ -43,6 +46,9 @@ func (c *FakeContainer) IsImageCached(context.Context) (bool, error) {
 func (c *FakeContainer) PullImage(ctx context.Context, creds oci.Credentials) error {
 	if c.pullDelay > 0*time.Second {
 		time.Sleep(c.pullDelay)
+	}
+	if c.PullErr != nil {
+		return c.PullErr
 	}
 	if creds != c.RequiredPullCredentials {
 		return status.PermissionDeniedError("Permission denied: wrong pull credentials")
@@ -135,6 +141,106 @@ func TestPullImageIfNecessary_InvalidCredentials_PermissionDenied(t *testing.T) 
 	err = container.PullImageIfNecessary(ctx, env, c, goodCreds, imageRef, false)
 
 	require.NoError(t, err, "good creds should still work after previous incorrect attempts")
+}
+
+func TestPullImageIfNecessary_NonOCIFetcherPullErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		pullErr     error
+		wantStatus  string
+		wantCounted bool
+	}{
+		{
+			name:        "resource exhausted",
+			pullErr:     status.ResourceExhaustedError("remote registry rate limited"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+		{
+			name:        "permission denied",
+			pullErr:     status.PermissionDeniedError("wrong pull credentials"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "not found",
+			pullErr:     status.NotFoundError("image not found"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "unavailable",
+			pullErr:     status.UnavailableError("remote registry unavailable"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+	} {
+		for _, useOCIFetcher := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/use_oci_fetcher_%t", tc.name, useOCIFetcher), func(t *testing.T) {
+				env := testenv.GetTestEnv(t)
+				imageRef := "docker.io/some-org/some-image:v1.0.0"
+				ctx := context.Background()
+				c := &FakeContainer{PullErr: tc.pullErr}
+
+				err := container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef, useOCIFetcher)
+
+				require.Error(t, err)
+				require.Equal(t, tc.wantStatus, container.ImagePullMetricStatus(err))
+				require.Equal(t, tc.wantCounted, container.ShouldCountImagePullError(err))
+			})
+		}
+	}
+}
+
+func TestImagePullMetricStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		err         error
+		wantStatus  string
+		wantCounted bool
+	}{
+		{
+			name:        "nil",
+			err:         nil,
+			wantStatus:  metrics.OCIFetcherStatusOK,
+			wantCounted: false,
+		},
+		{
+			name:        "unknown error",
+			err:         status.UnknownError("network unavailable"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+		{
+			name:        "resource exhausted",
+			err:         status.ResourceExhaustedError("remote registry rate limited"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+		{
+			name:        "permission denied",
+			err:         status.PermissionDeniedError("wrong pull credentials"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "not found",
+			err:         status.NotFoundError("image not found"),
+			wantStatus:  metrics.OCIFetcherStatusUserError,
+			wantCounted: false,
+		},
+		{
+			name:        "unavailable",
+			err:         status.UnavailableError("remote registry unavailable"),
+			wantStatus:  metrics.OCIFetcherStatusError,
+			wantCounted: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.wantStatus, container.ImagePullMetricStatus(tc.err))
+			require.Equal(t, tc.wantCounted, container.ShouldCountImagePullError(tc.err))
+		})
+	}
 }
 
 func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
@@ -370,6 +476,97 @@ func TestUsageStats(t *testing.T) {
 	}, s.TaskStats(), protocmp.Transform()))
 }
 
+func TestUsageStats_GPUUsageReportsPeaks(t *testing.T) {
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	// Observe two GPUs whose per-device peaks occur during different samples.
+	// The peak total should be the largest simultaneous sum, not the sum of the
+	// independent per-device peaks.
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 300,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 100, Vendor: repb.GPUDeviceUsage_NVIDIA},
+			{Id: "GPU-b", MemoryBytes: 200, Vendor: repb.GPUDeviceUsage_NVIDIA},
+		},
+	}})
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 300,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 250},
+			{Id: "GPU-b", MemoryBytes: 50},
+		},
+	}})
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 400,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 200},
+			{Id: "GPU-b", MemoryBytes: 200},
+		},
+	}})
+
+	// A final empty sample after the processes exit should not discard the GPU
+	// peaks observed while the task was running.
+	stats.Update(&repb.UsageStats{})
+	require.Empty(t, cmp.Diff(&repb.GPUUsage{
+		PeakTotalMemoryBytes: 400,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", PeakMemoryBytes: 250, Vendor: repb.GPUDeviceUsage_NVIDIA},
+			{Id: "GPU-b", PeakMemoryBytes: 200, Vendor: repb.GPUDeviceUsage_NVIDIA},
+		},
+	}, stats.TaskStats().GetGpuUsage(), protocmp.Transform()))
+
+	// A recycled runner should not carry GPU peaks into the next task.
+	stats.Reset()
+	require.Nil(t, stats.TaskStats().GetGpuUsage())
+}
+
+func TestUsageStats_ConcurrentUpdateAndBasicTaskStats(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	var eg errgroup.Group
+	eg.Go(func() error {
+		for i := range 1000 {
+			stats.Update(&repb.UsageStats{
+				CpuNanos:      int64(i) * 1e6,
+				MemoryBytes:   int64(i) * 1024,
+				CgroupIoStats: &repb.CgroupIOStats{Rbytes: int64(i), Wbytes: int64(i)},
+			})
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		for range 1000 {
+			taskStats := stats.BasicTaskStats()
+			_ = taskStats.GetMemoryBytes()
+			_ = taskStats.GetCpuNanos()
+		}
+		return nil
+	})
+
+	require.NoError(t, eg.Wait())
+}
+
+func TestUsageStats_BasicTaskStatsOmitsTimeline(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+	stats.Update(&repb.UsageStats{
+		CpuNanos:      1e6,
+		MemoryBytes:   1024,
+		CgroupIoStats: &repb.CgroupIOStats{},
+	})
+
+	// Full execution stats should include the timeline, but live stats polling
+	// should skip it to avoid returning a pointer to mutable timeline state.
+	require.NotNil(t, stats.TaskStats().GetTimeline())
+	require.Nil(t, stats.BasicTaskStats().GetTimeline())
+}
+
 func TestUsageStats_Timeseries(t *testing.T) {
 	flags.Set(t, "executor.record_usage_timelines", true)
 
@@ -419,6 +616,73 @@ func TestUsageStats_Timeseries(t *testing.T) {
 	}, timestamps, "timestamps")
 	assert.Equal(t, []int64{0, 7000, 9500}, cpuSamples, "cpu samples")
 	assert.Equal(t, []int64{0, 500, 400}, memKBSamples, "memory kb samples")
+}
+
+func TestUsageStats_ZeroGPUUsageOmitted(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	stats := &container.UsageStats{}
+	stats.Reset()
+
+	// Successful GPU readings that never observe any memory should not add an
+	// empty summary or an all-zero timeline to the task stats.
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a"},
+		},
+	}})
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{}})
+
+	taskStats := stats.TaskStats()
+	require.Nil(t, taskStats.GetGpuUsage())
+	require.Nil(t, taskStats.GetTimeline().GetGpuUsage())
+}
+
+func TestUsageStats_GPUTimeseries(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+
+	start := time.Unix(100, 0)
+	clock := clockwork.NewFakeClockAt(start)
+	stats := &container.UsageStats{Clock: clock}
+	stats.Reset()
+
+	// GPU tracking starts after the initial timeline sample. The total GPU
+	// series should be backfilled with zero for that initial sample.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 100_000,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 100_000},
+		},
+	}})
+
+	// An unavailable reading should preserve the last observation instead of
+	// reporting a false zero.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{})
+
+	// A larger reading spread across two devices should be recorded as the
+	// new total.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{
+		TotalMemoryBytes: 400_000,
+		DeviceUsage: []*repb.GPUDeviceUsage{
+			{Id: "GPU-a", MemoryBytes: 150_000},
+			{Id: "GPU-b", MemoryBytes: 250_000},
+		},
+	}})
+
+	// A successful empty reading should bring total GPU usage back to zero.
+	clock.Advance(100 * time.Millisecond)
+	stats.Update(&repb.UsageStats{GpuUsage: &repb.GPUUsage{}})
+
+	timeline := stats.TaskStats().GetTimeline()
+	assert.Equal(t, []int64{0, 100, 100, 400, 0}, timeseries.DeltaDecode(timeline.GetGpuUsage().GetTotalMemoryKbSamples()))
+
+	// Recycled runners should begin the next task without the previous task's
+	// final GPU reading or timeline.
+	stats.Reset()
+	require.Nil(t, stats.TaskStats().GetTimeline().GetGpuUsage())
 }
 
 // fakePausableContainer is a FakeContainer whose Pause sleeps for a

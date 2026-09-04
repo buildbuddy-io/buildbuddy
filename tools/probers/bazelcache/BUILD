@@ -9,11 +9,14 @@ go_library(
         "//proto:remote_execution_go_proto",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/digest",
+        "//server/util/bazel_request",
         "//server/util/compression",
         "//server/util/grpc_client",
         "//server/util/log",
+        "//server/util/uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

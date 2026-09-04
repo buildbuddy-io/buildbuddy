@@ -65,14 +65,14 @@ export default class DebugMenu extends React.Component<DebugMenuProps, State> {
           title={this.props.preferences.denseModeEnabled ? "Disable dense mode" : "Enable dense mode"}
           aria-label={this.props.preferences.denseModeEnabled ? "Disable dense mode" : "Enable dense mode"}
           onClick={() => this.props.preferences.toggleDenseMode()}>
-          {this.props.preferences.denseModeEnabled ? <Rows2 className="icon" /> : <Rows3 className="icon" />}
+          {this.props.preferences.denseModeEnabled ? <Rows2 /> : <Rows3 />}
         </Button>
         <Button
           className="debug-panel-button icon-button"
           title={this.props.preferences.darkModeEnabled ? "Enable light mode" : "Enable dark mode"}
           aria-label={this.props.preferences.darkModeEnabled ? "Enable light mode" : "Enable dark mode"}
           onClick={() => this.props.preferences.setTheme(this.props.preferences.darkModeEnabled ? "light" : "dark")}>
-          {this.props.preferences.darkModeEnabled ? <Sun className="icon" /> : <Moon className="icon" />}
+          {this.props.preferences.darkModeEnabled ? <Sun /> : <Moon />}
         </Button>
         <Button
           className="debug-panel-button icon-button"
@@ -80,11 +80,11 @@ export default class DebugMenu extends React.Component<DebugMenuProps, State> {
           aria-label={this.props.preferences.lightTerminalEnabled ? "Enable dark terminal" : "Enable light terminal"}
           onClick={() => this.props.preferences.toggleLightTerminal()}>
           <span className="debug-panel-terminal-icon">
-            <Terminal className="icon debug-panel-terminal-base-icon" />
+            <Terminal className="debug-panel-terminal-base-icon" />
             {this.props.preferences.lightTerminalEnabled ? (
-              <Moon className="icon debug-panel-terminal-theme-icon" />
+              <Moon className="debug-panel-terminal-theme-icon" />
             ) : (
-              <Sun className="icon debug-panel-terminal-theme-icon" />
+              <Sun className="debug-panel-terminal-theme-icon" />
             )}
           </span>
         </Button>

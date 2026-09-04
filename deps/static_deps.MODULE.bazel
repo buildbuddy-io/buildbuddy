@@ -6,6 +6,7 @@ use_repo(
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
     "com_github_bazelbuild_bazelisk-bazelisk-linux-amd64",
     "com_github_bazelbuild_bazelisk-bazelisk-linux-arm64",
+    "com_github_bazelbuild_bazelisk-bazelisk-windows-amd64",
     "com_github_buildbuddy_io_podman_static_podman-linux-amd64",
     "com_github_buildbuddy_io_podman_static_podman-linux-arm64",
     "com_github_buildbuddy_io_protoc_gen_protobufjs",
@@ -24,6 +25,7 @@ use_repo(
     "com_github_rootless_containers_rootlesskit-linux-amd64",
     "com_github_rootless_containers_rootlesskit-linux-arm64",
     "com_github_sluongng_nogo_analyzer",
+    "dbip_asn_lite",
     "io_bazel_bazel-6.5.0-darwin-arm64",
     "io_bazel_bazel-6.5.0-darwin-x86_64",
     "io_bazel_bazel-6.5.0-linux-arm64",
@@ -61,6 +63,4 @@ use_repo(
     "org_kernel_git_linux_kernel-vmlinux",
     "org_kernel_git_linux_kernel-vmlinux-6.1",
     "org_kernel_git_linux_kernel-vmlinux-arm64",
-    "org_llvm_llvm_clang-format_linux-x86_64",
-    "org_llvm_llvm_clang-format_macos-x86_64",
 )

@@ -135,7 +135,7 @@ func { this is not valid go at all ((
 
 func TestUnsupportedLanguageReturnsNil(t *testing.T) {
 	rctx, dir := testRepoContext(t)
-	ann, err := annotations.Extract(t.Context(), "python", filepath.Join(dir, "a.py"), []byte("import os\n"), rctx)
+	ann, err := annotations.Extract(t.Context(), "ruby", filepath.Join(dir, "a.rb"), []byte("require 'set'\n"), rctx)
 	require.NoError(t, err)
 	assert.Nil(t, ann)
 }

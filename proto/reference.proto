@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+import "proto/storage.proto";
+
+package reference;
+
+// A reference to a blob that resides in shared storage (e.g. GCS or S3),
+// addressable by all peers backed by the same storage.
+message Reference {
+  storage.FileMetadata metadata = 1;
+}

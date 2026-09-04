@@ -1,7 +1,7 @@
-import { Github } from "lucide-react";
 import React from "react";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Link from "../../../app/components/link/link";
+import { Github } from "../../../app/icons/github_lucide";
 import router from "../../../app/router/router";
 import { ReviewController } from "./review_controller";
 import { ReviewModel } from "./review_model";
@@ -33,7 +33,7 @@ export default class PullRequestHeaderComponent extends React.Component<PullRequ
               </span>
             </span>
             <a href={model.getGithubUrl()} className="review-gh-link">
-              <Github size="16" className="icon" />
+              <Github size={16} />
             </a>
           </span>
           <div className="review-actions">

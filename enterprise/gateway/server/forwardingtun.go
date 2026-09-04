@@ -12,22 +12,20 @@ package server
 //  6. WireGuard encrypts, sends UDP to Client B
 //
 // Packets destined for the network's hub IP (fd00:bb:N::1) are injected into
-// that network's private gVisor stack instead, where the DNS server answers
-// them locally rather than forwarding.
+// that network's private gVisor stack instead, where the gateway's composed
+// hub services answer them rather than forwarding (see hub.go).
 
 import (
+	"context"
 	"fmt"
-	"net"
+	"io"
 	"net/netip"
 	"os"
-	"strings"
 	"sync"
 
-	"github.com/miekg/dns"
 	"golang.zx2c4.com/wireguard/tun"
 	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
@@ -38,13 +36,14 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 )
 
-// netStack is a per-network gVisor stack used for local services (DNS).
+// netStack is a per-network gVisor stack that hosts the hub services.
 type netStack struct {
 	hubIP        netip.Addr
 	ep           *channel.Endpoint
 	stack        *stack.Stack
 	notifyHandle *channel.NotificationHandle
 	outbound     chan *buffer.View // shared with muxTUN
+	services     []io.Closer       // closers of the started hub services
 }
 
 // WriteNotify implements channel.Notification. Called by gVisor when the stack
@@ -77,6 +76,9 @@ func (ns *netStack) injectInbound(pkt []byte) {
 }
 
 func (ns *netStack) close() {
+	for _, c := range ns.services {
+		c.Close()
+	}
 	ns.ep.RemoveNotify(ns.notifyHandle)
 	ns.ep.Close()
 	ns.stack.Close()
@@ -112,9 +114,10 @@ func (t *muxTUN) unregisterIP(addr netip.Addr) {
 	t.ipToNetwork.Delete(addr)
 }
 
-// startNetworkDNS creates a gVisor stack for the network at index and starts
-// a DNS server bound to its hub IP. networkKey is used for logging only.
-func (t *muxTUN) startNetworkDNS(index int, networkKey string, lookup func(string) (netip.Addr, bool)) error {
+// startNetworkServices creates a gVisor stack for the network at index and
+// starts each composed hub service on its hub IP. networkKey is used for
+// logging only.
+func (t *muxTUN) startNetworkServices(index int, networkKey string, services []HubService, lookupName func(string) (netip.Addr, bool), peerContext func(netip.Addr) (context.Context, bool)) error {
 	hubIP := networkHubIP(index)
 
 	opts := stack.Options{
@@ -148,18 +151,23 @@ func (t *muxTUN) startNetworkDNS(index int, networkKey string, lookup func(strin
 	}
 	ns.notifyHandle = ep.AddNotify(ns)
 
-	conn, err := gonet.DialUDP(s, &tcpip.FullAddress{
-		NIC:  1,
-		Addr: tcpip.AddrFromSlice(hubIP.AsSlice()),
-		Port: 53,
-	}, nil, ipv6.ProtocolNumber)
-	if err != nil {
-		ns.close()
-		return fmt.Errorf("DNS listen on %s:53: %v", hubIP, err)
+	hub := &HubNetwork{
+		IP:          hubIP,
+		NetworkKey:  networkKey,
+		LookupName:  lookupName,
+		PeerContext: peerContext,
+		stack:       s,
 	}
-	go serveDNS(conn, lookup)
+	for _, svc := range services {
+		closer, err := svc.Start(hub)
+		if err != nil {
+			ns.close()
+			return fmt.Errorf("start hub service on %s: %v", hubIP, err)
+		}
+		ns.services = append(ns.services, closer)
+	}
 
-	// Register the hub IP so Write() routes DNS packets into this stack.
+	// Register the hub IP so Write() routes hub-destined packets into this stack.
 	t.ipToNetwork.Store(hubIP, index)
 	t.netStacks.Store(index, ns)
 	return nil
@@ -268,49 +276,4 @@ func (t *muxTUN) Close() error {
 		})
 	})
 	return nil
-}
-
-func serveDNS(conn *gonet.UDPConn, lookup func(string) (netip.Addr, bool)) {
-	buf := make([]byte, 512)
-	for {
-		n, src, err := conn.ReadFrom(buf)
-		if err != nil {
-			return // stack closed
-		}
-		req := new(dns.Msg)
-		if err := req.Unpack(buf[:n]); err != nil {
-			continue
-		}
-		resp := new(dns.Msg)
-		resp.SetReply(req)
-		resp.Authoritative = true
-		for _, q := range req.Question {
-			name := strings.TrimSuffix(q.Name, ".")
-			ip, ok := lookup(name)
-			if !ok {
-				resp.Rcode = dns.RcodeNameError
-				continue
-			}
-			switch q.Qtype {
-			case dns.TypeAAAA:
-				if ip.Is6() {
-					resp.Answer = append(resp.Answer, &dns.AAAA{
-						Hdr:  dns.RR_Header{Name: q.Name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60},
-						AAAA: net.IP(ip.AsSlice()),
-					})
-				}
-			case dns.TypeA:
-				if ip.Is4() {
-					a4 := ip.As4()
-					resp.Answer = append(resp.Answer, &dns.A{
-						Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
-						A:   net.IP(a4[:]),
-					})
-				}
-			}
-		}
-		if b, err := resp.Pack(); err == nil {
-			conn.WriteTo(b, src)
-		}
-	}
 }

@@ -166,6 +166,7 @@ config:
     events_api_url: "grpcs://buildbuddy-grpc.example.com"
     cache_api_url: "grpcs://buildbuddy-grpc.example.com"
   auth:
+    jwt_key: "<randomly-generated-secret>"
     ## To use Google auth, get client_id and client_secret here:
     ## https://console.developers.google.com/apis/credentials
     oauth_providers:

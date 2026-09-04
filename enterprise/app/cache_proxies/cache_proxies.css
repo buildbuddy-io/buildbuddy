@@ -27,7 +27,14 @@
   margin-top: 16px;
 }
 
-.cache-proxies-page .cache-proxy-summary {
+.cache-proxies-page .cache-proxy-details {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.cache-proxies-page .cache-proxy-detail {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -138,6 +145,10 @@
   background-color: var(--color-status-error);
 }
 
+.cache-proxies-page .cache-uncacheable-color-swatch {
+  background-color: var(--color-amber-500);
+}
+
 .cache-proxies-page .cache-read-color-swatch {
   background-color: var(--color-light-blue-500);
 }
@@ -148,4 +159,9 @@
 
 .cache-proxies-page .cache-stat {
   font-weight: 600;
+}
+
+.cache-proxies-page .cache-proxy-configured-flags {
+  font-family: monospace;
+  overflow-wrap: anywhere;
 }

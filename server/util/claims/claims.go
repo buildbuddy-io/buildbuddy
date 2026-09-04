@@ -36,6 +36,7 @@ import (
 const (
 	// Maximum number of entries in JWT -> Claims cache.
 	claimsCacheSize = 1_000
+	defaultJWTKey   = "set_the_jwt_in_config"
 
 	// The key the Claims are stored under in the context.
 	// If unset, the JWT can be used to reconstitute the claims.
@@ -43,7 +44,7 @@ const (
 )
 
 var (
-	jwtKey             = flag.String("auth.jwt_key", "set_the_jwt_in_config", "The key to use when signing HMAC-SHA256-signed JWT tokens.", flag.Secret)
+	jwtKey             = flag.String("auth.jwt_key", defaultJWTKey, "The key to use when signing HMAC-SHA256-signed JWT tokens.", flag.Secret)
 	newJwtKey          = flag.String("auth.new_jwt_key", "", "If set, HMAC-SHA256-signed JWT verifications will try both this and the old JWT key.", flag.Secret)
 	signUsingNewJwtKey = flag.Bool("auth.sign_using_new_jwt_key", false, "If true, new JWTs will be signed using the new JWT key.")
 	claimsCacheTTL     = flag.Duration("auth.jwt_claims_cache_ttl", 15*time.Second, "TTL for JWT string to parsed claims caching. Set to '0' to disable cache.")
@@ -56,6 +57,11 @@ var (
 
 	reparseJWTs = flag.Bool("auth.reparse_jwts", true, "Whether to permit re-parsing JWTs or not.")
 )
+
+// IsJWTKeySet reports whether auth.jwt_key has been explicitly configured.
+func IsJWTKeySet() bool {
+	return *jwtKey != "" && *jwtKey != defaultJWTKey
+}
 
 var (
 	// Generic permission denied error.

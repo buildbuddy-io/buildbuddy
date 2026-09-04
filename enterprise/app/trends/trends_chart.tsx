@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { CategoricalChartState } from "recharts/types/chart/types";
 import { TrendsChartId } from "../../../app/router/router";
+import { getHiddenSeriesAfterLegendClick } from "./chart_series";
 
 interface ChartDataSeries {
   name: string;
@@ -52,6 +53,7 @@ interface Props {
 interface State {
   refAreaLeft?: string;
   refAreaRight?: string;
+  hiddenSeries: ReadonlySet<number>;
 }
 
 interface TrendsChartTooltipProps extends TooltipProps<any, any> {
@@ -118,7 +120,19 @@ function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dat
 }
 
 export default class TrendsChartComponent extends React.Component<Props, State> {
-  state: State = {};
+  state: State = { hiddenSeries: new Set() };
+
+  onLegendClick(_data: unknown, seriesIndex: number, event: React.MouseEvent) {
+    event.stopPropagation();
+    this.setState((state) => ({
+      hiddenSeries: getHiddenSeriesAfterLegendClick(
+        state.hiddenSeries,
+        seriesIndex,
+        this.props.dataSeries.length,
+        event.ctrlKey || event.metaKey || event.shiftKey
+      ),
+    }));
+  }
 
   onMouseDown(e: CategoricalChartState) {
     if (!this.props.onZoomSelection || !e) {
@@ -161,7 +175,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     return !Boolean(this.state.refAreaLeft);
   }
 
-  renderDataSeries(ds: ChartDataSeries, index: number): JSX.Element {
+  renderDataSeries(ds: ChartDataSeries, seriesIndex: number): JSX.Element {
     const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
     if (ds.isLine) {
       return (
@@ -172,6 +186,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
+          hide={this.state.hiddenSeries.has(seriesIndex)}
           stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
         />
       );
@@ -186,12 +201,13 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         name={ds.name}
         dataKey={ds.extractValue}
         isAnimationActive={false}
+        hide={this.state.hiddenSeries.has(seriesIndex)}
         stackId={ds.stackId}
         fill={getResolvedColor(color)}>
-        {this.props.data.map((date, index) => (
+        {this.props.data.map((date, datumIndex) => (
           <Cell
             cursor={ds.onClick ? "pointer" : "default"}
-            key={`cell-${index}`}
+            key={`cell-${datumIndex}`}
             onClick={!this.props.onZoomSelection && ds.onClick ? ds.onClick.bind(this, date) : undefined}
           />
         ))}
@@ -216,7 +232,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" />
-            <Legend />
+            <Legend onClick={this.onLegendClick.bind(this)} />
             <XAxis dataKey={(v) => v} tickFormatter={this.props.formatXAxisLabel} ticks={this.props.ticks} />
             <YAxis
               yAxisId="primary"
@@ -240,7 +256,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
                 <TrendsChartTooltip
                   labelFormatter={this.props.formatHoverXAxisLabel}
                   shouldRender={() => this.shouldRenderTooltip()}
-                  dataSeries={this.props.dataSeries}
+                  dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index))}
                 />
               }
             />

@@ -146,52 +146,52 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
       case 0:
         // Showing the target listing only.
         className = "artifacts";
-        icon = <ArrowDownCircle className="icon brown" />;
+        icon = <ArrowDownCircle className="brown" />;
         presentVerb = `${targets.length === 1 ? "target" : "targets"} with artifacts`;
         pastVerb = presentVerb;
         break;
       case Status.FAILED:
         className = "card-failure";
-        icon = <XCircle className="icon red" />;
+        icon = <XCircle className="red" />;
         presentVerb = `failing ${targets.length === 1 ? "test" : "tests"}`;
         pastVerb = `${targets.length === 1 ? "test" : "tests"} failed`;
         renderFlakyChip = true;
         break;
       case Status.FAILED_TO_BUILD:
         className = "card-failure";
-        icon = <XCircle className="icon red" />;
+        icon = <XCircle className="red" />;
         presentVerb = `${targets.length === 1 ? "target" : "targets"} failed to build`;
         pastVerb = `${targets.length === 1 ? "target" : "targets"} failed to build`;
         break;
       case Status.TIMED_OUT:
         className = "card-timeout";
-        icon = <Clock className="icon" />;
+        icon = <Clock />;
         presentVerb = `timed out ${targets.length == 1 ? "test" : "tests"}`;
         pastVerb = `${targets.length == 1 ? "test" : "tests"} timed out`;
         renderFlakyChip = true;
         break;
       case Status.FLAKY:
         className = "card-flaky";
-        icon = <HelpCircle className="icon orange" />;
+        icon = <HelpCircle className="orange" />;
         presentVerb = `flaky ${targets.length == 1 ? "test" : "tests"}`;
         pastVerb = `flaky ${targets.length == 1 ? "test" : "tests"}`;
         renderFlakyChip = true;
         break;
       case Status.PASSED:
         className = "card-success";
-        icon = <CheckCircle className="icon green" />;
+        icon = <CheckCircle className="green" />;
         presentVerb = `passing ${targets.length == 1 ? "test" : "tests"}`;
         pastVerb = `${targets.length == 1 ? "test" : "tests"} passed`;
         break;
       case Status.BUILT:
         className = "card-success";
-        icon = <CheckCircle className="icon green" />;
+        icon = <CheckCircle className="green" />;
         presentVerb = `${targets.length == 1 ? "target" : "targets"}`;
         pastVerb = `${targets.length == 1 ? "target" : "targets"} built successfully`;
         break;
       case Status.SKIPPED:
         className = "card-skipped";
-        icon = <SkipForward className="icon purple" />;
+        icon = <SkipForward className="purple" />;
         presentVerb = `${targets.length == 1 ? "target" : "targets"}`;
         pastVerb = `${targets.length == 1 ? "target" : "targets"} skipped`;
         break;
@@ -226,7 +226,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                     <div title={targetTitleAttr(target)} className="target">
                       <span className="target-status-icon">{icon}</span>{" "}
                       <span className="chevron-icon">
-                        <ChevronRight className="icon" />
+                        <ChevronRight />
                       </span>
                       <span className="target-label">{target.metadata?.label}</span>{" "}
                       {target.testSummary && target.testSummary.totalNumCached === target.testSummary.totalRunCount && (
@@ -257,7 +257,7 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
                         </TextLink>
                         {output.uri?.startsWith("bytestream://") && (
                           <a className="artifact-view" href={this.getCodeURL(output)}>
-                            <FileCode className="icon" /> View
+                            <FileCode /> View
                           </a>
                         )}
                         <DigestComponent digest={{ hash: output.digest, sizeBytes: output.length }} />

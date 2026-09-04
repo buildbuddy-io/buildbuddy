@@ -657,13 +657,13 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
                   className="button icon-button"
                   onClick={(e) => this.onClickZoom(e, -1)}
                   title={`Zoom out (${modifierKey()}+scroll)`}>
-                  <ZoomOut className="icon" />
+                  <ZoomOut />
                 </button>
                 <button
                   className="button icon-button"
                   onClick={(e) => this.onClickZoom(e, +1)}
                   title={`Zoom in (${modifierKey()}+scroll)`}>
-                  <ZoomIn className="icon" />
+                  <ZoomIn />
                 </button>
               </div>
             </div>

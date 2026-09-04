@@ -57,6 +57,7 @@ cache:
   max_size_bytes: 10000000000 # 10 GB
   in_memory: true
 auth:
+  jwt_key: "<randomly-generated-secret>"
   oauth_providers:
     - issuer_url: "https://accounts.google.com"
       client_id: "12345678911-f1r0phjnhbabcdefm32etnia21keeg31.apps.googleusercontent.com"
@@ -83,6 +84,7 @@ cache:
   disk:
     root_directory: /data/buildbuddy-cache
 auth:
+  jwt_key: "<randomly-generated-secret>"
   oauth_providers:
     - issuer_url: "https://your-custom-domain.okta.com"
       client_id: "0aaa5twc7sx0kUW123x6"

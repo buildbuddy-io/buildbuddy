@@ -436,7 +436,7 @@ func TestIPRulesRBE(t *testing.T) {
 	require.NoError(t, err)
 
 	// RBE Requests from a blockedIP + allowed client identity should succeed.
-	allowedIdentity, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+	allowedIdentity, err := cis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Client: interfaces.ClientIdentityExecutor,
 		Origin: "test",
 	}, time.Minute)
@@ -453,7 +453,7 @@ func TestIPRulesRBE(t *testing.T) {
 
 	// RBE Requests from a blockedIP + blocked client identity should fail.
 	// Sign some other client-identity using the shared signing key.
-	blockedIdentity, err := cis.IdentityHeader(&interfaces.ClientIdentity{
+	blockedIdentity, err := cis.NewIdentityHeader(&interfaces.ClientIdentity{
 		Client: "foo",
 		Origin: "test",
 	}, time.Minute)

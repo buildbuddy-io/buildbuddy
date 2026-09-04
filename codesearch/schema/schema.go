@@ -7,6 +7,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/codesearch/token"
 	"github.com/buildbuddy-io/buildbuddy/codesearch/types"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+
+	xxhash "github.com/cespare/xxhash/v2"
 )
 
 var (
@@ -52,6 +54,17 @@ var (
 		MustFieldSchema(types.KeywordField, RepoModulePathField, true),
 	})
 )
+
+// FileID returns the document id for a repo file: a stable hash of the
+// repository (owner, repo) and the file's name (repo-relative path). The parts
+// are NUL-separated so distinct (owner, repo, name) triples can't collide by
+// concatenation — e.g. {"a","bc",...} vs {"ab","c",...}. It is the exact key
+// for both writing (github indexing) and reading (nav file lookup), so both
+// sides derive ids the same way.
+func FileID(owner, repo, name string) []byte {
+	h := xxhash.Sum64String(owner + "\x00" + repo + "\x00" + name)
+	return fmt.Appendf(nil, "%d", h)
+}
 
 func GitHubFileSchema() types.DocumentSchema {
 	return gitHubFileSchema

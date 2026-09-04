@@ -32,9 +32,9 @@ export default class TargetFlakyTestCardComponent extends React.Component<Props>
   renderStatusIcon(status: Status) {
     switch (status) {
       case "error":
-        return <AlertCircle className="icon black" />;
+        return <AlertCircle className="black" />;
       default:
-        return <XCircle className="icon red" />;
+        return <XCircle className="red" />;
     }
   }
 

@@ -28,14 +28,18 @@ go_library(
 go_test(
     name = "grpc_client_test",
     size = "small",
-    srcs = ["grpc_client_test.go"],
+    srcs = [
+        "grpc_client_internal_test.go",
+        "grpc_client_test.go",
+    ],
+    embed = [":grpc_client"],
     deps = [
-        ":grpc_client",
         "//proto:ping_service_go_proto",
         "//server/environment",
         "//server/testutil/testenv",
         "//server/testutil/testport",
         "//server/util/grpc_server",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )

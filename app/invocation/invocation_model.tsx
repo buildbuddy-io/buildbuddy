@@ -841,35 +841,31 @@ export default class InvocationModel {
     if (this.hasRunStatus()) {
       switch (this.invocation.runStatus) {
         case invocation_status.OverallStatus.SUCCESS:
-          return <CheckCircle className="icon green" />;
+          return <CheckCircle className="green" />;
         case invocation_status.OverallStatus.FAILURE:
-          return <XCircle className="icon red" />;
+          return <XCircle className="red" />;
         case invocation_status.OverallStatus.IN_PROGRESS:
-          return <PlayCircle className="icon blue" />;
+          return <PlayCircle className="blue" />;
         case invocation_status.OverallStatus.DISCONNECTED:
-          return <HelpCircle className="icon" />;
+          return <HelpCircle />;
         default:
       }
     }
 
     let invocationStatus = this.invocation.invocationStatus;
     if (invocationStatus == invocation_status.InvocationStatus.DISCONNECTED_INVOCATION_STATUS) {
-      return <HelpCircle className="icon" />;
+      return <HelpCircle />;
     }
     if (!this.started) {
-      return <HelpCircle className="icon" />;
+      return <HelpCircle />;
     }
     if (!this.finished) {
-      return <PlayCircle className="icon blue" />;
+      return <PlayCircle className="blue" />;
     }
     if (this.invocation.bazelExitCode == "NO_TESTS_FOUND") {
-      return <Circle className="icon" />;
+      return <Circle />;
     }
-    return this.finished.exitCode?.code == 0 ? (
-      <CheckCircle className="icon green" />
-    ) : (
-      <XCircle className="icon red" />
-    );
+    return this.finished.exitCode?.code == 0 ? <CheckCircle className="green" /> : <XCircle className="red" />;
   }
 
   getCPU() {

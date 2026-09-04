@@ -22,7 +22,7 @@ var (
 	invocationCleanupWorkers   = flag.Int("cleanup_workers", 1, "How many cleanup tasks to run")
 
 	// Flags for Execution Janitor.
-	executionTTL = flag.Duration("storage.execution.ttl", 0, "The time, in seconds, to keep invocations before deletion. 0 disables invocation deletion.")
+	executionTTL = flag.Duration("storage.execution.ttl", 0, "The time, in seconds, to keep executions before deletion. 0 disables execution deletion.")
 
 	executionCleanupBatchSize = flag.Int("storage.execution.cleanup_batch_size", 200, "How many executions to delete in each janitor cleanup task")
 	executionCleanupInterval  = flag.Duration("storage.execution.cleanup_interval", 5*time.Minute, "How often the janitor cleanup tasks will run")

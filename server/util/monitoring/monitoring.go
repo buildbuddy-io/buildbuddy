@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
@@ -16,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/trace"
 	"google.golang.org/grpc"
@@ -23,14 +26,25 @@ import (
 	channelz "github.com/rantav/go-grpc-channelz"
 )
 
+func init() {
+	// The prometheus package automatically registers the collector with the
+	// default registry in its init method. Since we can't override that we need
+	// to unregister it before adding it again with more metrics.
+	prometheus.Unregister(collectors.NewGoCollector())
+	prometheus.MustRegister(collectors.NewGoCollector(
+		collectors.WithGoCollectorRuntimeMetrics(collectors.MetricsAll),
+	))
+}
+
 var (
 	mutexProfileFraction = flag.Int("mutex_profile_fraction", 0, "The fraction of mutex contention events reported. (1/rate, 0 disables)")
 	blockProfileRate     = flag.Int("block_profile_rate", 0, "The fraction of goroutine blocking events reported. (1/rate, 0 disables)")
 
 	enableRpcz = flag.Bool("enable_rpcz", false, "Enables a /rpcz endpoint for viewing gRPC requests")
 
-	basicAuthUser = flag.String("monitoring.basic_auth.username", "", "Optional username for basic auth on the monitoring port.")
-	basicAuthPass = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
+	basicAuthUser  = flag.String("monitoring.basic_auth.username", "", "Optional username for basic auth on the monitoring port.")
+	basicAuthPass  = flag.String("monitoring.basic_auth.password", "", "Optional password for basic auth on the monitoring port.", flag.Secret)
+	basicAuthCreds = flag.Map("monitoring.basic_auth.credentials", map[string]string{}, "Optional user->pass map of credentials for auth on the monitoring port.", flag.Secret)
 )
 
 const (
@@ -41,8 +55,18 @@ const (
 // StartMonitoringHandler on a monitoring-only port is preferred.
 func RegisterMonitoringHandlers(env environment.Env, mux *http.ServeMux) {
 	handle := mux.Handle
+	creds := maps.Clone(*basicAuthCreds)
+	if creds == nil {
+		creds = map[string]string{}
+	}
 	if *basicAuthUser != "" || *basicAuthPass != "" {
-		auth := basicauth.Middleware(basicauth.DefaultRealm, map[string]string{*basicAuthUser: *basicAuthPass})
+		if pass, ok := creds[*basicAuthUser]; ok && pass != *basicAuthPass {
+			log.Fatalf("duplicate monitoring login creds for user %s", *basicAuthUser)
+		}
+		creds[*basicAuthUser] = *basicAuthPass
+	}
+	if len(creds) > 0 {
+		auth := basicauth.Middleware(basicauth.DefaultRealm, creds)
 		handle = func(pattern string, handler http.Handler) {
 			mux.Handle(pattern, auth(handler))
 		}

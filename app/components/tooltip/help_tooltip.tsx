@@ -45,7 +45,7 @@ export default function HelpTooltip({
       role={isButton ? "button" : role}
       tabIndex={isButton ? (tabIndex ?? 0) : tabIndex}
       {...props}>
-      <HelpCircle className="icon help-tooltip-icon" />
+      <HelpCircle className="help-tooltip-icon" />
     </Tooltip>
   );
 }

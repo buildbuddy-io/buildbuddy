@@ -212,7 +212,7 @@ export default class CompareActionsComponent extends React.Component<CompareActi
       return (
         <div className="compare-invocations container">
           <div className="error-container">
-            <XCircle className="icon red" />
+            <XCircle className="red" />
             <div>{error}</div>
           </div>
         </div>

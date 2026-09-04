@@ -3,7 +3,7 @@ package accumulator
 import (
 	"context"
 	"net/url"
-	"regexp"
+	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
@@ -16,12 +16,12 @@ import (
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
 	workflowIDFieldName                   = "workflowID"
 	actionNameFieldName                   = "actionName"
+	commitStatusLabelFieldName            = "commitStatusLabel"
 	disableCommitStatusReportingFieldName = "disableCommitStatusReporting"
 	disableTargetTrackingFieldName        = "disableTargetTracking"
 
@@ -29,18 +29,14 @@ const (
 	// from cache -> blobstore. If more than this number are present, they
 	// will be dropped.
 	maxPersistableTestArtifacts = 1000
-
-	// If codesearch is enabled, and an invocation contains a single file with the
-	// following name, attempt to ingest this kythe sstable file in codesearch.
-	KytheOutputName = "kythe_serving.sst"
 )
 
 var (
 	buildMetadataFieldMapping = map[string]string{
 		"DISABLE_COMMIT_STATUS_REPORTING": disableCommitStatusReportingFieldName,
 		"DISABLE_TARGET_TRACKING":         disableTargetTrackingFieldName,
+		"COMMIT_STATUS_LABEL":             commitStatusLabelFieldName,
 	}
-	bytestreamURIPattern = regexp.MustCompile(`^bytestream://.*/blobs/([a-z0-9]{64})/\d+$`)
 )
 
 type Accumulator interface {
@@ -62,6 +58,7 @@ type Accumulator interface {
 	DisableTargetTracking() bool
 	WorkflowID() string
 	ActionName() string
+	CommitStatusLabel() string
 	Pattern() string
 
 	BuildFinished() bool
@@ -84,8 +81,10 @@ type BEValues struct {
 	buildStartTime            time.Time
 	buildToolLogURIs          []*url.URL
 	outputFilesMap            map[string]*build_event_stream.File
-	kytheSSTableResourceName  *rspb.ResourceName
 	profileName               string
+	gitFetchTotalBytes        int64
+	gitFetchDuration          time.Duration
+	gitFetchRetryCount        int64
 
 	failedTestOutputURIs []*url.URL
 	passedTestOutputURIs []*url.URL
@@ -112,22 +111,16 @@ func (v *BEValues) maybeExtractOutputFile(files ...*build_event_stream.File) {
 		if file.GetName() == "" {
 			continue
 		}
-		if m := bytestreamURIPattern.FindStringSubmatch(file.GetUri()); len(m) >= 1 {
-			digestHash := m[1]
-			v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
+		uri, err := url.Parse(file.GetUri())
+		if err != nil || uri.Scheme != "bytestream" {
+			continue
 		}
-		// Special case: check for kythe output files.
-		if file.GetName() == KytheOutputName {
-			uri, err := url.Parse(file.GetUri())
-			if err != nil {
-				continue
-			}
-			rn, err := digest.ParseDownloadResourceName(uri.Path)
-			if err != nil {
-				continue
-			}
-			v.kytheSSTableResourceName = rn.ToProto()
+		rn, err := digest.ParseDownloadResourceName(strings.TrimPrefix(uri.Path, "/"))
+		if err != nil {
+			continue
 		}
+		digestHash := rn.GetDigest().GetHash()
+		v.outputFilesMap[digestHash] = proto.Clone(file).(*build_event_stream.File)
 	}
 }
 
@@ -163,6 +156,11 @@ func (v *BEValues) AddEvent(event *build_event_stream.BuildEvent) error {
 		v.populateWorkspaceInfoFromBuildMetadata(p.BuildMetadata)
 	case *build_event_stream.BuildEvent_WorkflowConfigured:
 		v.handleWorkflowConfigured(p.WorkflowConfigured)
+	case *build_event_stream.BuildEvent_GitFetchCompleted:
+		// The remote runner reports cumulative totals, so the last event wins.
+		v.gitFetchTotalBytes = p.GitFetchCompleted.GetTotalBytes()
+		v.gitFetchDuration = p.GitFetchCompleted.GetDuration().AsDuration()
+		v.gitFetchRetryCount = p.GitFetchCompleted.GetRetryCount()
 	case *build_event_stream.BuildEvent_Finished:
 		v.sawFinishedEvent = true
 	case *build_event_stream.BuildEvent_BuildToolLogs:
@@ -230,8 +228,22 @@ func (v *BEValues) OutputFiles() map[string]*build_event_stream.File {
 	return v.outputFilesMap
 }
 
-func (v *BEValues) KytheSSTableResourceName() *rspb.ResourceName {
-	return v.kytheSSTableResourceName
+// GitFetchTotalBytes returns the total number of bytes fetched by git while
+// a remote runner set up the git repository, or 0 if not reported.
+func (v *BEValues) GitFetchTotalBytes() int64 {
+	return v.gitFetchTotalBytes
+}
+
+// GitFetchDuration returns the total time a remote runner spent running git
+// fetch commands, or 0 if not reported.
+func (v *BEValues) GitFetchDuration() time.Duration {
+	return v.gitFetchDuration
+}
+
+// GitFetchRetryCount returns the number of git fetch retries a remote runner
+// made after low-speed aborts, or 0 if not reported.
+func (v *BEValues) GitFetchRetryCount() int64 {
+	return v.gitFetchRetryCount
 }
 
 func (v *BEValues) DisableCommitStatusReporting() bool {
@@ -252,6 +264,10 @@ func (v *BEValues) WorkflowID() string {
 
 func (v *BEValues) ActionName() string {
 	return v.getStringValue(actionNameFieldName)
+}
+
+func (v *BEValues) CommitStatusLabel() string {
+	return v.getStringValue(commitStatusLabelFieldName)
 }
 
 func (v *BEValues) BuildFinished() bool {

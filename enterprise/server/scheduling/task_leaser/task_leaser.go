@@ -77,15 +77,15 @@ type TaskLease struct {
 	executorHostname string
 	taskID           string
 
-	ctx               context.Context
-	execTask          *repb.ExecutionTask
-	leaseID           string
-	supportsReconnect bool
-	quit              chan struct{}
-	mu                sync.Mutex // protects stream
-	stream            scpb.Scheduler_LeaseTaskClient
-	ttl               time.Duration
-	cancelFunc        context.CancelFunc
+	ctx            context.Context
+	execTask       *repb.ExecutionTask
+	leaseID        string
+	reconnectToken string
+	quit           chan struct{}
+	mu             sync.Mutex // protects stream
+	stream         scpb.Scheduler_LeaseTaskClient
+	ttl            time.Duration
+	cancelFunc     context.CancelFunc
 }
 
 func (t *TaskLease) Context() context.Context {
@@ -117,9 +117,7 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 		ExecutorHostname:  t.executorHostname,
 		TaskId:            t.taskID,
 		SupportsReconnect: *enableReconnect,
-	}
-	if t.supportsReconnect {
-		req.ReconnectToken = t.leaseID
+		ReconnectToken:    t.reconnectToken,
 	}
 	var rsp *scpb.LeaseTaskResponse
 	var r *retry.Retry
@@ -150,7 +148,9 @@ func (t *TaskLease) pingServer(ctx context.Context) (b []byte, err error) {
 			return nil, originalErr
 		}
 	}
-	t.supportsReconnect = rsp.GetSupportsReconnect() || rsp.GetReconnectToken() != ""
+	if rsp.GetReconnectToken() != "" {
+		t.reconnectToken = rsp.GetReconnectToken()
+	}
 	if rsp.GetLeaseId() != "" {
 		t.leaseID = rsp.GetLeaseId()
 	}
@@ -197,7 +197,7 @@ func (t *TaskLease) claim(ctx context.Context) (context.Context, []byte, error) 
 	serializedTask, err := t.pingServer(ctx)
 	if err == nil {
 		defer t.keepLease(ctx)
-		log.CtxInfof(ctx, "Worker leased task: %q", t.taskID)
+		log.CtxDebugf(ctx, "Worker leased task: %q", t.taskID)
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	t.cancelFunc = cancel
@@ -216,7 +216,7 @@ func (t *TaskLease) closed() bool {
 func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	log.CtxInfof(ctx, "Closing task lease")
+	log.CtxDebugf(ctx, "Closing task lease")
 	if t.closed() {
 		log.CtxInfof(ctx, "Lease was already closed. Short-circuiting.")
 		return
@@ -271,6 +271,6 @@ func (t *TaskLease) Close(ctx context.Context, taskErr error, retry bool) {
 			log.CtxInfof(ctx, "Successfully re-enqueued task")
 		}
 	} else {
-		log.CtxInfof(ctx, "Task lease closed cleanly")
+		log.CtxDebugf(ctx, "Task lease closed cleanly")
 	}
 }

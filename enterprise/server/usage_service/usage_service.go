@@ -146,6 +146,24 @@ var UsageFields = []UsageField{
 		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_WORKFLOW_UPLOAD_SIZE_BYTES,
 	},
 	{
+		Name:                "total_customer_proxy_download_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN proxy = 'customer' THEN total_download_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASDownloadedBytes,
+			rawUsageLabelEquals(sku.Proxy, sku.ProxyCustomer),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_CUSTOMER_PROXY_DOWNLOAD_SIZE_BYTES,
+	},
+	{
+		Name:                "total_customer_proxy_upload_size_bytes",
+		PrimaryDBExpression: "SUM(CASE WHEN proxy = 'customer' THEN total_upload_size_bytes ELSE 0 END)",
+		OLAPExpression: rawUsageSum(
+			sku.RemoteCacheCASUploadedBytes,
+			rawUsageLabelEquals(sku.Proxy, sku.ProxyCustomer),
+		),
+		AlertingMetric: usagepb.UsageAlertingMetric_TOTAL_CUSTOMER_PROXY_UPLOAD_SIZE_BYTES,
+	},
+	{
 		Name:                "linux_execution_duration_usec",
 		PrimaryDBExpression: "SUM(linux_execution_duration_usec)",
 		OLAPExpression: rawUsageSumUsec(
@@ -332,7 +350,7 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 		end = addCalendarMonths(start, 1)
 	}
 
-	usages, err := s.scanUsages(ctx, g.GroupID, start, end)
+	usages, err := s.scanUsages(ctx, g.GroupID, start, end, req.GetUseOlap())
 	if err != nil {
 		return nil, err
 	}
@@ -358,6 +376,8 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 		aggregateUsage.TotalExternalUploadSizeBytes += u.GetTotalExternalUploadSizeBytes()
 		aggregateUsage.TotalInternalUploadSizeBytes += u.GetTotalInternalUploadSizeBytes()
 		aggregateUsage.TotalWorkflowUploadSizeBytes += u.GetTotalWorkflowUploadSizeBytes()
+		aggregateUsage.TotalCustomerProxyDownloadSizeBytes += u.GetTotalCustomerProxyDownloadSizeBytes()
+		aggregateUsage.TotalCustomerProxyUploadSizeBytes += u.GetTotalCustomerProxyUploadSizeBytes()
 		aggregateUsage.LinuxExecutionDurationUsec += u.GetLinuxExecutionDurationUsec()
 		aggregateUsage.TotalCachedActionExecUsec += u.GetTotalCachedActionExecUsec()
 		aggregateUsage.CloudRbeLinuxExecutionDurationUsec += u.GetCloudRbeLinuxExecutionDurationUsec()
@@ -519,8 +539,11 @@ func (s *usageService) countUsageAlertingRules(ctx context.Context, dbh interfac
 	return row.Count, nil
 }
 
-func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
-	if s.readFromOLAPDB {
+func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time, useOLAP bool) ([]*usagepb.Usage, error) {
+	if s.readFromOLAPDB || useOLAP {
+		if s.olapdbh == nil {
+			return nil, status.FailedPreconditionError("OLAP DB handle must be configured for usage OLAP reads")
+		}
 		return s.scanOLAPUsages(ctx, groupID, start, end)
 	}
 	return s.scanPrimaryDBUsages(ctx, groupID, start, end)

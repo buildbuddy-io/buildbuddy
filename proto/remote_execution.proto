@@ -1883,6 +1883,60 @@ message FindMissingBlobsRequest {
   // length of the blob digest hashes and the digest functions announced
   // in the server's capabilities.
   DigestFunction.Value digest_function = 3;
+
+  // NOTE: fields below are BuildBuddy extensions, not part of the upstream
+  // REAPI. They use high tag numbers so they will not collide with fields
+  // added upstream.
+
+  // Purpose identifies which internal code path originated a FindMissingBlobs
+  // call. BuildBuddy's own clients populate it; external clients (e.g. Bazel)
+  // leave it UNKNOWN. It is used purely for observability (present/absent rate
+  // by purpose) and MUST NOT affect the result of the lookup.
+  enum Purpose {
+    // Default / unset. External clients that don't set the field land here,
+    // so UNKNOWN doubles as a signal for "originated outside BuildBuddy".
+    UNKNOWN = 0;
+    // atime_updater: batched remote FindMissingBlobs sent purely to bump atime.
+    ATIME_UPDATE = 1;
+    // Validating that an ActionResult's output digests still exist before
+    // returning it (action_cache_server / execution_server AC validation).
+    AC_VALIDATION = 2;
+    // Executor checking which action output files already exist before upload.
+    EXECUTOR_OUTPUT_UPLOAD = 3;
+    // Chunked (bytestream) read/upload manifest + chunk-existence checks.
+    BYTESTREAM_CHUNKING = 4;
+    // FMB request forwarded from proxy.
+    CACHE_PROXY_CAS_PASSTHROUGH = 5;
+    // Remote-asset Fetch: FindMissing used to renew a fetched blob's atime.
+    REMOTE_ASSET_FETCH = 6;
+    // VM snapshot artifact existence checks (snaploader).
+    SNAPSHOT = 7;
+    // Cache migration copy / secondary-cache diff.
+    CACHE_MIGRATION = 8;
+    // Write-path "does this already exist?" dedupe guard.
+    WRITE_DEDUPE = 9;
+    // A Contains() existence check, which is implemented on top of FindMissing.
+    CONTAINS = 10;
+    // Chunk check from BSS proxy on Read.
+    CACHE_PROXY_BSS_CDC_READ = 11;
+    // Chunk check from BSS proxy on Write.
+    CACHE_PROXY_BSS_CDC_WRITE = 12;
+    // Data upload from CI runner.
+    CI_RUNNER_UPLOAD = 13;
+    // Mostly from executors.
+    CLIENT_BATCH_UPLOAD_CDC_CHUNKING = 14;
+    // Currently only used by SpliceBlob API.
+    CDC_MANIFEST_STORE = 15;
+    // AC validation checking existence of digest chunks.
+    AC_MISSING_CHUNK_VALIDATION = 16;
+    // CAS FindMissingBlobs checking existence of digest chunks.
+    FMB_CHUNK_VALIDATION = 17;
+    // CAS SplitBlob API.
+    CAS_SPLIT_BLOB = 18;
+    // Reference write-path "does this already exist?" dedupe guard.
+    REFERENCE_WRITE_DEDUPE = 19;
+  }
+  Purpose purpose = 1000;
 }
 
 // A response message for
@@ -2800,6 +2854,48 @@ message UsageStats {
 
   // Network statistics for the network interface assigned to the action.
   NetworkStats network_stats = 10;
+
+  // GPU memory usage sampled during the task.
+  GPUUsage gpu_usage = 11;
+}
+
+// GPU memory usage sampled during a task's execution.
+message GPUUsage {
+  // GPU memory usage grouped by GPU.
+  repeated GPUDeviceUsage device_usage = 1;
+
+  // Maximum total GPU memory used by the task's processes across all GPUs.
+  int64 peak_total_memory_bytes = 2;
+
+  // Most recently recorded total GPU memory usage of the task across all
+  // GPUs. This field is only used for point-in-time readings and is not
+  // reported in task results (peak_total_memory_bytes is reported instead).
+  int64 total_memory_bytes = 3;
+}
+
+// GPU memory usage sampled on a GPU during a task's execution.
+message GPUDeviceUsage {
+  enum Vendor {
+    // The GPU vendor was not reported.
+    UNKNOWN_GPU_VENDOR = 0;
+
+    // NVIDIA Corporation.
+    NVIDIA = 1;
+  }
+
+  // GPU hardware vendor.
+  Vendor vendor = 1;
+
+  // GPU UUID reported by the GPU driver.
+  string id = 2;
+
+  // Maximum total GPU memory used by the task's processes on this GPU.
+  int64 peak_memory_bytes = 3;
+
+  // Most recently recorded GPU memory usage of the task on this GPU. This
+  // field is only used for point-in-time readings and is not reported in
+  // task results (peak_memory_bytes is reported instead).
+  int64 memory_bytes = 4;
 }
 
 // Network statistics for an action.
@@ -2861,6 +2957,17 @@ message UsageTimeline {
 
   // Delta-encoded total write operations, totaled across all block devices.
   repeated int64 wios_total_samples = 8;
+
+  // GPU memory usage timelines. This is unset when GPU memory tracking is not
+  // enabled or no GPU memory reading was available.
+  GPUUsageTimeline gpu_usage = 9;
+}
+
+// GPU memory usage sampled over a task's execution.
+message GPUUsageTimeline {
+  // Delta-encoded total GPU memory usage in kilobytes (1000 bytes). Samples
+  // correspond one-to-one with UsageTimeline.timestamps.
+  repeated int64 total_memory_kb_samples = 1;
 }
 
 // Pressure Stall Information, commonly known as PSI.
@@ -3043,9 +3150,9 @@ message StoredExecution {
   string status_message = 32;
   string command_snippet = 62;
 
-  // TODO(sluongng): add configuration.
   string target_label = 33;
   string action_mnemonic = 57;
+  string configuration_id = 92;
 
   // Experiments used by this execution.
   repeated string experiments = 61;
@@ -3076,4 +3183,35 @@ message StoredExecution {
   int64 snapshot_saved_bytes = 86;
   // Wall-clock duration of Container.Pause.
   int64 pause_duration_usec = 87;
+  // Disk space used by the task's workspace (buildroot), in bytes, measured
+  // after the task finishes. Only populated when
+  // executor.workspace.measure_disk_usage is enabled.
+  int64 buildroot_disk_usage_bytes = 88;
+
+  // Test metadata sourced from the command environment.
+  string test_size = 89;
+  uint32 test_shard_index = 90;
+  uint32 test_total_shards = 91;
+
+  // Time the guest VM spent waiting for dockerd to become ready while booting,
+  // before it could begin accepting commands. Only set for executions that
+  // booted a fresh firecracker VM with dockerd enabled.
+  int64 vm_dockerd_wait_duration_usec = 93;
+
+  // Time the guest VM spent waiting for its local DNS server to become ready
+  // while booting. Only set for executions that booted a fresh firecracker VM
+  // with DNS overrides configured.
+  int64 vm_dns_wait_duration_usec = 94;
+
+  // Time from when the guest VM's vmexec process started until its gRPC
+  // server was about to begin serving (includes the dockerd and DNS waits
+  // above, but not earlier guest init such as kernel boot). Only set for
+  // executions that booted a fresh firecracker VM.
+  int64 vm_exec_init_duration_usec = 95;
+
+  // Time the executor spent dialing the guest VM's vmexec server. For
+  // executions that booted a fresh firecracker VM, this includes guest boot
+  // up to the point where the vmexec server was serving. Set for every
+  // firecracker execution.
+  int64 vm_exec_dial_duration_usec = 96;
 }

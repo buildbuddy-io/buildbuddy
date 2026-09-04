@@ -24,7 +24,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -44,6 +46,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -67,6 +70,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	executil "github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -91,6 +95,7 @@ var (
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+	chunkingEnabled                    = flag.Bool("remote_execution.chunking_enabled", false, "If true, executors upload outputs and download inputs using content-defined chunks.")
 
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
@@ -301,6 +306,7 @@ func (s *ExecutionServer) insertExecution(ctx context.Context, executionID, invo
 		rmd := bazel_request.GetRequestMetadata(ctx)
 		executionProto.TargetLabel = rmd.GetTargetId()
 		executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+		executionProto.ConfigurationId = rmd.GetConfigurationId()
 		executionProto.OutputPath = primaryOutputPath(command)
 		executionProto.RequestedPool = requestedPool
 		executionProto.ClientIp = clientip.Get(ctx)
@@ -384,13 +390,14 @@ func (s *ExecutionServer) updateExecutionPostCompletion(ctx context.Context, exe
 		// Stage must be COMPLETED, otherwise mergeExecutionUpdates drops this
 		// event as "execution progress appears to restart" after the first
 		// COMPLETED.
-		Stage:                 int64(repb.ExecutionStage_COMPLETED),
-		UpdatedAtUsec:         time.Now().UnixMicro(),
-		PauseDurationUsec:     stats.GetPauseDurationUsec(),
-		SnapshotSavedLocally:  fcStats.GetSnapshotSavedLocally(),
-		SnapshotSavedRemotely: fcStats.GetSnapshotSavedRemotely(),
-		SnapshotIsDiff:        fcStats.GetSnapshotIsDiff(),
-		SnapshotSavedBytes:    fcStats.GetSnapshotSavedBytes(),
+		Stage:                   int64(repb.ExecutionStage_COMPLETED),
+		UpdatedAtUsec:           time.Now().UnixMicro(),
+		PauseDurationUsec:       stats.GetPauseDurationUsec(),
+		SnapshotSavedLocally:    fcStats.GetSnapshotSavedLocally(),
+		SnapshotSavedRemotely:   fcStats.GetSnapshotSavedRemotely(),
+		SnapshotIsDiff:          fcStats.GetSnapshotIsDiff(),
+		SnapshotSavedBytes:      fcStats.GetSnapshotSavedBytes(),
+		BuildrootDiskUsageBytes: stats.GetBuildrootDiskUsageBytes(),
 	}
 	return s.executionCollector.UpdateInProgressExecution(ctx, execution)
 }
@@ -439,6 +446,22 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 			rmd := bazel_request.GetRequestMetadata(ctx)
 			executionProto.TargetLabel = rmd.GetTargetId()
 			executionProto.ActionMnemonic = rmd.GetActionMnemonic()
+			executionProto.ConfigurationId = rmd.GetConfigurationId()
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_SIZE"); ok {
+				if testSize, ok := bespb.TestSize_value[strings.ToUpper(value)]; ok && testSize != int32(bespb.TestSize_UNKNOWN) {
+					executionProto.TestSize = strings.ToLower(bespb.TestSize(testSize).String())
+				}
+			}
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_SHARD_INDEX"); ok {
+				if shardIndex, err := strconv.ParseUint(value, 10, 32); err == nil {
+					executionProto.TestShardIndex = uint32(shardIndex)
+				}
+			}
+			if value, ok := rexec.LookupEnv(cmd.GetEnvironmentVariables(), "TEST_TOTAL_SHARDS"); ok {
+				if totalShards, err := strconv.ParseUint(value, 10, 32); err == nil {
+					executionProto.TestTotalShards = uint32(totalShards)
+				}
+			}
 			executionProto.DiskBytesRead = md.GetUsageStats().GetCgroupIoStats().GetRbytes()
 			executionProto.DiskBytesWritten = md.GetUsageStats().GetCgroupIoStats().GetWbytes()
 			executionProto.DiskWriteOperations = md.GetUsageStats().GetCgroupIoStats().GetWios()
@@ -465,6 +488,13 @@ func (s *ExecutionServer) updateExecution(ctx context.Context, executionID strin
 
 			executionProto.EffectiveTimeoutUsec = auxMeta.GetTimeout().AsDuration().Microseconds()
 			executionProto.RequestedTimeoutUsec = action.GetTimeout().AsDuration().Microseconds()
+
+			if vmMetrics := auxMeta.GetVmMetrics(); vmMetrics != nil {
+				executionProto.VmDockerdWaitDurationUsec = vmMetrics.GetDockerdWaitDurationUsec()
+				executionProto.VmDnsWaitDurationUsec = vmMetrics.GetVmDnsWaitDurationUsec()
+				executionProto.VmExecInitDurationUsec = vmMetrics.GetVmExecInitDurationUsec()
+				executionProto.VmExecDialDurationUsec = vmMetrics.GetVmExecDialDurationUsec()
+			}
 
 			if properties != nil {
 				executionProto.RequestedIsolationType, _ = platform.CoerceContainerType(properties.WorkloadIsolationType)
@@ -546,9 +576,13 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		return nil, nil
 	}
 
-	// Always clean up invocationLinks and execution updates from the collector.
-	// The execution cannot be retried after this point, so nothing will clean
-	// up this data if we don't do it here.
+	// Always clean up executionInvocationLinks, invocationExecutionLinks, and
+	// execution updates from the collector. The execution cannot be retried
+	// after this point, so nothing will clean up this data if we don't do it
+	// here. This means that even if we fail to AppendExecution or
+	// FlushExecutionStats, we will still remove all links and in-progress
+	// executions.
+	var links []*sipb.StoredInvocationLink
 	defer func() {
 		err := s.executionCollector.DeleteExecutionInvocationLinks(ctx, executionID)
 		if err != nil {
@@ -558,6 +592,11 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		if err != nil {
 			log.CtxErrorf(ctx, "Failed to clean up in-progress execution in collector: %s", err)
 		}
+		for _, link := range links {
+			if err := s.executionCollector.DeleteInvocationExecutionLink(ctx, link); err != nil {
+				log.CtxErrorf(ctx, "Failed to clean up reverse invocation link for invocation %q: %s", link.GetInvocationId(), err)
+			}
+		}
 	}()
 
 	executionProto, err := s.executionCollector.GetInProgressExecution(ctx, executionID)
@@ -565,7 +604,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 		return nil, status.InternalErrorf("failed to get execution %q from redis: %s", executionID, err)
 	}
 
-	links, err := s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
+	links, err = s.executionCollector.GetExecutionInvocationLinks(ctx, executionID)
 	if err != nil {
 		return nil, status.InternalErrorf("failed to get invocations for execution %q: %s", executionID, err)
 	}
@@ -586,7 +625,7 @@ func (s *ExecutionServer) flushExecutionToOLAP(ctx context.Context, executionID 
 			if err := s.executionCollector.AppendExecution(ctx, link.GetInvocationId(), executionProto); err != nil {
 				log.CtxErrorf(ctx, "failed to append execution %q to invocation %q: %s", executionID, link.GetInvocationId(), err)
 			} else {
-				log.CtxInfof(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
+				log.CtxDebugf(ctx, "appended execution %q to invocation %q in redis", executionID, link.GetInvocationId())
 			}
 		} else if s.env.GetOLAPDBHandle() != nil {
 			// Flush to Clickhouse directly if the invocation completed before
@@ -893,7 +932,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	// Inject use-oci-fetcher platform property via experiment.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
 		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
+		const disableOCIFetcherExperiment = "remote_execution.disable_oci_fetcher"
 		useOCIFetcher, details := fp.BooleanDetails(ctx, useOCIFetcherExperiment, false)
+		disableOCIFetcher := fp.Boolean(ctx, disableOCIFetcherExperiment, true)
+		if useOCIFetcher == disableOCIFetcher {
+			log.CtxWarningf(
+				ctx,
+				"OCI fetcher experiment flags do not match: %s=%t, %s=%t; expected the values to be logical opposites",
+				useOCIFetcherExperiment, useOCIFetcher, disableOCIFetcherExperiment, disableOCIFetcher,
+			)
+		}
 		if useOCIFetcher {
 			executionTask.PlatformOverrides.Properties = append(
 				executionTask.PlatformOverrides.Properties,
@@ -908,16 +956,34 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
-	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
+	uploadOutputsChunked := *chunkingEnabled
+	downloadInputsChunked := *chunkingEnabled
+	if efp != nil {
+		uploadOutputsChunked = efp.Boolean(ctx, "executor.upload_outputs_chunked", uploadOutputsChunked)
+		downloadInputsChunked = efp.Boolean(ctx, "executor.download_inputs_chunked", downloadInputsChunked)
+	}
+	if chunking.Enabled(ctx, efp) && uploadOutputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
+		if efp != nil && efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
+			executionTask.Experiments = append(executionTask.Experiments, cdc.SpliceWithoutValidationExperiment)
+		}
 	}
-	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.download_inputs_chunked", false) {
+	if chunking.Enabled(ctx, efp) && downloadInputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 
 	if efp != nil && efp.Boolean(ctx, "remote_execution.publish_post_completion_stats", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
+	}
+
+	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
+		if efp.Boolean(ctx, snaputil.RemoteContainerImageReadsExperiment, false) {
+			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageReadsExperiment)
+		}
+		if efp.Boolean(ctx, snaputil.RemoteContainerImageWritesExperiment, false) {
+			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageWritesExperiment)
+		}
 	}
 
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
@@ -930,7 +996,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if err != nil {
 			return nil, err
 		}
-		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, platform.IsCICommand(command, platform.GetProto(action, command)))
+		isCIRunner := platform.IsCIRunner(command, platform.GetProto(action, command))
+		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, isCIRunner /*=shouldExchangeToken*/)
 		if err != nil {
 			return nil, err
 		}
@@ -954,7 +1021,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	executionTask.QueuedTimestamp = timestamppb.Now()
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
-	taskSize := tasksize.ApplyLimits(ctx, s.env.GetExperimentFlagProvider(), command, props, tasksize.Override(defaultTaskSize, requestedTaskSize))
+	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
 	measuredSize := s.taskSizer.Get(ctx, command, props)
 	var predictedSize *scpb.TaskSize
 	if measuredSize == nil {
@@ -1079,7 +1146,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	// Check if there's already an identical action pending execution that this request can be merged into.
 	executionID, op := action_merger.GetOrCreateExecutionID(ctx, s.rdb, s.env.GetSchedulerService(), adInstanceDigest, action.DoNotCache)
 	if op == action_merger.New {
-		log.CtxInfof(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
+		log.CtxDebugf(ctx, "Scheduling new execution %s for %q for invocation %q", executionID, downloadString, invocationID)
 
 		// Check CPU time quota before dispatching execution.
 		// Use a 1ns check to verify quota is available before starting.
@@ -1098,7 +1165,7 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 			return err
 		}
 		ctx = log.EnrichContext(ctx, log.ExecutionIDKey, executionID)
-		log.CtxInfof(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
+		log.CtxDebugf(ctx, "Scheduled execution %q for request %q for invocation %q", executionID, downloadString, invocationID)
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_result", "new")
 		tracing.AddStringAttributeToCurrentSpan(ctx, "execution_id", executionID)
 	} else {
@@ -1157,7 +1224,7 @@ func (e *InProgressExecution) processOpUpdate(ctx context.Context, op *longrunni
 	// Log only on stage transitions or if it's been a while since we last
 	// logged.
 	if stage != e.lastStage || time.Since(e.lastLogTime) > 30*time.Second {
-		log.CtxInfof(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
+		log.CtxDebugf(ctx, "WaitExecution: %q in stage: %s", e.opName, stage)
 		e.lastLogTime = time.Now()
 	}
 	if stage < e.lastStage {
@@ -1200,7 +1267,7 @@ func (s *ExecutionServer) getGroupIDForMetrics(ctx context.Context) string {
 }
 
 func (s *ExecutionServer) waitExecution(ctx context.Context, req *repb.WaitExecutionRequest, stream streamLike, opts waitOpts) error {
-	log.CtxInfof(ctx, "WaitExecution called for: %q", req.GetName())
+	log.CtxDebugf(ctx, "WaitExecution called for: %q", req.GetName())
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.authenticator)
 	if err != nil {
 		return err
@@ -1662,6 +1729,14 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		md := executeResponse.GetResult().GetExecutionMetadata()
 		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
+		}
+	} else if details, ok := oom.DetailsFromError(execErr); ok {
+		// The task was killed by the executor OOM killer. Record a higher memory
+		// estimate so that the task is scheduled with more memory if the client
+		// retries it.
+		md := executeResponse.GetResult().GetExecutionMetadata()
+		if err := s.taskSizer.UpdateForOOM(ctx, cmd, properties, md.GetEstimatedTaskSize(), details.ObservedMemoryBytes); err != nil {
+			log.CtxWarningf(ctx, "Failed to update task size after OOM: %s", err)
 		}
 	}
 

@@ -2,56 +2,123 @@ syntax = "proto3";
 
 package gateway;
 
+import "google/protobuf/timestamp.proto";
+import "google/rpc/status.proto";
+
 option go_package = "gateway";
 
-message RegisterRequest {
+message ConnectRequest {
   // Optional. Identifies which network within the group to join.
   // Defaults to "" (the group's default network).
   string network_name = 1;
 
-  // Optional. Requested DNS name for this peer within the network. Other peers
-  // on the same network can resolve this name to this peer's assigned IP via
-  // the DNS server at <name>.internal. If the requested name is already taken,
-  // the server assigns a unique name by appending a numeric suffix (e.g.
-  // "foo-1"). The actual assigned name is returned in RegisterResponse.
+  // Optional. Requested DNS name for this peer within the network. Other
+  // peers on the same network can resolve this name to this peer's assigned
+  // IP via the DNS server at <name>.internal. Names are unique within a
+  // network: if the name is already held by a connected peer, the request
+  // fails with ALREADY_EXISTS.
   string peer_name = 2;
 
   // Client's WireGuard public key, hex-encoded. The client generates its own
   // keypair locally and never shares its private key with the server.
   string public_key = 3;
+
+  // Required. Caller-chosen identifier for this connection, echoed in List
+  // results so that callers can correlate a connection with the workload
+  // that created it (e.g. `bb box` uses the invocation ID of the action
+  // running the VM). Session IDs are unique among the group's connected
+  // peers; a duplicate causes the request to fail with ALREADY_EXISTS.
+  string session_id = 4;
 }
 
-message RegisterResponse {
-  reserved 1;  // formerly private_key; clients now generate their own keypairs.
-
+// ConnectResponse messages are streamed by the Connect RPC. The first
+// message carries the full tunnel configuration; the stream then stays open
+// for the lifetime of the registration, carrying periodic empty heartbeat
+// messages that clients should ignore.
+message ConnectResponse {
   // Gateway's WireGuard public key for this network, hex-encoded.
-  string server_public_key = 2;
+  string server_public_key = 1;
 
   // host:udp_port that clients should configure as their WireGuard endpoint.
-  string server_endpoint = 3;
+  string server_endpoint = 2;
 
-  // IP address assigned to this client within the tunnel, e.g. "10.0.0.5" or
-  // "fd00:bb::2"
-  string assigned_ip = 4;
+  // IP address assigned to this client within the tunnel, e.g. "fd00:bb::2".
+  string assigned_ip = 3;
 
   // IP address of the gateway hub within the tunnel. Also serves as the DNS
-  // resolver for peer names: pass this to netstack.CreateNetTUN so that
-  // hostnames registered via peer_name resolve through the tunnel.
-  string gateway_ip = 5;
+  // resolver for peer names.
+  string gateway_ip = 4;
 
-  // CIDR of the network, e.g. "10.0.0.0/24".
-  string network_cidr = 6;
-
-  // The DNS name actually assigned to this peer (may differ from the requested
-  // peer_name if there was a conflict). Reachable at
-  // <assigned_peer_name>.internal. Empty if no peer_name was requested.
-  string assigned_peer_name = 7;
+  // CIDR of the network, e.g. "fd00:bb::/48".
+  string network_cidr = 5;
 }
 
-message DeregisterRequest {
-  // The client's WireGuard public key, hex-encoded. Must match the key used
-  // during Register.
-  string public_key = 1;
+message ListRequest {}
+
+// Peer describes a single peer currently registered with the gateway.
+message Peer {
+  // The name of this peer. Can be reached via "bb ssh <name>". Empty for
+  // peers that registered without a name (e.g. transient bb ssh clients);
+  // those are reachable by IP only.
+  string name = 1;
+
+  // The IP address assigned to the peer within the tunnel.
+  string ip = 2;
+
+  // Uniquely identifies this peer's connection (see
+  // ConnectRequest.session_id).
+  string session_id = 3;
+
+  // The time of this peer's most recent WireGuard handshake. Unset if the
+  // peer has not completed a handshake yet. A live peer re-handshakes every
+  // couple of minutes, so an old value here means the tunnel is dark even
+  // though the peer is still registered.
+  google.protobuf.Timestamp last_handshake_time = 4;
 }
 
-message DeregisterResponse {}
+message ListResponse {
+  // The peers currently connected to the gateway that are owned by the user
+  // authenticated for the ListRequest.
+  repeated Peer peers = 1;
+}
+
+message WatchRequest {
+  // Required. The session ID of the peer connection to watch (see
+  // ConnectRequest.session_id).
+  string session_id = 1;
+}
+
+// WatchResponse messages are streamed by the Watch RPC, one per observed
+// state change of the watched peer. While the watched peer is quiet the
+// stream also carries periodic empty heartbeat messages; clients should
+// ignore messages with no peer.
+message WatchResponse {
+  // The watched peer's current state. Unset in heartbeat messages.
+  Peer peer = 1;
+}
+
+// RelayRequest asks the gateway's egress relay to open a TCP connection on
+// the caller's behalf.
+//
+// N.B. This proto is sent as raw bytes to the relay service over the
+// already-established WireGuard tunnel.
+// The server, likewise, sends the response proto as raw bytes before
+// shuttling bytes back and forth for the relayed connection.
+message RelayRequest {
+  // Required. Target host, as a DNS name resolved by the gateway.
+  string host = 1;
+
+  // Required. Target TCP port, 1-65535.
+  int32 port = 2;
+}
+
+// RelayResponse is the relay's one reply to a RelayRequest.
+message RelayResponse {
+  // OK means the connection to the target is open and the stream now carries
+  // its bytes.
+  google.rpc.Status status = 1;
+
+  // The address the target resolved to at the gateway, as host:port. Set on
+  // success, informational.
+  string resolved_address = 2;
+}

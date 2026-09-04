@@ -38,13 +38,16 @@ var (
 	tmpWriteFileRe = regexp.MustCompile(`\.[0-9a-zA-Z]{10}\.tmp$`)
 
 	fileWriterConcurrencyLimit = flag.Int("file_writer_concurrency_limit", 5_000, "Limit on concurrent file writer operations that may result in syscalls. Can be disabled by setting the value to 0.")
+	syncOnCommit               = flag.Bool("file_writer_sync_on_commit", false, "Whether disk.FileWriterWithTmpDir should sync the file on commit")
 )
 
 type Partition struct {
-	ID           string `yaml:"id" json:"id" usage:"The ID of the partition."`
-	MaxSizeBytes int64  `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
-	NumRanges    int    `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
-	SoftDeleted  bool   `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
+	ID                string         `yaml:"id" json:"id" usage:"The ID of the partition."`
+	MaxSizeBytes      int64          `yaml:"max_size_bytes" json:"max_size_bytes" usage:"Maximum size of the partition."`
+	EvictionThreshold *float64       `yaml:"eviction_threshold" json:"eviction_threshold" usage:"Fraction of max_size_bytes above which the janitor evicts the oldest items from the partition. Defaults to 0.9. This is only used by the pebble cache."`
+	MinEvictionAge    *time.Duration `yaml:"min_eviction_age" json:"min_eviction_age" usage:"Don't evict anything from this partition unless it's been idle for at least this long. Defaults to cache.pebble.min_eviction_age. This is only used by the pebble cache."`
+	NumRanges         int            `yaml:"num_ranges" json:"num_ranges" usage:"The number of raft ranges to pre-create for this partition. This is only useful for raft."`
+	SoftDeleted       bool           `yaml:"soft_deleted" json:"soft_delete" usage:"If set, mark this partition as soft_deleted. This is only useful for raft. Note that rollback the config change won't undo this change. To undo the change, the partition descriptor needs to be updated in meta range."`
 }
 
 type PartitionMapping struct {
@@ -347,6 +350,7 @@ func (w *writeMover) Commit() error {
 		// This is the common case (writing a new file). linkat fails with
 		// EEXIST if finalPath already exists, in which case we fall back to
 		// linking to a unique temp name and renaming over the destination.
+		renamedOver := false
 		err := linkAnonymousTmpFile(w.File, w.finalPath)
 		if err != nil {
 			if !errors.Is(err, syscall.EEXIST) {
@@ -364,6 +368,34 @@ func (w *writeMover) Commit() error {
 				RemoveIfExists(linkPath)
 				return err
 			}
+			renamedOver = true
+		}
+		// Sync after linking, not before: on journaling filesystems
+		// (XFS/ext4), fsyncing the file also persists the link/rename that
+		// published it, since the directory update and the inode change
+		// share a journal transaction. Syncing before the link would leave
+		// a crash window where metadata written after Commit survives but
+		// the directory entry does not, so callers like pebble_cache's
+		// FindMissing (which consults only metadata) would advertise a
+		// blob that can't be read.
+		if *syncOnCommit {
+			if err := w.File.Sync(); err != nil {
+				// The link above already published the file at finalPath.
+				// After a fresh link, nothing can reference it yet (callers
+				// record metadata only after Commit succeeds), so undo the
+				// publish rather than leave an orphan that eviction never
+				// sees. After a rename over an existing file, keep it:
+				// metadata from the earlier write may point at finalPath,
+				// and removing it would leave that metadata dangling.
+				deleted := false
+				if !renamedOver {
+					deleted = RemoveIfExists(w.finalPath) == nil
+				}
+				if !deleted {
+					log.CtxWarningf(w.ctx, "Left orphaned file at %s", w.finalPath)
+				}
+				return err
+			}
 		}
 		w.releaseTmpFileBytesMetric()
 		if err := w.File.Close(); err != nil {
@@ -371,6 +403,13 @@ func (w *writeMover) Commit() error {
 		}
 		w.tmpFileIsClosed = true
 		return nil
+	}
+	// This fallback path closes the file before renaming it, so the sync
+	// makes the data durable but not the rename that publishes it.
+	if *syncOnCommit {
+		if err := w.File.Sync(); err != nil {
+			return err
+		}
 	}
 	tmpName := w.File.Name()
 	if err := w.File.Close(); err != nil {

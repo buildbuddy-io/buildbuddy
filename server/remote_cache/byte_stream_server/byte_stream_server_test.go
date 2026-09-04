@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"strings"
 	"sync"
 	"testing"
@@ -156,6 +157,13 @@ func (r *closeBlockingReadCloser) Read(_ []byte) (int, error) {
 
 func (r *closeBlockingReadCloser) Close() error {
 	return nil
+}
+
+type zeroReader struct{}
+
+func (r zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 type readerFuncCache struct {
@@ -765,6 +773,16 @@ func zstdDecompress(t *testing.T, b []byte) []byte {
 	return out
 }
 
+func compressZstdInFrames(data []byte, frameSize int) []byte {
+	var compressed []byte
+	for len(data) > 0 {
+		n := min(frameSize, len(data))
+		compressed = append(compressed, compression.CompressZstd(nil, data[:n])...)
+		data = data[n:]
+	}
+	return compressed
+}
+
 func newUUID(t *testing.T) string {
 	uuid, err := guuid.NewRandom()
 	require.NoError(t, err)
@@ -1032,7 +1050,7 @@ func TestChunkedBlobReaderReadChunk(t *testing.T) {
 		require.ErrorIs(t, result.err, io.ErrUnexpectedEOF)
 	})
 
-	t.Run("zstd allows compression overhead", func(t *testing.T) {
+	t.Run("zstd streams compressed bytes", func(t *testing.T) {
 		data := []byte("abc")
 		compressed := compression.CompressZstd(nil, data)
 		require.Greater(t, len(compressed), len(data))
@@ -1055,6 +1073,28 @@ func TestChunkedBlobReaderReadChunk(t *testing.T) {
 		result := r.readChunk(rn.ToProto(), 0, buf)
 		require.NoError(t, result.err)
 		require.Equal(t, compressed, result.data)
+		r.bufferPool.Put(result.data)
+	})
+
+	t.Run("zstd rejects chunks exceeding compressed read cap", func(t *testing.T) {
+		d := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: chunking.MaxSupportedChunkSizeBytes()}
+		rn := digest.NewCASResourceName(d, "", repb.DigestFunction_BLAKE3)
+		rn.SetCompressor(repb.Compressor_ZSTD)
+		r := &chunkedBlobReader{
+			ctx: context.Background(),
+			cache: &readerFuncCache{
+				reader: func(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+					rc := io.NopCloser(io.LimitReader(zeroReader{}, chunking.MaxCompressedChunkReadSizeBytes()+1))
+					return rc, nil
+				},
+			},
+			bufferPool: bytebufferpool.VariableSize(int(chunking.MaxCompressedChunkReadSizeBytes())),
+		}
+
+		buf := r.bufferPool.Get(compression.ZstdCompressBound(d.GetSizeBytes()))
+		result := r.readChunk(rn.ToProto(), 0, buf)
+		require.True(t, status.IsInternalError(result.err))
+		r.bufferPool.Put(result.data)
 	})
 }
 
@@ -1245,6 +1285,93 @@ func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 		require.NoError(t, err)
 		buf.Write(resp.GetData())
 	}
+	require.Equal(t, fullBlob, zstdDecompress(t, buf.Bytes()))
+}
+
+func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *testing.T) {
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"cache.chunking_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "true",
+			Variants: map[string]any{
+				"true":  true,
+				"false": false,
+			},
+		},
+	})
+	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
+	flags.Set(t, "cache.zstd_transcoding_enabled", true)
+
+	fp, err := experiments.NewFlagProvider(t.Name())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	te.SetCache(&casCompressionCache{Cache: te.GetCache()})
+
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runByteStreamServer(ctx, t, te)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	chunk1 := make([]byte, 646321)
+	rng := rand.New(rand.NewSource(12345))
+	for i := range chunk1 {
+		chunk1[i] = byte(rng.Intn(256))
+	}
+	compressedChunk1 := compressZstdInFrames(chunk1, 2616)
+	compressBound := compression.ZstdCompressBound(int64(len(chunk1)))
+	// Old chunked zstd passthrough truncated this chunk at ZstdCompressBound.
+	require.Greater(t, len(compressedChunk1), int(compressBound))
+	require.Equal(t, chunk1, zstdDecompress(t, compressedChunk1))
+
+	chunk2 := make([]byte, 2*1024*1024)
+	for i := range chunk2 {
+		chunk2[i] = byte(rng.Intn(256))
+	}
+	fullBlob := append(append([]byte{}, chunk1...), chunk2...)
+
+	chunk1Digest, err := digest.Compute(bytes.NewReader(chunk1), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	chunk2Digest, err := digest.Compute(bytes.NewReader(chunk2), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_BLAKE3)
+	require.NoError(t, err)
+
+	baseCache := te.GetCache().(*casCompressionCache).Cache
+	chunk1RN := digest.NewCASResourceName(chunk1Digest, "", repb.DigestFunction_BLAKE3)
+	chunk2RN := digest.NewCASResourceName(chunk2Digest, "", repb.DigestFunction_BLAKE3)
+	require.NoError(t, baseCache.Set(ctx, chunk1RN.ToProto(), compressedChunk1))
+	require.NoError(t, baseCache.Set(ctx, chunk2RN.ToProto(), chunk2))
+
+	manifest := &chunking.Manifest{
+		BlobDigest:     blobDigest,
+		ChunkDigests:   []*repb.Digest{chunk1Digest, chunk2Digest},
+		InstanceName:   "",
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	}
+	require.NoError(t, manifest.Store(ctx, te.GetCache()))
+
+	blobRN := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_BLAKE3)
+	blobRN.SetCompressor(repb.Compressor_ZSTD)
+
+	stream, err := bsClient.Read(ctx, &bspb.ReadRequest{
+		ResourceName: blobRN.DownloadString(),
+	})
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		buf.Write(resp.GetData())
+	}
+	// The parent zstd stream should include the full first chunk before chunk2.
 	require.Equal(t, fullBlob, zstdDecompress(t, buf.Bytes()))
 }
 

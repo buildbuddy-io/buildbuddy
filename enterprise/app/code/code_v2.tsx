@@ -866,7 +866,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
       this.state.fullPathToModelMap.set(fullPath, model);
       this.state.fullPathToNodeMap.set(fullPath, node);
 
-      fetchDecorations(fullPath).then((newDecs) => {
+      fetchDecorations(this.currentOwner(), this.currentRepo(), fullPath).then((newDecs) => {
         if (!newDecs) {
           return;
         }
@@ -1653,7 +1653,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
           {Boolean(this.getQuery()) && (
             <div className="code-menu-actions">
               <OutlinedButton className="request-review-button" onClick={this.handleEditClicked.bind(this)}>
-                <Pencil className="icon green" /> Edit
+                <Pencil className="green" /> Edit
               </OutlinedButton>
             </div>
           )}
@@ -1670,7 +1670,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     </>
                   ) : (
                     <>
-                      <Send className="icon blue" /> Request Review
+                      <Send className="blue" /> Request Review
                     </>
                   )}
                 </OutlinedButton>
@@ -1686,7 +1686,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     </>
                   ) : (
                     <>
-                      <Send className="icon blue" /> Update PR
+                      <Send className="blue" /> Update PR
                     </>
                   )}
                 </OutlinedButton>
@@ -1910,7 +1910,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                       window.open(applicableInstallation?.url + `/permissions/update`, "_blank") &&
                       this.updateState({ installationsResponse: undefined })
                     }>
-                    <Key className="icon white" /> Permissions
+                    <Key className="white" /> Permissions
                   </FilledButton>
                 )}
                 <FilledButton
@@ -1923,7 +1923,7 @@ export default class CodeComponentV2 extends React.Component<Props, State> {
                     </>
                   ) : (
                     <>
-                      <Send className="icon white" /> Send
+                      <Send className="white" /> Send
                     </>
                   )}
                 </FilledButton>
@@ -1959,7 +1959,7 @@ function getOrCreateModel(url: string, value: string) {
 }
 
 async function sha1(content: Uint8Array) {
-  const hash = await crypto.subtle.digest("SHA-1", content);
+  const hash = await crypto.subtle.digest("SHA-1", content as Uint8Array<ArrayBuffer>);
   return Array.from(new Uint8Array(hash))
     .map((v) => v.toString(16).padStart(2, "0"))
     .join("");

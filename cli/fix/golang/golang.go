@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bazelbuild/bazel-gazelle/label"
+	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazelbuild/bazel-gazelle/language"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"

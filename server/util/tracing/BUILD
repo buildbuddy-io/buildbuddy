@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:trace_go_proto",
         "//server/environment",
+        "//server/util/authutil",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
@@ -34,9 +35,15 @@ go_test(
     srcs = ["tracing_test.go"],
     deps = [
         ":tracing",
+        "//proto:trace_go_proto",
+        "//server/interfaces",
         "//server/testutil/testenv",
+        "//server/util/authutil",
         "//server/util/log",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//propagation",
+        "@io_opentelemetry_go_otel_trace//:trace",
     ],
 )

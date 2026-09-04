@@ -579,7 +579,9 @@ func bypassIPRules(ctx context.Context, client *interfaces.ClientIdentity) bool 
 	// These clients may bypass IP rules unconditionally.
 	if client.Client == interfaces.ClientIdentityExecutor ||
 		client.Client == interfaces.ClientIdentityApp ||
-		client.Client == interfaces.ClientIdentityWorkflow {
+		client.Client == interfaces.ClientIdentityWorkflow ||
+		client.Client == interfaces.ClientIdentityMetadataServer ||
+		client.Client == interfaces.ClientIdentityCodeSearchServer {
 		return true
 	}
 

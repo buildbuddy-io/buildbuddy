@@ -15,12 +15,15 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/gcsutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/blobstore/gcs"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -33,10 +36,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/statusz"
@@ -51,6 +56,7 @@ import (
 	"golang.org/x/text/message"
 	"golang.org/x/time/rate"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -80,7 +86,7 @@ var (
 	numDeleteWorkers          = flag.Int("cache.pebble.num_delete_workers", DefaultNumDeleteWorkers, "Number of deletes in parallel")
 	samplesPerBatch           = flag.Int("cache.pebble.samples_per_batch", DefaultSamplesPerBatch, "How many keys we read forward every time we get a random key.")
 	samplerIterRefreshPeriod  = flag.Duration("cache.pebble.sampler_iter_refresh_peroid", DefaultSamplerIterRefreshPeriod, "How often we refresh iterator in sampler")
-	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long")
+	minEvictionAgeFlag        = flag.Duration("cache.pebble.min_eviction_age", DefaultMinEvictionAge, "Don't evict anything unless it's been idle for at least this long. May be overridden per-partition via the partition's min_eviction_age.")
 	forceCompaction           = flag.Bool("cache.pebble.force_compaction", false, "If set, compact the DB when it's created")
 	forceCalculateMetadata    = flag.Bool("cache.pebble.force_calculate_metadata", false, "If set, partition size and counts will be calculated even if cached information is available.")
 	samplesPerEviction        = flag.Int("cache.pebble.samples_per_eviction", 20, "How many records to sample on each eviction")
@@ -92,6 +98,7 @@ var (
 	enableAutoRatchet         = flag.Bool("cache.pebble.enable_auto_ratchet", false, "If true, automatically upgrade on-disk format to latest version.")
 	groupSizeSampleRate       = flag.Float64("cache.pebble.group_size_sample_rate", .01, "Compute estimated size per-group in partitions by sampling at this rate.")
 	groupSizeSampleDecayRate  = flag.Float64("cache.pebble.group_size_sample_decay_rate", .95, "Constant factor used to decay away partition size estimates.")
+	maxOpenFiles              = flag.Int("cache.pebble.max_open_files", 4000, "Maximum number of open SST files in Pebble. Must be lower than the open fd limit for the process. The buildbuddy_remote_cache_pebble_cache_pebble_level_num_files metric can be used to observe the number of SST files in pebble at different levels.")
 
 	activeKeyVersion  = flag.Int64("cache.pebble.active_key_version", int64(filestore.UnspecifiedKeyVersion), "The key version new data will be written with. If negative, will write to the highest existing version in the database, or the highest known version if a new database is created.")
 	migrationQPSLimit = flag.Int("cache.pebble.migration_qps_limit", 50, "QPS limit for data version migration")
@@ -100,11 +107,16 @@ var (
 	minBytesAutoZstdCompression = flag.Int64("cache.pebble.min_bytes_auto_zstd_compression", DefaultMinBytesAutoZstdCompression, "Blobs larger than this will be zstd compressed before written to disk.")
 
 	// GCS Large File Support
-	gcsBucket      = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
-	gcsTTLDays     = flag.Int64("cache.pebble.gcs.ttl_days", 0, "An object TTL, specified in days, to apply to the GCS bucket (0 means disabled).")
-	gcsCredentials = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
-	gcsProjectID   = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
-	gcsAppName     = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
+	gcsBucket               = flag.String("cache.pebble.gcs.bucket", "", "The name of the GCS bucket to store build artifact files in.")
+	gcsTTLDays              = flag.Int64("cache.pebble.gcs.ttl_days", 0, "An object TTL, specified in days, to apply to the GCS bucket (0 means disabled).")
+	gcsCredentials          = flag.String("cache.pebble.gcs.credentials", "", "Credentials in JSON format that will be used to authenticate to GCS.", flag.Secret)
+	gcsProjectID            = flag.String("cache.pebble.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
+	gcsAppName              = flag.String("cache.pebble.gcs.app_name", "", "The app name, under which blobstore data will be stored.")
+	gcsAtimeUpdateThreshold = flag.Duration("cache.pebble.gcs.atime_update_threshold", 0, "Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update).")
+
+	// Presence cache. If the experiment framework is enabled, the experiment values take precedence.
+	presenceCacheMaxEntries = flag.Int64("cache.pebble.presence_cache.max_entries", 0, "A non-zero value enables a digest presence cache to satisfy FindMissing requests. Each entry is about 190 bytes so a 1 million entry cache would take about 190MB of memory.")
+	presenceCacheTTL        = flag.Duration("cache.pebble.presence_cache.ttl", 1*time.Minute, "TTL for the presence cache. Should be configured well below cache.pebble.atime_update_threshold")
 )
 
 var (
@@ -159,6 +171,13 @@ const (
 	SamplerIterRefreshPeriod = 5 * time.Minute
 
 	maxReadBufferSize = 10_000_000
+
+	// PresenceCacheConfigExperiment is the experiment name for configuring
+	// the presence cache. The value is expected to be a JSON object with two
+	// fields:
+	//  - max_entries configures the maximum number of entries in the cache
+	//  - ttl (string in Go duration format) configures the TTL
+	PresenceCacheConfigExperiment = "pebble-presence-cache-config"
 )
 
 type sizeUpdateOp int
@@ -207,7 +226,12 @@ type Options struct {
 	GCSAppName          string
 	GCSTTLDays          *int64
 	MinGCSFileSizeBytes *int64
-	FileStorer          filestore.Store
+	// GCSAtimeUpdateThreshold suppresses a GCS object's custom time (atime)
+	// refresh if it was updated more recently than this. 0 updates on every
+	// atime update.
+	GCSAtimeUpdateThreshold *time.Duration
+	FileStorer              filestore.Store
+	GCSBlobstore            filestore.PebbleGCSStorage
 }
 
 type sizeUpdate struct {
@@ -221,7 +245,13 @@ type sizeUpdate struct {
 type accessTimeUpdate struct {
 	key         filestore.PebbleKey
 	authHeaders map[string][]string
+	// If true, the read that triggered this update opted out of remote atime
+	// propagation, so the external atime updater is not called.
+	skipRemoteUpdate bool
 }
+
+// Compile-time assertion that PebbleCache implements interfaces.ReferenceCache.
+var _ interfaces.ReferenceCache = (*PebbleCache)(nil)
 
 // PebbleCache implements the cache interface by storing metadata in a pebble
 // database and storing cache entry contents on disk.
@@ -272,13 +302,20 @@ type PebbleCache struct {
 	fileStorer filestore.Store
 	bufferPool *bytebufferpool.VariableSizePool
 
+	// Presence cache struct is always created, even if disabled so it can
+	// be adjusted via experiment. The cache methods are no-op when the cache
+	// is disabled.
+	presence *PresenceCache
+
 	minBytesAutoZstdCompression int64
 
 	oldMetrics       pebble.Metrics
 	metricsCollector *pebble.MetricsCollector
 
-	minGCSFileSizeBytes int64
-	gcsTTLDays          int64
+	minGCSFileSizeBytes     int64
+	gcsTTLDays              int64
+	gcsAtimeUpdateThreshold time.Duration
+	gcsBlobstore            filestore.PebbleGCSStorage
 
 	metrics struct {
 		compressedBlobSizeWrite   prometheus.Counter
@@ -376,6 +413,7 @@ func Register(env *real_environment.RealEnv) error {
 		GCSAppName:                  *gcsAppName,
 		GCSTTLDays:                  gcsTTLDays,
 		MinGCSFileSizeBytes:         minGCSFileSizeBytesFlag,
+		GCSAtimeUpdateThreshold:     gcsAtimeUpdateThreshold,
 		EnableAutoRatchet:           *enableAutoRatchet,
 	}
 	c, err := NewPebbleCache(env, opts)
@@ -411,6 +449,15 @@ func validateOpts(opts *Options) error {
 	}
 	if opts.MaxSizeBytes == 0 {
 		return status.FailedPreconditionError("Pebble cache size must be greater than 0")
+	}
+
+	for _, p := range opts.Partitions {
+		if *p.EvictionThreshold <= 0 || *p.EvictionThreshold > 1 {
+			return status.FailedPreconditionErrorf("Partition %q eviction_threshold must be in (0, 1]", p.ID)
+		}
+		if *p.MinEvictionAge < 0 {
+			return status.FailedPreconditionErrorf("Partition %q min_eviction_age must not be negative", p.ID)
+		}
 	}
 
 	for _, pm := range opts.PartitionMappings {
@@ -482,8 +529,24 @@ func SetOptionDefaults(opts *Options) {
 		var ttlInDays int64 = 0
 		opts.GCSTTLDays = &ttlInDays
 	}
+	if opts.GCSAtimeUpdateThreshold == nil {
+		var threshold time.Duration = 0
+		opts.GCSAtimeUpdateThreshold = &threshold
+	}
 	if opts.MinBytesAutoZstdCompression == nil {
 		opts.MinBytesAutoZstdCompression = &DefaultMinBytesAutoZstdCompression
+	}
+}
+
+func setPartitionDefaults(opts *Options) {
+	for i := range opts.Partitions {
+		part := &opts.Partitions[i]
+		if part.MinEvictionAge == nil {
+			part.MinEvictionAge = opts.MinEvictionAge
+		}
+		if part.EvictionThreshold == nil {
+			part.EvictionThreshold = new(JanitorCutoffThreshold)
+		}
 	}
 }
 
@@ -531,7 +594,7 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 		L0CompactionThreshold:    2,
 		MaxConcurrentCompactions: func() int { return 18 },
 		MemTableSize:             64 << 20, // 64 MB
-		MaxOpenFiles:             2000,     // double the default
+		MaxOpenFiles:             *maxOpenFiles,
 		EventListener: &pebble.EventListener{
 			BackgroundError: mc.BackgroundError,
 			WriteStallBegin: mc.WriteStallBegin,
@@ -572,6 +635,11 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 // NewPebbleCache creates a new cache from the provided env and opts.
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	SetOptionDefaults(opts)
+	// Create the default partition after scalar defaults are set, so that it
+	// picks up the defaulted MaxSizeBytes, but before per-partition defaults
+	// are filled in.
+	ensureDefaultPartitionExists(opts)
+	setPartitionDefaults(opts)
 	if err := validateOpts(opts); err != nil {
 		return nil, err
 	}
@@ -584,7 +652,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	if err := disk.EnsureDirectoryExists(opts.RootDirectory); err != nil {
 		return nil, err
 	}
-	ensureDefaultPartitionExists(opts)
 	warnIfCacheTooLarge(opts)
 
 	mc := &pebble.MetricsCollector{}
@@ -613,6 +680,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		clock = clockwork.NewRealClock()
 	}
 
+	gcsBlobstore := opts.GCSBlobstore
 	fileStorer := opts.FileStorer
 	if fileStorer == nil {
 		filestoreOpts := make([]filestore.Option, 0)
@@ -621,7 +689,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			// will already compress blobs before storing them, so we don't
 			// want the gcs lib to attempt to compress them too.
 			ctx := env.GetServerContext()
-			gcsBlobstore, err := gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			var err error
+			gcsBlobstore, err = gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
 			if err != nil {
 				return nil, err
 			}
@@ -684,6 +753,8 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		includeMetadataSize:         opts.IncludeMetadataSize,
 		minGCSFileSizeBytes:         *opts.MinGCSFileSizeBytes,
 		gcsTTLDays:                  *opts.GCSTTLDays,
+		gcsAtimeUpdateThreshold:     *opts.GCSAtimeUpdateThreshold,
+		gcsBlobstore:                gcsBlobstore,
 		fileStorer:                  fileStorer,
 	}
 	zstdLabels := prometheus.Labels{metrics.CacheNameLabel: pc.name, metrics.CompressionType: "zstd"}
@@ -728,6 +799,14 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 		return nil, err
 	}
 	log.Infof("[%s] Min DB version: %d, Max DB version: %d, Active version: %d", pc.name, pc.minDBVersion, pc.maxDBVersion, pc.activeDatabaseVersion())
+
+	// N.B. The presence cache derives its keys at the active version, so it
+	// must be constructed after the active version is finalized above.
+	presence, err := NewPresenceCache(pc.name, pc.activeDatabaseVersion(), clock)
+	if err != nil {
+		return nil, err
+	}
+	pc.presence = presence
 
 	// Only enable migrators if the data stored in the database lags the
 	// currently active version.
@@ -777,7 +856,22 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			if err := disk.EnsureDirectoryExists(pc.blobDirectory); err != nil {
 				return err
 			}
-			pe, err := newPartitionEvictor(env.GetServerContext(), part, pc.fileStorer, pc.blobDirectory, pc.leaser, pc.locker, pc, clock, *opts.MinEvictionAge, opts.Name, opts.IncludeMetadataSize, *opts.SampleBufferSize, *opts.SamplesPerBatch, *opts.SamplerIterRefreshPeriod, *opts.DeleteBufferSize, *opts.NumDeleteWorkers)
+			pe, err := newPartitionEvictor(
+				env.GetServerContext(),
+				part,
+				pc.fileStorer,
+				pc.blobDirectory,
+				pc.leaser,
+				pc.locker,
+				pc,
+				clock,
+				opts.Name,
+				opts.IncludeMetadataSize,
+				*opts.SampleBufferSize,
+				*opts.SamplesPerBatch,
+				*opts.SamplerIterRefreshPeriod,
+				*opts.DeleteBufferSize,
+				*opts.NumDeleteWorkers)
 			if err != nil {
 				return err
 			}
@@ -815,8 +909,7 @@ func keyRange(key []byte) ([]byte, []byte) {
 	return keyPrefix(key, keys.MinByte), keyPrefix(key, keys.MaxByte)
 }
 
-func olderThanThreshold(t time.Time, threshold time.Duration) bool {
-	age := time.Since(t)
+func olderThanThreshold(age time.Duration, threshold time.Duration) bool {
 	return age >= threshold
 }
 
@@ -867,6 +960,187 @@ func (p *PebbleCache) minAndMaxDatabaseVersions() (min, max filestore.PebbleKeyV
 
 func (p *PebbleCache) activeDatabaseVersion() filestore.PebbleKeyVersion {
 	return filestore.PebbleKeyVersion(p.activeKeyVersion)
+}
+
+// PresenceCache is a simple LRU to satisfy FindMissingBlobs requests.
+// A hit on this cache avoids an expensive Pebble lookup.
+type PresenceCache struct {
+	// Config settings.
+	enabled atomic.Bool
+	ttl     time.Duration
+
+	lru lru.LRU[struct{}]
+	// cacheName used in log messages
+	cacheName string
+	// version is the pebble key version to use since the presence cache
+	// uses the same keys as the pebble DB.
+	version filestore.PebbleKeyVersion
+}
+
+type PresenceCacheConfig struct {
+	MaxEntries int64  `json:"max_entries"`
+	TTL        string `json:"ttl"`
+}
+
+func NewPresenceCache(cacheName string, version filestore.PebbleKeyVersion, clock clockwork.Clock) (*PresenceCache, error) {
+	// Always create a presence cache struct so that we can adjust it via
+	// an experiment rather than creating it on demand.
+	maxSize := max(*presenceCacheMaxEntries, 1)
+	l, err := lru.New(&lru.Config[struct{}]{
+		Name:       "pebble_cache_" + cacheName + "_presence_cache",
+		MaxSize:    maxSize,
+		TTL:        *presenceCacheTTL,
+		Clock:      clock,
+		ThreadSafe: true,
+		SizeFn:     func(struct{}) int64 { return 1 },
+	})
+	if err != nil {
+		return nil, err
+	}
+	c := &PresenceCache{
+		lru:       l,
+		cacheName: cacheName,
+		version:   version,
+		ttl:       *presenceCacheTTL,
+	}
+	c.enabled.Store(*presenceCacheMaxEntries > 0)
+	return c, nil
+}
+
+func (c *PresenceCache) IsEnabled() bool {
+	return c.enabled.Load()
+}
+
+func (c *PresenceCache) SetConfig(cfg PresenceCacheConfig) {
+	ttl, err := time.ParseDuration(cfg.TTL)
+	if err != nil {
+		alert.UnexpectedEvent("presence_cache_config_invalid_ttl", "[%s] FindMissing presence cache: ignoring config with invalid ttl %q: %s", c.cacheName, cfg.TTL, err)
+		return
+	}
+	if ttl == 0 {
+		alert.UnexpectedEvent("presence_cache_config_zero_ttl", "[%s] FindMissing presence cache: ignoring config with zero ttl", c.cacheName)
+		return
+	}
+	if cfg.MaxEntries > 0 {
+		if !c.enabled.Load() {
+			c.lru.Purge()
+			log.Infof("[%s] FindMissing presence cache enabled (max_entries=%d, ttl=%s)", c.cacheName, cfg.MaxEntries, ttl)
+		}
+		if err := c.lru.SetMaxSize(cfg.MaxEntries); err != nil {
+			alert.UnexpectedEvent("presence_cache_config_invalid_max_size", "[%s] FindMissing presence cache: ignoring invalid max_entries=%d: %s", c.cacheName, cfg.MaxEntries, err)
+		}
+		if ttl != c.ttl {
+			if err := c.lru.SetTTL(ttl); err != nil {
+				log.Warningf("[%s] FindMissing presence cache: ignoring invalid ttl=%s: %s", c.cacheName, ttl, err)
+			} else {
+				// SetTTL does not affect existing entries so flush the cache
+				// entirely on TTL changes.
+				c.lru.Purge()
+				log.Infof("[%s] FindMissing presence cache TTL changed: %s -> %s", c.cacheName, c.ttl, ttl)
+				c.ttl = ttl
+			}
+		}
+		c.enabled.Store(true)
+	} else if c.enabled.Swap(false) {
+		c.lru.Purge()
+		log.Infof("[%s] FindMissing presence cache disabled", c.cacheName)
+	}
+}
+
+func (c *PresenceCache) key(pk filestore.PebbleKey) (string, bool) {
+	if !c.IsEnabled() {
+		return "", false
+	}
+	kb, err := pk.Bytes(c.version)
+	if err != nil {
+		return "", false
+	}
+	return string(kb), true
+}
+
+// Contains reports whether pk is known-present, recording a hit/miss metric.
+func (c *PresenceCache) Contains(pk filestore.PebbleKey) bool {
+	key, ok := c.key(pk)
+	if !ok {
+		return false
+	}
+	if c.lru.Contains(key) {
+		return true
+	}
+	return false
+}
+
+// Add records pk as present. No-op while the cache is disabled.
+func (c *PresenceCache) Add(pk filestore.PebbleKey) {
+	if key, ok := c.key(pk); ok {
+		c.lru.Add(key, struct{}{})
+	}
+}
+
+// Remove invalidates pk. No-op while the cache is disabled.
+func (c *PresenceCache) Remove(pk filestore.PebbleKey) {
+	if key, ok := c.key(pk); ok {
+		c.lru.Remove(key)
+	}
+}
+
+func (c *PresenceCache) NumEntries() int {
+	return c.lru.Len()
+}
+
+func (p *PebbleCache) refreshPresenceCacheConfig(ctx context.Context, efp interfaces.ExperimentFlagProvider) {
+	if efp == nil {
+		return
+	}
+	cfg := PresenceCacheConfig{
+		MaxEntries: *presenceCacheMaxEntries,
+		TTL:        presenceCacheTTL.String(),
+	}
+	if obj := efp.Object(ctx, PresenceCacheConfigExperiment, nil); len(obj) > 0 {
+		if err := experiments.ObjectToStruct(obj, &cfg); err != nil {
+			alert.UnexpectedEvent("presence_cache_invalid_config", "[%s] Ignoring invalid presence-cache experiment config %v: %s", p.name, obj, err)
+			return
+		}
+	}
+	p.presence.SetConfig(cfg)
+}
+
+func (p *PebbleCache) watchPresenceCacheSize(quitChan chan struct{}) {
+	ticker := p.clock.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-ticker.Chan():
+			metrics.PebbleCachePresenceCacheEntryCount.WithLabelValues(p.name).Set(float64(p.presence.NumEntries()))
+		}
+	}
+}
+
+// watchPresenceCacheConfig periodically rechecks the experiment state and
+// propagates config changes to the presence cache.
+func (p *PebbleCache) watchPresenceCacheConfig(quitChan chan struct{}) {
+	efp := p.env.GetExperimentFlagProvider()
+	if efp == nil {
+		return
+	}
+	ch := make(chan struct{}, 1)
+	stop := efp.Subscribe(ch)
+	defer stop()
+	ticker := p.clock.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	ctx := p.env.GetServerContext()
+	for {
+		select {
+		case <-quitChan:
+			return
+		case <-ticker.Chan():
+			p.refreshPresenceCacheConfig(ctx, efp)
+		case <-ch:
+			p.refreshPresenceCacheConfig(ctx, efp)
+		}
+	}
 }
 
 // updateDatabaseVersion updates the min and max versions of the database.
@@ -935,12 +1209,11 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 	}
 
 	atime := time.UnixMicro(md.GetLastAccessUsec())
+	newAtime := p.clock.Now()
 
-	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
+	if !olderThanThreshold(newAtime.Sub(atime), p.atimeUpdateThreshold) {
 		return nil
 	}
-
-	newAtime := p.clock.Now()
 
 	if atime.After(newAtime) {
 		// Atime updates are queued -- if an object was overwritten
@@ -954,18 +1227,25 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		metrics.CacheNameLabel: p.name,
 	}
 
-	// If this is a GCS object, update the custom time and record the new
-	// custom time.
+	// If this is a GCS object, refresh the custom time and record the new
+	// custom time. Each refresh is a billed GCS Class A operation and the custom
+	// time is only a defensive TTL backstop, so it does not need to track the
+	// pebble atime closely: skip the refresh unless the recorded custom time is
+	// older than gcsAtimeUpdateThreshold. The pebble atime below is still
+	// updated on every access past the atime threshold.
 	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
 			return nil
 		}
-		if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
-			metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
-			log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
-			return err
+		lastCustomTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
+		if newAtime.Sub(lastCustomTime) >= p.gcsAtimeUpdateThreshold {
+			if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
+				metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
+				log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
+				return err
+			}
+			md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 		}
-		md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 	}
 
 	md.LastAccessUsec = newAtime.UnixMicro()
@@ -978,8 +1258,9 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		return err
 	}
 
-	// Call the external atime updater, if registered.
-	if p.atimeUpdater != nil {
+	// Call the external atime updater, if registered, unless the caller
+	// opted out of remote atime propagation updates.
+	if p.atimeUpdater != nil && !update.skipRemoteUpdate {
 		d := md.GetFileRecord().GetDigest()
 		instanceName := md.GetFileRecord().GetIsolation().GetRemoteInstanceName()
 		digestFunction := md.GetFileRecord().GetDigestFunction()
@@ -1543,9 +1824,12 @@ func (p *PebbleCache) activeEncryption(ctx context.Context) (*sgpb.Encryption, e
 	return &sgpb.Encryption{KeyId: ak.GetEncryptionKeyId()}, nil
 }
 
-func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
-	rn := digest.ResourceNameFromProto(r)
-	if err := rn.Validate(); err != nil {
+func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption, rn *rspb.ResourceName) (*sgpb.FileRecord, error) {
+	digestFunction := rn.GetDigestFunction()
+	if digestFunction == repb.DigestFunction_UNKNOWN {
+		digestFunction = repb.DigestFunction_SHA256
+	}
+	if err := digest.Validate(rn.GetDigest(), digestFunction); err != nil {
 		return nil, err
 	}
 
@@ -1557,7 +1841,7 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 			GroupId:            groupID,
 		},
 		Digest:         rn.GetDigest(),
-		DigestFunction: rn.GetDigestFunction(),
+		DigestFunction: digestFunction,
 		Compressor:     rn.GetCompressor(),
 		Encryption:     encryption,
 	}, nil
@@ -1566,6 +1850,9 @@ func (p *PebbleCache) makeFileRecord(groupID string, encryption *sgpb.Encryption
 func (p *PebbleCache) lookupFileMetadataAndVersion(ctx context.Context, db pebble.IPebbleDB, key filestore.PebbleKey, fileMetadata *sgpb.FileMetadata) (filestore.PebbleKeyVersion, error) {
 	var lastErr error
 	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		if ctx.Err() != nil {
+			return -1, ctx.Err()
+		}
 		keyBytes, err := key.Bytes(version)
 		if err != nil {
 			return -1, err
@@ -1588,12 +1875,12 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 	if !status.IsNotFoundError(causeErr) && !os.IsNotExist(causeErr) {
 		return false
 	}
-	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil {
+	if fileMetadata.GetStorageMetadata().GetFileMetadata() != nil || fileMetadata.GetStorageMetadata().GetGcsMetadata() != nil {
 		err := p.deleteMetadataOnly(ctx, key)
 		if err != nil && status.IsNotFoundError(err) {
 			return false
 		}
-		log.Warningf("[%s] Metadata record %q was found but file (%+v) not found on disk: %s", p.name, key.String(), fileMetadata, causeErr)
+		log.Warningf("[%s] Metadata record %q was found but file (%+v) not found in storage: %s", p.name, key.String(), fileMetadata, causeErr)
 		if err != nil {
 			log.Warningf("[%s] Error deleting metadata: %s", p.name, err)
 			return false
@@ -1604,7 +1891,7 @@ func (p *PebbleCache) handleMetadataMismatch(ctx context.Context, causeErr error
 }
 
 func (p *PebbleCache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	missing, err := p.FindMissing(ctx, []*rspb.ResourceName{r})
+	missing, err := p.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_CONTAINS), []*rspb.ResourceName{r})
 	if err != nil {
 		return false, err
 	}
@@ -1675,6 +1962,20 @@ func (p *PebbleCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 			missing = append(missing, r.GetDigest())
 		}
 	}
+
+	if len(resources) > 0 {
+		purposeLabel := findmissing.PurposeFromContext(ctx).String()
+		if present := len(resources) - len(missing); present > 0 {
+			metrics.PebbleCacheFindMissingBlobStatusCount.
+				WithLabelValues(p.name, purposeLabel, metrics.PresentStatusLabel).
+				Add(float64(present))
+		}
+		if len(missing) > 0 {
+			metrics.PebbleCacheFindMissingBlobStatusCount.
+				WithLabelValues(p.name, purposeLabel, metrics.AbsentStatusLabel).
+				Add(float64(len(missing)))
+		}
+	}
 	return missing, nil
 }
 
@@ -1688,57 +1989,146 @@ func (p *PebbleCache) findMissing(ctx context.Context, db pebble.IPebbleDB, grou
 		return err
 	}
 
+	// Avoid expensive pebble op if key is in the presence cache.
+	// We don't update the atime on hit because we expect the cache TTL to be
+	// configured below the atime update threshold.
+	if p.presence.Contains(key) {
+		return nil
+	}
+
 	unlockFn := p.locker.RLock(key.LockID())
 	defer unlockFn()
 
-	md := sgpb.FileMetadataFromVTPool()
-	defer md.ReturnToVTPool()
-	err = p.lookupFileMetadata(ctx, db, key, md)
+	buf, closer, err := p.lookupFileMetadataBytes(db, key)
 	if err != nil {
 		return err
+	}
+	defer closer.Close()
+
+	var md sgpb.FileMetadataFindMissingView
+	if err := md.UnmarshalWire(buf); err != nil {
+		return status.InternalErrorf("error parsing value for %q: %s", key, err)
 	}
 
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
-	if md.GetStoredSizeBytes() == 0 {
+	if md.StoredSizeBytes == 0 {
 		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
 		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
-	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
-		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
+	if md.StorageMetadata.HasGcsMetadata {
+		if gcsutil.CustomTimeIsPastTTL(p.clock, md.StorageMetadata.GcsMetadata.LastCustomTimeUsec, p.gcsTTLDays) {
 			return status.NotFoundError("backing object may have expired")
 		}
 	}
 
-	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
+	p.presence.Add(key)
+
+	p.sendAtimeUpdate(ctx, key, md.LastAccessUsec)
 	return nil
 }
 
-func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
-	rc, err := p.Reader(ctx, r, 0, 0)
-	if err != nil {
-		return nil, err
+// lookupFileMetadataBytes is lookupFileMetadataAndVersion, except that it
+// returns the serialized FileMetadata value as stored instead of
+// unmarshalling it. The returned buffer is only valid until the returned
+// closer is closed; on success the caller must close it.
+func (p *PebbleCache) lookupFileMetadataBytes(db pebble.IPebbleDB, key filestore.PebbleKey) ([]byte, io.Closer, error) {
+	var lastErr error
+	for minVersion, version := p.minAndMaxDatabaseVersions(); version >= minVersion; version-- {
+		keyBytes, err := key.Bytes(version)
+		if err != nil {
+			return nil, nil, err
+		}
+		buf, closer, err := db.Get(keyBytes)
+		if err != nil {
+			if err == pebble.ErrNotFound {
+				err = status.NotFoundErrorf("key %q not found", keyBytes)
+			}
+			lastErr = err
+			continue
+		}
+		if len(buf) == 0 {
+			closer.Close()
+			lastErr = status.NotFoundErrorf("key %q not found (empty value)", keyBytes)
+			continue
+		}
+		return buf, closer, nil
 	}
-	defer rc.Close()
-	bufSize := digest.SafeBufferSize(r, maxReadBufferSize)
-	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
-	_, err = io.Copy(buf, rc)
-	return buf.Bytes(), err
+	// Should never happen.
+	if lastErr == nil {
+		return nil, nil, status.NotFoundErrorf("key %q not found (no version available)", key.String())
+	}
+	return nil, nil, lastErr
+}
+
+// readBufSize returns the buffer size to allocate to hold the full contents
+// of r, whose stored metadata is md.
+func (p *PebbleCache) readBufSize(r *rspb.ResourceName, md *sgpb.FileMetadata, reader io.Reader) int64 {
+	// If the requested compression matches the stored compression, the data is
+	// returned as stored, so the stored size from the file metadata is the
+	// right buffer size. Otherwise the data is compressed or decompressed while
+	// reading, so fall back to estimating.
+	var bufSize int64
+	if r.GetCompressor() == md.GetFileRecord().GetCompressor() {
+		bufSize = min(md.GetStoredSizeBytes(), maxReadBufferSize)
+	} else {
+		bufSize = int64(digest.SafeBufferSize(r, maxReadBufferSize))
+	}
+	// WriteTo allows copying without a second read to get EOF. Without that
+	// bytes.Buffer.ReadFrom will allocate an extra bytes.MinRead unless we
+	// oversize it. *os.File advertises WriterTo (for sendfile support), but
+	// writing to a bytes.Buffer it falls back to bytes.Buffer.ReadFrom, which
+	// also needs the extra room.
+	_, isFile := reader.(*os.File)
+	_, isWriterTo := reader.(io.WriterTo)
+	if isFile || !isWriterTo {
+		bufSize += bytes.MinRead
+	}
+	return bufSize
+}
+
+func (p *PebbleCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	b, _, err := p.GetWithMetadata(ctx, r)
+	return b, err
 }
 
 func (p *PebbleCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
-	data, err := p.Get(ctx, r)
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+	if spn.IsRecording() {
+		spn.SetAttributes(
+			attribute.String("digest_hash", r.GetDigest().GetHash()),
+			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
+	}
+	db, err := p.leaser.DB()
 	if err != nil {
 		return nil, nil, err
 	}
-	md, err := p.Metadata(ctx, r)
+	defer db.Close()
+
+	encryption, err := p.activeEncryption(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	return data, md, nil
+	rc, md, err := p.reader(ctx, db, p.userGroupID(ctx), encryption, r, 0, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rc.Close()
+	buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
+	_, err = io.Copy(buf, rc)
+	if err != nil {
+		return nil, nil, err
+	}
+	return buf.Bytes(), &interfaces.CacheMetadata{
+		StoredSizeBytes:    md.GetStoredSizeBytes(),
+		DigestSizeBytes:    md.GetFileRecord().GetDigest().GetSizeBytes(),
+		LastModifyTimeUsec: md.GetLastModifyUsec(),
+		LastAccessTimeUsec: md.GetLastAccessUsec(),
+	}, err
 }
 
 func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1753,47 +2143,302 @@ func (p *PebbleCache) GetMulti(ctx context.Context, resources []*rspb.ResourceNa
 	}
 	defer db.Close()
 
-	var mu sync.Mutex
-	foundMap := make(map[*repb.Digest][]byte, len(resources))
-
 	groupID := p.userGroupID(ctx)
 	encryption, err := p.activeEncryption(ctx)
 	if err != nil {
 		return nil, err
 	}
-	eg, ctx := errgroup.WithContext(ctx)
-	eg.SetLimit(10)
-	for _, r := range resources {
-		eg.Go(func() error {
-			rc, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
+
+	var next atomic.Int64
+	var mu sync.Mutex
+	foundMap := make(map[*repb.Digest][]byte, len(resources))
+	handleBatch := func() error {
+		for {
+			i := int(next.Add(1)) - 1
+			if i >= len(resources) {
+				return nil
+			}
+			r := resources[i]
+			rc, md, err := p.reader(ctx, db, groupID, encryption, r, 0, 0)
 			if err != nil {
 				if status.IsNotFoundError(err) || os.IsNotExist(err) {
-					return nil
+					continue
 				}
 				return err
 			}
-
-			buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(r, maxReadBufferSize)))
+			buf := bytes.NewBuffer(make([]byte, 0, p.readBufSize(r, md, rc)))
 			_, copyErr := io.Copy(buf, rc)
 			closeErr := rc.Close()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			if copyErr != nil {
 				log.CtxWarningf(ctx, "[%s] GetMulti encountered error when copying %s: %s", p.name, r.GetDigest().GetHash(), copyErr)
-				return nil
+				continue
 			}
 			if closeErr != nil {
 				log.CtxWarningf(ctx, "[%s] GetMulti cannot close reader when copying %s: %s", p.name, r.GetDigest().GetHash(), closeErr)
-				return nil
+				continue
 			}
 			mu.Lock()
 			foundMap[r.GetDigest()] = buf.Bytes()
 			mu.Unlock()
-			return nil
-		})
+		}
+	}
+
+	// Inline resources don't need 1 goroutine per resource. sqrt(inline count)
+	// goroutines seems to be fastest.
+	inlineResources := 0
+	for _, rn := range resources {
+		if rn.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
+			inlineResources++
+		}
+	}
+	// Add 1 goroutine per non-inline resource, since they can be slow.
+	maxGoroutines := min(10, int(math.Sqrt(float64(inlineResources)))+(len(resources)-inlineResources))
+	if maxGoroutines <= 1 {
+		// Don't start goroutines if we don't have to.
+		if err := handleBatch(); err != nil {
+			return nil, err
+		}
+		return foundMap, nil
+	}
+
+	// Make sure to set the ctx used inside handleBatch (don't shadow it).
+	var eg *errgroup.Group
+	eg, ctx = errgroup.WithContext(ctx)
+	for range maxGoroutines {
+		eg.Go(handleBatch)
 	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 	return foundMap, nil
+}
+
+func (p *PebbleCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if p.gcsBlobstore == nil {
+		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot dereference")
+	}
+
+	db, err := p.leaser.DB()
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return nil, err
+	}
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	unlockFn := p.locker.RLock(key.LockID())
+	// The metadata is handed to the caller, so don't use mem pooling here.
+	md := &sgpb.FileMetadata{}
+	err = p.lookupFileMetadata(ctx, db, key, md)
+	unlockFn()
+	if err != nil {
+		return nil, err
+	}
+
+	// If this object is somehow stored as a zero-length file, pretend it
+	// does not exist.
+	if md.StoredSizeBytes == 0 {
+		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, md)
+		return nil, status.NotFoundError("object not found (zero-length)")
+	}
+	gcsMetadata := md.GetStorageMetadata().GetGcsMetadata()
+	if gcsMetadata == nil {
+		return nil, status.NotFoundErrorf("resource %q is not stored in shared storage", key.String())
+	}
+	// If the custom time is stale the object may already have been deleted by
+	// a GCS lifecycle rule; don't hand out a reference to it. This matches
+	// the behavior of the Reader() and Contains()/FindMissing() paths.
+	if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
+		return nil, status.NotFoundError("backing object may have expired")
+	}
+
+	// Handing out a reference is a read: bump the atime (which also refreshes
+	// the GCS custom time) so the object is not evicted out from under the
+	// peer that resolves this reference.
+	p.sendAtimeUpdate(ctx, key, md.GetLastAccessUsec())
+
+	return &refpb.Reference{Metadata: md}, nil
+}
+
+type referenceWriter struct {
+	wc interfaces.CommittedWriteCloser
+	md *sgpb.FileMetadata
+}
+
+func (w *referenceWriter) Write(p []byte) (int, error) {
+	return w.wc.Write(p)
+}
+
+func (w *referenceWriter) Close() error {
+	return w.wc.Close()
+}
+
+func (w *referenceWriter) Commit() (*refpb.Reference, error) {
+	if err := w.wc.Commit(); err != nil {
+		return nil, err
+	}
+	return &refpb.Reference{Metadata: w.md}, nil
+}
+
+func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
+	if p.gcsBlobstore == nil {
+		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot create references")
+	}
+	if !p.storesInGCS(r.GetDigest().GetSizeBytes()) {
+		return nil, status.NotFoundErrorf("resource %s is too small for shared storage", r.GetDigest().GetHash())
+	}
+
+	r, shouldCompress := p.autoZstdResource(r)
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return nil, err
+	}
+	bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+
+	// Commit only captures the blob's metadata instead of registering it in
+	// this cache.
+	rw := &referenceWriter{}
+	wc, err := p.wrapWriter(ctx, fileRecord, bw, shouldCompress, nil, func(md *sgpb.FileMetadata) error {
+		rw.md = md
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	rw.wc = wc
+	return rw, nil
+}
+
+func validateReference(ref *refpb.Reference) error {
+	sm := ref.GetMetadata().GetStorageMetadata()
+	if sm.GetGcsMetadata().GetBlobName() == "" {
+		return status.InvalidArgumentError("malformed reference (empty blob name)")
+	}
+	if sm.GetFileMetadata() != nil || sm.GetInlineMetadata() != nil {
+		return status.InvalidArgumentError("malformed reference (non-GCS storage metadata)")
+	}
+	return nil
+}
+
+func (p *PebbleCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if p.gcsBlobstore == nil {
+		return nil, status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot dereference")
+	}
+	if err := validateReference(ref); err != nil {
+		return nil, err
+	}
+	md := ref.GetMetadata()
+	if err := p.checkFileMetadata(md); err != nil {
+		return nil, err
+	}
+	rc, err := p.readerForMetadata(ctx, r, md, offset, limit)
+	if err != nil && (status.IsNotFoundError(err) || os.IsNotExist(err)) {
+		// This is the metadata mismatch that reader() heals by deleting the
+		// metadata record, but the record backing this reference lives on the
+		// peer that minted it, so it cannot be fixed from here.
+		log.Warningf("[%s] Blob %q referenced by a peer was not found in shared storage; the referencing peer may have a dangling metadata record (md: %+v): %s", p.name, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName(), md, err)
+	}
+	return rc, err
+}
+
+func (p *PebbleCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	ctx, spn := tracing.StartSpan(ctx)
+	defer spn.End()
+
+	if p.gcsBlobstore == nil {
+		return status.FailedPreconditionError("pebble cache is not backed by shared storage; cannot write references")
+	}
+	if err := validateReference(ref); err != nil {
+		return err
+	}
+	refMD := ref.GetMetadata()
+	if err := p.checkFileMetadata(refMD); err != nil {
+		return err
+	}
+	refDigest := refMD.GetFileRecord().GetDigest()
+	if refDigest.GetHash() != r.GetDigest().GetHash() || refDigest.GetSizeBytes() != r.GetDigest().GetSizeBytes() {
+		return status.InvalidArgumentErrorf("reference digest %s does not match written resource digest %s", digest.String(refDigest), digest.String(r.GetDigest()))
+	}
+
+	db, err := p.leaser.DB()
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	encryption, err := p.activeEncryption(ctx)
+	if err != nil {
+		return err
+	}
+	// Ensure the encryption key the blob was written with matches this cache's
+	// current encryption key, to protect against edge cases around enabling or
+	// disabling encryption , or rotating encryption keys.
+	if refMD.GetEncryptionMetadata().GetEncryptionKeyId() != encryption.GetKeyId() {
+		return status.FailedPreconditionErrorf("reference encryption key %q does not match the active encryption key %q", refMD.GetEncryptionMetadata().GetEncryptionKeyId(), encryption.GetKeyId())
+	}
+	fileRecord, err := p.makeFileRecord(p.userGroupID(ctx), encryption, r)
+	if err != nil {
+		return err
+	}
+	// The referenced blob keeps the encoding chosen by the cache that minted
+	// the reference, which may differ from the compressor on the wire
+	// resource.
+	fileRecord.Compressor = refMD.GetFileRecord().GetCompressor()
+	key, err := p.fileStorer.PebbleKey(fileRecord)
+	if err != nil {
+		return err
+	}
+
+	storageMD := refMD.GetStorageMetadata().CloneVT()
+	if mustClone {
+		storageMD, err = p.fileStorer.CloneBlob(ctx, refMD.GetStorageMetadata().GetGcsMetadata(), fileRecord)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Assuming ownership makes this record responsible for the blob's
+		// lifecycle, so update the blob's atime, like a clone or write would.
+		t := p.clock.Now()
+		if err := p.fileStorer.UpdateBlobAtime(ctx, storageMD.GetGcsMetadata(), t); err != nil {
+			return err
+		}
+		storageMD.GetGcsMetadata().LastCustomTimeUsec = t.UnixMicro()
+	}
+
+	now := p.clock.Now().UnixMicro()
+	md := &sgpb.FileMetadata{
+		FileRecord:         fileRecord,
+		StorageMetadata:    storageMD,
+		EncryptionMetadata: refMD.GetEncryptionMetadata().CloneVT(),
+		StoredSizeBytes:    refMD.GetStoredSizeBytes(),
+		LastAccessUsec:     now,
+		LastModifyUsec:     now,
+	}
+	return p.writeMetadata(ctx, db, key, md)
 }
 
 func (p *PebbleCache) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
@@ -1834,22 +2479,24 @@ func (p *PebbleCache) sendSizeUpdate(partID string, cacheType rspb.CacheType, op
 }
 
 func (p *PebbleCache) sendAtimeUpdate(ctx context.Context, key filestore.PebbleKey, lastAccessUsec int64) {
-	atime := time.UnixMicro(lastAccessUsec)
+	age := time.Since(time.UnixMicro(lastAccessUsec))
 
-	p.metrics.atimeDeltaWhenRead.Observe(float64(time.Since(atime).Milliseconds()))
+	p.metrics.atimeDeltaWhenRead.Observe(float64(age.Milliseconds()))
 
-	if !olderThanThreshold(atime, p.atimeUpdateThreshold) {
+	if !olderThanThreshold(age, p.atimeUpdateThreshold) {
 		return
 	}
 
+	skipRemoteUpdate := proxy_util.SkipRemoteAtimeUpdate(ctx)
 	authHeaders := map[string][]string{}
-	if p.atimeUpdater != nil {
+	if p.atimeUpdater != nil && !skipRemoteUpdate {
 		// Only copy auth headers if they will be used by an atime updater.
 		authHeaders = authutil.GetAuthHeaders(ctx)
 	}
 	up := &accessTimeUpdate{
-		key:         key,
-		authHeaders: authHeaders,
+		key:              key,
+		authHeaders:      authHeaders,
+		skipRemoteUpdate: skipRemoteUpdate,
 	}
 
 	// If the atimeBufferSize is 0, non-blocking writes do not make sense,
@@ -1891,6 +2538,7 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
+	p.presence.Remove(key)
 	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata, fileMetadataKey)
 	return nil
 }
@@ -1912,6 +2560,7 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
 		return err
 	}
+	p.presence.Remove(key)
 
 	storageMetadata := md.GetStorageMetadata()
 	partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
@@ -1958,6 +2607,22 @@ func getSizeOnLocalDisk(key []byte, md *sgpb.FileMetadata, includeMetadata bool)
 		return payloadSize + mdSize
 	}
 	return payloadSize
+}
+
+func getSizeOnLocalDiskFromView(keyLen, valLen int, v *sgpb.FileMetadataEvictionView, includeMetadata bool) int64 {
+	hasFile := v.HasStorageMetadata && v.StorageMetadata.HasFileMetadata
+	hasInline := v.HasStorageMetadata && v.StorageMetadata.HasInlineMetadata
+	payloadSize := v.StoredSizeBytes
+	if !hasFile && !hasInline {
+		payloadSize = 0 // Not on disk, so doesn't count.
+	}
+	if !includeMetadata {
+		return payloadSize
+	}
+	if hasInline {
+		payloadSize = 0 // Inline payloads are part of the serialized metadata and are already counted in valLen.
+	}
+	return int64(valLen) + int64(keyLen) + payloadSize
 }
 
 func (p *PebbleCache) Delete(ctx context.Context, r *rspb.ResourceName) error {
@@ -2018,7 +2683,7 @@ func (p *PebbleCache) Reader(ctx context.Context, r *rspb.ResourceName, uncompre
 	if err != nil {
 		return nil, err
 	}
-	rc, err := p.reader(ctx, db, p.userGroupID(ctx), encryption, r, uncompressedOffset, limit)
+	rc, _, err := p.reader(ctx, db, p.userGroupID(ctx), encryption, r, uncompressedOffset, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -2040,18 +2705,7 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 			attribute.String("digest_hash", r.GetDigest().GetHash()),
 			attribute.Int64("digest_size", r.GetDigest().GetSizeBytes()))
 	}
-	// If data is not already compressed, return a writer that will compress it before writing
-	// Only compress data over a given size for more optimal compression ratios
-	shouldCompress := r.GetCompressor() == repb.Compressor_IDENTITY && r.GetDigest().GetSizeBytes() >= p.minBytesAutoZstdCompression
-	if shouldCompress {
-		r = &rspb.ResourceName{
-			Digest:         r.GetDigest(),
-			DigestFunction: r.GetDigestFunction(),
-			InstanceName:   r.GetInstanceName(),
-			Compressor:     repb.Compressor_ZSTD,
-			CacheType:      r.GetCacheType(),
-		}
-	}
+	r, shouldCompress := p.autoZstdResource(r)
 
 	encryption, err := p.activeEncryption(ctx)
 	if err != nil {
@@ -2069,17 +2723,31 @@ func (p *PebbleCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfa
 	return p.newWrappedWriter(ctx, fileRecord, key, shouldCompress)
 }
 
-// newWrappedWriter returns an interfaces.CommittedWriteCloser that on Write
-// will:
-// (1) compress the data if shouldCompress is true; and then
-// (2) encrypt the data if encryption is enabled
-// (3) write the data using input wcm's Write method.
-// On Commit, it will write the metadata for fileRecord.
+func (p *PebbleCache) autoZstdResource(r *rspb.ResourceName) (*rspb.ResourceName, bool) {
+	if r.GetCompressor() != repb.Compressor_IDENTITY || r.GetDigest().GetSizeBytes() < p.minBytesAutoZstdCompression {
+		return r, false
+	}
+	return &rspb.ResourceName{
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+		InstanceName:   r.GetInstanceName(),
+		Compressor:     repb.Compressor_ZSTD,
+		CacheType:      r.GetCacheType(),
+	}, true
+}
+
+func (p *PebbleCache) storesInGCS(sizeBytes int64) bool {
+	return sizeBytes >= p.maxInlineFileSizeBytes && sizeBytes >= p.minGCSFileSizeBytes
+}
+
+// newWrappedWriter returns an interfaces.CommittedWriteCloser that writes
+// data to the storage tier appropriate for fileRecord and, on Commit, writes
+// the metadata for fileRecord.
 func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, key filestore.PebbleKey, shouldCompress bool) (interfaces.CommittedWriteCloser, error) {
 	var wcm interfaces.MetadataWriteCloser
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
-	} else if fileRecord.GetDigest().GetSizeBytes() >= p.minGCSFileSizeBytes {
+	} else if p.storesInGCS(fileRecord.GetDigest().GetSizeBytes()) {
 		bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
 		if err != nil {
 			return nil, err
@@ -2098,10 +2766,21 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	if err != nil {
 		return nil, err
 	}
+	return p.wrapWriter(ctx, fileRecord, wcm, shouldCompress, db.Close, func(md *sgpb.FileMetadata) error {
+		return p.writeMetadata(ctx, db, key, md)
+	})
+}
 
+// wrapWriter wraps wcm in the storage-independent layers of the write path:
+// a commit hook that assembles the written blob's metadata and hands it to
+// commitFn, encryption (if enabled), and compression (if shouldCompress).
+// closeFn, if non-nil, is called when the returned writer is closed.
+func (p *PebbleCache) wrapWriter(ctx context.Context, fileRecord *sgpb.FileRecord, wcm interfaces.MetadataWriteCloser, shouldCompress bool, closeFn func() error, commitFn func(md *sgpb.FileMetadata) error) (interfaces.CommittedWriteCloser, error) {
 	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
-	cwc.SetCloseFn(db.Close)
+	if closeFn != nil {
+		cwc.SetCloseFn(closeFn)
+	}
 	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := p.clock.Now().UnixMicro()
 		md := &sgpb.FileMetadata{
@@ -2113,11 +2792,11 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 			LastModifyUsec:     now,
 		}
 		if bytesWritten == 0 {
-			log.Infof("Rejecting zero-length write. Key %q, md: %+v", key, md)
+			log.Infof("Rejecting zero-length write. md: %+v", md)
 			return status.UnavailableError("zero-length writes are not allowed")
 		}
 
-		return p.writeMetadata(ctx, db, key, md)
+		return commitFn(md)
 	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
@@ -2224,7 +2903,7 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 		for _, e := range evictors {
 			e.mu.Lock()
 			e.lru.UpdateSizeBytes(e.sizeBytes)
-			maxAllowedSize := int64(JanitorCutoffThreshold * float64(e.part.MaxSizeBytes))
+			maxAllowedSize := evictionThresholdBytes(e.part)
 			totalSizeBytes := e.sizeBytes
 			e.mu.Unlock()
 
@@ -2245,8 +2924,7 @@ func (p *PebbleCache) TestingWaitForGC(ctx context.Context) error {
 }
 
 type evictionKey struct {
-	bytes           []byte
-	storageMetadata *sgpb.StorageMetadata
+	bytes []byte
 }
 
 func (k *evictionKey) ID() string {
@@ -2279,7 +2957,6 @@ type partitionEvictor struct {
 	acCount     int64
 
 	atimeBufferSize  int
-	minEvictionAge   time.Duration
 	activeKeyVersion int64
 
 	samplesPerBatch          int
@@ -2301,7 +2978,22 @@ type versionGetter interface {
 	minDatabaseVersion() filestore.PebbleKeyVersion
 }
 
-func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer filestore.Store, blobDir string, dbg pebble.Leaser, locker lockmap.Locker[string], vg versionGetter, clock clockwork.Clock, minEvictionAge time.Duration, cacheName string, includeMetadataSize bool, sampleBufferSize int, samplesPerBatch int, samplerIterRefreshPeriod time.Duration, deleteBufferSize int, numDeleteWorkers int) (*partitionEvictor, error) {
+func newPartitionEvictor(
+	ctx context.Context,
+	part disk.Partition,
+	fileStorer filestore.Store,
+	blobDir string, dbg pebble.Leaser,
+	locker lockmap.Locker[string],
+	vg versionGetter,
+	clock clockwork.Clock,
+	cacheName string,
+	includeMetadataSize bool,
+	sampleBufferSize int,
+	samplesPerBatch int,
+	samplerIterRefreshPeriod time.Duration,
+	deleteBufferSize int,
+	numDeleteWorkers int) (*partitionEvictor, error) {
+
 	pe := &partitionEvictor{
 		ctx:                      ctx,
 		mu:                       &sync.Mutex{},
@@ -2313,7 +3005,6 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		versionGetter:            vg,
 		rng:                      rand.New(rand.NewSource(time.Now().UnixNano())),
 		clock:                    clock,
-		minEvictionAge:           minEvictionAge,
 		cacheName:                cacheName,
 		samples:                  make(chan *approxlru.Sample[*evictionKey], sampleBufferSize),
 		samplesPerBatch:          samplesPerBatch,
@@ -2334,7 +3025,7 @@ func newPartitionEvictor(ctx context.Context, part disk.Partition, fileStorer fi
 		EvictionResampleLatencyUsec: metrics.PebbleCacheEvictionResampleLatencyUsec.With(metricLbls),
 		EvictionEvictLatencyUsec:    metrics.PebbleCacheEvictionEvictLatencyUsec.With(metricLbls),
 		RateLimit:                   float64(*evictionRateLimit),
-		MaxSizeBytes:                int64(JanitorCutoffThreshold * float64(part.MaxSizeBytes)),
+		MaxSizeBytes:                evictionThresholdBytes(part),
 		Clock:                       clock,
 		OnEvict:                     pe.evict,
 		OnSample:                    pe.sample,
@@ -2385,6 +3076,16 @@ func (e *partitionEvictor) processEviction(quitChan chan struct{}) {
 	eg.Wait()
 }
 
+// evictionThresholdBytes returns the maximum number of bytes that can be stored before
+// eviction should start.
+func evictionThresholdBytes(p disk.Partition) int64 {
+	threshold := float64(JanitorCutoffThreshold)
+	if p.EvictionThreshold != nil {
+		threshold = *p.EvictionThreshold
+	}
+	return int64(threshold * float64(p.MaxSizeBytes))
+}
+
 func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) error {
 	db, err := e.dbGetter.DB()
 	if err != nil {
@@ -2408,6 +3109,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 
 	fileMetadata := sgpb.FileMetadataFromVTPool()
 	defer fileMetadata.ReturnToVTPool()
+	var fileMetadataView sgpb.FileMetadataEvictionView
 	timer := e.clock.NewTimer(0)
 	defer timer.Stop()
 
@@ -2425,7 +3127,7 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 		// entries to evict. We will sleep for some time to prevent from
 		// constantly generating samples in vain.
 		e.mu.Lock()
-		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(e.part.MaxSizeBytes))
+		shouldSleep := e.sizeBytes <= int64(SamplerSleepThreshold*float64(evictionThresholdBytes(e.part)))
 		e.mu.Unlock()
 		if shouldSleep {
 			select {
@@ -2477,41 +3179,44 @@ func (e *partitionEvictor) generateSamplesForEviction(quitChan chan struct{}) er
 			}
 		}
 
-		fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
-		err = fileMetadata.UnmarshalVT(iter.Value())
-		if err != nil {
+		if err := fileMetadataView.UnmarshalWire(iter.Value()); err != nil {
+			metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "invalid_proto").Inc()
 			log.Warningf("[%s] cannot generate sample for eviction, skipping: failed to read proto: %s", e.cacheName, err)
 			continue
 		}
 
 		if rand.Float64() <= *groupSizeSampleRate {
-			keyBytes := make([]byte, len(iter.Key()))
-			copy(keyBytes, iter.Key())
-			sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
-			e.mu.Lock()
-			e.sizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
-			e.mu.Unlock()
+			// We need the group ID, so unmarshal the full metadata.
+			fileMetadata.ResetVT() // UnmarshalVT doesn't reset, unlike proto.Unmarshal.
+			if err := fileMetadata.UnmarshalVT(iter.Value()); err == nil {
+				keyBytes := make([]byte, len(iter.Key()))
+				copy(keyBytes, iter.Key())
+				sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
+				e.mu.Lock()
+				e.sizeByGroup[fileMetadata.GetFileRecord().GetIsolation().GetGroupId()] += sizeBytes
+				e.mu.Unlock()
+			}
 		}
 
-		e.maybeAddToSampleChan(iter, fileMetadata, quitChan, timer)
+		e.maybeAddToSampleChan(iter, &fileMetadataView, quitChan, timer)
 		iter.Next()
 	}
 }
 
-func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetadata *sgpb.FileMetadata, quitChan chan struct{}, timer clockwork.Timer) {
-	atime := time.UnixMicro(fileMetadata.GetLastAccessUsec())
+func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, view *sgpb.FileMetadataEvictionView, quitChan chan struct{}, timer clockwork.Timer) {
+	atime := time.UnixMicro(view.LastAccessUsec)
 	age := e.clock.Since(atime)
-	if age < e.minEvictionAge {
+	if age < *e.part.MinEvictionAge {
+		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "age_too_small").Inc()
 		return
 	}
 	keyBytes := make([]byte, len(iter.Key()))
 	copy(keyBytes, iter.Key())
 
-	sizeBytes := getSizeOnLocalDisk(keyBytes, fileMetadata, e.includeMetadataSize)
+	sizeBytes := getSizeOnLocalDiskFromView(len(iter.Key()), len(iter.Value()), view, e.includeMetadataSize)
 	sample := &approxlru.Sample[*evictionKey]{
 		Key: &evictionKey{
-			bytes:           keyBytes,
-			storageMetadata: fileMetadata.GetStorageMetadata(),
+			bytes: keyBytes,
 		},
 		SizeBytes: sizeBytes,
 		Timestamp: atime,
@@ -2519,8 +3224,10 @@ func (e *partitionEvictor) maybeAddToSampleChan(iter pebble.Iterator, fileMetada
 	timer.Reset(SamplerSleepDuration)
 	select {
 	case e.samples <- sample:
+		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "enqueued").Inc()
 	case <-quitChan:
 	case <-timer.Chan(): // e.samples is full.
+		metrics.PebbleCacheEvictionSamples.WithLabelValues(e.part.ID, e.cacheName, "queue_full").Inc()
 	}
 }
 
@@ -2708,7 +3415,7 @@ func (e *partitionEvictor) Statusz(ctx context.Context) string {
 	buf := "<pre>"
 	buf += fmt.Sprintf("Partition %q (%q)\n", e.part.ID, e.blobDir)
 
-	maxAllowedSize := int64(JanitorCutoffThreshold * float64(e.part.MaxSizeBytes))
+	maxAllowedSize := evictionThresholdBytes(e.part)
 	percentFull := float64(e.sizeBytes) / float64(maxAllowedSize) * 100.0
 	totalCount := e.casCount + e.acCount
 	buf += fmt.Sprintf("Items: CAS: %d AC: %d (%d total)\n", e.casCount, e.acCount, totalCount)
@@ -2786,7 +3493,9 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 	err = pebble.GetProto(db, sample.Key.bytes, md)
 	defer md.ReturnToVTPool()
 	if err != nil {
-		log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
+		if !status.IsNotFoundError(err) && !os.IsNotExist(err) {
+			log.Infof("[%s] failed to read file metadata for key %s: %s", e.cacheName, sample.Key, err)
+		}
 		return
 	}
 	atime := time.UnixMicro(md.GetLastAccessUsec())
@@ -2796,7 +3505,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 		return
 	}
 
-	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, sample.Key.storageMetadata); err != nil {
+	if err := e.deleteFile(sample.Key.bytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), sample.SizeBytes, md.GetStorageMetadata()); err != nil {
 		log.Errorf("[%s] Error evicting file for key %q: %s (ignoring)", e.cacheName, sample.Key, err)
 		return
 	}
@@ -2819,21 +3528,27 @@ func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Samp
 }
 
 func deleteDirIfEmptyAndOld(dir string) error {
-	files, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
 	di, err := os.Stat(dir)
 	if err != nil {
 		return err
 	}
-
-	if len(files) != 0 || time.Since(di.ModTime()) < *dirDeletionDelay {
-		// dir was not empty or was too young
+	if time.Since(di.ModTime()) < *dirDeletionDelay {
+		// dir is too young
 		return nil
 	}
 
-	return os.Remove(dir)
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	if len(files) != 0 {
+		// dir is not empty
+		return nil
+	}
+
+	err = os.Remove(dir)
+	log.Infof("Deleted dir: %q; err: %v", dir, err)
+	return err
 }
 
 func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, groupID string, lastModifyUsec int64, storedSizeBytes int64, storageMetadata *sgpb.StorageMetadata) error {
@@ -2961,14 +3676,14 @@ func (p *PebbleCache) Partition(ctx context.Context, remoteInstanceName string) 
 	return p.lookupPartitionID(remoteInstanceName, p.userGroupID(ctx)), nil
 }
 
-func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, error) {
+func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName, uncompressedOffset int64, uncompressedLimit int64) (io.ReadCloser, *sgpb.FileMetadata, error) {
 	fileRecord, err := p.makeFileRecord(groupID, encryption, r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	key, err := p.fileStorer.PebbleKey(fileRecord)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	unlockFn := p.locker.RLock(key.LockID())
@@ -2978,25 +3693,57 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 	err = p.lookupFileMetadata(ctx, db, key, fileMetadata)
 	unlockFn()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	if err := p.checkFileMetadata(fileMetadata); err != nil {
+		return nil, nil, err
+	}
+	reader, err := p.readerForMetadata(ctx, r, fileMetadata, uncompressedOffset, uncompressedLimit)
+	if err != nil {
+		if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			unlockFn := p.locker.Lock(key.LockID())
+			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
+			unlockFn()
+		}
+		return nil, nil, err
+	}
+	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
+	return reader, fileMetadata, nil
+}
+
+// checkFileMetadata returns a NotFound error if the blob described by md
+// cannot be served by this cache, without consulting storage. Callers must
+// call it before readerForMetadata: it guarantees the crypter exists for
+// encrypted metadata, and it keeps these misses out of readerForMetadata's
+// error space so a NotFound from that function means the storage object
+// itself is missing (which reader() relies on for metadata self-healing).
+func (p *PebbleCache) checkFileMetadata(md *sgpb.FileMetadata) error {
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
-	md := fileMetadata.GetStorageMetadata()
-	if fileMetadata.GetStoredSizeBytes() == 0 {
-		log.Infof("Ignoring zero-length file. Key: %q, md: %+v", key, fileMetadata)
-		return nil, status.NotFoundError("object not found (zero-length)")
+	if md.GetStoredSizeBytes() == 0 {
+		log.Infof("Ignoring zero-length file. md: %+v", md)
+		return status.NotFoundError("object not found (zero-length)")
 	}
 	// If this is a GCS object, ensure the custom time is relatively recent
 	// so that we avoid saying something exists when it's been deleted by
 	// a GCS lifecycle rule.
-	if gcsMetadata := fileMetadata.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
+	if gcsMetadata := md.GetStorageMetadata().GetGcsMetadata(); gcsMetadata != nil {
 		if gcsutil.ObjectIsPastTTL(p.clock, gcsMetadata, p.gcsTTLDays) {
-			return nil, status.NotFoundError("backing object may have expired")
+			return status.NotFoundError("backing object may have expired")
 		}
 	}
+	if md.GetEncryptionMetadata() != nil && p.env.GetCrypter() == nil {
+		return status.NotFoundError("decryption key not available")
+	}
+	return nil
+}
 
+// readerForMetadata returns a reader serving the blob described by md,
+// decrypted and transcoded as needed so the returned bytes use r's requested
+// compressor; uncompressedOffset/uncompressedLimit are interpreted in
+// uncompressed bytes.
+func (p *PebbleCache) readerForMetadata(ctx context.Context, r *rspb.ResourceName, fileMetadata *sgpb.FileMetadata, uncompressedOffset, uncompressedLimit int64) (io.ReadCloser, error) {
 	requestedCompression := r.GetCompressor()
 	cachedCompression := fileMetadata.GetFileRecord().GetCompressor()
 	if requestedCompression == cachedCompression &&
@@ -3005,12 +3752,7 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 		return nil, status.FailedPreconditionError("passthrough compression does not support offset/limit")
 	}
 
-	shouldDecrypt := fileMetadata.EncryptionMetadata != nil
-	if shouldDecrypt {
-		if encryption == nil {
-			return nil, status.NotFoundError("decryption key not available")
-		}
-	}
+	shouldDecrypt := fileMetadata.GetEncryptionMetadata() != nil
 
 	// If the data is stored uncompressed/unencrypted, we can use the offset/limit directly
 	// otherwise we need to decompress/decrypt first.
@@ -3024,16 +3766,10 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 
 	shouldDecompress := cachedCompression == repb.Compressor_ZSTD && requestedCompression == repb.Compressor_IDENTITY
 
-	reader, err := p.fileStorer.NewReader(ctx, p.blobDirectory, md, offset, limit)
+	reader, err := p.fileStorer.NewReader(ctx, p.blobDirectory, fileMetadata.GetStorageMetadata(), offset, limit)
 	if err != nil {
-		if status.IsNotFoundError(err) || os.IsNotExist(err) {
-			unlockFn := p.locker.Lock(key.LockID())
-			p.handleMetadataMismatch(ctx, err, key, fileMetadata)
-			unlockFn()
-		}
 		return nil, err
 	}
-	p.sendAtimeUpdate(ctx, key, fileMetadata.GetLastAccessUsec())
 
 	if !rawStorage {
 		if shouldDecrypt {
@@ -3066,7 +3802,12 @@ func (p *PebbleCache) reader(ctx context.Context, db pebble.IPebbleDB, groupID s
 	if requestedCompression == repb.Compressor_ZSTD && cachedCompression == repb.Compressor_IDENTITY {
 		bufSize := digest.SafeBufferSize(r, CompressorBufSizeBytes)
 
-		return compression.NewZstdCompressingReader(reader, p.bufferPool, int64(bufSize))
+		zr, err := compression.NewZstdCompressingReader(reader, p.bufferPool, int64(bufSize))
+		if err != nil {
+			_ = reader.Close()
+			return nil, err
+		}
+		return zr, nil
 	}
 
 	return reader, nil
@@ -3118,6 +3859,16 @@ func (p *PebbleCache) Start() error {
 	}
 	p.eg.Go(func() error {
 		p.refreshMetrics(p.quitChan)
+		return nil
+	})
+	// Load initial experiment state before we start the cache.
+	p.refreshPresenceCacheConfig(p.env.GetServerContext(), p.env.GetExperimentFlagProvider())
+	p.eg.Go(func() error {
+		p.watchPresenceCacheConfig(p.quitChan)
+		return nil
+	})
+	p.eg.Go(func() error {
+		p.watchPresenceCacheSize(p.quitChan)
 		return nil
 	})
 	return nil

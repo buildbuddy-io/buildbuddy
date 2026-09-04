@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
@@ -131,4 +133,38 @@ func (w *SlackWebhook) NotifyComplete(ctx context.Context, invocation *inpb.Invo
 	json.NewEncoder(buf).Encode(payload)
 	_, err := http.Post(w.callbackURL, "application/json; charset=utf-8", buf)
 	return err
+}
+
+// Client posts messages to Slack webhook URLs.
+type Client struct {
+	httpClient *http.Client
+}
+
+func NewClient() *Client {
+	return &Client{httpClient: &http.Client{Timeout: 30 * time.Second}}
+}
+
+func (c *Client) Post(ctx context.Context, webhookURL string, payload *Payload) error {
+	if webhookURL == "" {
+		return status.InvalidArgumentError("Slack webhook URL is required")
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return status.WrapErrorf(err, "marshal Slack payload")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
+	if err != nil {
+		return status.WrapErrorf(err, "build Slack request")
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return status.WrapErrorf(err, "post to Slack webhook")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return status.UnavailableErrorf("Slack webhook returned HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }

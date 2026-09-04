@@ -119,7 +119,7 @@ func main() {
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
-	gw, err := server.New(env)
+	gw, err := server.New(env, server.DNSService())
 	if err != nil {
 		return err
 	}

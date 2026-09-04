@@ -38,13 +38,13 @@ function getStatusClass(status?: build_event_stream.TestStatus) {
 function getStatusIcon(status?: build_event_stream.TestStatus) {
   switch (status) {
     case build_event_stream.TestStatus.PASSED:
-      return <CheckCircle className="icon green" />;
+      return <CheckCircle className="green" />;
     case build_event_stream.TestStatus.FLAKY:
-      return <HelpCircle className="icon orange" />;
+      return <HelpCircle className="orange" />;
     case build_event_stream.TestStatus.TIMEOUT:
-      return <Clock className="icon" />;
+      return <Clock />;
     default:
-      return <XCircle className="icon red" />;
+      return <XCircle className="red" />;
   }
 }
 
@@ -145,7 +145,7 @@ export default class TargetTestLogCardComponent extends React.Component<Props, S
           className={`card ${this.state.cacheEnabled && (this.props.dark ? "dark" : "light-terminal")} ${getStatusClass(
             this.props.buildEvent?.testResult?.status
           )}`}>
-          <PauseCircle className={`icon rotate-90 ${this.props.dark ? "white" : ""}`} />
+          <PauseCircle className={`rotate-90 ${this.props.dark ? "white" : ""}`} />
           <div className="content">
             {!this.state.cacheEnabled && (
               <div className="empty-state">

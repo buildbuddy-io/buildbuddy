@@ -30,8 +30,7 @@
 }
 
 .debug-panel .debug-panel-button .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   stroke: var(--color-text-primary);
 }
 
@@ -40,21 +39,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
 }
 
 .debug-panel .debug-panel-button .debug-panel-terminal-base-icon {
-  width: 17px;
-  height: 17px;
+  --icon-size: 17px;
 }
 
 .debug-panel .debug-panel-button .debug-panel-terminal-theme-icon {
   position: absolute;
   top: -2px;
   right: -2px;
-  width: 9px;
-  height: 9px;
+  --icon-size: 9px;
   padding: 1px;
   border-radius: 50%;
   background: var(--color-bg-primary);

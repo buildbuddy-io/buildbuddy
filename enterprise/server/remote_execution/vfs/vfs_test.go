@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -26,10 +27,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	fusefs "github.com/hanwen/go-fuse/v2/fs"
+	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+	"google.golang.org/grpc"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	vfspb "github.com/buildbuddy-io/buildbuddy/proto/vfs"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -59,6 +64,13 @@ func setupEnv(t *testing.T) environment.Env {
 }
 
 func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (*vfs_server.Server, *vfs.VFS, string) {
+	return setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{
+		EnablePassthrough: true,
+		Verbose:           true,
+	}, nil)
+}
+
+func setupVFSWithInputTreeAndClient(t *testing.T, env environment.Env, tree *repb.Tree, options *vfs.Options, wrapClient func(vfspb.FileSystemClient) vfspb.FileSystemClient) (*vfs_server.Server, *vfs.VFS, string) {
 	tmp := testfs.MakeTempDir(t)
 	mnt := filepath.Join(tmp, "vfs")
 	err := os.MkdirAll(mnt, 0755)
@@ -77,11 +89,11 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 	_, err = server.Prepare(context.Background(), &container.FileSystemLayout{Inputs: tree}, tf)
 	require.NoError(t, err)
 
-	client := vfs_server.NewDirectClient(server)
-	fs := vfs.New(client, mnt, &vfs.Options{
-		Verbose: true,
-		//LogFUSEOps: true,
-	})
+	client := vfspb.FileSystemClient(vfs_server.NewDirectClient(server))
+	if wrapClient != nil {
+		client = wrapClient(client)
+	}
+	fs := vfs.New(client, mnt, options)
 	err = fs.Mount()
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -91,6 +103,137 @@ func setupVFSWithInputTree(t *testing.T, env environment.Env, tree *repb.Tree) (
 		}
 	})
 	return server, fs, mnt
+}
+
+type countingFileSystemClient struct {
+	vfspb.FileSystemClient
+	readCount                 atomic.Int64
+	lookupCount               atomic.Int64
+	getAttrCount              atomic.Int64
+	getDirectoryContentsCount atomic.Int64
+}
+
+func (c *countingFileSystemClient) Read(ctx context.Context, req *vfspb.ReadRequest, opts ...grpc.CallOption) (*vfspb.ReadResponse, error) {
+	c.readCount.Add(1)
+	return c.FileSystemClient.Read(ctx, req, opts...)
+}
+
+func (c *countingFileSystemClient) Lookup(ctx context.Context, req *vfspb.LookupRequest, opts ...grpc.CallOption) (*vfspb.LookupResponse, error) {
+	c.lookupCount.Add(1)
+	return c.FileSystemClient.Lookup(ctx, req, opts...)
+}
+
+func (c *countingFileSystemClient) GetAttr(ctx context.Context, req *vfspb.GetAttrRequest, opts ...grpc.CallOption) (*vfspb.GetAttrResponse, error) {
+	c.getAttrCount.Add(1)
+	return c.FileSystemClient.GetAttr(ctx, req, opts...)
+}
+
+func (c *countingFileSystemClient) GetDirectoryContents(ctx context.Context, req *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
+	c.getDirectoryContentsCount.Add(1)
+	return c.FileSystemClient.GetDirectoryContents(ctx, req, opts...)
+}
+
+type blockingGetDirectoryContentsClient struct {
+	vfspb.FileSystemClient
+	blockNext       atomic.Bool
+	released        atomic.Bool
+	snapshotReady   chan struct{}
+	releaseSnapshot chan struct{}
+}
+
+func (c *blockingGetDirectoryContentsClient) GetDirectoryContents(ctx context.Context, req *vfspb.GetDirectoryContentsRequest, opts ...grpc.CallOption) (*vfspb.GetDirectoryContentsResponse, error) {
+	rsp, err := c.FileSystemClient.GetDirectoryContents(ctx, req, opts...)
+	if c.blockNext.CompareAndSwap(true, false) {
+		close(c.snapshotReady)
+		<-c.releaseSnapshot
+	}
+	return rsp, err
+}
+
+func (c *blockingGetDirectoryContentsClient) release() {
+	if c.released.CompareAndSwap(false, true) {
+		close(c.releaseSnapshot)
+	}
+}
+
+func setupVFSWithBlockedDirectorySnapshot(t *testing.T) (*blockingGetDirectoryContentsClient, *vfs.Node, *fusefs.Inode) {
+	env := setupEnv(t)
+	var client *blockingGetDirectoryContentsClient
+	_, vfsClient, _ := setupVFSWithInputTreeAndClient(t, env, &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, func(baseClient vfspb.FileSystemClient) vfspb.FileSystemClient {
+		client = &blockingGetDirectoryContentsClient{
+			FileSystemClient: baseClient,
+			snapshotReady:    make(chan struct{}),
+			releaseSnapshot:  make(chan struct{}),
+		}
+		return client
+	})
+	t.Cleanup(client.release)
+	rootInode, err := vfsClient.GetInode(1)
+	require.NoError(t, err)
+	root, ok := rootInode.Operations().(*vfs.Node)
+	require.True(t, ok)
+	child, errno := root.Mknod(t.Context(), "file.txt", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, root.AddChild("file.txt", child, false))
+	return client, root, child
+}
+
+func setupRenameOverwriteTest(t *testing.T, wrapClient func(vfspb.FileSystemClient) vfspb.FileSystemClient) (*vfs.Node, *vfs.Node) {
+	env := setupEnv(t)
+	_, vfsClient, _ := setupVFSWithInputTreeAndClient(t, env, &repb.Tree{Root: &repb.Directory{}}, &vfs.Options{}, wrapClient)
+	rootInode, err := vfsClient.GetInode(1)
+	require.NoError(t, err)
+	root, ok := rootInode.Operations().(*vfs.Node)
+	require.True(t, ok)
+
+	sourceParentInode, errno := root.Mkdir(t.Context(), "source", 0755, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, root.AddChild("source", sourceParentInode, false))
+	sourceParent := sourceParentInode.Operations().(*vfs.Node)
+
+	aliasParentInode, errno := root.Mkdir(t.Context(), "aliases", 0755, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, root.AddChild("aliases", aliasParentInode, false))
+	aliasParent := aliasParentInode.Operations().(*vfs.Node)
+
+	source, errno := sourceParent.Mknod(t.Context(), "source.txt", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, sourceParent.AddChild("source.txt", source, false))
+	target, errno := sourceParent.Mknod(t.Context(), "target.txt", unix.S_IFREG|0644, 0, &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, sourceParent.AddChild("target.txt", target, false))
+	alias, errno := aliasParent.Link(t.Context(), target.Operations(), "alias.txt", &fuse.EntryOut{})
+	require.Zero(t, errno)
+	require.True(t, aliasParent.AddChild("alias.txt", alias, false))
+
+	return sourceParent, aliasParent
+}
+
+type readdirResult struct {
+	entry *fuse.DirEntry
+	errno syscall.Errno
+}
+
+func startBlockedReaddir(t *testing.T, client *blockingGetDirectoryContentsClient, root *vfs.Node) <-chan readdirResult {
+	t.Helper()
+	handle, _, errno := root.OpendirHandle(t.Context(), 0)
+	require.Zero(t, errno)
+	readdirenter, ok := handle.(interface {
+		Readdirent(context.Context) (*fuse.DirEntry, syscall.Errno)
+	})
+	require.True(t, ok)
+	result := make(chan readdirResult, 1)
+	client.blockNext.Store(true)
+	go func() {
+		entry, errno := readdirenter.Readdirent(t.Context())
+		result <- readdirResult{entry: entry, errno: errno}
+	}()
+	select {
+	case <-client.snapshotReady:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for directory snapshot")
+	}
+	return result
 }
 
 func setupVFS(t *testing.T) string {
@@ -235,6 +378,133 @@ func TestReaddir(t *testing.T) {
 			size: len(newTestData),
 		},
 	})
+}
+
+func TestPassthroughDisabledByDefault(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	tree := createInputTree(t, ctx, env, map[string]string{"input.txt": "hello"})
+
+	var countingClient *countingFileSystemClient
+	_, _, fsPath := setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{}, func(client vfspb.FileSystemClient) vfspb.FileSystemClient {
+		countingClient = &countingFileSystemClient{FileSystemClient: client}
+		return countingClient
+	})
+
+	data, err := os.ReadFile(filepath.Join(fsPath, "input.txt"))
+	require.NoError(t, err)
+	require.Equal(t, "hello", string(data))
+	require.Positive(t, countingClient.readCount.Load())
+}
+
+func TestReaddirCachesLookupAttrs(t *testing.T) {
+	env := setupEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(t.Context(), env.GetAuthenticator())
+	require.NoError(t, err)
+	tree := createInputTree(t, ctx, env, map[string]string{
+		"one.txt":       "one",
+		"two.txt":       "two",
+		"sub/three.txt": "three",
+	})
+
+	var countingClient *countingFileSystemClient
+	_, _, fsPath := setupVFSWithInputTreeAndClient(t, env, tree, &vfs.Options{}, func(client vfspb.FileSystemClient) vfspb.FileSystemClient {
+		countingClient = &countingFileSystemClient{FileSystemClient: client}
+		return countingClient
+	})
+	countingClient.lookupCount.Store(0)
+	countingClient.getAttrCount.Store(0)
+	countingClient.getDirectoryContentsCount.Store(0)
+
+	entries, err := os.ReadDir(fsPath)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		_, err := entry.Info()
+		require.NoError(t, err)
+	}
+
+	require.EqualValues(t, 1, countingClient.getDirectoryContentsCount.Load())
+	require.Zero(t, countingClient.lookupCount.Load())
+	require.Zero(t, countingClient.getAttrCount.Load())
+}
+
+func TestReaddirSnapshotDoesNotRestoreDeletedEntry(t *testing.T) {
+	client, root, _ := setupVFSWithBlockedDirectorySnapshot(t)
+	result := startBlockedReaddir(t, client, root)
+	require.Zero(t, root.Unlink(t.Context(), "file.txt"))
+	removed, _ := root.RmChild("file.txt")
+	require.True(t, removed)
+	client.release()
+	readdirResult := <-result
+	require.Zero(t, readdirResult.errno)
+	require.Equal(t, "file.txt", readdirResult.entry.Name)
+
+	_, errno := root.Lookup(t.Context(), "file.txt", &fuse.EntryOut{})
+	require.Equal(t, syscall.ENOENT, errno)
+}
+
+func TestReaddirSnapshotDoesNotRestoreStaleAttrs(t *testing.T) {
+	client, root, child := setupVFSWithBlockedDirectorySnapshot(t)
+	result := startBlockedReaddir(t, client, root)
+	client.release()
+	readdirResult := <-result
+	require.Zero(t, readdirResult.errno)
+	require.Equal(t, "file.txt", readdirResult.entry.Name)
+
+	_, errno := root.Link(t.Context(), child.Operations(), "link.txt", &fuse.EntryOut{})
+	require.Zero(t, errno)
+	removed, _ := root.RmChild("file.txt")
+	require.True(t, removed)
+	lookupOut := &fuse.EntryOut{}
+	_, errno = root.Lookup(t.Context(), "file.txt", lookupOut)
+	require.Zero(t, errno)
+	require.EqualValues(t, 2, lookupOut.Nlink)
+}
+
+func TestReaddirCachedAttrsInvalidatedWhenRenameOverwritesHardlink(t *testing.T) {
+	sourceParent, aliasParent := setupRenameOverwriteTest(t, nil)
+	handle, _, errno := aliasParent.OpendirHandle(t.Context(), 0)
+	require.Zero(t, errno)
+	readdirenter := handle.(interface {
+		Readdirent(context.Context) (*fuse.DirEntry, syscall.Errno)
+	})
+	entry, errno := readdirenter.Readdirent(t.Context())
+	require.Zero(t, errno)
+	require.Equal(t, "alias.txt", entry.Name)
+
+	require.Zero(t, sourceParent.Rename(t.Context(), "source.txt", sourceParent, "target.txt", 0))
+	removed, _ := aliasParent.RmChild("alias.txt")
+	require.True(t, removed)
+	lookupOut := &fuse.EntryOut{}
+	_, errno = aliasParent.Lookup(t.Context(), "alias.txt", lookupOut)
+	require.Zero(t, errno)
+	require.EqualValues(t, 1, lookupOut.Nlink)
+}
+
+func TestReaddirSnapshotOverlappingRenameDoesNotCacheOverwrittenAttrs(t *testing.T) {
+	client := &blockingGetDirectoryContentsClient{
+		snapshotReady:   make(chan struct{}),
+		releaseSnapshot: make(chan struct{}),
+	}
+	sourceParent, aliasParent := setupRenameOverwriteTest(t, func(baseClient vfspb.FileSystemClient) vfspb.FileSystemClient {
+		client.FileSystemClient = baseClient
+		return client
+	})
+	t.Cleanup(client.release)
+	result := startBlockedReaddir(t, client, aliasParent)
+	require.Zero(t, sourceParent.Rename(t.Context(), "source.txt", sourceParent, "target.txt", 0))
+	client.release()
+	readdirResult := <-result
+	require.Zero(t, readdirResult.errno)
+	require.Equal(t, "alias.txt", readdirResult.entry.Name)
+
+	removed, _ := aliasParent.RmChild("alias.txt")
+	require.True(t, removed)
+	lookupOut := &fuse.EntryOut{}
+	_, errno := aliasParent.Lookup(t.Context(), "alias.txt", lookupOut)
+	require.Zero(t, errno)
+	require.EqualValues(t, 1, lookupOut.Nlink)
 }
 
 func stat(t *testing.T, path string) os.FileInfo {

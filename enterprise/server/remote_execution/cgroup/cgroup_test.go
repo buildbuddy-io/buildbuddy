@@ -1,6 +1,8 @@
 package cgroup
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -127,6 +129,64 @@ func TestSettingsMap(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReadCgroupProcs(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "cgroup.procs"), []byte("123\n456\n123\n"), 0o644))
+	// Place a process in a child cgroup. Some container runtime
+	// configurations place container processes in a child cgroup of the
+	// container's top-level cgroup, which then lists no processes of its own.
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "child"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "child", "cgroup.procs"), []byte("789\n"), 0o644))
+
+	// Processes listed in the cgroup and in its descendants should all appear
+	// in the returned set, with duplicate entries collapsed.
+	pids, err := ReadCgroupProcs(dir)
+	require.NoError(t, err)
+	require.Equal(t, map[int]struct{}{123: {}, 456: {}, 789: {}}, pids)
+}
+
+func TestReadCgroupProcsMissingCgroup(t *testing.T) {
+	dir := t.TempDir()
+
+	// A missing cgroup should surface as ErrNotExist so callers can
+	// distinguish a deleted cgroup from an unreadable one.
+	_, err := ReadCgroupProcs(filepath.Join(dir, "removed"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestReadMemoryMax(t *testing.T) {
+	dir := t.TempDir()
+
+	// A numeric memory.max value should be returned as the limit in bytes.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte("1073741824\n"), 0644))
+	limit, err := ReadMemoryMax(dir)
+	require.NoError(t, err)
+	require.NotNil(t, limit)
+	require.Equal(t, int64(1073741824), *limit)
+
+	// The special value "max" means the cgroup has no memory limit, which is
+	// reported as nil.
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.max"), []byte("max\n"), 0644))
+	limit, err = ReadMemoryMax(dir)
+	require.NoError(t, err)
+	require.Nil(t, limit)
+}
+
+func TestReadMemoryStatField(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "memory.stat"), []byte("anon 1024\nfile 2048\ninactive_file 512\n"), 0644))
+
+	// The requested field's value should be returned, ignoring other fields.
+	value, err := ReadMemoryStatField(dir, "inactive_file")
+	require.NoError(t, err)
+	require.Equal(t, int64(512), value)
+
+	// Requesting a field that is not present in memory.stat should return an
+	// error.
+	_, err = ReadMemoryStatField(dir, "nonexistent_field")
+	require.Error(t, err)
 }
 
 func TestParsePSI(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,10 +24,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/kms"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_service"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/proxy_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
@@ -36,6 +40,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -45,10 +50,14 @@ import (
 	"github.com/cockroachdb/pebble/vfs"
 	"github.com/docker/go-units"
 	"github.com/jonboulle/clockwork"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
@@ -283,6 +292,193 @@ func TestGetSet(t *testing.T) {
 			require.Equal(t, r.GetDigest().GetHash(), d2.GetHash())
 		})
 	}
+}
+
+func TestPresenceCache(t *testing.T) {
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(1_000_000))
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	const cacheName = "presence_test"
+	options := &pebble_cache.Options{
+		Name:                   cacheName,
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000_000),
+		MaxInlineFileSizeBytes: 100,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Use an extern-sized blob so it has a real backing file + metadata.
+	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	require.NoError(t, pc.Set(ctx, r, buf))
+
+	hitCtr := metrics.LRULookupCount.WithLabelValues("pebble_cache_"+cacheName+"_presence_cache", "contains", metrics.HitStatusLabel)
+
+	// Only FindMissing populates the presence cache, so the first call after
+	// the write does the real lookup (a miss) and records the digest present.
+	hitsBefore := testutil.ToFloat64(hitCtr)
+	missing, err := pc.FindMissing(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.Empty(t, missing, "digest should be present")
+	require.Equal(t, hitsBefore, testutil.ToFloat64(hitCtr), "first FindMissing should not be a presence-cache hit")
+
+	// The second FindMissing is served from the presence cache.
+	missing, err = pc.FindMissing(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.Empty(t, missing, "digest should be present")
+	require.Greater(t, testutil.ToFloat64(hitCtr), hitsBefore, "repeat FindMissing should hit the presence cache")
+
+	// Deleting the blob must invalidate the presence cache; otherwise FindMissing
+	// would wrongly report it present (data loss).
+	require.NoError(t, pc.Delete(ctx, r))
+	missing, err = pc.FindMissing(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.Equal(t, []*repb.Digest{r.GetDigest()}, missing, "deleted digest must be reported missing")
+}
+
+func randomPebbleKey(t *testing.T) filestore.PebbleKey {
+	rn, _ := testdigest.RandomCASResourceBuf(t, 1000)
+	fr := &sgpb.FileRecord{
+		Isolation:      &sgpb.Isolation{CacheType: rspb.CacheType_CAS, PartitionId: "default"},
+		Digest:         rn.GetDigest(),
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	key, err := filestore.New().PebbleKey(fr)
+	require.NoError(t, err)
+	return key
+}
+
+func TestPresenceCache_SetConfig(t *testing.T) {
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(0))
+	c, err := pebble_cache.NewPresenceCache("test", filestore.Version5, clockwork.NewFakeClock())
+	require.NoError(t, err)
+	require.False(t, c.IsEnabled())
+	k1 := randomPebbleKey(t)
+
+	// Adds are gated off while disabled.
+	c.Add(k1)
+	require.False(t, c.Contains(k1))
+
+	// Enabling makes the cache active; a key can be added and found.
+	c.SetConfig(pebble_cache.PresenceCacheConfig{MaxEntries: 10, TTL: "1m"})
+	require.True(t, c.IsEnabled())
+	c.Add(k1)
+	require.True(t, c.Contains(k1))
+
+	// Disabling gates the cache off and purges it.
+	c.SetConfig(pebble_cache.PresenceCacheConfig{MaxEntries: 0, TTL: "1m"})
+	require.False(t, c.IsEnabled())
+	require.False(t, c.Contains(k1))
+
+	// A re-enabled cache must start clean: entries from before the disable (or
+	// a straggler add racing it) must not survive, because deletes don't
+	// invalidate a disabled cache.
+	c.SetConfig(pebble_cache.PresenceCacheConfig{MaxEntries: 10, TTL: "1m"})
+	require.True(t, c.IsEnabled())
+	require.False(t, c.Contains(k1), "re-enable must start with an empty cache")
+}
+
+func TestPresenceCache_Resize(t *testing.T) {
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(1_000_000))
+	c, err := pebble_cache.NewPresenceCache("test", filestore.Version5, clockwork.NewFakeClock())
+	require.NoError(t, err)
+	c.SetConfig(pebble_cache.PresenceCacheConfig{MaxEntries: 2, TTL: "1m"})
+
+	ka, kb, kc := randomPebbleKey(t), randomPebbleKey(t), randomPebbleKey(t)
+	c.Add(ka)
+	c.Add(kb)
+	c.Add(kc) // exceeds the max of 2 -> least-recently-used "a" is evicted.
+	require.False(t, c.Contains(ka))
+	require.True(t, c.Contains(kb))
+	require.True(t, c.Contains(kc))
+
+	// Shrinking the max evicts down to fit.
+	c.SetConfig(pebble_cache.PresenceCacheConfig{MaxEntries: 1, TTL: "1m"})
+	require.True(t, c.IsEnabled())
+	remaining := 0
+	for _, k := range []filestore.PebbleKey{ka, kb, kc} {
+		if c.Contains(k) {
+			remaining++
+		}
+	}
+	require.Equal(t, 1, remaining)
+}
+
+func TestPresenceCache_TTLChange(t *testing.T) {
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(10))
+	flags.Set(t, "cache.pebble.presence_cache.ttl", time.Minute)
+	c, err := pebble_cache.NewPresenceCache("test", filestore.Version5, clockwork.NewFakeClock())
+	require.NoError(t, err)
+	k1 := randomPebbleKey(t)
+
+	// A TTL change purges: the new TTL only applies to new inserts, so existing
+	// entries are flushed rather than left with mixed expiries.
+	c.Add(k1)
+	c.SetConfig(pebble_cache.PresenceCacheConfig{MaxEntries: 10, TTL: "2m"})
+	require.False(t, c.Contains(k1))
+
+	// An unchanged TTL does not purge.
+	c.Add(k1)
+	c.SetConfig(pebble_cache.PresenceCacheConfig{MaxEntries: 10, TTL: "2m"})
+	require.True(t, c.Contains(k1))
+}
+
+func TestPresenceCache_ExperimentConfig(t *testing.T) {
+	// The static flag leaves the presence cache disabled (max_entries=0); the
+	// experiment object turns it on at runtime with a positive max_entries and
+	// its own TTL (a duration string in the JSON).
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(0))
+	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		pebble_cache.PresenceCacheConfigExperiment: {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants: map[string]any{"on": map[string]any{
+				"max_entries": 1000,
+				"ttl":         "2m",
+			}},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+
+	te := testenv.GetTestEnv(t)
+	te.SetExperimentFlagProvider(fp)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	const cacheName = "presence_experiment_test"
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		Name:                   cacheName,
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000_000),
+		MaxInlineFileSizeBytes: 100,
+	})
+	require.NoError(t, err)
+	// Start applies the initial experiment config synchronously, so the cache is
+	// active before any request is served.
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	require.NoError(t, pc.Set(ctx, r, buf))
+
+	// Only FindMissing populates the presence cache: the first call populates,
+	// the second must be served from it -- proving the experiment enabled the
+	// cache at runtime.
+	hitCtr := metrics.LRULookupCount.WithLabelValues("pebble_cache_"+cacheName+"_presence_cache", "contains", metrics.HitStatusLabel)
+	before := testutil.ToFloat64(hitCtr)
+	for range 2 {
+		missing, err := pc.FindMissing(ctx, []*rspb.ResourceName{r})
+		require.NoError(t, err)
+		require.Empty(t, missing)
+	}
+	require.Greater(t, testutil.ToFloat64(hitCtr), before,
+		"experiment-enabled presence cache should serve the repeat FindMissing hit")
 }
 
 func TestDupeWrites(t *testing.T) {
@@ -1247,6 +1443,167 @@ func TestNoEarlyEviction(t *testing.T) {
 	}
 }
 
+func TestPartitionMinEvictionAge(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	clock := clockwork.NewFakeClock()
+	maxSizeBytes := int64(100_000)
+	partitionMinEvictionAge := 1 * time.Hour
+	opts := &pebble_cache.Options{
+		RootDirectory: testfs.MakeTempDir(t),
+		MaxSizeBytes:  maxSizeBytes,
+		Partitions: []disk.Partition{{
+			ID:             pebble_cache.DefaultPartitionID,
+			MaxSizeBytes:   maxSizeBytes,
+			MinEvictionAge: &partitionMinEvictionAge,
+		}},
+		// The partition-level setting should take precedence over this.
+		MinEvictionAge: new(time.Duration(0)),
+		// Don't compress anything so that sizes are predictable.
+		MinBytesAutoZstdCompression: new(int64(math.MaxInt64)),
+		// Never update atime so that Contains() doesn't prevent eviction.
+		AtimeUpdateThreshold: new(time.Duration(math.MaxInt64)),
+		Clock:                clock,
+		SamplesPerBatch:      new(50),
+		SampleBufferSize:     new(10), // Don't allow filling the sample channel with many copies of the same key.
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Write 3x the partition capacity.
+	var resourceKeys []*rspb.ResourceName
+	for i := 0; i < int(maxSizeBytes)/1000*3; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		resourceKeys = append(resourceKeys, rn)
+	}
+
+	// Wake the sample generator, which goes to sleep while the cache is
+	// empty. Advance repeatedly in case it wasn't sleeping yet on the first
+	// advance.
+	for i := 0; i < 5; i++ {
+		clock.Advance(pebble_cache.SamplerSleepDuration)
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// Nothing has been idle for the partition's min eviction age, so nothing
+	// should be evicted even though the partition is over capacity. Give the
+	// janitor a chance to run and verify everything is still present.
+	time.Sleep(3 * time.Second)
+	for _, r := range resourceKeys {
+		exists, err := pc.Contains(ctx, r)
+		require.NoError(t, err)
+		require.True(t, exists)
+	}
+
+	// Once entries pass the partition's min eviction age, eviction should
+	// bring the partition back under the janitor cutoff.
+	clock.Advance(partitionMinEvictionAge)
+	gcCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	require.NoError(t, pc.TestingWaitForGC(gcCtx))
+
+	evicted := 0
+	for _, r := range resourceKeys {
+		exists, err := pc.Contains(ctx, r)
+		require.NoError(t, err)
+		if !exists {
+			evicted++
+		}
+	}
+	require.Greater(t, evicted, 0)
+	require.Less(t, evicted, len(resourceKeys))
+}
+
+func TestPartitionJanitorCutoffThreshold(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+
+	maxSizeBytes := int64(100_000)
+	newCache := func(t *testing.T, cutoff float64) *pebble_cache.PebbleCache {
+		opts := &pebble_cache.Options{
+			RootDirectory: testfs.MakeTempDir(t),
+			MaxSizeBytes:  maxSizeBytes,
+			Partitions: []disk.Partition{{
+				ID:                pebble_cache.DefaultPartitionID,
+				MaxSizeBytes:      maxSizeBytes,
+				EvictionThreshold: &cutoff,
+			}},
+			MinEvictionAge: new(time.Duration(0)),
+			// Don't compress anything so that sizes are predictable.
+			MinBytesAutoZstdCompression: new(int64(math.MaxInt64)),
+			// Never update atime so that Contains() doesn't prevent eviction.
+			AtimeUpdateThreshold: new(time.Duration(math.MaxInt64)),
+			SamplesPerBatch:      new(50),
+			SampleBufferSize:     new(10), // Don't allow filling the sample channel with many copies of the same key.
+		}
+		pc, err := pebble_cache.NewPebbleCache(te, opts)
+		require.NoError(t, err)
+		require.NoError(t, pc.Start())
+		t.Cleanup(func() { pc.Stop() })
+		return pc
+	}
+	write := func(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCache, n int) []*rspb.ResourceName {
+		resourceKeys := make([]*rspb.ResourceName, 0, n)
+		for i := 0; i < n; i++ {
+			rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+			require.NoError(t, pc.Set(ctx, rn, buf))
+			resourceKeys = append(resourceKeys, rn)
+		}
+		return resourceKeys
+	}
+
+	t.Run("lower_threshold_starts_eviction_sooner", func(t *testing.T) {
+		ctx := getAnonContext(t, te)
+		pc := newCache(t, 0.5)
+		// Fill to 70% of the partition size: under the default .9 cutoff, but
+		// over the configured .5 cutoff.
+		resourceKeys := write(t, ctx, pc, 70)
+
+		countEvicted := func() int {
+			evicted := 0
+			for _, r := range resourceKeys {
+				if exists, err := pc.Contains(ctx, r); err == nil && !exists {
+					evicted++
+				}
+			}
+			return evicted
+		}
+
+		// Set() returns before the write is reflected in the partition's size
+		// accounting, so TestingWaitForGC may observe a stale size and return
+		// before eviction has started. Instead, wait for eviction directly.
+		require.Eventually(t, func() bool { return countEvicted() > 0 },
+			30*time.Second, 100*time.Millisecond)
+
+		// Let eviction finish and verify it didn't evict everything.
+		gcCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		require.NoError(t, pc.TestingWaitForGC(gcCtx))
+		require.Less(t, countEvicted(), len(resourceKeys))
+	})
+
+	t.Run("higher_threshold_starts_eviction_later", func(t *testing.T) {
+		ctx := getAnonContext(t, te)
+		pc := newCache(t, 1.0)
+		// Fill to 95% of the partition size: over the default .9 cutoff, but
+		// under the configured 1.0 cutoff.
+		resourceKeys := write(t, ctx, pc, 95)
+
+		// Give the janitor a chance to run, then verify nothing was evicted.
+		time.Sleep(3 * time.Second)
+		for _, r := range resourceKeys {
+			exists, err := pc.Contains(ctx, r)
+			require.NoError(t, err)
+			require.True(t, exists)
+		}
+	})
+}
+
 func TestLRU(t *testing.T) {
 	testCases := []struct {
 		desc                   string
@@ -1276,15 +1633,15 @@ func TestLRU(t *testing.T) {
 			opts := &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                maxSizeBytes,
-				AtimeUpdateThreshold:        pointer(time.Duration(0)), // update atime on every access
-				AtimeBufferSize:             pointer(0),                // blocking channel of atime updates
-				MinEvictionAge:              pointer(time.Duration(0)), // no min eviction age
+				AtimeUpdateThreshold:        new(time.Duration(0)), // update atime on every access
+				AtimeBufferSize:             new(0),                // blocking channel of atime updates
+				MinEvictionAge:              new(time.Duration(0)), // no min eviction age
 				MinBytesAutoZstdCompression: &maxSizeBytes,
 				MaxInlineFileSizeBytes:      tc.maxInlineFileSizeBytes,
-				ActiveKeyVersion:            pointer(int64(5)),
+				ActiveKeyVersion:            new(int64(5)),
 				Clock:                       clock,
-				SamplesPerBatch:             pointer(50),
-				SampleBufferSize:            pointer(10), // Don't allow filling the sample channel with many copies of the same key.
+				SamplesPerBatch:             new(50),
+				SampleBufferSize:            new(10), // Don't allow filling the sample channel with many copies of the same key.
 			}
 			pc, err := pebble_cache.NewPebbleCache(te, opts)
 			require.NoError(t, err)
@@ -2348,12 +2705,12 @@ func BenchmarkGetMulti(b *testing.B) {
 	}
 }
 
-func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, insert bool) {
+func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, present bool) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
 	for i := 0; i < 100; i++ {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
-		if insert {
+		if present {
 			if err := pc.Set(ctx, r, buf); err != nil {
 				b.Fatalf("Error setting %q in cache: %s", r.GetDigest().GetHash(), err.Error())
 			}
@@ -2381,7 +2738,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 			b.Fatal(err)
 		}
 		b.StopTimer()
-		if insert {
+		if present {
 			if len(missing) != 0 {
 				b.Fatalf("Missing: %+v, but all digests should be present", missing)
 			}
@@ -2401,25 +2758,38 @@ func BenchmarkFindMissing(b *testing.B) {
 	te.SetAuthenticator(testauth.NewTestAuthenticator(b, emptyUserMap))
 	ctx := getAnonContext(b, te)
 
-	maxSizeBytes := int64(100_000_000)
-	rootDir := testfs.MakeTempDir(b)
-	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{RootDirectory: rootDir, MaxSizeBytes: maxSizeBytes})
-	if err != nil {
-		b.Fatal(err)
-	}
-	pc.Start()
-	defer pc.Stop()
+	// Make sure there's no eviction to avoid muddying up the benchmark.
+	maxSizeBytes := int64(1_000_000_000_000)
 
-	sizes := []int64{1024, 1024 * 1024, 10 * 1024 * 1024}
-	for _, insert := range []bool{false, true} {
-		for _, size := range sizes {
-			name := fmt.Sprintf("size=%s/insert=%v", units.BytesSize(float64(size)), insert)
-			b.Run(name, func(b *testing.B) {
-				benchmarkFindMissing(b, pc, ctx, size, insert)
+	for _, storage := range []struct {
+		name                   string
+		digestSizeBytes        int64
+		maxInlineFileSizeBytes int64
+	}{
+		{"512B-inline", 512, 1024},
+		{"32KiB-inline", 32 * 1024, 64 * 1024},
+		{"1KiB-external", 1024, 1024},
+	} {
+		for _, present := range []bool{true, false} {
+			rootDir := testfs.MakeTempDir(b)
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+				RootDirectory:          rootDir,
+				MaxSizeBytes:           maxSizeBytes,
+				MaxInlineFileSizeBytes: storage.maxInlineFileSizeBytes,
 			})
+			if err != nil {
+				b.Fatal(err)
+			}
+			pc.Start()
+			name := fmt.Sprintf("storage=%s/present=%v", storage.name, present)
+			b.Run(name, func(b *testing.B) {
+				benchmarkFindMissing(b, pc, ctx, storage.digestSizeBytes, present)
+			})
+			if err := pc.Stop(); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
-
 }
 
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
@@ -2542,6 +2912,14 @@ func TestSampling(t *testing.T) {
 	require.NoError(t, err)
 
 	minEvictionAge := 1 * time.Hour
+	evictionTimeout := 15 * time.Second
+	evictionPollInterval := 100 * time.Millisecond
+	// Each unsuccessful poll advances the fake clock to wake the sampler. Keep
+	// newer entries ineligible throughout the entire polling window.
+	maxClockAdvance := time.Duration(evictionTimeout/evictionPollInterval) * pebble_cache.SamplerSleepDuration
+	newerAtimeGap := maxClockAdvance + time.Minute
+	require.Less(t, newerAtimeGap, minEvictionAge)
+
 	clock := clockwork.NewFakeClock()
 	opts := &pebble_cache.Options{
 		RootDirectory: testfs.MakeTempDir(t),
@@ -2554,10 +2932,10 @@ func TestSampling(t *testing.T) {
 		MinEvictionAge:   &minEvictionAge,
 		Clock:            clock,
 		ActiveKeyVersion: &activeKeyVersion,
-		SamplesPerBatch:  pointer(50),
+		SamplesPerBatch:  new(50),
 		// Never update atime so we can check if something has been evicted
 		// without preventing its eviction.
-		AtimeUpdateThreshold: pointer(time.Duration(math.MaxInt64)),
+		AtimeUpdateThreshold: new(time.Duration(math.MaxInt64)),
 	}
 	pc, err := pebble_cache.NewPebbleCache(te, opts)
 	require.NoError(t, err)
@@ -2571,9 +2949,9 @@ func TestSampling(t *testing.T) {
 
 	// Advance time (to force newer atime) and write the same digest
 	// encrypted. The encrypted key should have the same digest prefix as the
-	// unencrypted key and come before the unencrypted key in lexicographical f
+	// unencrypted key and come before the unencrypted key in lexicographical
 	// order.
-	clock.Advance(5 * time.Minute)
+	clock.Advance(newerAtimeGap)
 	err = pc.Set(ctx, rn, buf)
 	require.NoError(t, err)
 
@@ -2587,27 +2965,28 @@ func TestSampling(t *testing.T) {
 		randomResources = append(randomResources, rn)
 	}
 
-	// Now advance the clock past the min eviction age to allow eviction to
-	// kick in. The unencrypted test digest should be evicted.
-	clock.Advance(minEvictionAge - 1*time.Minute)
+	// Now advance the clock to the min eviction age to allow eviction to
+	// kick in. The unencrypted test digest should be evicted. Keep the newer
+	// entries younger by the full atime gap, since waitForEviction advances the
+	// fake clock while waking the sampler.
+	clock.Advance(minEvictionAge - newerAtimeGap)
 
-	waitForEviction := func(timeout time.Duration) {
-		interval := 100 * time.Millisecond
-		for i := 0; i < int(timeout/interval); i++ {
+	waitForEviction := func() {
+		for i := 0; i < int(evictionTimeout/evictionPollInterval); i++ {
 			if exists, err := pc.Contains(anonCtx, rn); err == nil && !exists {
 				log.Infof("i = %d: unencrypted test digest is evicted", i)
 				return
 			}
-			time.Sleep(interval)
+			time.Sleep(evictionPollInterval)
 			// generateSamplesForEviction might be sleeping, so advance
 			// enough to wake it up. Alternatively, we could call
 			// pc.Start() after the cache already has some data so that
 			// generateSamplesForEviction never sleeps.
 			clock.Advance(pebble_cache.SamplerSleepDuration)
 		}
-		t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, timeout)
+		t.Fatalf("unencrypted test digest (%v) is not evicted after %v", rn, evictionTimeout)
 	}
-	waitForEviction(15 * time.Second)
+	waitForEviction()
 
 	// The unencrypted key should no longer exist.
 	unencryptedExists, err := pc.Contains(anonCtx, rn)
@@ -2728,6 +3107,149 @@ func TestGCSBlobStorage(t *testing.T) {
 	}
 }
 
+func TestReadReference(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 100
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		GCSBlobstore:           mockGCS,
+		MaxInlineFileSizeBytes: 10,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Blobs at or above minGCSFileSize live in GCS and are referenceable.
+	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, gcsRN, gcsBuf))
+
+	ref, err := pc.ReadReference(ctx, gcsRN)
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
+	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
+
+	// The reference should carry everything needed to read unencrypted bytes
+	// back out of GCS without going through this cache.
+	r, err := mockGCS.Reader(ctx, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName(), 0, 0)
+	require.NoError(t, err)
+	defer r.Close()
+	blobBuf, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.EqualValues(t, len(blobBuf), ref.GetMetadata().GetStoredSizeBytes())
+	if ref.GetMetadata().GetFileRecord().GetCompressor() == repb.Compressor_ZSTD {
+		blobBuf, err = compression.DecompressZstd(nil, blobBuf)
+		require.NoError(t, err)
+	}
+	require.Equal(t, gcsBuf, blobBuf)
+
+	// Inlined blobs and blobs on local disk are not in shared storage, so
+	// they have no reference.
+	inlineRN, inlineBuf := testdigest.RandomCASResourceBuf(t, 1)
+	require.NoError(t, pc.Set(ctx, inlineRN, inlineBuf))
+	_, err = pc.ReadReference(ctx, inlineRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	diskRN, diskBuf := testdigest.RandomCASResourceBuf(t, 50)
+	require.NoError(t, pc.Set(ctx, diskRN, diskBuf))
+	_, err = pc.ReadReference(ctx, diskRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// Missing resources have no reference either.
+	missingRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+	_, err = pc.ReadReference(ctx, missingRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// Once the backing object is past its GCS lifecycle TTL, stop handing out
+	// references to it.
+	clock.Advance(25 * time.Hour)
+	_, err = pc.ReadReference(ctx, gcsRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+}
+
+func TestCreateReference(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	clock := clockwork.NewFakeClock()
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 100
+	var gcsTTLDays int64 = 1
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           int64(1_000_000), // 1MB
+		Clock:                  clock,
+		FileStorer:             fileStorer,
+		GCSBlobstore:           mockGCS,
+		MaxInlineFileSizeBytes: 10,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	// Blobs at or above minGCSFileSize are staged in GCS and referenceable.
+	gcsRN, gcsBuf := testdigest.RandomCASResourceBuf(t, 100)
+	w, err := pc.CreateReference(ctx, gcsRN)
+	require.NoError(t, err)
+	defer w.Close()
+	_, err = w.Write(gcsBuf)
+	require.NoError(t, err)
+	ref, err := w.Commit()
+	require.NoError(t, err)
+	require.NotEmpty(t, ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
+	require.Equal(t, gcsRN.GetDigest().GetHash(), ref.GetMetadata().GetFileRecord().GetDigest().GetHash())
+
+	// The blob is only staged, not written to the cache.
+	_, err = pc.Get(ctx, gcsRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+	_, err = pc.ReadReference(ctx, gcsRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+
+	// The reference dereferences back to the written bytes.
+	rc, err := pc.Dereference(ctx, ref, gcsRN, 0, 0)
+	require.NoError(t, err)
+	defer rc.Close()
+	got, err := io.ReadAll(rc)
+	require.NoError(t, err)
+	require.Equal(t, gcsBuf, got)
+
+	// A cache that stores the reference takes ownership of the staged blob,
+	// and the blob becomes readable from it.
+	require.NoError(t, pc.WriteReference(ctx, ref, gcsRN, false /*=mustClone*/))
+	got, err = pc.Get(ctx, gcsRN)
+	require.NoError(t, err)
+	require.Equal(t, gcsBuf, got)
+
+	// Blobs below minGCSFileSize cannot be referenced, and nothing is
+	// written anywhere for them.
+	diskRN, _ := testdigest.RandomCASResourceBuf(t, 50)
+	_, err = pc.CreateReference(ctx, diskRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+	_, err = pc.Get(ctx, diskRN)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+}
+
 func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
@@ -2792,8 +3314,70 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
-func pointer[T any](value T) *T {
-	return &value
+func TestGCSAtimeUpdateThreshold(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	// sendAtimeUpdate gates on wall-clock time (time.Since), so start the fake
+	// clock well in the past. Otherwise, once an atime update moves the stored
+	// atime to a fake-future timestamp, subsequent accesses would be skipped.
+	clock := clockwork.NewFakeClockAt(time.Now().Add(-30 * 24 * time.Hour))
+	ctx := getAnonContext(t, te)
+
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+	atimeThreshold := 10 * time.Hour
+
+	mockGCS := mockgcs.New(clock)
+	require.NoError(t, mockGCS.SetBucketCustomTimeTTL(ctx, gcsTTLDays))
+	fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"), filestore.WithClock(clock))
+	options := &pebble_cache.Options{
+		RootDirectory:           testfs.MakeTempDir(t),
+		MaxSizeBytes:            int64(1_000_000), // 1MB
+		Clock:                   clock,
+		FileStorer:              fileStorer,
+		MaxInlineFileSizeBytes:  1,
+		MinGCSFileSizeBytes:     &minGCSFileSize,
+		GCSTTLDays:              &gcsTTLDays,
+		GCSAtimeUpdateThreshold: &atimeThreshold,
+		AtimeUpdateThreshold:    new(time.Duration(0)), // update atime on every access
+		AtimeBufferSize:         new(0),                // blocking channel of atime updates
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, options)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, rn, buf))
+
+	// Writing the object sets its custom time; it does not call UpdateCustomTime.
+	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+
+	// waitForAtime blocks until the object's pebble atime reaches the current
+	// (fake) clock time, i.e. until the queued atime update has been processed.
+	waitForAtime := func() {
+		want := clock.Now().UnixMicro()
+		require.Eventually(t, func() bool {
+			md, err := pc.Metadata(ctx, rn)
+			return err == nil && md.LastAccessTimeUsec == want
+		}, time.Minute, 10*time.Millisecond)
+	}
+
+	// Access the object before the threshold elapses. The pebble atime is
+	// updated, but the GCS custom time is left alone.
+	clock.Advance(1 * time.Hour)
+	_, err = pc.Get(ctx, rn)
+	require.NoError(t, err)
+	waitForAtime()
+	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+
+	// Access the object once its custom time is older than the threshold.
+	// Now the GCS custom time is refreshed.
+	clock.Advance(10 * time.Hour)
+	_, err = pc.Get(ctx, rn)
+	require.NoError(t, err)
+	waitForAtime()
+	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
 }
 
 func dirSizeFiles(path string) (int64, error) {
@@ -2837,9 +3421,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 			},
 		},
@@ -2848,9 +3432,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				MaxInlineFileSizeBytes:      -1, // don't inline anything.
 			},
@@ -2860,9 +3444,9 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 			},
@@ -2872,17 +3456,17 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			opts: &pebble_cache.Options{
 				RootDirectory:               testfs.MakeTempDir(t),
 				MaxSizeBytes:                int64(100_000),
-				MinEvictionAge:              pointer(time.Duration(0)),
-				AtimeUpdateThreshold:        pointer(time.Duration(0)),
-				AtimeBufferSize:             pointer(0),
+				MinEvictionAge:              new(time.Duration(0)),
+				AtimeUpdateThreshold:        new(time.Duration(0)),
+				AtimeBufferSize:             new(0),
 				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
 				IncludeMetadataSize:         true,
 
 				Clock:                  clock,
 				FileStorer:             fileStorer,
 				MaxInlineFileSizeBytes: -1, // force everything into mock gcs
-				MinGCSFileSizeBytes:    pointer(int64(1)),
-				GCSTTLDays:             pointer(int64(1)),
+				MinGCSFileSizeBytes:    new(int64(1)),
+				GCSTTLDays:             new(int64(1)),
 			},
 		},
 	}
@@ -2893,8 +3477,8 @@ func TestCacheStaysBelowConfiguredSize(t *testing.T) {
 			flags.Set(t, "cache.pebble.deletes_per_eviction", 1)
 
 			// Don't allow filling the sample channel with many copies of the same key.
-			tc.opts.SamplesPerBatch = pointer(50)
-			tc.opts.SampleBufferSize = pointer(10)
+			tc.opts.SamplesPerBatch = new(50)
+			tc.opts.SampleBufferSize = new(10)
 			pc, err := pebble_cache.NewPebbleCache(te, tc.opts)
 			if err != nil {
 				t.Fatal(err)
@@ -3045,4 +3629,789 @@ func TestAtimeUpdater(t *testing.T) {
 		return updater.calls.Load() > 0
 	}
 	require.Eventually(t, calledFunc, time.Minute, 100*time.Millisecond)
+}
+
+func TestAtimeUpdaterSkipRemote(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	ctx := getAnonContext(t, te)
+
+	threshold := time.Microsecond
+	workers := 1
+	opts := &pebble_cache.Options{
+		RootDirectory:         testfs.MakeTempDir(t),
+		MaxSizeBytes:          1_000_000_000,
+		AtimeUpdateThreshold:  &threshold,
+		NumAtimeUpdateWorkers: &workers,
+	}
+	pc, err := pebble_cache.NewPebbleCache(te, opts)
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	defer pc.Stop()
+
+	r, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, pc.Set(ctx, r, buf))
+
+	updater := fakeAtimeUpdater{calls: &atomic.Int32{}}
+	pc.RegisterAtimeUpdater(updater)
+
+	// A read on a context marked skip-remote-atime-update must not call the
+	// external atime updater, even though it still refreshes the local atime.
+	_, err = pc.Get(proxy_util.SetSkipRemoteAtimeUpdate(ctx), r)
+	require.NoError(t, err)
+	require.Never(t, func() bool {
+		return updater.calls.Load() > 0
+	}, 2*time.Second, 100*time.Millisecond)
+
+	// A normal read still calls the external atime updater, confirming it's wired
+	// up and only the skip-remote read above was suppressed.
+	_, err = pc.Get(ctx, r)
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return updater.calls.Load() > 0
+	}, time.Minute, 100*time.Millisecond)
+}
+
+type faultyGCS struct {
+	filestore.PebbleGCSStorage
+	mu      sync.Mutex
+	readErr error
+}
+
+func (g *faultyGCS) SetReadError(err error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.readErr = err
+}
+
+func (g *faultyGCS) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	g.mu.Lock()
+	err := g.readErr
+	g.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	return g.PebbleGCSStorage.Reader(ctx, blobName, offset, limit)
+}
+
+type commitFailingGCS struct {
+	filestore.PebbleGCSStorage
+	err error
+}
+
+func (g *commitFailingGCS) ConditionalWriter(ctx context.Context, blobName string, overwriteExisting bool, customTime time.Time, estimatedSize int64) (interfaces.CommittedWriteCloser, error) {
+	w := ioutil.NewCustomCommitWriteCloser(io.Discard)
+	w.SetCommitFn(func(int64) error {
+		return g.err
+	})
+	return w, nil
+}
+
+func newGCSBackedContractCache(t *testing.T, clock clockwork.Clock, gcs filestore.PebbleGCSStorage) (*testenv.TestEnv, interfaces.Cache) {
+	t.Helper()
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 30
+	pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+		RootDirectory:          testfs.MakeTempDir(t),
+		MaxSizeBytes:           1_000_000,
+		Clock:                  clock,
+		FileStorer:             filestore.New(filestore.WithGCSBlobstore(gcs, "app-name")),
+		MaxInlineFileSizeBytes: 1,
+		MinGCSFileSizeBytes:    &minGCSFileSize,
+		GCSTTLDays:             &gcsTTLDays,
+	})
+	require.NoError(t, err)
+	require.NoError(t, pc.Start())
+	t.Cleanup(func() { pc.Stop() })
+	return te, pc
+}
+
+// expectMetadataPresent asserts that the metadata-only read methods (Contains,
+// Metadata, FindMissing) report rn as present. PebbleCache answers these from
+// its local index without consulting backing storage.
+func expectMetadataPresent(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	contains, err := c.Contains(ctx, rn)
+	require.NoError(t, err, "Contains")
+	require.True(t, contains, "Contains")
+
+	_, err = c.Metadata(ctx, rn)
+	require.NoError(t, err, "Metadata")
+
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "FindMissing")
+	require.Empty(t, missing, "FindMissing")
+}
+
+// expectMetadataMissing asserts that the metadata-only read methods report rn
+// as missing.
+func expectMetadataMissing(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	contains, err := c.Contains(ctx, rn)
+	require.NoError(t, err, "Contains")
+	require.False(t, contains, "Contains")
+
+	_, err = c.Metadata(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "Metadata: %v", err)
+
+	missing, err := c.FindMissing(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "FindMissing")
+	require.Len(t, missing, 1, "FindMissing")
+	require.Equal(t, rn.GetDigest().GetHash(), missing[0].GetHash(), "FindMissing")
+}
+
+// expectContentPresent asserts that the content-returning read methods (Get,
+// GetWithMetadata, GetMulti, Reader) all return data.
+func expectContentPresent(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+	t.Helper()
+	got, err := c.Get(ctx, rn)
+	require.NoError(t, err, "Get")
+	require.Equal(t, data, got, "Get")
+
+	got, _, err = c.GetWithMetadata(ctx, rn)
+	require.NoError(t, err, "GetWithMetadata")
+	require.Equal(t, data, got, "GetWithMetadata")
+
+	multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "GetMulti")
+	require.Equal(t, data, multi[rn.GetDigest()], "GetMulti")
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.NoError(t, err, "Reader")
+	got, err = io.ReadAll(rc)
+	require.NoError(t, err, "Reader.ReadAll")
+	require.NoError(t, rc.Close(), "Reader.Close")
+	require.Equal(t, data, got, "Reader")
+}
+
+// expectContentNotFound asserts that the content-returning read methods all
+// report rn as missing.
+func expectContentNotFound(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName) {
+	t.Helper()
+	_, err := c.Get(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "Get: %v", err)
+
+	_, _, err = c.GetWithMetadata(ctx, rn)
+	require.True(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
+
+	multi, err := c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.NoError(t, err, "GetMulti")
+	require.Nil(t, multi[rn.GetDigest()], "GetMulti")
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.True(t, status.IsNotFoundError(err), "Reader: %v", err)
+	require.Nil(t, rc, "Reader")
+}
+
+// expectContentError asserts that the content-returning read methods all fail
+// with an error containing wantErr that is distinct from a NotFound error (i.e.
+// a transient failure must not be reported as a cache miss).
+func expectContentError(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, wantErr string) {
+	t.Helper()
+	_, err := c.Get(ctx, rn)
+	require.ErrorContains(t, err, wantErr, "Get")
+	require.False(t, status.IsNotFoundError(err), "Get: %v", err)
+
+	_, _, err = c.GetWithMetadata(ctx, rn)
+	require.ErrorContains(t, err, wantErr, "GetWithMetadata")
+	require.False(t, status.IsNotFoundError(err), "GetWithMetadata: %v", err)
+
+	_, err = c.GetMulti(ctx, []*rspb.ResourceName{rn})
+	require.ErrorContains(t, err, wantErr, "GetMulti")
+	require.False(t, status.IsNotFoundError(err), "GetMulti: %v", err)
+
+	rc, err := c.Reader(ctx, rn, 0, 0)
+	require.ErrorContains(t, err, wantErr, "Reader")
+	require.False(t, status.IsNotFoundError(err), "Reader: %v", err)
+	require.Nil(t, rc, "Reader")
+}
+
+func TestPebbleGCSBlobPresent(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte)
+	}{
+		{
+			name: "set",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				require.NoError(t, c.Set(ctx, rn, data))
+			},
+		},
+		{
+			name: "set_multi",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				require.NoError(t, c.SetMulti(ctx, map[*rspb.ResourceName][]byte{rn: data}))
+			},
+		},
+		{
+			name: "writer",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				w, err := c.Writer(ctx, rn)
+				require.NoError(t, err)
+				defer w.Close()
+				_, err = w.Write(data)
+				require.NoError(t, err)
+				require.NoError(t, w.Commit())
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := clockwork.NewFakeClock()
+			te, c := newGCSBackedContractCache(t, clock, mockgcs.New(clock))
+			ctx := getAnonContext(t, te)
+			rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+			tc.setup(t, ctx, c, rn, data)
+
+			expectMetadataPresent(t, ctx, c, rn)
+			expectContentPresent(t, ctx, c, rn, data)
+		})
+	}
+}
+
+func TestPebbleGCSBlobMissingAfterDelete(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	te, c := newGCSBackedContractCache(t, clock, mockgcs.New(clock))
+	ctx := getAnonContext(t, te)
+	rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+	require.NoError(t, c.Set(ctx, rn, data))
+	require.NoError(t, c.Delete(ctx, rn))
+
+	expectMetadataMissing(t, ctx, c, rn)
+	expectContentNotFound(t, ctx, c, rn)
+}
+
+func TestPebbleGCSBackingObjectDeleted(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	gcs := mockgcs.New(clock)
+	te, c := newGCSBackedContractCache(t, clock, gcs)
+	ctx := getAnonContext(t, te)
+	rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+	require.NoError(t, c.Set(ctx, rn, data))
+	require.NoError(t, gcs.DeleteAllBlobs(ctx))
+
+	// Metadata reads are answered from the local index, which still has the
+	// entry even though the backing blob is gone.
+	expectMetadataPresent(t, ctx, c, rn)
+	// The first content miss repairs the local index, so metadata reads miss after it.
+	expectContentNotFound(t, ctx, c, rn)
+	expectMetadataMissing(t, ctx, c, rn)
+}
+
+func TestPebbleGCSBackingReadUnavailable(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	gcs := &faultyGCS{PebbleGCSStorage: mockgcs.New(clock)}
+	te, c := newGCSBackedContractCache(t, clock, gcs)
+	ctx := getAnonContext(t, te)
+	rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+	require.NoError(t, c.Set(ctx, rn, data))
+	gcs.SetReadError(status.UnavailableError("gcs read unavailable"))
+
+	expectMetadataPresent(t, ctx, c, rn)
+	expectContentError(t, ctx, c, rn, "gcs read unavailable")
+}
+
+func TestPebbleGCSWriteFaults(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte)
+	}{
+		{
+			name: "set",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				err := c.Set(ctx, rn, data)
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "set_multi",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				err := c.SetMulti(ctx, map[*rspb.ResourceName][]byte{rn: data})
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "writer",
+			setup: func(t *testing.T, ctx context.Context, c interfaces.Cache, rn *rspb.ResourceName, data []byte) {
+				w, err := c.Writer(ctx, rn)
+				require.NoError(t, err)
+				defer w.Close()
+				_, err = w.Write(data)
+				require.NoError(t, err)
+				require.Error(t, w.Commit())
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := clockwork.NewFakeClock()
+			gcs := &commitFailingGCS{
+				PebbleGCSStorage: mockgcs.New(clock),
+				err:              status.ResourceExhaustedError("too many concurrent writes"),
+			}
+			te, c := newGCSBackedContractCache(t, clock, gcs)
+			ctx := getAnonContext(t, te)
+			rn, data := testdigest.RandomCASResourceBuf(t, 100)
+
+			tc.setup(t, ctx, c, rn, data)
+
+			expectMetadataMissing(t, ctx, c, rn)
+			expectContentNotFound(t, ctx, c, rn)
+		})
+	}
+}
+
+func TestDereference(t *testing.T) {
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+	// Disables auto-zstd so blobs are stored (and dereferenced) as IDENTITY.
+	var minAutoZstd int64 = 1 << 30
+	// Forces auto-zstd so blobs are stored as ZSTD.
+	var alwaysAutoZstd int64 = 1
+
+	newGCSBackedCache := func(t *testing.T, te *testenv.TestEnv, minBytesAutoZstdCompression int64) (*pebble_cache.PebbleCache, filestore.PebbleGCSStorage) {
+		clock := clockwork.NewFakeClock()
+		mockGCS := mockgcs.New(clock)
+		require.NoError(t, mockGCS.SetBucketCustomTimeTTL(context.Background(), gcsTTLDays))
+		fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, "app-name"))
+		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+			RootDirectory:               testfs.MakeTempDir(t),
+			MaxSizeBytes:                int64(1_000_000),
+			Clock:                       clock,
+			FileStorer:                  fileStorer,
+			GCSBlobstore:                mockGCS,
+			MaxInlineFileSizeBytes:      1,
+			MinGCSFileSizeBytes:         &minGCSFileSize,
+			GCSTTLDays:                  &gcsTTLDays,
+			MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
+		})
+		require.NoError(t, err)
+		require.NoError(t, pc.Start())
+		t.Cleanup(func() { pc.Stop() })
+		return pc, mockGCS
+	}
+
+	t.Run("no shared storage backing", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+			RootDirectory: testfs.MakeTempDir(t),
+			MaxSizeBytes:  int64(1_000_000),
+		})
+		require.NoError(t, err)
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		_, err = pc.Dereference(context.Background(), &refpb.Reference{}, rn, 0, 0)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+	})
+
+	t.Run("dereference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_IDENTITY, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		rc, err := pc.Dereference(ctx, ref, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf, got)
+
+		// Ranged reads apply offset/limit to the stored stream.
+		rc, err = pc.Dereference(ctx, ref, rn, 5, 10)
+		require.NoError(t, err)
+		got, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf[5:15], got)
+	})
+
+	t.Run("zstd stored, identity requested", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, alwaysAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_ZSTD, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		rc, err := pc.Dereference(ctx, ref, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf, got)
+
+		// Ranged reads apply offset/limit to the decompressed stream.
+		rc, err = pc.Dereference(ctx, ref, rn, 5, 10)
+		require.NoError(t, err)
+		got, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf[5:15], got)
+	})
+
+	t.Run("identity stored, zstd requested", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_IDENTITY, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		rnZstd := rn.CloneVT()
+		rnZstd.Compressor = repb.Compressor_ZSTD
+		rc, err := pc.Dereference(ctx, ref, rnZstd, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		decompressed, err := compression.DecompressZstd(nil, got)
+		require.NoError(t, err)
+		require.Equal(t, buf, decompressed)
+	})
+
+	t.Run("ranged zstd passthrough is rejected", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, alwaysAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.ReadReference(ctx, rn)
+		require.NoError(t, err)
+
+		rnZstd := rn.CloneVT()
+		rnZstd.Compressor = repb.Compressor_ZSTD
+		_, err = pc.Dereference(ctx, ref, rnZstd, 5, 10)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+	})
+
+	t.Run("malformed reference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		_, err := pc.Dereference(ctx, &refpb.Reference{}, rn, 0, 0)
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("missing blob", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		pc, mockGCS := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.ReadReference(ctx, rn)
+		require.NoError(t, err)
+
+		// Delete the backing blob out from under the reference.
+		blobName := ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()
+		require.NotEmpty(t, blobName)
+		require.NoError(t, mockGCS.DeleteBlob(ctx, blobName))
+
+		_, err = pc.Dereference(ctx, ref, rn, 0, 0)
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+
+	t.Run("encrypted", func(t *testing.T) {
+		te, kmsDir := getCrypterEnv(t)
+		userID := "US123"
+		groupID := "GR123"
+		groupKeyID := "EK123"
+		user := testauth.User(userID, groupID)
+		user.CacheEncryptionEnabled = true
+		users := map[string]interfaces.UserInfo{userID: user}
+		auther := testauth.NewTestAuthenticator(t, users)
+		te.SetAuthenticator(auther)
+		ctx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+		key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+		require.NoError(t, te.GetDBHandle().NewQuery(ctx, "create_key").Create(key))
+		require.NoError(t, te.GetDBHandle().NewQuery(ctx, "create_key_version").Create(keyVersion))
+
+		pc, _ := newGCSBackedCache(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, pc.Set(ctx, rn, buf))
+		ref, err := pc.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		// The reference must carry the encryption metadata needed to
+		// decrypt, and dereferencing must return the decrypted bytes.
+		require.NotNil(t, ref.GetMetadata().GetEncryptionMetadata())
+
+		rc, err := pc.Dereference(ctx, ref, rn, 0, 0)
+		require.NoError(t, err)
+		got, err := io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf, got)
+
+		// Ranged reads apply offset/limit to the decrypted stream.
+		rc, err = pc.Dereference(ctx, ref, rn, 5, 10)
+		require.NoError(t, err)
+		got, err = io.ReadAll(rc)
+		require.NoError(t, err)
+		require.NoError(t, rc.Close())
+		require.Equal(t, buf[5:15], got)
+	})
+}
+
+func TestWriteReference(t *testing.T) {
+	var minGCSFileSize int64 = 1
+	var gcsTTLDays int64 = 1
+	// Disables auto-zstd so blobs are stored as IDENTITY.
+	var minAutoZstd int64 = 1 << 30
+	// Forces auto-zstd so blobs are stored as ZSTD.
+	var alwaysAutoZstd int64 = 1
+
+	// setup builds two caches sharing one mock GCS bucket, standing in for two
+	// distributed cache peers backed by the same shared storage.
+	setup := func(t *testing.T, te *testenv.TestEnv, minBytesAutoZstdCompression int64) (*pebble_cache.PebbleCache, *pebble_cache.PebbleCache, *clockwork.FakeClock) {
+		clock := clockwork.NewFakeClock()
+		mockGCS := mockgcs.New(clock)
+		require.NoError(t, mockGCS.SetBucketCustomTimeTTL(context.Background(), gcsTTLDays))
+		newCache := func(appName string) *pebble_cache.PebbleCache {
+			fileStorer := filestore.New(filestore.WithGCSBlobstore(mockGCS, appName), filestore.WithClock(clock))
+			pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+				RootDirectory:               testfs.MakeTempDir(t),
+				MaxSizeBytes:                int64(1_000_000),
+				Clock:                       clock,
+				FileStorer:                  fileStorer,
+				GCSBlobstore:                mockGCS,
+				MaxInlineFileSizeBytes:      1,
+				MinGCSFileSizeBytes:         &minGCSFileSize,
+				GCSTTLDays:                  &gcsTTLDays,
+				MinBytesAutoZstdCompression: &minBytesAutoZstdCompression,
+			})
+			require.NoError(t, err)
+			require.NoError(t, pc.Start())
+			t.Cleanup(func() { pc.Stop() })
+			return pc
+		}
+		return newCache("app-src"), newCache("app-dst"), clock
+	}
+
+	blobName := func(ref *refpb.Reference) string {
+		return ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()
+	}
+
+	t.Run("take ownership", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+
+		// The accepting cache points directly at the referenced blob.
+		dstRef, err := dst.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, blobName(ref), blobName(dstRef))
+	})
+
+	t.Run("take ownership refreshes the blob TTL", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, clock := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+
+		// Accept the reference when the blob has burned most of its 24h TTL.
+		clock.Advance(20 * time.Hour)
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
+
+		// Taking ownership stamped a fresh custom time, so the entry stays
+		// readable past the blob's original deletion horizon.
+		clock.Advance(20 * time.Hour)
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("clone", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+
+		// The accepting cache stored its own copy of the blob; the source
+		// cache's blob is untouched.
+		dstRef, err := dst.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.NotEqual(t, blobName(ref), blobName(dstRef))
+		require.True(t, strings.HasPrefix(blobName(dstRef), "app-dst/"), "unexpected blob name %q", blobName(dstRef))
+		got, err = src.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("zstd stored blob", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, alwaysAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, repb.Compressor_ZSTD, ref.GetMetadata().GetFileRecord().GetCompressor())
+
+		// The stored compressor travels with the reference, so reads through
+		// the accepting cache decompress transparently.
+		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
+		got, err := dst.Get(ctx, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("digest mismatch", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+
+		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		err = dst.WriteReference(ctx, ref, otherRN, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("malformed reference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		_, dst, _ := setup(t, te, minAutoZstd)
+
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		err := dst.WriteReference(ctx, &refpb.Reference{}, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %s", err)
+	})
+
+	t.Run("expired reference", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		ctx := getAnonContext(t, te)
+		src, dst, clock := setup(t, te, minAutoZstd)
+
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(ctx, rn, buf))
+		ref, err := src.ReadReference(ctx, rn)
+		require.NoError(t, err)
+
+		// Once the referenced blob is past its GCS lifecycle TTL, it may be
+		// deleted at any moment, so accepting the reference is not safe.
+		clock.Advance(25 * time.Hour)
+		err = dst.WriteReference(ctx, ref, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+	})
+
+	t.Run("encryption state mismatch", func(t *testing.T) {
+		te, kmsDir := getCrypterEnv(t)
+		userID := "US123"
+		groupID := "GR123"
+		groupKeyID := "EK123"
+		user := testauth.User(userID, groupID)
+		user.CacheEncryptionEnabled = true
+		users := map[string]interfaces.UserInfo{userID: user}
+		auther := testauth.NewTestAuthenticator(t, users)
+		te.SetAuthenticator(auther)
+		encCtx, err := auther.WithAuthenticatedUser(context.Background(), userID)
+		require.NoError(t, err)
+		group1KeyURI := generateKMSKey(t, kmsDir, "group1Key")
+		key, keyVersion := createKey(t, te, groupKeyID, groupID, group1KeyURI)
+		require.NoError(t, te.GetDBHandle().NewQuery(encCtx, "create_key").Create(key))
+		require.NoError(t, te.GetDBHandle().NewQuery(encCtx, "create_key_version").Create(keyVersion))
+
+		src, dst, _ := setup(t, te, minAutoZstd)
+
+		// Mint a reference from an unencrypted write.
+		anonCtx := getAnonContext(t, te)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, src.Set(anonCtx, rn, buf))
+		ref, err := src.ReadReference(anonCtx, rn)
+		require.NoError(t, err)
+		require.Nil(t, ref.GetMetadata().GetEncryptionMetadata())
+
+		// Accepting it under a context with active encryption would store a
+		// record whose encryption metadata cannot match the pebble key; it
+		// must be rejected before anything is stored.
+		err = dst.WriteReference(encCtx, ref, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+		exists, err := dst.Contains(encCtx, rn)
+		require.NoError(t, err)
+		require.False(t, exists)
+	})
+
+	t.Run("no shared storage backing", func(t *testing.T) {
+		te := testenv.GetTestEnv(t)
+		te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
+		pc, err := pebble_cache.NewPebbleCache(te, &pebble_cache.Options{
+			RootDirectory: testfs.MakeTempDir(t),
+			MaxSizeBytes:  int64(1_000_000),
+		})
+		require.NoError(t, err)
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		err = pc.WriteReference(context.Background(), &refpb.Reference{}, rn, false /*=mustClone*/)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+	})
 }

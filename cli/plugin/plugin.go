@@ -629,7 +629,9 @@ func (p *Plugin) commandEnv() []string {
 // Plugins can read Bazel args from the FORWARDED_BAZEL_ARGS_FILE environment
 // variable. Plugins can write that file to modify the args (most commonly just
 // appending to the file), which will then be fed to the next plugin in the
-// pipeline, or passed to Bazel if this is the last plugin.
+// pipeline, or passed to Bazel if this is the last plugin. BB rc-file options
+// are retained in this file so that reparsing plugin changes does not change
+// the active .bbrc configuration; the CLI removes them before invoking Bazel.
 //
 // Plugins can also read the resolved args (i.e. all --config flags expanded) from the
 // file at RESOLVED_BAZEL_ARGS_FILE, but changes to that file are ignored.
@@ -640,7 +642,7 @@ func (p *Plugin) commandEnv() []string {
 //
 // See cli/example_plugins/ping-remote/pre_bazel.sh for an example.
 func (p *Plugin) PreBazel(bazelArgs *arg.BazelArgs, execArgs []string) (*arg.BazelArgs, []string, error) {
-	initialForwardedArgs := bazelArgs.Forwarded()
+	initialForwardedArgs := bazelArgs.Unresolved()
 	initialResolvedArgs := bazelArgs.Resolved()
 
 	// Write legacy resolved bazel args to $1 so existing plugins keep working.

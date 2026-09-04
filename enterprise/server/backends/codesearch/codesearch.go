@@ -89,10 +89,6 @@ func (css *CodesearchService) RepoStatus(ctx context.Context, req *inpb.RepoStat
 	return css.client.RepoStatus(ctx, req)
 }
 
-func (css *CodesearchService) IngestAnnotations(ctx context.Context, req *inpb.IngestAnnotationsRequest) (*inpb.IngestAnnotationsResponse, error) {
-	return css.client.IngestAnnotations(ctx, req)
-}
-
 func (css *CodesearchService) KytheProxy(ctx context.Context, req *srpb.KytheRequest) (*srpb.KytheResponse, error) {
 	return css.client.KytheProxy(ctx, req)
 }

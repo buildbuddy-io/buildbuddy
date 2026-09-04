@@ -13,7 +13,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/quota"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -21,7 +20,6 @@ import (
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/goredisstore.v8"
 
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	snpb "github.com/buildbuddy-io/buildbuddy/proto/server_notification"
 )
 
@@ -36,14 +34,7 @@ const (
 	quotaExceededMessageTemplate = "quota exceeded for %q - to increase quota, request a quote at https://buildbuddy.io/request-quote"
 )
 
-var (
-	errBlocked = status.UnavailableError("there was an issue with your request - please contact support at https://buildbuddy.io/contact")
-)
-
 func Register(env *real_environment.RealEnv) error {
-	if !*quotaManagerEnabled {
-		return nil
-	}
 	qm, err := NewQuotaManager(env)
 	if err != nil {
 		return err
@@ -62,31 +53,9 @@ type QuotaManager struct {
 	bucketFactory bucketFactory
 }
 
-func (qm *QuotaManager) checkGroupBlocked(ctx context.Context) error {
-	fp := qm.env.GetExperimentFlagProvider()
-	if fp == nil {
-		return nil
-	}
-
-	c, err := claims.ClaimsFromContext(ctx)
-	if err != nil {
-		return nil
-	}
-
-	// Allow impersonating requests and requests without an API key (web UI requests)
-	if c.IsImpersonating() || c.GetAPIKeyInfo().ID == "" {
-		return nil
-	}
-
-	if c.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS {
-		return errBlocked
-	}
-	return nil
-}
-
 func (qm *QuotaManager) Allow(ctx context.Context, namespace string, quantity int64) error {
-	if err := qm.checkGroupBlocked(ctx); err != nil {
-		return err
+	if !*quotaManagerEnabled {
+		return nil
 	}
 
 	key, err := quota.GetKey(ctx, qm.env)

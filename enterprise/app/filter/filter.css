@@ -188,20 +188,3 @@
   color: var(--color-filter-toggle);
   cursor: pointer;
 }
-
-.date-picker-button-wrapper.popup-wrapper {
-  position: relative;
-}
-
-.date-picker-button-wrapper .date-picker-popup {
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.date-picker-button-wrapper .icon-text-button {
-  max-height: var(--row-height);
-}
-
-.date-picker-button-wrapper .icon-text-button > :not(:last-child) {
-  margin-right: 8px;
-}

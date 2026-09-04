@@ -37,7 +37,7 @@ export default class ScorecardCardComponent extends React.Component<Props, State
 
     return (
       <div className="card scorecard">
-        <XCircle className="icon" />
+        <XCircle />
         <div className="content">
           <div className="title">Cache Misses</div>
           <div className="details">

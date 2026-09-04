@@ -257,10 +257,15 @@ func (s *Server) CreateProject(owner, repo string, settings *ProjectSettings) {
 
 // Push pushes the local repo to a project created with CreateProject.
 func (s *Server) Push(owner, repo, accessToken, localPath string) {
+	// Disable credential helpers (an empty helper value resets the helper
+	// list) so that git does not store the pushed credentials after
+	// authenticating. On macOS, the system gitconfig enables the osxkeychain
+	// helper, which hangs forever on unattended hosts waiting for keychain
+	// access.
 	testshell.Run(s.t, localPath, `
 		git remote add origin `+s.RepoURL(owner, repo, accessToken)+`
 		export GIT_ASKPASS=/usr/bin/true
-		git push --set-upstream origin "$(git branch --show-current)"
+		git -c credential.helper= push --set-upstream origin "$(git branch --show-current)"
 	`)
 }
 

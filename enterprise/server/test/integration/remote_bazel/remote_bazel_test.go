@@ -65,6 +65,24 @@ func init() {
 	log.Configure()
 }
 
+// loadRunfilesLibrary is a Bash snippet that loads the Bazel-provided Bash
+// library defining rlocation. Test binaries that look up runfiles should
+// include it, and depend on `@rules_shell//shell/runfiles`.
+const loadRunfilesLibrary = `
+# Load the Bash library that defines rlocation.
+# Don't exit on the first failed lookup; try several possible locations.
+set +e
+f=bazel_tools/tools/bash/runfiles/runfiles.bash
+source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "${RUNFILES_MANIFEST_FILE:-/dev/null}" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$0.runfiles/$f" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  source "$(grep -sm1 "^$f " "$0.exe.runfiles_manifest" | cut -f2- -d' ')" 2>/dev/null || \
+  { echo >&2 "ERROR: cannot find $f"; exit 1; }
+f=
+set -e
+`
+
 // Returns the invocation ID of the outer invocation.
 func waitForInvocationCreated(t *testing.T, ctx context.Context, bb bbspb.BuildBuddyServiceClient, reqCtx *ctxpb.RequestContext) string {
 	for delay := 50 * time.Millisecond; delay < 1*time.Minute; delay *= 2 {
@@ -152,7 +170,7 @@ func makeLocalGitRepo(t *testing.T, contents map[string]string) (path, commitSHA
 
 // Run remote bazel in a separate process so it doesn't interfere with
 // the local server and cause a race condition.
-func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) {
+func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress string, args ...string) string {
 	cmd := testcli.Command(t, workDir, append(
 		[]string{
 			"remote",
@@ -166,6 +184,7 @@ func runRemoteBazelInSeparateProcess(t *testing.T, workDir string, serverAddress
 	b, err := cmd.CombinedOutput()
 	t.Log(string(b))
 	require.NoError(t, err)
+	return string(b)
 }
 
 func TestWithPrivateRepo(t *testing.T) {
@@ -330,9 +349,9 @@ func TestCancel(t *testing.T) {
 		_, runErr := remotebazel.Run(
 			ctxWithCancel,
 			remotebazel.RunOpts{
-				Server:            bbServer.GRPCAddress(),
-				Command:           "echo STARTING && sleep 2147483647",
-				WorkspaceFilePath: wsFilePath,
+				Server:               bbServer.GRPCAddress(),
+				Command:              "echo STARTING && sleep 2147483647",
+				AbsLocalWorkspaceDir: filepath.Dir(wsFilePath),
 			}, repoConfig)
 		runErrCh <- runErr
 	}()
@@ -353,22 +372,15 @@ func TestCancel(t *testing.T) {
 func TestFetchRemoteBuildOutputs(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
-load("@rules_cc//cc:defs.bzl", "cc_binary")
-cc_binary(
+genrule(
     name = "main",
-    srcs = ["main.c"],
+    srcs = ["main.in"],
+    outs = ["main.sh"],
+    cmd = "cp $< $@",
+    executable = True,
 )
 `,
-		"main.c": `
-#include <stdio.h>
-
-int main() {
-    printf("Hello from main!");
-    return 0;
-}
-`,
-		"MODULE.bazel": `bazel_dep(name = "rules_cc", version = "0.0.17")` + "\n",
-		".bazelrc":     "common --lockfile_mode=off --check_direct_dependencies=off\n",
+		"main.in": "#!/bin/sh\nprintf 'Hello from main!'\n",
 	})
 
 	// Run a server and executor locally to run remote bazel against
@@ -387,7 +399,7 @@ int main() {
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
 	// Check that the remote build output was fetched locally.
 	// The outputs will be downloaded to a directory that may change with the platform,
-	// so recursively search for the build output named `hello_world_go`.
+	// so recursively search for the build output named `main.sh`.
 	findFile := func(rootDir, targetFile string) (string, error) {
 		var outputPath string
 		err := filepath.WalkDir(rootDir, func(path string, d os.DirEntry, err error) error {
@@ -405,7 +417,7 @@ int main() {
 		return outputPath, err
 	}
 	t.Chdir(repoDir)
-	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "main")
+	downloadedOutputPath, err := findFile(remotebazel.BuildBuddyArtifactDir, "main.sh")
 	require.NoError(t, err)
 
 	// Make sure we can successfully run the fetched binary.
@@ -423,22 +435,15 @@ int main() {
 func TestBuildRemotelyRunLocally(t *testing.T) {
 	repoDir, _ := makeLocalGitRepo(t, map[string]string{
 		"BUILD": `
-load("@rules_cc//cc:defs.bzl", "cc_binary")
-cc_binary(
+genrule(
     name = "main",
-    srcs = ["main.c"],
+    srcs = ["main.in"],
+    outs = ["main.sh"],
+    cmd = "cp $< $@",
+    executable = True,
 )
 `,
-		"main.c": `
-#include <stdio.h>
-
-int main() {
-    printf("Hello from main!");
-    return 0;
-}
-`,
-		"MODULE.bazel": `bazel_dep(name = "rules_cc", version = "0.0.17")` + "\n",
-		".bazelrc":     "common --lockfile_mode=off --check_direct_dependencies=off\n",
+		"main.in": "#!/bin/sh\nprintf 'Hello from main!'\n",
 	})
 
 	// Run a server and executor locally to run remote bazel against
@@ -446,7 +451,7 @@ int main() {
 
 	// Run remote bazel
 	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
-	runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
 		// Ensure the build is happening on a clean runner, because if the build
 		// artifact is locally cached, we won't upload it to the remote cache
 		// and we won't be able to fetch it.
@@ -457,6 +462,7 @@ int main() {
 		"run",
 		":main",
 		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+	require.Contains(t, output, "Hello from main!")
 
 	// Check that the remote runner didn't run the script
 	bbClient := env.GetBuildBuddyServiceClient()
@@ -486,6 +492,213 @@ int main() {
 	})
 	require.NoError(t, err)
 	require.NotContains(t, string(logResp.GetBuffer()), "Hello from main!")
+}
+
+func TestBuildRemotelyRunLocally_ShBinary(t *testing.T) {
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+genrule(
+    name = "generated_script",
+    srcs = ["main.sh"],
+    outs = ["main-generated.sh"],
+    cmd = "cp $< $@",
+    executable = True,
+)
+
+sh_binary(
+    name = "main",
+    srcs = [":generated_script"],
+)
+`,
+		"main.sh": `#!/usr/bin/env bash
+echo "Hello from sh_binary!"
+`,
+	})
+
+	// Run a server and executor locally to run remote bazel against.
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+	// rules_shell sh_binary exposes both the runnable entrypoint and its
+	// underlying script as outputs. Verify that Remote Bazel selects the
+	// entrypoint among the multiple outputs.
+	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+		"--runner_exec_properties=instance_name="+randomStr,
+		"--run_remotely=0",
+		"run",
+		":main",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+	require.Contains(t, output, "Hello from sh_binary!")
+}
+
+func TestBuildRemotelyRunLocally_Runfiles(t *testing.T) {
+	tests := []struct {
+		name                      string
+		beforeRunfilesInitializer string
+		runfilePath               string
+		expectedOutput            string
+	}{
+		{
+			name:           "runs with runfiles",
+			runfilePath:    "_main/message.txt",
+			expectedOutput: "Hello from a runfile!",
+		},
+		// The CLI sets RUNFILES_DIR to point to the local downloaded runfiles directory.
+		// Even if that env var is unset, the executable should still be able to find the runfiles directory.
+		{
+			name: "runs even if RUNFILES_DIR is unset",
+			beforeRunfilesInitializer: `
+# Run the top-level executable without its runfiles environment to verify
+# that it can rediscover the downloaded runfiles directory. The marker prevents
+# this from looping.
+if [[ -z "${RUNFILES_REEXECUTED:-}" ]]; then
+  executable="${RUNFILES_DIR%.runfiles}"
+  exec env -i PATH="$PATH" RUNFILES_REEXECUTED=1 "$executable"
+fi
+`,
+			runfilePath:    "_main/message.txt",
+			expectedOutput: "Hello from a runfile!",
+		},
+		{
+			name:           "resolves apparent Bzlmod repo name",
+			runfilePath:    "messages/external_message.txt",
+			expectedOutput: "Hello from an external runfile!",
+		},
+	}
+
+	// Run a server and executor locally to run remote bazel against.
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repoDir, _ := makeLocalGitRepo(t, map[string]string{
+				"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+genrule(
+    name = "generated_script",
+    srcs = ["main.sh"],
+    outs = ["main-generated.sh"],
+    cmd = "cp $< $@",
+    executable = True,
+)
+
+genrule(
+    name = "generated_message",
+    outs = ["message.txt"],
+    cmd = "echo 'Hello from a runfile!' > $@",
+)
+
+sh_binary(
+    name = "main",
+    srcs = [":generated_script"],
+    data = [
+        ":generated_message",
+        "@messages//:generated_message",
+    ],
+    deps = ["@rules_shell//shell/runfiles"],
+)
+`,
+				"main.sh": `#!/usr/bin/env bash
+set -euo pipefail
+` + test.beforeRunfilesInitializer + loadRunfilesLibrary + `
+# Look for the runfile message.txt. We should be able to successfully find it
+# on the local machine.
+message_path="$(rlocation "` + test.runfilePath + `" || true)"
+if [[ -z "$message_path" ]]; then
+  echo >&2 "failed to find the runfile ` + test.runfilePath + `"
+  exit 1
+fi
+cat "$message_path"
+`,
+				"MODULE.bazel": `
+module(name = "runfiles_test")
+bazel_dep(name = "message_dep", version = "1.0", repo_name = "messages")
+local_path_override(module_name = "message_dep", path = "dep")
+`,
+				".bazelrc": "common --lockfile_mode=off\n",
+				"dep/MODULE.bazel": `
+module(name = "message_dep", version = "1.0")
+`,
+				"dep/BUILD": `
+genrule(
+    name = "generated_message",
+    outs = ["external_message.txt"],
+    cmd = "echo 'Hello from an external runfile!' > $@",
+    visibility = ["//visibility:public"],
+)
+`,
+			})
+
+			randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
+			output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+				"--runner_exec_properties=instance_name="+randomStr,
+				"--run_remotely=0",
+				"run",
+				":main",
+				fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+			require.Contains(t, output, test.expectedOutput)
+		})
+	}
+}
+
+func TestBuildRemotelyRunLocally_ExecutableRunfile(t *testing.T) {
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		"BUILD": `
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+# Even though bazel does not upload the targets to the cache,
+# the CI runner should still upload them.
+genrule(
+    name = "generated_script",
+    srcs = ["main.sh"],
+    outs = ["main-generated.sh"],
+    cmd = "cp $< $@",
+    executable = True,
+    tags = ["no-remote-cache"],
+)
+
+genrule(
+    name = "generated_helper",
+    srcs = ["helper.sh"],
+    outs = ["helper-generated.sh"],
+    cmd = "cp $< $@ && chmod +x $@",
+    tags = ["no-remote-cache"],
+)
+
+sh_binary(
+    name = "main",
+    srcs = [":generated_script"],
+    data = [":generated_helper"],
+    deps = ["@rules_shell//shell/runfiles"],
+)
+`,
+		"main.sh": `#!/usr/bin/env bash
+set -euo pipefail
+` + loadRunfilesLibrary + `
+# The main binary runs the helper script from its runfiles directory.
+helper_path="$(rlocation _main/helper-generated.sh)"
+"$helper_path"
+`,
+		"helper.sh": `#!/usr/bin/env bash
+echo "Hello from an executable runfile!"
+`,
+	})
+
+	// Run a server and executor locally to run remote bazel against.
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+	randomStr := fmt.Sprintf("%d", time.Now().UnixMilli())
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+		"--runner_exec_properties=instance_name="+randomStr,
+		"--run_remotely=0",
+		"run",
+		":main",
+		"--remote_build_event_upload=minimal",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1))
+	require.Contains(t, output, "Hello from an executable runfile!")
 }
 
 func TestAccessingSecrets(t *testing.T) {
@@ -649,6 +862,24 @@ func TestBashScript(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Contains(t, string(logResp.GetBuffer()), "Hello from the remote runner!")
+}
+
+func TestBBRC(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repoDir, _ := makeLocalGitRepo(t, map[string]string{
+		".bbrc": `
+remote --skip_auto_checkout=true
+remote:ci --script='echo BBRC config applied'
+`,
+	})
+
+	env, bbServer, _ := runLocalServerAndExecutor(t, "", "", nil)
+
+	output := runRemoteBazelInSeparateProcess(t, repoDir, bbServer.GRPCAddress(),
+		"--bb_config=ci",
+		fmt.Sprintf("--remote_header=x-buildbuddy-api-key=%s", env.APIKey1),
+	)
+	require.Contains(t, output, "BBRC config applied")
 }
 
 // In production, the apps upload the ci_runner and bb binaries to the cache so

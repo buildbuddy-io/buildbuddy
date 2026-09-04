@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/util/procstats",
+        "//proto:execution_stats_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:vmexec_go_proto",
         "//server/interfaces",

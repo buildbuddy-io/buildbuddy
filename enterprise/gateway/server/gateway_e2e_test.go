@@ -1,9 +1,9 @@
-package server
+package server_test
 
 // End-to-end tests that bring up real userspace WireGuard tunnels and verify
 // actual packet flow through the gateway.
 //
-// Each client uses golang.zx2c4.com/wireguard/tun/netstack to run a userspace
+// Each client (brought up by the testgateway package) runs a userspace
 // WireGuard device backed by a gVisor network stack.  The gateway runs on
 // localhost with a real UDP socket, so these tests exercise the full path:
 //
@@ -15,87 +15,70 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/netip"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/testgateway"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/tun/netstack"
-
-	gwpb "github.com/buildbuddy-io/buildbuddy/proto/gateway"
 )
 
-// tunnelPeer holds the gVisor netstack and assigned tunnel address for a
-// registered WireGuard peer.
-type tunnelPeer struct {
-	net          *netstack.Net
-	addr         netip.Addr
-	assignedName string
-}
+// TestEndToEnd_WatchReportsHandshake verifies that a Watch stream reports the
+// watched peer's first completed WireGuard handshake. The fallback poll is
+// set long so events can only arrive via push — the registration broadcast
+// or the device-logger wake, whichever the handshake's timing exercises —
+// never the poll.
+func TestEndToEnd_WatchReportsHandshake(t *testing.T) {
+	flags.Set(t, "gateway.watch_fallback_poll_interval", time.Minute)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := testgateway.Setup(t, ta, server.DNSService())
 
-// registerAndConnect registers a new peer with the gateway and brings up a
-// userspace WireGuard tunnel for it. The tunnel is closed when the test ends.
-//
-// persistent_keepalive_interval=1 is used so that the first outbound packet
-// triggers an immediate WireGuard handshake rather than waiting for the
-// gateway to initiate one.
-func registerAndConnect(t testing.TB, gw *Gateway, ctx context.Context, networkName, peerName string) tunnelPeer {
-	t.Helper()
-	privKey, err := wgkeys.GeneratePrivateKey()
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	resp, err := gw.Register(ctx, &gwpb.RegisterRequest{
-		NetworkName: networkName,
-		PeerName:    peerName,
-		PublicKey:   privKey.PublicKey().Hex(),
-	})
-	require.NoError(t, err)
+	// Watch before the peer exists so the stream observes the full
+	// lifecycle: registration first, then the handshake.
+	sessionID := testgateway.NextSessionID()
+	events, cancelWatch, _ := testgateway.StartWatch(t, gw, ctx, sessionID)
+	defer cancelWatch()
 
-	addr := netip.MustParseAddr(resp.GetAssignedIp())
-	tunDev, tnet, err := netstack.CreateNetTUN(
-		[]netip.Addr{addr},
-		// Use the gateway's hub IP as the DNS resolver so peer names
-		// registered with peer_name are resolvable by name.
-		[]netip.Addr{netip.MustParseAddr(resp.GetGatewayIp())},
-		1420,
-	)
-	require.NoError(t, err)
+	testgateway.RegisterAndConnectWithSessionID(t, gw, ctx, "net1", "peer-a", sessionID)
 
-	logger := &device.Logger{
-		Verbosef: func(format string, args ...any) {},
-		Errorf:   func(format string, args ...any) { t.Logf("wg: "+format, args...) },
+	// The peer's persistent keepalive triggers the handshake; the watch must
+	// eventually report a peer with a handshake time.
+	deadline := time.After(30 * time.Second)
+	for {
+		select {
+		case rsp := <-events:
+			if rsp.GetPeer() == nil {
+				continue // heartbeat
+			}
+			require.Equal(t, sessionID, rsp.GetPeer().GetSessionId())
+			if rsp.GetPeer().GetLastHandshakeTime() != nil {
+				return
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for Watch to report a completed handshake")
+		}
 	}
-	dev := device.NewDevice(tunDev, conn.NewDefaultBind(), logger)
-	t.Cleanup(dev.Close)
-
-	ipc := fmt.Sprintf(
-		"private_key=%s\npublic_key=%s\nallowed_ip=%s\nendpoint=%s\npersistent_keepalive_interval=1\n",
-		privKey.Hex(), resp.GetServerPublicKey(), resp.GetNetworkCidr(), resp.GetServerEndpoint(),
-	)
-	require.NoError(t, dev.IpcSet(ipc))
-	require.NoError(t, dev.Up())
-
-	return tunnelPeer{net: tnet, addr: addr, assignedName: resp.GetAssignedPeerName()}
 }
 
 // TestEndToEnd_PeersCanCommunicate verifies that two peers in the same network
 // can exchange data over the WireGuard tunnel using direct IP addressing.
 func TestEndToEnd_PeersCanCommunicate(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(t, ta)
+	gw := testgateway.Setup(t, ta, server.DNSService())
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	peerA := registerAndConnect(t, gw, ctx, "net1", "peer-a")
-	peerB := registerAndConnect(t, gw, ctx, "net1", "peer-b")
+	peerA := testgateway.RegisterAndConnect(t, gw, ctx, "net1", "peer-a")
+	peerB := testgateway.RegisterAndConnect(t, gw, ctx, "net1", "peer-b")
 
 	const port = 9999
-	ln, err := peerA.net.ListenTCP(&net.TCPAddr{Port: port})
+	ln, err := peerA.Net.ListenTCP(&net.TCPAddr{Port: port})
 	require.NoError(t, err)
 	t.Cleanup(func() { ln.Close() })
 
@@ -105,7 +88,7 @@ func TestEndToEnd_PeersCanCommunicate(t *testing.T) {
 	// handshake; allow up to 30 s for it to complete.
 	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	connB, err := peerB.net.DialContext(dialCtx, "tcp", fmt.Sprintf("[%s]:%d", peerA.addr, port))
+	connB, err := peerB.Net.DialContext(dialCtx, "tcp", fmt.Sprintf("[%s]:%d", peerA.Addr, port))
 	require.NoError(t, err)
 	defer connB.Close()
 
@@ -128,16 +111,16 @@ func TestEndToEnd_PeersCanCommunicate(t *testing.T) {
 // that name.
 func TestEndToEnd_DNSResolution(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(t, ta)
+	gw := testgateway.Setup(t, ta, server.DNSService())
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
-	peerA := registerAndConnect(t, gw, ctx, "net1", "myvm")
-	peerB := registerAndConnect(t, gw, ctx, "net1", "")
+	peerA := testgateway.RegisterAndConnect(t, gw, ctx, "net1", "myvm")
+	peerB := testgateway.RegisterAndConnect(t, gw, ctx, "net1", "")
 
 	const port = 9998
-	ln, err := peerA.net.ListenTCP(&net.TCPAddr{Port: port})
+	ln, err := peerA.Net.ListenTCP(&net.TCPAddr{Port: port})
 	require.NoError(t, err)
 	t.Cleanup(func() { ln.Close() })
 
@@ -148,7 +131,7 @@ func TestEndToEnd_DNSResolution(t *testing.T) {
 	// Dial peer-a by DNS name. The gVisor stack sends a DNS query to the
 	// gateway hub IP (configured as the resolver in CreateNetTUN), which
 	// routes it to serveDNS via injectInbound.
-	connB, err := peerB.net.DialContext(dialCtx, "tcp", fmt.Sprintf("%s:%d", peerA.assignedName, port))
+	connB, err := peerB.Net.DialContext(dialCtx, "tcp", fmt.Sprintf("%s:%d", peerA.AssignedName, port))
 	require.NoError(t, err)
 	defer connB.Close()
 
@@ -179,22 +162,22 @@ func TestEndToEnd_DNSResolution(t *testing.T) {
 //	  --test_arg=-test.run='^$'
 func BenchmarkGatewayThroughput(b *testing.B) {
 	ta := testauth.NewTestAuthenticator(b, testauth.TestUsers("user1", "group1"))
-	gw := setupGateway(b, ta)
+	gw := testgateway.Setup(b, ta, server.DNSService())
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(b, err)
 
-	peerA := registerAndConnect(b, gw, ctx, "net1", "server")
-	peerB := registerAndConnect(b, gw, ctx, "net1", "client")
+	peerA := testgateway.RegisterAndConnect(b, gw, ctx, "net1", "server")
+	peerB := testgateway.RegisterAndConnect(b, gw, ctx, "net1", "client")
 
 	const port = 9997
-	ln, err := peerA.net.ListenTCP(&net.TCPAddr{Port: port})
+	ln, err := peerA.Net.ListenTCP(&net.TCPAddr{Port: port})
 	require.NoError(b, err)
 	b.Cleanup(func() { ln.Close() })
 
 	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	connB, err := peerB.net.DialContext(dialCtx, "tcp", fmt.Sprintf("[%s]:%d", peerA.addr, port))
+	connB, err := peerB.Net.DialContext(dialCtx, "tcp", fmt.Sprintf("[%s]:%d", peerA.Addr, port))
 	require.NoError(b, err)
 	b.Cleanup(func() { connB.Close() })
 

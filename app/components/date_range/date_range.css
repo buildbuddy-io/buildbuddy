@@ -1,0 +1,140 @@
+.date-range-picker {
+  --day-height: 36px;
+
+  display: flex;
+  font-size: 14px;
+  overflow: hidden;
+  border-radius: inherit;
+
+  .preset-picker {
+    border-right: 1px solid var(--color-border-primary);
+    user-select: none;
+  }
+
+  .preset-option {
+    padding: 12px 20px;
+    cursor: pointer;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--color-border-primary);
+
+    &:hover {
+      background: var(--color-bg-hover);
+    }
+
+    &.selected {
+      font-weight: 600;
+    }
+  }
+
+  .calendar-picker {
+    width: 360px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .text-inputs {
+    display: flex;
+    gap: 8px;
+    padding: 16px;
+    background: var(--color-bg-secondary);
+  }
+
+  .text-inputs .text-input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .calendar-input {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 0;
+  }
+
+  .month-picker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 16px;
+  }
+
+  .weekdays,
+  .days {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+  }
+
+  .weekday {
+    text-align: center;
+    padding: 4px 0;
+    font-weight: 600;
+  }
+
+  .day {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: var(--day-height);
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  /* Days rendered outside the shown month, in the leading/trailing weeks. */
+  .day.outside-month {
+    color: var(--color-text-muted);
+  }
+
+  .day.in-selection {
+    color: var(--color-button-primary-text);
+  }
+
+  .day .day-number {
+    position: relative;
+  }
+
+  .day.today .day-number {
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  .day .selection {
+    position: absolute;
+    inset: 4px 0;
+    background: var(--color-button-primary-bg);
+  }
+
+  .day .preview {
+    position: absolute;
+    inset: 2px 0;
+    border: solid var(--color-button-primary-bg);
+    border-width: 1px 0;
+  }
+
+  .day .preview.round-left {
+    border-left-width: 1px;
+  }
+
+  .day .preview.round-right {
+    border-right-width: 1px;
+  }
+
+  .day .round-left {
+    border-top-left-radius: calc(var(--day-height) / 2);
+    border-bottom-left-radius: calc(var(--day-height) / 2);
+    left: 2px;
+  }
+
+  .day .round-right {
+    border-top-right-radius: calc(var(--day-height) / 2);
+    border-bottom-right-radius: calc(var(--day-height) / 2);
+    right: 2px;
+  }
+}

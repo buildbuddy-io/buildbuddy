@@ -88,7 +88,7 @@ export default class TimingProfilePageComponent extends React.Component<Props, S
         onProfileLoadError={this.handleProfileLoadError.bind(this)}>
         {({ dragActive, loadingMessage }) => (
           <>
-            <Upload className="icon" />
+            <Upload />
             <div className="title">Drop a timing profile here</div>
             <div className="details">Supports JSON trace profiles and gzipped files such as `command.profile.gz`.</div>
             <OutlinedButton onClick={this.openFilePicker.bind(this)}>Choose file</OutlinedButton>

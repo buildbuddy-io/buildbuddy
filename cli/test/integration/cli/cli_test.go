@@ -119,6 +119,40 @@ func TestBazelHelp(t *testing.T) {
 	require.Contains(t, output, `BAZEL_STARTUP_OPTIONS="`)
 }
 
+func TestBazelHelp_IgnoresBBRC(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		// This would fail if help attempted to parse the workspace .bbrc.
+		".bbrc": `startup --not_a_bb_flag`,
+	})
+
+	// Explicit bbrc options should also not be forwarded to Bazel.
+	cmd := testcli.Command(t, ws,
+		"--bbrc="+ws+"/missing.bbrc",
+		"help",
+		"--bb_config=missing",
+		"build",
+	)
+	b, err := testcli.CombinedOutput(cmd)
+	output := string(b)
+	require.NoErrorf(t, err, "output: %s", output)
+	require.Contains(t, output, "Usage:")
+}
+
+func TestBazelHelp_UsesBazelrc(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelrc": `help --announce_rc`,
+	})
+
+	cmd := testcli.Command(t, ws, "help", "build")
+	b, err := testcli.CombinedOutput(cmd)
+	output := string(b)
+	require.NoErrorf(t, err, "output: %s", output)
+	require.Contains(t, output, "Reading rc options for 'help'")
+	require.Contains(t, output, "--announce_rc")
+}
+
 func TestHelpWithoutHomeEnv(t *testing.T) {
 	ws := testcli.NewWorkspace(t)
 	cmd := testcli.Command(t, ws, "--help")
@@ -264,6 +298,144 @@ sh_binary(name = "echo", srcs = ["echo.sh"])`,
 	require.Contains(t, output, "Hello World")
 	// Make sure we don't print any warnings.
 	require.NotContains(t, output, log.WarningPrefix)
+}
+
+func TestBBRC_Watcher(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	writeFakeBazel(t, ws)
+	customBBRC := ws + "/custom.bbrc"
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"custom.bbrc": `
+startup --watch
+run:ci --stream_run_logs --on_stream_run_logs_failure=warn
+`,
+		"fake-godemon.sh": `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${FAKE_GODEMON_ACTIVE:-}" == "1" ]]; then
+  echo "nested watcher invocation" >&2
+  exit 1
+fi
+export FAKE_GODEMON_ACTIVE=1
+# Skip Godemon's --watch and --lockfile arguments, then execute bb once.
+shift 4
+printf 'WATCHER_CHILD_ARGS:%s\n' "$*"
+exec "$@"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "fake-godemon.sh")
+
+	cmd := testcli.Command(t, ws,
+		"--bbrc="+customBBRC,
+		"run",
+		"--bb_config=ci",
+		":target",
+	)
+	cmd.Env = append(os.Environ(),
+		"GODEMON_BINARY_PATH="+ws+"/fake-godemon.sh",
+		"BB_DISABLE_SIDECAR=1",
+	)
+	b, err := testcli.CombinedOutput(cmd)
+	output := strings.ReplaceAll(string(b), "\r\n", "\n")
+	require.NoErrorf(t, err, "output: %s", output)
+
+	// Even when the watcher restarts the bb process, the BBRC flags should be preserved.
+	require.Contains(t, output, "WATCHER_CHILD_ARGS:")
+	require.Contains(t, output, "--bbrc="+customBBRC)
+	require.Contains(t, output, "--bb_config=ci")
+	// This log is only printed when the stream_run_logs flag is correctly set.
+	require.Contains(t, output, "streaming run logs is only supported")
+	// The Bazel wrapper should have been successfully invoked.
+	require.Contains(t, output, "FAKE_BAZEL_ARGS:")
+}
+
+func TestBBRC_Plugin(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	writeFakeBazel(t, ws)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `run:ci --stream_run_logs --on_stream_run_logs_failure=warn`,
+		"buildbuddy.yaml": `plugins:
+  - path: testplugin
+`,
+		"testplugin/pre_bazel.sh": `#!/usr/bin/env bash
+set -euo pipefail
+echo '--build_metadata=FROM_PLUGIN' >> "$FORWARDED_BAZEL_ARGS_FILE"
+`,
+	})
+	testfs.MakeExecutable(t, ws, "testplugin/pre_bazel.sh")
+
+	cmd := testcli.Command(t, ws, "run", "--bb_config=ci", ":target")
+	cmd.Env = append(os.Environ(), "BB_DISABLE_SIDECAR=1")
+	b, err := testcli.CombinedOutput(cmd)
+	output := strings.ReplaceAll(string(b), "\r\n", "\n")
+	require.NoErrorf(t, err, "output: %s", output)
+
+	// Run-log streaming came from the named BB config, so this warning proves
+	// the config was still active after the plugin arguments were reparsed.
+	require.Contains(t, output, "streaming run logs is only supported")
+	require.Contains(t, output, "--build_metadata=FROM_PLUGIN")
+}
+
+func TestBBRC_SidecarRollback(t *testing.T) {
+	ws := testcli.NewWorkspace(t)
+	writeFakeBazel(t, ws)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc": `run:ci --stream_run_logs --on_stream_run_logs_failure=warn`,
+	})
+
+	cmd := testcli.Command(t, ws,
+		"run",
+		"--bb_config=ci",
+		"--remote_cache=grpc://127.0.0.1:1",
+		":target",
+	)
+	// An unmatched quote makes sidecar argument parsing fail immediately. The
+	// CLI then restores its original arguments and continues without a sidecar.
+	cmd.Env = append(os.Environ(), "BB_SIDECAR_ARGS='")
+	b, err := testcli.CombinedOutput(cmd)
+	output := strings.ReplaceAll(string(b), "\r\n", "\n")
+	require.NoErrorf(t, err, "output: %s", output)
+
+	require.Contains(t, output, "Sidecar could not be initialized")
+	// This setting came from --bb_config=ci. Seeing it after the sidecar
+	// rollback proves that restoring the arguments retained the config choice.
+	require.Contains(t, output, "streaming run logs is only supported")
+	require.Contains(t, output, "FAKE_BAZEL_ARGS:")
+}
+
+// writeFakeBazel installs a workspace Bazel wrapper that completes `run`
+// commands without starting Bazel. It also rejects BB-only arguments, since
+// those must be consumed by the CLI before it invokes Bazelisk.
+func writeFakeBazel(t *testing.T, ws string) {
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		"tools/bazel": `#!/usr/bin/env bash
+set -euo pipefail
+# The CLI queries Bazel's option definitions before parsing the command. Let
+# the hermetic test Bazel answer that query, and intercept the final run only.
+for arg in "$@"; do
+  if [[ "$arg" == "help" ]]; then
+    exec "$BAZEL_REAL" "$@"
+  fi
+done
+script_path=""
+for arg in "$@"; do
+  case "$arg" in
+    --bbrc*|--bb_config*|--ignore_all_bb_rc_files*|--stream_run_logs*|--on_stream_run_logs_failure*)
+      echo "BB-only argument leaked to Bazel: $arg" >&2
+      exit 1
+      ;;
+    --script_path=*)
+      script_path="${arg#--script_path=}"
+      ;;
+  esac
+done
+printf 'FAKE_BAZEL_ARGS:%s\n' "$*"
+if [[ -n "$script_path" ]]; then
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$script_path"
+  chmod +x "$script_path"
+fi
+`,
+	})
+	testfs.MakeExecutable(t, ws, "tools/bazel")
 }
 
 func TestBazelBuildWithBuildBuddyServices(t *testing.T) {

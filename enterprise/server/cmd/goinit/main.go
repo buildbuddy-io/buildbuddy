@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"io/fs"
 	"net"
 	"os"
@@ -37,6 +36,7 @@ import (
 const (
 	commonMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID
 	cgroupMountFlags = syscall.MS_NODEV | syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_RELATIME
+	selfExePath      = "/proc/self/exe"
 
 	// EXT4_IOC_RESIZE_FS is the ioctl constant for resizing an ext4 FS.
 	// Computed from C: https://gist.github.com/bduffany/ce9b594c2166ea1a4564cba1b5ed652d
@@ -144,31 +144,6 @@ func configureDefaultRoute(ifaceName, ipAddr string) error {
 		return err
 	}
 	return nlConn.Close()
-}
-
-func copyFile(src, dest string, mode os.FileMode) error {
-	log.Debugf("copyFile src: %q; dest: %q", src, dest)
-	out, err := os.OpenFile(dest, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-	if err != nil {
-		return err
-	}
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return err
-	}
-
-	if err := in.Close(); err != nil {
-		return err
-	}
-	if err := out.Close(); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func startDockerd(ctx context.Context) error {
@@ -300,8 +275,6 @@ func main() {
 	die(mkdirp("/mnt/dev", 0755))
 	die(mount("/dev", "/mnt/dev", "", syscall.MS_MOVE, ""))
 
-	die(copyFile("/init", "/mnt/init", 0555))
-
 	log.Debugf("switching root!")
 	die(chdir("/mnt"))
 	die(mount(".", "/", "", syscall.MS_MOVE, ""))
@@ -427,6 +400,8 @@ func main() {
 		})
 	}
 
+	// Re-execute the initramfs binary through procfs so it does not need to be
+	// copied into the writable root filesystem.
 	eg.Go(func() error {
 		// Run the vmexec server as a child process so that when we call wait()
 		// to reap direct zombie children, we aren't stealing the WaitStatus
@@ -434,7 +409,7 @@ func main() {
 		// a pid). We could alternatively use a mutex to avoid reaping while
 		// vmexec is running a command, but that causes problems for Bazel,
 		// which explicitly waits for stale server processes to be reaped.
-		cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmexec")...)
+		cmd := exec.CommandContext(ctx, selfExePath, append(os.Args[1:], "--vmexec")...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()
@@ -443,7 +418,7 @@ func main() {
 		if !*enableVFS {
 			return nil
 		}
-		cmd := exec.CommandContext(ctx, os.Args[0], append(os.Args[1:], "--vmvfs")...)
+		cmd := exec.CommandContext(ctx, selfExePath, append(os.Args[1:], "--vmvfs")...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		return cmd.Run()

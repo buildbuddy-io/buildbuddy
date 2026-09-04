@@ -93,10 +93,25 @@
   margin-top: 16px;
 }
 
-.executors-page .banner {
+.executors-page .self-hosted-executors-banner {
   margin-top: 32px;
   margin-bottom: 32px;
-  max-width: 600px;
+}
+
+.executors-page .executor-cards {
+  margin-top: 16px;
+}
+
+/* Pool heading + "view executions" link. */
+.executors-page .executor-pool-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.executors-page .executor-pool-header h2 {
+  margin: 0;
 }
 
 .executors-page .executor-details {
@@ -112,9 +127,11 @@
   gap: 8px;
 }
 
+.executors-page .executor-configured-flags {
+  font-family: monospace;
+  overflow-wrap: anywhere;
+}
+
 .executors-page .pool-size-warning {
-  margin: 0;
   margin-top: 16px;
-  max-width: initial;
-  display: inline-flex;
 }

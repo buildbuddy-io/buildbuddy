@@ -14,6 +14,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -32,6 +33,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -275,6 +277,113 @@ func TestExecuteTaskAndStreamResults(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestExecuteTaskAndStreamResults_PreservesOOMError(t *testing.T) {
+	ctx := t.Context()
+	task := getTask()
+	observedMemoryBytes := int64(800)
+	usageMemoryBytes := int64(100)
+	// Set up a fake executor where all runners return oom.Error
+	runOverride := rbetest.AlwaysReturn(&interfaces.CommandResult{
+		ExitCode: commandutil.NoExitCode,
+		Error: oom.Error(oom.Details{
+			EstimatedMemoryBytes: task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
+			ObservedMemoryBytes:  observedMemoryBytes,
+		}),
+		DoNotRecycle: true,
+		UsageStats: &repb.UsageStats{
+			MemoryBytes: usageMemoryBytes,
+		},
+	})
+	exec, _, execClient, mockServer, mockCounter := getExecutor(t, runOverride)
+	publisher, err := operation.Publish(ctx, execClient, task.GetExecutionTask().GetExecutionId())
+	require.NoError(t, err)
+
+	// Execute the scheduled task through the executor so the runner result is
+	// normalized and published as an ExecuteResponse.
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	// The executor should preserve the OOM status details, pass
+	// finishedCleanly=false to the recycle hook, and leave the command usage
+	// stats untouched.
+	<-mockServer.finished
+	require.Equal(t, 1, mockCounter.countRecycled)
+	require.Equal(t, 0, mockCounter.countFinishedCleanly)
+	ops := mockServer.getOperations()
+	completedOp := ops[len(ops)-1]
+	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+
+	unpackedCompletedOp, err := rexec.UnpackOperation(completedOp)
+	require.NoError(t, err)
+	rsp := unpackedCompletedOp.ExecuteResponse
+	require.Equal(t, int32(codes.Unavailable), rsp.GetStatus().GetCode())
+	require.Equal(t, int32(commandutil.NoExitCode), rsp.GetResult().GetExitCode())
+	require.Equal(t, usageMemoryBytes, rsp.GetResult().GetExecutionMetadata().GetUsageStats().GetMemoryBytes())
+	details, ok := oom.DetailsFromStatusProto(rsp.GetStatus())
+	require.True(t, ok)
+	require.Equal(t, task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(), details.EstimatedMemoryBytes)
+	require.Equal(t, observedMemoryBytes, details.ObservedMemoryBytes)
+}
+
+func TestExecuteTaskAndStreamResults_PreservesOOMErrorAfterGracefulTermination(t *testing.T) {
+	ctx := t.Context()
+	task := getTask()
+	task.GetExecutionTask().GetAction().Timeout = durationpb.New(50 * time.Millisecond)
+	task.GetExecutionTask().GetCommand().Platform = &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: platform.TerminationGracePeriodPropertyName, Value: time.Second.String()},
+		},
+	}
+	observedMemoryBytes := int64(800)
+	usageMemoryBytes := int64(100)
+	// Set up a fake executor where the runner returns oom.Error after the task
+	// timeout has triggered graceful termination.
+	runOverride := func(ctx context.Context, original rbetest.RunFunc) *interfaces.CommandResult {
+		time.Sleep(200 * time.Millisecond)
+		return &interfaces.CommandResult{
+			ExitCode: commandutil.NoExitCode,
+			Error: oom.Error(oom.Details{
+				EstimatedMemoryBytes: task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
+				ObservedMemoryBytes:  observedMemoryBytes,
+			}),
+			DoNotRecycle: true,
+			UsageStats: &repb.UsageStats{
+				MemoryBytes: usageMemoryBytes,
+			},
+		}
+	}
+	exec, _, execClient, mockServer, mockCounter := getExecutor(t, runOverride)
+	publisher, err := operation.Publish(ctx, execClient, task.GetExecutionTask().GetExecutionId())
+	require.NoError(t, err)
+
+	// Execute the scheduled task through the timeout path where
+	// gracefullyTerminated is closed before the runner returns.
+	retry, err := exec.ExecuteTaskAndStreamResults(ctx, task, publisher)
+	require.NoError(t, err)
+	require.False(t, retry)
+
+	// The graceful termination rewrite should not replace the more specific OOM
+	// error with DeadlineExceeded.
+	<-mockServer.finished
+	require.Equal(t, 1, mockCounter.countRecycled)
+	require.Equal(t, 0, mockCounter.countFinishedCleanly)
+	ops := mockServer.getOperations()
+	completedOp := ops[len(ops)-1]
+	require.Equal(t, repb.ExecutionStage_COMPLETED, operation.ExtractStage(completedOp))
+
+	unpackedCompletedOp, err := rexec.UnpackOperation(completedOp)
+	require.NoError(t, err)
+	rsp := unpackedCompletedOp.ExecuteResponse
+	require.Equal(t, int32(codes.Unavailable), rsp.GetStatus().GetCode())
+	require.Equal(t, int32(commandutil.NoExitCode), rsp.GetResult().GetExitCode())
+	require.Equal(t, usageMemoryBytes, rsp.GetResult().GetExecutionMetadata().GetUsageStats().GetMemoryBytes())
+	details, ok := oom.DetailsFromStatusProto(rsp.GetStatus())
+	require.True(t, ok)
+	require.Equal(t, task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(), details.EstimatedMemoryBytes)
+	require.Equal(t, observedMemoryBytes, details.ObservedMemoryBytes)
 }
 
 func TestExecuteTaskAndStreamResults_CacheHit(t *testing.T) {

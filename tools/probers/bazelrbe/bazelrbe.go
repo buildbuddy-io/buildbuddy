@@ -14,14 +14,16 @@ import (
 	mrand "math/rand/v2"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
 var (
 	bazelBinary         = flag.String("bazel_binary", "bazel", "Path to bazel binary")
-	bazelArgs           = flag.String("bazel_args", "", "Space separated list of args to pass to Bazel")
-	bazelStartupOptions = flag.String("bazel_startup_options", "", "Space separated list of Bazel startup options to pass (appear before the command)")
+	bazelArgs           = flag.String("bazel_args", "", "Shell-style list of args to pass to Bazel")
+	bazelStartupOptions = flag.String("bazel_startup_options", "", "Shell-style list of Bazel startup options to pass (appear before the command)")
 	proberName          = flag.String("prober_name", "", "Short, human-readable name of this prober. This name must be a valid bazel package name (only '.', '@', '-', '_' and alphanumeric characters allowed).")
+	containerImage      = flag.String("container_image", "none", "Container image in which to execute prober actions. Set to 'none' to use the executor default.")
 
 	numTargets         = flag.Int("num_targets", 10, "Number targets to generate")
 	numInputsPerTarget = flag.Int("num_inputs_per_target", 10, "Number of inputs each generated target will have")
@@ -52,14 +54,17 @@ genrule(
 		  srcs=($(SRCS))
 		  outs=($(OUTS))
 		  for ((i=0; i < $${#srcs[@]}; i++)); do
-			src=$${srcs[i]}  
+			src=$${srcs[i]}
 			out=$${outs[i]}
 			/bin/cat "$$src" > "$$out"
 		  done
       """,
-	  exec_properties = {"salt": "%d"},
+	  exec_properties = {
+	      "container-image": %q,
+	      "salt": "%d",
+	  },
 )
-`, targetName, strings.Join(srcs, ","), strings.Join(outs, ","), salt), nil
+`, targetName, strings.Join(srcs, ","), strings.Join(outs, ","), *containerImage, salt), nil
 }
 
 func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes int) error {
@@ -136,7 +141,10 @@ func runProbe() error {
 		"--max_idle_secs=5",
 	}
 	if *bazelStartupOptions != "" {
-		startupArgs := strings.Split(*bazelStartupOptions, " ")
+		startupArgs, err := shlex.Split(*bazelStartupOptions)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid --bazel_startup_options: %s", err)
+		}
 		args = append(args, startupArgs...)
 	}
 	args = append(args,
@@ -144,9 +152,13 @@ func runProbe() error {
 		"//"+*proberName+":all",
 	)
 	if *bazelArgs != "" {
-		extraArgs := strings.Split(*bazelArgs, " ")
+		extraArgs, err := shlex.Split(*bazelArgs)
+		if err != nil {
+			return status.InvalidArgumentErrorf("invalid --bazel_args: %s", err)
+		}
 		args = append(args, extraArgs...)
 	}
+	args = append(args, "--remote_header=x-buildbuddy-trace=force")
 	trimmedTags := strings.TrimSpace(*tags)
 	if trimmedTags != "" {
 		args = append(args, "--build_metadata=TAGS="+trimmedTags)

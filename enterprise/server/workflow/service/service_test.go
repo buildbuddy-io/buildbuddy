@@ -872,6 +872,56 @@ func TestWebhook_NoWorkflowConfig_NOP(t *testing.T) {
 	require.Zero(t, len(execClient.executeRequests))
 }
 
+func TestWebhook_NoWorkflowConfig_CodesearchEnabled_StartsIndexing(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	flags.Set(t, "remote_execution.enable_codesearch_indexing", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+
+	// Enable codesearch indexing for the group.
+	g, err := te.GetUserDB().GetGroupByID(ctx, gid)
+	require.NoError(t, err)
+	g.URLIdentifier = "mustbeset"
+	g.CodeSearchEnabled = true
+	_, err = te.GetUserDB().UpdateGroup(ctx, g)
+	require.NoError(t, err)
+
+	// `useDefaultWorkflowConfig` is false and the repo has no buildbuddy.yaml, so
+	// the user has no workflow actions of their own. But codesearch indexing is
+	// enabled, so a push should still trigger the codesearch indexing action.
+	repo := createWorkflow(t, te, repoURL, gid, false /*useDefaultWorkflowConfig*/)
+
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	provider.WebhookData = &interfaces.WebhookData{
+		EventName:               "push",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetBranch:            "main",
+		TargetRepoDefaultBranch: "main",
+		PushedRepoURL:           "https://github.com/acme-inc/acme",
+		PushedBranch:            "main",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+	}
+	// Do not return a buildbuddy.yaml config file in the repo contents.
+	provider.FileContents = map[string]string{}
+
+	err = te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	// Expect exactly the codesearch indexing action to be dispatched.
+	execReq := execClient.NextExecuteRequest()
+	require.Equal(t, config.CSIncrementalUpdateName, getExecutedActionName(t, ctx, te, execReq.Payload))
+}
+
 func TestWebhook_FailedToStart_PublishesStatus(t *testing.T) {
 	ctx := context.Background()
 	u, lis := testhttp.NewServer(t)
@@ -1104,80 +1154,49 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		actionFilter              []string
 		codesearchEnabledForGroup bool
 		codesearchFlagEnabled     bool
-		kytheFlagEnabled          bool
 		expectedActions           []string
 	}{
 		{
-			name:                      "no action filter, kythe disabled",
+			name:                      "no action filter, codesearch disabled for group",
 			actionFilter:              nil,
 			codesearchEnabledForGroup: false,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
 			expectedActions:           []string{"Test all targets"},
 		},
 		{
-			name:                      "no action filter, kythe enabled",
+			name:                      "no action filter, codesearch enabled",
 			actionFilter:              nil,
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName, config.KytheActionName},
-		},
-		{
-			name:                      "action filter, kythe disabled",
-			actionFilter:              []string{"Test all targets"},
-			codesearchEnabledForGroup: false,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets"},
-		},
-		{
-			name:                      "action filter, kythe enabled",
-			actionFilter:              []string{"Test all targets"},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{"Test all targets"},
-		},
-		{
-			name:                      "kythe-only action filter",
-			actionFilter:              []string{config.KytheActionName},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.KytheActionName},
-		},
-		{
-			name:                      "all codesearch action filter",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.CSIncrementalUpdateName, config.KytheActionName},
-		},
-		{
-			name:                      "no action filter, cs indexing only enabled",
-			actionFilter:              nil,
-			codesearchEnabledForGroup: true,
-			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          false,
 			expectedActions:           []string{"Test all targets", config.CSIncrementalUpdateName},
 		},
 		{
-			name:                      "all codesearch action filter, cs indexing only enabled",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "action filter, codesearch disabled for group",
+			actionFilter:              []string{"Test all targets"},
+			codesearchEnabledForGroup: false,
+			codesearchFlagEnabled:     true,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
+			name:                      "action filter excludes codesearch",
+			actionFilter:              []string{"Test all targets"},
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     true,
-			kytheFlagEnabled:          false,
+			expectedActions:           []string{"Test all targets"},
+		},
+		{
+			name:                      "codesearch-only action filter",
+			actionFilter:              []string{config.CSIncrementalUpdateName},
+			codesearchEnabledForGroup: true,
+			codesearchFlagEnabled:     true,
 			expectedActions:           []string{config.CSIncrementalUpdateName},
 		},
 		{
-			name:                      "all codesearch action filter, kythe indexing only enabled",
-			actionFilter:              []string{config.CSIncrementalUpdateName, config.KytheActionName},
+			name:                      "codesearch indexing flag disabled",
+			actionFilter:              nil,
 			codesearchEnabledForGroup: true,
 			codesearchFlagEnabled:     false,
-			kytheFlagEnabled:          true,
-			expectedActions:           []string{config.KytheActionName},
+			expectedActions:           []string{"Test all targets"},
 		},
 	}
 
@@ -1190,7 +1209,6 @@ func TestAPIDispatch_ActionFiltering(t *testing.T) {
 		require.NoError(t, err)
 
 		flags.Set(t, "remote_execution.enable_codesearch_indexing", tc.codesearchFlagEnabled)
-		flags.Set(t, "remote_execution.enable_kythe_indexing", tc.kytheFlagEnabled)
 
 		workflowID := te.GetWorkflowService().GetLegacyWorkflowIDForGitRepository(gid, repoURL)
 		rsp, err := bbClient.ExecuteWorkflow(ctx, &wfpb.ExecuteWorkflowRequest{
@@ -1264,6 +1282,62 @@ actions:
 	require.Zero(t, scheduled.FailedAttemptCount)
 	require.Zero(t, scheduled.ConsecutiveScheduleFailureCount)
 	require.Zero(t, scheduled.LeaseExpiresUsec)
+}
+
+func TestScheduledWorkflow_SharesInstanceNameWithWebhookEvent(t *testing.T) {
+	ctx := context.Background()
+	te := newTestEnv(t)
+	configureExperiments(t, te, map[string]bool{"remote_execution.enable_scheduled_workflows": true})
+	authCtx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	runBBServer(ctx, t, te)
+	provider.FileContents = map[string]string{
+		config.FilePath: `
+actions:
+  - name: "Test"
+    bazel_commands: [ "test //..." ]
+    triggers:
+      pull_request:
+        branches: [ "*" ]
+      schedule:
+        crons: ["0 * * * *"]
+`,
+	}
+
+	now := threePM
+	te.SetClock(clockwork.NewFakeClockAt(now))
+	// Scheduled workflows have normalize repo URLs (no ".git" suffix).
+	insertScheduledRun(t, te, &tables.ScheduledRun{
+		ScheduleID:  "test",
+		GroupID:     gid,
+		RepoURL:     repoURL,
+		ActionName:  "Test",
+		CronExpr:    "0 * * * *",
+		NextRunUsec: now.UnixMicro(),
+	})
+
+	require.NoError(t, te.GetWorkflowService().RunScheduledWorkflows(t.Context()))
+	scheduledRequest := execClient.NextExecuteRequest().Payload
+
+	// GitHub webhook payloads use clone URLs, which include a ".git" suffix.
+	cloneURL := repoURL + ".git"
+	wd := &interfaces.WebhookData{
+		EventName:               "pull_request",
+		PushedRepoURL:           cloneURL,
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		TargetRepoURL:           cloneURL,
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "main",
+	}
+	require.NoError(t, te.GetWorkflowService().HandleRepositoryEvent(authCtx, repo, wd, "faketoken"))
+	pullRequest := execClient.NextExecuteRequest().Payload
+
+	// Scheduled workflows and webhook events should share the same instance name so runners can be shared.
+	require.Equal(t, scheduledRequest.GetInstanceName(), pullRequest.GetInstanceName())
 }
 
 func TestScheduledWorkflow(t *testing.T) {
@@ -2343,25 +2417,26 @@ func TestTimeout(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		ctx := context.Background()
-		u, lis := testhttp.NewServer(t)
-		flags.Set(t, "app.build_buddy_url", *u)
-		flags.Set(t, "remote_execution.enable_remote_exec", true)
-		te := newTestEnv(t)
-		ctx, _, gid := authenticate(t, ctx, te)
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			u, lis := testhttp.NewServer(t)
+			flags.Set(t, "app.build_buddy_url", *u)
+			flags.Set(t, "remote_execution.enable_remote_exec", true)
+			te := newTestEnv(t)
+			ctx, _, gid := authenticate(t, ctx, te)
 
-		execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
-		te.SetRemoteExecutionClient(execClient)
-		go http.Serve(lis, te.GetWorkflowService())
-		provider := setupFakeGitProvider(t, te)
-		repoURL := makeTempRepo(t)
-		runBBServer(ctx, t, te)
-		repo := createWorkflow(t, te, repoURL, gid, false)
+			execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+			te.SetRemoteExecutionClient(execClient)
+			go http.Serve(lis, te.GetWorkflowService())
+			provider := setupFakeGitProvider(t, te)
+			repoURL := makeTempRepo(t)
+			runBBServer(ctx, t, te)
+			repo := createWorkflow(t, te, repoURL, gid, false)
 
-		updateGroupStatus(t, te, gid, tc.groupStatus)
-		enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
+			updateGroupStatus(t, te, gid, tc.groupStatus)
+			enableCIRunnerDefaultTimeoutExperiment(t, te, grpb.Group_FREE_TIER_GROUP_STATUS, "1h")
 
-		config := `
+			config := `
 actions:
   - name: "Test"
     triggers: { push: { branches: [ "*" ] } }
@@ -2369,17 +2444,18 @@ actions:
     timeout: "2h"
 `
 
-		pushToDefaultBranch(t, te, repo, provider, config)
+			pushToDefaultBranch(t, te, repo, provider, config)
 
-		execReq := execClient.NextExecuteRequest()
-		exec := getExecution(t, ctx, te, execReq.Payload)
-		expectedTimeout := tc.expectedTimeout.String()
-		require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout, tc.name)
-		if tc.expectedTimeoutReason != "" {
-			require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason, tc.name)
-		} else {
-			require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason, tc.name)
-		}
-		require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration(), tc.name)
+			execReq := execClient.NextExecuteRequest()
+			exec := getExecution(t, ctx, te, execReq.Payload)
+			expectedTimeout := tc.expectedTimeout.String()
+			require.Contains(t, exec.Command.GetArguments(), "--timeout="+expectedTimeout)
+			if tc.expectedTimeoutReason != "" {
+				require.Contains(t, exec.Command.GetArguments(), "--timeout_reason="+tc.expectedTimeoutReason)
+			} else {
+				require.NotContains(t, exec.Command.GetArguments(), "--timeout_reason="+ci_runner_util.FreeTierTimeoutReason)
+			}
+			require.Equal(t, tc.expectedTimeout+workflow.TimeoutGracePeriod, exec.Action.GetTimeout().AsDuration())
+		})
 	}
 }

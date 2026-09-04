@@ -85,16 +85,8 @@ type DocumentMatch interface {
 	FieldLength(fieldName string) uint32
 	// Signal returns the named per-document scoring signal, or 0 if the
 	// signal is absent or has not been resolved. Signals are attached to
-	// matches by a SignalResolver before scoring.
+	// matches by the index reader's ResolveSignals before scoring.
 	Signal(name string) float64
-}
-
-// SignalResolver computes per-document scoring signals for a set of matches
-// and attaches them so scorers can read them via DocumentMatch.Signal.
-// Resolution is requested explicitly so queries that don't score on signals
-// pay nothing. Implemented by index.Reader.
-type SignalResolver interface {
-	ResolveSignals(matches []DocumentMatch, names ...string) error
 }
 
 type Tokenizer interface {
@@ -139,6 +131,11 @@ type IndexWriter interface {
 type IndexReader interface {
 	GetStoredDocument(docID uint64) Document
 	RawQuery(squery string) ([]DocumentMatch, error)
+	// ResolveSignals computes the named per-document scoring signals and
+	// attaches them to the matches, where scorers read them via
+	// DocumentMatch.Signal. Resolving is part of the reader contract because
+	// the signals (e.g. import in-degree) can only be computed from the index.
+	ResolveSignals(matches []DocumentMatch, names ...string) error
 }
 
 type Scorer interface {
@@ -154,6 +151,11 @@ type Scorer interface {
 	// a Scorer is single-use per search and must not be shared across
 	// concurrent Search calls.
 	Prepare(matches []DocumentMatch)
+	// Rescore computes an exact relevance score using the stored document
+	// contents. It is much more expensive than Score and is only run on the
+	// documents Score ranked into the result window. A Rescore of 0 means the
+	// document is not a true match and must be dropped from the results.
+	Rescore(docMatch DocumentMatch, doc Document) float64
 }
 
 type HighlightedRegion interface {

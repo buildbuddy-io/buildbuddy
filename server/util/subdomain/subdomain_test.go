@@ -3,8 +3,10 @@ package subdomain_test
 import (
 	"context"
 	"net/url"
+	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -30,4 +32,8 @@ func TestSetHost(t *testing.T) {
 
 	// Subdomains on a different domain shouldn't match.
 	require.Equal(t, "", getSubdomain("sub.notbuildbuddy.io"))
+}
+
+func TestHeaderIsInternal(t *testing.T) {
+	require.True(t, strings.HasPrefix(subdomain.HeaderName, authutil.InternalHeaderPrefix))
 }

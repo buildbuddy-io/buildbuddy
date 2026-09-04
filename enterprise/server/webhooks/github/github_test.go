@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/stretchr/testify/assert"
+
+	gh "github.com/google/go-github/v59/github"
 )
 
 func webhookRequest(t *testing.T, eventType string, payload []byte) *http.Request {
@@ -58,6 +60,23 @@ func TestParseRequest_ValidTagPushEvent_Success(t *testing.T) {
 	}, data)
 }
 
+func TestParseRequest_ValidAnnotatedTagPushEvent_UsesDereferencedCommitSHA(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	req := webhookRequest(t, "push", test_data.PushAnnotatedTagEvent)
+
+	data, err := github.NewProvider(env).ParseWebhookData(req)
+
+	assert.NoError(t, err)
+	assert.Equal(t, &interfaces.WebhookData{
+		EventName:               "push",
+		PushedRepoURL:           "https://github.com/test/hello_bb_ci.git",
+		PushedTag:               "v1.1.0",
+		SHA:                     "258044d28288d5f6f1c5928b0e22580296fec666",
+		TargetRepoURL:           "https://github.com/test/hello_bb_ci.git",
+		TargetRepoDefaultBranch: "main",
+	}, data)
+}
+
 func TestParseRequest_TagDeletionEvent_ReturnsNil(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	req := webhookRequest(t, "push", test_data.DeleteTagEvent)
@@ -85,6 +104,7 @@ func TestParseRequest_ValidPullRequestEvent_Success(t *testing.T) {
 		TargetBranch:            "main",
 		PullRequestAuthor:       "test",
 		PullRequestNumber:       37,
+		PullRequestAction:       "opened",
 	}, data)
 }
 
@@ -107,6 +127,7 @@ func TestParseRequest_ValidPullRequestReviewEvent_Success(t *testing.T) {
 		PullRequestNumber:       1,
 		PullRequestAuthor:       "test2",
 		PullRequestApprover:     "test",
+		PullRequestAction:       "approved",
 	}, data)
 }
 
@@ -117,5 +138,82 @@ func TestParseRequest_InvalidEvent_Error(t *testing.T) {
 	data, err := github.NewProvider(env).ParseWebhookData(req)
 
 	assert.Error(t, err)
+	assert.Nil(t, data)
+}
+
+func pullRequestEvent(action string) *gh.PullRequestEvent {
+	repo := &gh.Repository{
+		CloneURL:      gh.String("https://github.com/test/repo.git"),
+		DefaultBranch: gh.String("main"),
+		Private:       gh.Bool(false),
+	}
+	return &gh.PullRequestEvent{
+		Action: gh.String(action),
+		PullRequest: &gh.PullRequest{
+			Number: gh.Int(7),
+			User:   &gh.User{Login: gh.String("author")},
+			Head: &gh.PullRequestBranch{
+				Ref:  gh.String("feature"),
+				SHA:  gh.String("deadbeef"),
+				Repo: repo,
+			},
+			Base: &gh.PullRequestBranch{
+				Ref:  gh.String("main"),
+				Repo: repo,
+			},
+		},
+	}
+}
+
+func TestParseWebhookData_ReadyForReview_IsPullRequestEventWithAction(t *testing.T) {
+	data, err := github.ParseWebhookData(pullRequestEvent("ready_for_review"))
+
+	assert.NoError(t, err)
+	assert.Equal(t, &interfaces.WebhookData{
+		EventName:               "pull_request",
+		PushedRepoURL:           "https://github.com/test/repo.git",
+		PushedBranch:            "feature",
+		SHA:                     "deadbeef",
+		TargetRepoURL:           "https://github.com/test/repo.git",
+		TargetRepoDefaultBranch: "main",
+		IsTargetRepoPublic:      true,
+		TargetBranch:            "main",
+		PullRequestAuthor:       "author",
+		PullRequestNumber:       7,
+		PullRequestAction:       "ready_for_review",
+	}, data)
+}
+
+func TestParseWebhookData_PullRequestOpened_RecordsAction(t *testing.T) {
+	data, err := github.ParseWebhookData(pullRequestEvent("opened"))
+
+	assert.NoError(t, err)
+	assert.Equal(t, "pull_request", data.EventName)
+	assert.Equal(t, "opened", data.PullRequestAction)
+}
+
+func TestParseWebhookData_AutoMergeEnabled_RecordsAction(t *testing.T) {
+	data, err := github.ParseWebhookData(pullRequestEvent("auto_merge_enabled"))
+
+	assert.NoError(t, err)
+	assert.Equal(t, &interfaces.WebhookData{
+		EventName:               "pull_request",
+		PushedRepoURL:           "https://github.com/test/repo.git",
+		PushedBranch:            "feature",
+		SHA:                     "deadbeef",
+		TargetRepoURL:           "https://github.com/test/repo.git",
+		TargetRepoDefaultBranch: "main",
+		IsTargetRepoPublic:      true,
+		TargetBranch:            "main",
+		PullRequestAuthor:       "author",
+		PullRequestNumber:       7,
+		PullRequestAction:       "auto_merge_enabled",
+	}, data)
+}
+
+func TestParseWebhookData_UnhandledPullRequestAction_Ignored(t *testing.T) {
+	data, err := github.ParseWebhookData(pullRequestEvent("unsupported_action"))
+
+	assert.NoError(t, err)
 	assert.Nil(t, data)
 }

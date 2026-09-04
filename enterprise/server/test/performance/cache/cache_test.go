@@ -3,6 +3,7 @@ package cache_test
 import (
 	"bytes"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"runtime"
@@ -29,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -40,6 +42,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	mdspb "github.com/buildbuddy-io/buildbuddy/proto/metadata_service"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
@@ -49,6 +52,11 @@ const (
 	numDigests   = 100
 )
 
+var (
+	enablePebblePresenceCache = flag.Bool("enable_pebble_presence_cache", false, "If true, configure the pebble presence cache for benchmarks.")
+	enableCompression         = flag.Bool("enable_compression", true, "If true, read and write compressed resources")
+)
+
 func init() {
 	*log.LogLevel = "error"
 	*log.IncludeShortFileName = true
@@ -56,7 +64,7 @@ func init() {
 }
 
 func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+	flags := map[string]memprovider.InMemoryFlag{
 		migration_cache.MigrationCacheConfigFlag: {
 			State:          memprovider.Enabled,
 			DefaultVariant: "singleton",
@@ -67,7 +75,18 @@ func setExperimentProvider(b *testing.B, te *real_environment.RealEnv) {
 				migration_cache.DecompressReadPercentageField: 0.0,
 			}},
 		},
-	})
+	}
+	if *enablePebblePresenceCache {
+		flags[pebble_cache.PresenceCacheConfigExperiment] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants: map[string]any{"on": map[string]any{
+				"max_entries": numDigests,
+				"ttl":         "1h",
+			}},
+		}
+	}
+	testProvider := memprovider.NewInMemoryProvider(flags)
 	require.NoError(b, openfeature.SetProviderAndWait(testProvider))
 	fp, err := experiments.NewFlagProvider("")
 	require.NoError(b, err)
@@ -99,6 +118,10 @@ func makeDigests(t testing.TB, numDigests int, digestSizeBytes int64, cacheType 
 	digestBufs := make([]*digestBuf, 0, numDigests)
 	for i := 0; i < numDigests; i++ {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, digestSizeBytes, cacheType, "")
+		if *enableCompression {
+			r.Compressor = repb.Compressor_ZSTD
+			buf = compression.CompressZstd(nil, buf)
+		}
 		digestBufs = append(digestBufs, &digestBuf{
 			d:   r,
 			buf: buf,
@@ -163,6 +186,25 @@ func getDistributedCache(t testing.TB, te environment.Env, c interfaces.Cache, l
 	return dc
 }
 
+type slowGcs struct {
+	filestore.PebbleGCSStorage
+}
+
+// time.Sleep can't reliably sleep for less than 1ms, so use a busy loop
+// instead.
+func busyLoop(dur time.Duration) {
+	start := time.Now()
+	for time.Since(start) < dur {
+	}
+}
+
+func (slow *slowGcs) Reader(ctx context.Context, blobName string, offset, limit int64) (io.ReadCloser, error) {
+	// GCS takes 30-40ms to open a reader. We don't have to wait that long to
+	// reproduce slowness in benchmarks
+	busyLoop(time.Millisecond)
+	return slow.PebbleGCSStorage.Reader(ctx, blobName, offset, limit)
+}
+
 func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	clock := clockwork.NewRealClock()
 
@@ -170,7 +212,7 @@ func getMetaCache(t testing.TB, te environment.Env) interfaces.Cache {
 	if err := mockGCS.SetBucketCustomTimeTTL(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	fs := filestore.New(filestore.WithGCSBlobstore(mockGCS, "one-bucket"))
+	fs := filestore.New(filestore.WithGCSBlobstore(&slowGcs{mockGCS}, "one-bucket"))
 
 	mm, err := mockmetadata.NewServer(maxSizeBytes, fs)
 	require.NoError(t, err)
@@ -242,26 +284,21 @@ func benchmarkRead(ctx context.Context, c interfaces.Cache, digestSizeBytes int6
 	b.ReportAllocs()
 	b.SetBytes(digestSizeBytes)
 
-	// Using a bytes.Buffer here because it is used in the distributed.Cache.Get
-	// path, which calls Cache.Reader, and this results in Read calls of various
-	// sizes.
-	readBuf := bytes.NewBuffer(make([]byte, 1))
-	i := 1
-	for b.Loop() {
+	for i := 1; b.Loop(); i++ {
 		dbuf := digestBufs[i%len(digestBufs)]
-		i++
 		r, err := c.Reader(ctx, dbuf.d, 0, 0)
 		if err != nil {
 			b.Fatal(err)
 		}
+		// Using an undersized bytes.Buffer here because this results in Read
+		// calls of various sizes.
+		readBuf := bytes.NewBuffer(make([]byte, 1))
 		n, err := readBuf.ReadFrom(r)
 		r.Close()
 		if err != nil {
 			b.Fatal(err)
 		}
-		if n != digestSizeBytes {
-			b.Fatalf("Wanted %v bytes, got %v", digestSizeBytes, n)
-		}
+		require.Equal(b, len(dbuf.buf), int(n))
 	}
 }
 
@@ -282,8 +319,8 @@ func benchmarkGet(ctx context.Context, c interfaces.Cache, digestSizeBytes int64
 	}
 }
 
-func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, b *testing.B) {
-	digestBufs := makeDigests(b, numDigests, digestSizeBytes, rspb.CacheType_CAS)
+func benchmarkGetMulti(ctx context.Context, c interfaces.Cache, digestSizeBytes int64, batchSize int, b *testing.B) {
+	digestBufs := makeDigests(b, batchSize, digestSizeBytes, rspb.CacheType_CAS)
 	setDigestsInCache(b, ctx, c, digestBufs)
 	digests := make([]*rspb.ResourceName, 0, len(digestBufs))
 	var sumBytes int64
@@ -399,16 +436,19 @@ func BenchmarkGetSingle(b *testing.B) {
 }
 
 func BenchmarkGetMulti(b *testing.B) {
-	sizes := []int64{10, 100, 1000, 10000}
+	sizes := []int64{100, 10000}
+	batchSizes := []int{1, 2, 3, 5, 10, 25, 50, 100, 500}
 	te := getTestEnv(b)
 	ctx := getUserContext(b, te)
 
 	for _, cache := range getAllCaches(b, te) {
 		for _, size := range sizes {
-			name := fmt.Sprintf("%s%d", cache.Name, size)
-			b.Run(name, func(b *testing.B) {
-				benchmarkGetMulti(ctx, cache, size, b)
-			})
+			for _, batchSize := range batchSizes {
+				name := fmt.Sprintf("%s%d/batch%d", cache.Name, size, batchSize)
+				b.Run(name, func(b *testing.B) {
+					benchmarkGetMulti(ctx, cache, size, batchSize, b)
+				})
+			}
 		}
 	}
 }
@@ -459,7 +499,7 @@ func BenchmarkParallel(b *testing.B) {
 							require.NoError(b, err)
 							n, err := w.Write(dbuf.buf)
 							require.NoError(b, err)
-							require.Equal(b, size, int64(n))
+							require.Equal(b, len(dbuf.buf), n)
 							require.NoError(b, w.Commit())
 							require.NoError(b, w.Close())
 						}
@@ -469,7 +509,7 @@ func BenchmarkParallel(b *testing.B) {
 						require.NoError(b, err)
 						n, err := io.Copy(io.Discard, r)
 						require.NoError(b, err)
-						require.Equal(b, size, n)
+						require.Equal(b, len(dbuf.buf), int(n))
 						require.NoError(b, r.Close())
 
 						// Get the digest from the cache.

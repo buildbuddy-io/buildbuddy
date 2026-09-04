@@ -519,15 +519,15 @@ func (c *connector) Driver() driver.Driver {
 	return c.d
 }
 
-func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, string, error) {
+func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConfig) (*gorm.DB, DataSource, error) {
 	ds, err := ParseDatasource(ctx, dataSource, advancedConfig)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	drv, err := getDriver(ds)
 	if err != nil {
-		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
+		return nil, nil, fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
 
 	// Use our own connector so that we can control the DSN for each new
@@ -546,7 +546,7 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 	case postgresDriver:
 		dialector = postgres.Dialector{Config: &postgres.Config{Conn: db}}
 	default:
-		return nil, "", fmt.Errorf("unsupported database driver %s", ds.DriverName())
+		return nil, nil, fmt.Errorf("unsupported database driver %s", ds.DriverName())
 	}
 
 	l := &gormutil.Logger{
@@ -559,12 +559,12 @@ func openDB(ctx context.Context, dataSource string, advancedConfig *AdvancedConf
 	config := gorm.Config{Logger: l, SkipDefaultTransaction: true}
 	gdb, err := gorm.Open(dialector, &config)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, err
 	}
 
 	instrumentGORM(gdb)
 
-	return gdb, ds.DriverName(), nil
+	return gdb, ds, nil
 }
 
 // DataSource is responsible for generating the DSN for new sql connections.
@@ -709,15 +709,22 @@ func ParseDatasource(ctx context.Context, datasource string, advancedConfig *Adv
 	return nil, status.FailedPreconditionError("no database configured -- please specify at least one in the config")
 }
 
-func setDBOptions(driver string, gdb *gorm.DB) error {
+func setDBOptions(ds DataSource, gdb *gorm.DB) error {
 	db, err := gdb.DB()
 	if err != nil {
 		return err
 	}
 
 	// SQLITE Special! To avoid "database is locked errors":
-	if driver == sqliteDriver {
+	if ds.DriverName() == sqliteDriver {
 		db.SetMaxOpenConns(1)
+		if dsn, err := ds.DSN(); err == nil && strings.Contains(dsn, "mode=memory") {
+			// An in-memory sqlite DB lives and dies with this single
+			// connection, so keep it idle forever and never expire it.
+			db.SetMaxIdleConns(1)
+			db.SetConnMaxLifetime(0)
+			db.SetConnMaxIdleTime(0)
+		}
 		gdb.Exec("PRAGMA journal_mode=WAL;")
 	} else {
 		if *maxOpenConns != 0 {
@@ -792,12 +799,13 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 		return nil, err
 	}
 
-	primaryDB, driverName, err := openDB(ctx, *dataSource, advDataSource)
+	primaryDB, primaryDS, err := openDB(ctx, *dataSource, advDataSource)
 	if err != nil {
 		return nil, status.FailedPreconditionErrorf("could not configure primary database: %s", err)
 	}
+	driverName := primaryDS.DriverName()
 
-	err = setDBOptions(driverName, primaryDB)
+	err = setDBOptions(primaryDS, primaryDB)
 	if err != nil {
 		return nil, err
 	}
@@ -845,11 +853,11 @@ func GetConfiguredDatabase(ctx context.Context, env environment.Env) (interfaces
 
 	// Setup a read replica if one is configured.
 	if *readReplica != "" {
-		replicaDB, readDialect, err := openDB(ctx, *readReplica, advReadReplica)
+		replicaDB, replicaDS, err := openDB(ctx, *readReplica, advReadReplica)
 		if err != nil {
 			return nil, status.FailedPreconditionErrorf("could not configure read replica database: %s", err)
 		}
-		setDBOptions(readDialect, replicaDB)
+		setDBOptions(replicaDS, replicaDB)
 		log.Info("Read replica was present -- connecting to it.")
 		dbh.readReplicaDB = replicaDB
 

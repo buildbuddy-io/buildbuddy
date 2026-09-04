@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/authdb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/userdb"
@@ -12,13 +13,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
 type testBucket struct {
@@ -63,6 +62,7 @@ func createTestLimitingBucket(env environment.Env, config *bucketConfig, limit i
 }
 
 func TestQuotaFlagdBuckets(t *testing.T) {
+	flags.Set(t, "app.enable_quota_management", true)
 	env := testenv.GetTestEnv(t)
 	testUsers := testauth.TestUsers("US001", "GR001")
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testUsers))
@@ -380,66 +380,36 @@ func TestConcurrentBucketAccess(t *testing.T) {
 	}
 }
 
-func TestCheckGroupBlocked(t *testing.T) {
+func TestCreateGCRABucket_RateLimit(t *testing.T) {
+	redisHandle := testredis.Start(t)
+	rdb := redisHandle.Client()
+	t.Cleanup(func() { require.NoError(t, rdb.Close()) })
+
 	env := testenv.GetTestEnv(t)
-	ctx := context.Background()
-
-	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{})
-	domain := t.Name()
-	require.NoError(t, openfeature.SetNamedProviderAndWait(domain, provider))
-	fp, err := experiments.NewFlagProvider(domain)
-	require.NoError(t, err)
-	env.SetExperimentFlagProvider(fp)
-
-	qm, err := newQuotaManager(env, createTestBucket)
+	env.SetDefaultRedisClient(rdb)
+	bucket, err := createGCRABucket(env, &bucketConfig{
+		namespace:          "test-namespace",
+		name:               "test-bucket",
+		numRequests:        1,
+		periodDurationUsec: int64(time.Hour.Microseconds()),
+		maxBurst:           2,
+	})
 	require.NoError(t, err)
 
-	t.Run("blocked group", func(t *testing.T) {
-		blockedClaims := &claims.Claims{
-			APIKeyID:    "AK001",
-			UserID:      "US001",
-			GroupID:     "GR001",
-			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, blockedClaims)
+	ctx := t.Context()
+	for range 3 {
+		allowed, err := bucket.Allow(ctx, "key", 1)
+		require.NoError(t, err)
+		require.True(t, allowed)
+	}
+	allowed, err := bucket.Allow(ctx, "key", 1)
+	require.NoError(t, err)
+	require.False(t, allowed)
 
-		err = qm.checkGroupBlocked(authedCtx)
-		assert.Error(t, err)
-		assert.Equal(t, errBlocked, err)
-	})
-
-	t.Run("enterprise group", func(t *testing.T) {
-		enterpriseClaims := &claims.Claims{
-			APIKeyID:    "AK001",
-			UserID:      "US001",
-			GroupID:     "GR001",
-			GroupStatus: grpb.Group_ENTERPRISE_GROUP_STATUS,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, enterpriseClaims)
-		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
-	})
-
-	t.Run("request without API key", func(t *testing.T) {
-		webClaims := &claims.Claims{
-			UserID:      "US001",
-			GroupID:     "GR001",
-			GroupStatus: grpb.Group_BLOCKED_GROUP_STATUS,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, webClaims)
-		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
-	})
-
-	t.Run("impersonating request", func(t *testing.T) {
-		impersonatingClaims := &claims.Claims{
-			APIKeyID:      "AK001",
-			UserID:        "US001",
-			GroupID:       "GR001",
-			GroupStatus:   grpb.Group_BLOCKED_GROUP_STATUS,
-			Impersonating: true,
-		}
-		authedCtx := testauth.WithAuthenticatedUserInfo(ctx, impersonatingClaims)
-		assert.NoError(t, qm.checkGroupBlocked(authedCtx))
-	})
+	// Rate limit state is independent for each key.
+	allowed, err = bucket.Allow(ctx, "other-key", 1)
+	require.NoError(t, err)
+	require.True(t, allowed)
 }
 
 func TestCreateGCRABucket_VeryLargePeriod(t *testing.T) {

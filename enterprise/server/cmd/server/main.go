@@ -42,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_enforcer"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/ip_rules_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/mcp/mcpserver"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/notification"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/quota"
@@ -72,6 +73,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
 	"github.com/buildbuddy-io/buildbuddy/server/telemetry"
+	"github.com/buildbuddy-io/buildbuddy/server/util/groupstatus"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
@@ -130,6 +132,7 @@ func convertToProdOrDie(ctx context.Context, env *real_environment.RealEnv) {
 	if err := usage_service.Register(env); err != nil {
 		log.Fatalf("%v", err)
 	}
+	notification.Register(env)
 
 	if err := api.Register(env); err != nil {
 		log.Fatalf("%v", err)
@@ -245,6 +248,7 @@ func main() {
 	if err := quota.Register(realEnv); err != nil {
 		log.Fatalf("%v", err)
 	}
+	realEnv.SetGroupStatusChecker(groupstatus.New())
 
 	if err := redis_client.RegisterRemoteExecutionRedisClient(realEnv); err != nil {
 		log.Fatalf("%v", err)

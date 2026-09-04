@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "accumulator",
@@ -9,12 +9,25 @@ go_library(
         "//proto:build_event_stream_go_proto",
         "//proto:invocation_go_proto",
         "//proto:invocation_status_go_proto",
-        "//proto:resource_go_proto",
         "//server/build_event_protocol/event_parser",
         "//server/build_event_protocol/invocation_format",
         "//server/remote_cache/digest",
         "//server/util/log",
         "//server/util/proto",
         "//server/util/timeutil",
+    ],
+)
+
+go_test(
+    name = "accumulator_test",
+    srcs = ["accumulator_test.go"],
+    deps = [
+        ":accumulator",
+        "//proto:build_event_stream_go_proto",
+        "//proto:invocation_go_proto",
+        "@com_github_google_go_cmp//cmp",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//testing/protocmp",
     ],
 )

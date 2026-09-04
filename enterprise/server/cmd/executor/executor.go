@@ -22,8 +22,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/gpu"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/runner"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/priority_task_scheduler"
@@ -91,6 +93,17 @@ var (
 	serverType        = flag.String("server_type", "prod-buildbuddy-executor", "The server type to match on health checks")
 	maxThreads        = flag.Int("executor.max_threads", 0, "The maximum number of threads to allow before panicking. If unset, the golang default will be used (currently 10,000).")
 )
+
+// Cgroups contains the executor's cgroup paths discovered during setup.
+// On platforms other than linux, all fields are empty.
+type Cgroups struct {
+	// StartingCgroup is the cgroup that contained the executor before setup,
+	// relative to the cgroupfs root. It is empty if the cgroup could not be
+	// determined or if the executor started in the root cgroup.
+	StartingCgroup string
+	// CgroupParent is the parent under which task cgroups are created.
+	CgroupParent string
+}
 
 func isOldEndpoint(endpoint string) bool {
 	u, err := url.Parse(endpoint)
@@ -331,6 +344,9 @@ func main() {
 		fmt.Printf("Error configuring logging: %s", err)
 		os.Exit(1)
 	}
+	if err := gpu.Configure(); err != nil {
+		log.Fatalf("Could not configure GPU memory tracking: %s", err)
+	}
 
 	if err := xds.Bootstrap(rootContext, nil /*=client*/); err != nil {
 		log.Fatalf("Error bootstrapping xDS config: %s", err)
@@ -345,6 +361,10 @@ func main() {
 	if err := os.MkdirAll(runner.GetBuildRoot(), 0755); err != nil {
 		log.Fatalf("Unable to create build root directory %q: %s", runner.GetBuildRoot(), err)
 	}
+	if err := resources.ConfigureDiskCapacity(runner.GetBuildRoot()); err != nil {
+		log.Warningf("Could not determine assignable disk capacity: %s", err)
+	}
+	metrics.RemoteExecutionAssignableDiskBytes.Set(math.Floor(float64(resources.GetAllocatedDiskBytes()) * tasksize.MaxResourceCapacityRatio))
 
 	// Run any startup commands.
 	for i, startupCommand := range *startupCommands {
@@ -386,13 +406,27 @@ func main() {
 	imageCacheAuth := container.NewImageCacheAuthenticator(container.ImageCacheAuthenticatorOpts{})
 	env.SetImageCacheAuthenticator(imageCacheAuth)
 
-	tasksCgroupParent, err := setupCgroups()
+	cgroups, err := setupCgroups()
 	if err != nil {
 		log.Fatalf("cgroup setup failed: %s", err)
 	}
 
+	var oomKiller oomkiller.Killer
+	if oomkiller.Enabled() {
+		monitor, err := oomkiller.NewMemoryMonitor(cgroups.StartingCgroup)
+		if err != nil {
+			log.Fatalf("Error initializing executor OOM killer memory monitor: %s", err)
+		}
+		k, err := oomkiller.New(rootContext, monitor)
+		if err != nil {
+			log.Fatalf("Error initializing executor OOM killer: %s", err)
+		}
+		oomKiller = k
+	}
+
 	runnerPool, err := runner.NewPool(env, cacheRoot, &runner.PoolOptions{
-		CgroupParent: tasksCgroupParent,
+		CgroupParent: cgroups.CgroupParent,
+		OOMKiller:    oomKiller,
 	})
 	if err != nil {
 		log.Fatalf("Failed to initialize runner pool: %s", err)
@@ -411,6 +445,14 @@ func main() {
 	if err := taskScheduler.Start(); err != nil {
 		log.Fatalf("Error starting task scheduler: %v", err)
 	}
+	prometheus.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: "buildbuddy",
+		Subsystem: "remote_execution",
+		Name:      "running_task_progress_seconds",
+		Help:      "Total time, in seconds, that the tasks currently running on this executor have spent executing so far. This approximates the execution progress that would be lost if the executor were shut down, since killed tasks are re-enqueued and restart from scratch.",
+	}, func() float64 {
+		return taskScheduler.TotalRunningTaskExecutionDuration().Seconds()
+	}))
 
 	monitoring.StartMonitoringHandler(env, fmt.Sprintf("%s:%d", *listen, *monitoringPort))
 

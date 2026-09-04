@@ -95,6 +95,10 @@ var (
 
 		// Audit logs.
 		buildBuddyServicePrefix + "GetAuditLogs",
+
+		// Sending notifications requires the SEND_NOTIFICATION capability.
+		// It's checked by the RPC handler.
+		buildBuddyServicePrefix + "SendNotification",
 	}
 
 	// groupMemberRPCs can only be called when logged in as a member of
@@ -202,6 +206,9 @@ var (
 		buildBuddyServicePrefix + "GetUsageAlertingRules",
 		buildBuddyServicePrefix + "CreateUsageAlertingRule",
 		buildBuddyServicePrefix + "DeleteUsageAlertingRule",
+		// Org SSO configuration
+		buildBuddyServicePrefix + "GetSSOConfig",
+		buildBuddyServicePrefix + "SetSSOConfig",
 		// Encryption.
 		buildBuddyServicePrefix + "GetEncryptionConfig",
 		buildBuddyServicePrefix + "SetEncryptionConfig",
@@ -236,8 +243,6 @@ var (
 
 		// Org management
 		buildBuddyServicePrefix + "SetGroupStatus",
-		buildBuddyServicePrefix + "GetSSOConfig",
-		buildBuddyServicePrefix + "SetSSOConfig",
 	}
 )
 

@@ -8,27 +8,53 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bbrc"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/parsed"
 )
 
 type BazelArgs struct {
-	// forwarded are the Bazel args that are eventually passed to Bazelisk.
-	// bb might add to these, but --config and --bazelrc flags are not expanded.
-	// These should look fairly similarly to the user-supplied args, but with some additional bb-specific args.
-	forwarded *parsed.OrderedArgs
+	// unresolved are the Bazel args without any rc files (bazelrc or bbrc) or config flags
+	// (--config or --bb_config) expanded.
+	//
+	// Any bbrc-related options should be removed before being passed to Bazelisk, because
+	// Bazelisk does not support them.
+	//
+	// Any bazelrc-related options are not expanded, because Bazelisk will handle expansion.
+	unresolved *parsed.OrderedArgs
 
-	// resolved are the Bazel args that are used internally within the bb parser.
-	// --config and --bazelrc flags are expanded, so the parser has a complete view of the args.
+	// resolved are the Bazel args that are used internally within the bb parser to understand the complete set of args.
+	// All bazelrc files, --config flags, bbrc files, and --bb_config flags are expanded.
 	resolved *parsed.OrderedArgs
+
+	// noResolve indicates that resolved args (i.e. --config and --bazelrc flags expanded) should not be computed.
+	noResolve bool
 }
 
-// Forwarded returns the forwarded args as a canonicalized []string.
+// Forwarded returns the args that should be passed to Bazelisk as a canonicalized []string.
 func (a *BazelArgs) Forwarded() []string {
-	return a.forwarded.Canonicalized().Format()
+	// Clone to avoid mutation of a.unresolved.
+	args := cloneOrderedArgs(a.unresolved)
+	// Remove bbrc-related options that should not be passed to Bazelisk.
+	// bbrc files should not contain Bazel options, so they do not need to be expanded before
+	// being removed.
+	bbrc.RemoveOptions(args)
+	return args.Canonicalized().Format()
+}
+
+// Unresolved returns the arguments before rc files and config flags are
+// expanded. Unlike Forwarded, it retains BB rc-file options so that they can
+// be re-parsed if needed.
+func (a *BazelArgs) Unresolved() []string {
+	// Clone to avoid mutation of a.unresolved.
+	args := cloneOrderedArgs(a.unresolved)
+	return args.Canonicalized().Format()
 }
 
 // Resolved returns the resolved args as a canonicalized []string.
 func (a *BazelArgs) Resolved() []string {
+	if a.noResolve {
+		return a.Forwarded()
+	}
 	return a.resolved.Canonicalized().Format()
 }
 
@@ -41,15 +67,13 @@ func NewBazelArgs(args []string) (*BazelArgs, error) {
 	return b, nil
 }
 
-// NewBazelArgsNoResolve creates a BazelArgs from an already-resolved []string
-// without performing config/bazelrc expansion. Both forwarded and resolved are
-// set to the same parsed form of args.
+// NewBazelArgsNoResolve creates a BazelArgs without performing config/bazelrc expansion.
 func NewBazelArgsNoResolve(args []string) (*BazelArgs, error) {
 	parsed, err := parser.ParseArgs(args)
 	if err != nil {
 		return nil, err
 	}
-	return &BazelArgs{forwarded: parsed, resolved: cloneOrderedArgs(parsed)}, nil
+	return &BazelArgs{unresolved: parsed, noResolve: true}, nil
 }
 
 func cloneOrderedArgs(args *parsed.OrderedArgs) *parsed.OrderedArgs {
@@ -59,21 +83,27 @@ func cloneOrderedArgs(args *parsed.OrderedArgs) *parsed.OrderedArgs {
 // Set updates the BazelArgs struct with a new slice of bazel args.
 // It also recomputes the resolved args.
 func (a *BazelArgs) Set(args []string) error {
-	forwarded, err := parser.ParseArgs(args)
+	parsedArgs, err := parser.ParseArgs(args)
 	if err != nil {
 		return err
 	}
-	a.forwarded = forwarded
+	a.unresolved = parsedArgs
+	if a.noResolve {
+		return nil
+	}
 	return a.resolve()
 }
 
 // Append adds a new bazel arg.
 func (a *BazelArgs) Append(arg string) error {
-	newFwd, err := parser.ParseArgs(Append(a.forwarded.Format(), arg))
+	newFwd, err := parser.ParseArgs(Append(a.unresolved.Format(), arg))
 	if err != nil {
 		return err
 	}
-	a.forwarded = newFwd
+	a.unresolved = newFwd
+	if a.noResolve {
+		return nil
+	}
 
 	if requiresResolve(arg) {
 		return a.resolve()
@@ -93,8 +123,11 @@ func (a *BazelArgs) AppendStartupOption(name, value string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.forwarded.Append(opt); err != nil {
+	if err := a.unresolved.Append(opt); err != nil {
 		return err
+	}
+	if a.noResolve {
+		return nil
 	}
 
 	if requiresResolve(name) {
@@ -108,11 +141,14 @@ func (a *BazelArgs) AppendStartupOption(name, value string) error {
 // If the same flag is specified multiple times, Bazel will use the last value. This is useful for adding flags that should
 // be overridden by later flags.
 func (a *BazelArgs) Prepend(arg string) error {
-	newFwd, err := parser.ParseArgs(prepend(a.forwarded.Format(), arg))
+	newFwd, err := parser.ParseArgs(prepend(a.unresolved.Format(), arg))
 	if err != nil {
 		return err
 	}
-	a.forwarded = newFwd
+	a.unresolved = newFwd
+	if a.noResolve {
+		return nil
+	}
 
 	if requiresResolve(arg) {
 		return a.resolve()
@@ -140,9 +176,13 @@ func prepend(args []string, arg string) []string {
 
 // requiresResolve returns true if the arg can change rc/config expansion.
 func requiresResolve(arg string) bool {
-	flagName, _ := SplitOptionValue(arg)
-	flagName = strings.TrimPrefix(flagName, "--")
-	return flagName == "config" || flagName == "bazelrc"
+	name := flagName(arg)
+	return name == bbrc.ConfigFlagName || name == bbrc.FileFlagName || name == bbrc.IgnoreAllRCFilesFlagName || name == "config" || name == "bazelrc"
+}
+
+func flagName(arg string) string {
+	name, _ := SplitOptionValue(arg)
+	return strings.TrimPrefix(name, "--")
 }
 
 // Get returns the value of a flag.
@@ -155,13 +195,18 @@ func (a *BazelArgs) Has(flagName string) bool {
 	return a.Get(flagName) != ""
 }
 
-// resolve re-evaluates the forwarded args and expands all flags into the resolved field.
+// resolve re-evaluates the forwarded args and expands BB and Bazel rc files
+// into the resolved field.
 //
 // resolve is expensive because it re-parses all rc files and expands configs. It is only necessary
 // when requiresResolve returns true for a flag.
 func (a *BazelArgs) resolve() error {
+	if a.noResolve {
+		return nil
+	}
+
 	// Clone to avoid mutation of a.forwarded by ResolveArgs.
-	clone := cloneOrderedArgs(a.forwarded)
+	clone := cloneOrderedArgs(a.unresolved)
 	resolved, err := parser.ResolveArgs(clone)
 	if err != nil {
 		return err
@@ -184,57 +229,69 @@ func (a *BazelArgs) GetAllFlagsWithName(flagName string) []string {
 
 // StripBBFlag removes a CLI-only string flag from the args (so it is
 // not passed to Bazelisk) and returns its value.
-// TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly
-// from the resolved args.
 func (a *BazelArgs) StripBBFlag(flagName string) (string, error) {
-	// GetCLICommandOptionVal removes the flag from a.forwarded in place.
-	flagVal, err := parser.GetCLICommandOptionVal(a.forwarded, flagName)
+	if a.noResolve {
+		return parser.GetCLICommandOptionVal(a.unresolved, flagName)
+	}
+	// GetCLICommandOptionVal removes the flag from the args in place,
+	// so we need to remove it from the unresolved args as well.
+	flagVal, err := parser.GetCLICommandOptionVal(a.resolved, flagName)
 	if err != nil {
 		return "", err
 	}
-	a.resolved.RemoveCommandOptions(flagName)
+	a.unresolved.RemoveCommandOptions(flagName)
 	return flagVal, nil
 }
 
 // StripBBBoolFlag removes a CLI-only bool flag from the forwarded args (so it
 // is not passed to Bazelisk) and returns whether it was set.
-// TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly
-// from the resolved args.
 func (a *BazelArgs) StripBBBoolFlag(flagName string) (bool, error) {
-	// IsCLICommandOptionSet removes the flag from a.forwarded in place.
-	set, err := parser.IsCLICommandOptionSet(a.forwarded, flagName)
+	if a.noResolve {
+		return parser.IsCLICommandOptionSet(a.unresolved, flagName)
+	}
+	// IsCLICommandOptionSet removes the flag from the args in place,
+	// so we need to remove it from the unresolved args as well.
+	set, err := parser.IsCLICommandOptionSet(a.resolved, flagName)
 	if err != nil {
 		return false, err
 	}
-	a.resolved.RemoveCommandOptions(flagName)
+	a.unresolved.RemoveCommandOptions(flagName)
 	return set, nil
 }
 
 // StripBBStartupOptions removes CLI-only startup options and returns the removed options.
-// TODO(#7389): If we support setting CLI flags via config, make sure we support reading them correctly.
 func (a *BazelArgs) StripBBStartupOptions(optionNames ...string) []*parsed.IndexedOption {
-	a.forwarded.RemoveStartupOptions(optionNames...)
+	if a.noResolve {
+		return a.unresolved.RemoveStartupOptions(optionNames...)
+	}
 	removed := a.resolved.RemoveStartupOptions(optionNames...)
+	a.unresolved.RemoveStartupOptions(optionNames...)
 	return removed
 }
 
 // GetRemoteHeaderVal returns the value of a --remote_header flag matching the
 // given key, reading from the resolved args.
 func (a *BazelArgs) GetRemoteHeaderVal(key string) string {
+	if a.noResolve {
+		return parser.GetRemoteHeaderVal(a.unresolved, key)
+	}
 	return parser.GetRemoteHeaderVal(a.resolved, key)
 }
 
 // Pop removes a flag and returns its value.
 // NOTE: Pop does not remove boolean flags.
 func (a *BazelArgs) Pop(flagName string) (string, error) {
-	value, newFwdSlice := Pop(a.forwarded.Format(), flagName)
+	value, newFwdSlice := Pop(a.unresolved.Format(), flagName)
 
 	if value != "" {
 		newFwd, err := parser.ParseArgs(newFwdSlice)
 		if err != nil {
 			return "", err
 		}
-		a.forwarded = newFwd
+		a.unresolved = newFwd
+		if a.noResolve {
+			return value, nil
+		}
 
 		if requiresResolve(flagName) {
 			return value, a.resolve()

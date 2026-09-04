@@ -9,12 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/txn"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -25,8 +27,59 @@ import (
 
 	_ "github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/logger"
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	gstatus "google.golang.org/grpc/status"
 )
+
+// testRecord is a valid file record in partition "default", used for writing
+// data-range keys in transactions. The replica state machine refuses generic
+// KV writes (DirectWrite/CAS) to file-record keyspace -- and every data range
+// is file-record keyspace -- so txn statements against data ranges must carry
+// SetRequests with real records, as production transactions would.
+type testRecord struct {
+	key []byte
+	fr  *sgpb.FileRecord
+}
+
+func newTestRecord(t testing.TB) *testRecord {
+	r, _ := testdigest.RandomCASResourceBuf(t, 100)
+	fr := &sgpb.FileRecord{
+		Isolation: &sgpb.Isolation{
+			CacheType:   rspb.CacheType_CAS,
+			PartitionId: "default",
+		},
+		Digest:         r.GetDigest(),
+		DigestFunction: r.GetDigestFunction(),
+	}
+	pk, err := filestore.New().PebbleKey(fr)
+	require.NoError(t, err)
+	key, err := pk.Bytes(filestore.Version5)
+	require.NoError(t, err)
+	return &testRecord{key: key, fr: fr}
+}
+
+// setRequest returns a SetRequest storing data inline in the record.
+func (r *testRecord) setRequest(data []byte) *rfpb.SetRequest {
+	return &rfpb.SetRequest{
+		Key: r.key,
+		FileMetadata: &sgpb.FileMetadata{
+			FileRecord: r.fr,
+			StorageMetadata: &sgpb.StorageMetadata{
+				InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{Data: data},
+			},
+		},
+	}
+}
+
+func writeRecord(t *testing.T, ctx context.Context, s *sender.Sender, r *testRecord, data []byte) {
+	t.Helper()
+	writeReq, err := rbuilder.NewBatchBuilder().Add(r.setRequest(data)).ToProto()
+	require.NoError(t, err)
+	writeRsp, err := s.SyncPropose(ctx, r.key, writeReq)
+	require.NoError(t, err)
+	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
+}
 
 func TestCommitPreparedTxn(t *testing.T) {
 	sf := testutil.NewStoreFactory(t)
@@ -34,27 +87,11 @@ func TestCommitPreparedTxn(t *testing.T) {
 	ctx := context.Background()
 	sf.StartShard(t, ctx, store)
 
-	{ // Do a DirectWrite.
-		key := []byte("PTdefault/f11")
-		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   key,
-				Value: []byte("bar"),
-			},
-		}).ToProto()
-		require.NoError(t, err)
-		writeRsp, err := store.Sender().SyncPropose(ctx, key, writeReq)
-		require.NoError(t, err)
-		err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-		require.NoError(t, err)
-	}
+	// Write the initial record value.
+	rec := newTestRecord(t)
+	writeRecord(t, ctx, store.Sender(), rec, []byte("bar"))
 
-	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   []byte("PTdefault/f11"),
-			Value: []byte("zoo"),
-		},
-	})
+	batch := rbuilder.NewBatchBuilder().Add(rec.setRequest([]byte("zoo")))
 	testutil.WaitForRangeLease(t, ctx, []*testutil.TestingStore{store}, 2)
 	rd := store.GetRange(2)
 	tb := rbuilder.NewTxn()
@@ -89,7 +126,7 @@ func TestCommitPreparedTxn(t *testing.T) {
 		require.NoError(t, readBatch.AnyError())
 	}
 
-	err = tc.ProcessTxnRecord(ctx, txnRecord)
+	err = tc.RecoverTxnRecordForTest(ctx, txnRecord)
 	require.NoError(t, err)
 
 	{ // Do a DirectRead and verify the txn record doesn't exist
@@ -105,35 +142,12 @@ func TestCommitPreparedTxn(t *testing.T) {
 		require.True(t, status.IsNotFoundError(err))
 	}
 
-	{ // Do a DirectRead and verify the value is updated.
-		key := []byte("PTdefault/f11")
-		readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
-			Key: key,
-		}).ToProto()
-		require.NoError(t, err)
-		readRsp, err := store.Sender().SyncRead(ctx, key, readReq)
-		require.NoError(t, err)
-		readBatch := rbuilder.NewBatchResponseFromProto(readRsp)
-		require.NoError(t, readBatch.AnyError())
-		directRead, err := readBatch.DirectReadResponse(0)
-		require.NoError(t, err)
-		require.Equal(t, []byte("zoo"), directRead.GetKv().GetValue())
-	}
+	// Verify the value is updated.
+	verifyRecordValue(t, ctx, store.Sender(), rec.key, []byte("zoo"))
 
-	{ // Do a DirectWrite, and it should succeed since the txn is committed.
-		key := []byte("PTdefault/f11")
-		writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-			Kv: &rfpb.KV{
-				Key:   key,
-				Value: []byte("bar2"),
-			},
-		}).ToProto()
-		require.NoError(t, err)
-		writeRsp, err := store.Sender().SyncPropose(ctx, key, writeReq)
-		require.NoError(t, err)
-		err = rbuilder.NewBatchResponseFromProto(writeRsp).AnyError()
-		require.NoError(t, err)
-	}
+	// Another write should succeed since the txn is committed (the key is
+	// unlocked again).
+	writeRecord(t, ctx, store.Sender(), rec, []byte("bar2"))
 }
 
 func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
@@ -175,7 +189,7 @@ func TestRecoverTxnToUpdateRangeDescriptor(t *testing.T) {
 	require.NoError(t, err)
 
 	// Tries to finalize the txn again.
-	err = tc.ProcessTxnRecord(ctx, txnRecord)
+	err = tc.RecoverTxnRecordForTest(ctx, txnRecord)
 	require.NoError(t, err)
 
 	verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
@@ -278,17 +292,9 @@ func TestRunTxn(t *testing.T) {
 	stores := []*testutil.TestingStore{s1, s2, s3}
 	sf.StartShard(t, ctx, stores...)
 
-	batch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   []byte("PTdefault/f11"),
-			Value: []byte("zoo"),
-		},
-	}).Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   []byte("PTdefault/bar"),
-			Value: []byte("foo"),
-		},
-	})
+	batch := rbuilder.NewBatchBuilder().
+		Add(newTestRecord(t).setRequest([]byte("zoo"))).
+		Add(newTestRecord(t).setRequest([]byte("foo")))
 
 	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
 		Kv: &rfpb.KV{
@@ -492,17 +498,8 @@ func setupPendingRollbackTxnForRecovery(
 	ctx := context.Background()
 	sf.StartShard(t, ctx, stores...)
 
-	userKey := []byte("PTdefault/f11")
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   userKey,
-			Value: []byte("before"),
-		},
-	}).ToProto()
-	require.NoError(t, err)
-	writeRsp, err := s1.Sender().SyncPropose(ctx, userKey, writeReq)
-	require.NoError(t, err)
-	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
+	rec := newTestRecord(t)
+	writeRecord(t, ctx, s1.Sender(), rec, []byte("before"))
 
 	metaKey := keys.MakeKey(constants.SystemPrefix, []byte("rollback-cas"))
 	metaStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
@@ -510,12 +507,7 @@ func setupPendingRollbackTxnForRecovery(
 	dataStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	dataRD := dataStore.GetRange(2)
 
-	dataBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   userKey,
-			Value: []byte("after"),
-		},
-	})
+	dataBatch := rbuilder.NewBatchBuilder().Add(rec.setRequest([]byte("after")))
 	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   metaKey,
@@ -542,10 +534,10 @@ func setupPendingRollbackTxnForRecovery(
 	}
 	require.NoError(t, tc.WriteTxnRecord(ctx, txnRecord))
 
-	return ctx, s1, tc, txnProto, txnRecord, userKey, metaKey
+	return ctx, s1, tc, txnProto, txnRecord, rec.key, metaKey
 }
 
-func verifyDirectReadValue(t *testing.T, ctx context.Context, s *sender.Sender, key, value []byte) {
+func directReadValue(t *testing.T, ctx context.Context, s *sender.Sender, key []byte) []byte {
 	t.Helper()
 	readReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectReadRequest{
 		Key: key,
@@ -557,7 +549,14 @@ func verifyDirectReadValue(t *testing.T, ctx context.Context, s *sender.Sender, 
 	require.NoError(t, readBatch.AnyError())
 	directRead, err := readBatch.DirectReadResponse(0)
 	require.NoError(t, err)
-	require.Equal(t, value, directRead.GetKv().GetValue())
+	return directRead.GetKv().GetValue()
+}
+
+func verifyRecordValue(t *testing.T, ctx context.Context, s *sender.Sender, key, data []byte) {
+	t.Helper()
+	md := &sgpb.FileMetadata{}
+	require.NoError(t, proto.Unmarshal(directReadValue(t, ctx, s, key), md))
+	require.Equal(t, data, md.GetStorageMetadata().GetInlineMetadata().GetData())
 }
 
 func verifyDirectReadNotFound(t *testing.T, ctx context.Context, s *sender.Sender, key []byte) {
@@ -650,17 +649,8 @@ func TestTxnRollbackRetryIsIdempotent(t *testing.T) {
 
 	sf.StartShard(t, ctx, stores...)
 
-	userKey := []byte("PTdefault/f11")
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   userKey,
-			Value: []byte("before"),
-		},
-	}).ToProto()
-	require.NoError(t, err)
-	writeRsp, err := s1.Sender().SyncPropose(ctx, userKey, writeReq)
-	require.NoError(t, err)
-	require.NoError(t, rbuilder.NewBatchResponseFromProto(writeRsp).AnyError())
+	rec := newTestRecord(t)
+	writeRecord(t, ctx, s1.Sender(), rec, []byte("before"))
 
 	metaKey := keys.MakeKey(constants.SystemPrefix, []byte("rollback-cas"))
 	metaStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
@@ -668,12 +658,7 @@ func TestTxnRollbackRetryIsIdempotent(t *testing.T) {
 	dataStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
 	dataRD := dataStore.GetRange(2)
 
-	dataBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   userKey,
-			Value: []byte("after"),
-		},
-	})
+	dataBatch := rbuilder.NewBatchBuilder().Add(rec.setRequest([]byte("after")))
 	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.CASRequest{
 		Kv: &rfpb.KV{
 			Key:   metaKey,
@@ -694,7 +679,7 @@ func TestTxnRollbackRetryIsIdempotent(t *testing.T) {
 	require.Error(t, err)
 
 	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
-	verifyDirectReadValue(t, ctx, s1.Sender(), userKey, []byte("before"))
+	verifyRecordValue(t, ctx, s1.Sender(), rec.key, []byte("before"))
 	verifyDirectReadNotFound(t, ctx, s1.Sender(), metaKey)
 	harness.assertFired(t)
 }
@@ -724,7 +709,7 @@ func TestRecoverSplitTxnRetryMatrix(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, repl.CommitTransaction(txnProto.GetTransactionId()))
 
-			require.NoError(t, coordinator.ProcessTxnRecord(ctx, txnRecord))
+			require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
 
 			verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
 			verifyRangeDescriptorInMetaRangeEquals(t, ctx, store.Sender(), updatedLeftRange)
@@ -757,12 +742,194 @@ func TestRecoverRollbackTxnRetryMatrix(t *testing.T) {
 			})
 			ctx, store, coordinator, txnProto, txnRecord, userKey, metaKey := setupPendingRollbackTxnForRecovery(t, harness)
 
-			require.NoError(t, coordinator.ProcessTxnRecord(ctx, txnRecord))
+			require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
 
 			verifyTxnRecordNotExist(t, ctx, store.Sender(), txnProto.GetTransactionId())
-			verifyDirectReadValue(t, ctx, store.Sender(), userKey, []byte("before"))
+			verifyRecordValue(t, ctx, store.Sender(), userKey, []byte("before"))
 			verifyDirectReadNotFound(t, ctx, store.Sender(), metaKey)
 			harness.assertFired(t)
 		})
 	}
+}
+
+func TestStalePendingJanitorHelpsCommit(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	ctx := context.Background()
+	sf.StartShard(t, ctx, stores...)
+
+	rec := newTestRecord(t)
+	writeRecord(t, ctx, s1.Sender(), rec, []byte("before"))
+
+	metaKey := keys.MakeKey(constants.SystemPrefix, []byte("stale-pending-commit"))
+	metaStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	metaRD := metaStore.GetRange(1)
+	dataStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	dataRD := dataStore.GetRange(2)
+
+	dataBatch := rbuilder.NewBatchBuilder().Add(rec.setRequest([]byte("after")))
+	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   metaKey,
+			Value: []byte("committed"),
+		},
+	})
+
+	tb := rbuilder.NewTxn()
+	tb.AddStatement().SetRangeDescriptor(dataRD).SetBatch(dataBatch)
+	tb.AddStatement().SetRangeDescriptor(metaRD).SetBatch(metaBatch)
+	txnProto, err := tb.ToProto()
+	require.NoError(t, err)
+
+	clock := clockwork.NewFakeClock()
+	tc := txn.NewCoordinator(s1, s1.APIClient(), clock)
+	for _, stmt := range txnProto.GetStatements() {
+		require.NoError(t, tc.PrepareStatement(ctx, txnProto.GetTransactionId(), stmt))
+	}
+
+	stalePendingRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PENDING,
+		CreatedAtUsec: clock.Now().UnixMicro(),
+	}
+	require.NoError(t, tc.WriteTxnRecord(ctx, stalePendingRecord))
+
+	commitRecord := proto.Clone(stalePendingRecord).(*rfpb.TxnRecord)
+	commitRecord.TxnState = rfpb.TxnRecord_PREPARED
+	commitRecord.Op = rfpb.FinalizeOperation_COMMIT
+	require.NoError(t, tc.WriteTxnRecord(ctx, commitRecord))
+
+	require.NoError(t, tc.RecoverTxnRecordForTest(ctx, stalePendingRecord))
+
+	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
+	verifyRecordValue(t, ctx, s1.Sender(), rec.key, []byte("after"))
+	require.Equal(t, []byte("committed"), directReadValue(t, ctx, s1.Sender(), metaKey))
+}
+
+func TestRollbackNotFoundPreventsLatePrepare(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	ctx := context.Background()
+	sf.StartShard(t, ctx, stores...)
+
+	rec := newTestRecord(t)
+	writeRecord(t, ctx, s1.Sender(), rec, []byte("before"))
+
+	metaKey := keys.MakeKey(constants.SystemPrefix, []byte("rollback-marker-late-prepare"))
+	metaStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	metaRD := metaStore.GetRange(1)
+	dataStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	dataRD := dataStore.GetRange(2)
+
+	dataBatch := rbuilder.NewBatchBuilder().Add(rec.setRequest([]byte("after")))
+	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{
+			Key:   metaKey,
+			Value: []byte("late-prepare"),
+		},
+	})
+
+	tb := rbuilder.NewTxn()
+	tb.AddStatement().SetRangeDescriptor(dataRD).SetBatch(dataBatch)
+	tb.AddStatement().SetRangeDescriptor(metaRD).SetBatch(metaBatch)
+	txnProto, err := tb.ToProto()
+	require.NoError(t, err)
+
+	clock := clockwork.NewFakeClock()
+	coordinator := txn.NewCoordinator(s1, s1.APIClient(), clock)
+	require.NoError(t, coordinator.PrepareStatement(ctx, txnProto.GetTransactionId(), txnProto.GetStatements()[0]))
+
+	txnRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PENDING,
+		CreatedAtUsec: clock.Now().UnixMicro(),
+	}
+	require.NoError(t, coordinator.WriteTxnRecord(ctx, txnRecord))
+
+	require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
+	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
+	verifyRecordValue(t, ctx, s1.Sender(), rec.key, []byte("before"))
+	verifyDirectReadNotFound(t, ctx, s1.Sender(), metaKey)
+
+	// B is a normal write that would prepare successfully if rollback had not
+	// written a participant-local marker for this txid.
+	err = coordinator.PrepareStatement(ctx, txnProto.GetTransactionId(), txnProto.GetStatements()[1])
+	require.Error(t, err)
+	verifyDirectReadNotFound(t, ctx, s1.Sender(), metaKey)
+}
+
+func TestRollbackMarkerStampedWithFinalizeTime(t *testing.T) {
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	s2 := sf.NewStore(t, testutil.StoreOptions{})
+	s3 := sf.NewStore(t, testutil.StoreOptions{})
+	stores := []*testutil.TestingStore{s1, s2, s3}
+	ctx := context.Background()
+	sf.StartShard(t, ctx, stores...)
+
+	rec := newTestRecord(t)
+	writeRecord(t, ctx, s1.Sender(), rec, []byte("before"))
+
+	dataStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
+	dataRD := dataStore.GetRange(2)
+	metaStore := testutil.GetStoreWithRangeLease(t, ctx, stores, 1)
+	metaRD := metaStore.GetRange(1)
+
+	dataBatch := rbuilder.NewBatchBuilder().Add(rec.setRequest([]byte("after")))
+	metaKey := keys.MakeKey(constants.SystemPrefix, []byte("rollback-marker-finalize-ts"))
+	metaBatch := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
+		Kv: &rfpb.KV{Key: metaKey, Value: []byte("x")},
+	})
+
+	tb := rbuilder.NewTxn()
+	tb.AddStatement().SetRangeDescriptor(dataRD).SetBatch(dataBatch)
+	tb.AddStatement().SetRangeDescriptor(metaRD).SetBatch(metaBatch)
+	txnProto, err := tb.ToProto()
+	require.NoError(t, err)
+
+	clock := clockwork.NewFakeClock()
+	coordinator := txn.NewCoordinator(s1, s1.APIClient(), clock)
+	require.NoError(t, coordinator.PrepareStatement(ctx, txnProto.GetTransactionId(), txnProto.GetStatements()[0]))
+
+	createdAtUsec := clock.Now().UnixMicro()
+	txnRecord := &rfpb.TxnRecord{
+		TxnRequest:    txnProto,
+		TxnState:      rfpb.TxnRecord_PENDING,
+		CreatedAtUsec: createdAtUsec,
+	}
+	require.NoError(t, coordinator.WriteTxnRecord(ctx, txnRecord))
+
+	// Advance the clock so finalize time is distinct from creation time: the
+	// marker must record the finalize time, not the txn creation time.
+	clock.Advance(time.Hour)
+	finalizeAtUsec := clock.Now().UnixMicro()
+
+	// The janitor rolls back the stale PENDING txn, writing a participant-local
+	// rollback marker on each range stamped with the finalize timestamp.
+	require.NoError(t, coordinator.RecoverTxnRecordForTest(ctx, txnRecord))
+	verifyTxnRecordNotExist(t, ctx, s1.Sender(), txnProto.GetTransactionId())
+	verifyRecordValue(t, ctx, s1.Sender(), rec.key, []byte("before"))
+
+	repl, err := dataStore.GetReplica(2)
+	require.NoError(t, err)
+
+	// The marker's timestamp is exactly the finalize time: present at a cutoff of
+	// finalizeAt, absent one microsecond earlier. A timestamp of 0 (field not
+	// plumbed) would be skipped by the GC guard and fail the first assertion.
+	has, err := repl.HasTxnRollbackMarkersBeforeForTest(finalizeAtUsec)
+	require.NoError(t, err)
+	require.True(t, has)
+	has, err = repl.HasTxnRollbackMarkersBeforeForTest(finalizeAtUsec - 1)
+	require.NoError(t, err)
+	require.False(t, has)
+	// In particular it is not stamped with the earlier creation time.
+	has, err = repl.HasTxnRollbackMarkersBeforeForTest(createdAtUsec)
+	require.NoError(t, err)
+	require.False(t, has)
 }

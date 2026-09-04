@@ -496,7 +496,7 @@ func TestNodeKeyPodReplaced(t *testing.T) {
 	require.Equal(t, map[string]string{"node-a": "10.0.0.99:7999"}, peers)
 }
 
-func TestLabelSelectorString(t *testing.T) {
+func TestAppLabelSelectorString(t *testing.T) {
 	tests := []struct {
 		name string
 		sel  *metav1.LabelSelector
@@ -523,7 +523,51 @@ func TestLabelSelectorString(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := labelSelectorString(tc.sel)
+			got := appLabelSelectorString(tc.sel)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestLabelSelectorString(t *testing.T) {
+	tests := []struct {
+		name    string
+		sel     *metav1.LabelSelector
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "nil",
+			sel:     nil,
+			wantErr: true,
+		},
+		{
+			name: "single label",
+			sel:  &metav1.LabelSelector{MatchLabels: map[string]string{"app": "cache"}},
+			want: "app=cache",
+		},
+		{
+			name: "no app label",
+			sel: &metav1.LabelSelector{MatchLabels: map[string]string{
+				"app.kubernetes.io/name":     "buildbuddy-enterprise",
+				"app.kubernetes.io/instance": "release",
+			}},
+			want: "app.kubernetes.io/instance=release,app.kubernetes.io/name=buildbuddy-enterprise",
+		},
+		{
+			name:    "empty selector",
+			sel:     &metav1.LabelSelector{},
+			wantErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := labelSelectorString(tc.sel)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 			require.Equal(t, tc.want, got)
 		})
 	}

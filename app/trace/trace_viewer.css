@@ -149,8 +149,7 @@
 }
 
 .trace-viewer .button .icon {
-  width: 20px;
-  height: 20px;
+  --icon-size: 20px;
 }
 
 .trace-viewer-hovercard {

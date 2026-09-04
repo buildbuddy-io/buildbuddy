@@ -49,6 +49,8 @@ go_library(
         "//server/remote_cache/content_addressable_storage_server",
         "//server/rpc/interceptors",
         "//server/ssl",
+        "//server/usage/sku",
+        "//server/util/channelz_metrics",
         "//server/util/grpc_client",
         "//server/util/grpc_server",
         "//server/util/healthcheck",
@@ -80,7 +82,13 @@ container_image(
         "@platforms//cpu:arm64": "arm64",
         "//conditions:default": "amd64",
     }),
-    base = "@buildbuddy_go_image_base//image",
+    # Base layers (libc, dynamic linker, etc.) are architecture-specific, so the
+    # base image must match the target architecture. Setting `architecture`
+    # above only stamps the image config metadata; it does not swap these layers.
+    base = select({
+        "@platforms//cpu:arm64": "@buildbuddy_go_image_base_arm64//image",
+        "//conditions:default": "@buildbuddy_go_image_base//image",
+    }),
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )

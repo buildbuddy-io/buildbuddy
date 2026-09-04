@@ -42,6 +42,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/channelz_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -78,6 +80,8 @@ var (
 	serverType = flag.String("server_type", "cache-proxy", "The server type to match on health checks")
 
 	remoteCache = flag.String("cache_proxy.remote_cache", "grpcs://remote.buildbuddy.dev", "The backing remote cache.")
+
+	proxyType = flag.String("cache_proxy.proxy_type", sku.ProxyBuildBuddy, "Whether this is a BuildBuddy-run (\"buildbuddy\") or customer-run (\"customer\") cache proxy. Used for usage tracking/billing.")
 )
 
 func main() {
@@ -138,6 +142,10 @@ func main() {
 		log.Fatal(err.Error())
 	}
 	usageutil.SetServerName("cache-proxy")
+	if *proxyType != sku.ProxyBuildBuddy && *proxyType != sku.ProxyCustomer && *proxyType != sku.ProxyUnknown {
+		log.Fatalf("Invalid --cache_proxy.proxy_type %q: must be %q, %q, or %q", *proxyType, sku.ProxyBuildBuddy, sku.ProxyCustomer, sku.ProxyUnknown)
+	}
+	usageutil.SetProxyType(*proxyType)
 
 	env.SetListenAddr(*listen)
 	if err := ssl.Register(env); err != nil {
@@ -289,6 +297,9 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 	}
 	if err = b.Start(); err != nil {
 		return err
+	}
+	if err := channelz_metrics.Start(env); err != nil {
+		log.Errorf("Failed to start channelz flow-control metrics: %s", err)
 	}
 	return nil
 }

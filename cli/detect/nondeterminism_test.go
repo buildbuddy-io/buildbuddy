@@ -26,6 +26,7 @@ func TestAddBazelFlags(t *testing.T) {
 		bazelArgsForTest(t, "--bazelrc=/tmp/bazelrc", "test", "//foo:bar"),
 		"/tmp/output-base",
 		"/tmp/log.pb.zst",
+		"test-invocation-id",
 		"grpcs://bes.example.com",
 		"https://example.com/invocation/",
 	)
@@ -40,7 +41,9 @@ func TestAddBazelFlags(t *testing.T) {
 		"--noremote_accept_cached",
 		"--repo_contents_cache=",
 		"--disk_cache=",
+		"--noexperimental_convenience_symlinks",
 		"--execution_log_compact_file=/tmp/log.pb.zst",
+		"--invocation_id=test-invocation-id",
 		"//foo:bar",
 	}, args)
 }
@@ -48,7 +51,7 @@ func TestAddBazelFlags(t *testing.T) {
 func TestAddBazelFlags_DoesNotMutateBaseArgs(t *testing.T) {
 	baseArgs := bazelArgsForTest(t, "build", "//foo:bar")
 
-	_, err := addBazelFlags(baseArgs, "/tmp/output-base", "/tmp/log.pb.zst", defaultBESBackend, defaultBESResultsURL)
+	_, err := addBazelFlags(baseArgs, "/tmp/output-base", "/tmp/log.pb.zst", "test-invocation-id", defaultBESBackend, defaultBESResultsURL)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"build", "//foo:bar"}, baseArgs.Forwarded())
@@ -64,7 +67,7 @@ func TestParseBazelCommand(t *testing.T) {
 }
 
 func TestRunReturnsDetectionError(t *testing.T) {
-	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{{TargetLabel: "//foo:bar"}}}
+	diff := &spawn_diff.DiffResult{SpawnDiffs: []*spawn_diff.SpawnDiff{nondeterministicSpawnDiff("//foo:bar")}}
 	explainer := &fakeExplainer{diff: diff}
 	runner := &fakeRunner{}
 	c := &checker{
@@ -80,9 +83,25 @@ func TestRunReturnsDetectionError(t *testing.T) {
 	err := c.Run(context.Background())
 	require.ErrorIs(t, err, errNondeterminismDetected)
 
-	require.Len(t, runner.runs, 2)
+	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
+	assert.True(t, explainer.nondeterministicOnly, "detector should request only non-deterministic spawns")
 	assert.Equal(t, 1, explainer.writeCalls)
 	assert.Same(t, diff, explainer.wroteDiff)
+}
+
+// nondeterministicSpawnDiff returns a representative non-deterministic spawn
+// diff, i.e. what explain.Diff returns for --nondeterministic_only: an exit code
+// change despite unchanged inputs. The classification itself is tested in the
+// cli/explain package; the detector just reports whatever explain.Diff surfaces.
+func nondeterministicSpawnDiff(label string) *spawn_diff.SpawnDiff {
+	return &spawn_diff.SpawnDiff{
+		TargetLabel: label,
+		Diff: &spawn_diff.SpawnDiff_Modified{Modified: &spawn_diff.Modified{
+			Diffs: []*spawn_diff.Diff{{
+				Diff: &spawn_diff.Diff_ExitCode{ExitCode: &spawn_diff.IntDiff{Old: 0, New: 1}},
+			}},
+		}},
+	}
 }
 
 func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
@@ -100,21 +119,31 @@ func TestRunReturnsNilWhenNoDiffs(t *testing.T) {
 
 	require.NoError(t, c.Run(context.Background()))
 
-	require.Len(t, runner.runs, 2)
+	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
 	assert.Equal(t, 0, explainer.writeCalls)
 }
 
 func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
-	a, err := newArtifacts()
+	m, err := newBuildMetadata()
 	require.NoError(t, err)
-	defer os.RemoveAll(a.tempDir)
+	defer os.RemoveAll(m.tempDir)
 
 	var runner fakeRunner
+	var buildRuns int
 	runner.onRun = func(ctx context.Context, call commandCall) error {
+		command, _ := parser.GetBazelCommandAndIndex(call.args)
+		if command == "shutdown" {
+			return nil
+		}
 		outputBase := outputBaseFromArgs(t, call.args)
+		if command == "clean" {
+			return os.RemoveAll(outputBase)
+		}
+
+		buildRuns++
 		require.NoError(t, os.MkdirAll(filepath.Join(outputBase, "execroot"), 0755))
-		if len(runner.runs) == 2 {
-			require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
+		if buildRuns == 2 {
+			require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_1"))
 		}
 		return nil
 	}
@@ -127,11 +156,11 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 		runner: &runner,
 	}
 
-	require.NoError(t, c.runBuilds(context.Background(), a))
+	require.NoError(t, c.runBuilds(context.Background(), m))
 
-	require.Len(t, runner.runs, 2)
-	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_1"))
-	require.NoDirExists(t, filepath.Join(a.tempDir, "output_base_2"))
+	require.Equal(t, []string{"build", "shutdown", "clean", "build", "shutdown", "clean"}, bazelCommands(runner.runs))
+	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_1"))
+	require.NoDirExists(t, filepath.Join(m.tempDir, "output_base_2"))
 }
 
 func bazelArgsForTest(t *testing.T, args ...string) *arg.BazelArgs {
@@ -150,6 +179,15 @@ func outputBaseFromArgs(t *testing.T, args []string) string {
 	}
 	require.FailNow(t, "missing --output_base arg", "args: %v", args)
 	return ""
+}
+
+func bazelCommands(calls []commandCall) []string {
+	var commands []string
+	for _, call := range calls {
+		command, _ := parser.GetBazelCommandAndIndex(call.args)
+		commands = append(commands, command)
+	}
+	return commands
 }
 
 type commandCall struct {
@@ -175,13 +213,15 @@ func (r *fakeRunner) Run(ctx context.Context, name string, args ...string) error
 }
 
 type fakeExplainer struct {
-	diff       *spawn_diff.DiffResult
-	diffErr    error
-	writeCalls int
-	wroteDiff  *spawn_diff.DiffResult
+	diff                 *spawn_diff.DiffResult
+	diffErr              error
+	nondeterministicOnly bool
+	writeCalls           int
+	wroteDiff            *spawn_diff.DiffResult
 }
 
-func (e *fakeExplainer) Diff(oldLog, newLog string) (*spawn_diff.DiffResult, error) {
+func (e *fakeExplainer) Diff(oldLog, newLog string, nondeterministicOnly bool) (*spawn_diff.DiffResult, error) {
+	e.nondeterministicOnly = nondeterministicOnly
 	return e.diff, e.diffErr
 }
 

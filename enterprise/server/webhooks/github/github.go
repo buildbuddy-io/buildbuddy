@@ -126,11 +126,23 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		ref := event.GetRef()
 		if after, ok := strings.CutPrefix(ref, "refs/tags/"); ok {
 			tag := after
+			// For tag pushes, prefer head_commit, which identifies the commit the tag
+			// resolves to. For lightweight tags it is the same as "after". For annotated
+			// tags, "after" identifies the tag object while head_commit.ID identifies
+			// the underlying commit. A commit SHA is needed for commit status reporting
+			// and commit-based repository API calls.
+			//
+			// GitHub documents that head_commit is populated for tag pushes. However, the
+			// field is nullable, so defensively fall back to "after".
+			sha := event.GetHeadCommit().GetID()
+			if sha == "" {
+				sha = event.GetAfter()
+			}
 			return &interfaces.WebhookData{
 				EventName:               webhook_data.EventName.Push,
 				PushedRepoURL:           event.GetRepo().GetCloneURL(),
 				PushedTag:               tag,
-				SHA:                     event.GetAfter(),
+				SHA:                     sha,
 				TargetRepoURL:           event.GetRepo().GetCloneURL(),
 				TargetRepoDefaultBranch: event.GetRepo().GetDefaultBranch(),
 				IsTargetRepoPublic:      !event.GetRepo().GetPrivate(),
@@ -151,10 +163,14 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 
 	case *gh.PullRequestEvent:
 		// Run workflows when the PR is opened, pushed to, or reopened, to match
-		// GitHub the behavior of GitHub actions. Also run workflows when the base
-		// branch changes, to accommodate stacked changes.
-		baseBranchChanged := event.GetAction() == "edited" && event.GetChanges().GetBase() != nil
-		if !(baseBranchChanged || event.GetAction() == "opened" || event.GetAction() == "synchronize" || event.GetAction() == "reopened") {
+		// the behavior of GitHub actions. Also run workflows when the base
+		// branch changes, to accommodate stacked changes, when a PR is marked
+		// ready for review, and when auto-merge is enabled. The action is
+		// recorded on the WebhookData so triggers can filter by type (e.g. only
+		// "ready_for_review" or "auto_merge_enabled").
+		action := event.GetAction()
+		baseBranchChanged := action == "edited" && event.GetChanges().GetBase() != nil
+		if !(baseBranchChanged || action == "opened" || action == "synchronize" || action == "reopened" || action == "ready_for_review" || action == "auto_merge_enabled") {
 			return nil, nil
 		}
 		wd, err := parsePullRequestOrReview(event)
@@ -162,6 +178,7 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 			return nil, err
 		}
 		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
+		wd.PullRequestAction = action
 		return wd, nil
 
 	case *gh.PullRequestReviewEvent:
@@ -177,6 +194,7 @@ func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
 		}
 		wd.PullRequestApprover = event.GetReview().GetUser().GetLogin()
 		wd.PullRequestNumber = int64(event.GetPullRequest().GetNumber())
+		wd.PullRequestAction = "approved"
 		return wd, nil
 
 	default:

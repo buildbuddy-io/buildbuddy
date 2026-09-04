@@ -3,11 +3,14 @@ package uuid
 import (
 	"context"
 	"encoding/hex"
+	"regexp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	guuid "github.com/google/uuid"
 )
+
+var Pattern = regexp.MustCompile("^(?:.*/invocation/)?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 
 func SetInContext(ctx context.Context) (context.Context, error) {
 	u, err := guuid.NewRandom()

@@ -38,7 +38,6 @@ type resourceNameType int
 
 const (
 	EmptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-	EmptyHash   = ""
 
 	uploadResourceName resourceNameType = iota
 	downloadResourceName
@@ -200,23 +199,26 @@ func isLowerHex(s string) bool {
 }
 
 func (r *ResourceName) Validate() error {
-	d := r.rn.GetDigest()
+	return Validate(r.GetDigest(), r.GetDigestFunction())
+}
+
+func Validate(d *repb.Digest, digestFunction repb.DigestFunction_Value) error {
 	if d == nil {
 		return status.InvalidArgumentError("Invalid (nil) Digest")
 	}
 	if d.GetSizeBytes() < 0 {
 		return status.InvalidArgumentErrorf("Invalid (negative) digest size")
 	}
-	if d.GetSizeBytes() == int64(0) {
-		if r.IsEmpty() {
+	if d.GetSizeBytes() == 0 {
+		if IsEmptyHash(d, digestFunction) {
 			return nil
 		}
-		return status.InvalidArgumentError("Invalid (zero-length) SHA256 hash")
+		return status.InvalidArgumentError("Invalid (zero-length) hash")
 	}
 	hash := d.GetHash()
-	if expected := hashLength(r.GetDigestFunction()); len(hash) != expected {
+	if expected := hashLength(digestFunction); len(hash) != expected {
 		return status.InvalidArgumentErrorf("Invalid length hash. Expected len %v for %s function. Got %v",
-			expected, r.GetDigestFunction().String(), len(hash))
+			expected, digestFunction.String(), len(hash))
 	}
 	if !isLowerHex(hash) {
 		return status.InvalidArgumentError("Hash isn't all lower case hex characters.")
@@ -408,7 +410,7 @@ func IsEmptyHash(d *repb.Digest, digestFunction repb.DigestFunction_Value) bool 
 	case repb.DigestFunction_MD5:
 		return d.GetHash() == "d41d8cd98f00b204e9800998ecf8427e"
 	case repb.DigestFunction_SHA256:
-		return d.GetHash() == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		return d.GetHash() == EmptySha256
 	case repb.DigestFunction_SHA384:
 		return d.GetHash() == "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
 	case repb.DigestFunction_SHA512:

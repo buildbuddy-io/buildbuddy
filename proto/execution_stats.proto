@@ -157,6 +157,46 @@ message ExecutionAuxiliaryMetadata {
 
   // Metadata containing more detail about the input fetch phase of execution.
   InputFetchMetadata input_fetch_detailed_stats = 11;
+
+  // Metrics reported by the guest VM which executed this action.
+  VMMetrics vm_metrics = 12;
+}
+
+// Metrics associated with the guest VM which executed an action. Mostly
+// reported by the guest's vmexec server; some fields are measured by the
+// executor.
+message VMMetrics {
+  // Time the guest spent waiting for dockerd to become ready. Zero if
+  // dockerd initialization was not requested.
+  int64 dockerd_wait_duration_usec = 1;
+
+  // Time the guest spent waiting for the VM's local DNS server to become
+  // ready. Zero if no DNS overrides were configured.
+  int64 vm_dns_wait_duration_usec = 2;
+
+  // Time from when the guest's vmexec process started until its gRPC server
+  // was about to begin serving. Includes the waits above, but not earlier
+  // guest init (kernel boot or init process setup).
+  int64 vm_exec_init_duration_usec = 3;
+
+  // Time the executor spent dialing the guest's vmexec server, measured on
+  // the host. For executions that booted a fresh VM, this includes guest boot
+  // up to the point where the vmexec server was serving. Unlike the boot
+  // timings above, this is set for every execution, since the connection is
+  // re-established for each task.
+  int64 vm_exec_dial_duration_usec = 4;
+
+  // Time spent on the successful host-to-guest gRPC transport dial, excluding
+  // any time waiting for a guest-triggered readiness signal.
+  int64 vm_exec_transport_dial_duration_usec = 5;
+
+  // Number of host-to-guest transport connection attempts made while dialing
+  // vmexec.
+  int64 vm_exec_dial_attempts = 6;
+
+  // Whether the executor received a guest-triggered vmexec readiness signal
+  // before dialing.
+  bool vm_exec_ready_signal_received = 7;
 }
 
 // Stats about work done after the COMPLETED operation is streamed back to the
@@ -168,6 +208,14 @@ message PostCompletionStats {
 
   // Firecracker-specific post-execution stats. Nil for non-firecracker runners.
   FirecrackerPostExecStats firecracker_post_exec_stats = 2;
+
+  // Disk space used by the task's workspace (buildroot), in bytes, measured
+  // just before the workspace is cleaned up. This is the logical (apparent)
+  // size summed across the workspace tree. Only populated when
+  // executor.workspace.measure_disk_usage is enabled, and not populated for
+  // VM-based runners. Measured off the task's critical path, so it does not add
+  // latency to task completion.
+  int64 buildroot_disk_usage_bytes = 3;
 }
 
 message FirecrackerPostExecStats {

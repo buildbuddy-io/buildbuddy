@@ -19,6 +19,8 @@ ts_library(
         "//app/components/button:link_button",
         "//app/components/link",
         "//app/components/select",
+        "//app/components/upgrade",
+        "//app/components/view_mode_toggle",
         "//app/router",
         "//app/service:rpc_service",
         "//app/util:errors",

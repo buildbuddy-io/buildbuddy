@@ -10,16 +10,26 @@ use_repo(npm, "npm")
 node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
 use_repo(node, "nodejs_toolchains")
 
+swc = use_extension("@aspect_rules_swc//swc:extensions.bzl", "swc")
+swc.toolchain(
+    name = "swc",
+    swc_version = "v1.15.46",
+)
+use_repo(swc, "swc_toolchains")
+
+register_toolchains("@swc_toolchains//:linux-arm64-musl_toolchain")
+
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(
-    # TODO: Remove after the next aspect_rules_ts update.
-    ts_integrity = "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==",
     ts_version_from = "@com_github_buildbuddy_io_buildbuddy//:package.json",
 )
 
-# TODO: Remove this after the next aspect_rules_ts update.
-# https://github.com/aspect-build/rules_ts/pull/786
-use_repo(rules_ts_ext, "npm_typescript")
+# rules_ts validates tsconfig using the programmatic API, which TypeScript 7.0 does not expose.
+rules_ts_ext.deps(
+    name = "npm_typescript6",
+    ts_version = "6.0.2",
+)
+use_repo(rules_ts_ext, "npm_typescript", "npm_typescript6")
 
 browser_repositories = use_extension("@rules_webtesting//web:extension.bzl", "browser_repositories_extension")
 browser_repositories.install(version = "0.3.4")

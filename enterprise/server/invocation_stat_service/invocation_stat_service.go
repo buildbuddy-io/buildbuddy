@@ -36,7 +36,7 @@ var (
 	useTimezoneInHeatmapQueries    = flag.Bool("app.use_timezone_in_heatmap_queries", true, "If enabled, use timezone instead of 'timezone offset' to compute day boundaries in heatmap queries.")
 	invocationSummaryAvailableUsec = flag.Int64("app.invocation_summary_available_usec", 0, "The timstamp when the invocation summary is available in the DB")
 	tagsInDrilldowns               = flag.Bool("app.fetch_tags_drilldown_data", true, "If enabled, DrilldownType_TAG_DRILLDOWN_TYPE can be returned in GetStatDrilldownRequests")
-	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", false, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
+	finerTimeBuckets               = flag.Bool("app.finer_time_buckets", true, "If enabled, split trends and drilldowns into smaller time buckets when the user has a smaller date range selected.")
 	targetTrendsEnabled            = flag.Bool("app.enable_target_trends", true, "Enables GetTargetTrends, which returns execution data aggregated by Bazel target.")
 )
 
@@ -536,9 +536,9 @@ func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSe
 // The returned "flattened" query will return row with the following column
 //
 //	name | p50 | ... | p99
-func getQueryWithFlattenedArray(innerQuery string) string {
+func getQueryWithFlattenedArray(innerQuery string, finerTimeBucketsEnabled bool) string {
 	var q string
-	if *finerTimeBuckets {
+	if finerTimeBucketsEnabled {
 		q = "SELECT bucket_start_time_micros,"
 	} else {
 		q = "SELECT name,"
@@ -563,14 +563,14 @@ func (i *InvocationStatService) getExecutionTrend(ctx context.Context, req *stpb
 	if err := i.addWhereClauses(q, req.GetQuery(), true, req.GetRequestContext()); err != nil {
 		return nil, err
 	}
-	if *finerTimeBuckets {
+	if i.finerTimeBucketsEnabled() {
 		q.SetGroupBy("bucket_start_time_micros")
 	} else {
 		q.SetGroupBy("name")
 	}
 
 	qStr, qArgs := q.Build()
-	qStr = getQueryWithFlattenedArray(qStr)
+	qStr = getQueryWithFlattenedArray(qStr, i.finerTimeBucketsEnabled())
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_trends").Raw(qStr, qArgs...)
 	res, err := db.ScanAll(rq, &stpb.ExecutionStat{})
 	if err != nil {
@@ -1349,7 +1349,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 	if *tagsInDrilldowns {
 		drilldownFields = append(drilldownFields, "tag")
 	}
-	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool", "exit_code"}
+	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool", "exit_code", "os", "arch"}
 	if req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC {
 		drilldownFields = append(drilldownFields, executionDrilldownFields...)
 	}
@@ -1537,6 +1537,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormActionMnemonic *string
 		GormEffectivePool  *string
 		GormExitCode       *string
+		GormArch           *string
+		GormOs             *string
 		Selection          int64
 		Inverse            int64
 	}
@@ -1575,6 +1577,10 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_EFFECTIVE_POOL_DRILLDOWN_TYPE, stat.GormEffectivePool, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormExitCode != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_EXIT_CODE_DRILLDOWN_TYPE, stat.GormExitCode, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormOs != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_OS_DRILLDOWN_TYPE, stat.GormOs, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormArch != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_ARCH_DRILLDOWN_TYPE, stat.GormArch, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormTag != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {

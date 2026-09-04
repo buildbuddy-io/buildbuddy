@@ -73,7 +73,7 @@ export default class SecretsListComponent extends React.Component<{}, State> {
           <div className="secrets-table">
             {this.state.response?.secret.map((secret) => (
               <div className="secrets-row">
-                <Lock className="icon lock-icon" />
+                <Lock className="lock-icon" />
                 <span className="secret-name code-font">{secret.name}</span>
                 <OutlinedLinkButton
                   className="edit-button"

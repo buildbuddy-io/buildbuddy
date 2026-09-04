@@ -2,11 +2,12 @@ package ci_runner_util
 
 import (
 	"context"
-	_ "embed"
 	"flag"
-	"path/filepath"
+	"fmt"
 	"strings"
 	"time"
+
+	_ "embed"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/cmd/ci_runner/bundle"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
@@ -26,10 +27,13 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
-const ExecutableName = "buildbuddy_ci_runner"
-const CLIBinaryName = "bb"
-const DefaultTimeoutExperimentName = "remote_execution.remote_runner_default_timeout"
-const FreeTierTimeoutReason = "free_tier_limit"
+const (
+	ExecutableName                    = platform.CIRunnerExecutableBaseName + platform.ExecutableSuffix
+	CLIBinaryName                     = "bb" + platform.ExecutableSuffix
+	DefaultTimeoutExperimentName      = "remote_execution.remote_runner_default_timeout"
+	LowSpeedRetryConfigExperimentName = "remote_execution.ci_runner.low_speed_retry_config"
+	FreeTierTimeoutReason             = "free_tier_limit"
+)
 
 type RunnerTimeoutResult struct {
 	Duration time.Duration
@@ -71,6 +75,59 @@ func RunnerTimeout(ctx context.Context, efp interfaces.ExperimentFlagProvider, r
 		return &RunnerTimeoutResult{Duration: *requestedTimeout}, nil
 	}
 	return &RunnerTimeoutResult{Duration: *CIRunnerDefaultTimeout}, nil
+}
+
+// LowSpeedRetryConfig is the value of the LowSpeedRetryConfigExperimentName
+// experiment, which configures the ci_runner to abort git fetches whose
+// transfer rate stays below Rate for Duration, and retry them up to Retries
+// times.
+type LowSpeedRetryConfig struct {
+	// Retries is the number of times to retry an aborted fetch.
+	Retries int `json:"retries"`
+	// Duration is how long the transfer rate must stay below Rate before the
+	// fetch is aborted, in time.Duration format (e.g. "30s"). If empty, the
+	// ci_runner default applies.
+	Duration string `json:"duration"`
+	// Rate is the transfer rate in bytes per second below which the fetch is
+	// considered too slow. If zero, the ci_runner default applies.
+	Rate int64 `json:"rate"`
+}
+
+// GitFetchLowSpeedRetryFlags returns the ci_runner git fetch retry flags
+// configured by the LowSpeedRetryConfigExperimentName experiment, or nil if
+// the experiment is not configured.
+func GitFetchLowSpeedRetryFlags(ctx context.Context, efp interfaces.ExperimentFlagProvider, opts ...any) []string {
+	if efp == nil {
+		return nil
+	}
+	object := efp.Object(ctx, LowSpeedRetryConfigExperimentName, nil, opts...)
+	if len(object) == 0 {
+		return nil
+	}
+	config := &LowSpeedRetryConfig{}
+	if err := experiments.ObjectToStruct(object, config); err != nil {
+		log.CtxErrorf(ctx, "Could not parse the %s experiment value: %s", LowSpeedRetryConfigExperimentName, err)
+		return nil
+	}
+	if config.Duration != "" {
+		duration, err := time.ParseDuration(config.Duration)
+		if err != nil {
+			log.CtxErrorf(ctx, "Could not parse the %s experiment duration %q: %s", LowSpeedRetryConfigExperimentName, config.Duration, err)
+			return nil
+		}
+		if duration <= 0 {
+			log.CtxWarningf(ctx, "Ignoring the %s experiment duration %q because it is not positive.", LowSpeedRetryConfigExperimentName, config.Duration)
+			config.Duration = ""
+		}
+	}
+	flags := []string{fmt.Sprintf("--git_fetch_low_speed_retries=%d", config.Retries)}
+	if config.Rate > 0 {
+		flags = append(flags, fmt.Sprintf("--git_fetch_low_speed_limit=%d", config.Rate))
+	}
+	if config.Duration != "" {
+		flags = append(flags, "--git_fetch_low_speed_time="+config.Duration)
+	}
+	return flags
 }
 
 // CanInitFromCache The apps are built for linux/amd64. If the ci_runner will run on linux/amd64
@@ -125,11 +182,10 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 			return nil, err
 		}
 
-		runnerName := filepath.Base(ExecutableName)
 		dir := &repb.Directory{
 			Files: []*repb.FileNode{
 				{
-					Name:         runnerName,
+					Name:         ExecutableName,
 					Digest:       runnerBinDigest,
 					IsExecutable: true,
 				},
@@ -148,7 +204,7 @@ func UploadInputRoot(ctx context.Context, bsClient bspb.ByteStreamClient, cache 
 // SetTaskRepositoryToken sets the GitHub repository token for a trusted remote runner task.
 // It mutates the original task.
 func SetTaskRepositoryToken(ctx context.Context, env environment.Env, task *repb.ExecutionTask, groupID string) error {
-	if !(IsRemoteRunnerTask(task)) {
+	if !platform.IsCIRunnerCommand(task.GetCommand()) {
 		return nil
 	}
 	if groupID == "" {
@@ -253,9 +309,4 @@ func applyEnvOverrides(task *repb.ExecutionTask, envOverrides map[string]string)
 			return
 		}
 	}
-}
-
-func IsRemoteRunnerTask(task *repb.ExecutionTask) bool {
-	args := task.GetCommand().GetArguments()
-	return len(args) > 0 && args[0] == "./"+ExecutableName
 }

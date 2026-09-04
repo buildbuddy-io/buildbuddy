@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -26,16 +28,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/open-feature/go-sdk/openfeature"
+	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -186,6 +193,106 @@ func TestBasicReadWrite(t *testing.T) {
 	}, peerLookupMetrics)
 }
 
+func TestGetPeerLookupMetrics(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:  3,
+		Nodes:              []string{peer1, peer2, peer3},
+		DisableLocalLookup: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+
+	for i := 0; i < 10; i++ {
+		// Do a write, then Get and GetWithMetadata it back through each node.
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, distributedCaches[i%3].Set(ctx, rn, buf))
+		for _, distributedCache := range distributedCaches {
+			data, err := distributedCache.Get(ctx, rn)
+			require.NoError(t, err)
+			require.Equal(t, buf, data)
+
+			data, md, err := distributedCache.GetWithMetadata(ctx, rn)
+			require.NoError(t, err)
+			require.Equal(t, buf, data)
+			require.NotNil(t, md)
+		}
+
+		// Get and GetWithMetadata a digest that was never written.
+		missingRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		for _, distributedCache := range distributedCaches {
+			_, err := distributedCache.Get(ctx, missingRN)
+			require.True(t, status.IsNotFoundError(err))
+
+			_, _, err = distributedCache.GetWithMetadata(ctx, missingRN)
+			require.True(t, status.IsNotFoundError(err))
+		}
+	}
+
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	assert.Equal(t, []testmetrics.HistogramValues{
+		{
+			Labels: map[string]string{
+				"op":                       "Get",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+			},
+			// For each of the 10 objects, we did a Get on all 3 distributed
+			// caches, which should have done only 1 lookup each (every peer
+			// has a replica).
+			Buckets: map[float64]uint64{1: 30},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "GetWithMetadata",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+			},
+			Buckets: map[float64]uint64{1: 30},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "Get",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+			},
+			// Each missing digest requires exhausting all 3 peers
+			// (replication factor), on each of the 3 distributed caches, for
+			// each of the 10 missing objects.
+			Buckets: map[float64]uint64{3: 30},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "GetWithMetadata",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+			},
+			Buckets: map[float64]uint64{3: 30},
+		},
+	}, peerLookupMetrics)
+}
+
 func TestReadPeers_FewerNodesThanReplicationFactor(t *testing.T) {
 	env, _, _ := getEnvAuthAndCtx(t)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -301,6 +408,71 @@ func TestReadWrite_Compression(t *testing.T) {
 			}
 		}
 	}
+}
+
+// compressorRecordingCache wraps a CompressionCache and records the
+// compressor of each GetWithMetadata request it serves.
+type compressorRecordingCache struct {
+	*testcompression.CompressionCache
+	mu          sync.Mutex
+	compressors []repb.Compressor_Value
+}
+
+func (c *compressorRecordingCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	c.mu.Lock()
+	c.compressors = append(c.compressors, r.GetCompressor())
+	c.mu.Unlock()
+	return c.CompressionCache.GetWithMetadata(ctx, r)
+}
+
+// TestGetWithMetadata_Compression verifies that GetWithMetadata transfers
+// large blobs between peers zstd-compressed, like Reader and GetMulti do.
+func TestGetWithMetadata_Compression(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	config := Options{
+		ReplicationFactor:            1,
+		Nodes:                        []string{peer},
+		DisableLocalLookup:           true,
+		EnableLocalCompressionLookup: true,
+		ListenAddr:                   peer,
+	}
+	base := &compressorRecordingCache{CompressionCache: &testcompression.CompressionCache{Cache: env.GetCache()}}
+	dc := startNewDCache(t, env, config, base)
+	waitForReady(t, peer)
+
+	// Write an entry bigger than 100 bytes (the peer-to-peer compression
+	// threshold).
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	require.NoError(t, dc.Set(ctx, rn, buf))
+
+	// An IDENTITY read above the threshold should be fetched from the peer as
+	// ZSTD and decompressed locally, without mutating the caller's resource.
+	data, md, err := dc.GetWithMetadata(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+	require.NotNil(t, md)
+	require.Equal(t, repb.Compressor_IDENTITY, rn.GetCompressor())
+	require.Equal(t, []repb.Compressor_Value{repb.Compressor_ZSTD}, base.compressors)
+
+	// A ZSTD read is served as-is: compressed data, no transport rewrite
+	// needed.
+	zstdRN := rn.CloneVT()
+	zstdRN.Compressor = repb.Compressor_ZSTD
+	data, _, err = dc.GetWithMetadata(ctx, zstdRN)
+	require.NoError(t, err)
+	decompressed, err := compression.DecompressZstd(nil, data)
+	require.NoError(t, err)
+	require.Equal(t, buf, decompressed)
+	require.Equal(t, []repb.Compressor_Value{repb.Compressor_ZSTD, repb.Compressor_ZSTD}, base.compressors)
+
+	// An IDENTITY read at or below the threshold is fetched uncompressed.
+	smallRN, smallBuf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, dc.Set(ctx, smallRN, smallBuf))
+	data, _, err = dc.GetWithMetadata(ctx, smallRN)
+	require.NoError(t, err)
+	require.Equal(t, smallBuf, data)
+	require.Equal(t, []repb.Compressor_Value{repb.Compressor_ZSTD, repb.Compressor_ZSTD, repb.Compressor_IDENTITY}, base.compressors)
 }
 
 func TestContains(t *testing.T) {
@@ -730,6 +902,201 @@ func TestBackfill(t *testing.T) {
 	}
 }
 
+// writeFailingCache wraps a Cache whose writes always fail, simulating a
+// backfill destination peer that is unwritable.
+type writeFailingCache struct {
+	interfaces.Cache
+}
+
+func (w *writeFailingCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	return nil, status.UnavailableError("induced write failure")
+}
+
+// TestBackfillCopiesToAllMissingPeers verifies that when a digest is missing
+// from more than one preferred peer, the backfill copies it to *every* missing
+// peer, not just the first.
+func TestBackfillCopiesToAllMissingPeers(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
+	}
+
+	// peer1 holds the blob; peer2 and peer3 are missing it.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	_ = startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, memoryCache1.Set(ctx, rn, buf))
+
+	// Build a peer set whose last-used peer is peer1 (the source), leaving
+	// peer2 and peer3 as backfill targets.
+	ps := peerset.New([]string{peer2, peer3, peer1}, nil)
+	for p := ps.GetNextPeer(); p != ""; p = ps.GetNextPeer() {
+	}
+	dc1.backfillPeers(ctx, dc1.getBackfillOrders(rn, ps))
+
+	for i, baseCache := range []interfaces.Cache{memoryCache2, memoryCache3} {
+		exists, err := baseCache.Contains(ctx, rn)
+		require.NoError(t, err)
+		require.True(t, exists, "blob was not backfilled to destination %d", i)
+		readAndCompareDigest(t, ctx, baseCache, rn)
+	}
+}
+
+// TestBackfillContinuesWhenOnePeerFails verifies that a failed copy to one
+// backfill destination does not prevent the copy to a healthy destination.
+func TestBackfillContinuesWhenOnePeerFails(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
+	}
+
+	// peer1 holds the blob, peer2 is a healthy target, and peer3 always fails
+	// writes.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	_ = startNewDCache(t, env, config3, &writeFailingCache{Cache: memoryCache3})
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, memoryCache1.Set(ctx, rn, buf))
+
+	ps := peerset.New([]string{peer2, peer3, peer1}, nil)
+	for p := ps.GetNextPeer(); p != ""; p = ps.GetNextPeer() {
+	}
+	// The copy to peer3 fails, but that failure is swallowed (logged) and must
+	// not prevent the copy to the healthy peer2. backfillPeers blocks until
+	// both copies finish, so the assertions below are deterministic.
+	dc1.backfillPeers(ctx, dc1.getBackfillOrders(rn, ps))
+
+	exists, err := memoryCache2.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "healthy peer was not backfilled despite a sibling failure")
+	readAndCompareDigest(t, ctx, memoryCache2, rn)
+
+	// Confirm the induced failure actually took effect (otherwise the test
+	// above would pass vacuously).
+	exists, err = memoryCache3.Contains(ctx, rn)
+	require.NoError(t, err)
+	require.False(t, exists, "blob should not have been written to the failing peer")
+}
+
+// TestBackfillViaGet verifies that Get and GetWithMetadata backfill
+// more-preferred peers that were missing the digest, like Reader does.
+func TestBackfillViaGet(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:    3,
+		Nodes:                []string{peer1, peer2, peer3},
+		DisableLocalLookup:   true,
+		RPCHeartbeatInterval: 100 * time.Millisecond,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 3.
+	memoryCache1 := newMemoryCache(t, singleCacheSizeBytes)
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := newMemoryCache(t, singleCacheSizeBytes)
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	_ = startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := newMemoryCache(t, singleCacheSizeBytes)
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	_ = startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, peer1)
+	waitForReady(t, peer2)
+	waitForReady(t, peer3)
+
+	baseCaches := map[string]interfaces.Cache{
+		peer1: memoryCache1,
+		peer2: memoryCache2,
+		peer3: memoryCache3,
+	}
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	require.NoError(t, dc1.Set(ctx, rn, buf))
+
+	// Delete the digest from the most-preferred peer so the read hits a
+	// less-preferred replica, making the most-preferred peer a backfill
+	// target.
+	preferredPeer := dc1.readPeers(rn).GetNextPeer()
+	require.NoError(t, baseCaches[preferredPeer].Delete(ctx, rn))
+
+	// backfillPeers blocks until copies finish, so the assertions below are
+	// deterministic.
+	data, err := dc1.Get(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+
+	exists, err := baseCaches[preferredPeer].Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "Get did not backfill the most-preferred peer")
+
+	// Same again via GetWithMetadata.
+	require.NoError(t, baseCaches[preferredPeer].Delete(ctx, rn))
+
+	data, _, err = dc1.GetWithMetadata(ctx, rn)
+	require.NoError(t, err)
+	require.Equal(t, buf, data)
+
+	exists, err = baseCaches[preferredPeer].Contains(ctx, rn)
+	require.NoError(t, err)
+	require.True(t, exists, "GetWithMetadata did not backfill the most-preferred peer")
+}
+
 func TestCopyFileDoesNotMutateResourceNameCompressor(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
 	singleCacheSizeBytes := int64(1000000)
@@ -983,6 +1350,7 @@ func TestFindMissing(t *testing.T) {
 
 func TestGetMulti(t *testing.T) {
 	env, _, ctx := getEnvAuthAndCtx(t)
+	metrics.DistributedCachePeerLookups.Reset()
 	singleCacheSizeBytes := int64(1000000)
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
@@ -1041,8 +1409,16 @@ func TestGetMulti(t *testing.T) {
 		}
 	}
 
+	// Generate some more digests, but don't write them to the cache.
+	resourcesNotWritten := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 70; i++ {
+		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
+		resourcesNotWritten = append(resourcesNotWritten, rn)
+	}
+	allResources := append(resourcesWritten, resourcesNotWritten...)
+
 	for _, distributedCache := range distributedCaches {
-		gotMap, err := distributedCache.GetMulti(ctx, resourcesWritten)
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
 		assert.Nil(t, err)
 		for _, r := range resourcesWritten {
 			d := r.GetDigest()
@@ -1050,7 +1426,35 @@ func TestGetMulti(t *testing.T) {
 			assert.True(t, ok)
 			assert.Equal(t, d.GetSizeBytes(), int64(len(buf)))
 		}
+		for _, r := range resourcesNotWritten {
+			_, ok := gotMap[r.GetDigest()]
+			assert.False(t, ok)
+		}
 	}
+
+	peerLookupMetrics := testmetrics.HistogramVecValues(t, metrics.DistributedCachePeerLookups)
+	assert.Equal(t, []testmetrics.HistogramValues{
+		{
+			Labels: map[string]string{
+				"op":                       "GetMulti",
+				metrics.CacheHitMissStatus: metrics.HitStatusLabel,
+			},
+			// Each hit only requires 1 peer lookup, and we did 3 GetMulti
+			// calls (loop count above) * 100 hits for each call (number of
+			// digests written).
+			Buckets: map[float64]uint64{1: 300},
+		},
+		{
+			Labels: map[string]string{
+				"op":                       "GetMulti",
+				metrics.CacheHitMissStatus: metrics.MissStatusLabel,
+			},
+			// Each miss should result in 3 peer lookups (replication factor),
+			// and we did 3 GetMulti calls (loop count above) * 70 misses each
+			// (number of digests not written).
+			Buckets: map[float64]uint64{3: 210},
+		},
+	}, peerLookupMetrics)
 }
 
 func TestHintedHandoff(t *testing.T) {
@@ -2380,6 +2784,226 @@ func TestReadThroughLocalCache(t *testing.T) {
 
 }
 
+func TestGetMultiReadThroughLocalCache(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:     1,
+		Nodes:                 []string{peer1, peer2, peer3},
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+	}
+
+	// Read everything via GetMulti once from each node so that the read-through
+	// caches get populated.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+		for _, r := range allResources {
+			buf, ok := gotMap[r.GetDigest()]
+			assert.True(t, ok)
+			assert.Equal(t, r.GetDigest().GetSizeBytes(), int64(len(buf)))
+		}
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Read everything again via GetMulti -- every resource should now be
+	// served directly from the local read-through cache, so each peer
+	// observes exactly one local op per call (the batched GetMulti).
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+		for _, r := range allResources {
+			buf, ok := gotMap[r.GetDigest()]
+			assert.True(t, ok)
+			assert.Equal(t, r.GetDigest().GetSizeBytes(), int64(len(buf)))
+		}
+	}
+	assert.Equal(t, opCountBefore[peer1]+len(allResources), len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2]+len(allResources), len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3]+len(allResources), len(memoryCache3.ops))
+}
+
+func TestGetMultiReadThroughLocalCacheSkipsMutableAC(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:     1,
+		Nodes:                 []string{peer1, peer2, peer3},
+		DisableLocalLookup:    true,
+		ReadThroughLocalCache: true,
+	}
+
+	// Setup a distributed cache, 3 nodes, R = 1.
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 100; i++ {
+		// Plain AC entries (not tree-cache) are mutable and must not be
+		// served from a read-through local cache.
+		rn, buf := testdigest.RandomACResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+	}
+
+	// Prime: read everything once from each node.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Read again. Because these are mutable AC entries, they must not be
+	// served from the local read-through cache, and each node should see
+	// additional ops beyond the local batched read.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+	assert.NotEqual(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.NotEqual(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.NotEqual(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
+func TestGetMultiReadThroughLocalCacheWithLookaside(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	baseConfig := Options{
+		ReplicationFactor:       1,
+		Nodes:                   []string{peer1, peer2, peer3},
+		DisableLocalLookup:      true,
+		ReadThroughLocalCache:   true,
+		LookasideCacheSizeBytes: 100_000,
+	}
+
+	memoryCache1 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config1 := baseConfig
+	config1.ListenAddr = peer1
+	dc1 := startNewDCache(t, env, config1, memoryCache1)
+
+	memoryCache2 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config2 := baseConfig
+	config2.ListenAddr = peer2
+	dc2 := startNewDCache(t, env, config2, memoryCache2)
+
+	memoryCache3 := traceCache(newMemoryCache(t, singleCacheSizeBytes))
+	config3 := baseConfig
+	config3.ListenAddr = peer3
+	dc3 := startNewDCache(t, env, config3, memoryCache3)
+
+	waitForReady(t, config1.ListenAddr)
+	waitForReady(t, config2.ListenAddr)
+	waitForReady(t, config3.ListenAddr)
+
+	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
+	allResources := make([]*rspb.ResourceName, 0)
+	for i := 0; i < 100; i++ {
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
+			t.Fatal(err)
+		}
+		allResources = append(allResources, rn)
+	}
+
+	// Prime: read everything once via GetMulti from each node. This populates
+	// both the lookaside cache and the local read-through cache.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+
+	opCountBefore := map[string]int{
+		peer1: len(memoryCache1.ops),
+		peer2: len(memoryCache2.ops),
+		peer3: len(memoryCache3.ops),
+	}
+
+	// Subsequent GetMulti calls should be served entirely from the
+	// lookaside cache and not touch the local cache at all.
+	for _, distributedCache := range distributedCaches {
+		gotMap, err := distributedCache.GetMulti(ctx, allResources)
+		require.NoError(t, err)
+		require.Equal(t, len(allResources), len(gotMap))
+	}
+	assert.Equal(t, opCountBefore[peer1], len(memoryCache1.ops))
+	assert.Equal(t, opCountBefore[peer2], len(memoryCache2.ops))
+	assert.Equal(t, opCountBefore[peer3], len(memoryCache3.ops))
+}
+
 func newReadthroughPeerSelectionCache(t *testing.T) *Cache {
 	env, _, _ := getEnvAuthAndCtx(t)
 	nodes := []string{"b1", "b2", "b3", "a1", "a2", "a3"}
@@ -2873,6 +3497,7 @@ type Op int
 const (
 	Read Op = iota
 	Get
+	GetWithMetadata
 	GetMulti
 	Write
 	Set
@@ -2889,6 +3514,8 @@ func (o Op) String() string {
 		return "READ"
 	case Get:
 		return "GET"
+	case GetWithMetadata:
+		return "GET_WITH_METADATA"
 	case GetMulti:
 		return "GET_MULTI"
 	case Write:
@@ -2961,6 +3588,10 @@ func (t *tracedCache) FindMissing(ctx context.Context, resources []*rspb.Resourc
 func (t *tracedCache) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
 	t.addOps(Get, r)
 	return t.Cache.Get(ctx, r)
+}
+func (t *tracedCache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	t.addOps(GetWithMetadata, r)
+	return t.Cache.GetWithMetadata(ctx, r)
 }
 func (t *tracedCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
 	t.addOps(GetMulti, resources...)
@@ -3258,4 +3889,424 @@ func TestKubeDiscoveryPodJoins(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return len(dc2.consistentHash.GetItems()) == 2
 	}, 5*time.Second, 50*time.Millisecond, "dc2 should discover 2 peers")
+}
+
+// sharedBlobStore is an in-memory stand-in for shared storage (GCS) common
+// to all nodes in a test cluster.
+type sharedBlobStore struct {
+	mu       sync.Mutex
+	disabled bool
+	blobs    map[string][]byte
+	uploads  int
+}
+
+func (s *sharedBlobStore) put(name string, data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disabled {
+		return
+	}
+	s.blobs[name] = data
+	s.uploads++
+}
+
+func (s *sharedBlobStore) get(name string) ([]byte, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.blobs[name]
+	return data, ok
+}
+
+func (s *sharedBlobStore) uploadCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.uploads
+}
+
+func testBlobName(r *rspb.ResourceName) string {
+	return "blobs/" + r.GetDigest().GetHash()
+}
+
+// referenceMemoryCache wraps a node's local cache, placing blobs in a shared
+// store so they can be distributed by reference, like the GCS-backed pebble
+// cache: byte writes upload their blob as they commit, and CreateReference
+// stages a blob without writing it to the wrapped cache.
+type referenceMemoryCache struct {
+	interfaces.Cache
+	store *sharedBlobStore
+
+	mu              sync.Mutex
+	byteCommits     int
+	refWrites       int
+	refWritesCloned int
+}
+
+func (c *referenceMemoryCache) counts() (byteCommits, refWrites, refWritesCloned int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.byteCommits, c.refWrites, c.refWritesCloned
+}
+
+func (c *referenceMemoryCache) makeReference(r *rspb.ResourceName, name string, sizeBytes int64) *refpb.Reference {
+	return &refpb.Reference{
+		Metadata: &sgpb.FileMetadata{
+			FileRecord: &sgpb.FileRecord{
+				Isolation: &sgpb.Isolation{
+					CacheType:          r.GetCacheType(),
+					RemoteInstanceName: r.GetInstanceName(),
+				},
+				Digest:         r.GetDigest(),
+				DigestFunction: r.GetDigestFunction(),
+				Compressor:     repb.Compressor_IDENTITY,
+			},
+			StorageMetadata: &sgpb.StorageMetadata{
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: name},
+			},
+			StoredSizeBytes: sizeBytes,
+		},
+	}
+}
+
+func (c *referenceMemoryCache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	inner, err := c.Cache.Writer(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	return &referenceMemoryCacheWriter{inner: inner, cache: c, r: r}, nil
+}
+
+func (c *referenceMemoryCache) ReadReference(ctx context.Context, r *rspb.ResourceName) (*refpb.Reference, error) {
+	name := testBlobName(r)
+	data, ok := c.store.get(name)
+	if !ok {
+		return nil, status.NotFoundError("not in shared storage")
+	}
+	return c.makeReference(r, name, int64(len(data))), nil
+}
+
+func (c *referenceMemoryCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
+	// Like the real implementation, fail before accepting any bytes when no
+	// reference can be created.
+	c.store.mu.Lock()
+	disabled := c.store.disabled
+	c.store.mu.Unlock()
+	if disabled {
+		return nil, status.NotFoundError("shared storage unavailable")
+	}
+	return &referenceMemoryCacheReferenceWriter{cache: c, r: r}, nil
+}
+
+type referenceMemoryCacheReferenceWriter struct {
+	cache *referenceMemoryCache
+	r     *rspb.ResourceName
+	buf   bytes.Buffer
+}
+
+func (w *referenceMemoryCacheReferenceWriter) Write(p []byte) (int, error) {
+	return w.buf.Write(p)
+}
+
+func (w *referenceMemoryCacheReferenceWriter) Close() error {
+	return nil
+}
+
+func (w *referenceMemoryCacheReferenceWriter) Commit() (*refpb.Reference, error) {
+	name := testBlobName(w.r)
+	w.cache.store.put(name, w.buf.Bytes())
+	return w.cache.makeReference(w.r, name, int64(w.buf.Len())), nil
+}
+
+func (c *referenceMemoryCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	data, ok := c.store.get(ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
+	if !ok {
+		return nil, status.NotFoundError("blob not found")
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (c *referenceMemoryCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
+	data, ok := c.store.get(ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName())
+	if !ok {
+		return status.NotFoundError("blob not found")
+	}
+	// Stand in for cloning the shared-storage object: install the blob in
+	// the wrapped cache so this node can serve it.
+	if err := c.Cache.Set(ctx, r.CloneVT(), data); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.refWrites++
+	if mustClone {
+		c.refWritesCloned++
+	}
+	return nil
+}
+
+type referenceMemoryCacheWriter struct {
+	inner interfaces.CommittedWriteCloser
+	cache *referenceMemoryCache
+	r     *rspb.ResourceName
+	buf   bytes.Buffer
+}
+
+func (w *referenceMemoryCacheWriter) Write(p []byte) (int, error) {
+	w.buf.Write(p)
+	return w.inner.Write(p)
+}
+
+func (w *referenceMemoryCacheWriter) Commit() error {
+	if err := w.inner.Commit(); err != nil {
+		return err
+	}
+	w.cache.mu.Lock()
+	w.cache.byteCommits++
+	w.cache.mu.Unlock()
+	w.cache.store.put(testBlobName(w.r), append([]byte(nil), w.buf.Bytes()...))
+	return nil
+}
+
+func (w *referenceMemoryCacheWriter) Close() error {
+	return w.inner.Close()
+}
+
+// setWriteReferenceExperiments swaps the process-global openfeature provider,
+// which is safe to do while servers are running; the env's experiment flag
+// provider must be installed before any servers start (background goroutines
+// read it without synchronization).
+func setWriteReferenceExperiments(t *testing.T, writeReferences bool, verifyReferences bool) {
+	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
+		"distributed_cache.write_gcs_references": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": writeReferences},
+		},
+		"distributed_cache.verify_write_gcs_references": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": verifyReferences},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+}
+
+func writeVerificationCounts(t *testing.T) map[string]float64 {
+	counts := map[string]float64{}
+	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceWriteVerificationCount) {
+		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
+	}
+	return counts
+}
+
+func TestWriteByReference(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	// Install the experiment flag provider once, before any servers start;
+	// subtests control flag values through the openfeature provider.
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	newCluster := func(t *testing.T, n int) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore) {
+		store := &sharedBlobStore{blobs: map[string][]byte{}}
+		var peers []string
+		for i := 0; i < n; i++ {
+			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+		}
+		baseConfig := Options{
+			ReplicationFactor: 3,
+			// The consistent hash sorts the Nodes slice in place, so give it
+			// its own copy to keep the peers iteration order stable.
+			Nodes:              slices.Clone(peers),
+			DisableLocalLookup: true,
+		}
+		var dcs []*Cache
+		var locals []*referenceMemoryCache
+		for _, peer := range peers {
+			local := &referenceMemoryCache{Cache: newMemoryCache(t, singleCacheSizeBytes), store: store}
+			config := baseConfig
+			config.ListenAddr = peer
+			dcs = append(dcs, startNewDCache(t, env, config, local))
+			locals = append(locals, local)
+		}
+		for _, peer := range peers {
+			waitForReady(t, peer)
+		}
+		return peers, dcs, locals, store
+	}
+	totals := func(locals []*referenceMemoryCache) (byteCommits, refWrites, refWritesCloned int) {
+		for _, l := range locals {
+			b, r, rc := l.counts()
+			byteCommits += b
+			refWrites += r
+			refWritesCloned += rc
+		}
+		return
+	}
+	assertReplicated := func(t *testing.T, locals []*referenceMemoryCache, dcs []*Cache, rn *rspb.ResourceName) {
+		for _, l := range locals {
+			exists, err := l.Contains(ctx, rn)
+			require.NoError(t, err)
+			require.True(t, exists)
+		}
+		for _, dc := range dcs {
+			readAndCompareDigest(t, ctx, dc, rn)
+		}
+	}
+
+	t.Run("write flag uploads once and distributes references", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true, false)
+		_, dcs, locals, store := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+
+		// The blob was staged in shared storage once, and every node
+		// received a reference instead of bytes.
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, refWritesCloned := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		require.Equal(t, 2, refWritesCloned) // Only 2 of the 3 should clone.
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("duplicate writes are not staged again", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true, false)
+		_, dcs, locals, store := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+
+		// Every write peer already has the blob, so a repeated write skips
+		// staging and the peers dedupe the byte-path fallback.
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("verify flag tees bytes and verifies references", func(t *testing.T) {
+		setWriteReferenceExperiments(t, false, true)
+		_, dcs, locals, store := newCluster(t, 3)
+		before := writeVerificationCounts(t)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		for _, dc := range dcs {
+			dc.distributedProxy.WaitForPendingVerificationsForTesting()
+		}
+
+		// Every node received the bytes, with the staged reference riding on
+		// a single stream's final message for verification.
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 3, byteCommits)
+		require.Equal(t, 0, refWrites)
+		// The stage plus the three byte writes each uploaded to shared
+		// storage.
+		require.Equal(t, 4, store.uploadCount())
+		after := writeVerificationCounts(t)
+		require.Equal(t, before[distributed_client.VerificationSuccess]+1, after[distributed_client.VerificationSuccess])
+		require.Equal(t, before[distributed_client.VerificationFailure], after[distributed_client.VerificationFailure])
+		require.Equal(t, before[distributed_client.VerificationError], after[distributed_client.VerificationError])
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("coordinator outside the write peerset stages the blob", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true, false)
+		peers, dcs, locals, store := newCluster(t, 4)
+		coordinator := dcs[3]
+		// Find a resource whose write peers exclude the coordinator, then
+		// write through it.
+		var rn *rspb.ResourceName
+		var buf []byte
+		for rn == nil {
+			candidateRN, candidateBuf := testdigest.RandomCASResourceBuf(t, 100)
+			ps, err := coordinator.writePeers(candidateRN)
+			require.NoError(t, err)
+			if !slices.Contains(ps.PreferredPeers, peers[3]) {
+				rn, buf = candidateRN, candidateBuf
+			}
+		}
+		require.NoError(t, coordinator.Set(ctx, rn, buf))
+
+		// The blob was staged once and only referenced from the three write
+		// peers; the coordinator keeps no local copy.
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		coordinatorContains, err := locals[3].Contains(ctx, rn)
+		require.NoError(t, err)
+		require.False(t, coordinatorContains)
+		for _, dc := range dcs {
+			readAndCompareDigest(t, ctx, dc, rn)
+		}
+	})
+
+	t.Run("unstageable blobs fall back to bytes", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true, false)
+		_, dcs, locals, store := newCluster(t, 3)
+		store.mu.Lock()
+		store.disabled = true
+		store.mu.Unlock()
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+
+		// No reference could be created, so the peers got the bytes.
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 3, byteCommits)
+		require.Equal(t, 0, refWrites)
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("experiments off leave the byte path alone", func(t *testing.T) {
+		setWriteReferenceExperiments(t, false, false)
+		_, dcs, locals, _ := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 3, byteCommits)
+		require.Equal(t, 0, refWrites)
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("caches without reference support write bytes", func(t *testing.T) {
+		setWriteReferenceExperiments(t, true, false)
+		var peers []string
+		for i := 0; i < 3; i++ {
+			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+		}
+		baseConfig := Options{
+			ReplicationFactor:  3,
+			Nodes:              slices.Clone(peers),
+			DisableLocalLookup: true,
+		}
+		var dcs []*Cache
+		var bases []interfaces.Cache
+		for _, peer := range peers {
+			base := newMemoryCache(t, singleCacheSizeBytes)
+			config := baseConfig
+			config.ListenAddr = peer
+			dcs = append(dcs, startNewDCache(t, env, config, base))
+			bases = append(bases, base)
+		}
+		for _, peer := range peers {
+			waitForReady(t, peer)
+		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		for _, base := range bases {
+			exists, err := base.Contains(ctx, rn)
+			require.NoError(t, err)
+			require.True(t, exists)
+		}
+		for _, dc := range dcs {
+			readAndCompareDigest(t, ctx, dc, rn)
+		}
+	})
 }

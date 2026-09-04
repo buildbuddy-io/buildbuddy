@@ -26,6 +26,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -48,14 +49,26 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+const (
+	// defaultFindMissingChunkFallbackConcurrency is the default value of the
+	// cache.find_missing_chunk_fallback_concurrency experiment, which bounds
+	// how many chunked-manifest fallback lookups FindMissingBlobs performs in
+	// parallel. Each lookup issues independent cache reads, so the work is
+	// I/O-bound.
+	defaultFindMissingChunkFallbackConcurrency = 8
+
+	// Values for the metrics.SpliceBlobValidation label.
+	spliceValidationFull    = "full"
+	spliceValidationSkipped = "skipped"
+)
+
 var (
 	enableTreeCaching         = flag.Bool("cache.enable_tree_caching", true, "If true, cache GetTree responses (full and partial)")
 	treeCacheSeed             = flag.String("cache.tree_cache_seed", "treecache-09032024", "If set, hash this with digests before caching / reading from tree cache")
 	minTreeCacheLevel         = flag.Int("cache.tree_cache_min_level", 1, "The min level at which the tree may be cached. 0 is the root")
 	minTreeCacheDescendents   = flag.Int("cache.tree_cache_min_descendents", 3, "The min number of descendents a node must parent in order to be cached")
-	maxTreeCacheSetDuration   = flag.Duration("cache.max_tree_cache_set_duration", time.Second, "The max amount of time to wait for unfinished tree cache entries to be set.")
 	treeCacheWriteProbability = flag.Float64("cache.tree_cache_write_probability", .01, "Write to the tree cache with this probability")
-	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", false, "If true, try to split up TreeCache entries to save space.")
+	enableTreeCacheSplitting  = flag.Bool("cache.tree_cache_splitting", true, "If true, try to split up TreeCache entries to save space.")
 	treeCacheSplittingMinSize = flag.Int("cache.tree_cache_splitting_min_size", 10000, "Minimum number of files in a subtree before we'll split it in the treecache.")
 	getTreeSubtreeSupport     = flag.Bool("cache.get_tree_subtree_support", true, "If true, respect the 'send_cache_subtrees' field on GetTree")
 	getTreeSubtreeMinDirCount = flag.Int("cache.get_tree_subtree_min_dir_count", 10, "The minimum number of directory children a subtree must have before we're willing to tell the client to cache it (inclusive).")
@@ -118,39 +131,62 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, rn.ToProto())
 	}
-	missing, err := s.cache.FindMissing(ctx, digestsToLookup)
+	// Forward the incoming request's purpose so present/absent metrics are
+	// attributed to the originating code path.
+	missing, err := s.cache.FindMissing(findmissing.ContextWithPurpose(ctx, req.GetPurpose()), digestsToLookup)
 	if err != nil {
 		return nil, err
 	}
 
 	// The chunked-manifest fallback lookup is skipped when the caller signals
 	// that these digests are individual content-defined chunks, not whole blobs.
-	// Otherwise, use the same fallback threshold as read paths so blobs chunked
-	// with an older, smaller chunk size still count as present after increasing
-	// the current chunk size.
+	// Otherwise, only check manifests for blobs above the current whole-blob
+	// write threshold. Blobs at or below the threshold should be uploaded as
+	// whole blobs.
 	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
-		checker := chunking.NewMissingChunkChecker(s.cache)
-		chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
+		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
+		maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
 
-		// https://go.dev/wiki/SliceTricks#filtering-without-allocating
-		stillMissing := missing[:0]
+		var mu sync.Mutex
+		stillMissing := make([]*repb.Digest, 0, len(missing))
+		markMissing := func(d *repb.Digest) {
+			mu.Lock()
+			stillMissing = append(stillMissing, d)
+			mu.Unlock()
+		}
+		concurrency := defaultFindMissingChunkFallbackConcurrency
+		if efp != nil {
+			concurrency = int(efp.Int64(ctx, "cache.find_missing_chunk_fallback_concurrency", defaultFindMissingChunkFallbackConcurrency))
+		}
+		if concurrency <= 0 {
+			concurrency = 1
+		}
+		eg, egCtx := errgroup.WithContext(ctx)
+		eg.SetLimit(concurrency)
 		for _, d := range missing {
-			if d.GetSizeBytes() <= chunkedReadFallbackSizeBytes {
-				stillMissing = append(stillMissing, d)
+			if d.GetSizeBytes() <= maxChunkSizeBytes {
+				markMissing(d)
 				continue
 			}
-			manifest, err := chunking.LoadManifest(ctx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
-			if err != nil {
-				stillMissing = append(stillMissing, d)
-				continue
-			}
-			anyMissing, err := checker.AnyChunkMissing(ctx, manifest)
-			if err != nil {
-				return nil, status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
-			}
-			if anyMissing {
-				stillMissing = append(stillMissing, d)
-			}
+			eg.Go(func() error {
+				manifest, err := chunking.LoadManifest(egCtx, s.cache, d, req.GetInstanceName(), req.GetDigestFunction())
+				if err != nil {
+					// Not stored as a chunked manifest, so it's genuinely missing.
+					markMissing(d)
+					return nil
+				}
+				anyMissing, err := checker.AnyChunkMissing(egCtx, manifest)
+				if err != nil {
+					return status.WrapErrorf(err, "missing chunks for %s", d.GetHash())
+				}
+				if anyMissing {
+					markMissing(d)
+				}
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
 		}
 		missing = stillMissing
 	}
@@ -590,6 +626,13 @@ func (s *ContentAddressableStorageServer) cacheTreeNode(ctx context.Context, roo
 		if err := eg.Wait(); err != nil {
 			return err
 		}
+		// The append order above depends on goroutine return order, so sort the
+		// children to keep the serialized root TreeCache (and thus its digest)
+		// deterministic for identical trees.
+		slices.SortFunc(rootCache.TreeCacheChildren, func(a *rspb.ResourceName, b *rspb.ResourceName) int {
+			return strings.Compare(a.GetDigest().GetHash(), b.GetDigest().GetHash())
+		})
+		rootCache.TreeCacheChildren = slices.CompactFunc(rootCache.TreeCacheChildren, dedupeResourceProtos)
 	}
 
 	buf, err := proto.Marshal(rootCache)
@@ -773,7 +816,11 @@ func compareSubtrees(a *digest.ResourceName, b *digest.ResourceName) int {
 	}
 }
 
-func dedupeSubtrees(a *digest.ResourceName, b *digest.ResourceName) bool {
+func dedupeResources(a *digest.ResourceName, b *digest.ResourceName) bool {
+	return a.GetDigest().GetHash() == b.GetDigest().GetHash() && a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes()
+}
+
+func dedupeResourceProtos(a *rspb.ResourceName, b *rspb.ResourceName) bool {
 	return a.GetDigest().GetHash() == b.GetDigest().GetHash() && a.GetDigest().GetSizeBytes() == b.GetDigest().GetSizeBytes()
 }
 
@@ -998,7 +1045,7 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if len(result.cachedSubtrees) > 0 {
 		// Sort and dedupe cached subtrees in case we ever want to cache this response somewhere.
 		slices.SortFunc(result.cachedSubtrees, compareSubtrees)
-		result.cachedSubtrees = slices.CompactFunc(result.cachedSubtrees, dedupeSubtrees)
+		result.cachedSubtrees = slices.CompactFunc(result.cachedSubtrees, dedupeResources)
 		rsp.Subtrees = make([]*repb.SubtreeResourceName, 0, len(result.cachedSubtrees))
 		for _, st := range result.cachedSubtrees {
 			rsp.Subtrees = append(rsp.Subtrees, &repb.SubtreeResourceName{
@@ -1224,7 +1271,27 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		DigestFunction: req.GetDigestFunction(),
 	}
 
-	if err := manifest.Store(ctx, s.cache); err != nil {
+	efp := s.env.GetExperimentFlagProvider()
+	skipValidation := cdc.IsSpliceWithoutValidation(ctx) &&
+		s.isTrustedSpliceClient(ctx) &&
+		efp != nil &&
+		efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false)
+
+	validation := spliceValidationFull
+	if skipValidation {
+		validation = spliceValidationSkipped
+	}
+	metrics.SpliceBlobCount.With(prometheus.Labels{
+		metrics.SpliceBlobValidation: validation,
+		metrics.GroupID:              s.groupIDForMetrics(ctx),
+	}).Inc()
+
+	if skipValidation {
+		err = manifest.StoreWithoutContentVerification(ctx, s.cache)
+	} else {
+		err = manifest.Store(ctx, s.cache)
+	}
+	if err != nil {
 		return nil, err
 	}
 
@@ -1233,35 +1300,39 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 	}, nil
 }
 
+func (s *ContentAddressableStorageServer) groupIDForMetrics(ctx context.Context) string {
+	if a := s.env.GetAuthenticator(); a != nil {
+		if u, err := a.AuthenticatedUser(ctx); err == nil {
+			return u.GetGroupID()
+		}
+	}
+	return interfaces.AuthAnonymousUser
+}
+
+// isTrustedSpliceClient reports whether the caller presented a validated
+// executor or cache-proxy client identity.
+func (s *ContentAddressableStorageServer) isTrustedSpliceClient(ctx context.Context) bool {
+	cis := s.env.GetClientIdentityService()
+	if cis == nil {
+		return false
+	}
+	identity, err := cis.IdentityFromContext(ctx)
+	if err != nil || identity == nil {
+		return false
+	}
+	return identity.Client == interfaces.ClientIdentityExecutor ||
+		identity.Client == interfaces.ClientIdentityCacheProxy
+}
+
 func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, blobDigest *repb.Digest, instanceName string, digestFunction repb.DigestFunction_Value, readZstd bool) ([]byte, error) {
 	if blobDigest.GetSizeBytes() > rpcutil.GRPCMaxSizeBytes {
 		return nil, status.NotFoundErrorf("blob %s not found", blobDigest.GetHash())
 	}
-	manifest, err := chunking.LoadManifest(ctx, s.cache, blobDigest, instanceName, digestFunction)
-	if err != nil {
-		return nil, err
+	compressor := repb.Compressor_IDENTITY
+	if readZstd {
+		compressor = repb.Compressor_ZSTD
 	}
-	rns := make([]*rspb.ResourceName, 0, len(manifest.ChunkDigests))
-	for _, d := range manifest.ChunkDigests {
-		rn := digest.NewCASResourceName(d, manifest.InstanceName, manifest.DigestFunction)
-		if readZstd {
-			rn.SetCompressor(repb.Compressor_ZSTD)
-		}
-		rns = append(rns, rn.ToProto())
-	}
-	chunkData, err := s.cache.GetMulti(ctx, rns)
-	if err != nil {
-		return nil, err
-	}
-	buf := make([]byte, 0, blobDigest.GetSizeBytes())
-	for _, d := range manifest.ChunkDigests {
-		data, ok := chunkData[d]
-		if !ok {
-			return nil, status.NotFoundErrorf("chunk %s missing for blob %s", d.GetHash(), blobDigest.GetHash())
-		}
-		buf = append(buf, data...)
-	}
-	return buf, nil
+	return chunking.GetBlob(ctx, s.cache, blobDigest, instanceName, digestFunction, compressor)
 }
 
 // SplitBlob is used to get the digests of the chunks that make up a blob. Clients can then see if
@@ -1269,7 +1340,11 @@ func (s *ContentAddressableStorageServer) readChunkedBlob(ctx context.Context, b
 func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	resp, err := s.splitBlob(ctx, req)
 	if err != nil {
-		log.CtxInfof(ctx, "SplitBlob failed: %v", err)
+		if status.IsNotFoundError(err) {
+			log.CtxDebugf(ctx, "SplitBlob failed: %v", err)
+		} else {
+			log.CtxWarningf(ctx, "SplitBlob failed: %v", err)
+		}
 	}
 	return resp, err
 }
@@ -1298,7 +1373,9 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 		return nil, err
 	}
 
-	if resp, err := s.FindMissingBlobs(ctx, manifest.ToFindMissingBlobsRequest()); err != nil {
+	fmReq := manifest.ToFindMissingBlobsRequest()
+	fmReq.Purpose = repb.FindMissingBlobsRequest_CAS_SPLIT_BLOB
+	if resp, err := s.FindMissingBlobs(ctx, fmReq); err != nil {
 		return nil, err
 	} else if len(resp.GetMissingBlobDigests()) > 0 {
 		return nil, status.NotFoundErrorf("required chunks not found in CAS: %s", chunking.DigestsSummary(resp.GetMissingBlobDigests()))

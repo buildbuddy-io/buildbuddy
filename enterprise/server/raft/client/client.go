@@ -84,11 +84,6 @@ func NewAPIClient(env environment.Env, name string, registry IRegistry) *APIClie
 }
 
 func (c *APIClient) getClient(ctx context.Context, peer string) (returnedClient rfspb.ApiClient, returnedErr error) {
-	ctx, spn := tracing.StartNamedSpan(ctx, "client.APIClient.getClient") // nolint:SA4006
-	defer func() {
-		tracing.RecordErrorToSpan(spn, returnedErr)
-		spn.End()
-	}()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {

@@ -10,10 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
@@ -25,6 +27,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcompression"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
@@ -33,12 +38,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/fastcdc2020/fastcdc"
 	"github.com/google/uuid"
+	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
@@ -983,6 +991,188 @@ func TestSpliceAndSplitBlob(t *testing.T) {
 	}
 }
 
+func TestSpliceBlobWithoutValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		groupID        string
+		clientIdentity string
+		sendHeader     bool
+		missingChunk   bool
+		wrongBlobSize  bool
+		wantSuccess    bool
+		wantValidation string
+	}{
+		{
+			name:           "trusted executor in experiment",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+			wantSuccess:    true,
+			wantValidation: "skipped",
+		},
+		{
+			name:           "trusted cache proxy forwards experiment",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityCacheProxy,
+			sendHeader:     true,
+			wantSuccess:    true,
+			wantValidation: "skipped",
+		},
+		{
+			name:           "trusted executor without experiment header",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			wantValidation: "full",
+		},
+		{
+			name:           "trusted executor cannot reference a missing chunk",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+			missingChunk:   true,
+			wantValidation: "skipped",
+		},
+		{
+			name:           "trusted executor cannot claim wrong blob size",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+			wrongBlobSize:  true,
+			wantValidation: "skipped",
+		},
+		{
+			name:           "trusted executor from group outside experiment",
+			groupID:        "GR_OTHER",
+			clientIdentity: interfaces.ClientIdentityExecutor,
+			sendHeader:     true,
+			wantValidation: "full",
+		},
+		{
+			name:           "untrusted caller cannot spoof experiment header",
+			groupID:        "GR_ALLOWED",
+			sendHeader:     true,
+			wantValidation: "full",
+		},
+		{
+			name:           "app identity cannot skip validation",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: interfaces.ClientIdentityApp,
+			sendHeader:     true,
+			wantValidation: "full",
+		},
+		{
+			name:           "signed unknown client cannot spoof experiment header",
+			groupID:        "GR_ALLOWED",
+			clientIdentity: "unknown-client",
+			sendHeader:     true,
+			wantValidation: "full",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			user := testauth.User("US1", tc.groupID)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+				user.GetUserID(): user,
+			}))
+
+			flags.Set(t, "app.client_identity.key", "test-client-identity-key")
+			identityService, err := clientidentity.New(env.GetClock())
+			require.NoError(t, err)
+			env.SetClientIdentityService(identityService)
+
+			tmp := testfs.MakeTempDir(t)
+			offlineFlagPath := testfs.WriteFile(t, tmp, "config.flagd.json", `
+{
+  "$schema": "https://flagd.dev/schema/v0/flags.json",
+  "flags": {
+    "cache.chunking_enabled": {
+      "state": "ENABLED",
+      "variants": {"enabled": true},
+      "defaultVariant": "enabled"
+    },
+    "splice-without-validation": {
+      "state": "ENABLED",
+      "variants": {"enabled": true, "disabled": false},
+      "defaultVariant": "disabled",
+      "targeting": {
+        "if": [
+          {"==": [{"var": "group_id"}, "GR_ALLOWED"]},
+          "enabled",
+          "disabled"
+        ]
+      }
+    }
+  }
+}
+`)
+			provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(offlineFlagPath))
+			require.NoError(t, err)
+			require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), provider))
+			fp, err := experiments.NewFlagProvider(t.Name())
+			require.NoError(t, err)
+			env.SetExperimentFlagProvider(fp)
+
+			ctx := testauth.WithAuthenticatedUserInfo(t.Context(), user)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			if tc.sendHeader {
+				ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
+			}
+			if tc.clientIdentity != "" {
+				identityHeader, err := identityService.NewIdentityHeader(&interfaces.ClientIdentity{
+					Origin: interfaces.ClientIdentityInternalOrigin,
+					Client: tc.clientIdentity,
+				}, clientidentity.DefaultExpiration)
+				require.NoError(t, err)
+				ctx = metadata.AppendToOutgoingContext(ctx, authutil.ClientIdentityHeaderName, identityHeader)
+			}
+
+			chunks := [][]byte{[]byte("chunk one"), []byte("chunk two")}
+			chunkDigests := make([]*repb.Digest, 0, len(chunks))
+			var blobSize int
+			for _, chunk := range chunks {
+				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				chunkDigests = append(chunkDigests, d)
+				blobSize += len(chunk)
+				if !tc.missingChunk {
+					rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+					require.NoError(t, env.GetCache().Set(ctx, rn.ToProto(), chunk))
+				}
+			}
+			if tc.wrongBlobSize {
+				blobSize++
+			}
+			blobDigest, err := digest.Compute(strings.NewReader(strings.Repeat("x", blobSize)), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+
+			clientConn := runCASServer(ctx, t, env)
+			t.Cleanup(func() { clientConn.Close() })
+			client := repb.NewContentAddressableStorageClient(clientConn)
+			metrics.SpliceBlobCount.Reset()
+			_, err = client.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+				BlobDigest:     blobDigest,
+				ChunkDigests:   chunkDigests,
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			assert.Equal(t, float64(1), testmetrics.CounterValueForLabels(t, metrics.SpliceBlobCount, prometheus.Labels{
+				metrics.SpliceBlobValidation: tc.wantValidation,
+				metrics.GroupID:              tc.groupID,
+			}))
+			if !tc.wantSuccess {
+				require.Error(t, err)
+				require.True(t, status.IsInvalidArgumentError(err), "expected InvalidArgumentError, got %v", err)
+				return
+			}
+			require.NoError(t, err)
+
+			manifest, err := chunking.LoadManifest(ctx, env.GetCache(), blobDigest, "", repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			require.Equal(t, chunkDigests, manifest.ChunkDigests)
+		})
+	}
+}
+
 func TestSplitBlobNotFound(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_enabled": {
@@ -1021,6 +1211,63 @@ func TestSplitBlobNotFound(t *testing.T) {
 	}
 
 	_, err = casClient.SplitBlob(ctx, splitReq)
+	require.Error(t, err)
+	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
+}
+
+func TestSplitBlobRejectsLayeredManifest(t *testing.T) {
+	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	cache := te.GetCache()
+
+	leaf1RN, leaf1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	leaf2RN, leaf2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	leaf3RN, leaf3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	nestedData := bytes.Join([][]byte{leaf1, leaf2, leaf3}, nil)
+	nestedDigest, err := digest.Compute(bytes.NewReader(nestedData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	for i, leaf := range []struct {
+		rn   *rspb.ResourceName
+		data []byte
+	}{
+		{leaf1RN, leaf1},
+		{leaf2RN, leaf2},
+		{leaf3RN, leaf3},
+	} {
+		require.NoError(t, cache.Set(ctx, leaf.rn, leaf.data), "store leaf %d", i)
+	}
+	require.NoError(t, (&chunking.Manifest{
+		BlobDigest:     nestedDigest,
+		ChunkDigests:   []*repb.Digest{leaf1RN.GetDigest(), leaf2RN.GetDigest(), leaf3RN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}).Store(ctx, cache))
+
+	directRN, directData := testdigest.RandomCASResourceBuf(t, 2*1024*1024)
+	require.NoError(t, cache.Set(ctx, directRN, directData))
+	parentData := bytes.Join([][]byte{nestedData, directData}, nil)
+	parentDigest, err := digest.Compute(bytes.NewReader(parentData), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+
+	// Inject a legacy layered manifest directly. Normal manifest storage rejects
+	// this because nestedDigest is not itself present in the CAS.
+	require.NoError(t, (&chunking.Manifest{
+		BlobDigest:     parentDigest,
+		ChunkDigests:   []*repb.Digest{nestedDigest, directRN.GetDigest()},
+		DigestFunction: repb.DigestFunction_SHA256,
+	}).StoreWithoutVerification(ctx, cache))
+
+	_, err = casClient.SplitBlob(ctx, &repb.SplitBlobRequest{
+		BlobDigest:     parentDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	})
 	require.Error(t, err)
 	require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got: %v", err)
 }
@@ -1111,7 +1358,9 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+	chunk4RN, chunk4 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	chunk5RN, chunk5 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := bytes.Join([][]byte{chunk1, chunk2, chunk3, chunk4, chunk5}, nil)
 
 	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
@@ -1119,10 +1368,15 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
 	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+	require.NoError(t, cache.Set(ctx, chunk4RN, chunk4))
+	require.NoError(t, cache.Set(ctx, chunk5RN, chunk5))
 
 	manifest := &chunking.Manifest{
-		BlobDigest:     blobDigest,
-		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		BlobDigest: blobDigest,
+		ChunkDigests: []*repb.Digest{
+			chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest(),
+			chunk4RN.GetDigest(), chunk5RN.GetDigest(),
+		},
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
@@ -1147,40 +1401,25 @@ func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
 	require.ElementsMatch(t, digestStrings(blobDigest, regularDigest), digestStrings(rsp.MissingBlobDigests...))
 }
 
-func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
+func TestChunkedBlobAtCurrentWriteThresholdIsMissingButReadable(t *testing.T) {
 	flags.Set(t, "cache.avg_chunk_size_bytes", 1024*1024)
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 2*1024*1024)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
 	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
 	cache := te.GetCache()
 
 	chunk1RN, chunk1 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk2RN, chunk2 := testdigest.RandomCASResourceBuf(t, 1024*1024)
 	chunk3RN, chunk3 := testdigest.RandomCASResourceBuf(t, 1024*1024)
-	fullBlob := append(append(chunk1, chunk2...), chunk3...)
+	chunk4RN, chunk4 := testdigest.RandomCASResourceBuf(t, 1024*1024)
+	fullBlob := bytes.Join([][]byte{chunk1, chunk2, chunk3, chunk4}, nil)
 
 	blobDigest, err := digest.Compute(bytes.NewReader(fullBlob), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
@@ -1188,10 +1427,11 @@ func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
 	require.NoError(t, cache.Set(ctx, chunk1RN, chunk1))
 	require.NoError(t, cache.Set(ctx, chunk2RN, chunk2))
 	require.NoError(t, cache.Set(ctx, chunk3RN, chunk3))
+	require.NoError(t, cache.Set(ctx, chunk4RN, chunk4))
 
 	manifest := &chunking.Manifest{
 		BlobDigest:     blobDigest,
-		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest()},
+		ChunkDigests:   []*repb.Digest{chunk1RN.GetDigest(), chunk2RN.GetDigest(), chunk3RN.GetDigest(), chunk4RN.GetDigest()},
 		InstanceName:   "",
 		DigestFunction: repb.DigestFunction_SHA256,
 	}
@@ -1201,15 +1441,13 @@ func TestFindMissingBlobsUsesReadFallbackThreshold(t *testing.T) {
 		BlobDigests: []*repb.Digest{blobDigest},
 	})
 	require.NoError(t, err)
-
-	require.Empty(t, rsp.MissingBlobDigests)
-
-	rsp, err = casClient.FindMissingBlobs(cdc.ContextWithChunked(ctx), &repb.FindMissingBlobsRequest{
-		BlobDigests: []*repb.Digest{blobDigest},
-	})
-	require.NoError(t, err)
 	require.Len(t, rsp.MissingBlobDigests, 1)
 	require.Equal(t, blobDigest.GetHash(), rsp.MissingBlobDigests[0].GetHash())
+
+	var downloaded bytes.Buffer
+	rn := digest.NewCASResourceName(blobDigest, "", repb.DigestFunction_SHA256)
+	require.NoError(t, cachetools.GetBlob(ctx, bsClient, rn, &downloaded))
+	require.Equal(t, fullBlob, downloaded.Bytes())
 }
 
 func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {

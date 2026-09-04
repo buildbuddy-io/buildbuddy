@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"golang.org/x/sync/errgroup"
 
+	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	vmxpb "github.com/buildbuddy-io/buildbuddy/proto/vmexec"
 	gstatus "google.golang.org/grpc/status"
@@ -150,6 +151,11 @@ func Execute(ctx context.Context, client vmxpb.ExecClient, cmd *repb.Command, wo
 		Stdout:     stdout.Bytes(),
 		Error:      err,
 		UsageStats: stats,
+		VMMetrics: &espb.VMMetrics{
+			DockerdWaitDurationUsec: res.GetMetrics().GetDockerdWaitDurationUsec(),
+			VmDnsWaitDurationUsec:   res.GetMetrics().GetVmDnsWaitDurationUsec(),
+			VmExecInitDurationUsec:  res.GetMetrics().GetVmExecInitDurationUsec(),
+		},
 	}
 	// The vmexec server normally calls unix.Sync() after the command is
 	// terminated, but if the context was cancelled then the Sync() call may not

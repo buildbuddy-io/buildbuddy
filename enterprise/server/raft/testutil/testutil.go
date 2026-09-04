@@ -27,7 +27,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
-	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"github.com/lni/dragonboat/v4"
@@ -378,6 +377,9 @@ func (fs *FakeStore) StartShard(ctx context.Context, req *rfpb.StartShardRequest
 func (fs *FakeStore) NHID() string {
 	return ""
 }
+func (fs *FakeStore) Zone() string {
+	return ""
+}
 
 type TestingReplica struct {
 	t testing.TB
@@ -469,14 +471,9 @@ func WriteRecord(ctx context.Context, t testing.TB, ts *TestingStore, groupID st
 		LastModifyUsec:  now.UnixMicro(),
 		LastAccessUsec:  now.UnixMicro(),
 	}
-	protoBytes, err := proto.Marshal(md)
-	require.NoError(t, err)
-
-	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
-		Kv: &rfpb.KV{
-			Key:   key,
-			Value: protoBytes,
-		},
+	writeReq, err := rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+		Key:          key,
+		FileMetadata: md,
 	}).ToProto()
 	require.NoError(t, err)
 	writeRsp, err := ts.Sender().SyncPropose(ctx, key, writeReq)

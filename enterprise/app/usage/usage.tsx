@@ -31,9 +31,14 @@ interface State {
 // This is the first month with usage numbers broken down by internal/external,
 // workflows, etc.  Prior months will still show the "old" charts.
 const FIRST_DETAILED_MONTH = "2025-08";
+const OLAP_QUERY_PARAM = "olap";
 
 function shouldShowDetailedView(periodStart: string): boolean {
   return new Date(periodStart) >= new Date(FIRST_DETAILED_MONTH);
+}
+
+function useOLAPFromURL(): boolean {
+  return new URLSearchParams(window.location.search).get(OLAP_QUERY_PARAM) === "1";
 }
 
 /** UsageComponent renders the Usage page shell and active tab. */
@@ -138,7 +143,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     this.setState({ loading: true });
 
     rpcService.service
-      .getUsage(new usage.GetUsageRequest({ usagePeriod: period }))
+      .getUsage(new usage.GetUsageRequest({ usagePeriod: period, useOlap: useOLAPFromURL() }))
       .then((response) => {
         console.log(response);
         if (!response.usage) {
@@ -672,6 +677,30 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                         </div>
                       </>
                     )}
+                  </>
+                )}
+                {Boolean(selection.totalCustomerProxyDownloadSizeBytes) && (
+                  <>
+                    <div className="usage-resource-name">Total bytes downloaded from cache proxy</div>
+                    <div
+                      className="usage-value"
+                      title={formatWithCommas(selection.totalCustomerProxyDownloadSizeBytes)}>
+                      {formatBytes(
+                        selection.totalCustomerProxyDownloadSizeBytes,
+                        selection.totalCustomerProxyDownloadSizeBytes
+                      )}
+                    </div>
+                  </>
+                )}
+                {Boolean(selection.totalCustomerProxyUploadSizeBytes) && (
+                  <>
+                    <div className="usage-resource-name">Total bytes uploaded to cache proxy</div>
+                    <div className="usage-value" title={formatWithCommas(selection.totalCustomerProxyUploadSizeBytes)}>
+                      {formatBytes(
+                        selection.totalCustomerProxyUploadSizeBytes,
+                        selection.totalCustomerProxyUploadSizeBytes
+                      )}
+                    </div>
                   </>
                 )}
               </div>

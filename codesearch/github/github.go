@@ -24,8 +24,6 @@ import (
 	"github.com/gabriel-vasile/mimetype"
 	"github.com/go-enry/go-enry/v2"
 
-	xxhash "github.com/cespare/xxhash/v2"
-
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/index"
 )
 
@@ -53,9 +51,7 @@ func lastIndexedDocKey(repoURL *git.RepoURL) []byte {
 }
 
 func makeFileId(repoURL *git.RepoURL, name string) []byte {
-	uniqueID := xxhash.Sum64String(repoURL.Owner + repoURL.Repo + name)
-	idBytes := fmt.Appendf(nil, "%d", uniqueID)
-	return idBytes
+	return schema.FileID(repoURL.Owner, repoURL.Repo, name)
 }
 
 func makeRepoMetadataDoc(repoURL *git.RepoURL, commitSHA, modulePath string) types.Document {

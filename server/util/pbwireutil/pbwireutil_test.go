@@ -16,7 +16,7 @@ func TestWireUtils(t *testing.T) {
 		Worker:          "foo",
 		QueuedTimestamp: &tspb.Timestamp{Seconds: 7},
 	}
-	b, err := proto.MarshalOld(msg)
+	b, err := proto.Marshal(msg)
 	require.NoError(t, err)
 
 	const (

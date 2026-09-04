@@ -323,6 +323,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 			req := &repb.FindMissingBlobsRequest{
 				DigestFunction: digestFunction,
 				InstanceName:   instanceName,
+				Purpose:        repb.FindMissingBlobsRequest_EXECUTOR_OUTPUT_UPLOAD,
 			}
 			for _, f := range batch {
 				req.BlobDigests = append(req.BlobDigests, f.digest)

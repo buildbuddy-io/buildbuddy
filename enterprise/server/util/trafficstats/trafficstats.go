@@ -32,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/stats"
@@ -62,11 +63,42 @@ type classifier struct {
 	occasionallLogger log.Logger
 }
 
+// byteCounterKey is a single label tuple for the ingress/egress byte counters.
+type byteCounterKey struct {
+	groupID, provider, region string
+}
+
+// byteCounterHandles holds the pre-created Counters for a given byteCounterKey
+// tuple to avoid creating counter handles per-RPC.
+type byteCounterHandles struct {
+	ingress, egress prometheus.Counter
+}
+
 type StatsHandler struct {
 	classifier *classifier
+
+	// Map from byteCounterKey -> byteCounterHandles
+	counterHandles sync.Map
 }
 
 type rpcCountersKey struct{}
+
+// counterHandlesForLabels returns the cached Counter handles for the given
+// labels.
+//
+// Avoids locking / allocating per-RPC inside prometheus code.
+func (h *StatsHandler) counterHandlesForLabels(groupID, provider, region string) *byteCounterHandles {
+	key := byteCounterKey{groupID: groupID, provider: provider, region: region}
+	if v, ok := h.counterHandles.Load(key); ok {
+		return v.(*byteCounterHandles)
+	}
+	handles := &byteCounterHandles{
+		ingress: metrics.GRPCServerIngressBytes.WithLabelValues(groupID, provider, region),
+		egress:  metrics.GRPCServerEgressBytes.WithLabelValues(groupID, provider, region),
+	}
+	actual, _ := h.counterHandles.LoadOrStore(key, handles)
+	return actual.(*byteCounterHandles)
+}
 
 type rpcCounters struct {
 	groupID                   string
@@ -154,11 +186,14 @@ func (h *StatsHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
 					log.Debugf("Traffic stats unset dimensions at end: %+v. Error: %v", c, endErr)
 				}
 			}
-			if c.ingressBytes > 0 {
-				metrics.GRPCServerIngressBytes.WithLabelValues(c.groupID, c.dest.Provider, c.dest.Region).Add(float64(c.ingressBytes))
-			}
-			if c.egressBytes > 0 {
-				metrics.GRPCServerEgressBytes.WithLabelValues(c.groupID, c.dest.Provider, c.dest.Region).Add(float64(c.egressBytes))
+			if c.ingressBytes > 0 || c.egressBytes > 0 {
+				handles := h.counterHandlesForLabels(c.groupID, c.dest.Provider, c.dest.Region)
+				if c.ingressBytes > 0 {
+					handles.ingress.Add(float64(c.ingressBytes))
+				}
+				if c.egressBytes > 0 {
+					handles.egress.Add(float64(c.egressBytes))
+				}
 			}
 		}
 	}

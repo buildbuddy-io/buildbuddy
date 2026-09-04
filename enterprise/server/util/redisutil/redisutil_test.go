@@ -1,6 +1,7 @@
 package redisutil_test
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
@@ -30,6 +31,63 @@ const (
 	// should not expire.
 	noExpiration time.Duration = 0
 )
+
+func TestCommandInfoParserExtendedReply(t *testing.T) {
+	commandFields := []string{
+		"$4\r\nhset\r\n",
+		":-4\r\n",
+		"*1\r\n$5\r\nwrite\r\n",
+		":1\r\n",
+		":1\r\n",
+		":1\r\n",
+		"*1\r\n$5\r\nwrite\r\n",
+		"*1\r\n$8\r\nreadonly\r\n",
+		"*1\r\n*2\r\n$5\r\nbegin\r\n:1\r\n",
+		"*0\r\n",
+		"+future-metadata\r\n",
+	}
+
+	for _, fieldCount := range []int{10, 11} {
+		t.Run(fmt.Sprintf("%d fields", fieldCount), func(t *testing.T) {
+			clientConn, serverConn := net.Pipe()
+			serverErr := make(chan error, 1)
+			go func() {
+				defer serverConn.Close()
+				rd := bufio.NewReader(serverConn)
+				for _, want := range []string{"*1\r\n", "$7\r\n", "command\r\n"} {
+					got, err := rd.ReadString('\n')
+					if err != nil {
+						serverErr <- err
+						return
+					}
+					if got != want {
+						serverErr <- fmt.Errorf("got request line %q, want %q", got, want)
+						return
+					}
+				}
+				reply := fmt.Sprintf("*1\r\n*%d\r\n%s", fieldCount, strings.Join(commandFields[:fieldCount], ""))
+				_, err := fmt.Fprint(serverConn, reply)
+				serverErr <- err
+			}()
+
+			client := redis.NewClient(&redis.Options{
+				Addr: "unused",
+				Dialer: func(context.Context, string, string) (net.Conn, error) {
+					return clientConn, nil
+				},
+			})
+			t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+			info, err := client.Command(t.Context()).Result()
+			require.NoError(t, err)
+			require.NoError(t, <-serverErr)
+			require.Contains(t, info, "hset")
+			require.Equal(t, int8(1), info["hset"].FirstKeyPos)
+			require.Equal(t, int8(1), info["hset"].LastKeyPos)
+			require.Equal(t, int8(1), info["hset"].StepCount)
+		})
+	}
+}
 
 func genOptions(scheme, user, password, addr, database string) *redis.Options {
 	if scheme != "redis" && scheme != "rediss" && scheme != "unix" {

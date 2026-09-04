@@ -2,6 +2,7 @@ package searcher_test
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"testing"
 
@@ -56,6 +57,9 @@ func (s constantScorer) Prepare(matches []types.DocumentMatch) {}
 func (s constantScorer) Score(docMatch types.DocumentMatch) float64 {
 	return 0.1
 }
+func (s constantScorer) Rescore(docMatch types.DocumentMatch, doc types.Document) float64 {
+	return 0.1
+}
 
 type explicitScorer struct {
 	scores map[uint64]float64
@@ -64,6 +68,9 @@ type explicitScorer struct {
 func (s *explicitScorer) Skip() bool                            { return false }
 func (s *explicitScorer) Prepare(matches []types.DocumentMatch) {}
 func (s *explicitScorer) Score(docMatch types.DocumentMatch) float64 {
+	return s.scores[docMatch.Docid()]
+}
+func (s *explicitScorer) Rescore(docMatch types.DocumentMatch, doc types.Document) float64 {
 	return s.scores[docMatch.Docid()]
 }
 
@@ -238,4 +245,60 @@ func exhaustiveTopIdents(scores map[uint64]float64, numResults, offset int) []st
 		idents = append(idents, sampleData[docID-1].id)
 	}
 	return idents
+}
+
+var importSchema = schema.NewDocumentSchema(
+	[]types.FieldSchema{
+		schema.MustFieldSchema(types.KeywordField, "ident", true),
+		schema.MustFieldSchema(types.KeywordField, types.ImportsField, true),
+		schema.MustFieldSchema(types.KeywordField, types.ImportIDField, true),
+	})
+
+func makeImportDoc(t *testing.T, ident, imports, importID string) types.Document {
+	fields := map[string][]byte{"ident": []byte(ident)}
+	if imports != "" {
+		fields[types.ImportsField] = []byte(imports)
+	}
+	if importID != "" {
+		fields[types.ImportIDField] = []byte(importID)
+	}
+	doc, err := importSchema.MakeDocument(fields)
+	require.NoError(t, err)
+	return doc
+}
+
+// createImportRankIndex indexes: three files importing pkg/popular, then
+// "unpopular" (docid 4) and "popular" (docid 5). With no boost, equal scores
+// surface in ascending docid order; with boost, popular must win.
+func createImportRankIndex(t *testing.T) *pebble.DB {
+	t.Helper()
+	indexDir := testfs.MakeTempDir(t)
+	db, err := index.OpenPebbleDB(indexDir)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	w, err := index.NewWriter(db, "testns")
+	require.NoError(t, err)
+	for i := range 3 {
+		require.NoError(t, w.AddDocument(makeImportDoc(t, fmt.Sprintf("importer%d", i), "go:mod/popular", fmt.Sprintf("go:mod/importer%d", i))))
+	}
+	require.NoError(t, w.AddDocument(makeImportDoc(t, "unpopular", "", "go:mod/unpopular")))
+	require.NoError(t, w.AddDocument(makeImportDoc(t, "popular", "", "go:mod/popular")))
+	require.NoError(t, w.Flush())
+	return db
+}
+
+func TestImportRankBoostOrdersResults(t *testing.T) {
+	ctx := context.Background()
+	db := createImportRankIndex(t)
+
+	// Every doc has the same (constant) text score, so without the always-on
+	// import-rank boost they would surface in ascending docid order, leaving
+	// "popular" (docid 5) last. The boost lifts the doc whose package is
+	// imported by three files to the top, which is the only way it can lead.
+	s := searcher.New(ctx, index.NewReader(ctx, db, "testns", importSchema))
+	docs, err := s.Search(sQuery{"(:all)", constantScorer{}}, 100, 0)
+	require.NoError(t, err)
+	require.Equal(t, 5, len(docs))
+	assert.Equal(t, "popular", string(docs[0].Field("ident").Contents()))
 }

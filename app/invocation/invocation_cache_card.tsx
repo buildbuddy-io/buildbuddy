@@ -4,8 +4,8 @@ import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
 import { blaze } from "../../proto/action_cache_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import format from "../format/format";
-import { getChartColor } from "../util/color";
 import InvocationModel from "./invocation_model";
+import DonutChart from "../components/chart/donut_chart";
 
 interface Props {
   model: InvocationModel;
@@ -23,7 +23,7 @@ export default class CacheCardComponent extends React.Component<Props> {
         +this.props.model.cacheStats[0]?.totalUploadSizeBytes !== 0);
     return (
       <div className="card">
-        <PieChartIcon className="icon" />
+        <PieChartIcon />
         <div className="content">
           <div className="title">Cache stats</div>
           {!hasCacheStats && (
@@ -33,7 +33,7 @@ export default class CacheCardComponent extends React.Component<Props> {
             <div className="details">
               {hasCacheStats && !this.props.model.hasCacheWriteCapability() && (
                 <div className="cache-details">
-                  <AlertCircleIcon className="icon" />
+                  <AlertCircleIcon />
                   This invocation was created with a read-only API key. No artifacts were written to the cache.
                 </div>
               )}
@@ -274,67 +274,11 @@ export default class CacheCardComponent extends React.Component<Props> {
 }
 
 function renderBreakdown(data: any[] | undefined, title: string, subtitle: string) {
-  data = data?.filter((d) => d.value > 0).sort((a, b) => b.value - a.value);
-
-  let sum = data?.reduce(
-    (prev, current) => {
-      return { name: "Sum", value: prev.value + current.value };
-    },
-    { name: "Sum", value: 0 }
-  );
-
-  let cap = 5;
-  let other = 0;
-  let otherLabels: string[] = [];
-  if (data && data?.length > cap) {
-    for (let i = cap; i < data.length; i++) {
-      other += data[i].value;
-      otherLabels.push(
-        `${format.formatWithCommas(data[i].value)} ${data[i].name} (${format.percent(data[i].value / sum.value)}%)`
-      );
-    }
-  }
-
-  data = data?.splice(0, cap);
-
-  if (other > 0) {
-    data?.push({ name: "Other", value: other });
-  }
-
   return (
     <div className="cache-section">
       <div className="cache-title">{title}</div>
       <div className="cache-subtitle">{subtitle}</div>
-      <div className="cache-chart">
-        <ResponsiveContainer width={80} height={80}>
-          <PieChart>
-            <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
-              {data?.map((_, index) => <Cell key={`cell-${index}`} fill={getChartColor(index)} />)}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
-        <div>
-          {data?.map((entry, index) => (
-            <div className="cache-chart-label">
-              <span
-                className="color-swatch cache-hit-color-swatch"
-                style={{ backgroundColor: getChartColor(index) }}></span>
-              <span className="cache-stat">
-                <span className="cache-stat-duration">{format.formatWithCommas(entry.value)}</span>{" "}
-                <span
-                  className="cache-stat-description"
-                  title={
-                    other > 0 && index == cap
-                      ? otherLabels.join(", ")
-                      : `${entry.name} (${format.percent(entry.value / sum.value)}%)`
-                  }>
-                  {entry.name} ({format.percent(entry.value / sum.value)}%)
-                </span>
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+      <DonutChart data={data}></DonutChart>
     </div>
   );
 }

@@ -330,7 +330,7 @@ func copyArtifact(ctx context.Context, dst bspb.ByteStreamClient, src interfaces
 	if err != nil {
 		return fmt.Errorf("read blob %q: %w", blobName, err)
 	}
-	rn, err := digest.ParseDownloadResourceName(parsedURL.Path)
+	rn, err := digest.ParseDownloadResourceName(strings.TrimPrefix(parsedURL.Path, "/"))
 	if err != nil {
 		return fmt.Errorf("parse bytestream URI as resource name: %w", err)
 	}

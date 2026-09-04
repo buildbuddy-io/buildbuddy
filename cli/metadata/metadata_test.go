@@ -17,6 +17,10 @@ func init() {
 }
 
 func TestAppendBuildMetadata(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
 	ws, commitSHA := testgit.MakeTempRepo(t, map[string]string{"WORKSPACE": ""})
 	testgit.ConfigureRemoteOrigin(t, ws, "https://user:secret@example.com/org/repo.git")
 	workspace.SetForTest(t, ws)

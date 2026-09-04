@@ -48,6 +48,7 @@ func new(env *real_environment.RealEnv) (batch_operator.BatchDigestOperator, err
 			InstanceName:   u.InstanceName,
 			BlobDigests:    u.Digests,
 			DigestFunction: u.DigestFunction,
+			Purpose:        repb.FindMissingBlobsRequest_ATIME_UPDATE,
 		}
 
 		ctx = ip_rules_enforcer.SetBypassIPRules(ctx)

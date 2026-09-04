@@ -41,10 +41,17 @@ const (
 	dockerdInitTimeout       = 30 * time.Second
 	dockerdDefaultSocketPath = "/var/run/docker.sock"
 
-	vmDNSInitTimeout = 5 * time.Second
+	vmDNSInitTimeout                   = 5 * time.Second
+	vmExecReadySignalInitialRetryDelay = 2 * time.Millisecond
+	vmExecReadySignalMaxRetryDelay     = 1 * time.Second
 )
 
 func init() {
+	// Record the process start time as early as possible; init() runs before
+	// any of main's code, so this is as close to actual process start as we
+	// can easily get.
+	processStartTime = time.Now()
+
 	clktck, err := sysconf.Sysconf(sysconf.SC_CLK_TCK)
 	if err != nil {
 		// Treat this as a fatal error because we could potentially report
@@ -72,15 +79,24 @@ const (
 var (
 	// Number of CPU ticks per second - used for CPU usage stats.
 	ticksPerSec int64
+
+	// The time at which this process started, recorded in init().
+	processStartTime time.Time
 )
 
 type execServer struct {
 	// workspaceDevice is the path to the hot-swappable workspace block device.
 	workspaceDevice string
+
+	// metrics holds metrics about this VM, and is returned from every Exec.
+	metrics *vmxpb.Metrics
 }
 
 func NewServer(workspaceDevice string) (*execServer, error) {
-	return &execServer{workspaceDevice}, nil
+	return &execServer{
+		workspaceDevice: workspaceDevice,
+		metrics:         &vmxpb.Metrics{},
+	}, nil
 }
 
 func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd bool, enableDockerdTCP bool, dnsOverrides []*networking.DNSOverride) error {
@@ -109,21 +125,59 @@ func Run(ctx context.Context, port uint32, workspaceDevice string, initDockerd b
 	// If applicable, wait for dockerd to start before accepting commands, so
 	// that commands depending on dockerd do not need to explicitly wait for it.
 	if initDockerd {
+		start := time.Now()
 		if err := waitForDockerd(ctx, enableDockerdTCP); err != nil {
 			return err
 		}
+		vmService.metrics.DockerdWaitDurationUsec = time.Since(start).Microseconds()
 	}
 
 	// If applicable, wait for the local DNS server to initialize before accepting
 	// commands on the vmExec server, to guarantee DNS requests are handled
 	// correctly.
 	if len(dnsOverrides) > 0 {
+		start := time.Now()
 		if err := waitForVMDNS(ctx, dnsOverrides); err != nil {
 			return err
 		}
+		vmService.metrics.VmDnsWaitDurationUsec = time.Since(start).Microseconds()
 	}
 
+	vmService.metrics.VmExecInitDurationUsec = time.Since(processStartTime).Microseconds()
+	go maintainVMExecReadySignal(ctx)
 	return server.Serve(listener)
+}
+
+// maintainVMExecReadySignal tells the host that vmexec is ready, then keeps the
+// connection open. Firecracker resets vsock connections across snapshot
+// restore, so the read below unblocks in a restored guest and causes it to
+// reconnect and send a fresh readiness signal.
+func maintainVMExecReadySignal(ctx context.Context) {
+	r := retry.New(ctx, &retry.Options{
+		InitialBackoff: vmExecReadySignalInitialRetryDelay,
+		MaxBackoff:     vmExecReadySignalMaxRetryDelay,
+		Multiplier:     2,
+		MaxRetries:     math.MaxInt,
+	})
+	for r.Next() {
+		conn, err := vsock.DialGuestToHost(vsock.HostVMExecReadyPort)
+		if err == nil {
+			_, err = io.WriteString(conn, vsock.VMExecReadyMessage)
+		}
+		if err == nil {
+			log.Debugf("Signaled vmexec readiness to host")
+			r.Reset()
+			// The host deliberately sends no data. This read returns when the
+			// connection is reset, including after snapshot restore.
+			var buf [1]byte
+			for err == nil && ctx.Err() == nil {
+				_, err = conn.Read(buf[:])
+			}
+		}
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}
 }
 
 func waitForDockerd(ctx context.Context, enableDockerdTCP bool) error {
@@ -337,6 +391,7 @@ func (x *execServer) Exec(ctx context.Context, req *vmxpb.ExecRequest) (*vmxpb.E
 	rsp.Status = gstatus.Convert(err).Proto()
 	rsp.Stdout = stdoutBuf.Bytes()
 	rsp.Stderr = stderrBuf.Bytes()
+	rsp.Metrics = x.metrics
 	return rsp, nil
 }
 
@@ -404,6 +459,9 @@ func (x *execServer) ExecStreamed(stream vmxpb.Exec_ExecStreamedServer) error {
 					if err != nil {
 						msgs <- &message{Err: err}
 						return
+					}
+					if res.GetResponse() != nil {
+						res.Response.Metrics = x.metrics
 					}
 					msgs <- &message{Response: res}
 				}()

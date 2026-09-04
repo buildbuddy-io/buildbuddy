@@ -67,6 +67,10 @@ func TestAPIKeyDiscovery(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir)
+
 			repoRoot, _ := testgit.MakeTempRepo(t, map[string]string{
 				"README.md": "# test repo",
 			})

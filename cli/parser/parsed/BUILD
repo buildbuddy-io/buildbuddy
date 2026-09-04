@@ -10,8 +10,8 @@ go_library(
     deps = [
         "//cli/log",
         "//cli/parser/arguments",
-        "//cli/parser/bazelrc",
         "//cli/parser/options",
+        "//cli/parser/rc_util",
         "//server/util/lib/set",
         "//server/util/shlex",
     ],

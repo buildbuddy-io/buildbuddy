@@ -82,31 +82,27 @@ export default class OrgPicker extends React.Component<Props, State> {
                       group.id === this.props.user?.selectedGroup.id ? "selected" : ""
                     }`}
                     onClick={this.handleOrgClicked.bind(this, group.id, group.url)}>
-                    {group.id === this.props.user?.selectedGroup.id ? (
-                      <CheckCircle className="icon" />
-                    ) : (
-                      <Circle className="icon" />
-                    )}
+                    {group.id === this.props.user?.selectedGroup.id ? <CheckCircle /> : <Circle />}
                     <div className="org-picker-item-label">{group.name}</div>
                   </div>
                 ))}
               </div>
               {this.props.user && router.canCreateOrg(this.props.user) && (
                 <div className="org-picker-item create-organization" onClick={this.handleCreateOrgClicked.bind(this)}>
-                  <PlusCircle className="icon" />
+                  <PlusCircle />
                   Create org
                 </div>
               )}
               {Boolean(this.props.user?.canImpersonate()) && (
                 <div className="org-picker-item admin-only" onClick={this.handleSearchGroupsClicked.bind(this)}>
-                  <ArrowRightCircle className="icon" />
+                  <ArrowRightCircle />
                   Go to org
                 </div>
               )}
             </div>
             <hr />
             <div className="org-picker-item" debug-id="logout-button" onClick={() => authService.logout()}>
-              <LogOut className="icon" /> Logout
+              <LogOut /> Logout
             </div>
           </div>
         )}
@@ -125,9 +121,9 @@ export default class OrgPicker extends React.Component<Props, State> {
               )}
             </div>
             {expanded ? (
-              <ChevronDown className="icon org-picker-profile-arrow" />
+              <ChevronDown className="org-picker-profile-arrow" />
             ) : (
-              <ChevronUp className="icon org-picker-profile-arrow" />
+              <ChevronUp className="org-picker-profile-arrow" />
             )}
           </div>
         )}

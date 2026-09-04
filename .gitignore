@@ -32,9 +32,9 @@ tramp
 /bb-out
 
 # Generated protos
-**/proto/**/*.pb.go
-**/proto/**/*_ts_proto.d.ts
-**/proto/**/*_ts_proto.js
+*.pb.go
+*_ts_proto.d.ts
+*_ts_proto.js
 
 # Node dependencies
 node_modules

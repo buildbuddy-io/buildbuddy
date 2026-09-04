@@ -34,8 +34,7 @@ body {
 }
 
 .impersonation-toolbar .icon {
-  width: 16px;
-  height: 16px;
+  --icon-size: 16px;
   stroke: var(--color-text-on-light-bg);
 }
 
@@ -102,10 +101,9 @@ body {
   justify-content: center;
 }
 
-.history-button svg {
+.history-button .icon {
+  --icon-size: 14px;
   margin-right: 8px;
-  width: 14px;
-  height: 14px;
 }
 
 .history-button:hover {

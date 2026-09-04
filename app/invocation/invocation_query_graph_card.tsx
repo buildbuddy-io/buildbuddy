@@ -82,7 +82,7 @@ export default class QueryGraphCardComponent extends React.Component<Props, Stat
         )}
         {fullGraphHidden && (
           <div className="invocation-query-graph-hidden-card card">
-            <AlertCircle className="icon red" />
+            <AlertCircle className="red" />
             <div className="content">
               <div className="title">Graph</div>
               <div className="details">
@@ -95,7 +95,7 @@ export default class QueryGraphCardComponent extends React.Component<Props, Stat
           </div>
         )}
         <div className="card invocation-query-graph-summary-card">
-          <List className="icon" />
+          <List />
           <div className="content">
             <div className="title">Graph summary</div>
             <div className="graph-summary">

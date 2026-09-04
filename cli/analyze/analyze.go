@@ -423,39 +423,36 @@ func (g *DependencyGraph) AffectedTargetCount(name string) int {
 // LongestPath returns the longest dependency path from one node in the graph to
 // any other node.
 func (g *DependencyGraph) LongestPath() []string {
-	longestPathLength := 0
-	var longestPathEnd *string
-
 	length := map[string]int{}
-	pred := map[string]*string{}
+	next := map[string]string{}
+	longestPathLength := 0
+	longestPathStart := ""
+
 	e := g.EdgeSet()
-	for _, m := range g.TopologicalSort() {
-		for n := range e.Incoming[m] {
-			l := length[n] + 1
-			if l > length[m] {
-				length[m] = l
-				n := n
-				pred[m] = &n
-			}
-			if l > longestPathLength {
-				longestPathLength = l
-				m := m
-				longestPathEnd = &m
+	nodes := g.TopologicalSort()
+	for i := len(nodes) - 1; i >= 0; i-- {
+		n := nodes[i]
+		for dep := range e.Outgoing[n] {
+			candidateLength := length[dep] + 1
+			if candidateLength > length[n] ||
+				(candidateLength == length[n] && dep < next[n]) {
+				length[n] = candidateLength
+				next[n] = dep
 			}
 		}
+		if length[n] > longestPathLength ||
+			(length[n] == longestPathLength && n < longestPathStart) {
+			longestPathLength = length[n]
+			longestPathStart = n
+		}
 	}
-	if longestPathEnd == nil {
+	if longestPathStart == "" {
 		return nil
 	}
-	path := []string{*longestPathEnd}
-	for {
-		p := pred[path[len(path)-1]]
-		if p == nil {
-			break
-		}
-		path = append(path, *p)
+	path := make([]string, 0, longestPathLength+1)
+	for n := longestPathStart; n != ""; n = next[n] {
+		path = append(path, n)
 	}
-	reverseSlice(path)
 	return path
 }
 
@@ -564,14 +561,6 @@ func makeSet[T comparable](values []T) map[T]bool {
 		set[v] = true
 	}
 	return set
-}
-
-// reverseSlice reverses the order of the elements in the given slice.
-func reverseSlice[T any](a []T) {
-	for i := 0; i < len(a)/2; i++ {
-		j := len(a) - i - 1
-		a[i], a[j] = a[j], a[i]
-	}
 }
 
 // bufferedChanOf returns a channel pre-populated with the list of values from

@@ -36,6 +36,7 @@ go_library(
         },
     }),
     deps = [
+        "//enterprise/server/oci/ociconv",
         "//enterprise/server/remote_execution/block_io",
         "//enterprise/server/remote_execution/cgroup",
         "//enterprise/server/remote_execution/commandutil",
@@ -49,7 +50,6 @@ go_library(
         "//enterprise/server/util/cpuset",
         "//enterprise/server/util/ext4",
         "//enterprise/server/util/oci",
-        "//enterprise/server/util/ociconv",
         "//enterprise/server/util/vfs_server",
         "//enterprise/server/util/vsock",
         "//enterprise/vmsupport:bundle",
@@ -70,6 +70,7 @@ go_library(
         "//server/util/log",
         "//server/util/networking",
         "//server/util/platform",
+        "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
         "//server/util/uuid",
@@ -121,7 +122,6 @@ go_test(
     timeout = "long",
     srcs = ["firecracker_test.go"],
     args = [
-        "--executor.enable_local_snapshot_sharing=true",
         "--executor.enable_remote_snapshot_sharing=true",
         # Uncomment to test the 6.1 kernel.
         # TODO: turn this on by default once the 6.1 kernel is used everywhere
@@ -183,10 +183,12 @@ go_test(
         "//server/util/log",
         "//server/util/networking",
         "//server/util/platform",
+        "//server/util/prefix",
         "//server/util/random",
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -7,6 +7,16 @@ package(default_visibility = ["//visibility:public"])
 # gazelle:ts disable
 
 go_proto_compiler(
+    name = "vtprotobuf_view_compiler",
+    plugin = "//tools/protoc-gen-go-vtproto-view",
+    suffix = "_vtview.pb.go",
+    valid_archive = False,
+    deps = [
+        "@com_github_planetscale_vtprotobuf//protohelpers",
+    ],
+)
+
+go_proto_compiler(
     name = "vtprotobuf_compiler",
     # marshal depends on size. Pool only generates code for messages with the
     # vtprotobuf mempool annotation.
@@ -46,6 +56,7 @@ proto_library(
         ":capability_proto",
         ":context_proto",
         "@com_google_protobuf//:duration_proto",
+        "@com_google_protobuf//:timestamp_proto",
     ],
 )
 
@@ -160,6 +171,7 @@ proto_library(
     deps = [
         ":acl_proto",
         ":context_proto",
+        ":upgrade_proto",
         "@com_google_protobuf//:timestamp_proto",
     ],
 )
@@ -198,8 +210,20 @@ proto_library(
         "distributed_cache.proto",
     ],
     deps = [
+        ":reference_proto",
+        ":remote_execution_proto",
         ":resource_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
+    ],
+)
+
+proto_library(
+    name = "reference_proto",
+    srcs = [
+        "reference.proto",
+    ],
+    deps = [
+        ":storage_proto",
     ],
 )
 
@@ -266,12 +290,19 @@ proto_library(
 proto_library(
     name = "gateway_proto",
     srcs = ["gateway.proto"],
+    deps = [
+        "@com_google_protobuf//:timestamp_proto",
+        "@googleapis//google/rpc:status_proto",
+    ],
 )
 
 go_proto_library(
     name = "gateway_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/gateway",
     proto = ":gateway_proto",
+    deps = [
+        "@org_golang_google_genproto_googleapis_rpc//status",
+    ],
 )
 
 proto_library(
@@ -345,6 +376,7 @@ proto_library(
     deps = [
         ":remote_execution_proto",
         ":resource_proto",
+        ":view_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_proto",
     ],
 )
@@ -445,6 +477,16 @@ proto_library(
         ":context_proto",
         ":user_id_proto",
         "@com_google_protobuf//:timestamp_proto",
+    ],
+)
+
+proto_library(
+    name = "view_proto",
+    srcs = [
+        "view.proto",
+    ],
+    deps = [
+        "@com_google_protobuf//:descriptor_proto",
     ],
 )
 
@@ -675,6 +717,7 @@ proto_library(
         ":index_proto",
         ":invocation_proto",
         ":iprules_proto",
+        ":notification_proto",
         ":quota_proto",
         ":repo_proto",
         ":resource_proto",
@@ -692,6 +735,19 @@ proto_library(
         ":workspace_proto",
         ":zip_proto",
     ],
+)
+
+proto_library(
+    name = "notification_proto",
+    srcs = ["notification.proto"],
+    deps = [
+        ":context_proto",
+    ],
+)
+
+proto_library(
+    name = "upgrade_proto",
+    srcs = ["upgrade.proto"],
 )
 
 proto_library(
@@ -793,6 +849,7 @@ proto_library(
         ":acl_proto",
         ":context_proto",
         ":trace_proto",
+        ":upgrade_proto",
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
@@ -1335,11 +1392,19 @@ go_proto_library(
     name = "storage_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/storage",
     proto = ":storage_proto",
+    views = True,
     deps = [
         ":remote_execution_go_proto",
         ":resource_go_proto",
+        ":view_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "view_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/view",
+    proto = ":view_proto",
 )
 
 go_proto_library(
@@ -1497,6 +1562,7 @@ go_proto_library(
         ":index_go_proto",
         ":invocation_go_proto",
         ":iprules_go_proto",
+        ":notification_go_proto",
         ":quota_go_proto",
         ":repo_go_proto",
         ":resource_go_proto",
@@ -1514,6 +1580,21 @@ go_proto_library(
         ":workspace_go_proto",
         ":zip_go_proto",
     ],
+)
+
+go_proto_library(
+    name = "notification_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/notification",
+    proto = ":notification_proto",
+    deps = [
+        ":context_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "upgrade_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/upgrade",
+    proto = ":upgrade_proto",
 )
 
 go_proto_library(
@@ -1598,6 +1679,7 @@ go_proto_library(
     deps = [
         ":acl_go_proto",
         ":context_go_proto",
+        ":upgrade_go_proto",
     ],
 )
 
@@ -1641,8 +1723,19 @@ go_proto_library(
     mode = "messages_and_services",
     proto = ":distributed_cache_proto",
     deps = [
+        ":reference_go_proto",
+        ":remote_execution_go_proto",
         ":resource_go_proto",
         "@com_github_planetscale_vtprotobuf//include/github.com/planetscale/vtprotobuf/vtproto:vtproto_go_proto",
+    ],
+)
+
+go_proto_library(
+    name = "reference_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/reference",
+    proto = ":reference_proto",
+    deps = [
+        ":storage_go_proto",
     ],
 )
 
@@ -1715,6 +1808,7 @@ go_proto_library(
         ":acl_go_proto",
         ":context_go_proto",
         ":trace_go_proto",
+        ":upgrade_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
     ],
 )
@@ -1900,6 +1994,7 @@ ts_proto_library(
         ":capability_ts_proto",
         ":context_ts_proto",
         ":duration_ts_proto",
+        ":timestamp_ts_proto",
     ],
 )
 
@@ -2057,6 +2152,7 @@ ts_proto_library(
         ":grpc_status_ts_proto",
         ":timestamp_ts_proto",
         ":trace_ts_proto",
+        ":upgrade_ts_proto",
     ],
 )
 
@@ -2220,6 +2316,19 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "notification_ts_proto",
+    proto = ":notification_proto",
+    deps = [
+        ":context_ts_proto",
+    ],
+)
+
+ts_proto_library(
+    name = "upgrade_ts_proto",
+    proto = ":upgrade_proto",
+)
+
+ts_proto_library(
     name = "usage_ts_proto",
     proto = ":usage_proto",
     deps = [
@@ -2371,6 +2480,7 @@ ts_proto_library(
         ":acl_ts_proto",
         ":context_ts_proto",
         ":timestamp_ts_proto",
+        ":upgrade_ts_proto",
     ],
 )
 
@@ -2427,6 +2537,7 @@ ts_proto_library(
         ":index_ts_proto",
         ":invocation_ts_proto",
         ":iprules_ts_proto",
+        ":notification_ts_proto",
         ":quota_ts_proto",
         ":repo_ts_proto",
         ":runner_ts_proto",

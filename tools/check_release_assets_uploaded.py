@@ -8,7 +8,9 @@ import time
 EXPECTED_ASSETS = [
     # enterprise app
     "buildbuddy-enterprise-darwin-amd64",
+    "buildbuddy-enterprise-darwin-arm64",
     "buildbuddy-enterprise-linux-amd64",
+    "buildbuddy-enterprise-linux-arm64",
     # OSS app
     "buildbuddy-darwin-amd64",
     "buildbuddy-linux-amd64",

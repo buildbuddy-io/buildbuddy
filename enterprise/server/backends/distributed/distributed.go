@@ -2,15 +2,16 @@ package distributed
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub"
@@ -28,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/consistent_hash"
+	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
@@ -40,6 +42,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 
+	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	gstatus "google.golang.org/grpc/status"
@@ -104,24 +107,26 @@ func (o *hintedHandoffOrder) String() string {
 
 // TODO(go/b/6456): use memory cache instead of LRU for lookaside cache
 type Cache struct {
-	authenticator        interfaces.Authenticator
-	local                interfaces.Cache
-	log                  log.Logger
-	lookaside            lru.LRU[lookasideCacheEntry]
-	peerZones            map[string]string
-	hintedHandoffsMu     *sync.RWMutex
-	hintedHandoffsByPeer map[string]chan *hintedHandoffOrder
-	distributedProxy     *distributed_client.Proxy
-	consistentHash       *consistent_hash.ConsistentHash
-	extraConsistentHash  *consistent_hash.ConsistentHash
-	heartbeatChannel     *heartbeat.Channel
-	kubeDiscoveryChannel *kubediscovery.PeerWatcher
-	heartbeatMu          *sync.RWMutex
-	shutdownMu           *sync.RWMutex
-	shutDownChan         chan struct{}
-	finishedShutdown     bool
-	opts                 Options
-	zone                 string
+	authenticator            interfaces.Authenticator
+	env                      environment.Env
+	local                    interfaces.Cache
+	log                      log.Logger
+	lookaside                lru.LRU[lookasideCacheEntry]
+	lookasideRightsizeConfig atomic.Pointer[lookasideRightsizeConfig]
+	peerZones                map[string]string
+	hintedHandoffsMu         *sync.RWMutex
+	hintedHandoffsByPeer     map[string]chan *hintedHandoffOrder
+	distributedProxy         *distributed_client.Proxy
+	consistentHash           *consistent_hash.ConsistentHash
+	extraConsistentHash      *consistent_hash.ConsistentHash
+	heartbeatChannel         *heartbeat.Channel
+	kubeDiscoveryChannel     *kubediscovery.PeerWatcher
+	heartbeatMu              *sync.RWMutex
+	shutdownMu               *sync.RWMutex
+	shutDownChan             chan struct{}
+	finishedShutdown         bool
+	opts                     Options
+	zone                     string
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -217,6 +222,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 	}
 	dc := &Cache{
 		authenticator:       env.GetAuthenticator(),
+		env:                 env,
 		local:               c,
 		log:                 log.NamedSubLogger(fmt.Sprintf("Coordinator(%s)", opts.ListenAddr)),
 		opts:                opts,
@@ -233,9 +239,11 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 		hintedHandoffsMu:     &sync.RWMutex{},
 		hintedHandoffsByPeer: make(map[string]chan *hintedHandoffOrder, 0),
 	}
+	dc.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: true, ratio: defaultRightsizeLookasideRatio})
 
 	if opts.LookasideCacheSizeBytes > 0 {
 		l, err := lru.New[lookasideCacheEntry](&lru.Config[lookasideCacheEntry]{
+			Name:    "distributed_lookaside_cache",
 			MaxSize: opts.LookasideCacheSizeBytes,
 			OnEvict: func(key string, v lookasideCacheEntry, reason lru.EvictionReason) {
 				age := time.Since(time.UnixMilli(v.createdAtMillis))
@@ -243,7 +251,7 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			},
 			SizeFn: func(v lookasideCacheEntry) int64 {
 				// []byte size + 8 bytes for the int64 timestamp.
-				return int64(len(v.data) + 8)
+				return int64(cap(v.data) + 8)
 			},
 			ThreadSafe: true,
 			TTL:        *lookasideCacheTTL,
@@ -433,6 +441,62 @@ func (c *Cache) lookasideKey(ctx context.Context, r *rspb.ResourceName) (key str
 	return "", false
 }
 
+const (
+	rightsizeLookasideEnabledExperiment = "cache.distributed_cache.rightsize_lookaside_entries"
+	rightsizeLookasideRatioExperiment   = "cache.distributed_cache.rightsize_lookaside_min_slack_ratio"
+	defaultRightsizeLookasideRatio      = 1.5
+	rightsizeConfigRefreshInterval      = 30 * time.Second
+)
+
+type lookasideRightsizeConfig struct {
+	enabled bool
+	ratio   float64
+}
+
+// rightsizeLookasideData returns a right-sized copy of data when its backing
+// array is meaningfully larger than its length, otherwise data unchanged.
+func (c *Cache) rightsizeLookasideData(data []byte) []byte {
+	cfg := c.lookasideRightsizeConfig.Load()
+	if cfg != nil && cfg.enabled && float64(cap(data)) > float64(len(data))*cfg.ratio {
+		return bytes.Clone(data)
+	}
+	return data
+}
+
+func (c *Cache) refreshLookasideRightsizeConfig() {
+	enabled, ratio := true, float64(defaultRightsizeLookasideRatio)
+	if fp := c.env.GetExperimentFlagProvider(); fp != nil {
+		ctx := context.Background()
+		enabled = fp.Boolean(ctx, rightsizeLookasideEnabledExperiment, enabled)
+		ratio = fp.Float64(ctx, rightsizeLookasideRatioExperiment, ratio)
+	}
+	c.lookasideRightsizeConfig.Store(&lookasideRightsizeConfig{enabled: enabled, ratio: ratio})
+}
+
+func (c *Cache) watchLookasideRightsizeConfig(shutDownChan chan struct{}) {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return
+	}
+
+	changes := make(chan struct{}, 1)
+	unsubscribe := fp.Subscribe(changes)
+	defer unsubscribe()
+
+	ticker := time.NewTicker(rightsizeConfigRefreshInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-shutDownChan:
+			return
+		case <-changes:
+			c.refreshLookasideRightsizeConfig()
+		case <-ticker.C:
+			c.refreshLookasideRightsizeConfig()
+		}
+	}
+}
+
 func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, data []byte) {
 	if !c.lookasideCacheEnabled() {
 		return
@@ -453,6 +517,9 @@ func (c *Cache) addLookasideEntry(ctx context.Context, r *rspb.ResourceName, dat
 }
 
 func (c *Cache) setLookasideEntry(lookasideKey string, data []byte) {
+	// Right-size the slice before we store it so we don't retain oversized
+	// buffers.
+	data = c.rightsizeLookasideData(data)
 	entry := lookasideCacheEntry{
 		createdAtMillis: time.Now().UnixMilli(),
 		data:            data,
@@ -633,6 +700,7 @@ func (c *Cache) StartListening() error {
 	}
 	c.shutDownChan = make(chan struct{})
 	go c.heartbeatPeers(c.shutDownChan)
+	go c.watchLookasideRightsizeConfig(c.shutDownChan)
 	if c.heartbeatChannel != nil {
 		c.heartbeatChannel.StartAdvertising()
 	}
@@ -780,8 +848,8 @@ func (c *Cache) readPeers(r *rspb.ResourceName) *peerset.PeerSet {
 			return 2
 		}
 	}
-	sort.Slice(primaryPeers, func(i, j int) bool {
-		return sortVal(primaryPeers[i]) < sortVal(primaryPeers[j])
+	slices.SortFunc(primaryPeers, func(a, b string) int {
+		return cmp.Compare(sortVal(a), sortVal(b))
 	})
 	ps := peerset.New(primaryPeers, secondaryPeers)
 	ps.BlockBackfills = blockBackfills
@@ -879,6 +947,37 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 		return results, nil
 	}
 
+	// Check the local read-through cache for any read-through-cacheable
+	// resources before going to a remote peer.
+	if c.localReadthroughEnabled() {
+		readthroughCheck := make([]*rspb.ResourceName, 0, len(stillMissing))
+		for _, r := range stillMissing {
+			if isLocalReadthroughCacheableResource(r) {
+				readthroughCheck = append(readthroughCheck, r)
+			}
+		}
+		if len(readthroughCheck) > 0 {
+			if localResults, err := c.local.GetMulti(ctx, readthroughCheck); err == nil {
+				notInLocal := stillMissing[:0]
+				for _, r := range stillMissing {
+					if buf, ok := localResults[r.GetDigest()]; ok && len(buf) > 0 {
+						results[r.GetDigest()] = buf
+						// Mirror remoteReader: a local read-through hit
+						// also populates the lookaside so subsequent
+						// lookups short-circuit without a local op.
+						c.addLookasideEntry(ctx, r, buf)
+					} else {
+						notInLocal = append(notInLocal, r)
+					}
+				}
+				stillMissing = notInLocal
+			}
+		}
+	}
+	if len(stillMissing) == 0 {
+		return results, nil
+	}
+
 	remoteResults, err := c.distributedProxy.RemoteGetMulti(ctx, peer, stillMissing)
 	if err != nil {
 		return nil, err
@@ -886,8 +985,14 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 
 	for _, r := range stillMissing {
 		buf, ok := remoteResults[r.GetDigest()]
-		if ok {
-			c.addLookasideEntry(ctx, r, buf)
+		if !ok {
+			continue
+		}
+		c.addLookasideEntry(ctx, r, buf)
+		if c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(r) {
+			if err := c.local.Set(ctx, r, buf); err != nil {
+				c.log.CtxDebugf(ctx, "Error writing to local read-through cache: %s", err)
+			}
 		}
 	}
 	if len(results) == 0 {
@@ -1026,6 +1131,8 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	//	  we shouldn't either, since the blob might never be read from this node.
 	// 2) A Get/Read call, which would have already written to those caches if
 	//    appropriate.
+	// 3) A GetWithMetadata call, which doesn't write to those caches, so as
+	//    with FindMissing/Contains, we shouldn't either.
 	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
 		return err
@@ -1045,21 +1152,7 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 type backfillOrder struct {
 	r      *rspb.ResourceName
 	source string
-	dest   string
-}
-
-func dedupeBackfills(backfills []*backfillOrder) []*backfillOrder {
-	deduped := make([]*backfillOrder, 0, len(backfills))
-	seen := make(map[string]struct{}, len(backfills))
-	for _, bf := range backfills {
-		d := bf.r.GetDigest()
-		if _, ok := seen[d.GetHash()]; ok {
-			continue
-		}
-		seen[d.GetHash()] = struct{}{}
-		deduped = append(deduped, bf)
-	}
-	return deduped
+	dests  []string
 }
 
 func groupID(ctx context.Context) string {
@@ -1069,32 +1162,37 @@ func groupID(ctx context.Context) string {
 	return interfaces.AuthAnonymousUser
 }
 
-func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) (err error) {
+func (c *Cache) backfillPeers(ctx context.Context, backfills []*backfillOrder) {
 	if len(backfills) == 0 {
-		return nil
+		return
 	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 	start := time.Now()
+	var err error
 	defer func() {
-		c.log.CtxDebugf(ctx, "backfill took %s err: %v", time.Since(start), err)
+		c.log.CtxDebugf(ctx, "backfill took %s; err: %v", time.Since(start), err)
 	}()
-	backfills = dedupeBackfills(backfills)
 	groupID := groupID(ctx)
-	eg, gCtx := errgroup.WithContext(ctx)
+	var eg errgroup.Group
+	eg.SetLimit(10)
 	for _, bf := range backfills {
-		bf := bf
-		eg.Go(func() error {
-			start := time.Now()
-			err := c.copyFile(gCtx, bf.r, bf.source, bf.dest)
-			metrics.DistributedCacheBackfillLatencyUsec.WithLabelValues(
-				groupID,
-				gstatus.Code(err).String(),
-			).Observe(float64(time.Since(start).Microseconds()))
-			return err
-		})
+		for _, dest := range bf.dests {
+			eg.Go(func() error {
+				start := time.Now()
+				err := c.copyFile(ctx, bf.r, bf.source, dest)
+				metrics.DistributedCacheBackfillLatencyUsec.WithLabelValues(
+					groupID,
+					gstatus.Code(err).String(),
+				).Observe(float64(time.Since(start).Microseconds()))
+				if err != nil {
+					c.log.CtxDebugf(ctx, "Error backfilling %s to peer %s: %s", bf.r.GetDigest().GetHash(), dest, err)
+				}
+				return nil
+			})
+		}
 	}
-	return eg.Wait()
+	err = eg.Wait()
 }
 
 func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*backfillOrder {
@@ -1105,16 +1203,11 @@ func (c *Cache) getBackfillOrders(r *rspb.ResourceName, ps *peerset.PeerSet) []*
 	if len(targets) == 0 {
 		return nil
 	}
-
-	orders := make([]*backfillOrder, 0, len(targets))
-	for _, target := range targets {
-		orders = append(orders, &backfillOrder{
-			source: source,
-			dest:   target,
-			r:      r,
-		})
-	}
-	return orders
+	return []*backfillOrder{{
+		r:      r,
+		source: source,
+		dests:  targets,
+	}}
 }
 
 // The first contains result that finds the digest will be returned. If all
@@ -1128,18 +1221,12 @@ func (c *Cache) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error
 		return true, nil
 	}
 	ps := c.readPeers(r)
-	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(r, ps)); err != nil {
-			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-		}
-	}
-
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
 		exists, err := c.remoteContains(ctx, peer, r)
 		if err == nil {
 			if exists {
 				c.log.CtxDebugf(ctx, "Contains(%q) found on peer %q", r.GetDigest(), peer)
-				backfill()
+				c.backfillPeers(ctx, c.getBackfillOrders(r, ps))
 				return exists, err
 			}
 			c.log.CtxDebugf(ctx, "Contains(%q) not found on peer %q (err: %+v)", r.GetDigest(), peer, err)
@@ -1177,13 +1264,21 @@ func (c *Cache) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces
 }
 
 func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	return c.getWithMetadata(ctx, r, "GetWithMetadata" /*=metricsLabel*/)
+}
+
+func (c *Cache) getWithMetadata(ctx context.Context, r *rspb.ResourceName, metricsLabel string) ([]byte, *interfaces.CacheMetadata, error) {
 	d := r.GetDigest()
 	ps := c.readPeers(r)
 
+	lookups := 0
 	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
 		data, md, err := c.remoteGetWithMetadata(ctx, peer, r)
 		if err == nil {
+			c.backfillPeers(ctx, c.getBackfillOrders(r, ps))
 			c.log.CtxDebugf(ctx, "GetWithMetadata(%q) found on peer %q", d, peer)
+			metrics.DistributedCachePeerLookups.WithLabelValues(metricsLabel, metrics.HitStatusLabel).Observe(float64(lookups))
 			return data, md, nil
 		}
 		if status.IsNotFoundError(err) {
@@ -1196,6 +1291,7 @@ func (c *Cache) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]by
 		ps.MarkPeerAsFailed(peer)
 	}
 
+	metrics.DistributedCachePeerLookups.WithLabelValues(metricsLabel, metrics.MissStatusLabel).Observe(float64(lookups))
 	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to GetWithMetadata %q. Peerset: %+v", d.GetHash(), ps)
 	return nil, nil, status.NotFoundErrorf("Exhausted all peers attempting to GetWithMetadata %q.", d.GetHash())
 }
@@ -1204,6 +1300,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 	if len(resources) == 0 {
 		return nil, nil
 	}
+	purpose := findmissing.PurposeFromContext(ctx)
 
 	mu := sync.RWMutex{} // protects(foundMap)
 	hashResources := make(map[string][]*rspb.ResourceName, 0)
@@ -1306,9 +1403,7 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		ps := peerMap[h]
 		backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-	}
+	c.backfillPeers(ctx, backfills)
 
 	var missing []*repb.Digest
 	for _, r := range resources {
@@ -1329,69 +1424,48 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 			missMetric.Observe(float64(lookups))
 		}
 	}
+
+	// Record the LOGICAL present/absent counts by purpose (deduplicated across
+	// replica retries), a complementary view to the per-node pebble metric.
+	if len(resources) > 0 {
+		purposeLabel := purpose.String()
+		if present := len(resources) - len(missing); present > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.PresentStatusLabel).
+				Add(float64(present))
+		}
+		if len(missing) > 0 {
+			metrics.DistributedCacheFindMissingBlobStatusCount.
+				WithLabelValues(purposeLabel, metrics.AbsentStatusLabel).
+				Add(float64(len(missing)))
+		}
+	}
 	return missing, nil
 }
 
-// The first reader with a non-empty value will be returned. If all potential
-// peers for the digest are exhausted, then return a NotFoundError.
-//
-// This is like setting READ_CONSISTENCY = ONE.
-//
-// Values found on a non-primary replica will be backfilled to the primary.
-func (c *Cache) distributedReader(ctx context.Context, rn *rspb.ResourceName, offset, limit int64, metricsLabel string) (io.ReadCloser, error) {
-	ps := c.readPeers(rn)
-	backfill := func() {
-		if err := c.backfillPeers(ctx, c.getBackfillOrders(rn, ps)); err != nil {
-			c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-		}
-	}
-
-	lookups := 0
-	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
-		lookups++
-		r, err := c.remoteReader(ctx, peer, rn, offset, limit)
-		if err == nil {
-			backfill()
-			metrics.DistributedCachePeerLookups.WithLabelValues(
-				metricsLabel,
-				metrics.HitStatusLabel,
-			).Observe(float64(lookups))
-			return r, err
-		}
-		if status.IsNotFoundError(err) {
-			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
-			continue
-		}
-		c.log.CtxDebugf(ctx, "Reader(%q) error on peer %s: %s", distributed_client.ResourceIsolationString(rn), peer, err)
-
-		// Some other error -- mark this peer as failed and try the next one.
-		ps.MarkPeerAsFailed(peer)
-
-	}
-	metrics.DistributedCachePeerLookups.WithLabelValues(
-		metricsLabel,
-		metrics.MissStatusLabel,
-	).Observe(float64(lookups))
-	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
-	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
-}
-
-// Below, in Get(), this value is the max initial allocatable buffer size.
-// Set it somewhat conservatively so that we're not DOSed by someone crafting
-// remote_instance_names that match this just to use memory.
-const maxInitialByteBufferSize = (1024 * 1024 * 4)
-
 func (c *Cache) Get(ctx context.Context, rn *rspb.ResourceName) ([]byte, error) {
-	r, err := c.distributedReader(ctx, rn, 0, 0, "Get" /*=metricsLabel*/)
-	if err != nil {
-		return nil, err
+	if data, found := c.getLookasideEntry(ctx, rn); found {
+		return data, nil
 	}
-	defer r.Close()
+	readThroughCacheable := c.localReadthroughEnabled() && isLocalReadthroughCacheableResource(rn)
+	if readThroughCacheable {
+		data, err := c.local.Get(ctx, rn)
+		if err == nil {
+			c.addLookasideEntry(ctx, rn, data)
+			return data, nil
+		}
+	}
 
-	bufSize := digest.SafeBufferSize(rn, maxInitialByteBufferSize)
-	buf := bytes.NewBuffer(make([]byte, 0, bufSize))
-	_, err = io.Copy(buf, r)
-	return buf.Bytes(), err
+	data, _, err := c.getWithMetadata(ctx, rn, "Get" /*=metricsLabel*/)
+	if err == nil {
+		c.addLookasideEntry(ctx, rn, data)
+		if readThroughCacheable {
+			if err := c.local.Set(ctx, rn, data); err != nil {
+				c.log.CtxDebugf(ctx, "Error writing to local read-through cache: %s", err)
+			}
+		}
+	}
+	return data, err
 }
 
 func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -1411,6 +1485,11 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		}
 	}
 
+	hitMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+		"GetMulti",
+		metrics.HitStatusLabel,
+	)
+	lookups := 0
 	for {
 		// Each iteration through this outer loop sends a "batch" of requests in
 		// parallel, until all digests have been found or we have exhausted all
@@ -1436,6 +1515,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			// we're out of peers and should exit, returning what we have.
 			break
 		}
+		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
 			peer := peer
@@ -1454,6 +1534,7 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 				}
 				for d, data := range peerRsp {
 					gotMap[d.GetHash()] = data
+					hitMetric.Observe(float64(lookups))
 				}
 				return nil
 			})
@@ -1482,15 +1563,28 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 			backfills = append(backfills, c.getBackfillOrders(r, ps)...)
 		}
 	}
-	if err := c.backfillPeers(ctx, backfills); err != nil {
-		c.log.CtxDebugf(ctx, "Error backfilling peers: %s", err)
-	}
+	c.backfillPeers(ctx, backfills)
 
 	rsp := make(map[*repb.Digest][]byte, len(resources))
+	misses := 0
 	for _, r := range resources {
 		d := r.GetDigest()
 		if buf, ok := gotMap[d.GetHash()]; ok {
 			rsp[d] = buf
+		} else {
+			misses++
+		}
+	}
+
+	// For every resource we didn't find, record an observation indicating how
+	// many lookups we did.
+	if misses > 0 {
+		missMetric := metrics.DistributedCachePeerLookups.WithLabelValues(
+			"GetMulti",
+			metrics.MissStatusLabel,
+		)
+		for range misses {
+			missMetric.Observe(float64(lookups))
 		}
 	}
 	return rsp, nil
@@ -1501,6 +1595,18 @@ type multiWriteCloser struct {
 	log         log.Logger
 	peerClosers map[string]interfaces.CommittedWriteCloser
 	r           *rspb.ResourceName
+
+	// verifiedWriter is the single peer writer opened for reference
+	// verification, if any. It is also present in peerClosers.
+	verifiedWriter *distributed_client.VerifiedWriter
+}
+
+// SetReference binds ref to the verifying peer stream's final message, if a
+// peer writer was opened for verification. It must be called before Commit.
+func (mc *multiWriteCloser) SetReference(ref *refpb.Reference) {
+	if mc.verifiedWriter != nil {
+		mc.verifiedWriter.SetReference(ref)
+	}
 }
 
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
@@ -1562,6 +1668,170 @@ func (mc *multiWriteCloser) Close() error {
 	return nil
 }
 
+// referenceWriteMode returns whether writes should distribute a reference to
+// the blob's location in shared storage to the write peers, and whether they
+// should stream the blob's bytes, based on the reference-write experiments.
+// Sending both lets the peers verify the reference against the authoritative
+// byte stream.
+func (c *Cache) referenceWriteMode(ctx context.Context) (sendReference bool, sendBytes bool) {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false, true
+	}
+	if fp.Boolean(ctx, "distributed_cache.verify_write_gcs_references", false) {
+		return true, true
+	}
+	if fp.Boolean(ctx, "distributed_cache.write_gcs_references", false) {
+		return true, false
+	}
+	return false, true
+}
+
+// referenceWriteCloser stages a write in shared storage via the local
+// cache's CreateReference while distributing it to the write peers. In
+// verify mode the bytes are streamed to the peers as they arrive, and the
+// created reference rides on one peer stream's final message for that peer
+// to verify. Otherwise the peers receive only the reference.
+type referenceWriteCloser struct {
+	ctx context.Context
+	c   *Cache
+	rn  *rspb.ResourceName
+
+	// refWriter stages the bytes in shared storage; its Commit produces the
+	// reference. Nil after a staging failure in verify mode.
+	refWriter interfaces.ReferenceWriter
+
+	// multiWriteCloser streams bytes to the peers: pre-opened in verify mode,
+	// nil in reference-only mode (the reference writers are opened at Commit,
+	// once the reference exists).
+	multiWriteCloser *multiWriteCloser
+	refCache         interfaces.ReferenceCache
+}
+
+// writePeersContain returns whether every write peer for r already holds it.
+// Errors are treated as the blob being missing so that the write proceeds.
+func (c *Cache) writePeersContain(ctx context.Context, r *rspb.ResourceName) bool {
+	ps, err := c.writePeers(r)
+	if err != nil {
+		return false
+	}
+	ctx = findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_REFERENCE_WRITE_DEDUPE)
+	eg, gCtx := errgroup.WithContext(ctx)
+	for _, peer := range ps.PreferredPeers {
+		eg.Go(func() error {
+			missing, err := c.remoteFindMissing(gCtx, peer, []*rspb.ResourceName{r})
+			if err != nil {
+				return err
+			}
+			if len(missing) > 0 {
+				return status.NotFoundErrorf("digest %q missing on peer %q", r.GetDigest().GetHash(), peer)
+			}
+			return nil
+		})
+	}
+	return eg.Wait() == nil
+}
+
+func (c *Cache) referenceWriter(ctx context.Context, refCache interfaces.ReferenceCache, rn *rspb.ResourceName, sendBytes bool) (interfaces.CommittedWriteCloser, error) {
+	if c.writePeersContain(ctx, rn) {
+		// Every write peer already has this blob, so don't pay to stage it in
+		// shared storage; the byte writers short-circuit when the peers
+		// respond with AlreadyExists.
+		return c.byteMultiWriter(ctx, rn, false /*=verify*/)
+	}
+	refWriter, err := refCache.CreateReference(ctx, rn)
+	if err != nil {
+		// The blob can't be staged in shared storage (e.g. it's too small);
+		// fall back to streaming bytes to the peers.
+		return c.byteMultiWriter(ctx, rn, false /*=verify*/)
+	}
+	refWriteCloser := &referenceWriteCloser{
+		ctx:       ctx,
+		c:         c,
+		rn:        rn,
+		refWriter: refWriter,
+		refCache:  refCache,
+	}
+	if sendBytes {
+		multiWriteCloser, err := c.byteMultiWriter(ctx, rn, true /*=verify*/)
+		if err != nil {
+			refWriter.Close()
+			return nil, err
+		}
+		refWriteCloser.multiWriteCloser = multiWriteCloser
+	} else if _, err := c.writePeers(rn); err != nil {
+		// Fail fast, before any bytes are accepted, if there aren't enough
+		// write peers.
+		refWriter.Close()
+		return nil, err
+	}
+	return refWriteCloser, nil
+}
+
+func (rwc *referenceWriteCloser) Write(data []byte) (int, error) {
+	if rwc.refWriter != nil {
+		if _, err := rwc.refWriter.Write(data); err != nil {
+			if rwc.multiWriteCloser == nil {
+				// The staged bytes were lost mid-stream and were never sent
+				// to the peers; the write fails.
+				return 0, err
+			}
+			// Stop staging; the peers still receive the bytes.
+			rwc.refWriter.Close()
+			rwc.refWriter = nil
+		}
+	}
+	if rwc.multiWriteCloser != nil {
+		return rwc.multiWriteCloser.Write(data)
+	}
+	return len(data), nil
+}
+
+func (rwc *referenceWriteCloser) Commit() error {
+	var ref *refpb.Reference
+	if rwc.refWriter != nil {
+		r, err := rwc.refWriter.Commit()
+		if err != nil {
+			if rwc.multiWriteCloser == nil {
+				return err
+			}
+			rwc.c.log.CtxDebugf(rwc.ctx, "Error staging reference for %q: %s", distributed_client.ResourceIsolationString(rwc.rn), err)
+		} else {
+			ref = r
+		}
+	}
+	if rwc.multiWriteCloser != nil {
+		if ref != nil {
+			// Bind the staged reference to the verifying peer stream's final
+			// message before committing sends it.
+			rwc.multiWriteCloser.SetReference(ref)
+		}
+		return rwc.multiWriteCloser.Commit()
+	}
+
+	// No byte streams were opened, so the staged reference is the write:
+	// fan it out to the write peers, who will store it without receiving
+	// the blob's bytes.
+	mwc, err := rwc.c.referenceMultiWriter(rwc.ctx, rwc.refCache, rwc.rn, ref)
+	if err != nil {
+		return err
+	}
+	defer mwc.Close()
+	return mwc.Commit()
+}
+
+func (rwc *referenceWriteCloser) Close() error {
+	var err error
+	if rwc.refWriter != nil {
+		// Aborts the staging write if it was never committed.
+		err = rwc.refWriter.Close()
+	}
+	if rwc.multiWriteCloser != nil {
+		return rwc.multiWriteCloser.Close()
+	}
+	return err
+}
+
 // Attempt to write digest to N peers (where N == replicationFactor).
 // Return an unavailable error if less than a quarum of peers can be
 // written to.
@@ -1574,6 +1844,94 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 		return nil, err
 	}
 
+	if sendReference, sendBytes := c.referenceWriteMode(ctx); sendReference && r.GetCacheType() == rspb.CacheType_CAS {
+		if refCache, ok := c.local.(interfaces.ReferenceCache); ok {
+			return c.referenceWriter(ctx, refCache, r, sendBytes)
+		}
+	}
+	mwc, err := c.byteMultiWriter(ctx, r, false /*=verify*/)
+	if err != nil {
+		return nil, err
+	}
+	return mwc, nil
+}
+
+// byteMultiWriter opens a multiWriteCloser streaming bytes to the write
+// peers. If verify is set, a single peer's stream is opened for reference
+// verification: binding a reference to the returned writer via SetReference
+// puts it on that stream's final message. Local writes never verify (they
+// don't go through the peer protocol), so the verifying stream is the first
+// remote peer's.
+func (c *Cache) byteMultiWriter(ctx context.Context, r *rspb.ResourceName, verify bool) (*multiWriteCloser, error) {
+	var verifiedWriter *distributed_client.VerifiedWriter
+	mwc, err := c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
+		if verify && verifiedWriter == nil && !(c.opts.EnableLocalWrites && peer == c.opts.ListenAddr) {
+			vw, err := c.distributedProxy.RemoteVerifiedWriter(ctx, peer, hintedHandoff, r)
+			if err != nil {
+				return nil, err
+			}
+			verifiedWriter = vw
+			return vw, nil
+		}
+		return c.remoteWriter(ctx, peer, hintedHandoff, r)
+	})
+	if err != nil {
+		return nil, err
+	}
+	mwc.verifiedWriter = verifiedWriter
+	return mwc, nil
+}
+
+// localReferenceWriteCloser adapts a local WriteReference call to the
+// CommittedWriteCloser shape used by multiWriteCloser. Reference writes carry
+// no bytes; the write happens at Commit.
+type localReferenceWriteCloser struct {
+	ctx       context.Context
+	refCache  interfaces.ReferenceCache
+	ref       *refpb.Reference
+	rn        *rspb.ResourceName
+	mustClone bool
+}
+
+func (l *localReferenceWriteCloser) Write(p []byte) (int, error) {
+	return 0, status.InternalError("reference writers do not accept bytes")
+}
+
+func (l *localReferenceWriteCloser) Commit() error {
+	return l.refCache.WriteReference(l.ctx, l.ref, l.rn, l.mustClone)
+}
+
+func (l *localReferenceWriteCloser) Close() error {
+	return nil
+}
+
+// referenceMultiWriter is like byteMultiWriter, but the peers receive only
+// the reference; committing the returned writer performs the reference
+// writes.
+func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference) (interfaces.CommittedWriteCloser, error) {
+	refMustBeCloned := false
+	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
+		var wc interfaces.CommittedWriteCloser
+		if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
+			wc = &localReferenceWriteCloser{ctx: ctx, refCache: refCache, ref: ref, rn: r, mustClone: refMustBeCloned}
+		} else {
+			var err error
+			wc, err = c.distributedProxy.RemoteReferenceWriter(ctx, peer, hintedHandoff, r, ref, refMustBeCloned)
+			if err != nil {
+				return nil, err
+			}
+		}
+		// At most one peer can own the reference. Other peers must clone.
+		refMustBeCloned = true
+		return wc, nil
+	})
+}
+
+// openMultiWriter opens a multiWriteCloser over the write peers for r, using
+// open to create each peer's writer. Peers whose writers fail to open are
+// replaced from the peer set's fallback peers; if fewer than
+// ReplicationFactor writers open, the whole write fails.
+func (c *Cache) openMultiWriter(ctx context.Context, r *rspb.ResourceName, open func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error)) (*multiWriteCloser, error) {
 	ps, err := c.writePeers(r)
 	if err != nil {
 		return nil, err
@@ -1586,7 +1944,7 @@ func (c *Cache) multiWriter(ctx context.Context, r *rspb.ResourceName) (interfac
 	}
 	for peer, hintedHandoff := ps.GetNextPeerAndHandoff(); peer != ""; peer, hintedHandoff = ps.GetNextPeerAndHandoff() {
 		start := time.Now()
-		rwc, err := c.remoteWriter(ctx, peer, hintedHandoff, r)
+		rwc, err := open(peer, hintedHandoff)
 		if err != nil {
 			ps.MarkPeerAsFailed(peer)
 			c.log.CtxDebugf(ctx, "Error opening remote writer for %q to peer %q after %s: %s", r.GetDigest().GetHash(), peer, time.Since(start), err)
@@ -1663,8 +2021,33 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	return nil
 }
 
-func (c *Cache) Reader(ctx context.Context, r *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
-	return c.distributedReader(ctx, r, uncompressedOffset, limit, "Reader" /*=metricsLabel*/)
+// The first reader with a non-empty value will be returned. If all potential
+// peers for the digest are exhausted, then return a NotFoundError.
+//
+// This is like setting READ_CONSISTENCY = ONE.
+//
+// Values found on a non-primary replica will be backfilled to the primary.
+func (c *Cache) Reader(ctx context.Context, rn *rspb.ResourceName, uncompressedOffset, limit int64) (io.ReadCloser, error) {
+	ps := c.readPeers(rn)
+	lookups := 0
+	for peer := ps.GetNextPeer(); peer != ""; peer = ps.GetNextPeer() {
+		lookups++
+		r, err := c.remoteReader(ctx, peer, rn, uncompressedOffset, limit)
+		if err == nil {
+			c.backfillPeers(ctx, c.getBackfillOrders(rn, ps))
+			metrics.DistributedCachePeerLookups.WithLabelValues("Reader", metrics.HitStatusLabel).Observe(float64(lookups))
+			return r, err
+		}
+		if status.IsNotFoundError(err) {
+			c.log.CtxDebugf(ctx, "Reader(%q) not found on peer %s", distributed_client.ResourceIsolationString(rn), peer)
+			continue
+		}
+		c.log.CtxDebugf(ctx, "Reader(%q) error on peer %s: %s", distributed_client.ResourceIsolationString(rn), peer, err)
+		ps.MarkPeerAsFailed(peer)
+	}
+	metrics.DistributedCachePeerLookups.WithLabelValues("Reader", metrics.MissStatusLabel).Observe(float64(lookups))
+	c.log.CtxDebugf(ctx, "Exhausted all peers attempting to read %q. Peerset: %+v", rn.GetDigest().GetHash(), ps)
+	return nil, status.NotFoundErrorf("Exhausted all peers attempting to read %q.", rn.GetDigest().GetHash())
 }
 
 func (c *Cache) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {

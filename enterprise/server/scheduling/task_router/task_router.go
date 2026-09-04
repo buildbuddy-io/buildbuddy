@@ -38,17 +38,25 @@ const (
 	// probes per task (for load balancing purposes).
 	defaultPreferredNodeLimit = 1
 
-	// The preferred node limit for ci_runner tasks.
+	// The preferred node limit for non-default affinity-key experiments. This
+	// leaves one of the three probes available for load balancing.
+	experimentPreferredNodeLimit = 2
+
+	// The preferred node limit for recyclable runner tasks.
 	// This is set higher than the default limit since we strongly prefer
 	// these tasks to hit a node with a warm bazel workspace, but it is
 	// set less than the number of probes so that we can autoscale the workflow
 	// executor pool effectively.
-	ciRunnerPreferredNodeLimit = 1
+	recyclableRunnerPreferredNodeLimit = 1
 
 	// Preferred node limit for tasks using [persistentWorkerRouter].
 	persistentWorkerRouterPreferredNodeLimit = 128
 
-	affinityRouterUseTargetPackageExperiment = "remote_execution.affinity_router_use_target_package"
+	affinityRouterKeyExperiment = "remote_execution.affinity_router_key"
+
+	affinityRouterKeyFirstOutput = "first_output"
+	affinityRouterKeyPackage     = "package"
+	affinityRouterKeyTarget      = "target"
 )
 
 type taskRouter struct {
@@ -82,9 +90,9 @@ func New(env environment.Env) (interfaces.TaskRouter, error) {
 	// Define the available routing strategies (note: strategies earlier in the
 	// list have higher precedence)
 	strategies := []Router{
-		&ciRunnerRouter{rdb: rdb},
 		&persistentWorkerRouter{env: env, rdb: rdb},
 		&affinityRouter{rdb: rdb},
+		&recyclableRunnerRouter{rdb: rdb},
 	}
 	return &taskRouter{
 		env:        env,
@@ -318,12 +326,23 @@ func (tr *taskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *
 
 // Contains the parameters required to make a routing decision.
 type routingParams struct {
-	cmd                                *repb.Command
-	platform                           *repb.Platform
-	remoteInstanceName                 string
-	groupID                            string
-	targetPackageLabel                 string
-	useTargetPackageForAffinityRouting bool
+	cmd                *repb.Command
+	platform           *repb.Platform
+	remoteInstanceName string
+	groupID            string
+	targetLabel        string
+	targetPackageLabel string
+	affinityRouterKey  string
+}
+
+func normalizeAffinityRouterKey(ctx context.Context, key string) string {
+	switch key {
+	case affinityRouterKeyFirstOutput, affinityRouterKeyPackage, affinityRouterKeyTarget:
+		return key
+	default:
+		log.CtxWarningf(ctx, "Ignoring unsupported %s experiment value %q", affinityRouterKeyExperiment, key)
+		return affinityRouterKeyFirstOutput
+	}
 }
 
 func getTargetPackageLabel(targetLabel string) string {
@@ -338,18 +357,21 @@ func getRoutingParams(ctx context.Context, env environment.Env, action *repb.Act
 	if u, err := env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		groupID = u.GetGroupID()
 	}
-	useTargetPackageForAffinityRouting := false
+	affinityRouterKey := affinityRouterKeyFirstOutput
 	if fp := env.GetExperimentFlagProvider(); fp != nil {
-		useTargetPackageForAffinityRouting = fp.Boolean(ctx, affinityRouterUseTargetPackageExperiment, false)
+		affinityRouterKey = fp.String(ctx, affinityRouterKeyExperiment, affinityRouterKeyFirstOutput)
 	}
+	affinityRouterKey = normalizeAffinityRouterKey(ctx, affinityRouterKey)
 	rmd := bazel_request.GetRequestMetadata(ctx)
+	targetLabel := rmd.GetTargetId()
 	return routingParams{
-		cmd:                                cmd,
-		platform:                           platform.GetProto(action, cmd),
-		remoteInstanceName:                 remoteInstanceName,
-		groupID:                            groupID,
-		targetPackageLabel:                 getTargetPackageLabel(rmd.GetTargetId()),
-		useTargetPackageForAffinityRouting: useTargetPackageForAffinityRouting,
+		cmd:                cmd,
+		platform:           platform.GetProto(action, cmd),
+		remoteInstanceName: remoteInstanceName,
+		groupID:            groupID,
+		targetLabel:        targetLabel,
+		targetPackageLabel: getTargetPackageLabel(targetLabel),
+		affinityRouterKey:  affinityRouterKey,
 	}
 }
 
@@ -394,23 +416,24 @@ type Router interface {
 	UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, key, hostID string) error
 }
 
-// The ciRunnerRouter routes ci_runner tasks according to git branch
-// information.
-type ciRunnerRouter struct {
+// The recyclableRunnerRouter routes recyclable runners that may use remote
+// snapshots. CI runners are routed according to git branch information.
+type recyclableRunnerRouter struct {
 	rdb redis.UniversalClient
 }
 
-func (*ciRunnerRouter) Applies(_ context.Context, params routingParams) bool {
+func (*recyclableRunnerRouter) Applies(_ context.Context, params routingParams) bool {
 	// TODO: pass parsed platform into routingParams and avoid manual parsing
 	// here.
-	return platform.IsCICommand(params.cmd, params.platform) && platform.IsTrue(platform.FindValue(params.platform, "recycle-runner"))
+	return platform.IsTrue(platform.FindValue(params.platform, "recycle-runner")) &&
+		platform.AllowsRemoteSnapshots(params.cmd, params.platform, nil /*=platformOverrides*/)
 }
 
-func (c *ciRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
+func (c *recyclableRunnerRouter) GetPreferredHostIDs(ctx context.Context, routingKey string) ([]string, error) {
 	return c.rdb.LRange(ctx, routingKey, 0, -1).Result()
 }
 
-func (c *ciRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
+func (c *recyclableRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceeded bool, preferredNodeLimit int, routingKey, executorHostID string) error {
 	pipe := c.rdb.TxPipeline()
 	if taskSucceeded {
 		// Push the node to the head of the list (but first remove it if already
@@ -428,11 +451,11 @@ func (c *ciRunnerRouter) UpdatePreferredHostIDs(ctx context.Context, taskSucceed
 	return err
 }
 
-func (*ciRunnerRouter) preferredNodeLimit(_ routingParams) int {
-	return ciRunnerPreferredNodeLimit
+func (*recyclableRunnerRouter) preferredNodeLimit(_ routingParams) int {
+	return recyclableRunnerPreferredNodeLimit
 }
 
-func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
+func (*recyclableRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	parts := []string{"task_route", params.groupID}
 	keys := make([]string, 0)
 
@@ -446,10 +469,10 @@ func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
-	// For workflow tasks, route using git branch name so that when re-running the
+	// For CI runner tasks, route using git branch name so that when re-running the
 	// workflow multiple times using the same branch, the runs are more likely
 	// to hit an executor with a warmer snapshot cache.
-	if platform.IsCICommand(params.cmd, params.platform) {
+	if platform.IsCIRunner(params.cmd, params.platform) {
 		envVarNames := []string{"GIT_BRANCH"}
 		if *defaultBranchRoutingEnabled {
 			envVarNames = append(envVarNames, "GIT_BASE_BRANCH", "GIT_REPO_DEFAULT_BRANCH")
@@ -471,7 +494,7 @@ func (*ciRunnerRouter) routingKeys(params routingParams) ([]string, error) {
 	return keys, nil
 }
 
-func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
+func (s *recyclableRunnerRouter) RoutingInfo(params routingParams) (int, []string, error) {
 	nodeLimit := s.preferredNodeLimit(params)
 	keys, err := s.routingKeys(params)
 	return nodeLimit, keys, err
@@ -481,15 +504,12 @@ func (s *ciRunnerRouter) RoutingInfo(params routingParams) (int, []string, error
 //   - remoteInstanceName
 //   - groupID
 //   - platform properties
-//   - and an affinity hint derived from either the first action output
-//     (default) or the request metadata target package (for experiment-enabled
-//     orgs)
+//   - and an affinity hint selected by the affinity-router-key experiment
 //
 // The first-output hint is stable even if an action's inputs change, which can
 // route successive executions of the same Bazel action back to a warmer
-// executor. The target-package experiment deliberately broadens that affinity so
-// related actions for the same package can share warmed executors and reduce
-// routing spray.
+// executor. The affinity-router-key experiment can instead group by Bazel
+// package or by full Bazel target label.
 type affinityRouter struct {
 	rdb redis.UniversalClient
 }
@@ -498,13 +518,26 @@ func (*affinityRouter) Applies(_ context.Context, params routingParams) bool {
 	return getAffinityRoutingHint(params) != ""
 }
 
-func (*affinityRouter) preferredNodeLimit(_ routingParams) int {
+func (*affinityRouter) preferredNodeLimit(params routingParams) int {
+	// Keep the whole experiment cohort at two preferred nodes, including
+	// actions that fall back to a first-output hint when target metadata is
+	// unavailable.
+	if params.affinityRouterKey != affinityRouterKeyFirstOutput {
+		return experimentPreferredNodeLimit
+	}
 	return defaultPreferredNodeLimit
 }
 
 func getAffinityRoutingHint(params routingParams) string {
-	if params.useTargetPackageForAffinityRouting && params.targetPackageLabel != "" {
-		return params.targetPackageLabel
+	switch params.affinityRouterKey {
+	case affinityRouterKeyTarget:
+		if params.targetLabel != "" {
+			return params.targetLabel
+		}
+	case affinityRouterKeyPackage:
+		if params.targetPackageLabel != "" {
+			return params.targetPackageLabel
+		}
 	}
 	return getFirstOutput(params.cmd)
 }
@@ -522,10 +555,7 @@ func (*affinityRouter) routingKey(params routingParams) (string, error) {
 	}
 	parts = append(parts, hash.Bytes(b))
 
-	// Add the selected affinity hint as the final part of the routing key. By
-	// default this is the first declared output, but a per-org experiment can
-	// switch this to the target package to reduce routing spray across related
-	// actions belonging to the same package.
+	// Add the selected affinity hint as the final part of the routing key.
 	hint := getAffinityRoutingHint(params)
 	if hint == "" {
 		return "", status.InternalError("routing key requested for action with no affinity hint")

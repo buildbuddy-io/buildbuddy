@@ -149,10 +149,8 @@ func (h *Liveness) BlockingValidateNodeLiveness(ctx context.Context, nl *rfpb.Ra
 }
 
 func (h *Liveness) verifyLease(ctx context.Context, l *rfpb.NodeLivenessRecord) (retErr error) {
-	_, span := tracing.StartNamedSpan(ctx, "nodeliveness.Liveness.verifyLease")
 	defer func() {
-		tracing.RecordErrorToSpan(span, retErr)
-		span.End()
+		tracing.AddErrorEventToCurrentSpan(ctx, "verifyLease", retErr)
 	}()
 	if serf.LamportTime(l.GetEpoch()) != h.clock.Time() {
 		return status.FailedPreconditionErrorf("LeaseInvalid: lease epoch %d != current epoch: %d", l.GetEpoch(), h.clock.Time())
@@ -184,10 +182,8 @@ func (h *Liveness) setLastLivenessRecord(nlr *rfpb.NodeLivenessRecord) {
 }
 
 func (h *Liveness) ensureValidLease(ctx context.Context, forceRenewal bool) (returnedRecord *rfpb.NodeLivenessRecord, returnedErr error) {
-	ctx, span := tracing.StartNamedSpan(ctx, "nodeliveness.Liveness.ensureValidLease")
 	defer func() {
-		tracing.RecordErrorToSpan(span, returnedErr)
-		span.End()
+		tracing.AddErrorEventToCurrentSpan(ctx, "ensureValidLease", returnedErr)
 	}()
 	start := time.Now()
 	h.mu.RLock()

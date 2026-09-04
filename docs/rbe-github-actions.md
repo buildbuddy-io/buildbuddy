@@ -78,6 +78,15 @@ Add your BuildBuddy API Key as GitHub Secret named `BUILDBUDDY_ORG_API_KEY`. For
 
 If you'd like BuildBuddy to publish commit statuses to your repo, you can do so by [logging in](https://app.buildbuddy.io) and clicking `Link Github Account` in the user menu in the top right.
 
+By default, each status is named after its Bazel command and target pattern. You can assign a name that matches the logical GitHub Actions step with build metadata:
+
+```yaml
+- name: Run unit tests
+  run: bazel test //... --config=ci --build_metadata=COMMIT_STATUS_LABEL="Unit tests"
+```
+
+To keep a Bazel invocation from publishing a BuildBuddy status, set `--build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true`. This only disables the status reported by BuildBuddy, not the GitHub Actions job status.
+
 ### Visibility
 
 By default, authenticated builds are only visible to members of your BuildBuddy organization. If you'd like your BuildBuddy results pages to be visible to members outside of your organization, you can add the following line to your `.bazelrc`:

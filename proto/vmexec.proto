@@ -74,6 +74,30 @@ message ExecResponse {
   bytes stdout = 2;
   bytes stderr = 3;
   google.rpc.Status status = 4;
+
+  // Metrics reported by the vmexec server. The init timings among these
+  // reflect the boot of the VM serving this response: if the VM was resumed
+  // from a snapshot, the boot (and these waits) happened before some earlier
+  // command, not this one.
+  Metrics metrics = 5;
+}
+
+// Metrics reported by the vmexec server, including timings of one-time
+// initialization steps that ran during VM boot, before the exec server began
+// accepting commands.
+message Metrics {
+  // Time spent waiting for dockerd to become ready. Zero if dockerd
+  // initialization was not requested.
+  int64 dockerd_wait_duration_usec = 1;
+
+  // Time spent waiting for the VM's local DNS server to become ready. Zero
+  // if no DNS overrides were configured.
+  int64 vm_dns_wait_duration_usec = 2;
+
+  // Time from when the vmexec process started until the gRPC server was
+  // about to begin serving. Includes the waits above, but not earlier guest
+  // init (kernel boot or init process setup).
+  int64 vm_exec_init_duration_usec = 3;
 }
 
 message ExecStreamedRequest {

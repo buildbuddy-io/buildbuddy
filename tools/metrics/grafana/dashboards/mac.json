@@ -126,9 +126,9 @@
               },
               "editorMode": "code",
               "exemplar": true,
-              "expr": "sum(up{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
+              "expr": "sum by (group_name) (up{region=~\"${region}\", job=\"mac-executor\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"})",
               "interval": "",
-              "legendFormat": "up",
+              "legendFormat": "{{group_name}}",
               "queryType": "randomWalk",
               "range": true,
               "refId": "A"

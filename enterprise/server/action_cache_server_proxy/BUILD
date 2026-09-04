@@ -25,6 +25,7 @@ go_library(
         "//server/util/capabilities",
         "//server/util/flag",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/status",

@@ -49,8 +49,8 @@ const (
 
 	// If we access a chunk, we will queue this number of contiguous chunks
 	// to be eagerly fetched in the background, anticipating that they will
-	// also be accessed
-	numChunksToEagerFetch = 32
+	// also be accessed.
+	defaultNumChunksToEagerFetch = 32
 
 	// Number of goroutines to run concurrently to handle LRU evictions.
 	lruEvictionConcurrency = 2
@@ -84,6 +84,20 @@ type usageSummary struct {
 	totalCount    int
 	totalDuration time.Duration
 }
+
+// WriteEvent describes a write to one chunk.
+type WriteEvent struct {
+	// Offset is the byte offset within the entire COWStore where the write began.
+	Offset int64
+	// Length is the number of bytes written.
+	Length int64
+	// ChunkIndex is the index of the chunk within the COWStore.
+	ChunkIndex int64
+}
+
+// OnWrite is called after each successful chunk-level write. Events never span
+// a chunk boundary.
+type OnWrite func(WriteEvent)
 
 // COWStore To enable copy-on-write support for a file, it can be split into
 // chunks of equal size. Just before a chunk is first written to, the chunk is first
@@ -149,10 +163,11 @@ type COWStore struct {
 	// Chunk offsets to be eagerly fetched. This is using a bounded stack data
 	// structure so that if the buffer is full, a new item can still be appended,
 	// evicting the least recently added chunk.
-	eagerFetchStack *boundedstack.BoundedStack[int64]
-	eagerFetchEg    *errgroup.Group
-	quitOnce        sync.Once
-	quitChan        chan struct{}
+	eagerFetchStack  *boundedstack.BoundedStack[int64]
+	eagerFetchEg     *errgroup.Group
+	eagerFetchChunks int
+	quitOnce         sync.Once
+	quitChan         chan struct{}
 
 	// usageLock protects chunkOperationToUsageSummary
 	usageLock                    sync.Mutex
@@ -160,6 +175,10 @@ type COWStore struct {
 
 	// LRU used to limit the number of chunks that can be mmapped at once.
 	mmapLRU *MmapLRU
+
+	// OnWrite is called after each successful chunk-level write. Events never span
+	// a chunk boundary.
+	onWrite OnWrite
 }
 
 type COWOptions struct {
@@ -168,6 +187,10 @@ type COWOptions struct {
 	DataDir            string
 	RemoteInstanceName string
 	RemoteEnabled      bool
+
+	// EagerFetchChunks controls how many chunks following an accessed chunk are
+	// fetched speculatively. If unset, the default eager-fetch window is used.
+	EagerFetchChunks int
 
 	// By default, mmapped chunks are managed by the executor-wide shared LRU.
 	//
@@ -194,6 +217,11 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 	chunkMap := make(map[int64]*Mmap, len(chunks))
 	for _, c := range chunks {
 		chunkMap[c.Offset] = c
+	}
+
+	eagerFetchChunks := opts.EagerFetchChunks
+	if eagerFetchChunks <= 0 {
+		eagerFetchChunks = defaultNumChunksToEagerFetch
 	}
 
 	var lru *MmapLRU
@@ -239,6 +267,7 @@ func NewCOWStore(ctx context.Context, env environment.Env, name string, chunks [
 		ioBlockSize:                  int64(stat.Sys().(*syscall.Stat_t).Blksize),
 		eagerFetchStack:              eagerFetchStack,
 		eagerFetchEg:                 &errgroup.Group{},
+		eagerFetchChunks:             eagerFetchChunks,
 		quitChan:                     make(chan struct{}),
 		chunkOperationToUsageSummary: make(map[string]usageSummary, 0),
 		mmapLRU:                      lru,
@@ -446,31 +475,44 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		return 0, err
 	}
 
-	chunkOffset := c.ChunkStartOffset(off)
+	// The byte offset of the start of the chunk containing the write.
+	chunkStartOffset := c.ChunkStartOffset(off)
 	n := 0
 
-	c.eagerFetchNextChunks(chunkOffset)
+	c.eagerFetchNextChunks(chunkStartOffset)
 
 	for len(p) > 0 {
 		// On each iteration, write to one chunk, first copying the readonly
 		// chunk if needed.
-		if err := c.copyChunkIfNotDirty(chunkOffset); err != nil {
+		if err := c.copyChunkIfNotDirty(chunkStartOffset); err != nil {
 			return 0, status.WrapError(err, "failed to copy chunk")
 		}
 
+		// The byte offset of the write (relative to the entire COWStore).
+		writeOffset := off + int64(n)
+		// The byte offset of the write (relative to the start of the current chunk).
 		chunkRelativeOffset := (off + int64(n)) % c.chunkSizeBytes
+		// Index of the chunk in the COWStore.
+		chunkIndex := writeOffset / c.chunkSizeBytes
 		writeSize := int(c.chunkSizeBytes - chunkRelativeOffset)
 		if writeSize > len(p) {
 			writeSize = len(p)
 		}
 
-		nw, err := c.writeToChunk(p, chunkRelativeOffset, chunkOffset, writeSize)
+		nw, err := c.writeToChunk(p, chunkRelativeOffset, chunkStartOffset, writeSize)
 		n += nw
 		if err != nil {
 			return n, err
 		}
+		if nw > 0 {
+			c.notifyWrite(WriteEvent{
+				Offset:     writeOffset,
+				Length:     int64(nw),
+				ChunkIndex: chunkIndex,
+			})
+		}
 		p = p[writeSize:]
-		chunkOffset += c.chunkSizeBytes
+		chunkStartOffset += c.chunkSizeBytes
 	}
 	metrics.COWBytesWritten.With(prometheus.Labels{
 		metrics.FileName: c.name,
@@ -522,8 +564,7 @@ func (c *COWStore) Sync() error {
 
 func (s *COWStore) Close() error {
 	// Close background goroutine eagerly fetching chunks
-	s.quitOnce.Do(func() { close(s.quitChan) })
-	s.eagerFetchEg.Wait()
+	s.StopEagerFetch()
 
 	var lastErr error
 	// TODO: maybe parallelize
@@ -601,6 +642,45 @@ func (s *COWStore) ChunkSizeBytes() int64 {
 	return s.chunkSizeBytes
 }
 
+// SetWriteCallback sets a callback that is invoked after successful
+// writes. It must not be called concurrently with WriteAt.
+func (s *COWStore) SetWriteCallback(onWrite OnWrite) {
+	s.onWrite = onWrite
+}
+
+func (s *COWStore) notifyWrite(event WriteEvent) {
+	if s.onWrite != nil {
+		s.onWrite(event)
+	}
+}
+
+// StopEagerFetch stops background eager fetching for this store.
+func (s *COWStore) StopEagerFetch() {
+	s.quitOnce.Do(func() {
+		close(s.quitChan)
+		s.eagerFetchEg.Wait()
+	})
+	s.eagerFetchStack = nil
+}
+
+// DisableLRUEviction disables LRU-driven unmapping for this store.
+// This is useful for paths where the caller manages chunk
+// lifetime explicitly (e.g. sequential snapshot export).
+// It does not unmap currently mapped chunks because the chunks are likely to
+// be touched again soon. The caller should manage chunk unmapping.
+func (s *COWStore) DisableLRUEviction() {
+	// Disable background eager fetching. Callers of this method
+	// manage chunk access explicitly, and eager fetch can fetch chunks outside of
+	// the expected pattern, causing untracked cache/network I/O.
+	s.StopEagerFetch()
+
+	s.storeLock.Lock()
+	defer s.storeLock.Unlock()
+	for _, chunk := range s.chunks {
+		chunk.disableLRUEviction()
+	}
+}
+
 // LimitMmappedChunks limits how many chunks can be mmapped at once.
 // This is useful when exporting a snapshot sequentially, when we don't want
 // recently touched chunks to stay mmapped longer than necessary. Existing
@@ -617,8 +697,7 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 	// Stop eager fetching chunks. With a limited LRU, it could cause unnecessary LRU churn.
 	// Note that eager fetching chunks acquires the storeLock, so we must stop this
 	// before acquiring the lock below.
-	s.quitOnce.Do(func() { close(s.quitChan) })
-	s.eagerFetchEg.Wait()
+	s.StopEagerFetch()
 
 	s.storeLock.Lock()
 	defer s.storeLock.Unlock()
@@ -630,7 +709,6 @@ func (s *COWStore) LimitMmappedChunks(maxMmappedChunks int64) error {
 		chunk.lru = lru
 	}
 	s.mmapLRU = lru
-	s.eagerFetchStack = nil
 	return nil
 }
 
@@ -764,7 +842,7 @@ func (s *COWStore) eagerFetchNextChunks(offset int64) {
 		return
 	}
 	currentOffset := offset + s.chunkSizeBytes
-	for i := 0; i < numChunksToEagerFetch; i++ {
+	for i := 0; i < s.eagerFetchChunks; i++ {
 		s.eagerFetchStack.Push(currentOffset)
 		currentOffset += s.chunkSizeBytes
 	}
@@ -1305,6 +1383,16 @@ func (m *Mmap) Unmap() error {
 	return nil
 }
 
+func (m *Mmap) disableLRUEviction() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.lru != nil {
+		m.lru.Remove(m)
+	}
+	m.lru = nil
+}
+
 // Note: caller is expected to hold the lock.
 func (m *Mmap) unmap() (unmapped bool, err error) {
 	if m.data == nil {
@@ -1507,6 +1595,10 @@ func (ml *MmapLRU) processEviction(m *Mmap) {
 	// the LRU lock, in order to avoid deadlocks.
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if m.lru != ml {
+		return
+	}
 
 	ml.mu.Lock()
 	lruContains := ml.lru.Contains(ml.key(m))

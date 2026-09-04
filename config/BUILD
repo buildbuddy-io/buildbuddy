@@ -3,6 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 # gazelle:default_visibility //visibility:public
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["buildbuddy.local.yaml"])
+
 filegroup(
     name = "config_files",
     srcs = select({

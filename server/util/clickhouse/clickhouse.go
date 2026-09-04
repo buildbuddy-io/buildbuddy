@@ -451,6 +451,10 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		Tags:                               invocation_format.ConvertDBTagsToOLAP(inv.GetTags()),
 		TargetLabel:                        in.GetTargetLabel(),
 		ActionMnemonic:                     in.GetActionMnemonic(),
+		ConfigurationID:                    in.GetConfigurationId(),
+		TestSize:                           in.GetTestSize(),
+		TestShardIndex:                     in.GetTestShardIndex(),
+		TestTotalShards:                    in.GetTestTotalShards(),
 		Experiments:                        in.GetExperiments(),
 		CommandSnippet:                     in.GetCommandSnippet(),
 		RunnerTaskNumber:                   in.GetRunnerTaskNumber(),
@@ -464,6 +468,11 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 		SnapshotIsDiff:                     in.GetSnapshotIsDiff(),
 		SnapshotSavedBytes:                 in.GetSnapshotSavedBytes(),
 		PauseDurationUsec:                  in.GetPauseDurationUsec(),
+		VMDockerdWaitDurationUsec:          in.GetVmDockerdWaitDurationUsec(),
+		VMDnsWaitDurationUsec:              in.GetVmDnsWaitDurationUsec(),
+		VMExecInitDurationUsec:             in.GetVmExecInitDurationUsec(),
+		VMExecDialDurationUsec:             in.GetVmExecDialDurationUsec(),
+		BuildrootDiskUsageBytes:            in.GetBuildrootDiskUsageBytes(),
 	}
 
 	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {

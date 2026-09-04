@@ -24,10 +24,10 @@ import (
 )
 
 var (
-	EnableLocalSnapshotSharing       = flag.Bool("executor.enable_local_snapshot_sharing", false, "Enables local snapshot sharing for firecracker VMs.")
+	EnableLocalSnapshotSharing       = flag.Bool("executor.enable_local_snapshot_sharing", true, "Enables local snapshot sharing for firecracker VMs.")
 	EnableRemoteSnapshotSharing      = flag.Bool("executor.enable_remote_snapshot_sharing", false, "Enables remote snapshot sharing for firecracker VMs.")
 	RemoteSnapshotReadonly           = flag.Bool("executor.remote_snapshot_readonly", false, "Disables remote snapshot writes.")
-	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", false, "Enable memory balloon support when snapshotting firecracker VMs.")
+	EnableBalloon                    = flag.Bool("executor.firecracker_enable_balloon", true, "Enable memory balloon support when snapshotting firecracker VMs.")
 	VerboseLogging                   = flag.Bool("executor.verbose_snapshot_logs", false, "Enables extra-verbose snapshot logs (even at debug log level)")
 	storeSnapshotsInLocalClusterOnly = flag.Bool("executor.store_snapshots_in_local_cluster_only", false, "If true, snapshots are only stored in the cache proxy in the cluster where this executor is running.")
 	enableUploadCompresssion         = flag.Bool("executor.enable_snapshot_chunk_upload_compression", true, "If true, snapshot chunks will be sent to the remote cache compressed.")
@@ -50,6 +50,14 @@ const (
 	// change!
 	MemoryFileName = "memory"
 
+	// UniversalSnapshotRef is a sentinel git ref for the "universal"
+	// snapshot. It is used as a last-resort fallback for runs that have no other
+	// fallback snapshots available, and can be written from any git branch.
+	//
+	// This must not collide with a real git ref. In particular, non-workflow
+	// tasks have an empty Ref, so the empty string cannot be used here.
+	UniversalSnapshotRef = "BB_UNIVERSAL_SNAPSHOT"
+
 	// DefaultMaxStaleFallbackSnapshotAge is the max age of a valid fallback snapshot.
 	// This is used to prevent using very stale local snapshots that may cause performance degradation.
 	DefaultMaxStaleFallbackSnapshotAge = 24 * time.Hour
@@ -60,6 +68,11 @@ const (
 
 	ConvertToCOWConcurrency       = 8
 	WriteSnapshotChunkConcurrency = 8
+
+	// Experiment names controlling whether a Firecracker task may read and
+	// write its chunked container image in the remote cache, regardless of whether remote snapshots are enabled.
+	RemoteContainerImageReadsExperiment  = "executor.remote_container_image_reads_enabled"
+	RemoteContainerImageWritesExperiment = "executor.remote_container_image_writes_enabled"
 )
 
 // ChunkSource represents how a snapshot chunk was initialized

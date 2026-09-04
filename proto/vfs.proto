@@ -242,7 +242,9 @@ message RenameRequest {
   uint32 flags = 5;
 }
 
-message RenameResponse {}
+message RenameResponse {
+  uint64 replaced_id = 1;
+}
 
 message MkdirRequest {
   uint64 parent_id = 1;

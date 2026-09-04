@@ -23,7 +23,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/block_io"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
@@ -40,6 +42,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
+	"github.com/buildbuddy-io/buildbuddy/server/util/cdc"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
@@ -82,6 +85,8 @@ var (
 	resolveImageDigests       = flag.Bool("executor.resolve_image_digests", false, "Whether to resolve image names with tags to digests.")
 
 	overlayfsEnabled = flag.Bool("executor.workspace.overlayfs_enabled", false, "Enable overlayfs support for anonymous action workspaces. ** UNSTABLE **")
+
+	measureWorkspaceDiskUsage = flag.Bool("executor.workspace.measure_disk_usage", false, "If set, measure the disk space used by the task's buildroot (workspace) after each task finishes and report it in the task's usage stats. Note: this requires walking the entire workspace tree, which may add CPU/IO overhead for tasks with large workspaces.")
 )
 
 const (
@@ -214,6 +219,8 @@ type taskRunner struct {
 
 	// task is the current task assigned to the runner.
 	task *repb.ExecutionTask
+	// schedulingMetadata is the current task's scheduling metadata.
+	schedulingMetadata *scpb.SchedulingMetadata
 	// State is the current state of the runner as it pertains to reuse. It is
 	// atomic because in some cases we want to print runner metadata for debug
 	// purposes but without having to hold the pool lock.
@@ -233,6 +240,11 @@ type taskRunner struct {
 
 	memoryUsageBytes int64
 	diskUsageBytes   int64
+
+	// measuredWorkspaceDiskUsageBytes is the disk usage of the workspace
+	// measured during the recycle/cleanup path (see measureWorkspaceDiskUsage).
+	// Reported via PostCompletionStats.
+	measuredWorkspaceDiskUsageBytes int64
 }
 
 func (r *taskRunner) Metadata() *espb.RunnerMetadata {
@@ -316,6 +328,10 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 		RemoteInstanceName: r.task.GetExecuteRequest().GetInstanceName(),
 		DigestFunction:     r.task.GetExecuteRequest().GetDigestFunction(),
 		Inputs:             inputTree,
+		WorkingDirectory:   r.task.GetCommand().GetWorkingDirectory(),
+		OutputDirectories:  r.task.GetCommand().GetOutputDirectories(),
+		OutputFiles:        r.task.GetCommand().GetOutputFiles(),
+		OutputPaths:        r.task.GetCommand().GetOutputPaths(),
 	}
 
 	if err := r.prepareVFS(ctx, layout); err != nil {
@@ -325,7 +341,7 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if platform.IsCICommand(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
+	if platform.IsCIRunner(r.task.GetCommand(), platform.GetProto(r.task.GetAction(), r.task.GetCommand())) &&
 		!ci_runner_util.CanInitFromCache(r.PlatformProperties.OS, r.PlatformProperties.Arch) {
 		if err := r.Workspace.AddRemoteRunnerBinaries(ctx); err != nil {
 			return err
@@ -334,9 +350,53 @@ func (r *taskRunner) DownloadInputs(ctx context.Context) error {
 	return nil
 }
 
+// killableTask registers a running task with the OOM killer.
+type killableTask struct {
+	r         *taskRunner
+	startedAt time.Time
+	cancel    context.CancelCauseFunc
+}
+
+func (k *killableTask) State(ctx context.Context) (*oomkiller.TaskState, error) {
+	stats, err := k.r.Container.Stats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &oomkiller.TaskState{
+		EstimatedMemoryBytes:    k.r.schedulingMetadata.GetTaskSize().GetEstimatedMemoryBytes(),
+		GroupID:                 k.r.schedulingMetadata.GetTaskGroupId(),
+		InvocationID:            k.r.task.GetInvocationId(),
+		ExecutionID:             k.r.task.GetExecutionId(),
+		RemoteExecutionPriority: k.r.schedulingMetadata.GetPriority(),
+		StartedAt:               k.startedAt,
+		UsageStats:              &repb.UsageStats{MemoryBytes: stats.GetMemoryBytes()},
+		Active:                  true,
+	}, nil
+}
+
+func (k *killableTask) Kill(ctx context.Context, err error) {
+	k.cancel(err)
+}
+
+func (k *killableTask) String() string {
+	return k.r.String()
+}
+
 // Run runs the task that is currently bound to the command runner.
 func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *interfaces.CommandResult) {
 	start := time.Now()
+	if r.p.oomKiller != nil {
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(ctx)
+		defer cancel(nil)
+		killable := &killableTask{
+			r:         r,
+			startedAt: start,
+			cancel:    cancel,
+		}
+		unregister := r.p.oomKiller.Register(ctx, killable)
+		defer unregister()
+	}
 	defer func() {
 		// Discard nonsensical PSI full-stall durations which are greater
 		// than the execution duration by a significant amount.
@@ -397,6 +457,14 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 				res.DoNotRecycle = true
 			}
 		}
+
+		// If the task reported an error, and it was OOM-killed, make sure to
+		// return the OOM error as the effective task error.
+		if oomErr := context.Cause(ctx); res.Error != nil && oom.IsError(oomErr) {
+			res.Error = oomErr
+			res.ExitCode = commandutil.NoExitCode
+			res.DoNotRecycle = true
+		}
 	}()
 
 	wsPath := r.Workspace.Path()
@@ -411,7 +479,9 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			fillStatsFromTransferInfo(ioStats, txInfo)
 			res.InputFetchMetadata = txInfo.InputFetchMetadata
 		}
-		res.VfsStats = r.Workspace.ComputeVFSStats()
+		if stats := r.Workspace.ComputeVFSStats(); stats != nil {
+			res.VfsStats = stats
+		}
 	}()
 
 	if !r.PlatformProperties.RecycleRunner {
@@ -469,6 +539,31 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 	return execResult
 }
 
+// measureWorkspaceDiskUsage measures the disk space used by the task's
+// workspace (buildroot) and stashes it so it can be reported via
+// PostCompletionStats. It is called from the recycle/cleanup path (after the
+// result has been returned to the client and before the workspace is cleaned
+// up), so it doesn't add latency to task completion.
+func (r *taskRunner) measureWorkspaceDiskUsage(ctx context.Context) {
+	if !*measureWorkspaceDiskUsage {
+		return
+	}
+
+	// VM runners report file system usage measured inside the VM. Their host's
+	// workspace only holds the VM disk image, so they are skipped.
+	if _, ok := r.Container.Delegate.(container.VM); ok {
+		return
+	}
+	start := time.Now()
+	usage, err := r.Workspace.DiskUsageBytes()
+	if err != nil {
+		log.CtxWarningf(ctx, "Failed to measure workspace disk usage: %s", err)
+		return
+	}
+	metrics.RemoteExecutionBuildrootDiskUsageMeasurementDurationUsec.Observe(float64(time.Since(start).Microseconds()))
+	r.measuredWorkspaceDiskUsageBytes = usage
+}
+
 func (r *taskRunner) GracefulTerminate(ctx context.Context) error {
 	return r.Container.Signal(ctx, syscall.SIGTERM)
 }
@@ -492,6 +587,9 @@ func (r *taskRunner) sendPersistentWorkRequest(ctx context.Context, command *rep
 }
 
 func (r *taskRunner) UploadOutputs(ctx context.Context, ioStats *repb.IOStats, executeResponse *repb.ExecuteResponse, cmdResult *interfaces.CommandResult) error {
+	if slices.Contains(r.task.GetExperiments(), cdc.SpliceWithoutValidationExperiment) {
+		ctx = cdc.ContextWithSpliceWithoutValidation(ctx)
+	}
 	txInfo, err := r.Workspace.UploadOutputs(ctx, r.task.Command, executeResponse, cmdResult)
 	if err != nil {
 		return err
@@ -506,10 +604,17 @@ func (r *taskRunner) GetIsolationType() string {
 	return r.PlatformProperties.WorkloadIsolationType
 }
 
-// PostCompletionStats returns observability data produced by the underlying
-// Container after Exec or Run have completed.
+// PostCompletionStats returns observability data produced after Exec or Run
+// have completed, including data gathered during the recycle/cleanup path.
 func (r *taskRunner) PostCompletionStats() *espb.PostCompletionStats {
-	return r.Container.PostCompletionStats()
+	stats := r.Container.PostCompletionStats()
+	if r.measuredWorkspaceDiskUsageBytes > 0 {
+		if stats == nil {
+			stats = &espb.PostCompletionStats{}
+		}
+		stats.BuildrootDiskUsageBytes = r.measuredWorkspaceDiskUsageBytes
+	}
+	return stats
 }
 
 // shutdown runs any manual cleanup required to clean up processes before
@@ -590,8 +695,7 @@ func (r *taskRunner) isCIRunner() bool {
 	task := r.task
 	r.p.mu.RUnlock()
 
-	args := task.GetCommand().GetArguments()
-	return len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+	return platform.IsCIRunnerCommand(task.GetCommand())
 }
 
 func (r *taskRunner) cleanupCIRunner(ctx context.Context) error {
@@ -611,6 +715,9 @@ type PoolOptions struct {
 	// newContainerImpl.
 	ContainerProvider container.Provider
 
+	// OOMKiller kills active tasks if the executor is running out of memory.
+	OOMKiller oomkiller.Killer
+
 	// CgroupParent is the parent cgroup under which all runner containers are
 	// placed.
 	CgroupParent string
@@ -625,6 +732,7 @@ type pool struct {
 	blockDevice        *block_io.Device
 	cacheRoot          string
 	overrideProvider   container.Provider
+	oomKiller          oomkiller.Killer
 	containerProviders map[platform.ContainerType]container.Provider
 
 	maxRunnerCount                 int
@@ -667,6 +775,7 @@ func NewPool(env environment.Env, cacheRoot string, opts *PoolOptions) (*pool, e
 		buildRoot:    *rootDirectory,
 		cacheRoot:    cacheRoot,
 		cgroupParent: opts.CgroupParent,
+		oomKiller:    opts.OOMKiller,
 		runners:      []*taskRunner{},
 		resolver:     resolver,
 	}
@@ -1148,6 +1257,7 @@ func (p *pool) Get(ctx context.Context, st *repb.ScheduledTask) (interfaces.Runn
 		if r != nil {
 			p.mu.Lock()
 			r.task = task
+			r.schedulingMetadata = st.GetSchedulingMetadata()
 			r.metadata.TaskNumber++
 			r.PlatformProperties = props
 			p.mu.Unlock()
@@ -1187,12 +1297,18 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 	if err != nil {
 		return nil, err
 	}
+	useHostVFS := props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType
+	var vfsPrefetchMode workspace.VFSPrefetchMode
+	if props.EnableVFS {
+		vfsPrefetchMode = workspace.VFSPrefetchMode(props.VFSPrefetchMode)
+	}
 	wsOpts := &workspace.Opts{
 		Preserve:        props.PreserveWorkspace,
 		CleanInputs:     props.CleanWorkspaceInputs,
 		CaseInsensitive: p.caseInsensitiveFS,
 		UseOverlayfs:    useOverlayfs,
-		UseVFS:          props.EnableVFS && platform.ContainerType(props.WorkloadIsolationType) != platform.FirecrackerContainerType,
+		UseVFS:          useHostVFS,
+		VFSPrefetchMode: vfsPrefetchMode,
 	}
 	ws, err := workspace.New(p.env, p.buildRoot, wsOpts)
 	if err != nil {
@@ -1215,6 +1331,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 			PersistentWorkerKey: key.GetPersistentWorkerKey(),
 		},
 		task:               st.GetExecutionTask(),
+		schedulingMetadata: st.GetSchedulingMetadata(),
 		PlatformProperties: props,
 		Container:          ctr,
 		Workspace:          ws,
@@ -1231,7 +1348,7 @@ func (p *pool) newRunner(ctx context.Context, key *rnpb.RunnerKey, props *platfo
 		p.pendingRemovals.Done()
 	}
 
-	log.CtxInfof(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
+	log.CtxDebugf(ctx, "Created new runner for task (runner=%q, type=%s, recyclable=%v)", r, props.WorkloadIsolationType, props.RecycleRunner)
 	return r, nil
 }
 
@@ -1508,6 +1625,11 @@ func (p *pool) TryRecycle(ctx context.Context, r interfaces.Runner, finishedClea
 		alert.UnexpectedEvent("unexpected_runner_type", "unexpected runner type %T", r)
 		return
 	}
+
+	// Measure workspace disk usage before the workspace is cleaned up or
+	// removed below. This runs after the result has been returned to the
+	// client, so it doesn't add latency to task completion.
+	cr.measureWorkspaceDiskUsage(ctx)
 
 	recycled := false
 	defer func() {

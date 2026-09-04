@@ -339,6 +339,34 @@ func TestPreBazel_AddConfig(t *testing.T) {
 	require.Equal(t, []string{"--ignore_all_rc_files", "test", "--test_output=all", "//initial"}, args.Resolved())
 }
 
+func TestPreBazel_PreservesBBRC(t *testing.T) {
+	ws, _ := setup(t)
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bbrc":                       `run:ci --stream_run_logs`,
+		"plugins/config/pre_bazel.sh": `echo '--build_metadata=PLUGIN' >> "$FORWARDED_BAZEL_ARGS_FILE"`,
+	})
+	p := testPlugin(t, ws, "./plugins/config")
+	args, err := arg.NewBazelArgs([]string{"run", "--bb_config=ci", "//initial"})
+	require.NoError(t, err)
+
+	args, execArgs, err := p.PreBazel(args, nil)
+	require.NoError(t, err)
+	require.Empty(t, execArgs)
+
+	// The plugin's Bazel flag is applied without losing the named BB config.
+	require.Contains(t, args.Unresolved(), "--bb_config=ci")
+	require.NotContains(t, args.Forwarded(), "--bb_config=ci")
+	require.NotContains(t, args.Resolved(), "--bb_config=ci")
+
+	require.NotContains(t, args.Unresolved(), "--stream_run_logs")
+	require.NotContains(t, args.Forwarded(), "--stream_run_logs")
+	require.Contains(t, args.Resolved(), "--stream_run_logs")
+
+	require.Contains(t, args.Unresolved(), "--build_metadata=PLUGIN")
+	require.Contains(t, args.Forwarded(), "--build_metadata=PLUGIN")
+	require.Contains(t, args.Resolved(), "--build_metadata=PLUGIN")
+}
+
 // TestPipelineWriter_HandlesFinalLine guards against a regression in which
 // the plugin output handler dropped the last line of plugin output due to a
 // race between draining the pty and closing the pipe. The plugin here only

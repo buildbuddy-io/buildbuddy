@@ -79,6 +79,11 @@ type userGroupMembership struct {
 	*MemberRole
 }
 
+type userOwnedGroup struct {
+	tables.User
+	*tables.Group
+}
+
 func singleUserGroup(u *tables.User) (*tables.Group, error) {
 	name := "My Organization"
 	if u.Email != "" {
@@ -89,10 +94,12 @@ func singleUserGroup(u *tables.User) (*tables.Group, error) {
 	}
 
 	return &tables.Group{
-		GroupID: strings.Replace(u.UserID, "US", "GR", 1),
-		UserID:  u.UserID,
-		Name:    name,
-		Status:  defaultSingleGroupStatus,
+		GroupID:            strings.Replace(u.UserID, "US", "GR", 1),
+		UserID:             u.UserID,
+		Name:               name,
+		Status:             defaultSingleGroupStatus,
+		CreatedByIP:        u.CreatedByIP,
+		CreatedByUserAgent: u.CreatedByUserAgent,
 	}, nil
 }
 
@@ -281,9 +288,15 @@ func (d *UserDB) CreateGroup(ctx context.Context, g *tables.Group) (string, erro
 		return "", status.UnauthenticatedErrorf("You don't have permission to create a group")
 	}
 
-	// Group status defaults to free tier, unless the user is already blocked.
+	// Group status defaults to free tier, unless the user is already blocked or
+	// an enterprise group is provisioning a child using an admin API key.
 	currentStatus := u.GetGroupStatus()
 	if currentStatus == grpb.Group_BLOCKED_GROUP_STATUS {
+		g.Status = currentStatus
+	} else if u.GetAPIKeyInfo().ID != "" &&
+		u.HasCapability(cappb.Capability_ORG_ADMIN) &&
+		(currentStatus == grpb.Group_ENTERPRISE_GROUP_STATUS ||
+			currentStatus == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS) {
 		g.Status = currentStatus
 	} else {
 		g.Status = grpb.Group_FREE_TIER_GROUP_STATUS
@@ -430,16 +443,37 @@ func (d *UserDB) UpdateGroupStatus(ctx context.Context, groupID string, status g
 }
 
 func (d *UserDB) UpdateGroupSamlIdpMetadataUrl(ctx context.Context, groupID string, url string) error {
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	if err := d.authorizeGroupAdminRole(ctx, groupID); err != nil {
 		return err
 	}
 
-	return d.h.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url").Raw(`
-		UPDATE "Groups" SET saml_idp_metadata_url = ?
-		WHERE group_id = ?`,
-		url,
-		groupID,
-	).Exec().Error
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		group, err := d.getGroupByID(ctx, tx, groupID)
+		if err != nil {
+			return err
+		}
+		// A parent group manages other groups by shared metadata URL, so it must
+		// always have one. Refuse to clear a parent's URL.
+		if group.IsParent && url == "" {
+			return status.FailedPreconditionError("cannot clear the SAML IdP metadata URL of a parent group")
+		}
+		// A "parent" group manages every group that shares its SAML IdP metadata
+		// URL: updating the parent cascades the new URL to all of them.
+		if group.IsParent && group.SamlIdpMetadataUrl != "" {
+			return tx.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url_cascade").Raw(`
+				UPDATE "Groups" SET saml_idp_metadata_url = ?
+				WHERE saml_idp_metadata_url = ?`,
+				url,
+				group.SamlIdpMetadataUrl,
+			).Exec().Error
+		}
+		return tx.NewQuery(ctx, "userdb_update_group_saml_idp_metadata_url").Raw(`
+			UPDATE "Groups" SET saml_idp_metadata_url = ?
+			WHERE group_id = ?`,
+			url,
+			groupID,
+		).Exec().Error
+	})
 }
 
 func (d *UserDB) DeleteGroupGitHubToken(ctx context.Context, groupID string) error {
@@ -1080,6 +1114,41 @@ func (d *UserDB) GetUser(ctx context.Context) (*tables.User, error) {
 		return nil, errUserNotFound
 	}
 	return d.getUserByUserID(ctx, d.h, u.GetUserID(), &interfaces.GetUserOpts{})
+}
+
+// GetUserWithOwnedGroups returns the user with all the groups they created.
+// This differs from GetUser, which returns all groups the user is a member of.
+func (d *UserDB) GetUserWithOwnedGroups(ctx context.Context) (*tables.User, error) {
+	u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if u.GetUserID() == "" {
+		return nil, errUserNotFound
+	}
+
+	rq := d.h.NewQuery(ctx, "userdb_get_user_with_owned_groups").Raw(`
+		SELECT u.*, g.*
+		FROM "Users" AS u
+		LEFT JOIN "Groups" AS g ON g.user_id = u.user_id
+		WHERE u.user_id = ?
+		ORDER BY g.group_id
+	`, u.GetUserID())
+	rows, err := db.ScanAll(rq, &userOwnedGroup{})
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, errUserNotFound
+	}
+
+	user := &rows[0].User
+	for _, row := range rows {
+		if row.Group != nil {
+			user.Groups = append(user.Groups, &tables.GroupRole{Group: *row.Group})
+		}
+	}
+	return user, nil
 }
 
 // getUserOpts specifies query criteria.

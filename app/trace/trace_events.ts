@@ -103,6 +103,7 @@ export const TIME_SERIES_METADATA = new Map<string, SeriesMetadata[]>([
   // enterprise/server/execution_service/execution_service.go
   ["CPU usage (cores)", [{ argKey: "cpu" }]],
   ["Memory usage (KB)", [{ argKey: "memory" }]],
+  ["GPU memory usage (KB)", [{ argKey: "gpu-memory" }]],
   ["Disk read bandwidth (MB/s)", [{ argKey: "disk-read-bw" }]],
   ["Disk read IOPS", [{ argKey: "disk-read-iops" }]],
   ["Disk write bandwidth (MB/s)", [{ argKey: "disk-write-bw" }]],
@@ -118,7 +119,7 @@ export const TIME_SERIES_EVENT_ORDER = new Map(Array.from(TIME_SERIES_METADATA).
 const GZIP_MAGIC_BYTE_0 = 0x1f;
 const GZIP_MAGIC_BYTE_1 = 0x8b;
 
-export type ProfileInput = Blob | ReadableStream<Uint8Array>;
+export type ProfileInput = Blob | ReadableStream<Uint8Array<ArrayBuffer>>;
 export type ProfileProgressCallback = (numBytesLoaded: number, done?: boolean) => void;
 export type TraceEventBatchCallback = (events: TraceEvent[]) => void;
 
@@ -146,9 +147,9 @@ export async function readProfileEvents(
   consumeEventBatch: TraceEventBatchCallback,
   progress?: ProfileProgressCallback
 ): Promise<void> {
-  let body: ReadableStream<Uint8Array>;
+  let body: ReadableStream<Uint8Array<ArrayBuffer>>;
   if (input instanceof Blob) {
-    body = input.stream() as ReadableStream<Uint8Array>;
+    body = input.stream();
     if (await isGzipCompressed(input)) {
       if (typeof DecompressionStream === "undefined") {
         throw new Error("This browser can't read gzipped timing profiles from local files.");

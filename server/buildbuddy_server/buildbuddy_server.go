@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/remote_exec_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/eventlog"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/http/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -36,9 +37,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/git"
@@ -47,6 +50,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/useragent"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
@@ -69,6 +73,7 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	irpb "github.com/buildbuddy-io/buildbuddy/proto/iprules"
+	npb "github.com/buildbuddy-io/buildbuddy/proto/notification"
 	qpb "github.com/buildbuddy-io/buildbuddy/proto/quota"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rppb "github.com/buildbuddy-io/buildbuddy/proto/repo"
@@ -91,9 +96,12 @@ import (
 )
 
 var (
-	disableCertConfig              = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
-	paginateInvocations            = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
-	restrictMultiGroupToEnterprise = flag.Bool("app.restrict_multi_group_to_enterprise", false, "If true, only enterprise accounts can create multiple organizations.", flag.Internal)
+	disableCertConfig   = flag.Bool("app.disable_cert_config", false, "If true, the certificate based auth option will not be shown in the config widget.")
+	paginateInvocations = flag.Bool("app.paginate_invocations", true, "If true, paginate invocations returned to the UI.")
+)
+
+const (
+	maxGroupsPerUserExperiment = "app.max_groups_per_user"
 )
 
 const (
@@ -104,6 +112,12 @@ const (
 var (
 	WriteEventLogTimeout = 1 * time.Hour
 )
+
+// samlMetadataHTTPClient fetches the customer-provided SAML IdP metadata URL
+// during validation.
+// It is a package-level var so that tests can substitute a client that trusts
+// a local test server.
+var samlMetadataHTTPClient = httpclient.New(nil /*=allowedPrivateIPNets*/, "saml_metadata")
 
 func (s *BuildBuddyServer) apiKeyValueReadbackEnabled() bool {
 	if s.env.GetAuthDB() == nil {
@@ -477,6 +491,8 @@ func (s *BuildBuddyServer) CreateUser(ctx context.Context, req *uspb.CreateUserR
 	if err := s.env.GetAuthenticator().FillUser(ctx, tu); err != nil {
 		return nil, err
 	}
+	tu.CreatedByIP = clientip.Get(ctx)
+	tu.CreatedByUserAgent = useragent.Get(ctx)
 	if err := userDB.InsertUser(ctx, tu); err != nil {
 		return nil, err
 	}
@@ -558,6 +574,44 @@ func (s *BuildBuddyServer) UpdateGroupUsers(ctx context.Context, req *grpb.Updat
 	return &grpb.UpdateGroupUsersResponse{}, nil
 }
 
+func createGroupAllowed(ctx context.Context, userDB interfaces.UserDB, efp interfaces.ExperimentFlagProvider, u interfaces.UserInfo) (*tables.User, error) {
+	isEnterprise := u.GetGroupStatus() == grpb.Group_ENTERPRISE_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS
+	if isEnterprise || efp == nil {
+		return nil, nil
+	}
+	maxGroupsPerUser := efp.Int64(ctx, maxGroupsPerUserExperiment, 0)
+
+	// User-owned API keys retain a user ID, so the API key ID is the reliable
+	// way to distinguish both user- and org-owned API keys from browser users.
+	if u.GetAPIKeyInfo().ID != "" {
+		return nil, status.PermissionDeniedError("Creating organizations is not supported through the API. Please continue in our UI.")
+	}
+
+	user, err := userDB.GetUserWithOwnedGroups(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// No owned groups means the user is creating their first org.
+	allOwnedGroupsBlocked := len(user.Groups) > 0
+	ownedNonEnterpriseGroupCount := int64(0)
+	for _, gr := range user.Groups {
+		if gr.Group.Status != grpb.Group_BLOCKED_GROUP_STATUS {
+			allOwnedGroupsBlocked = false
+		}
+		if gr.Group.Status != grpb.Group_ENTERPRISE_GROUP_STATUS && gr.Group.Status != grpb.Group_ENTERPRISE_TRIAL_GROUP_STATUS {
+			ownedNonEnterpriseGroupCount++
+		}
+	}
+	if allOwnedGroupsBlocked {
+		return nil, status.PermissionDeniedError("Error creating organization. Please contact support@buildbuddy.io.")
+	}
+
+	if maxGroupsPerUser > 0 && ownedNonEnterpriseGroupCount >= maxGroupsPerUser {
+		return nil, status.PermissionDeniedError("You've reached the limit on non-enterprise organizations. Please contact support@buildbuddy.io to upgrade to an enterprise plan.")
+	}
+	return user, nil
+}
+
 func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGroupRequest) (*grpb.CreateGroupResponse, error) {
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
@@ -567,13 +621,14 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	if err != nil {
 		return nil, err
 	}
-	if *restrictMultiGroupToEnterprise && (u.GetGroupStatus() == grpb.Group_FREE_TIER_GROUP_STATUS || u.GetGroupStatus() == grpb.Group_BLOCKED_GROUP_STATUS) {
-		return nil, status.PermissionDeniedError("An enterprise account is required to create multiple organizations. Please contact support@buildbuddy.io if you need multiple organizations.")
-	}
-
 	groupName := strings.TrimSpace(req.GetName())
 	if len(groupName) == 0 {
 		return nil, status.InvalidArgumentError("Group name cannot be empty")
+	}
+
+	user, err := createGroupAllowed(ctx, userDB, s.env.GetExperimentFlagProvider(), u)
+	if err != nil {
+		return nil, err
 	}
 
 	groupOwnedDomain := ""
@@ -582,12 +637,14 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 	// are intended to be managed manually so we do not currently allow
 	// joining by domain.
 	if req.GetAutoPopulateFromOwnedDomain() && u.GetUserID() != "" {
-		user, err := userDB.GetUser(ctx)
-		if err != nil {
-			return nil, err
+		// createGroupAllowed only looks the user up when it needs to.
+		if user == nil {
+			user, err = userDB.GetUser(ctx)
+			if err != nil {
+				return nil, err
+			}
 		}
-		userEmailDomain := getEmailDomain(user.Email)
-		groupOwnedDomain = userEmailDomain
+		groupOwnedDomain = getEmailDomain(user.Email)
 	}
 
 	group := &tables.Group{
@@ -600,6 +657,8 @@ func (s *BuildBuddyServer) CreateGroup(ctx context.Context, req *grpb.CreateGrou
 		CodeSearchEnabled:           req.GetCodeSearchEnabled(),
 		DeveloperOrgCreationEnabled: req.GetDeveloperOrgCreationEnabled(),
 		UseGroupOwnedExecutors:      req.GetUseGroupOwnedExecutors(),
+		CreatedByIP:                 clientip.Get(ctx),
+		CreatedByUserAgent:          useragent.Get(ctx),
 	}
 
 	// For groups created using an API Key allow the SAML IDP Metadata URL
@@ -699,17 +758,25 @@ func (s *BuildBuddyServer) SetGroupStatus(ctx context.Context, req *grpb.SetGrou
 	return &grpb.SetGroupStatusResponse{}, nil
 }
 
+func (s *BuildBuddyServer) authorizeSSOConfigAccess(ctx context.Context, groupID string) error {
+	if groupID == "" {
+		return status.InvalidArgumentError("Missing organization identifier")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return err
+	}
+	return authutil.AuthorizeOrgAdmin(u, groupID)
+}
+
 func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOConfigRequest) (*grpb.GetSSOConfigResponse, error) {
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := s.authorizeSSOConfigAccess(ctx, groupID); err != nil {
 		return nil, err
 	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
-	}
-	groupID := req.GetRequestContext().GetGroupId()
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Missing organization identifier")
 	}
 	group, err := userDB.GetGroupByID(ctx, groupID)
 	if err != nil {
@@ -723,20 +790,17 @@ func (s *BuildBuddyServer) GetSSOConfig(ctx context.Context, req *grpb.GetSSOCon
 }
 
 func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOConfigRequest) (*grpb.SetSSOConfigResponse, error) {
-	if err := claims.AuthorizeServerAdmin(ctx); err != nil {
+	groupID := req.GetRequestContext().GetGroupId()
+	if err := s.authorizeSSOConfigAccess(ctx, groupID); err != nil {
 		return nil, err
 	}
 	userDB := s.env.GetUserDB()
 	if userDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	groupID := req.GetRequestContext().GetGroupId()
-	if groupID == "" {
-		return nil, status.InvalidArgumentError("Missing organization identifier")
-	}
 	metadataURL := strings.TrimSpace(req.GetConfig().GetSamlIdpMetadataUrl())
 	if metadataURL != "" {
-		if err := validateSamlIdpMetadataURL(ctx, metadataURL); err != nil {
+		if err := ValidateSamlIdpMetadataURL(ctx, samlMetadataHTTPClient, metadataURL); err != nil {
 			return nil, err
 		}
 	}
@@ -749,17 +813,17 @@ func (s *BuildBuddyServer) SetSSOConfig(ctx context.Context, req *grpb.SetSSOCon
 	return &grpb.SetSSOConfigResponse{}, nil
 }
 
-// validateSamlIdpMetadataURL verifies that the given URL points to a valid
+// ValidateSamlIdpMetadataURL verifies that the given URL points to a valid
 // SAML 2.0 IdP metadata document. It performs a syntactic check on the URL
 // and then fetches the document and confirms the XML root element is
 // EntityDescriptor or EntitiesDescriptor in the SAML metadata namespace.
-func validateSamlIdpMetadataURL(ctx context.Context, rawURL string) error {
+func ValidateSamlIdpMetadataURL(ctx context.Context, client *http.Client, rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return status.InvalidArgumentError("metadata URL must use http or https")
+	if u.Scheme != "https" {
+		return status.InvalidArgumentError("metadata URL must use https")
 	}
 	if u.Host == "" {
 		return status.InvalidArgumentError("metadata URL must include a host")
@@ -770,7 +834,7 @@ func validateSamlIdpMetadataURL(ctx context.Context, rawURL string) error {
 	if err != nil {
 		return status.InvalidArgumentErrorf("invalid metadata URL: %s", err)
 	}
-	resp, err := http.DefaultClient.Do(httpReq)
+	resp, err := client.Do(httpReq)
 	if err != nil {
 		return status.InvalidArgumentErrorf("failed to fetch metadata URL: %s", err)
 	}
@@ -1816,7 +1880,10 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			default:
 				return status.InvalidArgumentErrorf("Unsupported log type %s", req.GetType())
 			}
-			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+			// Attach the invocation ID to the context so experiments evaluated
+			// by the log writer can target and bucket by invocation.
+			writerCtx := bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: req.GetMetadata().GetInvocationId()})
+			eventLogWriter, err = eventlog.NewEventLogWriter(writerCtx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), s.env.GetExperimentFlagProvider(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
 			if err != nil {
 				return err
 			}
@@ -2274,6 +2341,13 @@ func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usa
 		al.LogForGroup(ctx, u.GetGroupID(), alpb.Action_DELETE, req)
 	}
 	return rsp, nil
+}
+
+func (s *BuildBuddyServer) SendNotification(ctx context.Context, req *npb.SendNotificationRequest) (*npb.SendNotificationResponse, error) {
+	if ns := s.env.GetNotificationService(); ns != nil {
+		return ns.SendNotification(ctx, req)
+	}
+	return nil, status.UnimplementedError("Not implemented")
 }
 
 func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {

@@ -19,6 +19,20 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+func TestIsCIRunnerCommand(t *testing.T) {
+	for _, executable := range []string{
+		"./buildbuddy_ci_runner",
+		"./buildbuddy_ci_runner.exe",
+		`.\buildbuddy_ci_runner`,
+		`.\buildbuddy_ci_runner.exe`,
+	} {
+		cmd := &repb.Command{Arguments: []string{executable}}
+		require.True(t, IsCIRunnerCommand(cmd))
+	}
+
+	require.False(t, IsCIRunnerCommand(&repb.Command{Arguments: []string{"./something_else"}}))
+}
+
 func TestParse_OS(t *testing.T) {
 	for _, testCase := range []struct {
 		rawValue      string
@@ -65,6 +79,67 @@ func TestParse_Arch(t *testing.T) {
 	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 	require.NoError(t, err)
 	assert.Equal(t, "amd64", platformProps.Arch)
+}
+
+func TestParse_VFSPrefetchMode(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		value         string
+		expectedValue string
+		wantError     bool
+	}{
+		{
+			name:          "default",
+			expectedValue: VFSPrefetchModeAll,
+		},
+		{
+			name:      "prefetch",
+			value:     "prefetch",
+			wantError: true,
+		},
+		{
+			name:          "all",
+			value:         VFSPrefetchModeAll,
+			expectedValue: VFSPrefetchModeAll,
+		},
+		{
+			name:          "none",
+			value:         VFSPrefetchModeNone,
+			expectedValue: VFSPrefetchModeNone,
+		},
+		{
+			name:      "invalid",
+			value:     "invalid",
+			wantError: true,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			platformProto := &repb.Platform{}
+			if testCase.value != "" {
+				platformProto.Properties = append(platformProto.Properties, &repb.Platform_Property{
+					Name:  VFSPrefetchModePropertyName,
+					Value: testCase.value,
+				})
+			}
+			properties, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: platformProto}})
+			if testCase.wantError {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, testCase.expectedValue, properties.VFSPrefetchMode)
+		})
+	}
+}
+
+func TestParse_FirecrackerVFS(t *testing.T) {
+	platformProto := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: enableVFSPropertyName, Value: "true"},
+		{Name: WorkloadIsolationPropertyName, Value: string(FirecrackerContainerType)},
+	}}
+	properties, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: platformProto}})
+	require.NoError(t, err)
+	require.True(t, properties.EnableVFS)
 }
 
 func TestParse_Pool(t *testing.T) {

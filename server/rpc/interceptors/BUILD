@@ -38,6 +38,7 @@ go_test(
     size = "small",
     srcs = ["interceptors_test.go"],
     deps = [
+        ":interceptors",
         "//proto:ping_service_go_proto",
         "//server/interfaces",
         "//server/testutil/testenv",
@@ -49,6 +50,8 @@ go_test(
         "//server/util/log",
         "//server/util/random",
         "//server/util/status",
+        "//server/util/subdomain",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",

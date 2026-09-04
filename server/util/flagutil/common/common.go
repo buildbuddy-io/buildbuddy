@@ -418,3 +418,14 @@ func SubstituteUsage(flagset *flag.FlagSet) bool {
 func AddTestFlagTypeForTesting(flagValue, value any) {
 	flagTypeToGoTypeMap[reflect.TypeOf(flagValue)] = reflect.TypeOf(value)
 }
+
+// Returns whether the provided flag is Secretable.IsSecret() or not.
+func IsSecret(flg *flag.Flag) bool {
+	if flg == nil {
+		return false
+	}
+	if s, ok := flg.Value.(Secretable); ok && s.IsSecret() {
+		return true
+	}
+	return false
+}

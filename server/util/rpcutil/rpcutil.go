@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
@@ -19,6 +21,9 @@ import (
 )
 
 const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
+
+var OTELGRPCMessageEventsEnabled = flag.Bool("grpc_otel_message_events_enabled", true,
+	"If set, record per-message OpenTelemetry events on gRPC spans. Only useful for streaming RPCs; disable on unary-only servers (e.g. the metadata server) to save per-RPC allocation.")
 
 func init() {
 	vtprotocodec.Register()
@@ -255,8 +260,38 @@ var MeterProvider = sync.OnceValue(func() metric.MeterProvider {
 			Boundaries: []float64{1, 10, 100, 1000},
 		}},
 	)
+
+	// Allowlist the attributes on RPC metrics: client-side metrics carry
+	// per-peer server.address/server.port attributes, which explode
+	// cardinality through the cross product of (rpc_method,
+	// rpc_response_status_code, server_address, server_port, instance) × 15
+	// buckets. Client-side metrics also get a coarser bucket set; server-side
+	// metrics keep the default buckets since their cardinality is bounded.
+	// The metrics are named `rpc.{client,server}.call.duration`, measured in
+	// seconds.
+	metricAttrs := attribute.NewAllowKeysFilter(
+		// rpc.method holds the full "package.Service/Method" path; the new
+		// semconv has no separate rpc.service attribute.
+		"rpc.method",
+		"rpc.response.status_code",
+		"rpc.system.name",
+	)
+	// Overrides for the new style metrics once we upgrade gRPC.
+	clientCallDurationView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "rpc.client.call.duration"},
+		sdkmetric.Stream{
+			Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: []float64{0.005, 0.025, 0.1, 0.5, 1, 5, 10, 30}, // in seconds
+			},
+			AttributeFilter: metricAttrs,
+		},
+	)
+	serverCallDurationView := sdkmetric.NewView(
+		sdkmetric.Instrument{Name: "rpc.server.call.duration"},
+		sdkmetric.Stream{AttributeFilter: metricAttrs},
+	)
 	return sdkmetric.NewMeterProvider(
 		sdkmetric.WithReader(exporter),
-		sdkmetric.WithView(durationView, sizeView, perRPCView),
+		sdkmetric.WithView(durationView, sizeView, perRPCView, clientCallDurationView, serverCallDurationView),
 	)
 })

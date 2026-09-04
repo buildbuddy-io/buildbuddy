@@ -1,0 +1,66 @@
+{
+  "ref": "refs/tags/v1.1.0",
+  "before": "0000000000000000000000000000000000000000",
+  "after": "b8ec69cbb0a4c521d84f6bff2b8788c343e2a9de",
+  "repository": {
+    "id": 338160417,
+    "node_id": "MDEwOlJlcG9zaXRvcnkzMzgxNjA0MTc=",
+    "name": "hello_bb_ci",
+    "full_name": "test/hello_bb_ci",
+    "private": true,
+    "owner": {
+      "name": "test",
+      "email": "test@buildbuddy.io",
+      "login": "test",
+      "id": 2414826,
+      "node_id": "MDQ6VXNlcjI0MTQ4MjY=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/2414826?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/test",
+      "html_url": "https://github.com/test",
+      "type": "User",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/test/hello_bb_ci",
+    "description": null,
+    "fork": false,
+    "url": "https://github.com/test/hello_bb_ci",
+    "clone_url": "https://github.com/test/hello_bb_ci.git",
+    "default_branch": "main",
+    "master_branch": "main"
+  },
+  "pusher": { "name": "test", "email": "test@buildbuddy.io" },
+  "sender": {
+    "login": "test",
+    "id": 2414826,
+    "type": "User",
+    "site_admin": false
+  },
+  "created": true,
+  "deleted": false,
+  "forced": false,
+  "base_ref": null,
+  "compare": "https://github.com/test/hello_bb_ci/compare/v1.1.0",
+  "commits": [],
+  "head_commit": {
+    "id": "258044d28288d5f6f1c5928b0e22580296fec666",
+    "tree_id": "e6ad10f38a3e6a04f102cfda25b1ab8890e1959e",
+    "distinct": true,
+    "message": "Update BUILD",
+    "timestamp": "2021-02-12T13:26:23-05:00",
+    "url": "https://github.com/test/hello_bb_ci/commit/258044d28288d5f6f1c5928b0e22580296fec666",
+    "author": {
+      "name": "test",
+      "email": "test@buildbuddy.io",
+      "username": "test"
+    },
+    "committer": {
+      "name": "GitHub",
+      "email": "noreply@github.com",
+      "username": "web-flow"
+    },
+    "added": [],
+    "removed": [],
+    "modified": ["BUILD"]
+  }
+}

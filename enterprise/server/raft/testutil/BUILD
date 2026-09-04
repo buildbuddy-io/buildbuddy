@@ -32,7 +32,6 @@ go_library(
         "//server/util/disk",
         "//server/util/grpc_server",
         "//server/util/log",
-        "//server/util/proto",
         "//server/util/status",
         "@com_github_google_uuid//:uuid",
         "@com_github_jonboulle_clockwork//:clockwork",

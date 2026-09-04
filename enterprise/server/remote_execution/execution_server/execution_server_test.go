@@ -2,7 +2,9 @@ package execution_server_test
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_server"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
@@ -208,6 +211,47 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
+	assert.NotContains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	assert.NotContains(t, task.GetExperiments(), "executor.download_inputs_chunked")
+	assert.Nil(t, task.GetFastCdc_2020Params())
+}
+
+func TestDispatch_ChunkingConfigWithNoopExperimentProvider(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			flags.Set(t, "remote_execution.chunking_enabled", enabled)
+			env, _, _ := setupEnv(t)
+			require.NoError(t, experiments.Register(env))
+			require.NotNil(t, env.GetExperimentFlagProvider())
+
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.upload_outputs_chunked"))
+			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.download_inputs_chunked"))
+			if enabled {
+				require.NotNil(t, task.GetFastCdc_2020Params())
+				assert.Equal(t, uint64(1024*1024), task.GetFastCdc_2020Params().GetAvgChunkSizeBytes())
+			} else {
+				assert.Nil(t, task.GetFastCdc_2020Params())
+			}
+		})
+	}
 }
 
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
@@ -226,6 +270,20 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
       "defaultVariant": "on"
     },
     "executor.upload_outputs_chunked": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "executor.download_inputs_chunked": {
+      "state": "ENABLED",
+      "variants": {
+        "on": true
+      },
+      "defaultVariant": "on"
+    },
+    "splice-without-validation": {
       "state": "ENABLED",
       "variants": {
         "on": true
@@ -273,6 +331,8 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 	err = proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task)
 	require.NoError(t, err)
 	require.Contains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	require.Contains(t, task.GetExperiments(), "executor.download_inputs_chunked")
+	require.Contains(t, task.GetExperiments(), "splice-without-validation")
 	require.Equal(t, int64(123456789), task.GetFastCdc_2020Params().GetBuildbuddyMaxChunkedWriteSizeBytes())
 }
 
@@ -801,6 +861,11 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 			flexibleCompute:        true,
 		},
+		{
+			name:                   "InvalidTestSize",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			invalidTestSize:        "extra-large",
+		},
 	} {
 		for _, flushAfterCleanup := range []bool{false, true} {
 			test := test
@@ -830,6 +895,7 @@ type publishTest struct {
 	useDefaultPool           bool
 	recycleRunner            bool
 	flushAfterCleanup        bool
+	invalidTestSize          string
 	// flexibleCompute routes the execution into the flexible-compute branch
 	// of incrementOLAPExecutionUsage.
 	flexibleCompute bool
@@ -861,6 +927,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		ToolInvocationId: invocationID,
 		TargetId:         "//some:test",
 		ActionMnemonic:   "TestRunner",
+		ConfigurationId:  "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d",
 	})
 	require.NoError(t, err)
 	for k, v := range test.platformOverrides {
@@ -882,10 +949,22 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	if test.recycleRunner {
 		platformProperties = append(platformProperties, &repb.Platform_Property{Name: "recycle-runner", Value: "true"})
 	}
-	arn := uploadAction(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
+	testSizeEnvValue := "large"
+	if test.invalidTestSize != "" {
+		testSizeEnvValue = test.invalidTestSize
+	}
+	arn := uploadActionWithCommand(clientCtx, t, env, instanceName, digestFunction, &repb.Action{
 		Timeout:    &durationpb.Duration{Seconds: 10},
 		DoNotCache: test.doNotCache,
 		Platform:   &repb.Platform{Properties: platformProperties},
+	}, &repb.Command{
+		Arguments:   []string{"test"},
+		OutputFiles: []string{"bazel-out/k8-fastbuild/bin/some/test"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{
+			{Name: "TEST_SHARD_INDEX", Value: "2"},
+			{Name: "TEST_SIZE", Value: testSizeEnvValue},
+			{Name: "TEST_TOTAL_SHARDS", Value: "6"},
+		},
 	})
 	executionClient, err := client.Execute(clientCtx, &repb.ExecuteRequest{
 		InstanceName:   arn.GetInstanceName(),
@@ -974,6 +1053,12 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		usageStats.IoPressure = &repb.PSI{
 			Some: &repb.PSI_Metrics{Total: 1030},
 			Full: &repb.PSI_Metrics{Total: 2030},
+		}
+		aux.VmMetrics = &espb.VMMetrics{
+			DockerdWaitDurationUsec: 4001,
+			VmDnsWaitDurationUsec:   4002,
+			VmExecInitDurationUsec:  4003,
+			VmExecDialDurationUsec:  4004,
 		}
 	} else {
 		effectivePool := "test-pool"
@@ -1157,6 +1242,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 
 	// Check that we recorded the executions
 	assert.Equal(t, 1, len(collectedExecutions))
+	wantTestSize := "large"
+	if test.invalidTestSize != "" {
+		wantTestSize = ""
+	}
 	expectedExecution := &repb.StoredExecution{
 		ExecutionId:                  taskID,
 		GroupId:                      "group1",
@@ -1176,6 +1265,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		RequestedTimeoutUsec:         10000000,
 		TargetLabel:                  "//some:test",
 		ActionMnemonic:               "TestRunner",
+		ConfigurationId:              "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d",
+		TestSize:                     wantTestSize,
+		TestShardIndex:               2,
+		TestTotalShards:              6,
 		SelfHosted:                   test.expectedSelfHosted,
 		Region:                       "test-region",
 		Os:                           "linux",
@@ -1225,6 +1318,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 		expectedExecution.MemoryPressureFullStallUsec = 2020
 		expectedExecution.IoPressureSomeStallUsec = 1030
 		expectedExecution.IoPressureFullStallUsec = 2030
+		expectedExecution.VmDockerdWaitDurationUsec = 4001
+		expectedExecution.VmDnsWaitDurationUsec = 4002
+		expectedExecution.VmExecInitDurationUsec = 4003
+		expectedExecution.VmExecDialDurationUsec = 4004
 	}
 	require.Empty(t, cmp.Diff(
 		expectedExecution,
@@ -2003,6 +2100,122 @@ func testPublishOperationRetryStreamWithOnlyPostCompletionStats(t *testing.T, fl
 	}
 	require.NotNil(t, foundExecutorUsage, "expected executor usage to be recorded")
 	assert.Equal(t, (5 * time.Second).Microseconds(), foundExecutorUsage.Counts.LinuxExecutionDurationUsec)
+}
+
+// TestPublishOperation_OOMKilledTask_IncreasesMemoryEstimate exercises the
+// task size update for a task killed by the executor OOM killer: when the
+// published ExecuteResponse status carries OOM killer details showing that the
+// task exceeded its memory estimate, the recorded memory estimate is increased
+// based on the observed usage, so that a client retry of the task is scheduled
+// with more memory. Errors without OOM details must not touch the estimate.
+func TestPublishOperation_OOMKilledTask_IncreasesMemoryEstimate(t *testing.T) {
+	const (
+		// The memory and CPU size the task was scheduled with.
+		scheduledMemoryBytes = 1_000_000_000
+		scheduledMilliCPU    = 2000
+		// The task's memory usage observed by the OOM killer, exceeding the
+		// scheduled estimate.
+		observedMemoryBytes = 3_000_000_000
+		// The multiplier applied to the observed usage to get the new estimate.
+		oomResizeMultiplier = 1.5
+	)
+	for _, test := range []struct {
+		name string
+		// executionErr is the execution error reported in the ExecuteResponse
+		// status.
+		executionErr error
+		// expectResize is whether the task's recorded memory estimate should be
+		// increased after the failure is published.
+		expectResize bool
+	}{
+		{
+			name: "OOM killer error increases the memory estimate",
+			executionErr: oom.Error(oom.Details{
+				EstimatedMemoryBytes: scheduledMemoryBytes,
+				ObservedMemoryBytes:  observedMemoryBytes,
+			}),
+			expectResize: true,
+		},
+		{
+			name:         "error without OOM details does not record an estimate",
+			executionErr: status.UnavailableError("executor shutting down"),
+			expectResize: false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Store measured task sizes in redis so that OOM resizes can be
+			// recorded.
+			flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+			flags.Set(t, "remote_execution.oom_resize_multiplier", oomResizeMultiplier)
+			env, conn, _ := setupEnv(t)
+			client := repb.NewExecutionClient(conn)
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+
+			// Schedule an execution.
+			cmd := &repb.Command{Arguments: []string{"some_memory_hungry_command"}}
+			arn := uploadActionWithCommand(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, &repb.Action{}, cmd)
+			executionClient, err := client.Execute(ctx, &repb.ExecuteRequest{
+				InstanceName:   arn.GetInstanceName(),
+				ActionDigest:   arn.GetDigest(),
+				DigestFunction: arn.GetDigestFunction(),
+			})
+			require.NoError(t, err)
+			require.NoError(t, executionClient.CloseSend())
+			op, err := executionClient.Recv()
+			require.NoError(t, err)
+			taskID := op.GetName()
+
+			// Publish a COMPLETED operation reporting that the task failed with
+			// the execution error, including the size the task was scheduled
+			// with in the execution metadata.
+			executorCtx := metadata.AppendToOutgoingContext(ctx, usageutil.ClientHeaderName, "executor")
+			stream, err := client.PublishOperation(executorCtx)
+			require.NoError(t, err)
+			op, err = operation.Assemble(
+				taskID,
+				operation.Metadata(repb.ExecutionStage_COMPLETED, arn.GetDigest()),
+				&repb.ExecuteResponse{
+					Result: &repb.ActionResult{
+						ExecutionMetadata: &repb.ExecutedActionMetadata{
+							EstimatedTaskSize: &scpb.TaskSize{
+								EstimatedMemoryBytes: scheduledMemoryBytes,
+								EstimatedMilliCpu:    scheduledMilliCPU,
+							},
+						},
+					},
+					Status: gstatus.Convert(test.executionErr).Proto(),
+				},
+			)
+			require.NoError(t, err)
+			require.NoError(t, stream.Send(op))
+			_, err = stream.CloseAndRecv()
+			require.NoError(t, err)
+
+			// Drain the /Execute stream so the test doesn't leak goroutines.
+			for {
+				_, err := executionClient.Recv()
+				if err == io.EOF {
+					break
+				}
+				require.NoError(t, err)
+			}
+
+			// Read back the task size that would be used to schedule the next
+			// attempt of the same command.
+			size := env.GetTaskSizer().Get(ctx, cmd, &platform.Properties{})
+			if test.expectResize {
+				// The new memory estimate should be the observed usage times the
+				// resize multiplier, and the CPU estimate should carry over from
+				// the scheduled size.
+				require.NotNil(t, size, "expected a task size to be recorded")
+				assert.Equal(t, int64(oomResizeMultiplier*observedMemoryBytes), size.GetEstimatedMemoryBytes())
+				assert.Equal(t, int64(scheduledMilliCPU), size.GetEstimatedMilliCpu())
+			} else {
+				require.Nil(t, size, "no task size should be recorded")
+			}
+		})
+	}
 }
 
 func TestMarkFailed(t *testing.T) {

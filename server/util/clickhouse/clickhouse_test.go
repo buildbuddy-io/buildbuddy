@@ -91,6 +91,42 @@ func TestExecutionFromProto(t *testing.T) {
 				RecycleRunner: true,
 			},
 		},
+		{
+			name: "VMMetrics",
+			in: &repb.StoredExecution{
+				ExecutionId:               executionID,
+				VmDockerdWaitDurationUsec: 4001,
+				VmDnsWaitDurationUsec:     4002,
+				VmExecInitDurationUsec:    4003,
+				VmExecDialDurationUsec:    4004,
+			},
+			want: &schema.Execution{
+				VMDockerdWaitDurationUsec: 4001,
+				VMDnsWaitDurationUsec:     4002,
+				VMExecInitDurationUsec:    4003,
+				VMExecDialDurationUsec:    4004,
+			},
+		},
+		{
+			name: "RequestAndTestMetadata",
+			in: &repb.StoredExecution{
+				ExecutionId:     executionID,
+				TargetLabel:     "//some:test",
+				ActionMnemonic:  "TestRunner",
+				ConfigurationId: "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d",
+				TestSize:        "large",
+				TestShardIndex:  2,
+				TestTotalShards: 6,
+			},
+			want: &schema.Execution{
+				TargetLabel:     "//some:test",
+				ActionMnemonic:  "TestRunner",
+				ConfigurationID: "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d",
+				TestSize:        "large",
+				TestShardIndex:  2,
+				TestTotalShards: 6,
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			// Convert the stored execution as the ClickHouse flush path does.
@@ -100,6 +136,16 @@ func TestExecutionFromProto(t *testing.T) {
 			// The row should preserve direct proto fields while also parsing
 			// the execution ID resource fields.
 			require.Equal(t, testCase.want.RecycleRunner, execution.RecycleRunner)
+			require.Equal(t, testCase.want.TargetLabel, execution.TargetLabel)
+			require.Equal(t, testCase.want.ActionMnemonic, execution.ActionMnemonic)
+			require.Equal(t, testCase.want.ConfigurationID, execution.ConfigurationID)
+			require.Equal(t, testCase.want.TestSize, execution.TestSize)
+			require.Equal(t, testCase.want.TestShardIndex, execution.TestShardIndex)
+			require.Equal(t, testCase.want.TestTotalShards, execution.TestTotalShards)
+			require.Equal(t, testCase.want.VMDockerdWaitDurationUsec, execution.VMDockerdWaitDurationUsec)
+			require.Equal(t, testCase.want.VMDnsWaitDurationUsec, execution.VMDnsWaitDurationUsec)
+			require.Equal(t, testCase.want.VMExecInitDurationUsec, execution.VMExecInitDurationUsec)
+			require.Equal(t, testCase.want.VMExecDialDurationUsec, execution.VMExecDialDurationUsec)
 			require.Equal(t, testCase.in.GetExecutionId(), reconstructExecutionID(t, execution))
 		})
 	}
@@ -142,10 +188,14 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 
 	err := env.GetOLAPDBHandle().FlushExecutionStats(ctx, invocation, []*repb.StoredExecution{
 		{
-			ExecutionId:    validExecutionID,
-			InvocationUuid: invocationUUID,
-			UpdatedAtUsec:  nowUsec,
-			CreatedAtUsec:  nowUsec,
+			ExecutionId:     validExecutionID,
+			InvocationUuid:  invocationUUID,
+			UpdatedAtUsec:   nowUsec,
+			CreatedAtUsec:   nowUsec,
+			ConfigurationId: "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d",
+			TestSize:        "enormous",
+			TestShardIndex:  3,
+			TestTotalShards: 8,
 		},
 		{
 			ExecutionId:    "not-a-resource-name",
@@ -170,6 +220,10 @@ func TestFlushExecutionStats_SkipsMalformedExecutionIDs(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, validExecutionID, reconstructExecutionID(t, &rows[0]))
+	require.Equal(t, "26b4b27c1032c7df9ed4ffe75e295384222c5464200cf73616ef1beeb8f8028d", rows[0].ConfigurationID)
+	require.Equal(t, "enormous", rows[0].TestSize)
+	require.Equal(t, uint32(3), rows[0].TestShardIndex)
+	require.Equal(t, uint32(8), rows[0].TestTotalShards)
 }
 
 func TestFlushExecutionStats_AllMalformedExecutionIDs_SkipsInsert(t *testing.T) {

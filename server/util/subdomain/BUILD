@@ -20,6 +20,7 @@ go_test(
     srcs = ["subdomain_test.go"],
     deps = [
         ":subdomain",
+        "//server/util/authutil",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],

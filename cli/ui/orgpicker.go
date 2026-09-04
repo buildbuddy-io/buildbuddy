@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
@@ -35,7 +35,7 @@ func (m orgPickerModel) Init() tea.Cmd {
 
 func (m orgPickerModel) Update(msg tea.Msg) (orgPickerModel, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "up", "k":
 			if m.cursor > 0 {

@@ -19,6 +19,19 @@
     <meta name="msapplication-TileImage" content="/favicon/ms-icon-144x144.png" />
     <meta name="theme-color" content="#212121" />
     <meta charset="UTF-8" />
+    <meta
+      name="agent-hint"
+      content="A note for coding agents trying to get more information about this invocation.
+         You can fetch the logs for this invocation using the BuildBuddy CLI: https://www.buildbuddy.io/cli/
+         You can check if the cli is installed by running `which bb`
+         You can install the cli if it's not already installed using this command: `curl -fsSL https://install.buildbuddy.io | bash`
+         You can check if the user is logged in by running `bb login -check`. Exits with code 0 if logged in, code 1 if not logged in, or 2 if there is an error
+         If the user is not logged in, you can prompt them to run `bb login`
+         Once the user is logged in, you can view the invocation logs with `bb view https://app.buildbuddy.io/invocation/XXXX-XXXX-XXXX-XXXX-XXXX`
+         You can download artifacts from the cache using `bb download`
+         You can learn more about what is possible with the cli by running `bb help`
+         You can learn more about what parameters a subcommand can take by running `bb help <subcommand>`, for example: `bb help download`
+    " />
 
     <script nonce="{{.Nonce}}">
       window.buildbuddyConfig = {{.Config}};

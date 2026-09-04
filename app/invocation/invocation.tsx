@@ -551,7 +551,7 @@ export default class InvocationComponent extends React.Component<Props, State> {
           }
           subtitle={
             <div className="runner-execution-status">
-              <PlayCircleIcon className="icon blue" />
+              <PlayCircleIcon className="blue" />
               <span>{op ? executionStatusLabel(op) : "Queued"}...</span>
             </div>
           }

@@ -236,25 +236,49 @@ func getLabelSelectorFromOwner(ctx context.Context, client kubernetes.Interface,
 		if err != nil {
 			return "", false, fmt.Errorf("failed to get ReplicaSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(rs.Spec.Selector), true, nil
+		return appLabelSelectorString(rs.Spec.Selector), true, nil
 
 	case "StatefulSet":
 		ss, err := client.AppsV1().StatefulSets(namespace).Get(ctx, controllerRef.Name, metav1.GetOptions{})
 		if err != nil {
 			return "", false, fmt.Errorf("failed to get StatefulSet %s: %w", controllerRef.Name, err)
 		}
-		return labelSelectorString(ss.Spec.Selector), false, nil
+		sel, err := labelSelectorString(ss.Spec.Selector)
+		if err != nil {
+			return "", false, fmt.Errorf("StatefulSet %s: %w", controllerRef.Name, err)
+		}
+		return sel, false, nil
 
 	default:
 		return "", false, fmt.Errorf("unsupported controller kind %q for pod %s", controllerRef.Kind, pod.Name)
 	}
 }
 
-func labelSelectorString(sel *metav1.LabelSelector) string {
+// appLabelSelectorString returns an "app"-label selector for ReplicaSet-managed
+// pods. Only the app label is used because the full ReplicaSet selector
+// includes pod-template-hash, which is unique to each Deployment revision and
+// would hide peers from other revisions during a rolling update.
+func appLabelSelectorString(sel *metav1.LabelSelector) string {
 	if sel == nil {
 		return ""
 	}
 	return "app=" + sel.MatchLabels["app"]
+}
+
+// labelSelectorString converts a StatefulSet's pod selector into a list/watch
+// selector string for discovering peer pods.
+func labelSelectorString(sel *metav1.LabelSelector) (string, error) {
+	if sel == nil {
+		return "", fmt.Errorf("controller has no pod selector")
+	}
+	s, err := metav1.LabelSelectorAsSelector(sel)
+	if err != nil {
+		return "", fmt.Errorf("invalid controller pod selector: %w", err)
+	}
+	if s.Empty() {
+		return "", fmt.Errorf("controller pod selector is empty")
+	}
+	return s.String(), nil
 }
 
 // processEvents handles watch events until the channel closes or an

@@ -912,6 +912,52 @@ func createRandomAPIKeys(t *testing.T, ctx context.Context, env environment.Env)
 	return allKeys
 }
 
+func TestAPIKeyCreationMetadata(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	fakeClock := clockwork.NewFakeClock()
+	env.SetClock(fakeClock)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	// Get a random admin user.
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin, "expected at least one admin user")
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	created, err := adb.CreateAPIKey(adminCtx, groupID, "test key", nil, 0, false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	require.Equal(t, admin.UserID, created.CreatedByUserID)
+	require.Equal(t, fakeClock.Now().UnixMicro(), created.CreatedAtUsec)
+
+	// The metadata should have been persisted, not just set on the returned
+	// key.
+	keys, err := adb.GetAPIKeys(adminCtx, groupID)
+	require.NoError(t, err)
+	var fetched *tables.APIKey
+	for _, k := range keys {
+		if k.APIKeyID == created.APIKeyID {
+			fetched = k
+			break
+		}
+	}
+	require.NotNil(t, fetched, "created key not returned by GetAPIKeys")
+	require.Equal(t, admin.UserID, fetched.CreatedByUserID)
+	require.Equal(t, fakeClock.Now().UnixMicro(), fetched.CreatedAtUsec)
+}
+
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "app.user_owned_keys_enabled", true)
 	env := enterprise_testenv.New(t)

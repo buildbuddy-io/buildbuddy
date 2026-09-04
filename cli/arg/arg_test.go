@@ -181,6 +181,19 @@ build:ci --remote_cache=grpc://ci-cache
 	}, args.Resolved())
 }
 
+func TestPrepend_NoResolve(t *testing.T) {
+	setupWorkspace(t, ``)
+	args, err := NewBazelArgsNoResolve([]string{"run", "//foo", "--", "--flag=value"})
+	require.NoError(t, err)
+
+	err = args.Prepend("--config=remote_only")
+	require.NoError(t, err)
+
+	want := []string{"run", "--config=remote_only", "//foo", "--", "--flag=value"}
+	require.Equal(t, want, args.Forwarded())
+	require.Equal(t, want, args.Resolved())
+}
+
 func TestPop(t *testing.T) {
 	setupWorkspace(t, `
 build --bes_backend=grpc://default-bes
@@ -486,7 +499,78 @@ func TestGetCommand(t *testing.T) {
 
 func setupWorkspace(t *testing.T, bazelrc string) {
 	ws := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
 	require.NoError(t, os.WriteFile(filepath.Join(ws, "WORKSPACE"), nil, 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(ws, ".bazelrc"), []byte(bazelrc), 0644))
 	workspace.SetForTest(t, ws)
+}
+
+func TestForwarded_DoesNotForwardBBRCArgs(t *testing.T) {
+	setupWorkspace(t, "run:late --build_metadata=LATE")
+	ws, err := workspace.Path()
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(ws, ".bbrc"), []byte(`
+run --stream_run_logs
+run:ci --on_stream_run_logs_failure=warn
+`), 0644))
+
+	args, err := NewBazelArgs([]string{"run", "--bb_config=ci", "--build_metadata=CLI", "//:target"})
+	require.NoError(t, err)
+	// The resolved args should contain the bbrc-related options, but the forwarded args should not.
+	require.Equal(t, []string{
+		"run",
+		"--build_metadata=CLI",
+		"//:target",
+	}, args.Forwarded())
+	require.Contains(t, args.Resolved(), "--stream_run_logs")
+	require.Contains(t, args.Resolved(), "--on_stream_run_logs_failure=warn")
+
+	// Append a new config flag. The corresponding metadata flag should be in the resolved args, but not the forwarded args.
+	require.NoError(t, args.Append("--config=late"))
+	require.Equal(t, []string{"CLI"}, GetMulti(args.Forwarded(), "build_metadata"))
+	require.Equal(t, []string{"CLI", "LATE"}, GetMulti(args.Resolved(), "build_metadata"))
+
+	require.Equal(t, []string{
+		"run",
+		"--build_metadata=CLI",
+		"--config=late",
+		"//:target",
+	}, args.Forwarded())
+	// The bb flags should still be in the resolved args.
+	require.Contains(t, args.Resolved(), "--stream_run_logs")
+	require.Contains(t, args.Resolved(), "--on_stream_run_logs_failure=warn")
+	require.Contains(t, args.Resolved(), "--build_metadata=LATE")
+}
+
+func TestUnresolved_RetainsBBRCArgs(t *testing.T) {
+	setupWorkspace(t, "")
+	ws, err := workspace.Path()
+	require.NoError(t, err)
+	customBBRC := filepath.Join(ws, "custom.bbrc")
+	require.NoError(t, os.WriteFile(customBBRC, []byte("run:ci --stream_run_logs\n"), 0644))
+
+	args, err := NewBazelArgs([]string{
+		"--bbrc=" + customBBRC,
+		"run",
+		"--bb_config=ci",
+		"//:target",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{
+		"--bbrc=" + customBBRC,
+		"run",
+		"--bb_config=ci",
+		"//:target",
+	}, args.Unresolved())
+	require.Equal(t, []string{"run", "//:target"}, args.Forwarded())
+
+	args, err = NewBazelArgs([]string{"--ignore_all_bb_rc_files", "run", "//:target"})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"--ignore_all_bb_rc_files",
+		"run",
+		"//:target",
+	}, args.Unresolved())
+	require.Equal(t, []string{"run", "//:target"}, args.Forwarded())
 }

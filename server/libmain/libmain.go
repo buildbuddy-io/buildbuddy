@@ -41,6 +41,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/splash"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/static"
+	"github.com/buildbuddy-io/buildbuddy/server/util/channelz_metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
@@ -243,6 +244,9 @@ func startInternalGRPCServers(env *real_environment.RealEnv) error {
 			return err
 		}
 		env.SetInternalGRPCSServer(sb.GetServer())
+	}
+	if err := channelz_metrics.Start(env); err != nil {
+		log.Errorf("Failed to start channelz flow-control metrics: %s", err)
 	}
 	return nil
 }

@@ -10,6 +10,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/redis_execution_collector"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testredis"
+	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/build_event_handler"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -27,14 +29,38 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
+	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	pepb "github.com/buildbuddy-io/buildbuddy/proto/publish_build_event"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	statuspb "google.golang.org/genproto/googleapis/rpc/status"
 )
+
+type notifyingExecutionCollector struct {
+	interfaces.ExecutionCollector
+	invocationID      string
+	executionsExpired chan struct{}
+}
+
+func (c *notifyingExecutionCollector) ExpireExecutions(ctx context.Context, invocationID string, ttl time.Duration) error {
+	err := c.ExecutionCollector.ExpireExecutions(ctx, invocationID, ttl)
+	if invocationID != c.invocationID {
+		return err
+	}
+	// ExpireExecutions is the last collector operation performed by invocation
+	// stats finalization, so it provides a deterministic barrier for the
+	// background stats recorder.
+	select {
+	case c.executionsExpired <- struct{}{}:
+	default:
+	}
+	return err
+}
 
 func TestGetExecution_OLAPOnly(t *testing.T) {
 	iid1 := uuid.New()
@@ -205,6 +231,115 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 			))
 		})
 	}
+}
+
+func TestGetExecution_OLAPOnly_InvocationFinalizedWhileExecutionCleanupInProgress(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "remote_execution.primary_db_reads_enabled", false)
+	flags.Set(t, "remote_execution.olap_reads_enabled", true)
+	flags.Set(t, "app.enable_write_executions_to_olap_db", true)
+	flags.Set(t, "cache_stats_finalization_delay", 0)
+
+	env := testenv.GetTestEnv(t)
+	redis := testredis.Start(t)
+	env.SetDefaultRedisClient(redis.Client())
+	redis_execution_collector.Register(env)
+	invocationID := uuid.New()
+	// Wrap the real Redis collector to observe asynchronous invocation
+	// finalization without replacing any of its storage behavior.
+	collector := &notifyingExecutionCollector{
+		ExecutionCollector: env.GetExecutionCollector(),
+		invocationID:       invocationID,
+		executionsExpired:  make(chan struct{}, 1),
+	}
+	env.SetExecutionCollector(collector)
+
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(ta)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "US1")
+	require.NoError(t, err)
+
+	handler := build_event_handler.NewBuildEventHandler(env)
+	channel, err := handler.OpenChannel(ctx, invocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	eventRequest := func(sequenceNumber int64, event *bespb.BuildEvent) *pepb.PublishBuildToolEventStreamRequest {
+		eventAny, err := anypb.New(event)
+		require.NoError(t, err)
+		return &pepb.PublishBuildToolEventStreamRequest{
+			OrderedBuildEvent: &pepb.OrderedBuildEvent{
+				SequenceNumber: sequenceNumber,
+				StreamId:       &bepb.StreamId{InvocationId: invocationID},
+				Event: &bepb.BuildEvent{
+					Event: &bepb.BuildEvent_BazelEvent{BazelEvent: eventAny},
+				},
+			},
+		}
+	}
+
+	// Simulate a build completing.
+	require.NoError(t, channel.HandleEvent(eventRequest(1, &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_Started{}},
+		Payload: &bespb.BuildEvent_Started{
+			Started: &bespb.BuildStarted{OptionsDescription: "test"},
+		},
+	})))
+	require.NoError(t, channel.HandleEvent(eventRequest(2, &bespb.BuildEvent{
+		Id: &bespb.BuildEventId{Id: &bespb.BuildEventId_BuildFinished{}},
+		Payload: &bespb.BuildEvent_Finished{
+			Finished: &bespb.BuildFinished{
+				ExitCode: &bespb.BuildFinished_ExitCode{},
+			},
+		},
+	})))
+
+	// Simulate an in-progress execution in the collector.
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 42}
+	executionID := digest.NewCASResourceName(actionDigest, "test-instance-name", repb.DigestFunction_SHA256).NewUploadString()
+	nowUsec := time.Now().UnixMicro()
+	require.NoError(t, collector.AddExecutionInvocationLink(ctx, &sipb.StoredInvocationLink{
+		InvocationId: invocationID,
+		ExecutionId:  executionID,
+		Type:         sipb.StoredInvocationLink_NEW,
+	}, true /*=bidirectional*/))
+
+	// Simulate sending the COMPLETED operation, but not yet sending EOF on the PublishOperation stream.
+	require.NoError(t, collector.UpdateInProgressExecution(ctx, &repb.StoredExecution{
+		ExecutionId:         executionID,
+		Stage:               int64(repb.ExecutionStage_COMPLETED),
+		GroupId:             "GR1",
+		UserId:              "US1",
+		CreatedAtUsec:       nowUsec,
+		UpdatedAtUsec:       nowUsec,
+		QueuedTimestampUsec: nowUsec,
+	}))
+
+	// We should still be able to fetch the execution.
+	service := execution_service.NewExecutionService(env)
+	getExecution := func() *espb.GetExecutionResponse {
+		rsp, err := service.GetExecution(ctx, &espb.GetExecutionRequest{
+			ExecutionLookup: &espb.ExecutionLookup{InvocationId: invocationID},
+		})
+		require.NoError(t, err)
+		return rsp
+	}
+	require.Len(t, getExecution().GetExecution(), 1, "execution should be visible before invocation finalization")
+
+	// Finalize the invocation while the executor still has its PublishOperation
+	// stream open to collect PostCompletionStats.
+	require.NoError(t, channel.FinalizeInvocation(invocationID))
+
+	// Wait for invocation finalization to delete all execution links.
+	select {
+	case <-collector.executionsExpired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for invocation stats finalization")
+	}
+
+	// We should still be able to fetch the execution.
+	require.Len(t, getExecution().GetExecution(), 1, "execution should be visible after invocation finalization")
 }
 
 func TestGetExecution_PrimaryDBIncludesInvocationLinkType(t *testing.T) {

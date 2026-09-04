@@ -183,6 +183,14 @@ type Invocation struct {
 	Tags string
 
 	ParentRunID string `gorm:"index:parent_run_id_index"`
+
+	// Git fetch stats reported by the remote runner (i.e. Workflows or remote
+	// bazel), if any. These are stored only in the OLAP DB; they are excluded
+	// from the primary DB schema and are populated in memory just before
+	// flushing the invocation to the OLAP DB.
+	GitFetchTotalBytes   int64 `gorm:"-"`
+	GitFetchDurationUsec int64 `gorm:"-"`
+	GitFetchRetryCount   int64 `gorm:"-"`
 }
 
 func (i *Invocation) TableName() string {
@@ -265,6 +273,12 @@ type Group struct {
 
 	// The status of the group: free tier, enterprise, etc.
 	Status grpb.Group_GroupStatus `gorm:"not null;default:1"`
+
+	// Information about the request that created this group. The user agent
+	// size must be at least useragent.MaxLength, otherwise MySQL defaults to
+	// varchar(255) and rejects longer values.
+	CreatedByIP        string
+	CreatedByUserAgent string `gorm:"size:1024"`
 }
 
 func (g *Group) TableName() string {
@@ -323,6 +337,17 @@ type User struct {
 	// Group roles are used to determine read/write permissions
 	// for everything.
 	Groups []*GroupRole `gorm:"-"`
+
+	// Information about the request that created this user. The user agent
+	// size must be at least useragent.MaxLength, otherwise MySQL defaults to
+	// varchar(255) and rejects longer values.
+	CreatedByIP        string
+	CreatedByUserAgent string `gorm:"size:1024"`
+
+	// When the login provider account backing this user was created, in
+	// microseconds since the epoch, or 0 if the provider doesn't report it.
+	ProviderAccountCreatedAtUsec int64
+
 	Model
 }
 
@@ -466,6 +491,10 @@ type APIKey struct {
 	Impersonation bool `gorm:"not null;default:0"`
 	// If set, the API key is not considered to be valid after this time.
 	ExpiryUsec int64 `gorm:"not null;default:0"`
+	// The ID of the user who created this API key, if it was created by an
+	// authenticated user. Keys created by the server or by an
+	// API-key-authenticated caller do not have this field set.
+	CreatedByUserID string `gorm:"default:''"`
 }
 
 func (k *APIKey) TableName() string {
@@ -832,6 +861,11 @@ type UsageLabels struct {
 	// Server describes the type of server that ultimately handled generating
 	// the response, for example "cache-proxy" or "app".
 	Server string `gorm:"not null;default:''"`
+
+	// Proxy describes whether the usage was reported by a BuildBuddy-run
+	// ("buildbuddy") or customer-run ("customer") cache proxy. It is empty for
+	// usage that was not reported by a cache proxy.
+	Proxy string `gorm:"not null;default:''"`
 }
 
 // Usage holds usage counter values for a group during a particular time period.
@@ -1003,6 +1037,21 @@ type IPRule struct {
 
 func (*IPRule) TableName() string {
 	return "IPRules"
+}
+
+// MetronomeBillingExportDestination is the BillingExportState primary key used
+// by the Metronome usage export cron.
+const MetronomeBillingExportDestination = "metronome"
+
+type BillingExportState struct {
+	Model
+	// Destination is the billing system usage is exported to, e.g. "metronome".
+	Destination                 string `gorm:"primaryKey"`
+	LastSuccessfulPeriodEndUsec int64
+}
+
+func (*BillingExportState) TableName() string {
+	return "BillingExportState"
 }
 
 type PostAutoMigrateLogic func() error
@@ -1491,6 +1540,7 @@ func RegisterTables() {
 	// Keep these sorted by two-letter prefix (and when adding new tables,
 	// use a unique prefix if possible):
 	registerTable("AK", &APIKey{})
+	registerTable("BE", &BillingExportState{})
 	registerTable("CA", &CacheEntry{})
 	registerTable("CL", &CacheLog{})
 	registerTable("EK", &EncryptionKey{})

@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -44,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -83,7 +83,7 @@ var (
 	workflowsLinuxComputeUnits    = flag.Int("remote_execution.workflows_linux_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Linux workflow actions.")
 	workflowsMacComputeUnits      = flag.Int("remote_execution.workflows_mac_compute_units", 3, "Number of BuildBuddy compute units (BCU) to reserve for Mac workflow actions.")
 	workflowsMaxRetries           = flag.Int("remote_execution.workflows_max_execute_retries", 4, "Number of times to retry a workflow action if it fails to start.")
-	enableKytheIndexing           = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.")
+	_                             = flag.Bool("remote_execution.enable_kythe_indexing", false, "If set, and codesearch is enabled, automatically run a kythe indexing action.", flag.Deprecated("kythe is deprecated: do not use this flag"))
 	enableCodesearchIndexing      = flag.Bool("remote_execution.enable_codesearch_indexing", false, "If set, and codesearch is enabled, automatically run an incremental indexing action.")
 
 	workflowURLMatcher = regexp.MustCompile(`^.*/webhooks/workflow/(?P<instance_name>.*)$`)
@@ -167,6 +167,13 @@ func generateWebhookID() (string, error) {
 }
 
 func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActionName string, gitCleanExclude []string) string {
+	// Webhook payloads typically use clone URLs, which may include a ".git"
+	// suffix. Normalize the URL and remove the suffix.
+	pushedRepoURL := wd.PushedRepoURL
+	if normalizedURL, err := gitutil.NormalizeRepoURL(pushedRepoURL); err == nil {
+		pushedRepoURL = normalizedURL.String()
+	}
+
 	// Use a unique remote instance name per repo URL and workflow action name, to help
 	// route workflow tasks to runners which previously executed the same workflow
 	// action.
@@ -179,7 +186,7 @@ func instanceName(wf *tables.Workflow, wd *interfaces.WebhookData, workflowActio
 	// existing runners for the workflow and cause subsequent workflows to be run
 	// from a clean runner.
 	keys := append([]string{
-		wd.PushedRepoURL,
+		pushedRepoURL,
 		workflowActionName,
 		wf.InstanceNameSuffix,
 	}, gitCleanExclude...)
@@ -567,7 +574,7 @@ func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflo
 	filteredActions := make([]*config.Action, 0, len(actions))
 	for _, a := range actions {
 		matchesActionName := len(actionFilter) == 0 || config.MatchesAnyActionName(a, actionFilter)
-		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag)
+		matchesTrigger := config.MatchesAnyTrigger(a, wd.EventName, wd.TargetBranch, wd.PushedTag, wd.PullRequestAction)
 		if matchesActionName && matchesTrigger {
 			filteredActions = append(filteredActions, a)
 		}
@@ -666,7 +673,7 @@ func (ws *workflowService) InvalidateAllSnapshotsForRepo(ctx context.Context, re
 }
 
 func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c *config.BuildBuddyConfig, workflow *tables.Workflow, wd *interfaces.WebhookData) error {
-	enableCS, enableKythe, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
+	enableCS, err := ws.isCodesearchIndexingEnabled(ctx, workflow.GroupID)
 	if err != nil {
 		return err
 	}
@@ -674,28 +681,22 @@ func (ws *workflowService) addCodesearchActionsIfEnabled(ctx context.Context, c 
 		// TODO(jdelfino): Using the cache API URL here is hacky, long term we might want a codesearch_api_url
 		c.Actions = append(c.Actions, config.CodesearchIncrementalUpdateAction(cache_api_url.WithPath(""), workflow.RepoURL, wd.TargetRepoDefaultBranch))
 	}
-	if enableKythe {
-		c.Actions = append(c.Actions, config.KytheIndexingAction(wd.TargetRepoDefaultBranch))
-	}
 	return nil
 }
 
-func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, groupID string) (bool, bool, error) {
-	// No point checking the DB if both flags are off.
-	if !*enableKytheIndexing && !*enableCodesearchIndexing {
-		return false, false, nil
+func (ws *workflowService) isCodesearchIndexingEnabled(ctx context.Context, groupID string) (bool, error) {
+	// No point checking the DB if the flag is off.
+	if !*enableCodesearchIndexing {
+		return false, nil
 	}
 
-	// Check the DB bit... and examine flags if enabled.
+	// Check the DB bit.
 	g, err := ws.env.GetUserDB().GetGroupByID(ctx, groupID)
 	if err != nil {
-		return false, false, err
+		return false, err
 	}
 
-	if !g.CodeSearchEnabled {
-		return false, false, nil
-	}
-	return *enableCodesearchIndexing, *enableKytheIndexing, nil
+	return g.CodeSearchEnabled, nil
 }
 
 func (ws *workflowService) getRepositoryWorkflow(ctx context.Context, groupID string, repoURL *gitutil.RepoURL) (*repositoryWorkflow, error) {
@@ -1202,9 +1203,8 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 		"--timeout_reason=" + runnerTimeout.Reason,
 	}
 
-	// Recycle workflow runners by default, but not Kythe ones, to avoid
-	// filling the cache with crap.
-	enableRunnerRecycling := workflowAction.Name != config.KytheActionName
+	// Recycle workflow runners by default.
+	enableRunnerRecycling := true
 
 	for _, filter := range workflowAction.GetGitFetchFilters() {
 		args = append(args, "--git_fetch_filters="+filter)
@@ -1212,6 +1212,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	if workflowAction.GitFetchDepth != nil {
 		args = append(args, fmt.Sprintf("--git_fetch_depth=%d", *workflowAction.GitFetchDepth))
 	}
+	args = append(args, ci_runner_util.GitFetchLowSpeedRetryFlags(ctx, ws.env.GetExperimentFlagProvider(), experiments.WithContext("workflow_action_name", workflowAction.Name))...)
 	for _, path := range workflowAction.GitCleanExclude {
 		args = append(args, "--git_clean_exclude="+path)
 	}
@@ -1239,6 +1240,7 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 				{Name: platform.EstimatedMemoryPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedMemory()},
 				{Name: platform.EstimatedCPUPropertyName, Value: workflowAction.ResourceRequests.GetEstimatedCPU()},
 				{Name: platform.RetryPropertyName, Value: fmt.Sprintf("%v", retry)},
+				{Name: platform.AllowRemoteSnapshotsPropertyName, Value: "true"},
 			},
 		},
 	}
@@ -1403,6 +1405,10 @@ func (ws *workflowService) checkStartWorkflowPreconditions(ctx context.Context) 
 
 // fetchWorkflowConfig returns the BuildBuddyConfig from the repo, or the
 // default BuildBuddyConfig if that setting is enabled.
+//
+// It returns nil (the "do nothing" signal) when there are no actions to run:
+// the repo has no buildbuddy.yaml, isn't using the default config, and
+// no additional settings (like codesearch) contribute actions.
 func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider interfaces.GitProvider, workflow *tables.Workflow, webhookData *interfaces.WebhookData) (*config.BuildBuddyConfig, error) {
 	workflowRef := webhookData.SHA
 	if workflowRef == "" {
@@ -1427,10 +1433,14 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 	} else {
 		if status.IsNotFoundError(err) {
 			if workflow.GitRepository != nil && !workflow.GitRepository.UseDefaultWorkflowConfig {
-				return nil, nil
+				// The repo has no buildbuddy.yaml and isn't using the default
+				// config, so the user has no actions of their own. Start from an
+				// empty config rather than bailing out, so that codesearch
+				// indexing actions can still be appended below if enabled.
+				c = &config.BuildBuddyConfig{}
+			} else {
+				c = config.GetDefault(webhookData.TargetRepoDefaultBranch)
 			}
-
-			c = config.GetDefault(webhookData.TargetRepoDefaultBranch)
 		} else {
 			return nil, err
 		}
@@ -1438,6 +1448,13 @@ func (ws *workflowService) fetchWorkflowConfig(ctx context.Context, gitProvider 
 
 	if err := ws.addCodesearchActionsIfEnabled(ctx, c, workflow, webhookData); err != nil {
 		return nil, err
+	}
+
+	// If there are no actions to run, return nil to signal "do nothing", which
+	// callers distinguish from a config with actions (e.g. to clean up orphaned
+	// scheduled runs).
+	if len(c.Actions) == 0 {
+		return nil, nil
 	}
 	return c, nil
 }
@@ -1573,8 +1590,7 @@ func (ws *workflowService) cancelInProgressWorkflowsOnSameBranch(ctx context.Con
 		return nil
 	}
 
-	// Don't cancel workflows on the default branch.
-	if wd.PushedBranch == wd.TargetRepoDefaultBranch || wd.TargetRepoDefaultBranch == "" {
+	if action.AllowsConcurrentRunsOnBranch(wd.PushedBranch, wd.TargetRepoDefaultBranch) {
 		return nil
 	}
 
@@ -1700,17 +1716,8 @@ func (ws *workflowService) executeWorkflowAction(ctx context.Context, key *table
 			continue // retry
 		}
 
-		cancelDuplicates := false
-		if efp := ws.env.GetExperimentFlagProvider(); efp != nil {
-			cancelDuplicates = efp.Boolean(ctx, "cancel_duplicate_workflows_default", false)
-		}
-		if action.AllowConcurrentRuns != nil {
-			cancelDuplicates = !*action.AllowConcurrentRuns
-		}
-		if cancelDuplicates {
-			if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, wf, wd, invocationID); err != nil {
-				log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
-			}
+		if err := ws.cancelInProgressWorkflowsOnSameBranch(ctx, action, wf, wd, invocationID); err != nil {
+			log.CtxWarningf(ctx, "Failed to cancel in-progress workflow invocations on branch %q: %s", wd.PushedBranch, err)
 		}
 
 		return executionID, nil
