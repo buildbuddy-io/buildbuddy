@@ -108,6 +108,27 @@ func TestGetCustomResourceParentMap_Invalid(t *testing.T) {
 			},
 		},
 		{
+			name: "accounting without parent",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2, ParentAccounting: "ceil"},
+			},
+		},
+		{
+			name: "nested parents",
+			resources: []resources.CustomResource{
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator"},
+				{Name: "apple_simulator", Value: 2, Parent: "device"},
+				{Name: "device", Value: 2},
+			},
+		},
+		{
+			name: "parent cycle",
+			resources: []resources.CustomResource{
+				{Name: "a", Value: 2, Parent: "b"},
+				{Name: "b", Value: 2, Parent: "a"},
+			},
+		},
+		{
 			name: "unsupported parent accounting",
 			resources: []resources.CustomResource{
 				{Name: "apple_simulator", Value: 2},

@@ -370,7 +370,6 @@ type PriorityTaskScheduler struct {
 	resourceCapacity        *resourceCounts
 	resourcesUsed           *resourceCounts
 	customResourceParents   map[string]string
-	customResourceChildren  map[string][]string
 	exclusiveTaskScheduling bool
 }
 
@@ -397,10 +396,6 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 	if err != nil {
 		return nil, err
 	}
-	customResourceChildren := make(map[string][]string)
-	for child, parent := range customResourceParents {
-		customResourceChildren[parent] = append(customResourceChildren[parent], child)
-	}
 	rootContext, rootCancel := context.WithCancel(context.Background())
 	qes := &PriorityTaskScheduler{
 		env:              env,
@@ -424,7 +419,6 @@ func NewPriorityTaskScheduler(env environment.Env, exec IExecutor, runnerPool in
 			Custom:    customResourcesUsed,
 		},
 		customResourceParents:   customResourceParents,
-		customResourceChildren:  customResourceChildren,
 		exclusiveTaskScheduling: *exclusiveTaskScheduling,
 	}
 	qes.rootContext = qes.enrichContext(qes.rootContext)
@@ -668,7 +662,7 @@ func (q *PriorityTaskScheduler) trackTask(res *scpb.EnqueueTaskReservationReques
 		for name := range q.resourcesUsed.Custom {
 			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
 				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / 1e6)
+			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
 		}
 		log.CtxDebugf(q.rootContext, "Claimed task resources. Queue stats: %s", q.stats())
 	}
@@ -689,7 +683,7 @@ func (q *PriorityTaskScheduler) untrackTask(res *scpb.EnqueueTaskReservationRequ
 		for name := range q.resourcesUsed.Custom {
 			metrics.RemoteExecutionAssignedCustomResources.With(prometheus.Labels{
 				metrics.CustomResourceNameLabel: name,
-			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / 1e6)
+			}).Set(float64(q.customResourceUsed(q.resourcesUsed, name)) / float64(customResourceUnit))
 		}
 		log.CtxDebugf(q.rootContext, "Released task resources. Queue stats: %s", q.stats())
 	}
@@ -738,7 +732,8 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *r
 		return false
 	}
 
-	affectedCustomResources := make(map[string]struct{}, len(size.GetCustomResources()))
+	candidateResources := reservedResources.Clone()
+	candidateResources.Add(q.taskResourceCounts(size))
 	for _, r := range size.GetCustomResources() {
 		if _, ok := q.resourceCapacity.Custom[r.GetName()]; !ok {
 			// The scheduler server should never send us tasks that require
@@ -746,16 +741,10 @@ func (q *PriorityTaskScheduler) canFitTask(res *queuedTask, reservedResources *r
 			alert.UnexpectedEvent("missing_custom_resource", "Task requested custom resource %q which is not configured for this executor", r.GetName())
 			continue
 		}
-		affectedCustomResources[r.GetName()] = struct{}{}
-		if parent, ok := q.customResourceParents[r.GetName()]; ok {
-			affectedCustomResources[parent] = struct{}{}
+		if q.customResourceUsed(candidateResources, r.GetName()) > q.resourceCapacity.Custom[r.GetName()] {
+			return false
 		}
-	}
-	candidateResources := reservedResources.Clone()
-	candidateResources.Add(q.taskResourceCounts(size))
-	for name := range affectedCustomResources {
-		capacity := q.resourceCapacity.Custom[name]
-		if q.customResourceUsed(candidateResources, name) > capacity {
+		if parent, ok := q.customResourceParents[r.GetName()]; ok && q.customResourceUsed(candidateResources, parent) > q.resourceCapacity.Custom[parent] {
 			return false
 		}
 	}
@@ -877,7 +866,7 @@ func (q *PriorityTaskScheduler) getNextSchedulableTask(ctx context.Context) (*qu
 
 		// If all resources are reserved, short circuit - none of the remaining
 		// tasks will be able to schedule.
-		if q.resourcesAllGTE(reservedResources, q.resourceCapacity) {
+		if reservedResources.AllGTE(q.resourceCapacity) {
 			break
 		}
 	}
@@ -1092,25 +1081,14 @@ func (q *PriorityTaskScheduler) taskResourceCounts(res *scpb.TaskSize) *resource
 
 func (q *PriorityTaskScheduler) customResourceUsed(res *resourceCounts, name string) customResourceCount {
 	used := res.Custom[name]
-	for _, child := range q.customResourceChildren[name] {
-		used += ceilCustomResource(res.Custom[child])
-	}
-	return used
-}
-
-func (q *PriorityTaskScheduler) resourcesAllGTE(a, b *resourceCounts) bool {
-	if a.RAMBytes < b.RAMBytes {
-		return false
-	}
-	if a.CPUMillis < b.CPUMillis {
-		return false
-	}
-	for k, v := range b.Custom {
-		if q.customResourceUsed(a, k) < v {
-			return false
+	// Round each child's aggregate usage, so fractional requests for the same
+	// child can share a parent unit. Direct requests for the parent add to this.
+	for child, parent := range q.customResourceParents {
+		if parent == name {
+			used += ceilCustomResource(res.Custom[child])
 		}
 	}
-	return true
+	return used
 }
 
 // Clone returns a deep copy of the resourceCounts object.
@@ -1127,4 +1105,21 @@ func (r *resourceCounts) Add(other *resourceCounts) {
 	for k, v := range other.Custom {
 		r.Custom[k] += v
 	}
+}
+
+// AllGTE returns true if all resource counts are greater than or equal to the
+// other resource counts.
+func (r *resourceCounts) AllGTE(other *resourceCounts) bool {
+	if r.RAMBytes < other.RAMBytes {
+		return false
+	}
+	if r.CPUMillis < other.CPUMillis {
+		return false
+	}
+	for k, v := range r.Custom {
+		if v < other.Custom[k] {
+			return false
+		}
+	}
+	return true
 }

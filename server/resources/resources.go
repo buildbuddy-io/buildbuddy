@@ -216,31 +216,33 @@ func GetAllocatedCustomResources() ([]*scpb.CustomResource, error) {
 }
 
 func GetCustomResourceParentMap() (map[string]string, error) {
-	resourceNames := make(map[string]struct{}, len(*customResources))
+	configured := make(map[string]CustomResource, len(*customResources))
 	for _, r := range *customResources {
-		if strings.Contains(r.Name, ".") {
-			return nil, status.InvalidArgumentError("Custom resource names may not contain periods")
-		}
-		resourceNames[r.Name] = struct{}{}
+		configured[r.Name] = r
 	}
 
 	parentByChild := make(map[string]string)
 	for _, r := range *customResources {
 		if r.Parent == "" {
+			if r.ParentAccounting != "" {
+				return nil, status.InvalidArgumentErrorf("Custom resource %q sets parent_accounting without a parent", r.Name)
+			}
 			continue
 		}
-		if _, ok := resourceNames[r.Parent]; !ok {
+		parent, ok := configured[r.Parent]
+		if !ok {
 			return nil, status.InvalidArgumentErrorf("Custom resource %q parent %q is not configured", r.Name, r.Parent)
 		}
 		if r.Parent == r.Name {
 			return nil, status.InvalidArgumentErrorf("Custom resource %q cannot be its own parent", r.Name)
 		}
-		switch r.ParentAccounting {
-		case "", "ceil":
-			parentByChild[r.Name] = r.Parent
-		default:
+		if parent.Parent != "" {
+			return nil, status.InvalidArgumentErrorf("Custom resource %q parent %q cannot itself have a parent", r.Name, r.Parent)
+		}
+		if r.ParentAccounting != "" && r.ParentAccounting != "ceil" {
 			return nil, status.InvalidArgumentErrorf("Custom resource %q has unsupported parent_accounting %q", r.Name, r.ParentAccounting)
 		}
+		parentByChild[r.Name] = r.Parent
 	}
 	return parentByChild, nil
 }

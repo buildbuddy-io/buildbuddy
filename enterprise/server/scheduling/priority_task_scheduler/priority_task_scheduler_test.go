@@ -401,6 +401,88 @@ func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) 
 	sim18Small.Complete()
 }
 
+func TestPriorityTaskScheduler_CanFitTaskWithParentResources(t *testing.T) {
+	q := &PriorityTaskScheduler{
+		resourceCapacity: &resourceCounts{
+			RAMBytes:  100,
+			CPUMillis: 100,
+			Custom: map[string]customResourceCount{
+				"parent": customResource(2),
+				"a":      customResource(1.5),
+				"b":      customResource(3),
+				"other":  customResource(1),
+			},
+		},
+		customResourceParents: map[string]string{"a": "parent", "b": "parent"},
+	}
+	for _, test := range []struct {
+		name     string
+		reserved map[string]float32
+		request  map[string]float32
+		wantFit  bool
+	}{
+		{
+			name: "unused children consume no parent units", wantFit: true,
+			request: map[string]float32{"parent": 2},
+		},
+		{
+			name:    "child capacity still applies",
+			request: map[string]float32{"a": 1.6},
+		},
+		{
+			name: "same child shares parent units", wantFit: true,
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"a": 0.1},
+		},
+		{
+			name:     "different children use separate parent units",
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"b": 0.1},
+		},
+		{
+			name: "exact whole unit leaves room for sibling", wantFit: true,
+			reserved: map[string]float32{"a": 1}, request: map[string]float32{"b": 0.1},
+		},
+		{
+			name:     "smallest fraction rounds up",
+			reserved: map[string]float32{"a": 1, "b": 0.1}, request: map[string]float32{"a": 0.000001},
+		},
+		{
+			name:     "direct parent request includes child usage",
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"parent": 0.1},
+		},
+		{
+			name:     "child request includes direct parent usage",
+			reserved: map[string]float32{"parent": 1.1}, request: map[string]float32{"a": 0.1},
+		},
+		{
+			name:    "parent and children in one request",
+			request: map[string]float32{"parent": 0.1, "a": 0.1, "b": 0.1},
+		},
+		{
+			name: "siblings in one request fit", wantFit: true,
+			request: map[string]float32{"a": 0.1, "b": 0.1},
+		},
+		{
+			name: "unrelated reserved resources do not block task", wantFit: true,
+			reserved: map[string]float32{"a": 3}, request: map[string]float32{"other": 1},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reserved := &resourceCounts{Custom: make(map[string]customResourceCount)}
+			for name, value := range test.reserved {
+				reserved.Custom[name] = customResource(value)
+			}
+			size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1}
+			for name, value := range test.request {
+				size.CustomResources = append(size.CustomResources, &scpb.CustomResource{Name: name, Value: value})
+			}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{TaskSize: size}}
+			before := reserved.Clone()
+			require.Equal(t, test.wantFit, q.canFitTask(task, reserved))
+			require.Equal(t, before, reserved, "checking capacity must not change reservations")
+		})
+	}
+}
+
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {
 	for _, test := range []struct {
 		name string
