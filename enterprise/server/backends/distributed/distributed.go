@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"slices"
 	"strings"
@@ -33,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -287,6 +289,8 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			dc.log.Infof("distributed cache peer set changed to %v", peers)
 			if err := chash.SetFromMap(peers); err != nil {
 				dc.log.Errorf("Error setting peers in consistent hash: %s", err)
+			} else {
+				dc.distributedProxy.CloseInactiveClients(set.FromSeq(maps.Values(peers)))
 			}
 		})
 	} else {

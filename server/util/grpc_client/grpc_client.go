@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -88,18 +89,21 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 		}
 	}
 	if goodConns == 0 {
-		logConnPoolState(p.targetForLogging, p.conns)
-		return status.UnavailableError("No ready connections in gRPC connection pool")
+		return status.UnavailableErrorf(
+			"No ready connections in gRPC connection pool for %s. %d connections in states: %v",
+			p.targetForLogging,
+			len(p.conns),
+			statesCount(p.conns))
 	}
 	return nil
 }
 
-func logConnPoolState(target string, conns []*clientConn) {
-	states := map[string]int{}
+func statesCount(conns []*clientConn) map[string]int {
+	states := make(map[string]int, len(conns))
 	for _, c := range conns {
 		states[c.GetState().String()]++
 	}
-	log.Infof("gRPC client connection pool for %s has %d connections in states: %v", target, len(conns), states)
+	return states
 }
 
 func (p *ClientConnPool) Close() error {
@@ -109,6 +113,10 @@ func (p *ClientConnPool) Close() error {
 			log.Warningf("could not close connection: %s", err)
 		}
 	}
+	metrics.PendingClientRPCsPerConnection.DeletePartialMatch(prometheus.Labels{
+		metrics.GRPCTargetLabel: p.targetForLogging,
+		metrics.GRPCPoolIDLabel: p.id,
+	})
 	return nil
 }
 
