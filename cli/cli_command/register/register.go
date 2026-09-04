@@ -114,6 +114,12 @@ func register() {
 		// Handle 'help' command separately to avoid circular dependency with `cli_command`
 		// package
 		{
+			Name:    "index",
+			Help:    "Sends updates to the remote codesearch index.",
+			Handler: index.HandleIndex,
+			Flags:   index.Flags,
+		},
+		{
 			Name:    "install",
 			Help:    "Installs a bb plugin (https://buildbuddy.io/plugins).",
 			Handler: plugin.HandleInstall,
@@ -171,12 +177,6 @@ func register() {
 			Help:    "Runs an SSH server on a user-mode wireguard network.",
 			Handler: ssh_server.HandleSSHServer,
 			Flags:   ssh_server.Flags,
-		},
-		{
-			Name:    "index",
-			Help:    "Sends updates to the remote codesearch index.",
-			Handler: index.HandleIndex,
-			Flags:   index.Flags,
 		},
 		{
 			Name:    "ui",
