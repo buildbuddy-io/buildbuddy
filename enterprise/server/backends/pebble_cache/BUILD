@@ -54,7 +54,7 @@ go_library(
 
 go_test(
     name = "pebble_cache_test",
-    size = "medium",
+    size = "large",
     srcs = [
         "pebble_cache_internal_test.go",
         "pebble_cache_test.go",
