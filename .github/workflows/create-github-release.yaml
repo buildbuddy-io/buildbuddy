@@ -9,11 +9,56 @@ on:
     tags:
       - "v*"
 
+# Serialize runs for the same tag. A newer force-push waits for an older run to
+# stop mutating its draft before replacing it.
+concurrency:
+  group: create-github-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'release skip')"
     steps:
+      # action-automatic-releases always creates a new draft. Remove drafts
+      # left by earlier tag pushes so artifact uploads and release checks do
+      # not resolve the same tag to different releases.
+      - name: Delete stale draft releases
+        env:
+          GH_TOKEN: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
+          VERSION_TAG: "${{ github.ref_name }}"
+        run: |
+          set -euo pipefail
+
+          # An old run can be retried after this tag has been moved. Do not let
+          # it replace the draft for the newer commit.
+          current_tag_sha=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/commits/${VERSION_TAG}" \
+            --jq '.sha')
+          if [[ "${current_tag_sha}" != "${GITHUB_SHA}" ]]; then
+            echo "Tag ${VERSION_TAG} now points to ${current_tag_sha}, not ${GITHUB_SHA}."
+            exit 1
+          fi
+
+          releases_json=$(mktemp)
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/releases?per_page=100" \
+            > "${releases_json}"
+
+          if jq -e --arg tag "${VERSION_TAG}" \
+            'any(.[][]; .tag_name == $tag and (.draft | not))' \
+            "${releases_json}" >/dev/null; then
+            echo "A published release already exists for ${VERSION_TAG}."
+            exit 1
+          fi
+
+          jq -r --arg tag "${VERSION_TAG}" \
+            '.[][] | select(.draft and .tag_name == $tag) | .id' \
+            "${releases_json}" |
+            while read -r release_id; do
+              gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/releases/${release_id}"
+            done
       - uses: "marvinpinto/action-automatic-releases@919008cf3f741b179569b7a6fb4d8860689ab7f0" # v1.2.1
         with:
           repo_token: "${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}"
@@ -25,7 +70,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${{ github.ref }}
+      release_branch: ${{ github.sha }}
       version_tag: ${{ github.ref_name }}
     secrets: inherit
 
@@ -34,7 +79,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${{ github.ref }}
+      release_branch: ${{ github.sha }}
       version_tag: ${{ github.ref_name }}
     secrets: inherit
 
@@ -43,7 +88,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${{ github.ref }}
+      release_branch: ${{ github.sha }}
       version_tag: ${{ github.ref_name }}
     secrets: inherit
 
@@ -52,7 +97,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${{ github.ref }}
+      release_branch: ${{ github.sha }}
       version_tag: ${{ github.ref_name }}
     secrets: inherit
 
@@ -61,7 +106,7 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'release skip')"
     needs: create-release
     with:
-      release_branch: ${{ github.ref }}
+      release_branch: ${{ github.sha }}
       version_tag: ${{ github.ref_name }}
     secrets: inherit
 

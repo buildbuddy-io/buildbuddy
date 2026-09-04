@@ -25,7 +25,9 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04-16cpu-arm64-arm-limited
+    # Build on amd64 and cross-compile so frontend tools such as SWC can use
+    # their available linux-x64 binaries.
+    runs-on: ubuntu-22.04-16cpu
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -41,6 +43,7 @@ jobs:
         run: |
           bazelisk build \
             --config=release \
+            --platforms=@toolchains_buildbuddy//platforms:linux_arm64 \
             --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
             //enterprise/server/cmd/server:buildbuddy \
             //enterprise/server/cmd/executor:executor
