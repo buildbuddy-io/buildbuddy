@@ -47,7 +47,7 @@ import { Cancelable, CancelablePromise, default as rpcService } from "../service
 import TerminalComponent from "../terminal/terminal";
 import { Profile, readProfile } from "../trace/compact_trace";
 import TraceViewer from "../trace/trace_viewer";
-import { digestToString, parseActionDigest } from "../util/cache";
+import { digestToString, isBytestreamURL, parseActionDigest, parseBytestreamURL } from "../util/cache";
 import { copyToClipboard } from "../util/clipboard";
 import { BuildBuddyError, HTTPStatusError } from "../util/errors";
 import { MessageClass, timestampToDate } from "../util/proto";
@@ -60,6 +60,13 @@ import InvocationModel from "./invocation_model";
 
 type IDigest = build.bazel.remote.execution.v2.IDigest;
 type ITimestamp = google_timestamp.protobuf.ITimestamp;
+
+/**
+ * Size of the compact execution log above which we don't auto-load the log.
+ * This is the zstd-compressed size, and we unpack the decompressed log as JS
+ * objects, so the required browser memory can be much larger than this.
+ */
+const LARGE_EXECUTION_LOG_THRESHOLD_BYTES = 10e6;
 
 const executionDownloadsPageSize = 100;
 
@@ -113,6 +120,10 @@ interface State {
   executionDownloads: cache.ExecutionDownload[];
   executionDownloadsLoading: boolean;
   executionDownloadsNextPageToken: string;
+
+  isExecutionLogLoading: boolean;
+  allowLoadingLargeExecutionLog: boolean;
+  executionLogError?: any;
 }
 
 interface ServerLog {
@@ -138,10 +149,14 @@ export default class InvocationActionCardComponent extends React.Component<Props
     executionDownloads: [],
     executionDownloadsLoading: false,
     executionDownloadsNextPageToken: "",
+    isExecutionLogLoading: false,
+    allowLoadingLargeExecutionLog: false,
   };
 
   private executionDownloadsContainerRef = React.createRef<HTMLDivElement>();
   private treeShaToChildrenPromiseMap = new Map<string, Promise<TreeNode[]>>();
+
+  private executionLogFetch?: CancelablePromise;
 
   componentDidMount() {
     this.fetchAction();
@@ -176,27 +191,41 @@ export default class InvocationActionCardComponent extends React.Component<Props
     }
   }
 
+  getExecutionLogSize() {
+    const uri = this.props.model.getExecutionLogFileUri();
+    return isBytestreamURL(uri) ? Number(parseBytestreamURL(uri).digest.sizeBytes) : undefined;
+  }
+
+  isExecutionLogTooLarge() {
+    if (this.state.allowLoadingLargeExecutionLog) return false;
+    return (this.getExecutionLogSize() ?? 0) > LARGE_EXECUTION_LOG_THRESHOLD_BYTES;
+  }
+
   fetchSpawnMetrics() {
+    this.executionLogFetch?.cancel();
+    this.setState({ isExecutionLogLoading: true, executionLogError: undefined, measuredMemoryPeakBytes: undefined });
     const actionDigestParam = this.props.search.get("actionDigest");
-    if (!actionDigestParam || !this.props.model.hasExecutionLog() || this.getExecutionId()) {
-      this.setState({ measuredMemoryPeakBytes: undefined });
+    if (
+      !actionDigestParam ||
+      !this.props.model.hasExecutionLog() ||
+      this.getExecutionId() ||
+      this.isExecutionLogTooLarge()
+    ) {
+      this.setState({ isExecutionLogLoading: false });
       return;
     }
 
     const actionDigest = parseActionDigest(actionDigestParam);
     if (!actionDigest) {
-      this.setState({ measuredMemoryPeakBytes: undefined });
+      this.setState({ isExecutionLogLoading: false });
       return;
     }
 
     const model = this.props.model;
     const actionDigestString = digestToString(actionDigest);
     const actionDigestHasSize = actionDigestParam.includes("/");
-    model
-      .getExecutionLog()
+    this.executionLogFetch = new CancelablePromise(model.getExecutionLog())
       .then((log) => {
-        if (this.props.model !== model || this.props.search.get("actionDigest") !== actionDigestParam) return;
-
         const spawn = log.find((entry) => {
           const spawnDigest = entry.spawn?.digest;
           if (!spawnDigest || spawnDigest.hash !== actionDigest.hash) return false;
@@ -206,7 +235,8 @@ export default class InvocationActionCardComponent extends React.Component<Props
           measuredMemoryPeakBytes: Number(spawn?.spawn?.metrics?.measuredMemoryPeakBytes || 0) || undefined,
         });
       })
-      .catch((e) => console.error("Failed to fetch execution log:", e));
+      .catch((e) => this.setState({ executionLogError: e }))
+      .finally(() => this.setState({ isExecutionLogLoading: false }));
   }
 
   fetchAction() {
@@ -1460,6 +1490,40 @@ export default class InvocationActionCardComponent extends React.Component<Props
 
   private renderSpawnResourceUsage() {
     if (this.getExecutionId()) return null;
+
+    if (this.state.isExecutionLogLoading) {
+      return (
+        <>
+          <div className="metadata-title">Resource usage</div>
+          <Spinner />
+        </>
+      );
+    }
+    if (this.state.executionLogError) {
+      return (
+        <>
+          <div className="metadata-title">Resource usage</div>
+          <div className="error-text">Failed to load execution log: {String(this.state.executionLogError)}</div>
+        </>
+      );
+    }
+    if (this.isExecutionLogTooLarge()) {
+      return (
+        <>
+          <div className="metadata-title">Resource usage</div>
+          <div>
+            <TextLink
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                this.setState({ allowLoadingLargeExecutionLog: true }, () => this.fetchSpawnMetrics());
+              }}>
+              Load execution log ({format.bytesIEC(this.getExecutionLogSize() ?? 0)})
+            </TextLink>
+          </div>
+        </>
+      );
+    }
 
     const measuredMemoryPeakBytes = this.state.measuredMemoryPeakBytes;
     if (!measuredMemoryPeakBytes || measuredMemoryPeakBytes <= 0) return null;
