@@ -328,21 +328,67 @@ func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.
 	if err != nil {
 		return nil, err
 	}
-	found, err := c.cache.GetMulti(ctx, req.GetResources())
+	rsp := &dcpb.GetMultiResponse{}
+	resources := req.GetResources()
+	if refCache, ok := c.cache.(interfaces.ReferenceCache); ok && c.getMultiSendsReferences(ctx) {
+		byteResources := make([]*rspb.ResourceName, 0, len(resources))
+		for _, rn := range resources {
+			// Minting a reference is best-effort: values that are not backed
+			// by shared storage are returned as bytes.
+			if ref, err := refCache.ReadReference(ctx, rn); err == nil {
+				rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
+					Key:              digestToKey(rn.GetDigest()),
+					ValueOrReference: &dcpb.KV_ValueReference{ValueReference: ref},
+				})
+				recordGetMultiResponseMetrics("reference", rn.GetDigest(), codes.OK.String())
+			} else {
+				byteResources = append(byteResources, rn)
+			}
+		}
+		resources = byteResources
+	}
+	if len(resources) == 0 {
+		return rsp, nil
+	}
+	found, err := c.cache.GetMulti(ctx, resources)
 	if err != nil {
+		for _, rn := range resources {
+			recordGetMultiResponseMetrics("bytes", rn.GetDigest(), status.MetricsLabel(err))
+		}
 		return nil, err
 	}
-	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
 		if len(buf) == 0 {
 			c.log.Warningf("returned a zero-length response for digest %q", d.GetHash())
 		}
 		rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
-			Key:   digestToKey(d),
-			Value: buf,
+			Key:              digestToKey(d),
+			ValueOrReference: &dcpb.KV_Value{Value: buf},
 		})
+		recordGetMultiResponseMetrics("bytes", d, codes.OK.String())
 	}
 	return rsp, nil
+}
+
+// recordGetMultiResponseMetrics records that this node served one value of a
+// peer's GetMulti request with its payload sent as responseType ("reference"
+// or "bytes") and the status of the response, attributing the digest's size
+// to it.
+func recordGetMultiResponseMetrics(responseType string, d *repb.Digest, statusLabel string) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusLabel,
+	}
+	metrics.DistributedCacheGetMultiResponseCount.With(labels).Inc()
+	metrics.DistributedCacheGetMultiResponseSizeBytes.With(labels).Add(float64(d.GetSizeBytes()))
+}
+
+func (c *Proxy) getMultiSendsReferences(ctx context.Context) bool {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "distributed_cache.get_multi_gcs_references", false)
 }
 
 // referenceReadMode returns whether Read should send the client a reference

@@ -1098,6 +1098,39 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	// DistributedCacheGetMultiResponseCount counts values served to
+	// distributed cache peers via GetMulti, by whether each value was sent
+	// as a reference to shared storage or as inline bytes, and by the gRPC
+	// status code of the response ("OK" on success). Each requested resource
+	// is counted separately. Resources missing from the local cache are
+	// omitted from the response and not counted.
+	DistributedCacheGetMultiResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_multi_response_count",
+		Help:      "Count of values served to distributed cache peers via GetMulti, by whether the value was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheGetMultiResponseSizeBytes totals the digest sizes of
+	// values served to distributed cache peers via GetMulti, by whether each
+	// value was sent as a reference to shared storage or as inline bytes, and
+	// by the gRPC status code of the response ("OK" on success). Sizes are
+	// the requested digest's (uncompressed) size rather than the exact bytes
+	// transferred. Resources missing from the local cache are omitted from
+	// the response and not counted.
+	DistributedCacheGetMultiResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_multi_response_size_bytes",
+		Help:      "Total digest sizes of values served to distributed cache peers via GetMulti, by whether the value was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
 	// DistributedCacheReferenceVerificationCount counts verifications of
 	// references received alongside streamed bytes on distributed cache
 	// reads, by outcome: "success" (the dereferenced bytes matched the

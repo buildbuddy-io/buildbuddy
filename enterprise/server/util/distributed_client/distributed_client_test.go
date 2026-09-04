@@ -1704,18 +1704,22 @@ func (c *serverReferenceCache) lastWriteReference() (*refpb.Reference, *rspb.Res
 }
 
 func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferences bool, verifyReferences bool) {
-	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"distributed_cache.read_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": readReferences},
-		},
-		"distributed_cache.verify_read_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": verifyReferences},
-		},
+	setExperimentFlags(t, te, map[string]bool{
+		"distributed_cache.read_gcs_references":        readReferences,
+		"distributed_cache.verify_read_gcs_references": verifyReferences,
 	})
+}
+
+func setExperimentFlags(t *testing.T, te *testenv.TestEnv, flags map[string]bool) {
+	inMemFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
+	for name, enabled := range flags {
+		inMemFlags[name] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": enabled},
+		}
+	}
+	provider := memprovider.NewInMemoryProvider(inMemFlags)
 	require.NoError(t, openfeature.SetProviderAndWait(provider))
 	fp, err := experiments.NewFlagProvider("")
 	require.NoError(t, err)
@@ -1816,6 +1820,105 @@ func TestReadReferenceExperiments(t *testing.T) {
 		ref, data := readRawResponses(t, peer, noRefRN)
 		require.Nil(t, ref)
 		require.Equal(t, noRefBuf, data)
+	})
+}
+
+// getMultiRaw fetches the given resources from peer with a raw gRPC client,
+// returning the response KVs keyed by digest hash.
+func getMultiRaw(t *testing.T, peer string, rns ...*rspb.ResourceName) map[string]*dcpb.KV {
+	t.Helper()
+	conn, err := grpc.NewClient(peer, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	client := dcpb.NewDistributedCacheClient(conn)
+	rsp, err := client.GetMulti(context.Background(), &dcpb.GetMultiRequest{Resources: rns})
+	require.NoError(t, err)
+	kvs := make(map[string]*dcpb.KV, len(rsp.GetKeyValue()))
+	for _, kv := range rsp.GetKeyValue() {
+		kvs[kv.GetKey().GetKey()] = kv
+	}
+	return kvs
+}
+
+func TestGetMultiReferenceExperiment(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	noRefRN, noRefBuf := testdigest.RandomCASResourceBuf(t, 100)
+	expectedRef := &refpb.Reference{
+		Metadata: &sgpb.FileMetadata{
+			FileRecord: &sgpb.FileRecord{Digest: rn.GetDigest()},
+			StorageMetadata: &sgpb.StorageMetadata{
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{BlobName: "blobs/test-blob"},
+			},
+		},
+	}
+	cache := &serverReferenceCache{
+		Cache: te.GetCache(),
+		refs:  map[string]*refpb.Reference{rn.GetDigest().GetHash(): expectedRef},
+	}
+	peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	c := distributed_client.New(te, cache, peer)
+	require.NoError(t, c.StartListening())
+	waitUntilServerIsAlive(peer)
+	require.NoError(t, te.GetCache().Set(ctx, rn, buf))
+	require.NoError(t, te.GetCache().Set(ctx, noRefRN, noRefBuf))
+
+	responseCount := func(responseType string) float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetMultiResponseCount, prometheus.Labels{
+			metrics.DistributedCacheReadResponseType: responseType,
+			metrics.StatusHumanReadableLabel:         "OK",
+		})
+	}
+	responseSize := func(responseType string) float64 {
+		return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetMultiResponseSizeBytes, prometheus.Labels{
+			metrics.DistributedCacheReadResponseType: responseType,
+			metrics.StatusHumanReadableLabel:         "OK",
+		})
+	}
+	expectAllBytes := func(t *testing.T) {
+		bytesBefore, refBefore := responseCount("bytes"), responseCount("reference")
+		bytesSizeBefore, refSizeBefore := responseSize("bytes"), responseSize("reference")
+		kvs := getMultiRaw(t, peer, rn, noRefRN)
+		require.Len(t, kvs, 2)
+		require.Equal(t, buf, kvs[rn.GetDigest().GetHash()].GetValue())
+		require.Nil(t, kvs[rn.GetDigest().GetHash()].GetValueReference())
+		require.Equal(t, noRefBuf, kvs[noRefRN.GetDigest().GetHash()].GetValue())
+		require.Nil(t, kvs[noRefRN.GetDigest().GetHash()].GetValueReference())
+		require.Equal(t, bytesBefore+2, responseCount("bytes"))
+		require.Equal(t, refBefore, responseCount("reference"))
+		require.Equal(t, bytesSizeBefore+float64(len(buf)+len(noRefBuf)), responseSize("bytes"))
+		require.Equal(t, refSizeBefore, responseSize("reference"))
+	}
+
+	t.Run("no experiment provider", func(t *testing.T) {
+		expectAllBytes(t)
+	})
+
+	t.Run("experiment off", func(t *testing.T) {
+		setExperimentFlags(t, te, map[string]bool{"distributed_cache.get_multi_gcs_references": false})
+		expectAllBytes(t)
+	})
+
+	t.Run("experiment sends references where available", func(t *testing.T) {
+		setExperimentFlags(t, te, map[string]bool{"distributed_cache.get_multi_gcs_references": true})
+		bytesBefore, refBefore := responseCount("bytes"), responseCount("reference")
+		bytesSizeBefore, refSizeBefore := responseSize("bytes"), responseSize("reference")
+		kvs := getMultiRaw(t, peer, rn, noRefRN)
+		require.Len(t, kvs, 2)
+		refKV := kvs[rn.GetDigest().GetHash()]
+		require.Empty(t, refKV.GetValue())
+		require.Empty(t, cmp.Diff(expectedRef, refKV.GetValueReference(), protocmp.Transform()))
+		// A value with no reference available is returned as bytes.
+		byteKV := kvs[noRefRN.GetDigest().GetHash()]
+		require.Equal(t, noRefBuf, byteKV.GetValue())
+		require.Nil(t, byteKV.GetValueReference())
+		require.Equal(t, bytesBefore+1, responseCount("bytes"))
+		require.Equal(t, refBefore+1, responseCount("reference"))
+		require.Equal(t, bytesSizeBefore+float64(len(noRefBuf)), responseSize("bytes"))
+		require.Equal(t, refSizeBefore+float64(len(buf)), responseSize("reference"))
 	})
 }
 
