@@ -36,7 +36,7 @@ go_binary(
 )
 
 sh_test(
-    name = "goinit_size_test",
+    name = "goinit_linux_amd64_size_test",
     srcs = ["goinit_size_test.sh"],
     args = [
         "$(rootpath :goinit)",
@@ -46,5 +46,8 @@ sh_test(
         "40000000",
     ],
     data = [":goinit"],
-    target_compatible_with = ["@platforms//os:linux"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
 )
