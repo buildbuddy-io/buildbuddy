@@ -44,7 +44,9 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # Note: the "STABLE_" suffix causes these to be part of the "stable" workspace
 # status, which may trigger rebuilds of certain targets if these values change
 # and you're building with the "--stamp" flag.
-latest_version_tag=$(./tools/latest_version_tag.sh)
+# Release workflows may pin the version explicitly (a release reserves its
+# version before the tag is pushed); otherwise use the newest version tag.
+latest_version_tag="${BB_VERSION_TAG_OVERRIDE:-$(./tools/latest_version_tag.sh)}"
 echo "STABLE_VERSION_TAG $latest_version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
 
