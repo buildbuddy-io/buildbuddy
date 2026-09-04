@@ -277,6 +277,19 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
             <span>Prevent non-admins from clearing workflow runner state</span>
           </label>
         )}
+        {this.showAdvancedSettings() && capabilities.executors && (
+          <label className="form-row input-label">
+            <input
+              autoComplete="off"
+              onFocus={this.onFocus.bind(this)}
+              onChange={this.onChange.bind(this)}
+              type="checkbox"
+              name="writerExecutorAccessEnabled"
+              checked={request.writerExecutorAccessEnabled}
+            />
+            <span>Allow Writers to view available executors</span>
+          </label>
+        )}
         {initialRequest.userOwnedKeysEnabled && !request.userOwnedKeysEnabled && (
           <Banner className="form-row" type="warning">
             This change will deactivate (but not delete) existing keys.

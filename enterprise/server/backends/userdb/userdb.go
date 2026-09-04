@@ -402,6 +402,7 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 			cache_encryption_enabled = ?,
 			suggestion_preference = ?,
 			restrict_clean_workflow_runs_to_admins = ?,
+			writer_executor_access_enabled = ?,
 			enforce_ip_rules = ?,
 			is_parent = ?,
 			saml_idp_metadata_url = ?
@@ -418,6 +419,7 @@ func (d *UserDB) UpdateGroup(ctx context.Context, g *tables.Group) (string, erro
 		g.CacheEncryptionEnabled,
 		g.SuggestionPreference,
 		g.RestrictCleanWorkflowRunsToAdmins,
+		g.WriterExecutorAccessEnabled,
 		g.EnforceIPRules,
 		g.IsParent,
 		g.SamlIdpMetadataUrl,

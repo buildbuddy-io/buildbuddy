@@ -12,6 +12,7 @@ go_test(
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
         "//proto:group_go_proto",
+        "//proto:user_go_proto",
         "//proto:user_id_go_proto",
         "//server/buildbuddy_server",
         "//server/environment",

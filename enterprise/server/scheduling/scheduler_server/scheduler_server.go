@@ -22,10 +22,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/error_util"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -2889,12 +2891,28 @@ func (s *SchedulerServer) upgradePrompt(ctx context.Context, executors []*scpb.G
 }
 
 func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error) {
-	groupID := req.GetRequestContext().GetGroupId()
-	if groupID == "" {
+	requestedGroupID := req.GetRequestContext().GetGroupId()
+	if requestedGroupID == "" {
 		return nil, status.InvalidArgumentError("group not specified")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userCapabilities, err := capabilities.ForAuthenticatedUserGroup(ctx, s.env.GetAuthenticator(), requestedGroupID)
+	if err != nil {
+		return nil, err
+	}
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, requestedGroupID)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorizeExecutorStatusAccess(u, userCapabilities, g); err != nil {
+		return nil, err
 	}
 
 	// If executor auth is not enabled, executors do not belong to any group.
+	groupID := requestedGroupID
 	if !s.requireExecutorAuthorization {
 		groupID = ""
 	}
@@ -2908,15 +2926,6 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 	// Don't report user owned executors as being enabled for the shared executor group ID (i.e. the BuildBuddy group)
 	if userOwnedExecutorsEnabled && groupID == *sharedExecutorPoolGroupID {
 		userOwnedExecutorsEnabled = false
-	}
-
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-	g, err := s.env.GetUserDB().GetGroupByID(ctx, u.GetGroupID())
-	if err != nil {
-		return nil, err
 	}
 
 	executors := make([]*scpb.GetExecutionNodesResponse_Executor, len(registeredNodes))
@@ -2947,6 +2956,20 @@ func (s *SchedulerServer) GetExecutionNodes(ctx context.Context, req *scpb.GetEx
 		UserOwnedExecutorsSupported: userOwnedExecutorsEnabled,
 		UpgradePrompt:               s.upgradePrompt(ctx, executors),
 	}, nil
+}
+
+func authorizeExecutorStatusAccess(u interfaces.UserInfo, userCapabilities []cappb.Capability, g *tables.Group) error {
+	if slices.Contains(userCapabilities, cappb.Capability_ORG_ADMIN) {
+		return nil
+	}
+	// Writer access is intended for signed-in users, not Writer-capability API
+	// keys. Org-admin API keys remain allowed by the check above.
+	if u.GetAPIKeyInfo().ID == "" && g.WriterExecutorAccessEnabled &&
+		slices.Contains(userCapabilities, cappb.Capability_CACHE_WRITE) &&
+		slices.Contains(userCapabilities, cappb.Capability_CAS_WRITE) {
+		return nil
+	}
+	return status.PermissionDeniedError("not authorized to view executor status")
 }
 
 func errTaskSizeTooLarge(pool, os, arch string, size *scpb.TaskSize) error {

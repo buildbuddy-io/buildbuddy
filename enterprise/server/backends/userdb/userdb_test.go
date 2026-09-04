@@ -513,7 +513,11 @@ func TestUpdateGroup(t *testing.T) {
 	createUser(t, ctx, env, "US2", "org2.io")
 	ctx2 := authUserCtx(ctx, env, t, "US2")
 
-	g1Update := &tables.Group{GroupID: "GR1", URLIdentifier: "gr1"}
+	g1Update := &tables.Group{
+		GroupID:                     "GR1",
+		URLIdentifier:               "gr1",
+		WriterExecutorAccessEnabled: true,
+	}
 
 	_, err := udb.UpdateGroup(ctx, g1Update)
 	require.Truef(
@@ -527,6 +531,9 @@ func TestUpdateGroup(t *testing.T) {
 
 	_, err = udb.UpdateGroup(ctx1, g1Update)
 	require.NoError(t, err)
+	updatedGroup, err := udb.GetGroupByID(ctx1, g1Update.GroupID)
+	require.NoError(t, err)
+	require.True(t, updatedGroup.WriterExecutorAccessEnabled)
 }
 
 // createGroupWithSamlURL creates a self-owned (non-parent) group for userID and
@@ -2368,6 +2375,7 @@ func TestGroupAuditLogs(t *testing.T) {
 		UrlIdentifier:               "my-group-name",
 		SharingEnabled:              false,
 		UseGroupOwnedExecutors:      true,
+		WriterExecutorAccessEnabled: true,
 		SuggestionPreference:        grpb.SuggestionPreference_ADMINS_ONLY,
 		UserOwnedKeysEnabled:        true,
 	})
@@ -2385,6 +2393,7 @@ func TestGroupAuditLogs(t *testing.T) {
 	require.False(t, req.SharingEnabled)
 	require.True(t, req.UserOwnedKeysEnabled)
 	require.True(t, req.UseGroupOwnedExecutors)
+	require.True(t, req.WriterExecutorAccessEnabled)
 	require.Equal(t, grpb.SuggestionPreference_ADMINS_ONLY, req.SuggestionPreference)
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -31,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/upgrade"
@@ -43,6 +45,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -1530,6 +1533,89 @@ func TestGetExecutionNodes(t *testing.T) {
 			last := rsp.GetExecutor()[i-1]
 			require.GreaterOrEqual(t, executor.GetNode().GetHost(), last.GetNode().GetHost())
 		}
+	}
+}
+
+func TestAuthorizeExecutorStatusAccess(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		userID         string
+		apiKeyID       string
+		capabilities   []cappb.Capability
+		settingEnabled bool
+		allowed        bool
+	}{
+		{
+			name:         "AdminSettingDisabled",
+			userID:       "US1",
+			capabilities: role.AdminCapabilities,
+			allowed:      true,
+		},
+		{
+			name:         "AdminAPIKeySettingDisabled",
+			apiKeyID:     "AK1",
+			capabilities: role.AdminCapabilities,
+			allowed:      true,
+		},
+		{
+			name:           "WriterSettingEnabled",
+			userID:         "US1",
+			capabilities:   role.WriterCapabilities,
+			settingEnabled: true,
+			allowed:        true,
+		},
+		{
+			name:         "WriterSettingDisabled",
+			userID:       "US1",
+			capabilities: role.WriterCapabilities,
+		},
+		{
+			name:           "DeveloperSettingEnabled",
+			userID:         "US1",
+			capabilities:   role.DeveloperCapabilities,
+			settingEnabled: true,
+		},
+		{
+			name:           "ReaderSettingEnabled",
+			userID:         "US1",
+			capabilities:   role.ReaderCapabilities,
+			settingEnabled: true,
+		},
+		{
+			name:           "OrgWriterAPIKeySettingEnabled",
+			apiKeyID:       "AK1",
+			capabilities:   role.WriterCapabilities,
+			settingEnabled: true,
+		},
+		{
+			name:           "UserWriterAPIKeySettingEnabled",
+			userID:         "US1",
+			apiKeyID:       "AK1",
+			capabilities:   role.WriterCapabilities,
+			settingEnabled: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			u := &testauth.TestUser{
+				UserID:   test.userID,
+				APIKeyID: test.apiKeyID,
+				GroupID:  "GR1",
+				GroupMemberships: []*interfaces.GroupMembership{
+					{GroupID: "GR1", Capabilities: test.capabilities},
+				},
+			}
+			g := &tables.Group{
+				GroupID:                     "GR1",
+				WriterExecutorAccessEnabled: test.settingEnabled,
+			}
+
+			err := authorizeExecutorStatusAccess(u, test.capabilities, g)
+			if test.allowed {
+				require.NoError(t, err)
+			} else {
+				require.True(t, status.IsPermissionDeniedError(err), "expected PermissionDenied, got %v", err)
+			}
+		})
 	}
 }
 

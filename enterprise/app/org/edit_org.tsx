@@ -41,6 +41,7 @@ export default class EditOrgComponent extends OrgForm<grp.UpdateGroupRequest> {
       useGroupOwnedExecutors: group.useGroupOwnedExecutors,
       suggestionPreference: group.suggestionPreference,
       restrictCleanWorkflowRunsToAdmins: group.restrictCleanWorkflowRunsToAdmins,
+      writerExecutorAccessEnabled: group.writerExecutorAccessEnabled,
     });
     this.setState({ request, initialRequest: this.newRequest(request) });
   }

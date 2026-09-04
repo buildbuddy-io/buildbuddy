@@ -31,6 +31,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -66,6 +67,40 @@ func getGroup(t *testing.T, ctx context.Context, env environment.Env) *tables.Gr
 	require.NoError(t, err, "failed to get self-owned group")
 	require.Len(t, tu.Groups, 1, "getGroup: user must be part of exactly one group")
 	return tu.Groups[0]
+}
+
+func TestUpdateGroup_WriterExecutorAccess(t *testing.T) {
+	te := enterprise_testenv.New(t)
+	enterprise_testauth.Configure(t, te)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+
+	ctx := context.Background()
+	err := te.GetUserDB().InsertUser(ctx, &tables.User{UserID: "US1", SubID: "US1SubID"})
+	require.NoError(t, err)
+	userCtx := authUserCtx(ctx, te, t, "US1")
+	group := getGroup(t, userCtx, te).Group
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	_, err = server.UpdateGroup(userCtx, &grpb.UpdateGroupRequest{
+		RequestContext:              &ctxpb.RequestContext{GroupId: group.GroupID},
+		Name:                        group.Name,
+		UrlIdentifier:               "writer-executor-access",
+		SuggestionPreference:        group.SuggestionPreference,
+		WriterExecutorAccessEnabled: true,
+	})
+	require.NoError(t, err)
+
+	updatedGroup, err := te.GetUserDB().GetGroupByID(userCtx, group.GroupID)
+	require.NoError(t, err)
+	require.True(t, updatedGroup.WriterExecutorAccessEnabled)
+	rsp, err := server.GetUser(userCtx, &uspb.GetUserRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.GetUserGroup(), 1)
+	require.True(t, rsp.GetUserGroup()[0].GetWriterExecutorAccessEnabled())
 }
 
 func TestCreateGroup(t *testing.T) {

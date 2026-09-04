@@ -362,6 +362,7 @@ func makeGroups(groupRoles []*tables.GroupRole) ([]*grpb.Group, error) {
 			DeveloperOrgCreationEnabled:       g.DeveloperOrgCreationEnabled,
 			UseGroupOwnedExecutors:            g.UseGroupOwnedExecutors,
 			RestrictCleanWorkflowRunsToAdmins: g.RestrictCleanWorkflowRunsToAdmins,
+			WriterExecutorAccessEnabled:       g.WriterExecutorAccessEnabled,
 			EnforceIpRules:                    g.EnforceIPRules,
 			SuggestionPreference:              g.SuggestionPreference,
 			Url:                               getGroupUrl(&gr.Group),
@@ -722,6 +723,7 @@ func (s *BuildBuddyServer) UpdateGroup(ctx context.Context, req *grpb.UpdateGrou
 	group.UseGroupOwnedExecutors = req.GetUseGroupOwnedExecutors()
 	group.SuggestionPreference = req.GetSuggestionPreference()
 	group.RestrictCleanWorkflowRunsToAdmins = req.GetRestrictCleanWorkflowRunsToAdmins()
+	group.WriterExecutorAccessEnabled = req.GetWriterExecutorAccessEnabled()
 	if group.SuggestionPreference == grpb.SuggestionPreference_UNKNOWN_SUGGESTION_PREFERENCE {
 		group.SuggestionPreference = grpb.SuggestionPreference_ENABLED
 	}

@@ -125,6 +125,9 @@ message Group {
 
   // The status of the group.
   GroupStatus status = 21;
+
+  // Whether users with the Writer role can view executor status.
+  bool writer_executor_access_enabled = 22;
 }
 
 message JoinGroupRequest {
@@ -357,6 +360,9 @@ message UpdateGroupRequest {
 
   // Whether to enable codesearch.
   bool code_search_enabled = 13;
+
+  // Whether users with the Writer role can view executor status.
+  bool writer_executor_access_enabled = 14;
 }
 
 message UpdateGroupResponse {

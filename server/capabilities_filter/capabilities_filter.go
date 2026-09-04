@@ -156,6 +156,8 @@ var (
 		buildBuddyServicePrefix + "SaveWorkspace",
 		buildBuddyServicePrefix + "GetWorkspaceDirectory",
 		buildBuddyServicePrefix + "GetWorkspaceFile",
+		// RBE deployment view. The handler applies the org's role policy.
+		buildBuddyServicePrefix + "GetExecutionNodes",
 	}
 
 	// AdminOnlyRPCs can only be called by admins of the selected group.
@@ -197,8 +199,6 @@ var (
 		// Workflow management
 		buildBuddyServicePrefix + "DeleteWorkflow",
 		buildBuddyServicePrefix + "InvalidateAllSnapshotsForRepo",
-		// RBE deployment view
-		buildBuddyServicePrefix + "GetExecutionNodes",
 		// Cache proxy deployment view
 		buildBuddyServicePrefix + "GetCacheProxies",
 		// BuildBuddy usage data
