@@ -102,10 +102,11 @@ func (c *bareCommandContainer) Signal(ctx context.Context, sig syscall.Signal) e
 
 func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, workDir string, stdio *interfaces.Stdio) (result *interfaces.CommandResult) {
 	var statsListener procstats.Listener
+	var statsTracker *container.UsageStats
 	if c.opts.EnableStats {
-		// Setting the stats listener to non-nil enables stats reporting in
-		// commandutil.RunWithOpts.
-		statsListener = func(*repb.UsageStats) {}
+		statsTracker = &container.UsageStats{}
+		statsTracker.Reset()
+		statsListener = statsTracker.Update
 	}
 
 	if *enableLogFiles {
@@ -162,12 +163,22 @@ func (c *bareCommandContainer) exec(ctx context.Context, cmd *repb.Command, work
 		}
 	}
 
-	return commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
+	result = commandutil.RunWithOpts(ctx, cmd, &commandutil.RunOpts{
 		Dir:           filepath.Join(workDir, cmd.GetWorkingDirectory()),
 		StatsListener: statsListener,
 		Stdio:         stdio,
 		Signal:        c.signal,
 	})
+	if statsTracker != nil {
+		trackedStats := statsTracker.TaskStats()
+		// commandutil may augment the final CPU and memory values using
+		// platform-specific process accounting after the last listener update.
+		trackedStats.CpuNanos = max(trackedStats.GetCpuNanos(), result.UsageStats.GetCpuNanos())
+		trackedStats.PeakMemoryBytes = max(trackedStats.GetPeakMemoryBytes(), result.UsageStats.GetPeakMemoryBytes())
+		trackedStats.MemoryBytes = result.UsageStats.GetMemoryBytes()
+		result.UsageStats = trackedStats
+	}
+	return result
 }
 
 func (c *bareCommandContainer) IsImageCached(ctx context.Context) (bool, error) { return false, nil }

@@ -69,6 +69,29 @@ func TestHelloWorldOnBareMetal(t *testing.T) {
 	assert.Equal(t, 0, result.ExitCode, "should exit with success")
 }
 
+func TestRun_StatsEnabled_RecordsUsageTimeline(t *testing.T) {
+	flags.Set(t, "executor.record_usage_timelines", true)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	workDir := testfs.MakeTempDir(t)
+	ctr := bare.NewBareCommandContainer(&bare.Opts{EnableStats: true})
+
+	result := ctr.Run(ctx, &repb.Command{
+		Arguments: []string{"sh", "-c", "sleep 0.1 & sleeper=$!; i=0; while kill -0 $sleeper 2>/dev/null; do i=$((i + 1)); done; wait $sleeper"},
+	}, workDir, oci.Credentials{})
+
+	require.NoError(t, result.Error)
+	require.Positive(t, result.UsageStats.GetCpuNanos())
+	require.Positive(t, result.UsageStats.GetPeakMemoryBytes())
+	require.NotNil(t, result.UsageStats.GetTimeline())
+	require.GreaterOrEqual(t, len(result.UsageStats.GetTimeline().GetTimestamps()), 2)
+	cpuMillis := int64(0)
+	for _, deltaMillis := range result.UsageStats.GetTimeline().GetCpuSamples() {
+		cpuMillis += deltaMillis
+	}
+	require.Positive(t, cpuMillis)
+}
+
 func TestLogFiles(t *testing.T) {
 	flags.Set(t, "executor.bare.enable_log_files", true)
 	ctx := context.Background()
