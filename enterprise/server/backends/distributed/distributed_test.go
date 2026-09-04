@@ -4075,18 +4075,22 @@ func (w *referenceMemoryCacheWriter) Close() error {
 // provider must be installed before any servers start (background goroutines
 // read it without synchronization).
 func setWriteReferenceExperiments(t *testing.T, writeReferences bool, verifyReferences bool) {
-	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"distributed_cache.write_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": writeReferences},
-		},
-		"distributed_cache.verify_write_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": verifyReferences},
-		},
+	setReferenceExperiments(t, map[string]bool{
+		"distributed_cache.write_gcs_references":        writeReferences,
+		"distributed_cache.verify_write_gcs_references": verifyReferences,
 	})
+}
+
+func setReferenceExperiments(t *testing.T, flags map[string]bool) {
+	memFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
+	for name, value := range flags {
+		memFlags[name] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": value},
+		}
+	}
+	provider := memprovider.NewInMemoryProvider(memFlags)
 	require.NoError(t, openfeature.SetProviderAndWait(provider))
 	t.Cleanup(func() {
 		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
@@ -4308,5 +4312,152 @@ func TestWriteByReference(t *testing.T) {
 		for _, dc := range dcs {
 			readAndCompareDigest(t, ctx, dc, rn)
 		}
+	})
+}
+
+func TestBackfillByReference(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	// Install the experiment flag provider once, before any servers start;
+	// subtests control flag values through the openfeature provider.
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// newCluster starts a 3-node cluster and returns it with a blob written
+	// by bytes to every node, so each node holds it locally and it is in
+	// shared storage.
+	newCluster := func(t *testing.T) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore, *rspb.ResourceName) {
+		store := &sharedBlobStore{blobs: map[string][]byte{}}
+		var peers []string
+		for i := 0; i < 3; i++ {
+			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+		}
+		baseConfig := Options{
+			ReplicationFactor:  3,
+			Nodes:              slices.Clone(peers),
+			DisableLocalLookup: true,
+		}
+		var dcs []*Cache
+		var locals []*referenceMemoryCache
+		for _, peer := range peers {
+			local := &referenceMemoryCache{Cache: newMemoryCache(t, singleCacheSizeBytes), store: store}
+			config := baseConfig
+			config.ListenAddr = peer
+			dcs = append(dcs, startNewDCache(t, env, config, local))
+			locals = append(locals, local)
+		}
+		for _, peer := range peers {
+			waitForReady(t, peer)
+		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		for _, local := range locals {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 1, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		return peers, dcs, locals, store, rn
+	}
+	// backfill copies rn from peers[0] to peers[1] and peers[2] via dcs[0].
+	backfill := func(t *testing.T, peers []string, dcs []*Cache, rn *rspb.ResourceName) {
+		ps := peerset.New([]string{peers[1], peers[2], peers[0]}, nil)
+		for p := ps.GetNextPeer(); p != ""; p = ps.GetNextPeer() {
+		}
+		dcs[0].backfillPeers(ctx, dcs[0].getBackfillOrders(rn, ps))
+	}
+	assertBackfilled := func(t *testing.T, locals []*referenceMemoryCache, rn *rspb.ResourceName) {
+		for i, local := range locals {
+			exists, err := local.Contains(ctx, rn)
+			require.NoError(t, err)
+			require.True(t, exists, "blob was not backfilled to peer %d", i)
+			readAndCompareDigest(t, ctx, local, rn)
+		}
+	}
+
+	t.Run("forwards the source's reference", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, store, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		uploadsBefore := store.uploadCount()
+
+		backfill(t, peers, dcs, rn)
+
+		// Each destination cloned the source's blob from shared storage;
+		// nothing was re-uploaded and no bytes were written.
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, refWritesCloned := local.counts()
+			require.Equal(t, 1, byteCommits) // The initial Set.
+			require.Equal(t, 1, refWrites)
+			require.Equal(t, 1, refWritesCloned)
+		}
+		require.Equal(t, uploadsBefore, store.uploadCount())
+		assertBackfilled(t, locals, rn)
+	})
+
+	t.Run("falls back to bytes when the source sends bytes", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.read_gcs_references":     false,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, _, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+
+		backfill(t, peers, dcs, rn)
+
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 2, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		assertBackfilled(t, locals, rn)
+	})
+
+	t.Run("falls back to bytes when the reference write fails", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, _, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		// The source still mints references from the shared store, but the
+		// destinations cannot resolve them, so their reference writes fail.
+		locals[1].store = &sharedBlobStore{blobs: map[string][]byte{}}
+		locals[2].store = &sharedBlobStore{blobs: map[string][]byte{}}
+
+		backfill(t, peers, dcs, rn)
+
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 2, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		assertBackfilled(t, locals, rn)
+	})
+
+	t.Run("experiment off copies bytes", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": false,
+		})
+		peers, dcs, locals, _, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+
+		backfill(t, peers, dcs, rn)
+
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 2, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		assertBackfilled(t, locals, rn)
 	})
 }

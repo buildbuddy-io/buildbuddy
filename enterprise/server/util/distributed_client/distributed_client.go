@@ -743,9 +743,23 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 }
 
 func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	_, rc, err := c.remoteRead(ctx, peer, r, offset, limit, false /*=returnReference*/)
+	return rc, err
+}
+
+// RemoteReaderOrReference reads r from peer like RemoteReader, except that
+// when the peer answers with a reference to r's bytes in shared storage
+// instead of the bytes themselves, the reference is returned as-is rather
+// than dereferenced. Exactly one of the reference and the reader is non-nil
+// on success.
+func (c *Proxy) RemoteReaderOrReference(ctx context.Context, peer string, r *rspb.ResourceName) (*refpb.Reference, io.ReadCloser, error) {
+	return c.remoteRead(ctx, peer, r, 0, 0, true /*=returnReference*/)
+}
+
+func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64, returnReference bool) (*refpb.Reference, io.ReadCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Pebble rejects offset/limit when the request matches the stored compressor,
 	// so skip the rewrite on the partial-read path.
@@ -764,11 +778,11 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	}
 	stream, err := client.Read(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rc, err := newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if rc.rsp.GetReference() != nil {
@@ -801,7 +815,7 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 				if err != nil {
 					rc.Close()
 					recordReadResponseMetrics("bytes", r, status.MetricsLabel(err))
-					return nil, err
+					return nil, nil, err
 				}
 				byteReader = dr
 			}
@@ -815,7 +829,7 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 						metrics.VerificationOutcomeLabel: VerificationFailure,
 						metrics.StatusHumanReadableLabel: codes.Internal.String(),
 					}).Inc()
-				return byteReader, nil
+				return nil, byteReader, nil
 			}
 			refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
 			if err != nil {
@@ -828,38 +842,42 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 						metrics.VerificationOutcomeLabel: VerificationError,
 						metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 					}).Inc()
-				return byteReader, nil
+				return nil, byteReader, nil
 			}
-			return NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer, groupIDForMetrics(ctx)), nil
+			return nil, NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer, groupIDForMetrics(ctx)), nil
 		}
 
-		// The reference is the whole response: dereference it.
+		// The reference is the whole response.
 		if !refMatches {
 			rc.Close()
 			recordReadResponseMetrics("reference", r, codes.Internal.String())
-			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
+			return nil, nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
 				peer, frd.GetHash(), frd.GetSizeBytes(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 		}
 		if err := rc.Close(); err != nil {
 			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
 		}
+		if returnReference {
+			recordReadResponseMetrics("reference", r, codes.OK.String())
+			return ref, nil, nil
+		}
 		refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
 		recordReadResponseMetrics("reference", r, status.MetricsLabel(err))
-		return refReader, err
+		return nil, refReader, err
 	}
 
 	if !decompress {
 		recordReadResponseMetrics("bytes", r, codes.OK.String())
-		return rc, nil
+		return nil, rc, nil
 	}
 	dr, err := compression.NewZstdDecompressingReader(rc)
 	if err != nil {
 		rc.Close()
 		recordReadResponseMetrics("bytes", r, status.MetricsLabel(err))
-		return nil, err
+		return nil, nil, err
 	}
 	recordReadResponseMetrics("bytes", r, codes.OK.String())
-	return dr, nil
+	return nil, dr, nil
 }
 
 // groupIDForMetrics returns the authenticated group ID in ctx, for metric
