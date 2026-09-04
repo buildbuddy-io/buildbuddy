@@ -18,6 +18,7 @@ go_library(
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache",
     deps = [
+        "//enterprise/server/auth",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/metrics",
@@ -63,6 +64,7 @@ go_test(
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
         "//server/testutil/testmetrics",
+        "//server/util/authutil",
         "//server/util/claims",
         "//server/util/disk",
         "//server/util/hash",

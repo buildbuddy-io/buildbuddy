@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -112,23 +113,60 @@ func TestFilecache(t *testing.T) {
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
 }
 
-func TestFileCacheUsesTrustedTaskGroupID(t *testing.T) {
-	const groupID = "GR12345"
-	ctx := claims.AuthContext(t.Context(), &claims.Claims{GroupID: groupID})
-	fcDir := testfs.MakeTempDir(t)
-	fc, err := filecache.NewFileCache(fcDir, 100_000, false)
-	require.NoError(t, err)
-	t.Cleanup(func() { fc.Close() })
-	fc.WaitForDirectoryScanToComplete()
+func jwtForGroup(t *testing.T, groupID string) string {
+	authCtx := claims.AuthContextWithJWT(t.Context(), &claims.Claims{GroupID: groupID}, nil)
+	token, ok := authCtx.Value(authutil.ContextTokenStringKey).(string)
+	require.True(t, ok)
+	require.NotEmpty(t, token)
+	return token
+}
 
-	workspaceDir := testfs.MakeTempDir(t)
-	source := writeFileContent(t, workspaceDir, "source", "source", false)
-	node := nodeFromString("source", false)
-	require.NoError(t, fc.AddFile(ctx, node, source))
+func TestFileCacheGroupFromTrustedJWT(t *testing.T) {
+	const authenticatedGroupID = "GR12345"
+	flags.Set(t, "auth.jwt_key", "server-test-key")
+	authenticatedJWT := jwtForGroup(t, authenticatedGroupID)
+	anonymousJWT := jwtForGroup(t, interfaces.AuthAnonymousUser)
+	// Model a self-hosted executor which does not have the server's signing key.
+	flags.Set(t, "auth.jwt_key", "executor-test-key")
 
-	cacheFileName := node.GetDigest().GetHash()
-	require.FileExists(t, filepath.Join(fcDir, groupID, cacheFileName))
-	require.NoFileExists(t, filepath.Join(fcDir, interfaces.AuthAnonymousUser, cacheFileName))
+	for _, test := range []struct {
+		name        string
+		jwt         string
+		wantGroupID string
+	}{
+		{name: "authenticated", jwt: authenticatedJWT, wantGroupID: authenticatedGroupID},
+		{name: "anonymous", jwt: anonymousJWT, wantGroupID: interfaces.AuthAnonymousUser},
+		{name: "invalid", jwt: "invalid", wantGroupID: interfaces.AuthAnonymousUser},
+		{name: "missing", wantGroupID: interfaces.AuthAnonymousUser},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			if test.jwt != "" {
+				ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, test.jwt)
+			}
+			if test.name == "authenticated" {
+				_, err := claims.ClaimsFromContext(ctx)
+				require.Error(t, err, "JWT should not be verifiable with the executor key")
+			}
+
+			fcDir := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(fcDir, 100_000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+
+			workspaceDir := testfs.MakeTempDir(t)
+			source := writeFileContent(t, workspaceDir, "source", "source", false)
+			node := nodeFromString("source", false)
+			require.NoError(t, fc.AddFile(ctx, node, source))
+
+			cacheFileName := node.GetDigest().GetHash()
+			require.FileExists(t, filepath.Join(fcDir, test.wantGroupID, cacheFileName))
+			if test.wantGroupID != interfaces.AuthAnonymousUser {
+				require.NoFileExists(t, filepath.Join(fcDir, interfaces.AuthAnonymousUser, cacheFileName))
+			}
+		})
+	}
 }
 
 func TestFileCacheGroupIsolation(t *testing.T) {

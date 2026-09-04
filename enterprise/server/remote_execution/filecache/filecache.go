@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -671,6 +672,12 @@ func groupIDStringFromContext(ctx context.Context) string {
 			log.CtxWarning(ctx, "Empty group id")
 		}
 		return c.GroupID
+	}
+	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+		groupID := u.GetGroupID()
+		if groupID != "" && groupID != interfaces.AuthAnonymousUser {
+			return groupID
+		}
 	}
 	return interfaces.AuthAnonymousUser
 }
