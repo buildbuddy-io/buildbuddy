@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,6 +56,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protodelim"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
@@ -1011,7 +1013,12 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
-	tableKeys, err := authDB.GetAPIKeys(ctx, req.GetRequestContext().GetGroupId())
+	groupID := req.GetRequestContext().GetGroupId()
+	tableKeys, err := authDB.GetAPIKeys(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	creationMetadata, err := s.getAPIKeyCreationMetadata(ctx, groupID, tableKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -1025,9 +1032,72 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			CreationMetadata:    creationMetadata[k.APIKeyID],
 		})
 	}
 	return rsp, nil
+}
+
+// getAPIKeyCreationMetadata returns a map from API Key ID to a CreationMetadata
+// proto containing creation metadata for the API key.
+func (s *BuildBuddyServer) getAPIKeyCreationMetadata(ctx context.Context, groupID string, keys []*tables.APIKey) (map[string]*akpb.CreationMetadata, error) {
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil || authutil.AuthorizeOrgAdmin(u, groupID) != nil {
+		// Only org admins can see creation metadata for API keys.
+		return nil, nil
+	}
+
+	udb := s.env.GetUserDB()
+	creatorNames := map[string]string{}
+	// This loop performs sequential lookups of users to populate the created_by
+	// field. This is fine because most groups don't have many keys. If this
+	// becomes a bottleneck, we can optimize it by batching lookups.
+	if udb != nil {
+		for _, key := range keys {
+			id := key.CreatedByUserID
+			if _, seen := creatorNames[id]; id == "" || seen {
+				continue
+			}
+			creatorNames[id] = ""
+			creator, err := udb.GetUserByIDWithoutAuthCheck(ctx, id, &interfaces.GetUserOpts{})
+			if err != nil {
+				if !status.IsNotFoundError(err) {
+					log.CtxDebugf(ctx, "Failed to look up creator %q of API key %q: %s", id, key.APIKeyID, err)
+				}
+				continue
+			}
+			isMember := slices.ContainsFunc(creator.Groups, func(g *tables.GroupRole) bool {
+				return g.GroupID == groupID
+			})
+			// If the user who created the key isn't a member of the group
+			// owning the key, don't return their display name. This can happen
+			// for API keys created in impersonation mode, or if the key was
+			// created by a user who has since left the group.
+			if !isMember {
+				continue
+			}
+			creatorProto := creator.ToProto()
+			creatorNames[id] = creatorProto.GetName().GetFull()
+			if creatorNames[id] == "" {
+				creatorNames[id] = creatorProto.GetEmail()
+			}
+		}
+	}
+
+	metadata := make(map[string]*akpb.CreationMetadata, len(keys))
+	for _, k := range keys {
+		md := &akpb.CreationMetadata{
+			CreatedBy: creatorNames[k.CreatedByUserID],
+		}
+		if k.CreatedAtUsec > 0 {
+			md.CreatedAt = timestamppb.New(time.UnixMicro(k.CreatedAtUsec))
+		}
+		if md.CreatedAt == nil && md.CreatedBy == "" {
+			continue
+		}
+		metadata[k.APIKeyID] = md
+	}
+	return metadata, nil
 }
 
 func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyRequest) (*akpb.GetApiKeyResponse, error) {
