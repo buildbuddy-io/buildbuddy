@@ -2322,8 +2322,7 @@ actions:
       push: { branches: [ master ] }
     steps:
       - run: |
-          output_base=$(bazel info output_base)
-          bazel run :write_java_log "$output_base"
+          bazel run :write_java_log "$PWD/../output-base"
 `,
 	}
 
