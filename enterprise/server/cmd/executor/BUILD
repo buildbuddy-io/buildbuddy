@@ -89,6 +89,7 @@ go_library(
             "//enterprise/server/oci/ociconv",
             "//enterprise/server/remote_execution/cgroup",
             "//enterprise/server/remote_execution/vbd",
+            "//server/util/flagutil",
             "//server/util/networking",
         ],
         "//conditions:default": [],
