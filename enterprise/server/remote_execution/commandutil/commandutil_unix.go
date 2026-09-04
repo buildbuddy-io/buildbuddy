@@ -38,6 +38,13 @@ func (p *process) cleanup() error {
 	return nil
 }
 
+func (p *process) finalizeUsage(stats *repb.UsageStats) {
+}
+
+func isKilledExitCode(exitCode int, err error) bool {
+	return exitCode == KilledExitCode
+}
+
 func (p *process) wait() (*espb.Rusage, error) {
 	defer close(p.terminated)
 	err := p.cmd.Wait()

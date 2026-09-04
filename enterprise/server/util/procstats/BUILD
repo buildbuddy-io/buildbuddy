@@ -19,6 +19,7 @@ go_test(
     srcs = ["procstats_test.go"],
     deps = [
         ":procstats",
+        "//proto:remote_execution_go_proto",
         "@com_github_stretchr_testify//require",
     ],
 )

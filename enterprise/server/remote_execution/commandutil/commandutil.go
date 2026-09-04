@@ -3,6 +3,7 @@ package commandutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -300,6 +301,7 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 
 	rusage, err := p.wait()
 	stats := <-statsCh
+	p.finalizeUsage(stats)
 	if cleanupErr := p.cleanup(); cleanupErr != nil {
 		log.CtxWarningf(ctx, "Failed to clean up process resources: %s", cleanupErr)
 	}
@@ -395,8 +397,8 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 
 	// If we fail to get the exit code of the process for any other reason, it might
 	// be a transient error that the client can retry, so return UNAVAILABLE for now.
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
 		return NoExitCode, status.UnavailableError(err.Error())
 	}
 	processState := exitErr.ProcessState
@@ -411,7 +413,8 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// can be retried if it was OOM killed. Note that KilledExitCode does not
 	// imply that SIGKILL was received.
 
-	if exitCode == KilledExitCode {
+	if isKilledExitCode(exitCode, err) {
+		exitCode = KilledExitCode
 		if ctx.Err() == context.Canceled {
 			return exitCode, status.CanceledErrorf("command was canceled: %s", err.Error())
 		}

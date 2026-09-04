@@ -23,6 +23,9 @@ const (
 // available. This can be used to live-update stats while a command is running.
 type Listener func(*repb.UsageStats)
 
+// StatsProvider returns cumulative resource usage for a process or process group.
+type StatsProvider func() (*repb.UsageStats, error)
+
 // Monitor polls resource usage of a process tree rooted at the given pid. The
 // process identified by pid is expected to have been started before calling
 // this function. The caller must close the given channel when the process is
@@ -30,6 +33,38 @@ type Listener func(*repb.UsageStats)
 // will return any stats collected.
 func Monitor(pid int, listener Listener, processTerminated <-chan struct{}) *repb.UsageStats {
 	ts := NewTreeStats(pid)
+	return monitorProvider(func() (*repb.UsageStats, error) {
+		if err := ts.Update(); err != nil {
+			return nil, err
+		}
+		return ts.Total(), nil
+	}, listener, processTerminated, false)
+}
+
+// MonitorProvider polls cumulative resource usage until the process terminates.
+// It takes one final sample after termination so providers backed by OS-level
+// accounting can include work performed by short-lived and terminated children.
+func MonitorProvider(provider StatsProvider, listener Listener, processTerminated <-chan struct{}) *repb.UsageStats {
+	return monitorProvider(provider, listener, processTerminated, true)
+}
+
+func monitorProvider(provider StatsProvider, listener Listener, processTerminated <-chan struct{}, sampleAfterTermination bool) *repb.UsageStats {
+	last := &repb.UsageStats{}
+	sample := func() {
+		stats, _ := provider()
+		if stats == nil {
+			return
+		}
+		// CPU and peak memory are cumulative. Preserve the highest values if a
+		// provider returns partial or stale data after an earlier successful
+		// sample. Current memory is instantaneous and may legitimately decrease.
+		stats.CpuNanos = max(stats.GetCpuNanos(), last.GetCpuNanos())
+		stats.PeakMemoryBytes = max(stats.GetPeakMemoryBytes(), last.GetPeakMemoryBytes())
+		last = stats
+		if listener != nil {
+			listener(stats)
+		}
+	}
 	// Most processes are short-lived so we need a fast poll rate if we want
 	// to increase the probability of getting at least one sample. But
 	// polling is expensive: a 50ms poll rate consumes around 10% of a CPU
@@ -39,10 +74,12 @@ func Monitor(pid int, listener Listener, processTerminated <-chan struct{}) *rep
 	for {
 		select {
 		case <-processTerminated:
-			return ts.Total()
+			if sampleAfterTermination {
+				sample()
+			}
+			return last
 		case <-time.After(pollInterval):
-			ts.Update() // ignore error
-			listener(ts.Total())
+			sample()
 		}
 		pollInterval = time.Duration(float64(pollInterval) * statsPollBackoff)
 		if pollInterval > statsMaxPollInterval {
@@ -140,10 +177,9 @@ func statTree(pid int) (map[int]*repb.UsageStats, error) {
 // the process IDs can be recycled.
 // See https://devblogs.microsoft.com/oldnewthing/20150403-00/?p=44313 for more information.
 //
-// TODO(sluongng): On Windows, it might be better to track stats from the JobObjects instead.
-// See enterprise/server/remote_execution/commandutil/commandutil_windows.go and
-// https://learn.microsoft.com/en-us/windows/win32/api/jobapi2/nf-jobapi2-queryinformationjobobject
-// for more information.
+// Windows command execution uses Job Object accounting for CPU, but continues
+// to use this process-tree accounting for resident memory; see
+// enterprise/server/remote_execution/commandutil/commandutil_windows.go.
 func pidsInTree(pid int) (set.Set[int], error) {
 	procs, err := ps.Processes()
 	if err != nil {
