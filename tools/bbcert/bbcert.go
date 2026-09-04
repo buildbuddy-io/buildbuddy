@@ -15,13 +15,35 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/tools/bbcert/update"
 
 	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
 )
 
 var (
-	servers = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times.")
+	servers = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times. Defaults to the servers built into this binary, if any (see `bbcert version`).")
+	// TODO: default to true once the publish workflow is in place.
+	autoUpdate = flag.Bool("auto_update", false, "Check for a newer published bbcert before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
 )
+
+// defaultServers is a comma-separated server list stamped in at link time.
+// This allows a binary to be published embedded with default servers.
+var defaultServers string
+
+// builtInServers parses a stamped server list. An unstamped build leaves the
+// "{STABLE_...}" placeholder, which counts as no servers.
+func builtInServers(stamped string) []string {
+	if stamped == "" || strings.HasPrefix(stamped, "{") {
+		return nil
+	}
+	var out []string
+	for s := range strings.SplitSeq(stamped, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
 
 var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 
@@ -85,8 +107,71 @@ func updateKubectlConfig(ctx context.Context, kc *cgpb.KubernetesClusterCredenti
 }
 
 func main() {
-	flag.Parse()
+	// The subcommand is positional and precedes the flags, so peel it off
+	// before parsing.
+	args := os.Args[1:]
+	var command string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		command, args = args[0], args[1:]
+	}
+	os.Args = append(os.Args[:1], args...)
 
+	switch command {
+	case "":
+		flag.Parse()
+		if *autoUpdate {
+			selfUpdate()
+		}
+		fetchCerts()
+	case "update":
+		os.Exit(update.Run(context.Background(), args))
+	case "version":
+		fmt.Println(update.Version())
+		if s := builtInServers(defaultServers); len(s) > 0 {
+			fmt.Printf("built-in servers: %s\n", strings.Join(s, ", "))
+		}
+		if u := update.BaseURL(); u != "" {
+			fmt.Printf("updates from:     %s\n", u)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command %q\n\n", command)
+		os.Exit(1)
+	}
+}
+
+// selfUpdate replaces this binary with the latest published one and restarts
+// with the same arguments.
+func selfUpdate() {
+	if os.Getenv(update.NoUpdateEnv) != "" || update.Commit() == "" {
+		// Disabled, or a development build, which must not be replaced by
+		// whatever happens to be published.
+		return
+	}
+	ctx := context.Background()
+	u, err := update.Default()
+	if err != nil {
+		log.Warningf("Not checking for updates: %s", err)
+		return
+	}
+	m, needed, err := u.Check(ctx)
+	if err != nil {
+		log.Warningf("Could not check for updates: %s", err)
+		return
+	}
+	if !needed {
+		return
+	}
+	log.Infof("Updating bbcert %.12s -> %.12s (published %s)", update.Commit(), m.Commit, m.PublishedAt)
+	if err := u.Apply(ctx, m); err != nil {
+		log.Warningf("Could not update: %s", err)
+		return
+	}
+	if err := update.Reexec(); err != nil {
+		log.Warningf("Updated, but could not restart (%s); continuing with the previous version. Rerun bbcert to use the new one.", err)
+	}
+}
+
+func fetchCerts() {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Could not determine home directory: %s", err)
@@ -125,11 +210,16 @@ func main() {
 	}
 	token := stdout.String()
 
-	if len(*servers) == 0 {
-		log.Fatalf("At least one --server must be specified.")
+	targets := *servers
+	if len(targets) == 0 {
+		targets = builtInServers(defaultServers)
+		if len(targets) == 0 {
+			log.Fatalf("No --server specified, and this build has no servers built in.")
+		}
+		log.Infof("Using the built-in servers: %s", strings.Join(targets, ", "))
 	}
 
-	for _, srv := range *servers {
+	for _, srv := range targets {
 		if err := fetchCert(ctx, srv, homeDir, keyFile, pub, token); err != nil {
 			log.Errorf("Failed to fetch cert from %s: %s", srv, err)
 		}
