@@ -36,6 +36,7 @@ go_test(
     embed = [":metronome_exporter_lib"],
     exec_properties = {
         "test.EstimatedComputeUnits": "4",
+        "test.container-image": "docker://gcr.io/flame-public/rbe-ubuntu20-04@sha256:09261f2019e9baa7482f7742cdee8e9972a3971b08af27363a61816b2968f622",
         "test.init-dockerd": "true",
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse25.3",
