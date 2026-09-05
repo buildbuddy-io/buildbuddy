@@ -65,7 +65,8 @@ var (
 	ErrRemoved = status.UnavailableError("container has been removed")
 
 	recordUsageTimelines          = flag.Bool("executor.record_usage_timelines", false, "Capture resource usage timeseries data in UsageStats for each task.")
-	imagePullTimeout              = flag.Duration("executor.image_pull_timeout", 5*time.Minute, "How long to wait for the container image to be pulled before returning an Unavailable (retryable) error for an action execution attempt. Applies to all isolation types (docker, firecracker, etc.)")
+	imagePullTimeout              = flag.Duration("executor.image_pull_timeout", 5*time.Minute, "How long to wait for the container image to be prepared before returning an Unavailable (retryable) error for an action execution attempt. Applies to all isolation types (docker, oci, etc.), except firecracker, which uses executor.firecracker_image_pull_timeout.")
+	firecrackerImagePullTimeout   = flag.Duration("executor.firecracker_image_pull_timeout", 10*time.Minute, "Overrides executor.image_pull_timeout for firecracker. Preparing a firecracker image also converts it to EXT4 and caches it as a chunked containerfs, which can take longer. Set to 0 to use executor.image_pull_timeout.")
 	cgroupStatsPollInterval       = flag.Duration("executor.cgroup_stats_poll_interval", 500*time.Millisecond, "How often to poll container stats.")
 	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
 	debugEnableAnonymousRecycling = flag.Bool("debug_enable_anonymous_runner_recycling", false, "Whether to enable runner recycling for unauthenticated requests. For debugging purposes only - do not use in production.")
@@ -665,6 +666,17 @@ func ShouldCountImagePullError(err error) bool {
 	}
 }
 
+// imagePullTimeoutFor returns how long to wait for an image to be prepared for
+// the given isolation type. Firecracker has its own timeout because preparing
+// its image does more than pull it: the image is also converted to EXT4 and
+// cached as a chunked containerfs.
+func imagePullTimeoutFor(isolationType string) time.Duration {
+	if isolationType == string(platform.FirecrackerContainerType) && *firecrackerImagePullTimeout > 0 {
+		return *firecrackerImagePullTimeout
+	}
+	return *imagePullTimeout
+}
+
 // PullImageIfNecessary pulls the image configured for the container if it
 // is not cached locally.
 func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandContainer, creds oci.Credentials, imageRef string, useOCIFetcher bool) error {
@@ -675,9 +687,9 @@ func PullImageIfNecessary(ctx context.Context, env environment.Env, ctr CommandC
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
-	if *imagePullTimeout > 0 {
+	if timeout := imagePullTimeoutFor(ctr.IsolationType()); timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, *imagePullTimeout)
+		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
 
