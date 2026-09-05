@@ -75,6 +75,7 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	remote_execution_config "github.com/buildbuddy-io/buildbuddy/server/remote_execution/config"
 	gcodes "google.golang.org/grpc/codes"
 	gstatus "google.golang.org/grpc/status"
@@ -1041,6 +1042,15 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
+	}
+	// cloud_cpu_nanos only counts cloud Linux executions.
+	if opts.recordActionMergingState && !opts.teedRequest && !pool.IsSelfHosted && props.OS == platform.LinuxOperatingSystemName {
+		if ul := s.env.GetUsageLimiter(); ul != nil {
+			// Use 1ns check to verify some quota is available before starting.
+			if err := ul.Check(ctx, usagepb.UsageAlertingMetric_CLOUD_CPU_NANOS, 1 /* CPU ns */); err != nil {
+				return nil, err
+			}
+		}
 	}
 	var hostnamePattern string
 	var routingConfig *scpb.RoutingConfig

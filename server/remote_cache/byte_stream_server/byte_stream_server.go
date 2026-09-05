@@ -37,6 +37,7 @@ import (
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
+	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
@@ -186,6 +187,11 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	// Check quota before reading - use digest size as expected transfer size
 	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+			return err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Check(ctx, usagepb.UsageAlertingMetric_TOTAL_DOWNLOAD_SIZE_BYTES, r.GetDigest().GetSizeBytes()); err != nil {
 			return err
 		}
 	}
@@ -592,6 +598,11 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 	// Check quota before writing - use digest size as expected upload size
 	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASUploadedBytes), r.GetDigest().GetSizeBytes()); err != nil {
+			return nil, err
+		}
+	}
+	if ul := s.env.GetUsageLimiter(); ul != nil {
+		if err := ul.Check(ctx, usagepb.UsageAlertingMetric_TOTAL_UPLOAD_SIZE_BYTES, r.GetDigest().GetSizeBytes()); err != nil {
 			return nil, err
 		}
 	}
