@@ -7,7 +7,7 @@ load("@com_github_sluongng_nogo_analyzer//staticcheck:def.bzl", "ANALYZERS", "st
 load("@io_bazel_rules_go//go:def.bzl", "nogo")
 load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@pypi//:requirements.bzl", "all_whl_requirements")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
 load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest")
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
@@ -341,4 +341,10 @@ py_library(
     srcs = ["release.py"],
     visibility = ["//:__subpackages__"],
     deps = ["@pypi//requests"],
+)
+
+py_test(
+    name = "release_test",
+    srcs = ["release_test.py"],
+    deps = [":buildbuddy_py_library"],
 )
