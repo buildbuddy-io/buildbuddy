@@ -12,7 +12,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //enterprise/server/cmd/executor:executor_linux_amd64_static //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
+      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
     allow_concurrent_runs: false
   - name: Check style
     container_image: ubuntu-22.04
