@@ -38,6 +38,10 @@ export default class LoginComponent extends React.Component<Props, State> {
   componentDidMount() {
     if (this.isOrgSpecific()) {
       this.fetchOrgName();
+      return;
+    }
+    if (capabilities.config.autoLoginEnabled && capabilities.config.configuredIssuers.length === 1) {
+      authService.login(undefined, { forceRedirect: true });
     }
   }
 

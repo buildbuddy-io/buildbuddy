@@ -270,15 +270,16 @@ export class AuthService {
     window.location.href = url.toString();
   }
 
-  login(slug?: string) {
+  login(slug?: string, options: { forceRedirect?: boolean } = {}) {
     const search = new URLSearchParams(window.location.search);
+    const usePopup = capabilities.config.popupAuthEnabled && !options.forceRedirect;
     if (slug) {
       let url = `/login/?${new URLSearchParams({
         redirect_url: search.get("redirect_url") || window.location.href,
-        show_picker: capabilities.config.popupAuthEnabled ? "true" : "false",
+        show_picker: usePopup ? "true" : "false",
         slug,
       })}`;
-      if (capabilities.config.popupAuthEnabled) {
+      if (usePopup) {
         popup
           .open(url)
           .then(() => this.refreshUser())
@@ -291,10 +292,10 @@ export class AuthService {
 
     let url = `/login/?${new URLSearchParams({
       redirect_url: search.get("redirect_url") || window.location.href,
-      show_picker: capabilities.config.popupAuthEnabled ? "true" : "false",
+      show_picker: usePopup ? "true" : "false",
       issuer_url: capabilities.auth,
     })}`;
-    if (capabilities.config.popupAuthEnabled) {
+    if (usePopup) {
       popup
         .open(url)
         .then(() => this.refreshUser())
