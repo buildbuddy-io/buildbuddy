@@ -17,9 +17,6 @@ message GetWorkspaceResponse {
   context.ResponseContext response_context = 1;
 
   // The requested workspace.
-  // To read workspace file contents, use the `GetWorkspaceFile` endpoint.
-  // To read workspace directory contents, use the
-  // `GetWorkspaceDirectoryRequest` endpoint.
   Workspace workspace = 2;
 }
 
@@ -65,6 +62,31 @@ message GetWorkspaceDirectoryResponse {
   repeated Node child_nodes = 2;
 }
 
+message SaveWorkspaceFileRequest {
+  // The request context.
+  context.RequestContext request_context = 1;
+
+  // The name of the workspace from which to fetch the file.
+  string workspace = 2;
+
+  // Information about the git repo from which to fetch this file.
+  Repo repo = 3;
+
+  // The file node being requested.
+  Node file = 4;
+
+  // The new contents of the file.
+  bytes content = 5;
+}
+
+message SaveWorkspaceFileResponse {
+  // The response context.
+  context.ResponseContext response_context = 1;
+
+  // The file node being requested.
+  Node file = 2;
+}
+
 message GetWorkspaceFileRequest {
   // The request context.
   context.RequestContext request_context = 1;
@@ -83,8 +105,11 @@ message GetWorkspaceFileResponse {
   // The response context.
   context.ResponseContext response_context = 1;
 
-  // The file node that was requested, with populated file content.
+  // The file node that was requested.
   Node file = 2;
+
+  // The contents of the file.
+  bytes content = 3;
 }
 
 message Workspace {
@@ -122,10 +147,6 @@ message Node {
   // The type of change that was made to this file, i.e. added / deleted /
   // modified / unmodified.
   ChangeType change_type = 4;
-
-  // The new contents of the file (if any). Only populated for `SaveWorkspace`
-  // requests. For read requests, use the `GetWorkspaceFile` endpoint.
-  bytes content = 5;
 
   // The original sha of the node without any workspace modifications.
   string original_sha = 6;
