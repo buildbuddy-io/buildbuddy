@@ -108,10 +108,11 @@ const (
 )
 
 var (
-	chunkFileSizeBytes      = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
-	enableChunkedEventLogs  = flag.Bool("storage.enable_chunked_event_logs", true, "If true, Event logs will be stored separately from the invocation proto in chunks.")
-	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not display properly.")
-	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
+	chunkFileSizeBytes       = flag.Int("storage.chunk_file_size_bytes", 3_000_000 /* 3 MB */, "How many bytes to buffer in memory before flushing a chunk of build protocol data to disk.")
+	enableChunkedEventLogs   = flag.Bool("storage.enable_chunked_event_logs", true, "If true, Event logs will be stored separately from the invocation proto in chunks.")
+	disablePersistArtifacts  = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not display properly.")
+	writeToOLAPDBEnabled     = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
+	blackholeAnonymousBuilds = flag.Bool("auth.blackhole_anonymous_builds", false, "If true and anonymous usage is enabled, unauthenticated build event streams will be acknowledged but discarded. A minimal invocation row is retained so the invocation page can explain why the build was not recorded.")
 
 	buildEventFilterStartThreshold = flag.Int("app.build_event_filter_start_threshold", 100_000, "When looking up an invocation, start filtering out unimportant events after this many events have been processed.")
 	cacheStatsFinalizationDelay    = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")
@@ -1063,9 +1064,18 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 		e.hasReceivedEventWithOptions = true
 		log.CtxDebugf(e.ctx, "Received options! sequence: %d invocation_id: %s", seqNo, iid)
 
-		authenticated, err := e.authenticateEvent(&bazelBuildEvent)
+		authenticated, missingAPIKey, err := e.authenticateEvent(&bazelBuildEvent)
 		if err != nil {
 			return err
+		}
+		if missingAPIKey && *blackholeAnonymousBuilds && e.env.GetAuthenticator().AnonymousUsageEnabled(e.ctx) {
+			log.CtxInfof(e.ctx, "Black-holing anonymous invocation %q", iid)
+			if err := recordBlackholedInvocation(e.ctx, e.env, iid); err != nil {
+				log.CtxWarningf(e.ctx, "Failed to record black-holed invocation %q: %s", iid, err)
+			}
+			e.isVoid = true
+			e.bufferedEvents = nil
+			return nil
 		}
 
 		if authenticated {
@@ -1156,32 +1166,47 @@ func (e *EventChannel) handleEvent(event *pepb.PublishBuildToolEventStreamReques
 	return e.processSingleEvent(invocationEvent, iid)
 }
 
-func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.BuildEvent) (bool, error) {
+func recordBlackholedInvocation(ctx context.Context, env environment.Env, iid string) error {
+	invocationUUID, err := uuid.StringToBytes(iid)
+	if err != nil {
+		return err
+	}
+	_, err = env.GetInvocationDB().CreateInvocation(ctx, &tables.Invocation{
+		InvocationID:     iid,
+		InvocationUUID:   invocationUUID,
+		InvocationStatus: int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS),
+		RedactionFlags:   redact.RedactionFlagStandardRedactions,
+	})
+	return err
+}
+
+func (e *EventChannel) authenticateEvent(bazelBuildEvent *build_event_stream.BuildEvent) (authenticated, missingAPIKey bool, err error) {
 	auth := e.env.GetAuthenticator()
-	if user, err := auth.AuthenticatedUser(e.ctx); err == nil && user != nil {
-		return true, nil
+	user, authErr := auth.AuthenticatedUser(e.ctx)
+	if authErr == nil && user != nil {
+		return true, false, nil
 	}
 	options, err := extractOptions(bazelBuildEvent)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	apiKey, err := authutil.ParseAPIKeyFromString(options)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if apiKey == "" {
-		return false, nil
+		return false, authutil.IsAnonymousUserError(authErr), nil
 	}
 	e.ctx = auth.AuthContextFromAPIKey(e.ctx, apiKey)
 	e.groupIDForMetrics = getGroupIDForMetrics(e.ctx, e.env)
 	authError := e.ctx.Value(interfaces.AuthContextUserErrorKey)
 	if authError != nil {
 		if err, ok := authError.(error); ok {
-			return false, err
+			return false, false, err
 		}
-		return false, status.UnknownError(fmt.Sprintf("%v", authError))
+		return false, false, status.UnknownError(fmt.Sprintf("%v", authError))
 	}
-	return true, nil
+	return true, false, nil
 }
 
 func (e *EventChannel) InitializeLogWriter(iid string) error {
