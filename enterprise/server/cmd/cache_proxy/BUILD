@@ -25,7 +25,7 @@ go_library(
         "//enterprise/server/experiments",
         "//enterprise/server/hit_tracker_client",
         "//enterprise/server/ip_rules_enforcer",
-        "//enterprise/server/ocifetcher_server_proxy",
+        "//enterprise/server/oci/ocifetcher",
         "//enterprise/server/remote_crypter",
         "//enterprise/server/remoteauth",
         "//enterprise/server/routing/routing_action_cache_client",
