@@ -76,6 +76,77 @@ func TestConfigure(t *testing.T) {
 	}
 }
 
+func TestGetCustomResourceParentMap(t *testing.T) {
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "apple_simulator", Value: 2},
+		{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator", ParentAccounting: "ceil"},
+		{Name: "sim_version_18_0", Value: 2, Parent: "apple_simulator"},
+		{Name: "sim_version_17_0", Value: 2, Parent: "apple_simulator", ParentAccounting: "sum"},
+	})
+
+	parentMap, err := resources.GetCustomResourceParentMap()
+	require.NoError(t, err)
+	require.Equal(t, map[string]resources.CustomResourceParent{
+		"sim_version_26_5": {Name: "apple_simulator", Accounting: "ceil"},
+		"sim_version_18_0": {Name: "apple_simulator", Accounting: "sum"},
+		"sim_version_17_0": {Name: "apple_simulator", Accounting: "sum"},
+	}, parentMap)
+}
+
+func TestGetCustomResourceParentMap_Invalid(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		resources []resources.CustomResource
+	}{
+		{
+			name: "missing parent",
+			resources: []resources.CustomResource{
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator"},
+			},
+		},
+		{
+			name: "self parent",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2, Parent: "apple_simulator"},
+			},
+		},
+		{
+			name: "accounting without parent",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2, ParentAccounting: "ceil"},
+			},
+		},
+		{
+			name: "nested parents",
+			resources: []resources.CustomResource{
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator"},
+				{Name: "apple_simulator", Value: 2, Parent: "device"},
+				{Name: "device", Value: 2},
+			},
+		},
+		{
+			name: "parent cycle",
+			resources: []resources.CustomResource{
+				{Name: "a", Value: 2, Parent: "b"},
+				{Name: "b", Value: 2, Parent: "a"},
+			},
+		},
+		{
+			name: "unsupported parent accounting",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2},
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator", ParentAccounting: "floor"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.custom_resources", test.resources)
+			_, err := resources.GetCustomResourceParentMap()
+			require.Error(t, err)
+		})
+	}
+}
+
 func TestConfigureDiskCapacity(t *testing.T) {
 	t.Run("disk_bytes flag sets capacity directly", func(t *testing.T) {
 		flags.Set(t, "executor.disk_bytes", int64(1234567))
