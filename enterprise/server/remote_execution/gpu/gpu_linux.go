@@ -44,8 +44,7 @@ func totalGPUMemoryBytes(devices []gpuDevice) (int64, error) {
 		if ret != nvml.SUCCESS {
 			return 0, fmt.Errorf("query GPU %q memory: %w", device.uuid, ret)
 		}
-		// Capacity uses int64 throughout scheduling, so reject values that
-		// would overflow when converted or added to the running total.
+		// Reject overflow so we don't return an incorrect total.
 		if memory.Total > uint64(math.MaxInt64-total) {
 			return 0, fmt.Errorf("total GPU memory exceeds %d bytes", int64(math.MaxInt64))
 		}

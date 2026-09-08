@@ -197,8 +197,7 @@ func TestTotalGPUMemoryBytes_Overflow(t *testing.T) {
 				}})
 			}
 
-			// NVML reports uint64 capacities, but scheduling uses int64.
-			// Reject either a device or a sum that cannot be represented.
+			// Both individual capacities and their sum must fit in int64.
 			total, err := totalGPUMemoryBytes(devices)
 			require.ErrorContains(t, err, "total GPU memory exceeds")
 			require.Zero(t, total)
