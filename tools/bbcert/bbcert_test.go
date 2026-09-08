@@ -29,5 +29,4 @@ func TestBuiltInServers(t *testing.T) {
 		builtInServers("grpcs://prod.example.com,grpcs://dev.example.com"))
 	require.Equal(t, []string{"grpcs://a"}, builtInServers(" grpcs://a , "), "whitespace and empties are dropped")
 	require.Nil(t, builtInServers(""), "nothing stamped")
-	require.Nil(t, builtInServers("{STABLE_BBCERT_DEFAULT_SERVERS}"), "an unstamped build keeps the placeholder")
 }

@@ -27,7 +27,7 @@ var baseURL string
 // BaseURL returns the stamped manifest location, or "" if this build was
 // not stamped with one.
 func BaseURL() string {
-	if baseURL == "" || strings.HasPrefix(baseURL, "{") {
+	if baseURL == "" {
 		return ""
 	}
 	return strings.TrimRight(baseURL, "/")
@@ -46,7 +46,7 @@ var commitSHA string
 // Commit returns the commit this binary was built from, or "" if it was not
 // stamped.
 func Commit() string {
-	if commitSHA == "" || strings.HasPrefix(commitSHA, "{") || commitSHA == "dev" || commitSHA == "unknown" {
+	if commitSHA == "" || commitSHA == "dev" || commitSHA == "unknown" {
 		return ""
 	}
 	return commitSHA

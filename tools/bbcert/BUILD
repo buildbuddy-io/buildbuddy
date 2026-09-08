@@ -22,8 +22,6 @@ go_binary(
     static = "on",
     visibility = ["//visibility:public"],
     x_defs = {
-        "github.com/buildbuddy-io/buildbuddy/tools/bbcert.defaultServers": "{STABLE_BBCERT_DEFAULT_SERVERS}",
-        "github.com/buildbuddy-io/buildbuddy/tools/bbcert/update.baseURL": "{STABLE_BBCERT_UPDATE_URL}",
         # The embedded SHA is used to determine if an update is available.
         "github.com/buildbuddy-io/buildbuddy/tools/bbcert/update.commitSHA": "{STABLE_COMMIT_SHA}",
     },

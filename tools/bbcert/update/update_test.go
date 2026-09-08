@@ -228,8 +228,6 @@ func TestBaseURL_IsEmptyUnlessStamped(t *testing.T) {
 	defer func(v string) { baseURL = v }(baseURL)
 	baseURL = ""
 	require.Equal(t, "", BaseURL())
-	baseURL = "{STABLE_BBCERT_UPDATE_URL}"
-	require.Equal(t, "", BaseURL(), "an unstamped build keeps the placeholder")
 	baseURL = "https://example.com/bbcert/"
 	require.Equal(t, "https://example.com/bbcert", BaseURL())
 }

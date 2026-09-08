@@ -31,10 +31,9 @@ var (
 // This allows a binary to be published embedded with default servers.
 var defaultServers string
 
-// builtInServers parses a stamped server list. An unstamped build leaves the
-// "{STABLE_...}" placeholder, which counts as no servers.
+// builtInServers parses a stamped server list. An unstamped build has none.
 func builtInServers(stamped string) []string {
-	if stamped == "" || strings.HasPrefix(stamped, "{") {
+	if stamped == "" {
 		return nil
 	}
 	var out []string
