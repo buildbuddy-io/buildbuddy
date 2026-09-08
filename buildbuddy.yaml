@@ -12,7 +12,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //enterprise/server/cmd/executor:executor_linux_amd64_static //... --config=linux-workflows --config=race --test_tag_filters=-performance,-bare --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
+      - run: "bazel test //enterprise/server/cmd/executor:executor_linux_amd64_static //... --config=linux-workflows --config=race --config=tests-ci --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
     allow_concurrent_runs: false
   - name: Check style
     container_image: ubuntu-22.04
@@ -44,7 +44,7 @@ actions:
     # TODO: Fix the tests below on Mac, and re-enable.
     steps:
       - run: >-
-          bazel test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
+          bazel test --config=mac-workflows
           --
           //...
           -//server/backends/disk_cache:all
@@ -72,7 +72,7 @@ actions:
     # TODO: Fix the tests below on Mac, and re-enable.
     steps:
       - run: >-
-          bazel test --config=mac-workflows --test_tag_filters=-performance,-webdriver,-docker,-bare
+          bazel test --config=mac-workflows
           --
           //...
           -//server/backends/disk_cache:all
@@ -91,7 +91,7 @@ actions:
         branches:
           - "master"
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=performance --test_tag_filters=+performance"
+      - run: "bazel test //... --config=linux-workflows --config=performance"
   - name: Baremetal tests
     container_image: ubuntu-22.04
     triggers:
@@ -103,7 +103,7 @@ actions:
           - "*"
         merge_with_base_interval: 3h
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=race --test_tag_filters=+bare --build_tag_filters=+bare"
+      - run: "bazel test //... --config=linux-workflows --config=race --config=tests-bare"
     allow_concurrent_runs: false
   - name: Nightly non-determinism check
     triggers:

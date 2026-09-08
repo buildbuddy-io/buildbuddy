@@ -110,6 +110,7 @@ common:race --@io_bazel_rules_go//go/config:race
 common:race --test_timeout=120,600,-1,-1
 
 common:performance --compilation_mode=opt
+common:performance --config=tests-performance
 
 # Configurations used to debug flaky tests
 common:quarantine --config=remote-minimal
@@ -131,6 +132,38 @@ common:webdriver-debug --test_env=DISPLAY
 # When debugging, only run one webdriver test at a time (it's overwhelming
 # otherwise).
 common:webdriver-debug --local_test_jobs=1
+
+
+###############
+# TEST SUITES #
+###############
+
+# Keep test tag filters here. Each suite specifies the complete filter because
+# --test_tag_filters replaces the previous value; filters are not additive.
+# Select a suite after execution configs so it overrides their default suite.
+# Repos choose their default and CI suites in their own .bazelrc.
+
+# Local development should not require Docker, bare execution (Firecracker), or
+# BuildBuddy Secrets ("include-secrets: true"). Benchmarks are opt-in as well.
+common:tests-local --test_tag_filters=-docker,-bare,-secrets,-performance
+
+# Authenticated RBE supports Docker, bare execution, and secrets. Performance
+# tests need a consistent environment and must be selected explicitly.
+common:tests-remote --test_tag_filters=-performance
+
+# Ordinary Linux CI; bare tests run in a separate workflow.
+common:tests-ci --test_tag_filters=-performance,-bare
+
+# Mac CI excludes tests that require unsupported services or isolation types.
+common:tests-macos --test_tag_filters=-performance,-webdriver,-docker,-bare
+
+# Windows CI runs locally and excludes benchmarks.
+common:tests-windows --test_tag_filters=-performance
+
+common:tests-bare --test_tag_filters=+bare
+common:tests-bare --build_tag_filters=+bare
+
+common:tests-performance --test_tag_filters=+performance
 
 
 ###################################
@@ -253,6 +286,7 @@ common:download-minimal --nobuild_runfile_links
 
 # Flags shared across remote configs
 common:remote-shared --config=cache-shared
+common:remote-shared --config=tests-remote
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
 common:remote-shared --rewind_lost_inputs
@@ -262,10 +296,6 @@ common:remote-shared --extra_execution_platforms=@toolchains_buildbuddy//platfor
 common:remote-prod-shared --config=remote-shared
 common:remote-prod-shared --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.io
 common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
-# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
-# but performance tests should not be run remotely since the environment
-# is not consistent or stable.
-common:remote-prod-shared --test_tag_filters=-performance
 
 # Flags shared for dev BES, RBE and cache
 # Note: Dev BES needed to override the default prod BES urls.
@@ -273,10 +303,6 @@ common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
 common:remote-dev-shared --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.dev
 common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
-# Tests tagged with "docker" or "bare" can be run if using authenticated RBE,
-# but performance tests should not be run remotely since the environment
-# is not consistent or stable.
-common:remote-dev-shared --test_tag_filters=-performance
 
 # Build with --config=remote to use BuildBuddy RBE, generally as a human from
 # the command line. Other configs shoudn't embed this.
@@ -385,6 +411,7 @@ common:untrusted-ci --remote_cache=grpcs://remote.buildbuddy.io
 
 # Disabled RBE for Windows
 common:untrusted-ci-windows --config=ci-shared
+common:untrusted-ci-windows --config=tests-windows
 common:untrusted-ci-windows --remote_instance_name=buildbuddy-io/buildbuddy/untrusted-ci-windows-25/rin20260818
 common:untrusted-ci-windows --repository_cache=C:/bazel/repo-cache/
 common:untrusted-ci-windows --bes_results_url=https://app.buildbuddy.io/invocation/
@@ -416,6 +443,7 @@ common:linux-workflows --build_metadata=TAGS=linux-workflow
 # TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
 common:mac-workflows --config=cache
 common:mac-workflows --config=workflows
+common:mac-workflows --config=tests-macos
 common:mac-workflows --build_metadata=TAGS=mac-workflow
 
 # Build fully static binaries linked against musl on Linux.
