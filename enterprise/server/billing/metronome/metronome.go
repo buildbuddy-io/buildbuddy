@@ -62,11 +62,31 @@ type UsageEvent struct {
 
 // MetronomeEvent is the JSON payload Metronome's /v1/ingest endpoint expects.
 type MetronomeEvent struct {
-	TransactionID string            `json:"transaction_id"`
-	CustomerID    string            `json:"customer_id"`
-	EventType     string            `json:"event_type"`
-	Timestamp     string            `json:"timestamp"`
-	Properties    map[string]string `json:"properties"`
+	TransactionID string          `json:"transaction_id"`
+	CustomerID    string          `json:"customer_id"`
+	EventType     string          `json:"event_type"`
+	Timestamp     string          `json:"timestamp"`
+	Properties    EventProperties `json:"properties"`
+}
+
+// EventProperties are the event properties billable metrics filter and
+// aggregate on: the usage count plus one field per usage label. Count is a
+// number so metrics can sum it and SQL metrics can do math on it.
+type EventProperties struct {
+	GroupID     string `json:"group_id"`
+	SKU         string `json:"sku"`
+	Count       int64  `json:"count"`
+	PeriodStart string `json:"period_start"`
+	PeriodEnd   string `json:"period_end"`
+
+	Client        string `json:"client,omitempty"`
+	Server        string `json:"server,omitempty"`
+	Origin        string `json:"origin,omitempty"`
+	Proxy         string `json:"proxy,omitempty"`
+	OS            string `json:"os,omitempty"`
+	Arch          string `json:"arch,omitempty"`
+	SelfHosted    string `json:"self_hosted,omitempty"`
+	IsolationType string `json:"isolation_type,omitempty"`
 }
 
 type Client struct {
@@ -144,15 +164,34 @@ func encodeEvent(e UsageEvent) (*MetronomeEvent, error) {
 		return nil, status.InvalidArgumentErrorf("[%s, %s] must be of window size %s", e.PeriodStart, e.PeriodEnd, WindowSize)
 	}
 
-	properties := map[string]string{
-		"group_id":     e.GroupID,
-		"sku":          e.SKU.String(),
-		"count":        strconv.FormatInt(e.Count, 10),
-		"period_start": e.PeriodStart.UTC().Format(time.RFC3339),
-		"period_end":   e.PeriodEnd.UTC().Format(time.RFC3339),
+	properties := EventProperties{
+		GroupID:     e.GroupID,
+		SKU:         e.SKU.String(),
+		Count:       e.Count,
+		PeriodStart: e.PeriodStart.UTC().Format(time.RFC3339),
+		PeriodEnd:   e.PeriodEnd.UTC().Format(time.RFC3339),
 	}
-	for k, v := range e.Labels {
-		properties[k] = v
+	for name, value := range e.Labels {
+		switch name {
+		case sku.Client:
+			properties.Client = value
+		case sku.Server:
+			properties.Server = value
+		case sku.Origin:
+			properties.Origin = value
+		case sku.Proxy:
+			properties.Proxy = value
+		case sku.OS:
+			properties.OS = value
+		case sku.Arch:
+			properties.Arch = value
+		case sku.SelfHosted:
+			properties.SelfHosted = value
+		case sku.IsolationType:
+			properties.IsolationType = value
+		default:
+			return nil, status.InvalidArgumentErrorf("usage label %q has no event property", name)
+		}
 	}
 	return &MetronomeEvent{
 		TransactionID: transactionID(e),
