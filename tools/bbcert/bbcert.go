@@ -29,6 +29,8 @@ var (
 
 // defaultServers is a comma-separated server list stamped in at link time.
 // This allows a binary to be published embedded with default servers.
+// Optionally set via linker flags:
+// --@io_bazel_rules_go//go/config:gc_linkopts='-X=main.defaultServers=foo'
 var defaultServers string
 
 // builtInServers parses a stamped server list. An unstamped build has none.

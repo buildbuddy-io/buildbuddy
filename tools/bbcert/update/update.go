@@ -22,6 +22,8 @@ import (
 )
 
 // baseURL is where binaries are published.
+// Optionally set via linker flags:
+// --@io_bazel_rules_go//go/config:gc_linkopts='-X=github.com/buildbuddy-io/buildbuddy/tools/bbcert/update.baseURL=foo'
 var baseURL string
 
 // BaseURL returns the stamped manifest location, or "" if this build was
