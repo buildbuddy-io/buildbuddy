@@ -22,38 +22,19 @@ import (
 var (
 	nvmlLibrary = nvml.New()
 
-	// defaultMemoryMonitor is the executor-wide monitor, set by configure when
-	// GPU memory tracking is enabled.
+	// defaultMemoryMonitor is the executor-wide monitor, set by Configure when
+	// NVML is available.
 	defaultMemoryMonitor *memoryMonitor
 )
 
 // GetTotalGPUMemoryBytes returns total memory capacity in bytes across accessible
-// NVIDIA GPUs. It reuses the configured memory monitor's devices when available,
-// and otherwise initializes NVML for this query. It returns an error if NVML is
-// unavailable, no GPUs are accessible, or any device cannot be queried.
+// NVIDIA GPUs discovered by Configure, without starting memory polling. It
+// returns an error if the monitor is unavailable or any device cannot be queried.
 func GetTotalGPUMemoryBytes() (int64, error) {
-	if defaultMemoryMonitor != nil {
-		return totalGPUMemoryBytes(defaultMemoryMonitor.devices)
+	if defaultMemoryMonitor == nil {
+		return 0, errors.New("GPU memory monitor is unavailable")
 	}
-	return queryTotalGPUMemoryBytes(nvmlLibrary)
-}
-
-func queryTotalGPUMemoryBytes(library nvml.Interface) (total int64, err error) {
-	if ret := library.Init(); ret != nvml.SUCCESS {
-		return 0, fmt.Errorf("initialize NVML: %w", ret)
-	}
-	defer func() {
-		if ret := library.Shutdown(); ret != nvml.SUCCESS {
-			total = 0
-			err = errors.Join(err, fmt.Errorf("shutdown NVML: %w", ret))
-		}
-	}()
-
-	devices, err := discoverDevices(library)
-	if err != nil {
-		return 0, fmt.Errorf("discover GPUs: %w", err)
-	}
-	return totalGPUMemoryBytes(devices)
+	return totalGPUMemoryBytes(defaultMemoryMonitor.devices)
 }
 
 func totalGPUMemoryBytes(devices []gpuDevice) (int64, error) {
@@ -87,8 +68,6 @@ type gpuDevice struct {
 }
 
 // discoverDevices returns the accessible NVIDIA GPUs and their stable UUIDs.
-// Zero accessible GPUs is reported as an error, since enabling GPU tracking
-// on an executor without GPUs indicates a misconfiguration.
 func discoverDevices(library nvml.Interface) ([]gpuDevice, error) {
 	count, ret := library.DeviceGetCount()
 	if ret != nvml.SUCCESS {
@@ -151,8 +130,8 @@ func (d gpuDevice) processMemory() (map[int]int64, error) {
 
 // memoryMonitor samples NVIDIA GPU memory usage and attributes it to cgroups.
 type memoryMonitor struct {
-	library nvml.Interface
-	devices []gpuDevice
+	devices         []gpuDevice
+	startMonitoring func()
 
 	// mu guards lastReading.
 	mu sync.Mutex
@@ -161,10 +140,10 @@ type memoryMonitor struct {
 	lastReading memoryReading
 }
 
-// newMemoryMonitor initializes NVML, discovers GPUs once so polling only
-// queries process memory, and starts the background poller. If discovery
-// fails, NVML is shut down before returning the error.
-func newMemoryMonitor(library nvml.Interface) (*memoryMonitor, error) {
+// newMemoryMonitor initializes NVML and discovers GPUs once so polling only
+// queries process memory. Polling starts lazily and stops when ctx is canceled.
+// If discovery fails, NVML is shut down before returning the error.
+func newMemoryMonitor(ctx context.Context, library nvml.Interface) (*memoryMonitor, error) {
 	if ret := library.Init(); ret != nvml.SUCCESS {
 		return nil, fmt.Errorf("initialize NVML: %w", ret)
 	}
@@ -176,8 +155,8 @@ func newMemoryMonitor(library nvml.Interface) (*memoryMonitor, error) {
 		}
 		return nil, err
 	}
-	m := &memoryMonitor{library: library, devices: devices}
-	go m.monitor(context.Background(), m.read)
+	m := &memoryMonitor{devices: devices}
+	m.startMonitoring = sync.OnceFunc(func() { go m.monitor(ctx, m.read) })
 	return m, nil
 }
 
@@ -284,8 +263,8 @@ func (m *memoryMonitor) setReading(reading memoryReading) {
 
 // configure creates the executor-wide memory monitor.
 func configure() error {
-	monitor, err := newMemoryMonitor(nvmlLibrary)
-	if err != nil {
+	monitor, err := newMemoryMonitor(context.Background(), nvmlLibrary)
+	if err != nil && !errors.Is(err, nvml.ERROR_LIBRARY_NOT_FOUND) {
 		return err
 	}
 	defaultMemoryMonitor = monitor
@@ -295,8 +274,9 @@ func configure() error {
 // cgroupUsage returns the latest reading from the executor-wide monitor.
 func cgroupUsage(cgroupPath string) *repb.GPUUsage {
 	if defaultMemoryMonitor == nil {
-		// Configure was not called; usage is unknown.
+		// NVML is unavailable or Configure was not called; usage is unknown.
 		return nil
 	}
+	defaultMemoryMonitor.startMonitoring()
 	return defaultMemoryMonitor.cgroupGPUUsage(cgroupPath)
 }

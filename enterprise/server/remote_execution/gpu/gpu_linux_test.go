@@ -43,40 +43,57 @@ func TestGetTotalGPUMemoryBytes_ConfiguredMonitor(t *testing.T) {
 }
 
 func TestGetTotalGPUMemoryBytes_WithoutMonitor(t *testing.T) {
+	previous := defaultMemoryMonitor
+	t.Cleanup(func() { defaultMemoryMonitor = previous })
+	defaultMemoryMonitor = nil
+
+	// Capacity queries cannot discover devices before Configure has run.
+	total, err := GetTotalGPUMemoryBytes()
+	require.ErrorContains(t, err, "monitor is unavailable")
+	require.Zero(t, total)
+}
+
+func TestConfigure_GPUMemoryTrackingDisabled_CapacityIsAvailable(t *testing.T) {
 	previousMonitor := defaultMemoryMonitor
 	previousLibrary := nvmlLibrary
 	t.Cleanup(func() {
 		defaultMemoryMonitor = previousMonitor
 		nvmlLibrary = previousLibrary
 	})
-	defaultMemoryMonitor = nil
 	flags.Set(t, "executor.gpu_memory_tracking_enabled", false)
+	flags.Set(t, "executor.gpu_memory_poll_interval", time.Duration(0))
+	device := &mock.Device{
+		GetUUIDFunc: func() (string, nvml.Return) { return "GPU-a", nvml.SUCCESS },
+		GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+			return nvml.Memory{Total: 8_000_000_000}, nvml.SUCCESS
+		},
+	}
 	library := &mock.Interface{
 		InitFunc:           func() nvml.Return { return nvml.SUCCESS },
-		ShutdownFunc:       func() nvml.Return { return nvml.SUCCESS },
 		DeviceGetCountFunc: func() (int, nvml.Return) { return 1, nvml.SUCCESS },
 		DeviceGetHandleByIndexFunc: func(index int) (nvml.Device, nvml.Return) {
-			return &mock.Device{
-				GetUUIDFunc: func() (string, nvml.Return) { return "GPU-a", nvml.SUCCESS },
-				GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
-					return nvml.Memory{Total: 8_000_000_000}, nvml.SUCCESS
-				},
-			}, nvml.SUCCESS
+			return device, nvml.SUCCESS
 		},
 	}
 	nvmlLibrary = library
 
-	// A capacity query works with usage tracking disabled and releases its
-	// NVML reference without creating a background monitor.
-	total, err := GetTotalGPUMemoryBytes()
-	require.NoError(t, err)
-	require.Equal(t, int64(8_000_000_000), total)
+	// Disabled tracking still discovers GPUs for capacity queries. The invalid
+	// poll interval is irrelevant because neither query starts polling.
+	require.NoError(t, Configure())
+	require.NotNil(t, defaultMemoryMonitor)
+	for range 2 {
+		total, err := GetTotalGPUMemoryBytes()
+		require.NoError(t, err)
+		require.Equal(t, int64(8_000_000_000), total)
+	}
+	require.Nil(t, CgroupUsage(t.TempDir()))
 	require.Len(t, library.InitCalls(), 1)
-	require.Len(t, library.ShutdownCalls(), 1)
-	require.Nil(t, defaultMemoryMonitor)
+	require.Empty(t, library.ShutdownCalls())
+	require.Empty(t, device.GetComputeRunningProcessesCalls())
 }
 
-func TestQueryTotalGPUMemoryBytes_Errors(t *testing.T) {
+func TestConfigure_NVMLErrors(t *testing.T) {
+	flags.Set(t, "executor.gpu_memory_tracking_enabled", true)
 	for _, testCase := range []struct {
 		name        string
 		initRet     nvml.Return
@@ -84,20 +101,25 @@ func TestQueryTotalGPUMemoryBytes_Errors(t *testing.T) {
 		countRet    nvml.Return
 		handleRet   nvml.Return
 		uuidRet     nvml.Return
-		memoryRet   nvml.Return
 		shutdownRet nvml.Return
 		wantErr     string
 	}{
-		{name: "initialization", initRet: nvml.ERROR_LIBRARY_NOT_FOUND, wantErr: "initialize NVML"},
+		{name: "NVML unavailable", initRet: nvml.ERROR_LIBRARY_NOT_FOUND},
+		{name: "driver unavailable", initRet: nvml.ERROR_DRIVER_NOT_LOADED, wantErr: "initialize NVML"},
 		{name: "device count", countRet: nvml.ERROR_UNKNOWN, wantErr: "get device count"},
 		{name: "no GPUs", wantErr: "no NVIDIA GPUs"},
 		{name: "device handle", count: 1, handleRet: nvml.ERROR_GPU_IS_LOST, wantErr: "get device 0"},
 		{name: "device UUID", count: 1, uuidRet: nvml.ERROR_GPU_IS_LOST, wantErr: "get device 0 UUID"},
-		{name: "memory query", count: 1, memoryRet: nvml.ERROR_GPU_IS_LOST, wantErr: "query GPU"},
-		{name: "shutdown", count: 1, shutdownRet: nvml.ERROR_UNKNOWN, wantErr: "shutdown NVML"},
-		{name: "query and shutdown", count: 1, memoryRet: nvml.ERROR_GPU_IS_LOST, shutdownRet: nvml.ERROR_UNKNOWN, wantErr: "query GPU"},
+		{name: "discovery and shutdown", count: 1, uuidRet: nvml.ERROR_GPU_IS_LOST, shutdownRet: nvml.ERROR_UNKNOWN, wantErr: "get device 0 UUID"},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			previousMonitor := defaultMemoryMonitor
+			previousLibrary := nvmlLibrary
+			t.Cleanup(func() {
+				defaultMemoryMonitor = previousMonitor
+				nvmlLibrary = previousLibrary
+			})
+			defaultMemoryMonitor = nil
 			library := &mock.Interface{
 				InitFunc:           func() nvml.Return { return testCase.initRet },
 				ShutdownFunc:       func() nvml.Return { return testCase.shutdownRet },
@@ -105,18 +127,24 @@ func TestQueryTotalGPUMemoryBytes_Errors(t *testing.T) {
 				DeviceGetHandleByIndexFunc: func(index int) (nvml.Device, nvml.Return) {
 					return &mock.Device{
 						GetUUIDFunc: func() (string, nvml.Return) { return "GPU-a", testCase.uuidRet },
-						GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
-							return nvml.Memory{Total: 8_000_000_000}, testCase.memoryRet
-						},
 					}, testCase.handleRet
 				},
 			}
+			nvmlLibrary = library
 
-			// Every initialized query releases its NVML reference, including
-			// failures. Cleanup errors must not hide the original query error.
-			total, err := queryTotalGPUMemoryBytes(library)
-			require.ErrorContains(t, err, testCase.wantErr)
-			require.Zero(t, total)
+			// Missing NVML must not prevent startup, even with tracking enabled.
+			// Other initialization failures are reported and release NVML when
+			// needed, without hiding the original discovery error.
+			err := Configure()
+			if testCase.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, testCase.wantErr)
+			}
+			require.Nil(t, defaultMemoryMonitor)
+			require.Nil(t, CgroupUsage(t.TempDir()))
+			_, capacityErr := GetTotalGPUMemoryBytes()
+			require.ErrorContains(t, capacityErr, "monitor is unavailable")
 			if testCase.initRet != nvml.SUCCESS {
 				require.Empty(t, library.ShutdownCalls())
 			} else {
@@ -178,14 +206,6 @@ func TestTotalGPUMemoryBytes_Overflow(t *testing.T) {
 	}
 }
 
-func TestConfigure_GPUMemoryTrackingDisabled_DoesNotFail(t *testing.T) {
-	flags.Set(t, "executor.gpu_memory_tracking_enabled", false)
-	flags.Set(t, "executor.gpu_memory_poll_interval", time.Duration(0))
-
-	err := Configure()
-	require.NoError(t, err)
-}
-
 func TestConfigure_InvalidPollInterval_Fails(t *testing.T) {
 	flags.Set(t, "executor.gpu_memory_tracking_enabled", true)
 	flags.Set(t, "executor.gpu_memory_poll_interval", time.Duration(0))
@@ -194,25 +214,54 @@ func TestConfigure_InvalidPollInterval_Fails(t *testing.T) {
 	require.ErrorContains(t, err, "must be at least 1ms")
 }
 
-func TestNewMemoryMonitor_NVMLFailsToInitialize_ReturnsNVMLError(t *testing.T) {
-	library := &mock.Interface{
-		InitFunc: func() nvml.Return { return nvml.ERROR_LIBRARY_NOT_FOUND },
+func TestCgroupUsage_StartsPollingOnceOnFirstMeasurement(t *testing.T) {
+	flags.Set(t, "executor.gpu_memory_tracking_enabled", false)
+	flags.Set(t, "executor.gpu_memory_poll_interval", time.Hour)
+	previous := defaultMemoryMonitor
+	t.Cleanup(func() { defaultMemoryMonitor = previous })
+	cgroupPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(cgroupPath, "cgroup.procs"), []byte("123\n"), 0o644))
+	device := &mock.Device{
+		GetUUIDFunc: func() (string, nvml.Return) { return "GPU-a", nvml.SUCCESS },
+		GetComputeRunningProcessesFunc: func() ([]nvml.ProcessInfo, nvml.Return) {
+			return []nvml.ProcessInfo{{Pid: 123, UsedGpuMemory: 8}}, nvml.SUCCESS
+		},
+		GetGraphicsRunningProcessesFunc: func() ([]nvml.ProcessInfo, nvml.Return) {
+			return nil, nvml.SUCCESS
+		},
 	}
-
-	_, err := newMemoryMonitor(library)
-	require.ErrorContains(t, err, "initialize NVML")
-}
-
-func TestNewMemoryMonitor_NoGPUsAvailable_ReturnsError(t *testing.T) {
 	library := &mock.Interface{
 		InitFunc:           func() nvml.Return { return nvml.SUCCESS },
-		DeviceGetCountFunc: func() (int, nvml.Return) { return 0, nvml.SUCCESS },
-		ShutdownFunc:       func() nvml.Return { return nvml.SUCCESS },
+		DeviceGetCountFunc: func() (int, nvml.Return) { return 1, nvml.SUCCESS },
+		DeviceGetHandleByIndexFunc: func(index int) (nvml.Device, nvml.Return) {
+			return device, nvml.SUCCESS
+		},
 	}
+	monitor, err := newMemoryMonitor(t.Context(), library)
+	require.NoError(t, err)
+	defaultMemoryMonitor = monitor
 
-	_, err := newMemoryMonitor(library)
-	require.ErrorContains(t, err, "reported no NVIDIA GPUs")
-	require.Len(t, library.ShutdownCalls(), 1)
+	// Constructing a monitor and requesting usage with tracking disabled must
+	// leave the process poller idle.
+	require.Nil(t, CgroupUsage(cgroupPath))
+	require.Never(t, func() bool { return len(device.GetComputeRunningProcessesCalls()) > 0 }, 20*time.Millisecond, time.Millisecond)
+
+	// Concurrent first measurements start a single poller. Its initial sample
+	// is available without waiting for the hourly interval set above.
+	flags.Set(t, "executor.gpu_memory_tracking_enabled", true)
+	done := make(chan struct{}, 10)
+	for range 10 {
+		go func() {
+			CgroupUsage(cgroupPath)
+			done <- struct{}{}
+		}()
+	}
+	for range 10 {
+		<-done
+	}
+	require.Eventually(t, func() bool { return CgroupUsage(cgroupPath).GetTotalMemoryBytes() == 8 }, time.Second, time.Millisecond)
+	require.Never(t, func() bool { return len(device.GetComputeRunningProcessesCalls()) > 1 }, 20*time.Millisecond, time.Millisecond)
+	require.Len(t, device.GetGraphicsRunningProcessesCalls(), 1)
 }
 
 func TestDeviceProcessMemory_UnavailableValueReported_ValueIsIgnored(t *testing.T) {
