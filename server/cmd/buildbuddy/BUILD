@@ -29,7 +29,16 @@ go_binary(
 
 container_image(
     name = "base_image",
-    base = "@buildbuddy_go_image_base//image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
+    # Base layers (libc, dynamic linker, etc.) must match the target architecture;
+    # setting architecture only changes the image config metadata.
+    base = select({
+        "@platforms//cpu:arm64": "@buildbuddy_go_image_base_arm64//image",
+        "//conditions:default": "@buildbuddy_go_image_base//image",
+    }),
     symlinks = {
         "config.yaml": "app/server/cmd/buildbuddy/buildbuddy.runfiles/%s/config/buildbuddy.release.yaml" % runfiles_directory(),
         "buildbuddy": "tmp",
@@ -46,6 +55,10 @@ container_image(
 
 go_image(
     name = "buildbuddy_go_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":base_image",
     binary = ":buildbuddy",
     tags = ["manual"],
@@ -54,6 +67,10 @@ go_image(
 
 container_image(
     name = "buildbuddy_image",
+    architecture = select({
+        "@platforms//cpu:arm64": "arm64",
+        "//conditions:default": "amd64",
+    }),
     base = ":buildbuddy_go_image",
     tags = ["manual"],
     visibility = ["//visibility:public"],
