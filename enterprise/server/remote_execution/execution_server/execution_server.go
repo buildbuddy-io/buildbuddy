@@ -1027,8 +1027,18 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if measuredSize == nil {
 		predictedSize = s.taskSizer.Predict(ctx, action, command, props)
 	}
+	// GPU estimates determine which executors have enough GPU capacity. Use the
+	// automatic estimate, including any minimum applied by the task sizer, so a
+	// fallback hint cannot exclude an executor that fits the measured GPU usage.
+	gpuSize := measuredSize
+	if gpuSize == nil {
+		gpuSize = predictedSize
+	}
+	if gpuSize != nil && gpuSize.EstimatedGpuMemoryBytes != nil {
+		taskSize.EstimatedGpuMemoryBytes = new(gpuSize.GetEstimatedGpuMemoryBytes())
+	}
 
-	if measuredSize != nil {
+	if measuredSize != nil && props.EstimatedComputeUnits == 0 {
 		// If we have a measured task size, make sure we associate the p90 cpu
 		// experiment arm with the task, so we can later evaluate the experiment
 		// results. Note, the first time this is evaluated, we'll use the avg

@@ -162,6 +162,93 @@ func getScheduleServer(t *testing.T, userOwnedEnabled, groupOwnedEnabled bool, u
 	return env.GetSchedulerService().(*SchedulerServer), ctx
 }
 
+func TestNodeCanFitTask_GPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		capacity int64
+		request  int64
+		custom   bool
+		wantFit  bool
+	}{
+		{name: "CPU task on CPU executor", wantFit: true},
+		{name: "GPU task on CPU executor", request: 1},
+		{name: "exact GPU capacity", capacity: 8, request: 8, wantFit: true},
+		{name: "GPU request exceeds capacity", capacity: 8, request: 9},
+		{name: "custom GPU resource without official capacity", request: 1, custom: true},
+		{name: "custom and official GPU resources", capacity: 8, request: 8, custom: true, wantFit: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			node := &scpb.ExecutionNode{AssignableMemoryBytes: 100, AssignableMilliCpu: 100, AssignableGpuMemoryBytes: testCase.capacity}
+			size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: new(testCase.request)}
+			if testCase.custom {
+				node.AssignableCustomResources = []*scpb.CustomResource{{Name: "gpu", Value: 1}}
+				size.CustomResources = []*scpb.CustomResource{{Name: "gpu", Value: 1}}
+			}
+
+			// GPU memory is an independent capacity constraint. Configuring a
+			// custom GPU resource does not grant official GPU memory capacity.
+			require.Equal(t, testCase.wantFit, nodeCanFitTask(node, size))
+		})
+	}
+}
+
+func TestGetMostAccurateTaskSize_GPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		measured  *scpb.TaskSize
+		predicted *scpb.TaskSize
+		fallback  int64
+		want      int64
+	}{
+		{name: "fallback only", fallback: 8, want: 8},
+		{name: "measurement below fallback", measured: &scpb.TaskSize{EstimatedGpuMemoryBytes: new(int64(4))}, fallback: 8, want: 4},
+		{name: "measurement above fallback", measured: &scpb.TaskSize{EstimatedGpuMemoryBytes: new(int64(8))}, fallback: 4, want: 8},
+		{name: "zero measurement", measured: &scpb.TaskSize{EstimatedGpuMemoryBytes: new(int64(0))}, fallback: 8},
+		{name: "older measurement", measured: &scpb.TaskSize{}, fallback: 8, want: 8},
+		{name: "prediction without GPU estimate", predicted: &scpb.TaskSize{}, fallback: 8, want: 8},
+		{name: "GPU requirement is not clamped", measured: &scpb.TaskSize{EstimatedGpuMemoryBytes: new(int64(16))}, fallback: 16, want: 16},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			handle := &executorHandle{registration: &scpb.ExecutionNode{
+				AssignableMemoryBytes: 100, AssignableMilliCpu: 100, AssignableGpuMemoryBytes: 8,
+			}}
+			custom := []*scpb.CustomResource{{Name: "gpu", Value: 1}}
+			metadata := &scpb.SchedulingMetadata{
+				TaskSize:          &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: new(testCase.fallback), CustomResources: custom},
+				MeasuredTaskSize:  testCase.measured,
+				PredictedTaskSize: testCase.predicted,
+				RequestedTaskSize: &scpb.TaskSize{CustomResources: custom},
+			}
+			before := metadata.CloneVT()
+
+			// Preserve the effective GPU requirement when choosing the final
+			// size, including zero and requirements enforced by MinGPUMemory.
+			size := handle.getMostAccurateTaskSize(&scpb.EnqueueTaskReservationRequest{SchedulingMetadata: metadata})
+			require.Equal(t, testCase.want, size.GetEstimatedGpuMemoryBytes())
+			require.Equal(t, custom, size.GetCustomResources())
+			require.Empty(t, cmp.Diff(before, metadata, protocmp.Transform()))
+		})
+	}
+}
+
+func TestScheduleTask_GPUMemory(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	cpuExecutor := newFakeExecutorWithId(ctx, t, "cpu", env.GetSchedulerClient())
+	cpuExecutor.Register()
+	gpuExecutor := newFakeExecutorWithId(ctx, t, "gpu", env.GetSchedulerClient())
+	gpuExecutor.node.AssignableGpuMemoryBytes = 8
+	gpuExecutor.Register()
+
+	// Mixed pools must route a GPU-sized task only to a node that reports
+	// enough GPU memory, even though both nodes have enough CPU and RAM.
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+	req.Metadata.TaskSize.EstimatedGpuMemoryBytes = new(int64(8))
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.NoError(t, err)
+	gpuExecutor.WaitForTask(req.GetTaskId())
+	cpuExecutor.EnsureTaskNotReceived(req.GetTaskId())
+}
+
 func TestSchedulerServerGetPoolInfoUserOwnedDisabled(t *testing.T) {
 	s, ctx := getScheduleServer(t, false, false, "")
 	p, err := s.GetPoolInfo(ctx, "linux", "amd64", "" /*=pool*/, "" /*=originalPool*/, "" /*=workflowID*/, platform.PoolTypeDefault)

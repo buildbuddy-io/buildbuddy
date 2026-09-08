@@ -57,6 +57,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
               <div className="executor-section-title">Assignable Milli CPU:</div>
               <div>{this.props.node.assignableMilliCpu}</div>
             </div>
+            {+this.props.node.assignableGpuMemoryBytes > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Assignable GPU Memory:</div>
+                <div>{format.bytes(+this.props.node.assignableGpuMemoryBytes)}</div>
+              </div>
+            )}
             <div className="executor-section">
               <div className="executor-section-title">Filecache Max Size:</div>
               <div>
