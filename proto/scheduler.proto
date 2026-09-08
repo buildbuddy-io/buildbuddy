@@ -127,6 +127,11 @@ message TaskSize {
   // The task's estimated cpu usage.
   int64 estimated_milli_cpu = 2;
 
+  // The task's estimated total GPU memory usage in bytes across all GPUs.
+  // This is independent of custom resources and defaults to 0 for tasks that
+  // do not request GPU memory.
+  int64 estimated_gpu_memory_bytes = 9;
+
   // The task's estimated disk space requirement (beyond task inputs).
   int64 estimated_free_disk_bytes = 3;
 
