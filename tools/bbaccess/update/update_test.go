@@ -50,7 +50,7 @@ func newPublisher(t *testing.T) *publisher {
 // does.
 func (p *publisher) publish(t *testing.T, commit string, binary []byte, latest bool) *Manifest {
 	t.Helper()
-	p.files["/"+commit+"/bbcert-test"] = binary
+	p.files["/"+commit+"/bbaccess-test"] = binary
 	digest := sha256.Sum256(binary)
 	m := &Manifest{
 		Commit:      commit,
@@ -125,7 +125,7 @@ func TestApply_ReplacesTheExecutableAtomically(t *testing.T) {
 	m := p.publish(t, "abc123", []byte("#!/bin/sh\necho new\n"), true /*=latest*/)
 
 	dir := t.TempDir()
-	exe := filepath.Join(dir, "bbcert")
+	exe := filepath.Join(dir, "bbaccess")
 	require.NoError(t, os.WriteFile(exe, []byte("old"), 0o755))
 
 	require.NoError(t, p.updater(t, exe).Apply(context.Background(), m))
@@ -145,9 +145,9 @@ func TestApply_RefusesABinaryThatDoesNotMatchTheManifest(t *testing.T) {
 	p := newPublisher(t)
 	m := p.publish(t, "abc123", []byte("published"), true /*=latest*/)
 	// The manifest is signed; the binary is not. Swapping it must fail.
-	p.files["/abc123/bbcert-test"] = []byte("swapped")
+	p.files["/abc123/bbaccess-test"] = []byte("swapped")
 
-	exe := filepath.Join(t.TempDir(), "bbcert")
+	exe := filepath.Join(t.TempDir(), "bbaccess")
 	require.NoError(t, os.WriteFile(exe, []byte("old"), 0o755))
 
 	err := p.updater(t, exe).Apply(context.Background(), m)
@@ -160,7 +160,7 @@ func TestApply_RefusesABinaryThatDoesNotMatchTheManifest(t *testing.T) {
 func TestApply_RefusesAnUnpublishedPlatform(t *testing.T) {
 	p := newPublisher(t)
 	m := p.publish(t, "abc123", []byte("published"), true /*=latest*/)
-	u := p.updater(t, filepath.Join(t.TempDir(), "bbcert"))
+	u := p.updater(t, filepath.Join(t.TempDir(), "bbaccess"))
 	u.Platform = "plan9-mips"
 	require.ErrorContains(t, u.Apply(context.Background(), m), "not published for plan9-mips")
 }
@@ -218,7 +218,7 @@ func TestParsePublicKey(t *testing.T) {
 	shipped, err := parsePublicKey(publicKeyPEM)
 	require.NoError(t, err)
 	defer func(v string) { baseURL = v }(baseURL)
-	baseURL = "https://example.com/bbcert"
+	baseURL = "https://example.com/bbaccess"
 	u, err := Default()
 	require.NoError(t, err)
 	require.Equal(t, shipped, u.PublicKey)
@@ -228,6 +228,6 @@ func TestBaseURL_IsEmptyUnlessStamped(t *testing.T) {
 	defer func(v string) { baseURL = v }(baseURL)
 	baseURL = ""
 	require.Equal(t, "", BaseURL())
-	baseURL = "https://example.com/bbcert/"
-	require.Equal(t, "https://example.com/bbcert", BaseURL())
+	baseURL = "https://example.com/bbaccess/"
+	require.Equal(t, "https://example.com/bbaccess", BaseURL())
 }

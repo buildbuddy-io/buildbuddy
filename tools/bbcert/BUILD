@@ -1,35 +1,7 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
-
-go_library(
-    name = "bbcert_lib",
-    srcs = ["bbcert.go"],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/bbcert",
-    visibility = ["//visibility:private"],
-    deps = [
-        "//proto:certgenerator_go_proto",
-        "//server/util/flag",
-        "//server/util/grpc_client",
-        "//server/util/log",
-        "//server/util/status",
-        "//tools/bbcert/update",
-    ],
-)
-
-go_binary(
+# bbcert was renamed to bbaccess. This alias keeps `bazel run //tools/bbcert`
+# working until everyone has switched over.
+alias(
     name = "bbcert",
-    embed = [":bbcert_lib"],
-    pure = "on",
-    static = "on",
+    actual = "//tools/bbaccess",
     visibility = ["//visibility:public"],
-    x_defs = {
-        # The embedded SHA is used to determine if an update is available.
-        "github.com/buildbuddy-io/buildbuddy/tools/bbcert/update.commitSHA": "{STABLE_COMMIT_SHA}",
-    },
-)
-
-go_test(
-    name = "bbcert_test",
-    srcs = ["bbcert_test.go"],
-    embed = [":bbcert_lib"],
-    deps = ["@com_github_stretchr_testify//require"],
 )

@@ -1,4 +1,4 @@
-// Package update keeps an installed bbcert current with the latest version.
+// Package update keeps an installed bbaccess current with the latest version.
 package update
 
 import (
@@ -23,7 +23,7 @@ import (
 
 // baseURL is where binaries are published.
 // Optionally set via linker flags:
-// --@io_bazel_rules_go//go/config:gc_linkopts='-X=github.com/buildbuddy-io/buildbuddy/tools/bbcert/update.baseURL=foo'
+// --@io_bazel_rules_go//go/config:gc_linkopts='-X=github.com/buildbuddy-io/buildbuddy/tools/bbaccess/update.baseURL=foo'
 var baseURL string
 
 // BaseURL returns the stamped manifest location, or "" if this build was
@@ -35,7 +35,7 @@ func BaseURL() string {
 	return strings.TrimRight(baseURL, "/")
 }
 
-// publicKeyPEM is the public key used to verify the bbcert binaries.
+// publicKeyPEM is the public key used to verify the bbaccess binaries.
 const publicKeyPEM = `
 -----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAu3vdQ3oRAqhLQf11lmAQlLUn0zI13s7YT2a8alKYpAg=
@@ -54,13 +54,13 @@ func Commit() string {
 	return commitSHA
 }
 
-// Version describes this binary for `bbcert version`.
+// Version describes this binary for `bbaccess version`.
 func Version() string {
 	commit := Commit()
 	if commit == "" {
 		commit = "unstamped development build"
 	}
-	return fmt.Sprintf("bbcert %s (%s, %s)", commit, Platform(), runtime.Version())
+	return fmt.Sprintf("bbaccess %s (%s, %s)", commit, Platform(), runtime.Version())
 }
 
 // Platform is the manifest key for the running binary, e.g. "darwin-arm64".
@@ -75,9 +75,9 @@ type Manifest struct {
 }
 
 // BinaryURL is the platform's binary URL for this manifest's
-// commit: <base>/<commit>/bbcert-<platform>.
+// commit: <base>/<commit>/bbaccess-<platform>.
 func (u *Updater) BinaryURL(m *Manifest, platform string) string {
-	return u.BaseURL + "/" + m.Commit + "/bbcert-" + platform
+	return u.BaseURL + "/" + m.Commit + "/bbaccess-" + platform
 }
 
 // Updater fetches manifests and applies them to an executable.
