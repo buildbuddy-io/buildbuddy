@@ -91,7 +91,7 @@ actions:
         branches:
           - "master"
     steps:
-      - run: "bazel test //... --config=linux-workflows --config=performance"
+      - run: "bazel test //... --config=linux-workflows --config=performance --config=tests-performance"
   - name: Baremetal tests
     container_image: ubuntu-22.04
     triggers:

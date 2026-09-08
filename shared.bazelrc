@@ -110,7 +110,6 @@ common:race --@io_bazel_rules_go//go/config:race
 common:race --test_timeout=120,600,-1,-1
 
 common:performance --compilation_mode=opt
-common:performance --config=tests-performance
 
 # Configurations used to debug flaky tests
 common:quarantine --config=remote-minimal
@@ -286,7 +285,6 @@ common:download-minimal --nobuild_runfile_links
 
 # Flags shared across remote configs
 common:remote-shared --config=cache-shared
-common:remote-shared --config=tests-remote
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
 common:remote-shared --rewind_lost_inputs
@@ -294,6 +292,7 @@ common:remote-shared --extra_execution_platforms=@toolchains_buildbuddy//platfor
 
 # Flags shared for prod RBE and cache
 common:remote-prod-shared --config=remote-shared
+common:remote-prod-shared --config=tests-remote
 common:remote-prod-shared --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.io
 common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
 
@@ -301,6 +300,7 @@ common:remote-prod-shared --remote_executor=grpcs://buildbuddy.buildbuddy.io
 # Note: Dev BES needed to override the default prod BES urls.
 common:remote-dev-shared --config=dev
 common:remote-dev-shared --config=remote-shared
+common:remote-dev-shared --config=tests-remote
 common:remote-dev-shared --experimental_remote_downloader=grpcs://buildbuddy.buildbuddy.dev
 common:remote-dev-shared --remote_executor=grpcs://buildbuddy.buildbuddy.dev
 

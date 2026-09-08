@@ -144,6 +144,7 @@ jobs:
       #              test `
       #              --config=untrusted-ci-windows `
       #              --config=performance `
+      #              --config=tests-performance `
       #              --test_output=all `
       #              @authArgs `
       #              -- `
