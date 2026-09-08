@@ -27,6 +27,13 @@ import (
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
+const (
+	// maxFailureOutputBytes caps how much test output is handed to the agent. Test
+	// output can run to megabytes, and the failure is at the end, so we keep
+	// the tail.
+	maxFailureOutputBytes = 8 * 1024 // 8KB
+)
+
 const Usage = `
 usage: bb agent fix <invocation> [ <target> ] [ --test_filter=<regex> ]
 
@@ -73,6 +80,9 @@ When reproduction completes, rerun the command against the modified workspace to
 
 After editing, summarize a concise root-cause diagnosis and description of the patch and why it fixes the failure. Use a max of 3 sentences. 
 Print the invocation URLs of the reproduction and verification runs.
+
+Note: This is filtered failure output. If it lacks enough context to identify the root cause,
+run 'bb view INVOCATION_ID' to retrieve the complete invocation logs.
 
 --- failing output ---
 %s
@@ -136,7 +146,7 @@ func HandleFix(args []string) (int, error) {
 // fixFailure hands the failing invocation's output to an agent and asks it to fix
 // the underlying cause. The agent edits the working tree in place.
 func fixFailure(ctx context.Context, failingOutput string, originalCommand []string, originalInvocationID string) error {
-	prompt := fmt.Sprintf(fixPrompt, originalCommand, originalInvocationID, failingOutput)
+	prompt := fmt.Sprintf(fixPrompt, originalCommand, originalInvocationID, tail(failingOutput, maxFailureOutputBytes))
 
 	log.Printf("%sRunning agent to fix the failure (this may take a few minutes)...%s", terminal.Esc(90), terminal.Esc())
 	rsp, err := agent.Run(ctx, &agentutil.RunRequest{
@@ -235,4 +245,14 @@ func parseInvocationID(s string) (string, error) {
 		return "", fmt.Errorf("%q is not an invocation ID or invocation URL", s)
 	}
 	return matches[1], nil
+}
+
+// tail returns the last max bytes of s, noting how much was dropped. Test
+// output is truncated from the front because the failure is reported at the
+// end, after the output that preceded it.
+func tail(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return fmt.Sprintf("[... %d earlier bytes truncated ...]\n%s", len(s)-max, s[len(s)-max:])
 }
