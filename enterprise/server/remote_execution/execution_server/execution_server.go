@@ -1001,6 +1001,9 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		if err != nil {
 			return nil, err
 		}
+		// Task sizing must use the original CAS command, which is reloaded when
+		// recording usage at completion. Add secrets only to the executor's copy.
+		executionTask.Command = command.CloneVT()
 		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
 		secretEnvVarNames := make([]string, 0, len(envVars))
 		for _, envVar := range envVars {

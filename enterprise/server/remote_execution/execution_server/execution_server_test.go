@@ -111,6 +111,33 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
+type taskSizerMock struct {
+	interfaces.TaskSizer
+
+	getCommand     *repb.Command
+	predictCommand *repb.Command
+}
+
+func (s *taskSizerMock) Get(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
+	s.getCommand = cmd.CloneVT()
+	return nil
+}
+
+func (s *taskSizerMock) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
+	s.predictCommand = cmd.CloneVT()
+	return nil
+}
+
+type secretServiceMock struct {
+	interfaces.SecretService
+
+	envVars []*repb.Command_EnvironmentVariable
+}
+
+func (s *secretServiceMock) GetSecretEnvVars(ctx context.Context, groupID string, secretNames ...string) ([]*repb.Command_EnvironmentVariable, error) {
+	return s.envVars, nil
+}
+
 func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 	env.SetClock(clock)
@@ -252,6 +279,54 @@ func TestDispatch_ChunkingConfigWithNoopExperimentProvider(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDispatch_TaskSizingUsesCommandWithoutInjectedSecrets(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	sizer := &taskSizerMock{}
+	env.SetTaskSizer(sizer)
+	env.SetSecretService(&secretServiceMock{
+		envVars: []*repb.Command_EnvironmentVariable{{Name: "SECRET", Value: "secret-value"}},
+	})
+	s, err := execution_server.NewExecutionServer(env)
+	require.NoError(t, err)
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+	require.NoError(t, err)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Completion reloads the command from CAS to record task sizes, so dispatch
+	// must use that command for sizing even when the task requests secrets.
+	cmd := &repb.Command{
+		Arguments:            []string{"echo", "hello"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{{Name: "ORIGINAL", Value: "original-value"}},
+	}
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "include-secrets", Value: "true"},
+		}},
+	}
+	arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	}, action, arn.NewUploadString())
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(cmd, sizer.getCommand, protocmp.Transform()))
+	require.Empty(t, cmp.Diff(cmd, sizer.predictCommand, protocmp.Transform()))
+
+	// The executor receives the secret along with the original environment.
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Len(t, sched.scheduleReqs, 1)
+	task := &repb.ExecutionTask{}
+	err = proto.Unmarshal(sched.scheduleReqs[0].GetSerializedTask(), task)
+	require.NoError(t, err)
+	envVars := make(map[string]string)
+	for _, envVar := range task.GetCommand().GetEnvironmentVariables() {
+		envVars[envVar.GetName()] = envVar.GetValue()
+	}
+	require.Equal(t, "secret-value", envVars["SECRET"])
+	require.Equal(t, "original-value", envVars["ORIGINAL"])
 }
 
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
