@@ -100,7 +100,7 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 
 	prompt := fmt.Sprintf(analysisPrompt, profilePath, skillContents)
 	log.Printf("%sRunning agent (this may take a minute)...%s", terminal.Esc(90), terminal.Esc())
-	rsp, err := agent.Run(ctx, &agentutil.RunRequest{
+	err = agent.Run(ctx, &agentutil.RunRequest{
 		Agent:           *profileAgent,
 		Model:           *profileModel,
 		ReasoningEffort: *profileEffort,
@@ -110,13 +110,6 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	if err != nil {
 		return -1, fmt.Errorf("analyze timing profile: %w", err)
 	}
-	fmt.Println(rsp.Output)
-	fmt.Printf(
-		"%sResume this agent session with:%s\n%s%s%s\n",
-		terminal.Esc(90), terminal.Esc(),
-		terminal.Esc(36), rsp.ResumeCommand, terminal.Esc(),
-	)
-
 	return 0, nil
 }
 
