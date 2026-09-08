@@ -28,5 +28,6 @@ func TestBuiltInServers(t *testing.T) {
 	require.Equal(t, []string{"grpcs://prod.example.com", "grpcs://dev.example.com"},
 		builtInServers("grpcs://prod.example.com,grpcs://dev.example.com"))
 	require.Equal(t, []string{"grpcs://a"}, builtInServers(" grpcs://a , "), "whitespace and empties are dropped")
+	require.Equal(t, []string{"grpcs://a", "grpcs://b"}, builtInServers("grpcs://a grpcs://b"), "space-separated, for linker flags")
 	require.Nil(t, builtInServers(""), "nothing stamped")
 }
