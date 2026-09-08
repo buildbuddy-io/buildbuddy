@@ -20,8 +20,6 @@ import (
 )
 
 var (
-	// Share the NVML library so its load/unload reference count covers both
-	// usage tracking and standalone capacity queries.
 	nvmlLibrary = nvml.New()
 
 	// defaultMemoryMonitor is the executor-wide monitor, set by configure when
