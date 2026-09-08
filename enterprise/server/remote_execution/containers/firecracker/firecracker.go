@@ -635,7 +635,7 @@ func (p *Provider) New(ctx context.Context, args *container.Init) (container.Com
 		LocalNetworkPool:       p.localNetworkPool,
 		MarshalledDNSOverrides: p.marshalledDNSOverrides,
 		HostResolvConf:         p.hostResolvConf,
-		UseOCIFetcher:          container.UseOCIFetcher(args.Props.UseOCIFetcher),
+		UseOCIFetcher:          args.Props.UseOCIFetcher,
 	}
 	c, err := NewContainer(ctx, p.env, args.Task.GetExecutionTask(), opts)
 	if err != nil {

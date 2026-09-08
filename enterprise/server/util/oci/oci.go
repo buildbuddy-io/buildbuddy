@@ -47,6 +47,7 @@ const (
 var (
 	registries             = flag.Slice("executor.container_registries", []Registry{}, "")
 	defaultKeychainEnabled = flag.Bool("executor.container_registry_default_keychain_enabled", false, "Enable the default container registry keychain, respecting both docker configs and podman configs.")
+	useOCIFetcherEnabled   = flag.Bool("executor.use_oci_fetcher", false, "Whether to use the OCI fetcher service for pulling container images.")
 
 	cacheEnabledPercent = flag.Int("executor.container_registry.use_cache_percent", 0, "Percentage of image pulls that should use the BuildBuddy remote cache for manifests and layers.")
 )
@@ -276,7 +277,14 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	return imageNameWithDigest, nil
 }
 
+// UseOCIFetcher reports whether an image pull should use the OCI fetcher,
+// accounting for both the caller's request and executor config.
+func UseOCIFetcher(requested bool) bool {
+	return requested && *useOCIFetcherEnabled
+}
+
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (ctr.Image, error) {
+	useOCIFetcher = UseOCIFetcher(useOCIFetcher)
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
