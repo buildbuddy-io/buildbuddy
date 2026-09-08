@@ -40,12 +40,6 @@ use_repo(
     "io_bazel_rules_nogo",
 )
 
-node = use_extension("@rules_nodejs//nodejs:extensions.bzl", "node")
-node.toolchain(
-    name = "nodejs",
-    node_version = "22.20.0",
-)
-
 # Bazel binaries for integration testing
 bazel_binaries = use_extension(
     "@rules_bazel_integration_test//:extensions.bzl",

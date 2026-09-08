@@ -485,7 +485,7 @@
           "REPO_MAPPING:,com_github_buildbuddy_io_buildbuddy ",
           "REPO_MAPPING:aspect_rules_ts+,aspect_rules_ts aspect_rules_ts+",
           "REPO_MAPPING:aspect_rules_ts+,bazel_tools bazel_tools",
-          "FILE:@@//package.json c45f54b75dd13605aedaba1a3dc9b48300b1c7ae6c2c20d418a05d36a27c4e06"
+          "FILE:@@//package.json 34ad80805bb3427ecfde1253fdcb81695ed32c526bab82e62a8e9d45c25ab0ef"
         ],
         "generatedRepoSpecs": {
           "npm_typescript": {
@@ -1198,7 +1198,7 @@
     "@@rules_nodejs+//nodejs:extensions.bzl%node": {
       "general": {
         "bzlTransitiveDigest": "Wk34E3p3A3kbwcuJQ9G/Q0rF/kuE/Dk2i/kPk1AA3oI=",
-        "usagesDigest": "jehcvvALfAciVNufsHD5AADqLHtK8i7m6JN7nVnnptM=",
+        "usagesDigest": "HItd0UAd7VGtOTnmuZ6sXIwWtyLOmdWQFeBibImoVPs=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "nodejs_linux_amd64": {
@@ -1834,6 +1834,9 @@
     }
   },
   "facts": {
+    "@@aspect_rules_js+//npm:extensions.bzl%pnpm": {
+      "11.8.0": "sha512-wfXnxMskHI8XS3Q4UdgvQrgCMkr8iw8Ra5atsVqgZmSUjd42lgo7oQebpbSyndAUATW5S1tfUmNZIknWjlVfJg=="
+    },
     "@@rules_distroless+//apt:extensions.bzl%apt": {
       "formats": {
         "trixie-security/main/amd64/Contents/https://snapshot.debian.org/archive/debian-security/20260318T142916Z": ".gz",

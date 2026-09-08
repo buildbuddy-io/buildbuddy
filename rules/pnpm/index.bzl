@@ -4,11 +4,10 @@ DEFAULT_CMD_TPL = """
 export BAZEL_BINDIR=. &&
 export ROOTDIR=$$(pwd) &&
 export PACKAGEDIR=$$(dirname $(location {package})) &&
-export PATH=$$ROOTDIR/$$(dirname $(location {corepack})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
+export PATH=$$ROOTDIR/$$(dirname $(location {pnpm})):$$ROOTDIR/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$PACKAGEDIR &&
-corepack enable &&
-corepack pnpm install --config.confirmModulesPurge=false &&
-corepack pnpm {command} &&
+pnpm install --config.confirmModulesPurge=false &&
+pnpm {command} &&
 cd build &&
 tar -cvf ../build.tar * &&
 cd $$ROOTDIR &&
@@ -19,10 +18,9 @@ EXECUTABLE_CMD_TPL = (
     """
 cat << EOF > $@
 export BAZEL_BINDIR=. &&
-export PATH=$$(pwd)/$$(dirname $(location {corepack})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
+export PATH=$$(pwd)/$$(dirname $(location {pnpm})):$$(pwd)/$$(dirname $(NODE_PATH)):$$PATH &&
 cd $$(dirname $(location {package})) &&
-corepack enable &&
-corepack pnpm install --config.confirmModulesPurge=false &&""" +
+pnpm install --config.confirmModulesPurge=false &&""" +
 
     # To explain the complicated escaping here:
     # starlark resolves `\\` to a literal backslash, giving us `\$$@`
@@ -36,12 +34,12 @@ corepack pnpm install --config.confirmModulesPurge=false &&""" +
     # the bash process that runs the pnpm command then resolves `$@` to the
     # command line arguments, effectively forwarding them to pnpm.
     """
-corepack pnpm {command} \\$$@
+pnpm {command} \\$$@
 EOF
 """
 )
 
-def pnpm(name, srcs, package, command = "build", deps = [], corepack = Label("//rules/pnpm:corepack"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
+def pnpm(name, srcs, package, command = "build", deps = [], pnpm = Label("@pnpm//:pnpm"), node = Label("@nodejs_toolchains//:resolved_toolchain"), **kwargs):
     extension = ".tar"
     executable = False
     if command != "build":
@@ -55,7 +53,7 @@ def pnpm(name, srcs, package, command = "build", deps = [], corepack = Label("//
 
     cmd = cmd_tpl.format(
         package = package,
-        corepack = corepack,
+        pnpm = pnpm,
         command = command,
     )
 
@@ -65,7 +63,7 @@ def pnpm(name, srcs, package, command = "build", deps = [], corepack = Label("//
         outs = [name + extension],
         cmd_bash = cmd,
         executable = executable,
-        tools = [corepack, node],
+        tools = [pnpm, node],
         toolchains = [node],
         local = 1,
         **kwargs
