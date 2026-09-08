@@ -20,10 +20,60 @@ import (
 )
 
 var (
+	// Share the NVML library so its load/unload reference count covers both
+	// usage tracking and standalone capacity queries.
+	nvmlLibrary = nvml.New()
+
 	// defaultMemoryMonitor is the executor-wide monitor, set by configure when
 	// GPU memory tracking is enabled.
 	defaultMemoryMonitor *memoryMonitor
 )
+
+// GetTotalGPUMemoryBytes returns total memory capacity in bytes across accessible
+// NVIDIA GPUs. It reuses the configured memory monitor's devices when available,
+// and otherwise initializes NVML for this query. It returns an error if NVML is
+// unavailable, no GPUs are accessible, or any device cannot be queried.
+func GetTotalGPUMemoryBytes() (int64, error) {
+	if defaultMemoryMonitor != nil {
+		return totalGPUMemoryBytes(defaultMemoryMonitor.devices)
+	}
+	return queryTotalGPUMemoryBytes(nvmlLibrary)
+}
+
+func queryTotalGPUMemoryBytes(library nvml.Interface) (total int64, err error) {
+	if ret := library.Init(); ret != nvml.SUCCESS {
+		return 0, fmt.Errorf("initialize NVML: %w", ret)
+	}
+	defer func() {
+		if ret := library.Shutdown(); ret != nvml.SUCCESS {
+			total = 0
+			err = errors.Join(err, fmt.Errorf("shutdown NVML: %w", ret))
+		}
+	}()
+
+	devices, err := discoverDevices(library)
+	if err != nil {
+		return 0, fmt.Errorf("discover GPUs: %w", err)
+	}
+	return totalGPUMemoryBytes(devices)
+}
+
+func totalGPUMemoryBytes(devices []gpuDevice) (int64, error) {
+	var total int64
+	for _, device := range devices {
+		memory, ret := device.device.GetMemoryInfo()
+		if ret != nvml.SUCCESS {
+			return 0, fmt.Errorf("query GPU %q memory: %w", device.uuid, ret)
+		}
+		// Capacity uses int64 throughout scheduling, so reject values that
+		// would overflow when converted or added to the running total.
+		if memory.Total > uint64(math.MaxInt64-total) {
+			return 0, fmt.Errorf("total GPU memory exceeds %d bytes", int64(math.MaxInt64))
+		}
+		total += int64(memory.Total)
+	}
+	return total, nil
+}
 
 // memoryReading maps GPU ID to PID to GPU memory usage in bytes, as measured
 // in a single polling pass over all GPUs.
@@ -236,7 +286,7 @@ func (m *memoryMonitor) setReading(reading memoryReading) {
 
 // configure creates the executor-wide memory monitor.
 func configure() error {
-	monitor, err := newMemoryMonitor(nvml.New())
+	monitor, err := newMemoryMonitor(nvmlLibrary)
 	if err != nil {
 		return err
 	}

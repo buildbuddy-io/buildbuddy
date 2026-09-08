@@ -19,6 +19,165 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
+func TestGetTotalGPUMemoryBytes_ConfiguredMonitor(t *testing.T) {
+	previous := defaultMemoryMonitor
+	t.Cleanup(func() { defaultMemoryMonitor = previous })
+	defaultMemoryMonitor = &memoryMonitor{devices: []gpuDevice{
+		{uuid: "GPU-a", device: &mock.Device{
+			GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+				return nvml.Memory{Total: 8_000_000_000, Used: 3_000_000_000, Free: 5_000_000_000}, nvml.SUCCESS
+			},
+		}},
+		{uuid: "GPU-b", device: &mock.Device{
+			GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+				return nvml.Memory{Total: 24_000_000_000, Used: 4_000_000_000, Free: 20_000_000_000}, nvml.SUCCESS
+			},
+		}},
+	}}
+
+	// Reuse the monitor's devices without loading NVML or starting a poller.
+	// Capacity includes memory that is already in use on either GPU.
+	total, err := GetTotalGPUMemoryBytes()
+	require.NoError(t, err)
+	require.Equal(t, int64(32_000_000_000), total)
+}
+
+func TestGetTotalGPUMemoryBytes_WithoutMonitor(t *testing.T) {
+	previousMonitor := defaultMemoryMonitor
+	previousLibrary := nvmlLibrary
+	t.Cleanup(func() {
+		defaultMemoryMonitor = previousMonitor
+		nvmlLibrary = previousLibrary
+	})
+	defaultMemoryMonitor = nil
+	flags.Set(t, "executor.gpu_memory_tracking_enabled", false)
+	library := &mock.Interface{
+		InitFunc:           func() nvml.Return { return nvml.SUCCESS },
+		ShutdownFunc:       func() nvml.Return { return nvml.SUCCESS },
+		DeviceGetCountFunc: func() (int, nvml.Return) { return 1, nvml.SUCCESS },
+		DeviceGetHandleByIndexFunc: func(index int) (nvml.Device, nvml.Return) {
+			return &mock.Device{
+				GetUUIDFunc: func() (string, nvml.Return) { return "GPU-a", nvml.SUCCESS },
+				GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+					return nvml.Memory{Total: 8_000_000_000}, nvml.SUCCESS
+				},
+			}, nvml.SUCCESS
+		},
+	}
+	nvmlLibrary = library
+
+	// A capacity query works with usage tracking disabled and releases its
+	// NVML reference without creating a background monitor.
+	total, err := GetTotalGPUMemoryBytes()
+	require.NoError(t, err)
+	require.Equal(t, int64(8_000_000_000), total)
+	require.Len(t, library.InitCalls(), 1)
+	require.Len(t, library.ShutdownCalls(), 1)
+	require.Nil(t, defaultMemoryMonitor)
+}
+
+func TestQueryTotalGPUMemoryBytes_Errors(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		initRet     nvml.Return
+		count       int
+		countRet    nvml.Return
+		handleRet   nvml.Return
+		uuidRet     nvml.Return
+		memoryRet   nvml.Return
+		shutdownRet nvml.Return
+		wantErr     string
+	}{
+		{name: "initialization", initRet: nvml.ERROR_LIBRARY_NOT_FOUND, wantErr: "initialize NVML"},
+		{name: "device count", countRet: nvml.ERROR_UNKNOWN, wantErr: "get device count"},
+		{name: "no GPUs", wantErr: "no NVIDIA GPUs"},
+		{name: "device handle", count: 1, handleRet: nvml.ERROR_GPU_IS_LOST, wantErr: "get device 0"},
+		{name: "device UUID", count: 1, uuidRet: nvml.ERROR_GPU_IS_LOST, wantErr: "get device 0 UUID"},
+		{name: "memory query", count: 1, memoryRet: nvml.ERROR_GPU_IS_LOST, wantErr: "query GPU"},
+		{name: "shutdown", count: 1, shutdownRet: nvml.ERROR_UNKNOWN, wantErr: "shutdown NVML"},
+		{name: "query and shutdown", count: 1, memoryRet: nvml.ERROR_GPU_IS_LOST, shutdownRet: nvml.ERROR_UNKNOWN, wantErr: "query GPU"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			library := &mock.Interface{
+				InitFunc:           func() nvml.Return { return testCase.initRet },
+				ShutdownFunc:       func() nvml.Return { return testCase.shutdownRet },
+				DeviceGetCountFunc: func() (int, nvml.Return) { return testCase.count, testCase.countRet },
+				DeviceGetHandleByIndexFunc: func(index int) (nvml.Device, nvml.Return) {
+					return &mock.Device{
+						GetUUIDFunc: func() (string, nvml.Return) { return "GPU-a", testCase.uuidRet },
+						GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+							return nvml.Memory{Total: 8_000_000_000}, testCase.memoryRet
+						},
+					}, testCase.handleRet
+				},
+			}
+
+			// Every initialized query releases its NVML reference, including
+			// failures. Cleanup errors must not hide the original query error.
+			total, err := queryTotalGPUMemoryBytes(library)
+			require.ErrorContains(t, err, testCase.wantErr)
+			require.Zero(t, total)
+			if testCase.initRet != nvml.SUCCESS {
+				require.Empty(t, library.ShutdownCalls())
+			} else {
+				require.Len(t, library.ShutdownCalls(), 1)
+				if testCase.shutdownRet != nvml.SUCCESS {
+					require.ErrorIs(t, err, testCase.shutdownRet)
+				}
+			}
+		})
+	}
+}
+
+func TestTotalGPUMemoryBytes_PartialQueryFails(t *testing.T) {
+	devices := []gpuDevice{
+		{uuid: "GPU-a", device: &mock.Device{
+			GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+				return nvml.Memory{Total: 8_000_000_000}, nvml.SUCCESS
+			},
+		}},
+		{uuid: "GPU-b", device: &mock.Device{
+			GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+				return nvml.Memory{}, nvml.ERROR_GPU_IS_LOST
+			},
+		}},
+	}
+
+	// Reporting a partial sum would understate capacity without revealing
+	// that a GPU could not be queried.
+	total, err := totalGPUMemoryBytes(devices)
+	require.ErrorContains(t, err, "GPU-b")
+	require.ErrorIs(t, err, nvml.ERROR_GPU_IS_LOST)
+	require.Zero(t, total)
+}
+
+func TestTotalGPUMemoryBytes_Overflow(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		totals []uint64
+	}{
+		{name: "device capacity", totals: []uint64{math.MaxUint64}},
+		{name: "combined capacity", totals: []uint64{math.MaxInt64, 1}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			var devices []gpuDevice
+			for _, total := range testCase.totals {
+				devices = append(devices, gpuDevice{device: &mock.Device{
+					GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+						return nvml.Memory{Total: total}, nvml.SUCCESS
+					},
+				}})
+			}
+
+			// NVML reports uint64 capacities, but scheduling uses int64.
+			// Reject either a device or a sum that cannot be represented.
+			total, err := totalGPUMemoryBytes(devices)
+			require.ErrorContains(t, err, "total GPU memory exceeds")
+			require.Zero(t, total)
+		})
+	}
+}
+
 func TestConfigure_GPUMemoryTrackingDisabled_DoesNotFail(t *testing.T) {
 	flags.Set(t, "executor.gpu_memory_tracking_enabled", false)
 	flags.Set(t, "executor.gpu_memory_poll_interval", time.Duration(0))
