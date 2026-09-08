@@ -16,15 +16,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/tools/bbcert/update"
+	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/update"
 
 	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
 )
 
 var (
-	servers = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times. Defaults to the servers built into this binary, if any (see `bbcert version`).")
+	servers = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times. Defaults to the servers built into this binary, if any (see `bbaccess version`).")
 	// TODO: default to true once the publish workflow is in place.
-	autoUpdate = flag.Bool("auto_update", false, "Check for a newer published bbcert before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
+	autoUpdate = flag.Bool("auto_update", false, "Check for a newer published bbaccess before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
 )
 
 // defaultServers is a comma-separated server list stamped in at link time.
@@ -166,13 +166,13 @@ func selfUpdate() {
 	if !needed {
 		return
 	}
-	log.Infof("Updating bbcert %.12s -> %.12s (published %s)", update.Commit(), m.Commit, m.PublishedAt)
+	log.Infof("Updating bbaccess %.12s -> %.12s (published %s)", update.Commit(), m.Commit, m.PublishedAt)
 	if err := u.Apply(ctx, m); err != nil {
 		log.Warningf("Could not update: %s", err)
 		return
 	}
 	if err := update.Reexec(); err != nil {
-		log.Warningf("Updated, but could not restart (%s); continuing with the previous version. Rerun bbcert to use the new one.", err)
+		log.Warningf("Updated, but could not restart (%s); continuing with the previous version. Rerun bbaccess to use the new one.", err)
 	}
 }
 

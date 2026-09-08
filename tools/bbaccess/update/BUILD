@@ -8,8 +8,8 @@ go_library(
         "run.go",
         "update.go",
     ],
-    importpath = "github.com/buildbuddy-io/buildbuddy/tools/bbcert/update",
-    visibility = ["//tools/bbcert:__subpackages__"],
+    importpath = "github.com/buildbuddy-io/buildbuddy/tools/bbaccess/update",
+    visibility = ["//tools/bbaccess:__subpackages__"],
 )
 
 go_test(

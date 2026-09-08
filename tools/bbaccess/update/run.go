@@ -8,7 +8,7 @@ import (
 )
 
 // NoUpdateEnv can be used to disable the automatic update check.
-const NoUpdateEnv = "BBCERT_NO_UPDATE"
+const NoUpdateEnv = "BBACCESS_NO_UPDATE"
 
 // Check fetches the published manifest and reports whether it names a
 // different build than this one.
@@ -20,9 +20,9 @@ func (u *Updater) Check(ctx context.Context) (m *Manifest, needed bool, err erro
 	return m, m.Commit != Commit(), nil
 }
 
-// Run implements `bbcert update`.
+// Run implements `bbaccess update`.
 func Run(ctx context.Context, args []string) int {
-	fs := flag.NewFlagSet("bbcert update", flag.ContinueOnError)
+	fs := flag.NewFlagSet("bbaccess update", flag.ContinueOnError)
 	commit := fs.String("commit", "", "Install this published commit instead of what latest points at.")
 	check := fs.Bool("check", false, "Report what is published without installing it.")
 	if err := fs.Parse(args); err != nil {
