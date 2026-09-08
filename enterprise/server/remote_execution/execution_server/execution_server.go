@@ -986,42 +986,8 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	// Add in secrets for any action explicitly requesting secrets, and all workflows.
-	secretService := s.env.GetSecretService()
-	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
-		if secretService == nil {
-			return nil, status.FailedPreconditionError("Secrets requested but secret service not available")
-		}
-		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID, props.EnvSecrets...)
-		if err != nil {
-			return nil, err
-		}
-		isCIRunner := platform.IsCIRunner(command, platform.GetProto(action, command))
-		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, isCIRunner /*=shouldExchangeToken*/)
-		if err != nil {
-			return nil, err
-		}
-		// Task sizing must use the original CAS command, which is reloaded when
-		// recording usage at completion. Add secrets only to the executor's copy.
-		executionTask.Command = command.CloneVT()
-		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
-		secretEnvVarNames := make([]string, 0, len(envVars))
-		for _, envVar := range envVars {
-			secretEnvVarNames = append(secretEnvVarNames, envVar.GetName())
-		}
-		if len(secretEnvVarNames) > 0 {
-			serializedNames, err := json.Marshal(secretEnvVarNames)
-			if err != nil {
-				return nil, status.WrapError(err, "marshal secret env var names")
-			}
-			executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
-				Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
-				Value: string(serializedNames),
-			})
-		}
-	}
-
-	executionTask.QueuedTimestamp = timestamppb.Now()
+	// NOTE: compute the task size before applying any volatile env overrides below,
+	// since the command hash is used as part of the task sizing key.
 	defaultTaskSize := tasksize.Default(executionTask)
 	requestedTaskSize := tasksize.Requested(executionTask)
 	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
@@ -1041,6 +1007,39 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// Add in secrets for any action explicitly requesting secrets, and all workflows.
+	secretService := s.env.GetSecretService()
+	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
+		if secretService == nil {
+			return nil, status.FailedPreconditionError("Secrets requested but secret service not available")
+		}
+		envVars, err := secretService.GetSecretEnvVars(ctx, taskGroupID, props.EnvSecrets...)
+		if err != nil {
+			return nil, err
+		}
+		isCIRunner := platform.IsCIRunner(command, platform.GetProto(action, command))
+		envVars, err = gcplink.ExchangeRefreshTokenForAuthToken(ctx, envVars, isCIRunner /*=shouldExchangeToken*/)
+		if err != nil {
+			return nil, err
+		}
+		executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, envVars...)
+		secretEnvVarNames := make([]string, 0, len(envVars))
+		for _, envVar := range envVars {
+			secretEnvVarNames = append(secretEnvVarNames, envVar.GetName())
+		}
+		if len(secretEnvVarNames) > 0 {
+			serializedNames, err := json.Marshal(secretEnvVarNames)
+			if err != nil {
+				return nil, status.WrapError(err, "marshal secret env var names")
+			}
+			executionTask.Command.EnvironmentVariables = append(executionTask.Command.EnvironmentVariables, &repb.Command_EnvironmentVariable{
+				Name:  ci_runner_env.BuildBuddySecretEnvVarNamesForRedaction,
+				Value: string(serializedNames),
+			})
+		}
+	}
+
+	executionTask.QueuedTimestamp = timestamppb.Now()
 	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
