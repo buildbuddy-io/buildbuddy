@@ -675,6 +675,15 @@ func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 	return ws.vfsServer.ComputeStats()
 }
 
+// VFSError returns the first input download error exposed to the current task,
+// or nil if VFS is disabled or no download failed after retries.
+func (ws *Workspace) VFSError() error {
+	if ws.vfsServer == nil {
+		return nil
+	}
+	return ws.vfsServer.TaskError()
+}
+
 // TaskFinished informs the workspace that task execution is done.
 // Returns the transfer stats.
 func (ws *Workspace) TaskFinished() (*dirtools.TransferInfo, error) {

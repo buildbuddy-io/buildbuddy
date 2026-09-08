@@ -382,6 +382,7 @@ type Server struct {
 	retryInputFetcher  *casFetcher
 	remoteInstanceName string
 	fileHandles        map[uint64]*fileHandle
+	taskError          error
 
 	// total number of CAS files in the tree.
 	casFileCount int64
@@ -415,6 +416,14 @@ func New(env environment.Env, workspacePath string) (*Server, error) {
 
 func (p *Server) Path() string {
 	return p.workspacePath
+}
+
+// TaskError returns the first input download error exposed to the current task,
+// or nil if no download failed after retries. Prepare clears this error.
+func (p *Server) TaskError() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.taskError
 }
 
 func (p *Server) generateScratchPath(name string) (string, error) {
@@ -730,6 +739,7 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 	p.inputFetcher = inputFetcher
 	p.retryInputFetcher = retryInputFetcher
 	p.internalTaskCtx = ctx
+	p.taskError = nil
 	return invalidatedInodes, nil
 }
 
@@ -1092,12 +1102,18 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 		return nil, status.FailedPreconditionError("no input fetcher is configured")
 	}
 	if err := inputFetcher.Fetch(ctx, node.fileNode); err != nil {
-		return nil, err
+		// The CAS downloader already handles retryable failures.
+		if inputFetcher == retryInputFetcher {
+			return nil, err
+		}
+	} else {
+		f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
+		if err == nil {
+			return f, nil
+		}
 	}
-	f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
-	if err == nil {
-		return f, nil
-	}
+	// A failed prefetcher cannot restart its downloads. Fetch directly from
+	// CAS if prefetch failed or the file was evicted before it could be opened.
 	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		return nil, err
 	}
@@ -1318,6 +1334,21 @@ func (p *Server) Open(ctx context.Context, request *vfspb.OpenRequest) (*vfspb.O
 	} else if node.fileNode != nil {
 		f, err := p.openCASFile(p.taskCtx(), node)
 		if err != nil {
+			// FUSE can only return an errno to the process. Record the gRPC
+			// error here so that we can later return it, taking precedence
+			// over any result that might be returned by command execution.
+			if s := gstatus.FromContextError(err); s.Code() != codes.Unknown {
+				err = s.Err()
+			}
+			err = status.WrapErrorf(gstatus.Convert(err).Err(), "download VFS input %q", node.Path())
+			p.mu.Lock()
+			if p.taskError == nil {
+				p.taskError = err
+			}
+			p.mu.Unlock()
+			// TODO: Cancel action execution here to avoid work whose result will
+			// be discarded because of this error. Keep the original download error
+			// as the action failure so cancellation does not hide its cause.
 			log.CtxWarningf(p.taskCtx(), "Open %q could not fetch file from CAS: %s", node.Path(), err)
 			return nil, err
 		}

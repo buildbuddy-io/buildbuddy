@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -26,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -639,6 +641,71 @@ func TestNewRunner_FirecrackerConfiguresGuestVFSWorkspace(t *testing.T) {
 
 	require.False(t, r.Workspace.Opts.UseVFS)
 	require.Equal(t, workspace.VFSPrefetchModeAll, r.Workspace.Opts.VFSPrefetchMode)
+}
+
+func TestRunnerVFSDownloadError(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("VFS requires Linux")
+	}
+	if _, err := os.Stat("/dev/fuse"); err != nil {
+		t.Skip("VFS requires /dev/fuse")
+	}
+	flags.Set(t, "executor.enable_vfs", true)
+	for _, testCase := range []struct {
+		name         string
+		script       string
+		wantVFSError bool
+	}{
+		{name: "command_fails", script: "cat input.txt", wantVFSError: true},
+		{name: "command_ignores_error", script: "cat input.txt || true", wantVFSError: true},
+		{name: "ordinary_missing_file", script: "cat nonexistent.txt", wantVFSError: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := newTestEnv(t)
+			_, runServer, lis := testenv.RegisterLocalGRPCServer(t, env)
+			testcache.Setup(t, env, lis)
+			go runServer()
+			fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1_000_000, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			env.SetFileCache(fc)
+			cfg := noLimitsCfg()
+			cfg.ContainerProvider = &bare.Provider{}
+			pool := newRunnerPool(t, env, cfg)
+			ctx := withAuthenticatedUser(t, t.Context(), env, "US1")
+			task := newTask()
+			task.ExecutionTask.Command.Arguments = []string{"sh", "-c", testCase.script}
+			task.ExecutionTask.Command.Platform.Properties = append(task.ExecutionTask.Command.Platform.Properties,
+				&repb.Platform_Property{Name: "enable-vfs", Value: "true"},
+				&repb.Platform_Property{Name: "vfs-prefetch-mode", Value: "none"},
+			)
+			r, err := get(ctx, pool, task)
+			require.NoError(t, err)
+			t.Cleanup(func() { require.NoError(t, r.RemoveWithTimeout(ctx)) })
+			require.NoError(t, r.PrepareForTask(ctx))
+
+			// The input exists in the action's tree but has been evicted from
+			// CAS. Files absent from the tree should remain ordinary ENOENTs.
+			d, err := digest.Compute(strings.NewReader("evicted input"), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			err = r.Workspace.DownloadInputs(ctx, &container.FileSystemLayout{
+				DigestFunction: repb.DigestFunction_SHA256,
+				Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+					{Name: "input.txt", Digest: d},
+				}}},
+			})
+			require.NoError(t, err)
+			res := r.Run(ctx, &repb.IOStats{})
+			if testCase.wantVFSError {
+				require.True(t, status.IsFailedPreconditionError(res.Error), "%v", res.Error)
+				require.Equal(t, commandutil.NoExitCode, res.ExitCode)
+				require.Contains(t, string(res.Stderr), "Input/output error")
+			} else {
+				require.NoError(t, res.Error)
+				require.NotZero(t, res.ExitCode)
+			}
+		})
+	}
 }
 
 // Returns containers that only consume disk resources when paused (like firecracker).

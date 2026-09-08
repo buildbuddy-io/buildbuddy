@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/firecracker"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/copy_on_write"
@@ -433,6 +434,48 @@ func TestFirecrackerRunVFS(t *testing.T) {
 	require.Equal(t, "result", testfs.ReadFileAsString(t, workDir, "out/result.txt"))
 	_, err = os.Stat(filepath.Join(workDir, "ignored.txt"))
 	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+func TestFirecrackerRunVFSDownloadError(t *testing.T) {
+	ctx := t.Context()
+	env := getTestEnv(ctx, t, envOpts{})
+	authenticator := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	env.SetAuthenticator(authenticator)
+	ctx, err := authenticator.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, authenticator)
+	require.NoError(t, err)
+	workDir := testfs.MakeTempDir(t)
+
+	// The command ignores the filesystem error and exits successfully. The
+	// host must still return the missing input's gRPC status to the executor.
+	inputResource, _ := testdigest.RandomCASResourceBuf(t, 32)
+	cmd := &repb.Command{Arguments: []string{"sh", "-c", "cat input.txt || true"}}
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         busyboxImage,
+		ActionWorkingDirectory: workDir,
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         2500,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+			EnableVfs:         true,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{Command: cmd}, opts)
+	require.NoError(t, err)
+	c.SetTaskFileSystemLayout(&container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+			{Name: "input.txt", Digest: inputResource.GetDigest()},
+		}}},
+	})
+
+	res := c.Run(ctx, cmd, workDir, oci.Credentials{})
+	require.True(t, status.IsFailedPreconditionError(res.Error), "%v", res.Error)
+	require.Equal(t, commandutil.NoExitCode, res.ExitCode)
+	require.Contains(t, string(res.Stderr), "Input/output error")
 }
 
 func TestFirecrackerLifecycle(t *testing.T) {
