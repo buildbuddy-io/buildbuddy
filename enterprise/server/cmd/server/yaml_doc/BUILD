@@ -9,6 +9,9 @@ package(default_visibility = [
 go_binary(
     name = "yaml_doc",
     embed = [":yaml_doc_lib"],
+    # Only used to generate docs for //website; keep out of //... builds
+    # (it is a full server/executor link, ~150MB per configuration).
+    tags = ["manual"],
 )
 
 go_library(
@@ -26,6 +29,7 @@ genrule(
     name = "generate_yaml",
     outs = ["buildbuddy_enterprise_server_documented_defaults.yaml"],
     cmd = "./$(location :yaml_doc) -yaml_documented_defaults_out_file=\"$@\"",
+    tags = ["manual"],
     tools = [":yaml_doc"],
 )
 
@@ -38,6 +42,7 @@ genrule(
         cat $(location :generate_yaml) >> "$@" &&
         echo "\\`\\`\\`" >> "$@"
     """,
+    tags = ["manual"],
     visibility = [
         "//website:__pkg__",
     ],
