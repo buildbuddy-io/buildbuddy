@@ -65,6 +65,7 @@ var (
 	ErrRemoved = status.UnavailableError("container has been removed")
 
 	recordUsageTimelines          = flag.Bool("executor.record_usage_timelines", false, "Capture resource usage timeseries data in UsageStats for each task.")
+	useOCIFetcher                 = flag.Bool("executor.use_oci_fetcher", false, "Whether to use the OCI fetcher service for pulling container images.")
 	imagePullTimeout              = flag.Duration("executor.image_pull_timeout", 5*time.Minute, "How long to wait for the container image to be pulled before returning an Unavailable (retryable) error for an action execution attempt. Applies to all isolation types (docker, firecracker, etc.)")
 	cgroupStatsPollInterval       = flag.Duration("executor.cgroup_stats_poll_interval", 500*time.Millisecond, "How often to poll container stats.")
 	debugUseLocalImagesOnly       = flag.Bool("debug_use_local_images_only", false, "Do not pull OCI images and only used locally cached images. This can be set to test local image builds during development without needing to push to a container registry. Not intended for production use.")
@@ -76,6 +77,12 @@ var (
 	// existence checks and image pulls.
 	pullOperations sync.Map
 )
+
+// UseOCIFetcher reports whether an image pull should use the OCI fetcher,
+// accounting for both the action-level platform property and executor config.
+func UseOCIFetcher(requested bool) bool {
+	return requested && *useOCIFetcher
+}
 
 type DockerDeviceMapping struct {
 	PathOnHost        string `yaml:"path_on_host" usage:"path to device that should be mapped from the host."`

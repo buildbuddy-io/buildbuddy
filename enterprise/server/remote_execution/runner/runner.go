@@ -289,7 +289,7 @@ func (r *taskRunner) PrepareForTask(ctx context.Context) error {
 	err = container.PullImageIfNecessary(
 		ctx, r.env,
 		r.Container, creds, r.PlatformProperties.ContainerImage,
-		r.PlatformProperties.UseOCIFetcher,
+		container.UseOCIFetcher(r.PlatformProperties.UseOCIFetcher),
 	)
 	if err != nil {
 		return status.UnavailableErrorf("Error pulling container: %s", err)
@@ -508,7 +508,7 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 		err = container.PullImageIfNecessary(
 			ctx, r.env,
 			r.Container, creds, r.PlatformProperties.ContainerImage,
-			r.PlatformProperties.UseOCIFetcher,
+			container.UseOCIFetcher(r.PlatformProperties.UseOCIFetcher),
 		)
 		if err != nil {
 			return commandutil.ErrorResult(err)
@@ -1092,17 +1092,18 @@ func (p *pool) warmupImage(ctx context.Context, cfg *WarmupConfig) error {
 	pullStart := time.Now()
 	pullErr := c.PullImage(ctx, creds)
 	pullDuration := time.Since(pullStart)
+	useOCIFetcher := container.UseOCIFetcher(platProps.UseOCIFetcher)
 	container.RecordImageFetchMetrics(
 		c.IsolationType(),
 		oci.RegistryETLDPlusOne(platProps.ContainerImage),
 		metrics.ImageFetchTriggerWarmup,
 		onDisk,
 		!creds.IsEmpty(),
-		platProps.UseOCIFetcher,
+		useOCIFetcher,
 		pullErr,
 		pullDuration,
 	)
-	container.LogImagePullError(ctx, platProps.ContainerImage, c.IsolationType(), metrics.ImageFetchTriggerWarmup, platProps.UseOCIFetcher, pullErr, pullDuration)
+	container.LogImagePullError(ctx, platProps.ContainerImage, c.IsolationType(), metrics.ImageFetchTriggerWarmup, useOCIFetcher, pullErr, pullDuration)
 	if pullErr != nil {
 		return pullErr
 	}

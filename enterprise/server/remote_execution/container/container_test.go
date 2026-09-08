@@ -76,6 +76,24 @@ func userCtx(t *testing.T, ta *testauth.TestAuthenticator, userID string) contex
 	return ctx
 }
 
+func TestUseOCIFetcher(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		executorEnabled bool
+		requested       bool
+		want            bool
+	}{
+		{name: "disabled by executor", executorEnabled: false, requested: true, want: false},
+		{name: "not requested", executorEnabled: true, requested: false, want: false},
+		{name: "enabled", executorEnabled: true, requested: true, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "executor.use_oci_fetcher", tc.executorEnabled)
+			assert.Equal(t, tc.want, container.UseOCIFetcher(tc.requested))
+		})
+	}
+}
+
 func TestPullImageIfNecessary_ValidCredentials(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))

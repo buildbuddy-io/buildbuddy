@@ -500,7 +500,7 @@ func (p *provider) New(ctx context.Context, args *container.Init) (container.Com
 
 		milliCPU:      args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMilliCpu(),
 		memoryBytes:   args.Task.GetSchedulingMetadata().GetTaskSize().GetEstimatedMemoryBytes(),
-		useOCIFetcher: args.Props.UseOCIFetcher,
+		useOCIFetcher: container.UseOCIFetcher(args.Props.UseOCIFetcher),
 	}
 	if settings := args.Task.GetSchedulingMetadata().GetCgroupSettings(); settings != nil {
 		container.cgroupSettings = settings
