@@ -612,7 +612,6 @@ type VM interface {
 // RecordImageFetchMetrics records the image fetch duration histogram.
 // Counts are available via the histogram's _count suffix.
 func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCreds, useOCIFetcher bool, err error, duration time.Duration) {
-	useOCIFetcher = oci.UseOCIFetcher(useOCIFetcher)
 	labels := prometheus.Labels{
 		metrics.IsolationTypeLabel:           isolation,
 		metrics.ImageFetchRegistryLabel:      registry,
@@ -626,7 +625,6 @@ func RecordImageFetchMetrics(isolation, registry, trigger string, onDisk, hasCre
 }
 
 func LogImagePullError(ctx context.Context, imageRef, isolation, trigger string, useOCIFetcher bool, err error, duration time.Duration) {
-	useOCIFetcher = oci.UseOCIFetcher(useOCIFetcher)
 	if !ShouldCountImagePullError(err) {
 		return
 	}

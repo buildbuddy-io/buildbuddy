@@ -277,14 +277,8 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 	return imageNameWithDigest, nil
 }
 
-// UseOCIFetcher reports whether an image pull should use the OCI fetcher,
-// accounting for both the caller's request and executor config.
-func UseOCIFetcher(requested bool) bool {
-	return requested && *useOCIFetcherEnabled
-}
-
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (ctr.Image, error) {
-	useOCIFetcher = UseOCIFetcher(useOCIFetcher)
+	useOCIFetcher = useOCIFetcher && *useOCIFetcherEnabled
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 

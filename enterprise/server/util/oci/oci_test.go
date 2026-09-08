@@ -224,24 +224,6 @@ func TestCredentialsToProto(t *testing.T) {
 			oci.Credentials{Username: "foo", Password: "bar"}.ToProto()))
 }
 
-func TestUseOCIFetcher(t *testing.T) {
-	for _, tc := range []struct {
-		name            string
-		executorEnabled bool
-		requested       bool
-		want            bool
-	}{
-		{name: "disabled by executor", executorEnabled: false, requested: true, want: false},
-		{name: "not requested", executorEnabled: true, requested: false, want: false},
-		{name: "enabled", executorEnabled: true, requested: true, want: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			flags.Set(t, "executor.use_oci_fetcher", tc.executorEnabled)
-			assert.Equal(t, tc.want, oci.UseOCIFetcher(tc.requested))
-		})
-	}
-}
-
 func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
 	flags.Set(t, "executor.use_oci_fetcher", true)
 	r, err := oci.NewResolver(te)
