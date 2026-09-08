@@ -128,9 +128,10 @@ message TaskSize {
   int64 estimated_milli_cpu = 2;
 
   // The task's estimated total GPU memory usage in bytes across all GPUs.
-  // This is independent of custom resources and defaults to 0 for tasks that
-  // do not request GPU memory.
-  int64 estimated_gpu_memory_bytes = 9;
+  // This is independent of custom resources. Absence means no estimate is
+  // available; a present value of 0 means the task is estimated to use no GPU
+  // memory.
+  optional int64 estimated_gpu_memory_bytes = 9;
 
   // The task's estimated disk space requirement (beyond task inputs).
   int64 estimated_free_disk_bytes = 3;
@@ -304,6 +305,8 @@ message SchedulingMetadata {
   //    incorporates the default task size and user-requested size, and not any
   //    historical information or model predictions. This estimate is now split
   //    into two separate fields: default_task_size and requested_size.
+  //    GPU memory is an exception; it includes the automatic GPU estimate and
+  //    user-specified minimum so node selection checks the effective requirement.
   // 2. Just before enqueueing a task on an executor, the scheduler sets this to
   //    the "final" task size that should be used by the executor, which
   //    incorporates the measured size or model-predicated size as applicable.
