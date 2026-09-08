@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
@@ -27,10 +28,11 @@ var (
 	autoUpdate = flag.Bool("auto_update", false, "Check for a newer published bbaccess before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
 )
 
-// defaultServers is a comma-separated server list stamped in at link time.
-// This allows a binary to be published embedded with default servers.
-// Optionally set via linker flags:
-// --@io_bazel_rules_go//go/config:gc_linkopts='-X=main.defaultServers=foo'
+// defaultServers is a server list stamped in at link time, separated by
+// commas or whitespace. This allows a binary to be published embedded with
+// default servers. Optionally set via linker flags:
+// --@io_bazel_rules_go//go/config:gc_linkopts='-X=main.defaultServers=foo bar'
+// (Bazel splits that flag's value on commas, hence the whitespace option.)
 var defaultServers string
 
 // builtInServers parses a stamped server list. An unstamped build has none.
@@ -39,10 +41,8 @@ func builtInServers(stamped string) []string {
 		return nil
 	}
 	var out []string
-	for s := range strings.SplitSeq(stamped, ",") {
-		if s = strings.TrimSpace(s); s != "" {
-			out = append(out, s)
-		}
+	for s := range strings.FieldsFuncSeq(stamped, func(r rune) bool { return r == ',' || unicode.IsSpace(r) }) {
+		out = append(out, s)
 	}
 	return out
 }
