@@ -353,7 +353,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
 	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
 	if ws.Opts.Preserve {
-		opts.Skip = ws.Inputs
+		opts.KnownInputs = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)

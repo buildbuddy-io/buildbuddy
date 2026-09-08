@@ -638,12 +638,12 @@ type FilePointer struct {
 }
 
 // removeExisting removes any existing file pointed to by the FilePointer if
-// it exists in the opts.Skip (pre-existing files) map. This is needed so that
+// it exists in the opts.KnownInputs map. This is needed so that
 // we overwrite existing files without silently dropping errors when linking
 // the file. (Note, it is not needed when writing a fresh copy of the file.)
 func removeExisting(fp *FilePointer, opts *DownloadTreeOpts) error {
 	pathKey := fspath.NewKey(fp.RelativePath, opts.CaseInsensitive)
-	if _, ok := opts.Skip[pathKey]; ok {
+	if _, ok := opts.KnownInputs[pathKey]; ok {
 		if err := os.Remove(fp.FullPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -1262,10 +1262,15 @@ type DownloadTreeOpts struct {
 	// CaseInsensitive specifies whether the filesystem is case-insensitive.
 	// If true, the paths will be normalized to lowercase.
 	CaseInsensitive bool
-	// Skip specifies file paths to skip, along with their file nodes. If the
-	// file metadata or contents to be downloaded don't match the file in this
-	// map, then it is re-downloaded (not skipped).
-	Skip map[fspath.Key]*repb.FileNode
+	// KnownInputs maps workspace-relative input paths to file nodes retained
+	// from previous tasks. When TrackTransfers is enabled, paths also present
+	// in the current tree are returned in InputsState.Exist so cleanup can
+	// preserve them.
+	//
+	// When RootDir is set, unchanged known inputs are reused without downloading.
+	// When RootDir is empty, cache availability is checked independently since
+	// evicting cached contents does not remove the corresponding VFS entry.
+	KnownInputs map[fspath.Key]*repb.FileNode
 	// RootDir specifies the destination directory for the downloaded tree.
 	// If not specified, tree digests will be downloaded directly into the filecache.
 	RootDir string
@@ -1559,11 +1564,22 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				}
 
 				pathKey := fspath.NewKey(relPath, f.opts.CaseInsensitive)
-				skippedNode, ok := f.opts.Skip[pathKey]
+				knownNode, ok := f.opts.KnownInputs[pathKey]
 				if ok {
 					trackExistsFn(relPath, node)
 				}
-				if ok && nodesEqual(node, skippedNode) {
+				// To avoid downloading inputs again when reusing a workspace,
+				// the caller supplies KnownInputs, a map of input paths and
+				// file metadata retained from previous tasks. If the file
+				// exists from a previous task and its contents haven't changed,
+				// we can skip downloading it.
+				//
+				// Edge case: for VFS prefetch, the file contents live in the
+				// file cache, which can evict them without removing the VFS
+				// entry. An unchanged known input therefore does not guarantee
+				// that the contents are available. Let prefetch check the file
+				// cache to decide whether another download is needed.
+				if ok && nodesEqual(node, knownNode) && !onlyDownloadToFileCache {
 					return
 				}
 				dk := newFetchKey(d, node.IsExecutable)

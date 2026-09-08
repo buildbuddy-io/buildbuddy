@@ -1254,7 +1254,7 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 	info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
 		RootDir:                  tmpDir,
 		RecordInputFetchMetadata: true,
-		Skip: map[fspath.Key]*repb.FileNode{
+		KnownInputs: map[fspath.Key]*repb.FileNode{
 			fspath.NewKey("preserved.txt", false): preservedNode,
 		},
 	})

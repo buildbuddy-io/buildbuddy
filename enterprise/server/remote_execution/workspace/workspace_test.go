@@ -18,10 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
@@ -606,6 +605,65 @@ func TestDownloadInputs_WorkingDirectoryNestedMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 	assert.Contains(t, err.Error(), "a/b")
+}
+
+func TestDownloadInputs_VFSPrefetchModeAll_PreserveWorkspace(t *testing.T) {
+	ctx := t.Context()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1e9, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	te.SetFileCache(fc)
+	inputDigest, err := cachetools.UploadBlob(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, strings.NewReader("input"))
+	require.NoError(t, err)
+	inputNode := &repb.FileNode{Name: "input.txt", Digest: inputDigest}
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{
+			Files: []*repb.FileNode{inputNode},
+		}},
+	}
+	ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{
+		Preserve:        true,
+		CleanInputs:     "*",
+		VFSPrefetchMode: workspace.VFSPrefetchModeAll,
+	})
+	require.NoError(t, err)
+
+	// The first task prefetches the input into the file cache. The workspace
+	// remembers the entry for cleanup bookkeeping across tasks.
+	ws.SetTask(ctx, &repb.ExecutionTask{})
+	require.NoError(t, ws.DownloadInputs(ctx, layout))
+	info, err := ws.TaskFinished()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, info.FileCount)
+	require.True(t, fc.ContainsFile(ctx, inputNode))
+	require.Contains(t, ws.Inputs, fspath.NewKey(inputNode.GetName(), false))
+	require.NoError(t, ws.Clean())
+
+	// If the cached contents are evicted between tasks, the preserved entry
+	// must not prevent the next task from prefetching them again.
+	require.True(t, fc.DeleteFile(ctx, inputNode))
+	ws.SetTask(ctx, &repb.ExecutionTask{})
+	require.NoError(t, ws.DownloadInputs(ctx, layout))
+	info, err = ws.TaskFinished()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, info.FileCount)
+	require.True(t, fc.ContainsFile(ctx, inputNode))
+	require.NoError(t, ws.Clean())
+
+	// When the input is already cached, another task reuses its contents
+	// without downloading them again.
+	ws.SetTask(ctx, &repb.ExecutionTask{})
+	require.NoError(t, ws.DownloadInputs(ctx, layout))
+	info, err = ws.TaskFinished()
+	require.NoError(t, err)
+	require.Zero(t, info.FileCount)
+	require.EqualValues(t, 1, info.LinkCount)
+	require.NoError(t, ws.Clean())
 }
 
 func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
