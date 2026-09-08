@@ -159,8 +159,15 @@ common:tests-macos --test_tag_filters=-performance,-webdriver,-docker,-bare
 # Windows CI runs locally and excludes benchmarks.
 common:tests-windows --test_tag_filters=-performance
 
+# Linux arm64 CI runs locally over a curated target list. Docker tests run in a
+# separate invocation using the docker suite below.
+common:tests-linux-arm64 --test_tag_filters=-performance,-docker
+
 common:tests-bare --test_tag_filters=+bare
 common:tests-bare --build_tag_filters=+bare
+
+# Unlike the bare suite, this doesn't filter builds; consumers name their targets.
+common:tests-docker --test_tag_filters=+docker
 
 common:tests-performance --test_tag_filters=+performance
 
