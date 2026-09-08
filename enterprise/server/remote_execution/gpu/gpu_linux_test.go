@@ -92,6 +92,27 @@ func TestConfigure_GPUMemoryTrackingDisabled_CapacityIsAvailable(t *testing.T) {
 	require.Empty(t, device.GetComputeRunningProcessesCalls())
 }
 
+func TestConfigure_NoGPUs_CapacityIsZero(t *testing.T) {
+	previousMonitor := defaultMemoryMonitor
+	previousLibrary := nvmlLibrary
+	t.Cleanup(func() {
+		defaultMemoryMonitor = previousMonitor
+		nvmlLibrary = previousLibrary
+	})
+	flags.Set(t, "executor.gpu_memory_tracking_enabled", true)
+	nvmlLibrary = &mock.Interface{
+		InitFunc:           func() nvml.Return { return nvml.SUCCESS },
+		DeviceGetCountFunc: func() (int, nvml.Return) { return 0, nvml.SUCCESS },
+	}
+
+	// An executor without GPUs can start with tracking enabled and report
+	// zero capacity when NVML successfully discovers an empty device list.
+	require.NoError(t, Configure())
+	total, err := GetTotalGPUMemoryBytes()
+	require.NoError(t, err)
+	require.Zero(t, total)
+}
+
 func TestConfigure_NVMLErrors(t *testing.T) {
 	flags.Set(t, "executor.gpu_memory_tracking_enabled", true)
 	for _, testCase := range []struct {
@@ -107,7 +128,6 @@ func TestConfigure_NVMLErrors(t *testing.T) {
 		{name: "NVML unavailable", initRet: nvml.ERROR_LIBRARY_NOT_FOUND},
 		{name: "driver unavailable", initRet: nvml.ERROR_DRIVER_NOT_LOADED, wantErr: "initialize NVML"},
 		{name: "device count", countRet: nvml.ERROR_UNKNOWN, wantErr: "get device count"},
-		{name: "no GPUs", wantErr: "no NVIDIA GPUs"},
 		{name: "device handle", count: 1, handleRet: nvml.ERROR_GPU_IS_LOST, wantErr: "get device 0"},
 		{name: "device UUID", count: 1, uuidRet: nvml.ERROR_GPU_IS_LOST, wantErr: "get device 0 UUID"},
 		{name: "discovery and shutdown", count: 1, uuidRet: nvml.ERROR_GPU_IS_LOST, shutdownRet: nvml.ERROR_UNKNOWN, wantErr: "get device 0 UUID"},

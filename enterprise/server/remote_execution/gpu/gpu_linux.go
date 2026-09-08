@@ -72,9 +72,6 @@ func discoverDevices(library nvml.Interface) ([]gpuDevice, error) {
 	if ret != nvml.SUCCESS {
 		return nil, fmt.Errorf("get device count: %w", ret)
 	}
-	if count == 0 {
-		return nil, errors.New("NVML reported no NVIDIA GPUs")
-	}
 	devices := make([]gpuDevice, 0, count)
 	for index := range count {
 		device, ret := library.DeviceGetHandleByIndex(index)
