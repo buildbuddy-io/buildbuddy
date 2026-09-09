@@ -1619,12 +1619,8 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		UID:            uid,
 		GID:            gid,
 		AdditionalGids: gids,
-		Umask:          pointer(uint32(022)), // 0644 file perms by default
+		Umask:          new(uint32(022)), // 0644 file perms by default
 	}, nil
-}
-
-func pointer[T any](val T) *T {
-	return &val
 }
 
 func toInt32s(in []int) []int32 {

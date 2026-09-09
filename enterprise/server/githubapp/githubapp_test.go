@@ -43,7 +43,7 @@ type fakeAppClient struct {
 func (c *fakeAppClient) CreateInstallationToken(_ context.Context, installationID int64, opts *github.InstallationTokenOptions) (*github.InstallationToken, *github.Response, error) {
 	c.createTokenCalls++
 	require.Equal(c.t, c.wantInstallationID, installationID)
-	return &github.InstallationToken{Token: github.String(fakeToken)}, &github.Response{
+	return &github.InstallationToken{Token: new(fakeToken)}, &github.Response{
 		Response: &http.Response{StatusCode: http.StatusCreated},
 	}, nil
 }

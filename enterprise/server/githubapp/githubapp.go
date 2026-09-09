@@ -1068,10 +1068,10 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 			organization = req.Owner
 		}
 		_, _, err := githubClient.Repositories.Create(ctx, organization, &github.Repository{
-			Name:        github.String(req.Name),
-			Description: github.String(req.Description),
-			Private:     github.Bool(req.Private),
-			AutoInit:    github.Bool(req.Template == ""),
+			Name:        new(req.Name),
+			Description: new(req.Description),
+			Private:     new(req.Private),
+			AutoInit:    new(req.Template == ""),
 		})
 		if err != nil {
 			return nil, err
@@ -2054,7 +2054,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 			PullRequestID:       githubv4.NewID(req.GetPullId()),
 			PullRequestReviewID: githubv4.NewID(reviewId),
 			Path:                githubv4.String(req.GetPath()),
-			Line:                githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
+			Line:                new(githubv4.Int(int(req.GetLine()))),
 			Side:                &side,
 			Body:                githubv4.String(req.GetBody()),
 		}
@@ -2354,7 +2354,7 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 		}
 		input := githubv4.AddPullRequestReviewInput{
 			PullRequestID: req.GetPullRequestId(),
-			Body:          githubv4.NewString(githubv4.String(replyBody)),
+			Body:          new(githubv4.String(replyBody)),
 			Event:         &event,
 		}
 		err := graphqlClient.Mutate(ctx, &m, input, nil)
@@ -2372,7 +2372,7 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 
 	input := githubv4.SubmitPullRequestReviewInput{
 		PullRequestReviewID: githubv4.NewID(reviewID),
-		Body:                githubv4.NewString(githubv4.String(replyBody)),
+		Body:                new(githubv4.String(replyBody)),
 		Event:               event,
 	}
 	err = graphqlClient.Mutate(ctx, &m, input, nil)
