@@ -13,7 +13,6 @@ go_library(
         "//server/util/bazel_request",
         "//server/util/compression",
         "//server/util/grpc_client",
-        "//server/util/healthcheck",
         "//server/util/log",
         "//server/util/tracing",
         "//server/util/uuid",
