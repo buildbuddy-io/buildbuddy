@@ -618,7 +618,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleBarClick(d: stats.DrilldownType, entries: stats.DrilldownEntry[], e?: MouseHandlerDataParam) {
-    if (!e || e.activeTooltipIndex === undefined) {
+    if (!e || !e.isTooltipActive || e.activeTooltipIndex === undefined) {
       return;
     }
     const entry = entries[Number(e.activeTooltipIndex)];
