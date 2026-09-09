@@ -127,6 +127,11 @@ message TaskSize {
   // The task's estimated cpu usage.
   int64 estimated_milli_cpu = 2;
 
+  // The task's estimated total GPU memory usage in bytes across all GPUs.
+  // This is independent of custom resources and defaults to 0 for tasks that
+  // do not request GPU memory.
+  int64 estimated_gpu_memory_bytes = 9;
+
   // The task's estimated disk space requirement (beyond task inputs).
   int64 estimated_free_disk_bytes = 3;
 
@@ -545,6 +550,11 @@ message ExecutionNode {
   // Assignable cpu in remote execution node.
   // Ex. 7000
   int64 assignable_milli_cpu = 4;
+
+  // GPU memory bytes available to tasks across all GPUs, configured using
+  // executor.gpu_memory_bytes or SYS_GPU_MEMORY_BYTES. A value of 0 means
+  // no GPU memory is available for scheduling on this node.
+  int64 assignable_gpu_memory_bytes = 26;
 
   // Assignable disk bytes in remote execution node, for task workspaces
   // (buildroots). Derived from the capacity of the filesystem holding the build
