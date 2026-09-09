@@ -3,6 +3,7 @@ package priority_queue_test
 import (
 	"container/heap"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/priority_queue"
 	"github.com/stretchr/testify/assert"
@@ -62,6 +63,26 @@ func TestZeroValue(t *testing.T) {
 	v, ok = q.Pop()
 	assert.Equal(t, 0, v)
 	assert.False(t, ok)
+}
+
+func TestPushWithTime(t *testing.T) {
+	q := priority_queue.New[string]()
+	baseTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Push A and B with the same priority; A gets an earlier time, so it
+	// should come first.
+	q.PushWithTime("A", 1, baseTime)
+	q.PushWithTime("B", 1, baseTime.Add(time.Second))
+
+	// Push C with the same priority and an even earlier time; it should come
+	// before both A and B despite being pushed last.
+	q.PushWithTime("C", 1, baseTime.Add(-time.Second))
+
+	// Push D with a higher priority and the latest time; priority should take
+	// precedence over time.
+	q.PushWithTime("D", 2, baseTime.Add(time.Hour))
+
+	require.Equal(t, []string{"D", "C", "A", "B"}, q.GetAllOrdered())
 }
 
 func TestRemoveAt(t *testing.T) {
