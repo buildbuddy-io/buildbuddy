@@ -38,88 +38,87 @@ function clearStyle(style: AnsiStyle) {
 
 const colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
 
-
 function applyCode(style: AnsiStyle, code: number) {
-      switch (code) {
-        case 0:
-          clearStyle(style);
-          return;
-        case 1:
-          style.bold = true;
-          return;
-        case 3:
-          style.italic = true;
-          return;
-        case 4:
-          style.underline = true;
-          return;
-        case 22:
-          style.bold = false;
-          return;
-        case 23:
-          style.italic = false;
-          return;
-        case 24:
-          style.underline = false;
-          return;
-        case 30:
-        case 31:
-        case 32:
-        case 33:
-        case 34:
-        case 35:
-        case 36:
-        case 37:
-          // Foreground color
-          style.foreground = colors[code - 30];
-          return;
-        case 39:
-          delete style.foreground;
-          return;
-        case 40:
-        case 41:
-        case 42:
-        case 43:
-        case 44:
-        case 45:
-        case 46:
-        case 47:
-          // Background color
-          style.background = colors[code - 40];
-          return;
-        case 49:
-          delete style.background;
-          return;
-        case 90:
-          // 90 is technically "bright black fg color" but just treat it as grey.
-          style.foreground = "grey";
-          return;
-        case 91:
-        case 92:
-        case 93:
-        case 94:
-        case 95:
-        case 96:
-        case 97:
-          // "Bright" foreground color (treat the same as non-bright for now)
-          style.foreground = colors[code - 90];
-          return;
-        case 100:
-          // 100 is technically "bright black bg color" but just treat it as grey.
-          style.background = "grey";
-          return;
-        case 101:
-        case 102:
-        case 103:
-        case 104:
-        case 105:
-        case 106:
-        case 107:
-          // "Bright" background color (treat the same as non-bright for now)
-          style.background = colors[code - 100];
-          return;
-        default:
-          return;
+  switch (code) {
+    case 0:
+      clearStyle(style);
+      return;
+    case 1:
+      style.bold = true;
+      return;
+    case 3:
+      style.italic = true;
+      return;
+    case 4:
+      style.underline = true;
+      return;
+    case 22:
+      style.bold = false;
+      return;
+    case 23:
+      style.italic = false;
+      return;
+    case 24:
+      style.underline = false;
+      return;
+    case 30:
+    case 31:
+    case 32:
+    case 33:
+    case 34:
+    case 35:
+    case 36:
+    case 37:
+      // Foreground color
+      style.foreground = colors[code - 30];
+      return;
+    case 39:
+      delete style.foreground;
+      return;
+    case 40:
+    case 41:
+    case 42:
+    case 43:
+    case 44:
+    case 45:
+    case 46:
+    case 47:
+      // Background color
+      style.background = colors[code - 40];
+      return;
+    case 49:
+      delete style.background;
+      return;
+    case 90:
+      // 90 is technically "bright black fg color" but just treat it as grey.
+      style.foreground = "grey";
+      return;
+    case 91:
+    case 92:
+    case 93:
+    case 94:
+    case 95:
+    case 96:
+    case 97:
+      // "Bright" foreground color (treat the same as non-bright for now)
+      style.foreground = colors[code - 90];
+      return;
+    case 100:
+      // 100 is technically "bright black bg color" but just treat it as grey.
+      style.background = "grey";
+      return;
+    case 101:
+    case 102:
+    case 103:
+    case 104:
+    case 105:
+    case 106:
+    case 107:
+      // "Bright" background color (treat the same as non-bright for now)
+      style.background = colors[code - 100];
+      return;
+    default:
+      return;
   }
 }
 
