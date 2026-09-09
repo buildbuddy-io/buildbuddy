@@ -211,7 +211,8 @@ def tag_and_push_image_with_docker(bazel_target, project, version_tag):
 def create_and_push_multi_platform_manifest(project, version_tag, architecture_images):
     remote_image_ref = f'gcr.io/{project}:{version_tag}'
     print(f'Creating and pushing multi-platform manifest {remote_image_ref}')
-    run_or_die(f'docker manifest create {remote_image_ref} {" ".join(architecture_images)}')
+    # A failed push leaves the local manifest behind; allow the release to retry.
+    run_or_die(f'docker manifest create --amend {remote_image_ref} {" ".join(architecture_images)}')
     run_or_die(f'docker manifest push --purge {remote_image_ref}')
 
 def update_docker_images(images, version_tag, skip_update_latest_tag, arch_specific_executor_tag, arch_specific_proxy_tag):

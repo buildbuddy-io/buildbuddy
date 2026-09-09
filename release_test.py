@@ -60,6 +60,42 @@ class ReleaseTest(unittest.TestCase):
         )
 
     @mock.patch.object(release, "run_or_die")
+    @mock.patch.object(release, "tag_and_push_image_with_docker")
+    @mock.patch.object(release, "build_image_with_bazel")
+    @mock.patch.object(release, "get_image_digest")
+    def test_push_multi_platform_image_retries_manifest_without_rebuilding(
+        self,
+        get_image_digest,
+        build_image_with_bazel,
+        tag_and_push_image_with_docker,
+        run_or_die,
+    ):
+        # Architecture uploads succeeded, but the first manifest push fails.
+        get_image_digest.side_effect = [None, "sha256:amd64", "sha256:arm64"] * 2
+        run_or_die.side_effect = [None, SystemExit(1), None, None]
+
+        with self.assertRaises(SystemExit):
+            release.push_multi_platform_image_for_project(
+                "example/project", "v1.2.3", "//example:image", True,
+            )
+        release.push_multi_platform_image_for_project(
+            "example/project", "v1.2.3", "//example:image", True,
+        )
+
+        build_image_with_bazel.assert_not_called()
+        tag_and_push_image_with_docker.assert_not_called()
+        self.assertEqual(run_or_die.call_args_list, [
+            mock.call(
+                "docker manifest create --amend gcr.io/example/project:v1.2.3 "
+                "gcr.io/example/project:v1.2.3-amd64 "
+                "gcr.io/example/project:v1.2.3-arm64"
+            ),
+            mock.call(
+                "docker manifest push --purge gcr.io/example/project:v1.2.3"
+            ),
+        ] * 2)
+
+    @mock.patch.object(release, "run_or_die")
     def test_create_and_push_multi_platform_manifest(self, run_or_die):
         release.create_and_push_multi_platform_manifest(
             "example/project",
@@ -72,7 +108,7 @@ class ReleaseTest(unittest.TestCase):
 
         run_or_die.assert_has_calls([
             mock.call(
-                "docker manifest create gcr.io/example/project:v1.2.3 "
+                "docker manifest create --amend gcr.io/example/project:v1.2.3 "
                 "gcr.io/example/project:v1.2.3-amd64 "
                 "gcr.io/example/project:v1.2.3-arm64"
             ),
