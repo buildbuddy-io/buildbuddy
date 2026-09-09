@@ -103,9 +103,12 @@ def confirm_new_version(version):
         version = get_version_override()
     return version
 
-IMAGE_MANIFEST_MEDIA_TYPES = [
+IMAGE_INDEX_MEDIA_TYPES = [
     "application/vnd.oci.image.index.v1+json",
     "application/vnd.docker.distribution.manifest.list.v2+json",
+]
+
+IMAGE_MANIFEST_MEDIA_TYPES = IMAGE_INDEX_MEDIA_TYPES + [
     "application/vnd.oci.image.manifest.v1+json",
     "application/vnd.docker.distribution.manifest.v2+json",
 ]
@@ -115,7 +118,7 @@ LINUX_IMAGE_PLATFORMS = [
     ("arm64", "//platforms:linux_arm64"),
 ]
 
-def get_image_digest(project, tag):
+def get_image(project, tag):
     query_url = f"https://gcr.io/v2/{project}/manifests/{tag}"
     r = requests.get(query_url, headers={"Accept": ", ".join(IMAGE_MANIFEST_MEDIA_TYPES)})
     if r.status_code == 404:
@@ -125,7 +128,10 @@ def get_image_digest(project, tag):
     digest = r.headers.get("Docker-Content-Digest")
     if digest is None:
         die(f"Registry did not return a digest for image gcr.io/{project}:{tag}.")
-    return digest
+    media_type = r.headers.get("Content-Type", "").split(";")[0].strip().lower()
+    if media_type not in IMAGE_MANIFEST_MEDIA_TYPES:
+        die(f"Registry returned an unsupported media type for image gcr.io/{project}:{tag}: {media_type!r}")
+    return {"digest": digest, "media_type": media_type}
 
 def create_and_push_tag(old_version, new_version, release_notes=''):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
@@ -142,53 +148,57 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
-def push_image_for_project(project, version_tag, bazel_target, skip_update_latest_tag):
-    version_digest = get_image_digest(project, version_tag)
-    if version_digest is None:
-        build_image_with_bazel(bazel_target)
+def push_image_for_project(project, version_tag, bazel_target, skip_update_latest_tag, platform_target=None):
+    version_image = get_image(project, version_tag)
+    if version_image is None:
+        build_image_with_bazel(bazel_target, platform_target)
         tag_and_push_image_with_docker(bazel_target, project, version_tag)
     else:
         print(f'Image gcr.io/{project}:{version_tag} already exists, skipping bazel build.')
 
-    update_latest_tag(project, version_tag, version_digest, skip_update_latest_tag)
+    update_latest_tag(project, version_tag, version_image, skip_update_latest_tag)
 
 def push_multi_platform_image_for_project(project, version_tag, bazel_target, skip_update_latest_tag):
-    version_digest = get_image_digest(project, version_tag)
-    if version_digest is None:
+    version_image = get_image(project, version_tag)
+    if version_image is not None and version_image["media_type"] not in IMAGE_INDEX_MEDIA_TYPES:
+        die(f"Image gcr.io/{project}:{version_tag} already exists but is not multi-platform. Use a new version tag.")
+    if version_image is None:
         architecture_images = []
         for architecture, platform_target in LINUX_IMAGE_PLATFORMS:
             architecture_tag = f"{version_tag}-{architecture}"
-            architecture_digest = get_image_digest(project, architecture_tag)
-            if architecture_digest is None:
-                build_image_with_bazel(bazel_target, platform_target)
-                tag_and_push_image_with_docker(bazel_target, project, architecture_tag)
-            else:
-                print(f'Image gcr.io/{project}:{architecture_tag} already exists, skipping bazel build.')
+            push_image_for_project(
+                project, architecture_tag, bazel_target,
+                skip_update_latest_tag=True, platform_target=platform_target,
+            )
             architecture_images.append(f"gcr.io/{project}:{architecture_tag}")
         create_and_push_multi_platform_manifest(project, version_tag, architecture_images)
     else:
         print(f'Image gcr.io/{project}:{version_tag} already exists, skipping bazel build.')
 
-    update_latest_tag(project, version_tag, version_digest, skip_update_latest_tag)
+    update_latest_tag(project, version_tag, version_image, skip_update_latest_tag)
 
-def update_latest_tag(project, version_tag, version_digest, skip_update_latest_tag):
+def update_latest_tag(project, version_tag, version_image, skip_update_latest_tag):
     if skip_update_latest_tag:
         return
 
-    version_digest = version_digest or get_image_digest(project, version_tag)
-    if version_digest is None:
+    version_image = version_image or get_image(project, version_tag)
+    if version_image is None:
         die(f"Could not fetch image with tag {version_tag} from project {project}.")
 
-    latest_digest = get_image_digest(project, "latest")
-    if latest_digest is None:
+    latest_image = get_image(project, "latest")
+    if latest_image is None:
         print(f"No 'latest' tag found for {project}; tagging current version as latest.")
-        should_update_latest_tag = True
-    else:
-        should_update_latest_tag = version_digest != latest_digest
+    elif (
+        latest_image["media_type"] in IMAGE_INDEX_MEDIA_TYPES
+        and version_image["media_type"] not in IMAGE_INDEX_MEDIA_TYPES
+    ):
+        die(f"Refusing to replace multi-platform gcr.io/{project}:latest with single-platform {version_tag}. "
+            "Publish a multi-platform image or use --skip_latest_tag.")
+    elif version_image["digest"] == latest_image["digest"]:
+        return
 
-    if should_update_latest_tag:
-        add_tag_cmd = f"echo 'yes' | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
-        run_or_die(add_tag_cmd)
+    add_tag_cmd = f"echo 'yes' | gcloud container images add-tag gcr.io/{project}:{version_tag} gcr.io/{project}:latest"
+    run_or_die(add_tag_cmd)
 
 def build_image_with_bazel(bazel_target, platform_target=None):
     print(f"Building docker image target {bazel_target}")
