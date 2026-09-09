@@ -27,12 +27,10 @@ func readyPod(name, ip string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
 
 func readyPodOnNode(name, ip, nodeName string, ownerRefs []metav1.OwnerReference) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            name,
-			Namespace:       testNamespace,
-			OwnerReferences: ownerRefs,
-			Labels:          map[string]string{"app": "cache"},
-		},
+		Name:            name,
+		Namespace:       testNamespace,
+		OwnerReferences: ownerRefs,
+		Labels:          map[string]string{"app": "cache"},
 		Spec: corev1.PodSpec{
 			NodeName: nodeName,
 		},
@@ -70,10 +68,8 @@ func statefulSetOwnerRef(name string) []metav1.OwnerReference {
 
 func replicaSet(name string) *appsv1.ReplicaSet {
 	return &appsv1.ReplicaSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNamespace,
-		},
+		Name:      name,
+		Namespace: testNamespace,
 		Spec: appsv1.ReplicaSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "cache"},
@@ -84,10 +80,8 @@ func replicaSet(name string) *appsv1.ReplicaSet {
 
 func statefulSet(name string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNamespace,
-		},
+		Name:      name,
+		Namespace: testNamespace,
 		Spec: appsv1.StatefulSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "cache"},
@@ -248,13 +242,11 @@ func TestPodNotReadyIncluded(t *testing.T) {
 
 	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
 	pod1 := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            "cache-1",
-			Namespace:       testNamespace,
-			OwnerReferences: ownerRefs,
-			Labels:          map[string]string{"app": "cache"},
-		},
-		Spec: corev1.PodSpec{NodeName: "cache-1"},
+		Name:            "cache-1",
+		Namespace:       testNamespace,
+		OwnerReferences: ownerRefs,
+		Labels:          map[string]string{"app": "cache"},
+		Spec:            corev1.PodSpec{NodeName: "cache-1"},
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.2",
 			Phase: corev1.PodRunning,
@@ -391,12 +383,10 @@ func TestNoPodIPExcluded(t *testing.T) {
 	pod0 := readyPod("cache-0", "10.0.0.1", ownerRefs)
 	// pod1 has no IP yet
 	pod1 := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            "cache-1",
-			Namespace:       testNamespace,
-			OwnerReferences: ownerRefs,
-			Labels:          map[string]string{"app": "cache"},
-		},
+		Name:            "cache-1",
+		Namespace:       testNamespace,
+		OwnerReferences: ownerRefs,
+		Labels:          map[string]string{"app": "cache"},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodPending,
 		},

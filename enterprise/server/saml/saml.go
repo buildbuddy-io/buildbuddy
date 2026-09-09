@@ -338,7 +338,7 @@ func (a *SAMLAuthenticator) FillUser(ctx context.Context, user *tables.User) err
 	user.Email = firstSet(attributes, samlEmailAttributes)
 	if slug, ok := ctx.Value(contextSamlSlugKey).(string); ok && slug != "" {
 		user.Groups = []*tables.GroupRole{
-			{Group: tables.Group{URLIdentifier: slug}},
+			{URLIdentifier: slug},
 		}
 	}
 	return nil

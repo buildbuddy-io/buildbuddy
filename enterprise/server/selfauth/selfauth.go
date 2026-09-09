@@ -117,10 +117,8 @@ func NewSelfAuth() (*selfAuth, error) {
 	q.SetString(strings.Join(strings.Fields(qString), ""), 10)
 
 	privateKey := &rsa.PrivateKey{
-		PublicKey: rsa.PublicKey{
-			N: &n,
-			E: e,
-		},
+		N:      &n,
+		E:      e,
 		D:      &d,
 		Primes: []*big.Int{&p, &q},
 	}

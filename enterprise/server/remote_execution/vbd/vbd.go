@@ -91,17 +91,15 @@ func (f *FS) Mount(ctx context.Context, path string) error {
 	opts := &fusefs.Options{
 		EntryTimeout: &nodeAttrTimeout,
 		AttrTimeout:  &nodeAttrTimeout,
-		MountOptions: fuse.MountOptions{
-			AllowOther: true,
-			// Debug:         true,
-			DisableXAttrs: true,
-			// Don't depend on `fusermount`.
-			// Disable fallback to fusermount as well, since it can cause
-			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
-			DirectMountStrict: true,
-			FsName:            "vbd",
-			MaxWrite:          fuse.MAX_KERNEL_WRITE,
-		},
+		AllowOther:   true,
+		// Debug:         true,
+		DisableXAttrs: true,
+		// Don't depend on `fusermount`.
+		// Disable fallback to fusermount as well, since it can cause
+		// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
+		DirectMountStrict: true,
+		FsName:            "vbd",
+		MaxWrite:          fuse.MAX_KERNEL_WRITE,
 	}
 	nodeFS := fusefs.NewNodeFS(f.root, opts)
 	server, err := fuse.NewServer(nodeFS, path, &opts.MountOptions)

@@ -358,10 +358,8 @@ func TestResolve(t *testing.T) {
 				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-					Add: pushedImage,
-					Descriptor: ctr.Descriptor{
-						Platform: &tc.imagePlatform,
-					},
+					Add:      pushedImage,
+					Platform: &tc.imagePlatform,
 				})
 				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -552,10 +550,8 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-					Add: pushedImage,
-					Descriptor: ctr.Descriptor{
-						Platform: &tc.imagePlatform,
-					},
+					Add:      pushedImage,
+					Platform: &tc.imagePlatform,
 				})
 				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -808,10 +804,8 @@ func TestResolve_WithCache(t *testing.T) {
 			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: pushedImage,
-				Descriptor: ctr.Descriptor{
-					Platform: &tc.imagePlatform,
-				},
+				Add:      pushedImage,
+				Platform: &tc.imagePlatform,
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -1564,10 +1558,8 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: pushedImage,
-				Descriptor: ctr.Descriptor{
-					Platform: &tc.imagePlatform,
-				},
+				Add:      pushedImage,
+				Platform: &tc.imagePlatform,
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -1664,10 +1656,8 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 			_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: pushedImage,
-				Descriptor: ctr.Descriptor{
-					Platform: &tc.imagePlatform,
-				},
+				Add:      pushedImage,
+				Platform: &tc.imagePlatform,
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 

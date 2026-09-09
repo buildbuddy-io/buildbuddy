@@ -738,8 +738,8 @@ func TestTracedCommandContainer_PostCompletionStats_PreservesDelegateStats(t *te
 		},
 	}
 	delegate := &fakeFirecrackerLikeContainer{
-		fakePausableContainer: fakePausableContainer{pauseDelay: 10 * time.Millisecond},
-		stats:                 delegateStats,
+		pauseDelay: 10 * time.Millisecond,
+		stats:      delegateStats,
 	}
 	tc := container.NewTracedCommandContainer(delegate)
 

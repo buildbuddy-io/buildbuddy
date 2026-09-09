@@ -24,7 +24,6 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
         "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_client_go//kubernetes/fake",
     ],
 )

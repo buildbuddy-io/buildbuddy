@@ -3698,17 +3698,15 @@ func (pc *partitionedCache) RegisterAtimeUpdater(updater interfaces.DigestOperat
 
 func fakeKubePod(name, namespace, ip string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels:    map[string]string{"app": "cache"},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "ReplicaSet",
-					Name:       "cache-rs",
-					Controller: func() *bool { b := true; return &b }(),
-				},
+		Name:      name,
+		Namespace: namespace,
+		Labels:    map[string]string{"app": "cache"},
+		OwnerReferences: []metav1.OwnerReference{
+			{
+				APIVersion: "apps/v1",
+				Kind:       "ReplicaSet",
+				Name:       "cache-rs",
+				Controller: func() *bool { b := true; return &b }(),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -3726,10 +3724,8 @@ func fakeKubePod(name, namespace, ip string) *corev1.Pod {
 
 func fakeKubeReplicaSet(namespace string) *appsv1.ReplicaSet {
 	return &appsv1.ReplicaSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cache-rs",
-			Namespace: namespace,
-		},
+		Name:      "cache-rs",
+		Namespace: namespace,
 		Spec: appsv1.ReplicaSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "cache"},

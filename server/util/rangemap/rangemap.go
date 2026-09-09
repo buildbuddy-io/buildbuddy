@@ -74,11 +74,9 @@ func (rm *RangeMap[T]) Add(start, end []byte, value T) (*RangeWithVal[T], error)
 	}
 
 	newRange := &RangeWithVal[T]{
-		Range: Range{
-			Start: start,
-			End:   end,
-		},
-		Val: value,
+		Start: start,
+		End:   end,
+		Val:   value,
 	}
 
 	if insertIndex >= len(rm.ranges) {

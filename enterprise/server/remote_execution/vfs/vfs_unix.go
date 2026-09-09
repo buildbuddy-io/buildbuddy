@@ -279,16 +279,14 @@ func (vfs *VFS) Mount() error {
 	opts := &fs.Options{
 		EntryTimeout: &nodeAttrTimeout,
 		AttrTimeout:  &nodeAttrTimeout,
-		MountOptions: fuse.MountOptions{
-			AllowOther: true,
-			Debug:      vfs.logFUSEOps,
-			// Don't depend on `fusermount`.
-			// Disable fallback to fusermount as well, since it can cause
-			// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
-			DirectMountStrict: true,
-			FsName:            "bbvfs",
-			MaxWrite:          fuse.MAX_KERNEL_WRITE,
-		},
+		AllowOther:   true,
+		Debug:        vfs.logFUSEOps,
+		// Don't depend on `fusermount`.
+		// Disable fallback to fusermount as well, since it can cause
+		// deadlocks. See https://github.com/hanwen/go-fuse/issues/506
+		DirectMountStrict: true,
+		FsName:            "bbvfs",
+		MaxWrite:          fuse.MAX_KERNEL_WRITE,
 		RootStableAttr: &fs.StableAttr{
 			Ino: vfscommon.RootInodeId,
 		},

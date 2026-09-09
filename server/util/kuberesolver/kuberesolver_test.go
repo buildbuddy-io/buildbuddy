@@ -133,10 +133,8 @@ func makeTarget(rawURL string) resolver.Target {
 
 func TestResolveExistingPod(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "metadata-server-0",
-			Namespace: "metadata-server-dev",
-		},
+		Name:      "metadata-server-0",
+		Namespace: "metadata-server-dev",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},
@@ -164,10 +162,8 @@ func TestResolveExistingPod(t *testing.T) {
 
 func TestResolvePodIPChanges(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "metadata-server-0",
-			Namespace: "metadata-server-dev",
-		},
+		Name:      "metadata-server-0",
+		Namespace: "metadata-server-dev",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},
@@ -248,10 +244,8 @@ func TestResolveNonExistentPod(t *testing.T) {
 
 func TestSharedWatcher(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-0",
-			Namespace: "ns",
-		},
+		Name:      "pod-0",
+		Namespace: "ns",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},
@@ -326,10 +320,8 @@ func TestSharedWatcher(t *testing.T) {
 
 func TestWatchPodIPExistingPod(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-0",
-			Namespace: "ns",
-		},
+		Name:      "pod-0",
+		Namespace: "ns",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},
@@ -360,10 +352,8 @@ func TestWatchPodIPExistingPod(t *testing.T) {
 
 func TestWatchPodIPUpdates(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-0",
-			Namespace: "ns",
-		},
+		Name:      "pod-0",
+		Namespace: "ns",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},
@@ -445,10 +435,8 @@ func TestWatchPodIPNonExistentPod(t *testing.T) {
 
 func TestWatchPodIPCancel(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-0",
-			Namespace: "ns",
-		},
+		Name:      "pod-0",
+		Namespace: "ns",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},
@@ -494,10 +482,8 @@ func TestWatchPodIPInvalidTarget(t *testing.T) {
 
 func TestWatchPodIPSharedWatcher(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-0",
-			Namespace: "ns",
-		},
+		Name:      "pod-0",
+		Namespace: "ns",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},
@@ -563,10 +549,8 @@ func TestWatchPodIPSharedWatcher(t *testing.T) {
 
 func TestWatchRecoveryFromResourceExpired(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod-0",
-			Namespace: "ns",
-		},
+		Name:      "pod-0",
+		Namespace: "ns",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},

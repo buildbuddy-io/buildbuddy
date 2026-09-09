@@ -1866,10 +1866,8 @@ func (a *GitHubApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCom
 	}
 
 	commits, _, err := client.Repositories.ListCommits(ctx, req.Owner, req.Repo, &github.CommitsListOptions{
-		SHA: req.Sha,
-		ListOptions: github.ListOptions{
-			PerPage: int(req.PerPage),
-		},
+		SHA:     req.Sha,
+		PerPage: int(req.PerPage),
 	})
 	if err != nil {
 		return nil, err
