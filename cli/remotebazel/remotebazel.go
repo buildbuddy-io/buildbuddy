@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
@@ -1530,7 +1531,7 @@ func HandleRemoteBazel(commandLineArgs []string) (int, error) {
 		// Read API key from command line if it is set.
 		apiKey = arg.Get(bazelArgs, "remote_header=x-buildbuddy-api-key")
 
-		bazelCmd, _ := parser.GetBazelCommandAndIndex(bazelArgs)
+		bazelCmd, _ := bazel_command.GetCommandAndIndex(bazelArgs)
 		if bazelCmd == "build" || (bazelCmd == "run" && !*runRemotely) {
 			fetchOutputs = true
 			if bazelCmd == "run" {
@@ -1691,7 +1692,7 @@ func parseRemoteCliFlags(args []string) ([]string, error) {
 	endParsingIndex := len(args)
 	if !runBashScript {
 		// Stop parsing flags when we reach the bazel command
-		_, bazelCmdIdx := parser.GetBazelCommandAndIndex(args)
+		_, bazelCmdIdx := bazel_command.GetCommandAndIndex(args)
 		if bazelCmdIdx == -1 {
 			return nil, status.InvalidArgumentErrorf("no bazel command passed to run remotely")
 		}

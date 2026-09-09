@@ -1201,6 +1201,11 @@ func TestGetFirstTargetPattern(t *testing.T) {
 			Args:            []string{"bazel", "build", "--config=remote", "-c", "opt", "-g"},
 			ExpectedPattern: "",
 		},
+		{
+			// Not a bazel command at all, so there is no target pattern.
+			Args:            []string{"install", "--path", "test"},
+			ExpectedPattern: "",
+		},
 	} {
 		assert.Equal(t, tc.ExpectedPattern, GetFirstTargetPattern(tc.Args), strings.Join(tc.Args, " "))
 	}

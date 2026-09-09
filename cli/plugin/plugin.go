@@ -19,7 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
 	"github.com/buildbuddy-io/buildbuddy/cli/config"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/cli/terminal"
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
@@ -1020,7 +1020,7 @@ func RunBazeliskWithPlugins(args []string, outputPath string, plugins []*Plugin)
 }
 
 func addTerminalFlags(args []string) []string {
-	_, idx := parser.GetBazelCommandAndIndex(args)
+	_, idx := bazel_command.GetCommandAndIndex(args)
 	if idx == -1 {
 		return args
 	}
