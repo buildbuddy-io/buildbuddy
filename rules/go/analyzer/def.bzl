@@ -1,4 +1,6 @@
 ANALYZERS = [
+    "slicesclip",
+    "slicesbackward",
     "any",
     # "bloop", # DO NOT ENABLE, see golang/go#74967
     # "fmtappendf",
@@ -11,8 +13,8 @@ ANALYZERS = [
     "rangeint",
     # "reflecttypefor",
     "slicescontains",
-    # "slicessort",
-    # "stditerators",
+    "slicessort",
+    "stditerators",
     "stringscut",
     "stringscutprefix",
     "stringsseq",

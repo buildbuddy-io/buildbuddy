@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -233,8 +234,7 @@ func (r *redactSecrets) Transform(in any, n *yaml.Node, flg *flag.Flag) (*yaml.N
 		for i := 0; i < len(n.Content)/2; i++ {
 			contentIndex[n.Content[2*i].Value] = 2*i + 1
 		}
-		for i := 0; i < t.NumField(); i++ {
-			ft := t.Field(i)
+		for ft := range t.Fields() {
 			name, _, _ := strings.Cut(ft.Tag.Get("yaml"), ",")
 			if name == "" {
 				name = strings.ToLower(ft.Name)
@@ -320,8 +320,8 @@ func DocumentNode(in any, n *yaml.Node, flg *flag.Flag, opts ...common.DocumentN
 				return DocumentNode(v.Elem().Interface(), n, flg, opts...)
 			} else {
 				exampleOpts := append(filterPassthrough(opts), AppendTypeToLineComment)
-				for i := len(exampleOpts) - 1; i >= 0; i-- {
-					if exampleOpts[i] == RedactSecrets {
+				for i, exampleOpt := range slices.Backward(exampleOpts) {
+					if exampleOpt == RedactSecrets {
 						exampleOpts = append(exampleOpts[:i], exampleOpts[i+1:]...)
 					}
 				}
@@ -392,8 +392,8 @@ func DocumentNode(in any, n *yaml.Node, flg *flag.Flag, opts ...common.DocumentN
 			}
 			if len(n.Content) == 0 {
 				exampleOpts := append(filterPassthrough(opts), AppendTypeToLineComment)
-				for i := len(exampleOpts) - 1; i >= 0; i-- {
-					if exampleOpts[i] == RedactSecrets {
+				for i, exampleOpt := range slices.Backward(exampleOpts) {
+					if exampleOpt == RedactSecrets {
 						exampleOpts = append(exampleOpts[:i], exampleOpts[i+1:]...)
 					}
 				}

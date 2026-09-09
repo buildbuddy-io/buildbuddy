@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -151,9 +152,9 @@ func MigrateToV2Layout(rootDir string) error {
 	if err := filepath.WalkDir(rootDir, walkFn); err != nil {
 		return err
 	}
-	for i := len(dirsToDelete) - 1; i >= 0; i-- {
-		if err := os.Remove(dirsToDelete[i]); err != nil {
-			log.Warningf("Could not delete directory %q: %s", dirsToDelete[i], err)
+	for _, d := range slices.Backward(dirsToDelete) {
+		if err := os.Remove(d); err != nil {
+			log.Warningf("Could not delete directory %q: %s", d, err)
 		}
 	}
 	log.Infof("Migrated %d digests in %s.", numMigrated, time.Since(start))

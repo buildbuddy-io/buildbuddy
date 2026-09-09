@@ -992,8 +992,7 @@ func typeContainsSecrets(t reflect.Type, seen map[reflect.Type]bool) bool {
 	case reflect.Map:
 		return typeContainsSecrets(t.Key(), seen) || typeContainsSecrets(t.Elem(), seen)
 	case reflect.Struct:
-		for i := 0; i < t.NumField(); i++ {
-			field := t.Field(i)
+		for field := range t.Fields() {
 			if slices.Contains(strings.Split(field.Tag.Get("config"), ","), "secret") {
 				return true
 			}

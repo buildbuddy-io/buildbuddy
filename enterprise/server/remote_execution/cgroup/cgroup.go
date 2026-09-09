@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -233,10 +234,10 @@ func EnableController(path string, controller string) error {
 			break
 		}
 	}
-	for i := len(stack) - 1; i >= 0; i-- {
-		log.Infof("Enabling cgroup subtree controller %q for %q", controller, stack[i])
-		if err := WriteSubtreeControl(stack[i], map[string]bool{controller: true}); err != nil {
-			return fmt.Errorf("write subtree control for %q: %w", stack[i], err)
+	for _, s := range slices.Backward(stack) {
+		log.Infof("Enabling cgroup subtree controller %q for %q", controller, s)
+		if err := WriteSubtreeControl(s, map[string]bool{controller: true}); err != nil {
+			return fmt.Errorf("write subtree control for %q: %w", s, err)
 		}
 	}
 	return nil

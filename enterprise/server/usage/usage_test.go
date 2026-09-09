@@ -981,8 +981,8 @@ func TestUsageTracker_UsageLabels_UnrecognizedLabelsAreNotFlushed(t *testing.T) 
 func increasingCountsStartingAt(value int64) *tables.UsageCounts {
 	counts := &tables.UsageCounts{}
 	countsValue := reflect.ValueOf(counts).Elem()
-	for i := 0; i < countsValue.NumField(); i++ {
-		countsValue.Field(i).Set(reflect.ValueOf(value))
+	for _, field := range countsValue.Fields() {
+		field.Set(reflect.ValueOf(value))
 		value++
 	}
 	return counts

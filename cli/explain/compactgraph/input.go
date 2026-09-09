@@ -837,8 +837,10 @@ func iterateAsRunfiles(s depset, filter InputFilter) RunfilesSeq {
 // reverse order (generators can't).
 func depsetsBackward[T depset](depsets []T) DepsetSeq {
 	return func(yield func(depset) bool) {
-		for i := len(depsets) - 1; i >= 0; i-- {
-			if !yield(depsets[i]) {
+		// A nested slices.Backward iterator can allocate when this helper is
+		// inlined into a method returning DepsetSeq. Keep a direct countdown.
+		for i := len(depsets); i > 0; i-- {
+			if !yield(depsets[i-1]) {
 				return
 			}
 		}
