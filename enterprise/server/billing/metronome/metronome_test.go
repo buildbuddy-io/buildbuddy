@@ -50,11 +50,14 @@ func TestIngestEvents(t *testing.T) {
 	for _, e := range gotEvents {
 		assert.Equal(t, "GR1", e.CustomerID)
 		assert.Equal(t, periodStart.Format(time.RFC3339), e.Timestamp)
-		assert.Equal(t, e.EventType, e.Properties["sku"])
+		assert.Equal(t, e.EventType, e.Properties.SKU)
 		assert.Equal(t, 67, len(e.TransactionID)) // "bb:" + 64 hex chars
 		txids[e.TransactionID] = true
 	}
 	assert.Len(t, txids, 2, "transaction IDs should be distinct per (sku, labels)")
+	assert.Equal(t, int64(2_000_000_000), gotEvents[1].Properties.Count)
+	assert.Equal(t, sku.OriginExternal, gotEvents[1].Properties.Origin)
+	assert.Equal(t, sku.ClientBazel, gotEvents[1].Properties.Client)
 }
 
 func TestIngestEventsBatching(t *testing.T) {
