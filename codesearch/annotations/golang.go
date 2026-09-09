@@ -72,8 +72,8 @@ func extractGo(ctx context.Context, filename string, content []byte, rctx *RepoC
 	}
 	// A vendored package is imported by its original path, not its on-disk
 	// path: src/vendor/golang.org/x/net identifies as golang.org/x/net.
-	if i := strings.LastIndex("/"+selfPath, "/vendor/"); i >= 0 {
-		selfPath = ("/" + selfPath)[i+len("/vendor/"):]
+	if _, vendoredPath, ok := strings.CutLast("/"+selfPath, "/vendor/"); ok {
+		selfPath = vendoredPath
 	}
 
 	seen := make(map[string]struct{}, len(importPaths))

@@ -75,8 +75,8 @@ func pythonModulePath(rel string) string {
 // pyParentPackage returns the package a module lives in: the module minus its
 // last segment ("" for a top-level module).
 func pyParentPackage(module string) string {
-	if i := strings.LastIndex(module, "."); i >= 0 {
-		return module[:i]
+	if before, _, ok := strings.CutLast(module, "."); ok {
+		return before
 	}
 	return ""
 }
@@ -127,8 +127,8 @@ func isPythonTestFile(rel string) bool {
 		}
 	}
 	base := rel
-	if i := strings.LastIndex(rel, "/"); i >= 0 {
-		base = rel[i+1:]
+	if _, after, ok := strings.CutLast(rel, "/"); ok {
+		base = after
 	}
 	return strings.HasPrefix(base, "test_") || strings.HasSuffix(base, "_test.py")
 }

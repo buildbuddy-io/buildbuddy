@@ -96,6 +96,8 @@ nogo(
     ] + staticcheck_analyzers(ANALYZERS + [
         "-SA1019",
         "-SA1029",
+        # Staticcheck no longer supports SA5011 after its IR changes.
+        "-SA5011",
         "-ST1000",
         "-ST1003",
         "-ST1005",
