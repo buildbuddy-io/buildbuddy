@@ -4,15 +4,16 @@ import {
   CartesianGrid,
   ComposedChart,
   Legend,
+  LegendPayload,
   Line,
+  MouseHandlerDataParam,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
-  TooltipProps,
+  TooltipContentProps,
   XAxis,
   YAxis,
 } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/types";
 import * as format from "../../../app/format/format";
 import { getHiddenSeriesAfterLegendClick } from "./chart_series";
 
@@ -42,13 +43,16 @@ interface CacheChartDataSeries {
 }
 
 interface State {
-  refAreaLeft?: string;
-  refAreaRight?: string;
+  refAreaLeft?: string | number;
+  refAreaRight?: string | number;
   hiddenSeries: ReadonlySet<number>;
 }
 
-interface CacheChartTooltipProps extends TooltipProps<any, any> {
-  labelFormatter: (datum: number) => string;
+// Recharts injects `active` and `payload` into the custom tooltip element; the
+// rest are our own props. The prop is named `formatLabel` rather than
+// `labelFormatter` so it can't collide with the Tooltip prop of that name.
+interface CacheChartTooltipProps extends Partial<Pick<TooltipContentProps<any, any>, "active" | "payload">> {
+  formatLabel: (datum: number) => string;
   shouldRender: () => boolean;
   dataSeries: CacheChartDataSeries[];
   hiddenSeries: ReadonlySet<number>;
@@ -57,7 +61,7 @@ interface CacheChartTooltipProps extends TooltipProps<any, any> {
 const CacheChartTooltip = ({
   active,
   payload,
-  labelFormatter,
+  formatLabel,
   shouldRender,
   dataSeries,
   hiddenSeries,
@@ -68,7 +72,7 @@ const CacheChartTooltip = ({
   let data = payload[0].payload;
   return (
     <div className="trend-chart-hover">
-      <div className="trend-chart-hover-label">{labelFormatter(data)}</div>
+      <div className="trend-chart-hover-label">{formatLabel(data)}</div>
       <div className="trend-chart-hover-value">
         {dataSeries.map(
           (series, index) =>
@@ -112,19 +116,23 @@ export default class CacheChartComponent extends React.Component<CacheChartProps
     ];
   }
 
-  onLegendClick(_data: unknown, seriesIndex: number, event: React.MouseEvent) {
+  onLegendClick(payload: LegendPayload, seriesIndex: number, event: React.MouseEvent) {
     event.stopPropagation();
-    this.setState((state) => ({
-      hiddenSeries: getHiddenSeriesAfterLegendClick(
-        state.hiddenSeries,
-        seriesIndex,
-        this.getDataSeries().length,
-        event.ctrlKey || event.metaKey || event.shiftKey
-      ),
-    }));
+    const name = ((payload.payload ?? null) as CacheChartDataSeries | null)?.name;
+    const legendIndex = this.getDataSeries().findIndex((s) => s.name === name);
+    if (legendIndex >= 0) {
+      this.setState((state) => ({
+        hiddenSeries: getHiddenSeriesAfterLegendClick(
+          state.hiddenSeries,
+          legendIndex,
+          this.getDataSeries().length,
+          event.ctrlKey || event.metaKey || event.shiftKey
+        ),
+      }));
+    }
   }
 
-  onMouseDown(e: CategoricalChartState) {
+  onMouseDown(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -132,7 +140,7 @@ export default class CacheChartComponent extends React.Component<CacheChartProps
     this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
   }
 
-  onMouseMove(e: CategoricalChartState) {
+  onMouseMove(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -143,7 +151,7 @@ export default class CacheChartComponent extends React.Component<CacheChartProps
     this.setState({ refAreaRight: e.activeLabel });
   }
 
-  onMouseUp(e: CategoricalChartState) {
+  onMouseUp(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -173,24 +181,26 @@ export default class CacheChartComponent extends React.Component<CacheChartProps
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
+            accessibilityLayer={false}
             data={this.props.data}
             onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
             onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" yAxisId="hits" />
             <Legend onClick={this.onLegendClick.bind(this)} />
             <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
-            <YAxis yAxisId="hits" tickFormatter={format.count} allowDecimals={false} />
+            <YAxis yAxisId="hits" tickFormatter={format.count} allowDecimals={false} width={84} />
             <YAxis
               domain={[0, 100]}
               yAxisId="percent"
               orientation="right"
+              width={84}
               tickFormatter={(value: number) => `${value}%`}
             />
             <Tooltip
               content={
                 <CacheChartTooltip
-                  labelFormatter={this.props.formatHoverLabel}
+                  formatLabel={this.props.formatHoverLabel}
                   shouldRender={() => this.shouldRenderTooltip()}
                   dataSeries={dataSeries}
                   hiddenSeries={this.state.hiddenSeries}

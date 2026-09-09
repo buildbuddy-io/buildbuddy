@@ -287,7 +287,7 @@ function drawPie(data: { value: number; color: string }[]) {
   return (
     <div className="cache-proxy-stat-ring-container">
       <ResponsiveContainer>
-        <PieChart>
+        <PieChart accessibilityLayer={false}>
           <Pie data={data} dataKey="value" outerRadius={32} innerRadius={18} isAnimationActive={false}>
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.color} />
