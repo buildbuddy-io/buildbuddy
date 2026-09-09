@@ -136,7 +136,7 @@ func TestPriorityTaskScheduler_CanFitTaskWithGPUMemory(t *testing.T) {
 			}
 			reserved := &resourceCounts{GPUMemoryBytes: testCase.reserved}
 			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{
-				TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: testCase.request},
+				TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: new(testCase.request)},
 			}}
 
 			// GPU requests must fit the unreserved capacity. CPU-only tasks
@@ -163,7 +163,7 @@ func TestPriorityTaskScheduler_GPUMemoryAccounting(t *testing.T) {
 	require.Equal(t, int64(8_000_000_000), q.resourceCapacity.GPUMemoryBytes)
 	require.Empty(t, q.resourceCapacity.Custom)
 
-	size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: 4_000_000_000}
+	size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: new(int64(4_000_000_000))}
 	first := &scpb.EnqueueTaskReservationRequest{TaskId: "first", TaskSize: size}
 	second := &scpb.EnqueueTaskReservationRequest{TaskId: "second", TaskSize: size}
 	queued := &queuedTask{EnqueueTaskReservationRequest: second}
@@ -210,7 +210,7 @@ func TestPriorityTaskScheduler_QueueSkipping_GPUMemory(t *testing.T) {
 			for i, gpuMemory := range testCase.requests {
 				q.q.Enqueue(t.Context(), &scpb.EnqueueTaskReservationRequest{
 					TaskId:   fmt.Sprint(i),
-					TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: gpuMemory},
+					TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: new(gpuMemory)},
 				})
 			}
 

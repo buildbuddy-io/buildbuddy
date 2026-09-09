@@ -477,15 +477,13 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 		return status.InvalidArgumentError("request is missing scheduling metadata")
 	}
 
-	// At this point, we haven't yet used the measured size or predicted size at
-	// all when deciding whether this task could fit on this node. This is
-	// intentional - these sizes can be volatile and we don't want them to
-	// affect whether a task can schedule on a node or not.
+	// Measured and predicted CPU/RAM sizes do not affect node selection because
+	// they can be volatile. GPU estimates are already included in the size used
+	// for node selection so that GPU memory reservations fit the selected node.
 	//
 	// So, now that we've decided to schedule the task on this node, we can
 	// incorporate the measured and predicted sizes into the enqueued task size,
-	// but limit to the node's capacity. This limiting ensures that it is still
-	// schedulable.
+	// but limit CPU/RAM to the node's capacity so the task remains schedulable.
 	effectiveSize := h.getMostAccurateTaskSize(req)
 	req.TaskSize = effectiveSize
 	// SchedulingMetadata.TaskSize is deprecated but we set it for backwards
@@ -582,6 +580,13 @@ func (h *executorHandle) getMostAccurateTaskSize(req *scpb.EnqueueTaskReservatio
 			size.EstimatedMilliCpu = executorMilliCPU
 		}
 	}
+	// Predictions and older measurements may not include GPU memory. Preserve
+	// the fallback and minimum already applied by the execution server.
+	if size.EstimatedGpuMemoryBytes == nil {
+		if fallback := req.GetSchedulingMetadata().GetTaskSize(); fallback != nil && fallback.EstimatedGpuMemoryBytes != nil {
+			size.EstimatedGpuMemoryBytes = new(fallback.GetEstimatedGpuMemoryBytes())
+		}
+	}
 
 	// Preserve any parameters which aren't modeled by dynamic task sizing (disk
 	// space requirements and custom resources).
@@ -674,6 +679,9 @@ func nodeCanFitTask(en *scpb.ExecutionNode, size *scpb.TaskSize) bool {
 		return false
 	}
 	if size.GetEstimatedMilliCpu() > int64(float64(en.GetAssignableMilliCpu())*tasksize.MaxResourceCapacityRatio) {
+		return false
+	}
+	if size.GetEstimatedGpuMemoryBytes() > en.GetAssignableGpuMemoryBytes() {
 		return false
 	}
 	for _, r := range size.GetCustomResources() {

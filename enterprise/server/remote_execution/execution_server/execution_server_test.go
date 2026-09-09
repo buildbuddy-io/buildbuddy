@@ -419,6 +419,78 @@ func TestDispatch_WorkingDirectoryValidation(t *testing.T) {
 	}
 }
 
+func TestDispatch_GPUSizing(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+	for _, testCase := range []struct {
+		name         string
+		disabled     bool
+		recorded     bool
+		measured     *int64
+		minimum      string
+		computeUnits string
+		want         *int64
+	}{
+		{name: "disabled", disabled: true, recorded: true, measured: new(int64(24)), minimum: "32"},
+		{name: "first execution", want: new(int64(16))},
+		{name: "older measurement", recorded: true, want: new(int64(16))},
+		{name: "measurement below fallback", recorded: true, measured: new(int64(8)), want: new(int64(8))},
+		{name: "measurement above fallback", recorded: true, measured: new(int64(24)), want: new(int64(24))},
+		{name: "zero measurement", recorded: true, measured: new(int64(0)), want: new(int64(0))},
+		{name: "minimum above measurement", recorded: true, measured: new(int64(8)), minimum: "12", want: new(int64(12))},
+		{name: "measurement above minimum", recorded: true, measured: new(int64(24)), minimum: "16", want: new(int64(24))},
+		{name: "compute units", recorded: true, measured: new(int64(8)), computeUnits: "2", want: new(int64(8))},
+		{name: "compute units without GPU measurement", recorded: true, computeUnits: "2", want: new(int64(16))},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			configureExperiments(t, env, map[string]bool{"remote_execution.task_gpu_sizing_enabled": !testCase.disabled})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+			require.NoError(t, err)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			cmd := &repb.Command{
+				Arguments: []string{"gpu-task"},
+				Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+					{Name: "EstimatedGPUMemory", Value: "16"},
+					{Name: "MinGPUMemory", Value: testCase.minimum},
+					{Name: "EstimatedComputeUnits", Value: testCase.computeUnits},
+					{Name: "resources:gpu_memory", Value: "16"},
+				}},
+			}
+			action := &repb.Action{}
+			props, err := platform.ParseProperties(&repb.ExecutionTask{Action: action, Command: cmd})
+			require.NoError(t, err)
+			if testCase.recorded {
+				start := time.Now()
+				md := &repb.ExecutedActionMetadata{
+					UsageStats:                  &repb.UsageStats{PeakMemoryBytes: 9_000_000, CpuNanos: 1_000_000_000},
+					ExecutionStartTimestamp:     tspb.New(start),
+					ExecutionCompletedTimestamp: tspb.New(start.Add(time.Second)),
+				}
+				if testCase.measured != nil {
+					md.UsageStats.GpuUsage = &repb.GPUUsage{PeakTotalMemoryBytes: *testCase.measured}
+				}
+				require.NoError(t, env.GetTaskSizer().Update(ctx, cmd, props, md))
+			}
+
+			// Node selection must see the effective GPU requirement, rather
+			// than a larger or smaller fallback. Custom GPU resources remain
+			// independent throughout the migration to official GPU sizing.
+			arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+			require.NoError(t, env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
+			scheduler := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, scheduler.scheduleReqs, 1)
+			metadata := scheduler.scheduleReqs[0].GetMetadata()
+			require.Equal(t, testCase.want, metadata.GetTaskSize().EstimatedGpuMemoryBytes)
+			require.Equal(t, []*scpb.CustomResource{{Name: "gpu_memory", Value: 16}}, metadata.GetTaskSize().GetCustomResources())
+			if testCase.computeUnits != "" {
+				require.Equal(t, int64(5_000_000_000), metadata.GetTaskSize().GetEstimatedMemoryBytes())
+				require.Equal(t, int64(2000), metadata.GetTaskSize().GetEstimatedMilliCpu())
+			}
+		})
+	}
+}
+
 func TestDispatch_TaskSizeOverridesExperiment(t *testing.T) {
 	env, _, _ := setupEnv(t)
 
