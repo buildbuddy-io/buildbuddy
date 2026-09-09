@@ -58,6 +58,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/compression",
         "//server/util/fspath",
         "//server/util/status",
         "@com_github_stretchr_testify//assert",

@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -381,7 +382,15 @@ type Server struct {
 	inputFetcher       container.InputFetcher
 	retryInputFetcher  *casFetcher
 	remoteInstanceName string
-	fileHandles        map[uint64]*fileHandle
+	digestFunction     repb.DigestFunction_Value
+	// trackUnusedInputs is whether the current task records the CAS input
+	// files it leaves unopened, so that later executions of the same command
+	// can skip prefetching them. See UnusedInputsDigest.
+	trackUnusedInputs bool
+	// prefetchMissCount is the number of CAS files opened during the current
+	// task that the input fetcher had left out of its fetch.
+	prefetchMissCount int64
+	fileHandles       map[uint64]*fileHandle
 
 	// total number of CAS files in the tree.
 	casFileCount int64
@@ -537,6 +546,12 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 				if _, err := addChild(parentNode, fileNode, childFileNode.GetName()); err != nil {
 					return err
 				}
+			} else {
+				// The node is reused for the new task, so forget that the
+				// previous task opened it.
+				existingNode.mu.Lock()
+				existingNode.accessed = false
+				existingNode.mu.Unlock()
 			}
 			numFiles++
 		}
@@ -677,6 +692,7 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	}
 
 	p.mu.Lock()
+	stats.PrefetchMissCount = p.prefetchMissCount
 	var walkNode func(node *fsNode)
 	walkNode = func(node *fsNode) {
 		node.mu.Lock()
@@ -704,11 +720,61 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	return stats
 }
 
+// UnusedInputsDigest stores the input root-relative paths of the CAS inputs
+// not opened since the last Prepare call as a CAS blob and returns its
+// digest, for reporting in the task's execution metadata. The blob format is
+// described by repb.ExecutionTask.vfs_unused_inputs_digest. It returns nil if
+// the task does not track unused inputs.
+func (p *Server) UnusedInputsDigest() (*repb.Digest, error) {
+	p.mu.Lock()
+	if !p.trackUnusedInputs {
+		p.mu.Unlock()
+		return nil, nil
+	}
+	instanceName := p.remoteInstanceName
+	digestFunction := p.digestFunction
+	var paths []string
+	var walkNode func(node *fsNode, path string)
+	walkNode = func(node *fsNode, path string) {
+		node.mu.Lock()
+		// The list is newline-separated, so a path containing a newline
+		// cannot be represented and is left out, which just means it is
+		// prefetched next time.
+		if node.fileNode != nil && !node.accessed && !strings.Contains(path, "\n") {
+			paths = append(paths, path)
+		}
+		children := node.children
+		node.mu.Unlock()
+		for name, child := range children {
+			walkNode(child, filepath.Join(path, name))
+		}
+	}
+	walkNode(p.root, "")
+	p.mu.Unlock()
+
+	slices.Sort(paths)
+	record := compression.CompressZstd(nil, []byte(strings.Join(paths, "\n")))
+	ctx := p.taskCtx()
+	d, err := cachetools.UploadBlobToCAS(ctx, p.env.GetByteStreamClient(), instanceName, digestFunction, record)
+	if err != nil {
+		return nil, status.WrapError(err, "upload unused inputs list")
+	}
+	// Keep a local copy so that a later task on this executor reads the list
+	// without a round trip to the CAS.
+	if fc := p.env.GetFileCache(); fc != nil {
+		if _, err := fc.Write(ctx, &repb.FileNode{Digest: d}, record); err != nil {
+			log.CtxWarningf(ctx, "Failed to add unused inputs list to the file cache: %s", err)
+		}
+	}
+	return d, nil
+}
+
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
 func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout, inputFetcher container.InputFetcher) (*vfscommon.InodeInvalidations, error) {
 	p.mu.Lock()
 	p.casFileCount = 0
 	p.casFileSizeBytes = 0
+	p.prefetchMissCount = 0
 	p.mu.Unlock()
 	// There may already be nodes in the tree prior to `Prepare` to be called,
 	// for example by the workspace code pre-creating the action output
@@ -723,6 +789,9 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	p.remoteInstanceName = layout.RemoteInstanceName
+	p.digestFunction = layout.DigestFunction
+	p.trackUnusedInputs = layout.TrackUnusedInputs
 	retryInputFetcher := newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	if inputFetcher == nil {
 		inputFetcher = retryInputFetcher
@@ -1097,6 +1166,17 @@ func (p *Server) openCASFile(ctx context.Context, node *fsNode) (*os.File, error
 	f, err := p.env.GetFileCache().Open(ctx, node.fileNode)
 	if err == nil {
 		return f, nil
+	}
+	// The file is missing from the file cache either because it was evicted
+	// after the fetch, or because the input fetcher left it out as unused by
+	// a previous execution (see dirtools.DownloadTreeOpts.UnusedInputsDigest)
+	// and returned without fetching it. Either way, fetch it directly, but
+	// count the latter case so that misses caused by leaving out unused
+	// inputs can be measured separately from evictions.
+	if prefetcher, ok := inputFetcher.(interface{ Prefetching(*repb.FileNode) bool }); ok && !prefetcher.Prefetching(node.fileNode) {
+		p.mu.Lock()
+		p.prefetchMissCount++
+		p.mu.Unlock()
 	}
 	if err := retryInputFetcher.Fetch(ctx, node.fileNode); err != nil {
 		return nil, err

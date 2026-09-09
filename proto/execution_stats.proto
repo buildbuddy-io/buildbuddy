@@ -160,6 +160,17 @@ message ExecutionAuxiliaryMetadata {
 
   // Metrics reported by the guest VM which executed this action.
   VMMetrics vm_metrics = 12;
+
+  // The digest of a CAS blob listing the input files that the action did not
+  // open while running on a VFS-backed workspace, in the format described by
+  // ExecutionTask.vfs_unused_inputs_digest. Only set for tasks whose
+  // vfs-prefetch-mode platform property is "used".
+  build.bazel.remote.execution.v2.Digest vfs_unused_inputs_digest = 13;
+
+  // Statistics about the VFS that served the action's inputs, if the action
+  // ran with VFS enabled, including how many inputs were prefetched and how
+  // many were downloaded lazily.
+  build.bazel.remote.execution.v2.VfsStats vfs_stats = 14;
 }
 
 // Metrics associated with the guest VM which executed an action. Mostly

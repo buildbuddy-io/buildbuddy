@@ -394,6 +394,85 @@ func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 		"subsequent milliCPU estimate should equal recorded milliCPU")
 }
 
+func TestSizer_UnusedInputsDigest(t *testing.T) {
+	flags.Set(t, "remote_execution.store_vfs_unused_inputs", true)
+
+	env := testenv.GetTestEnv(t)
+	rdb := testredis.Start(t).Client()
+	env.SetRemoteExecutionRedisClient(rdb)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers())
+	env.SetAuthenticator(auth)
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	cmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
+	}
+	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeUsed}
+
+	// Nothing is recorded for the command initially, but the executor should
+	// still record what the task leaves unopened.
+	got, track := sizer.UnusedInputsForTask(ctx, cmd, props)
+	require.Nil(t, got)
+	require.True(t, track)
+
+	// Record the digest of the list produced by an execution, then read it
+	// back.
+	d := &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 42}
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, props, d)
+	require.NoError(t, err)
+	got, track = sizer.UnusedInputsForTask(ctx, cmd, props)
+	require.Empty(t, cmp.Diff(d, got, protocmp.Transform()))
+	require.True(t, track)
+
+	// A different command has its own recorded digest.
+	otherCmd := &repb.Command{
+		Arguments: []string{"/usr/bin/clang", "bar.c", "-o", "bar.o"},
+	}
+	got, _ = sizer.UnusedInputsForTask(ctx, otherCmd, props)
+	require.Nil(t, got)
+
+	// Tasks that don't run on VFS, or that prefetch every input, neither get
+	// the recorded digest nor record anything, since the executor would
+	// ignore the digest and the app would discard the record.
+	got, track = sizer.UnusedInputsForTask(ctx, cmd, &platform.Properties{})
+	require.Nil(t, got)
+	require.False(t, track)
+	prefetchAllProps := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeAll}
+	got, track = sizer.UnusedInputsForTask(ctx, cmd, prefetchAllProps)
+	require.Nil(t, got)
+	require.False(t, track)
+
+	// An execution that reports no digest (it did not run on VFS) leaves the
+	// recorded digest alone, and so does an execution of a task that
+	// prefetches every input.
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, props, nil)
+	require.NoError(t, err)
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, prefetchAllProps, &repb.Digest{Hash: "other", SizeBytes: 1})
+	require.NoError(t, err)
+	got, _ = sizer.UnusedInputsForTask(ctx, cmd, props)
+	require.Empty(t, cmp.Diff(d, got, protocmp.Transform()))
+}
+
+func TestSizer_UnusedInputsDigest_Disabled(t *testing.T) {
+	// With the flag off, the sizer doesn't need Redis, digests are neither
+	// recorded nor returned, and executors are told not to record, so that
+	// tasks in the "used" mode behave exactly like "all".
+	env := testenv.GetTestEnv(t)
+	sizer, err := tasksize.NewSizer(env)
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	cmd := &repb.Command{Arguments: []string{"/usr/bin/clang"}}
+	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeUsed}
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, props, &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 1})
+	require.NoError(t, err)
+	got, track := sizer.UnusedInputsForTask(ctx, cmd, props)
+	require.Nil(t, got)
+	require.False(t, track)
+}
+
 func TestSizer_RespectsMilliCPULimit(t *testing.T) {
 	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 

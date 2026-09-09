@@ -1,10 +1,12 @@
 package vfs_server_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -17,10 +19,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/google/go-cmp/cmp"
@@ -174,6 +178,44 @@ func readFromVFS(t *testing.T, server *vfs_server.Server, name string) string {
 	return string(res.Data)
 }
 
+// openFromVFS opens and immediately releases the file at the given
+// slash-separated path, which is how an action reading an input looks to the
+// VFS server.
+func openFromVFS(t *testing.T, server *vfs_server.Server, path string) {
+	ctx := t.Context()
+	id := uint64(vfscommon.RootInodeId)
+	for name := range strings.SplitSeq(path, "/") {
+		rsp, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: id, Name: name})
+		require.NoError(t, err, "lookup %s", path)
+		id = rsp.GetId()
+	}
+	f, err := server.Open(ctx, &vfspb.OpenRequest{Id: id, Flags: uint32(os.O_RDONLY)})
+	require.NoError(t, err, "open %s", path)
+	_, err = server.Release(ctx, &vfspb.ReleaseRequest{HandleId: f.GetHandleId()})
+	require.NoError(t, err, "release %s", path)
+}
+
+// unusedInputsRecord stores an unused inputs list naming the given paths in
+// the CAS, as a previous execution would have, and returns its digest.
+func unusedInputsRecord(t *testing.T, env *testenv.TestEnv, ctx context.Context, paths ...string) *repb.Digest {
+	return setFile(t, env, ctx, "", string(compression.CompressZstd(nil, []byte(strings.Join(paths, "\n")))))
+}
+
+// unusedInputPaths fetches the unused inputs list with the given digest from the
+// CAS and decodes the paths it names.
+func unusedInputPaths(t *testing.T, env environment.Env, ctx context.Context, d *repb.Digest) []string {
+	buf := &bytes.Buffer{}
+	rn := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256)
+	err := cachetools.GetBlob(ctx, env.GetByteStreamClient(), rn, buf)
+	require.NoError(t, err)
+	pathList, err := compression.DecompressZstd(nil, buf.Bytes())
+	require.NoError(t, err)
+	if len(pathList) == 0 {
+		return nil
+	}
+	return strings.Split(string(pathList), "\n")
+}
+
 func prepare(t *testing.T, env environment.Env, server *vfs_server.Server, tree *repb.Tree) {
 	tf, err := dirtools.NewTreeFetcher(t.Context(), env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{})
 	require.NoError(t, err)
@@ -261,6 +303,147 @@ func TestPrefetchedFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
 	_, err = server.Prepare(ctx, layout, tf)
 	require.NoError(t, err)
 	require.Equal(t, contents, readFromVFS(t, server, "input.txt"))
+
+	// The file was prefetched and then evicted, so fetching it again counts
+	// as a download but not as a prefetch miss.
+	stats := server.ComputeStats()
+	require.EqualValues(t, 1, stats.GetFileDownloadCount())
+	require.EqualValues(t, 0, stats.GetPrefetchMissCount())
+}
+
+func TestUnusedInputs(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	aDigest := setFile(t, env, ctx, "", "a")
+	bDigest := setFile(t, env, ctx, "", "b")
+	cDigest := setFile(t, env, ctx, "", "c")
+	dDigest := setFile(t, env, ctx, "", "d")
+	eDigest := setFile(t, env, ctx, "", "e")
+
+	// Build an input tree with nested directories and a symlink.
+	deepDir := &repb.Directory{
+		Files: []*repb.FileNode{{Name: "e.txt", Digest: eDigest}},
+	}
+	deepDigest, err := digest.ComputeForMessage(deepDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	subDir := &repb.Directory{
+		Files: []*repb.FileNode{
+			{Name: "c.txt", Digest: cDigest},
+			{Name: "d.txt", Digest: dDigest},
+		},
+		Directories: []*repb.DirectoryNode{{Name: "deep", Digest: deepDigest}},
+		Symlinks:    []*repb.SymlinkNode{{Name: "link", Target: "c.txt"}},
+	}
+	subDigest, err := digest.ComputeForMessage(subDir, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	tree := &repb.Tree{
+		Root: &repb.Directory{
+			Files: []*repb.FileNode{
+				{Name: "a.txt", Digest: aDigest},
+				{Name: "b.txt", Digest: bDigest},
+			},
+			Directories: []*repb.DirectoryNode{{Name: "sub", Digest: subDigest}},
+		},
+		Children: []*repb.Directory{subDir, deepDir},
+	}
+	layout := &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: tree, TrackUnusedInputs: true}
+	_, err = server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+
+	// Before anything is opened, every file is listed as unused.
+	allFiles := []string{"a.txt", "b.txt", "sub/c.txt", "sub/d.txt", "sub/deep/e.txt"}
+	d, err := server.UnusedInputsDigest()
+	require.NoError(t, err)
+	require.Equal(t, allFiles, unusedInputPaths(t, env, ctx, d))
+
+	// Open some inputs, one of them twice. Looking up an input without
+	// opening it and creating a scratch file should not count as usage.
+	openFromVFS(t, server, "b.txt")
+	openFromVFS(t, server, "sub/deep/e.txt")
+	openFromVFS(t, server, "sub/d.txt")
+	openFromVFS(t, server, "sub/d.txt")
+	_, err = server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "a.txt"})
+	require.NoError(t, err)
+	writeToVFS(t, server, "scratch.txt", "scratch")
+
+	d, err = server.UnusedInputsDigest()
+	require.NoError(t, err)
+	paths := unusedInputPaths(t, env, ctx, d)
+	require.Equal(t, []string{"a.txt", "sub/c.txt"}, paths)
+	// The list is also kept in the file cache, so that a later task on this
+	// executor reads it without a round trip to the CAS.
+	cached := env.GetFileCache().ContainsFile(ctx, &repb.FileNode{Digest: d})
+	require.True(t, cached)
+
+	// Preparing the server for a new task with the same tree reuses the
+	// nodes but forgets which ones the previous task opened.
+	_, err = server.Prepare(ctx, layout, nil)
+	require.NoError(t, err)
+	d, err = server.UnusedInputsDigest()
+	require.NoError(t, err)
+	require.Equal(t, allFiles, unusedInputPaths(t, env, ctx, d))
+
+	openFromVFS(t, server, "a.txt")
+	d, err = server.UnusedInputsDigest()
+	require.NoError(t, err)
+	paths = unusedInputPaths(t, env, ctx, d)
+	require.Equal(t, []string{"b.txt", "sub/c.txt", "sub/d.txt", "sub/deep/e.txt"}, paths)
+}
+
+func TestUnusedInputsNotTracked(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	tree := &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{{Name: "a.txt", Digest: setFile(t, env, ctx, "", "a")}},
+	}}
+
+	// A task that does not track unused inputs, such as one that prefetches
+	// everything, produces no list even after opening inputs.
+	_, err := server.Prepare(ctx, &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: tree}, nil)
+	require.NoError(t, err)
+	openFromVFS(t, server, "a.txt")
+	d, err := server.UnusedInputsDigest()
+	require.NoError(t, err)
+	require.Nil(t, d)
+}
+
+func TestInputSkippedAsUnusedFetchedOnDemand(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	usedDigest := setFile(t, env, ctx, "", "opened by the previous execution")
+	unusedDigest := setFile(t, env, ctx, "", "not opened by the previous execution")
+	usedNode := &repb.FileNode{Name: "used.txt", Digest: usedDigest}
+	unusedNode := &repb.FileNode{Name: "unused.txt", Digest: unusedDigest}
+	tree := &repb.Tree{Root: &repb.Directory{
+		Files: []*repb.FileNode{unusedNode, usedNode},
+	}}
+
+	// Leave out the input that a previous execution did not open.
+	tf, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
+		UnusedInputsDigest: unusedInputsRecord(t, env, ctx, "unused.txt"),
+	})
+	require.NoError(t, err)
+	_, err = tf.Start()
+	require.NoError(t, err)
+	_, err = tf.Wait()
+	require.NoError(t, err)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, usedNode))
+	require.False(t, env.GetFileCache().ContainsFile(ctx, unusedNode))
+
+	layout := &container.FileSystemLayout{DigestFunction: repb.DigestFunction_SHA256, Inputs: tree, TrackUnusedInputs: true}
+	_, err = server.Prepare(ctx, layout, tf)
+	require.NoError(t, err)
+
+	// Opening the input that was not prefetched fetches it on demand. The
+	// list for the next execution then names only the file this execution
+	// left unopened, so the next execution prefetches the one opened here.
+	contents := readFromVFS(t, server, "unused.txt")
+	require.Equal(t, "not opened by the previous execution", contents)
+	require.True(t, env.GetFileCache().ContainsFile(ctx, unusedNode))
+	stats := server.ComputeStats()
+	require.EqualValues(t, 1, stats.GetFileDownloadCount())
+	require.EqualValues(t, 1, stats.GetPrefetchMissCount())
+	d, err := server.UnusedInputsDigest()
+	require.NoError(t, err)
+	paths := unusedInputPaths(t, env, ctx, d)
+	require.Equal(t, []string{"used.txt"}, paths)
 }
 
 func TestMaterializeOutputs(t *testing.T) {
