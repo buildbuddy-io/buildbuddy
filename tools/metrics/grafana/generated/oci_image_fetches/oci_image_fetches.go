@@ -26,9 +26,21 @@ const (
 	// executor's disk, i.e. the ones that had to hit a registry.
 	notOnDiskFilter = `region="$region", on_disk="false"`
 
-	// ociClientFilter selects the outgoing HTTP clients used to talk to OCI
-	// registries: "oci" (the app-side resolver) and "oci_fetcher" (the
-	// executor-side layer fetcher).
+	// ociClientFilter selects the two HTTP clients on the image pull path:
+	// "oci" (the app-side resolver, enterprise/server/util/oci/oci.go) and
+	// "oci_fetcher" (the executor-side layer fetcher,
+	// enterprise/server/oci/ocifetcher/ocifetcher.go).
+	//
+	// It deliberately excludes "ociregistry"
+	// (enterprise/server/oci/ociregistry/ociregistry.go), which is the registry
+	// mirror server serving its own clients rather than an executor pulling an
+	// image.
+	//
+	// Both clients route through mirrors when executor.container_registry_mirrors
+	// is set, in which case their traffic goes to the mirror rather than
+	// upstream and the upstream egress lands under "ociregistry" instead. That
+	// flag is unset in every environment today, so these two clients are the
+	// registry egress; revisit the filter if mirroring is ever turned on.
 	ociClientFilter = `region="$region", client_name=~"oci|oci_fetcher"`
 
 	// rateMinInterval is the floor applied to $__rate_interval on the panels
@@ -45,26 +57,17 @@ const (
 	latencySpanNullsMsec = 30 * 60 * 1000
 )
 
-// ts returns a full-width timeseries panel: one panel per dashboard row, thin
-// lines and no fill. Callers set their own axis floor and legend.
-func ts(title, unit string) *timeseries.PanelBuilder {
-	return timeseries.NewPanelBuilder().
-		Title(title).
-		Datasource(dash.Prometheus()).
-		Unit(unit).
-		LineWidth(1).
-		FillOpacity(0).
-		GradientMode(common.GraphGradientModeNone).
-		ShowPoints(common.VisibilityModeAuto).
-		Tooltip(common.NewVizTooltipOptionsBuilder().
-			Mode(common.TooltipDisplayModeMulti).
-			Sort(common.SortOrderDescending)).
+// panel returns a full-width timeseries panel. It takes the shared defaults
+// from dash.Timeseries and overrides only the geometry, so this dashboard
+// follows the shared styling rather than drifting from it.
+func panel(title, unit string) *timeseries.PanelBuilder {
+	return dash.Timeseries(title, unit).
 		Height(9).
 		Span(24)
 }
 
-// tableLegend lists each series below the graph with the given calcs. Worth
-// the vertical space only when a panel draws more than one line.
+// tableLegend lists each series below the graph with the given calcs,
+// replacing the mean/max/last default from dash.Timeseries.
 func tableLegend(calcs ...string) *common.VizLegendOptionsBuilder {
 	return common.NewVizLegendOptionsBuilder().
 		DisplayMode(common.LegendDisplayModeTable).
@@ -101,7 +104,7 @@ func hiddenLegend() *common.VizLegendOptionsBuilder {
 // in us-sjc the split ran ok 60%, user_error 33%, timeout 6.6%,
 // canceled 0.2%, error 0.06%.
 func statusesPanel() *timeseries.PanelBuilder {
-	return ts("Image pull statuses", dash.UnitPercentUnit).
+	return panel("Image pull statuses", dash.UnitPercentUnit).
 		Description("Image pulls by status, as a share of all pulls for images that were not already on disk. user_error is a bad image reference or missing credentials and canceled means the task went away mid-pull, so neither is a failure to act on -- timeout and error are.").
 		Min(0).
 		Max(1).
@@ -138,9 +141,12 @@ scalar(sum(rate(%s_count{%s}[$__rate_interval])))`,
 
 // latencyPanel graphs one quantile of image pull latency. Each quantile gets
 // its own panel: overlaying them buries p50 under the much larger p99.
+// %g throughout, not %d on quantile*100 and %.2f in the expression: those
+// truncate anything finer than two decimals, so latencyPanel(0.999) would have
+// queried histogram_quantile(1.00, ...) under a "p99" title.
 func latencyPanel(quantile float64) *timeseries.PanelBuilder {
-	label := fmt.Sprintf("p%d", int(quantile*100))
-	return ts(fmt.Sprintf("Image pull %s latency", label), dash.UnitMicroseconds).
+	label := fmt.Sprintf("p%g", quantile*100)
+	return panel(fmt.Sprintf("Image pull %s latency", label), dash.UnitMicroseconds).
 		Description(fmt.Sprintf("%s latency of successful image pulls for images that were not already on disk.", label)).
 		Min(0).
 		Legend(hiddenLegend()).
@@ -155,16 +161,15 @@ func latencyPanel(quantile float64) *timeseries.PanelBuilder {
 		// through it.
 		SpanNulls(common.BoolOrFloat64{Float64: new(float64(latencySpanNullsMsec))}).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
-			`histogram_quantile(%.2f, sum by (le) (rate(%s_bucket{%s, status="ok"}[$__rate_interval])))`,
+			`histogram_quantile(%g, sum by (le) (rate(%s_bucket{%s, status="ok"}[$__rate_interval])))`,
 			quantile, imageFetchMetric, notOnDiskFilter),
 			label))
 }
 
 func outgoingRequestsPanel() *timeseries.PanelBuilder {
-	return ts("Outgoing OCI HTTP requests", dash.UnitRequestsPerSec).
-		Description(`Outgoing HTTP requests to OCI registries, by client.`).
+	return panel("Outgoing OCI HTTP requests", dash.UnitRequestsPerSec).
+		Description(`Outgoing HTTP requests from the image pull path, by client. "oci" is the app-side resolver and "oci_fetcher" the executor-side layer fetcher; the ociregistry mirror server is not included.`).
 		Min(0).
-		Legend(tableLegend("mean", "max", "last")).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
 			`sum by (client_name) (rate(buildbuddy_http_client_request_count{%s}[$__rate_interval]))`,
 			ociClientFilter),
@@ -172,10 +177,9 @@ func outgoingRequestsPanel() *timeseries.PanelBuilder {
 }
 
 func outgoingBytesPanel() *timeseries.PanelBuilder {
-	return ts("Outgoing OCI HTTP bytes read", dash.UnitBytesPerSec).
-		Description(`Bytes read from OCI registries, by client.`).
+	return panel("Outgoing OCI HTTP bytes read", dash.UnitBytesPerSec).
+		Description(`Bytes read by the image pull path, by client. "oci" is the app-side resolver and "oci_fetcher" the executor-side layer fetcher; the ociregistry mirror server is not included.`).
 		Min(0).
-		Legend(tableLegend("mean", "max", "last")).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
 			`sum by (client_name) (rate(buildbuddy_http_client_response_size_bytes_sum{%s}[$__rate_interval]))`,
 			ociClientFilter),
