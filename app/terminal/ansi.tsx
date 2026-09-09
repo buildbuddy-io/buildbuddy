@@ -38,29 +38,97 @@ function clearStyle(style: AnsiStyle) {
 
 const colors = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
 
-function applyCode(style: AnsiStyle, code: number) {
+enum Mode {
+  NORMAL = "normal",
+  FOREGROUND = "foreground",
+  FOREGROUND_24BIT = "foreground 24-bit color",
+  FOREGROUND_256 = "foreground 256 color",
+  BACKGROUND = "background",
+  BACKGROUND_24BIT = "background 24-bit color",
+  BACKGROUND_256 = "background 256 color",
+  INVALID = "invalid",
+}
+
+function applyCode(style: AnsiStyle, mode: Mode, code: number): Mode {
+  switch (mode) {
+    case Mode.NORMAL:
+      return applyCodeForNormalMode(style, code);
+    case Mode.FOREGROUND:
+      if (code === 2) {
+        return Mode.FOREGROUND_24BIT;
+      }
+      if (code === 5) {
+        return Mode.FOREGROUND_256;
+      }
+      return Mode.INVALID;
+    case Mode.FOREGROUND_24BIT:
+      if (code < 0 || code > 255) {
+        return Mode.INVALID;
+      }
+      let fgVal = code.toString(16).toUpperCase().padStart(2, "0");
+      style.foreground = style.foreground + fgVal;
+      if (style.foreground.length === 7) {
+        return Mode.NORMAL;
+      }
+      return Mode.FOREGROUND_24BIT;
+    case Mode.FOREGROUND_256:
+      if (code < 0 || code > 255) {
+        return Mode.INVALID;
+      }
+      style.foreground = code.toString().padStart(3, "0");
+      return Mode.NORMAL;
+    case Mode.BACKGROUND:
+      if (code === 2) {
+        return Mode.BACKGROUND_24BIT;
+      }
+      if (code === 5) {
+        return Mode.BACKGROUND_256;
+      }
+      return Mode.INVALID;
+    case Mode.BACKGROUND_24BIT:
+      if (code < 0 || code > 255) {
+        return Mode.INVALID;
+      }
+      let bgVal = code.toString(16).toUpperCase().padStart(2, "0");
+      style.background = style.background + bgVal;
+      if (style.background.length === 7) {
+        return Mode.NORMAL;
+      }
+      return Mode.BACKGROUND_24BIT;
+    case Mode.BACKGROUND_256:
+      if (code < 0 || code > 255) {
+        return Mode.INVALID;
+      }
+      style.background = code.toString().padStart(3, "0");
+      return Mode.NORMAL;
+    default:
+      throw new Error("Unknown mode in applyCode: " + mode);
+  }
+}
+
+function applyCodeForNormalMode(style: AnsiStyle, code: number): Mode {
   switch (code) {
     case 0:
       clearStyle(style);
-      return;
+      return Mode.NORMAL;
     case 1:
       style.bold = true;
-      return;
+      return Mode.NORMAL;
     case 3:
       style.italic = true;
-      return;
+      return Mode.NORMAL;
     case 4:
       style.underline = true;
-      return;
+      return Mode.NORMAL;
     case 22:
       style.bold = false;
-      return;
+      return Mode.NORMAL;
     case 23:
       style.italic = false;
-      return;
+      return Mode.NORMAL;
     case 24:
       style.underline = false;
-      return;
+      return Mode.NORMAL;
     case 30:
     case 31:
     case 32:
@@ -71,10 +139,13 @@ function applyCode(style: AnsiStyle, code: number) {
     case 37:
       // Foreground color
       style.foreground = colors[code - 30];
-      return;
+      return Mode.NORMAL;
+    case 38:
+      style.foreground = "#";
+      return Mode.FOREGROUND;
     case 39:
       delete style.foreground;
-      return;
+      return Mode.NORMAL;
     case 40:
     case 41:
     case 42:
@@ -85,14 +156,17 @@ function applyCode(style: AnsiStyle, code: number) {
     case 47:
       // Background color
       style.background = colors[code - 40];
-      return;
+      return Mode.NORMAL;
+    case 48:
+      style.background = "#";
+      return Mode.BACKGROUND;
     case 49:
       delete style.background;
-      return;
+      return Mode.NORMAL;
     case 90:
       // 90 is technically "bright black fg color" but just treat it as grey.
       style.foreground = "grey";
-      return;
+      return Mode.NORMAL;
     case 91:
     case 92:
     case 93:
@@ -102,11 +176,11 @@ function applyCode(style: AnsiStyle, code: number) {
     case 97:
       // "Bright" foreground color (treat the same as non-bright for now)
       style.foreground = colors[code - 90];
-      return;
+      return Mode.NORMAL;
     case 100:
       // 100 is technically "bright black bg color" but just treat it as grey.
       style.background = "grey";
-      return;
+      return Mode.NORMAL;
     case 101:
     case 102:
     case 103:
@@ -116,9 +190,9 @@ function applyCode(style: AnsiStyle, code: number) {
     case 107:
       // "Bright" background color (treat the same as non-bright for now)
       style.background = colors[code - 100];
-      return;
+      return Mode.NORMAL;
     default:
-      return;
+      return Mode.NORMAL;
   }
 }
 
@@ -143,6 +217,7 @@ export default function parseAnsi(text: string, style: AnsiStyle): [string, Form
   let plaintext: string = "";
   const tags: FormatTag[] = [];
   let code = "";
+  let mode: Mode = Mode.NORMAL;
   let tag: FormatTag = { length: 0 };
 
   // rules_go produces test logs containing 0x16 ("synchronous idle") bytes at
@@ -159,10 +234,20 @@ export default function parseAnsi(text: string, style: AnsiStyle): [string, Form
     if (inEscapeSequence) {
       if (char === "m") {
         // Commit the current sequence code.
-        applyCode(style, Number(code || 0));
+        let prevMode = mode;
+        mode = applyCode(style, mode, Number(code || 0));
+        if (mode != Mode.NORMAL) {
+          // if the color field is corrupted, clear it.
+          if (prevMode === Mode.FOREGROUND_24BIT) {
+            style.foreground = "";
+          } else if (prevMode === Mode.BACKGROUND_24BIT) {
+            style.background = "";
+          }
+        }
         code = "";
         // Escape sequence has ended.
         inEscapeSequence = false;
+        mode = Mode.NORMAL;
         continue;
       }
       if (char >= "0" && char <= "9") {
@@ -172,7 +257,11 @@ export default function parseAnsi(text: string, style: AnsiStyle): [string, Form
       }
       if (char === ";") {
         // Commit the current sequence code.
-        applyCode(style, Number(code || 0));
+        mode = applyCode(style, mode, Number(code || 0));
+        if (mode === Mode.INVALID) {
+          // the ansi sequence was malformed; just process this code in normal mode.
+          mode = applyCode(style, Mode.NORMAL, Number(code || 0));
+        }
         code = "";
         continue;
       }
@@ -181,6 +270,7 @@ export default function parseAnsi(text: string, style: AnsiStyle): [string, Form
         // For now, treat as a no-op.
         code = "";
         inEscapeSequence = false;
+        mode = Mode.NORMAL;
         continue;
       }
       // Unexpected character.

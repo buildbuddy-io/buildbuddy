@@ -56,9 +56,17 @@ interface RowSpanProps extends SpanData {
  */
 function RowSpan({ text, matchIndex, isActiveMatch, style, link }: RowSpanProps) {
   if (!style) style = {};
+	const foregroundRGB: string | undefined =
+		style.foreground?.startsWith("#") ?
+		style.foreground :
+		undefined;
+	const backgroundRGB: string | undefined =
+		style.background?.startsWith("#") ?
+		style.background :
+		undefined;
   const className = [
-    style.background && `ansi-bg-${style.background}`,
-    style.foreground && `ansi-fg-${style.foreground}`,
+    style.background && !style.background.startsWith("#") && `ansi-bg-${style.background}`,
+    style.foreground && !style.foreground.startsWith("#") && `ansi-fg-${style.foreground}`,
     style.bold && "ansi-bold",
     style.italic && "ansi-italic",
     style.underline && "ansi-underline",
@@ -69,10 +77,19 @@ function RowSpan({ text, matchIndex, isActiveMatch, style, link }: RowSpanProps)
     .join(" ");
   if (link) {
     return (
-      <a href={link} target="_blank" className={className}>
+      <a
+			href={link} target="_blank"
+			className={className ? className : undefined}
+			style={{color: foregroundRGB, backgroundColor: backgroundRGB}}>
         {text}
       </a>
     );
   }
-  return <span className={className}>{text}</span>;
+  return (
+		<span
+		className={className ? className : undefined}
+		style={{color: foregroundRGB, backgroundColor: backgroundRGB}}>
+			{text}
+		</span>
+	);
 }

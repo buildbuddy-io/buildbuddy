@@ -1,0 +1,1622 @@
+/* Dark terminal colors */
+
+.terminal .ansi-fg-black {
+  color: var(--color-black);
+}
+.terminal .ansi-fg-green {
+  color: var(--color-green-400);
+}
+.terminal .ansi-fg-red {
+  color: var(--color-red-400);
+}
+.terminal .ansi-fg-yellow {
+  color: var(--color-yellow-400);
+}
+.terminal .ansi-fg-blue {
+  color: var(--color-blue-400);
+}
+.terminal .ansi-fg-magenta {
+  color: var(--color-purple-400);
+}
+.terminal .ansi-fg-cyan {
+  color: var(--color-cyan-400);
+}
+.terminal .ansi-fg-white {
+  color: var(--color-white);
+}
+.terminal .ansi-fg-grey {
+  color: var(--color-gray-400);
+}
+.terminal .ansi-bg-black {
+  background-color: var(--color-black);
+}
+.terminal .ansi-bg-green {
+  background-color: var(--color-green-400);
+}
+.terminal .ansi-bg-red {
+  background-color: var(--color-red-400);
+}
+.terminal .ansi-bg-yellow {
+  background-color: var(--color-yellow-400);
+}
+.terminal .ansi-bg-blue {
+  background-color: var(--color-blue-400);
+}
+.terminal .ansi-bg-magenta {
+  background-color: var(--color-purple-400);
+}
+.terminal .ansi-bg-cyan {
+  background-color: var(--color-cyan-400);
+}
+.terminal .ansi-bg-white {
+  background-color: var(--color-white);
+}
+.terminal .ansi-bg-grey {
+  background-color: var(--color-gray-400);
+}
+
+/* Light terminal color overrides */
+
+.terminal.light-terminal .ansi-fg-green {
+  color: var(--color-green-700);
+}
+.terminal.light-terminal .ansi-fg-red {
+  color: var(--color-red-600);
+}
+.terminal.light-terminal .ansi-fg-yellow {
+  color: var(--color-yellow-800);
+}
+.terminal.light-terminal .ansi-fg-blue {
+  color: var(--color-blue-600);
+}
+.terminal.light-terminal .ansi-fg-magenta {
+  color: var(--color-purple-600);
+}
+.terminal.light-terminal .ansi-fg-cyan {
+  color: var(--color-cyan-600);
+}
+.terminal.light-terminal .ansi-fg-grey {
+  color: var(--color-gray-600);
+}
+
+/* 256 color mode */
+
+/* foreground colors */
+.terminal .ansi-fg-000 {
+	color: var(--color-xterm-000)
+}
+.terminal .ansi-fg-001 {
+	color: var(--color-xterm-001)
+}
+.terminal .ansi-fg-002 {
+	color: var(--color-xterm-002)
+}
+.terminal .ansi-fg-003 {
+	color: var(--color-xterm-003)
+}
+.terminal .ansi-fg-004 {
+	color: var(--color-xterm-004)
+}
+.terminal .ansi-fg-005 {
+	color: var(--color-xterm-005)
+}
+.terminal .ansi-fg-006 {
+	color: var(--color-xterm-006)
+}
+.terminal .ansi-fg-007 {
+	color: var(--color-xterm-007)
+}
+.terminal .ansi-fg-008 {
+	color: var(--color-xterm-008)
+}
+.terminal .ansi-fg-009 {
+	color: var(--color-xterm-009)
+}
+.terminal .ansi-fg-010 {
+	color: var(--color-xterm-010)
+}
+.terminal .ansi-fg-011 {
+	color: var(--color-xterm-011)
+}
+.terminal .ansi-fg-012 {
+	color: var(--color-xterm-012)
+}
+.terminal .ansi-fg-013 {
+	color: var(--color-xterm-013)
+}
+.terminal .ansi-fg-014 {
+	color: var(--color-xterm-014)
+}
+.terminal .ansi-fg-015 {
+	color: var(--color-xterm-015)
+}
+.terminal .ansi-fg-016 {
+	color: var(--color-xterm-016)
+}
+.terminal .ansi-fg-017 {
+	color: var(--color-xterm-017)
+}
+.terminal .ansi-fg-018 {
+	color: var(--color-xterm-018)
+}
+.terminal .ansi-fg-019 {
+	color: var(--color-xterm-019)
+}
+.terminal .ansi-fg-020 {
+	color: var(--color-xterm-020)
+}
+.terminal .ansi-fg-021 {
+	color: var(--color-xterm-021)
+}
+.terminal .ansi-fg-022 {
+	color: var(--color-xterm-022)
+}
+.terminal .ansi-fg-023 {
+	color: var(--color-xterm-023)
+}
+.terminal .ansi-fg-024 {
+	color: var(--color-xterm-024)
+}
+.terminal .ansi-fg-025 {
+	color: var(--color-xterm-025)
+}
+.terminal .ansi-fg-026 {
+	color: var(--color-xterm-026)
+}
+.terminal .ansi-fg-027 {
+	color: var(--color-xterm-027)
+}
+.terminal .ansi-fg-028 {
+	color: var(--color-xterm-028)
+}
+.terminal .ansi-fg-029 {
+	color: var(--color-xterm-029)
+}
+.terminal .ansi-fg-030 {
+	color: var(--color-xterm-030)
+}
+.terminal .ansi-fg-031 {
+	color: var(--color-xterm-031)
+}
+.terminal .ansi-fg-032 {
+	color: var(--color-xterm-032)
+}
+.terminal .ansi-fg-033 {
+	color: var(--color-xterm-033)
+}
+.terminal .ansi-fg-034 {
+	color: var(--color-xterm-034)
+}
+.terminal .ansi-fg-035 {
+	color: var(--color-xterm-035)
+}
+.terminal .ansi-fg-036 {
+	color: var(--color-xterm-036)
+}
+.terminal .ansi-fg-037 {
+	color: var(--color-xterm-037)
+}
+.terminal .ansi-fg-038 {
+	color: var(--color-xterm-038)
+}
+.terminal .ansi-fg-039 {
+	color: var(--color-xterm-039)
+}
+.terminal .ansi-fg-040 {
+	color: var(--color-xterm-040)
+}
+.terminal .ansi-fg-041 {
+	color: var(--color-xterm-041)
+}
+.terminal .ansi-fg-042 {
+	color: var(--color-xterm-042)
+}
+.terminal .ansi-fg-043 {
+	color: var(--color-xterm-043)
+}
+.terminal .ansi-fg-044 {
+	color: var(--color-xterm-044)
+}
+.terminal .ansi-fg-045 {
+	color: var(--color-xterm-045)
+}
+.terminal .ansi-fg-046 {
+	color: var(--color-xterm-046)
+}
+.terminal .ansi-fg-047 {
+	color: var(--color-xterm-047)
+}
+.terminal .ansi-fg-048 {
+	color: var(--color-xterm-048)
+}
+.terminal .ansi-fg-049 {
+	color: var(--color-xterm-049)
+}
+.terminal .ansi-fg-050 {
+	color: var(--color-xterm-050)
+}
+.terminal .ansi-fg-051 {
+	color: var(--color-xterm-051)
+}
+.terminal .ansi-fg-052 {
+	color: var(--color-xterm-052)
+}
+.terminal .ansi-fg-053 {
+	color: var(--color-xterm-053)
+}
+.terminal .ansi-fg-054 {
+	color: var(--color-xterm-054)
+}
+.terminal .ansi-fg-055 {
+	color: var(--color-xterm-055)
+}
+.terminal .ansi-fg-056 {
+	color: var(--color-xterm-056)
+}
+.terminal .ansi-fg-057 {
+	color: var(--color-xterm-057)
+}
+.terminal .ansi-fg-058 {
+	color: var(--color-xterm-058)
+}
+.terminal .ansi-fg-059 {
+	color: var(--color-xterm-059)
+}
+.terminal .ansi-fg-060 {
+	color: var(--color-xterm-060)
+}
+.terminal .ansi-fg-061 {
+	color: var(--color-xterm-061)
+}
+.terminal .ansi-fg-062 {
+	color: var(--color-xterm-062)
+}
+.terminal .ansi-fg-063 {
+	color: var(--color-xterm-063)
+}
+.terminal .ansi-fg-064 {
+	color: var(--color-xterm-064)
+}
+.terminal .ansi-fg-065 {
+	color: var(--color-xterm-065)
+}
+.terminal .ansi-fg-066 {
+	color: var(--color-xterm-066)
+}
+.terminal .ansi-fg-067 {
+	color: var(--color-xterm-067)
+}
+.terminal .ansi-fg-068 {
+	color: var(--color-xterm-068)
+}
+.terminal .ansi-fg-069 {
+	color: var(--color-xterm-069)
+}
+.terminal .ansi-fg-070 {
+	color: var(--color-xterm-070)
+}
+.terminal .ansi-fg-071 {
+	color: var(--color-xterm-071)
+}
+.terminal .ansi-fg-072 {
+	color: var(--color-xterm-072)
+}
+.terminal .ansi-fg-073 {
+	color: var(--color-xterm-073)
+}
+.terminal .ansi-fg-074 {
+	color: var(--color-xterm-074)
+}
+.terminal .ansi-fg-075 {
+	color: var(--color-xterm-075)
+}
+.terminal .ansi-fg-076 {
+	color: var(--color-xterm-076)
+}
+.terminal .ansi-fg-077 {
+	color: var(--color-xterm-077)
+}
+.terminal .ansi-fg-078 {
+	color: var(--color-xterm-078)
+}
+.terminal .ansi-fg-079 {
+	color: var(--color-xterm-079)
+}
+.terminal .ansi-fg-080 {
+	color: var(--color-xterm-080)
+}
+.terminal .ansi-fg-081 {
+	color: var(--color-xterm-081)
+}
+.terminal .ansi-fg-082 {
+	color: var(--color-xterm-082)
+}
+.terminal .ansi-fg-083 {
+	color: var(--color-xterm-083)
+}
+.terminal .ansi-fg-084 {
+	color: var(--color-xterm-084)
+}
+.terminal .ansi-fg-085 {
+	color: var(--color-xterm-085)
+}
+.terminal .ansi-fg-086 {
+	color: var(--color-xterm-086)
+}
+.terminal .ansi-fg-087 {
+	color: var(--color-xterm-087)
+}
+.terminal .ansi-fg-088 {
+	color: var(--color-xterm-088)
+}
+.terminal .ansi-fg-089 {
+	color: var(--color-xterm-089)
+}
+.terminal .ansi-fg-090 {
+	color: var(--color-xterm-090)
+}
+.terminal .ansi-fg-091 {
+	color: var(--color-xterm-091)
+}
+.terminal .ansi-fg-092 {
+	color: var(--color-xterm-092)
+}
+.terminal .ansi-fg-093 {
+	color: var(--color-xterm-093)
+}
+.terminal .ansi-fg-094 {
+	color: var(--color-xterm-094)
+}
+.terminal .ansi-fg-095 {
+	color: var(--color-xterm-095)
+}
+.terminal .ansi-fg-096 {
+	color: var(--color-xterm-096)
+}
+.terminal .ansi-fg-097 {
+	color: var(--color-xterm-097)
+}
+.terminal .ansi-fg-098 {
+	color: var(--color-xterm-098)
+}
+.terminal .ansi-fg-099 {
+	color: var(--color-xterm-099)
+}
+.terminal .ansi-fg-100 {
+	color: var(--color-xterm-100)
+}
+.terminal .ansi-fg-101 {
+	color: var(--color-xterm-101)
+}
+.terminal .ansi-fg-102 {
+	color: var(--color-xterm-102)
+}
+.terminal .ansi-fg-103 {
+	color: var(--color-xterm-103)
+}
+.terminal .ansi-fg-104 {
+	color: var(--color-xterm-104)
+}
+.terminal .ansi-fg-105 {
+	color: var(--color-xterm-105)
+}
+.terminal .ansi-fg-106 {
+	color: var(--color-xterm-106)
+}
+.terminal .ansi-fg-107 {
+	color: var(--color-xterm-107)
+}
+.terminal .ansi-fg-108 {
+	color: var(--color-xterm-108)
+}
+.terminal .ansi-fg-109 {
+	color: var(--color-xterm-109)
+}
+.terminal .ansi-fg-110 {
+	color: var(--color-xterm-110)
+}
+.terminal .ansi-fg-111 {
+	color: var(--color-xterm-111)
+}
+.terminal .ansi-fg-112 {
+	color: var(--color-xterm-112)
+}
+.terminal .ansi-fg-113 {
+	color: var(--color-xterm-113)
+}
+.terminal .ansi-fg-114 {
+	color: var(--color-xterm-114)
+}
+.terminal .ansi-fg-115 {
+	color: var(--color-xterm-115)
+}
+.terminal .ansi-fg-116 {
+	color: var(--color-xterm-116)
+}
+.terminal .ansi-fg-117 {
+	color: var(--color-xterm-117)
+}
+.terminal .ansi-fg-118 {
+	color: var(--color-xterm-118)
+}
+.terminal .ansi-fg-119 {
+	color: var(--color-xterm-119)
+}
+.terminal .ansi-fg-120 {
+	color: var(--color-xterm-120)
+}
+.terminal .ansi-fg-121 {
+	color: var(--color-xterm-121)
+}
+.terminal .ansi-fg-122 {
+	color: var(--color-xterm-122)
+}
+.terminal .ansi-fg-123 {
+	color: var(--color-xterm-123)
+}
+.terminal .ansi-fg-124 {
+	color: var(--color-xterm-124)
+}
+.terminal .ansi-fg-125 {
+	color: var(--color-xterm-125)
+}
+.terminal .ansi-fg-126 {
+	color: var(--color-xterm-126)
+}
+.terminal .ansi-fg-127 {
+	color: var(--color-xterm-127)
+}
+.terminal .ansi-fg-128 {
+	color: var(--color-xterm-128)
+}
+.terminal .ansi-fg-129 {
+	color: var(--color-xterm-129)
+}
+.terminal .ansi-fg-130 {
+	color: var(--color-xterm-130)
+}
+.terminal .ansi-fg-131 {
+	color: var(--color-xterm-131)
+}
+.terminal .ansi-fg-132 {
+	color: var(--color-xterm-132)
+}
+.terminal .ansi-fg-133 {
+	color: var(--color-xterm-133)
+}
+.terminal .ansi-fg-134 {
+	color: var(--color-xterm-134)
+}
+.terminal .ansi-fg-135 {
+	color: var(--color-xterm-135)
+}
+.terminal .ansi-fg-136 {
+	color: var(--color-xterm-136)
+}
+.terminal .ansi-fg-137 {
+	color: var(--color-xterm-137)
+}
+.terminal .ansi-fg-138 {
+	color: var(--color-xterm-138)
+}
+.terminal .ansi-fg-139 {
+	color: var(--color-xterm-139)
+}
+.terminal .ansi-fg-140 {
+	color: var(--color-xterm-140)
+}
+.terminal .ansi-fg-141 {
+	color: var(--color-xterm-141)
+}
+.terminal .ansi-fg-142 {
+	color: var(--color-xterm-142)
+}
+.terminal .ansi-fg-143 {
+	color: var(--color-xterm-143)
+}
+.terminal .ansi-fg-144 {
+	color: var(--color-xterm-144)
+}
+.terminal .ansi-fg-145 {
+	color: var(--color-xterm-145)
+}
+.terminal .ansi-fg-146 {
+	color: var(--color-xterm-146)
+}
+.terminal .ansi-fg-147 {
+	color: var(--color-xterm-147)
+}
+.terminal .ansi-fg-148 {
+	color: var(--color-xterm-148)
+}
+.terminal .ansi-fg-149 {
+	color: var(--color-xterm-149)
+}
+.terminal .ansi-fg-150 {
+	color: var(--color-xterm-150)
+}
+.terminal .ansi-fg-151 {
+	color: var(--color-xterm-151)
+}
+.terminal .ansi-fg-152 {
+	color: var(--color-xterm-152)
+}
+.terminal .ansi-fg-153 {
+	color: var(--color-xterm-153)
+}
+.terminal .ansi-fg-154 {
+	color: var(--color-xterm-154)
+}
+.terminal .ansi-fg-155 {
+	color: var(--color-xterm-155)
+}
+.terminal .ansi-fg-156 {
+	color: var(--color-xterm-156)
+}
+.terminal .ansi-fg-157 {
+	color: var(--color-xterm-157)
+}
+.terminal .ansi-fg-158 {
+	color: var(--color-xterm-158)
+}
+.terminal .ansi-fg-159 {
+	color: var(--color-xterm-159)
+}
+.terminal .ansi-fg-160 {
+	color: var(--color-xterm-160)
+}
+.terminal .ansi-fg-161 {
+	color: var(--color-xterm-161)
+}
+.terminal .ansi-fg-162 {
+	color: var(--color-xterm-162)
+}
+.terminal .ansi-fg-163 {
+	color: var(--color-xterm-163)
+}
+.terminal .ansi-fg-164 {
+	color: var(--color-xterm-164)
+}
+.terminal .ansi-fg-165 {
+	color: var(--color-xterm-165)
+}
+.terminal .ansi-fg-166 {
+	color: var(--color-xterm-166)
+}
+.terminal .ansi-fg-167 {
+	color: var(--color-xterm-167)
+}
+.terminal .ansi-fg-168 {
+	color: var(--color-xterm-168)
+}
+.terminal .ansi-fg-169 {
+	color: var(--color-xterm-169)
+}
+.terminal .ansi-fg-170 {
+	color: var(--color-xterm-170)
+}
+.terminal .ansi-fg-171 {
+	color: var(--color-xterm-171)
+}
+.terminal .ansi-fg-172 {
+	color: var(--color-xterm-172)
+}
+.terminal .ansi-fg-173 {
+	color: var(--color-xterm-173)
+}
+.terminal .ansi-fg-174 {
+	color: var(--color-xterm-174)
+}
+.terminal .ansi-fg-175 {
+	color: var(--color-xterm-175)
+}
+.terminal .ansi-fg-176 {
+	color: var(--color-xterm-176)
+}
+.terminal .ansi-fg-177 {
+	color: var(--color-xterm-177)
+}
+.terminal .ansi-fg-178 {
+	color: var(--color-xterm-178)
+}
+.terminal .ansi-fg-179 {
+	color: var(--color-xterm-179)
+}
+.terminal .ansi-fg-180 {
+	color: var(--color-xterm-180)
+}
+.terminal .ansi-fg-181 {
+	color: var(--color-xterm-181)
+}
+.terminal .ansi-fg-182 {
+	color: var(--color-xterm-182)
+}
+.terminal .ansi-fg-183 {
+	color: var(--color-xterm-183)
+}
+.terminal .ansi-fg-184 {
+	color: var(--color-xterm-184)
+}
+.terminal .ansi-fg-185 {
+	color: var(--color-xterm-185)
+}
+.terminal .ansi-fg-186 {
+	color: var(--color-xterm-186)
+}
+.terminal .ansi-fg-187 {
+	color: var(--color-xterm-187)
+}
+.terminal .ansi-fg-188 {
+	color: var(--color-xterm-188)
+}
+.terminal .ansi-fg-189 {
+	color: var(--color-xterm-189)
+}
+.terminal .ansi-fg-190 {
+	color: var(--color-xterm-190)
+}
+.terminal .ansi-fg-191 {
+	color: var(--color-xterm-191)
+}
+.terminal .ansi-fg-192 {
+	color: var(--color-xterm-192)
+}
+.terminal .ansi-fg-193 {
+	color: var(--color-xterm-193)
+}
+.terminal .ansi-fg-194 {
+	color: var(--color-xterm-194)
+}
+.terminal .ansi-fg-195 {
+	color: var(--color-xterm-195)
+}
+.terminal .ansi-fg-196 {
+	color: var(--color-xterm-196)
+}
+.terminal .ansi-fg-197 {
+	color: var(--color-xterm-197)
+}
+.terminal .ansi-fg-198 {
+	color: var(--color-xterm-198)
+}
+.terminal .ansi-fg-199 {
+	color: var(--color-xterm-199)
+}
+.terminal .ansi-fg-200 {
+	color: var(--color-xterm-200)
+}
+.terminal .ansi-fg-201 {
+	color: var(--color-xterm-201)
+}
+.terminal .ansi-fg-202 {
+	color: var(--color-xterm-202)
+}
+.terminal .ansi-fg-203 {
+	color: var(--color-xterm-203)
+}
+.terminal .ansi-fg-204 {
+	color: var(--color-xterm-204)
+}
+.terminal .ansi-fg-205 {
+	color: var(--color-xterm-205)
+}
+.terminal .ansi-fg-206 {
+	color: var(--color-xterm-206)
+}
+.terminal .ansi-fg-207 {
+	color: var(--color-xterm-207)
+}
+.terminal .ansi-fg-208 {
+	color: var(--color-xterm-208)
+}
+.terminal .ansi-fg-209 {
+	color: var(--color-xterm-209)
+}
+.terminal .ansi-fg-210 {
+	color: var(--color-xterm-210)
+}
+.terminal .ansi-fg-211 {
+	color: var(--color-xterm-211)
+}
+.terminal .ansi-fg-212 {
+	color: var(--color-xterm-212)
+}
+.terminal .ansi-fg-213 {
+	color: var(--color-xterm-213)
+}
+.terminal .ansi-fg-214 {
+	color: var(--color-xterm-214)
+}
+.terminal .ansi-fg-215 {
+	color: var(--color-xterm-215)
+}
+.terminal .ansi-fg-216 {
+	color: var(--color-xterm-216)
+}
+.terminal .ansi-fg-217 {
+	color: var(--color-xterm-217)
+}
+.terminal .ansi-fg-218 {
+	color: var(--color-xterm-218)
+}
+.terminal .ansi-fg-219 {
+	color: var(--color-xterm-219)
+}
+.terminal .ansi-fg-220 {
+	color: var(--color-xterm-220)
+}
+.terminal .ansi-fg-221 {
+	color: var(--color-xterm-221)
+}
+.terminal .ansi-fg-222 {
+	color: var(--color-xterm-222)
+}
+.terminal .ansi-fg-223 {
+	color: var(--color-xterm-223)
+}
+.terminal .ansi-fg-224 {
+	color: var(--color-xterm-224)
+}
+.terminal .ansi-fg-225 {
+	color: var(--color-xterm-225)
+}
+.terminal .ansi-fg-226 {
+	color: var(--color-xterm-226)
+}
+.terminal .ansi-fg-227 {
+	color: var(--color-xterm-227)
+}
+.terminal .ansi-fg-228 {
+	color: var(--color-xterm-228)
+}
+.terminal .ansi-fg-229 {
+	color: var(--color-xterm-229)
+}
+.terminal .ansi-fg-230 {
+	color: var(--color-xterm-230)
+}
+.terminal .ansi-fg-231 {
+	color: var(--color-xterm-231)
+}
+.terminal .ansi-fg-232 {
+	color: var(--color-xterm-232)
+}
+.terminal .ansi-fg-233 {
+	color: var(--color-xterm-233)
+}
+.terminal .ansi-fg-234 {
+	color: var(--color-xterm-234)
+}
+.terminal .ansi-fg-235 {
+	color: var(--color-xterm-235)
+}
+.terminal .ansi-fg-236 {
+	color: var(--color-xterm-236)
+}
+.terminal .ansi-fg-237 {
+	color: var(--color-xterm-237)
+}
+.terminal .ansi-fg-238 {
+	color: var(--color-xterm-238)
+}
+.terminal .ansi-fg-239 {
+	color: var(--color-xterm-239)
+}
+.terminal .ansi-fg-240 {
+	color: var(--color-xterm-240)
+}
+.terminal .ansi-fg-241 {
+	color: var(--color-xterm-241)
+}
+.terminal .ansi-fg-242 {
+	color: var(--color-xterm-242)
+}
+.terminal .ansi-fg-243 {
+	color: var(--color-xterm-243)
+}
+.terminal .ansi-fg-244 {
+	color: var(--color-xterm-244)
+}
+.terminal .ansi-fg-245 {
+	color: var(--color-xterm-245)
+}
+.terminal .ansi-fg-246 {
+	color: var(--color-xterm-246)
+}
+.terminal .ansi-fg-247 {
+	color: var(--color-xterm-247)
+}
+.terminal .ansi-fg-248 {
+	color: var(--color-xterm-248)
+}
+.terminal .ansi-fg-249 {
+	color: var(--color-xterm-249)
+}
+.terminal .ansi-fg-250 {
+	color: var(--color-xterm-250)
+}
+.terminal .ansi-fg-251 {
+	color: var(--color-xterm-251)
+}
+.terminal .ansi-fg-252 {
+	color: var(--color-xterm-252)
+}
+.terminal .ansi-fg-253 {
+	color: var(--color-xterm-253)
+}
+.terminal .ansi-fg-254 {
+	color: var(--color-xterm-254)
+}
+.terminal .ansi-fg-255 {
+	color: var(--color-xterm-255)
+}
+
+/* background colors */
+.terminal .ansi-bg-000 {
+	background-color: var(--color-xterm-000)
+}
+.terminal .ansi-bg-001 {
+	background-color: var(--color-xterm-001)
+}
+.terminal .ansi-bg-002 {
+	background-color: var(--color-xterm-002)
+}
+.terminal .ansi-bg-003 {
+	background-color: var(--color-xterm-003)
+}
+.terminal .ansi-bg-004 {
+	background-color: var(--color-xterm-004)
+}
+.terminal .ansi-bg-005 {
+	background-color: var(--color-xterm-005)
+}
+.terminal .ansi-bg-006 {
+	background-color: var(--color-xterm-006)
+}
+.terminal .ansi-bg-007 {
+	background-color: var(--color-xterm-007)
+}
+.terminal .ansi-bg-008 {
+	background-color: var(--color-xterm-008)
+}
+.terminal .ansi-bg-009 {
+	background-color: var(--color-xterm-009)
+}
+.terminal .ansi-bg-010 {
+	background-color: var(--color-xterm-010)
+}
+.terminal .ansi-bg-011 {
+	background-color: var(--color-xterm-011)
+}
+.terminal .ansi-bg-012 {
+	background-color: var(--color-xterm-012)
+}
+.terminal .ansi-bg-013 {
+	background-color: var(--color-xterm-013)
+}
+.terminal .ansi-bg-014 {
+	background-color: var(--color-xterm-014)
+}
+.terminal .ansi-bg-015 {
+	background-color: var(--color-xterm-015)
+}
+.terminal .ansi-bg-016 {
+	background-color: var(--color-xterm-016)
+}
+.terminal .ansi-bg-017 {
+	background-color: var(--color-xterm-017)
+}
+.terminal .ansi-bg-018 {
+	background-color: var(--color-xterm-018)
+}
+.terminal .ansi-bg-019 {
+	background-color: var(--color-xterm-019)
+}
+.terminal .ansi-bg-020 {
+	background-color: var(--color-xterm-020)
+}
+.terminal .ansi-bg-021 {
+	background-color: var(--color-xterm-021)
+}
+.terminal .ansi-bg-022 {
+	background-color: var(--color-xterm-022)
+}
+.terminal .ansi-bg-023 {
+	background-color: var(--color-xterm-023)
+}
+.terminal .ansi-bg-024 {
+	background-color: var(--color-xterm-024)
+}
+.terminal .ansi-bg-025 {
+	background-color: var(--color-xterm-025)
+}
+.terminal .ansi-bg-026 {
+	background-color: var(--color-xterm-026)
+}
+.terminal .ansi-bg-027 {
+	background-color: var(--color-xterm-027)
+}
+.terminal .ansi-bg-028 {
+	background-color: var(--color-xterm-028)
+}
+.terminal .ansi-bg-029 {
+	background-color: var(--color-xterm-029)
+}
+.terminal .ansi-bg-030 {
+	background-color: var(--color-xterm-030)
+}
+.terminal .ansi-bg-031 {
+	background-color: var(--color-xterm-031)
+}
+.terminal .ansi-bg-032 {
+	background-color: var(--color-xterm-032)
+}
+.terminal .ansi-bg-033 {
+	background-color: var(--color-xterm-033)
+}
+.terminal .ansi-bg-034 {
+	background-color: var(--color-xterm-034)
+}
+.terminal .ansi-bg-035 {
+	background-color: var(--color-xterm-035)
+}
+.terminal .ansi-bg-036 {
+	background-color: var(--color-xterm-036)
+}
+.terminal .ansi-bg-037 {
+	background-color: var(--color-xterm-037)
+}
+.terminal .ansi-bg-038 {
+	background-color: var(--color-xterm-038)
+}
+.terminal .ansi-bg-039 {
+	background-color: var(--color-xterm-039)
+}
+.terminal .ansi-bg-040 {
+	background-color: var(--color-xterm-040)
+}
+.terminal .ansi-bg-041 {
+	background-color: var(--color-xterm-041)
+}
+.terminal .ansi-bg-042 {
+	background-color: var(--color-xterm-042)
+}
+.terminal .ansi-bg-043 {
+	background-color: var(--color-xterm-043)
+}
+.terminal .ansi-bg-044 {
+	background-color: var(--color-xterm-044)
+}
+.terminal .ansi-bg-045 {
+	background-color: var(--color-xterm-045)
+}
+.terminal .ansi-bg-046 {
+	background-color: var(--color-xterm-046)
+}
+.terminal .ansi-bg-047 {
+	background-color: var(--color-xterm-047)
+}
+.terminal .ansi-bg-048 {
+	background-color: var(--color-xterm-048)
+}
+.terminal .ansi-bg-049 {
+	background-color: var(--color-xterm-049)
+}
+.terminal .ansi-bg-050 {
+	background-color: var(--color-xterm-050)
+}
+.terminal .ansi-bg-051 {
+	background-color: var(--color-xterm-051)
+}
+.terminal .ansi-bg-052 {
+	background-color: var(--color-xterm-052)
+}
+.terminal .ansi-bg-053 {
+	background-color: var(--color-xterm-053)
+}
+.terminal .ansi-bg-054 {
+	background-color: var(--color-xterm-054)
+}
+.terminal .ansi-bg-055 {
+	background-color: var(--color-xterm-055)
+}
+.terminal .ansi-bg-056 {
+	background-color: var(--color-xterm-056)
+}
+.terminal .ansi-bg-057 {
+	background-color: var(--color-xterm-057)
+}
+.terminal .ansi-bg-058 {
+	background-color: var(--color-xterm-058)
+}
+.terminal .ansi-bg-059 {
+	background-color: var(--color-xterm-059)
+}
+.terminal .ansi-bg-060 {
+	background-color: var(--color-xterm-060)
+}
+.terminal .ansi-bg-061 {
+	background-color: var(--color-xterm-061)
+}
+.terminal .ansi-bg-062 {
+	background-color: var(--color-xterm-062)
+}
+.terminal .ansi-bg-063 {
+	background-color: var(--color-xterm-063)
+}
+.terminal .ansi-bg-064 {
+	background-color: var(--color-xterm-064)
+}
+.terminal .ansi-bg-065 {
+	background-color: var(--color-xterm-065)
+}
+.terminal .ansi-bg-066 {
+	background-color: var(--color-xterm-066)
+}
+.terminal .ansi-bg-067 {
+	background-color: var(--color-xterm-067)
+}
+.terminal .ansi-bg-068 {
+	background-color: var(--color-xterm-068)
+}
+.terminal .ansi-bg-069 {
+	background-color: var(--color-xterm-069)
+}
+.terminal .ansi-bg-070 {
+	background-color: var(--color-xterm-070)
+}
+.terminal .ansi-bg-071 {
+	background-color: var(--color-xterm-071)
+}
+.terminal .ansi-bg-072 {
+	background-color: var(--color-xterm-072)
+}
+.terminal .ansi-bg-073 {
+	background-color: var(--color-xterm-073)
+}
+.terminal .ansi-bg-074 {
+	background-color: var(--color-xterm-074)
+}
+.terminal .ansi-bg-075 {
+	background-color: var(--color-xterm-075)
+}
+.terminal .ansi-bg-076 {
+	background-color: var(--color-xterm-076)
+}
+.terminal .ansi-bg-077 {
+	background-color: var(--color-xterm-077)
+}
+.terminal .ansi-bg-078 {
+	background-color: var(--color-xterm-078)
+}
+.terminal .ansi-bg-079 {
+	background-color: var(--color-xterm-079)
+}
+.terminal .ansi-bg-080 {
+	background-color: var(--color-xterm-080)
+}
+.terminal .ansi-bg-081 {
+	background-color: var(--color-xterm-081)
+}
+.terminal .ansi-bg-082 {
+	background-color: var(--color-xterm-082)
+}
+.terminal .ansi-bg-083 {
+	background-color: var(--color-xterm-083)
+}
+.terminal .ansi-bg-084 {
+	background-color: var(--color-xterm-084)
+}
+.terminal .ansi-bg-085 {
+	background-color: var(--color-xterm-085)
+}
+.terminal .ansi-bg-086 {
+	background-color: var(--color-xterm-086)
+}
+.terminal .ansi-bg-087 {
+	background-color: var(--color-xterm-087)
+}
+.terminal .ansi-bg-088 {
+	background-color: var(--color-xterm-088)
+}
+.terminal .ansi-bg-089 {
+	background-color: var(--color-xterm-089)
+}
+.terminal .ansi-bg-090 {
+	background-color: var(--color-xterm-090)
+}
+.terminal .ansi-bg-091 {
+	background-color: var(--color-xterm-091)
+}
+.terminal .ansi-bg-092 {
+	background-color: var(--color-xterm-092)
+}
+.terminal .ansi-bg-093 {
+	background-color: var(--color-xterm-093)
+}
+.terminal .ansi-bg-094 {
+	background-color: var(--color-xterm-094)
+}
+.terminal .ansi-bg-095 {
+	background-color: var(--color-xterm-095)
+}
+.terminal .ansi-bg-096 {
+	background-color: var(--color-xterm-096)
+}
+.terminal .ansi-bg-097 {
+	background-color: var(--color-xterm-097)
+}
+.terminal .ansi-bg-098 {
+	background-color: var(--color-xterm-098)
+}
+.terminal .ansi-bg-099 {
+	background-color: var(--color-xterm-099)
+}
+.terminal .ansi-bg-100 {
+	background-color: var(--color-xterm-100)
+}
+.terminal .ansi-bg-101 {
+	background-color: var(--color-xterm-101)
+}
+.terminal .ansi-bg-102 {
+	background-color: var(--color-xterm-102)
+}
+.terminal .ansi-bg-103 {
+	background-color: var(--color-xterm-103)
+}
+.terminal .ansi-bg-104 {
+	background-color: var(--color-xterm-104)
+}
+.terminal .ansi-bg-105 {
+	background-color: var(--color-xterm-105)
+}
+.terminal .ansi-bg-106 {
+	background-color: var(--color-xterm-106)
+}
+.terminal .ansi-bg-107 {
+	background-color: var(--color-xterm-107)
+}
+.terminal .ansi-bg-108 {
+	background-color: var(--color-xterm-108)
+}
+.terminal .ansi-bg-109 {
+	background-color: var(--color-xterm-109)
+}
+.terminal .ansi-bg-110 {
+	background-color: var(--color-xterm-110)
+}
+.terminal .ansi-bg-111 {
+	background-color: var(--color-xterm-111)
+}
+.terminal .ansi-bg-112 {
+	background-color: var(--color-xterm-112)
+}
+.terminal .ansi-bg-113 {
+	background-color: var(--color-xterm-113)
+}
+.terminal .ansi-bg-114 {
+	background-color: var(--color-xterm-114)
+}
+.terminal .ansi-bg-115 {
+	background-color: var(--color-xterm-115)
+}
+.terminal .ansi-bg-116 {
+	background-color: var(--color-xterm-116)
+}
+.terminal .ansi-bg-117 {
+	background-color: var(--color-xterm-117)
+}
+.terminal .ansi-bg-118 {
+	background-color: var(--color-xterm-118)
+}
+.terminal .ansi-bg-119 {
+	background-color: var(--color-xterm-119)
+}
+.terminal .ansi-bg-120 {
+	background-color: var(--color-xterm-120)
+}
+.terminal .ansi-bg-121 {
+	background-color: var(--color-xterm-121)
+}
+.terminal .ansi-bg-122 {
+	background-color: var(--color-xterm-122)
+}
+.terminal .ansi-bg-123 {
+	background-color: var(--color-xterm-123)
+}
+.terminal .ansi-bg-124 {
+	background-color: var(--color-xterm-124)
+}
+.terminal .ansi-bg-125 {
+	background-color: var(--color-xterm-125)
+}
+.terminal .ansi-bg-126 {
+	background-color: var(--color-xterm-126)
+}
+.terminal .ansi-bg-127 {
+	background-color: var(--color-xterm-127)
+}
+.terminal .ansi-bg-128 {
+	background-color: var(--color-xterm-128)
+}
+.terminal .ansi-bg-129 {
+	background-color: var(--color-xterm-129)
+}
+.terminal .ansi-bg-130 {
+	background-color: var(--color-xterm-130)
+}
+.terminal .ansi-bg-131 {
+	background-color: var(--color-xterm-131)
+}
+.terminal .ansi-bg-132 {
+	background-color: var(--color-xterm-132)
+}
+.terminal .ansi-bg-133 {
+	background-color: var(--color-xterm-133)
+}
+.terminal .ansi-bg-134 {
+	background-color: var(--color-xterm-134)
+}
+.terminal .ansi-bg-135 {
+	background-color: var(--color-xterm-135)
+}
+.terminal .ansi-bg-136 {
+	background-color: var(--color-xterm-136)
+}
+.terminal .ansi-bg-137 {
+	background-color: var(--color-xterm-137)
+}
+.terminal .ansi-bg-138 {
+	background-color: var(--color-xterm-138)
+}
+.terminal .ansi-bg-139 {
+	background-color: var(--color-xterm-139)
+}
+.terminal .ansi-bg-140 {
+	background-color: var(--color-xterm-140)
+}
+.terminal .ansi-bg-141 {
+	background-color: var(--color-xterm-141)
+}
+.terminal .ansi-bg-142 {
+	background-color: var(--color-xterm-142)
+}
+.terminal .ansi-bg-143 {
+	background-color: var(--color-xterm-143)
+}
+.terminal .ansi-bg-144 {
+	background-color: var(--color-xterm-144)
+}
+.terminal .ansi-bg-145 {
+	background-color: var(--color-xterm-145)
+}
+.terminal .ansi-bg-146 {
+	background-color: var(--color-xterm-146)
+}
+.terminal .ansi-bg-147 {
+	background-color: var(--color-xterm-147)
+}
+.terminal .ansi-bg-148 {
+	background-color: var(--color-xterm-148)
+}
+.terminal .ansi-bg-149 {
+	background-color: var(--color-xterm-149)
+}
+.terminal .ansi-bg-150 {
+	background-color: var(--color-xterm-150)
+}
+.terminal .ansi-bg-151 {
+	background-color: var(--color-xterm-151)
+}
+.terminal .ansi-bg-152 {
+	background-color: var(--color-xterm-152)
+}
+.terminal .ansi-bg-153 {
+	background-color: var(--color-xterm-153)
+}
+.terminal .ansi-bg-154 {
+	background-color: var(--color-xterm-154)
+}
+.terminal .ansi-bg-155 {
+	background-color: var(--color-xterm-155)
+}
+.terminal .ansi-bg-156 {
+	background-color: var(--color-xterm-156)
+}
+.terminal .ansi-bg-157 {
+	background-color: var(--color-xterm-157)
+}
+.terminal .ansi-bg-158 {
+	background-color: var(--color-xterm-158)
+}
+.terminal .ansi-bg-159 {
+	background-color: var(--color-xterm-159)
+}
+.terminal .ansi-bg-160 {
+	background-color: var(--color-xterm-160)
+}
+.terminal .ansi-bg-161 {
+	background-color: var(--color-xterm-161)
+}
+.terminal .ansi-bg-162 {
+	background-color: var(--color-xterm-162)
+}
+.terminal .ansi-bg-163 {
+	background-color: var(--color-xterm-163)
+}
+.terminal .ansi-bg-164 {
+	background-color: var(--color-xterm-164)
+}
+.terminal .ansi-bg-165 {
+	background-color: var(--color-xterm-165)
+}
+.terminal .ansi-bg-166 {
+	background-color: var(--color-xterm-166)
+}
+.terminal .ansi-bg-167 {
+	background-color: var(--color-xterm-167)
+}
+.terminal .ansi-bg-168 {
+	background-color: var(--color-xterm-168)
+}
+.terminal .ansi-bg-169 {
+	background-color: var(--color-xterm-169)
+}
+.terminal .ansi-bg-170 {
+	background-color: var(--color-xterm-170)
+}
+.terminal .ansi-bg-171 {
+	background-color: var(--color-xterm-171)
+}
+.terminal .ansi-bg-172 {
+	background-color: var(--color-xterm-172)
+}
+.terminal .ansi-bg-173 {
+	background-color: var(--color-xterm-173)
+}
+.terminal .ansi-bg-174 {
+	background-color: var(--color-xterm-174)
+}
+.terminal .ansi-bg-175 {
+	background-color: var(--color-xterm-175)
+}
+.terminal .ansi-bg-176 {
+	background-color: var(--color-xterm-176)
+}
+.terminal .ansi-bg-177 {
+	background-color: var(--color-xterm-177)
+}
+.terminal .ansi-bg-178 {
+	background-color: var(--color-xterm-178)
+}
+.terminal .ansi-bg-179 {
+	background-color: var(--color-xterm-179)
+}
+.terminal .ansi-bg-180 {
+	background-color: var(--color-xterm-180)
+}
+.terminal .ansi-bg-181 {
+	background-color: var(--color-xterm-181)
+}
+.terminal .ansi-bg-182 {
+	background-color: var(--color-xterm-182)
+}
+.terminal .ansi-bg-183 {
+	background-color: var(--color-xterm-183)
+}
+.terminal .ansi-bg-184 {
+	background-color: var(--color-xterm-184)
+}
+.terminal .ansi-bg-185 {
+	background-color: var(--color-xterm-185)
+}
+.terminal .ansi-bg-186 {
+	background-color: var(--color-xterm-186)
+}
+.terminal .ansi-bg-187 {
+	background-color: var(--color-xterm-187)
+}
+.terminal .ansi-bg-188 {
+	background-color: var(--color-xterm-188)
+}
+.terminal .ansi-bg-189 {
+	background-color: var(--color-xterm-189)
+}
+.terminal .ansi-bg-190 {
+	background-color: var(--color-xterm-190)
+}
+.terminal .ansi-bg-191 {
+	background-color: var(--color-xterm-191)
+}
+.terminal .ansi-bg-192 {
+	background-color: var(--color-xterm-192)
+}
+.terminal .ansi-bg-193 {
+	background-color: var(--color-xterm-193)
+}
+.terminal .ansi-bg-194 {
+	background-color: var(--color-xterm-194)
+}
+.terminal .ansi-bg-195 {
+	background-color: var(--color-xterm-195)
+}
+.terminal .ansi-bg-196 {
+	background-color: var(--color-xterm-196)
+}
+.terminal .ansi-bg-197 {
+	background-color: var(--color-xterm-197)
+}
+.terminal .ansi-bg-198 {
+	background-color: var(--color-xterm-198)
+}
+.terminal .ansi-bg-199 {
+	background-color: var(--color-xterm-199)
+}
+.terminal .ansi-bg-200 {
+	background-color: var(--color-xterm-200)
+}
+.terminal .ansi-bg-201 {
+	background-color: var(--color-xterm-201)
+}
+.terminal .ansi-bg-202 {
+	background-color: var(--color-xterm-202)
+}
+.terminal .ansi-bg-203 {
+	background-color: var(--color-xterm-203)
+}
+.terminal .ansi-bg-204 {
+	background-color: var(--color-xterm-204)
+}
+.terminal .ansi-bg-205 {
+	background-color: var(--color-xterm-205)
+}
+.terminal .ansi-bg-206 {
+	background-color: var(--color-xterm-206)
+}
+.terminal .ansi-bg-207 {
+	background-color: var(--color-xterm-207)
+}
+.terminal .ansi-bg-208 {
+	background-color: var(--color-xterm-208)
+}
+.terminal .ansi-bg-209 {
+	background-color: var(--color-xterm-209)
+}
+.terminal .ansi-bg-210 {
+	background-color: var(--color-xterm-210)
+}
+.terminal .ansi-bg-211 {
+	background-color: var(--color-xterm-211)
+}
+.terminal .ansi-bg-212 {
+	background-color: var(--color-xterm-212)
+}
+.terminal .ansi-bg-213 {
+	background-color: var(--color-xterm-213)
+}
+.terminal .ansi-bg-214 {
+	background-color: var(--color-xterm-214)
+}
+.terminal .ansi-bg-215 {
+	background-color: var(--color-xterm-215)
+}
+.terminal .ansi-bg-216 {
+	background-color: var(--color-xterm-216)
+}
+.terminal .ansi-bg-217 {
+	background-color: var(--color-xterm-217)
+}
+.terminal .ansi-bg-218 {
+	background-color: var(--color-xterm-218)
+}
+.terminal .ansi-bg-219 {
+	background-color: var(--color-xterm-219)
+}
+.terminal .ansi-bg-220 {
+	background-color: var(--color-xterm-220)
+}
+.terminal .ansi-bg-221 {
+	background-color: var(--color-xterm-221)
+}
+.terminal .ansi-bg-222 {
+	background-color: var(--color-xterm-222)
+}
+.terminal .ansi-bg-223 {
+	background-color: var(--color-xterm-223)
+}
+.terminal .ansi-bg-224 {
+	background-color: var(--color-xterm-224)
+}
+.terminal .ansi-bg-225 {
+	background-color: var(--color-xterm-225)
+}
+.terminal .ansi-bg-226 {
+	background-color: var(--color-xterm-226)
+}
+.terminal .ansi-bg-227 {
+	background-color: var(--color-xterm-227)
+}
+.terminal .ansi-bg-228 {
+	background-color: var(--color-xterm-228)
+}
+.terminal .ansi-bg-229 {
+	background-color: var(--color-xterm-229)
+}
+.terminal .ansi-bg-230 {
+	background-color: var(--color-xterm-230)
+}
+.terminal .ansi-bg-231 {
+	background-color: var(--color-xterm-231)
+}
+.terminal .ansi-bg-232 {
+	background-color: var(--color-xterm-232)
+}
+.terminal .ansi-bg-233 {
+	background-color: var(--color-xterm-233)
+}
+.terminal .ansi-bg-234 {
+	background-color: var(--color-xterm-234)
+}
+.terminal .ansi-bg-235 {
+	background-color: var(--color-xterm-235)
+}
+.terminal .ansi-bg-236 {
+	background-color: var(--color-xterm-236)
+}
+.terminal .ansi-bg-237 {
+	background-color: var(--color-xterm-237)
+}
+.terminal .ansi-bg-238 {
+	background-color: var(--color-xterm-238)
+}
+.terminal .ansi-bg-239 {
+	background-color: var(--color-xterm-239)
+}
+.terminal .ansi-bg-240 {
+	background-color: var(--color-xterm-240)
+}
+.terminal .ansi-bg-241 {
+	background-color: var(--color-xterm-241)
+}
+.terminal .ansi-bg-242 {
+	background-color: var(--color-xterm-242)
+}
+.terminal .ansi-bg-243 {
+	background-color: var(--color-xterm-243)
+}
+.terminal .ansi-bg-244 {
+	background-color: var(--color-xterm-244)
+}
+.terminal .ansi-bg-245 {
+	background-color: var(--color-xterm-245)
+}
+.terminal .ansi-bg-246 {
+	background-color: var(--color-xterm-246)
+}
+.terminal .ansi-bg-247 {
+	background-color: var(--color-xterm-247)
+}
+.terminal .ansi-bg-248 {
+	background-color: var(--color-xterm-248)
+}
+.terminal .ansi-bg-249 {
+	background-color: var(--color-xterm-249)
+}
+.terminal .ansi-bg-250 {
+	background-color: var(--color-xterm-250)
+}
+.terminal .ansi-bg-251 {
+	background-color: var(--color-xterm-251)
+}
+.terminal .ansi-bg-252 {
+	background-color: var(--color-xterm-252)
+}
+.terminal .ansi-bg-253 {
+	background-color: var(--color-xterm-253)
+}
+.terminal .ansi-bg-254 {
+	background-color: var(--color-xterm-254)
+}
+.terminal .ansi-bg-255 {
+	background-color: var(--color-xterm-255)
+}

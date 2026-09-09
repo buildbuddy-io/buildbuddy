@@ -25,6 +25,80 @@ describe("normalizeSpace", () => {
 });
 
 describe("getContent", () => {
+  it("should handle 24 bit color", () => {
+    expect(
+      getContent(
+        "\x1b[3;38;2;;80;255;48;2;60;90;127;1mHello World",
+        { match: "", caseSensitive: false },
+        Number.MAX_SAFE_INTEGER
+      ).rows
+    ).toEqual([
+      {
+        plaintext: "Hello World",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [
+          {
+            length: 11,
+            style: {
+              bold: true,
+              italic: true,
+              foreground: "#0050FF",
+              background: "#3C5A7F",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("should handle 256 color", () => {
+    expect(
+      getContent("\x1b[3;38;5;;48;5;60;1mHello World", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+        .rows
+    ).toEqual([
+      {
+        plaintext: "Hello World",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [
+          {
+            length: 11,
+            style: {
+              bold: true,
+              italic: true,
+              foreground: "000",
+              background: "060",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("should fall back to normal processing if the color sequence is invalid", () => {
+    expect(
+      getContent("\x1b[3;38;;5;30;48;5;60;1mHello World", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER)
+        .rows
+    ).toEqual([
+      {
+        plaintext: "Hello World",
+        matchStartIndex: null,
+        wrapOffset: 0,
+        tags: [
+          {
+            length: 11,
+            style: {
+              bold: true,
+              foreground: "black",
+              background: "060",
+            },
+          },
+        ],
+      },
+    ]);
+  });
+
   it("should preserve blank lines", () => {
     expect(getContent("Hello\n\nWorld", { match: "", caseSensitive: false }, Number.MAX_SAFE_INTEGER).rows).toEqual([
       {

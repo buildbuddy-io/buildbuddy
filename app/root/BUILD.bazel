@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files([
     "root.css",
     "colors.css",
+    "xterm-colors.css",
 ])
 
 ts_library(
