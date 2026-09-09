@@ -980,14 +980,12 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	// when writing sharable snapshots
 	var wg sync.WaitGroup
 	for i := range 3 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			c := containers[i]
 			// Each new VM shouldn't have trouble saving snapshots themselves
 			err := c.Pause(ctx)
 			require.NoError(t, err)
-		}()
+		})
 	}
 	wg.Wait()
 

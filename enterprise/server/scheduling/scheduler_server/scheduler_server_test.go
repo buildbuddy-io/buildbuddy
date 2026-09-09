@@ -493,9 +493,7 @@ func (e *fakeExecutor) Register() {
 	require.NoError(e.t, err)
 
 	recvChan := make(chan Result[*scpb.RegisterAndStreamWorkResponse], 1)
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
+	e.wg.Go(func() {
 		for {
 			msg, err := stream.Recv()
 			recvChan <- Result[*scpb.RegisterAndStreamWorkResponse]{Value: msg, Err: err}
@@ -503,10 +501,8 @@ func (e *fakeExecutor) Register() {
 				return
 			}
 		}
-	}()
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
+	})
+	e.wg.Go(func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -551,7 +547,7 @@ func (e *fakeExecutor) Register() {
 				require.NoError(e.t, err)
 			}
 		}
-	}()
+	})
 
 	// Give the executor a moment to register with the scheduler.
 	// TODO: explicitly wait for a scheduler reply.

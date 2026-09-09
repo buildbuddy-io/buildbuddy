@@ -359,24 +359,20 @@ func TestRaciness(t *testing.T) {
 	numGoroutines := 100
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			key, err := cache.EncryptionKey(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expectedKey, key.Key)
-		}()
+		})
 	}
 	wg.Wait()
 
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			key, err := cache.DecryptionKey(ctx, expectedMetadata)
 			require.NoError(t, err)
 			require.Equal(t, expectedKey, key.Key)
-		}()
+		})
 	}
 	wg.Wait()
 }

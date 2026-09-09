@@ -2058,9 +2058,7 @@ func runConcurrentFetchBlob(
 	var wg sync.WaitGroup
 
 	for i := range numRequests {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			stream := streamFactory(i)
 			err := server.FetchBlob(req, stream)
@@ -2070,7 +2068,7 @@ func runConcurrentFetchBlob(
 				data: stream.collectData(),
 				err:  err,
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

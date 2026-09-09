@@ -1398,16 +1398,14 @@ func TestSaturateTaskQueue(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	for range 10 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			cmd := rbe.Execute(cmdProto, &rbetest.ExecuteOpts{DoNotCacheAction: true})
 			res := cmd.Wait()
 
 			require.NoError(t, res.Err)
 			require.Equal(t, 0, res.ExitCode)
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -1944,12 +1942,10 @@ func TestActionMerging_ScheduledConcurrently(t *testing.T) {
 		wg := sync.WaitGroup{}
 		ops := make(chan string, 5)
 		for i := range 5 {
-			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{CheckCache: true, InvocationID: fmt.Sprintf("invocation%d", i)})
 				ops <- exec.WaitAccepted()
-				wg.Done()
-			}()
+			})
 		}
 		wg.Wait()
 		close(ops)
@@ -2137,16 +2133,14 @@ func TestActionMerging_DisabledWithDoNotCache(t *testing.T) {
 	wg := sync.WaitGroup{}
 	ops := make(chan string, numOps)
 	for i := range numOps {
-		wg.Add(1)
-		go func() {
+		wg.Go(func() {
 			exec := rbe.Execute(cmd, &rbetest.ExecuteOpts{
 				CheckCache:       true,
 				DoNotCacheAction: true,
 				InvocationID:     fmt.Sprintf("invocation%d", i),
 			})
 			ops <- exec.WaitAccepted()
-			wg.Done()
-		}()
+		})
 	}
 	wg.Wait()
 	close(ops)

@@ -43,12 +43,10 @@ func fullyUtilizeCPUCores(numGoroutines int, dur time.Duration) {
 	var wg sync.WaitGroup
 	end := time.Now().Add(dur)
 	for range numGoroutines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for time.Now().Before(end) {
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

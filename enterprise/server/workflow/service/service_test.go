@@ -1568,12 +1568,10 @@ actions:
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// Intentionally use a non-authenticated context, like the cron scheduler would.
 			errCh <- te.GetWorkflowService().RunScheduledWorkflows(t.Context())
-		}()
+		})
 	}
 	wg.Wait()
 	close(errCh)
@@ -1759,11 +1757,9 @@ actions:
 	var wg sync.WaitGroup
 	errCh := make(chan error, 2)
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			errCh <- te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, webhookData, "faketoken")
-		}()
+		})
 	}
 	wg.Wait()
 	close(errCh)
