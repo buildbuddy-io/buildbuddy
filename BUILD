@@ -13,32 +13,28 @@ load("@rules_python_gazelle_plugin//manifest:defs.bzl", "gazelle_python_manifest
 load("@rules_python_gazelle_plugin//modules_mapping:def.bzl", "modules_mapping")
 load("@rules_uv//uv:pip.bzl", "pip_compile")
 load("//rules/go:index.bzl", "go_sdk_tool")
-load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS")
+load("//rules/go/analyzer:def.bzl", "MODERNIZE_ANALYZERS", "MODERNIZE_CONFIG")
 
 package(default_visibility = ["//visibility:public"])
 
 npm_link_all_packages(name = "node_modules")
 
 # Rendered JSON result could be checked by doing:
-#   bazel build //:no_go_config
-#   cat bazel-bin/no_go_config.json | jq .
+#   bazel build //:nogo_config
+#   cat bazel-bin/nogo_config.json | jq .
 write_file(
     name = "nogo_config",
     out = "nogo_config.json",
     content = [
         json.encode_indent(
-            {
-                "exhaustive": {
+            dict(
+                MODERNIZE_CONFIG,
+                exhaustive = {
                     "analyzer_flags": {
                         "default-signifies-exhaustive": "true",
                     },
                 },
-                "slicescontains": {
-                    "exclude_files": {
-                        ".*/gazelle\\+/cmd/gazelle/.*": "third-party gazelle sources compiled by //cli/fix/langs:gazelle",
-                    },
-                },
-            },
+            ),
         ),
     ],
 )
