@@ -22,6 +22,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -32,17 +33,28 @@ import (
 	"sync"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/stats"
 
 	cryptorand "crypto/rand"
+
+	grpcstatus "google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -80,20 +92,146 @@ func (r *results) add(res opResult) {
 // prober runs the full check suite over a single connection. Multiple probers,
 // one per connection, run concurrently and record into a shared results sink.
 type prober struct {
-	ctx          context.Context
-	results      *results
-	bs           bspb.ByteStreamClient
-	ac           repb.ActionCacheClient
-	cas          repb.ContentAddressableStorageClient
-	invocationID string
+	ctx             context.Context
+	results         *results
+	bs              bspb.ByteStreamClient
+	ac              repb.ActionCacheClient
+	cas             repb.ContentAddressableStorageClient
+	invocationID    string
+	connectionIndex int
 }
+
+type timelineEvent struct {
+	ElapsedUsec      int64  `json:"elapsed_usec"`
+	Attempt          int    `json:"attempt"`
+	Event            string `json:"event"`
+	Bytes            int    `json:"bytes,omitempty"`
+	WireBytes        int    `json:"wire_bytes,omitempty"`
+	LocalAddr        string `json:"local_addr,omitempty"`
+	RemoteAddr       string `json:"remote_addr,omitempty"`
+	Code             string `json:"code,omitempty"`
+	TransparentRetry bool   `json:"transparent_retry,omitempty"`
+	SpanID           string `json:"span_id,omitempty"`
+}
+
+type operationTimeline struct {
+	mu       sync.Mutex
+	start    time.Time
+	span     trace.Span
+	attempts int
+	events   []timelineEvent
+}
+
+func (t *operationTimeline) record(e timelineEvent) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e.ElapsedUsec = time.Since(t.start).Microseconds()
+	t.events = append(t.events, e)
+	t.span.AddEvent("grpc."+e.Event, trace.WithAttributes(
+		attribute.Int("attempt", e.Attempt),
+		attribute.Int64("elapsed_usec", e.ElapsedUsec),
+		attribute.Int("bytes", e.Bytes),
+		attribute.Int("wire_bytes", e.WireBytes),
+		attribute.String("local_addr", e.LocalAddr),
+		attribute.String("remote_addr", e.RemoteAddr),
+		attribute.String("grpc_code", e.Code),
+		attribute.Bool("transparent_retry", e.TransparentRetry),
+		attribute.String("rpc_span_id", e.SpanID),
+	))
+}
+
+func (t *operationTimeline) JSON() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	b, _ := json.Marshal(t.events)
+	return string(b)
+}
+
+type timelineKey struct{}
+type attemptKey struct{}
+type rpcAttempt struct {
+	timeline *operationTimeline
+	number   int
+}
+
+type timelineHandler struct{}
+
+func (*timelineHandler) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	t, ok := ctx.Value(timelineKey{}).(*operationTimeline)
+	if !ok {
+		return ctx
+	}
+	t.mu.Lock()
+	t.attempts++
+	attempt := &rpcAttempt{timeline: t, number: t.attempts}
+	t.mu.Unlock()
+	return context.WithValue(ctx, attemptKey{}, attempt)
+}
+
+func (*timelineHandler) HandleRPC(ctx context.Context, s stats.RPCStats) {
+	a, ok := ctx.Value(attemptKey{}).(*rpcAttempt)
+	if !ok {
+		return
+	}
+	e := timelineEvent{Attempt: a.number}
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		e.SpanID = sc.SpanID().String()
+	}
+	switch s := s.(type) {
+	case *stats.Begin:
+		e.Event = "begin"
+		e.TransparentRetry = s.IsTransparentRetryAttempt
+	case *stats.DelayedPickComplete:
+		e.Event = "connection_selected"
+	case *stats.OutHeader:
+		e.Event = "out_header"
+		if s.LocalAddr != nil {
+			e.LocalAddr = s.LocalAddr.String()
+		}
+		if s.RemoteAddr != nil {
+			e.RemoteAddr = s.RemoteAddr.String()
+		}
+	case *stats.OutPayload:
+		// This marks handing the message to gRPC, not delivery to the peer.
+		e.Event, e.Bytes, e.WireBytes = "out_payload", s.Length, s.WireLength
+	case *stats.InHeader:
+		e.Event = "in_header"
+	case *stats.InPayload:
+		e.Event, e.Bytes, e.WireBytes = "in_payload", s.Length, s.WireLength
+	case *stats.InTrailer:
+		e.Event = "in_trailer"
+	case *stats.End:
+		e.Event, e.Code = "end", grpcstatus.Code(s.Error).String()
+	default:
+		return
+	}
+	a.timeline.record(e)
+}
+
+func (*timelineHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+func (*timelineHandler) HandleConn(context.Context, stats.ConnStats) {}
 
 // do runs a single cache operation with its own timeout, records its latency
 // and outcome for metrics reporting, and logs failures.
 func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) error {
 	ctx, cancel := context.WithTimeout(p.ctx, *opTimeout)
 	defer cancel()
+	operationID := uuid.New()
+	ctx, span := otel.Tracer("bazelcache-prober").Start(ctx, "bazelcache."+op, trace.WithAttributes(
+		attribute.String("invocation_id", p.invocationID),
+		attribute.String("action_id", operationID),
+		attribute.String("target_id", op),
+		attribute.String("compressor", compressor),
+		attribute.Int("connection_index", p.connectionIndex),
+		attribute.Int64("timeout_usec", opTimeout.Microseconds()),
+	))
+	defer span.End()
+	timeline := &operationTimeline{start: time.Now(), span: span}
+	ctx = context.WithValue(ctx, timelineKey{}, timeline)
 	ctx, err := bazel_request.WithRequestMetadata(ctx, &repb.RequestMetadata{
+		ActionId:         operationID,
 		ToolInvocationId: p.invocationID,
 		ActionMnemonic:   "BazelCacheProber",
 		TargetId:         op,
@@ -104,11 +242,14 @@ func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) e
 	start := time.Now()
 	err = fn(ctx)
 	latency := time.Since(start)
+	timeline.record(timelineEvent{Event: "operation_return", Code: grpcstatus.Code(err).String()})
 
 	p.results.add(opResult{op: op, compressor: compressor, latency: latency, err: err})
 
 	if err != nil {
-		log.Errorf("%s failed after %s: %s", opDesc(op, compressor, p.invocationID), latency, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		log.Errorf("%s failed after %s: %s; operationID=%s connection=%d traceID=%s timeline=%s", opDesc(op, compressor, p.invocationID), latency, err, operationID, p.connectionIndex, span.SpanContext().TraceID(), timeline.JSON())
 	}
 	return err
 }
@@ -393,16 +534,19 @@ func (p *prober) run() error {
 	return g.Wait()
 }
 
-func main() {
-	flag.Parse()
-
+func run() error {
 	if *cacheTarget == "" {
-		log.Fatalf("--cache_target is required")
+		return fmt.Errorf("--cache_target is required")
 	}
 
 	if *numConnections < 1 {
-		log.Fatalf("--connections must be at least 1")
+		return fmt.Errorf("--connections must be at least 1")
 	}
+	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker("bazelcache-prober"))
+	if err := tracing.Configure(env); err != nil {
+		return fmt.Errorf("configure tracing: %w", err)
+	}
+	defer shutdownTracing()
 
 	ctx := context.Background()
 	if *apiKey != "" {
@@ -421,19 +565,20 @@ func main() {
 	}()
 	uuid := uuid.New()
 	probers := make([]*prober, 0, *numConnections)
-	for range *numConnections {
-		conn, err := grpc_client.DialSimpleWithoutPooling(*cacheTarget)
+	for i := range *numConnections {
+		conn, err := grpc_client.DialSimpleWithoutPooling(*cacheTarget, grpc.WithStatsHandler(&timelineHandler{}))
 		if err != nil {
-			log.Fatalf("failed to connect to cache: %s", err)
+			return fmt.Errorf("failed to connect to cache: %w", err)
 		}
 		closers = append(closers, conn)
 		probers = append(probers, &prober{
-			ctx:          ctx,
-			results:      res,
-			bs:           bspb.NewByteStreamClient(conn),
-			ac:           repb.NewActionCacheClient(conn),
-			cas:          repb.NewContentAddressableStorageClient(conn),
-			invocationID: uuid,
+			ctx:             ctx,
+			results:         res,
+			bs:              bspb.NewByteStreamClient(conn),
+			ac:              repb.NewActionCacheClient(conn),
+			cas:             repb.NewContentAddressableStorageClient(conn),
+			invocationID:    uuid,
+			connectionIndex: i,
 		})
 	}
 
@@ -449,7 +594,23 @@ func main() {
 
 	res.printMetrics(os.Stdout)
 
-	if err != nil {
+	return err
+}
+
+func shutdownTracing() {
+	if tp, ok := otel.GetTracerProvider().(interface{ Shutdown(context.Context) error }); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := tp.Shutdown(ctx); err != nil {
+			log.Warningf("Failed to flush traces: %s", err)
+		}
+	}
+}
+
+func main() {
+	flag.Parse()
+	if err := run(); err != nil {
+		log.Errorf("Probe failed: %s", err)
 		os.Exit(1)
 	}
 }
