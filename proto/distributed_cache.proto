@@ -111,9 +111,15 @@ message GetWithMetadataResponse {
   MetadataResponse metadata = 2;
 }
 
+// Next Tag: 4
 message KV {
   Key key = 1;
+
+  // The bytes of the value. Mutually exclusive with value_reference.
   bytes value = 2;
+
+  // A reference to the value. Mutually exclusive with value.
+  reference.Reference value_reference = 3;
 }
 
 message GetMultiRequest {
