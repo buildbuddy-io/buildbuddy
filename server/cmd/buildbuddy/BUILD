@@ -56,10 +56,6 @@ container_image(
 
 go_image(
     name = "buildbuddy_go_image",
-    architecture = select({
-        "@platforms//cpu:arm64": "arm64",
-        "//conditions:default": "amd64",
-    }),
     base = ":base_image",
     binary = ":buildbuddy",
     tags = ["manual"],
