@@ -295,9 +295,11 @@ func setupTracingWithExporter(env environment.Env, traceExporter sdktrace.SpanEx
 	}
 
 	bsp := sdktrace.NewBatchSpanProcessor(traceExporter)
-	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
-		return bsp.Shutdown(ctx)
-	})
+	if hc := env.GetHealthChecker(); hc != nil {
+		hc.RegisterShutdownFunction(func(ctx context.Context) error {
+			return bsp.Shutdown(ctx)
+		})
+	}
 
 	ctx, cancel := context.WithTimeout(env.GetServerContext(), resourceDetectionTimeout)
 	defer cancel()
