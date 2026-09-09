@@ -28,9 +28,11 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -39,7 +41,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
@@ -542,13 +543,14 @@ func run() error {
 	if *numConnections < 1 {
 		return fmt.Errorf("--connections must be at least 1")
 	}
-	env := real_environment.NewRealEnv(healthcheck.NewHealthChecker("bazelcache-prober"))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	env := real_environment.NewBatchEnv()
 	if err := tracing.Configure(env); err != nil {
 		return fmt.Errorf("configure tracing: %w", err)
 	}
 	defer shutdownTracing()
 
-	ctx := context.Background()
 	if *apiKey != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", *apiKey)
 	}
