@@ -106,8 +106,14 @@ message GetWithMetadataRequest {
   resource.ResourceName resource = 1;
 }
 
+// Next Tag: 4
 message GetWithMetadataResponse {
+  // The bytes of the data. Mutually exclusive with reference.
   bytes data = 1;
+
+  // A reference to the data. Mutually exlusive with data.
+  reference.Reference reference = 3;
+
   MetadataResponse metadata = 2;
 }
 
