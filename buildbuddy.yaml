@@ -116,7 +116,17 @@ actions:
       memory: 16GB
     steps:
       - run: |
-          bb detect nondeterminism --bazel_command='build //... --config=linux-workflows' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
+          # Notifications are optional; a missing secret must not prevent the check.
+          # To enable them, set BB_NOTIFY_API_KEY to an API key with notification
+          # capability and BB_CHECKS_SLACK_WEBHOOK_URL to the Slack webhook URL
+          # in this BuildBuddy instance's workspace secrets.
+          notify_flags=()
+          if [[ -n "${BB_NOTIFY_API_KEY:-}" ]]; then
+            notify_flags+=(--notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL)
+          else
+            echo "WARNING: BB_NOTIFY_API_KEY is not set; running without notifications." >&2
+          fi
+          bb detect nondeterminism --bazel_command='build //... --config=linux-workflows' "${notify_flags[@]}"
   - name: Code review
     container_image: ubuntu-22.04
     triggers:
