@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"math"
+	"math/rand"
 	"net"
 	"os"
 	"path/filepath"
@@ -403,7 +404,7 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	txnCoordinator := txn.NewCoordinator(s, apiClient, clock)
 	s.txnCoordinator = txnCoordinator
 
-	usages, err := usagetracker.New(s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
+	usages, err := usagetracker.New(s, s.sender, s.leaser, cfg.GossipManager, s.NodeDescriptor(), cfg.Partitions, clock, cfg.FileStorer)
 
 	if *enableDriver {
 		s.driverQueue = driver.NewQueue(s, s.sender, cfg.GossipManager, nhLog, apiClient, clock, env.GetExperimentFlagProvider())
@@ -1682,6 +1683,58 @@ func (s *Store) getLeasedReplicas(ctx context.Context) []*replica.Replica {
 		res = append(res, r)
 	}
 	return res
+}
+
+// RandomOpenRangeDescriptor returns a uniformly random range this store hosts
+// (leader or follower) whose data lives in the given partition, or nil if none.
+// Used by the eviction sampler; scoping to hosted (not leased) ranges keeps the
+// sampling rate independent of lease distribution.
+func (s *Store) RandomOpenRangeDescriptor(partitionID string) *rfpb.RangeDescriptor {
+	s.rangeMu.RLock()
+	defer s.rangeMu.RUnlock()
+	// Reservoir sample (Algorithm R, size 1): pick the n-th eligible range with
+	// probability 1/n, leaving every range equally likely in a single pass.
+	var chosen *rfpb.RangeDescriptor
+	n := 0
+	for _, rd := range s.openRanges {
+		if !rangeInPartition(rd, partitionID) {
+			continue
+		}
+		n++
+		if rand.Intn(n) == 0 {
+			chosen = rd
+		}
+	}
+	return chosen
+}
+
+// rangeInPartition reports whether rd holds evictable data in the partition:
+// not the meta range, and partition-matching. Prefers partition_id, falling
+// back to the start key for descriptors that predate the field.
+func rangeInPartition(rd *rfpb.RangeDescriptor, partitionID string) bool {
+	if rd.GetRangeId() == constants.MetaRangeID {
+		return false
+	}
+	partID := rd.GetPartitionId()
+	if partID == "" {
+		partID = keys.PartitionIDFromRangeStart(rd.GetStart())
+	}
+	return partID == partitionID
+}
+
+// HostedRangeIDs returns the range IDs this store hosts in the given partition
+// (excluding the meta range), used by the sampler to prune stale resume cursors.
+func (s *Store) HostedRangeIDs(partitionID string) map[uint64]struct{} {
+	s.rangeMu.RLock()
+	defer s.rangeMu.RUnlock()
+	ids := make(map[uint64]struct{}, len(s.openRanges))
+	for _, rd := range s.openRanges {
+		if !rangeInPartition(rd, partitionID) {
+			continue
+		}
+		ids[rd.GetRangeId()] = struct{}{}
+	}
+	return ids
 }
 
 func (s *Store) StartShard(ctx context.Context, req *rfpb.StartShardRequest) (*rfpb.StartShardResponse, error) {
