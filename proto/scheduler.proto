@@ -373,6 +373,14 @@ message SchedulingMetadata {
 
   // cgroup2 settings. Will be set only for Linux executions.
   CgroupSettings cgroup_settings = 12;
+
+  // Trace context captured when the task was scheduled. Because scheduling
+  // metadata is persisted alongside the task, this survives re-enqueues and
+  // work stealing, unlike EnqueueTaskReservationRequest.trace_metadata which
+  // is populated from the context active at enqueue time. The scheduler
+  // copies this to EnqueueTaskReservationRequest.trace_metadata (which is
+  // what executors read) when rebuilding reservations from persisted state.
+  trace.Metadata trace_metadata = 17;
 }
 
 message RoutingConfig {

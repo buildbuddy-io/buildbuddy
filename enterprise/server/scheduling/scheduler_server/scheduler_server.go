@@ -467,7 +467,15 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	// whether it's safe to call Inject using a carrier that already has metadata so we clone the proto to be defensive.
 	// We also clone to avoid mutating the proto in adjustTaskSize below.
 	req = req.CloneVT()
-	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
+	if tm := req.GetSchedulingMetadata().GetTraceMetadata(); tm != nil {
+		// Prefer the trace context captured when the task was scheduled.
+		req.TraceMetadata = tm
+	} else {
+		// Tasks scheduled before the scheduling metadata carried trace
+		// context: fall back to the ambient context, which is correct for
+		// probe-path enqueues.
+		tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
+	}
 
 	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
 		req.Jwt = tokenString
@@ -2572,6 +2580,10 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	}
 	taskID := req.GetTaskId()
 	metadata := req.GetMetadata()
+	// Capture the trace context in the scheduling metadata before persisting,
+	// so that reservations rebuilt from persisted state (re-enqueues, work
+	// stealing) stay joined to the trace that scheduled the task.
+	tracing.InjectProtoTraceMetadata(ctx, metadata.GetTraceMetadata(), func(m *tpb.Metadata) { metadata.TraceMetadata = m })
 	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask()); err != nil {
 		return nil, err
 	}

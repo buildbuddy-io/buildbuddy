@@ -45,5 +45,6 @@ go_test(
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel//propagation",
         "@io_opentelemetry_go_otel_trace//:trace",
+        "@org_golang_google_grpc//metadata",
     ],
 )
