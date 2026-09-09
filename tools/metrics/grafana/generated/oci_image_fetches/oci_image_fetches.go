@@ -31,9 +31,18 @@ const (
 	// executor-side layer fetcher).
 	ociClientFilter = `region="$region", client_name=~"oci|oci_fetcher"`
 
-	// statusesMinInterval is the floor for the status breakdown panel's
-	// $__rate_interval. See statusesPanel.
-	statusesMinInterval = "10m"
+	// rateMinInterval is the floor applied to $__rate_interval on the panels
+	// built from sparse image pull data. See statusesPanel and latencyPanel.
+	rateMinInterval = "10m"
+
+	// statusLinearThreshold is where the status panel's symlog axis switches
+	// from logarithmic to linear, so shares of exactly zero still plot. See
+	// statusesPanel.
+	statusLinearThreshold = 1e-4
+
+	// latencySpanNullsMsec bridges gaps in the latency panels up to this
+	// width. See latencyPanel.
+	latencySpanNullsMsec = 30 * 60 * 1000
 )
 
 // ts returns a full-width timeseries panel: one panel per dashboard row, thin
@@ -96,15 +105,27 @@ func statusesPanel() *timeseries.PanelBuilder {
 		Description("Image pulls by status, as a share of all pulls for images that were not already on disk. user_error is a bad image reference or missing credentials and canceled means the task went away mid-pull, so neither is a failure to act on -- timeout and error are.").
 		Min(0).
 		Max(1).
-		// min and max, not mean: a mean share over a window with wildly
-		// varying pull volume is not a quantity you can reason about.
-		Legend(tableLegend("min", "max")).
+		// Just max. A mean share over a window with wildly varying pull
+		// volume is not a quantity you can reason about, and min is 0 for
+		// every status whenever pulls are sparse enough to have a quiet
+		// window -- which is nearly always.
+		Legend(tableLegend("max")).
+		// Symlog rather than plain log. Shares span several decades, from a
+		// status at 100% down to a handful of errors in a million pulls, and a
+		// linear axis flattens everything below a few percent into the floor.
+		// Plain log cannot plot zero at all, and these lines sit at exactly
+		// zero most of the time; symlog is logarithmic above the threshold and
+		// linear below it, so quiet periods still draw.
+		ScaleDistribution(common.NewScaleDistributionConfigBuilder().
+			Type(common.ScaleDistributionSymlog).
+			Log(10).
+			LinearThreshold(statusLinearThreshold)).
 		// Pulls that miss the on-disk cache are sparse enough that a short
 		// rate window leaves the denominator at zero, which shows up as gaps.
 		// Flooring the panel's min interval widens $__rate_interval enough to
 		// give continuous lines at the dashboard's default 6h range, and it
 		// still grows with the step at longer ranges.
-		Interval(statusesMinInterval).
+		Interval(rateMinInterval).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
 			// Dividing by scalar() rather than a vector keeps the status label
 			// on the result without needing a group_left join.
@@ -123,6 +144,16 @@ func latencyPanel(quantile float64) *timeseries.PanelBuilder {
 		Description(fmt.Sprintf("%s latency of successful image pulls for images that were not already on disk.", label)).
 		Min(0).
 		Legend(hiddenLegend()).
+		// Pulls are sparse enough that at a full-width panel's native step the
+		// rate window covers no samples much of the time, and the quantile
+		// comes back empty. Measured over 24h at a 45s step, a 60s window
+		// returned a value for 80% of steps in us-sjc and 23% in us-central1;
+		// a 10m window brings those to 100% and 88%.
+		Interval(rateMinInterval).
+		// Bridge whatever gaps remain, but only short ones -- a genuinely
+		// quiet stretch should still read as a break rather than a line drawn
+		// through it.
+		SpanNulls(common.BoolOrFloat64{Float64: new(float64(latencySpanNullsMsec))}).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
 			`histogram_quantile(%.2f, sum by (le) (rate(%s_bucket{%s, status="ok"}[$__rate_interval])))`,
 			quantile, imageFetchMetric, notOnDiskFilter),
