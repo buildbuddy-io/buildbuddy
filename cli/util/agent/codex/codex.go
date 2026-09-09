@@ -23,9 +23,6 @@ type event struct {
 }
 
 // Run executes a Codex agent command.
-//
-// Codex doesn't support a tool allowlist, so request.AllowedTools is ignored.
-// Instead, commands are run in a read-only sandbox.
 func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResponse, error) {
 	if _, err := exec.LookPath("codex"); err != nil {
 		return nil, fmt.Errorf("codex is not installed or not in PATH")
@@ -51,11 +48,14 @@ func Run(ctx context.Context, request *agentutil.RunRequest) (*agentutil.RunResp
 }
 
 func commandArgs(request *agentutil.RunRequest) []string {
-	// Codex does not support a tool allowlist equivalent to Claude's
-	// --allowedTools. Run without approvals in a read-only sandbox.
+	// Run without approvals, read-only unless the caller asked for more.
+	sandbox := request.CodexSandbox
+	if sandbox == "" {
+		sandbox = agentutil.SandboxReadOnly
+	}
 	args := []string{
 		"exec",
-		"--sandbox", "read-only",
+		"--sandbox", sandbox,
 		"--config", `approval_policy="never"`,
 		"--json",
 		// Support not running in a git repository.
@@ -66,6 +66,9 @@ func commandArgs(request *agentutil.RunRequest) []string {
 	}
 	if request.ReasoningEffort != "" {
 		args = append(args, "--config", fmt.Sprintf("model_reasoning_effort=%q", request.ReasoningEffort))
+	}
+	if len(request.CodexArgs) > 0 {
+		args = append(args, request.CodexArgs...)
 	}
 	return args
 }
