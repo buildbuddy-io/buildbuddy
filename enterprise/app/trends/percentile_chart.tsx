@@ -192,9 +192,6 @@ export default class PercentilesChartComponent extends React.Component<Percentil
   }
 }
 
-// Recharts injects `active` and `payload` into the custom tooltip element; the
-// rest are our own props. The prop is named `formatLabel` rather than
-// `labelFormatter` so it can't collide with the Tooltip prop of that name.
 interface PercentilesChartTooltipProps extends Partial<Pick<TooltipContentProps<any, any>, "active" | "payload">> {
   formatLabel: (datum: number) => string;
   shouldRender: () => boolean;

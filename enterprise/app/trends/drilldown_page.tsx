@@ -618,8 +618,6 @@ export default class DrilldownPageComponent extends React.Component<Props, State
   }
 
   handleBarClick(d: stats.DrilldownType, entries: stats.DrilldownEntry[], e?: MouseHandlerDataParam) {
-    // Recharts 3 no longer passes the active payload to chart-level click
-    // handlers, so look the clicked entry up by its index instead.
     if (!e || e.activeTooltipIndex === undefined) {
       return;
     }
