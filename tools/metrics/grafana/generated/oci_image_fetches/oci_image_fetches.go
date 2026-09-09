@@ -31,23 +31,9 @@ const (
 	// executor-side layer fetcher).
 	ociClientFilter = `region="$region", client_name=~"oci|oci_fetcher"`
 
-	// attributableStatuses are the image fetch outcomes that say something
-	// about whether *we* can pull images. "user_error" (bad image reference,
-	// missing credentials, no such repo) and "canceled" (the task went away
-	// mid-pull) are excluded: neither is a pull we failed to serve. This
-	// mirrors ShouldCountImagePullError in
-	// enterprise/server/remote_execution/container/container.go, which already
-	// draws that line for error counting and logging.
-	//
-	// The distinction is not academic. Over 7d in us-sjc the split is
-	// ok 60%, user_error 33%, timeout 6.6%, canceled 0.2%, error 0.06% --
-	// so counting every status would peg "success" near 60% and swamp the
-	// infrastructure signal with user misconfiguration.
-	attributableStatuses = `status=~"ok|error|timeout"`
-
-	// successRateMinInterval is the floor for the success rate panel's
-	// $__rate_interval. See successRatePanel.
-	successRateMinInterval = "10m"
+	// statusesMinInterval is the floor for the status breakdown panel's
+	// $__rate_interval. See statusesPanel.
+	statusesMinInterval = "10m"
 )
 
 // ts returns a full-width timeseries panel: one panel per dashboard row, thin
@@ -87,30 +73,45 @@ func hiddenLegend() *common.VizLegendOptionsBuilder {
 
 // --- Panels ---
 
-func successRatePanel() *timeseries.PanelBuilder {
-	return ts("Image pull success rate", dash.UnitPercentUnit).
-		Description("Fraction of image pulls that succeeded, counting only pulls for images that were not already on disk. Excludes user_error (bad image reference or credentials) and canceled pulls, which are not failures we can act on.").
-		// The axis is deliberately left to autoscale rather than pinned to
-		// 0-100%. Success sits just under 1, so a fixed 0-1 axis would flatten
-		// the line against the top and hide exactly the dips worth seeing.
+// statusesPanel breaks image pulls down by status, each as a share of all
+// pulls. Every status is queried, but "ok" is hidden from the graph: it
+// accounts for most of the volume and plotting it would squash every other
+// line flat against the bottom. Keeping it in the query rather than filtering
+// it out means the panel still has a series whenever any pull happened, so a
+// window with no failures draws a flat zero rather than reading "No data" --
+// which would be indistinguishable from a broken query. It stays in the legend
+// table, where the ok share is useful context.
+//
+// The statuses are worth reading separately rather than as one error rate,
+// because they are not all ours to fix. ImagePullMetricStatus in
+// enterprise/server/remote_execution/container/container.go assigns them:
+// "user_error" is a bad image reference or missing credentials (the codes
+// ShouldCountImagePullError excludes), "canceled" means the task went away
+// mid-pull, and "timeout" and "error" are the ones that point at us. Over 7d
+// in us-sjc the split ran ok 60%, user_error 33%, timeout 6.6%,
+// canceled 0.2%, error 0.06%.
+func statusesPanel() *timeseries.PanelBuilder {
+	return ts("Image pull statuses", dash.UnitPercentUnit).
+		Description("Image pulls by status, as a share of all pulls for images that were not already on disk. Successful pulls are hidden from the graph so the failure lines stay readable, but remain in the legend. user_error is a bad image reference or missing credentials and canceled means the task went away mid-pull, so neither is a failure to act on -- timeout and error are.").
+		Min(0).
 		Legend(tableLegend()).
+		OverrideByName("ok", []dashboard.DynamicConfigValue{
+			{Id: "custom.hideFrom", Value: common.HideSeriesConfig{Viz: true, Legend: false, Tooltip: false}},
+		}).
 		// Pulls that miss the on-disk cache are sparse enough that a short
 		// rate window leaves the denominator at zero, which shows up as gaps.
 		// Flooring the panel's min interval widens $__rate_interval enough to
-		// give a continuous line at the dashboard's default 6h range, and it
+		// give continuous lines at the dashboard's default 6h range, and it
 		// still grows with the step at longer ranges.
-		Interval(successRateMinInterval).
+		Interval(statusesMinInterval).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
-			// "or vector(0)" pins the line to zero in the rare window where
-			// every pull failed. Without it the numerator is an empty vector,
-			// the division drops out entirely, and a total outage would render
-			// as "No data" — indistinguishable from a broken query.
-			`(sum(rate(%s_count{%s, status="ok"}[$__rate_interval])) or vector(0))
+			// Dividing by scalar() rather than a vector keeps the status label
+			// on the result without needing a group_left join.
+			`sum by (status) (rate(%s_count{%s}[$__rate_interval]))
   /
-sum(rate(%s_count{%s, %s}[$__rate_interval]))`,
-			imageFetchMetric, notOnDiskFilter,
-			imageFetchMetric, notOnDiskFilter, attributableStatuses),
-			"Success rate"))
+scalar(sum(rate(%s_count{%s}[$__rate_interval])))`,
+			imageFetchMetric, notOnDiskFilter, imageFetchMetric, notOnDiskFilter),
+			"{{status}}"))
 }
 
 // latencyPanel graphs one quantile of image pull latency. Each quantile gets
@@ -171,7 +172,7 @@ func build() (dashboard.Dashboard, error) {
 		Time("now-6h", "now").
 		Tooltip(dashboard.DashboardCursorSyncCrosshair).
 		WithVariable(regionVariable()).
-		WithPanel(successRatePanel()).
+		WithPanel(statusesPanel()).
 		WithPanel(latencyPanel(0.50)).
 		WithPanel(latencyPanel(0.99)).
 		WithPanel(outgoingRequestsPanel()).
