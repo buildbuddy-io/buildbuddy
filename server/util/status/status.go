@@ -278,8 +278,7 @@ func WrapError(err error, msg string) error {
 	if err == nil {
 		return nil
 	}
-	var statusErr *statusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*statusError](err); ok {
 		statusErr.err = fmt.Errorf("%s: %w", msg, statusErr.err)
 		return statusErr
 	}
@@ -343,8 +342,7 @@ func Message(err error) string {
 		return ""
 	}
 
-	var statusErr *statusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*statusError](err); ok {
 		return statusErr.err.Error()
 	}
 

@@ -156,8 +156,7 @@ func (a *AwsS3BlobStore) bucketExists(ctx context.Context, bucketName string) (b
 	if err == nil {
 		return true, nil
 	}
-	var nf *s3types.NotFound
-	if errors.As(err, &nf) {
+	if _, ok := errors.AsType[*s3types.NotFound](err); ok {
 		return false, nil
 	}
 	return false, err
@@ -204,8 +203,7 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 	spn.End()
 
 	if err != nil {
-		var nsk *s3types.NoSuchKey
-		if errors.As(err, &nsk) {
+		if _, ok := errors.AsType[*s3types.NoSuchKey](err); ok {
 			return nil, status.NotFoundError(err.Error())
 		}
 		return nil, err
@@ -280,8 +278,7 @@ func (a *AwsS3BlobStore) BlobExists(ctx context.Context, blobName string) (bool,
 	_, err := a.client.HeadObject(ctx, params)
 	util.RecordExistsMetrics(awsS3Label, start, err)
 	if err != nil {
-		var nf *s3types.NotFound
-		if errors.As(err, &nf) {
+		if _, ok := errors.AsType[*s3types.NotFound](err); ok {
 			return false, nil
 		}
 		return false, err

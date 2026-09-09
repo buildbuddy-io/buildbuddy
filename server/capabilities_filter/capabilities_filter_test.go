@@ -25,11 +25,11 @@ var (
 
 func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 	serviceMethodNames := []string{}
-	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
+	buildbuddyServiceType := reflect.TypeFor[bbspb.BuildBuddyServiceServer]()
 	for method := range buildbuddyServiceType.Methods() {
 		serviceMethodNames = append(serviceMethodNames, buildBuddyServicePrefix+method.Name)
 	}
-	apiServiceType := reflect.TypeOf((*apipb.ApiServiceServer)(nil)).Elem()
+	apiServiceType := reflect.TypeFor[apipb.ApiServiceServer]()
 	for method := range apiServiceType.Methods() {
 		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+method.Name)
 	}
@@ -50,11 +50,11 @@ func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 func TestBuildBuddyServiceRPCsHaveRequestAndResponseContextFields(t *testing.T) {
 	type Req interface{ GetRequestContext() *ctxpb.RequestContext }
 	type Res interface{ GetResponseContext() *ctxpb.ResponseContext }
-	expectedReqType := reflect.TypeOf((*Req)(nil)).Elem()
-	expectedResType := reflect.TypeOf((*Res)(nil)).Elem()
-	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	expectedReqType := reflect.TypeFor[Req]()
+	expectedResType := reflect.TypeFor[Res]()
+	ctxType := reflect.TypeFor[context.Context]()
 
-	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
+	buildbuddyServiceType := reflect.TypeFor[bbspb.BuildBuddyServiceServer]()
 	for method := range buildbuddyServiceType.Methods() {
 		methodFunc := method.Type
 		methodName := method.Name
