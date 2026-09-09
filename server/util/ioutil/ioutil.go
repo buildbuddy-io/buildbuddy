@@ -1,18 +1,37 @@
 package ioutil
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
 
+const (
+	// spillWriterBufSizeBytes is the size of the pooled bufio.Writer buffers
+	// used for writing to spill files.
+	spillWriterBufSizeBytes = 4096
+)
+
 var (
 	// ErrLimitExceeded is returned when a read exceeds its configured size limit.
 	ErrLimitExceeded = errors.New("read limit exceeded")
+
+	// spillBufferPool recycles the in-memory buffers held by SpillBuffers,
+	// since callers like the executor create a couple of them per task.
+	// Requests larger than the pool max are capped, and appends past the
+	// pooled capacity fall back to regular allocation.
+	spillBufferPool = bytebufferpool.VariableSize(1024 * 1024)
+
+	// spillWriterPool recycles the bufio.Writers which buffer writes to spill
+	// files, so that each spill doesn't allocate a fresh write buffer.
+	spillWriterPool = bytebufferpool.NewVariableWriteBufPool(spillWriterBufSizeBytes)
 )
 
 // A writer that drops anything written to it.
@@ -446,4 +465,140 @@ func (m *MultiReadCloser) Close() error {
 		errs[i] = c.Close()
 	}
 	return errors.Join(errs...)
+}
+
+// SpillBuffer is a writer that buffers data in memory up to a fixed limit,
+// then spills all data to a file once the limit is exceeded. This avoids any
+// file IO in the common case where the total amount of data written is small.
+// The in-memory buffers are recycled via a shared pool.
+// It is not safe for concurrent use.
+type SpillBuffer struct {
+	path          string
+	memLimitBytes int64
+	buf           []byte
+	closed        bool
+	// reading is set once Reader is called, after which writes are rejected.
+	// This makes misuse loud, since a write after the shared reader has
+	// seeked the file would land at the wrong offset.
+	reading bool
+	file    *os.File
+	// w buffers writes to the spill file, so that producers which write many
+	// small chunks don't cost a write syscall per chunk.
+	w *bytebufferpool.BufioWriter
+}
+
+// NewSpillBuffer returns a SpillBuffer which spills to a file created at the
+// given path once more than memoryLimitBytes bytes are written. The file is
+// created lazily, so nothing is written to disk if the limit is never
+// exceeded. The caller is responsible for calling Close once the contents
+// are no longer needed.
+func NewSpillBuffer(path string, memoryLimitBytes int64) *SpillBuffer {
+	return &SpillBuffer{path: path, memLimitBytes: memoryLimitBytes}
+}
+
+func (b *SpillBuffer) Write(p []byte) (int, error) {
+	if b.closed || b.reading {
+		return 0, errors.New("SpillBuffer is not writable after Reader or Close")
+	}
+	if b.file == nil {
+		if int64(len(b.buf))+int64(len(p)) <= b.memLimitBytes {
+			if b.buf == nil {
+				// Take a pooled buffer on the first write rather than at
+				// construction time, so that commands which produce no output
+				// don't check out a buffer at all. Appends past the pooled
+				// capacity fall back to regular allocation, which can happen
+				// if the memory limit exceeds the pool's max buffer size.
+				b.buf = spillBufferPool.Get(b.memLimitBytes)[:0]
+			}
+			b.buf = append(b.buf, p...)
+			return len(p), nil
+		}
+		// This write puts us over the memory limit. Move the buffered data to
+		// the spill file, then write to the file from here on.
+		f, err := os.Create(b.path)
+		if err != nil {
+			return 0, fmt.Errorf("create spill file: %w", err)
+		}
+		if _, err := f.Write(b.buf); err != nil {
+			// Leave the buffered data intact so that a subsequent write can
+			// retry the spill, and remove the partial file so that a spill
+			// file only exists on disk once the spill has fully succeeded.
+			f.Close()
+			os.Remove(b.path)
+			return 0, fmt.Errorf("write buffered data to spill file: %w", err)
+		}
+		b.file = f
+		b.w = spillWriterPool.Get(spillWriterBufSizeBytes)
+		b.w.Reset(f)
+		b.releaseBuf()
+	}
+	return b.w.Write(p)
+}
+
+// Reader returns a reader over all data written so far, positioned at the
+// start. Writing must be complete before calling Reader, and Write calls
+// fail once Reader has been called. The returned reader is a shared
+// instance with a single seek cursor, so it must not be read from
+// concurrently, and must not be read from after the SpillBuffer is closed.
+func (b *SpillBuffer) Reader() (io.ReadSeeker, error) {
+	if b.closed {
+		return nil, errors.New("SpillBuffer readers must be obtained before Close")
+	}
+	b.reading = true
+	if b.file == nil {
+		return bytes.NewReader(b.buf), nil
+	}
+	if b.w != nil {
+		if err := b.w.Flush(); err != nil {
+			return nil, fmt.Errorf("flush spill file: %w", err)
+		}
+		// Writes are no longer allowed, so return the write buffer to the
+		// pool now instead of holding it until Close.
+		b.releaseWriter()
+	}
+	if _, err := b.file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("seek spill file: %w", err)
+	}
+	return b.file, nil
+}
+
+// Close releases the in-memory buffer, and closes and removes the spill file
+// if one was created. Close is safe to call more than once.
+func (b *SpillBuffer) Close() error {
+	if b.closed {
+		return nil
+	}
+	b.closed = true
+	b.releaseBuf()
+	if b.file == nil {
+		return nil
+	}
+	// Skip flushing buffered writes, since the file is being removed anyway.
+	closeErr := b.file.Close()
+	b.file = nil
+	b.releaseWriter()
+	return errors.Join(closeErr, os.Remove(b.path))
+}
+
+// releaseWriter returns the pooled write buffer. Reset drops the reference
+// to the file and clears any buffered data and error state left over from a
+// failed flush.
+func (b *SpillBuffer) releaseWriter() {
+	if b.w == nil {
+		return
+	}
+	b.w.Reset(io.Discard)
+	spillWriterPool.Put(b.w)
+	b.w = nil
+}
+
+// releaseBuf returns the in-memory buffer to the pool. After this, the
+// buffer contents must not be read again, since the pool may hand the buffer
+// out to another SpillBuffer.
+func (b *SpillBuffer) releaseBuf() {
+	if b.buf == nil {
+		return
+	}
+	spillBufferPool.Put(b.buf)
+	b.buf = nil
 }
