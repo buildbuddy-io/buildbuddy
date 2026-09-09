@@ -278,7 +278,9 @@ func (r *Resolver) ResolveImageDigest(ctx context.Context, imageName string, pla
 }
 
 func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb.Platform, credentials Credentials, useOCIFetcher bool) (ctr.Image, error) {
-	actuallyUseOCIFetcher := useOCIFetcher && *useOCIFetcherEnabled
+	if !*useOCIFetcherEnabled {
+		useOCIFetcher = false
+	}
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -306,7 +308,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 	}
 	useCache := cacheEnabled && !isAnon
 
-	if actuallyUseOCIFetcher && r.env.GetOCIFetcherClient() == nil {
+	if useOCIFetcher && r.env.GetOCIFetcherClient() == nil {
 		return nil, status.FailedPreconditionError("OCIFetcherClient is required when useOCIFetcher is true")
 	}
 
@@ -324,7 +326,7 @@ func (r *Resolver) Resolve(ctx context.Context, imageName string, platform *rgpb
 		r.env.GetOCIFetcherClient(),
 		credentials,
 		useCache,
-		actuallyUseOCIFetcher,
+		useOCIFetcher,
 	)
 }
 
