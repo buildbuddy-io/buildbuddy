@@ -25,7 +25,7 @@ tool github.com/otiai10/copy
 tool golang.org/x/telemetry/counter
 
 replace (
-	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.16.8-19
+	github.com/buildkite/terminal-to-html/v3 => github.com/buildbuddy-io/terminal-to-html/v3 v3.17.1-1
 	github.com/lni/dragonboat/v4 => github.com/buildbuddy-io/dragonboat/v4 v4.0.2
 	github.com/lni/goutils v1.4.0 => github.com/buildbuddy-io/goutils v1.4.1
 	github.com/lni/vfs => github.com/buildbuddy-io/vfs v0.2.3
@@ -75,7 +75,7 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20230611145640-acc696258285
 	github.com/buildbuddy-io/fastcdc2020 v0.0.2
 	github.com/buildbuddy-io/tensorflow-proto v0.0.0-20220908151343-929b41ab4dc6
-	github.com/buildkite/terminal-to-html/v3 v3.0.0-00010101000000-000000000000
+	github.com/buildkite/terminal-to-html/v3 v3.17.1
 	github.com/cavaliergopher/cpio v1.0.1
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cockroachdb/pebble v1.1.4
