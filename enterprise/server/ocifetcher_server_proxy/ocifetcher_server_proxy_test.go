@@ -53,6 +53,193 @@ func TestNew_MissingLocalBSClient(t *testing.T) {
 	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
 }
 
+func TestRegister_FetchDirectlyDependencies(t *testing.T) {
+	flags.Set(t, "cache_proxy.oci_fetcher_fetch_directly", true)
+	for _, tc := range []struct {
+		name       string
+		localBS    bool
+		localAC    bool
+		wantErrMsg string
+	}{
+		{name: "BothLocalClients", localBS: true, localAC: true},
+		{name: "MissingLocalBS", localAC: true, wantErrMsg: "byte stream client"},
+		{name: "MissingLocalAC", localBS: true, wantErrMsg: "action cache client"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			// Construction must not make RPCs. Ordinary cache clients must not
+			// substitute for a missing local client.
+			bsClient := bspb.NewByteStreamClient(nil)
+			acClient := repb.NewActionCacheClient(nil)
+			env.SetByteStreamClient(bsClient)
+			env.SetActionCacheClient(acClient)
+			if tc.localBS {
+				env.SetLocalByteStreamClient(bsClient)
+			}
+			if tc.localAC {
+				env.SetLocalActionCacheClient(acClient)
+			}
+
+			err := Register(env)
+			if tc.wantErrMsg != "" {
+				require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+				require.ErrorContains(t, err, tc.wantErrMsg)
+				require.Nil(t, env.GetOCIFetcherServer())
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, env.GetOCIFetcherServer())
+			_, isProxy := env.GetOCIFetcherServer().(*OCIFetcherServerProxy)
+			require.False(t, isProxy)
+		})
+	}
+}
+
+// Direct mode needs neither an upstream OCI fetcher nor ordinary (potentially
+// remote-backed) cache clients. Exercise the registered service over gRPC with
+// the same cache-proxy identity used to access the local cache in production.
+func TestRegister_FetchDirectly(t *testing.T) {
+	flags.Set(t, "cache_proxy.oci_fetcher_fetch_directly", true)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.0/8", "::1/128"})
+	const adminGroupID = "GR123"
+	flags.Set(t, "auth.admin_group_id", adminGroupID)
+	adminCtx := testauth.WithAuthenticatedUserInfo(context.Background(), &claims.Claims{
+		UserID:        "US1",
+		GroupID:       adminGroupID,
+		AllowedGroups: []string{adminGroupID},
+		GroupMemberships: []*interfaces.GroupMembership{{
+			GroupID:      adminGroupID,
+			Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+		}},
+	})
+
+	for _, private := range []bool{false, true} {
+		name := "Public"
+		if private {
+			name = "Private"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			var registryCreds *testregistry.BasicAuthCreds
+			var creds *rgpb.Credentials
+			if private {
+				registryCreds = &testregistry.BasicAuthCreds{Username: "user", Password: "secret"}
+				creds = &rgpb.Credentials{Username: "user", Password: "secret"}
+			}
+			counter := testhttp.NewRequestCounter()
+			reg := testregistry.Run(t, testregistry.Opts{
+				Creds: registryCreds,
+				HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+					counter.Inc(r)
+					return true
+				},
+			})
+			imageName, img := reg.PushNamedImage(t, "test-image", registryCreds)
+			manifestDigest, manifestSize, manifestMediaType := imageMetadata(t, img)
+			manifestRef := imageName + "@" + manifestDigest
+			manifest, err := img.RawManifest()
+			require.NoError(t, err)
+			layers, err := img.Layers()
+			require.NoError(t, err)
+			require.NotEmpty(t, layers)
+			layerDigest, err := layers[0].Digest()
+			require.NoError(t, err)
+			blobRef := imageName + "@" + layerDigest.String()
+			blob := layerData(t, layers[0])
+			blobSize, blobMediaType := layerMetadata(t, layers[0])
+
+			_, bsClient, acClient := setupCacheEnvWithIdentity(t, interfaces.ClientIdentityCacheProxy)
+			newClient := func() ofpb.OCIFetcherClient {
+				env := testenv.GetTestEnv(t)
+				env.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+				env.SetLocalByteStreamClient(bsClient)
+				env.SetLocalActionCacheClient(acClient)
+				require.Nil(t, env.GetOCIFetcherClient())
+				require.Nil(t, env.GetByteStreamClient())
+				require.Nil(t, env.GetActionCacheClient())
+				return runRegisteredOCIFetcher(ctx, t, env)
+			}
+			client := newClient()
+			fetchCached := func(client ofpb.OCIFetcherClient, ctx context.Context, creds *rgpb.Credentials, bypass bool) {
+				resp, err := client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: manifestRef, Credentials: creds, BypassRegistry: bypass})
+				require.NoError(t, err)
+				require.Equal(t, manifest, resp.GetManifest())
+				require.Equal(t, manifestDigest, resp.GetDigest())
+				require.Equal(t, manifestSize, resp.GetSize())
+				require.Equal(t, manifestMediaType, resp.GetMediaType())
+
+				meta, err := client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypass})
+				require.NoError(t, err)
+				require.Equal(t, blobSize, meta.GetSize())
+				require.Equal(t, blobMediaType, meta.GetMediaType())
+				stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypass})
+				require.NoError(t, err)
+				require.Equal(t, blob, collectBlobData(t, stream))
+			}
+
+			// All four RPCs work with no upstream clients. Manifest metadata is
+			// intentionally registry-backed, unlike the three cacheable RPCs.
+			meta, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: imageName, Credentials: creds})
+			require.NoError(t, err)
+			require.Equal(t, manifestDigest, meta.GetDigest())
+			require.Equal(t, manifestSize, meta.GetSize())
+			require.Equal(t, manifestMediaType, meta.GetMediaType())
+			fetchCached(client, ctx, creds, false)
+
+			// A warm cache must not let callers use another credential's access
+			// proof, or bypass registry authorization without server-admin claims.
+			for _, rpc := range []struct {
+				name string
+				call func(*rgpb.Credentials, bool) error
+			}{
+				{"FetchManifest", func(creds *rgpb.Credentials, bypass bool) error {
+					_, err := client.FetchManifest(ctx, &ofpb.FetchManifestRequest{Ref: manifestRef, Credentials: creds, BypassRegistry: bypass})
+					return err
+				}},
+				{"FetchManifestMetadata", func(creds *rgpb.Credentials, bypass bool) error {
+					_, err := client.FetchManifestMetadata(ctx, &ofpb.FetchManifestMetadataRequest{Ref: manifestRef, Credentials: creds, BypassRegistry: bypass})
+					return err
+				}},
+				{"FetchBlob", func(creds *rgpb.Credentials, bypass bool) error {
+					stream, err := client.FetchBlob(ctx, &ofpb.FetchBlobRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypass})
+					if err != nil {
+						return err
+					}
+					_, err = stream.Recv()
+					return err
+				}},
+				{"FetchBlobMetadata", func(creds *rgpb.Credentials, bypass bool) error {
+					_, err := client.FetchBlobMetadata(ctx, &ofpb.FetchBlobMetadataRequest{Ref: blobRef, Credentials: creds, BypassRegistry: bypass})
+					return err
+				}},
+			} {
+				err := rpc.call(creds, true)
+				require.True(t, status.IsPermissionDeniedError(err), "%s: expected PermissionDenied, got: %v", rpc.name, err)
+				if private {
+					for _, badCreds := range []*rgpb.Credentials{nil, {Username: "user", Password: "wrong"}} {
+						err := rpc.call(badCreds, false)
+						require.True(t, status.IsUnauthenticatedError(err), "%s: expected Unauthenticated, got: %v", rpc.name, err)
+					}
+				}
+			}
+
+			counter.Reset()
+			fetchCached(client, ctx, creds, false)
+			require.Empty(t, counter.Snapshot(), "cache hits must not contact the registry")
+			require.NoError(t, reg.Shutdown())
+			fetchCached(client, ctx, creds, false)
+
+			// A fresh service has no in-memory access proofs. An admin can still
+			// read all three cached resources with bypass_registry and no creds,
+			// proving they were persisted to the local BS and AC services.
+			freshClient := newClient()
+			fetchCached(freshClient, adminCtx, nil, true)
+			_, err = freshClient.FetchManifestMetadata(adminCtx, &ofpb.FetchManifestMetadataRequest{Ref: manifestRef, BypassRegistry: true})
+			require.True(t, status.IsNotFoundError(err), "manifest metadata does not support bypass: %v", err)
+		})
+	}
+}
+
 // TestHappyPath tests successful FetchBlob, FetchBlobMetadata, FetchManifest,
 // FetchManifestMetadata calls with no credentials and with credentials.
 func TestHappyPath(t *testing.T) {
@@ -786,8 +973,12 @@ func imageMetadata(t *testing.T, img ctr.Image) (digest string, size int64, medi
 
 // setupCacheEnv creates ByteStream and ActionCache clients for caching.
 func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.ActionCacheClient) {
+	return setupCacheEnvWithIdentity(t, interfaces.ClientIdentityApp)
+}
+
+func setupCacheEnvWithIdentity(t *testing.T, identity string) (*testenv.TestEnv, bspb.ByteStreamClient, repb.ActionCacheClient) {
 	te := testenv.GetTestEnv(t)
-	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
+	enterprise_testenv.AddClientIdentity(t, te, identity)
 	_, runServer, localGRPClis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, localGRPClis)
 	go runServer()
@@ -797,12 +988,8 @@ func setupCacheEnv(t *testing.T) (*testenv.TestEnv, bspb.ByteStreamClient, repb.
 // setupLocalBSClient creates a standalone local BS cache env and returns
 // a ByteStream client connected to it.
 func setupLocalBSClient(t *testing.T) bspb.ByteStreamClient {
-	te := testenv.GetTestEnv(t)
-	enterprise_testenv.AddClientIdentity(t, te, interfaces.ClientIdentityApp)
-	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
-	testcache.Setup(t, te, lis)
-	go runServer()
-	return te.GetByteStreamClient()
+	_, bsClient, _ := setupCacheEnvWithIdentity(t, interfaces.ClientIdentityCacheProxy)
+	return bsClient
 }
 
 // runOCIFetcherServer creates an OCIFetcher server and returns a client connected to it.
@@ -833,11 +1020,14 @@ func runOCIFetcherProxy(ctx context.Context, t *testing.T, remoteClient ofpb.OCI
 	env.SetOCIFetcherClient(remoteClient)
 	env.SetLocalByteStreamClient(setupLocalBSClient(t))
 
-	proxy, err := New(env)
-	require.NoError(t, err)
+	return runRegisteredOCIFetcher(ctx, t, env)
+}
+
+func runRegisteredOCIFetcher(ctx context.Context, t *testing.T, env *testenv.TestEnv) ofpb.OCIFetcherClient {
+	require.NoError(t, Register(env))
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
-	ofpb.RegisterOCIFetcherServer(grpcServer, proxy)
+	ofpb.RegisterOCIFetcherServer(grpcServer, env.GetOCIFetcherServer())
 	go runFunc()
 	t.Cleanup(func() { grpcServer.GracefulStop() })
 

@@ -409,11 +409,13 @@ func registerInternalServices(env *real_environment.RealEnv) error {
 		return status.InternalErrorf("CacheProxy: error starting local actioncache server: %s", err.Error())
 	}
 	env.SetLocalActionCacheServer(localAC)
+	repb.RegisterActionCacheServer(env.GetInternalGRPCServer(), localAC)
 
 	conn, err := grpc_client.DialInternalWithoutPooling(env, fmt.Sprintf("grpc://localhost:%d", grpc_server.InternalGRPCPort()))
 	if err != nil {
 		return status.InternalErrorf("CacheProxy: error dialing internal gRPC server: %s", err.Error())
 	}
+	env.SetLocalActionCacheClient(repb.NewActionCacheClient(conn))
 	env.SetLocalByteStreamClient(bspb.NewByteStreamClient(conn))
 	env.SetLocalContentAddressableStorageClient(repb.NewContentAddressableStorageClient(conn))
 

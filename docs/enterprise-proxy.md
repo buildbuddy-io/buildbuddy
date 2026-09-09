@@ -63,3 +63,39 @@ build:buildbuddy_proxy --remote_bytestream_uri_prefix=<org-slug>.buildbuddy.io
 ```
 
 You can use your org-specific cache hostname, such as `<org-slug>.buildbuddy.io`, or `remote.buildbuddy.io`. Do not include a `grpc://`, `grpcs://`, or `bytestream://` scheme in `--remote_bytestream_uri_prefix`.
+
+## Caching OCI images directly
+
+By default, the proxy forwards OCIFetcher requests to the BuildBuddy app and caches
+blob contents locally. To fetch images directly from container registries instead,
+set the following in the **cache proxy's BuildBuddy configuration**:
+
+```yaml
+cache_proxy:
+  oci_fetcher_fetch_directly: true
+```
+
+In this mode, the proxy runs OCIFetcher itself and stores blobs, blob metadata, and
+manifests in its local cache. OCI requests and image contents are not forwarded to
+the app or its cache. Existing remote authentication and other proxy services are
+unchanged; this is not a standalone, offline proxy mode. Setting this option back
+to `false` restores upstream forwarding. `ocifetcher.enabled` is not required on
+either the app or the proxy for direct mode.
+
+The proxy's internal cache clients need a trusted client identity to access OCI
+metadata. Configure `app.client_identity.key` with the deployment's signing key
+(trusted by the upstream services too), and set `app.client_identity.client` to
+`cache-proxy`, as for other trusted proxy-to-service calls. Do not share the signing
+key with image-pull clients.
+
+The proxy must be able to reach the registries. For private-network registries,
+allow only the required CIDRs via `executor.container_registry_allowed_private_ips`
+in the proxy configuration. Registry mirrors can be configured with
+`executor.container_registry_mirrors`. Registry credentials and access checks are
+handled by OCIFetcher just as they are on the app; cached private images still
+require authorized registry credentials.
+
+Clients must send OCIFetcher RPCs to the proxy. For BuildBuddy executors, set
+`executor.cache_target` to the proxy and enable the `use-oci-fetcher` execution
+property for image pulls. This option does not expose an HTTP Docker Registry
+endpoint or change ordinary Docker pulls.
