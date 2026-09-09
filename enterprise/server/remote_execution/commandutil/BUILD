@@ -31,6 +31,7 @@ go_test(
     name = "commandutil_test",
     size = "enormous",
     srcs = [
+        "commandutil_internal_windows_test.go",
         "commandutil_test.go",
         "commandutil_unix_test.go",
         "commandutil_windows_test.go",
@@ -39,6 +40,7 @@ go_test(
         "@io_bazel_rules_go//go/platform:windows": [],
         "//conditions:default": ["//enterprise/server/remote_execution/commandutil/test_binary:test_binary_no_cov"],
     }),
+    embed = [":commandutil"],
     tags = ["cpu:4"],
     x_defs = select({
         "@io_bazel_rules_go//go/platform:windows": {},
@@ -47,7 +49,6 @@ go_test(
         },
     }),
     deps = [
-        ":commandutil",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/util/status",
