@@ -12,7 +12,6 @@ DASHBOARD_NAMES = [
     "mac",
     "node-exporter-full",
     "nodes",
-    "raft",
     "rbeperf",
     "traffic-stats",
     "victoriametrics-cluster",
