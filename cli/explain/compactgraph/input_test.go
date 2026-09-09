@@ -97,11 +97,7 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 				tc.rt.RootSymlinks = &SymlinkEntrySet{}
 			}
 
-			actual := make(map[string]Input)
-			for runfilesPath, input := range tc.rt.ComputeMapping("_main", "SHA-256") {
-				actual[runfilesPath] = input
-			}
-			assert.Equal(t, tc.expected, actual)
+			assert.Equal(t, tc.expected, tc.rt.ComputeMapping("_main", "SHA-256"))
 		})
 	}
 }

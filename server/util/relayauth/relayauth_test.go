@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"maps"
 	"math/big"
 	"strings"
 	"testing"
@@ -461,9 +462,7 @@ func TestHostileHeadersAreRejected(t *testing.T) {
 		})
 		token.Header["typ"] = credentialType
 		token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(certBlock.Bytes)}
-		for k, v := range extra {
-			token.Header[k] = v
-		}
+		maps.Copy(token.Header, extra)
 		var signingKey any = key
 		switch alg {
 		case "none":

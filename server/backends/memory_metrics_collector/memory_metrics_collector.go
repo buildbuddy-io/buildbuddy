@@ -2,6 +2,7 @@ package memory_metrics_collector
 
 import (
 	"context"
+	"maps"
 	"sync"
 	"time"
 
@@ -236,9 +237,7 @@ func (m *MemoryMetricsCollector) ReadCounts(ctx context.Context, key string) (ma
 	if existingValIface, ok := m.l.Get(key); ok {
 		if existingVal, ok := existingValIface.(map[string]int64); ok {
 			counts := make(map[string]int64, len(existingVal))
-			for k, v := range existingVal {
-				counts[k] = v
-			}
+			maps.Copy(counts, existingVal)
 			return counts, nil
 		}
 	}

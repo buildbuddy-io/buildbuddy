@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -1154,9 +1155,7 @@ func (p *Server) materializeNode(ctx context.Context, node *fsNode, destination 
 	target := node.target
 	backingPath := node.backingPath
 	children := make(map[string]*fsNode, len(node.children))
-	for name, child := range node.children {
-		children[name] = child
-	}
+	maps.Copy(children, node.children)
 	node.mu.Unlock()
 
 	switch nodeType {

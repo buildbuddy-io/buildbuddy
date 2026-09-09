@@ -431,9 +431,7 @@ func (r *RunfilesTree) ComputeMapping(workspaceRunfilesDirectory, hashFunction s
 	// 2. Artifacts at canonical locations.
 	// Later artifacts override earlier ones, but only after removing duplicates. Bazel internally uses a NestedSet,
 	// which deduplicates artifacts and then maps them to their potentially duplicate runfiles paths).
-	for runfilesPath, artifact := range iterateAsRunfiles(r.Artifacts, newDuplicateFilter()) {
-		m[runfilesPath] = artifact
-	}
+	maps.Insert(m, iterateAsRunfiles(r.Artifacts, newDuplicateFilter()))
 	// 3. Empty files.
 	for _, emptyFilePath := range r.EmptyFiles {
 		// Empty file paths as contained in the log are not prefixed with the workspace runfiles directory.
@@ -443,9 +441,7 @@ func (r *RunfilesTree) ComputeMapping(workspaceRunfilesDirectory, hashFunction s
 		}, hashFunction)
 	}
 	// 4. Root symlinks.
-	for runfilesPath, artifact := range iterateAsRunfiles(r.RootSymlinks, noFilter) {
-		m[runfilesPath] = artifact
-	}
+	maps.Insert(m, iterateAsRunfiles(r.RootSymlinks, noFilter))
 	// 5. The repo mapping manifest at its fixed location.
 	if r.RepoMappingManifest != nil {
 		m["_repo_mapping"] = r.RepoMappingManifest
