@@ -12,7 +12,6 @@ DASHBOARD_NAMES = [
     "mac",
     "node-exporter-full",
     "nodes",
-    "oci-image-fetches",
     "raft",
     "rbeperf",
     "traffic-stats",
