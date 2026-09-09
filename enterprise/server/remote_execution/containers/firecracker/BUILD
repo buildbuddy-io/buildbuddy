@@ -114,8 +114,8 @@ genrule(
 
 # NOTE: to run this test locally, use `test.sh` or `bench.sh`
 #
-# To remotely execute this test, a couple of tag_filters are needed:
-# bazel test --config=remote --test_tag_filters=+bare \
+# To remotely execute this test, select the bare test suite:
+# bazel test --config=remote --config=tests-bare \
 # //enterprise/server/remote_execution/containers/firecracker:firecracker_test
 go_test(
     name = "firecracker_test",
