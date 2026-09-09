@@ -357,6 +357,14 @@ func (m *mockCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobReques
 	return nil, status.UnimplementedError("SplitBlob not implemented")
 }
 
+func (m *mockCASClient) GetChunkMapping(ctx context.Context, req *repb.GetChunkMappingRequest, opts ...grpc.CallOption) (repb.ContentAddressableStorage_GetChunkMappingClient, error) {
+	return nil, status.UnimplementedError("GetChunkMapping not implemented")
+}
+
+func (m *mockCASClient) RegisterChunkMapping(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_RegisterChunkMappingClient, error) {
+	return nil, status.UnimplementedError("RegisterChunkMapping not implemented")
+}
+
 type mockACClient struct {
 	actionResults           map[string]*repb.ActionResult // key is action digest hash
 	err                     error

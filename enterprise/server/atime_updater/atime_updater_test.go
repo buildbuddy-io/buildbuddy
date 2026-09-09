@@ -138,6 +138,16 @@ func (f *fakeCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*r
 	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
 }
 
+func (f *fakeCAS) GetChunkMapping(req *repb.GetChunkMappingRequest, stream repb.ContentAddressableStorage_GetChunkMappingServer) error {
+	f.t.Fatal("Unexpected call to GetChunkMapping")
+	return status.InternalError("GetChunkMapping RPC is not currently implemented")
+}
+
+func (f *fakeCAS) RegisterChunkMapping(stream repb.ContentAddressableStorage_RegisterChunkMappingServer) error {
+	f.t.Fatal("Unexpected call to RegisterChunkMapping")
+	return status.InternalError("RegisterChunkMapping RPC is not currently implemented")
+}
+
 func runFakeCAS(ctx context.Context, env *testenv.TestEnv, t testing.TB) (*fakeCAS, repb.ContentAddressableStorageClient) {
 	cas := fakeCAS{t: t, authenticator: env.GetAuthenticator(), updates: []update{}}
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)

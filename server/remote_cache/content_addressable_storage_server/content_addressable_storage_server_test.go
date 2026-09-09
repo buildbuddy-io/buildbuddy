@@ -1657,3 +1657,19 @@ func TestSpliceBlobReadOnlyKey(t *testing.T) {
 	_, err = casClient.SpliceBlob(ctx, spliceReq)
 	require.NoError(t, err)
 }
+
+func TestStreamingChunkMappingRPCsUnimplemented(t *testing.T) {
+	ctx := context.Background()
+	clientConn := runCASServer(ctx, t, testenv.GetTestEnv(t))
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+
+	getStream, err := casClient.GetChunkMapping(ctx, &repb.GetChunkMappingRequest{})
+	require.NoError(t, err)
+	_, err = getStream.Recv()
+	require.Equal(t, gcodes.Unimplemented, gstatus.Code(err))
+
+	registerStream, err := casClient.RegisterChunkMapping(ctx)
+	require.NoError(t, err)
+	_, err = registerStream.CloseAndRecv()
+	require.Equal(t, gcodes.Unimplemented, gstatus.Code(err))
+}
