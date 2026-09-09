@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/apikeyauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/gatewayauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
@@ -21,13 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m,
-		// testenv starts a healthcheck goroutine that is not stopped on cleanup.
-		goleak.IgnoreTopFunction("github.com/buildbuddy-io/buildbuddy/server/util/healthcheck.(*HealthChecker).handleSignals"),
-		// testenv starts a DB stats polling goroutine that sleeps between polls
-		// and is not stopped on cleanup.
-		goleak.IgnoreTopFunction("time.Sleep"),
-	)
+	goleak.VerifyTestMain(m)
 }
 
 func newPubKeyHex(t *testing.T) string {
@@ -47,13 +42,18 @@ func freeUDPPort(t testing.TB) int {
 
 func setupGateway(t testing.TB, ta *testauth.TestAuthenticator) *Gateway {
 	t.Helper()
+	return setupGatewayWithOptions(t, Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []HubService{DNSService()},
+	})
+}
+
+func setupGatewayWithOptions(t testing.TB, opts Options) *Gateway {
+	t.Helper()
 	flags.Set(t, "gateway.udp_listen_port", freeUDPPort(t))
 	flags.Set(t, "gateway.public_host", "127.0.0.1")
 
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(ta)
-
-	gw, err := New(env, DNSService())
+	gw, err := New(opts)
 	require.NoError(t, err)
 	t.Cleanup(gw.Close)
 	return gw
@@ -194,6 +194,26 @@ func TestConnect_InvalidPeerName(t *testing.T) {
 		err = gw.Connect(&gwpb.ConnectRequest{NetworkName: "net1", PeerName: name, PublicKey: newPubKeyHex(t), SessionId: "session-" + name}, stream)
 		require.Errorf(t, err, "expected error for peer_name %q", name)
 	}
+}
+
+func TestConnect_InvalidPeerNameLeavesNoPeer(t *testing.T) {
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
+	gw := setupGateway(t, ta)
+
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
+	require.NoError(t, err)
+
+	pubKey := newPubKeyHex(t)
+	stream := &fakeConnectStream{ctx: ctx, responses: make(chan *gwpb.ConnectResponse, 1)}
+	err = gw.Connect(&gwpb.ConnectRequest{NetworkName: "net1", PeerName: "not.one.label", PublicKey: pubKey, SessionId: "session-1"}, stream)
+	require.Error(t, err)
+
+	gw.mu.Lock()
+	defer gw.mu.Unlock()
+	require.Empty(t, gw.peers, "a rejected registration must not leave a peer behind")
+	ipc, err := gw.dev.IpcGet()
+	require.NoError(t, err)
+	require.NotContains(t, ipc, pubKey, "the rejected key must not be configured on the WireGuard device")
 }
 
 func TestList(t *testing.T) {
@@ -813,4 +833,69 @@ func TestCleanupStalePeers(t *testing.T) {
 	require.False(t, staleNameExists, "stale peer's DNS name should be removed")
 	_, freshNameExists := ns.names["fresh"]
 	require.True(t, freshNameExists, "fresh peer's DNS name should remain")
+}
+
+// staticAuthenticator returns a fixed principal, standing in for any
+// credential type. Gateway behavior depends only on the principal, so these
+// tests cover cert- and API-key-shaped callers alike.
+type staticAuthenticator struct {
+	p *gatewayauth.Principal
+}
+
+func (s staticAuthenticator) Authenticate(context.Context, string) (*gatewayauth.Principal, error) {
+	principal := *s.p
+	return &principal, nil
+}
+
+func TestConnect_RecordsPrincipal(t *testing.T) {
+	// What the authenticator reports is what the cleanup sweep acts on later
+	// (credential expiry) and what log lines attribute, so it must be
+	// recorded on the peer faithfully.
+	expiry := time.Now().Add(12 * time.Hour)
+	gw := setupGatewayWithOptions(t, Options{
+		Authenticator: staticAuthenticator{&gatewayauth.Principal{
+			User:      "vadim@buildbuddy.io",
+			Namespace: "user:vadim@buildbuddy.io",
+			ExpiresAt: expiry,
+		}},
+	})
+
+	pubKey := newPubKeyHex(t)
+	startConnect(t, gw, context.Background(), &gwpb.ConnectRequest{PublicKey: pubKey, SessionId: "session-1"})
+
+	gw.mu.Lock()
+	info := gw.peers[pubKey]
+	gw.mu.Unlock()
+	require.NotNil(t, info)
+	require.Equal(t, "vadim@buildbuddy.io", info.user)
+	require.Equal(t, expiry, info.expiresAt)
+	require.Equal(t, "user:vadim@buildbuddy.io", info.networkState.namespace)
+}
+
+func TestCleanup_ExpiredCredentialEndsTheTunnel(t *testing.T) {
+	// An expiring credential must not buy an unbounded tunnel. WireGuard
+	// re-handshakes forever, so the cleanup sweep is what enforces expiry.
+	gw := setupGatewayWithOptions(t, Options{
+		Authenticator: staticAuthenticator{&gatewayauth.Principal{
+			User:      "vadim@buildbuddy.io",
+			Namespace: "user:vadim@buildbuddy.io",
+			ExpiresAt: time.Now().Add(2 * time.Second),
+		}},
+	})
+
+	pubKey := newPubKeyHex(t)
+	startConnect(t, gw, context.Background(), &gwpb.ConnectRequest{PublicKey: pubKey, SessionId: "session-1"})
+
+	gw.mu.Lock()
+	_, registered := gw.peers[pubKey]
+	gw.mu.Unlock()
+	require.True(t, registered)
+
+	require.Eventually(t, func() bool {
+		gw.cleanupStalePeers()
+		gw.mu.Lock()
+		defer gw.mu.Unlock()
+		_, stillThere := gw.peers[pubKey]
+		return !stillThere
+	}, 30*time.Second, 250*time.Millisecond, "the peer should be reaped once its credential expires")
 }

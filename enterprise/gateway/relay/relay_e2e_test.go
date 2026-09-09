@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/apikeyauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/relay"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/testgateway"
@@ -21,7 +22,10 @@ import (
 // setupRelayGateway creates a gateway running the relay service.
 func setupRelayGateway(t testing.TB, ta *testauth.TestAuthenticator) *server.Gateway {
 	t.Helper()
-	return testgateway.Setup(t, ta, relay.New())
+	return testgateway.Setup(t, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{relay.New()},
+	})
 }
 
 // startEchoServer starts a TCP server on localhost that echoes what it reads
@@ -147,7 +151,10 @@ func TestRelay_NotComposedMeansNoListener(t *testing.T) {
 	// A gateway that does not compose the relay (the customer-facing shape)
 	// must not have a relay listener at all.
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := testgateway.Setup(t, ta, server.DNSService())
+	gw := testgateway.Setup(t, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{server.DNSService()},
+	})
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 

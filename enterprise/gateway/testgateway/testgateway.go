@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/stretchr/testify/require"
@@ -26,17 +24,14 @@ import (
 	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 )
 
-// Setup starts a gateway composing the given hub services on a free UDP port,
+// Setup starts a gateway with the given options on a free UDP port,
 // registered for cleanup with t.
-func Setup(t testing.TB, ta *testauth.TestAuthenticator, services ...server.HubService) *server.Gateway {
+func Setup(t testing.TB, opts server.Options) *server.Gateway {
 	t.Helper()
 	flags.Set(t, "gateway.udp_listen_port", freeUDPPort(t))
 	flags.Set(t, "gateway.public_host", "127.0.0.1")
 
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(ta)
-
-	gw, err := server.New(env, services...)
+	gw, err := server.New(opts)
 	require.NoError(t, err)
 	t.Cleanup(gw.Close)
 	return gw

@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/apikeyauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/testgateway"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
@@ -33,7 +34,10 @@ import (
 func TestEndToEnd_WatchReportsHandshake(t *testing.T) {
 	flags.Set(t, "gateway.watch_fallback_poll_interval", time.Minute)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := testgateway.Setup(t, ta, server.DNSService())
+	gw := testgateway.Setup(t, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{server.DNSService()},
+	})
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
@@ -69,7 +73,10 @@ func TestEndToEnd_WatchReportsHandshake(t *testing.T) {
 // can exchange data over the WireGuard tunnel using direct IP addressing.
 func TestEndToEnd_PeersCanCommunicate(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := testgateway.Setup(t, ta, server.DNSService())
+	gw := testgateway.Setup(t, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{server.DNSService()},
+	})
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
@@ -111,7 +118,10 @@ func TestEndToEnd_PeersCanCommunicate(t *testing.T) {
 // that name.
 func TestEndToEnd_DNSResolution(t *testing.T) {
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := testgateway.Setup(t, ta, server.DNSService())
+	gw := testgateway.Setup(t, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{server.DNSService()},
+	})
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
@@ -162,7 +172,10 @@ func TestEndToEnd_DNSResolution(t *testing.T) {
 //	  --test_arg=-test.run='^$'
 func BenchmarkGatewayThroughput(b *testing.B) {
 	ta := testauth.NewTestAuthenticator(b, testauth.TestUsers("user1", "group1"))
-	gw := testgateway.Setup(b, ta, server.DNSService())
+	gw := testgateway.Setup(b, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{server.DNSService()},
+	})
 
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(b, err)
