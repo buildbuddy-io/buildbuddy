@@ -23,9 +23,8 @@ import (
 )
 
 var (
-	servers = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times. Defaults to the servers built into this binary, if any (see `bbaccess version`).")
-	// TODO: default to true once the publish workflow is in place.
-	autoUpdate = flag.Bool("auto_update", false, "Check for a newer published bbaccess before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
+	servers    = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times. Defaults to the servers built into this binary, if any (see `bbaccess version`).")
+	autoUpdate = flag.Bool("auto_update", true, "Check for a newer published bbaccess before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
 )
 
 // defaultServers is a server list stamped in at link time, separated by
