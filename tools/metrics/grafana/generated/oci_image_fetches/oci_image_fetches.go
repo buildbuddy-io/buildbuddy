@@ -54,14 +54,14 @@ func ts(title, unit string) *timeseries.PanelBuilder {
 		Span(24)
 }
 
-// tableLegend lists each series below the graph with its mean, max and last
-// value. Worth the vertical space only when a panel draws more than one line.
-func tableLegend() *common.VizLegendOptionsBuilder {
+// tableLegend lists each series below the graph with the given calcs. Worth
+// the vertical space only when a panel draws more than one line.
+func tableLegend(calcs ...string) *common.VizLegendOptionsBuilder {
 	return common.NewVizLegendOptionsBuilder().
 		DisplayMode(common.LegendDisplayModeTable).
 		Placement(common.LegendPlacementBottom).
 		ShowLegend(true).
-		Calcs([]string{"mean", "max", "last"})
+		Calcs(calcs)
 }
 
 // hiddenLegend drops the legend entirely, for single-series panels where the
@@ -74,13 +74,14 @@ func hiddenLegend() *common.VizLegendOptionsBuilder {
 // --- Panels ---
 
 // statusesPanel breaks image pulls down by status, each as a share of all
-// pulls. Every status is queried, but "ok" is hidden from the graph: it
-// accounts for most of the volume and plotting it would squash every other
-// line flat against the bottom. Keeping it in the query rather than filtering
-// it out means the panel still has a series whenever any pull happened, so a
-// window with no failures draws a flat zero rather than reading "No data" --
-// which would be indistinguishable from a broken query. It stays in the legend
-// table, where the ok share is useful context.
+// pulls.
+//
+// The axis is pinned to 0-100% rather than left to autoscale. Shares are
+// bounded by definition, so a fixed axis is meaningful, and it keeps the scale
+// stable as you switch regions or narrow to a group. Autoscaling also breaks
+// outright in the common healthy case: when every failure line sits at a flat
+// zero the data range is degenerate, and Grafana falls back to a default max
+// of 100 -- which a percentunit axis renders as "10000%".
 //
 // The statuses are worth reading separately rather than as one error rate,
 // because they are not all ours to fix. ImagePullMetricStatus in
@@ -92,12 +93,12 @@ func hiddenLegend() *common.VizLegendOptionsBuilder {
 // canceled 0.2%, error 0.06%.
 func statusesPanel() *timeseries.PanelBuilder {
 	return ts("Image pull statuses", dash.UnitPercentUnit).
-		Description("Image pulls by status, as a share of all pulls for images that were not already on disk. Successful pulls are hidden from the graph so the failure lines stay readable, but remain in the legend. user_error is a bad image reference or missing credentials and canceled means the task went away mid-pull, so neither is a failure to act on -- timeout and error are.").
+		Description("Image pulls by status, as a share of all pulls for images that were not already on disk. user_error is a bad image reference or missing credentials and canceled means the task went away mid-pull, so neither is a failure to act on -- timeout and error are.").
 		Min(0).
-		Legend(tableLegend()).
-		OverrideByName("ok", []dashboard.DynamicConfigValue{
-			{Id: "custom.hideFrom", Value: common.HideSeriesConfig{Viz: true, Legend: false, Tooltip: false}},
-		}).
+		Max(1).
+		// min and max, not mean: a mean share over a window with wildly
+		// varying pull volume is not a quantity you can reason about.
+		Legend(tableLegend("min", "max")).
 		// Pulls that miss the on-disk cache are sparse enough that a short
 		// rate window leaves the denominator at zero, which shows up as gaps.
 		// Flooring the panel's min interval widens $__rate_interval enough to
@@ -132,7 +133,7 @@ func outgoingRequestsPanel() *timeseries.PanelBuilder {
 	return ts("Outgoing OCI HTTP requests", dash.UnitRequestsPerSec).
 		Description(`Outgoing HTTP requests to OCI registries, by client.`).
 		Min(0).
-		Legend(tableLegend()).
+		Legend(tableLegend("mean", "max", "last")).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
 			`sum by (client_name) (rate(buildbuddy_http_client_request_count{%s}[$__rate_interval]))`,
 			ociClientFilter),
@@ -143,7 +144,7 @@ func outgoingBytesPanel() *timeseries.PanelBuilder {
 	return ts("Outgoing OCI HTTP bytes read", dash.UnitBytesPerSec).
 		Description(`Bytes read from OCI registries, by client.`).
 		Min(0).
-		Legend(tableLegend()).
+		Legend(tableLegend("mean", "max", "last")).
 		WithTarget(dash.PromQuery(fmt.Sprintf(
 			`sum by (client_name) (rate(buildbuddy_http_client_response_size_bytes_sum{%s}[$__rate_interval]))`,
 			ociClientFilter),
