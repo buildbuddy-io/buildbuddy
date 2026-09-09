@@ -189,6 +189,32 @@ func TestExpiredAssertionIsRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "expired")
 }
 
+func TestClockSkewIsTolerated(t *testing.T) {
+	// Client and gateway clocks disagree by a little in either direction;
+	// neither the expiry nor the lifetime cap may reject a credential for it.
+	ca := newTestCA(t)
+	certPEM, keyPEM := ca.issue(t, certOpts{notBefore: time.Now().Add(-24 * time.Hour)})
+	signer, err := NewSigner(certPEM, keyPEM)
+	require.NoError(t, err)
+
+	// A gateway 30s ahead sees a default credential 30s past its expiry.
+	cred, err := signer.Sign(testAudience, testWGKey, DefaultAssertionLifetime)
+	require.NoError(t, err)
+	v, err := NewVerifier(ca.pem, testAudience)
+	require.NoError(t, err)
+	v.now = func() time.Time { return time.Now().Add(DefaultAssertionLifetime + 30*time.Second) }
+	_, err = v.Verify(cred)
+	require.NoError(t, err)
+
+	// A gateway 30s behind sees a maximum-lifetime credential expiring 30s
+	// beyond the cap.
+	cred, err = signer.Sign(testAudience, testWGKey, MaxAssertionLifetime)
+	require.NoError(t, err)
+	v.now = func() time.Time { return time.Now().Add(-30 * time.Second) }
+	_, err = v.Verify(cred)
+	require.NoError(t, err)
+}
+
 func TestAssertionTooFarInTheFutureIsRejected(t *testing.T) {
 	// Bounds the replay window even if a client asks for a long-lived
 	// assertion, so a captured credential goes stale quickly.
@@ -336,21 +362,29 @@ func TestMalformedCredentials(t *testing.T) {
 	require.NoError(t, err)
 	parts := strings.Split(valid, ".")
 
-	for name, cred := range map[string]string{
-		"empty":         "",
-		"one segment":   parts[0],
-		"two segments":  parts[0] + "." + parts[1],
-		"four segments": valid + ".extra",
-		"bad base64":    "!!!." + parts[1] + "." + parts[2],
-		"not a cert":    headerSegment(t, "ES256", []byte("hello")) + "." + parts[1] + "." + parts[2],
-		"empty payload": parts[0] + ".." + parts[2],
-		"no signature":  parts[0] + "." + parts[1] + ".",
+	// Each is rejected with an error that says what kind of problem it is:
+	// a token the parser cannot read, a certificate it cannot use, or a bad
+	// signature.
+	for name, tc := range map[string]struct{ cred, want string }{
+		"empty":         {"", "malformed credential"},
+		"one segment":   {parts[0], "malformed credential"},
+		"two segments":  {parts[0] + "." + parts[1], "malformed credential"},
+		"four segments": {valid + ".extra", "malformed credential"},
+		"bad base64":    {"!!!." + parts[1] + "." + parts[2], "malformed credential"},
+		"header not json": {
+			base64.RawURLEncoding.EncodeToString([]byte("{")) + "." + parts[1] + "." + parts[2],
+			"malformed credential",
+		},
+		"not a cert":    {headerSegment(t, "ES256", []byte("hello")) + "." + parts[1] + "." + parts[2], "parse certificate"},
+		"empty payload": {parts[0] + ".." + parts[2], "malformed credential"},
+		"no signature":  {parts[0] + "." + parts[1] + ".", "signature is invalid"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			v, err := NewVerifier(ca.pem, testAudience)
 			require.NoError(t, err)
-			_, err = v.Verify(cred)
-			assert.Error(t, err)
+			_, err = v.Verify(tc.cred)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
 		})
 	}
 }

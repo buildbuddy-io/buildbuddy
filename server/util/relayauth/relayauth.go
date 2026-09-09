@@ -32,8 +32,12 @@ const credentialType = "tunnel-credential+jwt"
 const MaxAssertionLifetime = 10 * time.Minute
 
 // DefaultAssertionLifetime is the expiry clients should ask for. Registration
-// is a single short RPC, so this only needs to cover one call plus skew.
+// is a single short RPC, so this only needs to cover one call.
 const DefaultAssertionLifetime = 2 * time.Minute
+
+// clockSkew is how far the client's and the gateway's clocks may disagree
+// before a credential is rejected as expired, or as expiring too far out.
+const clockSkew = time.Minute
 
 type claims struct {
 	jwt.RegisteredClaims
@@ -200,9 +204,10 @@ func (v *Verifier) Verify(credential string) (*Identity, error) {
 			switch {
 			case verr.Errors&jwt.ValidationErrorSignatureInvalid != 0:
 				return nil, fmt.Errorf("relayauth: credential signature is invalid: %w", err)
-			case verr.Inner != nil:
+			case verr.Errors&jwt.ValidationErrorUnverifiable != 0 && verr.Inner != nil:
 				// leafCertificate's own error: an untrusted or malformed
-				// certificate.
+				// certificate. A malformed token carries an Inner error too,
+				// flagged Malformed instead, and falls through.
 				return nil, fmt.Errorf("relayauth: %w", verr.Inner)
 			}
 		}
@@ -221,10 +226,10 @@ func (v *Verifier) Verify(credential string) (*Identity, error) {
 		return nil, fmt.Errorf("relayauth: credential has no expiry")
 	}
 	exp := c.ExpiresAt.Time
-	if !exp.After(now) {
+	if !exp.After(now.Add(-clockSkew)) {
 		return nil, fmt.Errorf("relayauth: credential expired at %s", exp.UTC().Format(time.RFC3339))
 	}
-	if exp.After(now.Add(MaxAssertionLifetime)) {
+	if exp.After(now.Add(MaxAssertionLifetime + clockSkew)) {
 		return nil, fmt.Errorf("relayauth: credential expires at %s, more than %s out",
 			exp.UTC().Format(time.RFC3339), MaxAssertionLifetime)
 	}
