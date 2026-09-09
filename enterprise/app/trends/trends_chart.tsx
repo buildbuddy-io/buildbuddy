@@ -6,15 +6,16 @@ import {
   Cell,
   ComposedChart,
   Legend,
+  LegendPayload,
   Line,
+  MouseHandlerDataParam,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
-  TooltipProps,
+  TooltipContentProps,
   XAxis,
   YAxis,
 } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/types";
 import { TrendsChartId } from "../../../app/router/router";
 import { getHiddenSeriesAfterLegendClick } from "./chart_series";
 
@@ -51,13 +52,13 @@ interface Props {
 }
 
 interface State {
-  refAreaLeft?: string;
-  refAreaRight?: string;
+  refAreaLeft?: string | number;
+  refAreaRight?: string | number;
   hiddenSeries: ReadonlySet<number>;
 }
 
-interface TrendsChartTooltipProps extends TooltipProps<any, any> {
-  labelFormatter: (datum: any) => string;
+interface TrendsChartTooltipProps extends Partial<Pick<TooltipContentProps<any, any>, "active" | "payload">> {
+  formatLabel: (datum: any) => string;
   shouldRender: () => boolean;
   dataSeries: ChartDataSeries[];
 }
@@ -96,13 +97,13 @@ function chartColorToCssClass(c: ChartColor): string {
   return "";
 }
 
-function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dataSeries }: TrendsChartTooltipProps) {
+function TrendsChartTooltip({ active, payload, formatLabel, shouldRender, dataSeries }: TrendsChartTooltipProps) {
   if (!active || !payload || payload.length < 1 || !shouldRender()) {
     return null;
   }
   return (
     <div className="trend-chart-hover">
-      <div className="trend-chart-hover-label">{labelFormatter(payload[0].payload)}</div>
+      <div className="trend-chart-hover-label">{formatLabel(payload[0].payload)}</div>
       <div className="trend-chart-hover-value">
         {dataSeries.map((ds, index) => {
           if (index >= payload.length) {
@@ -112,7 +113,8 @@ function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dat
           if (data === undefined) {
             return <></>;
           }
-          return <div>{ds.formatHoverValue ? ds.formatHoverValue(data.value) : data.value}</div>;
+          const value = data.value as number;
+          return <div>{ds.formatHoverValue ? ds.formatHoverValue(value) : value}</div>;
         })}
       </div>
     </div>
@@ -122,19 +124,23 @@ function TrendsChartTooltip({ active, payload, labelFormatter, shouldRender, dat
 export default class TrendsChartComponent extends React.Component<Props, State> {
   state: State = { hiddenSeries: new Set() };
 
-  onLegendClick(_data: unknown, seriesIndex: number, event: React.MouseEvent) {
+  onLegendClick(payload: LegendPayload, seriesIndex: number, event: React.MouseEvent) {
     event.stopPropagation();
-    this.setState((state) => ({
-      hiddenSeries: getHiddenSeriesAfterLegendClick(
-        state.hiddenSeries,
-        seriesIndex,
-        this.props.dataSeries.length,
-        event.ctrlKey || event.metaKey || event.shiftKey
-      ),
-    }));
+    const name = ((payload.payload ?? null) as ChartDataSeries | null)?.name;
+    const legendIndex = this.props.dataSeries.findIndex((s) => s.name === name);
+    if (legendIndex >= 0) {
+      this.setState((state) => ({
+        hiddenSeries: getHiddenSeriesAfterLegendClick(
+          state.hiddenSeries,
+          legendIndex,
+          this.props.dataSeries.length,
+          event.ctrlKey || event.metaKey || event.shiftKey
+        ),
+      }));
+    }
   }
 
-  onMouseDown(e: CategoricalChartState) {
+  onMouseDown(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -142,7 +148,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
   }
 
-  onMouseMove(e: CategoricalChartState) {
+  onMouseMove(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -153,7 +159,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     this.setState({ refAreaRight: e.activeLabel });
   }
 
-  onMouseUp(e: CategoricalChartState) {
+  onMouseUp(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -227,11 +233,12 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
+            accessibilityLayer={false}
             data={this.props.data}
             onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
             onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" yAxisId="primary" />
             <Legend onClick={this.onLegendClick.bind(this)} />
             <XAxis dataKey={(v) => v} tickFormatter={this.props.formatXAxisLabel} ticks={this.props.ticks} />
             <YAxis
@@ -240,13 +247,15 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               allowDecimals={this.props.primaryYAxis.allowDecimals}
               width={84}
             />
-            {/* If no secondary axis should be shown, render an invisible one
-                by setting height="0" so that right-padding is consistent across
-                all charts. */}
+            {/* If no secondary axis should be shown, still render one (with no
+                ticks, tick lines, or axis line) so that it reserves its width
+                and right-padding is consistent across all charts. */}
             <YAxis
               yAxisId="secondary"
               orientation="right"
-              height={hasSecondaryAxis ? undefined : 0}
+              tick={hasSecondaryAxis}
+              tickLine={hasSecondaryAxis}
+              axisLine={hasSecondaryAxis}
               tickFormatter={this.props.secondaryYAxis?.formatTickValue}
               allowDecimals={this.props.secondaryYAxis?.allowDecimals}
               width={84}
@@ -254,7 +263,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             <Tooltip
               content={
                 <TrendsChartTooltip
-                  labelFormatter={this.props.formatHoverXAxisLabel}
+                  formatLabel={this.props.formatHoverXAxisLabel}
                   shouldRender={() => this.shouldRenderTooltip()}
                   dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index))}
                 />

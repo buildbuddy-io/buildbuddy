@@ -38,7 +38,7 @@ export default class DonutChart extends React.Component<Props> {
     return (
       <div className="donut-chart">
         <ResponsiveContainer width={80} height={80}>
-          <PieChart>
+          <PieChart accessibilityLayer={false}>
             <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
               {data?.map((_, index) => <Cell key={`cell-${index}`} fill={getChartColor(index)} />)}
             </Pie>

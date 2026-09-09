@@ -1,5 +1,14 @@
 import React from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, TooltipProps, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  TooltipContentProps,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { User } from "../../../app/auth/user";
 import Button from "../../../app/components/button/button";
 import { FilterInput } from "../../../app/components/filter_input/filter_input";
@@ -288,7 +297,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
     router.navigateTo(`/trends/?ddMetric=${metricParam}&d=${dimensions}#drilldown`, false);
   };
 
-  renderCustomTooltip = (p: TooltipProps<any, any>) => {
+  renderCustomTooltip = (p: TooltipContentProps<any, any>) => {
     if (p.active && p.payload && p.payload.length > 0) {
       const data = p.payload[0].payload as TargetChartData;
       return (
@@ -382,7 +391,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     </div>
                     <div className="targets-chart-container">
                       <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={chartData}>
+                        <BarChart accessibilityLayer={false} data={chartData}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis tick={false} tickFormatter={() => ""}></XAxis>
                           <YAxis width={120} tickFormatter={(v) => renderMetricValue(this.selectedMetric.metric, v)} />
@@ -391,10 +400,8 @@ export default class TrendsComponent extends React.Component<Props, State> {
                             dataKey="value"
                             fill={ChartColor.GREEN}
                             cursor="pointer"
-                            onClick={(e: any) => {
-                              const clickedData = chartData.find((d) => {
-                                return d.target === e.target;
-                              });
+                            onClick={(bar) => {
+                              const clickedData = bar.payload as TargetChartData | undefined;
                               if (clickedData) {
                                 this.handleBarClick(clickedData);
                               }

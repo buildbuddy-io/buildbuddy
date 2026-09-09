@@ -485,7 +485,7 @@
           "REPO_MAPPING:,com_github_buildbuddy_io_buildbuddy ",
           "REPO_MAPPING:aspect_rules_ts+,aspect_rules_ts aspect_rules_ts+",
           "REPO_MAPPING:aspect_rules_ts+,bazel_tools bazel_tools",
-          "FILE:@@//package.json 34ad80805bb3427ecfde1253fdcb81695ed32c526bab82e62a8e9d45c25ab0ef"
+          "FILE:@@//package.json 88b020bb29f7e1c0c87f07209e23b27b3805919e3432a536b7dab5aba2dc1b24"
         ],
         "generatedRepoSpecs": {
           "npm_typescript": {

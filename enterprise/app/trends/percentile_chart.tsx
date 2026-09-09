@@ -4,15 +4,16 @@ import {
   CartesianGrid,
   ComposedChart,
   Legend,
+  LegendPayload,
   Line,
+  MouseHandlerDataParam,
   ReferenceArea,
   ResponsiveContainer,
   Tooltip,
-  TooltipProps,
+  TooltipContentProps,
   XAxis,
   YAxis,
 } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/types";
 import * as format from "../../../app/format/format";
 import { getHiddenSeriesAfterLegendClick } from "./chart_series";
 
@@ -39,8 +40,8 @@ interface PercentileDataSeries {
 }
 
 interface State {
-  refAreaLeft?: string;
-  refAreaRight?: string;
+  refAreaLeft?: string | number;
+  refAreaRight?: string | number;
   hiddenSeries: ReadonlySet<number>;
 }
 
@@ -58,16 +59,20 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     ];
   }
 
-  onLegendClick(_data: unknown, seriesIndex: number, event: React.MouseEvent) {
+  onLegendClick(payload: LegendPayload, seriesIndex: number, event: React.MouseEvent) {
     event.stopPropagation();
-    this.setState((state) => ({
-      hiddenSeries: getHiddenSeriesAfterLegendClick(
-        state.hiddenSeries,
-        seriesIndex,
-        this.getDataSeries().length,
-        event.ctrlKey || event.metaKey || event.shiftKey
-      ),
-    }));
+    const name = ((payload.payload ?? null) as PercentileDataSeries | null)?.name;
+    const legendIndex = this.getDataSeries().findIndex((s) => s.name === name);
+    if (legendIndex >= 0) {
+      this.setState((state) => ({
+        hiddenSeries: getHiddenSeriesAfterLegendClick(
+          state.hiddenSeries,
+          legendIndex,
+          this.getDataSeries().length,
+          event.ctrlKey || event.metaKey || event.shiftKey
+        ),
+      }));
+    }
   }
 
   handleRowClick() {
@@ -77,7 +82,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     this.props.onColumnClicked(this.lastDataFromHover);
   }
 
-  onMouseDown(e: CategoricalChartState) {
+  onMouseDown(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -85,7 +90,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     this.setState({ refAreaLeft: e.activeLabel, refAreaRight: e.activeLabel });
   }
 
-  onMouseMove(e: CategoricalChartState) {
+  onMouseMove(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -96,7 +101,7 @@ export default class PercentilesChartComponent extends React.Component<Percentil
     this.setState({ refAreaRight: e.activeLabel });
   }
 
-  onMouseUp(e: CategoricalChartState) {
+  onMouseUp(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
@@ -126,20 +131,32 @@ export default class PercentilesChartComponent extends React.Component<Percentil
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
+            accessibilityLayer={false}
             data={this.props.data}
             style={this.props.onColumnClicked ? { cursor: "pointer" } : {}}
             onClick={this.props.onZoomSelection ? undefined : this.handleRowClick.bind(this)}
             onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
             onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid strokeDasharray="3 3" yAxisId="duration" />
             <Legend onClick={this.onLegendClick.bind(this)} />
             <XAxis dataKey={(v) => v} tickFormatter={this.props.extractLabel} ticks={this.props.ticks} />
             <YAxis yAxisId="duration" tickFormatter={format.durationSec} allowDecimals={false} width={84} />
+            {/* Render a secondary y axis even though we don't have one so that chart edges align with others. */}
+            <YAxis
+              yAxisId="secondary"
+              orientation="right"
+              tick={false}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={undefined}
+              allowDecimals={undefined}
+              width={84}
+            />
             <Tooltip
               content={
                 <PercentilesChartTooltip
-                  labelFormatter={this.props.formatHoverLabel}
+                  formatLabel={this.props.formatHoverLabel}
                   shouldRender={() => this.shouldRenderTooltip()}
                   dataSeries={dataSeries}
                   hiddenSeries={this.state.hiddenSeries}
@@ -175,8 +192,8 @@ export default class PercentilesChartComponent extends React.Component<Percentil
   }
 }
 
-interface PercentilesChartTooltipProps extends TooltipProps<any, any> {
-  labelFormatter: (datum: number) => string;
+interface PercentilesChartTooltipProps extends Partial<Pick<TooltipContentProps<any, any>, "active" | "payload">> {
+  formatLabel: (datum: number) => string;
   shouldRender: () => boolean;
   dataSeries: PercentileDataSeries[];
   hiddenSeries: ReadonlySet<number>;
@@ -202,7 +219,7 @@ class PercentilesChartTooltip extends React.Component<PercentilesChartTooltipPro
 
     return (
       <div className="trend-chart-hover">
-        <div className="trend-chart-hover-label">{this.props.labelFormatter(data)}</div>
+        <div className="trend-chart-hover-label">{this.props.formatLabel(data)}</div>
         <div className="trend-chart-hover-value">
           {this.props.dataSeries
             .map((series, index) => ({ series, index }))
