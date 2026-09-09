@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1047,6 +1046,8 @@ func (s *BuildBuddyServer) getAPIKeyCreationMetadata(ctx context.Context, groupI
 		return nil, nil
 	}
 
+	isServerAdmin := claims.AuthorizeServerAdmin(ctx) == nil
+
 	udb := s.env.GetUserDB()
 	creatorNames := map[string]string{}
 	// This loop performs sequential lookups of users to populate the created_by
@@ -1066,14 +1067,8 @@ func (s *BuildBuddyServer) getAPIKeyCreationMetadata(ctx context.Context, groupI
 				}
 				continue
 			}
-			isMember := slices.ContainsFunc(creator.Groups, func(g *tables.GroupRole) bool {
-				return g.GroupID == groupID
-			})
-			// If the user who created the key isn't a member of the group
-			// owning the key, don't return their display name. This can happen
-			// for API keys created in impersonation mode, or if the key was
-			// created by a user who has since left the group.
-			if !isMember {
+			if !isServerAdmin && authutil.IsAdminEmail(creator.Email) {
+				creatorNames[id] = authutil.AdminDisplayName
 				continue
 			}
 			creatorProto := creator.ToProto()

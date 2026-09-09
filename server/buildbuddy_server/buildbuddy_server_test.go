@@ -428,36 +428,49 @@ func testUserWithCapabilities(userID, groupID string, caps ...cappb.Capability) 
 	return u
 }
 
-func groupMember(userID, firstName, lastName, groupID string) *tables.User {
+func tableUser(userID, firstName, lastName, email string) *tables.User {
 	return &tables.User{
 		UserID:    userID,
 		FirstName: firstName,
 		LastName:  lastName,
-		Email:     userID + "@example.com",
-		Groups:    []*tables.GroupRole{{Group: tables.Group{GroupID: groupID}}},
+		Email:     email,
 	}
 }
 
 func TestGetApiKeys_CreationMetadata(t *testing.T) {
 	const (
-		adminID    = "ADMIN"
-		devID      = "DEV"
-		outsiderID = "OUTSIDER"
-		deletedID  = "DELETED"
-		brokenID   = "BROKEN"
+		serverAdminGroup = "SERVER_ADMIN_GROUP"
+		adminID          = "ADMIN"
+		serverAdminID    = "SERVER_ADMIN"
+		devID            = "DEV"
+		leaverID         = "LEAVER"
+		bbAdminID        = "BB_ADMIN"
+		deletedID        = "DELETED"
+		brokenID         = "BROKEN"
 	)
+	flags.Set(t, "auth.admin_group_id", serverAdminGroup)
 	createdAt := time.Date(2026, time.September, 2, 12, 0, 0, 0, time.UTC)
 	model := tables.Model{CreatedAtUsec: createdAt.UnixMicro()}
 
+	// A server admin viewing group1's keys: an org admin of group1 who is also
+	// an admin of the server admin group.
+	serverAdmin := testUserWithCapabilities(serverAdminID, group1, cappb.Capability_ORG_ADMIN)
+	serverAdmin.GroupMemberships = append(serverAdmin.GroupMemberships, &interfaces.GroupMembership{
+		GroupID:      serverAdminGroup,
+		Capabilities: []cappb.Capability{cappb.Capability_ORG_ADMIN},
+	})
+
 	te := testenv.GetTestEnv(t)
 	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
-		adminID: testUserWithCapabilities(adminID, group1, cappb.Capability_ORG_ADMIN),
-		devID:   testUserWithCapabilities(devID, group1, cappb.Capability_CACHE_WRITE),
+		adminID:       testUserWithCapabilities(adminID, group1, cappb.Capability_ORG_ADMIN),
+		serverAdminID: serverAdmin,
+		devID:         testUserWithCapabilities(devID, group1, cappb.Capability_CACHE_WRITE),
 	})
 	te.SetAuthenticator(auth)
 	te.SetAuthDB(&fakeAuthDB{keys: []*tables.APIKey{
 		{APIKeyID: "member", Model: model, CreatedByUserID: adminID},
-		{APIKeyID: "outsider", Model: model, CreatedByUserID: outsiderID},
+		{APIKeyID: "leaver", Model: model, CreatedByUserID: leaverID},
+		{APIKeyID: "bb-admin", Model: model, CreatedByUserID: bbAdminID},
 		{APIKeyID: "deleted", Model: model, CreatedByUserID: deletedID},
 		{APIKeyID: "broken", Model: model, CreatedByUserID: brokenID},
 		{APIKeyID: "time-only", Model: model},
@@ -465,8 +478,9 @@ func TestGetApiKeys_CreationMetadata(t *testing.T) {
 	}})
 	te.SetUserDB(&fakeUserDB{
 		users: map[string]*tables.User{
-			adminID:    groupMember(adminID, "Ada", "Admin", group1),
-			outsiderID: groupMember(outsiderID, "Olive", "Outsider", group2),
+			adminID:   tableUser(adminID, "Ada", "Admin", "ada@example.com"),
+			leaverID:  tableUser(leaverID, "", "", "leaver@example.com"),
+			bbAdminID: tableUser(bbAdminID, "Bob", "Buildbuddy", "bob@buildbuddy.io"),
 		},
 		errs: map[string]error{brokenID: status.UnavailableError("db unavailable")},
 	})
@@ -484,29 +498,37 @@ func TestGetApiKeys_CreationMetadata(t *testing.T) {
 		for _, k := range rsp.GetApiKey() {
 			keys[k.GetId()] = k
 		}
-		require.Len(t, keys, 6)
+		require.Len(t, keys, 7)
 		return keys
+	}
+	createdBy := func(t *testing.T, keys map[string]*akpb.ApiKey, id string) string {
+		md := keys[id].GetCreationMetadata()
+		require.NotNil(t, md, id)
+		require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro(), id)
+		return md.GetCreatedBy()
 	}
 
 	t.Run("admin", func(t *testing.T) {
 		keys := getKeys(t, adminID)
-
-		md := keys["member"].GetCreationMetadata()
-		require.NotNil(t, md)
-		require.Equal(t, "Ada Admin", md.GetCreatedBy())
-		require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro())
-
-		// Creators who aren't group members, no longer exist, or can't be
-		// looked up are not attributed, but the timestamp is still returned.
-		for _, id := range []string{"outsider", "deleted", "broken", "time-only"} {
-			md := keys[id].GetCreationMetadata()
-			require.NotNil(t, md, id)
-			require.Empty(t, md.GetCreatedBy(), id)
-			require.Equal(t, createdAt.UnixMicro(), md.GetCreatedAt().AsTime().UnixMicro(), id)
-		}
-
+		require.Equal(t, "Ada Admin", createdBy(t, keys, "member"))
+		// Users with no name fall back to their email, even if they have since
+		// left the group.
+		require.Equal(t, "leaver@example.com", createdBy(t, keys, "leaver"))
+		// BuildBuddy employees are not identified to customers.
+		require.Equal(t, "Buildbuddy Admin", createdBy(t, keys, "bb-admin"))
+		// Creators who no longer exist or can't be looked up are not
+		// attributed, but the timestamp is still returned.
+		require.Empty(t, createdBy(t, keys, "deleted"))
+		require.Empty(t, createdBy(t, keys, "broken"))
+		require.Empty(t, createdBy(t, keys, "time-only"))
 		// Keys with nothing to show get no metadata at all.
 		require.Nil(t, keys["legacy"].GetCreationMetadata())
+	})
+
+	t.Run("server_admin", func(t *testing.T) {
+		keys := getKeys(t, serverAdminID)
+		require.Equal(t, "Ada Admin", createdBy(t, keys, "member"))
+		require.Equal(t, "Bob Buildbuddy", createdBy(t, keys, "bb-admin"))
 	})
 
 	t.Run("developer", func(t *testing.T) {
