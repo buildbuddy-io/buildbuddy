@@ -2413,20 +2413,14 @@ func (p *PebbleCache) WriteReference(ctx context.Context, ref *refpb.Reference, 
 		return err
 	}
 
-	storageMD := refMD.GetStorageMetadata().CloneVT()
+	var storageMD *sgpb.StorageMetadata
 	if mustClone {
 		storageMD, err = p.fileStorer.CloneBlob(ctx, refMD.GetStorageMetadata().GetGcsMetadata(), fileRecord)
 		if err != nil {
 			return err
 		}
 	} else {
-		// Assuming ownership makes this record responsible for the blob's
-		// lifecycle, so update the blob's atime, like a clone or write would.
-		t := p.clock.Now()
-		if err := p.fileStorer.UpdateBlobAtime(ctx, storageMD.GetGcsMetadata(), t); err != nil {
-			return err
-		}
-		storageMD.GetGcsMetadata().LastCustomTimeUsec = t.UnixMicro()
+		storageMD = refMD.GetStorageMetadata().CloneVT()
 	}
 
 	now := p.clock.Now().UnixMicro()
