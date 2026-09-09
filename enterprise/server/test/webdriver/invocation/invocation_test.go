@@ -173,7 +173,7 @@ func TestAuthenticatedInvocation_PersonalAPIKey_CacheEnabled(t *testing.T) {
 	}
 	wt.Find(`.api-key-value-hide`).Click()
 	apiKey := ""
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		apiKey = wt.Find(".api-key-value").Text()
 		if !strings.Contains(apiKey, "••••") {
 			break

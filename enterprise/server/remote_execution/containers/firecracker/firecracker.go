@@ -965,8 +965,7 @@ func MergeDiffSnapshot(ctx context.Context, baseSnapshotPath string, baseSnapsho
 		// Ensure goroutines don't cross chunk boundaries and cause race conditions when writing
 		perThreadBytes = alignToMultiple(perThreadBytes, storeChunkSizeBytes)
 	}
-	for i := 0; i < concurrency; i++ {
-		i := i
+	for i := range concurrency {
 		offset := perThreadBytes * int64(i)
 		regionEnd := perThreadBytes * int64(i+1)
 		if regionEnd > inInfo.Size() {

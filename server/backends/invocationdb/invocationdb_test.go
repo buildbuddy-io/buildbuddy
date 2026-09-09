@@ -40,7 +40,7 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	dbh := env.GetDBHandle()
 	idb := invocationdb.NewInvocationDB(env, dbh)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		iid := fmt.Sprintf("invocation-%d", i)
 		pattern := fmt.Sprintf("//pattern:%d", i)
 

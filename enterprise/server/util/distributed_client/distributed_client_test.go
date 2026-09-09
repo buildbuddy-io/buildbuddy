@@ -102,7 +102,7 @@ func (r *randomDataMaker) Read(p []byte) (n int, err error) {
 	offset := 0
 	for {
 		val := int64(r.src.Int63())
-		for i := 0; i < 8; i++ {
+		for range 8 {
 			p[offset] = byte(val & 0xff)
 			todo--
 			if todo == 0 {
@@ -843,7 +843,7 @@ func TestGetMulti(t *testing.T) {
 		remoteInstanceName := fmt.Sprintf("prefix/%d", numDigests)
 
 		digests := make([]*rspb.ResourceName, 0, numDigests)
-		for i := 0; i < numDigests; i++ {
+		for range numDigests {
 			// Read some random bytes.
 			buf := new(bytes.Buffer)
 			io.CopyN(buf, randomSrc, 100)
@@ -1337,7 +1337,7 @@ func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
 	const n = 4
 	rns := make([]*rspb.ResourceName, n)
 	bufs := make([][]byte, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		rns[i], bufs[i] = testdigest.RandomCASResourceBuf(t, 200+int64(i)*50)
 		require.NoError(t, te.GetCache().Set(ctx, rns[i], bufs[i]))
 	}

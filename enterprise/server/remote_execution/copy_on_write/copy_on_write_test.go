@@ -82,7 +82,7 @@ func TestMmap_Concurrency(t *testing.T) {
 	s, _ := newMmap(t)
 
 	eg := &errgroup.Group{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			s.Source()
 			return nil
@@ -242,7 +242,7 @@ func TestCOW_Concurrency(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	eg.SetLimit(1000)
-	for i := 0; i < 10_000; i++ {
+	for range 10_000 {
 		eg.Go(func() error {
 			if rand.Float64() < 0.2 {
 				tester.WriteRandomRange()
@@ -289,7 +289,7 @@ func TestCOW_SparseData(t *testing.T) {
 	// - 2: data block somewhere in the middle of the chunk
 	// - 3: data block at the end of the chunk
 	chunks := make([][]byte, 4)
-	for i := 0; i < len(chunks); i++ {
+	for i := range chunks {
 		chunks[i] = make([]byte, chunkSize)
 	}
 	// chunkData[0]: empty
@@ -313,7 +313,7 @@ func TestCOW_SparseData(t *testing.T) {
 	require.Equal(t, len(dataOut), n)
 
 	// Inspect the chunk files and ensure they have the expected physical size.
-	for i := 0; i < len(chunks); i++ {
+	for i := range chunks {
 		chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
 		// We wrote one data block per chunk except for the one chunk that was
 		// all empty. The empty chunk should not have written a file.
@@ -366,7 +366,7 @@ func TestCOW_Resize(t *testing.T) {
 		{Name: "DecreaseSize", OldSize: chunkSize, NewSize: chunkSize - 1, ExpectError: true},
 	} {
 		t.Run(test.Name, func(t *testing.T) {
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				// Start out with a file containing random data
 				startBuf := randBytes(t, int(test.OldSize))
 				src := makeTempFile(t, startBuf)
@@ -386,7 +386,7 @@ func TestCOW_Resize(t *testing.T) {
 				// Read random ranges; should match startBuf right-padded with
 				// zeroes.
 				startRightPad := append(startBuf, make([]byte, test.NewSize-test.OldSize)...)
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					offset, length := randSubslice(int(test.NewSize))
 					b := make([]byte, length)
 					_, err := cow.ReadAt(b, int64(offset))
@@ -412,7 +412,7 @@ func TestCOW_Resize(t *testing.T) {
 				require.True(t, bytes.Equal(endBuf, b))
 
 				// Read random ranges again; should match endBuf this time.
-				for i := 0; i < 10; i++ {
+				for range 10 {
 					offset, length := randSubslice(int(test.NewSize))
 					b := make([]byte, length)
 					_, err := cow.ReadAt(b, int64(offset))
@@ -453,7 +453,7 @@ func TestCOW_MmapLRUDoesNotDeadlock(t *testing.T) {
 
 	var eg errgroup.Group
 	eg.SetLimit(100)
-	for i := 0; i < 10_000; i++ {
+	for range 10_000 {
 		eg.Go(func() error {
 			p := make([]byte, 1)
 			offset := rand.Int63n(fileSize - 1)
@@ -631,7 +631,7 @@ func BenchmarkCOW_ReadWritePerformance(b *testing.B) {
 				off := int64(0)
 
 				b.StartTimer()
-				for r := 0; r < ioCountPerBenchOp; r++ {
+				for range ioCountPerBenchOp {
 					if !test.sequential {
 						off = rand.Int63n(ioBlockSize)
 					}
@@ -732,7 +732,7 @@ func testStore(t *testing.T, s interfaces.Store, path string) {
 	expectedContent := make([]byte, int(size))
 	buf := make([]byte, int(size))
 	n := 1 + rand.Intn(50)
-	for i := 0; i < n; i++ {
+	for range n {
 		// With equal probability, either (a) read a random range and make sure
 		// it matches expectedContent, or (b) write a random range and update
 		// our expectedContent for subsequent reads.

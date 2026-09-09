@@ -124,7 +124,7 @@ func TestQuotaFlagdBuckets(t *testing.T) {
 	assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
 
 	// The next 4 requests are allowed, but the 5th is blocked.
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		assert.NoError(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
 	}
 	assert.Error(t, qm.Allow(ctx, "rpc:/google.bytestream.ByteStream/Read", 1))
@@ -363,19 +363,19 @@ func TestConcurrentBucketAccess(t *testing.T) {
 	const numIterations = 100
 
 	done := make(chan bool)
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		keyID := i
 		go func() {
 			defer func() { done <- true }()
 			key := fmt.Sprintf("key%d", keyID)
-			for j := 0; j < numIterations; j++ {
+			for range numIterations {
 				qm.loadQuotasFromFlagd(ctx, key, "rpc:/test.Service/Method")
 				qm.findBucket("rpc:/test.Service/Method", key)
 			}
 		}()
 	}
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		<-done
 	}
 }

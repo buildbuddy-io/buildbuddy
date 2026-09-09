@@ -950,7 +950,6 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 		// Attempt to link digests from the file cache. Digests that are not
 		// present in the filecache will be added to the fetchQueue channel.
 		for dk, filePointers := range ff.filesToFetch {
-			filePointers := filePointers
 
 			// Write empty files directly (skip checking cache and downloading).
 			if digest.IsEmptyHash(dk.ToDigest(), ff.digestFunction) && !ff.onlyDownloadToFileCache {

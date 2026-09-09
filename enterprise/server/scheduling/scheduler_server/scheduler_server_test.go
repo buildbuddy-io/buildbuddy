@@ -592,7 +592,7 @@ func (e *fakeExecutor) WaitForTask(taskID string) {
 }
 
 func (e *fakeExecutor) WaitForTaskWithDelay(taskID string, delay time.Duration) {
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		e.mu.Lock()
 		task, ok := e.tasks[taskID]
 		e.mu.Unlock()

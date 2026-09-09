@@ -270,7 +270,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 func (d *zoneData) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 	var answer []dns.RR
 	name := qName
-	for i := 0; i < maxCNAMEDepth; i++ {
+	for i := range maxCNAMEDepth {
 		records, ok := d.lookup(name)
 		if !ok {
 			// The queried name itself not existing is NXDOMAIN. Reaching a

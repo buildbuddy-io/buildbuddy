@@ -157,7 +157,7 @@ func TestBasicReadWrite(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -228,7 +228,7 @@ func TestGetPeerLookupMetrics(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		// Do a write, then Get and GetWithMetadata it back through each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, distributedCaches[i%3].Set(ctx, rn, buf))
@@ -380,7 +380,7 @@ func TestReadWrite_Compression(t *testing.T) {
 			}
 			distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				// Do a write, and ensure it was written to all nodes.
 				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 				writeRN := rn.CloneVT()
@@ -725,7 +725,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	// still have reference to them via the Nodes list.
 	waitForShutdown(dc3)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -795,7 +795,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	assert.Nil(t, err)
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -860,7 +860,7 @@ func TestBackfill(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -1176,7 +1176,7 @@ func TestContainsMulti(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1292,7 +1292,7 @@ func TestFindMissing(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1304,7 +1304,7 @@ func TestFindMissing(t *testing.T) {
 	// Generate some more digests, but don't write them to the cache.
 	resourcesNotWritten := make([]*rspb.ResourceName, 0)
 	digestsNotWritten := make([]*repb.Digest, 0)
-	for i := 0; i < 70; i++ {
+	for range 70 {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		resourcesNotWritten = append(resourcesNotWritten, rn)
 		digestsNotWritten = append(digestsNotWritten, rn.GetDigest())
@@ -1389,7 +1389,7 @@ func TestGetMulti(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1411,7 +1411,7 @@ func TestGetMulti(t *testing.T) {
 
 	// Generate some more digests, but don't write them to the cache.
 	resourcesNotWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 70; i++ {
+	for range 70 {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		resourcesNotWritten = append(resourcesNotWritten, rn)
 	}
@@ -1525,7 +1525,7 @@ func TestHintedHandoff(t *testing.T) {
 	assert.Nil(t, err)
 
 	digestsWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -1615,7 +1615,7 @@ func TestDelete(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1673,7 +1673,7 @@ func TestDelete_NonExistentFile(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 
 		// Do a delete on a file that does not exist.
@@ -1796,7 +1796,7 @@ func TestExtraNodes(t *testing.T) {
 	waitForReady(t, config3.ListenAddr)
 
 	written := make([]*rspb.ResourceName, 0)
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		// Do a write - should be visible from all nodes
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc1.Set(ctx, rn, buf); err != nil {
@@ -1918,7 +1918,7 @@ func TestExtraNodes(t *testing.T) {
 	waitForReady(t, config8.ListenAddr)
 	waitForReady(t, config9.ListenAddr)
 
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		// Do a write - should be written to new nodes
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc6.Set(ctx, rn, buf); err != nil {
@@ -1994,7 +1994,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 
 	// Write some data.
 	written := make([]*rspb.ResourceName, 0)
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc1.Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2103,7 +2103,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 
 	// Now write some new data. It should only be written to the old nodes
 	// because the newly added nodes are read-only.
-	for i := 0; i < numDigestsToWrite; i++ {
+	for i := range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := caches[i%len(caches)].Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2170,7 +2170,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 
 	// Write some data.
 	written := make([]*rspb.ResourceName, 0)
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc1.Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2277,7 +2277,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < numDigestsToWrite; i++ {
+	for i := range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := caches[i%len(caches)].Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2335,7 +2335,7 @@ func TestReadThroughLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -2461,7 +2461,7 @@ func TestGetMultiLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -2560,7 +2560,7 @@ func TestLookasideLimits(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 1_000_000)
@@ -2631,7 +2631,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		rn.InstanceName = digest.TreeCacheRemoteInstanceName
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -2668,7 +2668,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 	// Now write some other AC content (without the special tree-cache
 	// remote instance name), and verify it's not put in the lookaside
 	// cache.
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -2742,7 +2742,7 @@ func TestReadThroughLocalCache(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -2819,7 +2819,7 @@ func TestGetMultiReadThroughLocalCache(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -2899,7 +2899,7 @@ func TestGetMultiReadThroughLocalCacheSkipsMutableAC(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Plain AC entries (not tree-cache) are mutable and must not be
 		// served from a read-through local cache.
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
@@ -2970,7 +2970,7 @@ func TestGetMultiReadThroughLocalCacheWithLookaside(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -3028,7 +3028,7 @@ func newReadthroughPeerSelectionCache(t *testing.T) *Cache {
 }
 
 func digestWithNoSameZonePrimary(t *testing.T, c *Cache) *repb.Digest {
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		buf := []byte(fmt.Sprintf("readthrough-peer-selection-%d", i))
 		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
@@ -3384,7 +3384,7 @@ func TestNoEncryptedContentsInLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node via the
 		// distributed cache.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -3478,7 +3478,7 @@ func TestLookasidePartitionIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read from partition A multiple times to populate the lookaside cache.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		reader, err := dc.Reader(ctx1, rnA, 0, 0)
 		require.NoError(t, err)
 		gotA, err := io.ReadAll(reader)
@@ -3808,7 +3808,7 @@ func TestKubeDiscoveryReadWrite(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		err := distributedCaches[i%3].Set(ctx, rn, buf)
 		require.NoError(t, err)
@@ -4114,7 +4114,7 @@ func TestWriteByReference(t *testing.T) {
 	newCluster := func(t *testing.T, n int) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore) {
 		store := &sharedBlobStore{blobs: map[string][]byte{}}
 		var peers []string
-		for i := 0; i < n; i++ {
+		for range n {
 			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
 		}
 		baseConfig := Options{
@@ -4278,7 +4278,7 @@ func TestWriteByReference(t *testing.T) {
 	t.Run("caches without reference support write bytes", func(t *testing.T) {
 		setWriteReferenceExperiments(t, true, false)
 		var peers []string
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
 		}
 		baseConfig := Options{

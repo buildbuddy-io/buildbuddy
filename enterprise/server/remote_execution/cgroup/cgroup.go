@@ -850,7 +850,7 @@ func readPSI(r io.Reader) (*repb.PSI, error) {
 		}
 		// Parse avgs
 		var avgs [3]float32
-		for i := 0; i < len(avgs); i++ {
+		for i := range len(avgs) {
 			field := fields[i+1]
 			name, rawValue, ok := strings.Cut(field, "=")
 			if !ok {

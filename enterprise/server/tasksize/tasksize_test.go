@@ -569,7 +569,7 @@ func TestSizer_P90CPUExperiment(t *testing.T) {
 	}
 	// Simulate CPU usage as described above
 	timeline := usageStats.Timeline
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		elapsedDuration := 1 * time.Second
 		timeline.Timestamps = append(timeline.Timestamps, elapsedDuration.Milliseconds())
 		md.ExecutionCompletedTimestamp = timestamppb.New(md.ExecutionCompletedTimestamp.AsTime().Add(elapsedDuration))

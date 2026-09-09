@@ -380,7 +380,7 @@ func TestPipelineWriter_HandlesFinalLine(t *testing.T) {
 	})
 
 	const trials = 200
-	for i := 0; i < trials; i++ {
+	for i := range trials {
 		cfgFile := &config.File{
 			Path:       filepath.Join(ws, "buildbuddy.yaml"),
 			RootConfig: &config.RootConfig{},
@@ -433,7 +433,7 @@ func TestPipelineWriter_ClosesPluginOutputPipes(t *testing.T) {
 
 	before := openFDCount(t)
 	const trials = 20
-	for i := 0; i < trials; i++ {
+	for range trials {
 		var out bytes.Buffer
 		wc, err := PipelineWriter(&out, plugins)
 		require.NoError(t, err)

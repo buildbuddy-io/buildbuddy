@@ -235,7 +235,7 @@ func newUUID(t *testing.T) string {
 func newTestEnv(t *testing.T) *real_environment.RealEnv {
 	env := testenv.GetTestEnv(t)
 	var userGroups []string
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		userGroups = append(userGroups, fmt.Sprintf("US%d", i), fmt.Sprintf("GR%d", i))
 	}
 	env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers(userGroups...)))
@@ -532,7 +532,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 	// Run 30 trials where we create a pool that runs 50 tasks using runner
 	// recycling, shutting down the pool after roughly half of the tasks have been
 	// started.
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		pool := newRunnerPool(t, env, noLimitsCfg())
 		numTasks := 50
 		tasksStarted := make(chan struct{}, numTasks)
@@ -557,7 +557,7 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 		}
 
 		var wg sync.WaitGroup
-		for i := 0; i < numTasks; i++ {
+		for range numTasks {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -666,12 +666,12 @@ func TestRunnerPool_DiskOnlyContainer_CanAddMultiple(t *testing.T) {
 
 	// Make sure we can add up to `maxRunnerCount` runners without eviction.
 	ctx := context.Background()
-	for i := 0; i < maxRunnerCount; i++ {
+	for i := range maxRunnerCount {
 		ctx = withAuthenticatedUser(t, ctx, env, fmt.Sprintf("US%d", i))
 		r := mustGetNewRunner(t, ctx, pool, newTask())
 		mustAddWithoutEviction(t, ctx, pool, r)
 	}
-	for i := 0; i < maxRunnerCount; i++ {
+	for i := range maxRunnerCount {
 		ctx = withAuthenticatedUser(t, ctx, env, fmt.Sprintf("US%d", i))
 		_ = mustGetPausedRunner(t, ctx, pool, newTask())
 	}

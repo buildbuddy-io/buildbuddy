@@ -326,7 +326,7 @@ func ConfigureSidecar(args *arg.BazelArgs) (*Instance, error) {
 	log.Debugf("Sidecar arguments: %v", sidecarArgs)
 
 	var connectionErr error
-	for i := 0; i < numConnectionAttempts; i++ {
+	for range numConnectionAttempts {
 		instance, err := restartSidecarIfNecessary(ctx, cacheDir, sidecarArgs)
 		if err != nil {
 			log.Warnf("Sidecar could not be initialized, continuing without sidecar: %s", err)

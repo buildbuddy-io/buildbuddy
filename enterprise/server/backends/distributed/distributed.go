@@ -1354,8 +1354,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
-			peer := peer
-			resources := resources
 			eg.Go(func() error {
 				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources)
 				peerMissingHashes := make(map[string]struct{})
@@ -1518,8 +1516,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
-			peer := peer
-			resources := resources
 			eg.Go(func() error {
 				peerRsp, err := c.remoteGetMulti(gCtx, peer, resources)
 				mu.Lock()
@@ -1612,7 +1608,6 @@ func (mc *multiWriteCloser) SetReference(ref *refpb.Reference) {
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 	var eg errgroup.Group
 	for _, wc := range mc.peerClosers {
-		wc := wc
 		eg.Go(func() error {
 			n, err := wc.Write(data)
 			if err != nil {
@@ -1631,8 +1626,6 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 func (mc *multiWriteCloser) Commit() error {
 	var eg errgroup.Group
 	for peer, wc := range mc.peerClosers {
-		wc := wc
-		peer := peer
 		eg.Go(func() error {
 			if err := wc.Commit(); err != nil {
 				return err

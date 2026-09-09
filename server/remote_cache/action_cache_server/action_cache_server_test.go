@@ -848,7 +848,7 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 
 	ar := &repb.ActionResult{}
 	var lastChunkRN *rspb.ResourceName
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 4*1024)
 		chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 4*1024)
 		require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))

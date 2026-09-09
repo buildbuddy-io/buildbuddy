@@ -21,7 +21,7 @@ func TestLockingBuffer_ReadWrite(t *testing.T) {
 			*done = true
 			doneLock.Unlock()
 		}()
-		for i := 0; i < writeCount; i++ {
+		for range writeCount {
 			if _, err := buf.Write([]byte(val)); err != nil {
 				t.Fail()
 				return
@@ -103,7 +103,7 @@ func TestLockingBuffer_ReadAll(t *testing.T) {
 			*done = true
 			doneLock.Unlock()
 		}()
-		for i := 0; i < writeCount; i++ {
+		for range writeCount {
 			if _, err := buf.Write([]byte(val)); err != nil {
 				t.Fail()
 				return

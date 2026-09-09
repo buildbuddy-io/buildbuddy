@@ -90,7 +90,7 @@ func TestClientConnPoolSplitter(t *testing.T) {
 		require.NoError(t, err)
 
 		splitterClient := pspb.NewApiClient(splitter)
-		for i := 0; i < numRequests; i++ {
+		for range numRequests {
 			_, err := splitterClient.Ping(ctx, &pspb.PingRequest{})
 			require.NoError(t, err)
 		}

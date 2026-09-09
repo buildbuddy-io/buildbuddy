@@ -151,7 +151,7 @@ func TestPackAndUnpackChunkedFiles(t *testing.T) {
 		// i.e. For SnapA -> ForkA -> ForkA' we want to make sure ForkA' functions
 		// correctly
 		originalOpts := optsA
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			forkWorkDir := testfs.MakeDirAll(t, workDir, fmt.Sprintf("VM-%d", i))
 			unpacked := mustUnpack(t, ctx, loader, keys, forkWorkDir, originalOpts)
 			forkCOW := unpacked.ChunkedFiles["scratchfs"]
@@ -560,7 +560,7 @@ func TestRemoteSnapshotFetching(t *testing.T) {
 
 	// Test unpacking snapshot
 	originalOpts := optsA
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		forkWorkDir := testfs.MakeDirAll(t, workDir, fmt.Sprintf("VM-%d", i))
 		unpacked := mustUnpack(t, ctx, loader, keys, forkWorkDir, originalOpts)
 		forkCOW := unpacked.ChunkedFiles["scratchfs"]

@@ -112,7 +112,7 @@ func writeBlobsForReading(ctx context.Context, numBlobs int) []*repb.Digest {
 	blobsPerThread := numBlobs / int(*concurrency)
 	for c := 0; c < int(*concurrency); c++ {
 		eg.Go(func() error {
-			for i := 0; i < blobsPerThread; i++ {
+			for range blobsPerThread {
 				d, buf := newRandomDigestBuf(randomBlobSize())
 				_, err := cachetools.UploadBlob(ctx, bsClient, *instanceName, repb.DigestFunction_SHA256, bytes.NewReader(buf))
 				if err != nil {
@@ -196,7 +196,7 @@ func findMissingBlobsDataFunc(cd *runner.CallData) ([]*dynamic.Message, error) {
 		InstanceName: *instanceName,
 		BlobDigests:  make([]*repb.Digest, 100),
 	}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		req.BlobDigests[i] = preWrittenDigests[rand.Intn(len(preWrittenDigests))]
 	}
 	dynamicMsg, err := dynamic.AsDynamicMessage(req)

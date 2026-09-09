@@ -240,7 +240,7 @@ func NewClientConnPoolSplitter(trafficAllocation map[*ClientConnPool]int) (*Clie
 	uniquePools := make([]*ClientConnPool, 0, len(trafficAllocation))
 	for pool, trafficPercent := range trafficAllocation {
 		totalTrafficPercent += trafficPercent
-		for i := 0; i < trafficPercent; i++ {
+		for range trafficPercent {
 			pools[poolIdx] = pool
 			poolIdx++
 		}

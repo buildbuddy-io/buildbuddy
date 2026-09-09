@@ -758,7 +758,7 @@ func TestFetchDeduplication(t *testing.T) {
 		}
 		results := make([]result, numConcurrent)
 		var wg sync.WaitGroup
-		for i := 0; i < numConcurrent; i++ {
+		for i := range numConcurrent {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
@@ -850,7 +850,7 @@ func TestFetchDeduplication(t *testing.T) {
 		}
 		results := make([]result, numConcurrent)
 		var wg sync.WaitGroup
-		for i := int32(0); i < numConcurrent; i++ {
+		for i := range numConcurrent {
 			wg.Add(1)
 			go func(idx int32) {
 				defer wg.Done()
@@ -882,7 +882,7 @@ func TestFetchDeduplication(t *testing.T) {
 		closeRelease()
 		wg.Wait()
 
-		for i := int32(0); i < numConcurrent; i++ {
+		for i := range numConcurrent {
 			require.NoErrorf(t, results[i].err, "request %d", i)
 			require.Equalf(t, http.StatusOK, results[i].statusCode, "request %d", i)
 		}

@@ -1174,7 +1174,7 @@ func TestChunkedBlobReader_CloseDoesNotWaitForActiveReads(t *testing.T) {
 		},
 	}, bytebufferpool.VariableSize(8), []*rspb.ResourceName{rn1, rn2}, 0, "false")
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-started:
 		case <-time.After(time.Second):

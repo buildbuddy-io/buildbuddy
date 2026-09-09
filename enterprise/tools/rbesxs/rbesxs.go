@@ -83,7 +83,7 @@ func newCommand(target, environment, apiKey, remoteInstanceName, tag string, ext
 		envSuffix = "io"
 	}
 	// Add these first so the buildbuddy flags take precedence.
-	for i := 0; i < len(extraFlags); i++ {
+	for i := range extraFlags {
 		if extraFlags[i] != "" {
 			cmd = append(cmd, extraFlags[i])
 		}

@@ -52,7 +52,7 @@ func TestPullsNotDeduped(t *testing.T) {
 	require.NoError(t, err)
 
 	eg := errgroup.Group{}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		eg.Go(func() error {
 			return container.PullImage(ctx, oci.Credentials{})
 		})

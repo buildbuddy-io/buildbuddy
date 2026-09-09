@@ -195,7 +195,6 @@ func (r *Env) shutdownBuildBuddyServers() {
 	log.Info("Waiting for buildbuddy servers to shutdown")
 	var wg sync.WaitGroup
 	for app := range r.buildBuddyServers {
-		app := app
 		app.env.GetHealthChecker().Shutdown()
 		wg.Add(1)
 		go func() {
@@ -327,7 +326,6 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 		log.Warningf("Shutting down executors...")
 		var wg sync.WaitGroup
 		for id, e := range rbe.executors {
-			id, e := id, e
 			e.env.GetHealthChecker().Shutdown()
 			wg.Add(1)
 			go func() {
@@ -773,7 +771,7 @@ func (r *Env) AddBuildBuddyServer() *BuildBuddyServer {
 }
 
 func (r *Env) AddBuildBuddyServers(n int) {
-	for i := 0; i < n; i++ {
+	for range n {
 		r.AddBuildBuddyServer()
 	}
 }
@@ -872,7 +870,7 @@ func (r *Env) AddNamedExecutors(t testing.TB, names []string) []*Executor {
 // Blocks until all executors register with the scheduler.
 func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 	var names []string
-	for i := 0; i < n; i++ {
+	for range n {
 		name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
 		names = append(names, name)
 	}

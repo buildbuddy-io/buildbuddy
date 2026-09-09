@@ -836,7 +836,7 @@ func TestKeyReencryption(t *testing.T) {
 	clock.Advance(*keyReencryptInterval * 2)
 
 	var user1NewKeyDBEntry, user2NewKeyDBEntry tables.EncryptionKeyVersion
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		q := `SELECT * FROM "EncryptionKeyVersions" WHERE encryption_key_id = ? AND version = 1`
 		ctx := context.Background()
 		err = env.GetDBHandle().NewQuery(ctx, "get_key1").Raw(q, group1KeyID).Take(&user1NewKeyDBEntry)

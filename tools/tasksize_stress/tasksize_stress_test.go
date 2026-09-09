@@ -42,7 +42,7 @@ func TestCPU8(t *testing.T) {
 func fullyUtilizeCPUCores(numGoroutines int, dur time.Duration) {
 	var wg sync.WaitGroup
 	end := time.Now().Add(dur)
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

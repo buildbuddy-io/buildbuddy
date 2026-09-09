@@ -254,7 +254,7 @@ func TestPullImageIfNecessary_ParallelCallsSerialized(t *testing.T) {
 
 	assert.Equal(t, 0, c.PullCount, "sanity check: pull count should be 0 initially")
 	eg := errgroup.Group{}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		eg.Go(func() error { return container.PullImageIfNecessary(ctx, env, c, oci.Credentials{}, imageRef, false) })
 	}
 	require.NoError(t, eg.Wait())

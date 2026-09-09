@@ -91,7 +91,6 @@ func normalizeTarget(target string) string {
 func failedTestTargets(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, invocationID string) ([]string, error) {
 	var targets []string
 	for _, s := range failingTestStatuses {
-		s := s
 		pageToken := ""
 		for {
 			resp, err := bbClient.GetTarget(ctx, &trpb.GetTargetRequest{

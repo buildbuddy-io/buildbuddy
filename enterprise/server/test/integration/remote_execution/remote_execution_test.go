@@ -546,7 +546,7 @@ func TestSimpleCommand_RunnerReuse_PoolSelectionViaHeader_RoutesCommandToSameExe
 	rbe := rbetest.NewRBETestEnv(t)
 
 	rbe.AddBuildBuddyServers(3)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		rbe.AddExecutorWithOptions(t, &rbetest.ExecutorOptions{Pool: "foo"})
 	}
 
@@ -818,7 +818,7 @@ func TestManySimpleCommandsWithMultipleExecutors(t *testing.T) {
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -838,7 +838,7 @@ func TestRedisAvailabilityMonitoring(t *testing.T) {
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1397,7 +1397,7 @@ func TestSaturateTaskQueue(t *testing.T) {
 		},
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -1435,7 +1435,7 @@ func TestMultipleSchedulersAndExecutors(t *testing.T) {
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1464,7 +1464,7 @@ func TestWorkSchedulingOnNewExecutor(t *testing.T) {
 
 	// Schedule some additional commands that existing executors can't take on.
 	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1497,13 +1497,13 @@ func TestWaitExecution(t *testing.T) {
 	rbe := rbetest.NewRBETestEnv(t)
 
 	// Start multiple servers so that executions are spread out across different servers.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		rbe.AddBuildBuddyServer()
 	}
 	rbe.AddExecutors(t, 5)
 
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmds = append(cmds, rbe.ExecuteControlledCommand(fmt.Sprintf("command%d", i+1), &rbetest.ExecuteControlledOpts{}))
 	}
 
@@ -1606,7 +1606,7 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	// Now schedule some commands. The fake task router will ensure that the reservations only land on "busy"
 	// executors.
 	var cmds []*rbetest.Command
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i))
 		cmds = append(cmds, cmd)
 	}
@@ -1672,7 +1672,7 @@ func TestRedisRestart(t *testing.T) {
 	}
 
 	var redisShards []*testredis.Handle
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		redisShards = append(redisShards, testredis.Start(t))
 	}
 
@@ -1814,7 +1814,7 @@ func WaitForPendingExecution(rdb redis.UniversalClient, opID string) error {
 	if err != nil {
 		return err
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_, err := rdb.Get(context.Background(), forwardKey).Result()
 		if err == nil {
 			return nil
@@ -2200,7 +2200,7 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 	rbe.AppProxy.SetDirector(director)
 
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
 			// Allow reconnecting with WaitExecution since the test will hard
 			// stop the app, which kills the Execute stream.
@@ -2230,7 +2230,6 @@ func TestAppShutdownDuringExecution_PublishOperationRetried(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	for _, cmd := range cmds {
-		cmd := cmd
 		eg.Go(func() error {
 			// Maybe let the command continue execution for a bit, then exit.
 			randSleepMillis(0, 50)
@@ -2298,7 +2297,7 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 	rbe.AddExecutor(t)
 
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
 			// Allow reconnecting with WaitExecution since the test will hard
 			// stop the app, which kills the Execute stream.
@@ -2328,7 +2327,6 @@ func TestAppShutdownDuringExecution_LeaseTaskRetried(t *testing.T) {
 
 	eg := &errgroup.Group{}
 	for _, cmd := range cmds {
-		cmd := cmd
 		eg.Go(func() error {
 			// Maybe let the command continue execution for a bit, then exit.
 			randSleepMillis(0, 50)
@@ -2639,7 +2637,7 @@ func testCustomResources(t *testing.T, test customResourcesTest) {
 	// are all currently tied up by the command we've started above.
 	taskRouter.UpdateSubset([]string{ex1ID, ex2ID})
 	var cmds []*rbetest.ControlledCommand
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		log.Infof("Starting smaller commands...")
 		cmd := rbe.ExecuteControlledCommand(fmt.Sprintf("cmd-%d", i), &rbetest.ExecuteControlledOpts{
 			Properties: []*repb.Platform_Property{

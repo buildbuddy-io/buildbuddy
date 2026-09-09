@@ -952,7 +952,7 @@ func TestSizeLimit(t *testing.T) {
 			defer pc.Stop()
 
 			resourceKeys := make([]*rspb.ResourceName, 0)
-			for i := 0; i < 150; i++ {
+			for range 150 {
 				r, buf := testdigest.RandomCASResourceBuf(t, 1000)
 				resourceKeys = append(resourceKeys, r)
 				if err := pc.Set(ctx, r, buf); err != nil {
@@ -1140,7 +1140,7 @@ func TestCompression_BufferPoolReuse(t *testing.T) {
 			defer pc.Stop()
 
 			// Do multiple reads to reuse buffers in bufferpool
-			for i := 0; i < 5; i++ {
+			for i := range 5 {
 				decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "" /*instanceName*/)
 
 				require.NoError(t, err, "i=%d", i)
@@ -1196,7 +1196,7 @@ func TestCompression_ParallelRequests(t *testing.T) {
 			defer pc.Stop()
 
 			eg := errgroup.Group{}
-			for i := 0; i < 10; i++ {
+			for range 10 {
 				eg.Go(func() error {
 					decompressedRN, blob := testdigest.RandomCompressibleCASResourceBuf(t, tc.blobSize, "" /*instanceName*/)
 
@@ -1227,7 +1227,7 @@ func TestCompression_NoEarlyEviction(t *testing.T) {
 	numDigests := 10
 	totalSizeCompresedData := 0
 	digestBlobs := make(map[*repb.Digest][]byte, numDigests)
-	for i := 0; i < numDigests; i++ {
+	for range numDigests {
 		rn, blob := testdigest.RandomCompressibleCASResourceBuf(t, 2000, "" /*instanceName*/)
 		compressed := compression.CompressZstd(nil, blob)
 		require.Less(t, len(compressed), len(blob))
@@ -1423,7 +1423,7 @@ func TestNoEarlyEviction(t *testing.T) {
 
 			// Should be able to add 10 things without anything getting evicted
 			resourceKeys := make([]*rspb.ResourceName, numDigests)
-			for i := 0; i < numDigests; i++ {
+			for i := range numDigests {
 				r, buf := testdigest.RandomCASResourceBuf(t, tc.digestSize)
 				resourceKeys[i] = r
 
@@ -1485,7 +1485,7 @@ func TestPartitionMinEvictionAge(t *testing.T) {
 	// Wake the sample generator, which goes to sleep while the cache is
 	// empty. Advance repeatedly in case it wasn't sleeping yet on the first
 	// advance.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		clock.Advance(pebble_cache.SamplerSleepDuration)
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -1549,7 +1549,7 @@ func TestPartitionJanitorCutoffThreshold(t *testing.T) {
 	}
 	write := func(t *testing.T, ctx context.Context, pc *pebble_cache.PebbleCache, n int) []*rspb.ResourceName {
 		resourceKeys := make([]*rspb.ResourceName, 0, n)
-		for i := 0; i < n; i++ {
+		for range n {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
 			require.NoError(t, pc.Set(ctx, rn, buf))
 			resourceKeys = append(resourceKeys, rn)
@@ -1651,7 +1651,7 @@ func TestLRU(t *testing.T) {
 			quartile := numDigests / 4
 			resourceKeys := make([]*rspb.ResourceName, 0)
 			lastUsed := make(map[*rspb.ResourceName]time.Time, numDigests)
-			for i := 0; i < numDigests; i++ {
+			for i := range numDigests {
 				cacheType := rspb.CacheType_CAS
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
@@ -1684,7 +1684,7 @@ func TestLRU(t *testing.T) {
 			}
 
 			// Write more data.
-			for i := 0; i < quartile; i++ {
+			for i := range quartile {
 				cacheType := rspb.CacheType_CAS
 				if i%2 == 0 {
 					cacheType = rspb.CacheType_AC
@@ -1802,7 +1802,7 @@ func TestStartupScan(t *testing.T) {
 			err = pc.Start()
 			require.NoError(t, err)
 			resources := make([]*rspb.ResourceName, 0)
-			for i := 0; i < 1000; i++ {
+			for i := range 1000 {
 				remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 				r, buf := testdigest.NewRandomResourceAndBuf(t, tc.digestSize, rspb.CacheType_AC, remoteInstanceName)
 				err = pc.Set(ctx, r, buf)
@@ -1859,13 +1859,13 @@ func TestDeleteOrphans(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	digests := make(map[string]*digestAndType, 0)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
 		digests[r.GetDigest().GetHash()] = &digestAndType{rspb.CacheType_CAS, r.GetDigest()}
 	}
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_AC, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -1977,7 +1977,7 @@ func TestDeleteEmptyDirs(t *testing.T) {
 	}
 	pc.Start()
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.NewRandomResourceAndBuf(t, 10000, rspb.CacheType_CAS, "remoteInstanceName")
 		err = pc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -2165,7 +2165,7 @@ func TestMigrateVersions(t *testing.T) {
 			t.Fatal(err)
 		}
 		pc.Start()
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			remoteInstanceName := fmt.Sprintf("remote-instance-%d", i)
 			r, buf := testdigest.NewRandomResourceAndBuf(t, 1000, rspb.CacheType_CAS, remoteInstanceName)
 			err = pc.Set(ctx, r, buf)
@@ -2643,7 +2643,7 @@ func TestEncryptionAndCompression(t *testing.T) {
 
 func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		r, buf := testdigest.NewRandomResourceAndBuf(b, digestSizeBytes, rspb.CacheType_CAS, "" /*instanceName*/)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
@@ -2654,7 +2654,7 @@ func benchmarkGetMulti(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.C
 	randomDigests := func(n int) []*rspb.ResourceName {
 		r := make([]*rspb.ResourceName, 0, n)
 		offset := randIntN(b, len(digestKeys))
-		for i := 0; i < n; i++ {
+		for i := range n {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
 		}
 		return r
@@ -2707,7 +2707,7 @@ func BenchmarkGetMulti(b *testing.B) {
 
 func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64, present bool) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if present {
@@ -2720,7 +2720,7 @@ func benchmarkFindMissing(b *testing.B, pc *pebble_cache.PebbleCache, ctx contex
 	randomDigests := func(n int) []*rspb.ResourceName {
 		r := make([]*rspb.ResourceName, 0, n)
 		offset := randIntN(b, len(digestKeys))
-		for i := 0; i < n; i++ {
+		for i := range n {
 			r = append(r, digestKeys[(i+offset)%len(digestKeys)])
 		}
 		return r
@@ -2794,7 +2794,7 @@ func BenchmarkFindMissing(b *testing.B) {
 
 func benchmarkContains1(b *testing.B, pc *pebble_cache.PebbleCache, ctx context.Context, digestSizeBytes int64) {
 	digestKeys := make([]*rspb.ResourceName, 0, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
 		digestKeys = append(digestKeys, r)
 		if err := pc.Set(ctx, r, buf); err != nil {
@@ -2957,7 +2957,7 @@ func TestSampling(t *testing.T) {
 
 	// Write some random digests as well.
 	var randomResources []*rspb.ResourceName
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		anonCtx := getAnonContext(t, te)
 		err = pc.Set(anonCtx, rn, buf)
@@ -3065,7 +3065,7 @@ func TestGCSBlobStorage(t *testing.T) {
 	defer pc.Stop()
 
 	sampleData := make(map[*rspb.ResourceName][]byte)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		sampleData[rn] = buf
 
@@ -3280,7 +3280,7 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	defer pc.Stop()
 
 	sampleData := make(map[*rspb.ResourceName][]byte)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		sampleData[rn] = buf
 
@@ -3555,7 +3555,7 @@ func TestGCSBlobStorageReadAfterTTL(t *testing.T) {
 	defer pc.Stop()
 
 	sampleData := make(map[*rspb.ResourceName][]byte)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		sampleData[rn] = buf
 

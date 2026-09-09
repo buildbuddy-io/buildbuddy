@@ -51,7 +51,7 @@ func TestGenerateName(t *testing.T) {
 
 	// A name in use by a running box is never handed out again.
 	taken := []*gwpb.Peer{{Name: name}}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		require.NotEqual(t, name, generateName(taken))
 	}
 }

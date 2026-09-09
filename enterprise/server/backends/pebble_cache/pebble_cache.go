@@ -850,8 +850,6 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	peMu := sync.Mutex{}
 	eg := errgroup.Group{}
 	for i, part := range opts.Partitions {
-		i := i
-		part := part
 		eg.Go(func() error {
 			if err := disk.EnsureDirectoryExists(pc.blobDirectory); err != nil {
 				return err
@@ -3434,7 +3432,7 @@ func (e *partitionEvictor) randomKey(buf []byte) ([]byte, error) {
 	// as maxDatabaseVersion, and this will sample all data.
 	version := e.versionGetter.minDatabaseVersion()
 	digestLength := len(buf)
-	for i := 0; i < digestLength; i++ {
+	for i := range digestLength {
 		buf[i] = digestChars[e.rng.Intn(len(digestChars))]
 	}
 
@@ -3511,7 +3509,7 @@ func (e *partitionEvictor) doEvict(sample *approxlru.Sample[*evictionKey]) {
 
 func (e *partitionEvictor) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
-	for i := 0; i < k; i++ {
+	for range k {
 		s, ok := <-e.samples
 		if ok {
 			samples = append(samples, s)
@@ -3810,7 +3808,6 @@ func (p *PebbleCache) readerForMetadata(ctx context.Context, r *rspb.ResourceNam
 func (p *PebbleCache) Start() error {
 	p.quitChan = make(chan struct{})
 	for _, evictor := range p.evictors {
-		evictor := evictor
 		p.eg.Go(func() error {
 			return evictor.run(p.quitChan)
 		})

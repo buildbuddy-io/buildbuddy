@@ -182,7 +182,7 @@ func TestGetBlobRejectsForgedManifestSizes(t *testing.T) {
 		SizeBytes: chunkCount * firstForgedChunkDigest.GetSizeBytes(),
 	}
 	chunkDigests := make([]*repb.Digest, chunkCount)
-	for i := 0; i < chunkCount-1; i++ {
+	for i := range chunkCount - 1 {
 		chunkDigests[i] = firstForgedChunkDigest
 	}
 	chunkDigests[chunkCount-1] = lastForgedChunkDigest
@@ -213,7 +213,7 @@ func TestChunker_DeterministicChunking(t *testing.T) {
 	const averageSize = 16 * 1024
 
 	var runs [2][][]byte
-	for run := 0; run < 2; run++ {
+	for run := range 2 {
 		var chunks [][]byte
 		writeChunkFn := func(data []byte) error {
 			chunk := make([]byte, len(data))
@@ -621,7 +621,7 @@ func TestMissingChunkChecker_Concurrent(t *testing.T) {
 	checker := chunking.NewMissingChunkChecker(cache, repb.FindMissingBlobsRequest_UNKNOWN)
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(32)
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		manifest, want := manifestAllPresent, false
 		if i%2 == 0 {
 			manifest, want = manifestWithMissing, true
