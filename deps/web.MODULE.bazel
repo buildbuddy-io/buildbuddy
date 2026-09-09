@@ -6,6 +6,7 @@ use_repo(node, "nodejs_toolchains")
 
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
 use_repo(pnpm, "pnpm")
+# To update to v12+, aspect_rules_js will need to be upgraded to support it.
 pnpm.pnpm(pnpm_version = "11.10.0")
 
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
