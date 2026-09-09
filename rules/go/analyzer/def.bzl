@@ -4,7 +4,7 @@ ANALYZERS = [
     # "fmtappendf",
     "forvar",
     # "mapsloop",
-    # "minmax",
+    "minmax",
     # "newexpr",
     # "plusbuild",
     # "omitzero",

@@ -723,10 +723,7 @@ func BenchmarkStore(b *testing.B) {
 			const chunkSize = 512 * 1024
 			var chunkDigests []*repb.Digest
 			for i := 0; i < len(blobData); i += chunkSize {
-				end := i + chunkSize
-				if end > len(blobData) {
-					end = len(blobData)
-				}
+				end := min(i+chunkSize, len(blobData))
 				chunk := blobData[i:end]
 				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
 				require.NoError(b, err)

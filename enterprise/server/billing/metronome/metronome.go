@@ -111,10 +111,7 @@ func (c *Client) ReportUsage(ctx context.Context, events []UsageEvent) error {
 		encoded = append(encoded, *ue)
 	}
 	for start := 0; start < len(encoded); start += MaxEventsPerIngestRequest {
-		end := start + MaxEventsPerIngestRequest
-		if end > len(encoded) {
-			end = len(encoded)
-		}
+		end := min(start+MaxEventsPerIngestRequest, len(encoded))
 		batch := encoded[start:end]
 		err := retry.DoVoid(ctx, c.retryOptions, func(ctx context.Context) error {
 			err := c.ingestToMetronome(ctx, batch)

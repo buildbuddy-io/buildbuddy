@@ -372,10 +372,7 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("invalid startIndex value: %s", err)
 		}
-		startIndex = v - 1
-		if startIndex < 0 {
-			startIndex = 0
-		}
+		startIndex = max(v-1, 0)
 	}
 
 	count := 0
@@ -385,10 +382,7 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("invalud count value: %s", err)
 		}
-		count = v
-		if count < 0 {
-			count = 0
-		}
+		count = max(v, 0)
 	}
 
 	users := []*UserResource{}
@@ -1047,10 +1041,7 @@ func (s *SCIMServer) getGroups(ctx context.Context, r *http.Request, g *tables.G
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("invalid startIndex value: %s", err)
 		}
-		startIndex = v - 1
-		if startIndex < 0 {
-			startIndex = 0
-		}
+		startIndex = max(v-1, 0)
 	}
 
 	count := 0
@@ -1060,10 +1051,7 @@ func (s *SCIMServer) getGroups(ctx context.Context, r *http.Request, g *tables.G
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("invalid count value: %s", err)
 		}
-		count = v
-		if count < 0 {
-			count = 0
-		}
+		count = max(v, 0)
 	}
 
 	userLists, err := s.env.GetUserDB().GetUserLists(ctx, g.GroupID)

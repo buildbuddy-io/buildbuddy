@@ -1874,12 +1874,9 @@ func (p *Server) Statfs(ctx context.Context, request *vfspb.StatfsRequest) (*vfs
 
 	totalBlocks := reportedSizeBytes / p.backingBlockSize
 
-	free := totalBlocks - p.blocks
 	// We don't enforce a usage limit yet so used blocks may go over the
 	// total blocks.
-	if free < 0 {
-		free = 0
-	}
+	free := max(totalBlocks-p.blocks, 0)
 
 	return &vfspb.StatfsResponse{
 		BlockSize:       p.backingBlockSize,

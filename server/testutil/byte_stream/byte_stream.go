@@ -57,10 +57,7 @@ func MustUploadChunked(t *testing.T, ctx context.Context, bsClient bspb.ByteStre
 
 	remaining := blob
 	for len(remaining) > 0 {
-		chunkSize := 1_000_000
-		if chunkSize > len(remaining) {
-			chunkSize = len(remaining)
-		}
+		chunkSize := min(1_000_000, len(remaining))
 		err = uploadStream.Send(&bspb.WriteRequest{
 			ResourceName: uploadResourceName,
 			WriteOffset:  int64(len(blob) - len(remaining)),

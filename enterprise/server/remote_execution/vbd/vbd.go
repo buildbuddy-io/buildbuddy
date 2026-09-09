@@ -269,10 +269,7 @@ type reader struct {
 var _ fuse.ReadResult = (*reader)(nil)
 
 func (r *reader) Bytes(p []byte) ([]byte, fuse.Status) {
-	length := r.size
-	if len(p) < length {
-		length = len(p)
-	}
+	length := min(len(p), r.size)
 	_, err := r.file.ReadAt(p[:length], r.off)
 	if err != nil {
 		log.CtxErrorf(r.ctx, "VBD read failed: %s", err)

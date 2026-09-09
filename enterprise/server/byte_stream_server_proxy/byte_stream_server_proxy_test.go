@@ -2783,10 +2783,7 @@ func TestWriteChunked(t *testing.T) {
 	require.NoError(t, err)
 	remaining := compressedData
 	for len(remaining) > 0 {
-		chunkSize := 1_000_000
-		if chunkSize > len(remaining) {
-			chunkSize = len(remaining)
-		}
+		chunkSize := min(1_000_000, len(remaining))
 		err = uploadStream.Send(&bspb.WriteRequest{
 			ResourceName: blobRN.NewUploadString(),
 			WriteOffset:  int64(len(compressedData) - len(remaining)),
@@ -3266,10 +3263,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	require.NoError(t, err)
 	remaining := originalData
 	for len(remaining) > 0 {
-		chunkSize := 100_000
-		if chunkSize > len(remaining) {
-			chunkSize = len(remaining)
-		}
+		chunkSize := min(100_000, len(remaining))
 		err = uploadStream.Send(&bspb.WriteRequest{
 			ResourceName: uploadString,
 			WriteOffset:  int64(len(originalData) - len(remaining)),

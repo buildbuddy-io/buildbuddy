@@ -587,10 +587,7 @@ func (w *Writer) AddDocument(doc types.Document) error {
 			s.tokens++
 		})
 		tfStats := tokenizer.TermFrequencyStats()
-		occurrences := tfStats.Occurrences
-		if occurrences < 0 {
-			occurrences = 0
-		}
+		occurrences := max(tfStats.Occurrences, 0)
 		fieldLengths[field.Name()] = uint32(min(occurrences, math.MaxUint32))
 		indexprofile.RecordTermFrequencyStats(field.Name(), tfStats)
 
