@@ -986,6 +986,27 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
+	// NOTE: compute the task size before applying any volatile env overrides below,
+	// since the command hash is used as part of the task sizing key.
+	defaultTaskSize := tasksize.Default(executionTask)
+	requestedTaskSize := tasksize.Requested(executionTask)
+	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
+	measuredSize := s.taskSizer.Get(ctx, command, props)
+	var predictedSize *scpb.TaskSize
+	if measuredSize == nil {
+		predictedSize = s.taskSizer.Predict(ctx, action, command, props)
+	}
+
+	if measuredSize != nil {
+		// If we have a measured task size, make sure we associate the p90 cpu
+		// experiment arm with the task, so we can later evaluate the experiment
+		// results. Note, the first time this is evaluated, we'll use the avg
+		// sample, so we'll probably want to ignore the first few days of data.
+		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
+			executionTask.Experiments = append(executionTask.Experiments, experiment)
+		}
+	}
+
 	// Add in secrets for any action explicitly requesting secrets, and all workflows.
 	secretService := s.env.GetSecretService()
 	if props.IncludeSecrets || len(props.EnvSecrets) > 0 {
@@ -1019,25 +1040,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()
-	defaultTaskSize := tasksize.Default(executionTask)
-	requestedTaskSize := tasksize.Requested(executionTask)
-	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
-	measuredSize := s.taskSizer.Get(ctx, command, props)
-	var predictedSize *scpb.TaskSize
-	if measuredSize == nil {
-		predictedSize = s.taskSizer.Predict(ctx, action, command, props)
-	}
-
-	if measuredSize != nil {
-		// If we have a measured task size, make sure we associate the p90 cpu
-		// experiment arm with the task, so we can later evaluate the experiment
-		// results. Note, the first time this is evaluated, we'll use the avg
-		// sample, so we'll probably want to ignore the first few days of data.
-		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
-			executionTask.Experiments = append(executionTask.Experiments, experiment)
-		}
-	}
-
 	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
