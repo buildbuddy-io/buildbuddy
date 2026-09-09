@@ -148,8 +148,7 @@ func TestStreamHeartbeats_ShutdownRemovesProxy(t *testing.T) {
 	registry, client := startTestRegistry(t, map[string]interfaces.UserInfo{testAPIKey: streamUser})
 
 	node := &cppb.CacheProxyNode{Host: "host-x", ProxyId: "proxy-x", Version: "v1"}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	streamCtx := outgoingCtx(ctx, testAPIKey)
 
 	shutdownCh := make(chan struct{})
@@ -194,8 +193,7 @@ func TestStreamHeartbeats_UnauthorizedReturnsError(t *testing.T) {
 	noCap := userWithCapabilities("U1", testGroupID, cappb.Capability_CACHE_WRITE)
 	_, client := startTestRegistry(t, map[string]interfaces.UserInfo{"NOCAP_KEY": noCap})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	streamCtx := outgoingCtx(ctx, "NOCAP_KEY")
 
 	err := streamHeartbeats(streamCtx, make(chan struct{}), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})

@@ -23,7 +23,7 @@ ANALYZERS = [
     "stringscutprefix",
     "stringsseq",
     "stringsbuilder",
-    # "testingcontext",
+    "testingcontext",
     "waitgroupgo",
 ]
 
