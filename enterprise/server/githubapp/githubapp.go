@@ -2517,7 +2517,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	eg, gCtx := errgroup.WithContext(ctx)
 
 	graph := &prDetailsQuery{}
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		"repoOwner":  githubv4.String(req.GetOwner()),
 		"repoName":   githubv4.String(req.GetRepo()),
 		"pullNumber": githubv4.Int(req.GetPull()),
@@ -2769,10 +2769,10 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, username stri
 	eg, gCtx := errgroup.WithContext(ctx)
 	incomingGraph := &prSearchQuery{}
 	outgoingGraph := &prSearchQuery{}
-	incomingVars := map[string]interface{}{
+	incomingVars := map[string]any{
 		"searchQuery": githubv4.String(fmt.Sprintf("is:open is:pr user-review-requested:%s archived:false draft:false", username)),
 	}
-	outgoingVars := map[string]interface{}{
+	outgoingVars := map[string]any{
 		"searchQuery": githubv4.String(fmt.Sprintf("is:open is:pr author:%s archived:false draft:false", username)),
 	}
 

@@ -56,7 +56,7 @@ func (*githubGitProvider) RegisterWebhook(ctx context.Context, accessToken, repo
 	hook, _, err := client.Repositories.CreateHook(ctx, owner, repo, &gh.Hook{
 		Name:   &name,
 		Events: eventsToReceive,
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"url":    webhookURL,
 			"events": eventsToReceive,
 		},
@@ -116,7 +116,7 @@ func (*githubGitProvider) ParseWebhookData(r *http.Request) (*interfaces.Webhook
 	return ParseWebhookData(event)
 }
 
-func ParseWebhookData(event interface{}) (*interfaces.WebhookData, error) {
+func ParseWebhookData(event any) (*interfaces.WebhookData, error) {
 	switch event := event.(type) {
 	case *gh.PushEvent:
 		// Ignore deletion events (both branch and tag deletions).

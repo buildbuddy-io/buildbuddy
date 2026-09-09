@@ -45,7 +45,7 @@ func NewHandle() *Handle {
 	}
 }
 
-func (h *Handle) BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{}) {
+func (h *Handle) BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []any) {
 	return "", nil
 }
 
@@ -98,7 +98,7 @@ func (h *Handle) GetExecutionIDsByInvID(t *testing.T, invID string) []string {
 
 func (h *Handle) GetInvocationIDs() []string {
 	res := []string{}
-	h.executionIDsByInvID.Range(func(k, v interface{}) bool {
+	h.executionIDsByInvID.Range(func(k, v any) bool {
 		invID := k.(string)
 		res = append(res, invID)
 		return true

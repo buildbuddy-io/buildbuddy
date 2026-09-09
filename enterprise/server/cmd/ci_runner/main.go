@@ -1002,10 +1002,10 @@ func (r *buildEventReporter) Write(b []byte) (int, error) {
 	return r.log.Write(b)
 }
 
-func (r *buildEventReporter) Println(vals ...interface{}) {
+func (r *buildEventReporter) Println(vals ...any) {
 	r.log.Println(vals...)
 }
-func (r *buildEventReporter) Printf(format string, vals ...interface{}) {
+func (r *buildEventReporter) Printf(format string, vals ...any) {
 	r.log.Printf(format, vals...)
 }
 
@@ -1038,10 +1038,10 @@ func (invLog *invocationLog) Write(b []byte) (int, error) {
 	return len(b), err
 }
 
-func (invLog *invocationLog) Println(vals ...interface{}) {
+func (invLog *invocationLog) Println(vals ...any) {
 	invLog.Write([]byte(fmt.Sprintln(vals...)))
 }
-func (invLog *invocationLog) Printf(format string, vals ...interface{}) {
+func (invLog *invocationLog) Printf(format string, vals ...any) {
 	invLog.Write([]byte(fmt.Sprintf(format+"\n", vals...)))
 }
 
@@ -2667,7 +2667,7 @@ func formatNowUTC() string {
 	return time.Now().UTC().Format("2006-01-02 15:04:05.000 UTC")
 }
 
-func writeCommandSummary(out io.Writer, format string, args ...interface{}) {
+func writeCommandSummary(out io.Writer, format string, args ...any) {
 	io.WriteString(out, ansiGray+formatNowUTC()+ansiReset+" ")
 	io.WriteString(out, fmt.Sprintf(format, args...))
 	io.WriteString(out, "\n")

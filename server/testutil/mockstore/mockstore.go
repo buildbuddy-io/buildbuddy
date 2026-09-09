@@ -26,7 +26,7 @@ func (m *Context) Err() error {
 	return nil
 }
 
-func (m *Context) Value(key interface{}) interface{} {
+func (m *Context) Value(key any) any {
 	return nil
 }
 

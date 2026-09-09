@@ -355,7 +355,7 @@ type casRPCRecorder struct {
 }
 
 func recordCASUnaryInterceptor(rec *casRPCRecorder) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		rec.mu.Lock()
 		switch {
 		case strings.HasSuffix(method, "/FindMissingBlobs"):
@@ -386,7 +386,7 @@ func recordCASUnaryInterceptor(rec *casRPCRecorder) grpc.UnaryClientInterceptor 
 }
 
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		count.Add(1)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
@@ -1585,7 +1585,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -1747,7 +1747,7 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -1903,7 +1903,7 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -2028,7 +2028,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	go remoteRun()
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -2460,7 +2460,7 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -3305,7 +3305,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	require.Equal(t, originalData, downloadedData)
 }
 
-func networkLatencyUnaryInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func networkLatencyUnaryInterceptor(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	time.Sleep(simulatedBenchRTT())
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
@@ -3316,7 +3316,7 @@ type delayedRecvClientStream struct {
 	recvCount int
 }
 
-func (s *delayedRecvClientStream) RecvMsg(m interface{}) error {
+func (s *delayedRecvClientStream) RecvMsg(m any) error {
 	if strings.HasSuffix(s.method, "/Read") {
 		if s.recvCount == 0 {
 			time.Sleep(simulatedBenchRTT())

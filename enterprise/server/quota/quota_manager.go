@@ -245,7 +245,7 @@ func (qm *QuotaManager) parseFlagdBucketConfig(ctx context.Context, nsString str
 		return nil, nil
 	}
 
-	bucketMap, ok := keySpecificFlagdNamespaceConfig.(map[string]interface{})
+	bucketMap, ok := keySpecificFlagdNamespaceConfig.(map[string]any)
 	if !ok {
 		return nil, status.InvalidArgumentErrorf("invalid quota.buckets config for namespace %q: expected object, got %T", nsString, keySpecificFlagdNamespaceConfig)
 	}
@@ -265,7 +265,7 @@ func (qm *QuotaManager) mergeIntoNamespace(ns *namespace) {
 	}
 
 	existing := existingInterface.(*namespace)
-	ns.bucketsByKey.Range(func(k, v interface{}) bool {
+	ns.bucketsByKey.Range(func(k, v any) bool {
 		existing.bucketsByKey.Store(k, v)
 		return true
 	})
@@ -286,7 +286,7 @@ func (qm *QuotaManager) findBucket(nsName string, key string) Bucket {
 }
 
 func (qm *QuotaManager) reloadNamespaces() {
-	qm.namespaces.Range(func(key, value interface{}) bool {
+	qm.namespaces.Range(func(key, value any) bool {
 		qm.namespaces.Delete(key)
 		return true
 	})
@@ -328,12 +328,12 @@ func (qm *QuotaManager) listenForUpdates(ctx context.Context) {
 	}
 }
 
-func bucketConfigFromMap(namespace string, bucketMap map[string]interface{}) (*bucketConfig, error) {
+func bucketConfigFromMap(namespace string, bucketMap map[string]any) (*bucketConfig, error) {
 	maxRateInterface, ok := bucketMap["maxRate"]
 	if !ok {
 		return nil, status.InvalidArgumentError("bucket.maxRate is required")
 	}
-	maxRateMap, ok := maxRateInterface.(map[string]interface{})
+	maxRateMap, ok := maxRateInterface.(map[string]any)
 	if !ok {
 		return nil, status.InvalidArgumentError("bucket.maxRate must be an object")
 	}
@@ -367,7 +367,7 @@ func bucketConfigFromMap(namespace string, bucketMap map[string]interface{}) (*b
 	return config, nil
 }
 
-func interfaceToInt64(v interface{}) (int64, error) {
+func interfaceToInt64(v any) (int64, error) {
 	switch val := v.(type) {
 	case int64:
 		return val, nil

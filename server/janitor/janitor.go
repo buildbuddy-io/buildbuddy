@@ -89,13 +89,13 @@ func NewInvocationJanitor(env environment.Env) *Janitor {
 	}
 }
 
-func lookupExpiredExecutionIDs(ctx context.Context, c *JanitorConfig) ([]interface{}, error) {
+func lookupExpiredExecutionIDs(ctx context.Context, c *JanitorConfig) ([]any, error) {
 	dbh := c.env.GetDBHandle()
 	cutoff := time.Now().Add(-1 * c.ttl)
 
 	stmt := `SELECT execution_id FROM "Executions" WHERE created_at_usec < ? LIMIT ?`
 	rq := dbh.NewQuery(ctx, "janitor_lookup_expired_executions").Raw(stmt, cutoff.UnixMicro(), c.batchSize)
-	executionIDs := make([]interface{}, 0, c.batchSize)
+	executionIDs := make([]any, 0, c.batchSize)
 	err := rq.IterateRaw(func(ctx context.Context, row *sql.Rows) error {
 		var executionID *string
 		if err := row.Scan(&executionID); err != nil {

@@ -58,11 +58,11 @@ func (m *mockBSReadClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockBSReadClient) SendMsg(interface{}) error {
+func (m *mockBSReadClient) SendMsg(any) error {
 	return nil
 }
 
-func (m *mockBSReadClient) RecvMsg(interface{}) error {
+func (m *mockBSReadClient) RecvMsg(any) error {
 	return nil
 }
 
@@ -110,11 +110,11 @@ func (m *mockBSWriteClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockBSWriteClient) SendMsg(interface{}) error {
+func (m *mockBSWriteClient) SendMsg(any) error {
 	return nil
 }
 
-func (m *mockBSWriteClient) RecvMsg(interface{}) error {
+func (m *mockBSWriteClient) RecvMsg(any) error {
 	return nil
 }
 
@@ -192,11 +192,11 @@ func (m *mockGetTreeClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockGetTreeClient) SendMsg(interface{}) error {
+func (m *mockGetTreeClient) SendMsg(any) error {
 	return nil
 }
 
-func (m *mockGetTreeClient) RecvMsg(interface{}) error {
+func (m *mockGetTreeClient) RecvMsg(any) error {
 	return nil
 }
 

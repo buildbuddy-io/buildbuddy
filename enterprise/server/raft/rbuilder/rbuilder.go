@@ -230,7 +230,7 @@ func (br *BatchResponse) setErr(err error) {
 	br.err = err
 }
 
-func NewBatchResponse(val interface{}) *BatchResponse {
+func NewBatchResponse(val any) *BatchResponse {
 	br := &BatchResponse{
 		cmd: &rfpb.BatchCmdResponse{},
 	}

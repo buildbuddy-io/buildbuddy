@@ -340,7 +340,7 @@ func (p *StreamPubSub) Publish(ctx context.Context, channel *Channel, message st
 	pipe := p.rdb.TxPipeline()
 	pipe.XAdd(ctx, &redis.XAddArgs{
 		Stream: channel.name,
-		Values: map[string]interface{}{streamDataField: message},
+		Values: map[string]any{streamDataField: message},
 	})
 	pipe.Expire(ctx, channel.name, listTTL)
 	_, err := pipe.Exec(ctx)

@@ -323,7 +323,7 @@ func (a *githubAuthenticator) renewToken(ctx context.Context, authToken string) 
 	return &token{GithubUser: resp, Expiry: time.Now().Add(jwtDuration).Unix()}, nil
 }
 
-func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
+func jwtKeyFunc(token *jwt.Token) (any, error) {
 	return []byte(*github.JwtKey), nil
 }
 

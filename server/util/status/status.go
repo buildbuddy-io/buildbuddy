@@ -133,7 +133,7 @@ func CanceledError(msg string) error {
 func IsCanceledError(err error) bool {
 	return status.Code(err) == codes.Canceled
 }
-func CanceledErrorf(format string, a ...interface{}) error {
+func CanceledErrorf(format string, a ...any) error {
 	return makeStatusError(codes.Canceled, fmt.Errorf(format, a...))
 }
 func UnknownError(msg string) error {
@@ -142,7 +142,7 @@ func UnknownError(msg string) error {
 func IsUnknownError(err error) bool {
 	return status.Code(err) == codes.Unknown
 }
-func UnknownErrorf(format string, a ...interface{}) error {
+func UnknownErrorf(format string, a ...any) error {
 	return makeStatusError(codes.Unknown, fmt.Errorf(format, a...))
 }
 func InvalidArgumentError(msg string) error {
@@ -151,7 +151,7 @@ func InvalidArgumentError(msg string) error {
 func IsInvalidArgumentError(err error) bool {
 	return status.Code(err) == codes.InvalidArgument
 }
-func InvalidArgumentErrorf(format string, a ...interface{}) error {
+func InvalidArgumentErrorf(format string, a ...any) error {
 	return makeStatusError(codes.InvalidArgument, fmt.Errorf(format, a...))
 }
 func DeadlineExceededError(msg string) error {
@@ -160,7 +160,7 @@ func DeadlineExceededError(msg string) error {
 func IsDeadlineExceededError(err error) bool {
 	return status.Code(err) == codes.DeadlineExceeded
 }
-func DeadlineExceededErrorf(format string, a ...interface{}) error {
+func DeadlineExceededErrorf(format string, a ...any) error {
 	return makeStatusError(codes.DeadlineExceeded, fmt.Errorf(format, a...))
 }
 func NotFoundError(msg string) error {
@@ -169,7 +169,7 @@ func NotFoundError(msg string) error {
 func IsNotFoundError(err error) bool {
 	return status.Code(err) == codes.NotFound
 }
-func NotFoundErrorf(format string, a ...interface{}) error {
+func NotFoundErrorf(format string, a ...any) error {
 	return makeStatusError(codes.NotFound, fmt.Errorf(format, a...))
 }
 func AlreadyExistsError(msg string) error {
@@ -178,7 +178,7 @@ func AlreadyExistsError(msg string) error {
 func IsAlreadyExistsError(err error) bool {
 	return status.Code(err) == codes.AlreadyExists
 }
-func AlreadyExistsErrorf(format string, a ...interface{}) error {
+func AlreadyExistsErrorf(format string, a ...any) error {
 	return makeStatusError(codes.AlreadyExists, fmt.Errorf(format, a...))
 }
 func PermissionDeniedError(msg string) error {
@@ -187,7 +187,7 @@ func PermissionDeniedError(msg string) error {
 func IsPermissionDeniedError(err error) bool {
 	return status.Code(err) == codes.PermissionDenied
 }
-func PermissionDeniedErrorf(format string, a ...interface{}) error {
+func PermissionDeniedErrorf(format string, a ...any) error {
 	return makeStatusError(codes.PermissionDenied, fmt.Errorf(format, a...))
 }
 func ResourceExhaustedError(msg string) error {
@@ -196,7 +196,7 @@ func ResourceExhaustedError(msg string) error {
 func IsResourceExhaustedError(err error) bool {
 	return status.Code(err) == codes.ResourceExhausted
 }
-func ResourceExhaustedErrorf(format string, a ...interface{}) error {
+func ResourceExhaustedErrorf(format string, a ...any) error {
 	return makeStatusError(codes.ResourceExhausted, fmt.Errorf(format, a...))
 }
 func FailedPreconditionError(msg string) error {
@@ -205,7 +205,7 @@ func FailedPreconditionError(msg string) error {
 func IsFailedPreconditionError(err error) bool {
 	return status.Code(err) == codes.FailedPrecondition
 }
-func FailedPreconditionErrorf(format string, a ...interface{}) error {
+func FailedPreconditionErrorf(format string, a ...any) error {
 	return makeStatusError(codes.FailedPrecondition, fmt.Errorf(format, a...))
 }
 func AbortedError(msg string) error {
@@ -214,7 +214,7 @@ func AbortedError(msg string) error {
 func IsAbortedError(err error) bool {
 	return status.Code(err) == codes.Aborted
 }
-func AbortedErrorf(format string, a ...interface{}) error {
+func AbortedErrorf(format string, a ...any) error {
 	return makeStatusError(codes.Aborted, fmt.Errorf(format, a...))
 }
 func OutOfRangeError(msg string) error {
@@ -223,7 +223,7 @@ func OutOfRangeError(msg string) error {
 func IsOutOfRangeError(err error) bool {
 	return status.Code(err) == codes.OutOfRange
 }
-func OutOfRangeErrorf(format string, a ...interface{}) error {
+func OutOfRangeErrorf(format string, a ...any) error {
 	return makeStatusError(codes.OutOfRange, fmt.Errorf(format, a...))
 }
 func UnimplementedError(msg string) error {
@@ -232,7 +232,7 @@ func UnimplementedError(msg string) error {
 func IsUnimplementedError(err error) bool {
 	return status.Code(err) == codes.Unimplemented
 }
-func UnimplementedErrorf(format string, a ...interface{}) error {
+func UnimplementedErrorf(format string, a ...any) error {
 	return makeStatusError(codes.Unimplemented, fmt.Errorf(format, a...))
 }
 func InternalError(msg string) error {
@@ -241,7 +241,7 @@ func InternalError(msg string) error {
 func IsInternalError(err error) bool {
 	return status.Code(err) == codes.Internal
 }
-func InternalErrorf(format string, a ...interface{}) error {
+func InternalErrorf(format string, a ...any) error {
 	return makeStatusError(codes.Internal, fmt.Errorf(format, a...))
 }
 func UnavailableError(msg string) error {
@@ -250,7 +250,7 @@ func UnavailableError(msg string) error {
 func IsUnavailableError(err error) bool {
 	return status.Code(err) == codes.Unavailable
 }
-func UnavailableErrorf(format string, a ...interface{}) error {
+func UnavailableErrorf(format string, a ...any) error {
 	return makeStatusError(codes.Unavailable, fmt.Errorf(format, a...))
 }
 func DataLossError(msg string) error {
@@ -259,7 +259,7 @@ func DataLossError(msg string) error {
 func IsDataLossError(err error) bool {
 	return status.Code(err) == codes.DataLoss
 }
-func DataLossErrorf(format string, a ...interface{}) error {
+func DataLossErrorf(format string, a ...any) error {
 	return makeStatusError(codes.DataLoss, fmt.Errorf(format, a...))
 }
 func UnauthenticatedError(msg string) error {
@@ -268,7 +268,7 @@ func UnauthenticatedError(msg string) error {
 func IsUnauthenticatedError(err error) bool {
 	return status.Code(err) == codes.Unauthenticated
 }
-func UnauthenticatedErrorf(format string, a ...interface{}) error {
+func UnauthenticatedErrorf(format string, a ...any) error {
 	return makeStatusError(codes.Unauthenticated, fmt.Errorf(format, a...))
 }
 
@@ -309,7 +309,7 @@ func WrapError(err error, msg string) error {
 }
 
 // Wrapf is the "Printf" version of `Wrap`.
-func WrapErrorf(err error, format string, a ...interface{}) error {
+func WrapErrorf(err error, format string, a ...any) error {
 	return WrapError(err, fmt.Sprintf(format, a...))
 }
 

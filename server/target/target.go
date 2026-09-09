@@ -749,7 +749,7 @@ func readPaginatedTargetsFromPrimaryDB(ctx context.Context, env environment.Env,
 	return fetchTargetsFromPrimaryDB(ctx, env, q, repo)
 }
 
-func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestamppb.Timestamp) (string, []interface{}) {
+func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestamppb.Timestamp) (string, []any) {
 	startedAfterMicros := time.Now().Add(-7 * 24 * time.Hour).UnixMicro()
 	if startedAfter != nil {
 		if reqUpdatedAfterMicros := startedAfter.AsTime().UnixMicro(); reqUpdatedAfterMicros > 0 {
@@ -757,7 +757,7 @@ func getTimeFilters(startedAfter *timestamppb.Timestamp, startedBefore *timestam
 		}
 	}
 	out := " (invocation_start_time_usec > ?) "
-	outArgs := []interface{}{startedAfterMicros}
+	outArgs := []any{startedAfterMicros}
 
 	if startedBefore != nil {
 		if startedBeforeMicros := startedBefore.AsTime().UnixMicro(); startedBeforeMicros > startedAfterMicros {
@@ -778,7 +778,7 @@ func GetDailyTargetStats(ctx context.Context, env environment.Env, req *trpb.Get
 	}
 
 	innerWhereClause := "group_id = ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID()}
+	qArgs := []any{u.GetGroupID()}
 
 	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
 	innerWhereClause += " AND " + timeQStr
@@ -870,7 +870,7 @@ func GetTargetStats(ctx context.Context, env environment.Env, req *trpb.GetTarge
 	}
 
 	innerWhereClause := "group_id = ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID()}
+	qArgs := []any{u.GetGroupID()}
 
 	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
 	innerWhereClause += " AND " + timeQStr
@@ -966,7 +966,7 @@ func GetTargetFlakeSamples(ctx context.Context, env environment.Env, req *trpb.G
 	pg.Limit = 5
 
 	innerWhereClause := "group_id = ? AND label = ? AND cached = 0"
-	qArgs := []interface{}{u.GetGroupID(), req.GetLabel()}
+	qArgs := []any{u.GetGroupID(), req.GetLabel()}
 
 	timeQStr, timeQArgs := getTimeFilters(req.GetStartedAfter(), req.GetStartedBefore())
 	innerWhereClause += " AND " + timeQStr

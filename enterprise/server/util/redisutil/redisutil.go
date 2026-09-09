@@ -483,7 +483,7 @@ func (r *redlock) Unlock(ctx context.Context) error {
 }
 
 type valueExpiration struct {
-	value      interface{}
+	value      any
 	expiration time.Duration
 }
 
@@ -522,9 +522,9 @@ type CommandBuffer struct {
 	// Buffer for HINCRBY commands.
 	hincr map[string]map[string]int64
 	// Buffer for RPUSH commands.
-	rpush map[string][]interface{}
+	rpush map[string][]any
 	// Buffer for SADD commands.
-	sadd map[string]map[interface{}]struct{}
+	sadd map[string]map[any]struct{}
 	// Buffer for EXPIRE commands.
 	expire map[string]time.Duration
 	// Whether the server is shutting down.
@@ -542,8 +542,8 @@ func (c *CommandBuffer) init() {
 	c.set = map[string]valueExpiration{}
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
-	c.rpush = map[string][]interface{}{}
-	c.sadd = map[string]map[interface{}]struct{}{}
+	c.rpush = map[string][]any{}
+	c.sadd = map[string]map[any]struct{}{}
 	c.expire = map[string]time.Duration{}
 }
 
@@ -595,7 +595,7 @@ func (c *CommandBuffer) HIncrBy(ctx context.Context, key, field string, incremen
 // If the server is shutting down, the command will be issued to Redis
 // synchronously using the given context. Otherwise, the command is added to
 // the buffer and the context is ignored.
-func (c *CommandBuffer) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+func (c *CommandBuffer) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
@@ -613,7 +613,7 @@ func (c *CommandBuffer) Set(ctx context.Context, key string, value interface{}, 
 // If the server is shutting down, the command will be issued to Redis
 // synchronously using the given context. Otherwise, the command is added to
 // the buffer and the context is ignored.
-func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interface{}) error {
+func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...any) error {
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
@@ -623,7 +623,7 @@ func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interfa
 
 	set, ok := c.sadd[key]
 	if !ok {
-		set = make(map[interface{}]struct{}, len(members))
+		set = make(map[any]struct{}, len(members))
 		c.sadd[key] = set
 	}
 	for _, m := range members {
@@ -637,7 +637,7 @@ func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interfa
 // If the server is shutting down, the command will be issued to Redis
 // synchronously using the given context. Otherwise, the command is added to
 // the buffer and the context is ignored.
-func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...interface{}) error {
+func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...any) error {
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
@@ -714,7 +714,7 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 		pipe.RPush(ctx, key, values...)
 	}
 	for key, set := range sadd {
-		members := []interface{}{}
+		members := []any{}
 		for member := range set {
 			members = append(members, member)
 		}

@@ -32,7 +32,7 @@ const (
 )
 
 type tableDescriptor struct {
-	table interface{}
+	table any
 	// 2-letter table prefix
 	prefix string
 	// Table name (must match struct name).
@@ -49,8 +49,8 @@ var (
 	allTables []tableDescriptor
 )
 
-func GetAllTables() []interface{} {
-	tableSlice := make([]interface{}, 0)
+func GetAllTables() []any {
+	tableSlice := make([]any, 0)
 	for _, d := range allTables {
 		tableSlice = append(tableSlice, d.table)
 	}

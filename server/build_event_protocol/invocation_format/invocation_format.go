@@ -101,9 +101,9 @@ func ConvertDBTagsToOLAP(tags string) []string {
 	return strings.Split(tags, ",")
 }
 
-func GetTagsAsClickhouseWhereClause(fieldName string, tags []string) (string, []interface{}) {
+func GetTagsAsClickhouseWhereClause(fieldName string, tags []string) (string, []any) {
 	outStrings := []string{}
-	outArgs := []interface{}{}
+	outArgs := []any{}
 	for _, tag := range tags {
 		outStrings = append(outStrings, "?")
 		outArgs = append(outArgs, tag)

@@ -730,7 +730,7 @@ func MissingDigestError(d *repb.Digest) error {
 	return MissingDigestErrorf(d, "Digest %v not found", d)
 }
 
-func MissingDigestErrorf(d *repb.Digest, format string, args ...interface{}) error {
+func MissingDigestErrorf(d *repb.Digest, format string, args ...any) error {
 	if d == nil {
 		log.Infof("MissingDigestErrorf called with nil digest. Stack trace:\n%s", string(debug.Stack()))
 	}

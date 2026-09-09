@@ -14,7 +14,7 @@ type dbCompatibleLogger struct {
 }
 
 // Don't panic in server code.
-func (l *dbCompatibleLogger) Panicf(format string, args ...interface{}) {
+func (l *dbCompatibleLogger) Panicf(format string, args ...any) {
 	l.Errorf(format, args...)
 }
 
