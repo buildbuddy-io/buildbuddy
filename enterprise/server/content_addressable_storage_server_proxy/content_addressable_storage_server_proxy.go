@@ -595,3 +595,48 @@ func (s *CASServerProxy) SplitBlob(ctx context.Context, req *repb.SplitBlobReque
 
 	return s.remote.SplitBlob(ctx, req)
 }
+
+func (s *CASServerProxy) GetChunkMapping(req *repb.GetChunkMappingRequest, stream repb.ContentAddressableStorage_GetChunkMappingServer) error {
+	remoteStream, err := s.remote.GetChunkMapping(stream.Context(), req)
+	if err != nil {
+		return err
+	}
+	for {
+		rsp, err := remoteStream.Recv()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(rsp); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *CASServerProxy) RegisterChunkMapping(stream repb.ContentAddressableStorage_RegisterChunkMappingServer) error {
+	remoteStream, err := s.remote.RegisterChunkMapping(stream.Context())
+	if err != nil {
+		return err
+	}
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			rsp, err := remoteStream.CloseAndRecv()
+			if err != nil {
+				return err
+			}
+			return stream.SendAndClose(rsp)
+		}
+		if err != nil {
+			return err
+		}
+		if sendErr := remoteStream.Send(req); sendErr != nil {
+			if _, err := remoteStream.CloseAndRecv(); err != nil {
+				return err
+			}
+			return sendErr
+		}
+	}
+}

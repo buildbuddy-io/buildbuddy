@@ -438,6 +438,14 @@ func (f *fakeCasClient) SplitBlob(ctx context.Context, req *repb.SplitBlobReques
 	panic("unimplemented")
 }
 
+func (f *fakeCasClient) GetChunkMapping(ctx context.Context, req *repb.GetChunkMappingRequest, opts ...grpc.CallOption) (repb.ContentAddressableStorage_GetChunkMappingClient, error) {
+	panic("unimplemented")
+}
+
+func (f *fakeCasClient) RegisterChunkMapping(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_RegisterChunkMappingClient, error) {
+	panic("unimplemented")
+}
+
 func TestFindMissingBlobs_AppliesCASRPCTimeout(t *testing.T) {
 	// Set a very short timeout so the test is fast.
 	flags.Set(t, "cache.client.cas_rpc_timeout", 1*time.Nanosecond)

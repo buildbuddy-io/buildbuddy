@@ -27,7 +27,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -352,6 +354,25 @@ func TestFindMissingBlobs_ForwardedToRemote(t *testing.T) {
 		"FindMissingBlobs must be forwarded to the remote")
 	require.Len(t, rsp.GetMissingBlobDigests(), 1, "exactly one blob should be reported missing")
 	require.Equal(t, absentRN.GetDigest().GetHash(), rsp.GetMissingBlobDigests()[0].GetHash())
+}
+
+func TestChunkMappingRPCs_ForwardedToRemote(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	cas := repb.NewContentAddressableStorageClient(h.sidecarConn)
+
+	getStream, err := cas.GetChunkMapping(ctx, &repb.GetChunkMappingRequest{})
+	require.NoError(t, err)
+	_, err = getStream.Recv()
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+	require.Equal(t, int64(1), h.remote.count("/build.bazel.remote.execution.v2.ContentAddressableStorage/GetChunkMapping"))
+
+	registerStream, err := cas.RegisterChunkMapping(ctx)
+	require.NoError(t, err)
+	_ = registerStream.Send(&repb.RegisterChunkMappingRequest{})
+	_, err = registerStream.CloseAndRecv()
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+	require.Equal(t, int64(1), h.remote.count("/build.bazel.remote.execution.v2.ContentAddressableStorage/RegisterChunkMapping"))
 }
 
 // TestGetCapabilities_FallbackBehavior documents (rather than endorses) the

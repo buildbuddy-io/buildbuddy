@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -957,6 +958,27 @@ func TestSplitBlob(t *testing.T) {
 	require.Equal(t, 2, len(splitResp.ChunkDigests))
 	require.Equal(t, chunk1Digest.Hash, splitResp.ChunkDigests[0].Hash)
 	require.Equal(t, chunk2Digest.Hash, splitResp.ChunkDigests[1].Hash)
+}
+
+func TestChunkMappingRPCsForwarded(t *testing.T) {
+	ctx := testContext()
+	conn, _, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	streamRequests.Store(0)
+	getStream, err := proxy.GetChunkMapping(ctx, &repb.GetChunkMappingRequest{})
+	require.NoError(t, err)
+	_, err = getStream.Recv()
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+	require.Equal(t, int32(1), streamRequests.Load())
+
+	registerStream, err := proxy.RegisterChunkMapping(ctx)
+	require.NoError(t, err)
+	_ = registerStream.Send(&repb.RegisterChunkMappingRequest{})
+	_, err = registerStream.CloseAndRecv()
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+	require.Equal(t, int32(2), streamRequests.Load())
 }
 
 func BenchmarkGetTree(b *testing.B) {

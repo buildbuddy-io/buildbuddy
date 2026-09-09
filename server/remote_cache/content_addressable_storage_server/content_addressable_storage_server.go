@@ -1349,6 +1349,14 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 	return resp, err
 }
 
+func (s *ContentAddressableStorageServer) GetChunkMapping(req *repb.GetChunkMappingRequest, stream repb.ContentAddressableStorage_GetChunkMappingServer) error {
+	return status.UnimplementedError("GetChunkMapping RPC is not currently implemented")
+}
+
+func (s *ContentAddressableStorageServer) RegisterChunkMapping(stream repb.ContentAddressableStorage_RegisterChunkMappingServer) error {
+	return status.UnimplementedError("RegisterChunkMapping RPC is not currently implemented")
+}
+
 func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {

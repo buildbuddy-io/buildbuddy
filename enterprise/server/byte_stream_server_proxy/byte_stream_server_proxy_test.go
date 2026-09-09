@@ -170,6 +170,16 @@ func (c *noOpCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*r
 	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
 }
 
+func (c *noOpCAS) GetChunkMapping(req *repb.GetChunkMappingRequest, stream repb.ContentAddressableStorage_GetChunkMappingServer) error {
+	c.t.Fatal("Unexpected call to GetChunkMapping")
+	return status.InternalError("GetChunkMapping RPC is not currently implemented")
+}
+
+func (c *noOpCAS) RegisterChunkMapping(stream repb.ContentAddressableStorage_RegisterChunkMappingServer) error {
+	c.t.Fatal("Unexpected call to RegisterChunkMapping")
+	return status.InternalError("RegisterChunkMapping RPC is not currently implemented")
+}
+
 func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_max_write_size_bytes": {
