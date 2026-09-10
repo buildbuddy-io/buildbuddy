@@ -21,7 +21,6 @@ go_test(
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/scheduling/scheduler_server",
         "//enterprise/server/tasksize",
-        "//enterprise/server/test/integration/remote_execution/rbeclient",
         "//enterprise/server/test/integration/remote_execution/rbetest",
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/testexecutor",

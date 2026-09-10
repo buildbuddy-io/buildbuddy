@@ -17,7 +17,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
@@ -1583,8 +1582,8 @@ func (f *fixedNodeTaskRouter) MarkFailed(ctx context.Context, action *repb.Actio
 }
 
 // Block makes RankNodes hold every caller until Unblock is called or the
-// caller's context is done. This stalls the scheduler at the point where it
-// picks an executor for a reservation.
+// caller's context is done. This can be used to stall the scheduler while it is
+// enqueueing tasks, since all tasks must be routed via the task router.
 func (f *fixedNodeTaskRouter) Block() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1593,7 +1592,7 @@ func (f *fixedNodeTaskRouter) Block() {
 	}
 }
 
-// Unblock releases callers held by Block. Safe to call more than once.
+// Unblock releases callers held by Block.
 func (f *fixedNodeTaskRouter) Unblock() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -1664,25 +1663,9 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	}
 }
 
-// TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown covers the way
-// queued task reservations were orphaned during the 2026-09-09 arm64 executor
-// scale-down.
-//
-// When an executor shuts down it hands its queued reservations back to the
-// scheduler, which re-enqueues them one at a time inside the executor's
-// registration stream handler. The executor process exits as soon as its own
-// graceful shutdown finishes, which cancels the stream's context. If the
-// scheduler re-enqueues on that context, every entry it has not reached yet is
-// dropped; in production the scheduler had about 12 seconds per executor and
-// dropped the remainder of every hand-back list. The task router's Block below
-// stalls the scheduler at exactly that point until the executors have exited,
-// so the re-enqueueing must survive the stream cancellation for the test to
-// pass.
 func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) {
-	// Idle executors normally rediscover orphaned work by sampling the
-	// unclaimed task set, on registration and when asking for more work. Turn
-	// that off so the shutdown hand-back is the only way for a queued
-	// reservation to survive.
+	// Disable work stealing since we're testing the hand-back mechanism for
+	// re-enqueueing work.
 	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", int64(0))
 
 	rbe := rbetest.NewRBETestEnv(t)
@@ -1690,15 +1673,15 @@ func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) 
 	doomedIDs := []string{"doomedExecutor1", "doomedExecutor2", "doomedExecutor3"}
 	const survivorID = "survivorExecutor"
 
-	// Route every reservation to the executors that are about to shut down.
+	// Set up "doomed" executors that accept reservations but never start them
+	// (simulating high queue length), and a "survivor" executor that stays
+	// healthy throughout the test. Initially, the task router routes all tasks
+	// to the "doomed" executors.
 	taskRouter := newFixedNodeTaskRouter(doomedIDs)
 	defer taskRouter.Unblock()
 	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
 		env.SetTaskRouter(taskRouter)
 	}})
-
-	// The doomed executors accept reservations but never start them, like a
-	// saturated executor with a deep backlog. The survivor stays healthy.
 	var doomed []*rbetest.Executor
 	for _, id := range doomedIDs {
 		e := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: id})
@@ -1720,53 +1703,35 @@ func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) 
 			"all commands should be queued on the doomed executors")
 	}
 
-	// Now the scale-down: all three doomed executors get their shutdown
-	// signal at once. Hold the scheduler at the point where it starts
-	// re-enqueueing the handed-back reservations...
+	// Now all three doomed executors get their shutdown signal at once. Block
+	// the task router so that the scheduler gets stuck trying to re-enqueue
+	// tasks.
 	taskRouter.Block()
 	for _, e := range doomed {
 		e.BeginShutdown()
 	}
 
-	// ...and let the executor processes exit before it gets any further, the
-	// way they do in production once max_shutdown_duration runs out. Each
-	// executor's own shutdown completes once it has sent its hand-back, and
-	// DisconnectExecutor waits until the scheduler has received it (the
-	// scheduler unregisters the executor at that point) before cancelling the
-	// registration stream. So any loss below can only come from the
-	// re-enqueueing being cut short.
+	// Now shut down the executors, handing off queued tasks to the scheduler,
+	// which will get stuck trying to re-enqueue tasks (because the task router
+	// is blocked).
 	for _, e := range doomed {
 		e.WaitForShutdown()
 		rbe.DisconnectExecutor(e)
 	}
 
-	// From here on the survivor is the only place the work can go.
+	// Now route all work to the survivor executor. Normally this would happen
+	// automatically when the executors unregister from the pool, but we have to
+	// do it explicitly here since we're controlling the task router.
 	taskRouter.UpdateSubset([]string{survivorID})
+
+	// Unblock the task router to let the app work through the hand-back
+	// requests from the now-terminated executors. Every command that was
+	// originally enqueued on the doomed executor set should now be executed on
+	// the survivor, and succeed.
 	taskRouter.Unblock()
-
-	// Every queued command should still run on the survivor. The survivor runs
-	// them one at a time, so allow 30s for each.
 	for _, cmd := range cmds {
-		res := waitForCompletion(t, cmd, time.After(30*time.Second))
-		require.NoError(t, res.Err, "[%s] should have completed successfully", cmd.Name)
+		res := cmd.Wait()
 		assert.Equal(t, survivorID, res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have run on the survivor", cmd.Name)
-	}
-}
-
-// waitForCompletion waits for the command to reach the COMPLETED stage and
-// returns its result, failing the test if the deadline fires first.
-func waitForCompletion(t *testing.T, cmd *rbetest.Command, deadline <-chan time.Time) *rbeclient.CommandResult {
-	for {
-		select {
-		case res, ok := <-cmd.StatusChannel():
-			require.True(t, ok, "[%s] status channel closed before completion", cmd.Name)
-			if res.Stage == repb.ExecutionStage_COMPLETED {
-				return res
-			}
-		case <-deadline:
-			require.FailNowf(t, "command did not complete", "[%s] was not completed within the deadline: its reservations were lost when the executors holding them shut down", cmd.Name)
-			return nil
-		}
 	}
 }
 

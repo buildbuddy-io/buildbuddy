@@ -136,15 +136,12 @@ const (
 	removeExecutorCleanupTimeout = 15 * time.Second
 
 	// How long to keep re-enqueueing an executor's handed-back task
-	// reservations after its registration stream has been cancelled. The
-	// executor process exits as soon as its own shutdown completes, which can
-	// be before a long hand-back list has been worked through.
+	// reservations after its registration stream has been cancelled due to
+	// the executor shutting down.
 	shutdownReEnqueueGracePeriod = 5 * time.Minute
-	// Bound on re-enqueueing a single handed-back reservation. reEnqueueTask
-	// retries until its context ends, so without this one unplaceable
-	// reservation could consume the whole grace period and drop everything
-	// after it.
-	shutdownReEnqueuePerTaskTimeout = 10 * time.Second
+
+	// Timeout on re-enqueueing a single handed-back task reservation.
+	shutdownReEnqueuePerTaskTimeout = 15 * time.Second
 
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
