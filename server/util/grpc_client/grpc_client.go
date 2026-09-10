@@ -425,12 +425,12 @@ func (c *rpcCredentials) RequireTransportSecurity() bool {
 }
 
 func CommonGRPCClientOptions() []grpc.DialOption {
-	otelOpts := []otelgrpc.Option{otelgrpc.WithMeterProvider(rpcutil.MeterProvider())}
+	statsHandler := otelgrpc.NewClientHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()))
 	if *rpcutil.OTELGRPCMessageEventsEnabled {
-		otelOpts = append(otelOpts, otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))
+		statsHandler = rpcutil.WithTracingClientMessageEvents(statsHandler)
 	}
 	return []grpc.DialOption{
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler(otelOpts...)),
+		grpc.WithStatsHandler(statsHandler),
 		interceptors.GetUnaryClientInterceptor(),
 		interceptors.GetStreamClientInterceptor(),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),

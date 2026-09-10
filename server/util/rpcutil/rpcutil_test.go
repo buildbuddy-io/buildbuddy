@@ -447,70 +447,102 @@ func TestMeterProviderGRPCViews(t *testing.T) {
 }
 
 func TestTracingMessageEvents(t *testing.T) {
-	for _, streaming := range []bool{false, true} {
-		for _, tc := range []struct {
-			name, header       string
-			ignore, wantEvents bool
-		}{
-			{name: "absent"}, {name: "empty", header: ""}, {name: "other", header: "true"},
-			{name: "force", header: "force", wantEvents: true},
-			{name: "ignored", header: "force", ignore: true},
-		} {
-			t.Run(fmt.Sprintf("streaming=%t/%s", streaming, tc.name), func(t *testing.T) {
-				flags.Set(t, "app.ignore_forced_tracing_header", tc.ignore)
-				recorder := tracetest.NewSpanRecorder()
-				tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(recorder))
-				defer tp.Shutdown(context.Background())
-				lis := bufconn.Listen(1 << 20)
-				defer lis.Close()
-				srv := grpc.NewServer(grpc.StatsHandler(rpcutil.WithTracingMessageEvents(
-					otelgrpc.NewServerHandler(otelgrpc.WithTracerProvider(tp)),
-				)))
-				hlpb.RegisterHealthServer(srv, health.NewServer())
-				go srv.Serve(lis)
-				defer srv.Stop()
-				conn, err := grpc.NewClient("passthrough:///bufnet",
-					grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
-					grpc.WithTransportCredentials(insecure.NewCredentials()),
-				)
-				require.NoError(t, err)
-				defer conn.Close()
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				if tc.name != "absent" {
-					ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", tc.header)
-				}
-				client := hlpb.NewHealthClient(conn)
-				if streaming {
-					stream, err := client.Watch(ctx, &hlpb.HealthCheckRequest{})
-					require.NoError(t, err)
-					response, err := stream.Recv()
-					require.NoError(t, err)
-					require.Equal(t, hlpb.HealthCheckResponse_SERVING, response.GetStatus())
-					cancel()
-				} else {
-					response, err := client.Check(ctx, &hlpb.HealthCheckRequest{})
-					require.NoError(t, err)
-					require.Equal(t, hlpb.HealthCheckResponse_SERVING, response.GetStatus())
-				}
-				require.Eventually(t, func() bool { return len(recorder.Ended()) == 1 }, 5*time.Second, time.Millisecond)
-				events := recorder.Ended()[0].Events()
-				if !tc.wantEvents {
-					require.Empty(t, events)
-					return
-				}
-				require.Len(t, events, 2)
-				require.Equal(t, "grpc.in_payload", events[0].Name)
-				require.Equal(t, "grpc.out_payload", events[1].Name)
-				for i, event := range events {
-					attrs := map[string]int64{}
-					for _, a := range event.Attributes {
-						attrs[string(a.Key)] = a.Value.AsInt64()
+	for _, clientSide := range []bool{false, true} {
+		for _, streaming := range []bool{false, true} {
+			for _, tc := range []struct {
+				name, header       string
+				ignore, wantEvents bool
+			}{
+				{name: "absent"}, {name: "empty", header: ""}, {name: "other", header: "true"},
+				{name: "force", header: "force", wantEvents: true},
+				{name: "ignored", header: "force", ignore: true},
+			} {
+				t.Run(fmt.Sprintf("client=%t/streaming=%t/%s", clientSide, streaming, tc.name), func(t *testing.T) {
+					flags.Set(t, "app.ignore_forced_tracing_header", tc.ignore)
+					recorder := tracetest.NewSpanRecorder()
+					tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(recorder))
+					defer tp.Shutdown(context.Background())
+					lis := bufconn.Listen(1 << 20)
+					defer lis.Close()
+					var serverOpts []grpc.ServerOption
+					var clientOpts []grpc.DialOption
+					if clientSide {
+						clientOpts = append(clientOpts, grpc.WithStatsHandler(rpcutil.WithTracingClientMessageEvents(otelgrpc.NewClientHandler(otelgrpc.WithTracerProvider(tp)))))
+					} else {
+						serverOpts = append(serverOpts, grpc.StatsHandler(rpcutil.WithTracingMessageEvents(otelgrpc.NewServerHandler(otelgrpc.WithTracerProvider(tp)))))
 					}
-					require.Equal(t, int64(i*2), attrs["bytes"])
-					require.Equal(t, int64(i*2+5), attrs["wire_bytes"])
-				}
-			})
+					srv := grpc.NewServer(serverOpts...)
+					hlpb.RegisterHealthServer(srv, health.NewServer())
+					go srv.Serve(lis)
+					defer srv.Stop()
+					clientOpts = append(clientOpts,
+						grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+						grpc.WithTransportCredentials(insecure.NewCredentials()),
+					)
+					conn, err := grpc.NewClient("passthrough:///bufnet", clientOpts...)
+					require.NoError(t, err)
+					defer conn.Close()
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if tc.name != "absent" {
+						ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", tc.header)
+					}
+					client := hlpb.NewHealthClient(conn)
+					if streaming {
+						stream, err := client.Watch(ctx, &hlpb.HealthCheckRequest{})
+						require.NoError(t, err)
+						response, err := stream.Recv()
+						require.NoError(t, err)
+						require.Equal(t, hlpb.HealthCheckResponse_SERVING, response.GetStatus())
+						cancel()
+					} else {
+						response, err := client.Check(ctx, &hlpb.HealthCheckRequest{})
+						require.NoError(t, err)
+						require.Equal(t, hlpb.HealthCheckResponse_SERVING, response.GetStatus())
+					}
+					require.Eventually(t, func() bool { return len(recorder.Ended()) == 1 }, 5*time.Second, time.Millisecond)
+					events := recorder.Ended()[0].Events()
+					if !tc.wantEvents {
+						require.Empty(t, events)
+						return
+					}
+					if clientSide {
+						names := map[string]bool{}
+						for _, e := range events {
+							names[e.Name] = true
+						}
+						for _, name := range []string{"grpc.begin", "grpc.out_header", "grpc.in_header", "grpc.end"} {
+							require.True(t, names[name], name)
+						}
+						if !streaming {
+							require.True(t, names["grpc.in_trailer"])
+						}
+						payloads := events[:0]
+						for _, e := range events {
+							if e.Name == "grpc.in_payload" || e.Name == "grpc.out_payload" {
+								payloads = append(payloads, e)
+							}
+						}
+						events = payloads
+						// The client sends the request and receives the response.
+						require.Len(t, events, 2)
+						require.Equal(t, "grpc.out_payload", events[0].Name)
+						require.Equal(t, "grpc.in_payload", events[1].Name)
+					} else {
+						require.Len(t, events, 2)
+						require.Equal(t, "grpc.in_payload", events[0].Name)
+						require.Equal(t, "grpc.out_payload", events[1].Name)
+					}
+					for i, event := range events {
+						attrs := map[string]int64{}
+						for _, a := range event.Attributes {
+							attrs[string(a.Key)] = a.Value.AsInt64()
+						}
+						require.Equal(t, int64(i*2), attrs["bytes"])
+						require.Equal(t, int64(i*2+5), attrs["wire_bytes"])
+					}
+				})
+			}
 		}
 	}
 }
