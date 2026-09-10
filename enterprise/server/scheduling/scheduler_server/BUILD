@@ -75,6 +75,7 @@ go_test(
         "//proto:upgrade_go_proto",
         "//server/environment",
         "//server/interfaces",
+        "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
