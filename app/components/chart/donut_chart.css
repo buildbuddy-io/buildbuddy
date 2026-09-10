@@ -4,6 +4,7 @@
   align-items: center;
 }
 
+.donut-chart .recharts-wrapper,
 .donut-chart .recharts-responsive-container {
   flex-shrink: 0;
   margin-right: 32px;
