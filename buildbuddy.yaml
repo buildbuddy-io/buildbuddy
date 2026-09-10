@@ -22,7 +22,6 @@ actions:
       push:
         branches:
           - "master"
-          - "bb_release_*"
       pull_request:
         branches:
           - "*"
@@ -30,9 +29,6 @@ actions:
     git_fetch_depth: 0
     steps:
       # Linux amd64 GitHub release binaries and flame-public images from release.py.
-      # Build only: do not load or publish images. Keep the explicit list since
-      # the static executor and container images are tagged manual.
-      # Apply linux-workflows last to use workflow RBE/cache settings.
       - run: >-
           bazel build --config=release --config=linux-workflows
           //server/cmd/buildbuddy:buildbuddy
