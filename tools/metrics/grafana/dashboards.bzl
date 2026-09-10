@@ -2,7 +2,6 @@
 # For generated JSON files, see tools/metrics/grafana/generated/BUILD.
 # This file is automatically updated by grafana.go - DO NOT EDIT
 DASHBOARD_NAMES = [
-    "cache-proxy",
     "cache",
     "clickhouse",
     "container-metrics",
