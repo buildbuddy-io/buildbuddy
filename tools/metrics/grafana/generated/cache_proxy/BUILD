@@ -11,7 +11,6 @@ go_library(
         "@com_github_grafana_grafana_foundation_sdk_go//cog",
         "@com_github_grafana_grafana_foundation_sdk_go//common",
         "@com_github_grafana_grafana_foundation_sdk_go//dashboard",
-        "@com_github_grafana_grafana_foundation_sdk_go//heatmap",
         "@com_github_grafana_grafana_foundation_sdk_go//timeseries",
     ],
 )
