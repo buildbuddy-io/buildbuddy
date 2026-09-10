@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/cog"
 	"github.com/grafana/grafana-foundation-sdk/go/common"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
-	"github.com/grafana/grafana-foundation-sdk/go/heatmap"
 	"github.com/grafana/grafana-foundation-sdk/go/timeseries"
 )
 
@@ -360,37 +359,10 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			Description("Avg age of last item evicted by the disk cache").
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`avg(`+diskCache+`_last_eviction_age_usec{`+cacheFilter+`}/1e6) by (partition_id)`, ""))).
-		WithPanel(heatmap.NewPanelBuilder().
-			Title("Files Added to Disk Cache by Size (${cache_name})").
-			Datasource(dash.Prometheus()).
+		WithPanel(dash.Heatmap("Files Added to Disk Cache by Size (${cache_name})", "bytes").
 			Repeat("cache_name").
 			RepeatDirection(dashboard.PanelRepeatDirectionH).
 			MaxDataPoints(25).
-			Calculate(false).
-			CellGap(0).
-			CellRadius(2).
-			Color(heatmap.NewHeatmapColorOptionsBuilder().
-				Mode(heatmap.HeatmapColorModeOpacity).
-				Scheme("Oranges").
-				Fill("#3274D9").
-				Scale(heatmap.HeatmapColorScaleExponential).
-				Exponent(0.5).
-				Steps(128)).
-			FilterValues(heatmap.NewFilterValueRangeBuilder().Le(1e-9)).
-			RowsFrame(heatmap.NewRowsHeatmapOptionsBuilder().Layout(common.HeatmapCellLayoutAuto)).
-			ShowValue(common.VisibilityModeNever).
-			Tooltip(heatmap.NewHeatmapTooltipBuilder().
-				Mode(common.TooltipDisplayModeSingle).
-				YHistogram(true)).
-			YAxis(heatmap.NewYAxisConfigBuilder().
-				AxisPlacement(common.AxisPlacementLeft).
-				Reverse(false).
-				Unit(dash.UnitBytes).
-				Decimals(0)).
-			ExemplarsColor("rgba(255,0,255,0.7)").
-			HideLegend().
-			Height(8).
-			Span(24).
 			WithTarget(dash.PromHeatmapQuery(`sum(increase(` + diskCache + `_added_file_size_bytes_bucket{` + cacheFilter + `}[$__interval])) by (le)`))).
 		WithPanel(perCache("Disk Cache Filesystem Usage (${cache_name})", dash.UnitPercentUnit).
 			Min(0).
