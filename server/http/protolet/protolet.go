@@ -155,8 +155,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server any, grpcSer
 	handlerFns := make(map[string]reflect.Value)
 
 	serverType := reflect.TypeOf(server)
-	for i := 0; i < serverType.NumMethod(); i++ {
-		method := serverType.Method(i)
+	for method := range serverType.Methods() {
 		if !isRPCMethod(method) && !isStreamingRPCMethod(method) {
 			continue
 		}

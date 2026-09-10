@@ -306,8 +306,7 @@ func dedupe(plugins []*Plugin) ([]*Plugin, error) {
 	var out []*Plugin
 	// Iterate in reverse order so that IDs appearing latest get the highest
 	// precedence.
-	for i := len(plugins) - 1; i >= 0; i-- {
-		p := plugins[i]
+	for _, p := range slices.Backward(plugins) {
 		id, err := p.NonVersionedID()
 		if err != nil {
 			return nil, err

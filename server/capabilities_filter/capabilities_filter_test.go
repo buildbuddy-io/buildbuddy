@@ -26,12 +26,12 @@ var (
 func TestAllRPCsHaveExplicitCapabilitiesSpecified(t *testing.T) {
 	serviceMethodNames := []string{}
 	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
-	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
-		serviceMethodNames = append(serviceMethodNames, buildBuddyServicePrefix+buildbuddyServiceType.Method(i).Name)
+	for method := range buildbuddyServiceType.Methods() {
+		serviceMethodNames = append(serviceMethodNames, buildBuddyServicePrefix+method.Name)
 	}
 	apiServiceType := reflect.TypeOf((*apipb.ApiServiceServer)(nil)).Elem()
-	for i := 0; i < apiServiceType.NumMethod(); i++ {
-		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+apiServiceType.Method(i).Name)
+	for method := range apiServiceType.Methods() {
+		serviceMethodNames = append(serviceMethodNames, apiServicePrefix+method.Name)
 	}
 
 	allDefinedMethods := capabilities_filter.AllRPCsForTestOnly()
@@ -55,9 +55,9 @@ func TestBuildBuddyServiceRPCsHaveRequestAndResponseContextFields(t *testing.T) 
 	ctxType := reflect.TypeOf((*context.Context)(nil)).Elem()
 
 	buildbuddyServiceType := reflect.TypeOf((*bbspb.BuildBuddyServiceServer)(nil)).Elem()
-	for i := 0; i < buildbuddyServiceType.NumMethod(); i++ {
-		methodFunc := buildbuddyServiceType.Method(i).Type
-		methodName := buildbuddyServiceType.Method(i).Name
+	for method := range buildbuddyServiceType.Methods() {
+		methodFunc := method.Type
+		methodName := method.Name
 
 		var actualReqType, actualResType reflect.Type
 		if methodFunc.In(0).Implements(ctxType) {

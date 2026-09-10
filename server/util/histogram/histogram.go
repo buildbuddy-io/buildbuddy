@@ -3,7 +3,7 @@ package histogram
 import (
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -53,7 +53,7 @@ type Percentiles struct {
 }
 
 func (h *Histogram) Percentiles() Percentiles {
-	sort.Slice(h.data, func(i, j int) bool { return h.data[i] < h.data[j] })
+	slices.Sort(h.data)
 
 	percentile := func(p float64) int64 {
 		if len(h.data) == 0 {

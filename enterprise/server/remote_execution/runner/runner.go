@@ -1473,8 +1473,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 		return nil
 	}
 
-	for i := len(p.runners) - 1; i >= 0; i-- {
-		r := p.runners[i]
+	for _, r := range slices.Backward(p.runners) {
 		if key.GroupId != r.key.GroupId || r.getState() != paused {
 			continue
 		}

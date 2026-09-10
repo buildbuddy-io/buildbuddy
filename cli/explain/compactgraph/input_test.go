@@ -1,6 +1,7 @@
 package compactgraph
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,5 +100,73 @@ func TestRunfilesTree_ComputeMapping(t *testing.T) {
 
 			assert.Equal(t, tc.expected, tc.rt.ComputeMapping("_main", "SHA-256"))
 		})
+	}
+}
+
+func TestTransitiveRunfilesBackward(t *testing.T) {
+	inputs := []*InputSet{{}, {}, {}}
+	symlinks := []*SymlinkEntrySet{{}, {}, {}}
+	for _, tc := range []struct {
+		name string
+		set  depset
+		want []depset
+	}{
+		{name: "InputSet", set: &InputSet{TransitiveSets: inputs}, want: []depset{inputs[2], inputs[1], inputs[0]}},
+		{name: "SymlinkEntrySet", set: &SymlinkEntrySet{transitiveSets: symlinks}, want: []depset{symlinks[2], symlinks[1], symlinks[0]}},
+		{name: "empty InputSet", set: &InputSet{}},
+		{name: "empty SymlinkEntrySet", set: &SymlinkEntrySet{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []depset
+			for child := range tc.set.TransitiveRunfilesBackward() {
+				got = append(got, child)
+			}
+			if !assert.Len(t, got, len(tc.want)) {
+				return
+			}
+			for i := range got {
+				assert.Same(t, tc.want[i], got[i])
+			}
+
+			calls := 0
+			tc.set.TransitiveRunfilesBackward()(func(child depset) bool {
+				calls++
+				if len(tc.want) > 0 {
+					assert.Same(t, tc.want[0], child)
+				}
+				return false
+			})
+			assert.Equal(t, min(1, len(tc.want)), calls)
+		})
+	}
+}
+
+func BenchmarkTransitiveRunfilesBackward(b *testing.B) {
+	for _, size := range []int{0, 1, 64, 1024} {
+		inputs := make([]*InputSet, size)
+		symlinks := make([]*SymlinkEntrySet, size)
+		for i := range size {
+			inputs[i] = &InputSet{}
+			symlinks[i] = &SymlinkEntrySet{}
+		}
+		b.Run(fmt.Sprintf("InputSet/%d", size), func(b *testing.B) {
+			benchmarkTransitiveRunfilesBackward(b, &InputSet{TransitiveSets: inputs}, size)
+		})
+		b.Run(fmt.Sprintf("SymlinkEntrySet/%d", size), func(b *testing.B) {
+			benchmarkTransitiveRunfilesBackward(b, &SymlinkEntrySet{transitiveSets: symlinks}, size)
+		})
+	}
+}
+
+func benchmarkTransitiveRunfilesBackward(b *testing.B, set depset, want int) {
+	b.ReportAllocs()
+	for range b.N {
+		count := 0
+		for range set.TransitiveRunfilesBackward() {
+			count++
+		}
+		if count != want {
+			b.Fatalf("visited %d transitive sets, want %d", count, want)
+		}
 	}
 }

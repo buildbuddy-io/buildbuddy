@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -430,8 +431,7 @@ func (g *DependencyGraph) LongestPath() []string {
 
 	e := g.EdgeSet()
 	nodes := g.TopologicalSort()
-	for i := len(nodes) - 1; i >= 0; i-- {
-		n := nodes[i]
+	for _, n := range slices.Backward(nodes) {
 		for dep := range e.Outgoing[n] {
 			candidateLength := length[dep] + 1
 			if candidateLength > length[n] ||
