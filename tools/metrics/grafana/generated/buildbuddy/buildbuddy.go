@@ -146,7 +146,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Repeat("job").
 			RepeatDirection(dashboard.PanelRepeatDirectionH).
 			WithTarget(dash.PromQuery(`sum(up{region="${region}", job="${job}"})`, "Up").RefId("A")).
-			WithTarget(dash.PromQuery(`sum(kube_pod_status_ready{region="${region}", pod=~"${job}-([0-9a-f]{8,10}-.*|[0-9]+)$"})`, "Ready").RefId("B"))).
+			WithTarget(dash.PromQuery(`sum(kube_pod_status_ready{region="${region}", pod=~"${job}-([0-9a-f]{8,10}-.*|[0-9]+)$", condition="true"})`, "Ready").RefId("B"))).
 		WithPanel(ts("${job} versions", "").
 			Height(7).
 			Span(24).
@@ -434,7 +434,7 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *")).
 			WithTarget(dash.PromQuery(`max((buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}-buildbuddy_remote_cache_disk_cache_filesystem_avail_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"})/buildbuddy_remote_cache_disk_cache_filesystem_total_bytes{region="${region}",job="buildbuddy-app", cache_name="${cache_name}"}) by (pod_name)`, "{{pod_name}}"))).
-		WithPanel(ts("Disk Cache eviction rate  (${cache_name})", dash.UnitOps).
+		WithPanel(ts("Disk Cache eviction rate (${cache_name})", dash.UnitOps).
 			Span(24).
 			Repeat("cache_name").
 			RepeatDirection(dashboard.PanelRepeatDirectionH).
@@ -448,7 +448,7 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			Span(24).
 			Repeat("cache_name").
 			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_eviction_samples_chan_size{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[${window}]) by (partition_id)`, ""))).
+			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_eviction_samples_chan_size{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}) by (partition_id)`, ""))).
 		WithPanel(ts("Eviction samples by status (${cache_name})", dash.UnitOps).
 			Span(24).
 			Repeat("cache_name").
@@ -472,9 +472,10 @@ func pebbleRow() *dashboard.RowBuilder {
 	return row("Remote cache pebble").
 		WithPanel(ts("Compression Ratio", "").
 			Span(24).
-			WithTarget(dash.PromQuery(`1/histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "").RefId("A")).
-			WithTarget(dash.PromQuery(`1/histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "").RefId("B")).
-			WithTarget(dash.PromQuery(`1/histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "").RefId("C"))).
+			Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of that factor across streams: p90 is what the best-compressing 10% of streams exceed, p1 is what 99% of streams achieve. Each series is the inverse of the matching quantile of the compressed/decompressed ratio histogram.").
+			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p90").RefId("A")).
+			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p50").RefId("B")).
+			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p1").RefId("C"))).
 		WithPanel(ts("Compaction rate (${cache_name}) (by type)", "").
 			Span(24).
 			Repeat("cache_name").
@@ -493,8 +494,6 @@ func pebbleRow() *dashboard.RowBuilder {
 			Span(24).
 			Repeat("cache_name").
 			RepeatDirection(dashboard.PanelRepeatDirectionH).
-			OverrideByName("in progress (count)", rightAxisProps(dash.UnitNone)).
-			OverrideByName("marked files", rightAxisProps(dash.UnitNone)).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_cache_pebble_cache_pebble_compact_estimated_debt_bytes{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}) by (pod_name)`, "{{pod_name}}"))).
 		WithPanel(ts("Op Rate (${cache_name})", dash.UnitOps).
 			Span(24).
@@ -632,13 +631,13 @@ func redisRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`sum by(pod_name) (redis_memory_used_bytes{region="${region}"} / redis_memory_max_bytes{region="${region}"})`, "{{pod_name}}"))).
 		WithPanel(ts("CPU Usage", dash.UnitPercentUnit).
 			Height(9).
-			WithTarget(dash.PromQuery(`sum by (pod_name) (rate(redis_cpu_user_seconds_total{region="${region}"} + redis_cpu_sys_seconds_total{region="${region}"}))`, "{{pod_name}}"))).
+			WithTarget(dash.PromQuery(`sum by (pod_name) (rate(redis_cpu_user_seconds_total{region="${region}"}[${window}]) + rate(redis_cpu_sys_seconds_total{region="${region}"}[${window}]))`, "{{pod_name}}"))).
 		WithPanel(ts("Total items", "").
 			Height(9).
 			WithTarget(dash.PromQuery(`sum by (pod_name) (redis_db_keys{region="${region}"})`, "{{pod_name}}"))).
 		WithPanel(ts("Expiration Rate", "").
 			Height(9).
-			WithTarget(dash.PromQuery(`rate(sum by(pod_name) (redis_expired_keys_total{region="${region}"}))`, "{{pod_name}}"))).
+			WithTarget(dash.PromQuery(`sum by (pod_name) (rate(redis_expired_keys_total{region="${region}"}[${window}]))`, "{{pod_name}}"))).
 		WithPanel(ts("Total number of clients", "").
 			Height(9).
 			Span(24).
@@ -1042,7 +1041,7 @@ func grpcRow() *dashboard.RowBuilder {
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltipUnsorted()).
-			WithTarget(dash.PromQuery(`histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region="${region}", job="${job}"})[$window]))`, "/{{grpc_service}}/{{grpc_method}}"))).
+			WithTarget(dash.PromQuery(`histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region="${region}", job="${job}"}[${window}])))`, "/{{grpc_service}}/{{grpc_method}}"))).
 		WithPanel(ts("gRPC client messages sent by method", dash.UnitRequestsPerSec).
 			FillOpacity(5).
 			Legend(tableLegend("lastNotNull").
@@ -1055,25 +1054,25 @@ func grpcRow() *dashboard.RowBuilder {
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltipUnsorted()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region="${region}", job="${job}"})[$window])`, "/{{rpc_service}}/{{rpc_method}}"))).
+			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
 		WithPanel(ts("gRPC Client Response Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltipUnsorted()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region="${region}", job="${job}"})[$window])`, "/{{rpc_service}}/{{rpc_method}}"))).
+			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
 		WithPanel(ts("gRPC Server Request Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltipUnsorted()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region="${region}", job="${job}"})[$window])`, "/{{rpc_service}}/{{rpc_method}}"))).
+			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
 		WithPanel(ts("gRPC Server Response Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltipUnsorted()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region="${region}", job="${job}"})[$window])`, "/{{rpc_service}}/{{rpc_method}}")))
+			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}")))
 }
 
 func trafficStatsRow() *dashboard.RowBuilder {
