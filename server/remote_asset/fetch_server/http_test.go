@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -123,6 +125,24 @@ func TestFetchHTTPContext(t *testing.T) {
 			} else {
 				require.Equal(t, 1, attempts)
 			}
+		})
+	}
+}
+
+func TestFetchHTTPDoesNotRetryPermanentTransportErrors(t *testing.T) {
+	for _, failure := range []error{httpclient.ErrIPNotAllowed, &net.DNSError{Err: "no such host", IsNotFound: true}} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			attempts := 0
+			client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				attempts++
+				return nil, failure
+			})}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/asset", nil)
+			require.NoError(t, err)
+			rsp, err := fetchHTTP(req, client)
+			require.Nil(t, rsp)
+			require.Equal(t, gcodes.NotFound, gstatus.Code(err))
+			require.Equal(t, 1, attempts)
 		})
 	}
 }

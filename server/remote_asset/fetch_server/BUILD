@@ -63,10 +63,24 @@ go_test(
 )
 
 go_test(
+    name = "errors_test",
+    srcs = ["errors_test.go"],
+    embed = [":fetch_server"],
+    deps = [
+        "//server/http/httpclient",
+        "//server/util/status",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
     name = "http_test",
     srcs = ["http_test.go"],
     embed = [":fetch_server"],
     deps = [
+        "//server/http/httpclient",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

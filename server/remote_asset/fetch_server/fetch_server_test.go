@@ -838,7 +838,7 @@ func TestFetchBlobRecoversFromTransportFailure(t *testing.T) {
 // Invoke the handler directly for parent context tests so a client-side gRPC
 // cancellation cannot mask an incorrectly returned response status.
 func TestFetchBlobTimeouts(t *testing.T) {
-	for _, mode := range []string{"fetch_timeout", "rpc_deadline", "rpc_canceled", "already_canceled"} {
+	for _, mode := range []string{"fetch_timeout", "rpc_deadline", "rpc_deadline_no_fetch_timeout", "rpc_canceled", "already_canceled"} {
 		t.Run(mode, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			conn := runFetchServer(t.Context(), t, te)
@@ -862,10 +862,13 @@ func TestFetchBlobTimeouts(t *testing.T) {
 			switch mode {
 			case "fetch_timeout":
 				req.Timeout = durationpb.New(100 * time.Millisecond)
-			case "rpc_deadline":
+			case "rpc_deadline", "rpc_deadline_no_fetch_timeout":
 				var deadlineCancel context.CancelFunc
 				ctx, deadlineCancel = context.WithTimeout(ctx, 100*time.Millisecond)
 				defer deadlineCancel()
+				if mode == "rpc_deadline_no_fetch_timeout" {
+					req.Timeout = nil
+				}
 			case "already_canceled":
 				cancel()
 			}
@@ -876,7 +879,9 @@ func TestFetchBlobTimeouts(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, int32(gcodes.DeadlineExceeded), resp.GetStatus().GetCode())
 				require.Contains(t, resp.GetStatus().GetMessage(), "timed out")
-				require.Equal(t, ts.URL, resp.GetUri())
+				require.Empty(t, resp.GetUri())
+				require.Contains(t, resp.GetStatus().GetMessage(), "attempting 1 of 2 URIs")
+				require.Contains(t, resp.GetStatus().GetMessage(), ts.URL)
 				// Keep the existing workaround for clients that ignore response status.
 				require.Equal(t, strings.Repeat("1", 64), resp.GetBlobDigest().GetHash())
 				require.Equal(t, int64(1), resp.GetBlobDigest().GetSizeBytes())
@@ -885,7 +890,7 @@ func TestFetchBlobTimeouts(t *testing.T) {
 				resp, err = server.FetchBlob(ctx, req)
 				require.Nil(t, resp)
 				expected := gcodes.Canceled
-				if mode == "rpc_deadline" {
+				if mode == "rpc_deadline" || mode == "rpc_deadline_no_fetch_timeout" {
 					expected = gcodes.DeadlineExceeded
 				}
 				require.Equal(t, expected, gstatus.Code(err))
@@ -896,6 +901,45 @@ func TestFetchBlobTimeouts(t *testing.T) {
 				// Do not try another mirror once the fetch budget or RPC has expired.
 				require.Equal(t, int32(1), attempts.Load())
 			}
+		})
+	}
+}
+
+func TestFetchBlobPermanentURIFailures(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	runFetchServer(t.Context(), t, te)
+	flags.Set(t, "remote_asset.allowed_private_ips", []string{})
+	flags.Set(t, "http.client.allow_localhost", false)
+	server, err := fetch_server.NewFetchServer(te)
+	require.NoError(t, err)
+	for _, uri := range []string{"http://127.0.0.1/asset", "ftp://example.com/asset", "relative/path", "http:///path"} {
+		t.Run(uri, func(t *testing.T) {
+			rsp, err := server.FetchBlob(t.Context(), &rapb.FetchBlobRequest{Uris: []string{uri}})
+			require.NoError(t, err)
+			require.Equal(t, int32(gcodes.NotFound), rsp.GetStatus().GetCode())
+			require.Equal(t, uri, rsp.GetUri())
+		})
+	}
+}
+
+func TestFetchBlobPermanentFailureTriesNextMirror(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	client := rapb.NewFetchClient(runFetchServer(t.Context(), t, te))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "ftp://example.com/asset", http.StatusFound)
+			return
+		}
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+	for _, uri := range []string{"ftp://example.com/asset", "relative/path", ts.URL + "/redirect"} {
+		t.Run(uri, func(t *testing.T) {
+			rsp, err := client.FetchBlob(t.Context(), &rapb.FetchBlobRequest{Uris: []string{uri, ts.URL + "/ok"}})
+			require.NoError(t, err)
+			require.Equal(t, int32(gcodes.OK), rsp.GetStatus().GetCode())
+			require.Equal(t, ts.URL+"/ok", rsp.GetUri())
 		})
 	}
 }
