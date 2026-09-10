@@ -131,11 +131,9 @@ func (s *Signer) Sign(audience, wgPublicKey string, lifetime time.Duration) (str
 
 	now := time.Now()
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, &claims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			Audience:  jwt.ClaimStrings{audience},
-			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(lifetime)),
-		},
+		Audience:           jwt.ClaimStrings{audience},
+		IssuedAt:           jwt.NewNumericDate(now),
+		ExpiresAt:          jwt.NewNumericDate(now.Add(lifetime)),
 		WireGuardPublicKey: wgPublicKey,
 	})
 	token.Header["typ"] = credentialType

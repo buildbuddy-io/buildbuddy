@@ -153,7 +153,7 @@ func ClearIdentity(ctx context.Context) context.Context {
 func (s *Service) NewIdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
 	expirationTime := s.clock.Now().Add(expiration)
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{
-		StandardClaims: jwt.StandardClaims{ExpiresAt: expirationTime.Unix()},
+		ExpiresAt:      expirationTime.Unix(),
 		ClientIdentity: *si,
 	})
 	return t.SignedString(s.signingKey)

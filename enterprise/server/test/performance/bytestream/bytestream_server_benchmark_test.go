@@ -64,8 +64,8 @@ func (c *slowCache) Writer(ctx context.Context, r *rspb.ResourceName) (interface
 	}
 	if rf, ok := w.(io.ReaderFrom); ok {
 		return &slowWriterReaderFrom{
-			slowWriter: slowWriter{CommittedWriteCloser: w},
-			ReaderFrom: rf,
+			CommittedWriteCloser: w,
+			ReaderFrom:           rf,
 		}, nil
 	}
 	return &slowWriter{

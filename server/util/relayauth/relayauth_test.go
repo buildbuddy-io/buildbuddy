@@ -454,10 +454,8 @@ func TestHostileHeadersAreRejected(t *testing.T) {
 	withHeader := func(alg string, extra map[string]any) string {
 		t.Helper()
 		token := jwt.NewWithClaims(jwt.GetSigningMethod(alg), &claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Audience:  jwt.ClaimStrings{testAudience},
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
-			},
+			Audience:           jwt.ClaimStrings{testAudience},
+			ExpiresAt:          jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
 			WireGuardPublicKey: testWGKey,
 		})
 		token.Header["typ"] = credentialType
@@ -487,10 +485,8 @@ func TestHostileHeadersAreRejected(t *testing.T) {
 		p384, err := parsePrivateKey(kb.Bytes)
 		require.NoError(t, err)
 		token := jwt.NewWithClaims(jwt.SigningMethodES384, &claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Audience:  jwt.ClaimStrings{testAudience},
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
-			},
+			Audience:           jwt.ClaimStrings{testAudience},
+			ExpiresAt:          jwt.NewNumericDate(time.Now().Add(DefaultAssertionLifetime)),
 			WireGuardPublicKey: testWGKey,
 		})
 		token.Header["typ"] = credentialType

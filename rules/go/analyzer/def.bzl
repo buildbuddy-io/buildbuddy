@@ -1,4 +1,5 @@
 ANALYZERS = [
+    "embedlit",
     "slicesclip",
     "slicesbackward",
     "any",
