@@ -679,8 +679,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, s.env.GetExperimentFlagProvider(), actionResult); err != nil {
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
@@ -952,14 +951,14 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		uploadOutputsChunked = efp.Boolean(ctx, "executor.upload_outputs_chunked", uploadOutputsChunked)
 		downloadInputsChunked = efp.Boolean(ctx, "executor.download_inputs_chunked", downloadInputsChunked)
 	}
-	if chunking.Enabled(ctx, efp) && uploadOutputsChunked {
+	if uploadOutputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
 		if efp != nil && efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
 			executionTask.Experiments = append(executionTask.Experiments, cdc.SpliceWithoutValidationExperiment)
 		}
 	}
-	if chunking.Enabled(ctx, efp) && downloadInputsChunked {
+	if downloadInputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 

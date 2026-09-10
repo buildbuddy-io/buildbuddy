@@ -45,7 +45,6 @@ go_test(
     srcs = ["byte_stream_server_test.go"],
     embed = [":byte_stream_server"],
     deps = [
-        "//enterprise/server/experiments",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/backends/memory_metrics_collector",
@@ -66,8 +65,6 @@ go_test(
         "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_google_uuid//:uuid",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",

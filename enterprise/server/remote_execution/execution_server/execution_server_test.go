@@ -337,13 +337,6 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 {
   "$schema": "https://flagd.dev/schema/v0/flags.json",
   "flags": {
-    "cache.chunking_enabled": {
-      "state": "ENABLED",
-      "variants": {
-        "on": true
-      },
-      "defaultVariant": "on"
-    },
     "executor.upload_outputs_chunked": {
       "state": "ENABLED",
       "variants": {

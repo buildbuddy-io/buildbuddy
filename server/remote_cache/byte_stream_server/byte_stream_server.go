@@ -199,7 +199,7 @@ func (s *ByteStreamServer) ReadCASResource(ctx context.Context, r *digest.CASRes
 	}
 	reader, err := s.cache.Reader(ctx, cacheRN.ToProto(), offset, limit)
 	if err != nil {
-		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(ctx, s.env.GetExperimentFlagProvider(), cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
+		if status.IsNotFoundError(err) && chunking.ShouldReadChunked(cacheRN.GetDigest().GetSizeBytes(), offset, limit) {
 			reader, err = s.attemptReadChunked(ctx, cacheRN, offset)
 		}
 		if err != nil {

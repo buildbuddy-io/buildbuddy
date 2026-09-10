@@ -81,7 +81,6 @@ go_test(
         "@com_github_buildbuddy_io_fastcdc2020//fastcdc",
         "@com_github_google_uuid//:uuid",
         "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_open_feature_go_sdk_contrib_providers_flagd//pkg",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
