@@ -54,6 +54,10 @@ const (
 	UnitShort = "short"
 	// UnitWatts formats as watts with SI prefixes (W, kW, MW).
 	UnitWatts = "watt"
+	// UnitVolts formats as volts with SI prefixes (V, kV).
+	UnitVolts = "volt"
+	// UnitAmps formats as amperes with SI prefixes (A, kA).
+	UnitAmps = "amp"
 )
 
 // Prometheus returns a reference to the default prometheus metrics datasource
@@ -124,6 +128,10 @@ func Stat(title, unit string) *stat.PanelBuilder {
 		Unit(unit).
 		GraphMode(common.BigValueGraphModeNone).
 		ColorMode(common.BigValueColorModeValue).
+		// The SDK serializes an unset orientation as "" rather than "auto".
+		// Grafana treats anything but "horizontal" as vertical, which stacks
+		// multi-series stats and shows only the first tile.
+		Orientation(common.VizOrientationAuto).
 		ReduceOptions(
 			common.NewReduceDataOptionsBuilder().
 				Calcs([]string{"lastNotNull"}).
