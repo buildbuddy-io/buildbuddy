@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -967,11 +966,11 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
-		if efp.Boolean(ctx, snaputil.RemoteContainerImageReadsExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageReadsExperiment)
+		if efp.Boolean(ctx, "executor.remote_container_image_reads_enabled", false) {
+			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_reads_enabled")
 		}
-		if efp.Boolean(ctx, snaputil.RemoteContainerImageWritesExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageWritesExperiment)
+		if efp.Boolean(ctx, "executor.remote_container_image_writes_enabled", false) {
+			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_writes_enabled")
 		}
 	}
 

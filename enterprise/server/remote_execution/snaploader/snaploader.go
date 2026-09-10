@@ -1559,8 +1559,8 @@ func GetRemoteContainerImageAccessOptions(ctx context.Context, task *repb.Execut
 			RemoteWritesEnabled: true,
 		}
 	}
-	reads := slices.Contains(task.GetExperiments(), snaputil.RemoteContainerImageReadsExperiment)
-	writes := slices.Contains(task.GetExperiments(), snaputil.RemoteContainerImageWritesExperiment)
+	reads := slices.Contains(task.GetExperiments(), "executor.remote_container_image_reads_enabled")
+	writes := slices.Contains(task.GetExperiments(), "executor.remote_container_image_writes_enabled")
 	log.CtxInfof(ctx, "Using remote chunked EXT4 access options: reads=%t writes=%t", reads, writes)
 	return RemoteContainerImageAccessOptions{
 		RemoteReadsEnabled: reads,
