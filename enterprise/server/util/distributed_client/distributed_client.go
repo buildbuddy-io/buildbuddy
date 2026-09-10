@@ -278,6 +278,18 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 		return nil, err
 	}
 	rn := req.GetResource()
+	if ref := c.getWithMetadataReference(ctx, rn); ref != nil {
+		md := ref.GetMetadata()
+		return &dcpb.GetWithMetadataResponse{
+			Reference: ref,
+			Metadata: &dcpb.MetadataResponse{
+				StoredSizeBytes: md.GetStoredSizeBytes(),
+				DigestSizeBytes: md.GetFileRecord().GetDigest().GetSizeBytes(),
+				LastModifyUsec:  md.GetLastModifyUsec(),
+				LastAccessUsec:  md.GetLastAccessUsec(),
+			},
+		}, nil
+	}
 	data, md, err := c.cache.GetWithMetadata(ctx, rn)
 	if err != nil {
 		return nil, err
@@ -291,6 +303,22 @@ func (c *Proxy) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRe
 			LastAccessUsec:  md.LastAccessTimeUsec,
 		},
 	}, nil
+}
+
+func (c *Proxy) getWithMetadataReference(ctx context.Context, rn *rspb.ResourceName) *refpb.Reference {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil || !fp.Boolean(ctx, "distributed_cache.get_with_metadata_gcs_references", false) {
+		return nil
+	}
+	refCache, ok := c.cache.(interfaces.ReferenceCache)
+	if !ok {
+		return nil
+	}
+	ref, err := refCache.ReadReference(ctx, rn)
+	if err != nil {
+		return nil
+	}
+	return ref
 }
 
 type resourceIsolationStringer struct{ *rspb.ResourceName }
