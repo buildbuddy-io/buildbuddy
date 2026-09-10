@@ -32,11 +32,7 @@ go_library(
 
 go_test(
     name = "fetch_server_test",
-    srcs = [
-        "errors_test.go",
-        "fetch_server_test.go",
-        "http_test.go",
-    ],
+    srcs = ["fetch_server_test.go"],
     embed = [":fetch_server"],
     deps = [
         "//proto:buildbuddy_service_go_proto",
@@ -65,30 +61,5 @@ go_test(
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
         "@org_golang_google_protobuf//types/known/durationpb",
-    ],
-)
-
-go_test(
-    name = "errors_test",
-    srcs = ["errors_test.go"],
-    embed = [":fetch_server"],
-    deps = [
-        "//server/http/httpclient",
-        "//server/util/status",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
-    ],
-)
-
-go_test(
-    name = "http_test",
-    srcs = ["http_test.go"],
-    embed = [":fetch_server"],
-    deps = [
-        "//server/http/httpclient",
-        "@com_github_stretchr_testify//require",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//status",
     ],
 )

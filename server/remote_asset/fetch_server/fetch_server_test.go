@@ -1,13 +1,17 @@
-package fetch_server_test
+package fetch_server
 
 import (
 	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -17,7 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -26,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,7 +69,7 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(clientConn))
 	env.SetCacheClient(cspb.NewCacheClient(clientConn))
 
-	fetchServer, err := fetch_server.NewFetchServer(env)
+	fetchServer, err := NewFetchServer(env)
 	require.NoError(t, err)
 
 	rapb.RegisterFetchServer(grpcServer, fetchServer)
@@ -142,7 +147,7 @@ func TestFetchBlob(t *testing.T) {
 				Uris: []string{ts.URL},
 				Qualifiers: []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: checksumQualifierFromContent(t, contentDigest.GetHash(), tc.digestFunc),
 					},
 				},
@@ -236,7 +241,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 				Uris: []string{ts.URL},
 				Qualifiers: []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: checksumQualifierFromContent(t, checksumDigest.GetHash(), tc.checksumFunc),
 					},
 				},
@@ -338,7 +343,7 @@ func TestFetchBlobMismatch(t *testing.T) {
 			if tc.checksumQualifier != "" {
 				request.Qualifiers = []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: tc.checksumQualifier,
 					},
 				}
@@ -402,7 +407,7 @@ func TestSubsequentRequestCacheHit(t *testing.T) {
 			if tc.checksumQualifier != "" {
 				request.Qualifiers = []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: tc.checksumQualifier,
 					},
 				}
@@ -451,11 +456,11 @@ func TestFetchBlobWithBazelQualifiers(t *testing.T) {
 		Uris: []string{ts.URL},
 		Qualifiers: []*rapb.Qualifier{
 			{
-				Name:  fetch_server.BazelCanonicalIDQualifier,
+				Name:  BazelCanonicalIDQualifier,
 				Value: "some-bazel-id",
 			},
 			{
-				Name:  fetch_server.BazelHttpHeaderPrefixQualifier + "hkey",
+				Name:  BazelHttpHeaderPrefixQualifier + "hkey",
 				Value: "hvalue",
 			},
 		},
@@ -494,7 +499,7 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -507,7 +512,7 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -520,11 +525,11 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
 					Value: "hvalue0",
 				},
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -536,11 +541,11 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderPrefixQualifier + "hkey",
+					Name:  BazelHttpHeaderPrefixQualifier + "hkey",
 					Value: "hvalue0",
 				},
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -574,7 +579,7 @@ func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
 		Uris: []string{ts.URL},
 		Qualifiers: []*rapb.Qualifier{
 			{
-				Name:  fetch_server.BazelCanonicalIDQualifier,
+				Name:  BazelCanonicalIDQualifier,
 				Value: "known-qualifier",
 			},
 			{
@@ -627,7 +632,7 @@ func TestFetchBlob_CacheProxy(t *testing.T) {
 		Uris: []string{ts.URL},
 		Qualifiers: []*rapb.Qualifier{
 			{
-				Name:  fetch_server.ChecksumQualifier,
+				Name:  ChecksumQualifier,
 				Value: checksumQualifierFromContent(t, contentDigest.GetHash(), repb.DigestFunction_BLAKE3),
 			},
 		},
@@ -702,7 +707,7 @@ func runFetchServerWithCacheProxy(ctx context.Context, env *testenv.TestEnv, t t
 
 	localCacheServer := cache_server.New(env)
 
-	fetchServer, err := fetch_server.NewFetchServer(env)
+	fetchServer, err := NewFetchServer(env)
 	require.NoError(t, err)
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -787,7 +792,7 @@ func TestFetchBlobFailureClassification(t *testing.T) {
 			}
 			resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
 				Uris:       uris,
-				Qualifiers: []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+				Qualifiers: []*rapb.Qualifier{{Name: ChecksumQualifier, Value: sha256CRI}},
 			})
 			if tc.code != gcodes.OK && tc.code != gcodes.NotFound {
 				require.Equal(t, tc.code, gstatus.Code(err), "%v", err)
@@ -825,7 +830,7 @@ func TestFetchBlobRecoversFromTransportFailure(t *testing.T) {
 	defer ts.Close()
 	resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
 		Uris:       []string{ts.URL},
-		Qualifiers: []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+		Qualifiers: []*rapb.Qualifier{{Name: ChecksumQualifier, Value: sha256CRI}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode())
@@ -842,7 +847,7 @@ func TestFetchBlobTimeouts(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			te := testenv.GetTestEnv(t)
 			conn := runFetchServer(t.Context(), t, te)
-			server, err := fetch_server.NewFetchServer(te)
+			server, err := NewFetchServer(te)
 			require.NoError(t, err)
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -910,7 +915,7 @@ func TestFetchBlobPermanentURIFailures(t *testing.T) {
 	runFetchServer(t.Context(), t, te)
 	flags.Set(t, "remote_asset.allowed_private_ips", []string{})
 	flags.Set(t, "http.client.allow_localhost", false)
-	server, err := fetch_server.NewFetchServer(te)
+	server, err := NewFetchServer(te)
 	require.NoError(t, err)
 	for _, uri := range []string{"http://127.0.0.1/asset", "ftp://example.com/asset", "relative/path", "http:///path"} {
 		t.Run(uri, func(t *testing.T) {
@@ -940,6 +945,189 @@ func TestFetchBlobPermanentFailureTriesNextMirror(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, int32(gcodes.OK), rsp.GetStatus().GetCode())
 			require.Equal(t, ts.URL+"/ok", rsp.GetUri())
+		})
+	}
+}
+
+func TestHTTPFetchError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code gcodes.Code
+	}{
+		{"blocked_ip", httpclient.ErrIPNotAllowed, gcodes.NotFound},
+		{"nxdomain", &net.DNSError{Err: "no such host", IsNotFound: true}, gcodes.NotFound},
+		{"dns_timeout", &net.DNSError{Err: "timeout", IsTimeout: true}, gcodes.Unavailable},
+		{"dns_temporary", &net.DNSError{Err: "server failure", IsTemporary: true}, gcodes.Unavailable},
+		{"TLS_timeout", errors.New("net/http: TLS handshake timeout"), gcodes.Unavailable},
+		{"connection_reset", errors.New("connection reset by peer"), gcodes.Unavailable},
+		{"redirect_rejected", status.NotFoundError("stopped after 10 redirects"), gcodes.NotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// net/http wraps dial failures through both net.OpError and url.Error.
+			err := &url.Error{Op: "Get", URL: "https://example.com/asset", Err: &net.OpError{Op: "dial", Net: "tcp", Err: tc.err}}
+			classified := httpFetchError(err.URL, err)
+			require.Equal(t, tc.code, gstatus.Code(classified))
+			require.Contains(t, status.Message(classified), err.URL)
+			require.Contains(t, status.Message(classified), tc.err.Error())
+		})
+	}
+}
+
+func TestValidateHTTPURL(t *testing.T) {
+	for _, uri := range []string{"ftp://example.com/a", "file:///tmp/a", "relative/path", "//example.com/a", "http:///path"} {
+		t.Run(uri, func(t *testing.T) {
+			u, err := url.Parse(uri)
+			require.NoError(t, err)
+			require.Equal(t, gcodes.NotFound, gstatus.Code(validateHTTPURL(u)))
+		})
+	}
+	for _, uri := range []string{"https://example.com/a", "http://example.com/a"} {
+		u, err := url.Parse(uri)
+		require.NoError(t, err)
+		require.NoError(t, validateHTTPURL(u))
+	}
+}
+
+func TestFetchTimeoutErrorPreservesLastAttempt(t *testing.T) {
+	// The budget may expire between a 404 response and the next mirror. Keep
+	// the 404 diagnostic while making clear that not all mirrors were tried.
+	err := fetchTimeoutError(1, 2, fmt.Errorf("https://example.com/first: %w", status.NotFoundError("HTTP 404 Not Found")))
+	require.Equal(t, gcodes.DeadlineExceeded, gstatus.Code(err))
+	require.Contains(t, status.Message(err), "attempting 1 of 2 URIs")
+	require.Contains(t, status.Message(err), "https://example.com/first")
+	require.Contains(t, status.Message(err), "404 Not Found")
+	err = fetchTimeoutError(0, 2, nil)
+	require.Contains(t, status.Message(err), "attempting 0 of 2 URIs")
+	require.NotContains(t, status.Message(err), "last fetch error")
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type trackedBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *trackedBody) Close() error { b.closed = true; return nil }
+
+func TestFetchHTTPRetries(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		outcomes []int // 0 represents a transport failure.
+		code     gcodes.Code
+	}{
+		{"TLS_timeout_then_success", []int{0, 200}, gcodes.OK},
+		{"exhaust_transport", []int{0, 0, 0}, gcodes.Unavailable},
+		{"server_errors_then_success", []int{502, 503, 200}, gcodes.OK},
+		{"exhaust_server_errors", []int{503, 503, 503}, gcodes.Unavailable},
+		{"rate_limit_then_success", []int{429, 200}, gcodes.OK},
+		{"request_timeout_then_success", []int{408, 200}, gcodes.OK},
+		{"not_found", []int{404}, gcodes.NotFound},
+		{"forbidden", []int{403}, gcodes.NotFound},
+		{"bad_request", []int{400}, gcodes.NotFound},
+		{"transient_then_terminal", []int{503, 404}, gcodes.NotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			attempts := 0
+			var bodies []*trackedBody
+			client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				for _, body := range bodies {
+					require.True(t, body.closed, "failed response must be closed before retry")
+				}
+				require.Less(t, attempts, len(tc.outcomes))
+				outcome := tc.outcomes[attempts]
+				attempts++
+				require.Equal(t, "secret", r.Header.Get("Authorization"))
+				if outcome == 0 {
+					return nil, errors.New("net/http: TLS handshake timeout")
+				}
+				body := &trackedBody{Reader: strings.NewReader("body")}
+				bodies = append(bodies, body)
+				return &http.Response{StatusCode: outcome, Status: fmt.Sprint(outcome), Body: body, Header: make(http.Header)}, nil
+			})}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/asset", nil)
+			require.NoError(t, err)
+			req.Header.Set("Authorization", "secret")
+			rsp, err := fetchHTTP(req, client)
+			require.Equal(t, tc.code, gstatus.Code(err), "%v", err)
+			require.Equal(t, len(tc.outcomes), attempts)
+			if tc.code == gcodes.OK {
+				require.NotNil(t, rsp)
+				require.False(t, bodies[len(bodies)-1].closed)
+				rsp.Body.Close()
+			} else {
+				require.Nil(t, rsp)
+			}
+			for _, body := range bodies {
+				require.True(t, body.closed)
+			}
+		})
+	}
+}
+
+func TestFetchHTTPContext(t *testing.T) {
+	for _, mode := range []string{"already_canceled", "during_request", "during_backoff", "deadline"} {
+		t.Run(mode, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			wantCode := gcodes.Canceled
+			if mode == "deadline" {
+				var deadlineCancel context.CancelFunc
+				ctx, deadlineCancel = context.WithTimeout(ctx, 50*time.Millisecond)
+				defer deadlineCancel()
+				wantCode = gcodes.DeadlineExceeded
+			}
+			attempts := 0
+			returned := make(chan struct{})
+			client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				attempts++
+				switch mode {
+				case "during_request":
+					cancel()
+				case "during_backoff":
+					close(returned)
+				case "deadline":
+					<-r.Context().Done()
+				}
+				return nil, errors.New("connection reset")
+			})}
+			if mode == "already_canceled" {
+				cancel()
+			}
+			if mode == "during_backoff" {
+				go func() { <-returned; time.Sleep(10 * time.Millisecond); cancel() }()
+			}
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com/asset", nil)
+			require.NoError(t, err)
+			rsp, err := fetchHTTP(req, client)
+			require.Nil(t, rsp)
+			require.Equal(t, wantCode, gstatus.Code(err))
+			if mode == "already_canceled" {
+				require.Zero(t, attempts)
+			} else {
+				require.Equal(t, 1, attempts)
+			}
+		})
+	}
+}
+
+func TestFetchHTTPDoesNotRetryPermanentTransportErrors(t *testing.T) {
+	for _, failure := range []error{httpclient.ErrIPNotAllowed, &net.DNSError{Err: "no such host", IsNotFound: true}} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			attempts := 0
+			client := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				attempts++
+				return nil, failure
+			})}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://example.com/asset", nil)
+			require.NoError(t, err)
+			rsp, err := fetchHTTP(req, client)
+			require.Nil(t, rsp)
+			require.Equal(t, gcodes.NotFound, gstatus.Code(err))
+			require.Equal(t, 1, attempts)
 		})
 	}
 }
