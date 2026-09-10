@@ -259,8 +259,13 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	// least have something we can return to the client.
 	var lastFetchErr error
 	var lastFetchUri string
+	var unavailableErr error
+	var invalidArgumentErr error
 
 	for i, uri := range req.GetUris() {
+		if err := ctx.Err(); err != nil {
+			return nil, gstatus.FromContextError(err).Err()
+		}
 		_, err := url.Parse(uri)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
@@ -288,7 +293,12 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
 			lastFetchUri = uri
-			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)
+			if status.IsUnavailableError(err) {
+				unavailableErr = lastFetchErr
+			} else if status.IsInvalidArgumentError(err) {
+				invalidArgumentErr = lastFetchErr
+			}
+			log.CtxWarningf(ctx, "Failed to mirror %q to cache (%s): %s", uri, gstatus.Code(err), err)
 			continue
 		}
 		return &rapb.FetchBlobResponse{
@@ -299,14 +309,21 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}, nil
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, gstatus.FromContextError(err).Err()
+	}
+	// A later missing mirror must not hide an earlier transient failure.
+	if unavailableErr != nil {
+		return nil, status.UnavailableError(status.Message(unavailableErr))
+	}
+	if invalidArgumentErr != nil {
+		return nil, status.InvalidArgumentError(status.Message(invalidArgumentErr))
+	}
+
 	log.CtxInfof(ctx, "Fetch: returning NotFound for %s", req.GetUris())
 	return &rapb.FetchBlobResponse{
 		Status: &statuspb.Status{
-			// Note: returning NotFound here because the other error codes in
-			// the proto documentation for FetchBlobResponse.status don't really
-			// apply when we fail to fetch. (PermissionDenied and Aborted might
-			// make sense in some cases, but it's unclear at the moment whether
-			// there is any benefit to using those.)
+
 			Code:    int32(gcodes.NotFound),
 			Message: status.Message(lastFetchErr),
 		},
@@ -422,7 +439,7 @@ func mirrorToCache(
 	log.CtxDebugf(ctx, "Fetching %s", uri)
 	req, err := http.NewRequestWithContext(ctx, "GET", uri, nil)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to fetch %q: create request failed: %s", uri, err)
+		return nil, status.InvalidArgumentErrorf("failed to fetch %q: create request failed: %s", uri, err)
 	}
 	req.Header = header
 	rsp, err := httpClient.Do(req)
@@ -431,6 +448,10 @@ func mirrorToCache(
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
+		// Request timeout and rate limiting are transient even though they are 4xx.
+		if rsp.StatusCode >= 400 && rsp.StatusCode < 500 && rsp.StatusCode != http.StatusRequestTimeout && rsp.StatusCode != http.StatusTooManyRequests {
+			return nil, status.NotFoundErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
+		}
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
 	}
 
@@ -442,6 +463,9 @@ func mirrorToCache(
 		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
 		rn.SetCompressor(repb.Compressor_ZSTD)
 		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
+			if status.IsInvalidArgumentError(err) {
+				return nil, err
+			}
 			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 		}
 		log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(d))

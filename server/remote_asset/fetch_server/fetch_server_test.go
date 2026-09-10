@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -727,4 +728,75 @@ func TestFetchDirectory(t *testing.T) {
 	resp, err := fetchClient.FetchDirectory(ctx, &rapb.FetchDirectoryRequest{})
 	assert.EqualError(t, err, "rpc error: code = Unimplemented desc = FetchDirectory is not yet implemented")
 	assert.Nil(t, resp)
+}
+
+func TestFetchBlobFailureClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		paths []string
+		code  gcodes.Code
+	}{
+		{"missing", []string{"404", "404"}, gcodes.NotFound},
+		{"forbidden", []string{"403"}, gcodes.NotFound},
+		{"server_error", []string{"503"}, gcodes.Unavailable},
+		{"timeout", []string{"408"}, gcodes.Unavailable},
+		{"rate_limit", []string{"429"}, gcodes.Unavailable},
+		{"reset_then_missing", []string{"reset", "404"}, gcodes.Unavailable},
+		{"missing_then_server_error", []string{"404", "503"}, gcodes.Unavailable},
+		{"server_error_then_missing", []string{"503", "404"}, gcodes.Unavailable},
+		{"checksum_mismatch", []string{"bad_checksum"}, gcodes.InvalidArgument},
+		{"checksum_then_missing", []string{"bad_checksum", "404"}, gcodes.InvalidArgument},
+		{"checksum_then_server_error", []string{"bad_checksum", "503"}, gcodes.Unavailable},
+		{"server_error_then_success", []string{"503", "ok"}, gcodes.OK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			require.NoError(t, scratchspace.Init())
+			client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/reset":
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					conn.Close()
+				case "/ok":
+					fmt.Fprint(w, content)
+				case "/bad_checksum":
+					fmt.Fprint(w, "wrong content")
+				default:
+					code, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/"))
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					w.WriteHeader(code)
+				}
+			}))
+			defer ts.Close()
+			var uris []string
+			for _, path := range tc.paths {
+				uris = append(uris, ts.URL+"/"+path)
+			}
+			resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+				Uris:       uris,
+				Qualifiers: []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+			})
+			if tc.code != gcodes.OK && tc.code != gcodes.NotFound {
+				require.Equal(t, tc.code, gstatus.Code(err), "%v", err)
+				require.Nil(t, resp)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, int32(tc.code), resp.GetStatus().GetCode())
+			if tc.code == gcodes.NotFound {
+				require.Equal(t, uris[len(uris)-1], resp.GetUri())
+				require.Equal(t, strings.Repeat("1", 64), resp.GetBlobDigest().GetHash())
+				require.Equal(t, int64(1), resp.GetBlobDigest().GetSizeBytes())
+			}
+		})
+	}
 }
