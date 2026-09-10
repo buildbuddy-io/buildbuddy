@@ -1019,6 +1019,38 @@ var (
 		StatusLabel,
 	})
 
+	// DistributedCacheBackfillCount counts distributed cache backfills (read
+	// repairs) of a single digest to a single peer, by whether the blob was
+	// sent to the peer as a reference to shared storage or as inline bytes,
+	// and by the backfill's gRPC status code ("OK" on success). A backfill
+	// that fails by reference and then falls back to bytes is counted once,
+	// under "bytes". Backfills skipped because the peer already had the blob
+	// are not counted.
+	DistributedCacheBackfillCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_backfill_count",
+		Help:      "Count of distributed cache backfills, by whether the blob was sent to the peer as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheBackfillSizeBytes totals the sizes of the blobs
+	// backfilled (read-repaired) to peers, with the same labels and counting
+	// rules as DistributedCacheBackfillCount. Sizes are the digest's
+	// (uncompressed) size, so compressed transfers count the full blob size
+	// rather than the exact bytes moved.
+	DistributedCacheBackfillSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_backfill_size_bytes",
+		Help:      "Total digest sizes of blobs backfilled to distributed cache peers, by whether the blob was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
+	})
+
 	DistributedCacheBackfillLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",

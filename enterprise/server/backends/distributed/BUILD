@@ -77,6 +77,7 @@ go_test(
         "//server/util/testing/flags",
         "@com_github_open_feature_go_sdk//openfeature",
         "@com_github_open_feature_go_sdk//openfeature/memprovider",
+        "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@io_k8s_api//apps/v1:apps",
@@ -85,5 +86,6 @@ go_test(
         "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//kubernetes/fake",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//codes",
     ],
 )

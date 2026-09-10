@@ -1078,6 +1078,19 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	return c.distributedProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
 
+// remoteReferenceWriter is remoteWriter's counterpart for writing r to peer
+// by reference; the write happens when the returned writer is committed.
+func (c *Cache) remoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
+	if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
+		refCache, ok := c.local.(interfaces.ReferenceCache)
+		if !ok {
+			return nil, status.UnimplementedErrorf("the local cache (%T) cannot accept references", c.local)
+		}
+		return &localReferenceWriteCloser{ctx: ctx, refCache: refCache, ref: ref, rn: r, mustClone: mustClone}, nil
+	}
+	return c.distributedProxy.RemoteReferenceWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+}
+
 func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.Delete(ctx, r)
@@ -1132,11 +1145,44 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	//    appropriate.
 	// 3) A GetWithMetadata call, which doesn't write to those caches, so as
 	//    with FindMissing/Contains, we shouldn't either.
+	//
+	// If the source responds with a reference, forward it to the destination
+	// instead of reading the bytes through this node. Only immutable CAS
+	// entries go by reference; AC entries are generally small.
+	if c.backfillByReference(ctx) && rn.GetCacheType() == rspb.CacheType_CAS {
+		ref, r, err := c.distributedProxy.RemoteReaderOrReference(ctx, source, rn)
+		if err != nil {
+			return recordBackfill(rn, "bytes", err)
+		}
+		if ref == nil {
+			defer r.Close()
+			return recordBackfill(rn, "bytes", c.copyBytes(ctx, r, dest, rn))
+		}
+		err = c.copyReference(ctx, ref, dest, rn)
+		if err == nil {
+			return recordBackfill(rn, "reference", nil)
+		}
+		c.log.CtxDebugf(ctx, "Error backfilling %s to peer %s by reference, falling back to bytes: %s", rn.GetDigest().GetHash(), dest, err)
+	}
 	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
-		return err
+		return recordBackfill(rn, "bytes", err)
 	}
 	defer r.Close()
+	return recordBackfill(rn, "bytes", c.copyBytes(ctx, r, dest, rn))
+}
+
+func recordBackfill(rn *rspb.ResourceName, requestType string, err error) error {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheWriteRequestType: requestType,
+		metrics.StatusHumanReadableLabel:         status.MetricsLabel(err),
+	}
+	metrics.DistributedCacheBackfillCount.With(labels).Inc()
+	metrics.DistributedCacheBackfillSizeBytes.With(labels).Add(float64(rn.GetDigest().GetSizeBytes()))
+	return err
+}
+
+func (c *Cache) copyBytes(ctx context.Context, r io.Reader, dest string, rn *rspb.ResourceName) error {
 	rwc, err := c.remoteWriter(ctx, dest, "", rn)
 	if err != nil {
 		return err
@@ -1146,6 +1192,25 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 		return err
 	}
 	return rwc.Commit()
+}
+
+// copyReference writes rn to dest by reference. The source peer keeps its
+// own record of the referenced blob, so dest must clone it.
+func (c *Cache) copyReference(ctx context.Context, ref *refpb.Reference, dest string, rn *rspb.ResourceName) error {
+	rwc, err := c.remoteReferenceWriter(ctx, dest, "", rn, ref, true /*=mustClone*/)
+	if err != nil {
+		return err
+	}
+	defer rwc.Close()
+	return rwc.Commit()
+}
+
+func (c *Cache) backfillByReference(ctx context.Context) bool {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "distributed_cache.backfill_gcs_references", false)
 }
 
 type backfillOrder struct {
