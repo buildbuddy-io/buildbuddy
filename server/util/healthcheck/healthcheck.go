@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"maps"
 	"net/http"
 	"os"
 	"os/signal"
@@ -220,9 +221,7 @@ func (h *HealthChecker) runHealthChecks(ctx context.Context) {
 
 	h.checkersMu.Lock()
 	checkers := make(map[string]interfaces.Checker, len(h.checkers))
-	for k, v := range h.checkers {
-		checkers[k] = v
-	}
+	maps.Copy(checkers, h.checkers)
 	h.checkersMu.Unlock()
 
 	eg, ctx := errgroup.WithContext(ctx)

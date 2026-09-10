@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"sync"
 	"time"
@@ -65,9 +66,7 @@ func (m *Mockstore) GetBlobMap() map[string][]byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	r := make(map[string][]byte, len(m.BlobMap))
-	for k, v := range m.BlobMap {
-		r[k] = v
-	}
+	maps.Copy(r, m.BlobMap)
 	return r
 }
 

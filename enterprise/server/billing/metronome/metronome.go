@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"sort"
@@ -148,9 +149,7 @@ func encodeEvent(e UsageEvent) (*MetronomeEvent, error) {
 		"period_start": e.PeriodStart.UTC().Format(time.RFC3339),
 		"period_end":   e.PeriodEnd.UTC().Format(time.RFC3339),
 	}
-	for k, v := range e.Labels {
-		properties[k] = v
-	}
+	maps.Copy(properties, e.Labels)
 	return &MetronomeEvent{
 		TransactionID: transactionID(e),
 		CustomerID:    e.GroupID,

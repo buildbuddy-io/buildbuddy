@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"slices"
 	"strings"
@@ -1000,9 +1001,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 		// ones, instead instead of copying into an empty map.
 		return remoteResults, nil
 	}
-	for k, v := range remoteResults {
-		results[k] = v
-	}
+	maps.Copy(results, remoteResults)
 	return results, nil
 }
 

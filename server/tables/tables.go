@@ -4,6 +4,7 @@ package tables
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -1369,9 +1370,7 @@ func PostAutoMigrate(db *gorm.DB) error {
 	}
 	prefixIndexes, ok := prefixIndicesByDialect[db.Dialector.Name()]
 	if ok {
-		for name, cols := range prefixIndexes {
-			invocationIndices[name] = cols
-		}
+		maps.Copy(invocationIndices, prefixIndexes)
 	}
 
 	executionIndices := map[string]string{
