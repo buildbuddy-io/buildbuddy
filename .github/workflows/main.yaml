@@ -20,10 +20,12 @@ jobs:
       - name: Setup Bazel Go module cache
         uses: ./.github/actions/setup-bazel-go-mod-cache
 
+      # GitHub Actions already reports CI / build; avoid a duplicate Bazel status.
       - name: Test
         run: |
           bazelisk test \
             --config=ci \
+            --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true \
             --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
             //...
 
