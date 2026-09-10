@@ -81,6 +81,10 @@
   font-weight: 600;
 }
 
+.trend-chart-hover .color-swatch {
+  display: inline-block;
+}
+
 .trends-clickable-bar:hover,
 .trends-clickable-bar.green:hover {
   fill: var(--color-chart-bar-hover-green);

@@ -16,6 +16,7 @@ import {
   Scatter,
   Tooltip,
   TooltipContentProps,
+  useYAxisScale,
   XAxis,
   YAxis,
 } from "recharts";
@@ -70,7 +71,8 @@ interface State {
   hiddenSeries: ReadonlySet<number>;
 }
 
-interface TrendsChartTooltipProps extends Partial<Pick<TooltipContentProps<any, any>, "active" | "payload">> {
+interface TrendsChartTooltipProps
+  extends Partial<Pick<TooltipContentProps<any, any>, "active" | "payload" | "coordinate">> {
   formatLabel: (datum: any) => string;
   shouldRender: () => boolean;
   dataSeries: ChartDataSeries[];
@@ -110,24 +112,56 @@ function chartColorToCssClass(c: ChartColor | string): string {
   return c;
 }
 
-function TrendsChartTooltip({ active, payload, formatLabel, shouldRender, dataSeries }: TrendsChartTooltipProps) {
-  if (!active || !payload || payload.length < 1 || !shouldRender()) {
+function TrendsChartTooltip({
+  active,
+  payload,
+  formatLabel,
+  shouldRender,
+  dataSeries,
+  coordinate,
+}: TrendsChartTooltipProps) {
+  if (!active || !payload || payload.length < 1 || !coordinate || !shouldRender()) {
     return null;
   }
-  // Look each payload entry's series up by name so a series' label always pairs
-  // with its own value, regardless of the order (or gaps) in `payload`.
+
   const seriesByName = new Map(dataSeries.map((ds) => [ds.name, ds]));
+  const primaryScale = useYAxisScale("primary");
+  const secondaryScale = useYAxisScale("secondary");
+
+  // Show the 3 closest lines.
+  const payloadsToShow = payload
+    .map((e) => {
+      const s = seriesByName.get(e.name as string);
+      if (!s) {
+        return undefined;
+      }
+      const axis = s.usesSecondaryAxis ? secondaryScale! : primaryScale!;
+      if (!axis) {
+        return undefined;
+      }
+      return {
+        yCoord: axis(e.value as number)!,
+        dataSeries: s,
+        payloadEntry: e,
+      };
+    })
+    .filter((v) => v !== undefined)
+    .sort((a, b) => Math.abs(a.yCoord - coordinate.y) - Math.abs(b.yCoord - coordinate.y))
+    .slice(0, 3)
+    .sort((a, b) => a.yCoord - b.yCoord);
+
   return (
     <div className="trend-chart-hover">
       <div className="trend-chart-hover-label">{formatLabel(payload[0].payload)}</div>
       <div className="trend-chart-hover-value">
-        {payload.map((data, index) => {
-          const ds = seriesByName.get(data.name as string);
-          if (!ds) {
-            return <React.Fragment key={index}></React.Fragment>;
-          }
-          const value = data.value as number;
-          return <div key={index}>{ds.formatHoverValue ? ds.formatHoverValue(value) : value}</div>;
+        {payloadsToShow.map((data, index) => {
+          const value = data.payloadEntry.value as number;
+          return (
+            <div key={data.payloadEntry.name}>
+              <div className="color-swatch" style={{ backgroundColor: data.dataSeries.color }} />
+              {data.dataSeries.formatHoverValue ? data.dataSeries.formatHoverValue(value) : value}
+            </div>
+          );
         })}
       </div>
     </div>

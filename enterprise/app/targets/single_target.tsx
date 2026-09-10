@@ -496,7 +496,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
       if (lastSlash >= 0) {
         endOfPath = "..." + endOfPath.slice(lastSlash);
       }
-      const endOfPathElement = () => <div>{endOfPath}</div>;
+      const endOfPathElement = () => <span>{endOfPath}</span>;
       for (const e of timeline.aggregatedStats) {
         durationByStartTime.set(+(e.bucketStartTimeUsec ?? 0), +(e.summary?.durationUsecP50 ?? 0));
         memoryByStartTime.set(+(e.bucketStartTimeUsec ?? 0), +(e.summary?.peakMemoryP50 ?? 0));
@@ -513,8 +513,7 @@ export default class SingleTargetComponent extends React.Component<Props, State>
           },
           formatHoverValue: (durationUsec) => (
             <>
-              {endOfPathElement()}
-              <div>{format.durationUsec(durationUsec ?? 0)}</div>
+              {endOfPathElement()} <span>{format.durationUsec(durationUsec ?? 0)}</span>
             </>
           ),
           color: color,
