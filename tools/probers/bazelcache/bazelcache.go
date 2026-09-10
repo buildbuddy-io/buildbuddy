@@ -29,6 +29,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,6 +71,8 @@ var (
 
 	numConnections = flag.Int("connections", 8, "Number of independent connections to run the full check suite on, in parallel. Each opens its own gRPC connection and is warmed up separately. The connections run concurrently, so this does not change the overall run time.")
 )
+
+var dumpStacksOnce sync.Once
 
 type opResult struct {
 	op         string
@@ -220,6 +223,7 @@ func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) e
 	ctx, cancel := context.WithTimeout(p.ctx, *opTimeout)
 	defer cancel()
 	operationID := uuid.New()
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-request-id", operationID)
 	ctx, span := otel.Tracer("bazelcache-prober").Start(ctx, "bazelcache."+op, trace.WithAttributes(
 		attribute.String("invocation_id", p.invocationID),
 		attribute.String("action_id", operationID),
@@ -240,9 +244,24 @@ func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) e
 	if err != nil {
 		return err
 	}
+	stopDump := time.AfterFunc(*opTimeout*3/4, func() {
+		dumpStacksOnce.Do(func() {
+			var stacks bytes.Buffer
+			if err := pprof.Lookup("goroutine").WriteTo(&stacks, 2); err != nil {
+				log.Warningf("Failed to capture goroutine stacks: %s", err)
+				return
+			}
+			log.Warningf(
+				"Slow probe: operation=%s invocationID=%s operationID=%s connection=%d\n%s",
+				op, p.invocationID, operationID, p.connectionIndex, stacks.String(),
+			)
+		})
+	})
+
 	start := time.Now()
 	err = fn(ctx)
 	latency := time.Since(start)
+	stopDump.Stop()
 	timeline.record(timelineEvent{Event: "operation_return", Code: grpcstatus.Code(err).String()})
 
 	p.results.add(opResult{op: op, compressor: compressor, latency: latency, err: err})
