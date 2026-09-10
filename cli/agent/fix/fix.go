@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -18,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/view"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
 
@@ -112,6 +114,14 @@ func HandleFix(args []string) (int, error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
 	}
 
+	if os.Getenv(remoteRunnerArtifactsDirectoryEnvVar) != "" {
+		// Before the agent makes any changes, verify that the local worktree is clean so that
+		// an exported patch will contain only changes made by the agent.
+		if err := ensureCleanGitWorktree(ctx); err != nil {
+			return -1, status.WrapError(err, "ensure clean git worktree")
+		}
+	}
+
 	inv, err := fetchInvocation(ctx, *agentflags.APITarget, invocationID)
 	if err != nil {
 		return -1, err
@@ -139,6 +149,11 @@ func HandleFix(args []string) (int, error) {
 	if err := fixFailure(ctx, errorLogs, cmd, invocationID); err != nil {
 		return -1, err
 	}
+	if patchPath, err := writeGitPatch(ctx, "bb-agent-fix.patch"); err != nil {
+		return -1, fmt.Errorf("export agent patch: %w", err)
+	} else if patchPath != "" {
+		log.Printf("Created patch artifact %s", patchPath)
+	}
 
 	return 0, nil
 }
@@ -154,7 +169,7 @@ func fixFailure(ctx context.Context, failingOutput string, originalCommand []str
 		Model:              *agentflags.Model,
 		ReasoningEffort:    *agentflags.Effort,
 		Prompt:             prompt,
-		ClaudeAllowedTools: []string{"Read", "Glob", "Grep", "Edit", "Write"},
+		ClaudeAllowedTools: []string{"Read", "Glob", "Grep", "Edit", "Write", "Bash"},
 		CodexSandbox:       agentutil.SandboxWorkspaceWrite,
 		CodexArgs:          []string{"--config", "sandbox_workspace_write.network_access=true"},
 	})

@@ -4,7 +4,10 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "fix",
-    srcs = ["fix.go"],
+    srcs = [
+        "fix.go",
+        "patch.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/agent/fix",
     deps = [
         "//cli/agent/agentflags",
@@ -23,6 +26,7 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/util/flag",
         "//server/util/grpc_client",
+        "//server/util/status",
         "//server/util/uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
