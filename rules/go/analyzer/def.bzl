@@ -1,4 +1,5 @@
 ANALYZERS = [
+    "atomictypes",
     "reflecttypeassert",
     "errorsastype",
     "embedlit",

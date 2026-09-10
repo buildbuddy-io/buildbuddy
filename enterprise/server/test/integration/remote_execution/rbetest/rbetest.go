@@ -132,7 +132,7 @@ type Env struct {
 	executors                     map[string]*Executor
 	testCommandController         *testCommandController
 	// Used to generate executor names when not specified.
-	executorNameCounter uint64
+	executorNameCounter atomic.Uint64
 	envOpts             *enterprise_testenv.Options
 
 	AppProxy     *testgrpc.Proxy
@@ -823,7 +823,7 @@ func (r *Env) AddExecutorWithOptions(t testing.TB, opts *ExecutorOptions) *Execu
 // otherwise use AddExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
 func (r *Env) AddExecutor(t testing.TB) *Executor {
-	name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
+	name := fmt.Sprintf("unnamedExecutor%d", r.executorNameCounter.Add(1))
 	return r.AddExecutorWithOptions(t, &ExecutorOptions{Name: name})
 }
 
@@ -847,7 +847,7 @@ func (r *Env) AddSingleTaskExecutorWithOptions(t testing.TB, options *ExecutorOp
 // otherwise use AddSingleTaskExecutorWithOptions and specify a custom Name.
 // Blocks until executor registers with the scheduler.
 func (r *Env) AddSingleTaskExecutor(t testing.TB) *Executor {
-	name := fmt.Sprintf("unnamedExecutor%d_singleTask", atomic.AddUint64(&r.executorNameCounter, 1))
+	name := fmt.Sprintf("unnamedExecutor%d_singleTask", r.executorNameCounter.Add(1))
 	return r.AddSingleTaskExecutorWithOptions(t, &ExecutorOptions{Name: name})
 }
 
@@ -871,7 +871,7 @@ func (r *Env) AddNamedExecutors(t testing.TB, names []string) []*Executor {
 func (r *Env) AddExecutors(t testing.TB, n int) []*Executor {
 	var names []string
 	for range n {
-		name := fmt.Sprintf("unnamedExecutor%d", atomic.AddUint64(&r.executorNameCounter, 1))
+		name := fmt.Sprintf("unnamedExecutor%d", r.executorNameCounter.Add(1))
 		names = append(names, name)
 	}
 	return r.AddNamedExecutors(t, names)

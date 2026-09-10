@@ -371,11 +371,9 @@ type Server struct {
 
 	server *grpc.Server
 
-	nextNodeID atomic.Uint64
-
 	mu                 sync.Mutex
 	blocks             int64
-	nextId             uint64
+	nextId             atomic.Uint64
 	nodes              map[uint64]*fsNode
 	internalTaskCtx    context.Context
 	root               *fsNode
@@ -410,7 +408,7 @@ func New(env environment.Env, workspacePath string) (*Server, error) {
 		root:             rootNode,
 		nodes:            nodes,
 	}
-	atomic.StoreUint64(&s.nextId, vfscommon.RootInodeId+1)
+	s.nextId.Store(vfscommon.RootInodeId + 1)
 	return s, nil
 }
 
@@ -433,7 +431,7 @@ func (p *Server) taskCtx() context.Context {
 }
 
 func (p *Server) addNode(node *fsNode) uint64 {
-	id := atomic.AddUint64(&p.nextId, 1)
+	id := p.nextId.Add(1)
 	node.server = p
 	node.id = id
 	p.mu.Lock()

@@ -58,13 +58,13 @@ func TestIngestEvents(t *testing.T) {
 }
 
 func TestIngestEventsBatching(t *testing.T) {
-	var requests int32
-	var totalEvents int32
+	var requests atomic.Int32
+	var totalEvents atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		var batch []metronome.MetronomeEvent
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&batch))
-		atomic.AddInt32(&totalEvents, int32(len(batch)))
+		totalEvents.Add(int32(len(batch)))
 	}))
 	defer server.Close()
 
@@ -84,14 +84,14 @@ func TestIngestEventsBatching(t *testing.T) {
 	c, err := metronome.NewClient(nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, c.ReportUsage(t.Context(), events))
-	assert.EqualValues(t, 3, atomic.LoadInt32(&requests))
-	assert.EqualValues(t, n, atomic.LoadInt32(&totalEvents))
+	assert.EqualValues(t, 3, requests.Load())
+	assert.EqualValues(t, n, totalEvents.Load())
 }
 
 func TestIngestRetriesTransientFailures(t *testing.T) {
-	var attempts int32
+	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if atomic.AddInt32(&attempts, 1) < 3 {
+		if attempts.Add(1) < 3 {
 			http.Error(w, "boom", http.StatusServiceUnavailable)
 			return
 		}
@@ -111,13 +111,13 @@ func TestIngestRetriesTransientFailures(t *testing.T) {
 	require.NoError(t, c.ReportUsage(t.Context(), []metronome.UsageEvent{{
 		GroupID: "GR1", PeriodStart: periodStart, PeriodEnd: periodStart.Add(metronome.WindowSize), SKU: sku.BuildEventsBESCount, Count: 1,
 	}}))
-	assert.EqualValues(t, 3, atomic.LoadInt32(&attempts))
+	assert.EqualValues(t, 3, attempts.Load())
 }
 
 func TestIngestDoesNotRetryClientErrors(t *testing.T) {
-	var attempts int32
+	var attempts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&attempts, 1)
+		attempts.Add(1)
 		http.Error(w, "bad", http.StatusBadRequest)
 	}))
 	defer server.Close()
@@ -136,13 +136,13 @@ func TestIngestDoesNotRetryClientErrors(t *testing.T) {
 	}})
 	require.Error(t, err)
 	assert.True(t, status.IsInvalidArgumentError(err))
-	assert.EqualValues(t, 1, atomic.LoadInt32(&attempts))
+	assert.EqualValues(t, 1, attempts.Load())
 }
 
 func TestReportUsageRejectsInvalidPeriods(t *testing.T) {
-	var requests int32
+	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&requests, 1)
+		requests.Add(1)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -183,7 +183,7 @@ func TestReportUsageRejectsInvalidPeriods(t *testing.T) {
 			assert.True(t, status.IsInvalidArgumentError(err))
 		})
 	}
-	assert.EqualValues(t, 0, atomic.LoadInt32(&requests))
+	assert.EqualValues(t, 0, requests.Load())
 }
 
 func TestTransactionIDDeterministic(t *testing.T) {
