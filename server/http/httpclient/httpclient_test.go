@@ -98,7 +98,7 @@ func TestBlockingDialerControl(t *testing.T) {
 			flags.Set(t, "http.client.allow_localhost", test.allowLocalhost)
 			err := blockingDialerControl(nil)("tcp", test.address, nil)
 			if test.wantError {
-				require.ErrorContains(t, err, "IP address not allowed")
+				require.ErrorIs(t, err, ErrIPNotAllowed)
 			} else {
 				require.NoError(t, err)
 			}
