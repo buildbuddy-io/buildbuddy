@@ -181,10 +181,12 @@ type trendTimeSettings struct {
 	location *time.Location
 }
 
+// ComputeTrendsInterval returns the stats bucket size to use for a response
+// covering a time range of the given duration.
 // These values are currently set to keep us under ~50 intervals in a response.
 // We need to make some visual improvements to cache charts so that they're
 // easier to read with lots of small intervals before we can do more than this.
-func computeTrendsInterval(d time.Duration) StatInterval {
+func ComputeTrendsInterval(d time.Duration) StatInterval {
 	if d <= 3*time.Hour {
 		return StatInterval5Minutes
 	}
@@ -226,7 +228,7 @@ func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezo
 	if !i.finerTimeBucketsEnabled() {
 		interval = StatInterval1Day
 	} else {
-		interval = computeTrendsInterval(endTime.Sub(startTime))
+		interval = ComputeTrendsInterval(endTime.Sub(startTime))
 	}
 
 	return &trendTimeSettings{
@@ -1632,7 +1634,13 @@ func (i *InvocationStatService) isOLAPDBEnabled() bool {
 }
 
 func (i *InvocationStatService) finerTimeBucketsEnabled() bool {
-	return i.isOLAPDBEnabled() && *finerTimeBuckets
+	return i.isOLAPDBEnabled() && FinerTimeBucketsEnabled()
+}
+
+// FinerTimeBucketsEnabled returns whether responses with time-bucketed stats
+// should use buckets sized to the query's date range instead of 1-day buckets.
+func FinerTimeBucketsEnabled() bool {
+	return *finerTimeBuckets
 }
 
 func (i *InvocationStatService) isInvocationPercentilesEnabled() bool {

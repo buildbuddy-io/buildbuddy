@@ -235,6 +235,19 @@ class Router {
     this.navigateTo(Path.targetsPath);
   }
 
+  navigateToSingleTarget(target: string, outputPath?: string) {
+    this.navigateTo(this.getSingleTargetPath(target, outputPath));
+  }
+
+  getSingleTargetPath(target: string, outputPath?: string) {
+    return (
+      Path.targetsPath +
+      "?target=" +
+      encodeURIComponent(target) +
+      (outputPath ? `&output_path=${encodeURIComponent(outputPath)}` : "")
+    );
+  }
+
   navigateToTrends() {
     this.navigateTo(Path.trendsPath);
   }
