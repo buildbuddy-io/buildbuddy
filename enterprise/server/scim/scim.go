@@ -93,7 +93,7 @@ func newUserResource(u *tables.User, authGroup *tables.Group) (*UserResource, er
 			}
 			userRole = role.Role(*g.Role).String()
 			if userRole == "" {
-				return nil, status.InternalErrorf("unhandled role: %d", g.Role)
+				return nil, status.InternalErrorf("unhandled role: %d", *g.Role)
 			}
 		}
 	}

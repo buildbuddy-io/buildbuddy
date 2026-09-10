@@ -61,9 +61,9 @@ func parsePodTarget(endpoint string) (podTarget, error) {
 	host := endpoint
 	port := ""
 
-	if idx := strings.LastIndex(endpoint, ":"); idx != -1 {
-		host = endpoint[:idx]
-		port = endpoint[idx+1:]
+	if before, after, ok := strings.CutLast(endpoint, ":"); ok {
+		host = before
+		port = after
 	}
 
 	// Expected format: <podName>.<serviceName>.<namespace>.svc.cluster.local
