@@ -21,7 +21,8 @@ import (
 )
 
 // newTestCA returns a self-signed certificate and its key, both PEM encoded.
-func newTestCA(t *testing.T, isCA bool) (certPEM, keyPEM string) {
+// Each tweak edits the template before signing, to build a defective CA.
+func newTestCA(t *testing.T, isCA bool, tweaks ...func(*x509.Certificate)) (certPEM, keyPEM string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -33,6 +34,9 @@ func newTestCA(t *testing.T, isCA bool) (certPEM, keyPEM string) {
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 		IsCA:                  isCA,
+	}
+	for _, tweak := range tweaks {
+		tweak(tmpl)
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	require.NoError(t, err)
@@ -47,7 +51,7 @@ func newTunnelGenerator(t *testing.T) (g *generator, caPEM string) {
 	certPEM, keyPEM := newTestCA(t, true /*=isCA*/)
 	ca, err := loadTunnelCA("", certPEM, "", keyPEM)
 	require.NoError(t, err)
-	return &generator{tunnelCA: ca, tunnelCAPEM: certPEM, tunnelNow: time.Now}, certPEM
+	return &generator{tunnelCA: ca}, certPEM
 }
 
 // clientKey stands in for the keypair bbcert generates on the workstation:
@@ -83,7 +87,7 @@ func TestGenerateTunnelCert_RoundTripsThroughTheGatewayVerifier(t *testing.T) {
 	require.NoError(t, g.generateTunnelCert(employee, &cgpb.GenerateRequest{TunnelPublicKey: pubPEM}, rsp))
 	tc := rsp.GetTunnelCredentials()
 	require.NotNil(t, tc)
-	require.Equal(t, caPEM, tc.GetCa())
+	require.Equal(t, caPEM, tc.GetCa(), "the CA is returned as loaded")
 
 	// The profile is what the gateway's verifier insists on: the person in
 	// the common name, client-auth usage, a leaf, and a validity window that
@@ -105,7 +109,7 @@ func TestGenerateTunnelCert_RoundTripsThroughTheGatewayVerifier(t *testing.T) {
 	const wgKey = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
 	cred, err := signer.Sign("gateway.test", wgKey, relayauth.DefaultAssertionLifetime)
 	require.NoError(t, err)
-	v, err := relayauth.NewVerifier([]byte(caPEM), "gateway.test")
+	v, err := relayauth.NewVerifier([]byte(tc.GetCa()), "gateway.test")
 	require.NoError(t, err)
 	id, err := v.Verify(cred)
 	require.NoError(t, err)
@@ -183,4 +187,28 @@ func TestLoadTunnelCA_RejectsMisconfiguration(t *testing.T) {
 	_, err = loadTunnelCA("", leafCert, "", leafKey)
 	require.True(t, status.IsFailedPreconditionError(err), "got %v", err)
 	require.ErrorContains(t, err, "not a CA")
+
+	// A CA restricted to client authentication is exactly what we want.
+	clientAuthCert, clientAuthKey := newTestCA(t, true /*=isCA*/, func(c *x509.Certificate) {
+		c.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+	})
+	_, err = loadTunnelCA("", clientAuthCert, "", clientAuthKey)
+	require.NoError(t, err)
+
+	// Each of these parses fine but fails the gateway's chain verification,
+	// so it must fail here instead.
+	for name, tc := range map[string]struct {
+		tweak func(*x509.Certificate)
+		want  string
+	}{
+		"cannot sign":      {func(c *x509.Certificate) { c.KeyUsage = x509.KeyUsageDigitalSignature }, "keyCertSign"},
+		"server auth only": {func(c *x509.Certificate) { c.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth} }, "clientAuth"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cert, key := newTestCA(t, true /*=isCA*/, tc.tweak)
+			_, err := loadTunnelCA("", cert, "", key)
+			require.True(t, status.IsFailedPreconditionError(err), "got %v", err)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
 }

@@ -135,10 +135,6 @@ type generator struct {
 	// tunnelCA issues WireGuard gateway client certificates. Nil when no
 	// tunnel CA is configured, in which case no such certificate is returned.
 	tunnelCA *ssl.CACert
-	// tunnelNow is the clock for tunnel certificate validity; tests override it.
-	tunnelNow func() time.Time
-	// tunnelCAPEM is the CA certificate, returned to clients for reference.
-	tunnelCAPEM string
 }
 
 type claims struct {
@@ -212,19 +208,13 @@ func (g *generator) generateKubernetesCerts(c *claims, req *cgpb.GenerateRequest
 const tunnelNotBeforeSkew = 5 * time.Minute
 
 // generateTunnelCert issues the client certificate used to authenticate against
-// WireGuard gateways, for the public key the client sent.
-//
-// Unlike the Kubernetes certificates above, which all share the cluster-admin
-// subject, this one names the user: the gateway reads the common name to
-// attribute tunneled connections to a person, and pins this CA so it can verify
-// the certificate on its own.
+// WireGuard gateways, for the public key the client sent. The common name of
+// the cert identifies the user.
 func (g *generator) generateTunnelCert(c *claims, req *cgpb.GenerateRequest, rsp *cgpb.GenerateResponse) error {
 	if g.tunnelCA == nil || req.GetTunnelPublicKey() == "" {
 		return nil
 	}
-	// Tunnel certificates identify people. Service accounts authenticate with
-	// no hosted domain (see validateUser) and get SSH and Kubernetes
-	// credentials only.
+	// Don't allow for service accounts at this time.
 	if c.Domain == "" {
 		return nil
 	}
@@ -238,7 +228,7 @@ func (g *generator) generateTunnelCert(c *claims, req *cgpb.GenerateRequest, rsp
 	if err != nil {
 		return status.InternalErrorf("could not generate serial number: %s", err)
 	}
-	now := g.tunnelNow()
+	now := time.Now()
 	template := x509.Certificate{
 		SerialNumber: serial,
 		Subject: pkix.Name{
@@ -259,7 +249,7 @@ func (g *generator) generateTunnelCert(c *claims, req *cgpb.GenerateRequest, rsp
 
 	rsp.TunnelCredentials = &cgpb.TunnelCredentials{
 		ClientCert: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
-		Ca:         g.tunnelCAPEM,
+		Ca:         string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: g.tunnelCA.Cert.Raw})),
 	}
 	return nil
 }
@@ -297,6 +287,16 @@ func loadTunnelCA(certFile, certPEM, keyFile, keyPEM string) (*ssl.CACert, error
 	}
 	if !caCert.IsCA {
 		return nil, status.FailedPreconditionError("tunnel CA certificate is not a CA (basicConstraints CA:TRUE is missing)")
+	}
+	// The gateway's x509.Verify holds the CA to these when it checks any leaf
+	// we issue: keyCertSign if keyUsage is set at all, and clientAuth if the
+	// CA restricts extended key usage.
+	if caCert.KeyUsage != 0 && caCert.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return nil, status.FailedPreconditionError("tunnel CA certificate cannot sign certificates (keyUsage lacks keyCertSign)")
+	}
+	restrictsEKU := len(caCert.ExtKeyUsage) > 0 || len(caCert.UnknownExtKeyUsage) > 0
+	if restrictsEKU && !slices.Contains(caCert.ExtKeyUsage, x509.ExtKeyUsageClientAuth) && !slices.Contains(caCert.ExtKeyUsage, x509.ExtKeyUsageAny) {
+		return nil, status.FailedPreconditionError("tunnel CA certificate cannot issue client certificates (extendedKeyUsage lacks clientAuth)")
 	}
 	pub, ok := caKey.Public().(interface{ Equal(crypto.PublicKey) bool })
 	if !ok || !pub.Equal(caCert.PublicKey) {
@@ -374,14 +374,14 @@ func newGenerator(ctx context.Context) (*generator, error) {
 		kubernetesClusters: kcs,
 	}
 
-	if *tunnelCAFile != "" || *tunnelCA != "" {
+	// Any tunnel flag opts in, so a CA with only its key configured fails
+	// here instead of silently issuing nothing.
+	if *tunnelCAFile != "" || *tunnelCA != "" || *tunnelCAKeyFile != "" || *tunnelCAKey != "" {
 		ca, err := loadTunnelCA(*tunnelCAFile, *tunnelCA, *tunnelCAKeyFile, *tunnelCAKey)
 		if err != nil {
 			return nil, err
 		}
 		g.tunnelCA = ca
-		g.tunnelCAPEM = string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Cert.Raw}))
-		g.tunnelNow = time.Now
 		log.Infof("Tunnel CA loaded; issuing gateway client certificates valid for %s.", *tunnelCertExpiry)
 	}
 
