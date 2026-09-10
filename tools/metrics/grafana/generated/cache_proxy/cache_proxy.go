@@ -114,12 +114,6 @@ func multiTooltip() *common.VizTooltipOptionsBuilder {
 		Sort(common.SortOrderDescending)
 }
 
-func multiTooltipUnsorted() *common.VizTooltipOptionsBuilder {
-	return common.NewVizTooltipOptionsBuilder().
-		Mode(common.TooltipDisplayModeMulti).
-		Sort(common.SortOrderNone)
-}
-
 // rightAxisProps moves a series to a separate right-hand axis with the given
 // unit; for use with OverrideByName/OverrideByQuery.
 func rightAxisProps(unit string) []dashboard.DynamicConfigValue {
@@ -147,7 +141,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Decimals(0).
 			Min(0).
 			ShowPoints(common.VisibilityModeNever).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (job) (up{`+proxyFilter+`})`, "{{job}} up").RefId("A")).
 			WithTarget(dash.PromQuery(`sum(kube_pod_status_ready{`+podFilter+`, condition="true"})`, "Ready").RefId("B")).
 			WithTarget(dash.PromQuery(`sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{region="${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{horizontalpodautoscaler}} target").RefId("C"))).
@@ -160,7 +154,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 		WithPanel(ts("Unexpected Restarts", dash.UnitShort).
 			FillOpacity(10).
 			ShowPoints(common.VisibilityModeNever).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum(increase(kube_pod_container_status_restarts_total{`+podFilter+`}[1m])) by (pod, container, namespace) > 0`, ""))).
 		WithPanel(ts("CPU usage", "").
 			Legend(hiddenLegend()).
@@ -320,12 +314,15 @@ func distributedCacheRow() *dashboard.RowBuilder {
 	return row("Distributed Cache").
 		WithPanel(ts("Request Mix", "").
 			WithTarget(dash.PromQuery(`sum(rate(grpc_server_started_total{`+proxyFilter+`, grpc_service="distributed_cache.DistributedCache"}[${window}])) by (grpc_method)`, "{{grpc_method}}"))).
+		WithPanel(methodPanel("Metadata")).
+		WithPanel(methodPanel("GetWithMetadata")).
 		WithPanel(methodPanel("GetMulti")).
 		WithPanel(methodPanel("FindMissing")).
 		WithPanel(methodPanel("Write")).
 		WithPanel(methodPanel("Read")).
 		WithPanel(ts("Lookaside cache hits and misses", dash.UnitRequestsPerSec).
 			AxisPlacement(common.AxisPlacementLeft).
+			Tooltip(multiTooltip()).
 			OverrideByName("hit_ratio", rightAxisProps(dash.UnitPercentUnit)).
 			WithTarget(dash.PromQuery(`sum(rate(`+lookups+`{`+proxyFilter+`}[${window}])) by (status)`, "__auto").RefId("A")).
 			WithTarget(dash.PromQuery(`sum(rate(`+lookups+`{`+proxyFilter+`, status="hit"}[${window}])) / sum(rate(`+lookups+`{`+proxyFilter+`}[${window}]))`, "hit_ratio").RefId("B"))).
@@ -502,7 +499,7 @@ func grpcRow() *dashboard.RowBuilder {
 	bytesPanel := func(title, metric string) *timeseries.PanelBuilder {
 		return ts(title, dash.UnitBinaryBytesPerSec).
 			Legend(lastValueLegend()).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(`+metric+`{`+proxyFilter+`}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))
 	}
 	return row("gRPC (cache-proxy)").
@@ -514,12 +511,12 @@ func grpcRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`sum by (grpc_service, grpc_method) (rate(grpc_server_handled_total{`+proxyFilter+`}[${window}]))`, "/{{grpc_service}}/{{grpc_method}}"))).
 		WithPanel(ts("gRPC server handling duration, q=${quantile}", dash.UnitSeconds).
 			Legend(lastValueLegend()).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{`+proxyFilter+`}[${window}])))`, "/{{grpc_service}}/{{grpc_method}}"))).
 		WithPanel(ts("gRPC client messages sent by method", dash.UnitRequestsPerSec).
 			FillOpacity(5).
 			Legend(lastValueLegend()).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (grpc_method, grpc_service) (rate(grpc_client_msg_sent_total{`+proxyFilter+`}[${window}]))`, "/{{grpc_service}}/{{grpc_method}}"))).
 		WithPanel(bytesPanel("gRPC Client Request Bytes", "rpc_client_request_size_bytes_sum")).
 		WithPanel(bytesPanel("gRPC Client Response Bytes", "rpc_client_response_size_bytes_sum")).
