@@ -39,6 +39,12 @@ const (
 	// cacheFilter narrows proxyFilter to one pebble cache, for panels that
 	// repeat per ${cache_name}.
 	cacheFilter = proxyFilter + `, cache_name="${cache_name}"`
+
+	// envoyFilter selects the Envoy (Contour) upstream clusters that front the
+	// cache proxies: one per Service port (1986 for gRPC, 443 for TLS). These
+	// series are exported by the Envoy pods, so they describe the proxies as
+	// clients see them; they only exist in regions with an Envoy ingress.
+	envoyFilter = `region="${region}", namespace="projectcontour", envoy_cluster_name=~"cache-proxy-prod_cache-proxy-service_.*"`
 )
 
 // row returns a collapsed row.
@@ -136,6 +142,7 @@ func dashedThreshold(p *timeseries.PanelBuilder, value float64) *timeseries.Pane
 func systemStatusRow() *dashboard.RowBuilder {
 	return row("System Status").
 		WithPanel(ts("Cache Proxy Instances", dash.UnitShort).
+			Description("Pods whose metrics endpoint is up, pods Kubernetes reports Ready, backends Envoy considers healthy (it trusts the EndpointSlice, so this follows readiness), and the autoscaler target. The first three should agree; a Ready or Envoy-healthy count above the up count means traffic is being sent to a pod nobody can reach.").
 			Height(7).
 			Decimals(0).
 			Min(0).
@@ -143,9 +150,21 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (job) (up{`+proxyFilter+`})`, "{{job}} up").RefId("A")).
 			WithTarget(dash.PromQuery(`sum(kube_pod_status_ready{`+podFilter+`, condition="true"})`, "Ready").RefId("B")).
+			WithTarget(dash.PromQuery(`min by (envoy_cluster_name) (envoy_cluster_membership_healthy{`+envoyFilter+`})`, "healthy in Envoy ({{envoy_cluster_name}})").RefId("D")).
 			WithTarget(dash.PromQuery(`sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{region="${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{horizontalpodautoscaler}} target").RefId("C"))).
-		WithPanel(ts("cache-proxy versions", "").
+		WithPanel(ts("Cache-proxy nodes cordoned or NotReady", dash.UnitShort).
+			Description("Nodes hosting a cache-proxy pod that are cordoned (unschedulable) or whose Ready condition is not True. A node that shows here while its pod still counts as Ready on the left is a pod receiving traffic that nobody can reach. Quiet nodes are omitted.").
 			Height(7).
+			Min(0).
+			Max(1).
+			Decimals(0).
+			LineInterpolation(common.LineInterpolationStepAfter).
+			FillOpacity(15).
+			ShowPoints(common.VisibilityModeNever).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`max by (node) (kube_node_status_condition{region="${region}", condition="Ready", status!="true", node=~"${node}"} == 1) and on (node) count by (node) (kube_pod_info{`+podFilter+`})`, "{{node}} NotReady").RefId("A")).
+			WithTarget(dash.PromQuery(`max by (node) (kube_node_spec_unschedulable{region="${region}", node=~"${node}"} == 1) and on (node) count by (node) (kube_pod_info{`+podFilter+`})`, "{{node}} cordoned").RefId("B"))).
+		WithPanel(ts("cache-proxy versions", "").
 			WithTarget(dash.PromQuery(`sum by (version, commit) (buildbuddy_version{`+proxyFilter+`})`, "{{version}} ({{commit}})"))).
 		WithPanel(ts("Failing Health Checks", "").
 			AxisSoftMax(0).
@@ -169,6 +188,41 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Max(1).
 			Legend(hiddenLegend()).
 			WithTarget(dash.PromQuery(`sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{`+podFilter+`, container="cache-proxy"}[1m])) / sum by (pod) (rate(container_cpu_cfs_periods_total{`+podFilter+`, container="cache-proxy"}[1m]))`, "__auto")))
+}
+
+// ingressRow shows the cache proxies from the front door: what Envoy sees
+// when it forwards client requests to the cache-proxy Service. The
+// proxies' own metrics cannot show a request that never reached a proxy,
+// which is exactly what happens when Envoy keeps forwarding to a backend
+// that is gone but still listed as Ready (us-sjc, 2026-09-09: a node was
+// rebooted without a successful drain and 1 in 14 requests failed for five
+// minutes while every proxy-side graph looked normal).
+//
+// The 5xx ratio and connect failure panels carry the thresholds of the
+// CacheProxyUpstream5xxRatioHigh and CacheProxyUpstreamConnectFailures
+// alerts in buildbuddy-internal's alerts-regional.yaml.
+func ingressRow() *dashboard.RowBuilder {
+	rq := `envoy_cluster_upstream_rq_xx{` + envoyFilter
+	return row("Ingress (Envoy)").
+		WithPanel(ts("Upstream 5xx responses", dash.UnitRequestsPerSec).
+			Description("Responses Envoy returned as 5xx on behalf of the cache-proxy clusters. For the gRPC cluster these are almost all Envoy-generated: 503 when it could not connect to the backend, 504 when the backend never answered. Baseline is ~0.").
+			Min(0).
+			ShowPoints(common.VisibilityModeNever).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (envoy_cluster_name, envoy_response_code_class) (rate(`+rq+`, envoy_response_code_class="5"}[${window}]))`, "{{envoy_cluster_name}} {{envoy_response_code_class}}xx"))).
+		WithPanel(dashedThreshold(ts("Upstream 5xx ratio", dash.UnitPercentUnit), 0.01).
+			Description("Share of all upstream responses that were 5xx. One unreachable backend out of N costs about 1/N of requests. The dashed line is the CacheProxyUpstream5xxRatioHigh alert threshold (1% for 2m).").
+			Min(0).
+			AxisSoftMax(0.02).
+			ShowPoints(common.VisibilityModeNever).
+			WithTarget(dash.PromQuery(`sum(rate(`+rq+`, envoy_response_code_class="5"}[${window}])) / sum(rate(`+rq+`}[${window}]))`, "5xx share"))).
+		WithPanel(dashedThreshold(ts("Upstream connect failures", dash.UnitEventsPerSec), 5).
+			Description("Connections Envoy could not open to a cache-proxy backend, summed over all Envoy pods. A refused connection (backend gone, port closed) fails immediately; an unanswered SYN (node gone) fails after the 2s connect timeout and is counted in both series. The dashed line is the CacheProxyUpstreamConnectFailures alert threshold (5/s for 2m).").
+			Min(0).
+			ShowPoints(common.VisibilityModeNever).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum(rate(envoy_cluster_upstream_cx_connect_fail{`+envoyFilter+`}[${window}]))`, "connect failures (all)").RefId("A")).
+			WithTarget(dash.PromQuery(`sum(rate(envoy_cluster_upstream_cx_connect_timeout{`+envoyFilter+`}[${window}]))`, "of which timed out").RefId("B")))
 }
 
 func probersRow() *dashboard.RowBuilder {
@@ -390,7 +444,8 @@ func pebbleRow() *dashboard.RowBuilder {
 	pebble := `buildbuddy_remote_cache_pebble_cache_pebble`
 	// compressionFactor is the inverse of the compression ratio
 	// (compressed / decompressed bytes) at quantile q of the ratio
-	// distribution, i.e. how many times smaller the data got.
+	// distribution, i.e. how many times smaller the data got. Because of the
+	// inversion, quantile q of the ratio is percentile 1-q of the factor.
 	compressionFactor := func(q string) string {
 		return `1 / histogram_quantile(` + q + `, sum(rate(buildbuddy_pebble_compression_ratio_bucket{` + cacheFilter + `}[10m])) by (le))`
 	}
@@ -401,10 +456,10 @@ func pebbleRow() *dashboard.RowBuilder {
 	return row("Remote Cache Pebble").
 		WithPanel(ts("Compression Ratio", "").
 			Span(24).
-			Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of the per-stream ratio. p10 is what the best-compressing 10% of streams exceed; p99 is what nearly every stream achieves.").
-			WithTarget(dash.PromQuery(compressionFactor("0.1"), "p10").RefId("A")).
+			Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of that factor across streams: p90 is what the best-compressing 10% of streams exceed, p1 is what 99% of streams achieve. Each series is the inverse of the matching quantile of the compressed/decompressed ratio histogram.").
+			WithTarget(dash.PromQuery(compressionFactor("0.1"), "p90").RefId("A")).
 			WithTarget(dash.PromQuery(compressionFactor("0.5"), "p50").RefId("B")).
-			WithTarget(dash.PromQuery(compressionFactor("0.99"), "p99").RefId("C"))).
+			WithTarget(dash.PromQuery(compressionFactor("0.99"), "p1").RefId("C"))).
 		WithPanel(perCache("Compaction rate (${cache_name}) (by type)", "").
 			WithTarget(dash.PromQuery(`sum(rate(`+pebble+`_compact_count{`+cacheFilter+`}[1m])) by (compaction_type)`, "__auto"))).
 		WithPanel(perCache("Compaction state (${cache_name})", dash.UnitBytes).
@@ -634,6 +689,7 @@ func build() (dashboard.Dashboard, error) {
 		WithVariable(cacheNameVariable()).
 		WithVariable(nodeVariable()).
 		WithRow(systemStatusRow()).
+		WithRow(ingressRow()).
 		WithRow(probersRow()).
 		WithRow(atimeUpdaterRow()).
 		WithRow(hitTrackerRow()).
