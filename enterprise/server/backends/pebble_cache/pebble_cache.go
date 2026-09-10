@@ -2570,8 +2570,10 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 		// Already deleted; see comment above.
 		break
 	case storageMetadata.GetGcsMetadata() != nil:
-		if err := p.fileStorer.DeleteStoredBlob(ctx, storageMetadata.GetGcsMetadata()); err != nil {
-			return err
+		if !storageMetadata.GetGcsMetadata().GetShared() {
+			if err := p.fileStorer.DeleteStoredBlob(ctx, storageMetadata.GetGcsMetadata()); err != nil {
+				return err
+			}
 		}
 	default:
 		return status.FailedPreconditionErrorf("Unknown storage metadata type: %+v", storageMetadata)
@@ -3567,8 +3569,10 @@ func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, gr
 	case storageMetadata.GetInlineMetadata() != nil:
 		break
 	case storageMetadata.GetGcsMetadata() != nil:
-		if err := e.fileStorer.DeleteStoredBlob(context.TODO(), storageMetadata.GetGcsMetadata()); err != nil {
-			return err
+		if !storageMetadata.GetGcsMetadata().GetShared() {
+			if err := e.fileStorer.DeleteStoredBlob(context.TODO(), storageMetadata.GetGcsMetadata()); err != nil {
+				return err
+			}
 		}
 	default:
 		return status.FailedPreconditionErrorf("Unknown storage metadata type: %+v", storageMetadata)

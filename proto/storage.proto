@@ -48,6 +48,13 @@ message StorageMetadata {
     // This is used in conjunction with a bucket LifecycleCondition that
     // deletes objects after DaysSinceCustomTime is exceeded.
     int64 last_custom_time_usec = 2 [(view.name) = "FindMissing"];
+
+    // If true, this record does not own the stored object: other records (on
+    // other cache peers) may refer to the same object. In this case, the object
+    // should not be deleted when the record is deleted or evicted. Doing so
+    // could lead to data loss on cache peers. Instead, these objects are
+    // cleaned up by GCS's object lifecycle management.
+    bool shared = 3;
   }
   GCSMetadata gcs_metadata = 5 [(view.name) = "FindMissing"];
 
