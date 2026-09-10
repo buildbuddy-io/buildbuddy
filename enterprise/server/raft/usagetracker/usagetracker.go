@@ -721,11 +721,8 @@ func (ut *Tracker) Start() {
 		pu.gcsDeleteCancel = gcsCancel
 		gcsEg, gcsGctx := errgroup.WithContext(gcsCtx)
 		pu.gcsDeleteEg = gcsEg
-		numGCSWorkers := pu.numGCSDeleteWorkers
-		if numGCSWorkers < 1 {
-			numGCSWorkers = 1
-		}
-		for i := 0; i < numGCSWorkers; i++ {
+		numGCSWorkers := max(pu.numGCSDeleteWorkers, 1)
+		for range numGCSWorkers {
 			pu.gcsDeleteEg.Go(func() error {
 				pu.processGCSDeletions(gcsGctx)
 				return nil

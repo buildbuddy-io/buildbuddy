@@ -483,11 +483,9 @@ func (h *Handler) handlePageFault(uffd uintptr, memoryStore *copy_on_write.COWSt
 	// address to a page boundary. In other words, get the address of the
 	// start of the page containing the faulting address.
 	guestPageAddr := pageStartAddress(uint64(faultingAddress), os.Getpagesize())
-	if guestPageAddr < mapping.BaseHostVirtAddr {
-		// Make sure we only try to map addresses that fall within the valid
-		// guest memory ranges
-		guestPageAddr = mapping.BaseHostVirtAddr
-	}
+	// Make sure we only try to map addresses that fall within the valid
+	// guest memory ranges.
+	guestPageAddr = max(guestPageAddr, mapping.BaseHostVirtAddr)
 
 	// If address had been previously removed, zero it.
 	if _, removed := h.removedAddresses[int64(guestPageAddr)]; removed {

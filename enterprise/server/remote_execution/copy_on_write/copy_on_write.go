@@ -389,10 +389,7 @@ func (c *COWStore) ReadAt(p []byte, off int64) (int, error) {
 	for len(p) > 0 {
 		chunkRelativeOffset := off % c.chunkSizeBytes
 		chunkCalculatedSize := c.calculateChunkSize(chunkOffset)
-		readSize := int(chunkCalculatedSize - chunkRelativeOffset)
-		if readSize > len(p) {
-			readSize = len(p)
-		}
+		readSize := min(int(chunkCalculatedSize-chunkRelativeOffset), len(p))
 
 		if err := c.readChunk(p, chunkRelativeOffset, chunkOffset, readSize); err != nil {
 			return n, err
@@ -494,10 +491,7 @@ func (c *COWStore) WriteAt(p []byte, off int64) (int, error) {
 		chunkRelativeOffset := (off + int64(n)) % c.chunkSizeBytes
 		// Index of the chunk in the COWStore.
 		chunkIndex := writeOffset / c.chunkSizeBytes
-		writeSize := int(c.chunkSizeBytes - chunkRelativeOffset)
-		if writeSize > len(p) {
-			writeSize = len(p)
-		}
+		writeSize := min(int(c.chunkSizeBytes-chunkRelativeOffset), len(p))
 
 		nw, err := c.writeToChunk(p, chunkRelativeOffset, chunkStartOffset, writeSize)
 		n += nw

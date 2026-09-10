@@ -378,10 +378,7 @@ func attachClientSubnetScopeIfPresent(m, r *dns.Msg) {
 		if !ok {
 			continue
 		}
-		udpSize := reqOPT.UDPSize()
-		if udpSize < dns.MinMsgSize {
-			udpSize = dns.MinMsgSize
-		}
+		udpSize := max(reqOPT.UDPSize(), dns.MinMsgSize)
 		respOPT := &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
 		respOPT.SetUDPSize(udpSize)
 		respOPT.Option = append(respOPT.Option, &dns.EDNS0_SUBNET{

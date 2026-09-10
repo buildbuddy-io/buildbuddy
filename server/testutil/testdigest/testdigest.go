@@ -21,10 +21,7 @@ var (
 func compressibleBlobOfSize(sizeBytes int) []byte {
 	out := make([]byte, 0, sizeBytes)
 	for len(out) < sizeBytes {
-		runEnd := len(out) + 100 + rand.Intn(100)
-		if runEnd > sizeBytes {
-			runEnd = sizeBytes
-		}
+		runEnd := min(len(out)+100+rand.Intn(100), sizeBytes)
 
 		runChar := byte(rand.Intn('Z'-'A'+1)) + 'A'
 		for len(out) < runEnd {

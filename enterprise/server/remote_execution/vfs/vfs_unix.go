@@ -916,10 +916,7 @@ type remoteFileReader struct {
 }
 
 func (r *remoteFileReader) Bytes(buf []byte) ([]byte, fuse.Status) {
-	numBytes := r.numBytes
-	if len(buf) < numBytes {
-		numBytes = len(buf)
-	}
+	numBytes := min(len(buf), r.numBytes)
 
 	// If the file contents was returned inline as part of the Open RPC, read from it directly instead of making
 	// additional RPCs.
