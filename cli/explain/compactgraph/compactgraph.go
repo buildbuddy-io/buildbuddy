@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"path"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -246,47 +247,36 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		invalidatedBy []string
 		invalidates   []any
 	}
-	diffResults := sync.Map{}
-	diffWG := sync.WaitGroup{}
+	// The result entries are pre-allocated (in a single backing slice) so that the worker goroutines below only ever
+	// read the map (looking up their own entry) and mutate distinct *diffResult values, which is data-race free without
+	// further synchronization. This avoids the per-access overhead of a sync.Map, which dominates when most of the
+	// (potentially hundreds of thousands of) spawns are unchanged and the per-spawn diffing work is otherwise trivial.
+	diffResults := make(map[string]*diffResult, len(commonOutputs))
+	resultStorage := make([]diffResult, len(commonOutputs))
+	for i, output := range commonOutputs {
+		diffResults[output] = &resultStorage[i]
+	}
 	// Diff runfiles tree spawns first to compute exact content hashes that are used when diffing other spawns.
-	for _, output := range commonRunfilesTrees {
-		diffWG.Add(1)
-		go func() {
-			defer diffWG.Done()
-			spawnDiff, localChange, invalidatedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks, old.settings.workspaceRunfilesDirectory, old.settings.hashFunction)
-			diffResults.Store(output, &diffResult{
-				spawnDiff:     spawnDiff,
-				localChange:   localChange,
-				invalidatedBy: invalidatedBy,
-			})
-		}()
-	}
-	diffWG.Wait()
-	for _, output := range commonSpawnOutputs {
-		diffWG.Add(1)
-		go func() {
-			defer diffWG.Done()
-			spawnDiff, localChange, invalidatedBy := diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
-			diffResults.Store(output, &diffResult{
-				spawnDiff:     spawnDiff,
-				localChange:   localChange,
-				invalidatedBy: invalidatedBy,
-			})
-		}()
-	}
-	diffWG.Wait()
+	parallelForEach(commonRunfilesTrees, func(output string) {
+		r := diffResults[output]
+		r.spawnDiff, r.localChange, r.invalidatedBy = diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks, old.settings.workspaceRunfilesDirectory, old.settings.hashFunction)
+	})
+	parallelForEach(commonSpawnOutputs, func(output string) {
+		r := diffResults[output]
+		r.spawnDiff, r.localChange, r.invalidatedBy = diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
+	})
 
 	// Visit spawns in topological order and attribute their diffs to transitive dependencies if possible.
 	commonOutputsSet := make(map[string]struct{})
 	for _, output := range commonOutputs {
 		commonOutputsSet[output] = struct{}{}
 	}
+	var flattenWG sync.WaitGroup
 	for _, output := range new.sortedPrimaryOutputs() {
 		if _, ok := commonOutputsSet[output]; !ok {
 			continue
 		}
-		resultEntry, _ := diffResults.Load(output)
-		result := resultEntry.(*diffResult)
+		result := diffResults[output]
 		if len(result.spawnDiff.GetModified().Diffs) == 0 {
 			continue
 		}
@@ -307,8 +297,7 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 				}
 			}
 			for invalidatedBy := range invalidatedByPrimaryOutput {
-				if invalidatingResultEntry, ok := diffResults.Load(invalidatedBy); ok {
-					invalidatingResult := invalidatingResultEntry.(*diffResult)
+				if invalidatingResult, ok := diffResults[invalidatedBy]; ok {
 					foundTransitiveCause = true
 					// Intentionally not flattening the slice here to avoid quadratic complexity when there are many
 					// transitively invalidated target, but few transitive causes. Quadratic complexity can't be avoided
@@ -320,16 +309,16 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		if result.localChange || !foundTransitiveCause {
 			if len(result.invalidates) > 0 {
 				// result.invalidates isn't modified after this point as the spawns are visited in topological order.
-				diffWG.Add(1)
+				flattenWG.Add(1)
 				go func() {
-					defer diffWG.Done()
+					defer flattenWG.Done()
 					result.spawnDiff.GetModified().TransitivelyInvalidated = flattenInvalidates(result.invalidates, isExecOutputPath(output))
 				}()
 			}
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
 		}
 	}
-	diffWG.Wait()
+	flattenWG.Wait()
 
 	return &spawn_diff.DiffResult{
 		SpawnDiffs:      spawnDiffs,
@@ -905,6 +894,30 @@ func setDifference(a, b []string) []string {
 	}
 	difference = append(difference, a[i:]...)
 	return difference
+}
+
+// parallelForEach invokes fn for each item, distributing the items across a bounded number of worker goroutines that
+// each process a contiguous chunk. fn must be safe to call concurrently. Compared to spawning one goroutine per item,
+// this keeps the goroutine count (and scheduling overhead) constant regardless of the number of items, which matters
+// when there are hundreds of thousands of mostly-unchanged spawns whose individual comparison is trivial.
+func parallelForEach[T any](items []T, fn func(T)) {
+	if len(items) == 0 {
+		return
+	}
+	numWorkers := min(runtime.NumCPU(), len(items))
+	chunkSize := (len(items) + numWorkers - 1) / numWorkers
+	var wg sync.WaitGroup
+	for start := 0; start < len(items); start += chunkSize {
+		end := min(start+chunkSize, len(items))
+		wg.Add(1)
+		go func(chunk []T) {
+			defer wg.Done()
+			for _, item := range chunk {
+				fn(item)
+			}
+		}(items[start:end])
+	}
+	wg.Wait()
 }
 
 // setIntersection computes the sorted slice a ∩ b for sorted slices a and b.
