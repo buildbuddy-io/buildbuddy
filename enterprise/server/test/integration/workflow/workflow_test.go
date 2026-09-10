@@ -749,16 +749,12 @@ func TestInvalidYAML(t *testing.T) {
 		RepoURL:     repoURL,
 		CommitSHA:   commitSHA,
 		Payload: &github.GithubStatusPayload{
-			Context:     pointer("BuildBuddy Workflows"),
+			Context:     new("BuildBuddy Workflows"),
 			Description: payload.Description,
-			TargetURL:   pointer("https://buildbuddy.io/docs/workflows-config"),
-			State:       pointer("error"),
+			TargetURL:   new("https://buildbuddy.io/docs/workflows-config"),
+			State:       new("error"),
 		},
 	}, s)
-}
-
-func pointer[T any](val T) *T {
-	return &val
 }
 
 func TestBazelUseCLI(t *testing.T) {

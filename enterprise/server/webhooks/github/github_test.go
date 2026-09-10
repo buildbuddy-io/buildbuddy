@@ -143,22 +143,22 @@ func TestParseRequest_InvalidEvent_Error(t *testing.T) {
 
 func pullRequestEvent(action string) *gh.PullRequestEvent {
 	repo := &gh.Repository{
-		CloneURL:      gh.String("https://github.com/test/repo.git"),
-		DefaultBranch: gh.String("main"),
-		Private:       gh.Bool(false),
+		CloneURL:      new("https://github.com/test/repo.git"),
+		DefaultBranch: new("main"),
+		Private:       new(false),
 	}
 	return &gh.PullRequestEvent{
-		Action: gh.String(action),
+		Action: new(action),
 		PullRequest: &gh.PullRequest{
-			Number: gh.Int(7),
-			User:   &gh.User{Login: gh.String("author")},
+			Number: new(7),
+			User:   &gh.User{Login: new("author")},
 			Head: &gh.PullRequestBranch{
-				Ref:  gh.String("feature"),
-				SHA:  gh.String("deadbeef"),
+				Ref:  new("feature"),
+				SHA:  new("deadbeef"),
 				Repo: repo,
 			},
 			Base: &gh.PullRequestBranch{
-				Ref:  gh.String("main"),
+				Ref:  new("main"),
 				Repo: repo,
 			},
 		},

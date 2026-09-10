@@ -276,10 +276,10 @@ func main() {
 	for _, c := range review.Comments {
 		if validLines[fileLine{c.File, c.Line}] {
 			inlineComments = append(inlineComments, &github.DraftReviewComment{
-				Path: github.String(c.File),
-				Line: github.Int(c.Line),
-				Side: github.String("RIGHT"),
-				Body: github.String(c.Body),
+				Path: new(c.File),
+				Line: new(c.Line),
+				Side: new("RIGHT"),
+				Body: new(c.Body),
 			})
 		} else {
 			overflowLines = append(overflowLines, fmt.Sprintf("- `%s:%d` — %s", c.File, c.Line, c.Body))
@@ -296,9 +296,9 @@ func main() {
 
 	if *dryRun {
 		req := &github.PullRequestReviewRequest{
-			CommitID: github.String(headSHA),
-			Event:    github.String("COMMENT"),
-			Body:     github.String(fullBody),
+			CommitID: new(headSHA),
+			Event:    new("COMMENT"),
+			Body:     new(fullBody),
 			Comments: inlineComments,
 		}
 		payloadBytes, _ := json.MarshalIndent(req, "", "  ")
@@ -338,9 +338,9 @@ func fetchRepoInfo(gh *github.Client) (owner, repo, branch string, err error) {
 func postReview(ctx context.Context, gh *github.Client, owner, repo string, prNumber int, headSHA, body string, comments []*github.DraftReviewComment) {
 	log.Info("Posting review to GitHub...")
 	req := &github.PullRequestReviewRequest{
-		CommitID: github.String(headSHA),
-		Event:    github.String("COMMENT"),
-		Body:     github.String(body),
+		CommitID: new(headSHA),
+		Event:    new("COMMENT"),
+		Body:     new(body),
 		Comments: comments,
 	}
 	posted, _, err := gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
@@ -353,7 +353,7 @@ func postReview(ctx context.Context, gh *github.Client, owner, repo string, prNu
 			fallbackBody.WriteString(fmt.Sprintf("- `%s:%d` — %s\n", c.GetPath(), c.GetLine(), c.GetBody()))
 		}
 		req.Comments = nil
-		req.Body = github.String(fallbackBody.String())
+		req.Body = new(fallbackBody.String())
 		posted, _, err = gh.PullRequests.CreateReview(ctx, owner, repo, prNumber, req)
 	}
 	if err != nil {

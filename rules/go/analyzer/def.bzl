@@ -7,7 +7,7 @@ ANALYZERS = [
     "forvar",
     "mapsloop",
     "minmax",
-    # "newexpr",
+    "newexpr",
     # "plusbuild",
     # "omitzero",
     "rangeint",

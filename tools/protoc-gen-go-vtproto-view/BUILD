@@ -34,7 +34,6 @@ go_test(
         "//tools/protoc-gen-go-vtproto-view/testdata:viewtest_go_proto",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//compiler/protogen",
-        "@org_golang_google_protobuf//proto",
         "@org_golang_google_protobuf//reflect/protodesc",
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//reflect/protoregistry",
