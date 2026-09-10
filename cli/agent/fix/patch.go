@@ -5,108 +5,115 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+
+	"github.com/buildbuddy-io/buildbuddy/cli/log"
 )
 
-const (
-	// remoteRunnerArtifactsDirectoryEnvVar is set by remote BuildBuddy runners to the directory
-	// whose contents are uploaded as invocation artifacts when the command exits.
-	remoteRunnerArtifactsDirectoryEnvVar = "BUILDBUDDY_ARTIFACTS_DIRECTORY"
-	downloadDirectoryName                = "bb-download"
-)
+const remoteRunnerArtifactsDirectoryEnvVar = "BUILDBUDDY_ARTIFACTS_DIRECTORY"
 
-// ensureCleanGitWorktree verifies that an exported patch will contain only
-// changes made after this check.
-func ensureCleanGitWorktree(ctx context.Context) error {
-	output, err := runGit(ctx, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+func isGitWorktreeClean(ctx context.Context) (bool, error) {
+	root, err := gitRoot(ctx)
 	if err != nil {
-		return fmt.Errorf("inspect git worktree: %w", err)
+		return false, err
 	}
-	if len(output) != 0 {
-		return fmt.Errorf("git worktree is not clean: %s", output)
+	var output bytes.Buffer
+	if err := runGit(ctx, root, &output, "status", "--porcelain=v1", "-z", "--untracked-files=all"); err != nil {
+		return false, fmt.Errorf("inspect git worktree: %w", err)
 	}
-	return nil
+	return output.Len() == 0, nil
 }
 
 // writeGitPatch writes all tracked and untracked worktree changes to the
 // remote runner artifact directory. It returns an empty path if there are no
 // changes.
-func writeGitPatch(ctx context.Context, name string) (string, error) {
+func writeGitPatch(ctx context.Context, invocationID string) (string, error) {
 	artifactsDir := os.Getenv(remoteRunnerArtifactsDirectoryEnvVar)
 	if artifactsDir == "" {
 		return "", nil
 	}
-	patch, err := runGit(ctx, "diff", "--binary", "HEAD", "--")
+	root, err := gitRoot(ctx)
 	if err != nil {
-		return "", fmt.Errorf("create patch for tracked files: %w", err)
+		return "", err
 	}
-	untracked, err := runGit(ctx, "ls-files", "--others", "--exclude-standard", "-z")
-	if err != nil {
+
+	var untracked bytes.Buffer
+	if err := runGit(ctx, root, &untracked, "ls-files", "--others", "--exclude-standard", "-z"); err != nil {
 		return "", fmt.Errorf("list untracked files: %w", err)
 	}
-	for pathBytes := range bytes.SplitSeq(untracked, []byte{0}) {
-		if len(pathBytes) == 0 {
-			continue
-		}
-		untrackedPatch, err := runGit(ctx, "diff", "--no-index", "--binary", "--", "/dev/null", string(pathBytes))
-		if err != nil {
-			return "", fmt.Errorf("create patch for untracked file %q: %w", pathBytes, err)
-		}
-		patch = append(patch, untrackedPatch...)
-	}
-	if len(patch) == 0 {
-		return "", nil
-	}
-
-	downloadDir := filepath.Join(artifactsDir, downloadDirectoryName)
-	if err := os.MkdirAll(downloadDir, 0755); err != nil {
-		return "", fmt.Errorf("create artifact directory: %w", err)
-	}
-	info, err := os.Lstat(downloadDir)
-	if err != nil {
-		return "", fmt.Errorf("inspect artifact directory: %w", err)
-	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return "", fmt.Errorf("artifact path %q is not a directory", downloadDir)
-	}
-
-	outputPath := filepath.Join(downloadDir, name)
-	file, err := os.OpenFile(outputPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	patchPath := filepath.Join(artifactsDir, fmt.Sprintf("bb-agent-fix-%s.patch", invocationID))
+	patchFile, err := os.OpenFile(patchPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
 	if err != nil {
 		return "", fmt.Errorf("create patch artifact: %w", err)
 	}
 	success := false
 	defer func() {
-		file.Close()
+		patchFile.Close()
 		if !success {
-			os.Remove(outputPath)
+			os.Remove(patchPath)
 		}
 	}()
-	if _, err := file.Write(patch); err != nil {
-		return "", fmt.Errorf("write patch artifact: %w", err)
+
+	if err := runGit(ctx, root, patchFile, "diff", "--binary", "HEAD", "--"); err != nil {
+		return "", fmt.Errorf("create patch for tracked files: %w", err)
 	}
-	if err := file.Close(); err != nil {
+	for pathBytes := range bytes.SplitSeq(untracked.Bytes(), []byte{0}) {
+		if len(pathBytes) == 0 {
+			continue
+		}
+		path := string(pathBytes)
+		info, err := os.Lstat(filepath.Join(root, path))
+		if err != nil {
+			return "", fmt.Errorf("inspect untracked file %q: %w", path, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			log.Warnf("Skipping untracked symlink %q in patch artifact", path)
+			continue
+		}
+		if err := runGit(ctx, root, patchFile, "diff", "--no-index", "--binary", "--", "/dev/null", path); err != nil {
+			return "", fmt.Errorf("create patch for untracked file %q: %w", path, err)
+		}
+	}
+	if err := patchFile.Close(); err != nil {
 		return "", fmt.Errorf("close patch artifact: %w", err)
 	}
+	info, err := os.Stat(patchPath)
+	if err != nil {
+		return "", fmt.Errorf("inspect patch artifact: %w", err)
+	}
+	if info.Size() == 0 {
+		return "", nil
+	}
 	success = true
-	return outputPath, nil
+	return patchPath, nil
 }
 
-func runGit(ctx context.Context, args ...string) ([]byte, error) {
+func gitRoot(ctx context.Context) (string, error) {
+	var output bytes.Buffer
+	if err := runGit(ctx, "", &output, "rev-parse", "--show-toplevel"); err != nil {
+		return "", fmt.Errorf("find git repository root: %w", err)
+	}
+	return strings.TrimSpace(output.String()), nil
+}
+
+func runGit(ctx context.Context, dir string, stdout io.Writer, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	cmd.Dir = dir
+	cmd.Stdout = stdout
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && len(args) > 1 && args[0] == "diff" && args[1] == "--no-index" {
 		// git diff --no-index returns 1 when the files differ.
-		return stdout.Bytes(), nil
+		return nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("git %v: %s: %w", args, bytes.TrimSpace(stderr.Bytes()), err)
+		return fmt.Errorf("git %v: %s: %w", args, bytes.TrimSpace(stderr.Bytes()), err)
 	}
-	return stdout.Bytes(), nil
+	return nil
 }

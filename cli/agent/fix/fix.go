@@ -19,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/view"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
-	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
 
@@ -114,11 +113,14 @@ func HandleFix(args []string) (int, error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
 	}
 
-	if os.Getenv(remoteRunnerArtifactsDirectoryEnvVar) != "" {
-		// Before the agent makes any changes, verify that the local worktree is clean so that
-		// an exported patch will contain only changes made by the agent.
-		if err := ensureCleanGitWorktree(ctx); err != nil {
-			return -1, status.WrapError(err, "ensure clean git worktree")
+	// On remote runners, upload the generated patch as an artifact to the invocation.
+	exportPatch := os.Getenv(remoteRunnerArtifactsDirectoryEnvVar) != ""
+	if exportPatch {
+		clean, err := isGitWorktreeClean(ctx)
+		if err != nil {
+			log.Warnf("Could not inspect the initial git worktree; the patch artifact may include pre-existing changes: %s", err)
+		} else if !clean {
+			log.Warnf("The git worktree was not clean before the agent ran; the patch artifact will include pre-existing changes")
 		}
 	}
 
@@ -146,13 +148,19 @@ func HandleFix(args []string) (int, error) {
 		return -1, err
 	}
 
-	if err := fixFailure(ctx, errorLogs, cmd, invocationID); err != nil {
-		return -1, err
+	agentErr := fixFailure(ctx, errorLogs, cmd, invocationID)
+
+	// Even if the agent failed, upload any patch artifacts that were created.
+	if exportPatch {
+		if patchPath, err := writeGitPatch(ctx, invocationID); err != nil {
+			log.Warnf("Failed to create patch artifact: %s", err)
+		} else if patchPath != "" {
+			log.Printf("Created patch artifact %s", patchPath)
+		}
 	}
-	if patchPath, err := writeGitPatch(ctx, "bb-agent-fix.patch"); err != nil {
-		return -1, fmt.Errorf("export agent patch: %w", err)
-	} else if patchPath != "" {
-		log.Printf("Created patch artifact %s", patchPath)
+
+	if agentErr != nil {
+		return -1, agentErr
 	}
 
 	return 0, nil

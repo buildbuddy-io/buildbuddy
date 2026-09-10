@@ -26,7 +26,6 @@ go_library(
         "//proto:invocation_go_proto",
         "//server/util/flag",
         "//server/util/grpc_client",
-        "//server/util/status",
         "//server/util/uuid",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
