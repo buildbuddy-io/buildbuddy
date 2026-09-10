@@ -633,11 +633,9 @@ func BenchmarkEnqueue(b *testing.B) {
 			for _, instance := range instances {
 				for _, digest := range digests {
 					for _, ctx := range contexts {
-						wg.Add(1)
-						go func() {
+						wg.Go(func() {
 							updater.Enqueue(ctx, instance, []*repb.Digest{digest}, repb.DigestFunction_SHA256)
-							wg.Done()
-						}()
+						})
 					}
 				}
 			}

@@ -435,11 +435,9 @@ func (r *Registration) watchRunState(rootContext context.Context) {
 
 			// Restart if it should be running
 			if running {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+				wg.Go(func() {
 					r.maintainRegistrationAndStreamWork(ctx)
-				}()
+				})
 			}
 		}
 	}

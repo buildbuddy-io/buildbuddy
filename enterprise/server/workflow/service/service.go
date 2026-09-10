@@ -227,14 +227,12 @@ func NewWorkflowService(env environment.Env) *workflowService {
 
 func (ws *workflowService) startBackgroundWorkers() {
 	for range webhookWorkerCount {
-		ws.wg.Add(1)
-		go func() {
-			defer ws.wg.Done()
+		ws.wg.Go(func() {
 
 			for task := range ws.tasks {
 				ws.runStartWorkflowTask(task)
 			}
-		}()
+		})
 	}
 	ws.env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		// Wait until the HTTP server shuts down to ensure that all in-flight
@@ -515,9 +513,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 		}
 		actionStatuses = append(actionStatuses, actionStatus)
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			var invocationID string
 			var statusErr error
@@ -559,7 +555,7 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 				log.CtxWarning(executionCtx, statusErr.Error())
 				return
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -1568,16 +1564,14 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 
 		// Start executions in parallel to help reduce workflow start latency
 		// for repos with lots of workflow actions.
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// Webhook triggered workflows should always be retried, because they
 			// don't have a client to retry for them
 			shouldRetry := true
 			if _, err := ws.executeWorkflowAction(ctx, apiKey, wf, wd, isTrusted, action, invocationID, nil /*=extraCIRunnerArgs*/, env, shouldRetry); err != nil {
 				log.CtxErrorf(ctx, "Failed to execute workflow %s (%s) action %q: %s", wf.WorkflowID, wf.RepoURL, action.Name, err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	return nil

@@ -24,7 +24,7 @@ ANALYZERS = [
     "stringsseq",
     "stringsbuilder",
     # "testingcontext",
-    # "waitgroup",
+    "waitgroupgo",
 ]
 
 MODERNIZE_ANALYZERS = ["//rules/go/analyzer:" + analyzer for analyzer in ANALYZERS]

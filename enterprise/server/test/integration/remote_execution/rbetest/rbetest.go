@@ -196,13 +196,11 @@ func (r *Env) shutdownBuildBuddyServers() {
 	var wg sync.WaitGroup
 	for app := range r.buildBuddyServers {
 		app.env.GetHealthChecker().Shutdown()
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			log.Infof("Waiting for buildbuddy server with port %d to shut down.", app.port)
 			app.env.GetHealthChecker().WaitForGracefulShutdown()
 			log.Infof("Shut down for buildbuddy server with port %d completed.", app.port)
-		}()
+		})
 	}
 	wg.Wait()
 	log.Info("Buildbuddy servers are shut down")
@@ -327,13 +325,11 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 		var wg sync.WaitGroup
 		for id, e := range rbe.executors {
 			e.env.GetHealthChecker().Shutdown()
-			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				log.Infof("Waiting for executor %q to shut down.", id)
 				e.env.GetHealthChecker().WaitForGracefulShutdown()
 				log.Infof("Shut down for executor %q completed.", id)
-				wg.Done()
-			}()
+			})
 		}
 		log.Warningf("Waiting for executor shutdown to finish...")
 		wg.Wait()

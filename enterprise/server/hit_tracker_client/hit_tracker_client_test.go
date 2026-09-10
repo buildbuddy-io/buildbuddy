@@ -376,11 +376,9 @@ func BenchmarkEnqueue(b *testing.B) {
 		hitTracker := hitTrackerFactory.NewCASHitTracker(b.Context(), &repb.RequestMetadata{})
 		wg := sync.WaitGroup{}
 		for range numToEnqueue {
-			wg.Add(1)
-			go func() {
+			wg.Go(func() {
 				hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
-				wg.Done()
-			}()
+			})
 		}
 		wg.Wait()
 	}

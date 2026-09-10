@@ -558,11 +558,9 @@ func TestRunnerPool_Shutdown_RunnersReturnRetriableOrNilError(t *testing.T) {
 
 		var wg sync.WaitGroup
 		for range numTasks {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				errs <- runTask()
-			}()
+			})
 			// Random, tiny delay to stagger the tasks a bit more.
 			sleepRandMicros(1)
 		}

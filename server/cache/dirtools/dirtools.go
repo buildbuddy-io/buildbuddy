@@ -317,9 +317,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 	cas := env.GetContentAddressableStorageClient()
 
 	for batch := range slices.Chunk(filesToUpload, 1000) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			req := &repb.FindMissingBlobsRequest{
 				DigestFunction: digestFunction,
 				InstanceName:   instanceName,
@@ -353,7 +351,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 				// If the reader errored and returned, don't block forever
 			case batches <- batchResult{files: batch, presentBytes: presentBytes}:
 			}
-		}()
+		})
 	}
 
 	go func() {
