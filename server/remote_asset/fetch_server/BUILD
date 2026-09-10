@@ -60,3 +60,14 @@ go_test(
         "@org_golang_google_grpc//status",
     ],
 )
+
+go_test(
+    name = "http_test",
+    srcs = ["http_test.go"],
+    embed = [":fetch_server"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//codes",
+        "@org_golang_google_grpc//status",
+    ],
+)

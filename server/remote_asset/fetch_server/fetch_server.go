@@ -323,7 +323,6 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	log.CtxInfof(ctx, "Fetch: returning NotFound for %s", req.GetUris())
 	return &rapb.FetchBlobResponse{
 		Status: &statuspb.Status{
-
 			Code:    int32(gcodes.NotFound),
 			Message: status.Message(lastFetchErr),
 		},
@@ -442,18 +441,11 @@ func mirrorToCache(
 		return nil, status.InvalidArgumentErrorf("failed to fetch %q: create request failed: %s", uri, err)
 	}
 	req.Header = header
-	rsp, err := httpClient.Do(req)
+	rsp, err := fetchHTTP(req, httpClient)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
+		return nil, err
 	}
 	defer rsp.Body.Close()
-	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
-		// Request timeout and rate limiting are transient even though they are 4xx.
-		if rsp.StatusCode >= 400 && rsp.StatusCode < 500 && rsp.StatusCode != http.StatusRequestTimeout && rsp.StatusCode != http.StatusTooManyRequests {
-			return nil, status.NotFoundErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
-		}
-		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
-	}
 
 	// If we know what the hash should be and the content length is known,
 	// then we know the full digest, and can pipe directly from the HTTP
@@ -524,6 +516,58 @@ func mirrorToCache(
 	}
 	log.CtxDebugf(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(blobDigest))
 	return blobDigest, nil
+}
+
+// fetchHTTP retries transient failures before receiving a successful response.
+// Do not retry body reads or cache uploads here: those may have side effects.
+func fetchHTTP(req *http.Request, client *http.Client) (*http.Response, error) {
+	ctx := req.Context()
+	var lastErr error
+	const maxAttempts = 3
+	for attempt := range maxAttempts {
+		if attempt > 0 {
+			timer := time.NewTimer(100 * time.Millisecond * time.Duration(1<<(attempt-1)))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, gstatus.FromContextError(ctx.Err()).Err()
+			case <-timer.C:
+			}
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, gstatus.FromContextError(err).Err()
+		}
+		rsp, err := doHTTP(req, client)
+		if err == nil {
+			return rsp, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, gstatus.FromContextError(err).Err()
+		}
+		if !status.IsUnavailableError(err) {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+func doHTTP(req *http.Request, client *http.Client) (*http.Response, error) {
+	rsp, err := client.Do(req)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", req.URL, err)
+	}
+	if rsp.StatusCode >= 200 && rsp.StatusCode < 400 {
+		return rsp, nil
+	}
+	// Close failed responses before retrying, without draining a potentially
+	// unbounded error body. Successful responses are closed by mirrorToCache.
+	rsp.Body.Close()
+	// Request timeout and rate limiting are transient even though they are 4xx.
+	if rsp.StatusCode >= 400 && rsp.StatusCode < 500 && rsp.StatusCode != http.StatusRequestTimeout && rsp.StatusCode != http.StatusTooManyRequests {
+		return nil, status.NotFoundErrorf("failed to fetch %q: HTTP %s", req.URL, rsp.Status)
+	}
+	return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", req.URL, rsp.Status)
 }
 
 func tempCopy(r io.Reader) (path string, err error) {

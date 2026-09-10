@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -799,4 +800,34 @@ func TestFetchBlobFailureClassification(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFetchBlobRecoversFromTransportFailure(t *testing.T) {
+	ctx := t.Context()
+	te := testenv.GetTestEnv(t)
+	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+	var attempts atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if attempts.Add(1) == 1 {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn.Close()
+			return
+		}
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+	resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+		Uris:       []string{ts.URL},
+		Qualifiers: []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode())
+	require.Equal(t, int32(2), attempts.Load())
+	expected, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.Equal(t, expected.GetHash(), resp.GetBlobDigest().GetHash())
 }
