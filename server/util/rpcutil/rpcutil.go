@@ -14,8 +14,11 @@ import (
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/mem"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/stats"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
@@ -24,6 +27,44 @@ const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
 
 var OTELGRPCMessageEventsEnabled = flag.Bool("grpc_otel_message_events_enabled", true,
 	"If set, record per-message OpenTelemetry events on gRPC spans. Only useful for streaming RPCs; disable on unary-only servers (e.g. the metadata server) to save per-RPC allocation.")
+
+// WithTracingMessageEvents records message sizes on recording spans only when
+// the incoming request includes x-buildbuddy-trace. otelgrpc no longer records
+// these events itself.
+func WithTracingMessageEvents(handler stats.Handler) stats.Handler {
+	return &tracingMessageHandler{Handler: handler}
+}
+
+type tracingMessageHandler struct {
+	stats.Handler
+}
+
+func (h *tracingMessageHandler) HandleRPC(ctx context.Context, event stats.RPCStats) {
+	h.recordMessage(ctx, event)
+	h.Handler.HandleRPC(ctx, event)
+}
+
+func (*tracingMessageHandler) recordMessage(ctx context.Context, event stats.RPCStats) {
+	var name string
+	var size, wireSize int
+	switch e := event.(type) {
+	case *stats.InPayload:
+		name, size, wireSize = "grpc.in_payload", e.Length, e.WireLength
+	case *stats.OutPayload:
+		// Successful handoff to gRPC does not prove delivery to the peer.
+		name, size, wireSize = "grpc.out_payload", e.Length, e.WireLength
+	default:
+		return
+	}
+	span := trace.SpanFromContext(ctx)
+	if !span.IsRecording() || len(metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-trace")) == 0 {
+		return
+	}
+	span.AddEvent(name, trace.WithAttributes(
+		attribute.Int("bytes", size),
+		attribute.Int("wire_bytes", wireSize),
+	))
+}
 
 func init() {
 	vtprotocodec.Register()

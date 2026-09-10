@@ -15,10 +15,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 
 	dto "github.com/prometheus/client_model/go"
@@ -437,6 +440,67 @@ func TestMeterProviderGRPCViews(t *testing.T) {
 				require.Greater(t, len(boundaries), len(coarseBoundaries),
 					"expected %s to keep otelgrpc's default buckets", tc.name)
 			}
+		}
+	}
+}
+
+func TestTracingMessageEvents(t *testing.T) {
+	for _, streaming := range []bool{false, true} {
+		for _, traceHeader := range []bool{false, true} {
+			t.Run(fmt.Sprintf("streaming=%t/header=%t", streaming, traceHeader), func(t *testing.T) {
+				recorder := tracetest.NewSpanRecorder()
+				tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(recorder))
+				defer tp.Shutdown(context.Background())
+				lis := bufconn.Listen(1 << 20)
+				defer lis.Close()
+				srv := grpc.NewServer(grpc.StatsHandler(rpcutil.WithTracingMessageEvents(
+					otelgrpc.NewServerHandler(otelgrpc.WithTracerProvider(tp)),
+				)))
+				hlpb.RegisterHealthServer(srv, health.NewServer())
+				go srv.Serve(lis)
+				defer srv.Stop()
+				conn, err := grpc.NewClient("passthrough:///bufnet",
+					grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+					grpc.WithTransportCredentials(insecure.NewCredentials()),
+				)
+				require.NoError(t, err)
+				defer conn.Close()
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if traceHeader {
+					ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
+				}
+				client := hlpb.NewHealthClient(conn)
+				if streaming {
+					stream, err := client.Watch(ctx, &hlpb.HealthCheckRequest{})
+					require.NoError(t, err)
+					response, err := stream.Recv()
+					require.NoError(t, err)
+					require.Equal(t, hlpb.HealthCheckResponse_SERVING, response.GetStatus())
+					cancel()
+				} else {
+					response, err := client.Check(ctx, &hlpb.HealthCheckRequest{})
+					require.NoError(t, err)
+					require.Equal(t, hlpb.HealthCheckResponse_SERVING, response.GetStatus())
+				}
+				require.Eventually(t, func() bool { return len(recorder.Ended()) == 1 }, 5*time.Second, time.Millisecond)
+				events := recorder.Ended()[0].Events()
+				if !traceHeader {
+					require.Empty(t, events)
+					return
+				}
+				require.Len(t, events, 2)
+				require.Equal(t, "grpc.in_payload", events[0].Name)
+				require.Equal(t, "grpc.out_payload", events[1].Name)
+				for i, event := range events {
+					attrs := map[string]int64{}
+					for _, a := range event.Attributes {
+						attrs[string(a.Key)] = a.Value.AsInt64()
+					}
+					require.Equal(t, int64(i*2), attrs["bytes"])
+					require.Equal(t, int64(i*2+5), attrs["wire_bytes"])
+				}
+			})
 		}
 	}
 }

@@ -225,12 +225,12 @@ func CommonGRPCServerOptionsWithConfig(env environment.Env, config GRPCServerCon
 			"uint32(grpc_server_worker_multiplier) is too large (%v). Disabling workers", *serverWorkerMultiplier)
 		workerMultiplier = 0
 	}
-	otelOpts := []otelgrpc.Option{otelgrpc.WithMeterProvider(rpcutil.MeterProvider())}
+	statsHandler := otelgrpc.NewServerHandler(otelgrpc.WithMeterProvider(rpcutil.MeterProvider()))
 	if *rpcutil.OTELGRPCMessageEventsEnabled {
-		otelOpts = append(otelOpts, otelgrpc.WithMessageEvents(otelgrpc.ReceivedEvents, otelgrpc.SentEvents))
+		statsHandler = rpcutil.WithTracingMessageEvents(statsHandler)
 	}
 	opts := []grpc.ServerOption{
-		grpc.StatsHandler(otelgrpc.NewServerHandler(otelOpts...)),
+		grpc.StatsHandler(statsHandler),
 		interceptors.GetUnaryInterceptor(env, config.ExtraChainedUnaryInterceptors...),
 		interceptors.GetStreamInterceptor(env, config.ExtraChainedStreamInterceptors...),
 		grpc.ChainUnaryInterceptor(config.PostAuthUnaryInterceptors...),
