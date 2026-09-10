@@ -41,11 +41,7 @@ const (
 	cacheFilter = proxyFilter + `, cache_name="${cache_name}"`
 
 	// envoyFilter selects the Envoy (Contour) upstream clusters that front the
-	// cache proxies: one per Service port (1986 for gRPC, 443 for TLS). The
-	// cluster name embeds the proxies' namespace (cache-proxy-prod,
-	// cache-proxy-dev), hence the wildcard. These series are exported by the
-	// Envoy pods, so they describe the proxies as external clients see them;
-	// they only exist in regions with an Envoy ingress.
+	// cache proxies, only in regions with an Envoy ingress.
 	envoyFilter = `region="${region}", namespace="projectcontour", envoy_cluster_name=~"cache-proxy-.*_cache-proxy-service_.*"`
 )
 
@@ -144,7 +140,7 @@ func dashedThreshold(p *timeseries.PanelBuilder, value float64) *timeseries.Pane
 func systemStatusRow() *dashboard.RowBuilder {
 	return row("System Status").
 		WithPanel(ts("Cache Proxy Instances", dash.UnitShort).
-			Description("Pods whose metrics endpoint is up, pods Kubernetes reports Ready, backends Envoy considers healthy (the max over Envoy pods and clusters, so a replica that is still converging after a restart does not drag it down; Envoy trusts the EndpointSlice, so this follows readiness), and the autoscaler target. The first three should agree; a Ready or Envoy-healthy count above the up count means traffic is being sent to a pod nobody can reach.").
+			Description("Ready or Envoy-healthy count above the up count might mean traffic is being sent to a pod nobody can reach.").
 			Height(7).
 			Decimals(0).
 			Min(0).
@@ -155,7 +151,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`max(envoy_cluster_membership_healthy{`+envoyFilter+`})`, "healthy in Envoy").RefId("D")).
 			WithTarget(dash.PromQuery(`sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{region="${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{horizontalpodautoscaler}} target").RefId("C"))).
 		WithPanel(ts("Cache-proxy nodes cordoned or NotReady", dash.UnitShort).
-			Description("Nodes hosting a cache-proxy pod that are cordoned (unschedulable) or whose Ready condition is not True. A node that shows here while its pod still counts as Ready on the left is a pod receiving traffic that nobody can reach. Quiet nodes are omitted.").
+			Description("Nodes hosting a cache-proxy pod that are cordoned or not Ready.").
 			Height(7).
 			Min(0).
 			Max(1).
@@ -192,17 +188,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{`+podFilter+`, container="cache-proxy"}[1m])) / sum by (pod) (rate(container_cpu_cfs_periods_total{`+podFilter+`, container="cache-proxy"}[1m]))`, "__auto")))
 }
 
-// ingressRow shows the cache proxies from the front door: what Envoy sees
-// when it forwards client requests to the cache-proxy Service. The
-// proxies' own metrics cannot show a request that never reached a proxy,
-// which is exactly what happens when Envoy keeps forwarding to a backend
-// that is gone but still listed as Ready (us-sjc, 2026-09-09: a node was
-// rebooted without a successful drain and 1 in 14 requests failed for five
-// minutes while every proxy-side graph looked normal).
-//
-// The 5xx ratio and connect failure panels carry the thresholds of the
-// CacheProxyUpstream5xxRatioHigh and CacheProxyUpstreamConnectFailures
-// alerts in buildbuddy-internal's alerts-regional.yaml.
+// ingressRow shows the cache proxies from the Envoy's point of view.
 func ingressRow() *dashboard.RowBuilder {
 	rq := `envoy_cluster_upstream_rq_xx{` + envoyFilter
 	return row("Ingress (Envoy)").
@@ -213,7 +199,7 @@ func ingressRow() *dashboard.RowBuilder {
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (envoy_cluster_name, envoy_response_code_class) (rate(`+rq+`, envoy_response_code_class="5"}[${window}]))`, "{{envoy_cluster_name}} {{envoy_response_code_class}}xx"))).
 		WithPanel(dashedThreshold(ts("Upstream 5xx ratio", dash.UnitPercentUnit), 0.01).
-			Description("Share of each cluster's upstream responses that were 5xx. One unreachable backend out of N costs about 1/N of requests. The dashed line is the CacheProxyUpstream5xxRatioHigh alert threshold (1% for 2m); the alert evaluates the ratio summed over both clusters, so a fault confined to the low-traffic 443 cluster can show here without firing it.").
+			Description("Share of each cluster's upstream responses that were 5xx. The dashed line is the CacheProxyUpstream5xxRatioHigh alert threshold (1% for 2m).").
 			Min(0).
 			AxisSoftMax(0.02).
 			ShowPoints(common.VisibilityModeNever).
