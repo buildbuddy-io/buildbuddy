@@ -8,12 +8,15 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -319,4 +322,117 @@ func TestDoubleBufferWriter_WriteAfterCancel(t *testing.T) {
 		_, err = dbw.Write([]byte{1, 2, 3, 4})
 	}
 	require.Equal(t, ctx.Err(), err)
+}
+
+func TestSpillBuffer_UnderLimit(t *testing.T) {
+	// Write less data than the memory limit. All of it should stay in memory,
+	// and no file should be created at the spill path.
+	path := filepath.Join(testfs.MakeTempDir(t), "spill")
+	b := ioutil.NewSpillBuffer(path, 10)
+	n, err := b.Write([]byte("hello"))
+	require.NoError(t, err)
+	require.Equal(t, 5, n)
+
+	r, err := b.Reader()
+	require.NoError(t, err)
+	content, err := io.ReadAll(r)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(content))
+	_, err = os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "spill file should not exist, got: %v", err)
+
+	// Once a reader has been obtained, writes should fail rather than
+	// invalidating the reader.
+	_, err = b.Write([]byte("more"))
+	assert.ErrorContains(t, err, "not writable")
+
+	// Close releases the in-memory buffer, so reads and writes afterwards
+	// should fail rather than silently observing reused memory.
+	require.NoError(t, b.Close())
+	_, err = b.Reader()
+	assert.ErrorContains(t, err, "before Close")
+	_, err = b.Write([]byte("more"))
+	assert.ErrorContains(t, err, "not writable")
+}
+
+func TestSpillBuffer_AtLimit(t *testing.T) {
+	// Write exactly up to the memory limit. The data should stay in memory
+	// with no spill file created.
+	path := filepath.Join(testfs.MakeTempDir(t), "spill")
+	b := ioutil.NewSpillBuffer(path, 5)
+	n, err := b.Write([]byte("hello"))
+	require.NoError(t, err)
+	require.Equal(t, 5, n)
+
+	r, err := b.Reader()
+	require.NoError(t, err)
+	content, err := io.ReadAll(r)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(content))
+	_, err = os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "spill file should not exist, got: %v", err)
+	require.NoError(t, b.Close())
+}
+
+func TestSpillBuffer_OverLimit(t *testing.T) {
+	// Write past the memory limit across several writes. Once the limit is
+	// exceeded, all data (including the previously buffered prefix) should be
+	// moved to the spill file.
+	path := filepath.Join(testfs.MakeTempDir(t), "spill")
+	b := ioutil.NewSpillBuffer(path, 8)
+	_, err := b.Write([]byte("hello "))
+	require.NoError(t, err)
+	// This write exceeds the 8-byte limit and should trigger the spill.
+	_, err = b.Write([]byte("world "))
+	require.NoError(t, err)
+	// Writes after the spill should be appended to the file.
+	_, err = b.Write([]byte("again"))
+	require.NoError(t, err)
+
+	// The reader should return the full contents, and should be seekable so
+	// that the contents can be read multiple times.
+	r, err := b.Reader()
+	require.NoError(t, err)
+	content, err := io.ReadAll(r)
+	require.NoError(t, err)
+	assert.Equal(t, "hello world again", string(content))
+	_, err = r.Seek(0, io.SeekStart)
+	require.NoError(t, err)
+	content, err = io.ReadAll(r)
+	require.NoError(t, err)
+	assert.Equal(t, "hello world again", string(content))
+
+	// The spill file should contain the full contents. (Reader flushed any
+	// writes that were still buffered for the file.)
+	spilled, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "hello world again", string(spilled))
+
+	// Once a reader has been obtained, writes should fail rather than being
+	// written at the shared handle's read offset.
+	_, err = b.Write([]byte("more"))
+	assert.ErrorContains(t, err, "not writable")
+
+	// Close should remove the spill file and be safe to call more than once.
+	require.NoError(t, b.Close())
+	require.NoError(t, b.Close())
+	_, err = os.Stat(path)
+	assert.True(t, os.IsNotExist(err), "spill file should be removed, got: %v", err)
+}
+
+func TestSpillBuffer_ZeroLimit(t *testing.T) {
+	// With a zero memory limit, the first non-empty write should go straight
+	// to the spill file.
+	path := filepath.Join(testfs.MakeTempDir(t), "spill")
+	b := ioutil.NewSpillBuffer(path, 0)
+	_, err := b.Write([]byte("hello"))
+	require.NoError(t, err)
+
+	// Obtaining a reader flushes any writes still buffered for the file.
+	_, err = b.Reader()
+	require.NoError(t, err)
+	spilled, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(spilled))
+	require.NoError(t, b.Close())
 }
