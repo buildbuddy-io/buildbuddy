@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 
 	"github.com/stretchr/testify/require"
 	gcodes "google.golang.org/grpc/codes"

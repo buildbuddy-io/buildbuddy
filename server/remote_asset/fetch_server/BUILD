@@ -32,9 +32,13 @@ go_library(
 
 go_test(
     name = "fetch_server_test",
-    srcs = ["fetch_server_test.go"],
+    srcs = [
+        "errors_test.go",
+        "fetch_server_test.go",
+        "http_test.go",
+    ],
+    embed = [":fetch_server"],
     deps = [
-        ":fetch_server",
         "//proto:buildbuddy_service_go_proto",
         "//proto:cache_service_go_proto",
         "//proto:remote_asset_go_proto",
@@ -42,6 +46,7 @@ go_test(
         "//proto:resource_go_proto",
         "//server/buildbuddy_server",
         "//server/cache_server",
+        "//server/http/httpclient",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/content_addressable_storage_server",
@@ -50,6 +55,7 @@ go_test(
         "//server/util/prefix",
         "//server/util/proto",
         "//server/util/scratchspace",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
