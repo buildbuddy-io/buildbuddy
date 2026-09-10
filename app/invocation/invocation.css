@@ -962,6 +962,7 @@
   margin-right: 32px;
 }
 
+.cache-chart .recharts-wrapper,
 .cache-chart .recharts-responsive-container {
   flex-shrink: 0;
   margin-right: 32px;
