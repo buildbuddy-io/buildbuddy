@@ -171,10 +171,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
    * @param dt the time elapsed since the previous animation frame.
    */
   private update(dt = 0) {
-    if (!this.panels.length) {
-      this.animation.stop();
-      return;
-    }
     this.canvasXPerModelX.min = this.panels[0].container.clientWidth / this.model.xMax;
     // Don't decrease `max` if it has been increased past the default limit as a
     // result of user interaction (e.g. zooming in after a search match). This
@@ -248,7 +244,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
   }
 
   private updateMouse(mouse: MouseEvent | React.MouseEvent) {
-    if (!this.panels.length) return;
     this.mouse = { clientX: mouse.clientX, clientY: mouse.clientY };
     // Update the mouse's model X coordinate (i.e. hovered timestamp).
     // When panning, keep mouseModelX fixed.
@@ -639,7 +634,6 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
           }}>
           {this.model.panels.map((panel, i) => (
             <div
-              key={i}
               className="panel-container"
               style={{
                 width: "100%",
@@ -647,7 +641,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
                 flexGrow: panel.sections[0]?.tracks ? 2 : 1,
                 position: "relative",
               }}>
-              <div className="panel" onScroll={(e) => this.onScroll(e, i)}>
+              <div key={i} className="panel" onScroll={(e) => this.onScroll(e, i)}>
                 <canvas
                   ref={this.canvasRefs[i]}
                   onMouseDown={(e) => this.onCanvasMouseDown(e, i)}

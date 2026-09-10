@@ -104,7 +104,6 @@ function buildLinePlotsPanel(trace: Profile): PanelModel {
     constants.SECTION_PADDING_BOTTOM;
   const sections: SectionModel[] = [];
   for (const series of trace.timeseries) {
-    if (!series.ts.length) continue;
     let yMax = 0;
     for (let i = 0; i < series.val.length; i++) {
       const y = series.val[i];
