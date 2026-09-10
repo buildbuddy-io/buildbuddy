@@ -41,10 +41,12 @@ const (
 	cacheFilter = proxyFilter + `, cache_name="${cache_name}"`
 
 	// envoyFilter selects the Envoy (Contour) upstream clusters that front the
-	// cache proxies: one per Service port (1986 for gRPC, 443 for TLS). These
-	// series are exported by the Envoy pods, so they describe the proxies as
-	// clients see them; they only exist in regions with an Envoy ingress.
-	envoyFilter = `region="${region}", namespace="projectcontour", envoy_cluster_name=~"cache-proxy-prod_cache-proxy-service_.*"`
+	// cache proxies: one per Service port (1986 for gRPC, 443 for TLS). The
+	// cluster name embeds the proxies' namespace (cache-proxy-prod,
+	// cache-proxy-dev), hence the wildcard. These series are exported by the
+	// Envoy pods, so they describe the proxies as external clients see them;
+	// they only exist in regions with an Envoy ingress.
+	envoyFilter = `region="${region}", namespace="projectcontour", envoy_cluster_name=~"cache-proxy-.*_cache-proxy-service_.*"`
 )
 
 // row returns a collapsed row.
