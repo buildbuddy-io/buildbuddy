@@ -378,7 +378,7 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 			quantilesExactLow(0.1, 0.5, 0.9)(file_download_size_bytes) AS download_quantiles,
 			quantilesExactLow(0.1, 0.5, 0.9)(file_upload_size_bytes) AS upload_quantiles
 		FROM "Executions"
-	`, append([]interface{}{runMatcher.String()}, bucketArgs...))
+	`, append([]any{runMatcher.String()}, bucketArgs...))
 
 	if err := s.addTimelineWhereClauses(q, groupID, req); err != nil {
 		return nil, err
