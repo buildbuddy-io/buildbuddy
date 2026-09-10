@@ -72,6 +72,8 @@ var (
 	numConnections = flag.Int("connections", 8, "Number of independent connections to run the full check suite on, in parallel. Each opens its own gRPC connection and is warmed up separately. The connections run concurrently, so this does not change the overall run time.")
 )
 
+var dumpStacksOnce sync.Once
+
 type opResult struct {
 	op         string
 	compressor string // empty if not applicable to this op
@@ -243,17 +245,18 @@ func (p *prober) do(op, compressor string, fn func(ctx context.Context) error) e
 		return err
 	}
 	stopDump := time.AfterFunc(*opTimeout*3/4, func() {
-		var stacks bytes.Buffer
-		if err := pprof.Lookup("goroutine").WriteTo(&stacks, 2); err != nil {
-			log.Warningf("Failed to capture goroutine stacks: %s", err)
-			return
-		}
-		log.Warningf(
-			"Slow probe: operation=%s invocationID=%s operationID=%s connection=%d\n%s",
-			op, p.invocationID, operationID, p.connectionIndex, stacks.String(),
-		)
+		dumpStacksOnce.Do(func() {
+			var stacks bytes.Buffer
+			if err := pprof.Lookup("goroutine").WriteTo(&stacks, 2); err != nil {
+				log.Warningf("Failed to capture goroutine stacks: %s", err)
+				return
+			}
+			log.Warningf(
+				"Slow probe: operation=%s invocationID=%s operationID=%s connection=%d\n%s",
+				op, p.invocationID, operationID, p.connectionIndex, stacks.String(),
+			)
+		})
 	})
-	defer stopDump.Stop()
 
 	start := time.Now()
 	err = fn(ctx)
