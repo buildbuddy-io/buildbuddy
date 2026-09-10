@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -112,6 +113,17 @@ func HandleFix(args []string) (int, error) {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
 	}
 
+	// On remote runners, upload the generated patch as an artifact to the invocation.
+	exportPatch := os.Getenv(remoteRunnerArtifactsDirectoryEnvVar) != ""
+	if exportPatch {
+		clean, err := isGitWorktreeClean(ctx)
+		if err != nil {
+			log.Warnf("Could not inspect the initial git worktree; the patch artifact may include pre-existing changes: %s", err)
+		} else if !clean {
+			log.Warnf("The git worktree was not clean before the agent ran; the patch artifact will include pre-existing changes")
+		}
+	}
+
 	inv, err := fetchInvocation(ctx, *agentflags.APITarget, invocationID)
 	if err != nil {
 		return -1, err
@@ -136,8 +148,19 @@ func HandleFix(args []string) (int, error) {
 		return -1, err
 	}
 
-	if err := fixFailure(ctx, errorLogs, cmd, invocationID); err != nil {
-		return -1, err
+	agentErr := fixFailure(ctx, errorLogs, cmd, invocationID)
+
+	// Even if the agent failed, upload any patch artifacts that were created.
+	if exportPatch {
+		if patchPath, err := writeGitPatch(ctx, invocationID); err != nil {
+			log.Warnf("Failed to create patch artifact: %s", err)
+		} else if patchPath != "" {
+			log.Printf("Created patch artifact %s", patchPath)
+		}
+	}
+
+	if agentErr != nil {
+		return -1, agentErr
 	}
 
 	return 0, nil
@@ -154,7 +177,7 @@ func fixFailure(ctx context.Context, failingOutput string, originalCommand []str
 		Model:              *agentflags.Model,
 		ReasoningEffort:    *agentflags.Effort,
 		Prompt:             prompt,
-		ClaudeAllowedTools: []string{"Read", "Glob", "Grep", "Edit", "Write"},
+		ClaudeAllowedTools: []string{"Read", "Glob", "Grep", "Edit", "Write", "Bash"},
 		CodexSandbox:       agentutil.SandboxWorkspaceWrite,
 		CodexArgs:          []string{"--config", "sandbox_workspace_write.network_access=true"},
 	})

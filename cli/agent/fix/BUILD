@@ -4,7 +4,10 @@ package(default_visibility = ["//cli:__subpackages__"])
 
 go_library(
     name = "fix",
-    srcs = ["fix.go"],
+    srcs = [
+        "fix.go",
+        "patch.go",
+    ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/agent/fix",
     deps = [
         "//cli/agent/agentflags",
