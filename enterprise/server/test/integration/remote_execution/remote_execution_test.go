@@ -1544,7 +1544,7 @@ type fixedNodeTaskRouter struct {
 	executorIDs map[string]struct{}
 	// If non-nil, RankNodes blocks until this channel is closed or the
 	// caller's context is done.
-	gate chan struct{}
+	blockChan chan struct{}
 }
 
 func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
@@ -1557,11 +1557,11 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 
 func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
 	f.mu.Lock()
-	gate := f.gate
+	blockChan := f.blockChan
 	f.mu.Unlock()
-	if gate != nil {
+	if blockChan != nil {
 		select {
-		case <-gate:
+		case <-blockChan:
 		case <-ctx.Done():
 		}
 	}
@@ -1588,8 +1588,8 @@ func (f *fixedNodeTaskRouter) MarkFailed(ctx context.Context, action *repb.Actio
 func (f *fixedNodeTaskRouter) Block() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.gate == nil {
-		f.gate = make(chan struct{})
+	if f.blockChan == nil {
+		f.blockChan = make(chan struct{})
 	}
 }
 
@@ -1597,9 +1597,9 @@ func (f *fixedNodeTaskRouter) Block() {
 func (f *fixedNodeTaskRouter) Unblock() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.gate != nil {
-		close(f.gate)
-		f.gate = nil
+	if f.blockChan != nil {
+		close(f.blockChan)
+		f.blockChan = nil
 	}
 }
 
@@ -1674,7 +1674,7 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 // graceful shutdown finishes, which cancels the stream's context. If the
 // scheduler re-enqueues on that context, every entry it has not reached yet is
 // dropped; in production the scheduler had about 12 seconds per executor and
-// dropped the remainder of every hand-back list. The task router gate below
+// dropped the remainder of every hand-back list. The task router's Block below
 // stalls the scheduler at exactly that point until the executors have exited,
 // so the re-enqueueing must survive the stream cancellation for the test to
 // pass.
