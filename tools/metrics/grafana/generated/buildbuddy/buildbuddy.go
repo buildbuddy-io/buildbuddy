@@ -472,10 +472,10 @@ func pebbleRow() *dashboard.RowBuilder {
 	return row("Remote cache pebble").
 		WithPanel(ts("Compression Ratio", "").
 			Span(24).
-			Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of the per-stream ratio. p10 is what the best-compressing 10% of streams exceed; p99 is what nearly every stream achieves.").
-			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p10").RefId("A")).
+			Description("How many times smaller pebble's compression makes a stream of data (decompressed / compressed bytes), at percentiles of that factor across streams: p90 is what the best-compressing 10% of streams exceed, p1 is what 99% of streams achieve. Each series is the inverse of the matching quantile of the compressed/decompressed ratio histogram.").
+			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.1, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p90").RefId("A")).
 			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.5, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p50").RefId("B")).
-			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p99").RefId("C"))).
+			WithTarget(dash.PromQuery(`1 / histogram_quantile(0.99, sum(rate(buildbuddy_pebble_compression_ratio_bucket{region="${region}", job="buildbuddy-app", cache_name="${cache_name}"}[10m])) by (le))`, "p1").RefId("C"))).
 		WithPanel(ts("Compaction rate (${cache_name}) (by type)", "").
 			Span(24).
 			Repeat("cache_name").
