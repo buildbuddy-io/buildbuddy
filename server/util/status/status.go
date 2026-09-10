@@ -41,7 +41,7 @@ type stack []uintptr
 
 func (s *stack) StackTrace() StackTrace {
 	f := make([]pkgerrors.Frame, len(*s))
-	for i := 0; i < len(f); i++ {
+	for i := range f {
 		f[i] = pkgerrors.Frame((*s)[i])
 	}
 	return f

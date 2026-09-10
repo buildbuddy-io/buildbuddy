@@ -110,10 +110,10 @@ func TestEventBuffer_ConcurrentProducers(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numProducers)
 
-	for i := 0; i < numProducers; i++ {
+	for range numProducers {
 		go func() {
 			defer wg.Done()
-			for j := 0; j < eventsPerProducer; j++ {
+			for range eventsPerProducer {
 				buffer.Add(regularEvent())
 			}
 		}()

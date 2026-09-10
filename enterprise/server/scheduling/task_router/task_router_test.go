@@ -466,7 +466,7 @@ func TestTaskRouter_RankNodes_WeightedByCPU(t *testing.T) {
 
 	nodeTasks := make(map[string]int, 0)
 	numTasks := 1000
-	for i := 0; i < numTasks; i++ {
+	for i := range numTasks {
 		cmd := &repb.Command{
 			Arguments:   []string{"gcc", "-c", "dbg", "foo.c", fmt.Sprintf("in-%d.c", i)},
 			OutputPaths: []string{"/bazel-out/foo.a"},
@@ -762,19 +762,19 @@ func TestTaskRouter_PersistentWorkerRouterEnabled(t *testing.T) {
 	requireNotAlwaysRanked(0, nodes[0].GetExecutorHostId(), t, router, ctx, cmd, instanceName)
 
 	// Mark the task executed by the first 10 nodes.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		router.MarkSucceeded(ctx, nil, cmd, instanceName, nodes[i].GetExecutorHostId())
 	}
 
 	// The first 10 nodes should now be preferred (but in reverse order, since
 	// the most recent should be preferred first).
 	var expectedPreferredNodes []string
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		expectedPreferredNodes = append(expectedPreferredNodes, nodes[i].GetExecutorHostId())
 	}
 	slices.Reverse(expectedPreferredNodes)
 	ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		require.Equal(t, expectedPreferredNodes[i], ranked[i].GetExecutionNode().GetExecutorHostId())
 	}
 	requireNonSequential(t, ranked[10:])
@@ -813,7 +813,7 @@ func requireNotAlwaysRanked(rank int, executorID string, t *testing.T, router in
 	t.Helper()
 	nodes := sequentiallyNumberedNodes(100)
 	nTrials := 10
-	for i := 0; i < nTrials; i++ {
+	for range nTrials {
 		ranked := router.RankNodes(ctx, nil, cmd, instanceName, nodes)
 
 		require.Equal(t, len(nodes), len(ranked))
@@ -910,7 +910,7 @@ func writeFlagConfig(t testing.TB, data string) string {
 
 func sequentiallyNumberedNodes(n int) []interfaces.ExecutionNode {
 	nodes := make([]interfaces.ExecutionNode, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		nodes = append(nodes, &testNode{
 			index:          i,
 			executorID:     fmt.Sprintf("executor-%d", i),

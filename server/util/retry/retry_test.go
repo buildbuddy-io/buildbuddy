@@ -157,7 +157,7 @@ func TestRetryWithFixedDelay(t *testing.T) {
 }
 
 func TestRetryDoWithExpiredContext(t *testing.T) {
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		ctx, cancel := context.WithCancel(context.Background())
 		// Immediately cancel the context.
 		cancel()

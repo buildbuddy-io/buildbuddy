@@ -862,7 +862,7 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 	totalTransferCount := int64(0)
 
 	eg := errgroup.Group{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		eg.Go(func() error {
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 			if err != nil {
@@ -918,7 +918,6 @@ func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
 
 	eg := errgroup.Group{}
 	for _, rootDir := range []string{tmpDirA, tmpDirB} {
-		rootDir := rootDir
 		eg.Go(func() error {
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
 			if err != nil {
@@ -931,7 +930,7 @@ func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
 		})
 	}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-cc.getMultiCalls:
 		case <-time.After(2 * time.Second):
@@ -980,7 +979,6 @@ func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
 	start := make(chan struct{})
 	eg := errgroup.Group{}
 	for _, rootDir := range []string{tmpDirA, tmpDirB} {
-		rootDir := rootDir
 		eg.Go(func() error {
 			<-start
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})

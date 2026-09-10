@@ -343,7 +343,7 @@ func checkVethRoute(ctx context.Context, veth *vethPair) {
 func createRandomVethPair(ctx context.Context, netns *Namespace) (string, string, error) {
 	var namespacedVeth, hostVeth string
 	var err error
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		// Compute unique veth names
 		namespacedVeth, err = randomVethName("veth0")
 		if err != nil {
@@ -651,7 +651,7 @@ func (a *HostNetAllocator) Get() (*HostNet, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	for attempt := 0; attempt < numAssignableNetworks; attempt++ {
+	for range numAssignableNetworks {
 		netIdx := a.idx
 		a.idx = (a.idx + 1) % numAssignableNetworks
 

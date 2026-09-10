@@ -132,7 +132,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	dirPerms := fs.FileMode(0777)
 	var rootDir string
 	maxAttempts := 10
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		rootDir = filepath.Join(parentDir, newRandomBuildDirCandidate())
 		if err := os.Mkdir(rootDir, dirPerms); err == nil {
 			break
@@ -567,7 +567,6 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var logsMu sync.Mutex
 	serverLogs := make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
 	for name, b := range cmdResult.AuxiliaryLogs {
-		name, b := name, b
 		eg.Go(func() error {
 			d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
 			if err != nil {

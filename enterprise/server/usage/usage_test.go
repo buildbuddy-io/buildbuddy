@@ -586,7 +586,7 @@ func TestUsageTracker_Flush_ConcurrentAccessAcrossApps(t *testing.T) {
 	clock.Advance(2 * periodDuration)
 
 	eg, ctx := errgroup.WithContext(ctx)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			ut, err := usage.NewTracker(
 				te, clock,
@@ -858,7 +858,7 @@ func TestUsageTracker_UsageLabels_AllFieldsAreMapped(t *testing.T) {
 	require.NoError(t, err)
 	clock.Advance(2 * periodDuration)
 	var eg errgroup.Group
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		eg.Go(func() error {
 			err := ut.FlushToDB(ctx)
 			require.NoError(t, err)

@@ -932,7 +932,7 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	containers := make([]*firecracker.FirecrackerContainer, 0, 4)
 	// Load the same base snapshot from multiple VMs - there should be no
 	// corruption or data transfer from snapshot sharing
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		workDir = testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
 		opts = firecracker.ContainerOpts{
 			ContainerImage:         busyboxImage,
@@ -979,9 +979,8 @@ func TestFirecracker_LocalSnapshotSharing(t *testing.T) {
 	// Pause multiple VMs simultaneously to test no race conditions / corruption
 	// when writing sharable snapshots
 	var wg sync.WaitGroup
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		wg.Add(1)
-		i := i
 		go func() {
 			defer wg.Done()
 			c := containers[i]
@@ -1084,7 +1083,7 @@ func TestFirecracker_LocalSnapshotSharing_DontResave(t *testing.T) {
 
 	// Load the same base snapshot from multiple VMs - there should be no
 	// corruption or data transfer from snapshot sharing
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		workDir = testfs.MakeDirAll(t, rootDir, fmt.Sprintf("work-%d", i))
 		opts = firecracker.ContainerOpts{
 			ContainerImage:         busyboxImage,
@@ -2692,7 +2691,7 @@ func TestFirecrackerComplexFileMapping(t *testing.T) {
 	subDirs := []string{"a", "b", "c", "d", "e"}
 	files := make([]string, 0, numFiles)
 
-	for i := 0; i < numFiles; i++ {
+	for range numFiles {
 		rand.Shuffle(len(subDirs), func(i, j int) {
 			subDirs[i], subDirs[j] = subDirs[j], subDirs[i]
 		})
@@ -4239,7 +4238,7 @@ func TestMergeDiffSnapshot(t *testing.T) {
 
 func testMergeDiffSnapshot(t *testing.T, cow bool) {
 	tmp := testfs.MakeTempDir(t)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		copy_on_write.ResetMmmapedBytesMetricForTest()
 
 		ctx := context.Background()
@@ -4322,7 +4321,7 @@ func testMergeDiffSnapshot(t *testing.T, cow bool) {
 // copied into expectedBuf at the same offsets.
 func writeRandomPages(t *testing.T, f *os.File, n int, expectedBuf []byte) {
 	const pageSize = 4096
-	for i := 0; i < n; i++ {
+	for range n {
 		offset := rand.Intn(len(expectedBuf))
 		// Round offset down to page-level resolution
 		offset = (offset / pageSize) * pageSize
@@ -4563,7 +4562,6 @@ func TestFirecrackerStressIO(t *testing.T) {
 	eg, ctx := errgroup.WithContext(context.Background())
 	eg.SetLimit(concurrency)
 	for i := 1; i <= runs; i++ {
-		i := i
 		eg.Go(func() (err error) {
 			if t.Failed() {
 				return nil

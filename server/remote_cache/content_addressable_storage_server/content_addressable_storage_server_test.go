@@ -140,7 +140,7 @@ func TestBatchUpdateBlobs(t *testing.T) {
 
 	var digests []*repb.Digest
 	req := &repb.BatchUpdateBlobsRequest{}
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		req.Requests = append(req.Requests, &repb.BatchUpdateBlobsRequest_Request{
 			Digest: rn.GetDigest(),

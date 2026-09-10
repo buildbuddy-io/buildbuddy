@@ -87,10 +87,10 @@ func createWorkspace(dir string, numTargets, numInputsPerTarget, inputSizeBytes 
 	}
 	defer buildFile.Close()
 	inputBuf := make([]byte, inputSizeBytes)
-	for targetIdx := 0; targetIdx < numTargets; targetIdx++ {
+	for targetIdx := range numTargets {
 		var inputs []string
 		var outputs []string
-		for inputIdx := 0; inputIdx < numInputsPerTarget; inputIdx++ {
+		for inputIdx := range numInputsPerTarget {
 			if _, err := rand.Read(inputBuf); err != nil {
 				return err
 			}

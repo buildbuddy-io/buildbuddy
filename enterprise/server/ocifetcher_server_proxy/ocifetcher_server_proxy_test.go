@@ -727,7 +727,7 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 	errs := make([]error, numClients)
 	results := make([][]byte, numClients)
 
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -753,7 +753,7 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		require.NoError(t, errs[i], "client %d got error", i)
 		require.Equal(t, expectedData, results[i], "client %d got wrong data", i)
 	}

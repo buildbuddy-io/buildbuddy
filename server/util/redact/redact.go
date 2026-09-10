@@ -173,12 +173,12 @@ func splitMultiFlag(input string) []string {
 	subFlags := multiFlagKeyRegex.FindAllStringIndex(input, -1 /* return all matches */)
 	subFlagStarts := make([]int, len(subFlags)+1)
 	subFlagStarts[0] = 0
-	for i := 0; i < len(subFlags); i++ {
+	for i := range subFlags {
 		subFlagStarts[i+1] = subFlags[i][0]
 	}
 
 	output := make([]string, len(subFlagStarts))
-	for i := 0; i < len(subFlagStarts); i++ {
+	for i := range subFlagStarts {
 		start := subFlagStarts[i]
 		if start > 0 {
 			// Skip the leading comma

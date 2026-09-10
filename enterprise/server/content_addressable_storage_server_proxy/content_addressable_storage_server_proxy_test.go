@@ -217,7 +217,7 @@ func TestBatchUpdateBlobsCompressorMetricsLabelsAreBounded(t *testing.T) {
 func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	wait := time.Millisecond
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		// The read that enqueued this atime update is processed asynchronously
 		// by the batcher goroutine, so the pending batch may not be ready when
 		// the sender's flush fires. Advance the clock on every iteration (rather
@@ -241,7 +241,7 @@ func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *a
 
 func expectNoAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		clock.Advance(atimeUpdatePeriod + time.Second)
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -356,7 +356,7 @@ func TestFindMissingBlobs_Caching(t *testing.T) {
 	// within the TTL are served from the local cache.
 	findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 	}
 	require.Equal(t, int32(1), requestCount.Load())

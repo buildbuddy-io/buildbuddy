@@ -357,7 +357,6 @@ func (q *promQuerier) fetchMetrics(ctx context.Context, groupID string) (map[str
 	eg.SetLimit(2)
 
 	for _, p := range queryParams {
-		p := p
 		eg.Go(func() error {
 			vec, err := q.query(egCtx, p.metricName, p.sumByFields, groupID, now)
 			if err != nil {

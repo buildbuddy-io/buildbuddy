@@ -98,7 +98,7 @@ func RandomDialer(targets []string) Director {
 		var cc *grpc.ClientConn
 		var err error
 		r := rand.Intn(len(targets))
-		for i := 0; i < len(targets); i++ {
+		for i := range targets {
 			target := targets[(r+i)%len(targets)]
 			cc, err = grpc_client.DialSimpleWithoutPooling(target)
 			if status.IsUnavailableError(err) {

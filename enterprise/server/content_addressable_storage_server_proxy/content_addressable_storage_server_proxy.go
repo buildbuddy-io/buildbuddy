@@ -442,7 +442,7 @@ func (s *CASServerProxy) BatchReadBlobs(ctx context.Context, req *repb.BatchRead
 		if !ok {
 			log.CtxWarningf(ctx, "Received unexpected digest from remote CAS.BatchReadBlobs: %s/%d", response.Digest.Hash, response.Digest.SizeBytes)
 		}
-		for i := 0; i < c; i++ {
+		for range c {
 			mergedResp.Responses = append(mergedResp.Responses, response)
 		}
 	}

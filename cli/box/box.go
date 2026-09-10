@@ -466,7 +466,7 @@ func generateName(peers []*gwpb.Peer) string {
 	for _, p := range peers {
 		taken[p.GetName()] = true
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		if name := petname.Generate(3, "-"); !taken[name] {
 			return name
 		}
@@ -665,7 +665,7 @@ func handleList(args []string) (int, error) {
 // fetched. Retries briefly since the action's final log lines may still be
 // in flight to BES when the execution completes.
 func fetchLogTail(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, iid string) string {
-	for attempt := 0; attempt < 3; attempt++ {
+	for range 3 {
 		resp, err := bbClient.GetEventLogChunk(ctx, &elpb.GetEventLogChunkRequest{
 			InvocationId: iid,
 			// Empty ChunkId fetches the last chunk.

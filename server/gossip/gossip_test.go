@@ -159,17 +159,16 @@ func TestUserQuery(t *testing.T) {
 	data := make(map[string][]string, 0)
 
 	addrs := make([]string, 0)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		addr := localAddr(t)
 		addrs = append(addrs, addr)
-		for j := 0; j < 5; j++ {
+		for j := range 5 {
 			letterByte := string(byte('a' + i*5 + j))
 			data[addr] = append(data[addr], letterByte)
 		}
 	}
 
 	for i, nodeAddr := range addrs {
-		nodeAddr := nodeAddr
 		b := &testBroker{
 			onEvent: func(eventType serf.EventType, event serf.Event) {
 				if query, ok := event.(*serf.Query); ok {
@@ -227,7 +226,7 @@ func TestUserEvents(t *testing.T) {
 	// flakiness due to broadcast failures.
 	flags.Set(t, "gossip.retransmit_mult", 10)
 	addrs := make([]string, 0)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		addrs = append(addrs, localAddr(t))
 	}
 	// map of nodeAddr => received bits
@@ -235,7 +234,6 @@ func TestUserEvents(t *testing.T) {
 	gotData := make(map[string][]string, 0)
 	nodes := make([]*gossip.GossipManager, 0)
 	for i, nodeAddr := range addrs {
-		nodeAddr := nodeAddr
 		b := &testBroker{
 			onEvent: func(eventType serf.EventType, event serf.Event) {
 				if userEvent, ok := event.(serf.UserEvent); ok {
@@ -251,7 +249,7 @@ func TestUserEvents(t *testing.T) {
 	}
 
 	for i, n := range nodes {
-		for j := 0; j < 5; j++ {
+		for j := range 5 {
 			letterByte := byte('a' + i*5 + j)
 			if err := n.SendUserEvent("letter", []byte{letterByte}, false); err != nil {
 				t.Fatalf("error sending user event: %s", err)

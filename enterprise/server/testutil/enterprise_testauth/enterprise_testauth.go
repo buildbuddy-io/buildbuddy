@@ -64,7 +64,7 @@ func CreateRandomGroups(t *testing.T, env environment.Env) []*tables.User {
 	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
 	var uids []string
 
-	for g := 0; g < 12; g++ {
+	for g := range 12 {
 		// Create an admin user with a self-owned group.
 		domain := fmt.Sprintf("rand-%d-%d.io", g, rand.Int63n(1e12))
 		admin := CreateRandomUser(t, env, domain)
@@ -86,7 +86,7 @@ func CreateRandomGroups(t *testing.T, env environment.Env) []*tables.User {
 
 		// Create a random number of users.
 		nDevs := int(rand.Float64() * 8)
-		for u := 0; u < nDevs; u++ {
+		for range nDevs {
 			dev := CreateRandomUser(t, env, domain)
 			uids = append(uids, dev.UserID)
 

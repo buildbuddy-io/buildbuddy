@@ -184,7 +184,7 @@ type testKey struct {
 func generateTestKeys(t *testing.T, numKeys int) []*testKey {
 	fs := filestore.New()
 	keys := make([]*testKey, numKeys)
-	for i := 0; i < numKeys; i++ {
+	for i := range numKeys {
 		r, _ := testdigest.RandomCASResourceBuf(t, 100)
 		fr := &sgpb.FileRecord{
 			Isolation: &sgpb.Isolation{
@@ -453,7 +453,7 @@ func TestLinearizabilityUnderSplits(t *testing.T) {
 	// larger backlog on partitioned nodes, increasing the catch-up
 	// asymmetry between old and new shards after restore.
 	leaseHolder := testutil.GetStoreWithRangeLease(t, ctx, stores, 2)
-	for i := 0; i < 40; i++ {
+	for range 40 {
 		testutil.WriteRecord(ctx, t, leaseHolder, "default", 1000)
 	}
 	leaseHolder.DB().Flush()

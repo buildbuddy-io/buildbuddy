@@ -226,7 +226,7 @@ func NewWorkflowService(env environment.Env) *workflowService {
 }
 
 func (ws *workflowService) startBackgroundWorkers() {
-	for i := 0; i < webhookWorkerCount; i++ {
+	for range webhookWorkerCount {
 		ws.wg.Add(1)
 		go func() {
 			defer ws.wg.Done()
@@ -510,7 +510,6 @@ func (ws *workflowService) ExecuteWorkflow(ctx context.Context, req *wfpb.Execut
 	wg := sync.WaitGroup{}
 	actionStatuses := make([]*wfpb.ExecuteWorkflowResponse_ActionStatus, 0, len(actions))
 	for _, action := range actions {
-		action := action
 		actionStatus := &wfpb.ExecuteWorkflowResponse_ActionStatus{
 			ActionName: action.Name,
 		}
@@ -1561,7 +1560,6 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 
 	var wg sync.WaitGroup
 	for _, action := range actions {
-		action := action
 		invocationUUID, err := guuid.NewRandom()
 		if err != nil {
 			return err

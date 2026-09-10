@@ -27,7 +27,7 @@ func TestNodesetOrderIndependence(t *testing.T) {
 	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
 	hosts := make([]string, 0)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		r, err := random.RandomString(5)
 		assert.Nil(err)
 		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
@@ -38,7 +38,7 @@ func TestNodesetOrderIndependence(t *testing.T) {
 	}
 
 	mappings := make(map[string]string, 0)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, err := random.RandomString(64)
 		assert.Nil(err)
 		mappings[r] = ch.Get(r)
@@ -64,7 +64,7 @@ func TestGetAllReplicas(t *testing.T) {
 		t.Run(fmt.Sprintf("%vhosts", numHosts), func(t *testing.T) {
 			assert := assert.New(t)
 			hosts := make([]string, 0, numHosts)
-			for i := 0; i < numHosts; i++ {
+			for i := range numHosts {
 				r, err := random.RandomString(5)
 				assert.Nil(err)
 				hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
@@ -74,7 +74,7 @@ func TestGetAllReplicas(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				k, err := random.RandomString(64)
 				assert.Nil(err)
 				replicas := ch.GetAllReplicas(k)
@@ -92,7 +92,7 @@ func TestEvenLoadDistribution(t *testing.T) {
 	// higher skew means less evenly balanced load.
 
 	var hosts []string
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		r, err := random.RandomString(5)
 		require.NoError(t, err)
 		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
@@ -103,7 +103,7 @@ func TestEvenLoadDistribution(t *testing.T) {
 
 	freq := map[string]int{}
 	buf := make([]byte, 16)
-	for i := 0; i < 1_000_000; i++ {
+	for range 1_000_000 {
 		_, err := io.ReadFull(rng, buf)
 		require.NoError(t, err)
 		host := ch.Get(string(buf))
@@ -269,7 +269,7 @@ func choose(n, k int) int {
 		return 1
 	}
 	result := 1
-	for i := 0; i < k; i++ {
+	for i := range k {
 		result = result * (n - i) / (i + 1)
 	}
 	return result
@@ -354,7 +354,7 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 			ch := consistent_hash.NewConsistentHash(test.HashFunction, test.NumVnodes)
 
 			hosts := make([]string, 0)
-			for i := 0; i < 50; i++ {
+			for i := range 50 {
 				r, err := random.RandomString(5)
 				assert.Nil(err)
 				hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))

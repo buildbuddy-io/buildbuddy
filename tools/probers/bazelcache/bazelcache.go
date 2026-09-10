@@ -348,7 +348,7 @@ func (p *prober) checkCAS(compressor repb.Compressor_Value) error {
 
 	var digests []*repb.Digest
 	blobsByHash := make(map[string][]byte, numBlobs)
-	for i := 0; i < numBlobs; i++ {
+	for range numBlobs {
 		// math/rand.NewSource only has about 2^31 distinct seeds, so using
 		// digest.RandomGenerator can repeat batches from previous probe runs.
 		buf := make([]byte, 1024)

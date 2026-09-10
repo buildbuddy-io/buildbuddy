@@ -221,7 +221,7 @@ func TestDeleteUserGitHubToken(t *testing.T) {
 	ctx := context.Background()
 
 	// Create several users with unique GH tokens
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		tu := newFakeUser(fmt.Sprintf("US%d", i), "org.io")
 		tu.GithubToken = fmt.Sprintf("test-github-token-%d", i)
 		err := env.GetUserDB().InsertUser(ctx, tu)
@@ -1314,7 +1314,7 @@ func TestGetAPIKeyForInternalUseOnly_ManyUsers(t *testing.T) {
 	// Create several users in different orgs
 	const nUsers = 10
 	seen := map[string]bool{}
-	for i := 0; i < nUsers; i++ {
+	for i := range nUsers {
 		uid := fmt.Sprintf("US%d", i)
 		domain := fmt.Sprintf("org%d.io", i)
 		createUser(t, ctx, env, uid, domain)
@@ -1327,7 +1327,7 @@ func TestGetAPIKeyForInternalUseOnly_ManyUsers(t *testing.T) {
 	}
 
 	// Get an API key for each user; should return their self-owned org key.
-	for i := 0; i < nUsers; i++ {
+	for i := range nUsers {
 		authCtx := authUserCtx(ctx, env, t, fmt.Sprintf("US%d", i))
 		gid := getGroup(t, authCtx, env).Group.GroupID
 		key, err := adb.GetAPIKeyForInternalUseOnly(authCtx, gid)
@@ -3039,7 +3039,7 @@ func TestGetUserBySubID(t *testing.T) {
 	require.Equal(t, randUser, u)
 
 	user := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		u := enterprise_testauth.CreateRandomUser(t, env, fmt.Sprintf("rand-%d.io", rand.Int63n(1e12)))
 		ctx2, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, u.UserID)
 		require.NoError(t, err)

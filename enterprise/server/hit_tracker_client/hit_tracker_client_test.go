@@ -283,7 +283,7 @@ func TestCASHitTracker_SplitsUpdates(t *testing.T) {
 	anonCtx := context.Background()
 	anonTracker := hitTrackerFactory.NewCASHitTracker(anonCtx, &repb.RequestMetadata{})
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		anonTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
 		anonTracker.TrackDownload(bDigest).CloseWithBytesTransferred(10, 20, repb.Compressor_IDENTITY, "test")
 		anonTracker.TrackDownload(cDigest).CloseWithBytesTransferred(100, 200, repb.Compressor_IDENTITY, "test")
@@ -335,7 +335,7 @@ func TestCASHitTracker_DropsUpdates(t *testing.T) {
 	anonCtx := context.Background()
 	hitTracker = hitTrackerFactory.NewCASHitTracker(anonCtx, &repb.RequestMetadata{})
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")
 		hitTracker.TrackDownload(bDigest).CloseWithBytesTransferred(10, 20, repb.Compressor_IDENTITY, "test")
 		hitTracker.TrackDownload(cDigest).CloseWithBytesTransferred(100, 200, repb.Compressor_IDENTITY, "test")
@@ -375,7 +375,7 @@ func BenchmarkEnqueue(b *testing.B) {
 		b.StartTimer()
 		hitTracker := hitTrackerFactory.NewCASHitTracker(b.Context(), &repb.RequestMetadata{})
 		wg := sync.WaitGroup{}
-		for i := 0; i < numToEnqueue; i++ {
+		for range numToEnqueue {
 			wg.Add(1)
 			go func() {
 				hitTracker.TrackDownload(aDigest).CloseWithBytesTransferred(1, 2, repb.Compressor_IDENTITY, "test")

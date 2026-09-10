@@ -1126,7 +1126,6 @@ func (p *pool) Warmup(ctx context.Context) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, cfg := range WarmupConfigs() {
-		cfg := cfg
 		eg.Go(func() error {
 			return p.warmupImage(ctx, &cfg)
 		})

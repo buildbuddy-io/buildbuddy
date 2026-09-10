@@ -261,7 +261,7 @@ func TestGetInvocation_FetchChildren(t *testing.T) {
 	require.True(t, created)
 
 	// Create child invocations
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		created, err = idb.CreateInvocation(ctx, &tables.Invocation{
 			InvocationID: fmt.Sprintf("child-%d", i),
 			ParentRunID:  "parent-id",
@@ -289,7 +289,7 @@ func TestGetInvocation_FetchChildren(t *testing.T) {
 
 	// Ensure child invocations are sorted by increasing creation time
 	require.Equal(t, 10, len(inv.ChildInvocations))
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		require.Equal(t, fmt.Sprintf("child-%d", i), inv.ChildInvocations[i].InvocationId)
 	}
 }

@@ -329,7 +329,6 @@ func startShard(ctx context.Context, store IStore, bootstrapInfo *ClusterBootstr
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	for _, node := range bootstrapInfo.nodes {
-		node := node
 		eg.Go(func() error {
 			apiClient, err := store.APIClient().Get(egCtx, node.grpcAddress)
 			if err != nil {

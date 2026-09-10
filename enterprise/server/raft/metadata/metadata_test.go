@@ -53,7 +53,7 @@ type testConfig struct {
 
 func getTestConfigs(t testing.TB, n int) []testConfig {
 	res := make([]testConfig, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		c := testConfig{
 			ta:     testauth.NewTestAuthenticator(t, userMap),
 			env:    testenv.GetTestEnv(t),
@@ -94,7 +94,6 @@ func getCacheConfig(t testing.TB) *config.ServerConfig {
 func allHealthy(caches ...*metadata.Server) bool {
 	eg := errgroup.Group{}
 	for _, cache := range caches {
-		cache := cache
 		eg.Go(func() error {
 			return cache.Check(context.Background())
 		})
@@ -107,7 +106,6 @@ func parallelShutdown(caches ...*metadata.Server) {
 	eg := errgroup.Group{}
 	ctx := context.Background()
 	for _, cache := range caches {
-		cache := cache
 		eg.Go(func() error {
 			cache.Stop(ctx)
 			return nil
@@ -161,12 +159,11 @@ func startNodes(t testing.TB, configs []testConfig) []*metadata.Server {
 	caches := make([]*metadata.Server, n)
 
 	joinList := make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		joinList = append(joinList, localAddr(t))
 	}
 
 	for i, config := range configs {
-		i := i
 		lN := joinList[i]
 		joinList := joinList
 		gs, err := gossip.NewWithArgs(config.config.NHID, lN, joinList)
@@ -311,7 +308,7 @@ func TestGetAndSet(t *testing.T) {
 	ctxUser2, err := ta.WithAuthenticatedUser(context.Background(), "user2")
 	require.NoError(t, err)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		md := randomFileMetadata(t, 100, "group1")
 
 		// Should be able to Set a record.
@@ -409,7 +406,7 @@ func TestCacheShutdown(t *testing.T) {
 
 	cacheRPCTimeout := 5 * time.Second
 	recordsWritten := make([]*sgpb.FileRecord, 0)
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 
@@ -426,7 +423,7 @@ func TestCacheShutdown(t *testing.T) {
 	// shutdown one node
 	waitForShutdown(t, caches[len(caches)-1])
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		ctx, cancel := context.WithTimeout(ctx, cacheRPCTimeout)
 		defer cancel()
 		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
@@ -458,7 +455,7 @@ func TestDistributedRanges(t *testing.T) {
 	require.NoError(t, err)
 
 	wrote := make([]*sgpb.FileMetadata, 0)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		rc := caches[rand.Intn(len(caches))]
 
 		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
@@ -498,7 +495,7 @@ func TestFindMissingMetadata(t *testing.T) {
 
 	recordsWritten := make([]*sgpb.FileRecord, 0)
 	setReq := &mdpb.SetRequest{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		setReq.SetOperations = append(setReq.SetOperations, &mdpb.SetRequest_SetOperation{
 			FileMetadata: md,
@@ -514,7 +511,7 @@ func TestFindMissingMetadata(t *testing.T) {
 	recordsToLookFor := recordsWritten
 	// Look for some additional records which have not been written to the
 	// metadata server. They should not be found.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		md := randomFileMetadata(t, 100, interfaces.AuthAnonymousUser)
 		recordsToLookFor = append(recordsToLookFor, md.GetFileRecord())
 	}
@@ -602,7 +599,7 @@ func TestLRU(t *testing.T) {
 	quartile := numDigests / 4
 	lastUsed := make(map[*sgpb.FileRecord]time.Time, numDigests)
 	resourceKeys := make([]*sgpb.FileRecord, 0)
-	for i := 0; i < numDigests; i++ {
+	for range numDigests {
 		md := randomFileMetadata(t, digestSize, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{
@@ -639,7 +636,7 @@ func TestLRU(t *testing.T) {
 	}
 
 	// Write more data
-	for i := 0; i < quartile; i++ {
+	for range quartile {
 		md := randomFileMetadata(t, digestSize, interfaces.AuthAnonymousUser)
 		_, err := rc1.Set(ctx, &mdpb.SetRequest{
 			SetOperations: []*mdpb.SetRequest_SetOperation{{

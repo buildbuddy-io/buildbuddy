@@ -256,7 +256,7 @@ func TestEnqueue_Deduping(t *testing.T) {
 	authenticator, updater, cas, _ := setup(t, batch_operator.BatchDigestOperatorConfig{})
 	ctx := authenticatedContext(t.Context(), "", authenticator)
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		require.True(t, updater.Enqueue(ctx, "instance-1", []*repb.Digest{digest0}, repb.DigestFunction_SHA256))
 		updater.ForceBatchingForTesting()
 	}
@@ -452,7 +452,7 @@ func TestEnqueue_Fairness(t *testing.T) {
 	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest1, digest9, digest6, digest9, digest0, digest1, digest9, digest2}, repb.DigestFunction_SHA256))
 	require.True(t, updater.Enqueue(anonCtx, "instance-1", []*repb.Digest{digest0, digest0, digest0, digest6, digest1, digest0, digest1, digest2, digest2}, repb.DigestFunction_SHA256))
 
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		updater.ForceBatchingForTesting()
 	}
 
@@ -518,7 +518,7 @@ func TestEnqueue_Raciness(t *testing.T) {
 	}
 	digestFunctions := []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_MD5}
 
-	for i := 0; i < 3000; i++ {
+	for range 3000 {
 		updater.Enqueue(
 			contexts[rand.IntN(len(contexts))],
 			instances[rand.IntN(len(instances))],
@@ -574,7 +574,7 @@ func TestEnqueueByResourceName_CAS(t *testing.T) {
 	updater.EnqueueByResourceName(group2Ctx, rn21)
 	updater.EnqueueByResourceName(anonCtx, rn51)
 
-	for i := 0; i < 15; i++ {
+	for range 15 {
 		updater.ForceBatchingForTesting()
 	}
 
@@ -629,7 +629,7 @@ func BenchmarkEnqueue(b *testing.B) {
 		}
 		b.StartTimer()
 		wg := sync.WaitGroup{}
-		for i := 0; i < 10_000; i++ {
+		for range 10_000 {
 			for _, instance := range instances {
 				for _, digest := range digests {
 					for _, ctx := range contexts {

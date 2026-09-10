@@ -140,7 +140,7 @@ func TestEvenDistributionUnderLoad(t *testing.T) {
 	require.NoError(t, err)
 
 	counts := make(map[int]int, 4)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		task := uuid.New()
 		_, cpus, cancel := cs.Acquire(1000, task)
 		for _, cpu := range cpus {
@@ -256,7 +256,7 @@ func TestCPUSetDisabledNumaBalancing(t *testing.T) {
 	cs, err := cpuset.NewLeaser(cpuset.LeaserOpts{SystemCPUs: getTestCPUs()})
 	require.NoError(t, err)
 	nodeFrequency := make(map[int]int, 0)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		task := uuid.New()
 		numa, _, cancel := cs.Acquire(1100, task)
 		nodeFrequency[numa]++
@@ -359,7 +359,7 @@ func TestMaxNumberOfLeases(t *testing.T) {
 	numLeases := cpuset.MaxNumLeases * 3
 	taskIDs := make([]string, numLeases)
 	cancels := make([]func(), numLeases)
-	for i := 0; i < numLeases; i++ {
+	for i := range numLeases {
 		task := uuid.New()
 		_, _, cancel := cs.Acquire(1000, task)
 		taskIDs[i] = task
@@ -387,7 +387,7 @@ func TestMaxNumberOfLeases(t *testing.T) {
 // 384-511: physical node 1
 func getTestCPUs() []cpuset.CPUInfo {
 	var out []cpuset.CPUInfo
-	for i := 0; i < 512; i++ {
+	for i := range 512 {
 		out = append(out, cpuset.CPUInfo{
 			Processor: i,
 			NumaNode:  (i / 128) % 2,

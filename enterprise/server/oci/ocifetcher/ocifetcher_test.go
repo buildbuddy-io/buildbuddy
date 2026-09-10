@@ -2057,7 +2057,7 @@ func runConcurrentFetchBlob(
 	results := make([]*fetchResult, numRequests)
 	var wg sync.WaitGroup
 
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

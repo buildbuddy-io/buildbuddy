@@ -336,12 +336,12 @@ func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			_ = sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node})
 		}
 	}()
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		flags.Set(t, "cache_proxy.app_target", fmt.Sprintf("grpcs://app-%d.example.com", i))
 	}
 	<-done

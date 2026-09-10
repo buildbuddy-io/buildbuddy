@@ -386,7 +386,7 @@ func TestManyNewWorkspaces(t *testing.T) {
 	// https://github.com/bazelbuild/bazel/blob/819aa9688229e244dc90dda1278d7444d910b48a/src/main/java/com/google/devtools/build/lib/rules/cpp/ShowIncludesFilter.java#L101
 	expectedPath := regexp.MustCompile(`.*execroot\\(?P<headerPath>.*)`)
 	allPaths := make(map[string]struct{})
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		ws, err := workspace.New(te, root, &workspace.Opts{})
 		require.NoError(t, err)
 		if runtime.GOOS == "windows" {

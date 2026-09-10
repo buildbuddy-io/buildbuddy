@@ -112,7 +112,7 @@ type namedBlob struct {
 
 func getBlobs(t testing.TB, num int, sizeBytes int64) []*namedBlob {
 	blobs := make([]*namedBlob, 0, num)
-	for i := 0; i < num; i++ {
+	for range num {
 		d, b := testdigest.RandomCASResourceBuf(t, sizeBytes)
 		blobs = append(blobs, &namedBlob{
 			name: d.GetDigest().GetHash(),

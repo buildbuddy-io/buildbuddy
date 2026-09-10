@@ -654,14 +654,14 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 }
 
 func TestScanWithConcurrentAdd(t *testing.T) {
-	for trial := 0; trial < 100; trial++ {
+	for trial := range 100 {
 		ctx := context.Background()
 		filecacheRoot := testfs.MakeTempDir(t)
 
 		const n = 100
 		var nodes [n]*repb.FileNode
 		var nodeContents [n]string
-		for i := 0; i < n; i++ {
+		for i := range n {
 			name := fmt.Sprint(i)
 			executable := i%2 == 0
 			nodes[i] = nodeFromString(name, executable)
@@ -691,7 +691,7 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 
 		// The directory scan should be resilient to this race condition -
 		// linking any file should work.
-		for i := 0; i < n; i++ {
+		for i := range n {
 			ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
 			require.True(t, ok, "link node %d (test trial %d)", i, trial)
 		}
@@ -784,7 +784,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		fc.WaitForDirectoryScanToComplete()
 
 		nodes := make([]*repb.FileNode, 10)
-		for i := 0; i < len(nodes); i++ {
+		for i := range nodes {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
 			name := rn.GetDigest().GetHash()
 			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
@@ -827,7 +827,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 		// Add new files to the cache.
 		nodes := make([]*repb.FileNode, 10)
-		for i := 0; i < len(nodes); i++ {
+		for i := range nodes {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
 			name := rn.GetDigest().GetHash()
 			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
@@ -1353,7 +1353,6 @@ func BenchmarkFilecacheLink(b *testing.B) {
 				eg := &errgroup.Group{}
 				eg.SetLimit(100)
 				for _, node := range nodes {
-					node := node
 					eg.Go(func() error {
 						if rand.Float64() > test.ReadFraction {
 							err := fc.AddFile(ctx, node, filepath.Join(tmp, node.GetName()))
@@ -1433,7 +1432,6 @@ func BenchmarkContainsAdd(b *testing.B) {
 				eg := &errgroup.Group{}
 				eg.SetLimit(100)
 				for path, node := range nodes {
-					path, node := path, node
 					eg.Go(func() error {
 						if !fc.ContainsFile(ctx, node) {
 							require.NoError(b, fc.AddFile(ctx, node, path))

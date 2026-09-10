@@ -960,7 +960,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
-			childDirWithDigest := childDirWithDigest
 			l := level
 			eg.Go(func() error {
 				grandchild, err := fetch(egCtx, childDirWithDigest, l+1)
