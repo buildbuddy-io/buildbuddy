@@ -25,6 +25,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/bes_artifacts"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
@@ -3055,7 +3056,7 @@ func runBazelWrapper() error {
 	// our bazel options. This can happen if the command is a `bb` CLI command
 	// and `bb` is being invoked via bazelisk (e.g. by setting
 	// USE_BAZEL_VERSION=buildbuddy-io/vX.Y.Z in env)
-	bazelSubcmd, cmdIdx := bazel.GetBazelCommandAndIndex(originalArgs)
+	bazelSubcmd, cmdIdx := bazel_command.GetCommandAndIndex(originalArgs)
 	if cmdIdx == -1 {
 		return runOrExec(bazelBin, append([]string{bazelBin}, originalArgs...), os.Environ())
 	}

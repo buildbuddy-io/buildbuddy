@@ -650,7 +650,7 @@ func GetParser() (*Parser, error) {
 func CanonicalizeArgs(args []string) ([]string, error) {
 	// Check for bazel command prior to running the parser to avoid the
 	// performance cost of generating the parser, which runs bazel.
-	bazelCommand, _ := GetBazelCommandAndIndex(args)
+	bazelCommand, _ := bazel_command.GetCommandAndIndex(args)
 	if bazelCommand == "" {
 		// Not a bazel command; no args to canonicalize.
 		return args, nil
@@ -1189,25 +1189,14 @@ func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir s
 	return parsedNamedConfigs, defaultConfig, nil
 }
 
-// TODO: Return an empty string if the subcommand happens to come after
-// a bb-specific command. For example, `bb install --path test` should
-// return an empty string, not "test".
-// TODO: More robust parsing of startup options. For example, this has a bug
-// that passing `bazel --output_base build test ...` returns "build" as the
-// bazel command, even though "build" is the argument to --output_base.
-func GetBazelCommandAndIndex(args []string) (string, int) {
-	for i, a := range args {
-		if bazel_command.IsCommand(a) {
-			return a, i
-		}
-	}
-	return "", -1
-}
-
 // GetFirstTargetPattern makes a best-attempt effort to return the first target
 // pattern in a bazel command.
 func GetFirstTargetPattern(args []string) string {
-	_, bazelCmdIdx := GetBazelCommandAndIndex(args)
+	_, bazelCmdIdx := bazel_command.GetCommandAndIndex(args)
+	if bazelCmdIdx == -1 {
+		// No bazel command, so there is no target pattern to find.
+		return ""
+	}
 	for i := bazelCmdIdx + 1; i < len(args); i++ {
 		s := args[i]
 		// Skip over the shortened compilation_mode flag and its value (Ex. -c opt)

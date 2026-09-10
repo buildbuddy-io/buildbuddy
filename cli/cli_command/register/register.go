@@ -1,6 +1,8 @@
 package register
 
 import (
+	"flag"
+	"fmt"
 	"sync"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
@@ -33,9 +35,49 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/view"
 )
 
-// Register registers all known cli commands in the structures laid out in
-// cli/cli_command. It is meant to be called immediately on CLI
-// startup.
+// implementation holds the parts of a cli command that require importing its
+// handler package. The commands themselves (names, help text and aliases) are
+// declared in cli_command.Commands, which stays dependency-free so that the
+// list of cli command names can be consulted without pulling in every handler.
+type implementation struct {
+	handler func(args []string) (exitCode int, err error)
+	flags   *flag.FlagSet
+}
+
+// implementationsByCommandName must contain exactly one entry per command in
+// cli_command.Commands; register panics otherwise.
+var implementationsByCommandName = map[string]implementation{
+	"add":             {handler: add.HandleAdd, flags: add.Flags},
+	"agent":           {handler: agent.HandleAgent, flags: agentflags.SharedAgentFlags},
+	"analyze":         {handler: analyze.HandleAnalyze, flags: analyze.Flags},
+	"ask":             {handler: ask.HandleAsk, flags: ask.Flags},
+	"box":             {handler: box.HandleBox, flags: box.Flags},
+	"detect":          {handler: detect.HandleDetect, flags: detect.Flags},
+	"download":        {handler: download.HandleDownload, flags: download.Flags},
+	"execute":         {handler: execute.HandleExecute, flags: execute.Flags},
+	"execution":       {handler: execution.HandleExecution, flags: execution.Flags},
+	"explain":         {handler: explain.HandleExplain, flags: explain.Flags},
+	"fix":             {handler: fix.HandleFix, flags: fix.Flags},
+	"index":           {handler: index.HandleIndex, flags: index.Flags},
+	"install":         {handler: plugin.HandleInstall, flags: plugin.Flags},
+	"login":           {handler: login.HandleLogin, flags: login.Flags},
+	"logout":          {handler: login.HandleLogout},
+	"print":           {handler: printlog.HandlePrint, flags: printlog.Flags},
+	"record":          {handler: record.HandleRecord, flags: record.Flags},
+	"remote":          {handler: remotebazel.HandleRemoteBazel, flags: remotebazel.RemoteFlagset},
+	"remote-download": {handler: remote_download.HandleRemoteDownload, flags: remote_download.Flags},
+	"search":          {handler: search.HandleSearch, flags: search.Flags},
+	"ssh":             {handler: ssh.HandleSSH, flags: ssh.Flags},
+	"ssh-server":      {handler: ssh_server.HandleSSHServer, flags: ssh_server.Flags},
+	"ui":              {handler: ui.HandleUI, flags: ui.Flags},
+	"update":          {handler: update.HandleUpdate, flags: update.Flags},
+	"upload":          {handler: upload.HandleUpload, flags: upload.Flags},
+	"version":         {handler: versioncmd.HandleVersion},
+	"view":            {handler: view.HandleView, flags: view.Flags},
+}
+
+// Register attaches the handler and flags of every command declared in
+// cli_command.Commands. It is meant to be called immediately on CLI startup.
 //
 // This indirection prevents dependency cycles from occurring when, for example,
 // an imported package tries to use the parser, which itself needs to know all
@@ -43,180 +85,17 @@ import (
 var Register = sync.OnceFunc(register)
 
 func register() {
-	cli_command.Commands = []*cli_command.Command{
-		{
-			Name:    "add",
-			Help:    "Adds a dependency to your WORKSPACE file.",
-			Handler: add.HandleAdd,
-			Flags:   add.Flags,
-		},
-		{
-			Name:    "agent",
-			Help:    "Runs an AI coding agent to analyze data.",
-			Handler: agent.HandleAgent,
-			Flags:   agentflags.SharedAgentFlags,
-		},
-		{
-			Name:    "analyze",
-			Help:    "Analyzes the dependency graph.",
-			Handler: analyze.HandleAnalyze,
-			Flags:   analyze.Flags,
-		},
-		{
-			Name:    "ask",
-			Help:    "Asks for suggestions about your last invocation.",
-			Handler: ask.HandleAsk,
-			Aliases: []string{"wtf", "huh"},
-			Flags:   ask.Flags,
-		},
-		{
-			Name:    "box",
-			Help:    "Starts a remote Firecracker VM box and opens a session in it.",
-			Handler: box.HandleBox,
-			Flags:   box.Flags,
-		},
-		{
-			Name:    "detect",
-			Help:    "Detects issues in the current workspace.",
-			Handler: detect.HandleDetect,
-			Flags:   detect.Flags,
-		},
-		{
-			Name:    "download",
-			Help:    "Downloads artifacts from a remote cache.",
-			Handler: download.HandleDownload,
-			Flags:   download.Flags,
-		},
-		{
-			Name:    "execute",
-			Help:    "Executes arbitrary commands using remote execution.",
-			Handler: execute.HandleExecute,
-			Flags:   execute.Flags,
-		},
-		{
-			Name:    "execution",
-			Help:    "Remote execution tools",
-			Handler: execution.HandleExecution,
-			Flags:   execution.Flags,
-		},
-		{
-			Name:    "fix",
-			Help:    "Applies fixes to WORKSPACE and BUILD files.",
-			Handler: fix.HandleFix,
-			Flags:   fix.Flags,
-		},
-		// Handle 'help' command separately to avoid circular dependency with `cli_command`
-		// package
-		{
-			Name:    "install",
-			Help:    "Installs a bb plugin (https://buildbuddy.io/plugins).",
-			Handler: plugin.HandleInstall,
-			Flags:   plugin.Flags,
-		},
-		{
-			Name:    "login",
-			Help:    "Configures bb commands to use your BuildBuddy API key.",
-			Handler: login.HandleLogin,
-			Flags:   login.Flags,
-		},
-		{
-			Name:    "logout",
-			Help:    "Configures bb commands to no longer use your saved API key.",
-			Handler: login.HandleLogout,
-		},
-		{
-			Name:    "print",
-			Help:    "Displays various log file types written by bazel.",
-			Handler: printlog.HandlePrint,
-			Flags:   printlog.Flags,
-		},
-		{
-			Name:    "record",
-			Help:    "Records command output and streams it to BuildBuddy.",
-			Handler: record.HandleRecord,
-			Flags:   record.Flags,
-		},
-		{
-			Name:    "remote",
-			Help:    "Runs a bazel command in the cloud with BuildBuddy's hosted bazel service.",
-			Handler: remotebazel.HandleRemoteBazel,
-			Flags:   remotebazel.RemoteFlagset,
-		},
-		{
-			Name:    "remote-download",
-			Help:    "Fetches a remote asset via an intermediate cache.",
-			Handler: remote_download.HandleRemoteDownload,
-			Flags:   remote_download.Flags,
-		},
-		{
-			Name:    "search",
-			Help:    "Searches for code in the remote codesearch index.",
-			Handler: search.HandleSearch,
-			Flags:   search.Flags,
-		},
-		{
-			Name:    "ssh",
-			Help:    "Runs an SSH client on a user-mode wireguard network.",
-			Handler: ssh.HandleSSH,
-			Flags:   ssh.Flags,
-		},
-		{
-			Name:    "ssh-server",
-			Help:    "Runs an SSH server on a user-mode wireguard network.",
-			Handler: ssh_server.HandleSSHServer,
-			Flags:   ssh_server.Flags,
-		},
-		{
-			Name:    "index",
-			Help:    "Sends updates to the remote codesearch index.",
-			Handler: index.HandleIndex,
-			Flags:   index.Flags,
-		},
-		{
-			Name:    "ui",
-			Help:    "Opens an interactive terminal UI for viewing builds.",
-			Handler: ui.HandleUI,
-			Flags:   ui.Flags,
-		},
-		{
-			Name:    "update",
-			Help:    "Updates the bb CLI to the latest version.",
-			Handler: update.HandleUpdate,
-			Flags:   update.Flags,
-		},
-		{
-			Name:    "upload",
-			Help:    "Uploads files to the remote cache.",
-			Handler: upload.HandleUpload,
-			Flags:   upload.Flags,
-		},
-		{
-			Name:    "version",
-			Help:    "Prints bb cli version info.",
-			Handler: versioncmd.HandleVersion,
-		},
-		{
-			Name:    "view",
-			Help:    "Views build logs from BuildBuddy.",
-			Handler: view.HandleView,
-			Flags:   view.Flags,
-		},
-		{
-			Name:    "explain",
-			Help:    "Explains your build using collected profiles and compact execution logs.",
-			Handler: explain.HandleExplain,
-			Flags:   explain.Flags,
-		},
-	}
-	cli_command.CommandsByName = make(
-		map[string]*cli_command.Command,
-		len(cli_command.Commands),
-	)
-	cli_command.Aliases = make(map[string]*cli_command.Command)
 	for _, command := range cli_command.Commands {
-		cli_command.CommandsByName[command.Name] = command
-		for _, alias := range command.Aliases {
-			cli_command.Aliases[alias] = command
+		impl, ok := implementationsByCommandName[command.Name]
+		if !ok {
+			panic(fmt.Sprintf("cli command %q has no registered handler", command.Name))
+		}
+		command.Handler = impl.handler
+		command.Flags = impl.flags
+	}
+	for name := range implementationsByCommandName {
+		if _, ok := cli_command.CommandsByName[name]; !ok {
+			panic(fmt.Sprintf("handler registered for unknown cli command %q", name))
 		}
 	}
 }
