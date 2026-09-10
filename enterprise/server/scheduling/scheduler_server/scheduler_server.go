@@ -66,6 +66,7 @@ var (
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
 	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
+	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool. This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
@@ -118,8 +119,6 @@ const (
 	redisTaskClaimedField            = "claimed"
 	redisTaskReconnectPeriodEndField = "reconnectPeriodEnd"
 
-	// Maximum number of unclaimed task IDs we track per pool.
-	maxUnclaimedTasksTracked = 10_000
 	// TTL for sets used to track unclaimed tasks in Redis. TTL is extended when new tasks are added.
 	unclaimedTaskSetTTL = 1 * time.Hour
 	// Unclaimed tasks older than this are removed from the unclaimed tasks list.
@@ -1041,10 +1040,10 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	if n > maxUnclaimedTasksTracked {
+	if n > *unclaimedTasksSetMaxSize {
 		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
 		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
-		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err(); err != nil {
+		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-(*unclaimedTasksSetMaxSize)-1).Err(); err != nil {
 			log.CtxWarningf(ctx, "Error trimming unclaimed tasks: %s", err)
 		}
 	}
@@ -1070,27 +1069,37 @@ func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, 
 	if err != nil {
 		return nil, err
 	}
-	// Random sample (without replacement) up to `count` tasks from the
-	// returned results.
-	rand.Shuffle(len(unclaimed), func(i, j int) {
+	// To avoid copying and shuffling the entire list just for a small sample, do
+	// an in-place Fisher-Yates shuffle stopping after n iterations, resulting in
+	// n randomly sampled tasks at the start of the list. Note that we need to
+	// hold the mutex here because the cache and concurrent Redis lookups can
+	// share this slice.
+	np.unclaimedTasksMu.Lock()
+	defer np.unclaimedTasksMu.Unlock()
+	n = min(n, len(unclaimed))
+	for i := range n {
+		j := i + rand.Intn(len(unclaimed)-i)
 		unclaimed[i], unclaimed[j] = unclaimed[j], unclaimed[i]
-	})
-	return unclaimed[:min(n, len(unclaimed))], nil
+	}
+	return slices.Clone(unclaimed[:n]), nil
 }
 
 // Gets all currently unclaimed tasks. If a TTL is configured, the result is
 // cached for a short duration to avoid excessive Redis compute, which can
 // become problematic for very large executor pools issuing a steady stream of
 // AskForMoreWorkRequests.
+// The returned slice is shared. Callers must hold unclaimedTasksMu while
+// accessing its elements.
 func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 	// The singleflight group should help reduce some concurrent lookups which
 	// are more likely to happen if the list is large.
 	unclaimed, _, err := np.unclaimedTasksSingleFlight.Do(ctx, "" /*=key*/, func(ctx context.Context) ([]string, error) {
+		np.unclaimedTasksMu.Lock()
 		if !np.unclaimedTasksExpiry.IsZero() && np.clock.Now().Before(np.unclaimedTasksExpiry) {
-			np.unclaimedTasksMu.Lock()
 			defer np.unclaimedTasksMu.Unlock()
 			return np.unclaimedTasks, nil
 		}
+		np.unclaimedTasksMu.Unlock()
 		unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
 		if err != nil {
 			return nil, err
@@ -1109,7 +1118,7 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return slices.Clone(unclaimed), nil
+	return unclaimed, nil
 }
 
 type persistedTask struct {
