@@ -994,34 +994,25 @@ func (r *Env) DisconnectExecutor(executor *Executor) {
 // waitForExecutorUnregistered waits until the scheduler no longer lists the
 // executor with the given ID.
 func (r *Env) waitForExecutorUnregistered(executorID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
-	defer cancel()
-	ctx = r.WithUserID(ctx, r.UserID1)
+	ctx := r.WithUserID(context.Background(), r.UserID1)
 	client := r.GetBuildBuddyServiceClient()
 	req := &scpb.GetExecutionNodesRequest{
 		RequestContext: &ctxpb.RequestContext{
 			GroupId: r.GroupID1,
 		},
 	}
-	for {
+	require.Eventually(r.t, func() bool {
 		rsp, err := client.GetExecutionNodes(ctx, req)
-		require.NoError(r.t, err)
-		registered := false
+		if err != nil {
+			return false
+		}
 		for _, e := range rsp.GetExecutor() {
 			if e.GetNode().GetExecutorId() == executorID {
-				registered = true
-				break
+				return false
 			}
 		}
-		if !registered {
-			return
-		}
-		select {
-		case <-ctx.Done():
-			require.FailNowf(r.t, "executor still registered", "executor %q was still registered with the scheduler after %s", executorID, defaultWaitTimeout)
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
+		return true
+	}, defaultWaitTimeout, 100*time.Millisecond, "executor %q should be unregistered from the scheduler", executorID)
 }
 
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.
