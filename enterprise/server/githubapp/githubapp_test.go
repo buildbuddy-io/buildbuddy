@@ -35,14 +35,23 @@ var (
 )
 
 type fakeAppClient struct {
-	t                  testing.TB
-	wantInstallationID int64
-	createTokenCalls   int
+	t                            testing.TB
+	wantInstallationID           int64
+	createTokenCalls             int
+	createTokenFailures          int
+	createTokenFailureStatusCode int
 }
 
 func (c *fakeAppClient) CreateInstallationToken(_ context.Context, installationID int64, opts *github.InstallationTokenOptions) (*github.InstallationToken, *github.Response, error) {
 	c.createTokenCalls++
 	require.Equal(c.t, c.wantInstallationID, installationID)
+	if c.createTokenCalls <= c.createTokenFailures {
+		if c.createTokenFailureStatusCode != 0 {
+			res := &github.Response{Response: &http.Response{StatusCode: c.createTokenFailureStatusCode}}
+			return nil, res, &github.ErrorResponse{Response: res.Response, Message: "request failed"}
+		}
+		return nil, nil, status.UnavailableError("transient error")
+	}
 	return &github.InstallationToken{Token: new(fakeToken)}, &github.Response{
 		Response: &http.Response{StatusCode: http.StatusCreated},
 	}, nil
@@ -107,6 +116,40 @@ func TestGetRepositoryInstallationToken(t *testing.T) {
 	tok, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
 	require.NoError(t, err)
 	require.Equal(t, fakeToken, tok)
+	require.Equal(t, 1, client.createTokenCalls)
+}
+
+func TestGetRepositoryInstallationToken_RetriesTokenCreation(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
+		t:                   t,
+		wantInstallationID:  testInstallationID,
+		createTokenFailures: 2,
+	}
+	app := newTestApp(te, client)
+
+	tok, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
+	require.NoError(t, err)
+	require.Equal(t, fakeToken, tok)
+	require.Equal(t, 3, client.createTokenCalls)
+}
+
+func TestGetRepositoryInstallationToken_DoesNotRetryAuthFailure(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertInstallation(t, te, ctx)
+	insertRepo(t, te, ctx)
+	client := &fakeAppClient{
+		t:                            t,
+		wantInstallationID:           testInstallationID,
+		createTokenFailures:          1,
+		createTokenFailureStatusCode: http.StatusUnauthorized,
+	}
+	app := newTestApp(te, client)
+
+	_, err := app.GetRepositoryInstallationToken(ctx, testGroupID, testRepoURL)
+	require.Error(t, err)
 	require.Equal(t, 1, client.createTokenCalls)
 }
 

@@ -1319,11 +1319,39 @@ func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID 
 	if err != nil {
 		return nil, err
 	}
-	t, res, err := client.CreateInstallationToken(ctx, installationID, nil)
-	if err := checkResponse(res, err); err != nil {
+	t, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (*github.InstallationToken, error) {
+		t, res, err := client.CreateInstallationToken(ctx, installationID, nil)
+		if err != nil {
+			if !isRetryableInstallationTokenError(res, err) {
+				return nil, retry.NonRetryableError(err)
+			}
+			return nil, err
+		}
+		return t, nil
+	})
+	if err != nil {
 		return nil, status.UnauthenticatedErrorf("failed to create installation token: %s", status.Message(err))
 	}
 	return t, nil
+}
+
+func isRetryableInstallationTokenError(res *github.Response, err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	// Transport errors, including TCP read timeouts, generally don't have an
+	// HTTP response and are safe to retry.
+	if res == nil {
+		return true
+	}
+	statusCode := res.StatusCode
+	if statusCode == http.StatusRequestTimeout || statusCode == http.StatusTooManyRequests || statusCode >= 500 {
+		return true
+	}
+	// Don't retry any 400 error codes, other than rate limit errors.
+	var rateLimitErr *github.RateLimitError
+	var abuseRateLimitErr *github.AbuseRateLimitError
+	return errors.As(err, &rateLimitErr) || errors.As(err, &abuseRateLimitErr)
 }
 
 func (a *GitHubApp) authorizeUserInstallationAccess(ctx context.Context, userToken string, installationID int64) error {
