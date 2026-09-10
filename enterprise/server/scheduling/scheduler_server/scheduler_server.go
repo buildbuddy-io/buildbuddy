@@ -135,6 +135,12 @@ const (
 
 	removeExecutorCleanupTimeout = 15 * time.Second
 
+	// How long to keep re-enqueueing an executor's handed-back task
+	// reservations after its registration stream has been cancelled. The
+	// executor process exits as soon as its own shutdown completes, which can
+	// be before a long hand-back list has been worked through.
+	shutdownReEnqueueGracePeriod = 5 * time.Minute
+
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
 
@@ -403,13 +409,25 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				log.CtxInfof(ctx, "Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
 				// Remove the executor first so that we don't try to send any work its way.
 				removeConnectedExecutor()
-				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
+				// Extend the context here so that we can continue re-enqueueing
+				// after the executor has terminated.
+				reEnqueueCtx, cancelReEnqueue := background.ExtendContextForFinalization(ctx, shutdownReEnqueueGracePeriod)
+				taskIDs := req.GetShuttingDownRequest().GetTaskId()
+				for i, taskID := range taskIDs {
+					if reEnqueueCtx.Err() != nil {
+						// Re-enqueueing is a handful of Redis round trips per
+						// reservation, so running out of the grace period means
+						// Redis or the executor probes are pathologically slow.
+						alert.CtxUnexpectedEvent(reEnqueueCtx, "shutdown_reenqueue_grace_period_expired", "Gave up re-enqueueing task reservations for executor %q going down: grace period of %s after stream cancellation expired with %d of %d reservations not re-enqueued", executorID, shutdownReEnqueueGracePeriod, len(taskIDs)-i, len(taskIDs))
+						break
+					}
 					leaseID := ""
 					reconnectToken := ""
-					if err := h.scheduler.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
-						log.CtxWarningf(ctx, "Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
+					if err := h.scheduler.reEnqueueTask(reEnqueueCtx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
+						log.CtxWarningf(reEnqueueCtx, "Could not re-enqueue task reservation %q for executor %q going down: %s", taskID, executorID, err)
 					}
 				}
+				cancelReEnqueue()
 			} else if req.GetAskForMoreWorkRequest() != nil {
 				poolKey := h.nodePoolKey(h.getRegistration())
 

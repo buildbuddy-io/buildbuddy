@@ -17,6 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/scheduling/scheduler_server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbeclient"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testexecutor"
@@ -43,6 +44,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1541,6 +1543,9 @@ func (_ fakeRankedNode) IsPreferred() bool {
 type fixedNodeTaskRouter struct {
 	mu          sync.Mutex
 	executorIDs map[string]struct{}
+	// If non-nil, RankNodes blocks until this channel is closed or the
+	// caller's context is done.
+	gate chan struct{}
 }
 
 func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
@@ -1552,6 +1557,15 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 }
 
 func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	f.mu.Lock()
+	gate := f.gate
+	f.mu.Unlock()
+	if gate != nil {
+		select {
+		case <-gate:
+		case <-ctx.Done():
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []interfaces.RankedExecutionNode
@@ -1567,6 +1581,27 @@ func (f *fixedNodeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Ac
 }
 
 func (f *fixedNodeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+}
+
+// Block makes RankNodes hold every caller until Unblock is called or the
+// caller's context is done. This stalls the scheduler at the point where it
+// picks an executor for a reservation.
+func (f *fixedNodeTaskRouter) Block() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.gate == nil {
+		f.gate = make(chan struct{})
+	}
+}
+
+// Unblock releases callers held by Block. Safe to call more than once.
+func (f *fixedNodeTaskRouter) Unblock() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.gate != nil {
+		close(f.gate)
+		f.gate = nil
+	}
 }
 
 func (f *fixedNodeTaskRouter) UpdateSubset(executorIDs []string) {
@@ -1627,6 +1662,116 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	for _, cmd := range cmds {
 		res := cmd.Wait()
 		assert.Equal(t, "newExecutor", res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have been executed on new executor", cmd.Name)
+	}
+}
+
+// TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown covers the way
+// queued task reservations were orphaned during the 2026-09-09 arm64 executor
+// scale-down.
+//
+// When an executor shuts down it hands its queued reservations back to the
+// scheduler, which re-enqueues them one at a time inside the executor's
+// registration stream handler. The executor process exits as soon as its own
+// graceful shutdown finishes, which cancels the stream's context. If the
+// scheduler re-enqueues on that context, every entry it has not reached yet is
+// dropped; in production the scheduler had about 12 seconds per executor and
+// dropped the remainder of every hand-back list. The task router gate below
+// stalls the scheduler at exactly that point until the executors have exited,
+// so the re-enqueueing must survive the stream cancellation for the test to
+// pass.
+func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) {
+	// Idle executors normally rediscover orphaned work by sampling the
+	// unclaimed task set, on registration and when asking for more work. Turn
+	// that off so the shutdown hand-back is the only way for a queued
+	// reservation to survive.
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", int64(0))
+	// The lifecycle gauge is process-wide and other tests in this process may
+	// have shut executors down already.
+	metrics.RemoteExecutionExecutorLifecycle.Reset()
+
+	rbe := rbetest.NewRBETestEnv(t)
+
+	doomedIDs := []string{"doomedExecutor1", "doomedExecutor2", "doomedExecutor3"}
+	const survivorID = "survivorExecutor"
+
+	// Route every reservation to the executors that are about to shut down.
+	taskRouter := newFixedNodeTaskRouter(doomedIDs)
+	defer taskRouter.Unblock()
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
+		env.SetTaskRouter(taskRouter)
+	}})
+
+	// The doomed executors accept reservations but never start them, like a
+	// saturated executor with a deep backlog. The survivor stays healthy.
+	var doomed []*rbetest.Executor
+	for _, id := range doomedIDs {
+		e := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: id})
+		e.ShutdownTaskScheduler()
+		doomed = append(doomed, e)
+	}
+	rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: survivorID})
+
+	// Queue up work. Every command gets reserved on all three doomed executors.
+	var cmds []*rbetest.Command
+	for i := range 10 {
+		cmds = append(cmds, rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i)))
+	}
+	for _, cmd := range cmds {
+		cmd.WaitAccepted()
+	}
+	for _, e := range doomed {
+		require.Eventually(t, func() bool { return e.QueueLength() == len(cmds) }, 10*time.Second, 10*time.Millisecond,
+			"all commands should be queued on the doomed executors")
+	}
+
+	// Now the scale-down: all three doomed executors get their shutdown
+	// signal at once. Hold the scheduler at the point where it starts
+	// re-enqueueing the handed-back reservations...
+	taskRouter.Block()
+	for _, e := range doomed {
+		e.BeginShutdown()
+	}
+	require.Eventually(t, func() bool {
+		return testmetrics.GaugeValueForLabels(t, metrics.RemoteExecutionExecutorLifecycle, prometheus.Labels{
+			metrics.ExecutorLifecycleStageLabel: metrics.ExecutorLifecycleStagePostReenqueueTasks,
+		}) == float64(len(doomed))
+	}, 10*time.Second, 10*time.Millisecond, "all doomed executors should have handed back their reservations")
+
+	// ...and let the executor processes exit before it gets any further, the
+	// way they do in production once max_shutdown_duration runs out. This
+	// cancels the registration stream contexts.
+	for _, e := range doomed {
+		e.WaitForShutdown()
+		rbe.DisconnectExecutor(e)
+	}
+
+	// From here on the survivor is the only place the work can go.
+	taskRouter.UpdateSubset([]string{survivorID})
+	taskRouter.Unblock()
+
+	// Every queued command should still run, on the survivor, within 30s.
+	deadline := time.After(30 * time.Second)
+	for _, cmd := range cmds {
+		res := waitForCompletion(t, cmd, deadline)
+		require.NoError(t, res.Err, "[%s] should have completed successfully", cmd.Name)
+		assert.Equal(t, survivorID, res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have run on the survivor", cmd.Name)
+	}
+}
+
+// waitForCompletion waits for the command to reach the COMPLETED stage and
+// returns its result, failing the test if the deadline fires first.
+func waitForCompletion(t *testing.T, cmd *rbetest.Command, deadline <-chan time.Time) *rbeclient.CommandResult {
+	for {
+		select {
+		case res, ok := <-cmd.StatusChannel():
+			require.True(t, ok, "[%s] status channel closed before completion", cmd.Name)
+			if res.Stage == repb.ExecutionStage_COMPLETED {
+				return res
+			}
+		case <-deadline:
+			require.FailNowf(t, "command did not complete", "[%s] was not completed within the deadline: its reservations were lost when the executors holding them shut down", cmd.Name)
+			return nil
+		}
 	}
 }
 
