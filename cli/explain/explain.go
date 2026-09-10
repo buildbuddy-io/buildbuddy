@@ -16,7 +16,6 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/explain/compactgraph"
-	"github.com/buildbuddy-io/buildbuddy/cli/explain/timing_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/flaghistory"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -38,7 +37,6 @@ import (
 const (
 	explainCmdUsage = `
 usage: bb explain [--old {FILE | INVOCATION_ID}] [--new {FILE | INVOCATION_ID}] [--output_format {text|json|proto}] [--nondeterministic_only]
-       bb explain profile INVOCATION_ID
 
 Displays a human-readable, structural diff of two compact execution logs, either
 obtained from the given invocations or located at the given file paths.
@@ -57,9 +55,6 @@ Output formats:
   text   Unstructured output (default)
   json   Structured output as JSON
   proto  Structured output as binary proto
-
-Subcommands:
-  profile   Analyzes the timing profile for an invocation.
 `
 )
 
@@ -101,9 +96,6 @@ var (
 )
 
 func HandleExplain(args []string) (int, error) {
-	if len(args) > 0 && args[0] == "profile" {
-		return timing_profile.HandleProfile(args[1:])
-	}
 	explainCmd.Var(profilePaths, "profile", "Path that a CPU profile should be written to.")
 	if err := arg.ParseFlagSet(explainCmd, args); err != nil {
 		if !errors.Is(err, flag.ErrHelp) {

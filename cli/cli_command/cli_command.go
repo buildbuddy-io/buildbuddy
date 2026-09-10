@@ -60,6 +60,10 @@ var Commands = []*Command{
 		Help: "Remote execution tools",
 	},
 	{
+		Name: "explain",
+		Help: "Explains your build using compact execution logs.",
+	},
+	{
 		Name: "fix",
 		Help: "Applies fixes to WORKSPACE and BUILD files.",
 	},
@@ -129,10 +133,6 @@ var Commands = []*Command{
 	{
 		Name: "view",
 		Help: "Views build logs from BuildBuddy.",
-	},
-	{
-		Name: "explain",
-		Help: "Explains your build using collected profiles and compact execution logs.",
 	},
 }
 
