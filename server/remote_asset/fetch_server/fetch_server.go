@@ -252,7 +252,8 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 	bsClient := getByteStreamClient(p.env)
 
-	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
+	rpcCtx := ctx
+	ctx, cancel := context.WithTimeout(rpcCtx, p.computeRequestTimeout(rpcCtx, req.GetTimeout()))
 	defer cancel()
 
 	// Keep track of the last fetch error so that if we fail to fetch, we at
@@ -263,8 +264,8 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	var invalidArgumentErr error
 
 	for i, uri := range req.GetUris() {
-		if err := ctx.Err(); err != nil {
-			return nil, gstatus.FromContextError(err).Err()
+		if ctx.Err() != nil {
+			break
 		}
 		_, err := url.Parse(uri)
 		if err != nil {
@@ -309,22 +310,30 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}, nil
 	}
 
-	if err := ctx.Err(); err != nil {
+	// RPC cancellation/deadline expiry is a transport-level error. An origin
+	// fetch timeout (request timeout or server maximum) belongs in the response
+	// status, so clients do not retry the entire RPC with a fresh fetch budget.
+	if err := rpcCtx.Err(); err != nil {
 		return nil, gstatus.FromContextError(err).Err()
 	}
-	// A later missing mirror must not hide an earlier transient failure.
-	if unavailableErr != nil {
-		return nil, status.UnavailableError(status.Message(unavailableErr))
-	}
-	if invalidArgumentErr != nil {
-		return nil, status.InvalidArgumentError(status.Message(invalidArgumentErr))
+	responseCode := gcodes.NotFound
+	if ctx.Err() != nil {
+		responseCode = gcodes.DeadlineExceeded
+		lastFetchErr = status.DeadlineExceededError("remote asset fetch timed out")
+	} else {
+		// A later missing mirror must not hide an earlier transient failure.
+		if unavailableErr != nil {
+			return nil, status.UnavailableError(status.Message(unavailableErr))
+		}
+		if invalidArgumentErr != nil {
+			return nil, status.InvalidArgumentError(status.Message(invalidArgumentErr))
+		}
 	}
 
-	log.CtxInfof(ctx, "Fetch: returning NotFound for %s", req.GetUris())
+	log.CtxInfof(ctx, "Fetch: returning %s for %s", responseCode, req.GetUris())
 	return &rapb.FetchBlobResponse{
 		Status: &statuspb.Status{
-
-			Code:    int32(gcodes.NotFound),
+			Code:    int32(responseCode),
 			Message: status.Message(lastFetchErr),
 		},
 		Uri: lastFetchUri,
@@ -447,12 +456,18 @@ func mirrorToCache(
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
 	}
 	defer rsp.Body.Close()
-	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
-		// Request timeout and rate limiting are transient even though they are 4xx.
-		if rsp.StatusCode >= 400 && rsp.StatusCode < 500 && rsp.StatusCode != http.StatusRequestTimeout && rsp.StatusCode != http.StatusTooManyRequests {
-			return nil, status.NotFoundErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
-		}
+	switch {
+	case rsp.StatusCode >= 200 && rsp.StatusCode < 400:
+		// Continue with the response body.
+	case rsp.StatusCode == http.StatusRequestTimeout,
+		rsp.StatusCode == http.StatusTooManyRequests,
+		rsp.StatusCode >= 500,
+		rsp.StatusCode < 200:
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
+	default:
+		// Preserve the existing NotFound response for other 4xx statuses,
+		// including 401/403, rather than introducing PermissionDenied semantics.
+		return nil, status.NotFoundErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
 	}
 
 	// If we know what the hash should be and the content length is known,

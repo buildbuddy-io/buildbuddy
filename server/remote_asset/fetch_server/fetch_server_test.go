@@ -10,7 +10,9 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -28,6 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
@@ -738,6 +741,7 @@ func TestFetchBlobFailureClassification(t *testing.T) {
 	}{
 		{"missing", []string{"404", "404"}, gcodes.NotFound},
 		{"forbidden", []string{"403"}, gcodes.NotFound},
+		{"unauthorized", []string{"401"}, gcodes.NotFound},
 		{"server_error", []string{"503"}, gcodes.Unavailable},
 		{"timeout", []string{"408"}, gcodes.Unavailable},
 		{"rate_limit", []string{"429"}, gcodes.Unavailable},
@@ -796,6 +800,71 @@ func TestFetchBlobFailureClassification(t *testing.T) {
 				require.Equal(t, uris[len(uris)-1], resp.GetUri())
 				require.Equal(t, strings.Repeat("1", 64), resp.GetBlobDigest().GetHash())
 				require.Equal(t, int64(1), resp.GetBlobDigest().GetSizeBytes())
+			}
+		})
+	}
+}
+
+// Invoke the handler directly for parent context tests so a client-side gRPC
+// cancellation cannot mask an incorrectly returned response status.
+func TestFetchBlobTimeouts(t *testing.T) {
+	for _, mode := range []string{"fetch_timeout", "rpc_deadline", "rpc_canceled", "already_canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			conn := runFetchServer(t.Context(), t, te)
+			server, err := fetch_server.NewFetchServer(te)
+			require.NoError(t, err)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var attempts atomic.Int32
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				if mode == "rpc_canceled" {
+					cancel()
+				}
+				<-r.Context().Done()
+			}))
+			defer ts.Close()
+			req := &rapb.FetchBlobRequest{
+				Uris:    []string{ts.URL, ts.URL + "/another-mirror"},
+				Timeout: durationpb.New(time.Minute),
+			}
+			switch mode {
+			case "fetch_timeout":
+				req.Timeout = durationpb.New(100 * time.Millisecond)
+			case "rpc_deadline":
+				var deadlineCancel context.CancelFunc
+				ctx, deadlineCancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer deadlineCancel()
+			case "already_canceled":
+				cancel()
+			}
+			var resp *rapb.FetchBlobResponse
+			if mode == "fetch_timeout" {
+				// Verify the inline status also survives an actual RPC.
+				resp, err = rapb.NewFetchClient(conn).FetchBlob(ctx, req)
+				require.NoError(t, err)
+				require.Equal(t, int32(gcodes.DeadlineExceeded), resp.GetStatus().GetCode())
+				require.Contains(t, resp.GetStatus().GetMessage(), "timed out")
+				require.Equal(t, ts.URL, resp.GetUri())
+				// Keep the existing workaround for clients that ignore response status.
+				require.Equal(t, strings.Repeat("1", 64), resp.GetBlobDigest().GetHash())
+				require.Equal(t, int64(1), resp.GetBlobDigest().GetSizeBytes())
+				require.NoError(t, ctx.Err())
+			} else {
+				resp, err = server.FetchBlob(ctx, req)
+				require.Nil(t, resp)
+				expected := gcodes.Canceled
+				if mode == "rpc_deadline" {
+					expected = gcodes.DeadlineExceeded
+				}
+				require.Equal(t, expected, gstatus.Code(err))
+			}
+			if mode == "already_canceled" {
+				require.Zero(t, attempts.Load())
+			} else {
+				// Do not try another mirror once the fetch budget or RPC has expired.
+				require.Equal(t, int32(1), attempts.Load())
 			}
 		})
 	}
