@@ -750,6 +750,20 @@ func (e *Executor) stop() {
 	e.env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
+// BeginShutdown starts a graceful shutdown of the executor without waiting for
+// it to finish, like a SIGTERM would. The executor hands its queued task
+// reservations back to the scheduler and stops claiming work, but its
+// registration stream stays open until the shutdown completes and
+// DisconnectExecutor is called.
+func (e *Executor) BeginShutdown() {
+	e.env.GetHealthChecker().Shutdown()
+}
+
+// WaitForShutdown blocks until a shutdown started with BeginShutdown completes.
+func (e *Executor) WaitForShutdown() {
+	e.env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
 // ShutdownTaskScheduler stops the task scheduler from de-queueing any more work.
 func (e *Executor) ShutdownTaskScheduler() {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
@@ -959,6 +973,22 @@ func (r *Env) RemoveExecutor(executor *Executor) {
 	executor.stop()
 	delete(r.executors, executor.id)
 	r.waitForExecutorRegistration()
+}
+
+// DisconnectExecutor simulates the executor process exiting: its scheduler
+// registration stream is torn down with no further coordination with the
+// server, and the test env stops tracking it. Use it after BeginShutdown and
+// WaitForShutdown to model an executor that leaves as soon as its own graceful
+// shutdown completes, whether or not the scheduler is done with it. Unlike
+// RemoveExecutor this does not wait for the scheduler's view of the pool to
+// settle, since an executor that already handed back its work has left the
+// pool before this point.
+func (r *Env) DisconnectExecutor(executor *Executor) {
+	if _, ok := r.executors[executor.id]; !ok {
+		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.id))
+	}
+	executor.cancelRegistration()
+	delete(r.executors, executor.id)
 }
 
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.
