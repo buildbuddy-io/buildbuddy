@@ -142,7 +142,7 @@ func dashedThreshold(p *timeseries.PanelBuilder, value float64) *timeseries.Pane
 func systemStatusRow() *dashboard.RowBuilder {
 	return row("System Status").
 		WithPanel(ts("Cache Proxy Instances", dash.UnitShort).
-			Description("Pods whose metrics endpoint is up, pods Kubernetes reports Ready, backends Envoy considers healthy (it trusts the EndpointSlice, so this follows readiness), and the autoscaler target. The first three should agree; a Ready or Envoy-healthy count above the up count means traffic is being sent to a pod nobody can reach.").
+			Description("Pods whose metrics endpoint is up, pods Kubernetes reports Ready, backends Envoy considers healthy (the max over Envoy pods and clusters, so a replica that is still converging after a restart does not drag it down; Envoy trusts the EndpointSlice, so this follows readiness), and the autoscaler target. The first three should agree; a Ready or Envoy-healthy count above the up count means traffic is being sent to a pod nobody can reach.").
 			Height(7).
 			Decimals(0).
 			Min(0).
@@ -150,7 +150,7 @@ func systemStatusRow() *dashboard.RowBuilder {
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (job) (up{`+proxyFilter+`})`, "{{job}} up").RefId("A")).
 			WithTarget(dash.PromQuery(`sum(kube_pod_status_ready{`+podFilter+`, condition="true"})`, "Ready").RefId("B")).
-			WithTarget(dash.PromQuery(`min by (envoy_cluster_name) (envoy_cluster_membership_healthy{`+envoyFilter+`})`, "healthy in Envoy ({{envoy_cluster_name}})").RefId("D")).
+			WithTarget(dash.PromQuery(`max(envoy_cluster_membership_healthy{`+envoyFilter+`})`, "healthy in Envoy").RefId("D")).
 			WithTarget(dash.PromQuery(`sum by (horizontalpodautoscaler) (kube_horizontalpodautoscaler_status_desired_replicas{region="${region}", horizontalpodautoscaler=~"cache-proxy.*autoscaler"})`, "{{horizontalpodautoscaler}} target").RefId("C"))).
 		WithPanel(ts("Cache-proxy nodes cordoned or NotReady", dash.UnitShort).
 			Description("Nodes hosting a cache-proxy pod that are cordoned (unschedulable) or whose Ready condition is not True. A node that shows here while its pod still counts as Ready on the left is a pod receiving traffic that nobody can reach. Quiet nodes are omitted.").
@@ -211,11 +211,12 @@ func ingressRow() *dashboard.RowBuilder {
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (envoy_cluster_name, envoy_response_code_class) (rate(`+rq+`, envoy_response_code_class="5"}[${window}]))`, "{{envoy_cluster_name}} {{envoy_response_code_class}}xx"))).
 		WithPanel(dashedThreshold(ts("Upstream 5xx ratio", dash.UnitPercentUnit), 0.01).
-			Description("Share of all upstream responses that were 5xx. One unreachable backend out of N costs about 1/N of requests. The dashed line is the CacheProxyUpstream5xxRatioHigh alert threshold (1% for 2m).").
+			Description("Share of each cluster's upstream responses that were 5xx. One unreachable backend out of N costs about 1/N of requests. The dashed line is the CacheProxyUpstream5xxRatioHigh alert threshold (1% for 2m); the alert evaluates the ratio summed over both clusters, so a fault confined to the low-traffic 443 cluster can show here without firing it.").
 			Min(0).
 			AxisSoftMax(0.02).
 			ShowPoints(common.VisibilityModeNever).
-			WithTarget(dash.PromQuery(`sum(rate(`+rq+`, envoy_response_code_class="5"}[${window}])) / sum(rate(`+rq+`}[${window}]))`, "5xx share"))).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (envoy_cluster_name) (rate(`+rq+`, envoy_response_code_class="5"}[${window}])) / sum by (envoy_cluster_name) (rate(`+rq+`}[${window}]))`, "{{envoy_cluster_name}}"))).
 		WithPanel(dashedThreshold(ts("Upstream connect failures", dash.UnitEventsPerSec), 5).
 			Description("Connections Envoy could not open to a cache-proxy backend, summed over all Envoy pods. A refused connection (backend gone, port closed) fails immediately; an unanswered SYN (node gone) fails after the 2s connect timeout and is counted in both series. The dashed line is the CacheProxyUpstreamConnectFailures alert threshold (5/s for 2m).").
 			Min(0).
