@@ -551,7 +551,7 @@ func insertTargets(ctx context.Context, env environment.Env, targets []*tables.T
 	chunkList := chunkTargetsBy(targets, 100)
 	for _, chunk := range chunkList {
 		valueStrings := []string{}
-		valueArgs := []interface{}{}
+		valueArgs := []any{}
 		for _, t := range chunk {
 			nowUsec := time.Now().UnixMicro()
 			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -591,7 +591,7 @@ func insertOrUpdateTargetStatuses(ctx context.Context, env environment.Env, stat
 	chunkList := chunkStatusesBy(statuses, 100)
 	for _, chunk := range chunkList {
 		valueStrings := []string{}
-		valueArgs := []interface{}{}
+		valueArgs := []any{}
 		for _, t := range chunk {
 			nowUsec := time.Now().UnixMicro()
 			valueStrings = append(valueStrings, "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")

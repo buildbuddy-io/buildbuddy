@@ -207,7 +207,7 @@ func (o *selfAuth) Authorize(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func writeJSONResponse(w http.ResponseWriter, r *http.Request, v interface{}) {
+func writeJSONResponse(w http.ResponseWriter, r *http.Request, v any) {
 	rsp, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

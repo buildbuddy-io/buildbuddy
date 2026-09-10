@@ -39,7 +39,7 @@ type joinClause struct {
 	onClause      string
 }
 
-func (j *joinClause) Build() (string, []interface{}) {
+func (j *joinClause) Build() (string, []any) {
 	subQuery, args := j.tableSubquery.Build()
 	q := pad(joinSQLKeyword) + "(" + subQuery + ") AS" + pad(j.alias) + pad(onSQLKeyword) + pad(j.onClause)
 	return q, args
@@ -51,7 +51,7 @@ type Query struct {
 	orderBy      string
 	groupBy      string
 	baseQuery    string
-	arguments    []interface{}
+	arguments    []any
 	whereClauses []string
 	joinClauses  []joinClause
 	fromClause   *Query
@@ -62,12 +62,12 @@ func NewQuery(baseQuery string) *Query {
 	return &Query{
 		baseQuery:    baseQuery,
 		whereClauses: make([]string, 0),
-		arguments:    make([]interface{}, 0),
+		arguments:    make([]any, 0),
 	}
 }
 
 // For those who simply can't help but use args in SELECT clauses
-func NewQueryWithArgs(baseQuery string, baseArgs []interface{}) *Query {
+func NewQueryWithArgs(baseQuery string, baseArgs []any) *Query {
 	return &Query{
 		baseQuery:    baseQuery,
 		whereClauses: make([]string, 0),
@@ -75,7 +75,7 @@ func NewQueryWithArgs(baseQuery string, baseArgs []interface{}) *Query {
 	}
 }
 
-func (q *Query) AddWhereClause(clause string, args ...interface{}) *Query {
+func (q *Query) AddWhereClause(clause string, args ...any) *Query {
 	clause = pad(clause)
 	q.whereClauses = append(q.whereClauses, clause)
 	q.arguments = append(q.arguments, args...)
@@ -128,7 +128,7 @@ func (q *Query) SetOffset(offset int64) *Query {
 	q.offset = &offset
 	return q
 }
-func (q *Query) Build() (string, []interface{}) {
+func (q *Query) Build() (string, []any) {
 	// Reference: SELECT foo FROM TABLE [JOIN TABLE2 ON a = b] WHERE bar = baz ORDER BY ack ASC LIMIT 10
 	var fullQuery strings.Builder
 	fullQuery.WriteString(q.baseQuery)
@@ -138,7 +138,7 @@ func (q *Query) Build() (string, []interface{}) {
 		fromClauseStr = " FROM (" + fromClauseStr + ")"
 		fullQuery.WriteString(fromClauseStr)
 	}
-	var argsInJoinClauses []interface{}
+	var argsInJoinClauses []any
 	for _, j := range q.joinClauses {
 		joinClause, args := j.Build()
 		argsInJoinClauses = append(argsInJoinClauses, args...)
@@ -175,16 +175,16 @@ func (q *Query) Build() (string, []interface{}) {
 
 type OrClauses struct {
 	whereClauses []string
-	arguments    []interface{}
+	arguments    []any
 }
 
-func (o *OrClauses) AddOr(clause string, args ...interface{}) *OrClauses {
+func (o *OrClauses) AddOr(clause string, args ...any) *OrClauses {
 	o.whereClauses = append(o.whereClauses, pad(clause))
 	o.arguments = append(o.arguments, args...)
 	return o
 }
 
-func (o *OrClauses) Build() (string, []interface{}) {
+func (o *OrClauses) Build() (string, []any) {
 	fullQuery := ""
 	if len(o.whereClauses) > 0 {
 		whereRestrict := strings.Join(o.whereClauses, orQueryJoiner)

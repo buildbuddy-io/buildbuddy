@@ -896,7 +896,7 @@ func (ws *workflowService) GetWorkflowHistory(ctx context.Context) (*wfpb.GetWor
 	qStr, qArgs := q.Build()
 	rq := ws.env.GetOLAPDBHandle().NewQuery(ctx, "workflow_service_get_actions").Raw(qStr, qArgs...)
 
-	actionHistoryQArgs := make([]interface{}, 0)
+	actionHistoryQArgs := make([]any, 0)
 	actionHistoryQStrs := make([]string, 0)
 	workflows := make(map[string]map[string]*wfpb.ActionHistory)
 

@@ -104,14 +104,14 @@ func startInactivityWatcher(ctx context.Context, inactiveCallbackFn func()) {
 }
 
 func inactivityUnaryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 		maybeUpdateLastUse()
 		return handler(ctx, req)
 	}
 }
 
 func inactivityStreamInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		maybeUpdateLastUse()
 		return handler(srv, stream)
 	}

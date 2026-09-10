@@ -392,7 +392,7 @@ type DBRawQuery interface {
 	// Take executes the query and scans the resulting row into the target
 	// struct. An error is returned if no records match. To check for this
 	// error use db.IsRecordNotFound.
-	Take(dest interface{}) error
+	Take(dest any) error
 	// Exec executes the raw modification query and returns the result.
 	Exec() DBResult
 	// IterateRaw executes the select query and iterates over the raw result
@@ -403,13 +403,13 @@ type DBRawQuery interface {
 
 type DBQuery interface {
 	// Create inserts a new row using the passed GORM-annotated struct.
-	Create(val interface{}) error
+	Create(val any) error
 	// Update updates an existing row using the primary key of the given
 	// GORM-annotated struct. Returns gorm.ErrRecordNotFound if a matching
 	// row does not exist.
-	Update(val interface{}) error
+	Update(val any) error
 	// Raw prepares a raw query.
-	Raw(sql string, values ...interface{}) DBRawQuery
+	Raw(sql string, values ...any) DBRawQuery
 }
 
 type DB interface {
@@ -487,7 +487,7 @@ type OLAPDBHandle interface {
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
-	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{})
+	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []any)
 }
 
 type InvocationDB interface {

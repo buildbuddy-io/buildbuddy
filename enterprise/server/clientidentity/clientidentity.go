@@ -201,7 +201,7 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 	var verifyErr error
 	for _, key := range s.verificationKeys {
 		c := &claims{}
-		_, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (interface{}, error) {
+		_, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (any, error) {
 			return key, nil
 		})
 		if err == nil {

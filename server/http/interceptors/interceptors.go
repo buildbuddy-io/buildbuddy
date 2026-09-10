@@ -190,7 +190,7 @@ func RedirectIfNotForwardedHTTPS(next http.Handler) http.Handler {
 
 // gzip, courtesy of https://gist.github.com/CJEnright/bc2d8b8dc0c1389a9feeddb110f822d7
 var gzPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		w := gzip.NewWriter(io.Discard)
 		return w
 	},

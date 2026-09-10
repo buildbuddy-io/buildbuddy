@@ -1693,7 +1693,7 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 		return status.InternalErrorf("unable to serialize scheduling metadata: %v", err)
 	}
 
-	props := map[string]interface{}{
+	props := map[string]any{
 		redisTaskProtoField:       serializedTask,
 		redisTaskMetadataField:    serializedMetadata,
 		redisTaskQueuedAtUsec:     time.Now().UnixMicro(),

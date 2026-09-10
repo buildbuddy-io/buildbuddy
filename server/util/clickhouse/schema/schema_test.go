@@ -16,7 +16,7 @@ import (
 func TestSchemaInSync(t *testing.T) {
 	tests := []struct {
 		clickhouseTable Table
-		primaryDBTable  interface{}
+		primaryDBTable  any
 	}{
 		{
 			clickhouseTable: &Invocation{},

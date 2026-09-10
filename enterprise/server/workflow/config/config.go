@@ -244,13 +244,13 @@ type ScheduleTrigger struct {
 type ResourceRequests struct {
 	// Memory is a numeric quantity of memory in bytes, or human-readable IEC
 	// byte notation like "1GB" = 1024^3 bytes.
-	Memory interface{} `yaml:"memory"`
+	Memory any `yaml:"memory"`
 	// CPU is a numeric quantity of CPU cores, or a string with a numeric
 	// quantity followed by an "m"-suffix for milli-CPU.
-	CPU interface{} `yaml:"cpu"`
+	CPU any `yaml:"cpu"`
 	// Disk is a numeric quantity of disk size in bytes, or human-readable
 	// IEC byte notation like "1GB" = 1024^3 bytes.
-	Disk interface{} `yaml:"disk"`
+	Disk any `yaml:"disk"`
 }
 
 // GetEstimatedMemory converts the memory resource request to a value compatible
@@ -416,7 +416,7 @@ func matchesAnyPattern(haystack []string, needle string) bool {
 	return matched
 }
 
-func yamlNumberToString(num interface{}) (str string, ok bool) {
+func yamlNumberToString(num any) (str string, ok bool) {
 	if i, ok := num.(int); ok {
 		return strconv.Itoa(i), true
 	}

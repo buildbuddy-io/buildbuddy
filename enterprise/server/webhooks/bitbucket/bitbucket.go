@@ -135,7 +135,7 @@ func (*bitbucketGitProvider) CreateStatus(ctx context.Context, accessToken, grou
 	return status.UnimplementedError("Not implemented")
 }
 
-func unmarshalBody(r *http.Request, payload interface{}) error {
+func unmarshalBody(r *http.Request, payload any) error {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err

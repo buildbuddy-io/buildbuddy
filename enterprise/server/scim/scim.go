@@ -201,7 +201,7 @@ func NewSCIMServer(env environment.Env) *SCIMServer {
 	}
 }
 
-type handlerFunc func(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error)
+type handlerFunc func(ctx context.Context, r *http.Request, g *tables.Group) (any, error)
 
 func isV2Path(urlPath string) bool {
 	return strings.HasPrefix(urlPath, "/scim/v2/")
@@ -364,7 +364,7 @@ func (s *SCIMServer) getFilteredUsers(ctx context.Context, g *tables.Group, filt
 	return nil, nil
 }
 
-func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	startIndex := 0
 	startIndexParam := r.URL.Query().Get("startIndex")
 	if startIndexParam != "" {
@@ -453,7 +453,7 @@ func (s *SCIMServer) getUsers(ctx context.Context, r *http.Request, g *tables.Gr
 	}, nil
 }
 
-func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) getUser(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	id := path.Base(r.URL.Path)
 	u, err := s.env.GetUserDB().GetUserByID(ctx, id, &interfaces.GetUserOpts{DirectMembershipsOnly: true})
 	if err != nil {
@@ -511,7 +511,7 @@ func fillUserFromResource(u *tables.User, ur UserResource, g *tables.Group, defa
 	return nil
 }
 
-func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) createUser(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -606,7 +606,7 @@ func getBooleanValue(v any) (bool, error) {
 	return false, status.InvalidArgumentErrorf("boolean field has unexpected value %v of type %T", v, v)
 }
 
-func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -725,7 +725,7 @@ func (s *SCIMServer) patchUser(ctx context.Context, r *http.Request, g *tables.G
 	return ur, nil
 }
 
-func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -775,7 +775,7 @@ func (s *SCIMServer) updateUser(ctx context.Context, r *http.Request, g *tables.
 	return updatedUser, nil
 }
 
-func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	id := path.Base(r.URL.Path)
 	if err := s.env.GetUserDB().DeleteUser(ctx, id); err != nil {
 		return nil, err
@@ -783,7 +783,7 @@ func (s *SCIMServer) deleteUser(ctx context.Context, r *http.Request, g *tables.
 	return nil, nil
 }
 
-func logGroupOperationResponse(ctx context.Context, label string, v interface{}) {
+func logGroupOperationResponse(ctx context.Context, label string, v any) {
 	out, err := json.Marshal(v)
 	if err != nil {
 		log.CtxWarningf(ctx, "SCIM %s response: failed to marshal: %s", label, err)
@@ -792,7 +792,7 @@ func logGroupOperationResponse(ctx context.Context, label string, v interface{})
 	log.CtxInfof(ctx, "SCIM %s response:\n%s", label, string(out))
 }
 
-func (s *SCIMServer) createGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) createGroup(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -835,7 +835,7 @@ func (s *SCIMServer) createGroup(ctx context.Context, r *http.Request, g *tables
 	return res, nil
 }
 
-func (s *SCIMServer) getGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) getGroup(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	log.CtxInfof(ctx, "SCIM get group request: %s %s", r.Method, r.URL.RequestURI())
 	id := path.Base(r.URL.Path)
 	ul, err := s.env.GetUserDB().GetUserList(ctx, id)
@@ -847,7 +847,7 @@ func (s *SCIMServer) getGroup(ctx context.Context, r *http.Request, g *tables.Gr
 	return res, nil
 }
 
-func (s *SCIMServer) updateGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) updateGroup(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -917,7 +917,7 @@ func (s *SCIMServer) updateGroup(ctx context.Context, r *http.Request, g *tables
 	return res, nil
 }
 
-func (s *SCIMServer) deleteGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) deleteGroup(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	log.CtxInfof(ctx, "SCIM delete group request: %s %s", r.Method, r.URL.RequestURI())
 	id := path.Base(r.URL.Path)
 	if err := s.env.GetUserDB().DeleteUserList(ctx, id); err != nil {
@@ -927,7 +927,7 @@ func (s *SCIMServer) deleteGroup(ctx context.Context, r *http.Request, g *tables
 	return nil, nil
 }
 
-func (s *SCIMServer) patchGroup(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) patchGroup(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	req, err := io.ReadAll(r.Body)
 	if err != nil {
 		return nil, err
@@ -1038,7 +1038,7 @@ func parseMemberValues(v any) ([]string, error) {
 	return ids, nil
 }
 
-func (s *SCIMServer) getGroups(ctx context.Context, r *http.Request, g *tables.Group) (interface{}, error) {
+func (s *SCIMServer) getGroups(ctx context.Context, r *http.Request, g *tables.Group) (any, error) {
 	log.CtxInfof(ctx, "SCIM get groups request: %s %s", r.Method, r.URL.RequestURI())
 	startIndex := 0
 	startIndexParam := r.URL.Query().Get("startIndex")

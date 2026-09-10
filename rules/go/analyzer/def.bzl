@@ -1,5 +1,5 @@
 ANALYZERS = [
-    # "any",
+    "any",
     # "bloop", # DO NOT ENABLE, see golang/go#74967
     # "fmtappendf",
     # "forvar",

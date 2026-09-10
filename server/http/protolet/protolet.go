@@ -148,7 +148,7 @@ type HTTPHandlers struct {
 	RequestHandler http.Handler
 }
 
-func GenerateHTTPHandlers(servicePrefix, serviceName string, server interface{}, grpcServer *grpc.Server) (*HTTPHandlers, error) {
+func GenerateHTTPHandlers(servicePrefix, serviceName string, server any, grpcServer *grpc.Server) (*HTTPHandlers, error) {
 	if reflect.ValueOf(server).Type().Kind() != reflect.Ptr {
 		return nil, fmt.Errorf("GenerateHTTPHandlers must be called with a pointer to an RPC service implementation")
 	}

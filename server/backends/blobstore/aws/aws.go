@@ -81,7 +81,7 @@ func NewAwsS3BlobStore(ctx context.Context) (*AwsS3BlobStore, error) {
 		log.Debugf("AWS blobstore endpoint found: %q", *awsS3Endpoint)
 		configOptions = append(configOptions, config.WithEndpointResolverWithOptions(
 			aws.EndpointResolverWithOptionsFunc(
-				func(_, _ string, _ ...interface{}) (aws.Endpoint, error) {
+				func(_, _ string, _ ...any) (aws.Endpoint, error) {
 					return aws.Endpoint{
 						URL:               *awsS3Endpoint,
 						SigningRegion:     *awsS3Region,

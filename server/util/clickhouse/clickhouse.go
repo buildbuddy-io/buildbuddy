@@ -136,11 +136,11 @@ type query struct {
 	name string
 }
 
-func (q *query) Create(val interface{}) error {
+func (q *query) Create(val any) error {
 	return status.UnimplementedError("Create is not supported for clickhouse")
 }
 
-func (q *query) Update(val interface{}) error {
+func (q *query) Update(val any) error {
 	return status.UnimplementedError("Update is not supported for clickhouse")
 }
 
@@ -148,7 +148,7 @@ type rawQuery struct {
 	db     *gorm.DB
 	ctx    context.Context
 	sql    string
-	values []interface{}
+	values []any
 }
 
 func (r *rawQuery) Exec() interfaces.DBResult {
@@ -156,11 +156,11 @@ func (r *rawQuery) Exec() interfaces.DBResult {
 	return interfaces.DBResult{Error: rb.Error, RowsAffected: rb.RowsAffected}
 }
 
-func (r *rawQuery) Take(dest interface{}) error {
+func (r *rawQuery) Take(dest any) error {
 	return r.db.Raw(r.sql, r.values...).Take(dest).Error
 }
 
-func (r *rawQuery) Scan(dest interface{}) error {
+func (r *rawQuery) Scan(dest any) error {
 	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
 }
 
@@ -185,7 +185,7 @@ func (r *rawQuery) DB() *gorm.DB {
 	return r.db
 }
 
-func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
+func (q *query) Raw(sql string, values ...any) interfaces.DBRawQuery {
 	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	return &rawQuery{db: db, ctx: q.ctx, sql: sql, values: values}
 }
@@ -199,8 +199,8 @@ func (dbh *DBHandle) NewQuery(ctx context.Context, name string) interfaces.DBQue
 // another epoch in micros rounded down to the supplied clickhouse interval
 // string (e.g., "1 HOUR", "30 MINUTE").  More about clickhouse intervals:
 // https://clickhouse.com/docs/en/sql-reference/data-types/special-data-types/interval
-func (h *DBHandle) BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{}) {
-	return fmt.Sprintf("toUnixTimestamp(toStartOfInterval(toDateTime64(%s / 1000000, 6, ?), INTERVAL %s)) * 1000000", fieldName, interval), []interface{}{loc.String()}
+func (h *DBHandle) BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []any) {
+	return fmt.Sprintf("toUnixTimestamp(toStartOfInterval(toDateTime64(%s / 1000000, 6, ?), INTERVAL %s)) * 1000000", fieldName, interval), []any{loc.String()}
 }
 
 // DateFromUsecTimestamp returns an SQL expression compatible with clickhouse
@@ -251,7 +251,7 @@ func withAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
 	}
 }
 
-func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value interface{}, opts ...InsertOpt) error {
+func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numEntries int, value any, opts ...InsertOpt) error {
 	o := defaultInsertOpts()
 	o.apply(opts...)
 	retrier := retry.DefaultWithContext(ctx)

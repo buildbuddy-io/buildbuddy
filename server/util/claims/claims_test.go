@@ -357,7 +357,7 @@ func TestAssembleJWT_ES256_UsesNewKeyWhenSet(t *testing.T) {
 	require.NoError(t, err)
 
 	parsedClaims := &claims.Claims{}
-	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (interface{}, error) {
+	_, err = jwt.ParseWithClaims(tokenString, parsedClaims, func(token *jwt.Token) (any, error) {
 		return pubKey, nil
 	})
 	require.NoError(t, err)

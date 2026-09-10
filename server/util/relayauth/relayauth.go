@@ -190,7 +190,7 @@ func (v *Verifier) Verify(credential string) (*Identity, error) {
 	var leaf *x509.Certificate
 	c := &claims{}
 	parser := jwt.NewParser(jwt.WithValidMethods(allowedMethods), jwt.WithoutClaimsValidation())
-	token, err := parser.ParseWithClaims(credential, c, func(t *jwt.Token) (interface{}, error) {
+	token, err := parser.ParseWithClaims(credential, c, func(t *jwt.Token) (any, error) {
 		cert, err := v.leafCertificate(t.Header)
 		if err != nil {
 			return nil, err
@@ -250,8 +250,8 @@ func (v *Verifier) Verify(credential string) (*Identity, error) {
 
 // leafCertificate reads the user certificate out of a JWT's x5c header and
 // verifies it against the pinned CA for client authentication.
-func (v *Verifier) leafCertificate(header map[string]interface{}) (*x509.Certificate, error) {
-	x5c, _ := header["x5c"].([]interface{})
+func (v *Verifier) leafCertificate(header map[string]any) (*x509.Certificate, error) {
+	x5c, _ := header["x5c"].([]any)
 	if len(x5c) != 1 {
 		return nil, fmt.Errorf("credential must carry exactly one certificate in x5c, has %d", len(x5c))
 	}

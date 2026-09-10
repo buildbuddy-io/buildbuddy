@@ -252,7 +252,7 @@ func parseClaimsInternal(ctx context.Context, token string, keyProvider KeyProvi
 	var lastErr error
 	claims := &Claims{}
 	for _, key := range keys {
-		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (interface{}, error) {
+		_, err := jwt.ParseWithClaims(token, claims, func(token *jwt.Token) (any, error) {
 			method = token.Method.Alg()
 			if token.Method != key.SigningMethod {
 				return nil, fmt.Errorf("incorrect key signing method: %v", token.Method.Alg())
