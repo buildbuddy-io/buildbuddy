@@ -278,24 +278,33 @@ The following properties allow customizing the behavior of the runner:
 
 BuildBuddy's scheduler intelligently allocates resources to actions,
 so it's generally not needed to manually configure resources for actions.
-However, some `exec_properties` are provided as manual overrides:
+However, some `exec_properties` are provided to customize resource allocation:
 
-- `EstimatedCPU`: the CPU time allocated for the action. Example values:
+- `EstimatedCPU`: the estimated CPU required for the action. Example values:
   - `2`: 2 CPU cores
   - `0.5`: 500 MilliCPU
   - `4000m`: 4000 MilliCPU
-- `EstimatedMemory`: the memory allocated to the action. Example values:
+- `EstimatedMemory`: the estimated memory required for the action. Example values:
   - `1M`: 1 MB
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
 - `EstimatedComputeUnits`: a convenience unit that specifies both CPU
   and memory. One compute unit is defined as 1 CPU and 2.5GB of
-  memory. Accepts numerical values, e.g. `1` or `9`.
-- `EstimatedFreeDiskBytes`: the amount of disk space allocated to the action.
-  Example values:
+  memory. Accepts numerical values, e.g. `1` or `9`. Set a positive value
+  to use explicit CPU and memory estimates instead of automatic sizing.
+  `EstimatedCPU` and `EstimatedMemory` override the corresponding
+  compute-unit estimates when specified.
+- `EstimatedFreeDiskBytes`: the extra disk space requested beyond the action's
+  input files. Currently, only `firecracker` isolation uses this property to
+  allocate disk space. Example values:
   - `1M`: 1 MB
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
+
+On BuildBuddy Cloud, set `EstimatedComputeUnits` to a positive value to use
+explicit resource estimates. You can then customize CPU and memory with
+`EstimatedCPU` and `EstimatedMemory`. For example, `EstimatedComputeUnits=2`
+with `EstimatedCPU=4` requests 4 CPUs and 5GB of memory.
 
 ### Execution timeout properties
 
