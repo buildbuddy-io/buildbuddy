@@ -439,7 +439,6 @@ func TestFindMissingBlobs_BypassCache(t *testing.T) {
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
-
 	ctx := testContext()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -851,26 +850,10 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 }
 
 func TestSpliceBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
-	remoteEnv.SetExperimentFlagProvider(fp)
 	conn, requestCount, _ := runRemoteCASS(ctx, remoteEnv, t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 
@@ -903,26 +886,10 @@ func TestSpliceBlob(t *testing.T) {
 }
 
 func TestSplitBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
-	remoteEnv.SetExperimentFlagProvider(fp)
 	conn, _, _ := runRemoteCASS(ctx, remoteEnv, t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 	remote := repb.NewContentAddressableStorageClient(conn)

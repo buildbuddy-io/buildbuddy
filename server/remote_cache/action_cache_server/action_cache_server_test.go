@@ -722,13 +722,7 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 		},
 	}
 
-	chunkingEnabled := true
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingEnabled, te.GetExperimentFlagProvider(), ar))
-
-	chunkingDisabled := false
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingDisabled, te.GetExperimentFlagProvider(), ar)
-	require.Error(t, err)
-	assert.True(t, status.IsNotFoundError(err))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar))
 }
 
 func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
@@ -760,18 +754,14 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 			{Path: "output", TreeDigest: treeDigest},
 		},
 	}
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar))
 	require.NoError(t, action_cache_server.ValidateActionResult(ctx, &getErrorCache{
 		Cache: cache,
 		match: func(r *rspb.ResourceName) bool {
 			return r.GetCacheType() == rspb.CacheType_CAS && digest.Equal(r.GetDigest(), treeDigest)
 		},
 		err: os.ErrNotExist,
-	}, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
-
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, false, te.GetExperimentFlagProvider(), ar)
-	require.Error(t, err)
-	assert.True(t, status.IsNotFoundError(err))
+	}, "", repb.DigestFunction_SHA256, ar))
 
 	tree.Root.Files[0].Name = "y" + tree.Root.Files[0].GetName()[1:]
 	corruptTreeData, err := proto.Marshal(tree)
@@ -781,7 +771,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 	for i, data := range corruptChunkData {
 		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
 	}
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
 
@@ -789,7 +779,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
 	}
 	require.NoError(t, cache.Delete(ctx, chunkRNs[1]))
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }
@@ -810,7 +800,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTreeInfersDigestFunction(t *
 	treeDigest, _ := storeChunkedBlob(t, ctx, cache, treeData, repb.DigestFunction_SHA1)
 	ar := &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{TreeDigest: treeDigest}}}
 
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_UNKNOWN, true, te.GetExperimentFlagProvider(), ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_UNKNOWN, ar))
 }
 
 func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *testing.T) {
@@ -832,7 +822,7 @@ func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *
 		SizeBytes: rpcutil.GRPCMaxSizeBytes + 1,
 	}}}}
 
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }
@@ -871,11 +861,11 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 		lastChunkRN = chunk2RN
 	}
 
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar))
 
 	// Deleting a single chunk should make validation fail with NotFound.
 	require.NoError(t, cache.Delete(ctx, lastChunkRN))
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }
@@ -915,7 +905,7 @@ func TestValidateActionResult_DiscardsChunkedOutputFileBelowCurrentWriteThreshol
 		},
 	}
 
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }

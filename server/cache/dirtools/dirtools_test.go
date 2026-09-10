@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -32,8 +31,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1651,24 +1648,7 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t *testing.T) {
 	flags.Set(t, "cache.client.enable_download_compression", false)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	env, ctx := testEnv(t)
-	env.SetExperimentFlagProvider(fp)
-
 	fileCache := &countingFileCache{
 		FileCache: env.GetFileCache(),
 		adds:      make(map[string]int),

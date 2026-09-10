@@ -1305,14 +1305,6 @@ func BenchmarkWriteUnique(b *testing.B) {
 
 func TestReadChunked(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1538,14 +1530,6 @@ func TestReadChecksPreconditions(t *testing.T) {
 func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 	// Setup environment.
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1694,14 +1678,6 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 
 func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1858,14 +1834,6 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 
 func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1972,14 +1940,6 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 
 func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2244,14 +2204,6 @@ func (r *faultyReader) Read(p []byte) (int, error) {
 
 func TestReadChunkedWithOffset(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2421,14 +2373,6 @@ func TestReadChunkedWithOffset(t *testing.T) {
 
 func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2513,14 +2457,6 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 
 func TestReadChunkedPartialLocalFailure(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2682,14 +2618,6 @@ func TestReadRemoteChunkRetryClassification(t *testing.T) {
 
 func TestWriteChunked(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2849,14 +2777,6 @@ func TestWriteChunked(t *testing.T) {
 
 func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3009,14 +2929,6 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3172,14 +3084,6 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 
 func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3357,14 +3261,6 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	log.Configure()
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3449,14 +3345,6 @@ func setupChunkedReadBenchmarkEnv(b *testing.B) *chunkedReadBenchmarkEnv {
 	log.Configure()
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3588,7 +3476,7 @@ func prepareChunkedReadBenchmarkData(b *testing.B, ctx context.Context, size int
 		})
 		return nil
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), writeChunkFn)
 	require.NoError(b, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(b, err)

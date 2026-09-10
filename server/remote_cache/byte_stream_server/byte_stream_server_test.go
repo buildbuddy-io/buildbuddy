@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -29,8 +28,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -790,26 +787,9 @@ func newUUID(t *testing.T) string {
 }
 
 func TestReadChunked(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -843,26 +823,9 @@ func TestReadChunked(t *testing.T) {
 }
 
 func TestReadChunked_NonZeroOffset(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -930,27 +893,11 @@ func TestReadChunked_NonZeroOffset(t *testing.T) {
 }
 
 func TestReadChunked_NonZeroOffset_ZstdBLAKE3(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1209,28 +1156,13 @@ func TestNewByteStreamServer_BufferPoolAccommodatesCompressedChunkOverhead(t *te
 
 func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 	chunkSize := int64(1024 * 1024)
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
 	te.SetCache(&casCompressionCache{Cache: te.GetCache()})
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1289,28 +1221,13 @@ func TestReadChunked_ZstdBLAKE3_PassthroughIncompressible(t *testing.T) {
 }
 
 func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
 
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
 	te.SetCache(&casCompressionCache{Cache: te.GetCache()})
 
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1376,26 +1293,9 @@ func TestReadChunked_ZstdPassthroughCompressedChunkLargerThanCompressBound(t *te
 }
 
 func TestReadChunked_MissingManifest(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runByteStreamServer(ctx, t, te)
@@ -1448,28 +1348,12 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 		{name: "zstd_many_chunks", chunkCount: 2 * defaultChunkedReadMaxInFlight, want: defaultChunkedReadMaxInFlight, compressor: repb.Compressor_ZSTD},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-				"cache.chunking_enabled": {
-					State:          memprovider.Enabled,
-					DefaultVariant: "true",
-					Variants: map[string]any{
-						"true":  true,
-						"false": false,
-					},
-				},
-			})
-			require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-			fp, err := experiments.NewFlagProvider(t.Name())
-			require.NoError(t, err)
 			if tc.compressor == repb.Compressor_ZSTD {
 				flags.Set(t, "cache.zstd_transcoding_enabled", true)
 			}
 
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
-			te.SetExperimentFlagProvider(fp)
-
 			baseCache := te.GetCache()
 			if tc.compressor == repb.Compressor_ZSTD {
 				baseCache = &casCompressionCache{Cache: baseCache}
@@ -1482,7 +1366,7 @@ func TestReadChunked_UsesParallelReads(t *testing.T) {
 			}
 			te.SetCache(cache)
 
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 
 			clientConn := runByteStreamServer(ctx, t, te)

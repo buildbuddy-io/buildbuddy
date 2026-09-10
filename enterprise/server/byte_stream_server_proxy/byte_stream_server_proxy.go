@@ -1227,9 +1227,7 @@ func (s *ByteStreamServerProxy) writeChunkingEnabled(ctx context.Context) bool {
 	if cdc.IsChunked(ctx) {
 		return false
 	}
-	return s.efp != nil &&
-		s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false) &&
-		chunking.Enabled(ctx, s.efp)
+	return s.efp != nil && s.efp.Boolean(ctx, "cache_proxy.intercept_and_chunk_large_writes", false)
 }
 
 type writeChunkedResult struct {
@@ -1347,7 +1345,7 @@ func (s *ByteStreamServerProxy) writeChunked(ctx context.Context, stream bspb.By
 		return nil
 	}
 
-	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, s.efp)), chunkWriteFn)
+	chunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), chunkWriteFn)
 	if err != nil {
 		return writeChunkedResult{}, status.InternalErrorf("creating chunker: %s", err)
 	}

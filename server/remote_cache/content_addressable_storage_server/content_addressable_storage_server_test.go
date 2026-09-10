@@ -40,7 +40,6 @@ import (
 	"github.com/google/uuid"
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -887,26 +886,9 @@ func TestGetTreeMissingRoot(t *testing.T) {
 }
 
 func TestSpliceAndSplitBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1085,11 +1067,6 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 {
   "$schema": "https://flagd.dev/schema/v0/flags.json",
   "flags": {
-    "cache.chunking_enabled": {
-      "state": "ENABLED",
-      "variants": {"enabled": true},
-      "defaultVariant": "enabled"
-    },
     "splice-without-validation": {
       "state": "ENABLED",
       "variants": {"enabled": true, "disabled": false},
@@ -1111,7 +1088,6 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 			fp, err := experiments.NewFlagProvider(t.Name())
 			require.NoError(t, err)
 			env.SetExperimentFlagProvider(fp)
-
 			ctx := testauth.WithAuthenticatedUserInfo(t.Context(), user)
 			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
 			require.NoError(t, err)
@@ -1174,26 +1150,9 @@ func TestSpliceBlobWithoutValidation(t *testing.T) {
 }
 
 func TestSplitBlobNotFound(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1273,26 +1232,9 @@ func TestSplitBlobRejectsLayeredManifest(t *testing.T) {
 }
 
 func TestSpliceBlobSingleChunk(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1329,26 +1271,9 @@ func TestSpliceBlobSingleChunk(t *testing.T) {
 }
 
 func TestFindMissingBlobsWithChunkedBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1469,30 +1394,14 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-				"cache.chunking_enabled": {
-					State:          memprovider.Enabled,
-					DefaultVariant: "true",
-					Variants: map[string]any{
-						"true":  true,
-						"false": false,
-					},
-				},
-			})
-			require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-			fp, err := experiments.NewFlagProvider(t.Name())
-			require.NoError(t, err)
-
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
-			te.SetExperimentFlagProvider(fp)
 			if tc.useCompressionCache {
 				flags.Set(t, "cache.zstd_transcoding_enabled", true)
 				te.SetCache(&casCompressionCache{Cache: te.GetCache()})
 			}
 
-			ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 			require.NoError(t, err)
 
 			clientConn := runCASServer(ctx, t, te)
@@ -1553,26 +1462,9 @@ func TestBatchReadBlobsWithChunkedBlob(t *testing.T) {
 }
 
 func TestBatchReadBlobsWithMismatchedChunkedManifest(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
-	te.SetExperimentFlagProvider(fp)
-
-	ctx, err = prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
 	require.NoError(t, err)
 
 	clientConn := runCASServer(ctx, t, te)
@@ -1619,22 +1511,6 @@ func TestSpliceBlobReadOnlyKey(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetProviderAndWait(testProvider))
-
-	fp, err := experiments.NewFlagProvider("test")
-	require.NoError(t, err)
-	te.SetExperimentFlagProvider(fp)
-
 	readOnlyUser := &testauth.TestUser{
 		UserID:       "US1",
 		GroupID:      "GR1",
@@ -1654,7 +1530,7 @@ func TestSpliceBlobReadOnlyKey(t *testing.T) {
 		DigestFunction: repb.DigestFunction_BLAKE3,
 	}
 
-	_, err = casClient.SpliceBlob(ctx, spliceReq)
+	_, err := casClient.SpliceBlob(ctx, spliceReq)
 	require.NoError(t, err)
 }
 

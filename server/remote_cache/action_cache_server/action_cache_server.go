@@ -79,16 +79,13 @@ func NewActionCacheServer(env environment.Env) (*ActionCacheServer, error) {
 	}, nil
 }
 
-func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, maxChunkSizeBytes int64, digests []*rspb.ResourceName) error {
+func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, maxChunkSizeBytes int64, digests []*rspb.ResourceName) error {
 	missing, err := cache.FindMissing(findmissing.ContextWithPurpose(ctx, repb.FindMissingBlobsRequest_AC_VALIDATION), digests)
 	if err != nil {
 		return err
 	}
 	if len(missing) == 0 {
 		return nil
-	}
-	if !chunkingEnabled {
-		return status.NotFoundErrorf("ActionResult output file %q not found in cache", chunking.DigestsSummary(missing))
 	}
 	for _, d := range missing {
 		if d.GetSizeBytes() <= maxChunkSizeBytes {
@@ -117,14 +114,13 @@ func checkFilesExist(ctx context.Context, cache interfaces.Cache, instanceName s
 	return eg.Wait()
 }
 
-func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, maxChunkSizeBytes int64, chunkedReadLimiter *semaphore.Weighted, treeDigest *repb.Digest) (*repb.Tree, error) {
+func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName string, digestFunction repb.DigestFunction_Value, maxChunkSizeBytes int64, chunkedReadLimiter *semaphore.Weighted, treeDigest *repb.Digest) (*repb.Tree, error) {
 	rn := digest.NewResourceName(treeDigest, instanceName, rspb.CacheType_CAS, digestFunction).ToProto()
 	blob, err := cache.Get(ctx, rn)
 	if err != nil {
 		isNotFound := status.IsNotFoundError(err) || os.IsNotExist(err)
 		treeSizeBytes := treeDigest.GetSizeBytes()
 		if !isNotFound ||
-			!chunkingEnabled ||
 			treeSizeBytes <= maxChunkSizeBytes ||
 			treeSizeBytes > rpcutil.GRPCMaxSizeBytes {
 			return nil, err
@@ -153,8 +149,8 @@ func readOutputTree(ctx context.Context, cache interfaces.Cache, instanceName st
 	return tree, nil
 }
 
-func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, chunkingEnabled bool, efp interfaces.ExperimentFlagProvider, r *repb.ActionResult) error {
-	maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
+func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteInstanceName string, digestFunction repb.DigestFunction_Value, r *repb.ActionResult) error {
+	maxChunkSizeBytes := chunking.MaxChunkSizeBytes()
 	outputFileDigests := make([]*rspb.ResourceName, 0, len(r.OutputFiles))
 	mu := &sync.Mutex{}
 	appendDigest := func(d *repb.Digest) {
@@ -174,7 +170,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 	for _, d := range r.OutputDirectories {
 		dc := d
 		g.Go(func() error {
-			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, chunkingEnabled, maxChunkSizeBytes, chunkedTreeReadLimiter, dc.GetTreeDigest())
+			tree, err := readOutputTree(gCtx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, chunkedTreeReadLimiter, dc.GetTreeDigest())
 			if err != nil {
 				return err
 			}
@@ -193,7 +189,7 @@ func ValidateActionResult(ctx context.Context, cache interfaces.Cache, remoteIns
 		return err
 	}
 
-	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, chunkingEnabled, maxChunkSizeBytes, outputFileDigests)
+	return checkFilesExist(ctx, cache, remoteInstanceName, digestFunction, maxChunkSizeBytes, outputFileDigests)
 }
 
 func setWorkerMetadata(ar *repb.ActionResult) {
@@ -250,8 +246,7 @@ func (s *ActionCacheServer) fetchActionResult(ctx context.Context, rn *digest.AC
 		return nil, nil, 0, err
 	}
 
-	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), chunkingEnabled, s.env.GetExperimentFlagProvider(), rsp); err != nil {
+	if err := ValidateActionResult(ctx, s.cache, req.GetInstanceName(), req.GetDigestFunction(), rsp); err != nil {
 		return nil, nil, 0, status.NotFoundErrorf("ActionResult (%s) not found: %s", req.GetActionDigest(), err)
 	}
 	// The default limit on incoming gRPC messages is 4MB and Bazel doesn't

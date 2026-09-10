@@ -143,9 +143,10 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	// Otherwise, only check manifests for blobs above the current whole-blob
 	// write threshold. Blobs at or below the threshold should be uploaded as
 	// whole blobs.
-	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
+	if len(missing) > 0 && !cdc.IsChunked(ctx) {
 		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
-		maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
+		maxChunkSizeBytes := chunking.MaxChunkSizeBytes()
+		efp := s.env.GetExperimentFlagProvider()
 
 		var mu sync.Mutex
 		stillMissing := make([]*repb.Digest, 0, len(missing))
@@ -403,12 +404,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
-	efp := s.env.GetExperimentFlagProvider()
-	chunkingEnabled := chunking.Enabled(ctx, efp)
-	chunkedReadFallbackSizeBytes := int64(0)
-	if chunkingEnabled {
-		chunkedReadFallbackSizeBytes = chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
-	}
+	chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes()
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -448,7 +444,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		// It's unexpected, but BatchReadBlobs may be used for blobs that are
 		// large enough to be chunked. If the blob was not found and it's large
 		// enough to be chunked, try to reassemble it from CDC chunks.
-		if (!ok || os.IsNotExist(err)) && chunkingEnabled && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
+		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
 			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
 				data = assembled
 				ok = true
@@ -1246,10 +1242,6 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		}, nil
 	}
 
-	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
-		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
-	}
-
 	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
 		return nil, status.InvalidArgumentErrorf("unsupported chunking function %v in request %s", cf, req)
 	}
@@ -1360,10 +1352,6 @@ func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *re
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
-	}
-
-	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
-		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
 	}
 
 	cf := req.GetChunkingFunction()

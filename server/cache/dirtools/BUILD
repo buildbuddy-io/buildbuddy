@@ -39,7 +39,6 @@ go_test(
     srcs = ["dirtools_test.go"],
     deps = [
         ":dirtools",
-        "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/filecache",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
@@ -57,8 +56,6 @@ go_test(
         "//server/util/proto",
         "//server/util/rpcutil",
         "//server/util/testing/flags",
-        "@com_github_open_feature_go_sdk//openfeature",
-        "@com_github_open_feature_go_sdk//openfeature/memprovider",
         "@com_github_roaringbitmap_roaring//:roaring",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
