@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
@@ -22,6 +23,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/test/bufconn"
 
 	dto "github.com/prometheus/client_model/go"
@@ -446,8 +448,16 @@ func TestMeterProviderGRPCViews(t *testing.T) {
 
 func TestTracingMessageEvents(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
-		for _, traceHeader := range []bool{false, true} {
-			t.Run(fmt.Sprintf("streaming=%t/header=%t", streaming, traceHeader), func(t *testing.T) {
+		for _, tc := range []struct {
+			name, header       string
+			ignore, wantEvents bool
+		}{
+			{name: "absent"}, {name: "empty", header: ""}, {name: "other", header: "true"},
+			{name: "force", header: "force", wantEvents: true},
+			{name: "ignored", header: "force", ignore: true},
+		} {
+			t.Run(fmt.Sprintf("streaming=%t/%s", streaming, tc.name), func(t *testing.T) {
+				flags.Set(t, "app.ignore_forced_tracing_header", tc.ignore)
 				recorder := tracetest.NewSpanRecorder()
 				tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(recorder))
 				defer tp.Shutdown(context.Background())
@@ -467,8 +477,8 @@ func TestTracingMessageEvents(t *testing.T) {
 				defer conn.Close()
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				if traceHeader {
-					ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", "force")
+				if tc.name != "absent" {
+					ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-trace", tc.header)
 				}
 				client := hlpb.NewHealthClient(conn)
 				if streaming {
@@ -485,7 +495,7 @@ func TestTracingMessageEvents(t *testing.T) {
 				}
 				require.Eventually(t, func() bool { return len(recorder.Ended()) == 1 }, 5*time.Second, time.Millisecond)
 				events := recorder.Ended()[0].Events()
-				if !traceHeader {
+				if !tc.wantEvents {
 					require.Empty(t, events)
 					return
 				}
@@ -503,4 +513,40 @@ func TestTracingMessageEvents(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestTracingMessageEventLimit(t *testing.T) {
+	flags.Set(t, "app.ignore_forced_tracing_header", false)
+	recorder := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()), sdktrace.WithSpanProcessor(recorder))
+	defer tp.Shutdown(context.Background())
+	handler := rpcutil.WithTracingMessageEvents(otelgrpc.NewServerHandler(otelgrpc.WithTracerProvider(tp)))
+	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-buildbuddy-trace", "force"))
+	ctx = handler.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: "/google.bytestream.ByteStream/Read"})
+	now := time.Now()
+	handler.HandleRPC(ctx, &stats.Begin{BeginTime: now})
+	handler.HandleRPC(ctx, &stats.InPayload{Length: 10, WireLength: 15})
+	for range 200 {
+		handler.HandleRPC(ctx, &stats.OutPayload{Length: 100, WireLength: 105})
+	}
+	handler.HandleRPC(ctx, &stats.End{BeginTime: now, EndTime: time.Now()})
+	spans := recorder.Ended()
+	require.Len(t, spans, 1)
+	require.Zero(t, spans[0].DroppedEvents())
+	events := spans[0].Events()
+	require.Len(t, events, 65)
+	require.Equal(t, "grpc.in_payload", events[0].Name)
+	require.Equal(t, "grpc.message_summary", events[64].Name)
+	attrs := map[string]int64{}
+	for _, a := range spans[0].Attributes() {
+		if strings.HasPrefix(string(a.Key), "grpc.") {
+			attrs[string(a.Key)] = a.Value.AsInt64()
+		}
+	}
+	require.Equal(t, map[string]int64{
+		"grpc.messages_received": 1, "grpc.messages_sent": 200,
+		"grpc.bytes_received": 10, "grpc.bytes_sent": 20000,
+		"grpc.wire_bytes_received": 15, "grpc.wire_bytes_sent": 21000,
+		"grpc.message_events_omitted": 137,
+	}, attrs)
 }

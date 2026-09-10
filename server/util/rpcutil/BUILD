@@ -10,6 +10,7 @@ go_library(
         "//server/util/flag",
         "//server/util/proto",
         "//server/util/status",
+        "//server/util/tracing",
         "//server/util/vtprotocodec",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_exporters_prometheus//:prometheus",
@@ -19,7 +20,6 @@ go_library(
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//mem",
-        "@org_golang_google_grpc//metadata",
         "@org_golang_google_grpc//stats",
     ],
 )
@@ -30,6 +30,7 @@ go_test(
     deps = [
         ":rpcutil",
         "//server/util/proto",
+        "//server/util/testing/flags",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_model//io/prometheus/client:go",
         "@com_github_stretchr_testify//require",
@@ -41,6 +42,7 @@ go_test(
         "@org_golang_google_grpc//health",
         "@org_golang_google_grpc//health/grpc_health_v1",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//stats",
         "@org_golang_google_grpc//test/bufconn",
         "@org_golang_google_protobuf//types/known/timestamppb",
         "@org_uber_go_goleak//:goleak",

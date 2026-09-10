@@ -9,6 +9,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/vtprotocodec"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/prometheus"
@@ -17,7 +18,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/mem"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/stats"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -26,44 +26,81 @@ import (
 const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
 
 var OTELGRPCMessageEventsEnabled = flag.Bool("grpc_otel_message_events_enabled", true,
-	"If set, record per-message OpenTelemetry events on gRPC spans. Only useful for streaming RPCs; disable on unary-only servers (e.g. the metadata server) to save per-RPC allocation.")
+	"Record up to 64 server payload trace events per RPC when x-buildbuddy-trace is force and app.ignore_forced_tracing_header is false, with totals and an omitted-event summary for longer streams. Also requests client message events from otelgrpc; otelgrpc 0.67+ does not emit those events.")
 
-// WithTracingMessageEvents records message sizes on recording spans only when
-// the incoming request includes x-buildbuddy-trace. otelgrpc no longer records
-// these events itself.
+const maxMessageEvents = 64
+
+// WithTracingMessageEvents adds bounded message diagnostics to force-traced RPCs.
 func WithTracingMessageEvents(handler stats.Handler) stats.Handler {
 	return &tracingMessageHandler{Handler: handler}
 }
 
-type tracingMessageHandler struct {
-	stats.Handler
+type tracingMessageHandler struct{ stats.Handler }
+type messageTraceKey struct{}
+type messageTrace struct {
+	mu                               sync.Mutex
+	received, sent                   int64
+	receivedBytes, sentBytes         int64
+	receivedWireBytes, sentWireBytes int64
+	recorded                         int64
+}
+
+func (h *tracingMessageHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
+	ctx = h.Handler.TagRPC(ctx, info)
+	if tracing.IsForcedTrace(ctx) && trace.SpanFromContext(ctx).IsRecording() {
+		ctx = context.WithValue(ctx, messageTraceKey{}, &messageTrace{})
+	}
+	return ctx
 }
 
 func (h *tracingMessageHandler) HandleRPC(ctx context.Context, event stats.RPCStats) {
-	h.recordMessage(ctx, event)
+	if state, ok := ctx.Value(messageTraceKey{}).(*messageTrace); ok {
+		state.record(trace.SpanFromContext(ctx), event)
+	}
 	h.Handler.HandleRPC(ctx, event)
 }
 
-func (*tracingMessageHandler) recordMessage(ctx context.Context, event stats.RPCStats) {
+func (m *messageTrace) record(span trace.Span, event stats.RPCStats) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	var name string
 	var size, wireSize int
 	switch e := event.(type) {
 	case *stats.InPayload:
 		name, size, wireSize = "grpc.in_payload", e.Length, e.WireLength
+		m.received++
+		m.receivedBytes += int64(size)
+		m.receivedWireBytes += int64(wireSize)
 	case *stats.OutPayload:
-		// Successful handoff to gRPC does not prove delivery to the peer.
+		// Handoff to gRPC does not prove delivery to the peer.
 		name, size, wireSize = "grpc.out_payload", e.Length, e.WireLength
+		m.sent++
+		m.sentBytes += int64(size)
+		m.sentWireBytes += int64(wireSize)
+	case *stats.End:
+		omitted := m.received + m.sent - m.recorded
+		attrs := []attribute.KeyValue{
+			attribute.Int64("grpc.messages_received", m.received),
+			attribute.Int64("grpc.messages_sent", m.sent),
+			attribute.Int64("grpc.bytes_received", m.receivedBytes),
+			attribute.Int64("grpc.bytes_sent", m.sentBytes),
+			attribute.Int64("grpc.wire_bytes_received", m.receivedWireBytes),
+			attribute.Int64("grpc.wire_bytes_sent", m.sentWireBytes),
+			attribute.Int64("grpc.message_events_omitted", omitted),
+		}
+		span.SetAttributes(attrs...)
+		if omitted > 0 {
+			span.AddEvent("grpc.message_summary", trace.WithAttributes(attrs...))
+		}
+		return
 	default:
 		return
 	}
-	span := trace.SpanFromContext(ctx)
-	if !span.IsRecording() || len(metadata.ValueFromIncomingContext(ctx, "x-buildbuddy-trace")) == 0 {
+	if m.recorded >= maxMessageEvents {
 		return
 	}
-	span.AddEvent(name, trace.WithAttributes(
-		attribute.Int("bytes", size),
-		attribute.Int("wire_bytes", wireSize),
-	))
+	m.recorded++
+	span.AddEvent(name, trace.WithAttributes(attribute.Int("bytes", size), attribute.Int("wire_bytes", wireSize)))
 }
 
 func init() {
