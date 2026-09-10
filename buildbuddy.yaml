@@ -14,7 +14,7 @@ actions:
     steps:
       - run: "bazel test //... --config=linux-workflows --config=race --config=tests-ci --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
     allow_concurrent_runs: false
-  - name: Build public artifacts
+  - name: Build public release artifacts
     container_image: ubuntu-22.04
     resource_requests:
       disk: 27GB
