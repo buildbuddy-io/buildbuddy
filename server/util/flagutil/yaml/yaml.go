@@ -132,13 +132,7 @@ func GetYAMLTypeString(yamlValue any) string {
 	if v, ok := yamlValue.(YAMLTypeStringable); ok {
 		return v.YAMLTypeString()
 	}
-	value := reflect.ValueOf(yamlValue)
-	if value.CanAddr() {
-		if v, ok := value.Addr().Interface().(YAMLTypeStringable); ok {
-			return v.YAMLTypeString()
-		}
-	}
-	t := value.Type()
+	t := reflect.TypeOf(yamlValue)
 	for t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}

@@ -197,8 +197,7 @@ func (v *Verifier) Verify(credential string) (*Identity, error) {
 		return cert.PublicKey, nil
 	})
 	if err != nil {
-		var verr *jwt.ValidationError
-		if errors.As(err, &verr) {
+		if verr, ok := errors.AsType[*jwt.ValidationError](err); ok {
 			switch {
 			case verr.Errors&jwt.ValidationErrorSignatureInvalid != 0:
 				return nil, fmt.Errorf("relayauth: credential signature is invalid: %w", err)

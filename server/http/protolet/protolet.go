@@ -48,16 +48,16 @@ func isRPCMethod(m reflect.Method) bool {
 		return false
 	}
 	// Check signature is about right: (rcvr??, context, proto) (proto, error)
-	if !t.In(1).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
+	if !t.In(1).Implements(reflect.TypeFor[context.Context]()) {
 		return false
 	}
-	if !t.In(2).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+	if !t.In(2).Implements(reflect.TypeFor[proto.Message]()) {
 		return false
 	}
-	if !t.Out(0).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+	if !t.Out(0).Implements(reflect.TypeFor[proto.Message]()) {
 		return false
 	}
-	if !t.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+	if !t.Out(1).Implements(reflect.TypeFor[error]()) {
 		return false
 	}
 	return true
@@ -71,13 +71,13 @@ func isStreamingRPCMethod(m reflect.Method) bool {
 	if t.NumIn() != 3 || t.NumOut() != 1 {
 		return false
 	}
-	if !t.In(1).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+	if !t.In(1).Implements(reflect.TypeFor[proto.Message]()) {
 		return false
 	}
-	if !t.In(2).Implements(reflect.TypeOf((*grpc.ServerStream)(nil)).Elem()) {
+	if !t.In(2).Implements(reflect.TypeFor[grpc.ServerStream]()) {
 		return false
 	}
-	if !t.Out(0).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+	if !t.Out(0).Implements(reflect.TypeFor[error]()) {
 		return false
 	}
 	return true
@@ -173,7 +173,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server any, grpcSer
 			methodType := method.Type()
 			requestIndex := 2
 			// If we're dealing with a streaming method, the request proto is the first input
-			if method.Type().In(1).Implements(reflect.TypeOf((*proto.Message)(nil)).Elem()) {
+			if method.Type().In(1).Implements(reflect.TypeFor[proto.Message]()) {
 				requestIndex = 1
 			}
 
@@ -232,7 +232,7 @@ func GenerateHTTPHandlers(servicePrefix, serviceName string, server any, grpcSer
 		args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(ctx), reqVal}
 		rspArr := method.Call(args)
 		if rspArr[1].Interface() != nil {
-			err, _ := rspArr[1].Interface().(error)
+			err, _ := reflect.TypeAssert[error](rspArr[1])
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}

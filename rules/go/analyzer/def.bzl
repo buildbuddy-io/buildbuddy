@@ -1,4 +1,6 @@
 ANALYZERS = [
+    "reflecttypeassert",
+    "errorsastype",
     "embedlit",
     "slicesclip",
     "slicesbackward",
@@ -12,7 +14,7 @@ ANALYZERS = [
     # "plusbuild",
     # "omitzero",
     "rangeint",
-    # "reflecttypefor",
+    "reflecttypefor",
     "slicescontains",
     "slicessort",
     "stditerators",
