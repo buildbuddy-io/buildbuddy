@@ -38,6 +38,7 @@ func WithTracingMessageEvents(handler stats.Handler) stats.Handler {
 type tracingMessageHandler struct{ stats.Handler }
 type messageTraceKey struct{}
 type messageTrace struct {
+	span                             trace.Span
 	mu                               sync.Mutex
 	received, sent                   int64
 	receivedBytes, sentBytes         int64
@@ -47,20 +48,22 @@ type messageTrace struct {
 
 func (h *tracingMessageHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
 	ctx = h.Handler.TagRPC(ctx, info)
-	if tracing.IsForcedTrace(ctx) && trace.SpanFromContext(ctx).IsRecording() {
-		ctx = context.WithValue(ctx, messageTraceKey{}, &messageTrace{})
+	if tracing.IsForcedTrace(ctx) {
+		if span := trace.SpanFromContext(ctx); span.IsRecording() {
+			ctx = context.WithValue(ctx, messageTraceKey{}, &messageTrace{span: span})
+		}
 	}
 	return ctx
 }
 
 func (h *tracingMessageHandler) HandleRPC(ctx context.Context, event stats.RPCStats) {
 	if state, ok := ctx.Value(messageTraceKey{}).(*messageTrace); ok {
-		state.record(trace.SpanFromContext(ctx), event)
+		state.record(event)
 	}
 	h.Handler.HandleRPC(ctx, event)
 }
 
-func (m *messageTrace) record(span trace.Span, event stats.RPCStats) {
+func (m *messageTrace) record(event stats.RPCStats) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var name string
@@ -88,9 +91,9 @@ func (m *messageTrace) record(span trace.Span, event stats.RPCStats) {
 			attribute.Int64("grpc.wire_bytes_sent", m.sentWireBytes),
 			attribute.Int64("grpc.message_events_omitted", omitted),
 		}
-		span.SetAttributes(attrs...)
+		m.span.SetAttributes(attrs...)
 		if omitted > 0 {
-			span.AddEvent("grpc.message_summary", trace.WithAttributes(attrs...))
+			m.span.AddEvent("grpc.message_summary", trace.WithAttributes(attrs...))
 		}
 		return
 	default:
@@ -100,7 +103,7 @@ func (m *messageTrace) record(span trace.Span, event stats.RPCStats) {
 		return
 	}
 	m.recorded++
-	span.AddEvent(name, trace.WithAttributes(attribute.Int("bytes", size), attribute.Int("wire_bytes", wireSize)))
+	m.span.AddEvent(name, trace.WithAttributes(attribute.Int("bytes", size), attribute.Int("wire_bytes", wireSize)))
 }
 
 func init() {
