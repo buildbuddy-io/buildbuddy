@@ -267,10 +267,6 @@ const (
 	// Binary version. Example: `v2.0.0`.
 	VersionLabel = "version"
 
-	// Executor shutdown lifecycle stage: `shutting_down` or
-	// `post_reenqueue_tasks`.
-	ExecutorLifecycleStageLabel = "stage"
-
 	// Binary git commit SHA. Example: `4bd7046417608d785094aa5ec7aa009a9ae53753`
 	CommitLabel = "commit"
 
@@ -470,10 +466,6 @@ const (
 
 // Label value constants
 const (
-	// Values for ExecutorLifecycleStageLabel.
-	ExecutorLifecycleStageShuttingDown       = "shutting_down"
-	ExecutorLifecycleStagePostReenqueueTasks = "post_reenqueue_tasks"
-
 	HitStatusLabel         = "hit"
 	MissStatusLabel        = "miss"
 	PartialStatusLabel     = "partial"
@@ -1702,21 +1694,6 @@ var (
 		Subsystem: "remote_execution",
 		Name:      "assigned_and_queued_estimated_milli_cpu",
 		Help:      "Estimated CPU time on the executor that is currently allocated for queued or executing tasks, in **milliCPU** (CPU-milliseconds per second). Note that this is a fuzzy estimate because there's no guarantee that tasks queued on a machine will be handled by that machine.",
-	})
-
-	// Number of executors in this process that have reached each stage of a
-	// graceful shutdown. Production executors report 0 or 1 per stage;
-	// integration tests run several executors in one process. Stages:
-	// `shutting_down` (shutdown signal received; queued work is no longer
-	// claimed) and `post_reenqueue_tasks` (queued task reservations were
-	// handed back to the scheduler).
-	RemoteExecutionExecutorLifecycle = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_execution",
-		Name:      "executor_lifecycle",
-		Help:      "Number of executors in this process that have reached each graceful shutdown stage (`shutting_down`, `post_reenqueue_tasks`). 0 or 1 per stage in production; integration tests run several executors per process.",
-	}, []string{
-		ExecutorLifecycleStageLabel,
 	})
 
 	RemoteExecutionAssignableMilliCPU = promauto.NewGauge(prometheus.GaugeOpts{

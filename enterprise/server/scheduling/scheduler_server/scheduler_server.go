@@ -140,6 +140,11 @@ const (
 	// executor process exits as soon as its own shutdown completes, which can
 	// be before a long hand-back list has been worked through.
 	shutdownReEnqueueGracePeriod = 5 * time.Minute
+	// Bound on re-enqueueing a single handed-back reservation. reEnqueueTask
+	// retries until its context ends, so without this one unplaceable
+	// reservation could consume the whole grace period and drop everything
+	// after it.
+	shutdownReEnqueuePerTaskTimeout = 10 * time.Second
 
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
@@ -423,7 +428,10 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 					}
 					leaseID := ""
 					reconnectToken := ""
-					if err := h.scheduler.reEnqueueTask(reEnqueueCtx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
+					taskCtx, cancelTask := context.WithTimeout(reEnqueueCtx, shutdownReEnqueuePerTaskTimeout)
+					err := h.scheduler.reEnqueueTask(taskCtx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down")
+					cancelTask()
+					if err != nil {
 						log.CtxWarningf(reEnqueueCtx, "Could not re-enqueue task reservation %q for executor %q going down: %s", taskID, executorID, err)
 					}
 				}

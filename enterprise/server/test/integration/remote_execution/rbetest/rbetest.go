@@ -975,21 +975,53 @@ func (r *Env) RemoveExecutor(executor *Executor) {
 	r.waitForExecutorRegistration()
 }
 
-// DisconnectExecutor simulates the executor process exiting. The scheduler
-// registration stream is torn down with no further coordination with the
-// server, and the test env stops tracking the executor. Use it after
-// BeginShutdown and WaitForShutdown to model an executor that exits as soon as
-// its own graceful shutdown completes, whether or not the scheduler is done
-// with it. Unlike RemoveExecutor, this does not wait for the scheduler's set of
-// registered executors to match the test env's. The scheduler already
-// unregistered this executor when it received the shutdown hand-back, and other
-// executors in the env may be shutting down at the same time.
+// DisconnectExecutor simulates the executor process exiting. It waits until
+// the scheduler has unregistered the executor, which happens when the
+// scheduler receives the executor's shutdown hand-back, then tears down the
+// registration stream with no further coordination with the server and stops
+// tracking the executor. Use it after BeginShutdown and WaitForShutdown to
+// model an executor that exits as soon as its own graceful shutdown completes,
+// whether or not the scheduler is done re-enqueueing its work.
 func (r *Env) DisconnectExecutor(executor *Executor) {
 	if _, ok := r.executors[executor.id]; !ok {
 		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.id))
 	}
+	r.waitForExecutorUnregistered(executor.id)
 	executor.cancelRegistration()
 	delete(r.executors, executor.id)
+}
+
+// waitForExecutorUnregistered waits until the scheduler no longer lists the
+// executor with the given ID.
+func (r *Env) waitForExecutorUnregistered(executorID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
+	defer cancel()
+	ctx = r.WithUserID(ctx, r.UserID1)
+	client := r.GetBuildBuddyServiceClient()
+	req := &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: r.GroupID1,
+		},
+	}
+	for {
+		rsp, err := client.GetExecutionNodes(ctx, req)
+		require.NoError(r.t, err)
+		registered := false
+		for _, e := range rsp.GetExecutor() {
+			if e.GetNode().GetExecutorId() == executorID {
+				registered = true
+				break
+			}
+		}
+		if !registered {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			require.FailNowf(r.t, "executor still registered", "executor %q was still registered with the scheduler after %s", executorID, defaultWaitTimeout)
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.

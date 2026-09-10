@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/config"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
-	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -247,7 +246,6 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		return true, nil
 	case <-r.shutdownSignal:
 		log.Info("Executor shutting down, cancelling node registration.")
-		metrics.RemoteExecutionExecutorLifecycle.WithLabelValues(metrics.ExecutorLifecycleStageShuttingDown).Inc()
 		taskReservations := r.taskScheduler.GetQueuedTaskReservations()
 		var taskIDs []string
 		for _, r := range taskReservations {
@@ -261,7 +259,6 @@ func (r *Registration) processWorkStream(ctx context.Context, stream scpb.Schedu
 		if err := stream.Send(rsp); err != nil {
 			return false, status.UnavailableErrorf("could not send shutdown notification: %s", err)
 		}
-		metrics.RemoteExecutionExecutorLifecycle.WithLabelValues(metrics.ExecutorLifecycleStagePostReenqueueTasks).Inc()
 		return true, nil
 	case msg := <-schedulerMsgs:
 		if moreWorkResponse := msg.GetAskForMoreWorkResponse(); moreWorkResponse != nil {

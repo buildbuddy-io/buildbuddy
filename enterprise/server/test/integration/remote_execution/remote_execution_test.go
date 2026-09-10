@@ -44,7 +44,6 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1685,9 +1684,6 @@ func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) 
 	// that off so the shutdown hand-back is the only way for a queued
 	// reservation to survive.
 	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", int64(0))
-	// The lifecycle gauge is process-wide and other tests in this process may
-	// have shut executors down already.
-	metrics.RemoteExecutionExecutorLifecycle.Reset()
 
 	rbe := rbetest.NewRBETestEnv(t)
 
@@ -1731,15 +1727,14 @@ func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) 
 	for _, e := range doomed {
 		e.BeginShutdown()
 	}
-	require.Eventually(t, func() bool {
-		return testmetrics.GaugeValueForLabels(t, metrics.RemoteExecutionExecutorLifecycle, prometheus.Labels{
-			metrics.ExecutorLifecycleStageLabel: metrics.ExecutorLifecycleStagePostReenqueueTasks,
-		}) == float64(len(doomed))
-	}, 10*time.Second, 10*time.Millisecond, "all doomed executors should have handed back their reservations")
 
 	// ...and let the executor processes exit before it gets any further, the
-	// way they do in production once max_shutdown_duration runs out. This
-	// cancels the registration stream contexts.
+	// way they do in production once max_shutdown_duration runs out. Each
+	// executor's own shutdown completes once it has sent its hand-back, and
+	// DisconnectExecutor waits until the scheduler has received it (the
+	// scheduler unregisters the executor at that point) before cancelling the
+	// registration stream. So any loss below can only come from the
+	// re-enqueueing being cut short.
 	for _, e := range doomed {
 		e.WaitForShutdown()
 		rbe.DisconnectExecutor(e)
@@ -1749,10 +1744,10 @@ func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) 
 	taskRouter.UpdateSubset([]string{survivorID})
 	taskRouter.Unblock()
 
-	// Every queued command should still run, on the survivor, within 30s.
-	deadline := time.After(30 * time.Second)
+	// Every queued command should still run on the survivor. The survivor runs
+	// them one at a time, so allow 30s for each.
 	for _, cmd := range cmds {
-		res := waitForCompletion(t, cmd, deadline)
+		res := waitForCompletion(t, cmd, time.After(30*time.Second))
 		require.NoError(t, res.Err, "[%s] should have completed successfully", cmd.Name)
 		assert.Equal(t, survivorID, res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have run on the survivor", cmd.Name)
 	}
