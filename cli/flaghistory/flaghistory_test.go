@@ -92,7 +92,7 @@ func TestSaveFlags(t *testing.T) {
 	require.NoError(t, err)
 
 	args, err = SaveFlags(args)
-	require.NoError(t, err)
+	requireError(t, err)
 
 	require.Equal(t, "explicit-invocation-id", args.Get(InvocationIDFlagName))
 	requirePreviousFlag(t, besBackendFlagName, "grpc://backend.example")
