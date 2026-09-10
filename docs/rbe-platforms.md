@@ -280,18 +280,17 @@ BuildBuddy's scheduler intelligently allocates resources to actions,
 so it's generally not needed to manually configure resources for actions.
 However, some `exec_properties` are provided to customize resource allocation:
 
-- `EstimatedCPU`: the estimated CPU required for the action. Example values:
+- `EstimatedCPU`: the estimated CPU required for the action. This may be overridden by the auto-sizer, except when `EstimatedComputeUnits` is also set. Example values:
   - `2`: 2 CPU cores
   - `0.5`: 500 MilliCPU
   - `4000m`: 4000 MilliCPU
-- `EstimatedMemory`: the estimated memory required for the action. Example values:
+- `EstimatedMemory`: the estimated memory required for the action. This may be overridden by the auto-sizer, except when `EstimatedComputeUnits` is also set. Example values:
   - `1M`: 1 MB
   - `2GB`: 2 GB
   - `4.5GB`: 4.5 GB
-- `EstimatedComputeUnits`: a convenience unit that specifies both CPU
-  and memory. One compute unit is defined as 1 CPU and 2.5GB of
-  memory. Accepts numerical values, e.g. `1` or `9`. Set a positive value
-  to use explicit CPU and memory estimates instead of automatic sizing.
+- `EstimatedComputeUnits`: a unit that specifies both CPU
+and memory, and also enables manual task sizing instead of auto-sizing. One compute unit is defined as 1 CPU and 2.5GB of
+  memory. Accepts numerical values, e.g. `1` or `9`.
   `EstimatedCPU` and `EstimatedMemory` override the corresponding
   compute-unit estimates when specified.
 - `EstimatedFreeDiskBytes`: the extra disk space requested beyond the action's
