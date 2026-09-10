@@ -208,6 +208,7 @@ func (a *AwsS3BlobStore) download(ctx context.Context, blobName string) ([]byte,
 		if errors.As(err, &nsk) {
 			return nil, status.NotFoundError(err.Error())
 		}
+		return nil, err
 	}
 
 	return buff.Bytes(), nil
