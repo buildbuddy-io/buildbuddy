@@ -10,6 +10,8 @@ They have options to deploy everything necessary to use all of BuildBuddy's bell
 
 The official BuildBuddy charts live in our [buildbuddy-helm repo](https://github.com/buildbuddy-io/buildbuddy-helm).
 
+For guidance on deploying and sizing self-hosted Cache Proxies, see the [Enterprise Cache Proxy documentation](enterprise-proxy.md).
+
 ## TL;DR
 
 ```bash
