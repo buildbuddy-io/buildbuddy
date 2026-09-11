@@ -40,9 +40,9 @@ This will return an IP address that you can ping to verify that your installatio
 
 ### Deployment topology and storage
 
-The Helm chart runs Cache Proxy replicas as a distributed cache. Consistent hashing assigns each cached artifact to an owning proxy pod. With the default replication factor of one, one proxy pod within the cluster stores each artifact, and other proxies route reads and writes to it. The upstream BuildBuddy Remote Cache remains the authoritative copy.
+The Helm chart runs Cache Proxies replicas as a distributed cache. Consistent hashing assigns cache artifacts to one or more proxy pods. With the default replication factor of one, each artifact is stored on one proxy pod in the cluster, and other proxy pods route reads and writes to the pod that owns the artifact. The upstream BuildBuddy Remote Cache remains the authoritative source of all cache artifacts.
 
-Use SSD-backed storage within the cluster for Cache Proxy data when possible. Proxy storage performance is generally less sensitive than executor scratch storage, but disk latency and throughput can still become bottlenecks under heavy cache traffic. Prefer fewer, larger proxies to reduce coordination and per-pod overhead, while retaining enough replicas for maintenance and failure tolerance.
+Use SSD-backed storage for Cache Proxy data when possible. Proxy storage performance is generally less sensitive than executor scratch storage, but disk latency and throughput can become bottlenecks under heavy load. Prefer fewer, larger proxies to reduce coordination and per-pod overhead, while retaining enough replicas for maintenance and failure tolerance.
 
 ### Initial sizing
 
@@ -53,7 +53,7 @@ As a starting point, size the proxy deployment relative to the executor capacity
 | CPU      | 20:1 to 30:1            |
 | Memory   | 4:1 to 5:1              |
 
-For example, a cluster with 1,000 executor CPUs and 2 TB (approximately 1.82 TiB) of executor memory should start with approximately 33 to 50 proxy CPUs and 400 to 500 GB (approximately 373 to 466 GiB) of proxy memory, divided across the proxy replicas.
+For example, an executor cluster with 1,000 CPUs and 2 TB (approximately 1.82 TiB) of memory should start with approximately 33 to 50 proxy CPUs and 400 to 500 GB (approximately 373 to 466 GiB) of proxy memory total, divided across the proxy replicas.
 
 One possible starting configuration for that example is:
 
@@ -72,7 +72,7 @@ This allocates 48 CPUs and 420 GiB of memory across three Cache Proxy replicas.
 
 The example sets requests equal to limits so scheduler reservations match the sizing calculation. Clusters that intentionally overcommit CPU can lower the CPU requests separately.
 
-These ratios are rules of thumb rather than fixed requirements. Monitor proxy CPU, memory, disk utilization, cache hit rate, request latency, evictions, and upstream traffic, then tune the replica count and per-pod resources for your cache traffic and enabled features.
+These ratios are rules of thumb rather than fixed requirements. Monitor proxy CPU, memory, disk utilization, cache hit rate, request latency, evictions, and upstream traffic, then tune the replica count and per-pod resources based on observed performance.
 
 ### Scaling executors
 
