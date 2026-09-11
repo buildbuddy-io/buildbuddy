@@ -49,6 +49,7 @@ var (
 	conversionGroup singleflight.Group[string, string]
 
 	localCacheStoreExt4Images = flag.Bool("executor.local_cache_store_ext4_images", true, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
+	excludeRootDeviceNodes    = flag.Bool("executor.exclude_root_device_nodes", false, "If true, omit entries under the root /dev directory when converting OCI images to ext4. Intended for unprivileged conversion actions.", flag.Internal)
 )
 
 func hashFile(filename string) (string, error) {
@@ -88,6 +89,14 @@ func diskImageFileNodeFromKey(key string) *repb.FileNode {
 
 func diskImageFileNode(containerImage string) *repb.FileNode {
 	return diskImageFileNodeFromKey(diskImageFileCacheKey(containerImage))
+}
+
+// AddDiskImageToFileCache adds a prebuilt ext4 image using the same shared
+// filecache key that Firecracker uses for converted OCI images.
+func AddDiskImageToFileCache(ctx context.Context, fileCache interfaces.FileCache, containerImage, imagePath string) error {
+	sharedCtx := sharedFileCacheContext(ctx, fileCache)
+	node := diskImageFileNode(containerImage)
+	return fileCache.AddFile(sharedCtx, node, imagePath)
 }
 
 // getDiskImagesPath returns the parent directory where legacy disk images are
@@ -295,8 +304,20 @@ func CreateDiskImage(ctx context.Context, resolver *oci.Resolver, fileCache inte
 func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache interfaces.FileCache, cacheRoot, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
-	tmpImagePath, err := convertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher)
+	tmpImage, err := os.CreateTemp(cacheRoot, "containerfs-*.ext4")
 	if err != nil {
+		return "", err
+	}
+	tmpImagePath := tmpImage.Name()
+	defer func() {
+		if err := os.Remove(tmpImagePath); err != nil && !os.IsNotExist(err) {
+			log.CtxWarningf(ctx, "Delete temp disk image %q: %s", tmpImagePath, err)
+		}
+	}()
+	if err := tmpImage.Close(); err != nil {
+		return "", fmt.Errorf("close temp disk image: %w", err)
+	}
+	if err := ConvertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher, tmpImagePath); err != nil {
 		return "", err
 	}
 	if !*localCacheStoreExt4Images || fileCache == nil {
@@ -315,58 +336,60 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 		log.CtxDebugf(ctx, "generated rootfs at %q", containerImagePath)
 		return containerImagePath, nil
 	}
-	defer func() {
-		if err := os.Remove(tmpImagePath); err != nil && !os.IsNotExist(err) {
-			log.CtxWarningf(ctx, "Delete temp disk image %q: %s", tmpImagePath, err)
-		}
-	}()
-	sharedCtx := sharedFileCacheContext(ctx, fileCache)
-	if err := fileCache.AddFile(sharedCtx, diskImageFileNode(containerImage), tmpImagePath); err != nil {
+	if err := AddDiskImageToFileCache(ctx, fileCache, containerImage, tmpImagePath); err != nil {
 		return "", fmt.Errorf("add disk image to filecache: %w", err)
 	}
 	return "", nil
 }
 
-// convertContainerToExt4FS generates an ext4 filesystem image from an OCI
-// container image reference.
-func convertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool) (string, error) {
+// ConvertContainerToExt4FS pulls an OCI image and writes its root filesystem
+// to an ext4 image at outputPath.
+func ConvertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
 	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
 	start := time.Now()
 
 	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, useOCIFetcher)
 	if err != nil {
-		return "", err
+		return err
 	}
 	rc := mutate.Extract(img)
 	defer rc.Close()
 
 	tempUnpackDir, err := os.MkdirTemp(workspaceDir, "unpack-*")
 	if err != nil {
-		return "", status.UnavailableErrorf("error creating temp unpack dir: %s", err)
+		return status.UnavailableErrorf("error creating temp unpack dir: %s", err)
 	}
 	defer os.RemoveAll(tempUnpackDir)
 
-	cmd := exec.CommandContext(ctx, "tar", "--extract", "--directory", tempUnpackDir)
+	tarArgs := []string{
+		"--extract",
+		"--directory", tempUnpackDir,
+	}
+	if *excludeRootDeviceNodes {
+		tarArgs = append(tarArgs,
+			"--anchored",
+			// The ext4 generator runs as the unprivileged action user, so tar
+			// cannot recreate OCI device entries using mknod. Guest startup
+			// mounts devtmpfs over /dev, so entries from this root directory
+			// would not be visible anyway.
+			"--exclude", "dev/*",
+		)
+	}
+	cmd := exec.CommandContext(ctx, "tar", tarArgs...)
 	var stderr bytes.Buffer
 	cmd.Stdin = rc
 	cmd.Stderr = &stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Run(); err != nil {
-		return "", status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
+		return status.UnavailableErrorf("download and extract layer tarball: %s: %q", err, stderr.String())
 	}
 
 	// Take the rootfs and write it into an ext4 image.
-	f, err := os.CreateTemp(workspaceDir, "containerfs-*.ext4")
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	imageFile := f.Name()
-	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, imageFile); err != nil {
-		return "", err
+	if err := ext4.DirectoryToImageAutoSize(ctx, tempUnpackDir, outputPath); err != nil {
+		return err
 	}
 	log.CtxInfof(ctx, "Converted %s to ext4 format in %s", containerImage, time.Since(start))
-	return imageFile, nil
+	return nil
 }
 
 // OverlayfsLayerToTarball converts an extracted overlayfs layer to an
