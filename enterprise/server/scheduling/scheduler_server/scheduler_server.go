@@ -2210,9 +2210,8 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			} else {
 				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
 			}
-
 			if req.GetReEnqueue() {
-				if _, err := s.ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{TaskId: taskID, Reason: req.GetReEnqueueReason().GetMessage()}); err != nil {
+				if err := s.reEnqueueTask(ctx, taskID, "" /*=leaseID*/, "" /*=reconnectToken*/, probesPerTask, req.GetReEnqueueReason().GetMessage()); err != nil {
 					log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task requested by executor but failed with err: %s", taskID, err)
 				}
 			}
@@ -2790,6 +2789,9 @@ func emitRemoteRunnerMetric(ctx context.Context, task *repb.ExecutionTask, md *s
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
+	if req.GetLeaseId() == "" {
+		return nil, status.FailedPreconditionError("lease id is required")
+	}
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
 	reconnectToken := ""
 	if err := s.reEnqueueTask(ctx, req.GetTaskId(), req.GetLeaseId(), reconnectToken, probesPerTask, req.GetReason()); err != nil {
