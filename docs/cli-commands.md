@@ -16,6 +16,88 @@ bb help
 bb help <command>
 ```
 
+## bb agent
+
+`bb agent` subcommands use an AI coding agent to analyze BuildBuddy invocations.
+
+Relevant invocation data is sent to the selected AI provider. This data can contain target names, file paths, build and test output, and other details about the build.
+
+#### Prerequisites
+
+The selected agent's CLI must be installed and available in `PATH`: `claude` or `codex`.
+
+#### Authentication
+
+On remote runners, only authorization via an API key is supported. It should be set as a [BuildBuddy secret](/docs/secrets).
+
+Agent usage is billed according to the selected provider and authentication method.
+
+```bash
+ANTHROPIC_API_KEY=<API_KEY> bb agent <SUBCOMMAND> --agent=claude <INVOCATION_ID>
+
+CODEX_API_KEY=<API_KEY> bb agent <SUBCOMMAND> --agent=codex <INVOCATION_ID>
+```
+
+Local runs can use a locally authenticated Claude Code or Codex subscription if available, or can authenticate with an API key.
+
+#### Choosing an agent and model
+
+Use `--agent` to select Claude or Codex.
+If `--model` and `--effort` are omitted, the selected agent's defaults are used.
+
+```bash
+bb agent fix \
+  --agent=codex \
+  --model=gpt-5.4 \
+  --effort=high \
+  <INVOCATION_ID>
+
+ bb agent fix \
+  --agent=claude \
+  --model=claude-opus-5 \
+  --effort=low \
+  <INVOCATION_ID>
+```
+
+### bb agent analyze-profile
+
+`bb agent analyze-profile` analyzes a Bazel timing profile uploaded by a BuildBuddy invocation. It produces a detailed report with recommendations for improving build performance.
+
+```bash
+bb agent analyze-profile <INVOCATION_ID>
+```
+
+#### Prerequisites
+
+- The build must have uploaded a timing profile to the remote cache.
+- Only `darwin-arm64` and `linux-amd64` are currently supported.
+
+### bb agent fix
+
+`bb agent fix` reproduces a failure from a previous invocation and fixes it by editing the current working tree.
+
+The agent reruns the invocation's original Bazel command to reproduce the failure, inspects the failure output and relevant source code, applies a minimal fix, and reruns the command to verify the fix is valid.
+
+When run locally, the changes are applied to the current working tree.
+When run remotely, the changes are uploaded to the 'Artifacts' tab of the invocation.
+
+#### Usage
+
+```bash
+# Fix every failing target in the invocation.
+bb agent fix <INVOCATION_ID>
+
+# Fix only a single failing target.
+bb agent fix <INVOCATION_ID> //foo:bar_test
+
+# Fix only the failing test cases that match a test filter.
+bb agent fix <INVOCATION_ID> //foo:bar_test --test_filter=TestBaz
+```
+
+#### Prerequisites
+
+- Run the command from the workspace that produced the failure, ideally checked out at the same commit.
+
 ## bb detect
 
 ### bb detect nondeterminism
@@ -80,54 +162,4 @@ make the builds faster, and make the Workflow runner less likely to run out of l
 
 ```bash
 bb detect nondeterminism --bazel_command='build //foo:bar --remote_executor=grpcs://remote.buildbuddy.io'
-```
-
-## bb agent
-
-### bb agent analyze-profile
-
-`bb agent analyze-profile` uses an AI coding agent to analyze a Bazel timing profile uploaded by a BuildBuddy invocation. It produces a detailed report with recommendations for improving build performance.
-
-The command accepts an invocation ID or invocation URL:
-
-```bash
-bb agent analyze-profile <INVOCATION_ID>
-bb agent analyze-profile https://app.buildbuddy.io/invocation/<INVOCATION_ID>
-```
-
-Relevant timing-profile data is sent to the selected AI provider. Timing profiles can contain target names, file paths, and other details about the build.
-
-#### Prerequisites
-
-Before running the command:
-
-- The build must have uploaded a timing profile.
-- The selected agent's CLI must be installed and available in `PATH`: `claude` or `codex`.
-
-Only `darwin-arm64` and `linux-amd64` are currently supported.
-
-#### Authentication
-
-On remote runners, only authorization via an API key is supported. It should be set as a [BuildBuddy secret](/docs/secrets).
-Local runs can use a locally authenticated Claude Code or Codex subscription if available, or can authenticate with an API key.
-
-Agent usage is billed according to the selected provider and authentication method.
-
-```bash
-ANTHROPIC_API_KEY=<API_KEY> bb agent analyze-profile --agent=claude <INVOCATION_ID>
-
-CODEX_API_KEY=<API_KEY> bb agent analyze-profile --agent=codex <INVOCATION_ID>
-```
-
-#### Choosing an agent and model
-
-Use `--agent` to select Claude or Codex.
-If `--model` and `--effort` are omitted, the selected agent's defaults are used.
-
-```bash
-bb agent analyze-profile \
-  --agent=codex \
-  --model=gpt-5.4 \
-  --effort=high \
-  <INVOCATION_ID>
 ```
