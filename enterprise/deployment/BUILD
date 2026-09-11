@@ -36,6 +36,7 @@ container_push(
 # login to gcp and then run these commands:
 #
 # ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
+# ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-minimal --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-minimal/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
 # ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-workflows --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-workflows/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
 # ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu20-04-webtest --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu20-04-webtest/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
 # ./enterprise/tools/build_images/build_image.py --registry=gcr.io --repository=flame-public/rbe-ubuntu22-04 --tag=latest --no-suffix --dockerfile=dockerfiles/rbe-ubuntu22-04/Dockerfile --platform=amd64 --platform=arm64 --user=_dcgcloud_token
