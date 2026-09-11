@@ -3585,14 +3585,16 @@ var (
 		CacheNameLabel,
 	})
 
-	PebbleCacheAtimeUpdateGCSErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	PebbleCacheGCSOperationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "pebble_cache_atime_update_gcs_error_count",
-		Help:      "Count of atime update errors from GCS.",
+		Name:      "pebble_cache_gcs_operation_count",
+		Help:      "Count of GCS operations performed by the pebble cache.",
 	}, []string{
+		OpLabel,
 		PartitionID,
 		CacheNameLabel,
+		StatusHumanReadableLabel,
 	})
 
 	PebbleCacheAtimeDeltaWhenRead = promauto.NewHistogramVec(prometheus.HistogramOpts{

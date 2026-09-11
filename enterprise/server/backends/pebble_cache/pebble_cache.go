@@ -1237,8 +1237,9 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		}
 		lastCustomTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
 		if newAtime.Sub(lastCustomTime) >= p.gcsAtimeUpdateThreshold {
-			if err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime); err != nil {
-				metrics.PebbleCacheAtimeUpdateGCSErrorCount.With(lbls).Inc()
+			err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime)
+			p.recordGCSOperation("update_atime", md.GetFileRecord(), err)
+			if err != nil {
 				log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
 				return err
 			}
@@ -2312,7 +2313,7 @@ func (p *PebbleCache) CreateReference(ctx context.Context, r *rspb.ResourceName)
 	if err != nil {
 		return nil, err
 	}
-	bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
+	bw, err := p.blobWriter(ctx, fileRecord)
 	if err != nil {
 		return nil, err
 	}
@@ -2414,6 +2415,7 @@ func (p *PebbleCache) WriteReference(ctx context.Context, ref *refpb.Reference, 
 	var storageMD *sgpb.StorageMetadata
 	if mustClone {
 		storageMD, err = p.fileStorer.CloneBlob(ctx, refMD.GetStorageMetadata().GetGcsMetadata(), fileRecord)
+		p.recordGCSOperation("clone", fileRecord, err)
 		if err != nil {
 			return err
 		}
@@ -2734,6 +2736,36 @@ func (p *PebbleCache) storesInGCS(sizeBytes int64) bool {
 	return sizeBytes >= p.maxInlineFileSizeBytes && sizeBytes >= p.minGCSFileSizeBytes
 }
 
+func (p *PebbleCache) recordGCSOperation(op string, fileRecord *sgpb.FileRecord, err error) {
+	metrics.PebbleCacheGCSOperationCount.With(prometheus.Labels{
+		metrics.OpLabel:                  op,
+		metrics.PartitionID:              fileRecord.GetIsolation().GetPartitionId(),
+		metrics.CacheNameLabel:           p.name,
+		metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
+	}).Inc()
+}
+
+// gcsBlobWriter counts the upload of the blob it writes when it commits.
+type gcsBlobWriter struct {
+	interfaces.CommittedMetadataWriteCloser
+	p          *PebbleCache
+	fileRecord *sgpb.FileRecord
+}
+
+func (w *gcsBlobWriter) Commit() error {
+	err := w.CommittedMetadataWriteCloser.Commit()
+	w.p.recordGCSOperation("write", w.fileRecord, err)
+	return err
+}
+
+func (p *PebbleCache) blobWriter(ctx context.Context, fileRecord *sgpb.FileRecord) (interfaces.CommittedMetadataWriteCloser, error) {
+	bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
+	if err != nil {
+		return nil, err
+	}
+	return &gcsBlobWriter{CommittedMetadataWriteCloser: bw, p: p, fileRecord: fileRecord}, nil
+}
+
 // newWrappedWriter returns an interfaces.CommittedWriteCloser that writes
 // data to the storage tier appropriate for fileRecord and, on Commit, writes
 // the metadata for fileRecord.
@@ -2742,7 +2774,7 @@ func (p *PebbleCache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.Fil
 	if fileRecord.GetDigest().GetSizeBytes() < p.maxInlineFileSizeBytes {
 		wcm = p.fileStorer.InlineWriter(ctx, fileRecord.GetDigest().GetSizeBytes())
 	} else if p.storesInGCS(fileRecord.GetDigest().GetSizeBytes()) {
-		bw, err := p.fileStorer.BlobWriter(ctx, fileRecord)
+		bw, err := p.blobWriter(ctx, fileRecord)
 		if err != nil {
 			return nil, err
 		}

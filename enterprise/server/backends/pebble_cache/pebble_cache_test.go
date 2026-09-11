@@ -38,6 +38,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -52,10 +53,12 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
 
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -3314,6 +3317,15 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
+func pebbleGCSOps(t *testing.T, op string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.PebbleCacheGCSOperationCount, prometheus.Labels{
+		metrics.OpLabel:                  op,
+		metrics.PartitionID:              pebble_cache.DefaultPartitionID,
+		metrics.CacheNameLabel:           pebble_cache.DefaultName,
+		metrics.StatusHumanReadableLabel: codes.OK.String(),
+	})
+}
+
 func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
@@ -3347,11 +3359,15 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, pc.Start())
 	defer pc.Stop()
 
+	writesBefore := pebbleGCSOps(t, "write")
+	atimeUpdatesBefore := pebbleGCSOps(t, "update_atime")
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	require.NoError(t, pc.Set(ctx, rn, buf))
+	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 
 	// Writing the object sets its custom time; it does not call UpdateCustomTime.
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update_atime"))
 
 	// waitForAtime blocks until the object's pebble atime reaches the current
 	// (fake) clock time, i.e. until the queued atime update has been processed.
@@ -3370,6 +3386,7 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update_atime"))
 
 	// Access the object once its custom time is older than the threshold.
 	// Now the GCS custom time is refreshed.
@@ -3378,6 +3395,9 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
+	require.Equal(t, atimeUpdatesBefore+1, pebbleGCSOps(t, "update_atime"))
+	// Reads don't upload anything.
+	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 }
 
 func dirSizeFiles(path string) (int64, error) {
@@ -4234,6 +4254,7 @@ func TestWriteReference(t *testing.T) {
 		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
+		clonesBefore := pebbleGCSOps(t, "clone")
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
 		got, err := dst.Get(ctx, rn)
 		require.NoError(t, err)
@@ -4243,6 +4264,7 @@ func TestWriteReference(t *testing.T) {
 		dstRef, err := dst.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, blobName(ref), blobName(dstRef))
+		require.Equal(t, clonesBefore, pebbleGCSOps(t, "clone"))
 	})
 
 	t.Run("take ownership inherits the blob TTL", func(t *testing.T) {
@@ -4332,7 +4354,9 @@ func TestWriteReference(t *testing.T) {
 		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
+		clonesBefore := pebbleGCSOps(t, "clone")
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
+		require.Equal(t, clonesBefore+1, pebbleGCSOps(t, "clone"))
 		got, err := dst.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, buf, got)
