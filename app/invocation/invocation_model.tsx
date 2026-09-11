@@ -791,6 +791,13 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  isFailed() {
+    if (this.hasRunStatus()) {
+      return this.invocation.runStatus === invocation_status.OverallStatus.FAILURE;
+    }
+    return this.isComplete() && !this.invocation.success;
+  }
+
   isRunInProgress() {
     return this.invocation.runStatus === invocation_status.OverallStatus.IN_PROGRESS;
   }

@@ -204,7 +204,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		UserOwnedKeysEnabled:                   env.GetAuthDB() != nil && env.GetAuthDB().GetUserOwnedKeysEnabled(),
 		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:                   *patternFilterEnabled,
-		BotSuggestionsEnabled:                  env.GetSuggestionService() != nil,
+		BotSuggestionsEnabled:                  env.GetRunnerService() != nil,
 		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
 		ExecutionSearchEnabled:                 *executionSearchEnabled,
 		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
