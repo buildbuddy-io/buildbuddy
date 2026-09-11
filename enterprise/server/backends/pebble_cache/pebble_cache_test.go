@@ -57,6 +57,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
 	"golang.org/x/sync/errgroup"
 
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
@@ -3316,12 +3317,15 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
-// pebbleGCSCounter returns the value of a pebble cache GCS counter for the
-// default partition of a cache with the default name.
-func pebbleGCSCounter(t *testing.T, metric *prometheus.CounterVec) float64 {
-	return testmetrics.CounterValueForLabels(t, metric, prometheus.Labels{
-		metrics.PartitionID:    pebble_cache.DefaultPartitionID,
-		metrics.CacheNameLabel: pebble_cache.DefaultName,
+// pebbleGCSOps returns the number of successful GCS operations of the given
+// kind ("write", "clone", or "update") performed for the default partition of
+// a cache with the default name.
+func pebbleGCSOps(t *testing.T, op string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.PebbleCacheGCSOperationCount, prometheus.Labels{
+		metrics.OpLabel:                  op,
+		metrics.PartitionID:              pebble_cache.DefaultPartitionID,
+		metrics.CacheNameLabel:           pebble_cache.DefaultName,
+		metrics.StatusHumanReadableLabel: codes.OK.String(),
 	})
 }
 
@@ -3358,15 +3362,15 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, pc.Start())
 	defer pc.Stop()
 
-	writesBefore := pebbleGCSCounter(t, metrics.PebbleCacheGCSWriteCount)
-	atimeUpdatesBefore := pebbleGCSCounter(t, metrics.PebbleCacheAtimeUpdateGCSCount)
+	writesBefore := pebbleGCSOps(t, "write")
+	atimeUpdatesBefore := pebbleGCSOps(t, "update")
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	require.NoError(t, pc.Set(ctx, rn, buf))
-	require.Equal(t, writesBefore+1, pebbleGCSCounter(t, metrics.PebbleCacheGCSWriteCount))
+	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 
 	// Writing the object sets its custom time; it does not call UpdateCustomTime.
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
-	require.Equal(t, atimeUpdatesBefore, pebbleGCSCounter(t, metrics.PebbleCacheAtimeUpdateGCSCount))
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update"))
 
 	// waitForAtime blocks until the object's pebble atime reaches the current
 	// (fake) clock time, i.e. until the queued atime update has been processed.
@@ -3385,7 +3389,7 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
-	require.Equal(t, atimeUpdatesBefore, pebbleGCSCounter(t, metrics.PebbleCacheAtimeUpdateGCSCount))
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update"))
 
 	// Access the object once its custom time is older than the threshold.
 	// Now the GCS custom time is refreshed.
@@ -3394,9 +3398,9 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
-	require.Equal(t, atimeUpdatesBefore+1, pebbleGCSCounter(t, metrics.PebbleCacheAtimeUpdateGCSCount))
+	require.Equal(t, atimeUpdatesBefore+1, pebbleGCSOps(t, "update"))
 	// Reads don't upload anything.
-	require.Equal(t, writesBefore+1, pebbleGCSCounter(t, metrics.PebbleCacheGCSWriteCount))
+	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 }
 
 func dirSizeFiles(path string) (int64, error) {
@@ -4253,7 +4257,7 @@ func TestWriteReference(t *testing.T) {
 		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
-		clonesBefore := pebbleGCSCounter(t, metrics.PebbleCacheGCSCloneCount)
+		clonesBefore := pebbleGCSOps(t, "clone")
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, false /*=mustClone*/))
 		got, err := dst.Get(ctx, rn)
 		require.NoError(t, err)
@@ -4263,7 +4267,7 @@ func TestWriteReference(t *testing.T) {
 		dstRef, err := dst.ReadReference(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, blobName(ref), blobName(dstRef))
-		require.Equal(t, clonesBefore, pebbleGCSCounter(t, metrics.PebbleCacheGCSCloneCount))
+		require.Equal(t, clonesBefore, pebbleGCSOps(t, "clone"))
 	})
 
 	t.Run("take ownership inherits the blob TTL", func(t *testing.T) {
@@ -4353,9 +4357,9 @@ func TestWriteReference(t *testing.T) {
 		ref, err := src.ReadReference(ctx, rn)
 		require.NoError(t, err)
 
-		clonesBefore := pebbleGCSCounter(t, metrics.PebbleCacheGCSCloneCount)
+		clonesBefore := pebbleGCSOps(t, "clone")
 		require.NoError(t, dst.WriteReference(ctx, ref, rn, true /*=mustClone*/))
-		require.Equal(t, clonesBefore+1, pebbleGCSCounter(t, metrics.PebbleCacheGCSCloneCount))
+		require.Equal(t, clonesBefore+1, pebbleGCSOps(t, "clone"))
 		got, err := dst.Get(ctx, rn)
 		require.NoError(t, err)
 		require.Equal(t, buf, got)
