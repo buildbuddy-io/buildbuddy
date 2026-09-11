@@ -36,6 +36,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/scorecard"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
@@ -1030,7 +1031,8 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 			Id:                  k.APIKeyID,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(k)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(k)),
 			CreationMetadata:    creationMetadata[k.APIKeyID],
 		})
 	}
@@ -1122,7 +1124,8 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 			Value:               value,
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
-			VisibleToDevelopers: key.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(key)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(key)),
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1147,9 +1150,10 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 	if authDB == nil {
 		return nil, status.UnimplementedError("Not Implemented")
 	}
+	api_key.FixRequestVisibility(req)
 	k, err := authDB.CreateAPIKey(
 		ctx, req.GetRequestContext().GetGroupId(), req.GetLabel(), req.GetCapability(),
-		req.GetExpiresIn().AsDuration(), req.GetVisibleToDevelopers())
+		req.GetExpiresIn().AsDuration(), api_key.VisibilitiesToInt(req.GetVisibility()))
 	if err != nil {
 		return nil, err
 	}
@@ -1167,7 +1171,8 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 			Value:               k.Value,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(k)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(k)),
 		},
 	}, nil
 }
@@ -1196,11 +1201,13 @@ func (s *BuildBuddyServer) UpdateApiKey(ctx context.Context, req *akpb.UpdateApi
 	if err != nil {
 		return nil, err
 	}
+	api_key.FixRequestVisibility(req)
 	tk := &tables.APIKey{
 		APIKeyID:            req.GetId(),
 		Label:               req.GetLabel(),
 		Capabilities:        capabilities.ToInt(req.GetCapability()),
 		VisibleToDevelopers: req.GetVisibleToDevelopers(),
+		Visibility:          api_key.VisibilitiesToInt(req.GetVisibility()),
 	}
 	if err := authDB.UpdateAPIKey(ctx, tk); err != nil {
 		return nil, err
@@ -1257,7 +1264,8 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 			Value:               k.Value,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(k)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(k)),
 			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
@@ -1293,7 +1301,8 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 			Id:                  k.APIKeyID,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(k)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(k)),
 		})
 	}
 	return rsp, nil
@@ -1326,7 +1335,8 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 			Value:               value,
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
-			VisibleToDevelopers: key.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(key)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(key)),
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1382,7 +1392,8 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 			Value:               k.Value,
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(k)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(k)),
 		},
 	}, nil
 
@@ -1397,11 +1408,13 @@ func (s *BuildBuddyServer) UpdateUserApiKey(ctx context.Context, req *akpb.Updat
 	if err != nil {
 		return nil, err
 	}
+	api_key.FixRequestVisibility(req)
 	updates := &tables.APIKey{
 		APIKeyID:            req.GetId(),
 		Label:               req.GetLabel(),
 		Capabilities:        capabilities.ToInt(req.GetCapability()),
 		VisibleToDevelopers: req.GetVisibleToDevelopers(),
+		Visibility:          api_key.VisibilitiesToInt(req.GetVisibility()),
 	}
 	if err := authDB.UpdateAPIKey(ctx, updates); err != nil {
 		return nil, err
@@ -1509,7 +1522,8 @@ func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
 			Id:                  k.APIKeyID,
 			Value:               k.Value,
 			Label:               k.Label,
-			VisibleToDevelopers: k.VisibleToDevelopers,
+			VisibleToDevelopers: api_key.IsVisibleToDevelopers(api_key.VisibilityOfKey(k)),
+			Visibility:          api_key.VisibilitiesFromInt(api_key.VisibilityOfKey(k)),
 			UserOwned:           k.Perms&perms.OWNER_READ > 0,
 		}
 	}

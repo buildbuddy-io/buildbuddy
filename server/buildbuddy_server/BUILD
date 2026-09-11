@@ -61,6 +61,7 @@ go_library(
         "//server/remote_execution/config",
         "//server/tables",
         "//server/target",
+        "//server/util/api_key",
         "//server/util/authutil",
         "//server/util/bazel_request",
         "//server/util/canary",

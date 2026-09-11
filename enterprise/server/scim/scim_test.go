@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testhttp"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -50,7 +51,7 @@ func prepareGroup(t *testing.T, ctx context.Context, env environment.Env) (strin
 	require.NoError(t, err)
 	g := u.Groups[0].Group
 
-	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []cappb.Capability{cappb.Capability_ORG_ADMIN}, 0, false)
+	apiKey, err := env.GetAuthDB().CreateAPIKey(ctx, g.GroupID, "SCIM", []cappb.Capability{cappb.Capability_ORG_ADMIN}, 0, api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 
 	g.SamlIdpMetadataUrl = "foo"

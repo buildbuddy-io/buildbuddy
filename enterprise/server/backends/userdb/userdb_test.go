@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -1367,8 +1368,8 @@ func TestGetAPIKeyForInternalUseOnly_PrefersCacheWritePermissions(t *testing.T) 
 			key, err := adb.CreateAPIKey(
 				authCtx, gid, "",
 				[]cappb.Capability{c},
-				0,     /*=expiresIn*/
-				false, /*=visibleToDevelopers*/
+				0, /*=expiresIn*/
+				api_key.DefaultAPIKeyVisibility,
 			)
 			require.NoError(t, err)
 			keyIDs[key.APIKeyID] = struct{}{}
@@ -1416,13 +1417,13 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 		ctx1, groupID1, "Admin-only key",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 	developerKey, err := adb.CreateAPIKey(
 		ctx1, groupID1, "Developer key",
 		[]cappb.Capability{cappb.Capability_CAS_WRITE},
 		0, /*=expiresIn*/
-		true /*=visibleToDevelopers*/)
+		api_key.DeveloperVisibleAPIKeyVisibility)
 	require.NoError(t, err)
 
 	// US1 should be able to see the keys they just created.
@@ -1469,7 +1470,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 		ctx2, groupID1, "test-label-2",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDenied, got: %v", err)
@@ -1479,7 +1480,7 @@ func TestCreateAndGetAPIKey(t *testing.T) {
 		ctx3, groupID1, "test-label-3",
 		[]cappb.Capability{cappb.Capability_CACHE_WRITE},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.Truef(
 		t, status.IsPermissionDeniedError(err),
 		"expected PermissionDenied, got: %v", err)
@@ -2069,7 +2070,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 				ctx1 := authUserCtx(ctx, env, t, "US1")
 				g := getGroup(t, ctx1, env).Group
 				enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx1, env, g.GroupID, true)
-				k1, err := adb.CreateAPIKey(ctx1, "GR1", "", test.AuthKeyCaps, 0 /*=expiresIn*/, false)
+				k1, err := adb.CreateAPIKey(ctx1, "GR1", "", test.AuthKeyCaps, 0 /*=expiresIn*/, api_key.DefaultAPIKeyVisibility)
 				require.NoError(t, err)
 				keys["GR1"] = k1
 			}
@@ -2079,7 +2080,7 @@ func TestUserOwnedKeys_CreateForOtherUser(t *testing.T) {
 				ctx2 := authUserCtx(ctx, env, t, "US2")
 				g := getGroup(t, ctx2, env).Group
 				enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx2, env, g.GroupID, true)
-				k2, err := adb.CreateAPIKey(ctx2, "GR2", "", test.AuthKeyCaps, 0 /*=expiresIn*/, false)
+				k2, err := adb.CreateAPIKey(ctx2, "GR2", "", test.AuthKeyCaps, 0 /*=expiresIn*/, api_key.DefaultAPIKeyVisibility)
 				require.NoError(t, err)
 				keys["GR2"] = k2
 				takeOwnershipOfDomain(t, ctx2, env, "US2")
@@ -2690,7 +2691,7 @@ func TestChildGroupAuth(t *testing.T) {
 		ctx1, us1Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 	adminCtx1 := env.GetAuthenticator().AuthContextFromAPIKey(ctx, key1.Value)
 
@@ -2701,7 +2702,7 @@ func TestChildGroupAuth(t *testing.T) {
 		ctx2, us2Group.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 
 	// Admin key for group1 shouldn't be able to affect anything in group2.
