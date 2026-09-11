@@ -93,6 +93,10 @@ func run() (retErr error) {
 		}
 		configs = append(configs, configFile)
 	}
+	mounts, err := resolveVolumes(*volumes)
+	if err != nil {
+		return err
+	}
 	envValues, err := readEnvFiles(*envFiles)
 	if err != nil {
 		return err
@@ -131,7 +135,12 @@ func run() (retErr error) {
 	// Cancel and join monitors before cleanup, even after partial startup.
 	defer func() {
 		cancel()
-		_ = group.Wait()
+		if errors.Is(retErr, context.Canceled) {
+			retErr = nil
+		}
+		if err := group.Wait(); err != nil && !errors.Is(err, context.Canceled) {
+			retErr = errors.Join(retErr, err)
+		}
 	}()
 
 	zkPort := dockernetwork.MustParsePort("2181/tcp")
@@ -152,7 +161,7 @@ func run() (retErr error) {
 		for i, configFile := range configs {
 			binds = append(binds, fmt.Sprintf("%s:/etc/clickhouse-server/config.d/%d_%s:ro", configFile, i, filepath.Base(configFile)))
 		}
-		binds = append(binds, *volumes...)
+		binds = append(binds, mounts...)
 		tcpPort := dockernetwork.MustParsePort("9000/tcp")
 		httpPort := dockernetwork.MustParsePort("8123/tcp")
 		if err := c.startContainer(groupCtx, group, fmt.Sprintf("clickhouse%d", r), &dockercontainer.Config{
@@ -171,10 +180,8 @@ func run() (retErr error) {
 			return fmt.Errorf("start ClickHouse replica %d: %w", r, err)
 		}
 	}
-	// Treat signal cancellation as a normal shutdown.
-	if err := group.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		return err
-	}
+	// The deferred join reports monitor failures; signals shut down normally.
+	<-groupCtx.Done()
 	return nil
 }
 
@@ -225,7 +232,19 @@ func (c *cluster) startContainer(ctx context.Context, group *errgroup.Group, nam
 }
 
 func (c *cluster) streamLogs(ctx context.Context, id string) error {
-	logs, err := c.client.ContainerLogs(ctx, id, dockerclient.ContainerLogsOptions{Follow: true, ShowStdout: true, ShowStderr: true})
+	// Allow final logs to drain after a container exits, but bound the wait for
+	// siblings that are still running or a daemon that stops responding.
+	logCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() {
+		select {
+		case <-time.After(5 * time.Second):
+			cancel()
+		case <-logCtx.Done():
+		}
+	})
+	defer stop()
+	logs, err := c.client.ContainerLogs(logCtx, id, dockerclient.ContainerLogsOptions{Follow: true, ShowStdout: true, ShowStderr: true})
 	if err != nil {
 		return err
 	}
@@ -263,6 +282,23 @@ func (c *cluster) cleanup() (retErr error) {
 	_, err := c.client.NetworkRemove(cleanupCtx, c.networkID, dockerclient.NetworkRemoveOptions{})
 	retErr = errors.Join(retErr, err)
 	return retErr
+}
+
+func resolveVolumes(volumes []string) ([]string, error) {
+	var resolved []string
+	for _, volume := range volumes {
+		source, target, hasSource := strings.Cut(volume, ":")
+		// Preserve named and anonymous volumes; only resolve host paths.
+		if hasSource && (strings.HasPrefix(source, ".") || strings.Contains(source, "/")) {
+			abs, err := filepath.Abs(source)
+			if err != nil {
+				return nil, fmt.Errorf("resolve volume %q: %w", volume, err)
+			}
+			volume = abs + ":" + target
+		}
+		resolved = append(resolved, volume)
+	}
+	return resolved, nil
 }
 
 // readEnvFiles reads Docker-style env files. A key without '=' inherits its

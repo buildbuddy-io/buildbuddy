@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -50,13 +51,17 @@ func TestClickHouseBackupAndRestore(t *testing.T) {
 `)
 
 	// Run a ClickHouse cluster with the configured backup disk.
-	dsn := startCluster(t, "--config_file", configPath, "--volume", backupDir+`:/backups/:rw`)
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	backupMountPath, err := filepath.Rel(wd, backupDir)
+	require.NoError(t, err)
+	dsn := startCluster(t, "--config_file", configPath, "--volume", backupMountPath+`:/backups/:rw`)
 
 	// Set up the OLAP DB handle.
 	flags.Set(t, "olap_database.data_source", dsn)
 	flags.Set(t, "olap_database.enable_data_replication", true)
 	env := testenv.GetTestEnv(t)
-	err := clickhouse.Register(env)
+	err = clickhouse.Register(env)
 	require.NoError(t, err)
 	// Create a test invocation.
 	ctx := t.Context()
@@ -130,7 +135,9 @@ func startCluster(t *testing.T, args ...string) (dsn string) {
 	err = cmd.Start()
 	require.NoError(t, err, "start clickhouse_cluster")
 	t.Cleanup(func() {
-		require.NoError(t, cmd.Process.Signal(os.Interrupt))
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+			t.Logf("signal clickhouse_cluster: %s", err)
+		}
 		require.NoError(t, cmd.Wait(), "stop clickhouse_cluster")
 	})
 	addr := "localhost:9201"
