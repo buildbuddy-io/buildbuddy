@@ -18,5 +18,6 @@ filegroup(
         "//tools/metrics/grafana/generated/go_runtime:go-runtime.json",
         "//tools/metrics/grafana/generated/nameserver:nameserver.json",
         "//tools/metrics/grafana/generated/oci_image_fetches:oci-image-fetches.json",
+        "//tools/metrics/grafana/generated/raft:raft.json",
     ],
 )
