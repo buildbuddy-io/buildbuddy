@@ -808,9 +808,7 @@ func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 		TaskId: taskID,
 		Reason: "for fun",
 	})
-	require.NoError(t, err)
-	// On a successful re-enqueue the executor should receive the task again.
-	fe.WaitForTask(taskID)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition error, got: %v", err)
 }
 
 func TestExecutorReEnqueue_MatchingLeaseID(t *testing.T) {
