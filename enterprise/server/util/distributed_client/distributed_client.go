@@ -357,7 +357,7 @@ func (c *Proxy) referenceReadMode(ctx context.Context) (sendReference bool, send
 	if fp.Boolean(ctx, "distributed_cache.verify_read_gcs_references", false) {
 		return true, true
 	}
-	if fp.Boolean(ctx, "distributed_cache.read_gcs_references", false) {
+	if fp.Boolean(ctx, "distributed_cache.read_gcs_references", true) {
 		return true, false
 	}
 	return false, true

@@ -1739,7 +1739,7 @@ func (c *Cache) referenceWriteMode(ctx context.Context) (sendReference bool, sen
 	if fp.Boolean(ctx, "distributed_cache.verify_write_gcs_references", false) {
 		return true, true
 	}
-	if fp.Boolean(ctx, "distributed_cache.write_gcs_references", false) {
+	if fp.Boolean(ctx, "distributed_cache.write_gcs_references", true) {
 		return true, false
 	}
 	return false, true
