@@ -83,6 +83,11 @@ function isRemoteCacheEnabled(model: InvocationModel) {
   return Boolean(model.optionsMap.get("remote_cache") || model.optionsMap.get("remote_executor"));
 }
 
+function isGrpcRemoteCacheEnabled(model: InvocationModel) {
+  const endpoint = model.optionsMap.get("remote_cache") || model.optionsMap.get("remote_executor");
+  return Boolean(endpoint && !/^https?:\/\//i.test(endpoint));
+}
+
 function hasAnyOption(model: InvocationModel, names: string[]) {
   return names.some((name) => model.optionsMap.has(name));
 }
@@ -103,7 +108,8 @@ function getCompactExecutionLogFlag(version: BazelVersion | null) {
   return null;
 }
 
-function supportsCurrentRemoteCacheRecovery(version: BazelVersion | null) {
+// Remote-cache lost-input recovery and chunking are supported from Bazel 8.7 and 9.1.
+function supportsRemoteCacheRecoveryAndChunking(version: BazelVersion | null) {
   return (
     bazelVersionAtLeast(version, 10) ||
     (version?.major === 9 && version.minor >= 1) ||
@@ -115,13 +121,16 @@ function supportsGuardAgainstConcurrentChanges(version: BazelVersion | null) {
   return bazelVersionAtLeast(version, 8, 3);
 }
 
+// The BEP retains explicit values such as "false"; only --noflag becomes "0".
+function isFalseOptionValue(rawValue: string | undefined) {
+  return rawValue !== undefined && ["0", "false", "no", "f", "n", "off"].includes(rawValue.trim().toLowerCase());
+}
+
 function isGuardAgainstConcurrentChangesDisabled(model: InvocationModel) {
   const rawValue =
     model.optionsMap.get("guard_against_concurrent_changes") ??
     model.optionsMap.get("experimental_guard_against_concurrent_changes");
-  if (rawValue === undefined) return false;
-
-  return ["0", "false", "no", "off"].includes(rawValue.trim().toLowerCase());
+  return isFalseOptionValue(rawValue);
 }
 
 export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
@@ -605,7 +614,9 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       !model.hasExecutionLog() &&
       getCompactExecutionLogFlag(version);
     const flags = [
-      !hasAnyOption(model, ["remote_grpc_log", "experimental_remote_grpc_log"]) && getRemoteGrpcLogFlag(version),
+      isGrpcRemoteCacheEnabled(model) &&
+        !hasAnyOption(model, ["remote_grpc_log", "experimental_remote_grpc_log"]) &&
+        getRemoteGrpcLogFlag(version),
       compactExecutionLogFlag,
     ].filter(Boolean) as string[];
     if (!flags.length) return null;
@@ -617,16 +628,22 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
           Consider adding{" "}
           <InlineProseList
             items={flags.map((flag) => (
-              <BazelFlag key={flag}>{flag}</BazelFlag>
+              <BazelFlag
+                key={flag}
+                anchor={flag.includes("grpc_log") ? "param-remote-grpc-log" : "param-no-execution-log-compact-file"}>
+                {flag}
+              </BazelFlag>
             ))}
           />{" "}
-          to capture remote RPCs and compact execution details for troubleshooting.{" "}
-          {compactExecutionLogFlag && (
-            <>
-              Add <span className="inline-code">execution_log.binpb.zst</span> to{" "}
-              <span className="inline-code">.gitignore</span> as well.
-            </>
-          )}
+          to capture diagnostic logs for troubleshooting. Add{" "}
+          <InlineProseList
+            items={flags.map((flag) => (
+              <span key={flag} className="inline-code">
+                {flag.split("=")[1]}
+              </span>
+            ))}
+          />{" "}
+          to <span className="inline-code">.gitignore</span> as well.
         </>
       ),
       reason: (
@@ -642,17 +659,23 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
     if (!isRemoteCacheEnabled(model)) return null;
-    if (model.booleanCommandLineOption("rewind_lost_inputs")) return null;
-
     const version = model.getBazelVersion();
-    if (!supportsCurrentRemoteCacheRecovery(version)) return null;
+    if (!supportsRemoteCacheRecoveryAndChunking(version)) return null;
+    // Rolling builds with the same major/minor can predate recovery support
+    // or the Bazel 10 default change, so don't infer their behavior.
+    if (model.started?.buildToolVersion?.includes("-pre.")) return null;
+
+    const rewindOption = model.optionsMap.get("rewind_lost_inputs");
+    const rewindEnabled =
+      rewindOption === undefined ? bazelVersionAtLeast(version, 10) : !isFalseOptionValue(rewindOption);
+    if (rewindEnabled) return null;
 
     return {
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding <BazelFlag>--rewind_lost_inputs</BazelFlag> so Bazel can retry an action when a remote input
-          is lost during the build.
+          Consider adding <BazelFlag anchor="param-no-rewind-lost-inputs">--rewind_lost_inputs</BazelFlag> so Bazel can
+          retry an action when a remote input is lost during the build.
         </>
       ),
       reason: (
@@ -677,8 +700,11 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider setting <BazelFlag>--guard_against_concurrent_changes=lite</BazelFlag> so Bazel checks for source
-          file changes before uploading action results to the remote cache.
+          Consider setting{" "}
+          <BazelFlag anchor="param-no-guard-against-concurrent-changes">
+            --guard_against_concurrent_changes=lite
+          </BazelFlag>{" "}
+          so Bazel checks for source file changes before uploading action results to the remote cache.
         </>
       ),
       reason: (
@@ -689,22 +715,24 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       ),
     };
   },
-  // Suggest SplitBlob / SpliceBlob remote-cache chunking.
+  // BuildBuddy supports SplitBlob / SpliceBlob and FastCDC chunking.
   ({ model }) => {
     if (!capabilities.config.expandedSuggestionsEnabled) return null;
     if (!model.isBazelInvocation()) return null;
-    if (!isRemoteCacheEnabled(model)) return null;
+    if (!isGrpcRemoteCacheEnabled(model)) return null;
     if (model.optionsMap.has("experimental_remote_cache_chunking")) return null;
-
-    const version = model.getBazelVersion();
-    if (!supportsCurrentRemoteCacheRecovery(version)) return null;
+    if (!supportsRemoteCacheRecoveryAndChunking(model.getBazelVersion())) return null;
+    if (model.started?.buildToolVersion?.includes("-pre.")) return null;
 
     return {
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider adding <BazelFlag>--experimental_remote_cache_chunking</BazelFlag> to let Bazel use SplitBlob and
-          SpliceBlob for large remote-cache uploads and downloads.
+          Consider adding{" "}
+          <BazelFlag anchor="param-no-experimental-remote-cache-chunking">
+            --experimental_remote_cache_chunking
+          </BazelFlag>{" "}
+          to let Bazel use SplitBlob and SpliceBlob for large remote-cache uploads and downloads.
         </>
       ),
       reason: (
@@ -826,18 +854,17 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     const version = model.getBazelVersion();
     if (!bazelVersionAtLeast(version, 8)) return null;
 
-    const explicitlyDisabled =
-      (model.optionsMap.has("remote_cache_async") && !model.booleanCommandLineOption("remote_cache_async", true)) ||
-      (model.optionsMap.has("experimental_remote_cache_async") &&
-        !model.booleanCommandLineOption("experimental_remote_cache_async", true));
+    const explicitlyDisabled = isFalseOptionValue(
+      model.optionsMap.get("remote_cache_async") ?? model.optionsMap.get("experimental_remote_cache_async")
+    );
     if (!explicitlyDisabled) return null;
 
     return {
       level: SuggestionLevel.INFO,
       message: (
         <>
-          Consider enabling <CommonBazelFlag>--remote_cache_async</CommonBazelFlag> to let Bazel upload cache results in the
-          background.
+          Consider enabling <BazelFlag anchor="param-no-remote-cache-async">--remote_cache_async</BazelFlag> to let
+          Bazel upload cache results in the background.
         </>
       ),
       reason: (
@@ -1041,9 +1068,10 @@ function buildLogRegex({
 type BazelFlagProps = {
   children: string;
   section?: string;
+  anchor?: string;
 };
 
-function BazelFlag({ children, section = "" }: BazelFlagProps) {
+function BazelFlag({ children, section = "", anchor }: BazelFlagProps) {
   let flag = children.split("=")[0] || "";
   if (flag.startsWith("--no")) {
     flag = "--" + flag.substring("--no".length);
@@ -1051,7 +1079,7 @@ function BazelFlag({ children, section = "" }: BazelFlagProps) {
   return (
     <TextLink
       className="inline-code bazel-flag"
-      href={`https://bazel.build/reference/command-line-reference#${section}flag${flag}`}>
+      href={`https://bazel.build/reference/command-line-reference#${anchor ?? `${section}flag${flag}`}`}>
       {children}
     </TextLink>
   );
