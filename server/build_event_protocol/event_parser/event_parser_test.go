@@ -415,17 +415,30 @@ func TestTagMerging(t *testing.T) {
 
 func TestEnvVarDiscovery(t *testing.T) {
 	tests := []struct {
-		name      string
-		envVars   map[string]string
-		repoUrl   string
-		branch    string
-		commitSha string
-		role      string
+		name                 string
+		envVars              map[string]string
+		repoUrl              string
+		branch               string
+		commitSha            string
+		role                 string
+		githubEnterpriseHost string
 	}{
 		{
 			name:    "GITHUB_REPOSITORY sets repo URL defaulting to github.com",
 			envVars: map[string]string{"GITHUB_REPOSITORY": "buildbuddy-io/buildbuddy"},
 			repoUrl: "https://github.com/buildbuddy-io/buildbuddy",
+		},
+		{
+			name:                 "GITHUB_REPOSITORY uses configured enterprise GitHub host",
+			envVars:              map[string]string{"GITHUB_REPOSITORY": "example-org/example-repo"},
+			repoUrl:              "https://ghe.example.com/example-org/example-repo",
+			githubEnterpriseHost: "ghe.example.com",
+		},
+		{
+			name:                 "GITHUB_REPOSITORY keeps explicit repo URL host",
+			envVars:              map[string]string{"GITHUB_REPOSITORY": "https://github.example.com/owner/repo"},
+			repoUrl:              "https://github.example.com/owner/repo",
+			githubEnterpriseHost: "ghe.example.com",
 		},
 		{
 			name:    "GITHUB_REF sets branch for heads ref",
@@ -462,6 +475,9 @@ func TestEnvVarDiscovery(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.githubEnterpriseHost != "" {
+				flags.Set(t, "github.enterprise_host", tc.githubEnterpriseHost)
+			}
 			options := make([]*command_line.Option, 0, len(tc.envVars))
 			for k, v := range tc.envVars {
 				options = append(options, &command_line.Option{
