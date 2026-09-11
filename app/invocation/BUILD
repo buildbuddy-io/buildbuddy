@@ -240,12 +240,12 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//app/auth:auth_service",
+        "//app/invocation:ai_fix_button",
         "//app/invocation:invocation_cancel_button",
         "//app/invocation:invocation_compare_button",
         "//app/invocation:invocation_menu",
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_share_button",
-        "//app/invocation:suggestion_button",
         "//app/invocation:workflow_rerun_button",
     ],
 )
@@ -780,24 +780,25 @@ ts_library(
 )
 
 ts_library(
-    name = "suggestion_button",
-    srcs = ["suggestion_button.tsx"],
+    name = "ai_fix_button",
+    srcs = ["ai_fix_button.tsx"],
     deps = [
         "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/alert:alert_service",
         "//app/auth:user",
         "//app/capabilities",
         "//app/components/button",
-        "//app/components/button:button_group",
+        "//app/components/button:ai_button",
         "//app/components/dialog",
-        "//app/components/menu",
+        "//app/components/link",
         "//app/components/modal",
-        "//app/components/popup",
-        "//app/components/spinner",
+        "//app/errors:error_service",
         "//app/invocation:invocation_model",
-        "//app/service:rpc_service",
+        "//app/invocation:link_github_repo_modal",
+        "//app/util:clipboard",
+        "//app/util:remote_runner",
     ],
 )
 

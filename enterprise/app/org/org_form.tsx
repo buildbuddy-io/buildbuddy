@@ -235,7 +235,7 @@ export default abstract class OrgForm<T extends GroupRequest> extends React.Comp
               name="botSuggestionsEnabled"
               checked={request.botSuggestionsEnabled}
             />
-            <span>Enable "Ask Buddy" button</span>
+            <span>Enable "Fix with AI" button</span>
           </label>
         )}
         {capabilities.config.codeSearchEnabled && this.props.user.codesearchAllowed && (
