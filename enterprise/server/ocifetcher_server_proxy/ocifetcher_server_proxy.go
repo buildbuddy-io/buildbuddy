@@ -5,6 +5,9 @@
 // For FetchBlob, the proxy checks the local byte stream cache before
 // forwarding to the upstream. On upstream fetch, the blob is written
 // to the local byte stream cache for future requests.
+//
+// When direct fetching is enabled, Register installs an OCIFetcher service
+// backed entirely by the local cache instead of forwarding to the upstream.
 package ocifetcher_server_proxy
 
 import (
@@ -12,10 +15,12 @@ import (
 	"io"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocicache"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ocifetcher"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -26,6 +31,8 @@ import (
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
+
+var fetchDirectly = flag.Bool("cache_proxy.oci_fetcher_fetch_directly", false, "Fetch OCI images directly from registries using only the proxy's local cache, rather than forwarding OCI requests to the upstream app.")
 
 const cacheDigestFunction = repb.DigestFunction_SHA256
 
@@ -40,6 +47,16 @@ type OCIFetcherServerProxy struct {
 }
 
 func Register(env *real_environment.RealEnv) error {
+	if *fetchDirectly {
+		// Do not use the remote or proxy cache clients: both OCI contents and
+		// metadata must stay local so image pulls do not depend on the apps.
+		server, err := ocifetcher.NewServer(env.GetLocalByteStreamClient(), env.GetLocalActionCacheClient())
+		if err != nil {
+			return status.WrapError(err, "Error initializing local OCIFetcherServer")
+		}
+		env.SetOCIFetcherServer(server)
+		return nil
+	}
 	proxy, err := New(env)
 	if err != nil {
 		return status.InternalErrorf("Error initializing OCIFetcherServerProxy: %s", err)
