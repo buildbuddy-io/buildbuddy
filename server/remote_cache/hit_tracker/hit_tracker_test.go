@@ -77,6 +77,52 @@ func TestHitTracker_RecordsDetailedStats(t *testing.T) {
 	assert.Equal(t, int64(0), stats.GetTotalUploadTransferredSizeBytes())
 }
 
+func TestHitTracker_RecordsExecutorStats(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	mc, err := memory_metrics_collector.NewMemoryMetricsCollector()
+	require.NoError(t, err)
+	env.SetMetricsCollector(mc)
+	ctx := context.Background()
+	iid := "d42f4cd1-6963-4a5a-9680-cb77cfaad9bd"
+	clientRMD := &repb.RequestMetadata{
+		ToolInvocationId: iid,
+		ActionId:         "f498500e6d2825ef3bd5564bb56c439da36efe38ab4936ae0ff93794e704ccb4",
+		ActionMnemonic:   "GoCompile",
+		TargetId:         "//foo:bar",
+	}
+	executorRMD := clientRMD.CloneVT()
+	executorRMD.ExecutorDetails = &repb.ExecutorDetails{ExecutorHostId: "host-id"}
+	d := &repb.Digest{
+		Hash:      "c9c111006b30ffe6ce309fd64c44da651bffa068d530c7b1898698186b4afe2b",
+		SizeBytes: 1000,
+	}
+
+	clientHT := env.GetHitTrackerFactory().NewCASHitTracker(ctx, clientRMD)
+	require.NoError(t, clientHT.TrackDownload(d).Record(100, 10*time.Millisecond, repb.Compressor_ZSTD))
+	require.NoError(t, clientHT.TrackUpload(d).Record(200, 20*time.Millisecond, repb.Compressor_ZSTD))
+
+	executorHT := env.GetHitTrackerFactory().NewCASHitTracker(ctx, executorRMD)
+	require.NoError(t, executorHT.TrackDownload(d).Record(300, 30*time.Millisecond, repb.Compressor_ZSTD))
+	require.NoError(t, executorHT.TrackDownload(d).Record(300, 30*time.Millisecond, repb.Compressor_ZSTD))
+	require.NoError(t, executorHT.TrackUpload(d).Record(400, 40*time.Millisecond, repb.Compressor_ZSTD))
+
+	stats := hit_tracker.CollectCacheStats(ctx, env, iid)
+	// Totals should include both client and executor stats.
+	assert.Equal(t, int64(3000), stats.GetTotalDownloadSizeBytes())
+	assert.Equal(t, int64(2000), stats.GetTotalUploadSizeBytes())
+	assert.Equal(t, int64(700), stats.GetTotalDownloadTransferredSizeBytes())
+	assert.Equal(t, int64(600), stats.GetTotalUploadTransferredSizeBytes())
+	assert.Equal(t, int64(70_000), stats.GetTotalDownloadUsec())
+	assert.Equal(t, int64(60_000), stats.GetTotalUploadUsec())
+	// Exec totals should include only executor stats.
+	assert.Equal(t, int64(2000), stats.GetExecDownloadSizeBytes())
+	assert.Equal(t, int64(1000), stats.GetExecUploadSizeBytes())
+	assert.Equal(t, int64(600), stats.GetExecDownloadTransferredSizeBytes())
+	assert.Equal(t, int64(400), stats.GetExecUploadTransferredSizeBytes())
+	assert.Equal(t, int64(60_000), stats.GetExecDownloadUsec())
+	assert.Equal(t, int64(40_000), stats.GetExecUploadUsec())
+}
+
 func TestHitTracker_RecordsUsageAndMetrics(t *testing.T) {
 	for _, test := range []struct {
 		name                  string
