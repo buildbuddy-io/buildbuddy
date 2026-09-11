@@ -344,13 +344,45 @@ func GetBlobChunked(
 	if err := f.Truncate(size); err != nil {
 		return err
 	}
+	checksum, err := digest.HashForDigestType(r.GetDigestFunction())
+	if err != nil {
+		return err
+	}
+	chunkDone := make([]chan struct{}, len(chunks))
+	for i := range chunkDone {
+		chunkDone[i] = make(chan struct{})
+	}
 
 	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(chunkedFileDownloadConcurrency)
+	// Keep the verifier outside the chunk download concurrency budget.
+	g.SetLimit(chunkedFileDownloadConcurrency + 1)
+	g.Go(func() error {
+		for i, c := range chunks {
+			select {
+			case <-chunkDone[i]:
+			case <-gctx.Done():
+				return gctx.Err()
+			}
+			if _, err := io.Copy(checksum, io.NewSectionReader(f, offsets[i], c.GetSizeBytes())); err != nil {
+				return status.DataLossErrorf("compute chunked download digest: %s", err)
+			}
+		}
+		computedDigest := &repb.Digest{
+			Hash:      hex.EncodeToString(checksum.Sum(nil)),
+			SizeBytes: size,
+		}
+		if !digest.Equal(computedDigest, r.GetDigest()) {
+			return status.DataLossErrorf("Downloaded chunked content (digest %q) did not match expected (digest %q)", digest.String(computedDigest), digest.String(r.GetDigest()))
+		}
+		return nil
+	})
 	for i, c := range chunks {
-		offset, c := offsets[i], c
 		g.Go(func() error {
-			return writeChunk(gctx, bsClient, r, c, offset, openLocal, f)
+			if err := writeChunk(gctx, bsClient, r, c, offsets[i], openLocal, f); err != nil {
+				return err
+			}
+			close(chunkDone[i])
+			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
