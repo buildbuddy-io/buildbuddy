@@ -49,5 +49,6 @@ go_test(
         "//server/util/usageutil",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
