@@ -282,7 +282,7 @@ func TestGitCheckoutRetriesSlowLazyFetch(t *testing.T) {
 	require.NoError(t, ws.init(t.Context()))
 	// Filtered fetches require the partialClone extension, which the runner
 	// normally enables while configuring the repository.
-	_, gitErr := git(t.Context(), io.Discard, "config", "extensions.partialClone", "true")
+	_, gitErr := git(t.Context(), io.Discard, "config", "extensions.partialClone", "origin")
 	require.Nil(t, gitErr)
 
 	// Fetch the pushed branch without blobs. This fetch is not stalled, so
@@ -414,7 +414,7 @@ func TestGitMergeRetriesSlowLazyFetch(t *testing.T) {
 	// commit needs a committer identity. The runner normally sets both while
 	// configuring the repository.
 	for _, kv := range [][2]string{
-		{"extensions.partialClone", "true"},
+		{"extensions.partialClone", "origin"},
 		{"user.email", "ci-runner@buildbuddy.io"},
 		{"user.name", "BuildBuddy"},
 	} {
@@ -449,6 +449,62 @@ func TestGitMergeRetriesSlowLazyFetch(t *testing.T) {
 	require.Equal(t, "feature change", string(featureFile))
 	_, gitErr := git(t.Context(), io.Discard, "rev-parse", "--verify", "HEAD^2")
 	require.Nil(t, gitErr, "expected HEAD to be a merge commit")
+}
+
+func TestWorkspaceConfigPartialCloneRemote(t *testing.T) {
+	for _, remoteName := range []string{"origin", "fork"} {
+		t.Run(remoteName, func(t *testing.T) {
+			ctx := t.Context()
+			runGit := func(repoDir string, args ...string) string {
+				args = append([]string{"-C", repoDir}, args...)
+				output, gitErr := git(ctx, io.Discard, args...)
+				if gitErr != nil {
+					t.Fatalf("git %v failed: %s", args, gitErr.Output)
+				}
+				return strings.TrimSpace(output)
+			}
+
+			sourceDir, _ := testgit.MakeTempRepo(t, map[string]string{
+				"lazy.txt": "lazy contents\n",
+			})
+			blobOID := runGit(sourceDir, "rev-parse", "HEAD:lazy.txt")
+			remote := testgit.StartServer(t, testgit.ServerOptions{LogWriter: io.Discard})
+			remote.CreateProject("test-org", "test-repo", &testgit.ProjectSettings{Public: true})
+			// Disable path-walk packing because it does not support object filters.
+			remote.SetProjectConfig("test-org", "test-repo", "pack.usePathWalk", "false")
+			remote.Push("test-org", "test-repo", remote.AccessToken(), sourceDir)
+			remoteURL := remote.RepoURL("test-org", "test-repo", "")
+
+			flags.Set(t, "pushed_repo_url", remoteURL)
+			if remoteName == "fork" {
+				flags.Set(t, "target_repo_url", remote.RepoURL("test-org", "upstream", ""))
+			} else {
+				flags.Set(t, "target_repo_url", remoteURL)
+			}
+			flags.Set(t, "git_fetch_filters", []string{"blob:none"})
+			t.Setenv("USE_SYSTEM_GIT_CREDENTIALS", "1")
+			checkoutDir := t.TempDir()
+			t.Chdir(checkoutDir)
+			invocationLog := newInvocationLog(nil)
+			invocationLog.writer = io.Discard
+			ws := &workspace{
+				rootDir: checkoutDir,
+				log:     &buildEventReporter{log: invocationLog},
+			}
+			require.NoError(t, ws.init(ctx))
+			require.NoError(t, ws.config(ctx))
+			// The extension must name the remote used for the pushed repository,
+			// including when the pushed branch belongs to a fork.
+			require.Equal(t, remoteName, runGit(checkoutDir, "config", "--get", "extensions.partialClone"))
+			require.NoError(t, ws.fetch(ctx, remoteURL, []string{"refs/heads/master"}, 1))
+
+			missingObjects := runGit(checkoutDir, "rev-list", "--objects", "--all", "--missing=print")
+			require.Contains(t, missingObjects, "?"+blobOID, "expected blob to be omitted from the filtered fetch")
+			// Reading the missing blob must lazily retrieve it from the real remote.
+			require.Contains(t, runGit(checkoutDir, "cat-file", "blob", blobOID), "lazy contents")
+			require.NotContains(t, strings.Fields(runGit(checkoutDir, "remote")), "true")
+		})
+	}
 }
 
 func TestIsTransferTooSlow(t *testing.T) {
