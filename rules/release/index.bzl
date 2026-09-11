@@ -23,10 +23,17 @@ load("@rules_multirun//:defs.bzl", "multirun")
 # To delete a release, run:
 #   `bazel run :dev.delete`
 #
+# To confirm all artifacts without uploading/deploying (0 = all confirmed,
+# nonzero = missing or unable to confirm), run:
+#   `bazel run :dev.artifacts_exist`
+# Steps with no artifacts should expose a successful no-op predicate.
+# Both components must provide .artifacts_exist when that action is analyzed
+# (including via wildcard builds); existing explicit actions do not depend on it.
+#
 def release(name, run, after, enable_actions = True, **kwargs):
     actions = [""]
     if enable_actions:
-        actions = [".apply", ".diff", ".delete", ".push_only", ".apply_only"]
+        actions = [".apply", ".diff", ".delete", ".push_only", ".apply_only", ".artifacts_exist"]
 
     for action in actions:
         multirun(
