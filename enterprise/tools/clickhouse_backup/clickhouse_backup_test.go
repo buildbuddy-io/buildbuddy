@@ -122,9 +122,6 @@ func runBackupTool(t *testing.T, args ...string) {
 }
 
 func startCluster(t *testing.T, args ...string) (dsn string) {
-	// TODO: remove docker-compose dependency.
-	ensureDockerComposeInstalled(t)
-
 	clickhouseClusterPath, err := runfiles.Rlocation(clickhouseClusterRlocationpath)
 	require.NoError(t, err)
 	cmd := exec.Command(clickhouseClusterPath, args...)
@@ -133,8 +130,8 @@ func startCluster(t *testing.T, args ...string) (dsn string) {
 	err = cmd.Start()
 	require.NoError(t, err, "start clickhouse_cluster")
 	t.Cleanup(func() {
-		cmd.Process.Signal(os.Interrupt)
-		_ = cmd.Wait()
+		require.NoError(t, cmd.Process.Signal(os.Interrupt))
+		require.NoError(t, cmd.Wait(), "stop clickhouse_cluster")
 	})
 	addr := "localhost:9201"
 	dsn = fmt.Sprintf("clickhouse://%s/default", addr)
@@ -154,14 +151,4 @@ func startCluster(t *testing.T, args ...string) (dsn string) {
 	}, 2*time.Minute, 10*time.Millisecond)
 
 	return dsn
-}
-
-func ensureDockerComposeInstalled(t *testing.T) {
-	if _, err := exec.LookPath("docker-compose"); err == nil {
-		return
-	}
-	if os.Getuid() == 0 {
-		b, err := exec.Command("sh", "-c", `apt update && apt install -y docker-compose`).CombinedOutput()
-		require.NoError(t, err, "install docker-compose", string(b))
-	}
 }

@@ -9,6 +9,13 @@ go_library(
     deps = [
         "//server/util/flag",
         "//server/util/log",
+        "@com_github_containerd_errdefs//:errdefs",
+        "@com_github_docker_go_units//:go-units",
+        "@com_github_moby_moby_api//pkg/stdcopy",
+        "@com_github_moby_moby_api//types/container",
+        "@com_github_moby_moby_api//types/network",
+        "@com_github_moby_moby_client//:client",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
