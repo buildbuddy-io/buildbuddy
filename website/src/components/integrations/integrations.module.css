@@ -14,18 +14,13 @@
 
 .logo {
   height: 100px;
+  width: auto;
   box-sizing: border-box;
   background-image: none !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   flex-grow: 0;
   flex-shrink: 0;
-}
-
-.logo img {
-  max-height: 100% !important;
-  width: auto !important;
+  object-fit: contain;
 }
 
 .integrationSection {

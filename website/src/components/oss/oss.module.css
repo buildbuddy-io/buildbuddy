@@ -3,6 +3,9 @@ div.ossContainer.ossContainer {
 }
 
 .ossList {
+  width: 100%;
+  max-width: 1296px;
+  margin: 0 auto;
   padding: 32px 64px;
 }
 
@@ -10,6 +13,7 @@ div.ossContainer.ossContainer {
   line-height: 56px;
   font-size: 42px;
   font-weight: 700;
+  margin-top: 0;
   margin-bottom: 8px;
 }
 
@@ -26,28 +30,40 @@ div.ossContainer.ossContainer {
   vertical-align: middle;
 }
 @media (max-width: 460px) {
-  div.heart {
+  .heart {
     display: block;
     width: 100%;
     text-align: center;
   }
 
-  div.title {
+  .title {
+    font-size: 34px;
+    line-height: 42px;
     text-align: center;
     width: 100%;
   }
-  div.subtitle {
+
+  .subtitle {
     text-align: center;
     width: 100%;
   }
-  div.ossList {
-    padding: 32px 32px;
+
+  .ossList {
+    padding: 24px;
   }
 }
 
-.image {
+.imageLink {
+  display: block;
+  width: 100%;
   border-radius: 16px;
   flex-shrink: 1;
+  overflow: hidden;
+}
+
+.image {
+  width: 100%;
+  border-radius: 16px;
 }
 
 .image img {
@@ -55,7 +71,7 @@ div.ossContainer.ossContainer {
 }
 
 @media (max-width: 1200px) {
-  .image {
+  .imageLink {
     display: none;
   }
 }
@@ -71,6 +87,14 @@ div.ossContainer.ossContainer {
   border-bottom: 2px solid rgba(255, 255, 255, 0.1);
 }
 
+.link:focus-visible,
+.imageLink:focus-visible,
+.repoImageLink:focus-visible,
+.repoButton:focus-visible {
+  outline: 3px solid #9fd8ff;
+  outline-offset: 4px;
+}
+
 .hr {
   background-color: rgb(255, 255, 255, 0.2);
   width: 100%;
@@ -78,35 +102,49 @@ div.ossContainer.ossContainer {
 
 .repos {
   display: grid;
-  flex-wrap: wrap;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  width: 100%;
 }
 
-@media (max-width: 1200px) {
-  div.repos {
+@media (max-width: 720px) {
+  .repos {
     grid-template-columns: 1fr;
   }
 }
 
 .repo {
   background-color: hsla(0, 0%, 100%, 0.05);
-  padding: 36px;
-  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 24px;
+  padding-bottom: 40px;
+  border-radius: 12px;
   text-align: center;
   display: flex;
   align-items: center;
-  justify-content: center;
   flex-direction: column;
+  min-width: 0;
+}
+
+.repoImageLink {
+  display: block;
+  width: 100%;
+  margin-bottom: 24px;
+  border-radius: 10px;
 }
 
 .repoImage {
   width: 100%;
-  margin-bottom: 24px;
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
   border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 .repoImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   border-radius: 8px;
 }
 
@@ -114,19 +152,29 @@ div.ossContainer.ossContainer {
   font-size: 24px;
   line-height: 30px;
   font-weight: 700;
+  overflow-wrap: anywhere;
+  margin-top: 0;
   margin-bottom: 12px;
 }
 
 .repoDescription {
-  margin-bottom: 12px;
+  flex-grow: 1;
+  margin-top: 0;
+  margin-bottom: 0;
   color: rgba(255, 255, 255, 0.7);
   font-weight: 400;
 }
 
-.repoLink {
-  font-weight: 600;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.25);
-  color: #fff;
+@media (max-width: 460px) {
+  .repo {
+    padding: 18px;
+    padding-bottom: 32px;
+  }
+
+  .repoTitle {
+    font-size: 21px;
+    line-height: 27px;
+  }
 }
 
 .repoButton {
