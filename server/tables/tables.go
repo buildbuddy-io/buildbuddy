@@ -496,6 +496,10 @@ type APIKey struct {
 	// authenticated user. Keys created by the server or by an
 	// API-key-authenticated caller do not have this field set.
 	CreatedByUserID string `gorm:"default:''"`
+	// If true, this key may only be seen or managed by server admins. These
+	// keys are used for internal purposes on behalf of the group, such as
+	// registering self-hosted executors.
+	ServerAdminOnly bool `gorm:"not null;default:0"`
 }
 
 func (k *APIKey) TableName() string {
