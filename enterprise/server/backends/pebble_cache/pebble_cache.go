@@ -1242,6 +1242,7 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 				log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
 				return err
 			}
+			metrics.PebbleCacheAtimeUpdateGCSCount.With(lbls).Inc()
 			md.StorageMetadata.GcsMetadata.LastCustomTimeUsec = newAtime.UnixMicro()
 		}
 	}
@@ -2417,6 +2418,10 @@ func (p *PebbleCache) WriteReference(ctx context.Context, ref *refpb.Reference, 
 		if err != nil {
 			return err
 		}
+		metrics.PebbleCacheGCSCloneCount.With(prometheus.Labels{
+			metrics.PartitionID:    fileRecord.GetIsolation().GetPartitionId(),
+			metrics.CacheNameLabel: p.name,
+		}).Inc()
 	} else {
 		storageMD = refMD.GetStorageMetadata().CloneVT()
 	}
@@ -2788,6 +2793,14 @@ func (p *PebbleCache) wrapWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 		if bytesWritten == 0 {
 			log.Infof("Rejecting zero-length write. md: %+v", md)
 			return status.UnavailableError("zero-length writes are not allowed")
+		}
+		// The underlying writer has committed by now, so a GCS-backed blob
+		// has been uploaded whether or not the metadata write below succeeds.
+		if md.GetStorageMetadata().GetGcsMetadata() != nil {
+			metrics.PebbleCacheGCSWriteCount.With(prometheus.Labels{
+				metrics.PartitionID:    fileRecord.GetIsolation().GetPartitionId(),
+				metrics.CacheNameLabel: p.name,
+			}).Inc()
 		}
 
 		return commitFn(md)

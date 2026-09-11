@@ -3595,6 +3595,36 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheAtimeUpdateGCSCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_atime_update_gcs_count",
+		Help:      "Count of GCS object custom time (atime) updates made while processing atime updates.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
+	PebbleCacheGCSWriteCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_gcs_write_count",
+		Help:      "Count of blobs the pebble cache uploaded to GCS on the write path.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
+	PebbleCacheGCSCloneCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_gcs_clone_count",
+		Help:      "Count of GCS blobs the pebble cache cloned (server-side copied) while accepting references from peers.",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	PebbleCacheAtimeDeltaWhenRead = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
