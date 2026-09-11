@@ -53,13 +53,7 @@ function Component() {
             width="642"
           />
           <img alt="Jenkins Integration" className={styles.logo} style={{ padding: "16px 0" }} src="/img/jenkins.svg" />
-          <img
-            alt="GCP Integration"
-            className={styles.logo}
-            height="204"
-            src="/img/gcp.png"
-            width="800"
-          />
+          <img alt="GCP Integration" className={styles.logo} height="204" src="/img/gcp.png" width="800" />
           <img
             alt="AWS Integration"
             className={styles.logo}

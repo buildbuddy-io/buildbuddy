@@ -133,9 +133,7 @@ function Component() {
           {tweets.map((tweet) => (
             <a
               className={`${styles.card} ${
-                tweet.handle === "@steeve" || tweet.handle === "@mfreeman451"
-                  ? styles.columnStart
-                  : ""
+                tweet.handle === "@steeve" || tweet.handle === "@mfreeman451" ? styles.columnStart : ""
               }`}
               href={tweet.url}
               key={tweet.url}
@@ -143,14 +141,7 @@ function Component() {
               target="_blank">
               <article>
                 <header className={styles.author}>
-                  <img
-                    alt=""
-                    className={styles.avatar}
-                    height="44"
-                    loading="lazy"
-                    src={tweet.avatar}
-                    width="44"
-                  />
+                  <img alt="" className={styles.avatar} height="44" loading="lazy" src={tweet.avatar} width="44" />
                   <div className={styles.authorText}>
                     <div className={styles.name}>{tweet.name}</div>
                     <div className={styles.handle}>{tweet.handle}</div>

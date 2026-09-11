@@ -27,15 +27,13 @@ const repos: Repository[] = [
   {
     name: "modular/modular",
     description: "The Modular Platform, including MAX and the Mojo programming language.",
-    evidenceUrl:
-      "https://github.com/modular/modular/blob/1245611c0c6320f30e6459ce70d1fc7b668c026f/.bazelrc",
+    evidenceUrl: "https://github.com/modular/modular/blob/1245611c0c6320f30e6459ce70d1fc7b668c026f/.bazelrc",
     image: require("../../../static/img/oss/modular_modular.png"),
   },
   {
     name: "apache/rocketmq",
     description: "A cloud-native messaging and streaming platform for event-driven applications.",
-    evidenceUrl:
-      "https://github.com/apache/rocketmq/blob/484b7b812c365c28ace88da72aa41bc30e010b10/.bazelrc",
+    evidenceUrl: "https://github.com/apache/rocketmq/blob/484b7b812c365c28ace88da72aa41bc30e010b10/.bazelrc",
     image: require("../../../static/img/oss/apache_rocketmq.png"),
   },
   {
@@ -55,36 +53,31 @@ const repos: Repository[] = [
   {
     name: "formatjs/formatjs",
     description: "A monorepo of JavaScript internationalization libraries, including React Intl.",
-    evidenceUrl:
-      "https://github.com/formatjs/formatjs/blob/33decfcf838e98655ff066adf1d1bd070d438742/.bazelrc",
+    evidenceUrl: "https://github.com/formatjs/formatjs/blob/33decfcf838e98655ff066adf1d1bd070d438742/.bazelrc",
     image: require("../../../static/img/oss/formatjs_formatjs.png"),
   },
   {
     name: "pixie-io/pixie",
     description: "An open-source observability tool for Kubernetes applications.",
-    evidenceUrl:
-      "https://github.com/pixie-io/pixie/blob/830ff2ad3d5b6d4ff5a975ac5b21d43d42ce4bef/.bazelrc",
+    evidenceUrl: "https://github.com/pixie-io/pixie/blob/830ff2ad3d5b6d4ff5a975ac5b21d43d42ce4bef/.bazelrc",
     image: require("../../../static/img/oss/pixie-io_pixie.png"),
   },
   {
     name: "lewish/asciiflow",
     description: "A client-side web application for drawing ASCII diagrams.",
-    evidenceUrl:
-      "https://github.com/lewish/asciiflow/blob/758bcb00fde489542baebcd0cabd2a4af1e586fe/.bazelrc",
+    evidenceUrl: "https://github.com/lewish/asciiflow/blob/758bcb00fde489542baebcd0cabd2a4af1e586fe/.bazelrc",
     image: require("../../../static/img/oss/lewish_asciiflow.png"),
   },
   {
     name: "aya-rs/aya",
     description: "An eBPF library for Rust focused on developer experience and operability.",
-    evidenceUrl:
-      "https://github.com/aya-rs/aya/blob/f69d62a22be71c376b5e0fad2d95adbdf46d9800/.github/workflows/ci.yml",
+    evidenceUrl: "https://github.com/aya-rs/aya/blob/f69d62a22be71c376b5e0fad2d95adbdf46d9800/.github/workflows/ci.yml",
     image: require("../../../static/img/oss/aya-rs_aya.png"),
   },
   {
     name: "zml/zml",
     description: "An AI inference stack built with Zig, MLIR, OpenXLA, and Bazel.",
-    evidenceUrl:
-      "https://github.com/zml/zml/blob/1b6a3cb3951c0a9b0a75525d3d9d7257e3f6ab0a/.github/workflows/ci.yaml",
+    evidenceUrl: "https://github.com/zml/zml/blob/1b6a3cb3951c0a9b0a75525d3d9d7257e3f6ab0a/.github/workflows/ci.yaml",
     image: require("../../../static/img/oss/zml_zml.png"),
   },
   {
@@ -132,8 +125,7 @@ const repos: Repository[] = [
   {
     name: "pachyderm/pachyderm",
     description: "A data pipeline platform with data versioning and lineage.",
-    evidenceUrl:
-      "https://github.com/pachyderm/pachyderm/blob/e237475e9910a2d6299d7d2c3d6fc3b9a8f28f0b/.bazelrc",
+    evidenceUrl: "https://github.com/pachyderm/pachyderm/blob/e237475e9910a2d6299d7d2c3d6fc3b9a8f28f0b/.bazelrc",
     image: require("../../../static/img/oss/pachyderm_pachyderm.png"),
   },
   {
@@ -146,8 +138,7 @@ const repos: Repository[] = [
   {
     name: "tweag/rules_haskell",
     description: "Bazel rules for building Haskell projects.",
-    evidenceUrl:
-      "https://github.com/tweag/rules_haskell/blob/4d94849132c05b2dbc7ebc3b2b802884a0e6fd25/.bazelrc.common",
+    evidenceUrl: "https://github.com/tweag/rules_haskell/blob/4d94849132c05b2dbc7ebc3b2b802884a0e6fd25/.bazelrc.common",
     image: require("../../../static/img/oss/tweag_rules_haskell.png"),
   },
   {
@@ -202,8 +193,7 @@ const repos: Repository[] = [
   {
     name: "carverauto/serviceradar",
     description: "Open-source network management, monitoring, IT operations, and security analytics.",
-    evidenceUrl:
-      "https://github.com/carverauto/serviceradar/blob/63f0632b871cc2dc008081a6bf75e25aa10eb75f/.bazelrc",
+    evidenceUrl: "https://github.com/carverauto/serviceradar/blob/63f0632b871cc2dc008081a6bf75e25aa10eb75f/.bazelrc",
     image: require("../../../static/img/oss/carverauto_serviceradar.png"),
   },
   {
@@ -223,8 +213,7 @@ const repos: Repository[] = [
   {
     name: "bazel-ios/rules_ios",
     description: "Bazel rules for building iOS applications and frameworks.",
-    evidenceUrl:
-      "https://github.com/bazel-ios/rules_ios/blob/0a0d0f886e90fe647047b18e664c67d99577ce06/.bazelrc",
+    evidenceUrl: "https://github.com/bazel-ios/rules_ios/blob/0a0d0f886e90fe647047b18e664c67d99577ce06/.bazelrc",
     image: require("../../../static/img/oss/bazel-ios_rules_ios.png"),
   },
   {
@@ -244,29 +233,25 @@ const repos: Repository[] = [
   {
     name: "sourcegraph/scip-clang",
     description: "A precise Clang-based code indexer for C, C++, and CUDA.",
-    evidenceUrl:
-      "https://github.com/sourcegraph/scip-clang/blob/90dbe3f59c22c89d12e78efc6afc4d0b30b93d3b/.bazelrc",
+    evidenceUrl: "https://github.com/sourcegraph/scip-clang/blob/90dbe3f59c22c89d12e78efc6afc4d0b30b93d3b/.bazelrc",
     image: require("../../../static/img/oss/sourcegraph_scip-clang.png"),
   },
   {
     name: "tweag/rules_sh",
     description: "Shell rules for Bazel.",
-    evidenceUrl:
-      "https://github.com/tweag/rules_sh/blob/97ec9d7de206d8ebd1bdfbbc0b98dfb3e0cb9437/.bazelrc",
+    evidenceUrl: "https://github.com/tweag/rules_sh/blob/97ec9d7de206d8ebd1bdfbbc0b98dfb3e0cb9437/.bazelrc",
     image: require("../../../static/img/oss/tweag_rules_sh.png"),
   },
   {
     name: "jvolkman/rules_pycross",
     description: "Bazel rules for cross-platform Python external dependencies.",
-    evidenceUrl:
-      "https://github.com/jvolkman/rules_pycross/blob/c5de55b952c0c278c91e7903069dd97d8b884260/.bazelrc",
+    evidenceUrl: "https://github.com/jvolkman/rules_pycross/blob/c5de55b952c0c278c91e7903069dd97d8b884260/.bazelrc",
     image: require("../../../static/img/oss/jvolkman_rules_pycross.png"),
   },
   {
     name: "keith/rules_multirun",
     description: "Bazel rules for running multiple commands in parallel in one invocation.",
-    evidenceUrl:
-      "https://github.com/keith/rules_multirun/blob/3969ec9c62d016e0933f6097ab1e813d927ec17d/.bazelrc",
+    evidenceUrl: "https://github.com/keith/rules_multirun/blob/3969ec9c62d016e0933f6097ab1e813d927ec17d/.bazelrc",
     image: require("../../../static/img/oss/keith_rules_multirun.png"),
   },
   {
@@ -300,15 +285,13 @@ const repos: Repository[] = [
   {
     name: "CaperAi/branchpoke",
     description: "A tool that reminds developers via Slack to clean up stale or merged GitLab branches.",
-    evidenceUrl:
-      "https://github.com/CaperAi/branchpoke/blob/cfbb203fc77b159540918a2a06091333e265e430/.bazelrc",
+    evidenceUrl: "https://github.com/CaperAi/branchpoke/blob/cfbb203fc77b159540918a2a06091333e265e430/.bazelrc",
     image: require("../../../static/img/oss/CaperAi_branchpoke.png"),
   },
   {
     name: "curtismuntz/witness",
     description: "A webcam service controlled through an API for recording and debugging robotics tests.",
-    evidenceUrl:
-      "https://github.com/curtismuntz/witness/blob/474a90ebd42ffa965f4869431a675005e8f149fd/.bazelrc",
+    evidenceUrl: "https://github.com/curtismuntz/witness/blob/474a90ebd42ffa965f4869431a675005e8f149fd/.bazelrc",
     image: require("../../../static/img/oss/curtismuntz_witness.png"),
   },
   {
@@ -328,8 +311,7 @@ const repos: Repository[] = [
   {
     name: "hdl/bazel_rules_hdl",
     description: "Bazel rules for hardware design using open tools such as Yosys, Verilator, and OpenROAD.",
-    evidenceUrl:
-      "https://github.com/hdl/bazel_rules_hdl/blob/ece083ef1385ff9ab067711fa766d77c3b54d961/.bazelrc",
+    evidenceUrl: "https://github.com/hdl/bazel_rules_hdl/blob/ece083ef1385ff9ab067711fa766d77c3b54d961/.bazelrc",
     image: require("../../../static/img/oss/hdl_bazel_rules_hdl.png"),
   },
   {
@@ -347,8 +329,7 @@ const repos: Repository[] = [
   {
     name: "samhowes/rules_tsql",
     description: "Bazel rules for compiling and deploying T-SQL database packages across platforms.",
-    evidenceUrl:
-      "https://github.com/samhowes/rules_tsql/blob/55ca4001b6436b9b7d34abbee9e796d4236bf725/.ci/init.sh",
+    evidenceUrl: "https://github.com/samhowes/rules_tsql/blob/55ca4001b6436b9b7d34abbee9e796d4236bf725/.ci/init.sh",
     image: require("../../../static/img/oss/samhowes_rules_tsql.png"),
   },
 ];
