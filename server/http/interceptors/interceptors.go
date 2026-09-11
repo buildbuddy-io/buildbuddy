@@ -446,10 +446,20 @@ func alertOnPanic(err any) {
 func RecoverAndAlert(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if panicErr := recover(); panicErr != nil {
-				http.Error(w, "A panic occurred", http.StatusInternalServerError)
-				alertOnPanic(panicErr)
+			panicErr := recover()
+			if panicErr == nil {
+				return
 			}
+			// http.ErrAbortHandler is the documented way for a handler to
+			// abandon a response it has already started writing. net/http
+			// expects to see it propagate so that it can close the connection
+			// (or reset the HTTP/2 stream) without logging. It is not an
+			// unexpected event, so re-panic rather than alerting.
+			if panicErr == http.ErrAbortHandler {
+				panic(panicErr)
+			}
+			http.Error(w, "A panic occurred", http.StatusInternalServerError)
+			alertOnPanic(panicErr)
 		}()
 		next.ServeHTTP(w, r)
 	})

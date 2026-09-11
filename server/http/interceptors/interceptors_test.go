@@ -2,8 +2,11 @@ package interceptors
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -167,4 +170,48 @@ func TestAuthorizeSelectedGroupRole_AdaptsHTTPRPCPaths(t *testing.T) {
 			require.Equal(t, tc.expectedBody, rsp.Body.String())
 		})
 	}
+}
+
+func TestRecoverAndAlert_UnexpectedPanic(t *testing.T) {
+	server := httptest.NewServer(RecoverAndAlert(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic(fmt.Errorf("something went wrong"))
+	})))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	require.Contains(t, string(body), "A panic occurred")
+}
+
+// A handler that panics with http.ErrAbortHandler is deliberately abandoning a
+// response it has already started writing, which is the only way to signal a
+// failure once the status has been committed. The panic has to reach net/http
+// for the connection to be closed, so it must not be swallowed and turned into
+// an error message appended to the body.
+func TestRecoverAndAlert_AbortHandlerPanicAbortsResponse(t *testing.T) {
+	// Declare more content than we write, and write enough of it to force the
+	// status line and headers out onto the connection.
+	const contentLength = 16 * 1024
+	partial := strings.Repeat("a", contentLength/2)
+	server := httptest.NewServer(RecoverAndAlert(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(contentLength))
+		w.WriteHeader(http.StatusOK)
+		_, err := io.WriteString(w, partial)
+		require.NoError(t, err)
+		panic(http.ErrAbortHandler)
+	})))
+	defer server.Close()
+
+	resp, err := http.Get(server.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, readErr := io.ReadAll(resp.Body)
+	require.Error(t, readErr, "aborted response should surface as a read error")
+	require.NotContains(t, string(body), "A panic occurred")
+	require.True(t, strings.HasPrefix(partial, string(body)), "response body should be a prefix of what the handler wrote")
 }
