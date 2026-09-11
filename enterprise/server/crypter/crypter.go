@@ -21,8 +21,21 @@ import (
 
 const (
 	// This must be exposed because it is used as an input to the
-	// key-derivation function in crypter_service.
+	// key-derivation function in crypter_service. This must NEVER be 0xFF,
+	// which is reserved for CustomerDeploymentKeyInfoPrefix below (enforced
+	// by a compile-time guard following this const block).
 	EncryptedDataHeaderVersion = 1
+
+	// CustomerDeploymentKeyInfoPrefix domain-separates derived keys scoped to
+	// customer-managed deployments (e.g. cache proxies) from cloud-scoped ones
+	// in the key-derivation function in crypter_service. The cloud HKDF info is
+	// [EncryptedDataHeaderVersion] + groupID; the customer-deployment info is
+	// [CustomerDeploymentKeyInfoPrefix, EncryptedDataHeaderVersion] + groupID.
+	// Since every cloud info begins with the header version byte, which is
+	// never 0xFF, the two derivations can never collide, so keys served to
+	// customer-managed deployments cannot decrypt content stored in the cloud
+	// cache.
+	CustomerDeploymentKeyInfoPrefix = 0xFF
 
 	// The chunk size to use for encrypting plain text data. Encryption is done
 	// in pieces, with data written in chunks up to this size and then flushed
@@ -35,6 +48,13 @@ const (
 	nonceSize                    = chacha20poly1305.NonceSizeX
 	encryptedChunkOverhead       = nonceSize + chacha20poly1305.Overhead
 )
+
+// Compile-time guard that EncryptedDataHeaderVersion never takes the value
+// reserved for CustomerDeploymentKeyInfoPrefix, which would break the domain
+// separation between cloud-scoped and customer-deployment-scoped derived
+// keys. If the two are ever equal, this expression divides by zero and fails
+// to compile.
+const _ = 1 / (CustomerDeploymentKeyInfoPrefix - EncryptedDataHeaderVersion)
 
 // Buffer pool for all the buffers in this package.
 var bufPool = bytebufferpool.VariableSize(PlainTextChunkSize + encryptedChunkOverhead)

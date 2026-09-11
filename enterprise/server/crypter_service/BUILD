@@ -36,6 +36,7 @@ go_test(
     deps = [
         "//enterprise/server/backends/pebble_cache",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/crypter",
         "//enterprise/server/crypter_key_cache",
         "//enterprise/server/testutil/enterprise_testauth",
         "//enterprise/server/testutil/enterprise_testenv",
