@@ -5,9 +5,20 @@ package filecache
 import (
 	"os"
 	"strings"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
+
+// ctimeUsec returns the file's inode change time in microseconds since the
+// Unix epoch.
+func ctimeUsec(info os.FileInfo) (int64, bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return st.Ctim.Nano() / 1000, true
+}
 
 func syncFilesystem(path string) error {
 	dir, err := os.Open(path)

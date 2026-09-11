@@ -147,6 +147,23 @@ func sizeFn(v *entry) int64 {
 	return v.sizeBytes
 }
 
+// scannedAddTimeUsec returns the add time to record for a file that a previous
+// process linked into the cache and which was rediscovered by the startup scan
+// or the disk fallback. Recovering the original add time rather than stamping
+// the scan time keeps the eviction age metric accurate across restarts. The
+// inode change time (ctime) approximates the original add time because the
+// hardlink into the cache updated it. The mtime is not suitable because some
+// tools write files with mtimes arbitrarily far in the past. If the platform
+// does not expose a change time, or the recorded time is in the future (e.g.
+// after a clock correction), fall back to the current time.
+func scannedAddTimeUsec(info os.FileInfo) int64 {
+	now := time.Now().UnixMicro()
+	if ctime, ok := ctimeUsec(info); ok && ctime < now {
+		return ctime
+	}
+	return now
+}
+
 func evictFn(rootDir string) func(string, *entry, lru.EvictionReason) {
 	// Note: this returned function will get called with the filecache lock
 	// held. This is because all LRU operations (Add/Contains etc.) are done
@@ -767,6 +784,8 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	addedAtUsec := time.Now().UnixMicro()
+
 	// If we're adding the file from the path where it should already exist
 	// (i.e. during the initial directory scan), and if it's already tracked in
 	// the LRU (i.e. another action added it concurrently with the scan), then
@@ -775,7 +794,17 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 		if c.l.Contains(k) {
 			return nil
 		}
+		// The file was linked into the cache by a previous process, so record
+		// its original add time rather than the scan time.
+		addedAtUsec = scannedAddTimeUsec(info)
 	} else {
+		// If we're replacing an existing entry for this key, keep its original
+		// add time so that the eviction age metric reflects how long the
+		// content has been in the cache, not the time since the last re-add.
+		if existing, ok := c.l.Get(k); ok {
+			addedAtUsec = existing.addedAtUsec
+		}
+
 		// If the file being added is not already at the path where we expect it
 		// (i.e. it's being added from some action workspace), then remove and
 		// unlink any existing entry, then hardlink to the destination path.
@@ -798,7 +827,7 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 	}
 
 	e := &entry{
-		addedAtUsec: time.Now().UnixMicro(),
+		addedAtUsec: addedAtUsec,
 		sizeBytes:   sizeOnDisk,
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
@@ -1184,7 +1213,7 @@ func (c *fileCache) containsWithStatFallback(key string) bool {
 		return true
 	}
 	success := c.l.Add(key, &entry{
-		addedAtUsec: time.Now().UnixMicro(),
+		addedAtUsec: scannedAddTimeUsec(info),
 		sizeBytes:   sizeOnDisk,
 	})
 	if !success {
