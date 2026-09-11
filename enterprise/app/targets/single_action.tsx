@@ -1,14 +1,12 @@
 import React from "react";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
-import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
-import moment from "moment";
 import { stats } from "../../../proto/stats_ts_proto";
-import { computeTimeKeys } from "../trends/common";
 import format from "../../../app/format/format";
 import FilledButton, { OutlinedButton } from "../../../app/components/button/button";
 import Select, { Option } from "../../../app/components/select/select";
 import { SortAsc, SortDesc } from "lucide-react";
 import ActionCompareButtonComponent from "../../../app/invocation/action_compare_button";
+import SingleActionChartComponent from "./single_action_chart";
 
 interface Props {
   target: string;
@@ -66,89 +64,22 @@ export default class SingleActionComponent extends React.Component<Props, State>
   renderSingleActionChart(
     title: string,
     fmt: (v: number) => string,
-    line: (as: execution_stats.ExecutionTimelineSummary) => number,
-    scat: (as: execution_stats.ExecutionTimelineEntry) => number,
-    area?: (as: execution_stats.ExecutionTimelineSummary) => [number, number]
+    p10: (as: execution_stats.ExecutionTimelineSummary) => number,
+    p50: (as: execution_stats.ExecutionTimelineSummary) => number,
+    p90: (as: execution_stats.ExecutionTimelineSummary) => number,
+    scat: (as: execution_stats.ExecutionTimelineEntry) => number
   ): React.ReactNode {
-    let { timeKeys, ticks } = computeTimeKeys(this.props.interval, this.props.domain);
-    timeKeys = timeKeys.map((v) => v * 1000);
-    ticks = ticks.map((v) => v * 1000);
-
-    const lineData = new Map<number, number>();
-    const areaData = new Map<number, [number, number]>();
-    const scatterData = new Map<number, number>();
-
-    for (const e of this.props.timeline.aggregatedStats) {
-      if (e.summary) {
-        lineData.set(+e.bucketStartTimeUsec, line(e.summary));
-        area && areaData.set(+e.bucketStartTimeUsec, area(e.summary));
-      }
-    }
-
-    for (const e of this.props.timeline.execution) {
-      scatterData.set(+e.startTimeUsec, scat(e));
-      timeKeys.push(+e.startTimeUsec);
-    }
-    timeKeys = timeKeys.sort();
-
-    // TODO XXX
-    // This isn't a journal article and we value aesthetics a bit.  Extend the
-    // line and area components out to the edge of whatever the minimum observed
-    // scatter points are so that the chart looks nice.
-    const lineSeries = {
-      name: title + "line",
-      type: SeriesType.LINE,
-      extractValue: (startTimeUsec: number) => lineData.get(startTimeUsec) ?? null,
-      formatHoverValue: (v: number) => (
-        <>
-          <div>{fmt(v)}</div>
-        </>
-      ),
-      color: ChartColor.BLUE,
-    };
-
-    const areaSeries = {
-      name: title + "area",
-      type: SeriesType.AREA,
-      extractValue: (startTimeUsec: number) => areaData.get(startTimeUsec) ?? null,
-      formatHoverValue: (v: number) => (
-        <>
-          <div>{fmt(v)}</div>
-        </>
-      ),
-      color: ChartColor.BLUE,
-    };
-
-    const scatterSeries = {
-      name: title + "scatter",
-      type: SeriesType.SCATTER,
-      extractValue: (startTimeUsec: number) => scatterData.get(startTimeUsec) ?? null,
-      formatHoverValue: (v: number) => (
-        <>
-          <div>{fmt(v)}</div>
-        </>
-      ),
-      color: ChartColor.BLUE,
-    };
-
     return (
-      <TrendsChartComponent
+      <SingleActionChartComponent
+        domain={this.props.domain}
         title={title}
-        data={timeKeys}
-        ticks={ticks}
-        dataSeries={[scatterSeries, lineSeries, areaSeries]}
-        primaryYAxis={{
-          formatTickValue: fmt,
-          allowDecimals: false,
-        }}
-        formatXAxisLabel={(startTimeUsec) =>
-          moment(startTimeUsec / 1000).format(
-            this.props.interval.type === stats.IntervalType.INTERVAL_TYPE_DAY ? "MMM D" : "MMM D, h:mm a"
-          )
-        }
-        formatHoverXAxisLabel={(startTimeUsec) => moment(startTimeUsec / 1000).format("dddd, MMMM Do YYYY, h:mm:ss a")}
-        hideLegend={true}
-      />
+        formatValue={fmt}
+        getP10={p10}
+        getP50={p50}
+        getP90={p90}
+        getScatterValue={scat}
+        interval={this.props.interval}
+        timeline={this.props.timeline}></SingleActionChartComponent>
     );
   }
 
@@ -269,30 +200,34 @@ export default class SingleActionComponent extends React.Component<Props, State>
         {this.renderSingleActionChart(
           "CPU usage",
           (v) => format.durationMillis(v / 1e6),
+          (es) => +es.cpuNanosP10,
           (es) => +es.cpuNanosP50,
-          (e) => +e.cpuNanos,
-          (es) => [+es.cpuNanosP10, +es.cpuNanosP90]
+          (es) => +es.cpuNanosP90,
+          (e) => +e.cpuNanos
         )}
         {this.renderSingleActionChart(
           "Wall time",
           (v) => format.durationMillis(v / 1e3),
+          (es) => +es.durationUsecP10,
           (es) => +es.durationUsecP50,
-          (e) => +e.durationUsec,
-          (es) => [+es.durationUsecP10, +es.durationUsecP90]
+          (es) => +es.durationUsecP90,
+          (e) => +e.durationUsec
         )}
         {this.renderSingleActionChart(
           "Input download (bytes)",
           (v) => format.bytes(v),
+          (es) => +es.downloadedBytesP10,
           (es) => +es.downloadedBytesP50,
-          (e) => +e.downloadedBytes,
-          (es) => [+es.downloadedBytesP10, +es.downloadedBytesP90]
+          (es) => +es.downloadedBytesP90,
+          (e) => +e.downloadedBytes
         )}
         {this.renderSingleActionChart(
           "Output upload (bytes)",
           (v) => format.bytes(v),
+          (es) => +es.uploadedBytesP10,
           (es) => +es.uploadedBytesP50,
-          (e) => +e.uploadedBytes,
-          (es) => [+es.uploadedBytesP10, +es.uploadedBytesP90]
+          (es) => +es.uploadedBytesP90,
+          (e) => +e.uploadedBytes
         )}
         {this.renderExecutionTable()}
       </>

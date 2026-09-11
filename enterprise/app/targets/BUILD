@@ -89,13 +89,25 @@ ts_library(
     deps = [
         "//:node_modules/@types/react",
         "//:node_modules/lucide-react",
-        "//:node_modules/moment",
         "//:node_modules/react",
         "//:node_modules/tslib",
         "//app/components/button",
         "//app/components/select",
         "//app/format",
         "//app/invocation:action_compare_button",
+        "//enterprise/app/targets:single_action_chart",
+        "//proto:execution_stats_ts_proto",
+        "//proto:stats_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "single_action_chart",
+    srcs = ["single_action_chart.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
         "//enterprise/app/trends:common",
         "//enterprise/app/trends:trends_chart",
         "//proto:execution_stats_ts_proto",

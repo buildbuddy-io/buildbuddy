@@ -14,6 +14,7 @@ import {
   ReferenceArea,
   ResponsiveContainer,
   Scatter,
+  ScatterPointItem,
   Tooltip,
   TooltipContentProps,
   useYAxisScale,
@@ -281,6 +282,11 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             stroke={scatterColor}
             fill={"#fff"}
             fillOpacity={1}
+            onClick={(d: ScatterPointItem) => {
+              if (ds.onClick) {
+                ds.onClick(d.payload);
+              }
+            }}
             shape={<Dot r={3} />}
             activeShape={<Dot r={3} fill={scatterColor} fillOpacity={0.8} />}
           />
