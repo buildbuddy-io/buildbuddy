@@ -2790,6 +2790,7 @@ func emitRemoteRunnerMetric(ctx context.Context, task *repb.ExecutionTask, md *s
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
 	if req.GetLeaseId() == "" {
+		log.CtxWarning(ctx, "Rejected re-enqueue with no lease id")
 		return nil, status.FailedPreconditionError("lease id is required")
 	}
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
