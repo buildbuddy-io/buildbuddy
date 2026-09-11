@@ -190,7 +190,7 @@ func shouldUseSynchronousBESProxy(synchronousWrites bool, args *arg.BazelArgs) b
 	}
 
 	bazelArgs := arg.GetBazelArgs(args.Resolved())
-	return arg.Get(bazelArgs, "bes_upload_mode") == waitForBESUploadMode
+	return strings.EqualFold(arg.Get(bazelArgs, "bes_upload_mode"), waitForBESUploadMode)
 }
 
 func appendSynchronousProxyArgs(sidecarArgs []string, synchronousWrites, synchronousBESProxy bool) []string {

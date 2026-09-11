@@ -30,6 +30,11 @@ func TestShouldUseSynchronousBESProxy(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "command line wait for upload complete is case insensitive",
+			args: []string{"build", "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE", "//foo"},
+			want: true,
+		},
+		{
 			name: "command line wait for upload complete with separate value",
 			args: []string{"build", "--bes_upload_mode", "wait_for_upload_complete", "//foo"},
 			want: true,
