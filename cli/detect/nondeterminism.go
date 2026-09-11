@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
+	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/shlex"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -47,6 +48,8 @@ Runs a Bazel command twice without accepting remote cache hits, then compares
 the compact execution logs with bb explain.
 
 If no Bazel command is provided, "build //..." is used.
+BES endpoints are inherited from the Bazel configuration unless overridden with
+--bes_backend or --bes_results_url; unconfigured endpoints default to production.
 
 Examples:
   bb detect nondeterminism
@@ -62,11 +65,11 @@ var (
 	nondeterminismFlags = flag.NewFlagSet("detect nondeterminism", flag.ContinueOnError)
 
 	bazelCommand  = nondeterminismFlags.String("bazel_command", defaultBazelCommand, "Shell-tokenized Bazel command to run twice.")
-	besBackend    = nondeterminismFlags.String("bes_backend", defaultBESBackend, "BuildBuddy BES backend target to stream Bazel results to.")
+	besBackend    = nondeterminismFlags.String("bes_backend", defaultBESBackend, "Override the Bazel-configured BES backend (defaults to BuildBuddy production if unset).")
 	besResultsURL = nondeterminismFlags.String(
 		"bes_results_url",
 		defaultBESResultsURL,
-		"BuildBuddy invocation URL prefix for Bazel BES results.",
+		"Override the Bazel-configured invocation URL prefix (defaults to BuildBuddy production if unset).",
 	)
 	notifyEmail = nondeterminismFlags.Bool("notify_email", false, "Send an email to workspace admins when nondeterminism is detected.")
 	notifySlack = nondeterminismFlags.String("notify_slack", "", "Name of the BuildBuddy secret with the Slack webhook URL to notify when nondeterminism is detected.")
@@ -147,10 +150,12 @@ func handleNondeterminism(args []string) (int, error) {
 		log.Print(nondeterminismUsage)
 		return -1, err
 	}
-	opts := options{
-		bazelArgs:     bazelArgs,
-		besBackend:    *besBackend,
-		besResultsURL: *besResultsURL,
+	opts, err := resolveNondeterminismOptions(bazelArgs, nondeterminismFlags)
+	if err != nil {
+		return -1, err
+	}
+	if (*notifyEmail || *notifySlack != "") && opts.besBackend == "" {
+		return -1, status.InvalidArgumentError("To send notifications, configure a non-empty BES backend.")
 	}
 
 	c := &checker{
@@ -185,6 +190,54 @@ func parseBazelCommand(command string) (*arg.BazelArgs, error) {
 		return nil, fmt.Errorf("expected a Bazel command like build or test, got %q", bazelCommand)
 	}
 	return bazelArgs, nil
+}
+
+// resolveNondeterminismOptions uses explicit detector flags, then the effective
+// Bazel configuration, then production defaults. Only resolve a copy: the Bazel
+// subprocess should still receive the original rc/config options.
+func resolveNondeterminismOptions(bazelArgs *arg.BazelArgs, flags *flag.FlagSet) (options, error) {
+	args := bazelArgs.Unresolved()
+	if root := os.Getenv("BUILDBUDDY_CI_RUNNER_ROOT_DIR"); root != "" {
+		// The ci_runner wrapper skips non-Bazel commands such as `bb detect`.
+		// Match ci_runner.customBazelrcOptions here so resolution sees the same
+		// rc files, in the same order, as our eventual `bazel` subprocesses.
+		startupArgs := []string{"--bazelrc=" + filepath.Join(root, "buildbuddy.bazelrc")}
+		if ws, err := workspace.Path(); err == nil {
+			rcPath := filepath.Join(ws, ".bazelrc")
+			if _, err := os.Stat(rcPath); err == nil {
+				startupArgs = append(startupArgs, "--noworkspace_rc", "--bazelrc="+rcPath)
+			} else if !os.IsNotExist(err) {
+				return options{}, fmt.Errorf("stat workspace bazelrc: %w", err)
+			}
+		}
+		args = append(startupArgs, args...)
+	}
+	resolved, err := arg.NewBazelArgs(args)
+	if err != nil {
+		return options{}, fmt.Errorf("resolve Bazel configuration: %w", err)
+	}
+	opts := options{
+		bazelArgs:     bazelArgs,
+		besBackend:    defaultBESBackend,
+		besResultsURL: defaultBESResultsURL,
+	}
+	resolvedArgs := arg.GetBazelArgs(resolved.Resolved())
+	// Use presence, not a non-empty value: --bes_backend= disables BES.
+	if value, index, _ := arg.FindLast(resolvedArgs, "bes_backend"); index >= 0 {
+		opts.besBackend = value
+	}
+	if value, index, _ := arg.FindLast(resolvedArgs, "bes_results_url"); index >= 0 {
+		opts.besResultsURL = value
+	}
+	flags.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "bes_backend":
+			opts.besBackend = f.Value.String()
+		case "bes_results_url":
+			opts.besResultsURL = f.Value.String()
+		}
+	})
+	return opts, nil
 }
 
 func (c *checker) Run(ctx context.Context) error {
