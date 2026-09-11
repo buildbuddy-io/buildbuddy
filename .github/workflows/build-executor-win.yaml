@@ -2,8 +2,6 @@ name: "Build Windows executor"
 
 on:
   pull_request:
-    branches:
-      - master
 
 jobs:
   build:
