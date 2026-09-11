@@ -1194,10 +1194,11 @@ func (c *Cache) copyBytes(ctx context.Context, r io.Reader, dest string, rn *rsp
 	return rwc.Commit()
 }
 
-// copyReference writes rn to dest by reference. The source peer keeps its
-// own record of the referenced blob, so dest must clone it.
+// copyReference writes rn to dest by reference. The source peer keeps its own
+// record of the referenced blob, so unless the blob is shared, dest must clone.
 func (c *Cache) copyReference(ctx context.Context, ref *refpb.Reference, dest string, rn *rspb.ResourceName) error {
-	rwc, err := c.remoteReferenceWriter(ctx, dest, "", rn, ref, true /*=mustClone*/)
+	mustClone := !ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetShared()
+	rwc, err := c.remoteReferenceWriter(ctx, dest, "", rn, ref, mustClone)
 	if err != nil {
 		return err
 	}
@@ -1962,10 +1963,26 @@ func (l *localReferenceWriteCloser) Close() error {
 	return nil
 }
 
+func (c *Cache) shareGCSReferences(ctx context.Context) bool {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "distributed_cache.share_gcs_references", false)
+}
+
 // referenceMultiWriter is like byteMultiWriter, but the peers receive only
 // the reference; committing the returned writer performs the reference
 // writes.
 func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference) (interfaces.CommittedWriteCloser, error) {
+	shared := false
+	if c.shareGCSReferences(ctx) {
+		if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata() != nil {
+			ref = ref.CloneVT()
+			ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().Shared = true
+			shared = true
+		}
+	}
 	refMustBeCloned := false
 	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
 		var wc interfaces.CommittedWriteCloser
@@ -1978,8 +1995,11 @@ func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.Re
 				return nil, err
 			}
 		}
-		// At most one peer can own the reference. Other peers must clone.
-		refMustBeCloned = true
+		// Unless the blob is shared, at most one peer can own the reference
+		// and other peers must clone.
+		if !shared {
+			refMustBeCloned = true
+		}
 		return wc, nil
 	})
 }

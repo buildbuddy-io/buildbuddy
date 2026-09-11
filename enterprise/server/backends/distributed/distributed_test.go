@@ -3937,12 +3937,28 @@ type referenceMemoryCache struct {
 	byteCommits     int
 	refWrites       int
 	refWritesCloned int
+	refWritesShared int
+	// shareReferences marks the references this node hands out as shared,
+	// standing in for a node whose records don't own their blobs.
+	shareReferences bool
+}
+
+func (c *referenceMemoryCache) setShareReferences(share bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.shareReferences = share
 }
 
 func (c *referenceMemoryCache) counts() (byteCommits, refWrites, refWritesCloned int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.byteCommits, c.refWrites, c.refWritesCloned
+}
+
+func (c *referenceMemoryCache) sharedRefWrites() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.refWritesShared
 }
 
 func (c *referenceMemoryCache) makeReference(r *rspb.ResourceName, name string, sizeBytes int64) *refpb.Reference {
@@ -3979,7 +3995,11 @@ func (c *referenceMemoryCache) ReadReference(ctx context.Context, r *rspb.Resour
 	if !ok {
 		return nil, status.NotFoundError("not in shared storage")
 	}
-	return c.makeReference(r, name, int64(len(data))), nil
+	ref := c.makeReference(r, name, int64(len(data)))
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().Shared = c.shareReferences
+	return ref, nil
 }
 
 func (c *referenceMemoryCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
@@ -4037,6 +4057,9 @@ func (c *referenceMemoryCache) WriteReference(ctx context.Context, ref *refpb.Re
 	c.refWrites++
 	if mustClone {
 		c.refWritesCloned++
+	}
+	if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetShared() {
+		c.refWritesShared++
 	}
 	return nil
 }
@@ -4136,7 +4159,7 @@ func TestWriteByReference(t *testing.T) {
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
-	newCluster := func(t *testing.T, n int) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore) {
+	newCluster := func(t *testing.T, n int, configure ...func(*Options)) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore) {
 		store := &sharedBlobStore{blobs: map[string][]byte{}}
 		var peers []string
 		for range n {
@@ -4148,6 +4171,9 @@ func TestWriteByReference(t *testing.T) {
 			// its own copy to keep the peers iteration order stable.
 			Nodes:              slices.Clone(peers),
 			DisableLocalLookup: true,
+		}
+		for _, fn := range configure {
+			fn(&baseConfig)
 		}
 		var dcs []*Cache
 		var locals []*referenceMemoryCache
@@ -4196,6 +4222,65 @@ func TestWriteByReference(t *testing.T) {
 		require.Equal(t, 0, byteCommits)
 		require.Equal(t, 3, refWrites)
 		require.Equal(t, 2, refWritesCloned) // Only 2 of the 3 should clone.
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("share flag distributes shared references without cloning", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": true,
+			"distributed_cache.share_gcs_references": true,
+		})
+		_, dcs, locals, store := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+
+		// The blob was staged once and every node refers to it as shared,
+		// so none of them cloned it.
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, refWritesCloned := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		require.Equal(t, 0, refWritesCloned)
+		for _, l := range locals {
+			require.Equal(t, 1, l.sharedRefWrites())
+		}
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("share flag with local writes", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": true,
+			"distributed_cache.share_gcs_references": true,
+		})
+		// With 3 nodes and a replication factor of 3, the coordinator is
+		// always a write peer, so its reference write goes through the local
+		// path instead of the peer protocol.
+		_, dcs, locals, store := newCluster(t, 3, func(o *Options) { o.EnableLocalWrites = true })
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, refWritesCloned := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		require.Equal(t, 0, refWritesCloned)
+		for _, l := range locals {
+			require.Equal(t, 1, l.sharedRefWrites())
+		}
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("share flag alone leaves the byte path alone", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": false,
+			"distributed_cache.share_gcs_references": true,
+		})
+		_, dcs, locals, _ := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 3, byteCommits)
+		require.Equal(t, 0, refWrites)
 		assertReplicated(t, locals, dcs, rn)
 	})
 
@@ -4432,6 +4517,34 @@ func TestBackfillByReference(t *testing.T) {
 			require.Equal(t, 1, byteCommits) // The initial Set.
 			require.Equal(t, 1, refWrites)
 			require.Equal(t, 1, refWritesCloned)
+		}
+		require.Equal(t, uploadsBefore, store.uploadCount())
+		assertBackfilled(t, locals, rn)
+		assertBackfillCounts(t, countsBefore, "reference", rn)
+	})
+
+	t.Run("forwards a shared reference without cloning", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, store, rn := newCluster(t)
+		locals[0].setShareReferences(true)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		uploadsBefore := store.uploadCount()
+		countsBefore := backfillCounts(t)
+
+		backfill(t, peers, dcs, rn)
+
+		// The source's blob is shared, so each destination took the
+		// reference as is instead of cloning the blob.
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, refWritesCloned := local.counts()
+			require.Equal(t, 1, byteCommits) // The initial Set.
+			require.Equal(t, 1, refWrites)
+			require.Equal(t, 0, refWritesCloned)
+			require.Equal(t, 1, local.sharedRefWrites())
 		}
 		require.Equal(t, uploadsBefore, store.uploadCount())
 		assertBackfilled(t, locals, rn)
