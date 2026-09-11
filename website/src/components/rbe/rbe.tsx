@@ -11,13 +11,11 @@ function Component() {
     return () => clearInterval(interval);
   }, []);
 
-  let unixTimeForOct1st2023 = 1696143600;
-  let minutesSavedOnOct1st2023 = 2943179231;
-  let savingsPerSecond = 158.28;
-  let minutesInAYear = 525600;
-  let minuteSaved = Math.round(
-    minutesSavedOnOct1st2023 + savingsPerSecond * (new Date().getTime() / 1000 - unixTimeForOct1st2023)
-  );
+  const baselineUnixTime = Date.parse("2026-09-11T00:00:00Z") / 1000;
+  const minutesSavedAtBaseline = 29686846011;
+  const savingsPerSecond = 815.3;
+  const minutesInAYear = 525600;
+  const minuteSaved = Math.round(minutesSavedAtBaseline + savingsPerSecond * (Date.now() / 1000 - baselineUnixTime));
 
   return (
     <div className={`${common.section} ${common.sectionDark}`}>

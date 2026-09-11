@@ -1,5 +1,5 @@
 import Image from "@theme/IdealImage";
-import { Copy } from "lucide-react";
+import { CalendarDays, Copy } from "lucide-react";
 import React, { useState } from "react";
 import common from "../../css/common.module.css";
 import { copyToClipboard } from "../../util/clipboard";
@@ -47,15 +47,19 @@ function Component(props) {
             {props.primaryButtonText !== "" && (
               <a
                 href={props.primaryButtonHref || "https://app.buildbuddy.io"}
-                className={`${common.button} ${common.buttonPrimary}`}>
+                className={`${common.button} ${common.buttonPrimary} ${styles.heroButton}`}>
                 {props.primaryButtonText || <>Get Started for Free</>}
               </a>
             )}
             {props.secondaryButtonText !== "" && (
               <a
                 href={props.secondaryButtonHref || "/request-demo"}
-                className={`${common.button} ${props.gradientButton ? common.buttonGradient : ""}`}>
-                {props.secondaryButtonText || <>Request a Demo</>}
+                className={`${common.button} ${props.gradientButton ? common.buttonGradient : ""} ${styles.heroButton}`}>
+                {props.secondaryButtonText || (
+                  <>
+                    <CalendarDays aria-hidden="true" /> Request a Demo
+                  </>
+                )}
               </a>
             )}
           </div>

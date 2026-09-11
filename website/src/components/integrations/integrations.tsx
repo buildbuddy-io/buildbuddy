@@ -1,4 +1,3 @@
-import Image from "@theme/IdealImage";
 import React from "react";
 import common from "../../css/common.module.css";
 import styles from "./integrations.module.css";
@@ -13,21 +12,21 @@ function Component() {
       </div>
       <div className={common.container}>
         <div className={styles.logos}>
-          <Image
+          <img
             alt="Github Integration Octocat"
             className={styles.logo}
+            height="416"
+            src="/img/github-image.png"
             style={{ marginRight: "-32px", padding: "20px 0" }}
-            img={require("../../../static/img/github-image.png")}
-            shouldAutoDownload={() => true}
-            threshold={10000}
+            width="500"
           />
-          <Image
+          <img
             alt="Github Integration"
             className={styles.logo}
+            height="205"
+            src="/img/github-text.png"
             style={{ padding: "20px 0" }}
-            img={require("../../../static/img/github-text.png")}
-            shouldAutoDownload={() => true}
-            threshold={10000}
+            width="500"
           />
           <img alt="Slack Integration" className={styles.logo} src="/img/slack.svg" />
           <img alt="Gitlab Integration" className={styles.logo} src="/img/gitlab.svg" />
@@ -37,37 +36,37 @@ function Component() {
             style={{ padding: "28px 0" }}
             src="/img/buildkite.svg"
           />
-          <Image
+          <img
             alt="CircleCI Integration"
             className={styles.logo}
+            height="142"
+            src="/img/circleci.png"
             style={{ padding: "16px 0" }}
-            img={require("../../../static/img/circleci.png")}
-            shouldAutoDownload={() => true}
-            threshold={10000}
+            width="500"
           />
-          <Image
+          <img
             alt="Travis Integration"
             className={styles.logo}
+            height="201"
+            src="/img/travis.png"
             style={{ padding: "12px 0" }}
-            img={require("../../../static/img/travis.png")}
-            shouldAutoDownload={() => true}
-            threshold={10000}
+            width="642"
           />
           <img alt="Jenkins Integration" className={styles.logo} style={{ padding: "16px 0" }} src="/img/jenkins.svg" />
-          <Image
+          <img
             alt="GCP Integration"
             className={styles.logo}
-            img={require("../../../static/img/gcp.png")}
-            shouldAutoDownload={() => true}
-            threshold={10000}
+            height="204"
+            src="/img/gcp.png"
+            width="800"
           />
-          <Image
+          <img
             alt="AWS Integration"
             className={styles.logo}
+            height="300"
+            src="/img/aws.png"
             style={{ padding: "24px 0" }}
-            img={require("../../../static/img/aws.png")}
-            shouldAutoDownload={() => true}
-            threshold={10000}
+            width="500"
           />
         </div>
       </div>

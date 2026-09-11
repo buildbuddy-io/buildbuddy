@@ -15,12 +15,12 @@ let form = {
 
 function OpenSource() {
   return (
-    <Layout title="Powered By BuildBuddy">
+    <Layout title="Open source repos powered by BuildBuddy">
       <div className={common.page}>
         <div className={common.section}>
           <div className={common.container}>
             <div className={common.centeredText}>
-              <div className={common.title}>Powered by BuildBuddy</div>
+              <div className={common.title}>Open source repos powered by BuildBuddy</div>
               <div className={common.subtitle}>
                 <br />
                 Here are some of our favorite open source repos that are powered by BuildBuddy.
