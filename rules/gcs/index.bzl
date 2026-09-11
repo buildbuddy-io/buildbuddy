@@ -117,7 +117,7 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
             "set -euo pipefail",
             "unset -v PYTHONSAFEPATH",
         ] + (_READ_SHA_PREFIX + [
-            "exec {gsutil} stat {marker}".format(gsutil = gsutil, marker = marker),
+            "exec {gsutil} stat {marker} >/dev/null".format(gsutil = gsutil, marker = marker),
         ] if sha_prefix else [
             'echo >&2 "Cannot confirm unversioned GCS artifacts without sha_prefix"',
             "exit 1",

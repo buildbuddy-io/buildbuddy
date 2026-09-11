@@ -39,7 +39,8 @@ expected="-m -h Cache-Control:no-store cp -r -Z $PAYLOAD $SHA_FILE gs://test-buc
 [[ "$(head -n 1 "$MOCK_LOG")" == "$expected" ]] || fail 'Payload/hash copy changed'
 [[ "$(tail -n 1 "$MOCK_LOG")" == *' gs://test-bucket/release/abc123/_SUCCESS' ]] || fail 'Wrong marker path'
 : > "$MOCK_LOG"
-"$CHECK" "$SHA_FILE"
+"$CHECK" "$SHA_FILE" > "$TEST_TMPDIR/check.stdout"
+[[ ! -s "$TEST_TMPDIR/check.stdout" ]] || fail 'Successful check printed object metadata'
 assert_stat_only
 : > "$MOCK_LOG"
 "$POISON_CHECK" "$SHA_FILE"
@@ -50,8 +51,8 @@ reset_state
 export MOCK_FAIL_COPY=1
 expect_failure "$PUSH" "$SHA_FILE" "$PAYLOAD" "$SHA_FILE"
 unset MOCK_FAIL_COPY
-[[ -f "$MOCK_STATE/partial" && ! -f "$MOCK_STATE/marker" ]]
-[[ "$(wc -l < "$MOCK_LOG")" == 1 ]]
+[[ -f "$MOCK_STATE/partial" && ! -f "$MOCK_STATE/marker" ]] || fail 'Partial upload published a marker or did not copy payload'
+[[ "$(wc -l < "$MOCK_LOG")" == 1 ]] || fail 'Failed payload copy attempted another cloud operation'
 : > "$MOCK_LOG"
 expect_failure "$CHECK" "$SHA_FILE"
 assert_stat_only
@@ -61,14 +62,15 @@ reset_state
 export MOCK_FAIL_MARKER=1
 expect_failure "$PUSH" "$SHA_FILE" "$PAYLOAD" "$SHA_FILE"
 unset MOCK_FAIL_MARKER
-[[ -f "$MOCK_STATE/complete" && ! -f "$MOCK_STATE/marker" ]]
+[[ -f "$MOCK_STATE/complete" && ! -f "$MOCK_STATE/marker" ]] || fail 'Failed marker upload left an incorrect completion state'
 expect_failure "$CHECK" "$SHA_FILE"
 
 # Auth/network/other stat errors are nonzero, even with a marker present.
 reset_state
 touch "$MOCK_STATE/marker"
 export MOCK_STAT_ERROR=1
-expect_failure "$CHECK" "$SHA_FILE"
+expect_failure "$CHECK" "$SHA_FILE" 2> "$TEST_TMPDIR/check.stderr"
+grep -q 'Simulated stat error' "$TEST_TMPDIR/check.stderr" || fail 'Check suppressed the stat error diagnostic'
 unset MOCK_STAT_ERROR
 assert_stat_only
 
@@ -95,20 +97,20 @@ assert_stat_only
 : > "$TEST_TMPDIR/_SUCCESS"
 : > "$MOCK_LOG"
 expect_failure "$PUSH" "$SHA_FILE" "$TEST_TMPDIR/_SUCCESS"
-[[ ! -s "$MOCK_LOG" ]]
+[[ ! -s "$MOCK_LOG" ]] || fail 'Reserved marker filename contacted GCS'
 
 # Unversioned uploads work without reading /dev/null, but must never reuse or
 # publish a completion marker: their contents can change under the same key.
 reset_state
 "$UNVERSIONED_PUSH" /dev/null "$PAYLOAD"
-[[ -f "$MOCK_STATE/complete" && ! -f "$MOCK_STATE/marker" ]]
-[[ "$(cat "$MOCK_LOG")" == "-m cp -r -Z $PAYLOAD gs://test-bucket/mutable/" ]]
+[[ -f "$MOCK_STATE/complete" && ! -f "$MOCK_STATE/marker" ]] || fail 'Unversioned upload did not finish or published a marker'
+[[ "$(cat "$MOCK_LOG")" == "-m cp -r -Z $PAYLOAD gs://test-bucket/mutable/" ]] || fail 'Unversioned upload used the wrong arguments or destination'
 touch "$MOCK_STATE/marker"
 : > "$MOCK_LOG"
 expect_failure "$UNVERSIONED_CHECK"
-[[ ! -s "$MOCK_LOG" ]]
+[[ ! -s "$MOCK_LOG" ]] || fail 'Unversioned check contacted GCS'
 "$UNVERSIONED_DELETE" /dev/null
-[[ "$(cat "$MOCK_LOG")" == '-m rm -r gs://test-bucket/mutable/' ]]
+[[ "$(cat "$MOCK_LOG")" == '-m rm -r gs://test-bucket/mutable/' ]] || fail 'Unversioned delete used the wrong destination'
 : > "$MOCK_LOG"
 "$DELETE" "$SHA_FILE"
-[[ "$(cat "$MOCK_LOG")" == '-m rm -r gs://test-bucket/release/abc123/' ]]
+[[ "$(cat "$MOCK_LOG")" == '-m rm -r gs://test-bucket/release/abc123/' ]] || fail 'Versioned delete used the wrong destination'

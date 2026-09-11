@@ -56,6 +56,7 @@ gcs(
 
 sh_test(
     name = "artifacts_exist_test",
+    size = "small",
     srcs = ["artifacts_exist_test.sh"],
     data = [
         "mock_gsutil.sh",
