@@ -533,6 +533,7 @@ ts_jasmine_node_test(
         "//app/auth:user",
         "//app/capabilities",
         "//app/util:react",
+        "//proto:build_event_stream_ts_proto",
         "//proto:group_ts_proto",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
