@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -329,7 +330,7 @@ func (d *UserDB) createGroup(ctx context.Context, tx interfaces.DB, userID strin
 		return "", err
 	}
 	// Initialize the group with a group-owned key.
-	_, err = d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, groupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/)
+	_, err = d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, groupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, api_key.DefaultAPIKeyVisibility)
 	if err != nil {
 		return "", err
 	}
@@ -895,7 +896,7 @@ func (d *UserDB) CreateDefaultGroup(ctx context.Context) error {
 				if err := tx.NewQuery(ctx, "userdb_create_default_group").Create(gc); err != nil {
 					return err
 				}
-				if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, DefaultGroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+				if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, DefaultGroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, api_key.DefaultAPIKeyVisibility); err != nil {
 					return err
 				}
 				return nil
@@ -964,7 +965,7 @@ func (d *UserDB) createUser(ctx context.Context, tx interfaces.DB, u *tables.Use
 		}
 		// For now, user-owned groups are assigned an org-level API key, and
 		// users have to explicitly enable user-owned keys.
-		if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, sug.GroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, false /*visibleToDevelopers*/); err != nil {
+		if _, err := d.env.GetAuthDB().CreateAPIKeyWithoutAuthCheck(ctx, tx, sug.GroupID, defaultAPIKeyLabel, defaultAPIKeyCapabilities, api_key.DefaultAPIKeyVisibility); err != nil {
 			return err
 		}
 		groupIDs[sug.GroupID] = struct{}{}

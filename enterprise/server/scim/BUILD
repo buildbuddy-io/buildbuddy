@@ -42,6 +42,7 @@ go_test(
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/testutil/testhttp",
+        "//server/util/api_key",
         "//server/util/authutil",
         "//server/util/role",
         "//server/util/status",

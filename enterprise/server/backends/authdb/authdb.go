@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -33,6 +34,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -767,12 +769,13 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 			nonce,
 			label,
 			visible_to_developers,
+			visibility,
 			impersonation,
 			expiry_usec,
 			created_at_usec,
 			updated_at_usec,
 			created_by_user_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
 		ak.UserID,
 		ak.GroupID,
@@ -783,6 +786,7 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 		nonce,
 		ak.Label,
 		ak.VisibleToDevelopers,
+		ak.Visibility,
 		ak.Impersonation,
 		ak.ExpiryUsec,
 		ak.CreatedAtUsec,
@@ -809,7 +813,7 @@ func (d *AuthDB) authorizeGroupAdminRole(ctx context.Context, groupID string) er
 	return authutil.AuthorizeOrgAdmin(u, groupID)
 }
 
-func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []cappb.Capability, expiresIn time.Duration, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string, caps []cappb.Capability, expiresIn time.Duration, visibility int32) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
@@ -824,7 +828,8 @@ func (d *AuthDB) CreateAPIKey(ctx context.Context, groupID string, label string,
 		GroupID:             groupID,
 		Label:               label,
 		Capabilities:        capabilities.ToInt(caps),
-		VisibleToDevelopers: visibleToDevelopers,
+		VisibleToDevelopers: api_key.IsVisibleToDevelopers(visibility),
+		Visibility:          visibility,
 	}
 	if expiresIn > 0 {
 		ak.ExpiryUsec = d.clock.Now().Add(expiresIn).UnixMicro()
@@ -856,12 +861,13 @@ func (d *AuthDB) CreateImpersonationAPIKey(ctx context.Context, groupID string) 
 		// may need to upload actions.
 		Capabilities:  capabilities.ToInt([]cappb.Capability{cappb.Capability_CAS_WRITE}),
 		Impersonation: true,
+		Visibility:    api_key.ImpersonationAPIKeyVisibility,
 		ExpiryUsec:    d.clock.Now().Add(impersonationAPIKeyDuration).UnixMicro(),
 	}
 	return d.createAPIKey(ctx, d.h, ak)
 }
 
-func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces.DB, groupID string, label string, caps []cappb.Capability, visibleToDevelopers bool) (*tables.APIKey, error) {
+func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces.DB, groupID string, label string, caps []cappb.Capability, visibility int32) (*tables.APIKey, error) {
 	if groupID == "" {
 		return nil, status.InvalidArgumentError("Group ID cannot be nil.")
 	}
@@ -869,7 +875,8 @@ func (d *AuthDB) CreateAPIKeyWithoutAuthCheck(ctx context.Context, tx interfaces
 		GroupID:             groupID,
 		Label:               label,
 		Capabilities:        capabilities.ToInt(caps),
-		VisibleToDevelopers: visibleToDevelopers,
+		VisibleToDevelopers: api_key.IsVisibleToDevelopers(visibility),
+		Visibility:          visibility,
 	}
 	return d.createAPIKey(ctx, tx, ak)
 }
@@ -968,6 +975,7 @@ func (d *AuthDB) CreateUserAPIKey(ctx context.Context, groupID, userID, label st
 		GroupID:      groupID,
 		Label:        label,
 		Capabilities: capabilities.ToInt(caps),
+		Visibility:   api_key.UserAPIKeyVisibility,
 	}
 	if expiresIn > 0 {
 		ak.ExpiryUsec = d.clock.Now().Add(expiresIn).UnixMicro()
@@ -1096,10 +1104,13 @@ func (d *AuthDB) GetAPIKeys(ctx context.Context, groupID string) ([]*tables.APIK
 		qb.AddWhereClause(`ak.user_id IS NULL OR ak.user_id = ''`)
 		qb.AddWhereClause(`ak.group_id = ?`, groupID)
 		if err := authutil.AuthorizeOrgAdmin(u, groupID); err != nil {
-			// If we're not an admin, restrict to keys that have only been made
-			// visible to non-admins. Note: the visible_to_developers field means "visible to
+			// If we're not an admin, only select keys visible to us.
+			// Note: the visible_to_developers field means "visible
 			// non-admins" now that we have reader/writer roles.
-			qb.AddWhereClause("ak.visible_to_developers = ?", true)
+			//
+			// Consult both the (deprecated) visible_to_developers and the (new)
+			// visibility bitmask while both are still in use and in sync.
+			qb.AddWhereClause("(ak.visible_to_developers = ? OR ak.visibility & ? != 0)", true, int32(akpb.Visibility_VISIBLE_TO_DEVELOPERS))
 		}
 		qb.AddWhereClause(`ak.impersonation = false`)
 		qb.SetOrderBy("ak.label", true /*ascending*/)
@@ -1163,7 +1174,14 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 	if err != nil {
 		return err
 	}
-	if existingKey.UserID != "" && key.VisibleToDevelopers {
+	// Keep the deprecated column and the bitmask in sync. Callers that only
+	// set the deprecated flag get the equivalent bitmask.
+	visibility := key.Visibility
+	if visibility == 0 {
+		visibility = api_key.VisibilityFromLegacyFlag(key.VisibleToDevelopers)
+	}
+	visibleToDevelopers := api_key.IsVisibleToDevelopers(visibility)
+	if existingKey.UserID != "" && visibleToDevelopers {
 		return status.InvalidArgumentError(`"visible_to_developers" field should not be set for user-owned keys`)
 	}
 	// When updating capabilities, make sure the user has the appropriate
@@ -1176,12 +1194,14 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 		SET
 			label = ?,
 			capabilities = ?,
-			visible_to_developers = ?
+			visible_to_developers = ?,
+			visibility = ?
 		WHERE
 			api_key_id = ?`,
 		key.Label,
 		key.Capabilities,
-		key.VisibleToDevelopers,
+		visibleToDevelopers,
+		visibility,
 		key.APIKeyID,
 	).Exec().Error
 }

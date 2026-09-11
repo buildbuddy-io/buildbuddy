@@ -19,6 +19,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauditlog"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
@@ -937,7 +938,7 @@ func TestAPIKeyCreationMetadata(t *testing.T) {
 	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
 	require.NoError(t, err)
 
-	created, err := adb.CreateAPIKey(adminCtx, groupID, "test key", nil, 0, false /*=visibleToDevelopers*/)
+	created, err := adb.CreateAPIKey(adminCtx, groupID, "test key", nil, 0, api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 	require.Equal(t, admin.UserID, created.CreatedByUserID)
 	require.Equal(t, fakeClock.Now().UnixMicro(), created.CreatedAtUsec)
@@ -956,6 +957,53 @@ func TestAPIKeyCreationMetadata(t *testing.T) {
 	require.NotNil(t, fetched, "created key not returned by GetAPIKeys")
 	require.Equal(t, admin.UserID, fetched.CreatedByUserID)
 	require.Equal(t, fakeClock.Now().UnixMicro(), fetched.CreatedAtUsec)
+}
+
+func TestAPIKeyVisibilityWrites(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin, "expected at least one admin user")
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	admins := int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
+	adminsAndDevs := admins | int32(akpb.Visibility_VISIBLE_TO_DEVELOPERS)
+
+	adminOnly, err := adb.CreateAPIKey(adminCtx, groupID, "admin only", nil, 0, api_key.DefaultAPIKeyVisibility)
+	require.NoError(t, err)
+	require.Equal(t, admins, adminOnly.Visibility)
+	devVisible, err := adb.CreateAPIKey(adminCtx, groupID, "dev visible", nil, 0, api_key.DeveloperVisibleAPIKeyVisibility)
+	require.NoError(t, err)
+	require.Equal(t, adminsAndDevs, devVisible.Visibility)
+
+	// The bitmask should be persisted, not just set on the returned struct.
+	fetched, err := adb.GetAPIKey(adminCtx, devVisible.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, adminsAndDevs, fetched.Visibility)
+
+	// Updating the deprecated flag should keep the bitmask in sync.
+	err = adb.UpdateAPIKey(adminCtx, &tables.APIKey{APIKeyID: devVisible.APIKeyID, Label: "dev visible", VisibleToDevelopers: false})
+	require.NoError(t, err)
+	fetched, err = adb.GetAPIKey(adminCtx, devVisible.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, admins, fetched.Visibility)
+	err = adb.UpdateAPIKey(adminCtx, &tables.APIKey{APIKeyID: adminOnly.APIKeyID, Label: "admin only", VisibleToDevelopers: true})
+	require.NoError(t, err)
+	fetched, err = adb.GetAPIKey(adminCtx, adminOnly.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, adminsAndDevs, fetched.Visibility)
 }
 
 func setupEnv(t *testing.T) *testenv.TestEnv {
