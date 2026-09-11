@@ -24,6 +24,7 @@ message ApiKey {
   repeated capability.Capability capability = 4;
 
   // True if this API key is visible to developers.
+  // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
   // True if this is a user owned key.
@@ -38,6 +39,9 @@ message ApiKey {
 
   // Metadata about the creation of this API key.
   CreationMetadata creation_metadata = 9;
+
+  // Who can see this API key.
+  repeated Visibility visibility = 10;
 }
 
 message CreationMetadata {
@@ -86,10 +90,15 @@ message CreateApiKeyRequest {
   repeated capability.Capability capability = 4;
 
   // True if this API key should be visible to developers.
+  // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
 
   // Optional. Duration after which the API key should no longer be valid.
   google.protobuf.Duration expires_in = 7;
+
+  // Optional. Who can see this API key. If empty (during migration), the key is
+  // visible to group admins, and to developers if visible_to_developers is set.
+  repeated Visibility visibility = 8;
 }
 
 message CreateApiKeyResponse {
@@ -155,7 +164,12 @@ message UpdateApiKeyRequest {
   repeated capability.Capability capability = 4;
 
   // True if this API key should be visible to developers.
+  // Deprecated: use visibility instead.
   bool visible_to_developers = 5;
+
+  // Optional. Who can see this API key. If empty (during migration), the key is
+  // visible to group admins, and to developers if visible_to_developers is set.
+  repeated Visibility visibility = 6;
 }
 
 message UpdateApiKeyResponse {
