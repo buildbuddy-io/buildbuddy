@@ -34,6 +34,12 @@ const (
 // Compile-time check that cpuLeaser implements the interface.
 var _ interfaces.CPULeaser = (*CPULeaser)(nil)
 
+// LeasingEnabled returns whether CPU leasing is enabled via the
+// executor.cpu_leaser.enable flag.
+func LeasingEnabled() bool {
+	return *cpuLeaserEnable
+}
+
 type CPULeaser struct {
 	mu        sync.Mutex
 	cpus      []CPUInfo
