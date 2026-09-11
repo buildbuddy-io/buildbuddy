@@ -47,6 +47,9 @@ func (m *MockInvocationDB) LookupChildInvocations(ctx context.Context, parentRun
 func (m *MockInvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
 	return nil
 }
+func (m *MockInvocationDB) DeleteInvocations(ctx context.Context, invocationIDs []string) error {
+	return nil
+}
 func (m *MockInvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
 	return nil
 }

@@ -258,7 +258,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 }
 
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
-	return d.deleteInvocation(ctx, d.h, invocationID)
+	return d.DeleteInvocations(ctx, []string{invocationID})
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
@@ -294,20 +294,27 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 	})
 }
 
-func (d *InvocationDB) deleteInvocation(ctx context.Context, tx interfaces.DB, invocationID string) error {
-	if err := tx.NewQuery(ctx, "invocationdb_delete_invocation").Raw(
-		`DELETE FROM "Invocations" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
-		return err
+func (d *InvocationDB) DeleteInvocations(ctx context.Context, invocationIDs []string) error {
+	if len(invocationIDs) == 0 {
+		return nil
 	}
-	if err := tx.NewQuery(ctx, "invocationdb_delete_executions").Raw(
-		`DELETE FROM "Executions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
-		return err
+	args := make([]any, len(invocationIDs))
+	for i, id := range invocationIDs {
+		args[i] = id
 	}
-	if err := tx.NewQuery(ctx, "invocationdb_delete_execution_links").Raw(
-		`DELETE FROM "InvocationExecutions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
-		return err
-	}
-	return nil
+	where := ` WHERE invocation_id IN (?` + strings.Repeat(",?", len(args)-1) + `)`
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		if err := tx.NewQuery(ctx, "invocationdb_delete_invocations").Raw(
+			`DELETE FROM "Invocations"`+where, args...).Exec().Error; err != nil {
+			return err
+		}
+		if err := tx.NewQuery(ctx, "invocationdb_delete_executions").Raw(
+			`DELETE FROM "Executions"`+where, args...).Exec().Error; err != nil {
+			return err
+		}
+		return tx.NewQuery(ctx, "invocationdb_delete_execution_links").Raw(
+			`DELETE FROM "InvocationExecutions"`+where, args...).Exec().Error
+	})
 }
 
 func (d *InvocationDB) SetNowFunc(now func() time.Time) {
