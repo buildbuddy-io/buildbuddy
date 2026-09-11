@@ -7,6 +7,10 @@ message GenerateRequest {
   string token = 1;
   // The SSH public key to be signed, in OpenSSH format.
   string ssh_public_key = 2;
+
+  // Public key to certify for authenticating to WireGuard gateways, as a PEM
+  // encoded PKIX ("PUBLIC KEY") block. Must be ECDSA P-256.
+  string tunnel_public_key = 3;
 }
 
 message KubernetesClusterCredentials {
@@ -29,11 +33,27 @@ message KubernetesClusterCredentials {
   string client_cert_key = 6;
 }
 
+// TunnelCredentials is the credential used to authenticate against a WireGuard
+// gateway, identifying the holder as a specific person (email).
+message TunnelCredentials {
+  // Client certificate (PEM encoded) for the key in
+  // GenerateRequest.tunnel_public_key, with the user's email as its common
+  // name.
+  string client_cert = 1;
+
+  // The CA that issued client_cert (PEM encoded).
+  string ca = 2;
+}
+
 message GenerateResponse {
   // Signed SSH certificate, in OpenSSH format.
   string ssh_cert = 1;
 
   repeated KubernetesClusterCredentials kubernetes_credentials = 2;
+
+  // Credentials for authenticating to WireGuard gateways. Unset if the server
+  // has no tunnel CA configured.
+  TunnelCredentials tunnel_credentials = 3;
 }
 
 // Service responsible for generating short-lived user certificates.
