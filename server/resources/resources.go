@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/elastic/gosigar"
 
@@ -174,6 +175,13 @@ func Configure(mmapLRUEnabled bool) error {
 	// Note: disk capacity is configured separately via ConfigureDiskCapacity,
 	// which must run after the build root directory exists.
 	allocatedDiskBytes = *diskBytes
+
+	for _, r := range *customResources {
+		if r.Name == platform.BazelCPUResourceName || r.Name == platform.BazelMemoryResourceName {
+			log.Warningf("executor.custom_resources registers %q, but the %q exec property is now interpreted as a task size estimate and no longer claims a custom resource. Rename this resource if tasks should still be gated on it.",
+				r.Name, "resources:"+r.Name)
+		}
+	}
 
 	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
