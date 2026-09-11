@@ -286,7 +286,7 @@ const repos: Repository[] = [
     name: "CaperAi/branchpoke",
     description: "A tool that reminds developers via Slack to clean up stale or merged GitLab branches.",
     evidenceUrl: "https://github.com/CaperAi/branchpoke/blob/cfbb203fc77b159540918a2a06091333e265e430/.bazelrc",
-    image: require("../../../static/img/oss/CaperAi_branchpoke.png"),
+    image: require("../../../static/img/oss/caperai_branchpoke.png"),
   },
   {
     name: "curtismuntz/witness",
