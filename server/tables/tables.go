@@ -486,8 +486,11 @@ type APIKey struct {
 	// capabilities.
 	// All read paths should utilize authdb.fetchAPIKeys to obtain the
 	// effective capabilities.
-	Capabilities        int32 `gorm:"default:1"`
-	VisibleToDevelopers bool  `gorm:"not null;default:0"`
+	Capabilities int32 `gorm:"default:1"`
+	// Deprecated: use the VISIBLE_TO_DEVELOPERS bit of Visibility instead.
+	VisibleToDevelopers bool `gorm:"not null;default:0"`
+	// Bitmask of api_key.Visibility values dictating who can see this key.
+	Visibility int32 `gorm:"not null;default:0"`
 	// Indicates whether this key is used for impersonation.
 	Impersonation bool `gorm:"not null;default:0"`
 	// If set, the API key is not considered to be valid after this time.

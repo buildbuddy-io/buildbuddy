@@ -49,6 +49,17 @@ message CreationMetadata {
   string created_by = 2;
 }
 
+// Who can see an API key. Each value is a distinct bit so that a set of
+// visibilities can be stored as a bitmask, like Capability.
+enum Visibility {
+  UNKNOWN_VISIBILITY = 0;
+  // Visible to non-admin members of the owning group.
+  VISIBLE_TO_DEVELOPERS = 1;  // 2^0
+  // Visible to admins of the owning group. Keys used for internal purposes on
+  // behalf of the group omit this, and are visible only to server admins.
+  VISIBLE_TO_GROUP_ADMINS = 2;  // 2^1
+}
+
 message Certificate {
   // String representation of certificate file.
   string cert = 1;
