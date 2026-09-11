@@ -439,8 +439,11 @@ message EnqueueTaskReservationRequest {
   // it can retry the lease.
   google.protobuf.Duration delay = 5;
 
-  // The jwt for this specific task. Can't be propagated via RPC metadata
-  // because this is sent in long-running streaming RPC.
+  // The JWT of the task owner. The executor uses it to authenticate requests
+  // made on behalf of the task (e.g. cache reads and writes), so it must
+  // identify the task owner rather than the executor, including for
+  // reservations created by work stealing or re-enqueues. Can't be propagated
+  // via RPC metadata because this is sent in a long-running streaming RPC.
   string jwt = 6;
 
   // Used to propagate trace information from the initial Execute request.
