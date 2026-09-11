@@ -1505,6 +1505,166 @@ func readResponseCount(t *testing.T, responseType, statusCode string) float64 {
 	})
 }
 
+// getMultiResponseCount returns the current value of the distributed cache
+// GetMulti response counter for the given response type and status code.
+func getMultiResponseCount(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetMultiResponseCount, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
+}
+
+// getMultiServer is a DistributedCache server whose GetMulti RPC returns a
+// canned set of KVs regardless of the request.
+type getMultiServer struct {
+	dcpb.UnimplementedDistributedCacheServer
+	kvs []*dcpb.KV
+}
+
+func (s *getMultiServer) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.GetMultiResponse, error) {
+	return &dcpb.GetMultiResponse{KeyValue: s.kvs}, nil
+}
+
+func startGetMultiServer(t *testing.T, kvs ...*dcpb.KV) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	srv := grpc.NewServer()
+	dcpb.RegisterDistributedCacheServer(srv, &getMultiServer{kvs: kvs})
+	t.Cleanup(srv.Stop)
+	go srv.Serve(lis)
+	waitUntilServerIsAlive(lis.Addr().String())
+	return lis.Addr().String()
+}
+
+func TestRemoteGetMultiReference(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	const blobName = "blobs/test-blob"
+	// Large enough that, with compressed reads enabled, the client requests
+	// compressed bytes over the wire.
+	rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
+	inlineRN, inlineBuf := testdigest.RandomCASResourceBuf(t, 50)
+	refKV := func(ref *refpb.Reference) *dcpb.KV {
+		return &dcpb.KV{Key: &dcpb.Key{Key: rn.GetDigest().GetHash(), SizeBytes: rn.GetDigest().GetSizeBytes()}, ValueReference: ref}
+	}
+	inlineKV := &dcpb.KV{Key: &dcpb.Key{Key: inlineRN.GetDigest().GetHash(), SizeBytes: inlineRN.GetDigest().GetSizeBytes()}, Value: inlineBuf}
+
+	t.Run("reference is dereferenced", func(t *testing.T) {
+		peer := startGetMultiServer(t, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getMultiResponseCount(t, "reference", "OK")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		gotRN, gotOffset, gotLimit := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+		require.Zero(t, gotOffset)
+		require.Zero(t, gotLimit)
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "OK"))
+	})
+
+	t.Run("reference is dereferenced as the requested resource under compressed reads", func(t *testing.T) {
+		peer := startGetMultiServer(t, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		// The client rewrites the wire request to ZSTD, but must dereference
+		// as the IDENTITY resource the caller asked for.
+		c.SetEnableCompressedReads(true)
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn})
+		require.NoError(t, err)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		gotRN, _, _ := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+	})
+
+	t.Run("inline bytes win when both are set", func(t *testing.T) {
+		both := refKV(makeReference(rn, "blobs/missing", repb.Compressor_IDENTITY))
+		both.Value = buf
+		peer := startGetMultiServer(t, both)
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{})
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn})
+		require.NoError(t, err)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		gotRN, _, _ := fake.LastDereference()
+		require.Nil(t, gotRN, "expected no dereference")
+	})
+
+	t.Run("wrong-length blob is treated as a miss", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		before := getMultiResponseCount(t, "reference", "Internal")
+		for _, blob := range [][]byte{buf[:len(buf)-1], append(append([]byte{}, buf...), 'x')} {
+			c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: blob})
+			got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+			require.NoError(t, err)
+			require.Len(t, got, 1)
+			require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+		}
+		require.Equal(t, before+2, getMultiResponseCount(t, "reference", "Internal"))
+	})
+
+	t.Run("references and inline values are mixed", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		refBefore, bytesBefore := getMultiResponseCount(t, "reference", "OK"), getMultiResponseCount(t, "bytes", "OK")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.NoError(t, err)
+		require.Len(t, got, 2)
+		require.Equal(t, buf, got[rn.GetDigest()])
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+		require.Equal(t, refBefore+1, getMultiResponseCount(t, "reference", "OK"))
+		require.Equal(t, bytesBefore+1, getMultiResponseCount(t, "bytes", "OK"))
+	})
+
+	t.Run("digest mismatch is treated as a miss", func(t *testing.T) {
+		otherRN, _ := testdigest.RandomCASResourceBuf(t, 1000)
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(otherRN, blobName, repb.Compressor_IDENTITY)))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getMultiResponseCount(t, "reference", "Internal")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "Internal"))
+	})
+
+	t.Run("missing blob is treated as a miss", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, "blobs/missing", repb.Compressor_IDENTITY)))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getMultiResponseCount(t, "reference", "NotFound")
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.NoError(t, err)
+		require.Len(t, got, 1)
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "NotFound"))
+	})
+
+	t.Run("cache that cannot dereference is rejected", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		c := distributed_client.New(te, te.GetCache(), localPeer)
+		require.NoError(t, c.StartListening())
+		waitUntilServerIsAlive(localPeer)
+		before := getMultiResponseCount(t, "reference", "FailedPrecondition")
+		_, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %v", err)
+		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "FailedPrecondition"))
+	})
+
+	t.Run("inline values are returned when nothing is referenced", func(t *testing.T) {
+		peer := startGetMultiServer(t, inlineKV)
+		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		c := distributed_client.New(te, te.GetCache(), localPeer)
+		require.NoError(t, c.StartListening())
+		waitUntilServerIsAlive(localPeer)
+		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{inlineRN})
+		require.NoError(t, err)
+		require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
+	})
+}
+
 func TestRemoteReadReference(t *testing.T) {
 	te := getTestEnv(t, emptyUserMap)
 	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())

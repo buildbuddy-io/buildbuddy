@@ -1095,6 +1095,38 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	// DistributedCacheGetMultiResponseCount counts values received from
+	// distributed cache peers via GetMulti, by whether each value was
+	// received as a reference to shared storage or as inline bytes, and by
+	// the gRPC status code of turning it into bytes ("OK" on success). Each
+	// value in a response is counted separately. Values the peer does not
+	// have are omitted from the response and not counted.
+	DistributedCacheGetMultiResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_multi_response_count",
+		Help:      "Count of values received from distributed cache peers via GetMulti, by whether the value was received as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheGetMultiResponseSizeBytes totals the digest sizes of
+	// values received from distributed cache peers via GetMulti, by whether
+	// each value was received as a reference to shared storage or as inline
+	// bytes, and by the gRPC status code of turning it into bytes ("OK" on
+	// success). Sizes are the requested digest's (uncompressed) size rather
+	// than the exact bytes transferred.
+	DistributedCacheGetMultiResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_multi_response_size_bytes",
+		Help:      "Total digest sizes of values received from distributed cache peers via GetMulti, by whether the value was received as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
 	// DistributedCacheWriteRequestCount counts distributed cache writes by
 	// whether the payload was sent as a reference or as inline bytes, and by
 	// the commit's gRPC status code ("OK" on success). Writes short-circuited

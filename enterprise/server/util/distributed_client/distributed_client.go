@@ -35,6 +35,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -70,6 +71,10 @@ const (
 	// decompressed peer response, since digest sizes are client-supplied.
 	// The buffer grows as needed.
 	maxDecompressBufSizeBytes = 4 * 1024 * 1024
+
+	// getMultiDereferenceConcurrency bounds how many references in a single
+	// GetMulti response are dereferenced from shared storage at once.
+	getMultiDereferenceConcurrency = 10
 )
 
 var (
@@ -724,9 +729,15 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 		return nil, err
 	}
 	resultMap := make(map[*repb.Digest][]byte, len(rsp.GetKeyValue()))
+	var references []*dcpb.KV
 	for _, keyValue := range rsp.GetKeyValue() {
 		rn, ok := hashResources[keyValue.GetKey().GetKey()]
 		if !ok {
+			continue
+		}
+		// If the peer sent bytes and a reference, use the bytes.
+		if keyValue.GetValueReference() != nil && len(keyValue.GetValue()) == 0 {
+			references = append(references, keyValue)
 			continue
 		}
 		d := rn.GetDigest()
@@ -734,12 +745,106 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 		if compressedHashes.Contains(d.GetHash()) {
 			buf, err = compression.DecompressZstd(make([]byte, 0, digest.SafeBufferSize(rn, maxDecompressBufSizeBytes)), buf)
 			if err != nil {
+				recordGetMultiResponseMetrics("bytes", rn, status.MetricsLabel(err))
 				return nil, err
 			}
 		}
+		recordGetMultiResponseMetrics("bytes", rn, codes.OK.String())
 		resultMap[d] = buf
 	}
+	if len(references) == 0 {
+		return resultMap, nil
+	}
+	if err := c.dereferenceMulti(ctx, peer, references, hashResources, resultMap); err != nil {
+		return nil, err
+	}
 	return resultMap, nil
+}
+
+// dereferenceMulti resolves the referenced values of a GetMulti response from
+// peer into resultMap, dereferencing concurrently.
+func (c *Proxy) dereferenceMulti(ctx context.Context, peer string, kvs []*dcpb.KV, requested map[string]*rspb.ResourceName, resultMap map[*repb.Digest][]byte) error {
+	refCache, ok := c.cache.(interfaces.ReferenceCache)
+	if !ok {
+		for _, kv := range kvs {
+			recordGetMultiResponseMetrics("reference", requested[kv.GetKey().GetKey()], codes.FailedPrecondition.String())
+		}
+		return status.FailedPreconditionErrorf("peer %q returned references, but the local cache (%T) cannot dereference", peer, c.cache)
+	}
+	var mu sync.Mutex
+	var eg errgroup.Group
+	eg.SetLimit(getMultiDereferenceConcurrency)
+	for _, kv := range kvs {
+		rn := requested[kv.GetKey().GetKey()]
+		ref := kv.GetValueReference()
+		eg.Go(func() error {
+			if !referenceMatches(ref, rn) {
+				frd := ref.GetMetadata().GetFileRecord().GetDigest()
+				c.log.Errorf("GetMulti(%q) from peer %q returned a reference for %s/%d; treating as a miss", ResourceIsolationString(rn), peer, frd.GetHash(), frd.GetSizeBytes())
+				recordGetMultiResponseMetrics("reference", rn, codes.Internal.String())
+				return nil
+			}
+			buf, err := dereferenceToBytes(ctx, refCache, ref, rn)
+			recordGetMultiResponseMetrics("reference", rn, status.MetricsLabel(err))
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				c.log.Warningf("GetMulti(%q) from peer %q could not dereference; treating as a miss: %s", ResourceIsolationString(rn), peer, err)
+				return nil
+			}
+			mu.Lock()
+			resultMap[rn.GetDigest()] = buf
+			mu.Unlock()
+			return nil
+		})
+	}
+	return eg.Wait()
+}
+
+func dereferenceToBytes(ctx context.Context, refCache interfaces.ReferenceCache, ref *refpb.Reference, rn *rspb.ResourceName) ([]byte, error) {
+	rc, err := refCache.Dereference(ctx, ref, rn, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	if rn.GetCompressor() != repb.Compressor_IDENTITY {
+		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(rn, maxDecompressBufSizeBytes)))
+		if _, err := buf.ReadFrom(rc); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	}
+	size := rn.GetDigest().GetSizeBytes()
+	buf := make([]byte, size)
+	if _, err := io.ReadFull(rc, buf); err != nil {
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			return nil, status.InternalErrorf("dereferenced value for %s/%d is shorter than expected", rn.GetDigest().GetHash(), size)
+		}
+		return nil, err
+	}
+	var extra [1]byte
+	n, err := rc.Read(extra[:])
+	if n > 0 {
+		return nil, status.InternalErrorf("dereferenced value for %s/%d is longer than expected", rn.GetDigest().GetHash(), size)
+	}
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+	return buf, nil
+}
+
+func referenceMatches(ref *refpb.Reference, r *rspb.ResourceName) bool {
+	fr := ref.GetMetadata().GetFileRecord()
+	frd := fr.GetDigest()
+	matches := frd.GetHash() == r.GetDigest().GetHash() &&
+		frd.GetSizeBytes() == r.GetDigest().GetSizeBytes() &&
+		fr.GetDigestFunction() == r.GetDigestFunction() &&
+		fr.GetIsolation().GetCacheType() == r.GetCacheType()
+	if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS {
+		matches = matches && fr.GetIsolation().GetRemoteInstanceName() == r.GetInstanceName()
+	}
+	return matches
 }
 
 func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
@@ -806,19 +911,8 @@ func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceNam
 		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
 
-		// Confirm the reference identifies the requested content. Compressor,
-		// encryption, and partition/group are peer-local and may legitimately
-		// differ; the instance name is only ignored for CAS, where content is
-		// instance-independent.
-		fr := ref.GetMetadata().GetFileRecord()
 		frd := ref.GetMetadata().GetFileRecord().GetDigest()
-		refMatches := frd.GetHash() == r.GetDigest().GetHash() &&
-			frd.GetSizeBytes() == r.GetDigest().GetSizeBytes() &&
-			fr.GetDigestFunction() == r.GetDigestFunction() &&
-			fr.GetIsolation().GetCacheType() == r.GetCacheType()
-		if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS {
-			refMatches = refMatches && fr.GetIsolation().GetRemoteInstanceName() == r.GetInstanceName()
-		}
+		refMatches := referenceMatches(ref, r)
 
 		// If the server is also streaming the data, serve those bytes to the
 		// caller and verify that dereferencing the reference produces the
@@ -909,6 +1003,19 @@ func recordReadResponseMetrics(responseType string, r *rspb.ResourceName, status
 	}
 	metrics.DistributedCacheReadResponseCount.With(labels).Inc()
 	metrics.DistributedCacheReadResponseSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
+}
+
+// recordGetMultiResponseMetrics records that one value of a peer GetMulti
+// response was received as responseType ("reference" or "bytes") and the
+// status of turning it into bytes, attributing the requested digest's size
+// to it.
+func recordGetMultiResponseMetrics(responseType string, r *rspb.ResourceName, statusLabel string) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusLabel,
+	}
+	metrics.DistributedCacheGetMultiResponseCount.With(labels).Inc()
+	metrics.DistributedCacheGetMultiResponseSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
 }
 
 // recordWriteRequestMetrics records that a peer write committed with its
