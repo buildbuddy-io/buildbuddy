@@ -160,10 +160,14 @@ func TestFileCacheGroupFromTrustedJWT(t *testing.T) {
 			node := nodeFromString("source", false)
 			require.NoError(t, fc.AddFile(ctx, node, source))
 
+			// Files are stored under the group directory, sharded into a
+			// subdirectory named by the first two characters of the digest
+			// hash (the default subdir prefix length).
 			cacheFileName := node.GetDigest().GetHash()
-			require.FileExists(t, filepath.Join(fcDir, test.wantGroupID, cacheFileName))
+			shardDir := cacheFileName[:2]
+			require.FileExists(t, filepath.Join(fcDir, test.wantGroupID, shardDir, cacheFileName))
 			if test.wantGroupID != interfaces.AuthAnonymousUser {
-				require.NoFileExists(t, filepath.Join(fcDir, interfaces.AuthAnonymousUser, cacheFileName))
+				require.NoFileExists(t, filepath.Join(fcDir, interfaces.AuthAnonymousUser, shardDir, cacheFileName))
 			}
 		})
 	}
@@ -706,8 +710,12 @@ func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) 
 	filecacheRoot := testfs.MakeTempDir(t)
 	outDir := testfs.MakeTempDir(t)
 
+	// Seed the cache directory with a file laid out the way a previous
+	// executor run would have written it: under the group directory, sharded
+	// by the first two characters of the digest hash.
 	node := nodeFromString("content", false)
-	writeFileContent(t, filecacheRoot, "ANON/"+node.GetDigest().GetHash(), "content", false)
+	digestHash := node.GetDigest().GetHash()
+	writeFileContent(t, filecacheRoot, "ANON/"+digestHash[:2]+"/"+digestHash, "content", false)
 
 	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 	require.NoError(t, err)
@@ -777,6 +785,10 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 	var unprefixedNodes []*repb.FileNode
 	{
+		// Start with subdir prefixing disabled so the cache is populated in
+		// the legacy flat layout, which is what an executor upgraded from a
+		// version without sharding will have on disk.
+		flags.Set(t, "executor.include_subdir_prefix", false)
 		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
 		if err != nil {
 			t.Fatal(err)
