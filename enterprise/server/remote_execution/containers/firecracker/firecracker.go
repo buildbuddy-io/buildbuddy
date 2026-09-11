@@ -2730,6 +2730,16 @@ func (c *FirecrackerContainer) Exec(ctx context.Context, cmd *repb.Command, stdi
 		result.VMMetrics.VmExecDialAttempts = c.vmExec.dialAttempts
 		result.VMMetrics.VmExecReadySignalReceived = c.vmExec.readySignalReceived
 
+		// If a VFS (FUSE) download failed, always return that as the command
+		// error so that the task can be retried (even if the task ignored the
+		// FS error and succeeded, it may have produced an incorrect result).
+		if c.fsLayout != nil && c.vfsServer != nil {
+			if err := c.vfsServer.TaskError(); err != nil {
+				result.Error = err
+				result.ExitCode = commandutil.NoExitCode
+			}
+		}
+
 		// Attach VM metadata to the result
 		result.VMMetadata = c.getVMMetadata()
 		// Include whether the snapshot will be saved, so it can be displayed in the UI.

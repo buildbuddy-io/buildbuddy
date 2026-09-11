@@ -40,6 +40,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -728,7 +729,8 @@ type BatchFileFetcher struct {
 	filesToFetch            FileMap
 	opts                    *DownloadTreeOpts
 	onlyDownloadToFileCache bool
-	doneErr                 chan error
+	failed                  chan struct{}
+	fetchErr                error // Set before failed is closed.
 
 	mu               sync.Mutex
 	remainingFetches map[fetchKey]struct{}
@@ -767,7 +769,7 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		filesToFetch:            filesToFetch,
 		opts:                    opts,
 		onlyDownloadToFileCache: opts.RootDir == "",
-		doneErr:                 make(chan error, 1),
+		failed:                  make(chan struct{}),
 		remainingFetches:        remainingFetches,
 		fetchWaiters:            make(map[fetchKey][]chan struct{}),
 		downloadsBitmap:         downloadsBitmap,
@@ -910,7 +912,10 @@ type digestToFetch struct {
 func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 	defer func() {
 		if retErr != nil {
-			ff.doneErr <- retErr
+			// Wake every waiting VFS reader, including future reads, so they
+			// can retry directly from CAS instead of waiting indefinitely.
+			ff.fetchErr = status.WrapError(gstatus.Convert(retErr).Err(), "fetcher failed")
+			close(ff.failed)
 		}
 	}()
 
@@ -1218,8 +1223,8 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case err := <-ff.doneErr:
-		return status.WrapError(err, "fetcher failed")
+	case <-ff.failed:
+		return ff.fetchErr
 	case <-done:
 		return nil
 	}
