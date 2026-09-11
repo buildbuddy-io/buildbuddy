@@ -4526,6 +4526,7 @@ func TestBackfillByReference(t *testing.T) {
 
 	t.Run("forwards a shared reference without cloning", func(t *testing.T) {
 		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references":    false,
 			"distributed_cache.read_gcs_references":     true,
 			"distributed_cache.backfill_gcs_references": true,
 		})
