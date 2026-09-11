@@ -1238,7 +1238,7 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		lastCustomTime := time.UnixMicro(gcsMetadata.GetLastCustomTimeUsec())
 		if newAtime.Sub(lastCustomTime) >= p.gcsAtimeUpdateThreshold {
 			err := p.fileStorer.UpdateBlobAtime(p.env.GetServerContext(), gcsMetadata, newAtime)
-			p.recordGCSOperation("update", md.GetFileRecord(), err)
+			p.recordGCSOperation("update_atime", md.GetFileRecord(), err)
 			if err != nil {
 				log.Errorf("Error updating GCS custom time (%q): %s", update.key, err)
 				return err

@@ -3317,9 +3317,6 @@ func TestGCSBlobStorageOverwriteObjects(t *testing.T) {
 	}
 }
 
-// pebbleGCSOps returns the number of successful GCS operations of the given
-// kind ("write", "clone", or "update") performed for the default partition of
-// a cache with the default name.
 func pebbleGCSOps(t *testing.T, op string) float64 {
 	return testmetrics.CounterValueForLabels(t, metrics.PebbleCacheGCSOperationCount, prometheus.Labels{
 		metrics.OpLabel:                  op,
@@ -3363,14 +3360,14 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	defer pc.Stop()
 
 	writesBefore := pebbleGCSOps(t, "write")
-	atimeUpdatesBefore := pebbleGCSOps(t, "update")
+	atimeUpdatesBefore := pebbleGCSOps(t, "update_atime")
 	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 	require.NoError(t, pc.Set(ctx, rn, buf))
 	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 
 	// Writing the object sets its custom time; it does not call UpdateCustomTime.
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
-	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update"))
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update_atime"))
 
 	// waitForAtime blocks until the object's pebble atime reaches the current
 	// (fake) clock time, i.e. until the queued atime update has been processed.
@@ -3389,7 +3386,7 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 0, mockGCS.UpdateCustomTimeCallCount())
-	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update"))
+	require.Equal(t, atimeUpdatesBefore, pebbleGCSOps(t, "update_atime"))
 
 	// Access the object once its custom time is older than the threshold.
 	// Now the GCS custom time is refreshed.
@@ -3398,7 +3395,7 @@ func TestGCSAtimeUpdateThreshold(t *testing.T) {
 	require.NoError(t, err)
 	waitForAtime()
 	require.Equal(t, 1, mockGCS.UpdateCustomTimeCallCount())
-	require.Equal(t, atimeUpdatesBefore+1, pebbleGCSOps(t, "update"))
+	require.Equal(t, atimeUpdatesBefore+1, pebbleGCSOps(t, "update_atime"))
 	// Reads don't upload anything.
 	require.Equal(t, writesBefore+1, pebbleGCSOps(t, "write"))
 }
