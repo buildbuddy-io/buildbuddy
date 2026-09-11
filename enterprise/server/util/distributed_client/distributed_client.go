@@ -621,12 +621,16 @@ func (c *Proxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	if err != nil {
 		return nil, err
 	}
+	return cacheMetadataFromProto(md), nil
+}
+
+func cacheMetadataFromProto(md *dcpb.MetadataResponse) *interfaces.CacheMetadata {
 	return &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
 		DigestSizeBytes:    md.GetDigestSizeBytes(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
-	}, nil
+	}
 }
 
 func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
@@ -634,6 +638,8 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	if err != nil {
 		return nil, nil, err
 	}
+	// The requester resource, captured before possible modification below.
+	requested := r
 	// Fetch compressed data over the wire and decompress it locally, like
 	// RemoteReader and RemoteGetMulti do.
 	decompress := c.shouldReadCompressed(r)
@@ -645,20 +651,62 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	if err != nil {
 		return nil, nil, err
 	}
-	data := rsp.GetData()
-	if decompress {
-		data, err = compression.DecompressZstd(make([]byte, 0, digest.SafeBufferSize(r, maxDecompressBufSizeBytes)), data)
+	var data []byte
+	// If the peer sends bytes and a reference, use the bytes.
+	if ref := rsp.GetReference(); ref != nil && len(rsp.GetData()) == 0 && requested.GetDigest().GetSizeBytes() > 0 {
+		rc, err := c.dereference(ctx, peer, ref, requested, 0, 0)
+		if err != nil {
+			recordGetWithMetadataResponseMetrics("reference", requested, status.MetricsLabel(err))
+			return nil, nil, err
+		}
+		defer rc.Close()
+		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(requested, maxDecompressBufSizeBytes)))
+		_, err = io.Copy(buf, rc)
+		recordGetWithMetadataResponseMetrics("reference", requested, status.MetricsLabel(err))
 		if err != nil {
 			return nil, nil, err
 		}
+		data = buf.Bytes()
+	} else if decompress {
+		data, err = compression.DecompressZstd(make([]byte, 0, digest.SafeBufferSize(r, maxDecompressBufSizeBytes)), rsp.GetData())
+		recordGetWithMetadataResponseMetrics("bytes", requested, status.MetricsLabel(err))
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		data = rsp.GetData()
+		recordGetWithMetadataResponseMetrics("bytes", requested, codes.OK.String())
 	}
-	md := rsp.GetMetadata()
-	return data, &interfaces.CacheMetadata{
-		StoredSizeBytes:    md.GetStoredSizeBytes(),
-		DigestSizeBytes:    md.GetDigestSizeBytes(),
-		LastAccessTimeUsec: md.GetLastAccessUsec(),
-		LastModifyTimeUsec: md.GetLastModifyUsec(),
-	}, nil
+	return data, cacheMetadataFromProto(rsp.GetMetadata()), nil
+}
+
+func recordGetWithMetadataResponseMetrics(responseType string, r *rspb.ResourceName, statusLabel string) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusLabel,
+	}
+	metrics.DistributedCacheGetWithMetadataResponseCount.With(labels).Inc()
+	metrics.DistributedCacheGetWithMetadataResponseSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
+}
+
+// referenceMatches reports whether ref identifies the content named by r.
+// Compressor, encryption, and partition/group are peer-local and may
+// legitimately differ, so they are not compared.
+func referenceMatches(ref *refpb.Reference, r *rspb.ResourceName) bool {
+	fr := ref.GetMetadata().GetFileRecord()
+	// CAS content is instance-independent, so the instance name only
+	// matters for other cache types.
+	if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS && fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
+		return false
+	}
+	return digest.Equal(fr.GetDigest(), r.GetDigest()) &&
+		fr.GetDigestFunction() == r.GetDigestFunction() &&
+		fr.GetIsolation().GetCacheType() == r.GetCacheType()
+}
+
+func referenceMismatchError(peer string, ref *refpb.Reference, r *rspb.ResourceName) error {
+	return status.InternalErrorf("peer %q returned a reference for %s, but %s was requested",
+		peer, digest.String(ref.GetMetadata().GetFileRecord().GetDigest()), digest.String(r.GetDigest()))
 }
 
 func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
@@ -806,19 +854,7 @@ func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceNam
 		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
 
-		// Confirm the reference identifies the requested content. Compressor,
-		// encryption, and partition/group are peer-local and may legitimately
-		// differ; the instance name is only ignored for CAS, where content is
-		// instance-independent.
-		fr := ref.GetMetadata().GetFileRecord()
-		frd := ref.GetMetadata().GetFileRecord().GetDigest()
-		refMatches := frd.GetHash() == r.GetDigest().GetHash() &&
-			frd.GetSizeBytes() == r.GetDigest().GetSizeBytes() &&
-			fr.GetDigestFunction() == r.GetDigestFunction() &&
-			fr.GetIsolation().GetCacheType() == r.GetCacheType()
-		if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS {
-			refMatches = refMatches && fr.GetIsolation().GetRemoteInstanceName() == r.GetInstanceName()
-		}
+		refMatches := referenceMatches(ref, r)
 
 		// If the server is also streaming the data, serve those bytes to the
 		// caller and verify that dereferencing the reference produces the
@@ -838,7 +874,7 @@ func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceNam
 			recordReadResponseMetrics("bytes", r, codes.OK.String())
 			if !refMatches {
 				// Verification is best-effort: log bad refs, but don't fail.
-				c.log.Errorf("Reference verification failed for %q from peer %q: reference identifies %s/%d", ResourceIsolationString(r), peer, frd.GetHash(), frd.GetSizeBytes())
+				c.log.Errorf("Reference verification failed for %q: %s", ResourceIsolationString(r), referenceMismatchError(peer, ref, r))
 				metrics.DistributedCacheReferenceVerificationCount.With(
 					prometheus.Labels{
 						metrics.GroupID:                  groupIDForMetrics(ctx),
@@ -867,6 +903,7 @@ func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceNam
 		if !refMatches {
 			rc.Close()
 			recordReadResponseMetrics("reference", r, codes.Internal.String())
+			frd := ref.GetMetadata().GetFileRecord().GetDigest()
 			return nil, nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
 				peer, frd.GetHash(), frd.GetSizeBytes(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 		}
@@ -924,6 +961,9 @@ func recordWriteRequestMetrics(requestType string, r *rspb.ResourceName, statusL
 }
 
 func (c *Proxy) dereference(ctx context.Context, peer string, ref *refpb.Reference, requested *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if !referenceMatches(ref, requested) {
+		return nil, referenceMismatchError(peer, ref, requested)
+	}
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
 	if !ok {
 		return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)

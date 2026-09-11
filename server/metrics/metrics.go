@@ -1130,6 +1130,38 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	// DistributedCacheGetWithMetadataResponseCount counts distributed cache
+	// peer GetWithMetadata responses by whether the payload was received as
+	// a reference to shared storage or as inline bytes, and by the gRPC
+	// status code of turning the response into bytes ("OK" on success).
+	// Responses that fail before any payload is received have no payload
+	// type and are not counted.
+	DistributedCacheGetWithMetadataResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_with_metadata_response_count",
+		Help:      "Count of distributed cache peer GetWithMetadata responses, by whether the payload was received as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheGetWithMetadataResponseSizeBytes totals the digest
+	// sizes of blobs fetched from peers via GetWithMetadata, by whether the
+	// payload was received as a reference to shared storage or as inline
+	// bytes, and by the gRPC status code of turning the response into bytes
+	// ("OK" on success). Sizes are the requested digest's (uncompressed)
+	// size rather than the exact bytes transferred.
+	DistributedCacheGetWithMetadataResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_with_metadata_response_size_bytes",
+		Help:      "Total digest sizes of blobs fetched from distributed cache peers via GetWithMetadata, by whether the payload was received as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
 	// DistributedCacheReferenceVerificationCount counts verifications of
 	// references received alongside streamed bytes on distributed cache
 	// reads, by outcome: "success" (the dereferenced bytes matched the

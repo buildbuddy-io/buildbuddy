@@ -1045,9 +1045,13 @@ func TestRemoteGetWithMetadata(t *testing.T) {
 	require.NoError(t, te.GetCache().Set(ctx, r, buf))
 
 	// Client-side: data and metadata round-trip through the RPC.
+	before := getWithMetadataResponseCount(t, "bytes", "OK")
+	beforeSize := getWithMetadataResponseSize(t, "bytes", "OK")
 	data, md, err := c.RemoteGetWithMetadata(ctx, peer, r)
 	require.NoError(t, err)
 	require.Equal(t, buf, data)
+	require.Equal(t, before+1, getWithMetadataResponseCount(t, "bytes", "OK"))
+	require.Equal(t, beforeSize+100, getWithMetadataResponseSize(t, "bytes", "OK"))
 
 	cacheMD, err := te.GetCache().Metadata(ctx, r)
 	require.NoError(t, err)
@@ -1378,6 +1382,29 @@ func (s *referenceReadServer) Read(req *dcpb.ReadRequest, stream dcpb.Distribute
 	return nil
 }
 
+// GetWithMetadata answers with the configured reference plus any configured
+// data chunks concatenated; with no chunks this is the shape a peer sends
+// when serving GetWithMetadata by reference.
+func (s *referenceReadServer) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRequest) (*dcpb.GetWithMetadataResponse, error) {
+	s.mu.Lock()
+	s.lastCompressor = req.GetResource().GetCompressor()
+	s.mu.Unlock()
+	var data []byte
+	for _, chunk := range s.dataChunks {
+		data = append(data, chunk...)
+	}
+	return &dcpb.GetWithMetadataResponse{
+		Data:      data,
+		Reference: s.ref,
+		Metadata: &dcpb.MetadataResponse{
+			StoredSizeBytes: s.ref.GetMetadata().GetStoredSizeBytes(),
+			DigestSizeBytes: s.ref.GetMetadata().GetFileRecord().GetDigest().GetSizeBytes(),
+			LastAccessUsec:  s.ref.GetMetadata().GetLastAccessUsec(),
+			LastModifyUsec:  s.ref.GetMetadata().GetLastModifyUsec(),
+		},
+	}, nil
+}
+
 func (s *referenceReadServer) LastCompressor() repb.Compressor_Value {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1494,6 +1521,20 @@ func newReferenceTestProxy(t *testing.T, te *testenv.TestEnv, blobs map[string][
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 	return c, cache
+}
+
+func getWithMetadataResponseCount(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetWithMetadataResponseCount, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
+}
+
+func getWithMetadataResponseSize(t *testing.T, responseType, statusCode string) float64 {
+	return testmetrics.CounterValueForLabels(t, metrics.DistributedCacheGetWithMetadataResponseSizeBytes, prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusCode,
+	})
 }
 
 // readResponseCount returns the current value of the distributed cache read
@@ -1632,6 +1673,130 @@ func TestRemoteReadReference(t *testing.T) {
 		// The failed dereference is recorded under its status code, not OK.
 		require.Equal(t, before+1, readResponseCount(t, "reference", "NotFound"))
 		require.Equal(t, beforeOK, readResponseCount(t, "reference", "OK"))
+	})
+}
+
+func TestRemoteGetWithMetadataReference(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
+	require.NoError(t, err)
+
+	const blobName = "blobs/test-blob"
+	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+	withMetadata := func(ref *refpb.Reference) *refpb.Reference {
+		ref.Metadata.StoredSizeBytes = 100
+		ref.Metadata.LastAccessUsec = 1234
+		ref.Metadata.LastModifyUsec = 5678
+		return ref
+	}
+
+	t.Run("identity", func(t *testing.T) {
+		peer := startReferenceReadServer(t, withMetadata(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getWithMetadataResponseCount(t, "reference", "OK")
+		beforeSize := getWithMetadataResponseSize(t, "reference", "OK")
+		got, md, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+		require.Equal(t, before+1, getWithMetadataResponseCount(t, "reference", "OK"))
+		require.Equal(t, beforeSize+100, getWithMetadataResponseSize(t, "reference", "OK"))
+		require.Equal(t, int64(100), md.StoredSizeBytes)
+		require.Equal(t, rn.GetDigest().GetSizeBytes(), md.DigestSizeBytes)
+		require.Equal(t, int64(1234), md.LastAccessTimeUsec)
+		require.Equal(t, int64(5678), md.LastModifyTimeUsec)
+		gotRN, gotOffset, gotLimit := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+		require.Equal(t, int64(0), gotOffset)
+		require.Equal(t, int64(0), gotLimit)
+	})
+
+	t.Run("decompress transport rewrite", func(t *testing.T) {
+		// With compressed reads enabled, the request is rewritten to ZSTD for
+		// transport. On a reference response, Dereference must see the
+		// caller's original IDENTITY resource so no decompression is needed.
+		bigRN, bigBuf := testdigest.RandomCASResourceBuf(t, 200)
+		peer, srv := startReferenceReadServerWithRecorder(t, makeReference(bigRN, blobName, repb.Compressor_ZSTD))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: bigBuf})
+		c.SetEnableCompressedReads(true)
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, bigRN)
+		require.NoError(t, err)
+		require.Equal(t, bigBuf, got)
+		require.Equal(t, repb.Compressor_ZSTD, srv.LastCompressor())
+		gotRN, _, _ := fake.LastDereference()
+		require.Equal(t, repb.Compressor_IDENTITY, gotRN.GetCompressor())
+	})
+
+	t.Run("digest mismatch is rejected", func(t *testing.T) {
+		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
+		peer := startReferenceReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		_, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.Error(t, err)
+		require.True(t, status.IsInternalError(err), "expected InternalError, got %s", err)
+		require.Contains(t, err.Error(), "returned a reference for")
+	})
+
+	t.Run("stored instance name may differ", func(t *testing.T) {
+		storedRN := rn.CloneVT()
+		storedRN.InstanceName = "instance-at-first-write"
+		peer := startReferenceReadServer(t, makeReference(storedRN, blobName, repb.Compressor_IDENTITY))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+	})
+
+	t.Run("cache that cannot dereference is rejected", func(t *testing.T) {
+		peer := startReferenceReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY))
+		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+		c := distributed_client.New(te, te.GetCache(), localPeer)
+		require.NoError(t, c.StartListening())
+		waitUntilServerIsAlive(localPeer)
+		_, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.Error(t, err)
+		require.True(t, status.IsFailedPreconditionError(err), "expected FailedPreconditionError, got %s", err)
+	})
+
+	t.Run("missing blob is not found", func(t *testing.T) {
+		peer := startReferenceReadServer(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY))
+		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
+		before := getWithMetadataResponseCount(t, "reference", "NotFound")
+		beforeOK := getWithMetadataResponseCount(t, "reference", "OK")
+		_, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.Error(t, err)
+		require.True(t, status.IsNotFoundError(err), "expected NotFoundError, got %s", err)
+		// The failed dereference is recorded under its status code, not OK.
+		require.Equal(t, before+1, getWithMetadataResponseCount(t, "reference", "NotFound"))
+		require.Equal(t, beforeOK, getWithMetadataResponseCount(t, "reference", "OK"))
+	})
+
+	t.Run("bytes are authoritative when sent with a reference", func(t *testing.T) {
+		// The reference points at a missing blob, so the bytes must be used
+		// without dereferencing.
+		peer, _ := startVerifyingReadServer(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY), [][]byte{buf})
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{})
+		beforeBytes := getWithMetadataResponseCount(t, "bytes", "OK")
+		beforeRef := getWithMetadataResponseCount(t, "reference", "OK")
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, rn)
+		require.NoError(t, err)
+		require.Equal(t, buf, got)
+		gotRN, _, _ := fake.LastDereference()
+		require.Nil(t, gotRN)
+		require.Equal(t, beforeBytes+1, getWithMetadataResponseCount(t, "bytes", "OK"))
+		require.Equal(t, beforeRef, getWithMetadataResponseCount(t, "reference", "OK"))
+	})
+
+	t.Run("empty blob is served from bytes even with a reference", func(t *testing.T) {
+		// A 0-byte blob's inline payload is indistinguishable from no
+		// payload, so the reference must be ignored rather than dereferenced.
+		emptyRN, _ := testdigest.RandomCASResourceBuf(t, 0)
+		peer := startReferenceReadServer(t, makeReference(emptyRN, "blobs/no-such-blob", repb.Compressor_IDENTITY))
+		c, fake := newReferenceTestProxy(t, te, map[string][]byte{})
+		got, _, err := c.RemoteGetWithMetadata(ctx, peer, emptyRN)
+		require.NoError(t, err)
+		require.Empty(t, got)
+		gotRN, _, _ := fake.LastDereference()
+		require.Nil(t, gotRN)
 	})
 }
 
