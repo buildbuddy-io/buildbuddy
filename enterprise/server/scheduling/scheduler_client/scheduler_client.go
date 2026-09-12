@@ -124,6 +124,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		Port:                      1,
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
+		AssignableGpuMemoryBytes:  resources.GetAllocatedGPUMemoryBytes(),
 		AssignableDiskBytes:       resources.GetAllocatedDiskBytes(),
 		AssignableCustomResources: customResources,
 		OsFamily:                  resources.GetOSFamily(),

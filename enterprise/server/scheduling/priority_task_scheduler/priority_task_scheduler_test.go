@@ -155,6 +155,124 @@ func TestTaskQueue_DedupesTasks(t *testing.T) {
 	require.Nil(t, q.Dequeue())
 }
 
+func TestPriorityTaskScheduler_CanFitTaskWithGPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		capacity int64
+		reserved int64
+		request  int64
+		wantFit  bool
+	}{
+		{name: "CPU task without GPU capacity", wantFit: true},
+		{name: "GPU task without GPU capacity", request: 1},
+		{name: "exact capacity", capacity: 8, request: 8, wantFit: true},
+		{name: "exceeds capacity", capacity: 8, request: 9},
+		{name: "exact remaining capacity", capacity: 8, reserved: 5, request: 3, wantFit: true},
+		{name: "exceeds remaining capacity", capacity: 8, reserved: 5, request: 4},
+		{name: "CPU task when GPU memory is full", capacity: 8, reserved: 8, wantFit: true},
+		{name: "CPU task after skipped GPU tasks", capacity: 8, reserved: 12, wantFit: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			q := &PriorityTaskScheduler{
+				resourceCapacity: &resourceCounts{RAMBytes: 100, CPUMillis: 100, GPUMemoryBytes: testCase.capacity},
+			}
+			reserved := &resourceCounts{GPUMemoryBytes: testCase.reserved}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{
+				TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: testCase.request},
+			}}
+
+			// GPU requests must fit the unreserved capacity. CPU-only tasks
+			// can run even if earlier tasks reserve more GPU memory than exists.
+			require.Equal(t, testCase.wantFit, q.canFitTask(task, reserved))
+			require.Equal(t, testCase.reserved, reserved.GPUMemoryBytes)
+		})
+	}
+}
+
+func TestPriorityTaskScheduler_GPUMemoryAccounting(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, resources.Configure(false /*=mmapLRUEnabled*/))
+	})
+	flags.Set(t, "executor.gpu_memory_bytes", 8_000_000_000)
+	t.Setenv("SYS_GPU_MEMORY_BYTES", "")
+	require.NoError(t, resources.Configure(false /*=mmapLRUEnabled*/))
+	q, err := NewPriorityTaskScheduler(testenv.GetTestEnv(t), NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{
+		RAMBytesCapacityOverride:  100,
+		CPUMillisCapacityOverride: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(q.rootCancel)
+	require.Equal(t, int64(8_000_000_000), q.resourceCapacity.GPUMemoryBytes)
+	require.Empty(t, q.resourceCapacity.Custom)
+
+	size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: 4_000_000_000}
+	first := &scpb.EnqueueTaskReservationRequest{TaskId: "first", TaskSize: size}
+	second := &scpb.EnqueueTaskReservationRequest{TaskId: "second", TaskSize: size}
+	queued := &queuedTask{EnqueueTaskReservationRequest: second}
+
+	// Tasks can share the configured GPU memory until their combined usage
+	// fills it, even though no custom GPU resource is configured.
+	q.trackTask(first, nil)
+	require.True(t, q.canFitTask(queued, q.resourcesUsed))
+	q.trackTask(second, nil)
+	require.Equal(t, int64(8_000_000_000), q.resourcesUsed.GPUMemoryBytes)
+	require.False(t, q.canFitTask(queued, q.resourcesUsed))
+	require.Contains(t, q.stats(), "GPU memory: 8,000,000,000 of 8,000,000,000 bytes allocated (0 remaining)")
+
+	// Completing a task releases its memory so another GPU task can start.
+	q.untrackTask(first, nil)
+	require.Equal(t, int64(4_000_000_000), q.resourcesUsed.GPUMemoryBytes)
+	require.True(t, q.canFitTask(queued, q.resourcesUsed))
+	q.untrackTask(second, nil)
+	require.Zero(t, q.resourcesUsed.GPUMemoryBytes)
+}
+
+func TestPriorityTaskScheduler_QueueSkipping_GPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		used             resourceCounts
+		concurrencyLimit int64
+		requests         []int64
+		wantTaskID       string
+	}{
+		{name: "first GPU task fits", requests: []int64{8, 4, 0}, wantTaskID: "0"},
+		{name: "GPU task fits remaining capacity", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{4, 8, 0}, wantTaskID: "0"},
+		{name: "small GPU task cannot delay large task", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{8, 4}},
+		{name: "CPU task skips blocked GPU tasks", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}, wantTaskID: "2"},
+		{name: "CPU reservations prevent skipping", used: resourceCounts{CPUMillis: 98, GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}},
+		{name: "RAM reservations prevent skipping", used: resourceCounts{RAMBytes: 98, GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}},
+		{name: "concurrency reservations prevent skipping", used: resourceCounts{GPUMemoryBytes: 4, Concurrency: 1}, concurrencyLimit: 2, requests: []int64{8, 0}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			q := &PriorityTaskScheduler{
+				q:                newTaskQueue(clockwork.NewRealClock()),
+				resourceCapacity: &resourceCounts{RAMBytes: 100, CPUMillis: 100, GPUMemoryBytes: 8, Concurrency: testCase.concurrencyLimit},
+				resourcesUsed:    &testCase.used,
+			}
+			for i, gpuMemory := range testCase.requests {
+				q.q.Enqueue(t.Context(), &scpb.EnqueueTaskReservationRequest{
+					TaskId:   fmt.Sprint(i),
+					TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: gpuMemory},
+				})
+			}
+
+			// Backfilling must reserve the resources needed by skipped GPU
+			// tasks so later work cannot delay their start.
+			before := q.resourcesUsed.Clone()
+			task, pos := q.getNextSchedulableTask(t.Context())
+			if testCase.wantTaskID == "" {
+				require.Nil(t, task)
+				require.Nil(t, pos)
+			} else {
+				require.NotNil(t, task)
+				require.Equal(t, testCase.wantTaskID, task.GetTaskId())
+				require.Equal(t, task, q.q.DequeueAt(pos))
+			}
+			require.Equal(t, before, q.resourcesUsed, "searching the queue must not change active resource usage")
+		})
+	}
+}
+
 func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t *testing.T) {
 	env := testenv.GetTestEnv(t)
 	env.SetRemoteExecutionClient(&FakeExecutionClient{})

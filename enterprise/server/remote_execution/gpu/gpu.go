@@ -14,16 +14,14 @@ var (
 	gpuMemoryPollInterval    = flag.Duration("executor.gpu_memory_poll_interval", 250*time.Millisecond, "How often to sample GPU process memory. Shorter poll intervals add more CPU overhead.")
 )
 
-// Configure validates the GPU memory tracking configuration and initializes
-// its platform implementation when tracking is enabled. The configure and
+// Configure initializes GPU capacity queries and validates memory tracking
+// settings. Unavailable NVML support is not an error. Memory polling starts on
+// the first CgroupUsage call with tracking enabled. The configure and
 // cgroupUsage functions are defined per platform in gpu_linux.go and
 // gpu_unsupported.go. Static builds use gpu_unsupported.go, since the NVML
 // bindings cannot be linked statically.
 func Configure() error {
-	if !*gpuMemoryTrackingEnabled {
-		return nil
-	}
-	if *gpuMemoryPollInterval < time.Millisecond {
+	if *gpuMemoryTrackingEnabled && *gpuMemoryPollInterval < time.Millisecond {
 		return errors.New("executor.gpu_memory_poll_interval must be at least 1ms")
 	}
 	return configure()

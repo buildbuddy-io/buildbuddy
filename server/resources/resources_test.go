@@ -76,6 +76,44 @@ func TestConfigure(t *testing.T) {
 	}
 }
 
+func TestConfigureGPUMemory(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, resources.Configure(false /*=mmapLRUEnabled*/))
+	})
+	for _, testCase := range []struct {
+		name    string
+		flag    int64
+		env     string
+		want    int64
+		wantErr string
+	}{
+		{name: "flag", flag: 8_000_000_000, want: 8_000_000_000},
+		{name: "env", env: "16000000000", want: 16_000_000_000},
+		{name: "unset resets capacity"},
+		{name: "zero env", env: "0"},
+		{name: "conflicting flag and env", flag: 8_000_000_000, env: "16000000000", wantErr: "Only one"},
+		{name: "invalid env", env: "8GB", wantErr: "parse SYS_GPU_MEMORY_BYTES"},
+		{name: "overflowing env", env: "9223372036854775808", wantErr: "parse SYS_GPU_MEMORY_BYTES"},
+		{name: "negative env", env: "-1", wantErr: "SYS_GPU_MEMORY_BYTES must not be negative"},
+		{name: "negative flag", flag: -1, wantErr: "executor.gpu_memory_bytes must not be negative"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.gpu_memory_bytes", testCase.flag)
+			t.Setenv("SYS_GPU_MEMORY_BYTES", testCase.env)
+
+			// Capacity comes from an explicit flag or environment setting.
+			// Reject ambiguous or invalid values before scheduling any work.
+			err := resources.Configure(false /*=mmapLRUEnabled*/)
+			if testCase.wantErr != "" {
+				require.ErrorContains(t, err, testCase.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, testCase.want, resources.GetAllocatedGPUMemoryBytes())
+		})
+	}
+}
+
 func TestGetCustomResourceParentMap(t *testing.T) {
 	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
 		{Name: "apple_simulator", Value: 2},
