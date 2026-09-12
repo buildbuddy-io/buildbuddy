@@ -79,7 +79,7 @@ func totalInputPowerByRackPanel() *timeseries.PanelBuilder {
 		Id(4).
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 1}).
 		Max(22000).
-		Thresholds(warnCritThresholds(15120, 17210)).
+		Thresholds(warnCritThresholds(16000, 17210)).
 		WithTarget(
 			dash.PromQuery(
 				`sum by (pdu) (
@@ -206,7 +206,7 @@ func totalInputPowerByUnitPanel() *timeseries.PanelBuilder {
 		Id(1).
 		GridPos(dashboard.GridPos{H: 8, W: 12, X: 0, Y: 18}).
 		AxisSoftMax(10800).
-		Thresholds(warnCritThresholds(7560, 8640)).
+		Thresholds(warnCritThresholds(8000, 8640)).
 		WithTarget(
 			dash.PromQuery(
 				`sum by (pdu, towerIndex) (pdu_infeedPower{job="snmp_servertech_sentry3", region="${region}", pdu="${pdu}"})`,
