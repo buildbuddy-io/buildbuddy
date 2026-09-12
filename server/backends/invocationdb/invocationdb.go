@@ -60,6 +60,11 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		// Insert worked; we're done.
 		return true, nil
 	}
+	// Missing API key rows are placeholders, not invocation attempts. If the
+	// insert conflicted, do not let the placeholder overwrite an existing row.
+	if ti.InvocationStatus == int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS) {
+		return false, nil
+	}
 	// Insert failed due to conflict; update the existing row instead.
 	created := false
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
