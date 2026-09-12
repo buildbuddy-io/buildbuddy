@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -245,22 +246,32 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	// Curl doesn't automatically set this after redirects either.
 	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
-			return fmt.Errorf("stopped after 10 redirects")
+			return status.NotFoundError("stopped after 10 redirects")
+		}
+		if err := validateHTTPURL(req.URL); err != nil {
+			return err
 		}
 		req.Header.Del("Referer")
 		return nil
 	}
 	bsClient := getByteStreamClient(p.env)
 
-	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
+	rpcCtx := ctx
+	ctx, cancel := context.WithTimeout(rpcCtx, p.computeRequestTimeout(rpcCtx, req.GetTimeout()))
 	defer cancel()
 
 	// Keep track of the last fetch error so that if we fail to fetch, we at
 	// least have something we can return to the client.
 	var lastFetchErr error
 	var lastFetchUri string
+	var unavailableErr error
+	var invalidArgumentErr error
+	attemptedURIs := 0
 
 	for i, uri := range req.GetUris() {
+		if ctx.Err() != nil {
+			break
+		}
 		_, err := url.Parse(uri)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
@@ -274,6 +285,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				}
 			}
 		}
+		attemptedURIs++
 		blobDigest, err := mirrorToCache(
 			ctx,
 			bsClient,
@@ -288,7 +300,12 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
 			lastFetchUri = uri
-			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)
+			if status.IsUnavailableError(err) {
+				unavailableErr = lastFetchErr
+			} else if status.IsInvalidArgumentError(err) {
+				invalidArgumentErr = lastFetchErr
+			}
+			log.CtxWarningf(ctx, "Failed to mirror %q to cache (%s): %s", uri, gstatus.Code(err), err)
 			continue
 		}
 		return &rapb.FetchBlobResponse{
@@ -299,15 +316,33 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		}, nil
 	}
 
-	log.CtxInfof(ctx, "Fetch: returning NotFound for %s", req.GetUris())
+	// RPC cancellation/deadline expiry is a transport-level error. An origin
+	// fetch timeout (request timeout or server maximum) belongs in the response
+	// status. This only applies if that budget expires before the RPC deadline;
+	// clients leaving req.Timeout unset normally hit the RPC deadline instead.
+	if rpcCtx.Err() != nil {
+		return nil, status.FromContextError(rpcCtx)
+	}
+	responseCode := gcodes.NotFound
+	if ctx.Err() != nil {
+		responseCode = gcodes.DeadlineExceeded
+		lastFetchErr = fetchTimeoutError(attemptedURIs, len(req.GetUris()), lastFetchErr)
+		// This is an overall budget failure, not a failure of the last URI.
+		lastFetchUri = ""
+	} else {
+		// A later missing mirror must not hide an earlier transient failure.
+		if unavailableErr != nil {
+			return nil, status.UnavailableError(status.Message(unavailableErr))
+		}
+		if invalidArgumentErr != nil {
+			return nil, status.InvalidArgumentError(status.Message(invalidArgumentErr))
+		}
+	}
+
+	log.CtxInfof(ctx, "Fetch: returning %s for %s", responseCode, req.GetUris())
 	return &rapb.FetchBlobResponse{
 		Status: &statuspb.Status{
-			// Note: returning NotFound here because the other error codes in
-			// the proto documentation for FetchBlobResponse.status don't really
-			// apply when we fail to fetch. (PermissionDenied and Aborted might
-			// make sense in some cases, but it's unclear at the moment whether
-			// there is any benefit to using those.)
-			Code:    int32(gcodes.NotFound),
+			Code:    int32(responseCode),
 			Message: status.Message(lastFetchErr),
 		},
 		Uri: lastFetchUri,
@@ -422,16 +457,29 @@ func mirrorToCache(
 	log.CtxDebugf(ctx, "Fetching %s", uri)
 	req, err := http.NewRequestWithContext(ctx, "GET", uri, nil)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to fetch %q: create request failed: %s", uri, err)
+		return nil, status.InvalidArgumentErrorf("failed to fetch %q: create request failed: %s", uri, err)
+	}
+	if err := validateHTTPURL(req.URL); err != nil {
+		return nil, err
 	}
 	req.Header = header
 	rsp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
+		return nil, httpFetchError(uri, err)
 	}
 	defer rsp.Body.Close()
-	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
+	switch {
+	case rsp.StatusCode >= 200 && rsp.StatusCode < 400:
+		// Continue with the response body.
+	case rsp.StatusCode == http.StatusRequestTimeout,
+		rsp.StatusCode == http.StatusTooManyRequests,
+		rsp.StatusCode >= 500,
+		rsp.StatusCode < 200:
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
+	default:
+		// Preserve the existing NotFound response for other 4xx statuses,
+		// including 401/403, rather than introducing PermissionDenied semantics.
+		return nil, status.NotFoundErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
 	}
 
 	// If we know what the hash should be and the content length is known,
@@ -442,6 +490,9 @@ func mirrorToCache(
 		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
 		rn.SetCompressor(repb.Compressor_ZSTD)
 		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
+			if status.IsInvalidArgumentError(err) {
+				return nil, err
+			}
 			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 		}
 		log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(d))
@@ -500,6 +551,34 @@ func mirrorToCache(
 	}
 	log.CtxDebugf(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(blobDigest))
 	return blobDigest, nil
+}
+
+func fetchTimeoutError(attempted, total int, lastErr error) error {
+	message := fmt.Sprintf("remote asset fetch timed out after attempting %d of %d URIs", attempted, total)
+	if lastErr != nil {
+		message += fmt.Sprintf("; last fetch error: %s", lastErr)
+	}
+	return status.DeadlineExceededError(message)
+}
+
+func validateHTTPURL(u *url.URL) error {
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return status.NotFoundErrorf("cannot fetch %q: expected an absolute HTTP(S) URL", u)
+	}
+	return nil
+}
+
+func httpFetchError(uri string, err error) error {
+	var dnsErr *net.DNSError
+	// Do not turn policy rejections or authoritative DNS misses into RPC
+	// retries. Other dial errors (timeouts, resets, refused connections, etc.)
+	// may be transient. Check wrapped errors rather than matching messages.
+	if errors.Is(err, httpclient.ErrIPNotAllowed) ||
+		(errors.As(err, &dnsErr) && dnsErr.IsNotFound) ||
+		status.IsNotFoundError(err) {
+		return status.NotFoundErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
+	}
+	return status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
 }
 
 func tempCopy(r io.Reader) (path string, err error) {

@@ -1,20 +1,26 @@
-package fetch_server_test
+package fetch_server
 
 import (
 	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
-	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
@@ -23,10 +29,12 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
@@ -60,7 +68,7 @@ func runFetchServer(ctx context.Context, t *testing.T, env *testenv.TestEnv) *gr
 	env.SetBuildBuddyServiceClient(bbspb.NewBuildBuddyServiceClient(clientConn))
 	env.SetCacheClient(cspb.NewCacheClient(clientConn))
 
-	fetchServer, err := fetch_server.NewFetchServer(env)
+	fetchServer, err := NewFetchServer(env)
 	require.NoError(t, err)
 
 	rapb.RegisterFetchServer(grpcServer, fetchServer)
@@ -138,7 +146,7 @@ func TestFetchBlob(t *testing.T) {
 				Uris: []string{ts.URL},
 				Qualifiers: []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: checksumQualifierFromContent(t, contentDigest.GetHash(), tc.digestFunc),
 					},
 				},
@@ -232,7 +240,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 				Uris: []string{ts.URL},
 				Qualifiers: []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: checksumQualifierFromContent(t, checksumDigest.GetHash(), tc.checksumFunc),
 					},
 				},
@@ -334,7 +342,7 @@ func TestFetchBlobMismatch(t *testing.T) {
 			if tc.checksumQualifier != "" {
 				request.Qualifiers = []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: tc.checksumQualifier,
 					},
 				}
@@ -398,7 +406,7 @@ func TestSubsequentRequestCacheHit(t *testing.T) {
 			if tc.checksumQualifier != "" {
 				request.Qualifiers = []*rapb.Qualifier{
 					{
-						Name:  fetch_server.ChecksumQualifier,
+						Name:  ChecksumQualifier,
 						Value: tc.checksumQualifier,
 					},
 				}
@@ -447,11 +455,11 @@ func TestFetchBlobWithBazelQualifiers(t *testing.T) {
 		Uris: []string{ts.URL},
 		Qualifiers: []*rapb.Qualifier{
 			{
-				Name:  fetch_server.BazelCanonicalIDQualifier,
+				Name:  BazelCanonicalIDQualifier,
 				Value: "some-bazel-id",
 			},
 			{
-				Name:  fetch_server.BazelHttpHeaderPrefixQualifier + "hkey",
+				Name:  BazelHttpHeaderPrefixQualifier + "hkey",
 				Value: "hvalue",
 			},
 		},
@@ -490,7 +498,7 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -503,7 +511,7 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -516,11 +524,11 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
 					Value: "hvalue0",
 				},
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -532,11 +540,11 @@ func TestFetchBlobWithHeaderUrl(t *testing.T) {
 			},
 			qualifiers: []*rapb.Qualifier{
 				{
-					Name:  fetch_server.BazelHttpHeaderPrefixQualifier + "hkey",
+					Name:  BazelHttpHeaderPrefixQualifier + "hkey",
 					Value: "hvalue0",
 				},
 				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
+					Name:  BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
 					Value: "hvalue",
 				},
 			},
@@ -570,7 +578,7 @@ func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
 		Uris: []string{ts.URL},
 		Qualifiers: []*rapb.Qualifier{
 			{
-				Name:  fetch_server.BazelCanonicalIDQualifier,
+				Name:  BazelCanonicalIDQualifier,
 				Value: "known-qualifier",
 			},
 			{
@@ -623,7 +631,7 @@ func TestFetchBlob_CacheProxy(t *testing.T) {
 		Uris: []string{ts.URL},
 		Qualifiers: []*rapb.Qualifier{
 			{
-				Name:  fetch_server.ChecksumQualifier,
+				Name:  ChecksumQualifier,
 				Value: checksumQualifierFromContent(t, contentDigest.GetHash(), repb.DigestFunction_BLAKE3),
 			},
 		},
@@ -698,7 +706,7 @@ func runFetchServerWithCacheProxy(ctx context.Context, env *testenv.TestEnv, t t
 
 	localCacheServer := cache_server.New(env)
 
-	fetchServer, err := fetch_server.NewFetchServer(env)
+	fetchServer, err := NewFetchServer(env)
 	require.NoError(t, err)
 
 	grpcServer, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
@@ -727,4 +735,238 @@ func TestFetchDirectory(t *testing.T) {
 	resp, err := fetchClient.FetchDirectory(ctx, &rapb.FetchDirectoryRequest{})
 	assert.EqualError(t, err, "rpc error: code = Unimplemented desc = FetchDirectory is not yet implemented")
 	assert.Nil(t, resp)
+}
+
+func TestFetchBlobFailureClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		paths []string
+		code  gcodes.Code
+	}{
+		{"missing", []string{"404", "404"}, gcodes.NotFound},
+		{"forbidden", []string{"403"}, gcodes.NotFound},
+		{"unauthorized", []string{"401"}, gcodes.NotFound},
+		{"server_error", []string{"503"}, gcodes.Unavailable},
+		{"timeout", []string{"408"}, gcodes.Unavailable},
+		{"rate_limit", []string{"429"}, gcodes.Unavailable},
+		{"reset_then_missing", []string{"reset", "404"}, gcodes.Unavailable},
+		{"missing_then_server_error", []string{"404", "503"}, gcodes.Unavailable},
+		{"server_error_then_missing", []string{"503", "404"}, gcodes.Unavailable},
+		{"checksum_mismatch", []string{"bad_checksum"}, gcodes.InvalidArgument},
+		{"checksum_then_missing", []string{"bad_checksum", "404"}, gcodes.InvalidArgument},
+		{"checksum_then_server_error", []string{"bad_checksum", "503"}, gcodes.Unavailable},
+		{"server_error_then_success", []string{"503", "ok"}, gcodes.OK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			require.NoError(t, scratchspace.Init())
+			client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/reset":
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					conn.Close()
+				case "/ok":
+					fmt.Fprint(w, content)
+				case "/bad_checksum":
+					fmt.Fprint(w, "wrong content")
+				default:
+					code, err := strconv.Atoi(strings.TrimPrefix(r.URL.Path, "/"))
+					if err != nil {
+						t.Error(err)
+						return
+					}
+					w.WriteHeader(code)
+				}
+			}))
+			defer ts.Close()
+			var uris []string
+			for _, path := range tc.paths {
+				uris = append(uris, ts.URL+"/"+path)
+			}
+			resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+				Uris:       uris,
+				Qualifiers: []*rapb.Qualifier{{Name: ChecksumQualifier, Value: sha256CRI}},
+			})
+			if tc.code != gcodes.OK && tc.code != gcodes.NotFound {
+				require.Equal(t, tc.code, gstatus.Code(err), "%v", err)
+				require.Nil(t, resp)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, int32(tc.code), resp.GetStatus().GetCode())
+			if tc.code == gcodes.NotFound {
+				require.Equal(t, uris[len(uris)-1], resp.GetUri())
+				require.Equal(t, strings.Repeat("1", 64), resp.GetBlobDigest().GetHash())
+				require.Equal(t, int64(1), resp.GetBlobDigest().GetSizeBytes())
+			}
+		})
+	}
+}
+
+// Invoke the handler directly for parent context tests so a client-side gRPC
+// cancellation cannot mask an incorrectly returned response status.
+func TestFetchBlobTimeouts(t *testing.T) {
+	for _, mode := range []string{"fetch_timeout", "rpc_deadline", "rpc_deadline_no_fetch_timeout", "rpc_canceled", "already_canceled"} {
+		t.Run(mode, func(t *testing.T) {
+			te := testenv.GetTestEnv(t)
+			conn := runFetchServer(t.Context(), t, te)
+			server, err := NewFetchServer(te)
+			require.NoError(t, err)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var attempts atomic.Int32
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				attempts.Add(1)
+				if mode == "rpc_canceled" {
+					cancel()
+				}
+				<-r.Context().Done()
+			}))
+			defer ts.Close()
+			req := &rapb.FetchBlobRequest{
+				Uris:    []string{ts.URL, ts.URL + "/another-mirror"},
+				Timeout: durationpb.New(time.Minute),
+			}
+			switch mode {
+			case "fetch_timeout":
+				req.Timeout = durationpb.New(100 * time.Millisecond)
+			case "rpc_deadline", "rpc_deadline_no_fetch_timeout":
+				var deadlineCancel context.CancelFunc
+				ctx, deadlineCancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer deadlineCancel()
+				if mode == "rpc_deadline_no_fetch_timeout" {
+					req.Timeout = nil
+				}
+			case "already_canceled":
+				cancel()
+			}
+			var resp *rapb.FetchBlobResponse
+			if mode == "fetch_timeout" {
+				// Verify the inline status also survives an actual RPC.
+				resp, err = rapb.NewFetchClient(conn).FetchBlob(ctx, req)
+				require.NoError(t, err)
+				require.Equal(t, int32(gcodes.DeadlineExceeded), resp.GetStatus().GetCode())
+				require.Contains(t, resp.GetStatus().GetMessage(), "timed out")
+				require.Empty(t, resp.GetUri())
+				require.Contains(t, resp.GetStatus().GetMessage(), "attempting 1 of 2 URIs")
+				require.Contains(t, resp.GetStatus().GetMessage(), ts.URL)
+				// Keep the existing workaround for clients that ignore response status.
+				require.Equal(t, strings.Repeat("1", 64), resp.GetBlobDigest().GetHash())
+				require.Equal(t, int64(1), resp.GetBlobDigest().GetSizeBytes())
+				require.NoError(t, ctx.Err())
+			} else {
+				resp, err = server.FetchBlob(ctx, req)
+				require.Nil(t, resp)
+				expected := gcodes.Canceled
+				if mode == "rpc_deadline" || mode == "rpc_deadline_no_fetch_timeout" {
+					expected = gcodes.DeadlineExceeded
+				}
+				require.Equal(t, expected, gstatus.Code(err))
+			}
+			if mode == "already_canceled" {
+				require.Zero(t, attempts.Load())
+			} else {
+				// Do not try another mirror once the fetch budget or RPC has expired.
+				require.Equal(t, int32(1), attempts.Load())
+			}
+		})
+	}
+}
+
+func TestFetchBlobPermanentURIFailures(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	runFetchServer(t.Context(), t, te)
+	flags.Set(t, "remote_asset.allowed_private_ips", []string{})
+	flags.Set(t, "http.client.allow_localhost", false)
+	server, err := NewFetchServer(te)
+	require.NoError(t, err)
+	for _, uri := range []string{"http://127.0.0.1/asset", "ftp://example.com/asset", "relative/path", "http:///path"} {
+		t.Run(uri, func(t *testing.T) {
+			rsp, err := server.FetchBlob(t.Context(), &rapb.FetchBlobRequest{Uris: []string{uri}})
+			require.NoError(t, err)
+			require.Equal(t, int32(gcodes.NotFound), rsp.GetStatus().GetCode())
+			require.Equal(t, uri, rsp.GetUri())
+		})
+	}
+}
+
+func TestFetchBlobPermanentFailureTriesNextMirror(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	client := rapb.NewFetchClient(runFetchServer(t.Context(), t, te))
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/redirect" {
+			http.Redirect(w, r, "ftp://example.com/asset", http.StatusFound)
+			return
+		}
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+	for _, uri := range []string{"ftp://example.com/asset", "relative/path", ts.URL + "/redirect"} {
+		t.Run(uri, func(t *testing.T) {
+			rsp, err := client.FetchBlob(t.Context(), &rapb.FetchBlobRequest{Uris: []string{uri, ts.URL + "/ok"}})
+			require.NoError(t, err)
+			require.Equal(t, int32(gcodes.OK), rsp.GetStatus().GetCode())
+			require.Equal(t, ts.URL+"/ok", rsp.GetUri())
+		})
+	}
+}
+
+func TestHTTPFetchError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code gcodes.Code
+	}{
+		{"blocked_ip", httpclient.ErrIPNotAllowed, gcodes.NotFound},
+		{"nxdomain", &net.DNSError{Err: "no such host", IsNotFound: true}, gcodes.NotFound},
+		{"dns_timeout", &net.DNSError{Err: "timeout", IsTimeout: true}, gcodes.Unavailable},
+		{"dns_temporary", &net.DNSError{Err: "server failure", IsTemporary: true}, gcodes.Unavailable},
+		{"TLS_timeout", errors.New("net/http: TLS handshake timeout"), gcodes.Unavailable},
+		{"connection_reset", errors.New("connection reset by peer"), gcodes.Unavailable},
+		{"redirect_rejected", status.NotFoundError("stopped after 10 redirects"), gcodes.NotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// net/http wraps dial failures through both net.OpError and url.Error.
+			err := &url.Error{Op: "Get", URL: "https://example.com/asset", Err: &net.OpError{Op: "dial", Net: "tcp", Err: tc.err}}
+			classified := httpFetchError(err.URL, err)
+			require.Equal(t, tc.code, gstatus.Code(classified))
+			require.Contains(t, status.Message(classified), err.URL)
+			require.Contains(t, status.Message(classified), tc.err.Error())
+		})
+	}
+}
+
+func TestValidateHTTPURL(t *testing.T) {
+	for _, uri := range []string{"ftp://example.com/a", "file:///tmp/a", "relative/path", "//example.com/a", "http:///path"} {
+		t.Run(uri, func(t *testing.T) {
+			u, err := url.Parse(uri)
+			require.NoError(t, err)
+			require.Equal(t, gcodes.NotFound, gstatus.Code(validateHTTPURL(u)))
+		})
+	}
+	for _, uri := range []string{"https://example.com/a", "http://example.com/a"} {
+		u, err := url.Parse(uri)
+		require.NoError(t, err)
+		require.NoError(t, validateHTTPURL(u))
+	}
+}
+
+func TestFetchTimeoutErrorPreservesLastAttempt(t *testing.T) {
+	// The budget may expire between a 404 response and the next mirror. Keep
+	// the 404 diagnostic while making clear that not all mirrors were tried.
+	err := fetchTimeoutError(1, 2, fmt.Errorf("https://example.com/first: %w", status.NotFoundError("HTTP 404 Not Found")))
+	require.Equal(t, gcodes.DeadlineExceeded, gstatus.Code(err))
+	require.Contains(t, status.Message(err), "attempting 1 of 2 URIs")
+	require.Contains(t, status.Message(err), "https://example.com/first")
+	require.Contains(t, status.Message(err), "404 Not Found")
+	err = fetchTimeoutError(0, 2, nil)
+	require.Contains(t, status.Message(err), "attempting 0 of 2 URIs")
+	require.NotContains(t, status.Message(err), "last fetch error")
 }

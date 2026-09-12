@@ -19,6 +19,9 @@ import (
 // Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
 var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
+// ErrIPNotAllowed identifies requests blocked by the private IP policy.
+var ErrIPNotAllowed = errors.New("IP address not allowed")
+
 // New creates an HTTP client that blocks connections to private IPs and records
 // metrics on any requests made.
 func New(allowedPrivateIPNets []*net.IPNet, clientName string) *http.Client {
@@ -52,7 +55,7 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 		}
 		if (!ip.IsGlobalUnicast() || ip.IsPrivate()) && !(ip.IsLoopback() && *allowLocalhost) {
 			log.Infof("Dialer control blocked address %s", address)
-			return errors.New("IP address not allowed")
+			return ErrIPNotAllowed
 		}
 		return nil
 	}
