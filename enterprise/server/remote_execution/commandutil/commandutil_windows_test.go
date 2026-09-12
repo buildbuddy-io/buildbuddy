@@ -5,6 +5,10 @@ package commandutil_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,7 +16,10 @@ import (
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/windows"
 )
 
 func TestRun_Win_NormalExit_NoError(t *testing.T) {
@@ -52,4 +59,89 @@ func TestComplexProcessTree(t *testing.T) {
 	// Assert
 	assert.NoError(t, res.Error)
 	assert.Equal(t, 0, res.ExitCode)
+}
+
+func TestRun_Win_NormalExit_KillsDescendants(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	workDir := testfs.MakeTempDir(t)
+	pidPath := filepath.Join(workDir, "child.pid")
+	releasePath := filepath.Join(workDir, "release-parent")
+	var childHandle windows.Handle
+	var res *interfaces.CommandResult
+	done := make(chan struct{})
+	t.Cleanup(func() {
+		cancel()
+		if childHandle != 0 {
+			_ = windows.TerminateProcess(childHandle, 1)
+			_ = windows.CloseHandle(childHandle)
+		}
+		<-done
+	})
+	script := fmt.Sprintf(`
+		$ErrorActionPreference = 'Stop'
+		$child = Start-Process powershell -ArgumentList '-NoProfile','-NonInteractive','-Command','Start-Sleep -Seconds 300' -NoNewWindow -PassThru
+		Set-Content -LiteralPath '%s' -Value $child.Id
+		while (!(Test-Path -LiteralPath '%s')) { Start-Sleep -Milliseconds 10 }
+	`, pidPath, releasePath)
+	cmd := &repb.Command{Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", script}}
+	go func() {
+		defer close(done)
+		res = commandutil.Run(ctx, cmd, workDir, nopStatsListener, &interfaces.Stdio{})
+	}()
+
+	// Retain the child's handle before allowing the parent to exit, so the
+	// final check cannot accidentally open a recycled PID on a busy runner.
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for childHandle == 0 {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for the child PID")
+		case <-done:
+			t.Fatalf("parent exited before publishing child PID: %+v", res)
+		case <-ticker.C:
+			pidBytes, err := os.ReadFile(pidPath)
+			if err != nil {
+				continue
+			}
+			pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+			if err != nil {
+				continue
+			}
+			childHandle, err = windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_TERMINATE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, os.WriteFile(releasePath, nil, 0600))
+	<-done
+	require.NoError(t, res.Error)
+	require.Zero(t, res.ExitCode)
+	require.NoError(t, ctx.Err(), "inherited output pipes kept the command running until cancellation")
+	var exitCode uint32
+	require.NoError(t, windows.GetExitCodeProcess(childHandle, &exitCode))
+	require.Equal(t, ^uint32(0), exitCode, "descendant did not receive the job termination exit code")
+	// The job can become inactive before Windows signals individual process
+	// handles. Confirm teardown completes using the retained child handle.
+	waitResult, err := windows.WaitForSingleObject(childHandle, 5000)
+	require.NoError(t, err)
+	require.EqualValues(t, windows.WAIT_OBJECT_0, waitResult, "descendant teardown did not complete")
+}
+
+func TestRun_Win_NegativeExitIsNotReportedAsKilled(t *testing.T) {
+	cmd := &repb.Command{Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", "Exit -1"}}
+
+	res := commandutil.Run(context.Background(), cmd, ".", nopStatsListener, &interfaces.Stdio{})
+
+	require.NoError(t, res.Error)
+}
+
+func TestRun_Win_TimeoutReturnsDeadlineExceeded(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	cmd := &repb.Command{Arguments: []string{"powershell", "-NoProfile", "-NonInteractive", "-Command", "Start-Sleep -Seconds 300"}}
+
+	res := commandutil.Run(ctx, cmd, ".", nopStatsListener, &interfaces.Stdio{})
+
+	require.True(t, status.IsDeadlineExceededError(res.Error), "expected deadline exceeded, got %v", res.Error)
+	require.Equal(t, commandutil.KilledExitCode, res.ExitCode)
 }

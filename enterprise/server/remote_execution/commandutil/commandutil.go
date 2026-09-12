@@ -3,6 +3,7 @@ package commandutil
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -231,9 +232,15 @@ func startNewProcess(ctx context.Context, cmd *exec.Cmd) (*process, error) {
 		return nil, fmt.Errorf("fail to setup preStart: %w", err)
 	}
 	if err := p.cmd.Start(); err != nil {
+		_ = p.cleanup()
 		return nil, err
 	}
 	if err := p.postStart(); err != nil {
+		// Even if Kill reports that the process is already done, Wait is still
+		// required to release exec.Cmd's parent-side resources and I/O goroutines.
+		_ = p.cleanup()
+		_ = p.killRootProcess()
+		_, _ = p.wait()
 		return nil, fmt.Errorf("fail to setup postStart: %w", err)
 	}
 
@@ -260,7 +267,7 @@ func (p *process) monitor(statsListener procstats.Listener) chan *repb.UsageStat
 		if statsListener == nil {
 			return
 		}
-		statsCh <- procstats.Monitor(p.cmd.Process.Pid, statsListener, p.terminated)
+		statsCh <- p.monitorUsage(statsListener)
 	}()
 
 	return statsCh
@@ -294,6 +301,9 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 
 	rusage, err := p.wait()
 	stats := <-statsCh
+	if cleanupErr := p.cleanup(); cleanupErr != nil {
+		log.CtxWarningf(ctx, "Failed to clean up process resources: %s", cleanupErr)
+	}
 	if rusage != nil {
 		// If process tree monitoring was not requested, then the stats returned
 		// by the channel will be nil. At least return the top-level process
@@ -386,7 +396,7 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 
 	// If we fail to get the exit code of the process for any other reason, it might
 	// be a transient error that the client can retry, so return UNAVAILABLE for now.
-	exitErr, ok := err.(*exec.ExitError)
+	exitErr, ok := errors.AsType[*exec.ExitError](err)
 	if !ok {
 		return NoExitCode, status.UnavailableError(err.Error())
 	}
@@ -402,7 +412,8 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 	// can be retried if it was OOM killed. Note that KilledExitCode does not
 	// imply that SIGKILL was received.
 
-	if exitCode == KilledExitCode {
+	if isKilledExitCode(exitCode, err) {
+		exitCode = KilledExitCode
 		if ctx.Err() == context.Canceled {
 			return exitCode, status.CanceledErrorf("command was canceled: %s", err.Error())
 		}
