@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -50,13 +51,17 @@ func TestClickHouseBackupAndRestore(t *testing.T) {
 `)
 
 	// Run a ClickHouse cluster with the configured backup disk.
-	dsn := startCluster(t, "--config_file", configPath, "--volume", backupDir+`:/backups/:rw`)
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	backupMountPath, err := filepath.Rel(wd, backupDir)
+	require.NoError(t, err)
+	dsn := startCluster(t, "--config_file", configPath, "--volume", backupMountPath+`:/backups/:rw`)
 
 	// Set up the OLAP DB handle.
 	flags.Set(t, "olap_database.data_source", dsn)
 	flags.Set(t, "olap_database.enable_data_replication", true)
 	env := testenv.GetTestEnv(t)
-	err := clickhouse.Register(env)
+	err = clickhouse.Register(env)
 	require.NoError(t, err)
 	// Create a test invocation.
 	ctx := t.Context()
@@ -122,9 +127,6 @@ func runBackupTool(t *testing.T, args ...string) {
 }
 
 func startCluster(t *testing.T, args ...string) (dsn string) {
-	// TODO: remove docker-compose dependency.
-	ensureDockerComposeInstalled(t)
-
 	clickhouseClusterPath, err := runfiles.Rlocation(clickhouseClusterRlocationpath)
 	require.NoError(t, err)
 	cmd := exec.Command(clickhouseClusterPath, args...)
@@ -133,8 +135,10 @@ func startCluster(t *testing.T, args ...string) (dsn string) {
 	err = cmd.Start()
 	require.NoError(t, err, "start clickhouse_cluster")
 	t.Cleanup(func() {
-		cmd.Process.Signal(os.Interrupt)
-		_ = cmd.Wait()
+		if err := cmd.Process.Signal(os.Interrupt); err != nil {
+			t.Logf("signal clickhouse_cluster: %s", err)
+		}
+		require.NoError(t, cmd.Wait(), "stop clickhouse_cluster")
 	})
 	addr := "localhost:9201"
 	dsn = fmt.Sprintf("clickhouse://%s/default", addr)
@@ -154,14 +158,4 @@ func startCluster(t *testing.T, args ...string) (dsn string) {
 	}, 2*time.Minute, 10*time.Millisecond)
 
 	return dsn
-}
-
-func ensureDockerComposeInstalled(t *testing.T) {
-	if _, err := exec.LookPath("docker-compose"); err == nil {
-		return
-	}
-	if os.Getuid() == 0 {
-		b, err := exec.Command("sh", "-c", `apt update && apt install -y docker-compose`).CombinedOutput()
-		require.NoError(t, err, "install docker-compose", string(b))
-	}
 }
