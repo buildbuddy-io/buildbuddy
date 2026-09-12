@@ -61,6 +61,7 @@ export class ActionComparisonService {
   }
 
   canCompareWith(invocationId: string, actionDigest: string): boolean {
+    console.log(this.hasComparisonAction());
     if (!this.hasComparisonAction()) return false;
     // Can't compare with itself
     return !(this.comparisonData?.invocationId === invocationId && this.comparisonData?.actionDigest === actionDigest);

@@ -54,6 +54,7 @@ ts_library(
         "//enterprise/app/sidebar",
         "//enterprise/app/tap",
         "//enterprise/app/targets",
+        "//enterprise/app/targets:single_target",
         "//enterprise/app/trends",
         "//enterprise/app/usage",
         "//enterprise/app/workflows",
