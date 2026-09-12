@@ -42,6 +42,9 @@ func (p *process) killRootProcess() error {
 	return p.cmd.Process.Kill()
 }
 
+func (p *process) finalizeUsage(stats *repb.UsageStats) {
+}
+
 func isKilledExitCode(exitCode int, err error) bool {
 	return exitCode == KilledExitCode
 }

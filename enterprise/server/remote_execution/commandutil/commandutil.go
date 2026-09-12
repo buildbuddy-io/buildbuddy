@@ -301,6 +301,7 @@ func RunWithProcessTreeCleanup(ctx context.Context, cmd *exec.Cmd, opts *RunOpts
 
 	rusage, err := p.wait()
 	stats := <-statsCh
+	p.finalizeUsage(stats)
 	if cleanupErr := p.cleanup(); cleanupErr != nil {
 		log.CtxWarningf(ctx, "Failed to clean up process resources: %s", cleanupErr)
 	}
