@@ -71,7 +71,7 @@ message Group {
   // Controls whether user-owned API keys are enabled.
   bool user_owned_keys_enabled = 11;
 
-  // Whether to show "Ask Buddy" for the organization.
+  // Whether to show AI actions for the organization.
   bool bot_suggestions_enabled = 15;
 
   // Whether developers in this organization are allowed to create
@@ -283,7 +283,7 @@ message CreateGroupRequest {
   // Whether to enable user-owned API keys.
   bool user_owned_keys_enabled = 7;
 
-  // Whether to show "Ask Buddy" for the organization.
+  // Whether to show AI actions for the organization.
   bool bot_suggestions_enabled = 8;
 
   // Whether developers in this organization are allowed to create
@@ -348,7 +348,7 @@ message UpdateGroupRequest {
   // admin-only.
   bool restrict_clean_workflow_runs_to_admins = 10;
 
-  // Whether to show "Ask Buddy" for the organization.
+  // Whether to show AI actions for the organization.
   bool bot_suggestions_enabled = 11;
 
   // Whether developers in this organization are allowed to create

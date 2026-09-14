@@ -88,7 +88,7 @@ export function triggerRemoteRun(
     platformProps = new Map<string, string>();
   }
 
-  if (!platformProps.has("container-image")) {
+  if (!platformProps.has("container-image") && platformProps.get("OSFamily") !== "darwin") {
     platformProps.set("container-image", DEFAULT_CONTAINER_IMAGE);
   }
 
@@ -135,7 +135,7 @@ export function triggerRemoteRun(
     name: name,
   });
 
-  rpcService.service
+  return rpcService.service
     .run(request)
     .then((response: runner.RunResponse) => {
       let url = `/invocation/${response.invocationId}?queued=true`;
