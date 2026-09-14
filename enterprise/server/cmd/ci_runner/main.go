@@ -3175,7 +3175,7 @@ func (ws *workspace) reclaimDiskSpace(ctx context.Context) error {
 	}
 	// Just print a few dirs for now so this doesn't take excessively long.
 	ws.log.Printf("WARNING: high VM disk usage (%.2f%%)", usageStats.usageFraction*100)
-	duArgs := []string{"--human-readable", "--max-depth=1", ".", filepath.Join("..", outputBaseDirName)}
+	duArgs := []string{"-h", "-d", "1", ".", filepath.Join("..", outputBaseDirName)}
 	if err = runCommand(ctx, "du", duArgs, nil /*=env*/, "" /*=dir*/, ws.log); err != nil {
 		return fmt.Errorf("du: %w", err)
 	}
