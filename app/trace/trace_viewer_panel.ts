@@ -5,7 +5,7 @@ import { truncateDecimals } from "../util/math";
 import * as constants from "./constants";
 import { TraceEvent } from "./trace_events";
 import { LinePlotModel, PanelModel, SectionModel, TrackModel } from "./trace_viewer_model";
-import { isFocusedStackEvent } from "./trace_viewer_search";
+import { computeFocusedStack, FocusedStack, isFocusedStackEvent } from "./trace_viewer_search";
 
 type LinePlotColorKey = "lightColor" | "darkColor";
 const FADED_EVENT_OPACITY = 0.45;
@@ -80,15 +80,33 @@ export default class Panel {
 
   filter = "";
 
+  private highlightedEvent?: { track: TrackModel; index: number };
+  // Thread-local ancestors and subtree range for highlightedEvent.track.thread.
+  // Storage is bounded by stack depth, even when the focus has many descendants.
+  private focusedStack?: FocusedStack;
+
   // If set, visually highlight this event to indicate that it is the current search match.
-  highlightEvent?: { track: TrackModel; index: number };
-  // Thread-local ancestor indices for highlightEvent.track.thread, bounded by stack depth.
-  // Descendants are checked as they render instead of storing the entire subtree.
-  focusedAncestorEventIndices = new Set<number>();
+  get highlightEvent() {
+    return this.highlightedEvent;
+  }
+
+  set highlightEvent(event: { track: TrackModel; index: number } | undefined) {
+    this.highlightedEvent = event;
+    this.focusedStack = undefined;
+    if (!event) return;
+    const section = this.model.sections.find((section) => section.tracks?.[0]?.thread === event.track.thread);
+    if (!section) return;
+    this.focusedStack = computeFocusedStack(
+      section,
+      event.track.eventIndices[event.index],
+      section.tracks!.indexOf(event.track)
+    );
+  }
 
   private theme: ThemeColors;
   private eventColorCache = new Map<string, string>();
   private eventFadedColorCache = new Map<string, string>();
+  private eventFadedChroma = "24";
 
   constructor(
     readonly model: PanelModel,
@@ -108,7 +126,7 @@ export default class Panel {
 
   private buildEventColorCache() {
     const style = getComputedStyle(document.documentElement);
-    const fadedChroma = style.getPropertyValue("--trace-event-faded-chroma").trim() || "24";
+    this.eventFadedChroma = style.getPropertyValue("--trace-event-faded-chroma").trim() || "24";
     this.eventColorCache.clear();
     this.eventFadedColorCache.clear();
     for (const section of this.model.sections) {
@@ -119,7 +137,6 @@ export default class Panel {
           const colorKey = thread.getColorKey(eventIndices[i]);
           if (!this.eventColorCache.has(colorKey)) {
             this.eventColorCache.set(colorKey, computeTraceEventColor(colorKey));
-            this.eventFadedColorCache.set(colorKey, computeTraceEventColor(colorKey, fadedChroma));
           }
         }
       }
@@ -521,17 +538,18 @@ export default class Panel {
       const inFocusedStack =
         !matchesFilter &&
         focusedEvent?.track.thread === thread &&
-        isFocusedStackEvent(
-          thread,
-          eventIndex,
-          focusedEvent.track.eventIndices[focusedEvent.index],
-          this.focusedAncestorEventIndices
-        );
-      const colorKey = thread.getColorKey(eventIndex);
+        this.focusedStack &&
+        isFocusedStackEvent(eventIndex, this.focusedStack);
       if (matchesFilter) {
-        this.ctx.fillStyle = this.eventColorCache.get(colorKey)!;
+        this.ctx.fillStyle = this.eventColorCache.get(thread.getColorKey(eventIndex))!;
       } else if (inFocusedStack) {
-        this.ctx.fillStyle = this.eventFadedColorCache.get(colorKey)!;
+        const colorKey = thread.getColorKey(eventIndex);
+        let color = this.eventFadedColorCache.get(colorKey);
+        if (!color) {
+          color = computeTraceEventColor(colorKey, this.eventFadedChroma);
+          this.eventFadedColorCache.set(colorKey, color);
+        }
+        this.ctx.fillStyle = color;
       } else {
         this.ctx.fillStyle = this.theme.eventFiltered;
       }

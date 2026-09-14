@@ -1,7 +1,7 @@
 import { ProfileBuilder } from "./compact_trace";
 import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel } from "./trace_viewer_model";
-import { collectFocusedAncestorEventIndices, isFocusedStackEvent } from "./trace_viewer_search";
+import { computeFocusedStack, isFocusedStackEvent } from "./trace_viewer_search";
 
 function makeTraceEvent(overrides: Partial<TraceEvent> & Pick<TraceEvent, "name">): TraceEvent {
   return {
@@ -30,12 +30,11 @@ describe("focused stack", () => {
       (i) => thread.getName(i) === "focused"
     )!;
     const focusedTrackIndex = tracks.findIndex((track) => Array.from(track.eventIndices).includes(focusedEventIndex));
-    const ancestors = collectFocusedAncestorEventIndices(section, focusedEventIndex, focusedTrackIndex);
+    const stack = computeFocusedStack(section, focusedEventIndex, focusedTrackIndex)!;
     const names = Array.from({ length: thread.length }, (_, i) => i)
-      .filter((i) => isFocusedStackEvent(thread, i, focusedEventIndex, ancestors))
+      .filter((i) => isFocusedStackEvent(i, stack))
       .map((i) => thread.getName(i))
       .sort();
-    expect(ancestors.size).toBe(2);
     expect(names).toEqual(expectedNames);
   }
 
@@ -51,7 +50,7 @@ describe("focused stack", () => {
     checkStack(events, ["child", "focused", "parent", "root"]);
   });
 
-  it("preserves the first containing ancestor when spans cross", () => {
+  it("uses the active rendered ancestors when spans cross", () => {
     checkStack(
       [
         makeTraceEvent({ name: "rootA", ts: 0, dur: 100 }),
@@ -61,7 +60,20 @@ describe("focused stack", () => {
         makeTraceEvent({ name: "C", ts: 20, dur: 60 }),
         makeTraceEvent({ name: "focused", ts: 21, dur: 49 }),
       ],
-      ["A", "focused", "rootA"]
+      ["C", "focused", "rootB"]
+    );
+  });
+
+  it("keeps equal-timestamp events in profile stack order", () => {
+    checkStack(
+      [
+        makeTraceEvent({ name: "root", ts: 0, dur: 100 }),
+        makeTraceEvent({ name: "parent", ts: 0, dur: 100 }),
+        makeTraceEvent({ name: "focused", ts: 0, dur: 50 }),
+        makeTraceEvent({ name: "child", ts: 0, dur: 50 }),
+        makeTraceEvent({ name: "sibling", ts: 60, dur: 40 }),
+      ],
+      ["child", "focused", "parent", "root"]
     );
   });
 });

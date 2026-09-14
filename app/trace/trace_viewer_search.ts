@@ -1,57 +1,59 @@
-import { Thread } from "./compact_trace";
-import { SectionModel, TrackModel } from "./trace_viewer_model";
+import { SectionModel } from "./trace_viewer_model";
 
-function eventEnd(track: TrackModel, eventIndex: number): number {
-  return track.thread.ts[eventIndex] + track.thread.dur[eventIndex];
-}
-
-function containsEvent(track: TrackModel, outerIndex: number, innerIndex: number): boolean {
-  return (
-    track.thread.ts[outerIndex] <= track.thread.ts[innerIndex] &&
-    eventEnd(track, outerIndex) >= eventEnd(track, innerIndex)
-  );
-}
+export type FocusedStack = {
+  ancestorEventIndices: Set<number>;
+  // Thread-local half-open range containing the focus and its descendants.
+  firstEventIndex: number;
+  endEventIndex: number;
+};
 
 /**
- * Returns thread-local indices of the first containing ancestor at each depth.
- * Only ancestors are cached: descendants are checked while rendering so focusing
- * a broad span does not allocate a set containing its entire subtree.
+ * Finds the rendered stack using the profile's depth order. At each depth, the
+ * latest event before the focus is its active ancestor. The next event at the
+ * same or a shallower depth ends its subtree, even when spans cross in time.
+ * Binary searches bound navigation work by stack depth, without scanning or
+ * storing every descendant.
  */
-export function collectFocusedAncestorEventIndices(
+export function computeFocusedStack(
   section: SectionModel,
   focusedEventIndex: number,
   focusedTrackIndex: number
-): Set<number> {
-  const ancestors = new Set<number>();
+): FocusedStack | undefined {
   const tracks = section.tracks ?? [];
   const focusedTrack = tracks[focusedTrackIndex];
-  if (!focusedTrack) return ancestors;
-
-  for (let trackIndex = 0; trackIndex < focusedTrackIndex; trackIndex++) {
-    const track = tracks[trackIndex];
-    if (track.thread !== focusedTrack.thread) continue;
-    for (const eventIndex of track.eventIndices) {
-      if (track.thread.ts[eventIndex] > track.thread.ts[focusedEventIndex]) break;
-      if (containsEvent(track, eventIndex, focusedEventIndex)) {
-        ancestors.add(eventIndex);
-        break;
+  if (!focusedTrack) return undefined;
+  const stack: FocusedStack = {
+    ancestorEventIndices: new Set<number>(),
+    firstEventIndex: focusedEventIndex,
+    endEventIndex: focusedTrack.thread.length,
+  };
+  for (let trackIndex = 0; trackIndex <= focusedTrackIndex; trackIndex++) {
+    const indices = tracks[trackIndex].eventIndices;
+    // Track indices are in thread event order, including ties in timestamps.
+    let low = 0;
+    let high = indices.length;
+    while (low < high) {
+      const mid = low + Math.floor((high - low) / 2);
+      if (indices[mid] <= focusedEventIndex) {
+        low = mid + 1;
+      } else {
+        high = mid;
       }
     }
+    if (trackIndex < focusedTrackIndex && low > 0) {
+      stack.ancestorEventIndices.add(indices[low - 1]);
+    }
+    if (low < indices.length) {
+      stack.endEventIndex = Math.min(stack.endEventIndex, indices[low]);
+    }
   }
-  return ancestors;
+  return stack;
 }
 
-/** Whether a thread-local event is the focus, a cached ancestor, or a fully contained descendant. */
-export function isFocusedStackEvent(
-  thread: Thread,
-  eventIndex: number,
-  focusedEventIndex: number,
-  ancestors: ReadonlySet<number>
-): boolean {
-  if (eventIndex === focusedEventIndex || ancestors.has(eventIndex)) return true;
+/** Whether a thread-local event belongs to the focused event's rendered stack. */
+export function isFocusedStackEvent(eventIndex: number, stack: FocusedStack): boolean {
   return (
-    thread.depth[eventIndex] > thread.depth[focusedEventIndex] &&
-    thread.ts[eventIndex] >= thread.ts[focusedEventIndex] &&
-    thread.ts[eventIndex] + thread.dur[eventIndex] <= thread.ts[focusedEventIndex] + thread.dur[focusedEventIndex]
+    stack.ancestorEventIndices.has(eventIndex) ||
+    (eventIndex >= stack.firstEventIndex && eventIndex < stack.endEventIndex)
   );
 }
