@@ -95,6 +95,18 @@ ts_jasmine_node_test(
     ],
 )
 
+ts_jasmine_node_test(
+    name = "trace_viewer_panel_test",
+    srcs = ["trace_viewer_panel_test.ts"],
+    deps = [
+        ":compact_trace",
+        ":trace_events",
+        ":trace_viewer_model",
+        ":trace_viewer_panel",
+        "//app/util:color",
+    ],
+)
+
 ts_library(
     name = "compact_trace",
     srcs = ["compact_trace.ts"],
@@ -123,6 +135,7 @@ ts_library(
         "//app/trace:constants",
         "//app/trace:trace_events",
         "//app/trace:trace_viewer_model",
+        "//app/trace:trace_viewer_search",
         "//app/util:canvas",
         "//app/util:color",
         "//app/util:dom",
@@ -133,5 +146,8 @@ ts_library(
 ts_library(
     name = "trace_viewer_search",
     srcs = ["trace_viewer_search.ts"],
-    deps = ["//app/trace:trace_viewer_model"],
+    deps = [
+        "//app/trace:compact_trace",
+        "//app/trace:trace_viewer_model",
+    ],
 )

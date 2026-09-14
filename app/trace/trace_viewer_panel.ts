@@ -5,6 +5,7 @@ import { truncateDecimals } from "../util/math";
 import * as constants from "./constants";
 import { TraceEvent } from "./trace_events";
 import { LinePlotModel, PanelModel, SectionModel, TrackModel } from "./trace_viewer_model";
+import { isFocusedStackEvent } from "./trace_viewer_search";
 
 type LinePlotColorKey = "lightColor" | "darkColor";
 const FADED_EVENT_OPACITY = 0.45;
@@ -81,7 +82,9 @@ export default class Panel {
 
   // If set, visually highlight this event to indicate that it is the current search match.
   highlightEvent?: { track: TrackModel; index: number };
-  highlightPathEventIndices = new Set<number>();
+  // Thread-local ancestor indices for highlightEvent.track.thread, bounded by stack depth.
+  // Descendants are checked as they render instead of storing the entire subtree.
+  focusedAncestorEventIndices = new Set<number>();
 
   private theme: ThemeColors;
   private eventColorCache = new Map<string, string>();
@@ -496,17 +499,6 @@ export default class Panel {
       let modelWidth = dur[eventIndex];
       if (modelX + modelWidth < xMin) continue;
 
-      const matchesFilter = !lowerFilter || thread.matchesFilter(eventIndex, lowerFilter);
-      const isFocusedPathEvent = !matchesFilter && this.highlightPathEventIndices.has(eventIndex);
-      const colorKey = thread.getColorKey(eventIndex);
-      if (matchesFilter) {
-        this.ctx.fillStyle = this.eventColorCache.get(colorKey)!;
-      } else if (isFocusedPathEvent) {
-        this.ctx.fillStyle = this.eventFadedColorCache.get(colorKey)!;
-      } else {
-        this.ctx.fillStyle = this.theme.eventFiltered;
-      }
-
       // TODO: only apply the horizontal gap if there's an event just after us.
       let width = modelWidth * scale - constants.EVENT_HORIZONTAL_GAP;
       const x = modelX * scale - scrollX;
@@ -523,6 +515,26 @@ export default class Panel {
         continue;
       }
       lastRenderedPixelRight = pixelRight;
+
+      const matchesFilter = !lowerFilter || thread.matchesFilter(eventIndex, lowerFilter);
+      const focusedEvent = this.highlightEvent;
+      const inFocusedStack =
+        !matchesFilter &&
+        focusedEvent?.track.thread === thread &&
+        isFocusedStackEvent(
+          thread,
+          eventIndex,
+          focusedEvent.track.eventIndices[focusedEvent.index],
+          this.focusedAncestorEventIndices
+        );
+      const colorKey = thread.getColorKey(eventIndex);
+      if (matchesFilter) {
+        this.ctx.fillStyle = this.eventColorCache.get(colorKey)!;
+      } else if (inFocusedStack) {
+        this.ctx.fillStyle = this.eventFadedColorCache.get(colorKey)!;
+      } else {
+        this.ctx.fillStyle = this.theme.eventFiltered;
+      }
 
       this.ctx.fillRect(x, y, width, constants.TRACK_HEIGHT);
 

@@ -1,7 +1,7 @@
 import { ProfileBuilder } from "./compact_trace";
 import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel } from "./trace_viewer_model";
-import { collectFocusedTracePathEventIndices } from "./trace_viewer_search";
+import { collectFocusedAncestorEventIndices, isFocusedStackEvent } from "./trace_viewer_search";
 
 function makeTraceEvent(overrides: Partial<TraceEvent> & Pick<TraceEvent, "name">): TraceEvent {
   return {
@@ -19,7 +19,26 @@ function makeTraceEvent(overrides: Partial<TraceEvent> & Pick<TraceEvent, "name"
   };
 }
 
-describe("collectFocusedTracePathEventIndices", () => {
+describe("focused stack", () => {
+  function checkStack(events: TraceEvent[], expectedNames: string[]) {
+    const builder = new ProfileBuilder();
+    for (const event of events) builder.addEvent(event);
+    const section = buildTraceViewerModel(builder.build()).panels[0].sections[0];
+    const tracks = section.tracks ?? [];
+    const thread = tracks[0].thread;
+    const focusedEventIndex = Array.from({ length: thread.length }, (_, i) => i).find(
+      (i) => thread.getName(i) === "focused"
+    )!;
+    const focusedTrackIndex = tracks.findIndex((track) => Array.from(track.eventIndices).includes(focusedEventIndex));
+    const ancestors = collectFocusedAncestorEventIndices(section, focusedEventIndex, focusedTrackIndex);
+    const names = Array.from({ length: thread.length }, (_, i) => i)
+      .filter((i) => isFocusedStackEvent(thread, i, focusedEventIndex, ancestors))
+      .map((i) => thread.getName(i))
+      .sort();
+    expect(ancestors.size).toBe(2);
+    expect(names).toEqual(expectedNames);
+  }
+
   it("includes ancestors and descendants of the focused event", () => {
     const root = makeTraceEvent({ name: "root", ts: 0, dur: 100 });
     const parent = makeTraceEvent({ name: "parent", ts: 10, dur: 70 });
@@ -29,27 +48,20 @@ describe("collectFocusedTracePathEventIndices", () => {
     const partialOverlap = makeTraceEvent({ name: "partialOverlap", ts: 55, dur: 20 });
     const events = [root, parent, focused, partialOverlap, sibling, child];
 
-    const builder = new ProfileBuilder();
-    for (const event of events) {
-      builder.addEvent(event);
-    }
-    const section = buildTraceViewerModel(builder.build()).panels[0].sections[0];
-    const tracks = section.tracks ?? [];
-    const thread = tracks[0].thread;
-    const eventIndexByName = (name: string) => {
-      for (let i = 0; i < thread.length; i++) {
-        if (thread.getName(i) === name) return i;
-      }
-      throw new Error(`event not found: ${name}`);
-    };
-    const focusedEventIndex = eventIndexByName("focused");
-    const focusedTrackIndex = tracks.findIndex((track) => Array.from(track.eventIndices).includes(focusedEventIndex));
+    checkStack(events, ["child", "focused", "parent", "root"]);
+  });
 
-    const focusedPathEventIndices = collectFocusedTracePathEventIndices(section, focusedEventIndex, focusedTrackIndex);
-    const focusedPathEventNames = Array.from(focusedPathEventIndices)
-      .map((eventIndex) => thread.getName(eventIndex))
-      .sort();
-
-    expect(focusedPathEventNames).toEqual(["child", "focused", "parent", "root"]);
+  it("preserves the first containing ancestor when spans cross", () => {
+    checkStack(
+      [
+        makeTraceEvent({ name: "rootA", ts: 0, dur: 100 }),
+        makeTraceEvent({ name: "A", ts: 1, dur: 90 }),
+        makeTraceEvent({ name: "rootB", ts: 10, dur: 110 }),
+        makeTraceEvent({ name: "B", ts: 11, dur: 50 }),
+        makeTraceEvent({ name: "C", ts: 20, dur: 60 }),
+        makeTraceEvent({ name: "focused", ts: 21, dur: 49 }),
+      ],
+      ["A", "focused", "rootA"]
+    );
   });
 });

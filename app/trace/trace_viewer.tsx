@@ -14,7 +14,7 @@ import EventHovercard from "./event_hovercard";
 import { TraceEvent } from "./trace_events";
 import { buildTraceViewerModel, panelScrollHeight } from "./trace_viewer_model";
 import Panel from "./trace_viewer_panel";
-import { collectFocusedTracePathEventIndices } from "./trace_viewer_search";
+import { collectFocusedAncestorEventIndices } from "./trace_viewer_search";
 
 export interface TraceViewProps {
   profile: Profile;
@@ -404,7 +404,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     const matchEventIndices = TypedArrayBuilder.of(Uint32Array);
     if (this.panels.length) {
       this.panels[0].highlightEvent = undefined;
-      this.panels[0].highlightPathEventIndices.clear();
+      this.panels[0].focusedAncestorEventIndices.clear();
     }
 
     // Find all matches for the new filter.
@@ -453,7 +453,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
       // If there are no matches, ensure any existing highlight is cleared.
       if (this.panels.length) {
         this.panels[0].highlightEvent = undefined;
-        this.panels[0].highlightPathEventIndices.clear();
+        this.panels[0].focusedAncestorEventIndices.clear();
       }
       this.searchIndex = -1;
       this.setState({ currentMatch: 0 });
@@ -491,7 +491,7 @@ export default class TraceViewer extends React.Component<TraceViewProps, TraceVi
     // Highlight the matched event so it is visually selected no matter what.
     const eventsPanel = this.panels[0];
     eventsPanel.highlightEvent = { track, index: eventIndex };
-    eventsPanel.highlightPathEventIndices = collectFocusedTracePathEventIndices(
+    eventsPanel.focusedAncestorEventIndices = collectFocusedAncestorEventIndices(
       this.model.panels[0].sections[sectionIndex],
       threadEventIndex,
       trackIndex
