@@ -35,11 +35,6 @@ var Commands = []*Command{
 		Help: "Analyzes the dependency graph.",
 	},
 	{
-		Name:    "ask",
-		Help:    "Asks for suggestions about your last invocation.",
-		Aliases: []string{"wtf", "huh"},
-	},
-	{
 		Name: "box",
 		Help: "Starts a remote Firecracker VM box and opens a session in it.",
 	},

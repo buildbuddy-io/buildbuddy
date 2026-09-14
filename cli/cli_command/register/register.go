@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/agent"
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
-	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/box"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/detect"
@@ -50,7 +49,6 @@ var implementationsByCommandName = map[string]implementation{
 	"add":             {handler: add.HandleAdd, flags: add.Flags},
 	"agent":           {handler: agent.HandleAgent, flags: agentflags.SharedAgentFlags},
 	"analyze":         {handler: analyze.HandleAnalyze, flags: analyze.Flags},
-	"ask":             {handler: ask.HandleAsk, flags: ask.Flags},
 	"box":             {handler: box.HandleBox, flags: box.Flags},
 	"detect":          {handler: detect.HandleDetect, flags: detect.Flags},
 	"download":        {handler: download.HandleDownload, flags: download.Flags},
