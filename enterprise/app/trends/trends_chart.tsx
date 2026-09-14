@@ -54,7 +54,7 @@ interface Props {
 interface State {
   refAreaLeft?: string | number;
   refAreaRight?: string | number;
-  hiddenSeries: ReadonlySet<number>;
+  hiddenSeriestises: ReadonlySet<number>;
 }
 
 interface TrendsChartTooltipProps extends Partial<Pick<TooltipContentProps<any, any>, "active" | "payload">> {
@@ -122,7 +122,7 @@ function TrendsChartTooltip({ active, payload, formatLabel, shouldRender, dataSe
 }
 
 export default class TrendsChartComponent extends React.Component<Props, State> {
-  state: State = { hiddenSeries: new Set() };
+  state: State = { hiddenSeriestises: new Set() };
 
   onLegendClick(payload: LegendPayload, seriesIndex: number, event: React.MouseEvent) {
     event.stopPropagation();
@@ -130,8 +130,8 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     const legendIndex = this.props.dataSeries.findIndex((s) => s.name === name);
     if (legendIndex >= 0) {
       this.setState((state) => ({
-        hiddenSeries: getHiddenSeriesAfterLegendClick(
-          state.hiddenSeries,
+        hiddenSeriestises: getHiddenSeriesAfterLegendClick(
+          state.hiddenSeriestises,
           legendIndex,
           this.props.dataSeries.length,
           event.ctrlKey || event.metaKey || event.shiftKey
@@ -192,7 +192,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
           dot={false}
           dataKey={ds.extractValue}
           isAnimationActive={false}
-          hide={this.state.hiddenSeries.has(seriesIndex)}
+          hide={this.state.hiddenSeriestises.has(seriesIndex)}
           stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
         />
       );
@@ -207,7 +207,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         name={ds.name}
         dataKey={ds.extractValue}
         isAnimationActive={false}
-        hide={this.state.hiddenSeries.has(seriesIndex)}
+        hide={this.state.hiddenSeriestises.has(seriesIndex)}
         stackId={ds.stackId}
         fill={getResolvedColor(color)}>
         {this.props.data.map((date, datumIndex) => (
@@ -265,7 +265,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
                 <TrendsChartTooltip
                   formatLabel={this.props.formatHoverXAxisLabel}
                   shouldRender={() => this.shouldRenderTooltip()}
-                  dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index))}
+                  dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeriestises.has(index))}
                 />
               }
             />
