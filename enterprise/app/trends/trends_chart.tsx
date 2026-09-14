@@ -1,4 +1,4 @@
-import React from "react";
+import React, { MouseEvent, MouseEventHandler } from "react";
 
 import {
   Area,
@@ -6,6 +6,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  Coordinate,
   Dot,
   Legend,
   LegendPayload,
@@ -17,6 +18,9 @@ import {
   ScatterPointItem,
   Tooltip,
   TooltipContentProps,
+  TooltipProps,
+  useChartHeight,
+  useChartWidth,
   useYAxisScale,
   XAxis,
   YAxis,
@@ -31,11 +35,18 @@ export enum SeriesType {
   AREA,
 }
 
+export interface ClickCoordinateInfo {
+  x: number;
+  y: number;
+  chartWidth: number;
+  chartHeight: number;
+}
+
 export interface ChartDataSeries {
   name: string;
   formatHoverValue?: (datum: number) => string | JSX.Element;
   extractValue: (datum: number) => any | null;
-  onClick?: (datum: number) => void;
+  onClick?: (datum: number, e: MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
   type: SeriesType;
   usesSecondaryAxis?: boolean;
   stackId?: string;
@@ -62,6 +73,8 @@ interface Props {
   primaryYAxis: ChartYAxis;
   secondaryYAxis?: ChartYAxis;
   hideLegend?: boolean;
+  customTooltip?: JSX.Element;
+  onClick?: MouseEventHandler<SVGGraphicsElement>;
 
   onZoomSelection?: (startDate: number, endDate: number) => void;
 }
@@ -77,6 +90,14 @@ interface TrendsChartTooltipProps
   formatLabel: (datum: any) => string;
   shouldRender: () => boolean;
   dataSeries: ChartDataSeries[];
+}
+
+interface RenderedDataSeriesProps {
+  ds: ChartDataSeries;
+  hidden: boolean;
+  highlight: boolean;
+  data: number[];
+  zoomFn?: Object;
 }
 
 export enum ChartColor {
@@ -169,6 +190,91 @@ function TrendsChartTooltip({
   );
 }
 
+function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDataSeriesProps) {
+  const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
+  const clickHandler = ds.onClick;
+  const chartWidth = useChartWidth() ?? 0;
+  const chartHeight = useChartHeight() ?? 0;
+  switch (ds.type) {
+    case SeriesType.BAR:
+      const color = ds.color ?? ChartColor.GREEN;
+      <Bar
+        className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(color) : ""}
+        yAxisId={axis}
+        name={ds.name}
+        dataKey={ds.extractValue}
+        isAnimationActive={false}
+        hide={hidden}
+        stackId={ds.stackId}
+        fill={getResolvedColor(color)}>
+        {data.map((date, datumIndex) => (
+          <Cell
+            cursor={clickHandler ? "pointer" : "default"}
+            key={`cell-${datumIndex}`}
+            onClick={
+              !zoomFn && clickHandler
+                ? (e) => clickHandler(date, e, { x: 0, y: 0, chartWidth, chartHeight })
+                : undefined
+            }
+          />
+        ))}
+      </Bar>;
+    case SeriesType.LINE:
+      return (
+        <Line
+          activeDot={false}
+          yAxisId={axis}
+          name={ds.name}
+          dot={false}
+          dataKey={ds.extractValue}
+          isAnimationActive={false}
+          hide={hidden}
+          connectNulls={true}
+          focusable={false}
+          stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
+          {...(highlight && { strokeWidth: 3 })}
+        />
+      );
+    case SeriesType.SCATTER:
+      const scatterColor = getResolvedColor(ds.color ?? ChartColor.BLUE);
+      return (
+        <Scatter
+          yAxisId={axis}
+          name={ds.name}
+          dataKey={ds.extractValue}
+          isAnimationActive={false}
+          hide={hidden}
+          stroke={scatterColor}
+          fill={"#fff"}
+          fillOpacity={1}
+          onClick={(d: ScatterPointItem, _, e) => {
+            if (clickHandler) {
+              clickHandler(d.payload, e, { x: d.cx ?? 0, y: d.cy ?? 0, chartWidth, chartHeight });
+            }
+          }}
+          shape={<Dot r={3} />}
+          activeShape={<Dot r={3} fill={scatterColor} fillOpacity={0.8} />}
+        />
+      );
+    case SeriesType.AREA:
+      return (
+        <Area
+          yAxisId={axis}
+          name={ds.name}
+          dataKey={ds.extractValue}
+          isAnimationActive={false}
+          hide={hidden}
+          stroke={"rgba(0,0,0,0)"}
+          opacity={0.2}
+          connectNulls={true}
+          activeDot={false}
+          focusable={false}
+        />
+      );
+  }
+  return <></>;
+}
+
 export default class TrendsChartComponent extends React.Component<Props, State> {
   state: State = { hiddenSeries: new Set() };
 
@@ -186,6 +292,14 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         ),
       }));
     }
+  }
+
+  componentDidMount(): void {
+    console.log("tc mount...");
+  }
+
+  componentWillUnmount(): void {
+    console.log("tc unmount..");
   }
 
   onMouseDown(e: MouseHandlerDataParam) {
@@ -233,81 +347,6 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     return !Boolean(this.state.refAreaLeft);
   }
 
-  renderDataSeries(ds: ChartDataSeries, seriesIndex: number): JSX.Element {
-    const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
-    switch (ds.type) {
-      case SeriesType.BAR:
-        const color = ds.color ?? ChartColor.GREEN;
-        <Bar
-          className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(color) : ""}
-          yAxisId={axis}
-          name={ds.name}
-          dataKey={ds.extractValue}
-          isAnimationActive={false}
-          hide={this.state.hiddenSeries.has(seriesIndex)}
-          stackId={ds.stackId}
-          fill={getResolvedColor(color)}>
-          {this.props.data.map((date, datumIndex) => (
-            <Cell
-              cursor={ds.onClick ? "pointer" : "default"}
-              key={`cell-${datumIndex}`}
-              onClick={!this.props.onZoomSelection && ds.onClick ? ds.onClick.bind(this, date) : undefined}
-            />
-          ))}
-        </Bar>;
-      case SeriesType.LINE:
-        return (
-          <Line
-            activeDot={{ pointerEvents: "none" }}
-            yAxisId={axis}
-            name={ds.name}
-            dot={false}
-            dataKey={ds.extractValue}
-            isAnimationActive={false}
-            hide={this.state.hiddenSeries.has(seriesIndex)}
-            connectNulls={true}
-            stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
-            {...(this.props.highlightSeries === ds.name && { strokeWidth: 3 })}
-          />
-        );
-      case SeriesType.SCATTER:
-        const scatterColor = getResolvedColor(ds.color ?? ChartColor.BLUE);
-        return (
-          <Scatter
-            yAxisId={axis}
-            name={ds.name}
-            dataKey={ds.extractValue}
-            isAnimationActive={false}
-            hide={this.state.hiddenSeries.has(seriesIndex)}
-            stroke={scatterColor}
-            fill={"#fff"}
-            fillOpacity={1}
-            onClick={(d: ScatterPointItem) => {
-              if (ds.onClick) {
-                ds.onClick(d.payload);
-              }
-            }}
-            shape={<Dot r={3} />}
-            activeShape={<Dot r={3} fill={scatterColor} fillOpacity={0.8} />}
-          />
-        );
-      case SeriesType.AREA:
-        return (
-          <Area
-            yAxisId={axis}
-            name={ds.name}
-            dataKey={ds.extractValue}
-            isAnimationActive={false}
-            hide={this.state.hiddenSeries.has(seriesIndex)}
-            stroke={"rgba(0,0,0,0)"}
-            opacity={0.2}
-            connectNulls={true}
-          />
-        );
-    }
-    return <></>;
-  }
-
   render() {
     const hasSecondaryAxis = this.props.secondaryYAxis !== undefined;
 
@@ -320,6 +359,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
+            onClick={(_, e) => this.props.onClick && this.props.onClick(e)}
             accessibilityLayer={false}
             data={this.props.data}
             onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
@@ -353,16 +393,32 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               allowDecimals={this.props.secondaryYAxis?.allowDecimals}
               width={84}
             />
-            <Tooltip
-              content={
-                <TrendsChartTooltip
-                  formatLabel={this.props.formatHoverXAxisLabel}
-                  shouldRender={() => this.shouldRenderTooltip()}
-                  dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index))}
+            {this.props.customTooltip ?? (
+              <Tooltip
+                cursor={false}
+                content={
+                  <TrendsChartTooltip
+                    formatLabel={this.props.formatHoverXAxisLabel}
+                    shouldRender={() => this.shouldRenderTooltip()}
+                    dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index))}
+                  />
+                }
+              />
+            )}
+
+            {this.props.dataSeries.map((ds, index) => {
+              const hidden = this.state.hiddenSeries.has(index);
+              const highlight = this.props.highlightSeries === ds.name;
+              return (
+                <RenderedDataSeries
+                  ds={ds}
+                  hidden={hidden}
+                  highlight={highlight}
+                  zoomFn={this.props.onZoomSelection}
+                  data={this.props.data}
                 />
-              }
-            />
-            {this.props.dataSeries.map(this.renderDataSeries.bind(this))}
+              );
+            })}
             {this.state.refAreaLeft && this.state.refAreaRight ? (
               <ReferenceArea
                 yAxisId="primary"

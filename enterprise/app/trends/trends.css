@@ -73,7 +73,6 @@
   box-shadow:
     0 3px 6px var(--color-shadow-tooltip),
     0 3px 6px var(--color-shadow-tooltip-alt);
-  pointer-events: none;
   z-index: 1;
 }
 
