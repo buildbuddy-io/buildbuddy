@@ -1,4 +1,5 @@
 import React from "react";
+import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { grp } from "../../proto/group_ts_proto";
 import { invocation_status } from "../../proto/invocation_status_ts_proto";
 import { invocation } from "../../proto/invocation_ts_proto";
@@ -12,6 +13,39 @@ function testUser(): User {
   return {
     selectedGroup: new grp.Group({ suggestionPreference: grp.SuggestionPreference.ENABLED }),
   } as User;
+}
+
+function suggestionModel(version?: string, options: Record<string, string> = {}, remote = true) {
+  const model = new InvocationModel(
+    new invocation.Invocation({
+      event: version
+        ? [
+            new invocation.InvocationEvent({
+              buildEvent: new build_event_stream.BuildEvent({
+                started: new build_event_stream.BuildStarted({ buildToolVersion: version }),
+              }),
+            }),
+          ]
+        : [],
+    })
+  );
+  if (remote) model.optionsMap.set("remote_cache", "grpcs://cache.example.com");
+  for (const [name, value] of Object.entries(options)) model.optionsMap.set(name, value);
+  return model;
+}
+
+function suggestionText(suggestions: ReturnType<typeof getSuggestions>) {
+  const text = (node: React.ReactNode): string => {
+    if (typeof node === "string" || typeof node === "number") return String(node);
+    if (Array.isArray(node)) return node.map(text).join("");
+    if (!React.isValidElement<{ children?: React.ReactNode; items?: React.ReactNode[] }>(node)) return "";
+    return text(node.props.children) + text(node.props.items || []);
+  };
+  return suggestions.map((suggestion) => text(suggestion.message)).join("\n");
+}
+
+function hasSuggestion(suggestions: ReturnType<typeof getSuggestions>, flag: string) {
+  return suggestionText(suggestions).includes(flag);
 }
 
 describe("getSuggestions", () => {
@@ -223,5 +257,297 @@ describe("getSuggestions", () => {
     // the likely cause here.
     expect(suggestions.length).toBe(1);
     expect(suggestions[0].reason).toBe("Shown because the build finished with a disconnected status.");
+  });
+
+  describe("version-gated remote cache suggestions", () => {
+    function getRemoteSuggestions(version?: string, options: Record<string, string> = {}, remote = true) {
+      return getSuggestions({
+        model: suggestionModel(version, options, remote),
+        buildLogs: "ordinary build logs",
+        user: testUser(),
+      });
+    }
+
+    it("uses the diagnostic log flags supported by each Bazel release", () => {
+      const cases = [
+        { version: "0.12.0", grpc: undefined, compact: undefined },
+        { version: "0.13.0", grpc: "--experimental_remote_grpc_log=bazel-remote-grpc.log", compact: undefined },
+        { version: "6.1.0", grpc: "--experimental_remote_grpc_log=bazel-remote-grpc.log", compact: undefined },
+        { version: "6.2.0", grpc: "--remote_grpc_log=bazel-remote-grpc.log", compact: undefined },
+        { version: "7.0.0", grpc: "--remote_grpc_log=bazel-remote-grpc.log", compact: undefined },
+        {
+          version: "7.1.0",
+          grpc: "--remote_grpc_log=bazel-remote-grpc.log",
+          compact: "--experimental_execution_log_compact_file=execution_log.binpb.zst",
+        },
+        {
+          version: "7.4.0",
+          grpc: "--remote_grpc_log=bazel-remote-grpc.log",
+          compact: "--execution_log_compact_file=execution_log.binpb.zst",
+        },
+      ];
+
+      for (const testCase of cases) {
+        const text = suggestionText(getRemoteSuggestions(testCase.version));
+        expect(text.includes("--experimental_remote_grpc_log=bazel-remote-grpc.log")).toBe(
+          testCase.grpc === "--experimental_remote_grpc_log=bazel-remote-grpc.log"
+        );
+        expect(text.includes("--remote_grpc_log=bazel-remote-grpc.log")).toBe(
+          testCase.grpc === "--remote_grpc_log=bazel-remote-grpc.log"
+        );
+        expect(text.includes("--experimental_execution_log_compact_file=execution_log.binpb.zst")).toBe(
+          testCase.compact === "--experimental_execution_log_compact_file=execution_log.binpb.zst"
+        );
+        expect(text.includes("--execution_log_compact_file=execution_log.binpb.zst")).toBe(
+          testCase.compact === "--execution_log_compact_file=execution_log.binpb.zst"
+        );
+      }
+    });
+
+    it("does not recommend diagnostic logs that are already captured or explicitly configured", () => {
+      const suggestions = getRemoteSuggestions("7.4.0", {
+        remote_grpc_log: "existing.log",
+        execution_log_compact_file: "existing.binpb.zst",
+      });
+
+      expect(hasSuggestion(suggestions, "remote_grpc_log=bazel-remote-grpc.log")).toBe(false);
+      expect(hasSuggestion(suggestions, "execution_log_compact_file=execution_log.binpb.zst")).toBe(false);
+    });
+
+    it("does not suggest gRPC logging for HTTP cache endpoints while retaining the local execution log", () => {
+      const suggestions = getRemoteSuggestions("7.4.0", { remote_cache: "https://cache.example.com" });
+
+      expect(hasSuggestion(suggestions, "--remote_grpc_log=bazel-remote-grpc.log")).toBe(false);
+      expect(hasSuggestion(suggestions, "--execution_log_compact_file=execution_log.binpb.zst")).toBe(true);
+    });
+
+    it("only suggests lost-input rewinding on supported releases where it is not the default", () => {
+      for (const [version, supported, defaultEnabled] of [
+        ["8.6.0", false, false],
+        ["8.7.0", false, false],
+        ["8.7.1", false, false],
+        ["8.8.0rc1", true, false],
+        ["8.8.0", true, false],
+        ["8.8.1", true, false],
+        ["8.9.0", true, false],
+        ["8.10.0", true, false],
+        ["9.0.0", false, false],
+        ["9.1.0", false, false],
+        ["9.2.0", false, false],
+        ["9.2.1", false, false],
+        ["9.3.0rc1", true, true],
+        ["9.3.0", true, true],
+        ["9.3.1", true, true],
+        ["9.4.0", true, true],
+        ["9.10.0", true, true],
+        ["10.0.0rc1", true, true],
+        ["10.0.0", true, true],
+        ["11.0.0", true, true],
+      ] as const) {
+        expect(hasSuggestion(getRemoteSuggestions(version), "--rewind_lost_inputs"))
+          .withContext(`${version}, absent`)
+          .toBe(supported && !defaultEnabled);
+        expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "false" }), "--rewind_lost_inputs"))
+          .withContext(`${version}, disabled`)
+          .toBe(supported && !defaultEnabled);
+        expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "true" }), "--rewind_lost_inputs"))
+          .withContext(`${version}, enabled`)
+          .toBe(false);
+      }
+    });
+
+    it("recommends chunking for supported Bazel releases using a gRPC cache", () => {
+      for (const [version, expected] of [
+        ["8.6.0", false],
+        ["8.7.0", true],
+        ["8.8.0", true],
+        ["9.0.0", false],
+        ["9.1.0", true],
+        ["9.2.0", true],
+        ["10.0.0", true],
+        ["10.0.0-pre.20251105.2", false],
+      ] as const) {
+        expect(hasSuggestion(getRemoteSuggestions(version), "--experimental_remote_cache_chunking")).toBe(expected);
+      }
+    });
+
+    it("does not suggest chunking when already configured or without a gRPC cache", () => {
+      for (const value of ["1", "0", "false"]) {
+        expect(
+          hasSuggestion(
+            getRemoteSuggestions("9.2.0", { experimental_remote_cache_chunking: value }),
+            "--experimental_remote_cache_chunking"
+          )
+        ).toBe(false);
+      }
+      expect(
+        hasSuggestion(
+          getRemoteSuggestions("9.2.0", { remote_cache: "https://cache.example.com" }),
+          "--experimental_remote_cache_chunking"
+        )
+      ).toBe(false);
+      expect(hasSuggestion(getRemoteSuggestions("9.2.0", {}, false), "--experimental_remote_cache_chunking")).toBe(
+        false
+      );
+    });
+
+    it("recognizes explicit boolean values while respecting opt-outs on default-enabled releases", () => {
+      for (const [version, suggestWhenDisabled] of [
+        ["8.8.0", true],
+        ["8.9.0", true],
+        ["9.3.0rc1", false],
+        ["9.3.0", false],
+        ["9.4.0", false],
+        ["10.0.0", false],
+        ["11.0.0", false],
+      ] as const) {
+        for (const value of ["0", "false", "no", "f", "n", "FALSE"]) {
+          expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: value }), "--rewind_lost_inputs"))
+            .withContext(`${version}, ${value}`)
+            .toBe(suggestWhenDisabled);
+        }
+        for (const value of ["1", "true", "yes", "t", "y"]) {
+          expect(
+            hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: value }), "--rewind_lost_inputs")
+          ).toBe(false);
+        }
+      }
+    });
+
+    it("does not infer rewinding support or defaults from rolling versions", () => {
+      for (const version of ["8.8.0-pre.20250501.1", "9.3.0-pre.20260818.1", "10.0.0-pre.20260818.1"]) {
+        expect(
+          hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "false" }), "--rewind_lost_inputs")
+        ).toBe(false);
+      }
+    });
+
+    it("suggests the experimental concurrent changes guard from Bazel 6.0 until the lite default", () => {
+      for (const [version, expected] of [
+        [undefined, false],
+        ["unknown", false],
+        ["0.10.1", false],
+        ["0.11.0", false],
+        ["5.4.1", false],
+        ["6.0.0rc1", true],
+        ["6.0.0", true],
+        ["6.5.0", true],
+        ["7.6.0", true],
+        ["8.0.0", true],
+        ["8.2.0", true],
+        ["8.2.1", true],
+        ["8.3.0rc1", false],
+        ["8.3.0", false],
+        ["8.3.1", false],
+        ["8.10.0", false],
+        ["9.0.0", false],
+        ["9.3.0", false],
+        ["10.0.0", false],
+        ["11.0.0", false],
+        ["8.0.0-pre.20240101.1", false],
+      ] as const) {
+        for (const options of [{}, { experimental_guard_against_concurrent_changes: "false" }] as Record<
+          string,
+          string
+        >[]) {
+          const suggestions = getRemoteSuggestions(version, options);
+          expect(hasSuggestion(suggestions, "--experimental_guard_against_concurrent_changes"))
+            .withContext(`${version}, ${JSON.stringify(options)}`)
+            .toBe(expected);
+          expect(hasSuggestion(suggestions, "--guard_against_concurrent_changes")).toBe(false);
+        }
+      }
+    });
+
+    it("recognizes configured concurrent changes guards without overriding the lite default", () => {
+      for (const name of ["experimental_guard_against_concurrent_changes", "guard_against_concurrent_changes"]) {
+        for (const value of ["0", "false", "no", "f", "n", "off", "FALSE", "1", "true", "yes", "t", "y", "lite"]) {
+          const options = { [name]: value };
+          expect(
+            hasSuggestion(getRemoteSuggestions("8.2.1", options), "--experimental_guard_against_concurrent_changes")
+          )
+            .withContext(`${name}=${value}`)
+            .toBe(["0", "false", "no", "f", "n", "off", "FALSE"].includes(value));
+          for (const version of ["8.3.0rc1", "8.3.0", "9.0.0", "10.0.0"]) {
+            expect(hasSuggestion(getRemoteSuggestions(version, options), "guard_against_concurrent_changes"))
+              .withContext(`${version}, ${name}=${value}`)
+              .toBe(false);
+          }
+        }
+      }
+    });
+
+    it("only recommends remote cache async when Bazel 8+ explicitly disables it", () => {
+      const cases: Array<{ version: string; options: Record<string, string>; expected: boolean }> = [
+        { version: "7.4.0", options: { remote_cache_async: "0" }, expected: false },
+        { version: "8.0.0", options: {}, expected: false },
+        { version: "8.0.0", options: { remote_cache_async: "0" }, expected: true },
+        { version: "9.2.0", options: { remote_cache_async: "false" }, expected: true },
+        { version: "9.2.0", options: { remote_cache_async: "no" }, expected: true },
+        { version: "9.2.0", options: { remote_cache_async: "true" }, expected: false },
+        { version: "9.2.0", options: { experimental_remote_cache_async: "false" }, expected: true },
+        { version: "8.0.0", options: { remote_cache_async: "1" }, expected: false },
+        { version: "8.0.0", options: { experimental_remote_cache_async: "0" }, expected: true },
+      ];
+      for (const testCase of cases) {
+        const suggestions = getRemoteSuggestions(testCase.version, testCase.options);
+        expect(hasSuggestion(suggestions, "--remote_cache_async")).toBe(testCase.expected);
+      }
+    });
+
+    it("does not recommend rewinding when it is already enabled", () => {
+      expect(hasSuggestion(getRemoteSuggestions("8.8.0", { rewind_lost_inputs: "1" }), "--rewind_lost_inputs")).toBe(
+        false
+      );
+    });
+
+    it("does not recommend compact execution logging when a legacy log option or uploaded execution log exists", () => {
+      for (const option of ["execution_log_binary_file", "execution_log_json_file"]) {
+        expect(
+          hasSuggestion(getRemoteSuggestions("7.4.0", { [option]: "existing.log" }), "execution_log_compact_file")
+        ).toBe(false);
+      }
+
+      const model = suggestionModel("7.4.0");
+      model.buildToolLogs = {
+        log: [{ name: "execution_log.binpb.zst", uri: "bytestream://cache.example.com/execution_log.binpb.zst" }],
+      } as build_event_stream.BuildToolLogs;
+      const suggestions = getSuggestions({ model, buildLogs: "ordinary build logs", user: testUser() });
+      expect(hasSuggestion(suggestions, "execution_log_compact_file")).toBe(false);
+    });
+
+    it("suppresses remote cache suggestions for an unknown version, local builds, and disabled feature gate", () => {
+      const original = capabilities.config.expandedSuggestionsEnabled;
+      try {
+        expect(hasSuggestion(getRemoteSuggestions(), "--remote_grpc_log")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions(), "--rewind_lost_inputs")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions("8.2.1", {}, false), "guard_against_concurrent_changes")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions("8.8.0", {}, false), "--rewind_lost_inputs")).toBe(false);
+
+        const nonBazelModel = suggestionModel("8.8.0");
+        nonBazelModel.invocation.role = "NINJA";
+        expect(
+          hasSuggestion(
+            getSuggestions({ model: nonBazelModel, buildLogs: "ordinary build logs", user: testUser() }),
+            "--rewind_lost_inputs"
+          )
+        ).toBe(false);
+
+        const nonBazelGuardModel = suggestionModel("8.2.1");
+        nonBazelGuardModel.invocation.role = "NINJA";
+        expect(
+          hasSuggestion(
+            getSuggestions({ model: nonBazelGuardModel, buildLogs: "ordinary build logs", user: testUser() }),
+            "guard_against_concurrent_changes"
+          )
+        ).toBe(false);
+
+        capabilities.config.expandedSuggestionsEnabled = false;
+        expect(hasSuggestion(getRemoteSuggestions("8.2.1"), "guard_against_concurrent_changes")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions("8.8.0"), "--rewind_lost_inputs")).toBe(false);
+      } finally {
+        capabilities.config.expandedSuggestionsEnabled = original;
+      }
+    });
   });
 });
