@@ -152,19 +152,22 @@ func (rw *instrumentedWriter) Write(p []byte) (int, error) {
 
 func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	rw := &instrumentedWriter{ResponseWriter: w}
+	// Deferred so that bytes already sent are still counted when the handler
+	// aborts a partially written response with panic(http.ErrAbortHandler).
+	defer func() {
+		provider := "unknown"
+		region := "unknown"
+		ip := clientip.Get(req.Context())
+		dest, err := trafficstats.Classify(ip)
+		if err == nil {
+			provider, region = dest.Provider, dest.Region
+		}
+		metrics.OCIRegistryEgressBytes.With(prometheus.Labels{
+			metrics.DestinationProviderLabel: provider,
+			metrics.DestinationRegionLabel:   region,
+		}).Add(float64(rw.bytesWritten))
+	}()
 	r.handleRegistryRequest(rw, req)
-
-	provider := "unknown"
-	region := "unknown"
-	ip := clientip.Get(req.Context())
-	dest, err := trafficstats.Classify(ip)
-	if err == nil {
-		provider, region = dest.Provider, dest.Region
-	}
-	metrics.OCIRegistryEgressBytes.With(prometheus.Labels{
-		metrics.DestinationProviderLabel: provider,
-		metrics.DestinationRegionLabel:   region,
-	}).Add(float64(rw.bytesWritten))
 }
 
 // The OCI registry is intended to be a read-through cache for public OCI images
@@ -471,15 +474,23 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 		http.Error(w, fmt.Sprintf("Error parsing resolved digest in %q: %s", resolvedRef.Context(), err), http.StatusInternalServerError)
 		return
 	}
-	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	responseStarted, err := fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
 	if err == nil {
 		return // Successfully served request from cache.
 	}
-	if !status.IsNotFoundError(err) {
-		log.CtxErrorf(ctx, "error fetching image %q from the cache: %s", resolvedRef.Context(), err)
-		http.Error(w, fmt.Sprintf("Error fetching image %q from the cache: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
-		return
+	if responseStarted {
+		// The status and content length are already committed, so there is no
+		// way to turn this into an HTTP error. Abort the response instead:
+		// net/http closes the connection (or resets the HTTP/2 stream) without
+		// terminating the body, so the client sees a failed read rather than a
+		// short or corrupt blob. Relying on a short body alone would not be
+		// enough, both because middleware may re-encode the response and drop
+		// our Content-Length, and because a corrupt cache entry is only
+		// detected after the full declared length has been written.
+		log.CtxWarningf(ctx, "error streaming image %q from the cache after starting HTTP response: %s", resolvedRef.Context(), err)
+		panic(http.ErrAbortHandler)
 	}
+	log.CtxWarningf(ctx, "error fetching image %q from the cache; falling back to upstream: %s", resolvedRef.Context(), err)
 
 	// We can only dedupe upstream requests when no auth is involved.
 	dedupFetches := inreq.Header.Get(headerAuthorization) == ""
@@ -502,9 +513,12 @@ func (r *registry) handleBlobsOrManifestsRequest(ctx context.Context, w http.Res
 	}
 
 	// The blob should now be in the cache, serve it from there.
-	err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
+	responseStarted, err = fetchFromCacheWriteToResponse(ctx, w, bsClient, acClient, resolvedRef.Context(), hash, ociResourceType, writeBody, ref)
 	if err != nil {
 		log.CtxErrorf(ctx, "error serving %q from cache after fetch: %s", resolvedRef.Context(), err)
+		if responseStarted {
+			panic(http.ErrAbortHandler)
+		}
 		http.Error(w, fmt.Sprintf("Error serving %q: %s", resolvedRef.Context(), err), http.StatusServiceUnavailable)
 	}
 }
@@ -537,46 +551,86 @@ func (r *registry) fetchAndCache(ctx context.Context, inreq *http.Request, bsCli
 	return ocicache.WriteBlobOrManifestToCacheAndWriter(ctx, upresp.Body, io.Discard, bsClient, acClient, resolvedRef.Context(), ociResourceType, hash, contentType, contentLength, originalRef)
 }
 
-func writeManifestMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash ctr.Hash, mc *ocipb.OCIManifestContent) {
+func writeManifestMetadataToResponse(w http.ResponseWriter, hash ctr.Hash, mc *ocipb.OCIManifestContent) {
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.Itoa(len(mc.GetRaw())))
 	w.Header().Add(headerContentType, mc.GetContentType())
 }
 
-func writeBlobMetadataToResponse(ctx context.Context, w http.ResponseWriter, hash ctr.Hash, blobMetadata *ocipb.OCIBlobMetadata) {
+func writeBlobMetadataToResponse(w http.ResponseWriter, hash ctr.Hash, blobMetadata *ocipb.OCIBlobMetadata) {
 	w.Header().Add(headerDockerContentDigest, hash.String())
 	w.Header().Add(headerContentLength, strconv.FormatInt(blobMetadata.GetContentLength(), 10))
 	w.Header().Add(headerContentType, blobMetadata.GetContentType())
 }
 
-func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef ctrname.Reference) error {
+// blobResponseWriter delays writing blob response headers until the response
+// body is ready to be written. Committing the status and headers only once we
+// have bytes to send lets the caller fall back to the upstream registry when a
+// cache read fails, instead of being stuck with a half-written 200 response.
+//
+// started reports whether the response has been committed, and must stay
+// accurate for every path that can commit it.
+type blobResponseWriter struct {
+	http.ResponseWriter
+	hash         ctr.Hash
+	blobMetadata *ocipb.OCIBlobMetadata
+	started      bool
+}
+
+func (w *blobResponseWriter) start() {
+	if w.started {
+		return
+	}
+	w.started = true
+	writeBlobMetadataToResponse(w.ResponseWriter, w.hash, w.blobMetadata)
+	w.ResponseWriter.WriteHeader(http.StatusOK)
+}
+
+func (w *blobResponseWriter) Write(p []byte) (int, error) {
+	w.start()
+	return w.ResponseWriter.Write(p)
+}
+
+func (w *blobResponseWriter) WriteHeader(statusCode int) {
+	w.started = true
+	w.ResponseWriter.WriteHeader(statusCode)
+}
+
+func fetchFromCacheWriteToResponse(ctx context.Context, w http.ResponseWriter, bsClient bspb.ByteStreamClient, acClient repb.ActionCacheClient, repo ctrname.Repository, hash ctr.Hash, ociResourceType ocipb.OCIResourceType, writeBody bool, originalRef ctrname.Reference) (bool, error) {
 	if ociResourceType == ocipb.OCIResourceType_MANIFEST {
 		mc, err := ocicache.FetchManifestFromAC(ctx, acClient, repo, hash, originalRef)
 		if err != nil {
-			return err
+			return false, err
 		}
-		writeManifestMetadataToResponse(ctx, w, hash, mc)
+		writeManifestMetadataToResponse(w, hash, mc)
 		w.WriteHeader(http.StatusOK)
 		if !writeBody {
-			return nil
+			return true, nil
 		}
 		if _, err := io.Copy(w, bytes.NewReader(mc.GetRaw())); err != nil {
-			return err
+			return true, err
 		}
-		return nil
+		return true, nil
 	}
 
 	blobMetadata, err := ocicache.FetchBlobMetadataFromCache(ctx, bsClient, acClient, repo, hash)
 	if err != nil {
-		return err
+		return false, err
 	}
-	writeBlobMetadataToResponse(ctx, w, hash, blobMetadata)
-	w.WriteHeader(http.StatusOK)
-
-	if !writeBody {
-		return nil
+	bw := &blobResponseWriter{
+		ResponseWriter: w,
+		hash:           hash,
+		blobMetadata:   blobMetadata,
 	}
-	return ocicache.FetchBlobFromCache(ctx, w, bsClient, hash, blobMetadata.GetContentLength())
+	if writeBody {
+		if err := ocicache.FetchBlobFromCache(ctx, bw, bsClient, hash, blobMetadata.GetContentLength()); err != nil {
+			return bw.started, err
+		}
+	}
+	// Commit the response even if we never wrote a body, so that HEAD requests
+	// and empty blobs still get a complete HTTP 200 response.
+	bw.start()
+	return true, nil
 }
 
 // resolveTagToDigest resolves a manifest tag to its digest, using an
