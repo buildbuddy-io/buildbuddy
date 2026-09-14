@@ -83,7 +83,6 @@ import (
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -2411,13 +2410,6 @@ func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usa
 func (s *BuildBuddyServer) SendNotification(ctx context.Context, req *npb.SendNotificationRequest) (*npb.SendNotificationResponse, error) {
 	if ns := s.env.GetNotificationService(); ns != nil {
 		return ns.SendNotification(ctx, req)
-	}
-	return nil, status.UnimplementedError("Not implemented")
-}
-
-func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
-	if us := s.env.GetSuggestionService(); us != nil {
-		return us.GetSuggestion(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }
