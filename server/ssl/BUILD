@@ -27,6 +27,9 @@ go_test(
     srcs = ["ssl_test.go"],
     deps = [
         ":ssl",
+        "//server/interfaces",
+        "//server/real_environment",
+        "@com_github_jonboulle_clockwork//:clockwork",
         "@com_github_stretchr_testify//require",
     ],
 )

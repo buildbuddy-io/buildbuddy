@@ -1,16 +1,26 @@
 package ssl_test
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"flag"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 )
 
@@ -147,4 +157,61 @@ func TestLoadCertificateKey_EncryptedNotSupported(t *testing.T) {
 	_, err := ssl.LoadCertificateKey("", string(keyPEM))
 	require.Error(t, err)
 	require.ErrorContains(t, err, "encrypted private keys are not supported")
+}
+
+type certificateHealthChecker struct {
+	interfaces.HealthChecker
+	shutdown func(context.Context) error
+}
+
+func (h *certificateHealthChecker) RegisterShutdownFunction(f interfaces.CheckerFunc) {
+	h.shutdown = f
+}
+
+func TestFileCertificateReload(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
+	writeCertificate := func() tls.Certificate {
+		cert, key, err := ssl.GenerateCert(pkix.Name{CommonName: "localhost"}, nil, time.Hour)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(certPath, []byte(cert), 0600))
+		require.NoError(t, os.WriteFile(keyPath, []byte(key), 0600))
+		pair, err := tls.X509KeyPair([]byte(cert), []byte(key))
+		require.NoError(t, err)
+		return pair
+	}
+	first := writeCertificate()
+	for name, value := range map[string]string{
+		"ssl.enable_ssl": "true", "ssl.cert_file": certPath, "ssl.key_file": keyPath,
+		"ssl.cert_reload_interval": "10s",
+	} {
+		previous := flag.Lookup(name).Value.String()
+		require.NoError(t, flag.Set(name, value))
+		t.Cleanup(func() { require.NoError(t, flag.Set(name, previous)) })
+	}
+	hc := &certificateHealthChecker{}
+	env := real_environment.NewRealEnv(hc)
+	clock := clockwork.NewFakeClock()
+	env.SetClock(clock)
+	service, err := ssl.NewSSLService(env)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, hc.shutdown(context.Background())) })
+	config, _ := service.ConfigureTLS(nil)
+	get := func() *tls.Certificate {
+		cert, err := config.GetCertificate(&tls.ClientHelloInfo{})
+		require.NoError(t, err)
+		return cert
+	}
+	original := get()
+	require.Equal(t, first.Certificate, original.Certificate)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, clock.BlockUntilContext(ctx, 1))
+	second := writeCertificate()
+	require.Equal(t, first.Certificate, get().Certificate)
+	clock.Advance(10 * time.Second)
+	require.Eventually(t, func() bool {
+		return string(get().Certificate[0]) == string(second.Certificate[0])
+	}, time.Second, time.Millisecond)
+	require.Equal(t, first.Certificate, original.Certificate, "previously returned certificates remain unchanged")
 }
