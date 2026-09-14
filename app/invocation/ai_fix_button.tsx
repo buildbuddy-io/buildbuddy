@@ -17,7 +17,6 @@ import errorService from "../errors/error_service";
 import { copyToClipboard } from "../util/clipboard";
 import { RemoteRunnerAgent, supportsRemoteRun, triggerRemoteRun } from "../util/remote_runner";
 import InvocationModel from "./invocation_model";
-import LinkGithubRepoModal from "./link_github_repo_modal";
 
 export interface AIFixButtonProps {
   model: InvocationModel;
@@ -26,13 +25,11 @@ export interface AIFixButtonProps {
 
 type State = {
   isDialogOpen: boolean;
-  isLinkRepoModalOpen: boolean;
 };
 
 export default class AIFixButton extends React.Component<AIFixButtonProps, State> {
   state: State = {
     isDialogOpen: false,
-    isLinkRepoModalOpen: false,
   };
 
   private getCommand(agent: RemoteRunnerAgent) {
@@ -41,15 +38,10 @@ export default class AIFixButton extends React.Component<AIFixButtonProps, State
 
   private async fixWithAI(agent: RemoteRunnerAgent) {
     try {
+      // `bb agent fix` doesn't require a checked out repo, so if the repo isn't
+      // linked, skip the checkout rather than requiring workflows to be set up.
       const repoURL = this.props.model.getRepo();
-      if (!repoURL) {
-        alertService.error("A repo URL is required.");
-        return;
-      }
-      if (!(await supportsRemoteRun(repoURL))) {
-        this.setState({ isLinkRepoModalOpen: true });
-        return;
-      }
+      const canCheckout = Boolean(repoURL) && (await supportsRemoteRun(repoURL));
       await triggerRemoteRun(
         this.props.model,
         this.getCommand(agent),
@@ -58,7 +50,7 @@ export default class AIFixButton extends React.Component<AIFixButtonProps, State
           ["EstimatedComputeUnits", "3"],
           ["env-secrets", agent === "claude" ? "ANTHROPIC_API_KEY" : "CODEX_API_KEY"],
         ]),
-        [],
+        canCheckout ? [] : ["--skip_auto_checkout=true"],
         "agent fix",
         agent
       );
@@ -135,10 +127,6 @@ export default class AIFixButton extends React.Component<AIFixButtonProps, State
             </DialogFooter>
           </Dialog>
         </Modal>
-        <LinkGithubRepoModal
-          isOpen={this.state.isLinkRepoModalOpen}
-          onRequestClose={() => this.setState({ isLinkRepoModalOpen: false })}
-        />
       </>
     );
   }

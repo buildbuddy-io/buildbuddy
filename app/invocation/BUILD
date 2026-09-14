@@ -796,7 +796,6 @@ ts_library(
         "//app/components/modal",
         "//app/errors:error_service",
         "//app/invocation:invocation_model",
-        "//app/invocation:link_github_repo_modal",
         "//app/util:clipboard",
         "//app/util:remote_runner",
     ],
