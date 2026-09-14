@@ -14,6 +14,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pebble_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/crypter_key_cache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
@@ -348,6 +349,71 @@ func TestDecryptWrongDigest(t *testing.T) {
 	require.NoError(t, err)
 	_, err = io.ReadAll(d)
 	require.ErrorContains(t, err, "authentication failed")
+}
+
+func TestCustomerDeploymentScopedKeyIndependence(t *testing.T) {
+	env, kms := getEnv(t)
+	customerKeyURI := generateKMSKey(t, kms, "customerKey")
+
+	groupID := "GR123"
+	keyID := "EK123"
+	clock := clockwork.NewRealClock()
+	createKey(t, env, clock, keyID, groupID, customerKeyURI)
+
+	ctx := context.Background()
+
+	backendCK := crypter_key_cache.CacheKey{GroupID: groupID}
+	customerCK := crypter_key_cache.CacheKey{GroupID: groupID, Scope: crypter_key_cache.KeyScopeCustomerDeployment}
+
+	backendKey, backendMD, err := refreshKey(ctx, backendCK, env.GetDBHandle(), env.GetKMS())
+	require.NoError(t, err)
+	customerKey, customerMD, err := refreshKey(ctx, customerCK, env.GetDBHandle(), env.GetKMS())
+	require.NoError(t, err)
+
+	// Both scopes are derived from the same key version...
+	require.Equal(t, keyID, backendMD.GetEncryptionKeyId())
+	require.Equal(t, keyID, customerMD.GetEncryptionKeyId())
+	require.EqualValues(t, 1, backendMD.GetVersion())
+	require.EqualValues(t, 1, customerMD.GetVersion())
+	// ...but the derived keys must be independent.
+	require.NotEqual(t, backendKey, customerKey)
+
+	// Looking up a specific key version must respect the scope too.
+	versionedBackendCK := crypter_key_cache.CacheKey{GroupID: groupID, KeyID: keyID, Version: 1}
+	versionedBackendKey, _, err := refreshKey(ctx, versionedBackendCK, env.GetDBHandle(), env.GetKMS())
+	require.NoError(t, err)
+	require.Equal(t, backendKey, versionedBackendKey)
+	versionedCustomerCK := crypter_key_cache.CacheKey{GroupID: groupID, KeyID: keyID, Version: 1, Scope: crypter_key_cache.KeyScopeCustomerDeployment}
+	versionedCustomerKey, _, err := refreshKey(ctx, versionedCustomerCK, env.GetDBHandle(), env.GetKMS())
+	require.NoError(t, err)
+	require.Equal(t, customerKey, versionedCustomerKey)
+
+	testData := make([]byte, 1000)
+	_, err = rand.Read(testData)
+	require.NoError(t, err)
+
+	encryptDecrypt := func(encKey, decKey []byte, md *sgpb.EncryptionMetadata) error {
+		out := bytes.NewBuffer(nil)
+		e, err := crypter.NewEncryptor(ctx, &crypter.DerivedKey{Key: encKey, Metadata: md}, dummyDigest, ioutil.NewCustomCommitWriteCloser(out), groupID, 1024)
+		require.NoError(t, err)
+		testdata.WriteInRandomChunks(t, e, testData)
+		d, err := crypter.NewDecryptor(ctx, &crypter.DerivedKey{Key: decKey, Metadata: md}, dummyDigest, io.NopCloser(bytes.NewReader(out.Bytes())), groupID, 1024)
+		require.NoError(t, err)
+		decrypted, err := io.ReadAll(d)
+		if err != nil {
+			return err
+		}
+		require.Equal(t, testData, decrypted)
+		return nil
+	}
+
+	// Same-scope decryption succeeds.
+	require.NoError(t, encryptDecrypt(backendKey, backendKey, backendMD))
+	require.NoError(t, encryptDecrypt(customerKey, customerKey, customerMD))
+	// Content encrypted under one scope must not be decryptable under the
+	// other.
+	require.ErrorContains(t, encryptDecrypt(backendKey, customerKey, backendMD), "authentication failed")
+	require.ErrorContains(t, encryptDecrypt(customerKey, backendKey, customerMD), "authentication failed")
 }
 
 func TestKeyLookup(t *testing.T) {
