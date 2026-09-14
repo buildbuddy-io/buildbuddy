@@ -1,4 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load(
+    "//enterprise/server/remote_execution/containers/firecracker/testdata:defs.bzl",
+    "BUSYBOX_IMAGE",
+    "DOCKER_DIND_IMAGE",
+    "DOCKER_ENABLED_IMAGE",
+    "DOCKER_HUB_BUSYBOX_IMAGE",
+    "UBUNTU_20_04_IMAGE",
+    "UBUNTU_24_04_IMAGE",
+    "WORKFLOWS_IMAGE",
+)
 
 package(default_visibility = ["//enterprise:__subpackages__"])
 
@@ -127,14 +137,22 @@ go_test(
         # TODO: turn this on by default once the 6.1 kernel is used everywhere
         # "--executor.firecracker_enable_linux_6_1=true",
     ],
+    data = [
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:docker_dind.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4",
+        "//enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4",
+        "@busybox",
+    ],
     exec_properties = {
         "test.Pool": "bare",
+        # Firecracker startup and timing tests are sensitive to contention when
+        # too many shards share a bare-metal executor.
+        "test.EstimatedComputeUnits": "10",
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
-        # These tests can get pretty expensive when running on a cold executor
-        # because of OCI image conversion. Size the task manually to avoid OOM.
-        # TODO: include test ext4 images as deps to avoid conversion.
-        "test.EstimatedComputeUnits": "10",
         "test.no-sandbox": "",  # Firecracker is not compatible with Bazel's sandbox environment
     },
     shard_count = 30,
@@ -144,11 +162,28 @@ go_test(
     target_compatible_with = [
         "@platforms//os:linux",
     ],
+    x_defs = {
+        "busyboxImage": BUSYBOX_IMAGE,
+        "busyboxOCIImageRlocationpath": "$(rlocationpath @busybox)",
+        "dockerDindImage": DOCKER_DIND_IMAGE,
+        "dockerHubBusyboxImage": DOCKER_HUB_BUSYBOX_IMAGE,
+        "imageWithDockerInstalled": DOCKER_ENABLED_IMAGE,
+        "imageWithDockerV28Installed": UBUNTU_24_04_IMAGE,
+        "ubuntuImage": UBUNTU_20_04_IMAGE,
+        "workflowsImage": WORKFLOWS_IMAGE,
+        "busyboxExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4)",
+        "dockerDindExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_dind.ext4)",
+        "dockerEnabledExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4)",
+        "ubuntu20_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4)",
+        "ubuntu24_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4)",
+        "workflowsExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4)",
+    },
     deps = [
         ":firecracker",
         "//enterprise/server/action_cache_server_proxy",
         "//enterprise/server/byte_stream_server_proxy",
         "//enterprise/server/clientidentity",
+        "//enterprise/server/oci/ociconv",
         "//enterprise/server/oci/ociregistry",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/copy_on_write",
@@ -192,6 +227,7 @@ go_test(
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
+        "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_protobuf//testing/protocmp",
         "@org_golang_x_sync//errgroup",
