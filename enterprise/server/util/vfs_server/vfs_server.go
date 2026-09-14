@@ -496,9 +496,11 @@ func (p *Server) updateLayout(ctx context.Context, inputTree *repb.Tree, digestF
 	var walkDir func(dir *repb.Directory, parentNode *fsNode) error
 	walkDir = func(dir *repb.Directory, parentNode *fsNode) error {
 		numDirs++
+		parentNode.mu.Lock()
 		if parentNode.children == nil && (len(dir.GetDirectories()) > 0 || len(dir.GetFiles()) > 0 || len(dir.GetSymlinks()) > 0) {
 			parentNode.children = make(map[string]*fsNode)
 		}
+		parentNode.mu.Unlock()
 		for _, childDirNode := range dir.GetDirectories() {
 			childDir, ok := dirMap[digest.NewKey(childDirNode.Digest)]
 			if !ok {

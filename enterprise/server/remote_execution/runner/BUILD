@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
+# gazelle:go_test file
+
 package(default_visibility = ["//enterprise:__subpackages__"])
 
 go_library(
@@ -86,7 +88,6 @@ go_test(
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/containers/bare",
         "//enterprise/server/remote_execution/executor/oomkiller",
-        "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/workspace",
         "//enterprise/server/tasksize",
@@ -99,7 +100,6 @@ go_test(
         "//server/metrics",
         "//server/real_environment",
         "//server/remote_cache/cachetools",
-        "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
@@ -115,4 +115,35 @@ go_test(
         "@com_github_stretchr_testify//require",
         "@org_golang_google_protobuf//encoding/protojson",
     ],
+)
+
+go_test(
+    name = "runner_vfs_test",
+    size = "small",
+    srcs = ["runner_vfs_test.go"],
+    embed = [":runner"],
+    exec_properties = {
+        "test.workload-isolation-type": "firecracker",
+        "test.EstimatedComputeUnits": "2",
+    },
+    tags = ["docker"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "//enterprise/server/remote_execution/commandutil",
+            "//enterprise/server/remote_execution/container",
+            "//enterprise/server/remote_execution/containers/bare",
+            "//enterprise/server/remote_execution/filecache",
+            "//proto:remote_execution_go_proto",
+            "//server/remote_cache/digest",
+            "//server/testutil/testauth",
+            "//server/testutil/testcache",
+            "//server/testutil/testenv",
+            "//server/testutil/testfs",
+            "//server/util/status",
+            "//server/util/testing/flags",
+            "@com_github_stretchr_testify//require",
+        ],
+        "//conditions:default": [],
+    }),
 )
