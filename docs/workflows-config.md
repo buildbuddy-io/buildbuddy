@@ -684,6 +684,10 @@ pushed.
   `reopened`, and base-branch edits. Set this if you only want the Workflow
   to run on specific actions - for example, `[ "ready_for_review" ]` to run only when
   a draft PR is marked ready for review.
+- **`skip_drafts`** (`boolean`, default: `false`): Whether to skip running the
+  workflow while the PR is a draft. If `types` is unset, the workflow also runs
+  when a draft PR is marked ready for review, so that it runs once the PR is
+  ready. If `types` is set, only the listed types trigger the workflow.
 - **`merge_with_base`** (`boolean`, default: `true`): Whether to merge the
   base branch into the PR branch before running the workflow action. This
   can help ensure that the changes in the PR branch do not conflict with

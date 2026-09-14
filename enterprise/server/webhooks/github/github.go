@@ -239,6 +239,7 @@ func parsePullRequestOrReview(event HasPullRequestEvent) (*interfaces.WebhookDat
 		IsTargetRepoPublic:      !event.GetPullRequest().GetBase().GetRepo().GetPrivate(),
 		TargetBranch:            event.GetPullRequest().GetBase().GetRef(),
 		PullRequestAuthor:       event.GetPullRequest().GetUser().GetLogin(),
+		PullRequestIsDraft:      event.GetPullRequest().GetDraft(),
 	}, nil
 }
 
