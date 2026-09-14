@@ -21,6 +21,7 @@ go_library(
         "@org_golang_google_grpc//experimental",
         "@org_golang_google_grpc//mem",
         "@org_golang_google_grpc//stats",
+        "@org_golang_google_grpc//status",
     ],
 )
 

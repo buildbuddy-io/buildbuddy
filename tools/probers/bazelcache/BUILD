@@ -21,10 +21,7 @@ go_library(
         "@io_opentelemetry_go_otel//codes",
         "@io_opentelemetry_go_otel_trace//:trace",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
-        "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//stats",
-        "@org_golang_google_grpc//status",
         "@org_golang_x_sync//errgroup",
     ],
 )

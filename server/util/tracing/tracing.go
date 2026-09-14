@@ -100,6 +100,16 @@ func IsForcedTrace(ctx context.Context) bool {
 	return isForcedTrace(ctx, *ignoreForcedTracingHeader)
 }
 
+// IsOutgoingForcedTrace reports whether an outgoing request's force-tracing header is honored.
+func IsOutgoingForcedTrace(ctx context.Context) bool {
+	if *ignoreForcedTracingHeader {
+		return false
+	}
+	md, _ := metadata.FromOutgoingContext(ctx)
+	values := md.Get(traceHeader)
+	return len(values) > 0 && values[0] == forceTraceHeaderValue
+}
+
 func isForcedTrace(ctx context.Context, ignoreHeader bool) bool {
 	if ignoreHeader {
 		return false

@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/experimental"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/stats"
+	grpcstatus "google.golang.org/grpc/status"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
@@ -26,7 +27,7 @@ import (
 const GRPCMaxSizeBytes = int64(4 * 1000 * 1000)
 
 var OTELGRPCMessageEventsEnabled = flag.Bool("grpc_otel_message_events_enabled", true,
-	"Record up to 64 server payload trace events per RPC when x-buildbuddy-trace is force and app.ignore_forced_tracing_header is false, with totals and an omitted-event summary for longer streams. Also requests client message events from otelgrpc; otelgrpc 0.67+ does not emit those events.")
+	"Record up to 64 payload trace events per RPC and client lifecycle events when incoming or (for clients) outgoing x-buildbuddy-trace is force and app.ignore_forced_tracing_header is false, with totals and an omitted-event summary for longer streams.")
 
 const maxMessageEvents = 64
 
@@ -35,9 +36,18 @@ func WithTracingMessageEvents(handler stats.Handler) stats.Handler {
 	return &tracingMessageHandler{Handler: handler}
 }
 
-type tracingMessageHandler struct{ stats.Handler }
+// WithTracingClientMessageEvents adds bounded message diagnostics and lifecycle events to force-traced client RPCs.
+func WithTracingClientMessageEvents(handler stats.Handler) stats.Handler {
+	return &tracingMessageHandler{Handler: handler, client: true}
+}
+
+type tracingMessageHandler struct {
+	stats.Handler
+	client bool
+}
 type messageTraceKey struct{}
 type messageTrace struct {
+	client                           bool
 	span                             trace.Span
 	mu                               sync.Mutex
 	received, sent                   int64
@@ -48,9 +58,9 @@ type messageTrace struct {
 
 func (h *tracingMessageHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) context.Context {
 	ctx = h.Handler.TagRPC(ctx, info)
-	if tracing.IsForcedTrace(ctx) {
+	if tracing.IsForcedTrace(ctx) || (h.client && tracing.IsOutgoingForcedTrace(ctx)) {
 		if span := trace.SpanFromContext(ctx); span.IsRecording() {
-			ctx = context.WithValue(ctx, messageTraceKey{}, &messageTrace{span: span})
+			ctx = context.WithValue(ctx, messageTraceKey{}, &messageTrace{span: span, client: h.client})
 		}
 	}
 	return ctx
@@ -66,6 +76,37 @@ func (h *tracingMessageHandler) HandleRPC(ctx context.Context, event stats.RPCSt
 func (m *messageTrace) record(event stats.RPCStats) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.client {
+		var name string
+		var attrs []attribute.KeyValue
+		switch e := event.(type) {
+		case *stats.Begin:
+			name = "grpc.begin"
+			attrs = append(attrs, attribute.Bool("transparent_retry", e.IsTransparentRetryAttempt))
+		case *stats.DelayedPickComplete:
+			name = "grpc.connection_selected"
+		case *stats.OutHeader:
+			name = "grpc.out_header"
+			if e.LocalAddr != nil {
+				attrs = append(attrs, attribute.String("local_addr", e.LocalAddr.String()))
+			}
+			if e.RemoteAddr != nil {
+				attrs = append(attrs, attribute.String("remote_addr", e.RemoteAddr.String()))
+			}
+		case *stats.InHeader:
+			name = "grpc.in_header"
+		case *stats.InTrailer:
+			name = "grpc.in_trailer"
+		case *stats.OutTrailer:
+			name = "grpc.out_trailer"
+		case *stats.End:
+			name = "grpc.end"
+			attrs = append(attrs, attribute.String("grpc_code", grpcstatus.Code(e.Error).String()))
+		}
+		if name != "" {
+			m.span.AddEvent(name, trace.WithAttributes(attrs...))
+		}
+	}
 	var name string
 	var size, wireSize int
 	switch e := event.(type) {
