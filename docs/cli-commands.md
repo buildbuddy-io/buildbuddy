@@ -52,7 +52,7 @@ bb agent fix \
   --effort=high \
   <INVOCATION_ID>
 
- bb agent fix \
+bb agent fix \
   --agent=claude \
   --model=claude-opus-5 \
   --effort=low \
@@ -63,8 +63,11 @@ bb agent fix \
 
 `bb agent analyze-profile` analyzes a Bazel timing profile uploaded by a BuildBuddy invocation. It produces a detailed report with recommendations for improving build performance.
 
+The command accepts an invocation ID or invocation URL:
+
 ```bash
 bb agent analyze-profile <INVOCATION_ID>
+bb agent analyze-profile https://app.buildbuddy.io/invocation/<INVOCATION_ID>
 ```
 
 #### Prerequisites
@@ -79,12 +82,12 @@ bb agent analyze-profile <INVOCATION_ID>
 The agent reruns the invocation's original Bazel command to reproduce the failure, inspects the failure output and relevant source code, applies a minimal fix, and reruns the command to verify the fix is valid.
 
 When run locally, the changes are applied to the current working tree.
-When run remotely, the changes are uploaded to the 'Artifacts' tab of the invocation.
+When run remotely, the diffset is uploaded to the 'Artifacts' tab of the remote `agent fix` run. It can be [fetched from the invocation](/docs/remote-runner-features#fetching-artifacts-programmatically) and applied to a local workspace using `git apply <DIFF_FILE>`.
 
 #### Usage
 
 ```bash
-# Fix every failing target in the invocation.
+# Fix the error log from the invocation.
 bb agent fix <INVOCATION_ID>
 
 # Fix only a single failing target.
@@ -92,6 +95,9 @@ bb agent fix <INVOCATION_ID> //foo:bar_test
 
 # Fix only the failing test cases that match a test filter.
 bb agent fix <INVOCATION_ID> //foo:bar_test --test_filter=TestBaz
+
+# Run the command remotely.
+bb remote --script='bb agent fix <INVOCATION_ID>'
 ```
 
 #### Prerequisites
