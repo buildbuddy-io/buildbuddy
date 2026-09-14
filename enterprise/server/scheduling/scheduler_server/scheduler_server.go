@@ -1274,6 +1274,10 @@ type SchedulerServer struct {
 	// executors.
 	detector *upgrade.Detector
 
+	// Limits checkTaskAccess logging to one line per task owner group per
+	// interval.
+	checkTaskAccessLogLimiter *perKeyLogLimiter
+
 	versionMu           sync.Mutex
 	newestVersion       *semver.Version
 	newestVersionExpiry time.Time
@@ -1361,6 +1365,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
+		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -2053,7 +2058,6 @@ type leaseMessage struct {
 	err error
 }
 
-// TODO(vadim): we should verify that the executor is authorized to read the task
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
 	ctx := stream.Context()
 	lastCheckin := time.Now()
@@ -2063,10 +2067,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	leaseID := ""
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
-	executorID := "unknown"
-	if p, ok := peer.FromContext(ctx); ok {
-		executorID = p.Addr.String()
-	}
+	executorID := peerAddress(ctx)
 
 	// If we've exited our event loop and the task is still claimed, then
 	// the worker did not finish properly and we should re-enqueue it.
@@ -2148,17 +2149,24 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		if !claimed {
 			log.CtxDebugf(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
+			task, err := s.readTask(ctx, req.GetTaskId())
+			if err != nil {
+				if status.IsNotFoundError(err) {
+					log.CtxInfof(ctx, "LeaseTask attempt failed: task does not exist")
+				} else {
+					log.CtxWarningf(ctx, "LeaseTask error reading task %s", err)
+				}
+				return err
+			}
+			if err := s.checkTaskAccess(ctx, task, executorID); err != nil {
+				return err
+			}
 			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)
 				return err
 			}
 			claimed = true
-			task, err := s.readTask(ctx, req.GetTaskId())
-			if err != nil {
-				log.CtxErrorf(ctx, "LeaseTask error reading task %s", err.Error())
-				return err
-			}
 
 			log.CtxInfof(ctx, "LeaseTask task successfully claimed by executor %q", executorID)
 
@@ -2264,6 +2272,96 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 	}
 
+	return nil
+}
+
+// checkTaskAccessExperiment is a boolean experiment that controls whether
+// requests failing checkTaskAccess are rejected. It defaults to false, in
+// which case mismatches are only logged.
+const checkTaskAccessExperiment = "remote_execution.task_access_check"
+
+func (s *SchedulerServer) taskAccessCheckEnforced(ctx context.Context, taskGroupID string) bool {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, checkTaskAccessExperiment, false, experiments.WithContext("group_id", taskGroupID))
+}
+
+// checkTaskAccessLogInterval bounds how often checkTaskAccess logs about a
+// given task owner group.
+const checkTaskAccessLogInterval = time.Minute
+
+// perKeyLogLimiter allows one log line per key per interval.
+type perKeyLogLimiter struct {
+	clock    clockwork.Clock
+	interval time.Duration
+
+	mu sync.Mutex
+	// Last time a log line was allowed, by key.
+	last map[string]time.Time
+}
+
+func newPerKeyLogLimiter(clock clockwork.Clock, interval time.Duration) *perKeyLogLimiter {
+	return &perKeyLogLimiter{
+		clock:    clock,
+		interval: interval,
+		last:     make(map[string]time.Time),
+	}
+}
+
+// allow reports whether a log line for the given key should be emitted now
+// and, if so, records that it was.
+func (l *perKeyLogLimiter) allow(key string) bool {
+	now := l.clock.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if t, ok := l.last[key]; ok && now.Sub(t) < l.interval {
+		return false
+	}
+	l.last[key] = now
+	return true
+}
+
+// peerAddress returns the network address of the RPC caller, for logging.
+func peerAddress(ctx context.Context) string {
+	if p, ok := peer.FromContext(ctx); ok {
+		return p.Addr.String()
+	}
+	return "unknown"
+}
+
+// checkTaskAccess checks that an executor leasing or re-enqueueing a task
+// presents the task owner's identity.
+//
+// Mismatches are always logged. A mismatch is only rejected if
+// checkTaskAccessExperiment is enabled for the task owner's group.
+func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTask, executorID string) error {
+	taskGroupID := task.metadata.GetTaskGroupId()
+	if taskGroupID == "" || taskGroupID == interfaces.AuthAnonymousUser {
+		return nil
+	}
+
+	var mismatchErr error
+	if user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		mismatchErr = status.PermissionDeniedErrorf("request for task %q is not authenticated as the task owner (executors must send the task JWT with lease requests): %s", task.taskID, err)
+	} else if user.GetGroupID() != taskGroupID {
+		mismatchErr = status.PermissionDeniedErrorf("request for task %q is authenticated as group %q, which does not own the task", task.taskID, user.GetGroupID())
+	} else {
+		return nil
+	}
+
+	enforced := s.taskAccessCheckEnforced(ctx, taskGroupID)
+	if s.checkTaskAccessLogLimiter.allow(taskGroupID) {
+		if enforced {
+			log.CtxWarningf(ctx, "Rejected request from executor %q for task owned by group %q: %s", executorID, taskGroupID, mismatchErr)
+		} else {
+			log.CtxWarningf(ctx, "Request from executor %q does not match task owner group %q (not enforced): %s", executorID, taskGroupID, mismatchErr)
+		}
+	}
+	if enforced {
+		return mismatchErr
+	}
 	return nil
 }
 
@@ -2819,6 +2917,14 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 		return nil, status.FailedPreconditionError("lease id is required")
 	}
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
+	task, err := s.readTask(ctx, req.GetTaskId())
+	if err != nil {
+		log.CtxWarningf(ctx, "ReEnqueueTask failed to read task %q: %s", req.GetTaskId(), err)
+		return nil, err
+	}
+	if err := s.checkTaskAccess(ctx, task, peerAddress(ctx)); err != nil {
+		return nil, err
+	}
 	reconnectToken := ""
 	if err := s.reEnqueueTask(ctx, req.GetTaskId(), req.GetLeaseId(), reconnectToken, probesPerTask, req.GetReason()); err != nil {
 		log.CtxErrorf(ctx, "ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)
