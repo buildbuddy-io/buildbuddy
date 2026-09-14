@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -13,4 +13,10 @@ go_library(
         "//cli/workspace",
         "@com_github_manifoldco_promptui//:promptui",
     ],
+)
+
+go_test(
+    name = "add_test",
+    srcs = ["add_test.go"],
+    embed = [":add"],
 )

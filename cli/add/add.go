@@ -2,6 +2,7 @@ package add
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,6 +18,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/manifoldco/promptui"
 )
+
+// ErrAlreadyExists indicates that a dependency is already present, possibly at a
+// different version or installed manually.
+var ErrAlreadyExists = errors.New("dependency already exists")
 
 var (
 	flags = flag.NewFlagSet("add", flag.ContinueOnError)
@@ -37,7 +42,7 @@ const (
 	registryEndpoint = "https://registry.build/%s/data.json"
 )
 
-func HandleAdd(args []string) (int, error) {
+func HandleAdd(args []string) (exitCode int, err error) {
 	if err := arg.ParseFlagSet(flags, args); err != nil {
 		if err == flag.ErrHelp {
 			log.Print(usage)
@@ -70,7 +75,11 @@ func HandleAdd(args []string) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); err == nil && closeErr != nil {
+			exitCode, err = 1, closeErr
+		}
+	}()
 
 	if strings.HasPrefix(strings.ToUpper(filepath.Base(f.Name())), "MODULE") {
 		if transitive {
@@ -99,17 +108,17 @@ func addToWorkspace(f *os.File, module, version string, resp *RegistryResponse) 
 		existingModule := m[1]
 		existingVersion := m[2]
 		if module == existingModule && version == existingVersion {
-			return fmt.Errorf("WORKSPACE already contains %s at the requested version (%s)",
-				existingModule, existingVersion)
+			return fmt.Errorf("WORKSPACE already contains %s at the requested version (%s): %w",
+				existingModule, existingVersion, ErrAlreadyExists)
 		}
 		if module == existingModule {
-			return fmt.Errorf("WORKSPACE already contains %s at version %s (the requested version is %s)",
-				existingModule, existingVersion, version)
+			return fmt.Errorf("WORKSPACE already contains %s at version %s (the requested version is %s): %w",
+				existingModule, existingVersion, version, ErrAlreadyExists)
 		}
 	}
 	if strings.Contains(string(contents), resp.Repo.FullName) {
-		return fmt.Errorf("WORKSPACE already contains %s which is likely %s manually installed",
-			resp.Repo.FullName, module)
+		return fmt.Errorf("WORKSPACE already contains %s which is likely %s manually installed: %w",
+			resp.Repo.FullName, module, ErrAlreadyExists)
 	}
 
 	addition := GenerateWorkspaceSnippet(module, version, resp)
@@ -141,12 +150,12 @@ func addToModule(f *os.File, module, version string, resp *RegistryResponse) err
 		existingModule := m[1]
 		existingVersion := m[2]
 		if newModule == existingModule && newVersion == existingVersion {
-			return fmt.Errorf("MODULE already contains %s at the requested version (%s)",
-				existingModule, existingVersion)
+			return fmt.Errorf("MODULE already contains %s at the requested version (%s): %w",
+				existingModule, existingVersion, ErrAlreadyExists)
 		}
 		if newModule == existingModule {
-			return fmt.Errorf("MODULE already contains %s at version %s (the requested version is %s)",
-				existingModule, existingVersion, newVersion)
+			return fmt.Errorf("MODULE already contains %s at version %s (the requested version is %s): %w",
+				existingModule, existingVersion, newVersion, ErrAlreadyExists)
 		}
 	}
 

@@ -20,9 +20,11 @@
 //
 // The --diff flag previews buildifier and Gazelle changes without writing
 // them; other fixes (dep additions, update-repos) are skipped in diff mode.
+// Formatting differences and tool failures both result in a nonzero exit status.
 package fix
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -56,6 +58,7 @@ usage: bb fix [ --diff ]
 
 Applies fixes to WORKSPACE and BUILD files.
 Use the --diff flag to print suggested fixes without applying.
+Exits nonzero if a tool fails or --diff finds changes.
 `
 	gazelleTarget = "//:gazelle"
 )
@@ -78,11 +81,13 @@ func HandleFix(args []string) (exitCode int, err error) {
 		return 1, err
 	}
 
-	if err := walk(baseFile); err != nil {
-		log.Printf("Error fixing: %s", err)
+	// Run both phases so formatting diagnostics do not hide Gazelle errors (or
+	// vice versa). A successful later phase must not erase an earlier failure.
+	walkErr := walk(baseFile)
+	if walkErr != nil {
+		log.Printf("Error fixing: %s", walkErr)
 	}
-
-	if err := runGazelle(path, baseFile); err != nil {
+	if err := errors.Join(walkErr, runGazelle(path, baseFile)); err != nil {
 		return 1, err
 	}
 
@@ -111,8 +116,14 @@ func runRepoGazelle() error {
 	if *diff {
 		args = append(args, "-mode=diff")
 	}
-	_, err := bazelisk.Run(args, &bazelisk.RunOpts{})
-	return err
+	exitCode, err := bazelisk.Run(args, &bazelisk.RunOpts{})
+	if err != nil {
+		return fmt.Errorf("run %s: %w", gazelleTarget, err)
+	}
+	if exitCode != 0 {
+		return fmt.Errorf("run %s: exited with code %d", gazelleTarget, exitCode)
+	}
+	return nil
 }
 
 func runBuiltinGazelle(repoRoot, baseFile string) error {
@@ -140,6 +151,7 @@ func walk(moduleOrWorkspaceFile string) error {
 	languages := getLanguages()
 	foundLanguages := map[language.Language]bool{}
 	depFiles := map[string][]string{}
+	var formatErrors []error
 	err := filepath.WalkDir(".",
 		func(path string, d os.DirEntry, err error) error {
 			if err != nil {
@@ -156,7 +168,7 @@ func walk(moduleOrWorkspaceFile string) error {
 			}
 			// .bzl files are formatted directly by buildifier.
 			if strings.HasSuffix(path, ".bzl") {
-				runBuildifier(path)
+				formatErrors = append(formatErrors, runBuildifier(path))
 				return nil
 			}
 
@@ -181,15 +193,16 @@ func walk(moduleOrWorkspaceFile string) error {
 			}
 			fileToFormat, err := translate.Translate(path)
 			if err != nil {
-				return err
+				formatErrors = append(formatErrors, fmt.Errorf("translate %s: %w", path, err))
+				return nil
 			}
 			if fileToFormat == "" {
 				return nil
 			}
-			runBuildifier(fileToFormat)
+			formatErrors = append(formatErrors, runBuildifier(fileToFormat))
 			return nil
 		})
-	if err != nil {
+	if err := errors.Join(append(formatErrors, err)...); err != nil {
 		return err
 	}
 
@@ -202,12 +215,22 @@ func walk(moduleOrWorkspaceFile string) error {
 	for l := range foundLanguages {
 		for _, d := range l.Deps() {
 			log.Debugf("Adding %s", d)
-			_, err := add.HandleAdd([]string{d})
+			exitCode, err := add.HandleAdd([]string{d})
+			if errors.Is(err, add.ErrAlreadyExists) {
+				continue
+			}
 			if err != nil {
-				log.Debugf("Failed adding %s: %s", d, err)
+				return fmt.Errorf("add %s: %w", d, err)
+			}
+			if exitCode != 0 {
+				return fmt.Errorf("add %s: exited with code %d", d, exitCode)
 			}
 		}
-		depFiles = l.ConsolidateDepFiles(depFiles)
+		var err error
+		depFiles, err = l.ConsolidateDepFiles(depFiles)
+		if err != nil {
+			return fmt.Errorf("consolidate dependency files: %w", err)
+		}
 	}
 
 	// Run update-repos on any dependency files we found.
@@ -216,7 +239,9 @@ func walk(moduleOrWorkspaceFile string) error {
 			runUpdateRepos(path, moduleOrWorkspaceFile)
 			for l := range foundLanguages {
 				if l.IsDepFile(path) {
-					l.RegisterDeps(path, moduleOrWorkspaceFile)
+					if err := l.RegisterDeps(path, moduleOrWorkspaceFile); err != nil {
+						return fmt.Errorf("register dependencies from %s: %w", path, err)
+					}
 				}
 			}
 		}
@@ -236,7 +261,7 @@ func getLanguages() []language.Language {
 	return languages
 }
 
-func runBuildifier(path string) {
+func runBuildifier(path string) error {
 	originalArgs := os.Args
 	defer func() {
 		os.Args = originalArgs
@@ -251,7 +276,10 @@ func runBuildifier(path string) {
 		)
 	}
 	os.Args = append(os.Args, path)
-	buildifier.Run()
+	if exitCode := buildifier.Run(); exitCode != 0 {
+		return fmt.Errorf("buildifier %s: exited with code %d", path, exitCode)
+	}
+	return nil
 }
 
 func runUpdateRepos(path string, moduleOrWorkspaceFile string) {

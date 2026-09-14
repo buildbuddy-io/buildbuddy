@@ -10,7 +10,7 @@ PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c
 PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
 # The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
-BB_CLI_VERSION = "5.0.333"
+BB_CLI_VERSION = "5.0.466"
 
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
@@ -268,28 +268,28 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-arm64",
         executable = True,
-        integrity = "sha256-NIFvkFPQj2UW9voLTzgbVup7WAC6vzJo3w316d1sKVI=",
+        integrity = "sha256-TknY15EfrnJ8ETCY5hrETfITJaibK8vv1KPZSTzHt6M=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-arm64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-x86_64",
         executable = True,
-        integrity = "sha256-B0rhObAwP/aGdtwnw7iZuCarOTS/jxp2eaUE8M67o5A=",
+        integrity = "sha256-uj3uG2RRSCx6w0DREhA3snFqXKBGX5a/zYp2BBYPBTk=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-x86_64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-linux-arm64",
         executable = True,
-        integrity = "sha256-08m6+utxtg0CrYDgeNz/ZkZprSLeTMkjSKe5BPD9SW8=",
+        integrity = "sha256-haHXS2dlsoFYYk8LXK31EBBoYBh0ZwrtQerUEAlFTb0=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-arm64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-linux-x86_64",
         executable = True,
-        integrity = "sha256-TaoceuYO8XWwHFvEYAoEyBb2CvQsLnLIzVft9qwr5f0=",
+        integrity = "sha256-32GiCcxF7P+QWbsE4BzB28K5ihKHFcraKipUu03rpIU=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-x86_64".format(version = BB_CLI_VERSION)],
     )
 

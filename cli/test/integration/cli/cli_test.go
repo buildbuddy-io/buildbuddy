@@ -582,8 +582,9 @@ func TestFixDiff(t *testing.T) {
 	})
 	cmd := testcli.Command(t, ws, "fix", "--diff")
 	stdout, stderr, err := testcli.SplitOutput(cmd)
-	// TODO: a non-empty diff probably *should* return an error (exit code 1)
-	require.NoError(t, err, "stdout: %q\nstderr: %q", string(stdout), string(stderr))
+	// Buildifier differences must be reflected in the CLI's exit status.
+	require.Error(t, err, "stdout: %q\nstderr: %q", string(stdout), string(stderr))
+	require.NotZero(t, cmd.ProcessState.ExitCode())
 	require.NotEmpty(t, string(stdout))
 }
 

@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -8,11 +8,15 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/fix/golang",
     visibility = ["//visibility:public"],
     deps = [
-        "//cli/log",
-        "//cli/workspace",
         "@bazel_gazelle//language",
         "@bazel_gazelle//language/go",
         "@bazel_gazelle//v2/label",
         "@org_golang_x_mod//modfile",
     ],
+)
+
+go_test(
+    name = "golang_test",
+    srcs = ["golang_test.go"],
+    embed = [":golang"],
 )

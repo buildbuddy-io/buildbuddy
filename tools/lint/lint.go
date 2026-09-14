@@ -347,10 +347,7 @@ func run() error {
 		files = lines(fileDiff)
 	}
 
-	// Start lint tools.
-	var eg errgroup.Group
-	eg.SetLimit(3)
-	var mu sync.RWMutex
+	var selectedTools []Tool
 	for _, t := range tools {
 		if len(*tool) > 0 && !slices.Contains(*tool, t.Name) {
 			continue
@@ -358,28 +355,47 @@ func run() error {
 		if slices.Contains(*exclude, t.Name) {
 			continue
 		}
+		selectedTools = append(selectedTools, t)
+	}
+	return runTools(ctx, selectedTools, *fix, files)
+}
+
+func runTools(ctx context.Context, tools []Tool, fix bool, files []string) error {
+	// Do not cancel other tools when one fails: report all lint errors.
+	var eg errgroup.Group
+	eg.SetLimit(3)
+	var mu sync.RWMutex
+	for _, t := range tools {
 		eg.Go(func() error {
-			if t.WriteLock && *fix {
+			if t.WriteLock && fix {
 				mu.Lock()
 				defer mu.Unlock()
 			} else {
 				mu.RLock()
 				defer mu.RUnlock()
 			}
-			log.Infof("[%s] starting", t.Name)
-			out := lockingbuffer.New()
-			err := t.Run(ctx, out, out, *fix, files)
-			if err != nil {
-				// Wait until the end to print all the diffs.
-				log.Errorf("[%s] failed: %s: output:\n%s", t.Name, err, out.String())
-				return fmt.Errorf("one or more lint checks failed - run ./buildfix.sh to attempt automatic fixes")
-			} else {
-				log.Infof("[%s] done", t.Name)
-			}
-			return nil
+			return runTool(ctx, t, fix, files)
 		})
 	}
 	return eg.Wait()
+}
+
+func runTool(ctx context.Context, t Tool, fix bool, files []string) error {
+	log.Infof("[%s] starting", t.Name)
+	out := lockingbuffer.New()
+	if err := t.Run(ctx, out, out, fix, files); err != nil {
+		// Wait until the end to print all the diffs.
+		log.Errorf("[%s] failed: %s: output:\n%s", t.Name, err, out.String())
+		return fmt.Errorf("one or more lint checks failed - run ./buildfix.sh to attempt automatic fixes")
+	}
+	// A tool may report warnings (or even diagnostics with an incorrect
+	// zero exit status). Preserve its output without treating all stderr
+	// as a failure: Bazel progress and warnings also go to stderr.
+	if out.Len() > 0 {
+		log.Infof("[%s] output:\n%s", t.Name, out.String())
+	}
+	log.Infof("[%s] done", t.Name)
+	return nil
 }
 
 // getRunfileToolCommand returns an [*exec.Cmd] for the given tool in runfiles.
