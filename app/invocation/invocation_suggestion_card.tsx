@@ -117,10 +117,11 @@ function supportsRemoteCacheChunking(version: BazelVersion | null) {
   );
 }
 
-// Rewinding needs the stale action-cache fix backported to Bazel 8.8 and 9.3.
+// Rewinding needs the stale action-cache fix backported to Bazel 8.8.
 // https://github.com/bazelbuild/bazel/pull/30266
-function supportsRemoteCacheRewinding(version: BazelVersion | null) {
-  return bazelVersionAtLeast(version, 9, 3) || (version?.major === 8 && version.minor >= 8);
+// Bazel 9.3+ enables it by default, so respect explicit opt-outs there.
+function shouldSuggestRemoteCacheRewinding(version: BazelVersion | null) {
+  return version?.major === 8 && version.minor >= 8;
 }
 
 // The BEP retains explicit values such as "false"; only --noflag becomes "0".
@@ -662,14 +663,12 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!model.isBazelInvocation()) return null;
     if (!isRemoteCacheEnabled(model)) return null;
     const version = model.getBazelVersion();
-    if (!supportsRemoteCacheRewinding(version)) return null;
-    // Rolling builds with the same major/minor can predate recovery support
-    // or the Bazel 9.3 default change, so don't infer their behavior.
+    if (!shouldSuggestRemoteCacheRewinding(version)) return null;
+    // Rolling builds with the same major/minor can predate recovery support.
     if (model.started?.buildToolVersion?.includes("-pre.")) return null;
 
     const rewindOption = model.optionsMap.get("rewind_lost_inputs");
-    const rewindEnabled =
-      rewindOption === undefined ? bazelVersionAtLeast(version, 9, 3) : !isFalseOptionValue(rewindOption);
+    const rewindEnabled = rewindOption !== undefined && !isFalseOptionValue(rewindOption);
     if (rewindEnabled) return null;
 
     return {

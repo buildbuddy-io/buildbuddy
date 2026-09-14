@@ -321,7 +321,7 @@ describe("getSuggestions", () => {
       expect(hasSuggestion(suggestions, "--execution_log_compact_file=execution_log.binpb.zst")).toBe(true);
     });
 
-    it("gates lost-input rewinding by the stale action-cache fix and release defaults", () => {
+    it("only suggests lost-input rewinding on supported releases where it is not the default", () => {
       for (const [version, supported, defaultEnabled] of [
         ["8.6.0", false, false],
         ["8.7.0", false, false],
@@ -349,7 +349,7 @@ describe("getSuggestions", () => {
           .toBe(supported && !defaultEnabled);
         expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "false" }), "--rewind_lost_inputs"))
           .withContext(`${version}, disabled`)
-          .toBe(supported);
+          .toBe(supported && !defaultEnabled);
         expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "true" }), "--rewind_lost_inputs"))
           .withContext(`${version}, enabled`)
           .toBe(false);
@@ -391,12 +391,20 @@ describe("getSuggestions", () => {
       );
     });
 
-    it("recognizes explicit boolean values on supported rewinding releases", () => {
-      for (const version of ["8.8.0", "9.3.0", "10.0.0"]) {
+    it("recognizes explicit boolean values while respecting opt-outs on default-enabled releases", () => {
+      for (const [version, suggestWhenDisabled] of [
+        ["8.8.0", true],
+        ["8.9.0", true],
+        ["9.3.0rc1", false],
+        ["9.3.0", false],
+        ["9.4.0", false],
+        ["10.0.0", false],
+        ["11.0.0", false],
+      ] as const) {
         for (const value of ["0", "false", "no", "f", "n", "FALSE"]) {
-          expect(
-            hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: value }), "--rewind_lost_inputs")
-          ).toBe(true);
+          expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: value }), "--rewind_lost_inputs"))
+            .withContext(`${version}, ${value}`)
+            .toBe(suggestWhenDisabled);
         }
         for (const value of ["1", "true", "yes", "t", "y"]) {
           expect(
