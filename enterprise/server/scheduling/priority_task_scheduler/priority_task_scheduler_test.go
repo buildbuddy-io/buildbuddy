@@ -147,13 +147,19 @@ func TestPriorityTaskScheduler_CanFitTaskWithGPUMemory(t *testing.T) {
 	}
 }
 
+// fakeGPUMemoryDetector reports a fixed GPU memory capacity.
+type fakeGPUMemoryDetector struct{ totalBytes int64 }
+
+func (d fakeGPUMemoryDetector) GetTotalGPUMemoryBytes() (int64, error) {
+	return d.totalBytes, nil
+}
+
 func TestPriorityTaskScheduler_GPUMemoryAccounting(t *testing.T) {
 	t.Cleanup(func() {
-		require.NoError(t, resources.Configure(false /*=mmapLRUEnabled*/))
+		require.NoError(t, resources.ConfigureGPU(nil))
 	})
-	flags.Set(t, "executor.gpu_memory_bytes", 8_000_000_000)
 	t.Setenv("SYS_GPU_MEMORY_BYTES", "")
-	require.NoError(t, resources.Configure(false /*=mmapLRUEnabled*/))
+	require.NoError(t, resources.ConfigureGPU(fakeGPUMemoryDetector{totalBytes: 8_000_000_000}))
 	q, err := NewPriorityTaskScheduler(testenv.GetTestEnv(t), NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{
 		RAMBytesCapacityOverride:  100,
 		CPUMillisCapacityOverride: 100,

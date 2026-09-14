@@ -22,8 +22,8 @@ import (
 var (
 	nvmlLibrary = nvml.New()
 
-	// defaultMemoryMonitor is the executor-wide monitor, set by Configure when
-	// NVML is available.
+	// defaultMemoryMonitor is the executor-wide monitor, set by configure when
+	// GPU memory tracking is enabled.
 	defaultMemoryMonitor *memoryMonitor
 )
 
@@ -260,7 +260,7 @@ func (m *memoryMonitor) setReading(reading memoryReading) {
 // configure creates the executor-wide memory monitor.
 func configure() error {
 	monitor, err := newMemoryMonitor(context.Background(), nvmlLibrary)
-	if err != nil && !errors.Is(err, nvml.ERROR_LIBRARY_NOT_FOUND) {
+	if err != nil {
 		return err
 	}
 	defaultMemoryMonitor = monitor
@@ -270,7 +270,7 @@ func configure() error {
 // cgroupUsage returns the latest reading from the executor-wide monitor.
 func cgroupUsage(cgroupPath string) *repb.GPUUsage {
 	if defaultMemoryMonitor == nil {
-		// NVML is unavailable or Configure was not called; usage is unknown.
+		// Configure was not called; usage is unknown.
 		return nil
 	}
 	defaultMemoryMonitor.startMonitoring()

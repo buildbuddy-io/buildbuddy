@@ -25,7 +25,7 @@ var (
 	memoryBytes       = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
 	mmapMemoryBytes   = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
 	milliCPU          = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
-	gpuMemoryBytes    = flag.Int64("executor.gpu_memory_bytes", 0, "Total GPU memory in bytes across all GPUs available to execution tasks. Defaults to 0. Cannot set both this option and the SYS_GPU_MEMORY_BYTES env var.")
+	gpuMemoryBytes    = flag.Int64("executor.gpu_memory_bytes", 0, "Optional total GPU memory in bytes across all GPUs available to execution tasks. If unset, this is read from the SYS_GPU_MEMORY_BYTES env var, or else detected from the GPUs on the executor. Cannot set both this option and the SYS_GPU_MEMORY_BYTES env var. Requires executor.gpu_memory_tracking_enabled.")
 	diskBytes         = flag.Int64("executor.disk_bytes", 0, "Optional maximum disk bytes to allocate to execution task workspaces (approximate). If unset, this is derived from the capacity of the filesystem holding the build root, scaled by executor.disk_capacity_ratio.")
 	diskCapacityRatio = flag.Float64("executor.disk_capacity_ratio", 0.9, "Fraction of the build root filesystem's total capacity to report as assignable to task workspaces. Leaves headroom for the OS, the local filecache, and root-reserved blocks. Ignored if executor.disk_bytes is set.")
 	zoneOverride      = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
@@ -70,7 +70,6 @@ func init() {
 	// resources.Configure() after flag.Parse().
 	_ = setSysRAMBytesFromEnvOrSystem()
 	_ = setSysMilliCPUCapacityFromEnvOrSystem()
-	_ = setSysGPUMemoryBytesFromEnv()
 }
 
 func setSysRAMBytesFromEnvOrSystem() error {
@@ -116,24 +115,6 @@ func setSysMilliCPUCapacityFromEnvOrSystem() error {
 	}
 	numCores := len(cpuList.List)
 	allocatedCPUMillis = int64(numCores * 1000)
-	return nil
-}
-
-func setSysGPUMemoryBytesFromEnv() error {
-	// GPU capacity must be configured explicitly until hardware detection is
-	// supported. Reset it when unset so repeated Configure calls do not retain
-	// a previous capacity.
-	allocatedGPUMemoryBytes = 0
-	if v := os.Getenv(gpuMemoryEnvVarName); v != "" {
-		i, err := strconv.ParseInt(v, 10, 64)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", gpuMemoryEnvVarName, err)
-		}
-		if i < 0 {
-			return status.InvalidArgumentErrorf("%s must not be negative (got %d)", gpuMemoryEnvVarName, i)
-		}
-		allocatedGPUMemoryBytes = i
-	}
 	return nil
 }
 
@@ -184,20 +165,6 @@ func Configure(mmapLRUEnabled bool) error {
 		}
 	}
 
-	if *gpuMemoryBytes < 0 {
-		return status.InvalidArgumentErrorf("executor.gpu_memory_bytes must not be negative (got %d)", *gpuMemoryBytes)
-	}
-	if *gpuMemoryBytes > 0 {
-		if os.Getenv(gpuMemoryEnvVarName) != "" {
-			return status.InvalidArgumentErrorf("Only one of the 'executor.gpu_memory_bytes' config option and '%s' environment variable may be set", gpuMemoryEnvVarName)
-		}
-		allocatedGPUMemoryBytes = *gpuMemoryBytes
-	} else {
-		if err := setSysGPUMemoryBytesFromEnv(); err != nil {
-			return fmt.Errorf("configure GPU memory: %w", err)
-		}
-	}
-
 	if mmapLRUEnabled {
 		// Check for too little or too much mmap memory.
 		if *mmapMemoryBytes < 64*1024*1024 || *mmapMemoryBytes > allocatedRAMBytes {
@@ -213,8 +180,58 @@ func Configure(mmapLRUEnabled bool) error {
 
 	log.Debugf("Set allocatedRAMBytes to %d", allocatedRAMBytes)
 	log.Debugf("Set allocatedCPUMillis to %d", allocatedCPUMillis)
-	log.Debugf("Set allocatedGPUMemoryBytes to %d", allocatedGPUMemoryBytes)
 
+	return nil
+}
+
+// GPUMemoryDetector detects the total GPU memory capacity of the executor.
+// This interface exists since the GPU package is currently an enterprise dep
+// and also has transitive enterprise deps.
+type GPUMemoryDetector interface {
+	GetTotalGPUMemoryBytes() (int64, error)
+}
+
+// ConfigureGPU sets the GPU memory capacity available to execution tasks from
+// the executor.gpu_memory_bytes flag, the SYS_GPU_MEMORY_BYTES env var, or the
+// detector, in that order. A nil detector means GPU memory tracking is
+// disabled. Any configured capacity is then rejected rather than ignored,
+// because for now GPU memory is only scheduled on executors that also measure
+// it.
+func ConfigureGPU(detector GPUMemoryDetector) error {
+	if *gpuMemoryBytes < 0 {
+		return status.InvalidArgumentErrorf("executor.gpu_memory_bytes must not be negative (got %d)", *gpuMemoryBytes)
+	}
+	if detector == nil {
+		if *gpuMemoryBytes > 0 || os.Getenv(gpuMemoryEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("executor.gpu_memory_bytes and %s require GPU memory tracking (executor.gpu_memory_tracking_enabled)", gpuMemoryEnvVarName)
+		}
+		allocatedGPUMemoryBytes = 0
+		return nil
+	}
+	if *gpuMemoryBytes > 0 {
+		if os.Getenv(gpuMemoryEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("Only one of the 'executor.gpu_memory_bytes' config option and '%s' environment variable may be set", gpuMemoryEnvVarName)
+		}
+		allocatedGPUMemoryBytes = *gpuMemoryBytes
+		return nil
+	}
+	if v := os.Getenv(gpuMemoryEnvVarName); v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", gpuMemoryEnvVarName, err)
+		}
+		if i < 0 {
+			return status.InvalidArgumentErrorf("%s must not be negative (got %d)", gpuMemoryEnvVarName, i)
+		}
+		allocatedGPUMemoryBytes = i
+		return nil
+	}
+	total, err := detector.GetTotalGPUMemoryBytes()
+	if err != nil {
+		return fmt.Errorf("detect total GPU memory: %w", err)
+	}
+	allocatedGPUMemoryBytes = total
+	log.Debugf("Set allocatedGPUMemoryBytes to %d (detected)", allocatedGPUMemoryBytes)
 	return nil
 }
 

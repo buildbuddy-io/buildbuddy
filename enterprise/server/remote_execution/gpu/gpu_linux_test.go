@@ -53,43 +53,54 @@ func TestGetTotalGPUMemoryBytes_WithoutMonitor(t *testing.T) {
 	require.Zero(t, total)
 }
 
-func TestConfigure_GPUMemoryTrackingDisabled_CapacityIsAvailable(t *testing.T) {
+func TestConfigure_GPUMemoryTrackingDisabled_DoesNotInitializeNVML(t *testing.T) {
 	previousMonitor := defaultMemoryMonitor
 	previousLibrary := nvmlLibrary
 	t.Cleanup(func() {
 		defaultMemoryMonitor = previousMonitor
 		nvmlLibrary = previousLibrary
 	})
+	defaultMemoryMonitor = nil
 	flags.Set(t, "executor.gpu_memory_tracking_enabled", false)
 	flags.Set(t, "executor.gpu_memory_poll_interval", time.Duration(0))
-	device := &mock.Device{
-		GetUUIDFunc: func() (string, nvml.Return) { return "GPU-a", nvml.SUCCESS },
-		GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
-			return nvml.Memory{Total: 8_000_000_000}, nvml.SUCCESS
-		},
-	}
 	library := &mock.Interface{
-		InitFunc:           func() nvml.Return { return nvml.SUCCESS },
-		DeviceGetCountFunc: func() (int, nvml.Return) { return 1, nvml.SUCCESS },
-		DeviceGetHandleByIndexFunc: func(index int) (nvml.Device, nvml.Return) {
-			return device, nvml.SUCCESS
-		},
+		InitFunc: func() nvml.Return { return nvml.ERROR_UNKNOWN },
 	}
 	nvmlLibrary = library
 
-	// Disabled tracking still discovers GPUs for capacity queries. The invalid
-	// poll interval is irrelevant because neither query starts polling.
+	// Disabled tracking must not touch NVML, so an unexpected NVML failure
+	// cannot prevent an executor from starting. The invalid poll interval is
+	// irrelevant because polling never starts.
 	require.NoError(t, Configure())
-	require.NotNil(t, defaultMemoryMonitor)
-	for range 2 {
-		total, err := GetTotalGPUMemoryBytes()
-		require.NoError(t, err)
-		require.Equal(t, int64(8_000_000_000), total)
-	}
+	require.Nil(t, defaultMemoryMonitor)
+	require.Empty(t, library.InitCalls())
 	require.Nil(t, CgroupUsage(t.TempDir()))
-	require.Len(t, library.InitCalls(), 1)
-	require.Empty(t, library.ShutdownCalls())
-	require.Empty(t, device.GetComputeRunningProcessesCalls())
+	_, err := GetTotalGPUMemoryBytes()
+	require.ErrorContains(t, err, "monitor is unavailable")
+}
+
+func TestMemoryDetector(t *testing.T) {
+	previous := defaultMemoryMonitor
+	t.Cleanup(func() { defaultMemoryMonitor = previous })
+	defaultMemoryMonitor = &memoryMonitor{devices: []gpuDevice{
+		{uuid: "GPU-a", device: &mock.Device{
+			GetMemoryInfoFunc: func() (nvml.Memory, nvml.Return) {
+				return nvml.Memory{Total: 8_000_000_000}, nvml.SUCCESS
+			},
+		}},
+	}}
+
+	// Capacity is only detected with tracking enabled, since NVML is only
+	// initialized then. Without tracking there is no detector at all.
+	flags.Set(t, "executor.gpu_memory_tracking_enabled", false)
+	require.Nil(t, MemoryDetector())
+
+	// With tracking enabled, the detector reports the discovered GPUs' total
+	// memory without starting the usage poller.
+	flags.Set(t, "executor.gpu_memory_tracking_enabled", true)
+	total, err := MemoryDetector().GetTotalGPUMemoryBytes()
+	require.NoError(t, err)
+	require.Equal(t, int64(8_000_000_000), total)
 }
 
 func TestConfigure_NoGPUs_CapacityIsZero(t *testing.T) {
@@ -125,7 +136,7 @@ func TestConfigure_NVMLErrors(t *testing.T) {
 		shutdownRet nvml.Return
 		wantErr     string
 	}{
-		{name: "NVML unavailable", initRet: nvml.ERROR_LIBRARY_NOT_FOUND},
+		{name: "NVML unavailable", initRet: nvml.ERROR_LIBRARY_NOT_FOUND, wantErr: "initialize NVML"},
 		{name: "driver unavailable", initRet: nvml.ERROR_DRIVER_NOT_LOADED, wantErr: "initialize NVML"},
 		{name: "device count", countRet: nvml.ERROR_UNKNOWN, wantErr: "get device count"},
 		{name: "device handle", count: 1, handleRet: nvml.ERROR_GPU_IS_LOST, wantErr: "get device 0"},
@@ -152,15 +163,11 @@ func TestConfigure_NVMLErrors(t *testing.T) {
 			}
 			nvmlLibrary = library
 
-			// Missing NVML must not prevent startup, even with tracking enabled.
-			// Other initialization failures are reported and release NVML when
-			// needed, without hiding the original discovery error.
+			// With tracking enabled, any NVML failure fails startup, so that a
+			// misconfigured executor never runs without measuring GPU memory.
+			// Discovery failures release NVML without hiding the original error.
 			err := Configure()
-			if testCase.wantErr == "" {
-				require.NoError(t, err)
-			} else {
-				require.ErrorContains(t, err, testCase.wantErr)
-			}
+			require.ErrorContains(t, err, testCase.wantErr)
 			require.Nil(t, defaultMemoryMonitor)
 			require.Nil(t, CgroupUsage(t.TempDir()))
 			_, capacityErr := GetTotalGPUMemoryBytes()

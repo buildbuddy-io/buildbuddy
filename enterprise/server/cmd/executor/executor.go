@@ -239,6 +239,9 @@ func GetConfiguredEnvironmentOrDie(cacheRoot string, filecacheSizeBytes int64, h
 	if err := resources.Configure(mmapLRUEnabled); err != nil {
 		log.Fatal(status.Message(err))
 	}
+	if err := resources.ConfigureGPU(gpu.MemoryDetector()); err != nil {
+		log.Fatalf("Could not configure GPU memory capacity: %s", err)
+	}
 	// Note: Using math.Floor here to match the int64() conversions in
 	// scheduler_server.go
 	metrics.RemoteExecutionAssignableMilliCPU.Set(math.Floor(float64(resources.GetAllocatedCPUMillis()) * tasksize.MaxResourceCapacityRatio))
