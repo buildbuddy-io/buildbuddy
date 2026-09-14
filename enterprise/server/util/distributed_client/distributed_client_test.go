@@ -1369,14 +1369,15 @@ func TestRemoteGetMulti_MultipleCompressedBlobs(t *testing.T) {
 }
 
 // referenceReadServer is a DistributedCache server that answers every Read
-// with a ReadResponse carrying the configured reference, followed by one data
-// message per configured chunk (the verification-mode response shape). It
-// records the compressor of the last requested resource so tests can assert
-// on what was seen at the server side of the wire.
+// with a single ReadResponse carrying the configured reference. It records
+// the compressor of the last requested resource so tests can assert on what
+// was seen at the server side of the wire.
 type referenceReadServer struct {
 	dcpb.UnimplementedDistributedCacheServer
-	ref        *refpb.Reference
-	dataChunks [][]byte
+	ref *refpb.Reference
+	// data, if set, is sent inline alongside the reference by GetWithMetadata
+	// only, to exercise the client's handling of a peer that sends both.
+	data []byte
 
 	mu             sync.Mutex
 	lastCompressor repb.Compressor_Value
@@ -1386,30 +1387,18 @@ func (s *referenceReadServer) Read(req *dcpb.ReadRequest, stream dcpb.Distribute
 	s.mu.Lock()
 	s.lastCompressor = req.GetResource().GetCompressor()
 	s.mu.Unlock()
-	if err := stream.Send(&dcpb.ReadResponse{Reference: s.ref}); err != nil {
-		return err
-	}
-	for _, chunk := range s.dataChunks {
-		if err := stream.Send(&dcpb.ReadResponse{Data: chunk}); err != nil {
-			return err
-		}
-	}
-	return nil
+	return stream.Send(&dcpb.ReadResponse{Reference: s.ref})
 }
 
 // GetWithMetadata answers with the configured reference plus any configured
-// data chunks concatenated; with no chunks this is the shape a peer sends
-// when serving GetWithMetadata by reference.
+// inline data; with no data this is the shape a peer sends when serving
+// GetWithMetadata by reference.
 func (s *referenceReadServer) GetWithMetadata(ctx context.Context, req *dcpb.GetWithMetadataRequest) (*dcpb.GetWithMetadataResponse, error) {
 	s.mu.Lock()
 	s.lastCompressor = req.GetResource().GetCompressor()
 	s.mu.Unlock()
-	var data []byte
-	for _, chunk := range s.dataChunks {
-		data = append(data, chunk...)
-	}
 	return &dcpb.GetWithMetadataResponse{
-		Data:      data,
+		Data:      s.data,
 		Reference: s.ref,
 		Metadata: &dcpb.MetadataResponse{
 			StoredSizeBytes: s.ref.GetMetadata().GetStoredSizeBytes(),
@@ -1432,17 +1421,17 @@ func startReferenceReadServer(t *testing.T, ref *refpb.Reference) string {
 }
 
 func startReferenceReadServerWithRecorder(t *testing.T, ref *refpb.Reference) (string, *referenceReadServer) {
-	return startVerifyingReadServer(t, ref, nil)
+	return startReferenceReadServerWithData(t, ref, nil)
 }
 
-// startVerifyingReadServer starts a server that responds with ref followed by
-// the given data chunks.
-func startVerifyingReadServer(t *testing.T, ref *refpb.Reference, dataChunks [][]byte) (string, *referenceReadServer) {
+// startReferenceReadServerWithData starts a server whose GetWithMetadata
+// responds with ref and the given inline data.
+func startReferenceReadServerWithData(t *testing.T, ref *refpb.Reference, data []byte) (string, *referenceReadServer) {
 	t.Helper()
 	lis, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 	srv := grpc.NewServer()
-	rrs := &referenceReadServer{ref: ref, dataChunks: dataChunks}
+	rrs := &referenceReadServer{ref: ref, data: data}
 	dcpb.RegisterDistributedCacheServer(srv, rrs)
 	t.Cleanup(srv.Stop)
 	go srv.Serve(lis)
@@ -1788,7 +1777,7 @@ func TestRemoteGetWithMetadataReference(t *testing.T) {
 	t.Run("bytes are authoritative when sent with a reference", func(t *testing.T) {
 		// The reference points at a missing blob, so the bytes must be used
 		// without dereferencing.
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY), [][]byte{buf})
+		peer, _ := startReferenceReadServerWithData(t, makeReference(rn, "blobs/no-such-blob", repb.Compressor_IDENTITY), buf)
 		c, fake := newReferenceTestProxy(t, te, map[string][]byte{})
 		beforeBytes := getWithMetadataResponseCount(t, "bytes", "OK")
 		beforeRef := getWithMetadataResponseCount(t, "reference", "OK")
@@ -1883,17 +1872,12 @@ func (c *serverReferenceCache) lastWriteReference() (*refpb.Reference, *rspb.Res
 	return c.writtenRef, c.writtenRN, c.writtenCloned
 }
 
-func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferences bool, verifyReferences bool) {
+func setReferenceReadExperiments(t *testing.T, te *testenv.TestEnv, readReferences bool) {
 	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"distributed_cache.read_gcs_references": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "on",
 			Variants:       map[string]any{"on": readReferences},
-		},
-		"distributed_cache.verify_read_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": verifyReferences},
 		},
 	})
 	require.NoError(t, openfeature.SetProviderAndWait(provider))
@@ -1970,29 +1954,22 @@ func TestReadReferenceExperiments(t *testing.T) {
 		require.Equal(t, buf, data)
 	})
 
-	t.Run("experiments off", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, false, false)
+	t.Run("experiment off", func(t *testing.T) {
+		setReferenceReadExperiments(t, te, false)
 		ref, data := readRawResponses(t, peer, rn)
 		require.Nil(t, ref)
 		require.Equal(t, buf, data)
 	})
 
-	t.Run("verify flag sends reference and bytes", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, false, true)
-		ref, data := readRawResponses(t, peer, rn)
-		require.Empty(t, cmp.Diff(expectedRef, ref, protocmp.Transform()))
-		require.Equal(t, buf, data)
-	})
-
 	t.Run("read flag sends reference only", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, true, false)
+		setReferenceReadExperiments(t, te, true)
 		ref, data := readRawResponses(t, peer, rn)
 		require.Empty(t, cmp.Diff(expectedRef, ref, protocmp.Transform()))
 		require.Empty(t, data)
 	})
 
 	t.Run("read flag falls back to bytes when no reference can be minted", func(t *testing.T) {
-		setReferenceReadExperiments(t, te, true, false)
+		setReferenceReadExperiments(t, te, true)
 		ref, data := readRawResponses(t, peer, noRefRN)
 		require.Nil(t, ref)
 		require.Equal(t, noRefBuf, data)
@@ -2273,134 +2250,6 @@ func TestWriteReferenceAccept(t *testing.T) {
 		require.Error(t, err)
 		require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got %s", err)
 	})
-}
-
-func TestRemoteReadVerification(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
-	require.NoError(t, err)
-
-	const blobName = "blobs/verified-blob"
-	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-	chunks := [][]byte{buf[:40], buf[40:]}
-
-	// deltas returns the nonzero outcome-count changes between two
-	// verificationCounts snapshots.
-	deltas := func(before, after map[string]float64) map[string]float64 {
-		d := map[string]float64{}
-		for s, c := range after {
-			if diff := c - before[s]; diff != 0 {
-				d[s] = diff
-			}
-		}
-		return d
-	}
-
-	t.Run("matching bytes", func(t *testing.T) {
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		beforeBytesOK := readResponseCount(t, "bytes", "OK")
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, beforeBytesOK+1, readResponseCount(t, "bytes", "OK"))
-		require.Equal(t, buf, got)
-	})
-
-	t.Run("ranged", func(t *testing.T) {
-		rangedChunks := [][]byte{buf[5:15]}
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), rangedChunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		r, err := c.RemoteReader(ctx, peer, rn, 5, 10)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf[5:15], got)
-	})
-
-	t.Run("mismatched reference bytes are non-fatal", func(t *testing.T) {
-		_, otherBuf := testdigest.RandomCASResourceBuf(t, 100)
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: otherBuf})
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		// The streamed bytes are authoritative.
-		require.Equal(t, buf, got)
-	})
-
-	t.Run("mismatched reference digest is non-fatal", func(t *testing.T) {
-		otherRN, _ := testdigest.RandomCASResourceBuf(t, 100)
-		peer, _ := startVerifyingReadServer(t, makeReference(otherRN, blobName, repb.Compressor_IDENTITY), chunks)
-		c, fake := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		before := verificationCounts(t)
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		// The streamed bytes are authoritative.
-		require.Equal(t, buf, got)
-		// The bad reference was counted as a failure and never dereferenced.
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, deltas(before, verificationCounts(t)))
-		gotRN, _, _ := fake.LastDereference()
-		require.Nil(t, gotRN)
-	})
-
-	t.Run("stored instance name difference does not fail verification", func(t *testing.T) {
-		// CAS entries are deduped across instance names, so the reference can
-		// carry the first writer's instance name without identifying
-		// different content.
-		storedRN := rn.CloneVT()
-		storedRN.InstanceName = "instance-at-first-write"
-		peer, _ := startVerifyingReadServer(t, makeReference(storedRN, blobName, repb.Compressor_IDENTITY), chunks)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})
-		before := verificationCounts(t)
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, verificationCounts(t)))
-	})
-
-	t.Run("missing dereferencer is non-fatal", func(t *testing.T) {
-		peer, _ := startVerifyingReadServer(t, makeReference(rn, blobName, repb.Compressor_IDENTITY), chunks)
-		localPeer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, te.GetCache(), localPeer)
-		require.NoError(t, c.StartListening())
-		waitUntilServerIsAlive(localPeer)
-		r, err := c.RemoteReader(ctx, peer, rn, 0, 0)
-		require.NoError(t, err)
-		got, err := io.ReadAll(r)
-		require.NoError(t, err)
-		require.NoError(t, r.Close())
-		require.Equal(t, buf, got)
-	})
-}
-
-// errorReadCloser fails every read with the given error.
-type errorReadCloser struct {
-	err error
-}
-
-func (e *errorReadCloser) Read(p []byte) (int, error) { return 0, e.err }
-func (e *errorReadCloser) Close() error               { return nil }
-
-// verificationCounts returns the current values of the reference verification
-// counter, keyed by outcome, summed across error codes.
-func verificationCounts(t *testing.T) map[string]float64 {
-	counts := map[string]float64{}
-	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceVerificationCount) {
-		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
-	}
-	return counts
 }
 
 // writeVerificationCounts returns the current values of the reference write
@@ -2774,78 +2623,6 @@ func TestRemoteVerifiedWriter(t *testing.T) {
 		_, gotRN, _ := cache.lastWriteReference()
 		require.Nil(t, gotRN)
 		require.Equal(t, before, writeVerificationCounts(t))
-	})
-}
-
-func TestVerifyingReadCloser(t *testing.T) {
-	newRC := func(data []byte) io.ReadCloser {
-		return io.NopCloser(bytes.NewReader(data))
-	}
-	rn, data := testdigest.RandomCASResourceBuf(t, 1000)
-
-	// run reads through a verifying reader and returns the served bytes plus
-	// the change in the verification counter, keyed by outcome.
-	run := func(t *testing.T, secondary io.ReadCloser) (gotData []byte, counted map[string]float64) {
-		before := verificationCounts(t)
-		v := distributed_client.NewVerifyingReadCloser(newRC(data), secondary, log.NamedSubLogger(t.Name()), rn, "test-peer", "GR-test")
-		got, err := io.ReadAll(v)
-		require.NoError(t, err)
-		require.NoError(t, v.Close())
-		counted = map[string]float64{}
-		for s, c := range verificationCounts(t) {
-			if d := c - before[s]; d != 0 {
-				counted[s] = d
-			}
-		}
-		return got, counted
-	}
-
-	t.Run("matching streams", func(t *testing.T) {
-		got, counted := run(t, newRC(data))
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, counted)
-	})
-
-	t.Run("differing bytes", func(t *testing.T) {
-		other := append([]byte{}, data...)
-		other[500] ^= 0xff
-		got, counted := run(t, newRC(other))
-		// Primary bytes are served regardless of the mismatch.
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, counted)
-	})
-
-	t.Run("secondary too short", func(t *testing.T) {
-		got, counted := run(t, newRC(data[:900]))
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, counted)
-	})
-
-	t.Run("secondary too long", func(t *testing.T) {
-		longer := append(append([]byte{}, data...), 0x01)
-		got, counted := run(t, newRC(longer))
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, counted)
-	})
-
-	t.Run("secondary read error", func(t *testing.T) {
-		got, counted := run(t, &errorReadCloser{err: errors.New("gcs exploded")})
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, counted)
-	})
-
-	t.Run("secondary read errors carry their code", func(t *testing.T) {
-		canceledLabels := prometheus.Labels{
-			metrics.GroupID:                  "GR-test",
-			metrics.VerificationOutcomeLabel: distributed_client.VerificationError,
-			metrics.StatusHumanReadableLabel: "Canceled",
-		}
-		before := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceVerificationCount, canceledLabels)
-		got, counted := run(t, &errorReadCloser{err: status.CanceledError("context canceled")})
-		require.Equal(t, data, got)
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, counted)
-		after := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheReferenceVerificationCount, canceledLabels)
-		require.Equal(t, before+1, after)
 	})
 }
 
