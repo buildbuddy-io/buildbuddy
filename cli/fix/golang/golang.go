@@ -9,8 +9,6 @@ import (
 
 	"github.com/bazel-contrib/bazel-gazelle/v2/label"
 	"github.com/bazelbuild/bazel-gazelle/language"
-	"github.com/buildbuddy-io/buildbuddy/cli/log"
-	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"golang.org/x/mod/modfile"
 
 	gazelleGolang "github.com/bazelbuild/bazel-gazelle/language/go"
@@ -62,14 +60,19 @@ func (g *Golang) IsDepFile(path string) bool {
 	return strings.HasSuffix(path, goModFileName)
 }
 
-func (g *Golang) ConsolidateDepFiles(deps map[string][]string) map[string][]string {
+func (g *Golang) ConsolidateDepFiles(deps map[string][]string) (map[string][]string, error) {
 	goModFiles, foundGoModFiles := deps[goModFileName]
 	goWorkFiles, foundGoWorkFiles := deps[goWorkFileName]
 
-	g.ensureModulePrefixesAreSet(goModFiles)
+	if len(goWorkFiles) > 1 {
+		return nil, fmt.Errorf("found multiple %s files, not sure what to do: %+v", goWorkFileName, goWorkFiles)
+	}
+	if err := g.ensureModulePrefixesAreSet(goModFiles); err != nil {
+		return nil, err
+	}
 
 	if foundGoModFiles && len(goModFiles) == 1 {
-		return deps
+		return deps, nil
 	}
 	if foundGoModFiles && len(goModFiles) > 1 {
 		var goWorkContents strings.Builder
@@ -77,31 +80,58 @@ func (g *Golang) ConsolidateDepFiles(deps map[string][]string) map[string][]stri
 		for _, m := range goModFiles {
 			goWorkContents.WriteString("use ./" + path.Dir(m) + "\n")
 		}
-		os.WriteFile(goWorkFileName, []byte(goWorkContents.String()), 0777)
+		if err := os.WriteFile(goWorkFileName, []byte(goWorkContents.String()), 0777); err != nil {
+			return nil, fmt.Errorf("write %q: %w", goWorkFileName, err)
+		}
 		delete(deps, goModFileName)
-	}
-	if foundGoWorkFiles && len(goWorkFiles) > 1 {
-		log.Fatalf("Found multiple %s files, not sure what to do: %+v", goWorkFileName, goWorkFiles)
 	}
 	if foundGoWorkFiles {
 		delete(deps, goModFileName)
 	}
-	return deps
+	return deps, nil
 }
 
-func (g *Golang) ensureModulePrefixesAreSet(goModFiles []string) {
+func (g *Golang) ensureModulePrefixesAreSet(goModFiles []string) error {
 	for _, f := range goModFiles {
 		fileContents, err := os.ReadFile(f)
 		if err != nil {
-			log.Warnf("error reading go.mod file %q: %s", f, err)
-			continue
+			return fmt.Errorf("read go.mod file %q: %w", f, err)
 		}
-		moduleName := modfile.ModulePath(fileContents)
-		contents, filename := workspace.GetBuildFileContents(filepath.Dir(f))
+		mod, err := modfile.Parse(f, fileContents, nil)
+		if err != nil {
+			return fmt.Errorf("parse go.mod file %q: %w", f, err)
+		}
+		if mod.Module == nil {
+			return fmt.Errorf("go.mod file %q has no module directive", f)
+		}
+		contents, filename, err := getBuildFileContents(filepath.Dir(f))
+		if err != nil {
+			return err
+		}
 		if !strings.Contains(contents, gazellePrefix) {
-			appendToFile(filename, fmt.Sprintf("\n\n# %s %s\n", gazellePrefix, moduleName))
+			if err := appendToFile(filename, fmt.Sprintf("\n\n# %s %s\n", gazellePrefix, mod.Module.Mod.Path)); err != nil {
+				return fmt.Errorf("write module prefix to %q: %w", filename, err)
+			}
 		}
 	}
+	return nil
+}
+
+// Only missing BUILD files may be skipped. Other read failures must not cause us
+// to silently create or append to a different BUILD file.
+func getBuildFileContents(dir string) (string, string, error) {
+	for _, basename := range []string{"BUILD", "BUILD.bazel"} {
+		filename := filepath.Join(dir, basename)
+		contents, err := os.ReadFile(filename)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return "", "", fmt.Errorf("read BUILD file %q: %w", filename, err)
+		}
+		return string(contents), filename, nil
+	}
+	return "", filepath.Join(dir, "BUILD.bazel"), nil
 }
 
 func appendToFile(fileName, contents string) error {
@@ -113,7 +143,7 @@ func appendToFile(fileName, contents string) error {
 	if _, err := f.WriteString(contents); err != nil {
 		return err
 	}
-	return nil
+	return f.Close()
 }
 
 const goDepsSnippet = `
@@ -125,24 +155,21 @@ use_repo(
 %s)
 `
 
-func (g *Golang) RegisterDeps(path string, modulePath string) {
+func (g *Golang) RegisterDeps(path string, modulePath string) error {
 	moduleFileContents, err := os.ReadFile(modulePath)
 	if err != nil {
-		log.Warnf("error reading module file %q: %s", modulePath, err)
-		return
+		return fmt.Errorf("read module file %q: %w", modulePath, err)
 	}
 	goModContents, err := os.ReadFile(path)
 	if err != nil {
-		log.Warnf("error reading go.mod file %q: %s", path, err)
-		return
+		return fmt.Errorf("read go.mod file %q: %w", path, err)
 	}
 
 	// TODO(siggisim): merge with existing deps
 	if !strings.Contains(string(moduleFileContents), "go_deps") {
-		mod, err := modfile.Parse("go.mod", goModContents, nil)
+		mod, err := modfile.Parse(path, goModContents, nil)
 		if err != nil {
-			log.Warnf("error parsing go.mod file %q: %s", path, err)
-			return
+			return fmt.Errorf("parse go.mod file %q: %w", path, err)
 		}
 
 		imports := ""
@@ -152,7 +179,9 @@ func (g *Golang) RegisterDeps(path string, modulePath string) {
 			}
 			imports = imports + `    "` + label.ImportPathToBazelRepoName(m.Mod.Path) + "\",\n"
 		}
-		appendToFile(modulePath, fmt.Sprintf(goDepsSnippet, path, imports))
+		if err := appendToFile(modulePath, fmt.Sprintf(goDepsSnippet, path, imports)); err != nil {
+			return fmt.Errorf("register Go dependencies in %q: %w", modulePath, err)
+		}
 	}
-
+	return nil
 }

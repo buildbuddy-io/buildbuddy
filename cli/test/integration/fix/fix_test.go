@@ -5,12 +5,13 @@
 // MODULE.bazel bootstrap, buildifier formatting, hidden-directory skipping,
 // --diff being non-mutating, idempotency on re-run, and --help.
 //
-// Tests that would exercise language detection (which goes to BCR via
-// `bb add`) or repo-defined Gazelle (which would invoke real bazel) are
-// intentionally omitted to keep the suite hermetic.
+// Repo-defined Gazelle is exercised via a local Bazel stub, without launching
+// Bazel. Language detection (which goes to BCR via `bb add`) is intentionally
+// omitted to keep the suite hermetic.
 package fix_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -191,10 +192,9 @@ func TestFix_DiffDoesNotMutate(t *testing.T) {
 	})
 
 	before := snapshot(t, ws)
-	// `buildifier -mode=diff` exits non-zero when there are differences,
-	// which `bb fix --diff` propagates. We don't assert on the exit code;
-	// we only care that no files were mutated.
-	out, _ := runFix(t, ws, "--diff")
+	// Buildifier differences must fail the command without changing files.
+	out, err := runFix(t, ws, "--diff")
+	require.Error(t, err, "output: %s", out)
 	after := snapshot(t, ws)
 
 	require.Equal(t, before, after, "--diff must not modify any files (output: %s)", out)
@@ -253,4 +253,181 @@ func TestFix_HelpExitsWithUsage(t *testing.T) {
 	// --help should not bootstrap a MODULE.bazel.
 	require.NoFileExists(t, filepath.Join(ws, "MODULE.bazel"),
 		"--help should print usage and exit before bootstrap")
+}
+
+// repoGazelleWorkspace selects a local executable as Bazel itself, rather than
+// tools/bazel (which would still require Bazelisk to resolve/download Bazel).
+// The stub and its argument log live outside the workspace so --diff snapshots
+// detect only changes made by bb fix, not the test's invocation bookkeeping.
+func repoGazelleWorkspace(t *testing.T, contents map[string]string, exitCode int) (ws, stub string) {
+	t.Helper()
+	stubDir := testfs.MakeTempDir(t)
+	stub = filepath.Join(stubDir, "bazel-stub")
+	testfs.WriteAllFileContents(t, stubDir, map[string]string{
+		"bazel-stub": fmt.Sprintf(`#!/bin/sh
+set -eu
+printf '%%s\n' "$@" >> "$BB_FIX_TEST_ARGS_FILE"
+printf 'repo Gazelle diagnostic\n' >&2
+exit %d
+`, exitCode),
+	})
+	testfs.MakeExecutable(t, stubDir, "bazel-stub")
+	ws = fixWorkspace(t, map[string]string{
+		"MODULE.bazel":  "module(name = \"x\")\n",
+		"BUILD.bazel":   "gazelle(name = \"gazelle\")\n",
+		".bazelversion": stub + "\n",
+	})
+	testfs.WriteAllFileContents(t, ws, contents)
+	// Override any Bazel version inherited from the test runner as well.
+	t.Setenv("BB_USE_BAZEL_VERSION", stub)
+	t.Setenv("USE_BAZEL_VERSION", stub)
+	// Bazelisk runs the stub via a cache symlink, so $0 is not its original
+	// path. Pass the argument log's absolute path independently.
+	t.Setenv("BB_FIX_TEST_ARGS_FILE", stub+".args")
+	return ws, stub
+}
+
+func requireRepoGazelleRan(t *testing.T, stub, mode string) {
+	t.Helper()
+	b, err := os.ReadFile(stub + ".args")
+	require.NoError(t, err, "repo Gazelle must run even after formatting errors")
+	want := "run\n--\n//:gazelle\n"
+	if mode == "diff" {
+		want += "-mode=diff\n"
+	}
+	require.Equal(t, want, string(b), "repo Gazelle should run exactly once with the requested mode")
+}
+
+func TestFix_RepoGazelleExitStatus(t *testing.T) {
+	for _, mode := range []string{"fix", "diff"} {
+		for _, exitCode := range []int{0, 7} {
+			t.Run(fmt.Sprintf("%s/exit_%d", mode, exitCode), func(t *testing.T) {
+				ws, stub := repoGazelleWorkspace(t, nil, exitCode)
+				args := []string{"fix"}
+				if mode == "diff" {
+					args = append(args, "--diff")
+				}
+				cmd := testcli.Command(t, ws, args...)
+				stdout, stderr, err := testcli.SplitOutput(cmd)
+				if exitCode == 0 {
+					// Gazelle may print warnings to stderr without failing.
+					require.NoError(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
+				} else {
+					// Bazelisk reports subprocess failures as an exit code with
+					// no Go error; bb fix must not silently discard that code.
+					require.Error(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
+					require.NotZero(t, cmd.ProcessState.ExitCode())
+				}
+				require.Empty(t, string(stdout), "a failure must not depend on Gazelle emitting stdout")
+				require.Contains(t, string(stderr), "repo Gazelle diagnostic")
+				requireRepoGazelleRan(t, stub, mode)
+			})
+		}
+	}
+}
+
+func TestFix_FormattingFailureSurvivesSuccessfulGazelle(t *testing.T) {
+	for _, mode := range []string{"fix", "diff"} {
+		for _, path := range []string{"broken.bzl", "broken/BUILD", "broken/BUILD.bazel"} {
+			t.Run(mode+"/"+path, func(t *testing.T) {
+				const malformed = "broken(\n"
+				ws, stub := repoGazelleWorkspace(t, map[string]string{path: malformed}, 0)
+				var args []string
+				if mode == "diff" {
+					args = append(args, "--diff")
+				}
+				out, err := runFix(t, ws, args...)
+				require.Error(t, err, "output: %s", out)
+				require.Contains(t, out, path)
+				require.Contains(t, out, "syntax error")
+				requireRepoGazelleRan(t, stub, mode)
+				b, err := os.ReadFile(filepath.Join(ws, path))
+				require.NoError(t, err)
+				require.Equal(t, malformed, string(b), "invalid input must not be overwritten")
+			})
+		}
+	}
+}
+
+func TestFix_ContinuesFormattingAfterErrors(t *testing.T) {
+	for _, mode := range []string{"fix", "diff"} {
+		t.Run(mode, func(t *testing.T) {
+			// WalkDir visits these in lexical order: both broken files precede
+			// both formattable files, and Gazelle must run after all of them.
+			contents := map[string]string{
+				"00-broken.bzl":        "broken(\n",
+				"01-broken/BUILD":      "also_broken(\n",
+				"z-first.bzl":          "def  first( x,y ):\n  return x+y\n",
+				"z-second/BUILD.bazel": poorlyFormatted,
+			}
+			ws, stub := repoGazelleWorkspace(t, contents, 0)
+			before := snapshot(t, ws)
+			args := []string{"fix"}
+			if mode == "diff" {
+				args = append(args, "--diff")
+			}
+			stdout, stderr, err := testcli.SplitOutput(testcli.Command(t, ws, args...))
+			require.Error(t, err, "stdout: %s\nstderr: %s", stdout, stderr)
+			require.Contains(t, string(stderr), "00-broken.bzl")
+			require.Contains(t, string(stderr), "01-broken/BUILD")
+			requireRepoGazelleRan(t, stub, mode)
+			if mode == "diff" {
+				require.Equal(t, before, snapshot(t, ws))
+				// A formatting error must not suppress later diffs, and the
+				// first diff's nonzero exit code must not suppress the second.
+				require.Contains(t, string(stdout), "z-first.bzl")
+				require.Contains(t, string(stdout), "z-second/BUILD.bazel")
+			} else {
+				for _, path := range []string{"z-first.bzl", "z-second/BUILD.bazel"} {
+					b, err := os.ReadFile(filepath.Join(ws, path))
+					require.NoError(t, err)
+					require.NotEqual(t, contents[path], string(b), "%s should still be formatted", path)
+				}
+			}
+		})
+	}
+}
+
+func TestFix_MissingRepoBazelExecutable(t *testing.T) {
+	for _, mode := range []string{"fix", "diff"} {
+		t.Run(mode, func(t *testing.T) {
+			ws, _ := repoGazelleWorkspace(t, nil, 0)
+			missing := filepath.Join(testfs.MakeTempDir(t), "missing-bazel")
+			t.Setenv("BB_USE_BAZEL_VERSION", missing)
+			t.Setenv("USE_BAZEL_VERSION", missing)
+			var args []string
+			if mode == "diff" {
+				args = append(args, "--diff")
+			}
+			out, err := runFix(t, ws, args...)
+			require.Error(t, err, "output: %s", out)
+			// Bazelisk reports its cache alias rather than the original path.
+			require.Contains(t, out, filepath.Base(missing))
+			require.Contains(t, out, "no such file or directory")
+		})
+	}
+}
+
+func TestFix_WalkFailureSurvivesSuccessfulGazelle(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read directories regardless of permission bits")
+	}
+	for _, mode := range []string{"fix", "diff"} {
+		t.Run(mode, func(t *testing.T) {
+			ws, stub := repoGazelleWorkspace(t, nil, 0)
+			unreadable := filepath.Join(ws, "00-unreadable")
+			require.NoError(t, os.Mkdir(unreadable, 0700))
+			t.Cleanup(func() { require.NoError(t, os.Chmod(unreadable, 0700)) })
+			require.NoError(t, os.Chmod(unreadable, 0000))
+			var args []string
+			if mode == "diff" {
+				args = append(args, "--diff")
+			}
+			out, err := runFix(t, ws, args...)
+			require.Error(t, err, "output: %s", out)
+			require.Contains(t, out, "00-unreadable")
+			require.Contains(t, out, "permission denied")
+			requireRepoGazelleRan(t, stub, mode)
+		})
+	}
 }
