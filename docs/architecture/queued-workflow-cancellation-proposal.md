@@ -18,7 +18,7 @@ Make queued workflows discoverable through execution metadata, in both SQL-backe
 
 The key excludes the commit SHA so successive commits match. Existing concurrency settings, including the default-branch policy, still apply. The replacement itself must not be cancelled.
 
-Also record the commit SHA, GitHub reporting repository, and status context so the workflow service can report cancellation if the runner never starts. All new fields are optional and unset for non-workflow executions.
+Also record the commit SHA, GitHub reporting repository, and status context. These identify which GitHub status to update: which repo, which commit, and which named CI status (for example, `Doc Clients (Apple)`). This lets the workflow service report cancellation even if the queued runner never starts. All new fields are optional and unset for non-workflow executions.
 
 ## SQL changes
 
