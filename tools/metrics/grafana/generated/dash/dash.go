@@ -39,6 +39,11 @@ const (
 	UnitMicroseconds = "µs"
 	// UnitMilliseconds is a duration in ms, rescaled to larger units as it grows.
 	UnitMilliseconds = "ms"
+	// UnitDurationMs takes a count of milliseconds and renders it as a
+	// compound duration, breaking it into the largest units that fit
+	// (days, hours, minutes) rather than rescaling to a single unit the
+	// way UnitMilliseconds does.
+	UnitDurationMs = "dtdurationms"
 	// UnitNone is a plain unabbreviated number with no suffix.
 	UnitNone = "none"
 	// UnitOps formats as operations/sec ("ops/s").
