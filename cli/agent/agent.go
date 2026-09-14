@@ -19,7 +19,7 @@ Runs an AI coding agent to analyze data.
 
 Subcommands:
 	analyze-profile   Analyzes the timing profile for an invocation.
-	fix               Reproduces and fixes a failure from a previous invocation.
+	fix               Fixes and verifies a failure from a previous invocation.
 `
 
 // subcommand is a `bb agent` subcommand.

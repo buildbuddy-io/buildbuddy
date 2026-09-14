@@ -77,9 +77,10 @@ bb agent analyze-profile https://app.buildbuddy.io/invocation/<INVOCATION_ID>
 
 ### bb agent fix
 
-`bb agent fix` reproduces a failure from a previous invocation and fixes it by editing the current working tree.
+`bb agent fix` fixes a failure from a previous invocation by editing the current working tree, then verifies the fix.
 
-The agent reruns the invocation's original Bazel command to reproduce the failure, inspects the failure output and relevant source code, applies a minimal fix, and reruns the command to verify the fix is valid.
+The agent inspects the failure output and relevant source code, applies a minimal fix, and reruns the invocation's original command to verify it.
+Pass `--verify=false` to skip reproduction and verification for a faster fix.
 
 When run locally, the changes are applied to the current working tree.
 When run remotely, the diffset is uploaded to the 'Artifacts' tab of the remote `agent fix` run. It can be [fetched from the invocation](/docs/remote-runner-features#fetching-artifacts-programmatically) and applied to a local workspace using `git apply <DIFF_FILE>`.
@@ -95,6 +96,9 @@ bb agent fix <INVOCATION_ID> //foo:bar_test
 
 # Fix only the failing test cases that match a test filter.
 bb agent fix <INVOCATION_ID> //foo:bar_test --test_filter=TestBaz
+
+# Skip reproduction and verification for a faster fix.
+bb agent fix <INVOCATION_ID> --verify=false
 
 # Run the command remotely.
 bb remote --script='bb agent fix <INVOCATION_ID>'
