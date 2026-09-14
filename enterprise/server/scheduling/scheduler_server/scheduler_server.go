@@ -117,6 +117,10 @@ const (
 	redisTaskAttempCountField        = "attemptCount"
 	redisTaskClaimedField            = "claimed"
 	redisTaskReconnectPeriodEndField = "reconnectPeriodEnd"
+	// JWT of the task owner. Sent to executors with every task reservation so
+	// that requests made on behalf of the task are authenticated as the task
+	// owner rather than as the executor.
+	redisTaskJWTField = "jwt"
 
 	// Maximum number of unclaimed task IDs we track per pool.
 	maxUnclaimedTasksTracked = 10_000
@@ -469,8 +473,16 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	req = req.CloneVT()
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
-		req.Jwt = tokenString
+	// Prior to https://github.com/buildbuddy-io/buildbuddy/pull/13345, the
+	// JWT was populated from the context which could either
+	// be the user jwt (in the normal path) or the executor jwt (if this
+	// function was called from the execution work stream handler).
+	// This check maintains this behavior during rollouts from versions that
+	// didn't yet have this change.
+	if req.GetJwt() == "" {
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
+			req.Jwt = tokenString
+		}
 	}
 
 	if req.GetSchedulingMetadata() == nil {
@@ -1121,6 +1133,8 @@ type persistedTask struct {
 	// reconnectPeriodEnd is the time until which the task is reserved for the
 	// previous lease holder to reconnect. Zero if the task is not reserved.
 	reconnectPeriodEnd time.Time
+	// jwt is the task owner's JWT. Empty for anonymous tasks.
+	jwt string
 }
 
 type schedulerClient struct {
@@ -1598,6 +1612,7 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 			TaskId:             task.taskID,
 			TaskSize:           task.metadata.GetTaskSize(),
 			SchedulingMetadata: task.metadata,
+			Jwt:                task.jwt,
 		}
 		reqs = append(reqs, req)
 	}
@@ -1684,7 +1699,7 @@ func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID s
 	return nil
 }
 
-func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {
+func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte, jwt string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1698,6 +1713,7 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 		redisTaskMetadataField:    serializedMetadata,
 		redisTaskQueuedAtUsec:     time.Now().UnixMicro(),
 		redisTaskAttempCountField: 0,
+		redisTaskJWTField:         jwt,
 	}
 	c, err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), props).Result()
 	if err != nil {
@@ -1936,6 +1952,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskQueuedAtUsec,
 		redisTaskAttempCountField,
 		redisTaskReconnectPeriodEndField,
+		redisTaskJWTField,
 	}
 	key := s.redisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
@@ -1998,6 +2015,10 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		}
 	}
 
+	// JWT field. Absent for anonymous tasks and for tasks inserted by
+	// older schedulers that don't persist it yet.
+	jwt, _ := vals[5].(string)
+
 	return &persistedTask{
 		taskID:             taskID,
 		metadata:           metadata,
@@ -2005,6 +2026,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		queuedTimestamp:    time.UnixMicro(queuedAtUsec),
 		attemptCount:       attemptCount,
 		reconnectPeriodEnd: reconnectPeriodEnd,
+		jwt:                jwt,
 	}, nil
 }
 
@@ -2572,13 +2594,15 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	}
 	taskID := req.GetTaskId()
 	metadata := req.GetMetadata()
-	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask()); err != nil {
+	jwt := s.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx)
+	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask(), jwt); err != nil {
 		return nil, err
 	}
 	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
 		TaskId:             taskID,
 		TaskSize:           req.GetMetadata().GetTaskSize(),
 		SchedulingMetadata: metadata,
+		Jwt:                jwt,
 	}
 
 	opts := enqueueTaskReservationOpts{
@@ -2712,6 +2736,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		TaskSize:           scheduledTask.metadata.GetTaskSize(),
 		SchedulingMetadata: scheduledTask.metadata,
 		Delay:              durationpb.New(delay),
+		Jwt:                scheduledTask.jwt,
 	}
 	opts := enqueueTaskReservationOpts{
 		numReplicas:                  numReplicas,
