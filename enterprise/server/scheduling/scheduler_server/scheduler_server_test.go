@@ -29,6 +29,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -145,6 +146,7 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 
 	testUsers := make(map[string]interfaces.UserInfo, 0)
 	testUsers["user1"] = &testauth.TestUser{UserID: "user1", GroupID: "group1", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
+	testUsers["user2"] = &testauth.TestUser{UserID: "user2", GroupID: "group2", UseGroupOwnedExecutors: opts.groupOwnedEnabled}
 
 	ta := testauth.NewTestAuthenticator(t, testUsers)
 	env.SetAuthenticator(ta)
@@ -870,6 +872,116 @@ func TestExecutorReEnqueue_RetriesDisabled(t *testing.T) {
 
 	// Ensure the task was never re-enqueued
 	fe.EnsureTaskNotReceived(taskID)
+}
+
+// authenticatedContext returns a context authenticated as the given test user.
+func authenticatedContext(t *testing.T, env environment.Env, userID string) context.Context {
+	ta := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	ctx, err := ta.WithAuthenticatedUser(context.Background(), userID)
+	require.NoError(t, err)
+	return ctx
+}
+
+// nextReservation returns the next task reservation sent by the scheduler to
+// the given executor, and asserts that it is for the given task.
+func nextReservation(t *testing.T, fe *fakeExecutor, taskID string) *scpb.EnqueueTaskReservationRequest {
+	rsp := fe.NextSchedulerMessage()
+	req := rsp.GetEnqueueTaskReservationRequest()
+	require.NotNil(t, req, "expected a task reservation, got: %+v", rsp)
+	require.Equal(t, taskID, req.GetTaskId())
+	return req
+}
+
+// reservationGroupID returns the group ID identified by the JWT carried by the
+// given task reservation.
+func reservationGroupID(t *testing.T, req *scpb.EnqueueTaskReservationRequest) string {
+	require.NotEmpty(t, req.GetJwt(), "reservation for task %q has no JWT", req.GetTaskId())
+	parser, err := claims.NewClaimsParser(claims.DefaultKeyProvider)
+	require.NoError(t, err)
+	c, err := parser.Parse(context.Background(), req.GetJwt())
+	require.NoError(t, err)
+	return c.GetGroupID()
+}
+
+func TestAskForMoreWork_ReservationCarriesTaskOwnerJWT(t *testing.T) {
+	// Disable the unclaimed tasks cache so that the scheduled task is
+	// immediately visible to AskForMoreWork.
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// Register the executor with an identity that differs from the task owner.
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	// Schedule a task as user1 but don't claim it, so that it's eligible to be
+	// enqueued again as part of AskForMoreWork.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
+
+	executor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	// The reservation built from the persisted task must identify the task
+	// owner, not the executor that asked for more work.
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
+}
+
+func TestExecutorJoin_ReservationCarriesTaskOwnerJWT(t *testing.T) {
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	executorCtx := authenticatedContext(t, env, "user2")
+
+	executor1 := newFakeExecutorWithId(executorCtx, t, "n1", env.GetSchedulerClient())
+	executor1.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor1, taskID)))
+
+	// An executor joining the pool is offered the unclaimed task. The
+	// reservation must identify the task owner, not the joining executor.
+	executor2 := newFakeExecutorWithId(executorCtx, t, "n2", env.GetSchedulerClient())
+	executor2.Register()
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
+}
+
+func TestExecutorShutdown_ReEnqueuedReservationCarriesTaskOwnerJWT(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	executorCtx := authenticatedContext(t, env, "user2")
+
+	executor1 := newFakeExecutorWithId(executorCtx, t, "n1", env.GetSchedulerClient())
+	executor1.Register()
+	executor2 := newFakeExecutorWithId(executorCtx, t, "n2", env.GetSchedulerClient())
+	executor2.Register()
+
+	// Both executors receive the initial reservation.
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor1, taskID)))
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
+
+	// executor1 shuts down and hands its reservation back to the scheduler,
+	// which re-enqueues it on executor2. The re-enqueued reservation must
+	// identify the task owner, not the executor that shut down.
+	executor1.Send(&scpb.RegisterAndStreamWorkRequest{
+		ShuttingDownRequest: &scpb.ShuttingDownRequest{TaskId: []string{taskID}},
+	})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor2, taskID)))
+}
+
+func TestExecutorReEnqueue_ReservationCarriesTaskOwnerJWT(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	executor := newFakeExecutor(authenticatedContext(t, env, "user2"), t, env.GetSchedulerClient())
+	executor.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
+
+	// The executor claims the task and then hands it back for another attempt.
+	// The re-enqueued reservation must identify the task owner, not the
+	// executor that gave up on it.
+	lease := executor.Claim(taskID)
+	require.NoError(t, lease.ReEnqueue())
+	require.Equal(t, "group1", reservationGroupID(t, nextReservation(t, executor, taskID)))
 }
 
 func TestLeaseExpiration(t *testing.T) {

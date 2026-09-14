@@ -80,6 +80,7 @@ go_test(
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testfs",
+        "//server/util/claims",
         "//server/util/log",
         "//server/util/platform",
         "//server/util/proto",
