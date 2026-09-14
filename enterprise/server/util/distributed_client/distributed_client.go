@@ -328,11 +328,31 @@ func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.
 	if err != nil {
 		return nil, err
 	}
-	found, err := c.cache.GetMulti(ctx, req.GetResources())
+	rsp := &dcpb.GetMultiResponse{}
+	resources := req.GetResources()
+	if refCache, ok := c.cache.(interfaces.ReferenceCache); ok && c.getMultiSendsReferences(ctx) {
+		byteResources := make([]*rspb.ResourceName, 0, len(resources))
+		for _, rn := range resources {
+			// Minting a reference is best-effort: values that are not backed
+			// by shared storage are returned as bytes.
+			if ref, err := refCache.ReadReference(ctx, rn); err == nil {
+				rsp.KeyValue = append(rsp.KeyValue, &dcpb.KV{
+					Key:            digestToKey(rn.GetDigest()),
+					ValueReference: ref,
+				})
+			} else {
+				byteResources = append(byteResources, rn)
+			}
+		}
+		resources = byteResources
+	}
+	if len(resources) == 0 {
+		return rsp, nil
+	}
+	found, err := c.cache.GetMulti(ctx, resources)
 	if err != nil {
 		return nil, err
 	}
-	rsp := &dcpb.GetMultiResponse{}
 	for d, buf := range found {
 		if len(buf) == 0 {
 			c.log.Warningf("returned a zero-length response for digest %q", d.GetHash())
@@ -343,6 +363,14 @@ func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.
 		})
 	}
 	return rsp, nil
+}
+
+func (c *Proxy) getMultiSendsReferences(ctx context.Context) bool {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "distributed_cache.get_multi_gcs_references", false)
 }
 
 // referenceReadMode returns whether Read should send the client a reference
