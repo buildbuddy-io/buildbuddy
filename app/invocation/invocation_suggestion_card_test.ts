@@ -321,18 +321,38 @@ describe("getSuggestions", () => {
       expect(hasSuggestion(suggestions, "--execution_log_compact_file=execution_log.binpb.zst")).toBe(true);
     });
 
-    it("gates lost-input rewinding by its supported releases", () => {
-      for (const testCase of [
-        { version: "8.6.0", supported: false },
-        { version: "8.7.0", supported: true },
-        { version: "8.8.0", supported: true },
-        { version: "9.0.0", supported: false },
-        { version: "9.1.0", supported: true },
-        { version: "9.2.0", supported: true },
-        { version: "10.0.0", supported: false },
-      ]) {
-        const suggestions = getRemoteSuggestions(testCase.version);
-        expect(hasSuggestion(suggestions, "--rewind_lost_inputs")).toBe(testCase.supported);
+    it("gates lost-input rewinding by the stale action-cache fix and release defaults", () => {
+      for (const [version, supported, defaultEnabled] of [
+        ["8.6.0", false, false],
+        ["8.7.0", false, false],
+        ["8.7.1", false, false],
+        ["8.8.0rc1", true, false],
+        ["8.8.0", true, false],
+        ["8.8.1", true, false],
+        ["8.9.0", true, false],
+        ["8.10.0", true, false],
+        ["9.0.0", false, false],
+        ["9.1.0", false, false],
+        ["9.2.0", false, false],
+        ["9.2.1", false, false],
+        ["9.3.0rc1", true, true],
+        ["9.3.0", true, true],
+        ["9.3.1", true, true],
+        ["9.4.0", true, true],
+        ["9.10.0", true, true],
+        ["10.0.0rc1", true, true],
+        ["10.0.0", true, true],
+        ["11.0.0", true, true],
+      ] as const) {
+        expect(hasSuggestion(getRemoteSuggestions(version), "--rewind_lost_inputs"))
+          .withContext(`${version}, absent`)
+          .toBe(supported && !defaultEnabled);
+        expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "false" }), "--rewind_lost_inputs"))
+          .withContext(`${version}, disabled`)
+          .toBe(supported);
+        expect(hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "true" }), "--rewind_lost_inputs"))
+          .withContext(`${version}, enabled`)
+          .toBe(false);
       }
     });
 
@@ -371,8 +391,8 @@ describe("getSuggestions", () => {
       );
     });
 
-    it("recognizes explicit boolean values and Bazel 10 rewinding defaults", () => {
-      for (const version of ["8.8.0", "9.2.0", "10.0.0"]) {
+    it("recognizes explicit boolean values on supported rewinding releases", () => {
+      for (const version of ["8.8.0", "9.3.0", "10.0.0"]) {
         for (const value of ["0", "false", "no", "f", "n", "FALSE"]) {
           expect(
             hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: value }), "--rewind_lost_inputs")
@@ -387,33 +407,66 @@ describe("getSuggestions", () => {
     });
 
     it("does not infer rewinding support or defaults from rolling versions", () => {
-      for (const version of ["10.0.0-pre.20251105.2", "10.0.0-pre.20260818.1"]) {
+      for (const version of ["8.8.0-pre.20250501.1", "9.3.0-pre.20260818.1", "10.0.0-pre.20260818.1"]) {
         expect(
           hasSuggestion(getRemoteSuggestions(version, { rewind_lost_inputs: "false" }), "--rewind_lost_inputs")
         ).toBe(false);
       }
     });
 
-    it("only suggests the concurrent changes guard when its effective enum disables it", () => {
-      for (const testCase of [
-        { value: "off", expected: true },
-        { value: "false", expected: true },
-        { value: "true", expected: false },
-        { value: "lite", expected: false },
-      ]) {
-        const suggestions = getRemoteSuggestions("8.3.0", { guard_against_concurrent_changes: testCase.value });
-        expect(hasSuggestion(suggestions, "--guard_against_concurrent_changes=lite")).toBe(testCase.expected);
+    it("suggests the experimental concurrent changes guard from Bazel 6.0 until the lite default", () => {
+      for (const [version, expected] of [
+        [undefined, false],
+        ["unknown", false],
+        ["0.10.1", false],
+        ["0.11.0", false],
+        ["5.4.1", false],
+        ["6.0.0rc1", true],
+        ["6.0.0", true],
+        ["6.5.0", true],
+        ["7.6.0", true],
+        ["8.0.0", true],
+        ["8.2.0", true],
+        ["8.2.1", true],
+        ["8.3.0rc1", false],
+        ["8.3.0", false],
+        ["8.3.1", false],
+        ["8.10.0", false],
+        ["9.0.0", false],
+        ["9.3.0", false],
+        ["10.0.0", false],
+        ["11.0.0", false],
+        ["8.0.0-pre.20240101.1", false],
+      ] as const) {
+        for (const options of [{}, { experimental_guard_against_concurrent_changes: "false" }] as Record<
+          string,
+          string
+        >[]) {
+          const suggestions = getRemoteSuggestions(version, options);
+          expect(hasSuggestion(suggestions, "--experimental_guard_against_concurrent_changes"))
+            .withContext(`${version}, ${JSON.stringify(options)}`)
+            .toBe(expected);
+          expect(hasSuggestion(suggestions, "--guard_against_concurrent_changes")).toBe(false);
+        }
       }
     });
 
-    it("only suggests the concurrent changes guard in Bazel 8.3+ when it is explicitly disabled", () => {
-      expect(
-        hasSuggestion(
-          getRemoteSuggestions("8.2.0", { guard_against_concurrent_changes: "off" }),
-          "--guard_against_concurrent_changes=lite"
-        )
-      ).toBe(false);
-      expect(hasSuggestion(getRemoteSuggestions("8.3.0"), "--guard_against_concurrent_changes=lite")).toBe(false);
+    it("recognizes configured concurrent changes guards without overriding the lite default", () => {
+      for (const name of ["experimental_guard_against_concurrent_changes", "guard_against_concurrent_changes"]) {
+        for (const value of ["0", "false", "no", "f", "n", "off", "FALSE", "1", "true", "yes", "t", "y", "lite"]) {
+          const options = { [name]: value };
+          expect(
+            hasSuggestion(getRemoteSuggestions("8.2.1", options), "--experimental_guard_against_concurrent_changes")
+          )
+            .withContext(`${name}=${value}`)
+            .toBe(["0", "false", "no", "f", "n", "off", "FALSE"].includes(value));
+          for (const version of ["8.3.0rc1", "8.3.0", "9.0.0", "10.0.0"]) {
+            expect(hasSuggestion(getRemoteSuggestions(version, options), "guard_against_concurrent_changes"))
+              .withContext(`${version}, ${name}=${value}`)
+              .toBe(false);
+          }
+        }
+      }
     });
 
     it("only recommends remote cache async when Bazel 8+ explicitly disables it", () => {
@@ -435,7 +488,7 @@ describe("getSuggestions", () => {
     });
 
     it("does not recommend rewinding when it is already enabled", () => {
-      expect(hasSuggestion(getRemoteSuggestions("8.7.0", { rewind_lost_inputs: "1" }), "--rewind_lost_inputs")).toBe(
+      expect(hasSuggestion(getRemoteSuggestions("8.8.0", { rewind_lost_inputs: "1" }), "--rewind_lost_inputs")).toBe(
         false
       );
     });
@@ -459,9 +512,11 @@ describe("getSuggestions", () => {
       const original = capabilities.config.expandedSuggestionsEnabled;
       try {
         expect(hasSuggestion(getRemoteSuggestions(), "--remote_grpc_log")).toBe(false);
-        expect(hasSuggestion(getRemoteSuggestions("8.7.0", {}, false), "--rewind_lost_inputs")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions(), "--rewind_lost_inputs")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions("8.2.1", {}, false), "guard_against_concurrent_changes")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions("8.8.0", {}, false), "--rewind_lost_inputs")).toBe(false);
 
-        const nonBazelModel = suggestionModel("8.7.0");
+        const nonBazelModel = suggestionModel("8.8.0");
         nonBazelModel.invocation.role = "NINJA";
         expect(
           hasSuggestion(
@@ -470,8 +525,18 @@ describe("getSuggestions", () => {
           )
         ).toBe(false);
 
+        const nonBazelGuardModel = suggestionModel("8.2.1");
+        nonBazelGuardModel.invocation.role = "NINJA";
+        expect(
+          hasSuggestion(
+            getSuggestions({ model: nonBazelGuardModel, buildLogs: "ordinary build logs", user: testUser() }),
+            "guard_against_concurrent_changes"
+          )
+        ).toBe(false);
+
         capabilities.config.expandedSuggestionsEnabled = false;
-        expect(hasSuggestion(getRemoteSuggestions("8.7.0"), "--rewind_lost_inputs")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions("8.2.1"), "guard_against_concurrent_changes")).toBe(false);
+        expect(hasSuggestion(getRemoteSuggestions("8.8.0"), "--rewind_lost_inputs")).toBe(false);
       } finally {
         capabilities.config.expandedSuggestionsEnabled = original;
       }

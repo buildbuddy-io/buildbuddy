@@ -108,8 +108,8 @@ function getCompactExecutionLogFlag(version: BazelVersion | null) {
   return null;
 }
 
-// Remote-cache lost-input recovery and chunking are supported from Bazel 8.7 and 9.1.
-function supportsRemoteCacheRecoveryAndChunking(version: BazelVersion | null) {
+// Remote-cache chunking is supported from Bazel 8.7 and 9.1.
+function supportsRemoteCacheChunking(version: BazelVersion | null) {
   return (
     bazelVersionAtLeast(version, 10) ||
     (version?.major === 9 && version.minor >= 1) ||
@@ -117,8 +117,10 @@ function supportsRemoteCacheRecoveryAndChunking(version: BazelVersion | null) {
   );
 }
 
-function supportsGuardAgainstConcurrentChanges(version: BazelVersion | null) {
-  return bazelVersionAtLeast(version, 8, 3);
+// Rewinding needs the stale action-cache fix backported to Bazel 8.8 and 9.3.
+// https://github.com/bazelbuild/bazel/pull/30266
+function supportsRemoteCacheRewinding(version: BazelVersion | null) {
+  return bazelVersionAtLeast(version, 9, 3) || (version?.major === 8 && version.minor >= 8);
 }
 
 // The BEP retains explicit values such as "false"; only --noflag becomes "0".
@@ -130,7 +132,7 @@ function isGuardAgainstConcurrentChangesDisabled(model: InvocationModel) {
   const rawValue =
     model.optionsMap.get("guard_against_concurrent_changes") ??
     model.optionsMap.get("experimental_guard_against_concurrent_changes");
-  return isFalseOptionValue(rawValue);
+  return rawValue === undefined || isFalseOptionValue(rawValue);
 }
 
 export const getTimingDataSuggestion: SuggestionMatcher = ({ model }) => {
@@ -660,14 +662,14 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!model.isBazelInvocation()) return null;
     if (!isRemoteCacheEnabled(model)) return null;
     const version = model.getBazelVersion();
-    if (!supportsRemoteCacheRecoveryAndChunking(version)) return null;
+    if (!supportsRemoteCacheRewinding(version)) return null;
     // Rolling builds with the same major/minor can predate recovery support
-    // or the Bazel 10 default change, so don't infer their behavior.
+    // or the Bazel 9.3 default change, so don't infer their behavior.
     if (model.started?.buildToolVersion?.includes("-pre.")) return null;
 
     const rewindOption = model.optionsMap.get("rewind_lost_inputs");
     const rewindEnabled =
-      rewindOption === undefined ? bazelVersionAtLeast(version, 10) : !isFalseOptionValue(rewindOption);
+      rewindOption === undefined ? bazelVersionAtLeast(version, 9, 3) : !isFalseOptionValue(rewindOption);
     if (rewindEnabled) return null;
 
     return {
@@ -693,7 +695,10 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!isRemoteCacheEnabled(model)) return null;
 
     const version = model.getBazelVersion();
-    if (!supportsGuardAgainstConcurrentChanges(version)) return null;
+    // On Bazel 6.0 through 8.2, the experimental boolean flag defaults to false.
+    // Bazel 8.3+ uses the stable name and defaults to lite; leave it alone.
+    if (!bazelVersionAtLeast(version, 6) || bazelVersionAtLeast(version, 8, 3)) return null;
+    if (model.started?.buildToolVersion?.includes("-pre.")) return null;
     if (!isGuardAgainstConcurrentChangesDisabled(model)) return null;
 
     return {
@@ -702,7 +707,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
         <>
           Consider setting{" "}
           <BazelFlag anchor="param-no-guard-against-concurrent-changes">
-            --guard_against_concurrent_changes=lite
+            --experimental_guard_against_concurrent_changes
           </BazelFlag>{" "}
           so Bazel checks for source file changes before uploading action results to the remote cache.
         </>
@@ -710,7 +715,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
       reason: (
         <>
           Shown because this build uses remote caching or execution, but{" "}
-          <span className="inline-code">--guard_against_concurrent_changes</span> is explicitly disabled.
+          <span className="inline-code">--experimental_guard_against_concurrent_changes</span> is not enabled.
         </>
       ),
     };
@@ -721,7 +726,7 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     if (!model.isBazelInvocation()) return null;
     if (!isGrpcRemoteCacheEnabled(model)) return null;
     if (model.optionsMap.has("experimental_remote_cache_chunking")) return null;
-    if (!supportsRemoteCacheRecoveryAndChunking(model.getBazelVersion())) return null;
+    if (!supportsRemoteCacheChunking(model.getBazelVersion())) return null;
     if (model.started?.buildToolVersion?.includes("-pre.")) return null;
 
     return {
