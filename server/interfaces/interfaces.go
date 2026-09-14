@@ -987,6 +987,9 @@ type WebhookData struct {
 	// Ex: "opened", "synchronize", "ready_for_review"
 	PullRequestAction string
 
+	// PullRequestIsDraft is whether the pull request is a draft, if applicable.
+	PullRequestIsDraft bool
+
 	// ChangedFiles is the list of files changed by branch push events. Only
 	// populated for branch push events.
 	ChangedFiles []string

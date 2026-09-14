@@ -211,6 +211,16 @@ func TestParseWebhookData_AutoMergeEnabled_RecordsAction(t *testing.T) {
 	}, data)
 }
 
+func TestParseWebhookData_DraftPullRequest_RecordsIsDraft(t *testing.T) {
+	event := pullRequestEvent("opened")
+	event.PullRequest.Draft = new(true)
+
+	data, err := github.ParseWebhookData(event)
+
+	assert.NoError(t, err)
+	assert.True(t, data.PullRequestIsDraft)
+}
+
 func TestParseWebhookData_UnhandledPullRequestAction_Ignored(t *testing.T) {
 	data, err := github.ParseWebhookData(pullRequestEvent("unsupported_action"))
 
