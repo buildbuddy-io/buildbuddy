@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
@@ -97,8 +98,8 @@ func (e *auditLogTestEnv) createAuditReaderKey(t *testing.T, userCtx context.Con
 		groupID,
 		"audit-reader",
 		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
-		0,     /*=expiresIn*/
-		false, /*=visibleToDevelopers*/
+		0, /*=expiresIn*/
+		api_key.DefaultAPIKeyVisibility,
 	)
 	require.NoError(t, err)
 	return key.Value

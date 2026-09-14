@@ -12,6 +12,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -240,7 +241,7 @@ func TestChildGroupAuth(t *testing.T) {
 		ctx1, us1Group.GroupID, "audit",
 		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 	group1AuditorCtx := env.GetAuthenticator().AuthContextFromAPIKey(ctx, grp1AuditKey.Value)
 
@@ -251,7 +252,7 @@ func TestChildGroupAuth(t *testing.T) {
 		ctx2, us2Group.GroupID, "audit",
 		[]cappb.Capability{cappb.Capability_AUDIT_LOG_READ},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 
 	// Key for group1 shouldn't be able to query anything in group2.
