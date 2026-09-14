@@ -6,15 +6,6 @@ import capabilities from "../capabilities/capabilities";
 import Button, { OutlinedButton } from "../components/button/button";
 import AIButton from "../components/button/ai_button";
 import LinkButton from "../components/button/link_button";
-import Dialog, {
-  DialogBody,
-  DialogFooter,
-  DialogFooterButtons,
-  DialogHeader,
-  DialogTitle,
-} from "../components/dialog/dialog";
-import Modal from "../components/modal/modal";
-import { TextLink } from "../components/link/link";
 import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
@@ -47,7 +38,6 @@ interface State {
   eventPageSize: number;
   localProfileName: string;
   viewerKey: number;
-  isAnalyzeProfileDialogOpen: boolean;
 }
 
 interface TraceEventRef {
@@ -85,7 +75,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
     viewerKey: 0,
-    isAnalyzeProfileDialogOpen: false,
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
@@ -461,55 +450,8 @@ export default class InvocationTimingCardComponent extends React.Component<Props
         label="Suggest speedups"
         onClick={this.suggestSpeedups.bind(this)}
         onCopyCommand={this.copyAnalyzeProfileCommand.bind(this)}
-        onInfoClick={() => this.setState({ isAnalyzeProfileDialogOpen: true })}
+        docsUrl="https://www.buildbuddy.io/docs/cli-commands#bb-agent-analyze-profile"
       />
-    );
-  }
-
-  private renderAnalyzeProfileDialog() {
-    return (
-      <Modal
-        isOpen={this.state.isAnalyzeProfileDialogOpen}
-        onRequestClose={() => this.setState({ isAnalyzeProfileDialogOpen: false })}>
-        <Dialog className="timing-analyze-profile-dialog">
-          <DialogHeader>
-            <DialogTitle>AI timing profile analysis</DialogTitle>
-          </DialogHeader>
-          <DialogBody>
-            <p>
-              <span className="inline-code">bb agent analyze-profile</span> uses AI to analyze the timing profile
-              uploaded with this build and recommend ways to improve build performance.
-            </p>
-            <p>
-              <b>Run from the UI</b>
-              <br />
-              When triggered from the UI, the command will be run on a remote runner and the results will be rendered in
-              a new tab. The runner requires an{" "}
-              <TextLink href="/settings/org/secrets" target="_blank">
-                agent API-key stored as a BuildBuddy secret
-              </TextLink>
-              .
-            </p>
-            <p>
-              <b>Run locally</b>
-              <br />
-              The adjacent menu has a button to copy the command to run locally. On your local machine, the command can
-              use your existing agent sign-in.
-            </p>
-            <p>
-              Relevant profile data is sent to the AI provider, and provider charges may apply.{" "}
-              <TextLink href="https://www.buildbuddy.io/docs/cli-commands#bb-agent-analyze-profile" target="_blank">
-                See the docs for more info.
-              </TextLink>
-            </p>
-          </DialogBody>
-          <DialogFooter>
-            <DialogFooterButtons>
-              <Button onClick={() => this.setState({ isAnalyzeProfileDialogOpen: false })}>Done</Button>
-            </DialogFooterButtons>
-          </DialogFooter>
-        </Dialog>
-      </Modal>
     );
   }
 
@@ -743,7 +685,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
               )}
           </div>
         </div>
-        {this.renderAnalyzeProfileDialog()}
       </>
     );
   }

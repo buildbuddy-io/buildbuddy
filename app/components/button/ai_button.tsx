@@ -1,4 +1,4 @@
-import { Bot, Check, ChevronDown, Copy, Info } from "lucide-react";
+import { Bot, Check, ChevronDown, Copy, ExternalLink } from "lucide-react";
 import React from "react";
 import { DEFAULT_REMOTE_RUNNER_AGENT, REMOTE_RUNNER_AGENTS, RemoteRunnerAgent } from "../../util/remote_runner";
 import { OutlinedButton } from "./button";
@@ -12,7 +12,7 @@ interface Props {
   loadingLabel?: string;
   onClick: (agent: RemoteRunnerAgent) => void | Promise<void>;
   onCopyCommand: (agent: RemoteRunnerAgent) => void;
-  onInfoClick: () => void;
+  docsUrl: string;
 }
 
 interface State {
@@ -35,6 +35,11 @@ export default class AIButton extends React.Component<Props, State> {
   private copyCommand() {
     this.setState({ isMenuOpen: false });
     this.props.onCopyCommand(this.state.agent);
+  }
+
+  private openDocs() {
+    this.setState({ isMenuOpen: false });
+    window.open(this.props.docsUrl, "_blank");
   }
 
   private async onClick() {
@@ -63,12 +68,6 @@ export default class AIButton extends React.Component<Props, State> {
             onClick={() => this.setState({ isMenuOpen: true })}>
             <ChevronDown />
           </OutlinedButton>
-          <OutlinedButton
-            className="icon-button"
-            aria-label="How this AI action works"
-            onClick={this.props.onInfoClick}>
-            <Info />
-          </OutlinedButton>
         </OutlinedButtonGroup>
         <Popup
           isOpen={this.state.isMenuOpen}
@@ -93,6 +92,10 @@ export default class AIButton extends React.Component<Props, State> {
             <MenuItem onClick={this.copyCommand.bind(this)}>
               <Copy className="ai-button-menu-icon" />
               <span>Copy command to run locally</span>
+            </MenuItem>
+            <MenuItem onClick={this.openDocs.bind(this)}>
+              <ExternalLink className="ai-button-menu-icon" />
+              <span>Docs</span>
             </MenuItem>
           </Menu>
         </Popup>
