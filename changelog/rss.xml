@@ -4,10 +4,19 @@
         <title>BuildBuddy Blog</title>
         <link>https://www.buildbuddy.io/changelog</link>
         <description>BuildBuddy Blog</description>
-        <lastBuildDate>Tue, 18 Aug 2026 10:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Fri, 11 Sep 2026 10:00:00 GMT</lastBuildDate>
         <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
         <generator>https://github.com/jpmonette/feed</generator>
         <language>en</language>
+        <item>
+            <title><![CDATA[Fix failing builds with bb agent fix]]></title>
+            <link>https://www.buildbuddy.io/changelog/agent-fix</link>
+            <guid>https://www.buildbuddy.io/changelog/agent-fix</guid>
+            <pubDate>Fri, 11 Sep 2026 10:00:00 GMT</pubDate>
+            <description><![CDATA[bb agent fix reproduces a failure from a previous invocation and fixes it by editing the current working tree.]]></description>
+            <category>AI</category>
+            <category>debugging</category>
+        </item>
         <item>
             <title><![CDATA[Configure the BuildBuddy CLI with .bbrc]]></title>
             <link>https://www.buildbuddy.io/changelog/bbrc</link>
