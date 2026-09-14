@@ -34,3 +34,17 @@
 .donut-chart-legend-desc {
   font-weight: normal;
 }
+
+.donut-chart-title {
+  margin-top: 32px;
+  font-weight: 700;
+  display: flex;
+  font-size: 20px;
+}
+
+.donut-chart-subtitle {
+  margin-bottom: 24px;
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}

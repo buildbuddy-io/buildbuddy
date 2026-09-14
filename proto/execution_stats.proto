@@ -10,6 +10,7 @@ import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
 import "proto/scheduler.proto";
 import "proto/stat_filter.proto";
+import "proto/stats.proto";
 
 package execution_stats;
 
@@ -431,4 +432,79 @@ message SearchExecutionResponse {
   // Token to retrieve the next page of results, or empty if there are no
   // more results in the list.
   string next_page_token = 3;
+}
+
+message GetExecutionTimelineRequest {
+  context.RequestContext request_context = 1;
+
+  // A mandatory target to avoid returning tons of data.
+  string target = 2;
+
+  ExecutionQuery query = 3;
+}
+
+message ExecutionTimelineEntry {
+  string action_digest_hash = 1;
+  string invocation_id = 2;
+
+  int64 start_time_usec = 3;
+  int64 duration_usec = 4;
+  int64 cpu_nanos = 5;
+  int64 peak_memory_bytes = 6;
+  int64 downloaded_bytes = 7;
+  int64 uploaded_bytes = 8;
+}
+
+message AggregatedExecutionTimelineEntry {
+  int64 bucket_start_time_usec = 1;
+  ExecutionTimelineSummary summary = 2;
+}
+
+message ExecutionTimelineSummary {
+  int64 duration_usec_total = 1;
+  int64 duration_usec_p10 = 2;
+  int64 duration_usec_p50 = 3;
+  int64 duration_usec_p90 = 4;
+  int64 cpu_nanos_total = 5;
+  int64 cpu_nanos_p10 = 6;
+  int64 cpu_nanos_p50 = 7;
+  int64 cpu_nanos_p90 = 8;
+  int64 peak_memory_p10 = 9;
+  int64 peak_memory_p50 = 10;
+  int64 peak_memory_p90 = 11;
+  int64 downloaded_bytes_total = 12;
+  int64 downloaded_bytes_p10 = 13;
+  int64 downloaded_bytes_p50 = 14;
+  int64 downloaded_bytes_p90 = 15;
+  int64 uploaded_bytes_total = 16;
+  int64 uploaded_bytes_p10 = 17;
+  int64 uploaded_bytes_p50 = 18;
+  int64 uploaded_bytes_p90 = 19;
+}
+
+message ExecutionTimeline {
+  string mnemonic = 1;
+  string output_path = 2;
+  string os = 3;
+  string arch = 4;
+  int64 shard = 5;
+
+  ExecutionTimelineSummary summary = 6;
+  repeated ExecutionTimelineEntry execution = 7;
+  repeated AggregatedExecutionTimelineEntry aggregated_stats = 8;
+}
+
+message GetExecutionTimelineResponse {
+  context.ResponseContext response_context = 1;
+
+  // This StatsInterval defines the buckets in the aggregated_stats of each
+  // timeline.
+  stats.StatsInterval interval = 3;
+
+  // One `ExecutionTimeline` for each group of executions that matched the
+  // target and query in the request.  Each timeline's summary and
+  // aggregated_stats cover all matching executions, but the individual
+  // `execution` entries are a bounded random sample across all timelines,
+  // ordered by start_time_usec.
+  repeated ExecutionTimeline timelines = 2;
 }

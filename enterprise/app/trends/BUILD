@@ -186,6 +186,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/recharts",
+        "//:node_modules/tslib",
         "//app/router",
         "//enterprise/app/trends:chart_series",
     ],
