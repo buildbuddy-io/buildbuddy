@@ -1366,6 +1366,21 @@ func TestReEnqueueTask_GroupCheck(t *testing.T) {
 	}
 }
 
+func TestPerKeyLogLimiter(t *testing.T) {
+	clock := clockwork.NewFakeClock()
+	limiter := newPerKeyLogLimiter(clock, time.Minute)
+
+	require.True(t, limiter.allow("group1"))
+	require.False(t, limiter.allow("group1"), "repeat within the interval is suppressed")
+	require.True(t, limiter.allow("group2"), "keys are limited independently")
+
+	clock.Advance(time.Minute - time.Second)
+	require.False(t, limiter.allow("group1"))
+	clock.Advance(time.Second)
+	require.True(t, limiter.allow("group1"), "allowed again once the interval has passed")
+	require.False(t, limiter.allow("group1"))
+}
+
 func TestLeaseTask_RefreshToken_FailureDoesNotFailLease(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
