@@ -1037,10 +1037,6 @@
   align-self: flex-start;
 }
 
-.timing-analyze-profile-dialog {
-  width: 600px;
-}
-
 .download-color-swatch {
   background-color: var(--color-light-blue-500);
 }
