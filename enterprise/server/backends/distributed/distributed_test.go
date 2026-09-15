@@ -1952,6 +1952,9 @@ func TestExtraNodes(t *testing.T) {
 }
 
 func TestExtraNodesReadOnly(t *testing.T) {
+	// Preserve coverage of migrations from the legacy ring to SHA256.
+	flags.Set(t, "cache.distributed_cache.consistent_hash_function", "CRC32")
+	flags.Set(t, "cache.distributed_cache.consistent_hash_vnodes", 100)
 	// Use new nodes for reads ONLY. No content should be written.
 	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", true)
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
@@ -2129,6 +2132,9 @@ func TestExtraNodesReadOnly(t *testing.T) {
 }
 
 func TestExtraNodesReadWrite(t *testing.T) {
+	// Preserve coverage of migrations from the legacy ring to SHA256.
+	flags.Set(t, "cache.distributed_cache.consistent_hash_function", "CRC32")
+	flags.Set(t, "cache.distributed_cache.consistent_hash_vnodes", 100)
 	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", false)
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_vnodes", 10000)
