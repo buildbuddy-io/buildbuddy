@@ -20,6 +20,7 @@ actions:
     arch: "arm64"
     resource_requests:
       disk: 27GB
+      memory: 16GB
     # ARM64 capacity is in the default prod pool and supports OCI isolation.
     platform_properties:
       Pool: "default"
