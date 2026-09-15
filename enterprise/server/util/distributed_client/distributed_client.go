@@ -1262,8 +1262,7 @@ func (wc *streamWriteCloser) Close() error {
 // for; the receiving peer records a hinted handoff so the data can be
 // forwarded once that peer returns.
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
-	return dbw, err
+	return c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 }
 
 // VerifiedWriter is a CommittedWriteCloser whose write stream's final message
@@ -1285,11 +1284,11 @@ func (w *VerifiedWriter) SetReference(ref *refpb.Reference) {
 // whose final stream message carries the reference bound via SetReference, if
 // any, for the peer to verify against the written bytes.
 func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (*VerifiedWriter, error) {
-	dbw, swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 	if err != nil {
 		return nil, err
 	}
-	return &VerifiedWriter{CommittedWriteCloser: dbw, swc: swc}, nil
+	return &VerifiedWriter{CommittedWriteCloser: swc, swc: swc}, nil
 }
 
 // RemoteReferenceWriter opens a write stream that writes r to the peer by
@@ -1298,21 +1297,20 @@ func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer stri
 // referenced blob's ownership semantics via mustClone. Like the byte path, a
 // peer that already has r is not an error.
 func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
-	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
-	return dbw, err
+	return c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
 }
 
-func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (interfaces.CommittedWriteCloser, *streamWriteCloser, error) {
+func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (*streamWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
 		cancel()
-		return nil, nil, err
+		return nil, err
 	}
 
 	requestType := "bytes"
@@ -1329,7 +1327,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 		refMustBeCloned: refMustBeCloned,
 		requestType:     requestType,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), wc, nil
+	return wc, nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {
