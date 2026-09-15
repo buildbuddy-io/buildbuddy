@@ -32,17 +32,7 @@ actions:
         branches:
           - "*"
     steps:
-      - run: |
-          # GCP ARM64 executors do not support Firecracker. Query test targets
-          # separately so that incompatible non-test targets under //... are not
-          # built, and omit tests that explicitly request Firecracker isolation.
-          bazel query \
-            'tests(//...) except attr("exec_properties", "firecracker", tests(//...))' \
-            --output=label > /tmp/linux-arm64-tests
-          bazel test \
-            --config=linux-arm64-workflows \
-            --config=tests-linux-arm64 \
-            --target_pattern_file=/tmp/linux-arm64-tests
+      - run: "bazel test //... --config=linux-arm64-workflows --config=race --config=tests-ci --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
     container_image: ubuntu-22.04
