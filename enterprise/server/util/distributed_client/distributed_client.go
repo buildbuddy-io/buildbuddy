@@ -100,7 +100,7 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		log:            logger,
 		readRefLogger:  logger.EveryN(100),
 		writeRefLogger: logger.EveryN(100),
-		bufPool:        bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
+		bufPool:        bytebufferpool.VariableSize(*config.ReadBufSizeBytes),
 		listenAddr:     listenAddr,
 		mu:             &sync.Mutex{},
 		// server goes here
