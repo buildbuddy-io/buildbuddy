@@ -70,6 +70,7 @@ var (
 	)
 	notifyEmail = nondeterminismFlags.Bool("notify_email", false, "Send an email to workspace admins when nondeterminism is detected.")
 	notifySlack = nondeterminismFlags.String("notify_slack", "", "Name of the BuildBuddy secret with the Slack webhook URL to notify when nondeterminism is detected.")
+	tempDir     = nondeterminismFlags.String("temp_dir", "", "Directory in which temporary output bases and build logs will be created. Defaults to the OS temp directory.")
 )
 
 var errNondeterminismDetected = errors.New("nondeterminism detected")
@@ -97,6 +98,7 @@ type options struct {
 	bazelArgs     *arg.BazelArgs
 	besBackend    string
 	besResultsURL string
+	tempDir       string
 }
 
 type checker struct {
@@ -151,6 +153,7 @@ func handleNondeterminism(args []string) (int, error) {
 		bazelArgs:     bazelArgs,
 		besBackend:    *besBackend,
 		besResultsURL: *besResultsURL,
+		tempDir:       *tempDir,
 	}
 
 	c := &checker{
@@ -188,7 +191,7 @@ func parseBazelCommand(command string) (*arg.BazelArgs, error) {
 }
 
 func (c *checker) Run(ctx context.Context) error {
-	m, err := newBuildMetadata()
+	m, err := newBuildMetadata(c.opts.tempDir)
 	if err != nil {
 		return err
 	}
@@ -278,8 +281,13 @@ func (c *checker) notifyNondeterminism(ctx context.Context, m *buildMetadata) er
 	return nil
 }
 
-func newBuildMetadata() (*buildMetadata, error) {
-	dir, err := os.MkdirTemp("", "nondeterminism-check-*")
+func newBuildMetadata(tempDir string) (*buildMetadata, error) {
+	if tempDir != "" {
+		if err := os.MkdirAll(tempDir, 0755); err != nil {
+			return nil, err
+		}
+	}
+	dir, err := os.MkdirTemp(tempDir, "nondeterminism-check-*")
 	if err != nil {
 		return nil, err
 	}
