@@ -33,6 +33,7 @@ go_library(
         "//server/util/retry",
         "//server/util/status",
         "//server/util/tracing",
+        "//third_party/singleflight",
         "@com_github_prometheus_client_golang//prometheus",
         "@io_opentelemetry_go_otel//attribute",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
