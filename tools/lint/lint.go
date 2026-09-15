@@ -50,11 +50,14 @@ var (
 		// Fixes frontend-related files, configs, and docs.
 		{Name: "PrettierFormat", Run: runPrettier},
 		// tools/fix_go_deps.sh fixes go.mod, go.sum, and MODULE.bazel.
-		// Runs exclusively because BuildFix also formats MODULE.bazel.
+		// Runs exclusively because Buildifier also formats MODULE.bazel.
 		{Name: "GoModulesFix", Run: runFixGoDeps, WriteLock: true},
-		// Fixes build+starlark file formatting and BUILD files.
-		// Runs exclusively because it may update MODULE.bazel.
-		{Name: "BuildFix", Run: runBuildFix, WriteLock: true},
+		// Fixes build+starlark file formatting.
+		// Runs exclusively because Gazelle may update the same BUILD files.
+		{Name: "Buildifier", Run: runBuildifier, WriteLock: true},
+		// Generates and updates BUILD files.
+		// Runs exclusively because Buildifier may update the same BUILD files.
+		{Name: "Gazelle", Run: runGazelle, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 	}
@@ -85,14 +88,7 @@ type Tool struct {
 	Run func(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error
 }
 
-func runBuildFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	if err := runBuildifier(ctx, stdout, stderr, fix); err != nil {
-		return err
-	}
-	return runGazelle(ctx, stdout, stderr, fix)
-}
-
-func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool) error {
+func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool, _ []string) error {
 	files, err := listBuildFiles(".")
 	if err != nil {
 		return fmt.Errorf("list build files: %w", err)
@@ -122,7 +118,7 @@ func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool) erro
 	return nil
 }
 
-func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool) error {
+func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool, _ []string) error {
 	cmd, err := getRunfileToolCommand(ctx, gazelleRlocationpath)
 	if err != nil {
 		return fmt.Errorf("get gazelle command: %w", err)
