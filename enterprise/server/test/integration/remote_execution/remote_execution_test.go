@@ -2395,9 +2395,6 @@ func TestContainerRegistryBypass(t *testing.T) {
 }
 
 func TestProactiveCancellation(t *testing.T) {
-	// Enable proactive cancellation on both the scheduler and executors.
-	flags.Set(t, "remote_execution.proactive_cancellation_enabled", true)
-	flags.Set(t, "executor.proactive_cancellation_enabled", true)
 	// Disable work stealing and queue pruning to make scheduling more
 	// predictable and make sure we're testing the right thing.
 	flags.Set(t, "executor.excess_capacity_threshold", -1)
