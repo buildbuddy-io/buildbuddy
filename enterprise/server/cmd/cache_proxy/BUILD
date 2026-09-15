@@ -1,6 +1,6 @@
 load("@io_bazel_rules_docker//container:container.bzl", "container_image")
 load("@io_bazel_rules_docker//go:image.bzl", "go_image")
-load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -74,6 +74,24 @@ go_library(
 go_binary(
     name = "cache_proxy",
     embed = [":cache_proxy_lib"],
+)
+
+go_test(
+    name = "cache_proxy_test",
+    size = "small",
+    srcs = ["cache_proxy_test.go"],
+    embed = [":cache_proxy_lib"],
+    deps = [
+        "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:remote_execution_go_proto",
+        "//server/interfaces",
+        "//server/testutil/testdigest",
+        "//server/testutil/testenv",
+        "//server/testutil/testport",
+        "//server/util/grpc_server",
+        "//server/util/testing/flags",
+        "@com_github_stretchr_testify//require",
+    ],
 )
 
 container_image(

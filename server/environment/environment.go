@@ -64,6 +64,7 @@ type Env interface {
 	GetInvocationSearchService() interfaces.InvocationSearchService
 	GetSplashPrinter() interfaces.SplashPrinter
 	GetActionCacheClient() repb.ActionCacheClient
+	GetLocalActionCacheClient() repb.ActionCacheClient
 	GetByteStreamClient() bspb.ByteStreamClient
 	GetLocalByteStreamClient() bspb.ByteStreamClient
 	GetPooledByteStreamClient() interfaces.PooledByteStreamClient
