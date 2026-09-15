@@ -4,6 +4,8 @@ title: Cache Configuration
 sidebar_label: Cache
 ---
 
+This document describes how to configure **BuildBuddy's open-source (OSS) cache**, which can act as a remote disk cache on a single node only. For Enterprise configuration, see [Enterprise cache setup](enterprise-cache-setup.md).
+
 ## Section
 
 `cache:` The cache section enables the BuildBuddy cache and configures how and where it will store data. **Optional**
@@ -19,16 +21,7 @@ sidebar_label: Cache
 - `zstd_transcoding_enabled`: Whether or not to enable cache compression capabilities. You need to use `--experimental_remote_cache_compression` to activate it on your build.
 
 - `disk:` The Disk section configures a disk-based cache.
-
   - `root_directory` The root directory to store cache data in, if using the disk cache. This directory must be readable and writable by the BuildBuddy process. The directory will be created if it does not exist.
-
-**Enterprise only**
-
-Legacy GCS, S3, Redis, and Memcache cache backends are deprecated for new deployments.
-Prefer `cache.disk.root_directory` for cache storage, and configure `storage.gcs` or
-`storage.aws_s3` for durable blob and build event storage. The legacy cache options
-remain listed in the [all options](config-all-options.mdx) docs and are marked deprecated
-for existing deployments.
 
 ## Example section
 
