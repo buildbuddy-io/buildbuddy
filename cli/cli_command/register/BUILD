@@ -12,7 +12,6 @@ go_library(
         "//cli/agent",
         "//cli/agent/agentflags",
         "//cli/analyze",
-        "//cli/ask",
         "//cli/box",
         "//cli/cli_command",
         "//cli/detect",

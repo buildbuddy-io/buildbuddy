@@ -24,7 +24,6 @@ import DenseInvocationOverviewComponent from "./dense/dense_invocation_overview"
 import { ExecuteOperation, ExecutionStage, executionStatusLabel, waitExecution } from "./execution_status";
 import InvocationActionCardComponent from "./invocation_action_card";
 import ArtifactsCardComponent from "./invocation_artifacts_card";
-import { InvocationBotCard } from "./invocation_bot_card";
 import BuildLogsCardComponent from "./invocation_build_logs_card";
 import CacheCardComponent from "./invocation_cache_card";
 import InvocationCoverageCardComponent from "./invocation_coverage_card";
@@ -648,10 +647,6 @@ export default class InvocationComponent extends React.Component<Props, State> {
               // is done on the server.
               debounceMillis={this.state.model.invocation.targetGroups.length ? 200 : 0}
             />
-          )}
-
-          {(activeTab === "all" || activeTab === "log") && this.state.model.botSuggestions.length > 0 && (
-            <InvocationBotCard suggestions={this.state.model.botSuggestions} />
           )}
 
           {(activeTab === "all" || activeTab === "log") && (
