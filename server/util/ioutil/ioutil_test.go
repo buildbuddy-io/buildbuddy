@@ -3,7 +3,6 @@ package ioutil_test
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -160,21 +159,6 @@ func TestBestEffortWriter(t *testing.T) {
 	require.Zero(t, written)
 	require.Error(t, b.Err())
 	require.Empty(t, cmp.Diff(bytesToWrite[:22], w.Bytes()))
-}
-
-func mustWrite(t *testing.T, w io.Writer, p []byte) {
-	n, err := w.Write(p)
-	require.NoError(t, err)
-	require.Equal(t, len(p), n)
-}
-
-func mustRead(t *testing.T, r io.Reader, p []byte) int {
-	buf := make([]byte, len(p))
-	n, err := ioutil.ReadTryFillBuffer(r, buf)
-	require.NoError(t, err)
-	require.Equal(t, p, buf[:n])
-	fmt.Println("\t\t\t\t\t\tREAD", n, "bytes")
-	return n
 }
 
 func TestSpillBuffer_UnderLimit(t *testing.T) {

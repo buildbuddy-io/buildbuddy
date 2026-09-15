@@ -47,16 +47,6 @@ import (
 )
 
 const (
-	// writeBufSizeBytes controls the maximum size of buffers used for writing
-	// to a remote cache. This is also the maximum payload size for each
-	// WriteRequest, though with ioutil.DoubleBufferWriter, payloads will be
-	// smaller unless the remote cache is falling behind. Experiments and
-	// benchmarks show that 128KB, 256KB, and 512KB are all about as fast.
-	// Values outside that range cause more allocation in gRPC code. This
-	// should be slightly smaller than 2^N, to allow for proto and gRPC
-	// overhead.
-	writeBufSizeBytes = 512 * 1000 // 512 KB
-
 	// Reference verification outcomes.
 	VerificationSuccess = "success"
 	VerificationFailure = "failure"
@@ -1262,7 +1252,11 @@ func (wc *streamWriteCloser) Close() error {
 // for; the receiving peer records a hinted handoff so the data can be
 // forwarded once that peer returns.
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	return c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 // VerifiedWriter is a CommittedWriteCloser whose write stream's final message
@@ -1297,7 +1291,11 @@ func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer stri
 // referenced blob's ownership semantics via mustClone. Like the byte path, a
 // peer that already has r is not an error.
 func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
-	return c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (*streamWriteCloser, error) {
