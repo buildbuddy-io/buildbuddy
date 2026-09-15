@@ -762,7 +762,7 @@ func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map
 		return nil
 	}
 	if *debugExecutorLabelsKey != "" && platform.FindEffectiveValue(task, "debug-executor-labels-key") != *debugExecutorLabelsKey {
-		alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching debug-executor-labels-key; ignoring")
+		log.CtxWarningf(ctx, "debug-executor-labels %q used without a matching debug-executor-labels-key; ignoring", raw)
 		return nil
 	}
 	out := make(map[string]string)
