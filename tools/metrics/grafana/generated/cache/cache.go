@@ -49,38 +49,18 @@ func ts(title, unit string) *timeseries.PanelBuilder {
 }
 
 func evictionAgePanel() *heatmap.PanelBuilder {
-	return heatmap.NewPanelBuilder().
-		Title("Eviction Age (${cache_name})").
-		Datasource(dash.Prometheus()).
+	return dash.Heatmap("Eviction Age (${cache_name})", dash.UnitDurationMs).
 		Repeat("cache_name").
 		RepeatDirection(dashboard.PanelRepeatDirectionH).
+		Span(24).
 		MaxDataPoints(25).
-		Calculate(false).
 		CellGap(0).
 		CellRadius(2).
-		Color(heatmap.NewHeatmapColorOptionsBuilder().
-			Mode(heatmap.HeatmapColorModeOpacity).
-			Scheme("Oranges").
-			Fill("#3274D9").
-			Scale(heatmap.HeatmapColorScaleExponential).
-			Exponent(0.5).
-			Steps(128).
-			Reverse(false)).
-		FilterValues(heatmap.NewFilterValueRangeBuilder().Le(1e-9)).
-		RowsFrame(heatmap.NewRowsHeatmapOptionsBuilder().Layout(common.HeatmapCellLayoutAuto)).
-		ShowValue(common.VisibilityModeNever).
-		Tooltip(heatmap.NewHeatmapTooltipBuilder().
-			Mode(common.TooltipDisplayModeSingle).
-			YHistogram(true)).
 		YAxis(heatmap.NewYAxisConfigBuilder().
 			AxisPlacement(common.AxisPlacementLeft).
 			Reverse(false).
 			Decimals(0).
 			Unit(dash.UnitDurationMs)).
-		ExemplarsColor("rgba(255,0,255,0.7)").
-		HideLegend().
-		Height(8).
-		Span(24).
 		WithTarget(q(`sum(increase(buildbuddy_remote_cache_disk_cache_eviction_age_msec_bucket{region="${region}", partition_id="${partition_id}", cache_name="${cache_name}"}[$__interval])) by (le)`, "{{le}}").
 			Exemplar(true).
 			Interval("").
@@ -89,11 +69,7 @@ func evictionAgePanel() *heatmap.PanelBuilder {
 }
 
 func keyFreshnessPanel() *heatmap.PanelBuilder {
-	return heatmap.NewPanelBuilder().
-		Title("Internal Key Freshness").
-		Datasource(dash.Prometheus()).
-		Calculate(false).
-		CellGap(1).
+	return dash.Heatmap("Internal Key Freshness", dash.UnitDurationMs).
 		Color(heatmap.NewHeatmapColorOptionsBuilder().
 			Mode(heatmap.HeatmapColorModeScheme).
 			Scheme("Oranges").
@@ -102,19 +78,11 @@ func keyFreshnessPanel() *heatmap.PanelBuilder {
 			Exponent(0.5).
 			Steps(64).
 			Reverse(false)).
-		FilterValues(heatmap.NewFilterValueRangeBuilder().Le(1e-9)).
-		RowsFrame(heatmap.NewRowsHeatmapOptionsBuilder().Layout(common.HeatmapCellLayoutAuto)).
+		ShowValue(common.VisibilityModeAuto).
 		Tooltip(heatmap.NewHeatmapTooltipBuilder().
 			Mode(common.TooltipDisplayModeSingle).
 			YHistogram(false)).
-		YAxis(heatmap.NewYAxisConfigBuilder().
-			AxisPlacement(common.AxisPlacementLeft).
-			Reverse(false).
-			Unit(dash.UnitDurationMs)).
-		ExemplarsColor("rgba(255,0,255,0.7)").
 		ShowLegend().
-		Height(8).
-		Span(12).
 		WithTarget(q(`sum(increase(buildbuddy_encryption_key_last_encryption_age_msec_bucket{region="${region}"}[6h])) by (le)`, "__auto").
 			Format(prometheus.PromQueryFormatHeatmap).
 			RefId("A"))
