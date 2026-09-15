@@ -8,6 +8,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/analyze_profile"
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/fix"
+	"github.com/buildbuddy-io/buildbuddy/cli/agent/review"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
 )
@@ -20,6 +21,7 @@ Runs an AI coding agent to analyze data.
 Subcommands:
 	analyze-profile   Analyzes the timing profile for an invocation.
 	fix               Fixes and verifies a failure from a previous invocation.
+	review            Reviews the current branch's GitHub PR and posts the findings.
 `
 
 // subcommand is a `bb agent` subcommand.
@@ -44,6 +46,12 @@ var (
 			usage:   fix.Usage,
 			flags:   fix.Flags,
 			handler: fix.HandleFix,
+		},
+		{
+			name:    "review",
+			usage:   review.Usage,
+			flags:   review.Flags,
+			handler: review.HandleReview,
 		},
 	}
 )
