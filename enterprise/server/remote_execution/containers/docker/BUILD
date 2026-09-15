@@ -41,7 +41,10 @@ go_test(
         "test.init-dockerd": "true",
     },
     shard_count = 2,
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":docker",
         "//enterprise/server/remote_execution/container",

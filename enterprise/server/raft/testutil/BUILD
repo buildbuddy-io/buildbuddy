@@ -52,6 +52,7 @@ go_test(
         "test.EstimatedComputeUnits": "8",
         "test.workload-isolation-type": "firecracker",
     },
+    tags = ["firecracker"],
     deps = [
         ":testutil",
         "@com_github_jonboulle_clockwork//:clockwork",

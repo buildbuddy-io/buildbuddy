@@ -81,7 +81,10 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse:25.3",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",
@@ -128,7 +131,10 @@ go_test(
         "test.runner-recycling-key": "mysql",
     },
     shard_count = 7,
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",
@@ -175,7 +181,10 @@ go_test(
         "test.runner-recycling-key": "postgres",
     },
     shard_count = 7,
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":usage",
         "//enterprise/server/backends/redis_metrics_collector",

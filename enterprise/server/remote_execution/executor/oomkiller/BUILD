@@ -58,7 +58,10 @@ go_test(
         "test.workload-isolation-type": "firecracker",
         "test.EstimatedMemory": "4GB",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     target_compatible_with = ["@platforms//os:linux"],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux": [

@@ -12,7 +12,10 @@ go_test(
         "test.runner-recycling-key": "clickhouse25.3",
         "test.workload-isolation-type": "firecracker",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         "//server/testutil/testclickhouse",
         "//server/usage/sku",

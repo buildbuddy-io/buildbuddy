@@ -24,6 +24,7 @@ go_library(
 go_test(
     name = "resources_test",
     srcs = ["resources_test.go"],
+    tags = ["noci"],
     deps = [
         ":resources",
         "//server/util/testing/flags",

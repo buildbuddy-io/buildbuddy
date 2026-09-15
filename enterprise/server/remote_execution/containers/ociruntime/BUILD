@@ -85,6 +85,7 @@ go_test(
     shard_count = 4,
     tags = [
         "docker",
+        "firecracker",
     ],
     target_compatible_with = [
         "@platforms//os:linux",

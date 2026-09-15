@@ -47,6 +47,7 @@ go_test(
         },
         "//conditions:default": {},
     }),
+    tags = ["firecracker"],
     deps = [
         ":disk",
         "//server/testutil/testfs",

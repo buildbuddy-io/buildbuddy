@@ -159,6 +159,11 @@ common:tests-macos --test_tag_filters=-performance,-webdriver,-docker,-bare
 # Windows CI runs locally and excludes benchmarks.
 common:tests-windows --test_tag_filters=-performance
 
+# Linux arm64 CI excludes tests requiring Firecracker, which is not supported
+# by the ARM64 executor pool.
+common:tests-linux-arm64 --test_tag_filters=-performance,-bare,-firecracker,-noci
+common:tests-linux-arm64 --build_tag_filters=-firecracker,-noci
+
 common:tests-bare --test_tag_filters=+bare
 common:tests-bare --build_tag_filters=+bare
 
@@ -442,6 +447,7 @@ common:linux-workflows --build_metadata=TAGS=linux-workflow
 
 # Configuration used for Linux ARM64 workflows
 common:linux-arm64-workflows --config=remote-shared
+common:linux-arm64-workflows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:linux-arm64-workflows --config=target-linux-arm64
 common:linux-arm64-workflows --config=workflows
 common:linux-arm64-workflows --config=buildbuddy_remote_executor

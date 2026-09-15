@@ -42,7 +42,10 @@ go_test(
         "test.runner-recycling-key": "clickhouse25.3",
         "test.workload-isolation-type": "firecracker",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         "//enterprise/server/billing/metronome",
         "//server/real_environment",

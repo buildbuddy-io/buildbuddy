@@ -84,7 +84,10 @@ go_test(
         # default disk limit.
         "test.runner-recycling-key": "mysql",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":authdb",
         "//enterprise/server/auditlog",
@@ -133,7 +136,10 @@ go_test(
         # default disk limit.
         "test.runner-recycling-key": "postgres",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":authdb",
         "//enterprise/server/auditlog",

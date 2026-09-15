@@ -42,7 +42,10 @@ go_test(
     },
     pure = "on",
     static = "on",  # because test-xfsprogs image (alpine-based) doesn't have glibc.
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":fastcopy",
         "//server/testutil/testfs",

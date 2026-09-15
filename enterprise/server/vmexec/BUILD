@@ -41,6 +41,7 @@ go_test(
         # to cause unnecessary IO on the host machine.
         "test.workload-isolation-type": "firecracker",
     },
+    tags = ["firecracker"],
     deps = [
         ":vmexec",
         "//enterprise/server/remote_execution/commandutil",

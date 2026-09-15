@@ -55,6 +55,7 @@ go_test(
         "test.EstimatedComputeUnits": "8",
         "test.workload-isolation-type": "firecracker",
     },
+    tags = ["firecracker"],
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/config",

@@ -45,7 +45,10 @@ go_test(
         # default disk limit.
         "test.runner-recycling-key": "clickhouse25.3",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         "//proto:context_go_proto",
         "//proto:invocation_go_proto",

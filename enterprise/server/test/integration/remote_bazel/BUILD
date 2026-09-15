@@ -7,6 +7,10 @@ go_test(
     srcs = ["remote_bazel_test.go"],
     shard_count = 7,
     tags = ["block-network"],
+    target_compatible_with = select({
+        "//platforms/configs:linux_arm64": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//cli/remotebazel",
         "//cli/testutil/testcli",

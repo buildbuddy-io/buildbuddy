@@ -61,7 +61,10 @@ go_test(
         # default disk limit.
         "test.runner-recycling-key": "mysql",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":invocationdb",
         "//proto:invocation_status_go_proto",
@@ -91,7 +94,10 @@ go_test(
         # default disk limit.
         "test.runner-recycling-key": "postgres",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":invocationdb",
         "//proto:invocation_status_go_proto",
