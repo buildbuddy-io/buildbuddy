@@ -1565,7 +1565,6 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 }
 
 type UploadWriter struct {
-	ctx          context.Context
 	cancel       context.CancelFunc
 	stream       bspb.ByteStream_WriteClient
 	sender       *rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
@@ -1741,7 +1740,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	sender := rpcutil.NewSender(cancel, stream)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
-			ctx:          ctx,
 			cancel:       cancel,
 			stream:       stream,
 			sender:       sender,
@@ -1752,7 +1750,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		}, nil
 	}
 	return &UploadWriter{
-		ctx:          ctx,
 		cancel:       cancel,
 		stream:       stream,
 		sender:       sender,
