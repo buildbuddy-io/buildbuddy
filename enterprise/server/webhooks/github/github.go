@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/slashcommand"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -23,7 +24,7 @@ import (
 
 var (
 	// GitHub event names to listen for on the webhook.
-	eventsToReceive = []string{"push", "pull_request", "pull_request_review"}
+	eventsToReceive = []string{"push", "pull_request", "pull_request_review", "issue_comment"}
 )
 
 type githubGitProvider struct {
@@ -197,9 +198,44 @@ func ParseWebhookData(event any) (*interfaces.WebhookData, error) {
 		wd.PullRequestAction = "approved"
 		return wd, nil
 
+	case *gh.IssueCommentEvent:
+		// Pull request comments are delivered as issue_comment
+		// events. Ignore actions other than creation (i.e. comment edits or deletes),
+		// or if the comment is not associated with a pull request (i.e. if it's from a GitHub issue).
+		if event.GetAction() != "created" || event.GetIssue().GetPullRequestLinks() == nil {
+			return nil, nil
+		}
+		if !slashcommand.IsCommand(event.GetComment().GetBody()) {
+			return nil, nil
+		}
+		// The payload doesn't include the pull request's head or base refs, so
+		// PushedRepoURL, PushedBranch, SHA, TargetBranch, and PullRequestAuthor
+		// are left unset and must be fetched before running a workflow.
+		repo := event.GetRepo()
+		return &interfaces.WebhookData{
+			EventName:               webhook_data.EventName.PullRequestComment,
+			TargetRepoURL:           repo.GetCloneURL(),
+			TargetRepoDefaultBranch: repo.GetDefaultBranch(),
+			IsTargetRepoPublic:      !repo.GetPrivate(),
+			PullRequestNumber:       int64(event.GetIssue().GetNumber()),
+			CommentAuthor:           event.GetComment().GetUser().GetLogin(),
+			CommentBody:             event.GetComment().GetBody(),
+		}, nil
 	default:
 		return nil, nil
 	}
+}
+
+func (p *githubGitProvider) GetPullRequestData(ctx context.Context, accessToken, repoURL string, pullRequestNumber int64) (*interfaces.WebhookData, error) {
+	owner, repo, err := parseOwnerRepo(repoURL)
+	if err != nil {
+		return nil, err
+	}
+	pr, _, err := newGitHubClient(ctx, accessToken).PullRequests.Get(ctx, owner, repo, int(pullRequestNumber))
+	if err != nil {
+		return nil, gitHubErrorToStatus(err)
+	}
+	return pullRequestData(pr), nil
 }
 
 // pushEventChangedFiles returns any files modified by a push event.
@@ -229,18 +265,23 @@ type HasPullRequestEvent interface {
 // parsePullRequestOrReview extracts WebhookData from a pull_request or
 // pull_request_review event.
 func parsePullRequestOrReview(event HasPullRequestEvent) (*interfaces.WebhookData, error) {
+	return pullRequestData(event.GetPullRequest()), nil
+}
+
+func pullRequestData(pr *gh.PullRequest) *interfaces.WebhookData {
 	return &interfaces.WebhookData{
 		EventName:               webhook_data.EventName.PullRequest,
-		PushedRepoURL:           event.GetPullRequest().GetHead().GetRepo().GetCloneURL(),
-		PushedBranch:            event.GetPullRequest().GetHead().GetRef(),
-		SHA:                     event.GetPullRequest().GetHead().GetSHA(),
-		TargetRepoURL:           event.GetPullRequest().GetBase().GetRepo().GetCloneURL(),
-		TargetRepoDefaultBranch: event.GetPullRequest().GetBase().GetRepo().GetDefaultBranch(),
-		IsTargetRepoPublic:      !event.GetPullRequest().GetBase().GetRepo().GetPrivate(),
-		TargetBranch:            event.GetPullRequest().GetBase().GetRef(),
-		PullRequestAuthor:       event.GetPullRequest().GetUser().GetLogin(),
-		PullRequestIsDraft:      event.GetPullRequest().GetDraft(),
-	}, nil
+		PushedRepoURL:           pr.GetHead().GetRepo().GetCloneURL(),
+		PushedBranch:            pr.GetHead().GetRef(),
+		SHA:                     pr.GetHead().GetSHA(),
+		TargetRepoURL:           pr.GetBase().GetRepo().GetCloneURL(),
+		TargetRepoDefaultBranch: pr.GetBase().GetRepo().GetDefaultBranch(),
+		IsTargetRepoPublic:      !pr.GetBase().GetRepo().GetPrivate(),
+		TargetBranch:            pr.GetBase().GetRef(),
+		PullRequestAuthor:       pr.GetUser().GetLogin(),
+		PullRequestNumber:       int64(pr.GetNumber()),
+		PullRequestIsDraft:      pr.GetDraft(),
+	}
 }
 
 func (*githubGitProvider) GetFileContents(ctx context.Context, accessToken, repoURL, filePath, ref string) ([]byte, error) {
