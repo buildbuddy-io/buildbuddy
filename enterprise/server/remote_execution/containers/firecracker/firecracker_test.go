@@ -544,6 +544,11 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 		require.NoError(t, err)
 		require.True(t, cached, "sanity check: image should already be cached")
 	}
+	requireNotCached := func(ctx context.Context, c *firecracker.FirecrackerContainer) {
+		cached, err := c.IsImageCached(ctx)
+		require.NoError(t, err)
+		require.False(t, cached, "image cached by another group should not be reported as cached")
+	}
 
 	authedCtx, err := ta.WithAuthenticatedUser(ctx, "US1")
 	require.NoError(t, err)
@@ -555,11 +560,11 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 		oci.Credentials{Username: registryCreds.Username, Password: registryCreds.Password},
 		opts.ContainerImage, opts.UseOCIFetcher,
 	))
-	requireCached(ctx, gr1Container)
+	requireCached(authedCtx, gr1Container)
 
 	// Try an unauthorized pull as GR1 (with wrong creds). Should fail
 	gr1WrongCredsContainer := newContainer(authedCtx)
-	requireCached(ctx, gr1WrongCredsContainer)
+	requireCached(authedCtx, gr1WrongCredsContainer)
 	err = gr1WrongCredsContainer.PullImage(
 		authedCtx,
 		oci.Credentials{Username: registryCreds.Username, Password: "wrong"},
@@ -574,7 +579,8 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 
 	// Try to do an unauthorized pull as ANON (should fail)
 	anonymousContainer := newContainer(ctx)
-	requireCached(ctx, anonymousContainer)
+	// Should not see the snapshot written by gr1.
+	requireNotCached(ctx, anonymousContainer)
 	err = container.PullImageIfNecessary(ctx, env, anonymousContainer, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
 	require.Error(t, err)
 	require.True(
@@ -588,7 +594,8 @@ func TestFirecrackerPullImageIfNecessary_CachedImageRequiresReauth(t *testing.T)
 	gr2Ctx, err := ta.WithAuthenticatedUser(ctx, "US2")
 	require.NoError(t, err)
 	gr2Container := newContainer(gr2Ctx)
-	requireCached(ctx, gr2Container)
+	// Should not see the snapshot written by gr1.
+	requireNotCached(gr2Ctx, gr2Container)
 	err = container.PullImageIfNecessary(gr2Ctx, env, gr2Container, oci.Credentials{}, opts.ContainerImage, opts.UseOCIFetcher)
 	require.Error(t, err)
 	require.True(
@@ -693,6 +700,76 @@ func TestFirecrackerPullImage_SkipsPullWhenContainerfsCached(t *testing.T) {
 	require.Equal(t, int32(0), blobRequests.Load())
 	// The manifest should still have been fetched, in order to authenticate with the registry.
 	require.Greater(t, manifestRequests.Load(), int32(0))
+}
+
+func TestFirecrackerPullImage_CachesChunkedContainerfs(t *testing.T) {
+	ctx := context.Background()
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+
+	// Mock requests to the container registry.
+	var blobRequests atomic.Int32
+	reg := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			if strings.Contains(r.URL.Path, "/blobs/") {
+				blobRequests.Add(1)
+			}
+			return true
+		},
+	})
+	t.Cleanup(func() {
+		require.NoError(t, reg.Shutdown())
+	})
+
+	// The test registry listens on a random port, so this image ref is unique
+	// to this test run and is guaranteed not to be present in the executor
+	// image cache, which may be shared across runs.
+	imageRef, _ := reg.PushNamedImage(t, "firecracker-cache-containerfs:latest", nil)
+	blobRequests.Store(0)
+
+	env := getTestEnv(ctx, t, envOpts{})
+	opts := firecracker.ContainerOpts{
+		ContainerImage:         imageRef,
+		ActionWorkingDirectory: testfs.MakeTempDir(t),
+		VMConfiguration: &fcpb.VMConfiguration{
+			NumCpus:           1,
+			MemSizeMb:         minMemSizeMB,
+			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_OFF,
+			ScratchDiskSizeMb: 100,
+		},
+		ExecutorConfig: getExecutorConfig(t),
+	}
+	instanceName := snaputil.SnapshotPartitionPrefix + "/instance"
+	newContainer := func() *firecracker.FirecrackerContainer {
+		containerOpts := opts
+		containerOpts.ActionWorkingDirectory = testfs.MakeTempDir(t)
+		c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{
+			ExecuteRequest: &repb.ExecuteRequest{InstanceName: instanceName},
+		}, containerOpts)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, c.Remove(context.Background()))
+		})
+		return c
+	}
+	loader, err := snaploader.New(env)
+	require.NoError(t, err)
+
+	// Sanity check: neither the image nor a chunked containerfs is cached yet.
+	c := newContainer()
+	cached, err := c.IsImageCached(ctx)
+	require.NoError(t, err)
+	require.False(t, cached)
+	_, err = snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, true /*=remoteEnabled*/)
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+
+	// Pull the image, as a clean VM run would.
+	require.NoError(t, c.PullImage(ctx, oci.Credentials{}))
+	require.Greater(t, blobRequests.Load(), int32(0), "expected the image layers to be pulled")
+
+	// The chunked containerfs should be cached after PullImage.
+	snap, err := snaploader.GetCachedContainerImage(ctx, loader, instanceName, imageRef, true /*=remoteEnabled*/)
+	require.NoError(t, err)
+	require.NotNil(t, snap)
 }
 
 func TestFirecrackerVMExecReadySignalAfterSnapshotResume(t *testing.T) {
