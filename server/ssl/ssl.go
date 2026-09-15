@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/build_buddy_url"
@@ -24,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -34,18 +36,19 @@ import (
 )
 
 var (
-	certFile         = flag.String("ssl.cert_file", "", "Path to a PEM encoded certificate file to use for TLS if not using ACME.")
-	keyFile          = flag.String("ssl.key_file", "", "Path to a PEM encoded key file to use for TLS if not using ACME.")
-	selfSigned       = flag.Bool("ssl.self_signed", false, "If true, a self-signed cert will be generated for TLS termination.")
-	clientCACertFile = flag.String("ssl.client_ca_cert_file", "", "Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth.")
-	clientCACert     = flag.String("ssl.client_ca_cert", "", "PEM encoded certificate authority used to issue client certificates for mTLS auth.", flag.Secret)
-	clientCAKeyFile  = flag.String("ssl.client_ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth.")
-	clientCAKey      = flag.String("ssl.client_ca_key", "", "PEM encoded certificate authority key used to issue client certificates for mTLS auth.", flag.Secret)
-	clientCertExp    = flag.Duration("ssl.client_cert_lifespan", 365*100*24*time.Hour, "The duration client certificates are valid for. Ex: '730h' for one month. If not set, defaults to 100 years.")
-	hostWhitelist    = flag.Slice("ssl.host_whitelist", []string{}, "Cloud-Only")
-	enableSSL        = flag.Bool("ssl.enable_ssl", false, "Whether or not to enable SSL/TLS on gRPC connections (gRPCS).")
-	useACME          = flag.Bool("ssl.use_acme", false, "Whether or not to automatically configure SSL certs using ACME. If ACME is enabled, cert_file and key_file should not be set.")
-	defaultHost      = flag.String("ssl.default_host", "", "Host name to use for ACME generated cert if TLS request does not contain SNI.")
+	certReloadInterval = flag.Duration("ssl.cert_reload_interval", time.Minute, "How often to reload the TLS certificate and key files. Must be positive. Only applies when ssl.cert_file and ssl.key_file are set.")
+	certFile           = flag.String("ssl.cert_file", "", "Path to a PEM encoded certificate file to use for TLS if not using ACME.")
+	keyFile            = flag.String("ssl.key_file", "", "Path to a PEM encoded key file to use for TLS if not using ACME.")
+	selfSigned         = flag.Bool("ssl.self_signed", false, "If true, a self-signed cert will be generated for TLS termination.")
+	clientCACertFile   = flag.String("ssl.client_ca_cert_file", "", "Path to a PEM encoded certificate authority file used to issue client certificates for mTLS auth.")
+	clientCACert       = flag.String("ssl.client_ca_cert", "", "PEM encoded certificate authority used to issue client certificates for mTLS auth.", flag.Secret)
+	clientCAKeyFile    = flag.String("ssl.client_ca_key_file", "", "Path to a PEM encoded certificate authority key file used to issue client certificates for mTLS auth.")
+	clientCAKey        = flag.String("ssl.client_ca_key", "", "PEM encoded certificate authority key used to issue client certificates for mTLS auth.", flag.Secret)
+	clientCertExp      = flag.Duration("ssl.client_cert_lifespan", 365*100*24*time.Hour, "The duration client certificates are valid for. Ex: '730h' for one month. If not set, defaults to 100 years.")
+	hostWhitelist      = flag.Slice("ssl.host_whitelist", []string{}, "Cloud-Only")
+	enableSSL          = flag.Bool("ssl.enable_ssl", false, "Whether or not to enable SSL/TLS on gRPC connections (gRPCS).")
+	useACME            = flag.Bool("ssl.use_acme", false, "Whether or not to automatically configure SSL certs using ACME. If ACME is enabled, cert_file and key_file should not be set.")
+	defaultHost        = flag.String("ssl.default_host", "", "Host name to use for ACME generated cert if TLS request does not contain SNI.")
 )
 
 type CertCache struct {
@@ -76,6 +79,7 @@ func NewCertCache(bs interfaces.Blobstore) *CertCache {
 }
 
 type SSLService struct {
+	certificate     atomic.Pointer[tls.Certificate]
 	env             environment.Env
 	httpTLSConfig   *tls.Config
 	grpcTLSConfig   *tls.Config
@@ -174,12 +178,25 @@ func (s *SSLService) populateTLSConfig() error {
 	}
 
 	if *keyFile != "" && *certFile != "" {
+		if *certReloadInterval <= 0 {
+			return status.InvalidArgumentError("ssl.cert_reload_interval must be positive")
+		}
 		certPair, err := tls.LoadX509KeyPair(*certFile, *keyFile)
 		if err != nil {
 			return err
 		}
-		httpTLSConfig.Certificates = []tls.Certificate{certPair}
-		grpcTLSConfig.Certificates = []tls.Certificate{certPair}
+		s.certificate.Store(&certPair)
+		ctx, cancel := context.WithCancel(context.Background())
+		s.env.GetHealthChecker().RegisterShutdownFunction(func(context.Context) error {
+			cancel()
+			return nil
+		})
+		go s.reloadCertificate(ctx, *certFile, *keyFile, *certReloadInterval)
+		getCert := func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return s.certificate.Load(), nil
+		}
+		httpTLSConfig.GetCertificate = getCert
+		grpcTLSConfig.GetCertificate = getCert
 		s.httpTLSConfig = httpTLSConfig
 		s.grpcTLSConfig = grpcTLSConfig
 	} else if *selfSigned {
@@ -236,6 +253,25 @@ func (s *SSLService) populateTLSConfig() error {
 		s.grpcTLSConfig = grpcTLSConfig
 	}
 	return nil
+}
+
+func (s *SSLService) reloadCertificate(ctx context.Context, certFile, keyFile string, interval time.Duration) {
+	ticker := s.env.GetClock().NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+			certPair, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				metrics.SSLCertificateReloadFailures.Inc()
+				log.Warningf("Failed to reload TLS certificate %q and key %q: %s", certFile, keyFile, err)
+				continue
+			}
+			s.certificate.Store(&certPair)
+		}
+	}
 }
 
 func (s *SSLService) IsEnabled() bool {

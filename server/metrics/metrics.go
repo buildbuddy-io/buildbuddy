@@ -523,6 +523,15 @@ var (
 )
 
 var (
+	// ## SSL metrics
+
+	SSLCertificateReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ssl",
+		Name:      "certificate_reload_failures_total",
+		Help:      "Number of failed TLS certificate reloads. The server retains the last successfully loaded certificate on failure.",
+	})
+
 	// ## Invocation build event metrics
 	//
 	// All invocation metrics are recorded at the _end_ of each invocation.
