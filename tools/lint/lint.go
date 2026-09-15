@@ -29,15 +29,14 @@ var (
 	legacyAllFlag = flag.Bool("a", false, "Has no effect (kept for backwards compatibility but will be removed soon)")
 )
 
-// BB CLI version is now pinned in deps.bzl (BB_CLI_VERSION) and downloaded
-// as a prebuilt binary via //tools/bb.
-
 // Set via x_defs in BUILD file.
 var (
 	goimportsRlocationpath   string
 	goRlocationpath          string
 	clangFormatRlocationpath string
-	bbCLIRlocationpath       string
+	buildifierRlocationpath  string
+	gazelleRlocationpath     string
+	bazeliskRlocationpath    string
 	prettierRlocationpath    string
 )
 
@@ -50,14 +49,12 @@ var (
 		{Name: "ProtoFormat", Run: runClangFormat},
 		// Fixes frontend-related files, configs, and docs.
 		{Name: "PrettierFormat", Run: runPrettier},
-		// tools/fix_go_deps.sh fixes go.mod, go.sum, deps.bzl, and MODULE.bzl.
-		// Runs exclusively because this might change deps.bzl which BuildFiles
-		// might also change.
+		// tools/fix_go_deps.sh fixes go.mod, go.sum, and MODULE.bazel.
+		// Runs exclusively because BuildFix also formats MODULE.bazel.
 		{Name: "GoModulesFix", Run: runFixGoDeps, WriteLock: true},
-		// Fixes build+starlark file formatting and deps (via embedded gazelle).
-		// Runs exclusively because this might change deps.bzl which GoDeps
-		// might also change.
-		{Name: "BuildFix", Run: runBBFix, WriteLock: true},
+		// Fixes build+starlark file formatting and BUILD files.
+		// Runs exclusively because it may update MODULE.bazel.
+		{Name: "BuildFix", Run: runBuildFix, WriteLock: true},
 		// Ensures that MODULE.bazel.lock is up to date.
 		{Name: "UpdateLockfile", Run: runBazelModDeps, WriteLock: true},
 	}
@@ -88,32 +85,97 @@ type Tool struct {
 	Run func(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error
 }
 
-func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
-	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
-	if err != nil {
-		return fmt.Errorf("get bb command: %w", err)
+func runBuildFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	if err := runBuildifier(ctx, stdout, stderr, fix); err != nil {
+		return err
 	}
-	cmd.Args = append(cmd.Args, "fix")
+	return runGazelle(ctx, stdout, stderr, fix)
+}
+
+func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool) error {
+	files, err := listBuildFiles(".")
+	if err != nil {
+		return fmt.Errorf("list build files: %w", err)
+	}
+	if len(files) == 0 {
+		return nil
+	}
+	cmd, err := getRunfileToolCommand(ctx, buildifierRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get buildifier command: %w", err)
+	}
+	if fix {
+		cmd.Args = append(cmd.Args, "-mode=fix")
+	} else {
+		cmd.Args = append(cmd.Args, "-mode=diff", "-diff_command=diff -u")
+	}
+	cmd.Args = append(cmd.Args, files...)
+	stdoutCounter := &ioutil.Counter{}
+	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run buildifier: %w", err)
+	}
+	if !fix && stdoutCounter.Count() > 0 {
+		return fmt.Errorf("buildifier found lint errors")
+	}
+	return nil
+}
+
+func runGazelle(ctx context.Context, stdout, stderr io.Writer, fix bool) error {
+	cmd, err := getRunfileToolCommand(ctx, gazelleRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get gazelle command: %w", err)
+	}
 	if !fix {
-		cmd.Args = append(cmd.Args, "--diff")
+		cmd.Args = append(cmd.Args, "-mode=diff")
 	}
 	stdoutCounter := &ioutil.Counter{}
 	cmd.Stdout = io.MultiWriter(stdout, stdoutCounter)
 	cmd.Stderr = stderr
-	// bb fix runs gazelle, which needs 'go' in PATH to resolve imports.
+	// Gazelle may invoke go to resolve imports.
 	goPath, err := runfiles.Rlocation(goRlocationpath)
 	if err != nil {
 		return fmt.Errorf("find go in runfiles: %w", err)
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run bb fix: %w", err)
+		return fmt.Errorf("run gazelle: %w", err)
 	}
-	// In diff mode, fail if the diff is non-empty.
 	if !fix && stdoutCounter.Count() > 0 {
-		return fmt.Errorf("bb fix found lint errors")
+		return fmt.Errorf("gazelle found lint errors")
 	}
 	return nil
+}
+
+func listBuildFiles(root string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != root && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		name := d.Name()
+		if isBuildFile(name) {
+			files = append(files, path)
+		}
+		return nil
+	})
+	return files, err
+}
+
+func isBuildFile(name string) bool {
+	return filepath.Ext(name) == ".bzl" ||
+		name == "BUILD" ||
+		name == "BUILD.bazel" ||
+		name == "WORKSPACE" ||
+		name == "WORKSPACE.bazel" ||
+		name == "MODULE.bazel"
 }
 
 func runFixGoDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
@@ -260,9 +322,9 @@ func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, fi
 		}
 	}
 
-	cmd, err := getRunfileToolCommand(ctx, bbCLIRlocationpath)
+	cmd, err := getRunfileToolCommand(ctx, bazeliskRlocationpath)
 	if err != nil {
-		return fmt.Errorf("get bb command: %w", err)
+		return fmt.Errorf("get bazelisk command: %w", err)
 	}
 	cmd.Args = append(cmd.Args, "mod", "deps")
 	if fix {
@@ -272,14 +334,14 @@ func runBazelModDeps(ctx context.Context, stdout, stderr io.Writer, fix bool, fi
 	}
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
-	// bb mod deps may need 'go' in PATH.
+	// bazel mod deps may need 'go' in PATH.
 	goPath, err := runfiles.Rlocation(goRlocationpath)
 	if err != nil {
 		return fmt.Errorf("find go in runfiles: %w", err)
 	}
 	cmd.Env = append(cmd.Env, "PATH="+filepath.Dir(goPath)+":"+os.Getenv("PATH"))
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("run bb mod deps: %w", err)
+		return fmt.Errorf("run bazel mod deps: %w", err)
 	}
 	return nil
 }
