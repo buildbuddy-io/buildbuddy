@@ -118,7 +118,6 @@ func TestHelpForBBCommands(t *testing.T) {
 	bbCommandNames := []string{
 		"add",
 		"analyze",
-		"ask",
 		"download",
 		"execute",
 		"explain",
@@ -163,21 +162,6 @@ func TestHelpForBBCommandWithInjectedOptions(t *testing.T) {
 
 	orderedArgs := &parsed.OrderedArgs{Args: args}
 	require.Equal(t, "remote", help.FindTargetCommandFromHelpArgs(orderedArgs))
-}
-
-func TestHelpAliases(t *testing.T) {
-	register.Register()
-
-	aliases := map[string]string{
-		"wtf": "ask",
-		"huh": "ask",
-	}
-
-	for alias, originalCmd := range aliases {
-		t.Run(alias, func(t *testing.T) {
-			testBBCommandAllPatterns(t, alias, originalCmd)
-		})
-	}
 }
 
 func TestHelpBazelCommands(t *testing.T) {

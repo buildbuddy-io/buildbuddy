@@ -487,15 +487,6 @@ a.card:hover {
   border-left: 6px solid transparent;
 }
 
-.card-suggestion.card-suggestion-bot {
-  background: var(--color-status-info);
-  color: var(--color-text-inverted);
-}
-
-.card-suggestion.card-suggestion-bot svg {
-  stroke: var(--color-icon-inverted);
-}
-
 .card.dark {
   background-color: var(--color-terminal-bg);
   color: var(--color-terminal-text);
