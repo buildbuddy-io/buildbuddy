@@ -15,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/repo_downloader"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -660,6 +661,169 @@ func TestWebhook_UntrustedApprovalOnUntrustedPullRequest_NOP(t *testing.T) {
 
 	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
 	require.NoError(t, err)
+}
+
+// slashCommandWebhookData returns webhook data for a slash command comment on
+// pull request #7. Like a real issue_comment event, it doesn't include the pull
+// request's head or base refs.
+func slashCommandWebhookData(commentAuthor string) *interfaces.WebhookData {
+	return &interfaces.WebhookData{
+		EventName:               webhook_data.EventName.PullRequestComment,
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetRepoDefaultBranch: "main",
+		IsTargetRepoPublic:      true,
+		PullRequestNumber:       7,
+		CommentAuthor:           commentAuthor,
+		CommentBody:             "/bb-review",
+	}
+}
+
+// forkPullRequestData returns metadata for pull request #7, opened from a fork
+// by the given author.
+func forkPullRequestData(author string) *interfaces.WebhookData {
+	return &interfaces.WebhookData{
+		EventName:               "pull_request",
+		TargetRepoURL:           "https://github.com/acme-inc/acme",
+		TargetRepoDefaultBranch: "main",
+		TargetBranch:            "main",
+		PushedRepoURL:           "https://github.com/untrusteduser/acme",
+		PushedBranch:            "feature",
+		SHA:                     "c04d68571cb519e095772c865847007ed3e7fea9",
+		IsTargetRepoPublic:      true,
+		PullRequestAuthor:       author,
+		PullRequestNumber:       7,
+	}
+}
+
+func TestWebhook_SlashCommandFromUntrustedCommenter_NOP(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	// The fork author comments the command on their own pull request.
+	provider.WebhookData = slashCommandWebhookData("external-user-1")
+	provider.PullRequestData = forkPullRequestData("external-user-1")
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	assert.Never(t, func() bool {
+		return len(execClient.executeRequests) > 0
+	}, 2*time.Second, 50*time.Millisecond, "untrusted commenter should not be able to trigger a slash command")
+}
+
+func TestWebhook_TrustedSlashCommandOnUntrustedForkPullRequest_StartsUntrustedWorkflow(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1"}
+	// A trusted maintainer comments the command on an untrusted fork author's
+	// pull request.
+	provider.WebhookData = slashCommandWebhookData("acme-inc-user-1")
+	provider.PullRequestData = forkPullRequestData("external-user-1")
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--action_name=BB Code Review")
+	assert.Contains(t, exec.Command.GetArguments(), "--pushed_repo_url=https://github.com/untrusteduser/acme")
+	env := envVars(exec.Command)
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.NotContains(t,
+		execReq.Metadata,
+		"x-buildbuddy-platform.env-overrides",
+		"slash command on an untrusted pull request should not have remote_header env vars")
+}
+
+func TestWebhook_TrustedSlashCommandOnTrustedPullRequest_StartsTrustedWorkflow(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1", "acme-inc-user-2"}
+	provider.WebhookData = slashCommandWebhookData("acme-inc-user-2")
+	provider.PullRequestData = forkPullRequestData("acme-inc-user-1")
+
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	execReq := execClient.NextExecuteRequest()
+	exec := getExecution(t, ctx, te, execReq.Payload)
+	assert.Equal(t, "./buildbuddy_ci_runner", exec.Command.GetArguments()[0])
+	assert.Contains(t, exec.Command.GetArguments(), "--action_name=BB Code Review")
+	env := envVars(exec.Command)
+	assert.NotContains(t,
+		env, "BUILDBUDDY_API_KEY",
+		"action env should not contain BUILDBUDDY_API_KEY env var")
+	assert.Regexp(t,
+		`BUILDBUDDY_API_KEY=[\w]+,REPO_USER=`,
+		execReq.Metadata["x-buildbuddy-platform.env-overrides"],
+		"API key should be set via env-overrides")
+}
+
+func TestWebhook_SlashCommandSuppressedByExperiment(t *testing.T) {
+	ctx := context.Background()
+	u, lis := testhttp.NewServer(t)
+	flags.Set(t, "app.build_buddy_url", *u)
+	flags.Set(t, "remote_execution.enable_remote_exec", true)
+	te := newTestEnv(t)
+	ctx, _, gid := authenticate(t, ctx, te)
+	execClient := te.GetRemoteExecutionClient().(*fakeExecutionClient)
+	te.SetRemoteExecutionClient(execClient)
+	go http.Serve(lis, te.GetWorkflowService())
+	provider := setupFakeGitProvider(t, te)
+	repoURL := makeTempRepo(t)
+	runBBServer(ctx, t, te)
+	repo := createWorkflow(t, te, repoURL, gid, false)
+	provider.TrustedUsers = []string{"acme-inc-user-1", "acme-inc-user-2"}
+	provider.WebhookData = slashCommandWebhookData("acme-inc-user-2")
+	provider.PullRequestData = forkPullRequestData("acme-inc-user-1")
+	configureExperiments(t, te, map[string]bool{
+		"remote_execution.suppress_workflow_execution": true,
+	})
+
+	// The command is from a trusted commenter on a trusted pull request, but the
+	// experiment suppresses workflow execution.
+	err := te.GetWorkflowService().HandleRepositoryEvent(ctx, repo, provider.WebhookData, "faketoken")
+	require.NoError(t, err)
+
+	assert.Never(t, func() bool {
+		return len(execClient.executeRequests) > 0
+	}, 2*time.Second, 50*time.Millisecond, "suppressed slash command should not start a workflow")
 }
 
 func TestWebhook_TrustedPush_StartsTrustedWorkflow(t *testing.T) {

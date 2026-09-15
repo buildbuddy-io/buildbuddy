@@ -922,6 +922,8 @@ type GitProvider interface {
 	// commit SHA.
 	CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error
 
+	GetPullRequestData(ctx context.Context, accessToken, repoURL string, pullRequestNumber int64) (*WebhookData, error)
+
 	// TODO(bduffany): ListRepos
 }
 
@@ -986,6 +988,11 @@ type WebhookData struct {
 	// type (see config.PullRequestTrigger.Types).
 	// Ex: "opened", "synchronize", "ready_for_review"
 	PullRequestAction string
+
+	// CommentAuthor and CommentBody identify the author and contents
+	// of a pull request comment, if applicable.
+	CommentAuthor string
+	CommentBody   string
 
 	// PullRequestIsDraft is whether the pull request is a draft, if applicable.
 	PullRequestIsDraft bool
