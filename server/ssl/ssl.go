@@ -79,13 +79,13 @@ func NewCertCache(bs interfaces.Blobstore) *CertCache {
 }
 
 type SSLService struct {
-	certificate           atomic.Pointer[tls.Certificate]
-	env                   environment.Env
-	httpTLSConfig         *tls.Config
-	grpcTLSConfig         *tls.Config
-	autocertManager       *autocert.Manager
-	AuthorityCert         *x509.Certificate
-	AuthorityKey          crypto.Signer
+	certificate     atomic.Pointer[tls.Certificate]
+	env             environment.Env
+	httpTLSConfig   *tls.Config
+	grpcTLSConfig   *tls.Config
+	autocertManager *autocert.Manager
+	AuthorityCert   *x509.Certificate
+	AuthorityKey    crypto.Signer
 }
 
 func Register(env *real_environment.RealEnv) error {
