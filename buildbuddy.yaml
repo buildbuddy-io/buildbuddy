@@ -47,7 +47,7 @@ actions:
           --flaky_test_attempts=3 --local_test_jobs=1
           //enterprise/server/test/integration/podman:podman_test
     allow_concurrent_runs: false
-  - name: Build public release artifacts # with -c opt and no race detection
+  - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
     container_image: ubuntu-22.04
     resource_requests:
       disk: 27GB
@@ -73,7 +73,7 @@ actions:
           //enterprise/server/cmd/executor:executor_image
           //enterprise/server/cmd/cache_proxy:cache_proxy_image
     allow_concurrent_runs: false
-  - name: Build public release artifacts (Linux_arm64)
+  - name: Build public release artifacts (linux_arm64)
     container_image: ubuntu-22.04
     os: "linux"
     arch: "arm64"
