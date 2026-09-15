@@ -5,12 +5,15 @@ on:
     types:
       - "released"
 
+permissions:
+  contents: read
+
 jobs:
   update:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Helm charts
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           repository: "buildbuddy-io/buildbuddy-helm"
@@ -18,91 +21,8 @@ jobs:
           token: ${{ secrets.BUILDBUDDY_APP_TOKEN }}
           path: buildbuddy-helm
 
-      - name: Bump OSS and Executor Versions
-        run: |
-          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
-
-          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
-          export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
-
-          sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy/Chart.yaml
-          sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed app/appVersion: $APP_VERSION_NUMBER # Version of deployed app/g" charts/buildbuddy/Chart.yaml
-          sed -ri "s/(.*)image\.tag(.*)v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2v$APP_VERSION_NUMBER/g" charts/buildbuddy/README.md
-          sed -ri "s/  tag(.*)v([0-9]+).([0-9]+).([0-9]+)/  tag\1v$APP_VERSION_NUMBER/g" charts/buildbuddy/values.yaml
-
-          sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy-executor/Chart.yaml
-          sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed executor/appVersion: $APP_VERSION_NUMBER # Version of deployed executor/g" charts/buildbuddy-executor/Chart.yaml
-          sed -ri "s/(.*)image\.tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-executor/README.md
-          sed -ri "s/  tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/  tag\1enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-executor/values.yaml
-
-      - name: Commit
-        run: |
-          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
-          git config --local user.email "releasebot@buildbuddy.io"
-          git config --local user.name "BuildBuddy Release Bot"
-
-          git add charts/buildbuddy/Chart.yaml
-          git add charts/buildbuddy/README.md
-          git add charts/buildbuddy/values.yaml
-
-          git add charts/buildbuddy-executor/Chart.yaml
-          git add charts/buildbuddy-executor/README.md
-          git add charts/buildbuddy-executor/values.yaml
-
-          git commit -m "Bumping OSS and Executor to ${{ github.event.release.tag_name }}" -a
-
-      - name: Push changes
-        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
-        with:
-          directory: buildbuddy-helm
-          repository: buildbuddy-io/buildbuddy-helm
-          github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
-          branch: master
-
-      - name: Sleep for 3 minutes
-        run: sleep 180s
-        shell: bash
-
-      - name: Bump Enterprise Version
-        run: |
-          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
-
-          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
-          export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
-          export EXECUTOR_VERSION_NUMBER=$(sed -rn 's/version: ([0-9\.]+) # Chart version/\1/gp' charts/buildbuddy-executor/Chart.yaml)
-
-          sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy-enterprise/Chart.yaml
-          sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed app/appVersion: $APP_VERSION_NUMBER # Version of deployed app/g" charts/buildbuddy-enterprise/Chart.yaml
-          sed -ri "s/(.*)image\.tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise/README.md
-          sed -ri "s/  tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/  tag\1enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise/values.yaml
-          sed -ri "s/version: 0.0.([0-9]+) # Executor chart version/version: $EXECUTOR_VERSION_NUMBER # Executor chart version/g" charts/buildbuddy-enterprise/requirements.yaml
-
-          helm dep update charts/buildbuddy-enterprise
-
-      - name: Commit
-        run: |
-          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
-          git config --local user.email "releasebot@buildbuddy.io"
-          git config --local user.name "BuildBuddy Release Bot"
-
-          git add charts/buildbuddy-enterprise/Chart.yaml
-          git add charts/buildbuddy-enterprise/README.md
-          git add charts/buildbuddy-enterprise/values.yaml
-          git add charts/buildbuddy-enterprise/charts/*
-
-          git commit -m "Bumping Enterprise to ${{ github.event.release.tag_name }}" -a
-
-      - name: Push changes
-        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
-        with:
-          directory: buildbuddy-helm
-          repository: buildbuddy-io/buildbuddy-helm
-          github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
-          branch: master
-
-      - name: Sleep for 3 minutes
-        run: sleep 180s
-        shell: bash
+      - name: Configure Helm repository
+        run: helm repo add buildbuddy https://helm.buildbuddy.io
 
       - name: Bump Cache Proxy Version
         run: |
@@ -111,12 +31,15 @@ jobs:
           export APP_TAG_NAME="${{ github.event.release.tag_name }}"
           export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
 
+          # shellcheck disable=SC2016
           sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy-enterprise-cache-proxy/Chart.yaml
           sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed cache proxy/appVersion: $APP_VERSION_NUMBER # Version of deployed cache proxy/g" charts/buildbuddy-enterprise-cache-proxy/Chart.yaml
           sed -ri "s/(.*)image\.tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise-cache-proxy/README.md
           sed -ri "s/  tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/  tag\1enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise-cache-proxy/values.yaml
+          git diff --unified=0 -- charts/buildbuddy-enterprise-cache-proxy/Chart.yaml | grep '^+version: ' >/dev/null ||
+            { echo "Failed to bump cache-proxy chart version" >&2; exit 1; }
 
-      - name: Commit
+      - name: Commit Cache Proxy changes
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-helm
           git config --local user.email "releasebot@buildbuddy.io"
@@ -128,7 +51,130 @@ jobs:
 
           git commit -m "Bumping Cache Proxy to ${{ github.event.release.tag_name }}" -a
 
-      - name: Push changes
+      - name: Push Cache Proxy changes
+        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
+        with:
+          directory: buildbuddy-helm
+          repository: buildbuddy-io/buildbuddy-helm
+          github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          branch: master
+
+      - name: Wait for Cache Proxy chart
+        timeout-minutes: 17
+        env:
+          CHART: buildbuddy-enterprise-cache-proxy
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+          version=$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+)([[:space:]]+#.*)?$/\1/p' "charts/$CHART/Chart.yaml")
+          test -n "$version"
+          deadline=$((SECONDS + 900))
+          until timeout 15s helm repo update buildbuddy --fail-on-repo-update-fail &&
+            timeout 15s helm show chart "buildbuddy/$CHART" --version "$version" >/dev/null; do
+            ((SECONDS < deadline)) || { echo "Timed out waiting for $CHART $version" >&2; exit 1; }
+            echo "Waiting for $CHART $version"
+            sleep 10
+          done
+
+      - name: Bump OSS and Executor Versions
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+
+          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
+          export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
+          CACHE_PROXY_VERSION_NUMBER=$(sed -rn 's/version: ([0-9\.]+) # Chart version/\1/gp' charts/buildbuddy-enterprise-cache-proxy/Chart.yaml)
+          export CACHE_PROXY_VERSION_NUMBER
+          test -n "$CACHE_PROXY_VERSION_NUMBER"
+
+          # shellcheck disable=SC2016
+          sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy/Chart.yaml
+          sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed app/appVersion: $APP_VERSION_NUMBER # Version of deployed app/g" charts/buildbuddy/Chart.yaml
+          sed -ri "s/(.*)image\.tag(.*)v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2v$APP_VERSION_NUMBER/g" charts/buildbuddy/README.md
+          sed -ri "s/  tag(.*)v([0-9]+).([0-9]+).([0-9]+)/  tag\1v$APP_VERSION_NUMBER/g" charts/buildbuddy/values.yaml
+          git diff --unified=0 -- charts/buildbuddy/Chart.yaml | grep '^+version: ' >/dev/null ||
+            { echo "Failed to bump OSS chart version" >&2; exit 1; }
+
+          # shellcheck disable=SC2016
+          sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy-executor/Chart.yaml
+          sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed executor/appVersion: $APP_VERSION_NUMBER # Version of deployed executor/g" charts/buildbuddy-executor/Chart.yaml
+          sed -ri "s/(.*)image\.tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-executor/README.md
+          sed -ri "s/  tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/  tag\1enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-executor/values.yaml
+          git diff --unified=0 -- charts/buildbuddy-executor/Chart.yaml | grep '^+version: ' >/dev/null ||
+            { echo "Failed to bump executor chart version" >&2; exit 1; }
+          sed -ri "/^  - name: buildbuddy-enterprise-cache-proxy$/,/^  - name:/ s/^(    version: ).*/\1$CACHE_PROXY_VERSION_NUMBER/" charts/buildbuddy-executor/requirements.yaml
+          UPDATED_CACHE_PROXY_VERSION=$(sed -rn '/^  - name: buildbuddy-enterprise-cache-proxy$/,/^  - name:/ s/^    version: ([^[:space:]]+).*/\1/p' charts/buildbuddy-executor/requirements.yaml)
+          test "$UPDATED_CACHE_PROXY_VERSION" = "$CACHE_PROXY_VERSION_NUMBER"
+
+          helm dep update charts/buildbuddy-executor
+
+      - name: Commit OSS and Executor changes
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+          git config --local user.email "releasebot@buildbuddy.io"
+          git config --local user.name "BuildBuddy Release Bot"
+
+          git add charts/buildbuddy
+          git add charts/buildbuddy-executor
+
+          git commit -m "Bumping OSS and Executor to ${{ github.event.release.tag_name }}" -a
+
+      - name: Push OSS and Executor changes
+        uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
+        with:
+          directory: buildbuddy-helm
+          repository: buildbuddy-io/buildbuddy-helm
+          github_token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+          branch: master
+
+      - name: Wait for Executor chart
+        timeout-minutes: 17
+        env:
+          CHART: buildbuddy-executor
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+          version=$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+)([[:space:]]+#.*)?$/\1/p' "charts/$CHART/Chart.yaml")
+          test -n "$version"
+          deadline=$((SECONDS + 900))
+          until timeout 15s helm repo update buildbuddy --fail-on-repo-update-fail &&
+            timeout 15s helm show chart "buildbuddy/$CHART" --version "$version" >/dev/null; do
+            ((SECONDS < deadline)) || { echo "Timed out waiting for $CHART $version" >&2; exit 1; }
+            echo "Waiting for $CHART $version"
+            sleep 10
+          done
+
+      - name: Bump Enterprise Version
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+
+          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
+          export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
+          EXECUTOR_VERSION_NUMBER=$(sed -rn 's/version: ([0-9\.]+) # Chart version/\1/gp' charts/buildbuddy-executor/Chart.yaml)
+          export EXECUTOR_VERSION_NUMBER
+          test -n "$EXECUTOR_VERSION_NUMBER"
+
+          # shellcheck disable=SC2016
+          sed -ri 's/version: 0.0.([0-9]+) # Chart version/echo "version: 0.0.$((\1+1)) # Chart version"/ge' charts/buildbuddy-enterprise/Chart.yaml
+          sed -ri "s/appVersion: ([0-9]+).([0-9]+).([0-9]+) # Version of deployed app/appVersion: $APP_VERSION_NUMBER # Version of deployed app/g" charts/buildbuddy-enterprise/Chart.yaml
+          sed -ri "s/(.*)image\.tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/\1image.tag\2enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise/README.md
+          sed -ri "s/  tag(.*)enterprise-v([0-9]+).([0-9]+).([0-9]+)/  tag\1enterprise-v$APP_VERSION_NUMBER/g" charts/buildbuddy-enterprise/values.yaml
+          git diff --unified=0 -- charts/buildbuddy-enterprise/Chart.yaml | grep '^+version: ' >/dev/null ||
+            { echo "Failed to bump enterprise chart version" >&2; exit 1; }
+          sed -ri "s/version: 0.0.([0-9]+) # Executor chart version/version: $EXECUTOR_VERSION_NUMBER # Executor chart version/g" charts/buildbuddy-enterprise/requirements.yaml
+          UPDATED_EXECUTOR_VERSION=$(sed -rn '/^  - name: buildbuddy-executor$/,/^  - name:/ s/^    version: ([^[:space:]]+).*/\1/p' charts/buildbuddy-enterprise/requirements.yaml)
+          test "$UPDATED_EXECUTOR_VERSION" = "$EXECUTOR_VERSION_NUMBER"
+
+          helm dep update charts/buildbuddy-enterprise
+
+      - name: Commit Enterprise changes
+        run: |
+          cd "$GITHUB_WORKSPACE"/buildbuddy-helm
+          git config --local user.email "releasebot@buildbuddy.io"
+          git config --local user.name "BuildBuddy Release Bot"
+
+          git add charts/buildbuddy-enterprise
+
+          git commit -m "Bumping Enterprise to ${{ github.event.release.tag_name }}" -a
+
+      - name: Push Enterprise changes
         uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
         with:
           directory: buildbuddy-helm
