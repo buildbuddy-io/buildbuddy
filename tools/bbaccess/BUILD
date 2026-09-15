@@ -11,6 +11,8 @@ go_library(
         "//server/util/grpc_client",
         "//server/util/log",
         "//server/util/status",
+        "//tools/bbaccess/tunnel",
+        "//tools/bbaccess/tunnel/config",
         "//tools/bbaccess/update",
     ],
 )
