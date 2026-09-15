@@ -36,6 +36,7 @@ go_test(
     shard_count = 2,
     tags = [
         "docker",
+        "firecracker",
     ],
     deps = [
         ":networking",

@@ -80,7 +80,10 @@ go_test(
         "test.runner-recycling-key": "mysql",
     },
     shard_count = 5,
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":userdb",
         "//enterprise/server/testutil/enterprise_testauth",
@@ -130,7 +133,10 @@ go_test(
         "test.runner-recycling-key": "postgres",
     },
     shard_count = 5,
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":userdb",
         "//enterprise/server/testutil/enterprise_testauth",

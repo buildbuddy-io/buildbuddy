@@ -53,7 +53,10 @@ go_test(
         "test.EstimatedComputeUnits": "4",
     },
     shard_count = 4,
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         "//enterprise/server/backends/email",
         "//enterprise/server/usage_service",

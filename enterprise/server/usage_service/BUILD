@@ -63,7 +63,10 @@ go_test(
         "test.runner-recycling-key": "clickhouse25.3",
         "test.EstimatedComputeUnits": "4",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":usage_service",
         "//proto:context_go_proto",

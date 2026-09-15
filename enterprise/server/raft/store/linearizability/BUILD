@@ -25,6 +25,7 @@ go_test(
     gotags = ["dragonboat_monkeytest"],
     tags = [
         "block-network",
+        "firecracker",
         "manual",
     ],
     deps = [

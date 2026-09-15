@@ -69,7 +69,10 @@ go_test(
         "test.workload-isolation-type": "firecracker",
     },
     shard_count = 8,
-    tags = ["block-network"],
+    tags = [
+        "block-network",
+        "firecracker",
+    ],
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/bringup",

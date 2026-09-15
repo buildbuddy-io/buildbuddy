@@ -15,7 +15,10 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "busybox",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     target_compatible_with = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",

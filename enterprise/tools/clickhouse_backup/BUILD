@@ -43,7 +43,10 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse25.3",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     x_defs = {
         "clickhouseClusterRlocationpath": "$(rlocationpath //enterprise/tools/clickhouse_cluster:clickhouse_cluster)",
         "clickhouseBackupRlocationpath": "$(rlocationpath :clickhouse_backup)",

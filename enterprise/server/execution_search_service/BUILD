@@ -34,7 +34,10 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse25.3",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":execution_search_service",
         "//proto:execution_stats_go_proto",

@@ -39,7 +39,10 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "clickhouse25.3",
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     deps = [
         ":auditlog",
         "//enterprise/server/testutil/enterprise_testauth",

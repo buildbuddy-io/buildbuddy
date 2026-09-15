@@ -56,6 +56,11 @@ def go_web_test_suite(
     }
     test_exec_properties.update(exec_properties)
 
+    target_compatible_with = select({
+        "//platforms/configs:linux_arm64": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+
     go_test(
         name = wrapped_test_name,
         args = args,
@@ -64,6 +69,7 @@ def go_web_test_suite(
         shard_count = shard_count,
         size = size,
         tags = wrapped_test_tags,
+        target_compatible_with = target_compatible_with,
         timeout = timeout,
         visibility = ["//visibility:private"],
         exec_properties = test_exec_properties,
@@ -81,6 +87,7 @@ def go_web_test_suite(
         shard_count = shard_count,
         size = size,
         tags = tags,
+        target_compatible_with = target_compatible_with,
         test = wrapped_test_name,
         test_suite_tags = test_suite_tags,
         timeout = timeout,

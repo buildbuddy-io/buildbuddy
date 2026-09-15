@@ -38,7 +38,10 @@ go_test(
         "test.EstimatedComputeUnits": "8",
         "test.workload-isolation-type": "firecracker",
     },
-    tags = ["block-network"],
+    tags = [
+        "block-network",
+        "firecracker",
+    ],
     deps = [
         "//enterprise/server/raft/constants",
         "//enterprise/server/raft/header",

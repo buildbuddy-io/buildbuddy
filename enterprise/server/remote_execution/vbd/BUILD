@@ -21,6 +21,7 @@ go_test(
         # Test requires mount() privileges.
         "test.workload-isolation-type": "firecracker",
     },
+    tags = ["firecracker"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],

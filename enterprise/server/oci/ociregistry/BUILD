@@ -67,7 +67,10 @@ go_test(
         "test.recycle-runner": "true",
         "test.runner-recycling-key": "podman-static@" + PODMAN_VERSION,
     },
-    tags = ["docker"],
+    tags = [
+        "docker",
+        "firecracker",
+    ],
     target_compatible_with = [
         "@platforms//os:linux",
         "@platforms//cpu:x86_64",

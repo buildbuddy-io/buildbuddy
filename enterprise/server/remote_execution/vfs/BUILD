@@ -86,6 +86,7 @@ go_test(
     },
     tags = [
         "docker",
+        "firecracker",
     ],
     deps = select({
         "@io_bazel_rules_go//go/platform:linux_amd64": [

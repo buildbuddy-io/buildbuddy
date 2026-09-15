@@ -28,6 +28,7 @@ go_test(
     # tag which we apply to tests that only run on CI.
     tags = [
         "docker",
+        "firecracker",
     ],
     target_compatible_with = ["@platforms//os:linux"],
     x_defs = {
