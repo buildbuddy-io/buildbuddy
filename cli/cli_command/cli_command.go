@@ -3,9 +3,8 @@ package cli_command
 import "flag"
 
 type Command struct {
-	Name    string
-	Help    string
-	Aliases []string
+	Name string
+	Help string
 	// Handler runs the command.
 	//
 	// It is nil until Register in cli_command/register is called.
@@ -131,38 +130,23 @@ var Commands = []*Command{
 	},
 }
 
-var (
-	// CommandsByName is a map of every known CLI command, each indexed by its
-	// Name field.
-	CommandsByName = make(map[string]*Command, len(Commands))
-
-	// Aliases maps every known alias to its corresponding CLI command.
-	Aliases = map[string]*Command{}
-)
+// CommandsByName is a map of every known CLI command, each indexed by its Name
+// field.
+var CommandsByName = make(map[string]*Command, len(Commands))
 
 func init() {
 	for _, command := range Commands {
 		CommandsByName[command.Name] = command
-		for _, alias := range command.Aliases {
-			Aliases[alias] = command
-		}
 	}
 }
 
-// GetCommand returns the Command corresponding to the provided command name or
-// alias, or nil if no such Command exists.
+// GetCommand returns the Command corresponding to the provided command name, or
+// nil if no such Command exists.
 func GetCommand(commandName string) *Command {
-	if command, ok := CommandsByName[commandName]; ok {
-		return command
-	}
-	if command, ok := Aliases[commandName]; ok {
-		return command
-	}
-	return nil
+	return CommandsByName[commandName]
 }
 
-// IsCommand returns whether name is recognized as a bb CLI command name or
-// alias.
+// IsCommand returns whether name is recognized as a bb CLI command name.
 func IsCommand(name string) bool {
 	return GetCommand(name) != nil
 }
