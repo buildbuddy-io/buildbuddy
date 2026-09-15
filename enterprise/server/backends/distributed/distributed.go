@@ -1110,15 +1110,23 @@ func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
+	w, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
 	if err != nil {
 		return err
 	}
-	defer rwc.Close()
-	if _, err := io.Copy(rwc, r); err != nil {
+	defer w.Close()
+	_, rIsWriterTo := r.(io.WriterTo)
+	_, wIsReaderFrom := w.(io.ReaderFrom)
+	var buf []byte
+	if !rIsWriterTo && !wIsReaderFrom {
+		// If neither optimization applies, specify a bigger buffer than
+		// io.Copy's default 32KB, to reduce the number of round trips.
+		buf = make([]byte, digest.SafeBufferSize(rn, 256*1000))
+	}
+	if _, err := io.CopyBuffer(w, r, buf); err != nil {
 		return err
 	}
-	return rwc.Commit()
+	return w.Commit()
 }
 
 func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source string, dest string) error {
