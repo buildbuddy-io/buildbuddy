@@ -32,20 +32,17 @@ actions:
         branches:
           - "*"
     steps:
-      - run: >-
-          bazel test --config=linux-arm64-workflows --config=tests-linux-arm64
-          --flaky_test_attempts=3 --local_test_jobs=1
-          --
-          //enterprise/server/remote_execution/...
-          //enterprise/server/test/integration/remote_execution/...
-          -//enterprise/server/remote_execution/containers/firecracker/...
-          -//enterprise/server/test/integration/remote_execution:remote_execution_test
-          //app/util:shlex_test
-      # Run a separate bazel invocation to invoke tests with the "docker" tag.
-      - run: >-
-          bazel test --config=linux-arm64-workflows --config=tests-docker
-          --flaky_test_attempts=3 --local_test_jobs=1
-          //enterprise/server/test/integration/podman:podman_test
+      - run: |
+          # GCP ARM64 executors do not support Firecracker. Query test targets
+          # separately so that incompatible non-test targets under //... are not
+          # built, and omit tests that explicitly request Firecracker isolation.
+          bazel query \
+            'tests(//...) except attr("exec_properties", "firecracker", tests(//...))' \
+            --output=label > /tmp/linux-arm64-tests
+          bazel test \
+            --config=linux-arm64-workflows \
+            --config=tests-linux-arm64 \
+            --target_pattern_file=/tmp/linux-arm64-tests
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
     container_image: ubuntu-22.04
