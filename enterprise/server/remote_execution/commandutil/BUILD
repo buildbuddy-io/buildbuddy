@@ -63,6 +63,7 @@ go_test(
         ],
         "@io_bazel_rules_go//go/platform:windows": [
             "//server/testutil/testfs",
+            "@org_golang_x_sys//windows",
         ],
         "//conditions:default": [],
     }),
