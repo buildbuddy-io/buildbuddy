@@ -22,10 +22,13 @@ import (
 )
 
 const Usage = `
-usage: bb agent review [ --dry_run ] [ --force ]
+usage: bb agent review [ <pr> ] [ --dry_run ] [ --force ]
 
-Reviews the open GitHub pull request for the current branch, then posts the
-findings as PR review comments.
+Reviews an open GitHub pull request, then posts the findings as PR review
+comments.
+
+  <pr>  Optional. The PR number to review. With no number, the PR for the
+        current branch is reviewed.
 
 Requires gh and a GitHub token in REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN.
 
@@ -34,6 +37,7 @@ review them anyway.
 
 Examples:
   bb agent review
+  bb agent review 13315
   bb agent review --dry_run
 `
 
@@ -115,7 +119,7 @@ type fileLine struct {
 // HandleReview receives only the positional args; the agent package parses
 // Flags before calling it.
 func HandleReview(args []string) (int, error) {
-	if len(args) != 0 {
+	if len(args) > 1 {
 		log.Print(Usage)
 		return 1, nil
 	}
@@ -129,23 +133,22 @@ func HandleReview(args []string) (int, error) {
 		return -1, err
 	}
 
-	// Fetch the PR associated with the current, checked-out branch.
-	owner, repo, branch, err := fetchRepoInfo()
+	owner, repo, err := fetchRepoInfo()
+	if err != nil {
+		return -1, err
+	}
+	prNumber, err := findPRNumber(args)
 	if err != nil {
 		return -1, err
 	}
 	log.Printf("Fetching PR info...")
-	prs, _, err := gh.PullRequests.List(ctx, owner, repo, &github.PullRequestListOptions{
-		Head:  owner + ":" + branch,
-		State: "open",
-	})
+	pr, _, err := gh.PullRequests.Get(ctx, owner, repo, prNumber)
 	if err != nil {
-		return -1, fmt.Errorf("list PRs: %w", err)
+		return -1, fmt.Errorf("get PR #%d: %w", prNumber, err)
 	}
-	if len(prs) == 0 {
-		return -1, fmt.Errorf("no open PR found for branch %q", branch)
+	if pr.GetState() != "open" {
+		return -1, fmt.Errorf("PR #%d is %s", prNumber, pr.GetState())
 	}
-	pr := prs[0]
 
 	headSHA := pr.GetHead().GetSHA()
 	headShort := headSHA
@@ -322,27 +325,51 @@ func newGHClient() (*github.Client, error) {
 	return github.NewClient(nil).WithAuthToken(token), nil
 }
 
-func fetchRepoInfo() (owner, repo, branch string, err error) {
+// fetchRepoInfo returns the owner and name of the base repo. PRs belong to the
+// base repo even when they are opened from a fork.
+func fetchRepoInfo() (owner, repo string, err error) {
 	repoRaw, err := run("gh", "repo", "view", "--json", "nameWithOwner")
 	if err != nil {
-		return "", "", "", fmt.Errorf("get repo info: %w", err)
+		return "", "", fmt.Errorf("get repo info: %w", err)
 	}
 	var repoInfo struct {
 		NameWithOwner string `json:"nameWithOwner"`
 	}
 	if err := json.Unmarshal([]byte(repoRaw), &repoInfo); err != nil {
-		return "", "", "", fmt.Errorf("parse repo info: %w", err)
+		return "", "", fmt.Errorf("parse repo info: %w", err)
 	}
 	owner, repo, ok := strings.Cut(repoInfo.NameWithOwner, "/")
 	if !ok {
-		return "", "", "", fmt.Errorf("unexpected nameWithOwner format: %q", repoInfo.NameWithOwner)
+		return "", "", fmt.Errorf("unexpected nameWithOwner format: %q", repoInfo.NameWithOwner)
+	}
+	return owner, repo, nil
+}
+
+// findPRNumber resolves which PR to review: an explicitly given number, else
+// the PR that gh associates with the current branch.
+func findPRNumber(args []string) (int, error) {
+	if len(args) == 1 {
+		n, err := strconv.Atoi(strings.TrimPrefix(args[0], "#"))
+		if err != nil || n <= 0 {
+			return 0, fmt.Errorf("%q is not a PR number", args[0])
+		}
+		return n, nil
 	}
 
-	branch, err = run("git", "rev-parse", "--abbrev-ref", "HEAD")
+	prRaw, err := run("gh", "pr", "view", "--json", "number")
 	if err != nil {
-		return "", "", "", fmt.Errorf("get current branch: %w", err)
+		return 0, fmt.Errorf("no PR found for the current branch; pass a PR number explicitly: %w", err)
 	}
-	return owner, repo, branch, nil
+	var prInfo struct {
+		Number int `json:"number"`
+	}
+	if err := json.Unmarshal([]byte(prRaw), &prInfo); err != nil {
+		return 0, fmt.Errorf("parse PR info: %w", err)
+	}
+	if prInfo.Number <= 0 {
+		return 0, fmt.Errorf("no PR found for the current branch; pass a PR number explicitly")
+	}
+	return prInfo.Number, nil
 }
 
 // postReview posts the review to the PR, or prints it when --dry_run is set.
