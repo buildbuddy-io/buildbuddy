@@ -15,6 +15,7 @@ go_library(
         "//server/util/flag",
         "//server/util/flagutil",
         "//server/util/log",
+        "//server/util/platform",
         "//server/util/status",
         "@com_github_elastic_gosigar//:gosigar",
         "@com_google_cloud_go_compute_metadata//:metadata",
