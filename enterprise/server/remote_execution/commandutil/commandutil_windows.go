@@ -56,6 +56,7 @@ type process struct {
 	jobMu     sync.Mutex
 	jobHandle windows.Handle
 	killed    bool
+	inactive  bool
 }
 
 type processKilledError struct {
@@ -140,7 +141,32 @@ func (p *process) postStart() error {
 }
 
 func (p *process) monitorUsage(listener procstats.Listener) *repb.UsageStats {
-	return procstats.Monitor(p.cmd.Process.Pid, listener, p.terminated)
+	treeStats := procstats.NewTreeStats(p.cmd.Process.Pid)
+	return procstats.MonitorProvider(func() (*repb.UsageStats, error) {
+		// Job Objects retain cumulative CPU accounting for processes that have
+		// already exited. Keep using process-tree RSS for memory so it has the
+		// same semantics as task sizing on other platforms.
+		cpuStats, cpuErr := p.jobUsageStats()
+		memoryErr := treeStats.Update()
+		stats := treeStats.Total()
+		if cpuStats != nil {
+			stats.CpuNanos = cpuStats.GetCpuNanos()
+		}
+		if cpuErr != nil {
+			return stats, cpuErr
+		}
+		return stats, memoryErr
+	}, listener, p.terminated)
+}
+
+func (p *process) jobUsageStats() (*repb.UsageStats, error) {
+	accounting, err := p.jobAccounting()
+	if err != nil {
+		return nil, err
+	}
+	return &repb.UsageStats{
+		CpuNanos: (accounting.TotalUserTime + accounting.TotalKernelTime) * 100,
+	}, nil
 }
 
 func (p *process) jobAccounting() (*jobObjectBasicAccountingInformation, error) {
@@ -195,6 +221,12 @@ func (p *process) cleanup() error {
 	return nil
 }
 
+func (p *process) finalizeUsage(stats *repb.UsageStats) {
+	if stats != nil && p.inactive {
+		stats.MemoryBytes = 0
+	}
+}
+
 func (p *process) withProcessHandle(f func(windows.Handle) error) error {
 	var err error
 	if handleErr := p.cmd.Process.WithHandle(func(handle uintptr) {
@@ -230,7 +262,8 @@ func (p *process) wait() (*espb.Rusage, error) {
 		return nil, fmt.Errorf("wait for root process: %w", err)
 	}
 	// Cmd.Wait also waits for stdout/stderr copying. Terminate descendants
-	// holding inherited pipes before waiting for EOF.
+	// holding inherited pipes before waiting for EOF, while retaining the Job
+	// Object's accounting for the final usage sample.
 	p.jobMu.Lock()
 	killed := p.killed
 	var cleanupErr error
@@ -245,6 +278,8 @@ func (p *process) wait() (*espb.Rusage, error) {
 		// Closing the job is the fallback if explicit termination or the
 		// accounting query failed. Do not report successful cleanup.
 		_ = p.cleanup()
+	} else {
+		p.inactive = true
 	}
 	err := p.cmd.Wait()
 	if cleanupErr != nil {
@@ -272,7 +307,8 @@ func (p *process) killProcessTree() error {
 	if p.jobHandle == 0 {
 		return nil
 	}
-	// Keep the job handle open so wait() can check for job inactivity.
+	// Keep the job handle open until wait() completes so the stats monitor can
+	// take a final cumulative sample, including terminated descendants.
 	if err := windows.TerminateJobObject(p.jobHandle, windowsKilledExitCode); err != nil {
 		return err
 	}
