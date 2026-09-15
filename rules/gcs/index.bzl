@@ -21,7 +21,7 @@ load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 #   `bazel run :app_bundle_release.delete`
 #
 # Returns 0 only if a content-addressed upload has its completion marker:
-#   `bazel run :app_bundle_release.artifacts_exist`
+#   `bazel run :app_bundle_release.check_artifacts_exist`
 # Older uploads without a marker must be uploaded again. Unversioned uploads
 # cannot be confirmed: a marker could describe stale, mutable contents.
 # `_SUCCESS` is reserved for the completion marker. sha_prefix must identify
@@ -110,8 +110,8 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     # Checking does not depend directly on srcs or .push_only. Computing the
     # existing content hash can still build the bundle transitively.
     write_file(
-        name = name + ".artifacts_exist.script",
-        out = name + ".artifacts_exist.out",
+        name = name + ".check_artifacts_exist.script",
+        out = name + ".check_artifacts_exist.out",
         content = [
             "#!/usr/bin/env bash",
             "set -euo pipefail",
@@ -127,9 +127,9 @@ def gcs(name, srcs, bucket, gsutil = "gsutil", prefix = "", sha_prefix = "", zip
     )
 
     sh_binary(
-        name = name + ".artifacts_exist",
+        name = name + ".check_artifacts_exist",
         args = [sha_prefix_location] if sha_prefix else [],
-        srcs = [":" + name + ".artifacts_exist.script"],
+        srcs = [":" + name + ".check_artifacts_exist.script"],
         data = [sha_prefix] if sha_prefix else [],
         use_bash_launcher = True,
         **kwargs
