@@ -187,6 +187,14 @@ func (r *Env) GetDBHandle() interfaces.DBHandle {
 	return r.testEnv.GetDBHandle()
 }
 
+func (r *Env) CreateAPIKey(t testing.TB, capabilities []cappb.Capability) string {
+	ctx := r.WithUserID(context.Background(), r.UserID1)
+	key, err := r.testEnv.GetAuthDB().CreateAPIKey(
+		ctx, r.GroupID1, "", capabilities, 0 /*=expiresIn*/, false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	return key.Value
+}
+
 func (r *Env) ShutdownBuildBuddyServers() {
 	r.shutdownBuildBuddyServersOnce.Do(r.shutdownBuildBuddyServers)
 }
