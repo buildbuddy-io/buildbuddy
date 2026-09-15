@@ -46,11 +46,6 @@ actions:
           bazel test --config=linux-arm64-workflows --config=tests-docker
           --flaky_test_attempts=3 --local_test_jobs=1
           //enterprise/server/test/integration/podman:podman_test
-      # Make sure the executor binary builds.
-      - run: >-
-          bazel build --config=linux-arm64-workflows
-          //enterprise/server/cmd/executor
-          //enterprise/server/cmd/executor:executor_linux_arm64_static
     allow_concurrent_runs: false
   - name: Build public release artifacts # with -c opt and no race detection
     container_image: ubuntu-22.04
@@ -77,6 +72,34 @@ actions:
           //enterprise/server/cmd/server:buildbuddy_image
           //enterprise/server/cmd/executor:executor_image
           //enterprise/server/cmd/cache_proxy:cache_proxy_image
+    allow_concurrent_runs: false
+  - name: Build public release artifacts (Linux_arm64)
+    container_image: ubuntu-22.04
+    os: "linux"
+    arch: "arm64"
+    resource_requests:
+      disk: 27GB
+    # ARM64 capacity is in the default prod pool and supports OCI isolation.
+    platform_properties:
+      Pool: "default"
+      workload-isolation-type: "oci"
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    # Release stamping needs version tags.
+    git_fetch_depth: 0
+    steps:
+      # Linux arm64 GitHub release binaries.
+      - run: >-
+          bazel build --config=release --config=linux-arm64-workflows
+          //server/cmd/buildbuddy:buildbuddy
+          //enterprise/server/cmd/server:buildbuddy
+          //enterprise/server/cmd/executor:executor
+          //enterprise/server/cmd/executor:executor_linux_arm64_static
     allow_concurrent_runs: false
   - name: Check style
     container_image: ubuntu-22.04
