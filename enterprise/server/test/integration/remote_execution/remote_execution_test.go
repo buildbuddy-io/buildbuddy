@@ -1541,6 +1541,9 @@ func (_ fakeRankedNode) IsPreferred() bool {
 type fixedNodeTaskRouter struct {
 	mu          sync.Mutex
 	executorIDs map[string]struct{}
+	// If non-nil, RankNodes blocks until this channel is closed or the
+	// caller's context is done.
+	blockChan chan struct{}
 }
 
 func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
@@ -1552,6 +1555,15 @@ func newFixedNodeTaskRouter(executorIDs []string) *fixedNodeTaskRouter {
 }
 
 func (f *fixedNodeTaskRouter) RankNodes(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName string, nodes []interfaces.ExecutionNode) []interfaces.RankedExecutionNode {
+	f.mu.Lock()
+	blockChan := f.blockChan
+	f.mu.Unlock()
+	if blockChan != nil {
+		select {
+		case <-blockChan:
+		case <-ctx.Done():
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []interfaces.RankedExecutionNode
@@ -1567,6 +1579,27 @@ func (f *fixedNodeTaskRouter) MarkSucceeded(ctx context.Context, action *repb.Ac
 }
 
 func (f *fixedNodeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cmd *repb.Command, remoteInstanceName, executorHostID string) {
+}
+
+// Block makes RankNodes hold every caller until Unblock is called or the
+// caller's context is done. This can be used to stall the scheduler while it is
+// enqueueing tasks, since all tasks must be routed via the task router.
+func (f *fixedNodeTaskRouter) Block() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.blockChan == nil {
+		f.blockChan = make(chan struct{})
+	}
+}
+
+// Unblock releases callers held by Block.
+func (f *fixedNodeTaskRouter) Unblock() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.blockChan != nil {
+		close(f.blockChan)
+		f.blockChan = nil
+	}
 }
 
 func (f *fixedNodeTaskRouter) UpdateSubset(executorIDs []string) {
@@ -1627,6 +1660,78 @@ func TestTaskReservationsNotLostOnExecutorShutdown(t *testing.T) {
 	for _, cmd := range cmds {
 		res := cmd.Wait()
 		assert.Equal(t, "newExecutor", res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have been executed on new executor", cmd.Name)
+	}
+}
+
+func TestTaskReservationsNotLostWithMultipleExecutorsShuttingDown(t *testing.T) {
+	// Disable work stealing since we're testing the hand-back mechanism for
+	// re-enqueueing work.
+	flags.Set(t, "remote_execution.unclaimed_tasks_set_max_size", int64(0))
+
+	rbe := rbetest.NewRBETestEnv(t)
+
+	doomedIDs := []string{"doomedExecutor1", "doomedExecutor2", "doomedExecutor3"}
+	const survivorID = "survivorExecutor"
+
+	// Set up "doomed" executors that accept reservations but never start them
+	// (simulating high queue length), and a "survivor" executor that stays
+	// healthy throughout the test. Initially, the task router routes all tasks
+	// to the "doomed" executors.
+	taskRouter := newFixedNodeTaskRouter(doomedIDs)
+	defer taskRouter.Unblock()
+	rbe.AddBuildBuddyServerWithOptions(&rbetest.BuildBuddyServerOptions{EnvModifier: func(env *testenv.TestEnv) {
+		env.SetTaskRouter(taskRouter)
+	}})
+	var doomed []*rbetest.Executor
+	for _, id := range doomedIDs {
+		e := rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: id})
+		e.ShutdownTaskScheduler()
+		doomed = append(doomed, e)
+	}
+	rbe.AddSingleTaskExecutorWithOptions(t, &rbetest.ExecutorOptions{Name: survivorID})
+
+	// Queue up work. Every command gets reserved on all three doomed executors.
+	var cmds []*rbetest.Command
+	for i := range 10 {
+		cmds = append(cmds, rbe.ExecuteCustomCommand("sh", "-c", fmt.Sprintf("echo 'hello from command %d'", i)))
+	}
+	for _, cmd := range cmds {
+		cmd.WaitAccepted()
+	}
+	for _, e := range doomed {
+		require.Eventually(t, func() bool { return e.QueueLength() == len(cmds) }, 10*time.Second, 10*time.Millisecond,
+			"all commands should be queued on the doomed executors")
+	}
+
+	// Now all three doomed executors get their shutdown signal at once. Block
+	// the task router so that the scheduler gets stuck trying to re-enqueue
+	// tasks.
+	taskRouter.Block()
+	for _, e := range doomed {
+		e.BeginShutdown()
+	}
+
+	// Now shut down the executors, handing off queued tasks to the scheduler,
+	// which will get stuck trying to re-enqueue tasks (because the task router
+	// is blocked).
+	for _, e := range doomed {
+		e.WaitForShutdown()
+		rbe.DisconnectExecutor(e)
+	}
+
+	// Now route all work to the survivor executor. Normally this would happen
+	// automatically when the executors unregister from the pool, but we have to
+	// do it explicitly here since we're controlling the task router.
+	taskRouter.UpdateSubset([]string{survivorID})
+
+	// Unblock the task router to let the app work through the hand-back
+	// requests from the now-terminated executors. Every command that was
+	// originally enqueued on the doomed executor set should now be executed on
+	// the survivor, and succeed.
+	taskRouter.Unblock()
+	for _, cmd := range cmds {
+		res := cmd.Wait()
+		assert.Equal(t, survivorID, res.ActionResult.GetExecutionMetadata().GetExecutorId(), "[%s] should have run on the survivor", cmd.Name)
 	}
 }
 
