@@ -192,120 +192,90 @@ type SendStream[S proto.Message, R proto.Message] interface {
 	CloseAndRecv() (R, error)
 }
 
+// Sender sends messages on a client stream, bounding how long each call may
+// block.
+//
+// Calls run on the caller's goroutine. A timeout is enforced by canceling the
+// stream's context, which is what makes the blocked gRPC call return. The
+// stream is therefore unusable once a call has timed out, and every later
+// call on the Sender reports that timeout instead of touching the stream.
+//
+// Every other error is passed through from the stream. In particular, gRPC
+// reports a transport error from Send as io.EOF: the stream is over and its
+// status is available from CloseAndRecvWithTimeout. Further sends after that
+// are rejected by gRPC without touching the network.
 type Sender[S proto.Message, R proto.Message] struct {
-	ctx      context.Context
-	stream   SendStream[S, R]
-	sendChan chan S
-	errChan  chan error
+	cancel context.CancelFunc
+	stream SendStream[S, R]
 
-	// done channel that's closed when the sending goroutine exists, to ensure
-	// that there are no in-flight stream.Send calls when calling CloseAndRecv.
-	done chan struct{}
+	// timeoutErr is the error of the first call that timed out. The stream
+	// context was canceled at that point, so later calls report it too.
+	timeoutErr error
 }
 
-// SendWithTimeoutCause attempts to send a message on the underlying stream,
-// waiting a maximum of timeout. If timeout is reached, the given cause is
-// returned as the error. If this function returns an error, it must not be
-// called again on the same Sender.
+// NewSender returns a Sender for stream, which must have been opened with a
+// context that cancel cancels. The Sender cancels that context when a call
+// times out.
+//
+// Example usage:
+//
+//	ctx, cancel := context.WithCancel(ctx)
+//	defer cancel()
+//	stream, err := bsClient.Write(ctx)
+//	// handle err
+//	sender := rpcutil.NewSender(cancel, stream)
+//	for {
+//		err := sender.SendWithTimeout(req, 5*time.Second)
+//		// handle err
+//	}
+func NewSender[S proto.Message, R proto.Message](cancel context.CancelFunc, stream SendStream[S, R]) *Sender[S, R] {
+	return &Sender[S, R]{cancel: cancel, stream: stream}
+}
+
+// call runs op, canceling the stream context if op has not returned after
+// timeout. If the timeout fires, a DeadlineExceeded error naming opName is
+// returned even if op then succeeded, since the stream is unusable either way.
+// Once a call has timed out, later calls return that error without running op.
+func (s *Sender[S, R]) call(opName string, timeout time.Duration, op func() error) error {
+	if s.timeoutErr != nil {
+		return s.timeoutErr
+	}
+	timer := time.AfterFunc(timeout, s.cancel)
+	err := op()
+	if !timer.Stop() {
+		s.timeoutErr = status.DeadlineExceededErrorf("%s timed out after %s", opName, timeout)
+		return s.timeoutErr
+	}
+	return err
+}
+
+// SendWithTimeout sends a message on the underlying stream, waiting a maximum
+// of timeout. If timeout is reached, the stream is canceled and a
+// DeadlineExceeded error is returned.
 //
 // Note that gRPC sends are asynchronous in the sense that the protocol does not
 // acknowledge individual messages. A timeout will only occur if the sender
 // exhausts the flow-control window and the receiver does not increase it.
-//
-// Must not be called after CloseAndRecvWithTimeoutCause.
-func (s *Sender[S, R]) SendWithTimeoutCause(msg S, timeout time.Duration, cause error) error {
-	if s.sendChan == nil {
-		return status.UnavailableError("Send channel closed")
-	}
-	s.sendChan <- msg
+func (s *Sender[S, R]) SendWithTimeout(msg S, timeout time.Duration) error {
+	return s.call("Send", timeout, func() error { return s.stream.Send(msg) })
+}
 
-	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
-	defer cancel()
-	select {
-	case err := <-s.errChan:
-		if err != nil {
-			close(s.sendChan)
-			s.sendChan = nil
-		}
+// CloseAndRecvWithTimeout calls CloseAndRecv on the underlying stream, waiting
+// a maximum of timeout. If timeout is reached, the stream is canceled and a
+// DeadlineExceeded error is returned. If an earlier call timed out, that
+// call's error is returned without touching the stream.
+func (s *Sender[S, R]) CloseAndRecvWithTimeout(timeout time.Duration) (R, error) {
+	var rsp R
+	err := s.call("CloseAndRecv", timeout, func() error {
+		var err error
+		rsp, err = s.stream.CloseAndRecv()
 		return err
-	case <-ctx.Done():
-		close(s.sendChan)
-		s.sendChan = nil
-		return context.Cause(ctx)
+	})
+	if err != nil {
+		var zero R
+		return zero, err
 	}
-}
-
-// CloseAndRecvWithTimeoutCause calls CloseAndRecv on the underlying stream,
-// waiting a maximum of timeout. If timeout is reached, the given cause is
-// returned as the error.
-func (s *Sender[S, R]) CloseAndRecvWithTimeoutCause(timeout time.Duration, cause error) (R, error) {
-	if s.sendChan != nil {
-		close(s.sendChan)
-		s.sendChan = nil
-	}
-	ctx, cancel := context.WithTimeoutCause(s.ctx, timeout, cause)
-	defer cancel()
-
-	// gRPC client streams don't support concurrent Send and Close* operations.
-	// If a previous SendWithTimeoutCause timed out, the sending goroutine may
-	// be stuck in stream.Send — let it exit before touching the stream again.
-	select {
-	case <-s.done:
-	case <-ctx.Done():
-		return *new(R), context.Cause(ctx)
-	}
-
-	ch := make(chan StreamMsg[R], 1)
-	go func() {
-		rsp, err := s.stream.CloseAndRecv()
-		ch <- StreamMsg[R]{rsp, err}
-	}()
-	select {
-	case msg := <-ch:
-		return msg.Data, msg.Error
-	case <-ctx.Done():
-		return *new(R), context.Cause(ctx)
-	}
-}
-
-// NewSender returns a stream handle that can be used to implement more
-// advanced stream handling, such as per-send timeouts.
-//
-// Example usage:
-//
-// sender := rpcutil.NewSender[*bspb.WriteRequest, *bspb.WriteResponse](ctx, stream)
-//
-//	for {
-//		err := sender.SendWithTimeoutCause(5 * time.Second, status.DeadlineExceededError("blah blah blah"))
-//		// handle err
-//	}
-func NewSender[S proto.Message, R proto.Message](ctx context.Context, stream SendStream[S, R]) Sender[S, R] {
-	sendChan := make(chan S, 1)
-	errChan := make(chan error, 1)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			select {
-			case req, ok := <-sendChan:
-				if !ok {
-					return
-				}
-				err := stream.Send(req)
-				select {
-				case errChan <- err:
-					if err != nil {
-						return
-					}
-				case <-ctx.Done():
-					return
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-	return Sender[S, R]{ctx, stream, sendChan, errChan, done}
+	return rsp, nil
 }
 
 // Provides an OpenTelemetry MeterProvider that exports metrics to Prometheus.

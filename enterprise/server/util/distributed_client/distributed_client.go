@@ -3,7 +3,6 @@ package distributed_client
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -1147,7 +1146,7 @@ func (r *distributedCacheReader) Close() error {
 
 type streamWriteCloser struct {
 	cancelFunc      context.CancelFunc
-	sender          rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	sender          *rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
 	r               *rspb.ResourceName
 	ref             *refpb.Reference
 	refMustBeCloned bool
@@ -1161,8 +1160,8 @@ type streamWriteCloser struct {
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
-	err := wc.sender.SendWithTimeoutCause(req, *peerWriteTimeout, context.DeadlineExceeded)
-	if errors.Is(err, context.DeadlineExceeded) {
+	err := wc.sender.SendWithTimeout(req, *peerWriteTimeout)
+	if status.IsDeadlineExceededError(err) {
 		err = status.DeadlineExceededErrorf("timed out sending distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
@@ -1170,8 +1169,8 @@ func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
 }
 
 func (wc *streamWriteCloser) closeAndRecv() (*dcpb.WriteResponse, error) {
-	rsp, err := wc.sender.CloseAndRecvWithTimeoutCause(*peerWriteTimeout, context.DeadlineExceeded)
-	if errors.Is(err, context.DeadlineExceeded) {
+	rsp, err := wc.sender.CloseAndRecvWithTimeout(*peerWriteTimeout)
+	if status.IsDeadlineExceededError(err) {
 		err = status.DeadlineExceededErrorf("timed out finalizing distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
@@ -1246,12 +1245,10 @@ func (wc *streamWriteCloser) commit() error {
 }
 
 func (wc *streamWriteCloser) Close() error {
-	// Cancel the stream ctx to unblock any in-flight stream.Send() in the
-	// Sender's background goroutine and let gRPC clean up the stream.
-	// Deliberately do NOT call stream.CloseAndRecv() here: if Commit() was
-	// called successfully it already did, and if the write was abandoned the
-	// stream is already broken, so CloseAndRecv would just race against an
-	// unwinding Send and leak a goroutine stuck in waitOnHeader.
+	// Cancel the stream ctx to let gRPC clean up the stream. Deliberately do
+	// NOT call stream.CloseAndRecv() here: if Commit() was called
+	// successfully it already did, and if the write was abandoned the stream
+	// is already broken.
 	wc.cancelFunc()
 	return nil
 }
@@ -1321,7 +1318,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 	}
 	wc := &streamWriteCloser{
 		cancelFunc:      cancel,
-		sender:          rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		sender:          rpcutil.NewSender(cancel, stream),
 		peer:            peer,
 		handoffPeer:     handoffPeer,
 		r:               r,

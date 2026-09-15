@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
@@ -45,20 +46,78 @@ type stream[T proto.Message] struct {
 	closeRecvCh chan message[T]
 }
 
+// blockingSendStream blocks in Send and CloseAndRecv until ctx is done, the
+// way a gRPC client stream does when the peer stops reading.
 type blockingSendStream[T proto.Message] struct {
 	ctx          context.Context
 	sendStarted  chan struct{}
 	sendReturned chan struct{}
+	sendCalls    int
 }
 
 func (s *blockingSendStream[T]) Send(T) error {
+	s.sendCalls++
 	close(s.sendStarted)
 	<-s.ctx.Done()
 	close(s.sendReturned)
 	return s.ctx.Err()
 }
 
-func (s *blockingSendStream[T]) CloseAndRecv() (T, error) {
+func (s *blockingSendStream[T]) CloseAndRecv() (zero T, err error) {
+	<-s.ctx.Done()
+	return zero, s.ctx.Err()
+}
+
+// lateSuccessStream blocks in Send until ctx is done and then reports
+// success, modeling a send that completes just as the Sender's timeout fires.
+type lateSuccessStream[T proto.Message] struct {
+	ctx context.Context
+}
+
+func (s *lateSuccessStream[T]) Send(T) error {
+	<-s.ctx.Done()
+	return nil
+}
+
+func (s *lateSuccessStream[T]) CloseAndRecv() (zero T, err error) {
+	return zero, nil
+}
+
+// eofSendStream fails every Send with io.EOF, the way a gRPC client stream
+// does once the stream is over, and reports the stream's status from
+// CloseAndRecv.
+type eofSendStream[T proto.Message] struct {
+	closeRecvVal T
+	closeRecvErr error
+	sendCalls    int
+}
+
+func (s *eofSendStream[T]) Send(T) error {
+	s.sendCalls++
+	return io.EOF
+}
+
+func (s *eofSendStream[T]) CloseAndRecv() (T, error) {
+	return s.closeRecvVal, s.closeRecvErr
+}
+
+// closeSendStream mimics a gRPC client stream after CloseAndRecv: further
+// sends fail with an Internal error without reaching the network.
+type closeSendStream[T proto.Message] struct {
+	closed    bool
+	sendCalls int
+}
+
+func (s *closeSendStream[T]) Send(T) error {
+	s.sendCalls++
+	if s.closed {
+		return status.InternalError("SendMsg called after CloseSend")
+	}
+	return nil
+}
+
+func (s *closeSendStream[T]) CloseAndRecv() (T, error) {
+	s.closed = true
 	var zero T
 	return zero, nil
 }
@@ -82,27 +141,6 @@ func (s *stream[T]) CloseAndRecv() (T, error) {
 		msg := <-s.closeRecvCh
 		return msg.Val, msg.Err
 	}
-	var zero T
-	return zero, nil
-}
-
-// orderingStream lets a test control/observe the ordering of calls on a stream.
-type orderingStream[T proto.Message] struct {
-	sendBlock        chan struct{}
-	sendReturned     chan struct{}
-	closeRecvStarted chan struct{}
-	closeRecvReturn  chan struct{}
-}
-
-func (s *orderingStream[T]) Send(T) error {
-	<-s.sendBlock
-	close(s.sendReturned)
-	return nil
-}
-
-func (s *orderingStream[T]) CloseAndRecv() (T, error) {
-	close(s.closeRecvStarted)
-	<-s.closeRecvReturn
 	var zero T
 	return zero, nil
 }
@@ -132,208 +170,174 @@ func TestReceiver(t *testing.T) {
 	ch <- message[*tspb.Timestamp]{Val: val}
 }
 
-func TestSender(t *testing.T) {
+func TestSender_SendTimeoutCancelsStream(t *testing.T) {
 	defer goleak.VerifyNone(t)
-	ctx := t.Context()
-	ch := make(chan message[*tspb.Timestamp])
-	stream := &stream[*tspb.Timestamp]{ch: ch}
-	sender := rpcutil.NewSender(ctx, stream)
-	val := tspb.Now()
-	cause := fmt.Errorf("test-cause")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream := &blockingSendStream[*tspb.Timestamp]{
+		ctx:          ctx,
+		sendStarted:  make(chan struct{}),
+		sendReturned: make(chan struct{}),
+	}
+	sender := rpcutil.NewSender(cancel, stream)
 
-	// Should return cause when timed out
-	err := sender.SendWithTimeoutCause(val, 0, cause)
-	require.Equal(t, cause, err)
-	<-ch
-	sender.CloseAndRecvWithTimeoutCause(hugeTimeout, cause)
+	// The timeout cancels the stream context, which is what unblocks the
+	// synchronous Send.
+	err := sender.SendWithTimeout(tspb.Now(), time.Millisecond)
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got %v", err)
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	<-stream.sendReturned
+
+	// The stream is dead, so later calls report the same timeout without
+	// touching it.
+	require.Equal(t, err, sender.SendWithTimeout(tspb.Now(), hugeTimeout))
+	_, closeErr := sender.CloseAndRecvWithTimeout(hugeTimeout)
+	require.Equal(t, err, closeErr)
+	require.Equal(t, 1, stream.sendCalls)
+}
+
+func TestSender_ZeroTimeoutReturnsDeadlineExceeded(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream := &blockingSendStream[*tspb.Timestamp]{
+		ctx:          ctx,
+		sendStarted:  make(chan struct{}),
+		sendReturned: make(chan struct{}),
+	}
+	sender := rpcutil.NewSender(cancel, stream)
+
+	err := sender.SendWithTimeout(tspb.Now(), 0)
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got %v", err)
+}
+
+// If the timeout fires while Send is completing successfully, the stream has
+// still been canceled, so the Sender must report the timeout rather than a
+// success it can't follow up on.
+func TestSender_TimeoutRacingWithSuccessReportsTimeout(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream := &lateSuccessStream[*tspb.Timestamp]{ctx: ctx}
+	sender := rpcutil.NewSender(cancel, stream)
+
+	err := sender.SendWithTimeout(tspb.Now(), time.Millisecond)
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got %v", err)
+	_, closeErr := sender.CloseAndRecvWithTimeout(hugeTimeout)
+	require.Equal(t, err, closeErr)
 }
 
 func TestSender_AllowsMultipleSuccessfulSends(t *testing.T) {
 	defer goleak.VerifyNone(t)
-	ctx := t.Context()
+	_, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	ch := make(chan message[*tspb.Timestamp], 2)
-	stream := &stream[*tspb.Timestamp]{ch: ch}
-	sender := rpcutil.NewSender(ctx, stream)
-	cause := fmt.Errorf("test-cause")
+	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
+	stream := &stream[*tspb.Timestamp]{ch: ch, closeRecvCh: closeRecvCh}
+	sender := rpcutil.NewSender(cancel, stream)
 	val1 := tspb.Now()
 	val2 := tspb.New(val1.AsTime().Add(time.Second))
+	rspVal := tspb.New(val1.AsTime().Add(2 * time.Second))
 
-	require.NoError(t, sender.SendWithTimeoutCause(val1, hugeTimeout, cause))
-	require.NoError(t, sender.SendWithTimeoutCause(val2, hugeTimeout, cause))
-
+	require.NoError(t, sender.SendWithTimeout(val1, hugeTimeout))
+	require.NoError(t, sender.SendWithTimeout(val2, hugeTimeout))
 	require.Equal(t, val1, (<-ch).Val)
 	require.Equal(t, val2, (<-ch).Val)
-	sender.CloseAndRecvWithTimeoutCause(hugeTimeout, cause)
+
+	closeRecvCh <- message[*tspb.Timestamp]{Val: rspVal}
+	rsp, err := sender.CloseAndRecvWithTimeout(hugeTimeout)
+	require.NoError(t, err)
+	require.Equal(t, rspVal, rsp)
 }
 
 func TestCloseAndRecv(t *testing.T) {
 	defer goleak.VerifyNone(t)
-	ctx := t.Context()
-	cause := fmt.Errorf("test-cause")
 	val := tspb.Now()
 
 	// Should return response successfully
+	_, cancel := context.WithCancel(t.Context())
+	defer cancel()
 	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
 	s := &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvCh}
-	sender := rpcutil.NewSender(ctx, s)
+	sender := rpcutil.NewSender(cancel, s)
 	closeRecvCh <- message[*tspb.Timestamp]{Val: val}
-	msg, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, cause)
+	msg, err := sender.CloseAndRecvWithTimeout(hugeTimeout)
 	require.NoError(t, err)
 	require.Equal(t, val, msg)
 
-	// Should return cause when timed out
-	closeRecvChTimeout := make(chan message[*tspb.Timestamp])
-	s = &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvChTimeout}
-	sender = rpcutil.NewSender(ctx, s)
-	msg, err = sender.CloseAndRecvWithTimeoutCause(0, cause)
+	// Should cancel the stream and return DeadlineExceeded when timed out
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	blocking := &blockingSendStream[*tspb.Timestamp]{
+		ctx:          ctx,
+		sendStarted:  make(chan struct{}),
+		sendReturned: make(chan struct{}),
+	}
+	sender = rpcutil.NewSender(cancel, blocking)
+	msg, err = sender.CloseAndRecvWithTimeout(time.Millisecond)
 	require.Nil(t, msg)
-	require.Equal(t, cause, err)
-
-	// Unblock CloseAndRecv goroutine to avoid leaking it in the timeout case.
-	close(closeRecvChTimeout)
+	require.True(t, status.IsDeadlineExceededError(err), "expected DeadlineExceeded, got %v", err)
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
 }
 
-func TestSender_CloseAndRecvDoesNotLeakSenderGoroutine(t *testing.T) {
-	// Use a background context that is never cancelled, so the only way
-	// the sender goroutine can exit is via sendChan being closed.
+// gRPC reports a transport error from Send as io.EOF and rejects further
+// sends itself, so the Sender passes them through unchanged rather than
+// refusing them: a repeat send gets the stream's answer again, and the
+// stream's status is still available from CloseAndRecv.
+func TestSender_SendErrorsArePassedThrough(t *testing.T) {
 	defer goleak.VerifyNone(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	streamErr := fmt.Errorf("transport is closing")
+	s := &eofSendStream[*tspb.Timestamp]{closeRecvErr: streamErr}
+	sender := rpcutil.NewSender(cancel, s)
 
-	ch := make(chan message[*tspb.Timestamp], 1)
-	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
-	s := &stream[*tspb.Timestamp]{ch: ch, closeRecvCh: closeRecvCh}
-	sender := rpcutil.NewSender(t.Context(), s)
+	require.Equal(t, io.EOF, sender.SendWithTimeout(tspb.Now(), hugeTimeout))
+	require.Equal(t, io.EOF, sender.SendWithTimeout(tspb.Now(), hugeTimeout))
+	require.Equal(t, 2, s.sendCalls)
+	// A failed send does not cancel the stream.
+	require.NoError(t, ctx.Err())
 
-	require.NoError(t, sender.SendWithTimeoutCause(tspb.Now(), hugeTimeout, fmt.Errorf("cause")))
-	<-ch
-	closeRecvCh <- message[*tspb.Timestamp]{Val: tspb.Now()}
-	_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("cause"))
+	_, err := sender.CloseAndRecvWithTimeout(hugeTimeout)
+	require.Equal(t, streamErr, err)
+}
+
+// A send after CloseAndRecv is likewise left to the stream to reject.
+func TestSender_SendAfterCloseAndRecvIsPassedThrough(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	_, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	s := &closeSendStream[*tspb.Timestamp]{}
+	sender := rpcutil.NewSender(cancel, s)
+
+	require.NoError(t, sender.SendWithTimeout(tspb.Now(), hugeTimeout))
+	_, err := sender.CloseAndRecvWithTimeout(hugeTimeout)
 	require.NoError(t, err)
+
+	err = sender.SendWithTimeout(tspb.Now(), hugeTimeout)
+	require.True(t, status.IsInternalError(err), "expected Internal, got %v", err)
+	require.Equal(t, 2, s.sendCalls)
 }
 
-func TestSender_CloseAndRecvWithoutSendsDoesNotLeak(t *testing.T) {
+// When the stream context is canceled by someone other than the Sender (for
+// example the caller's deadline), the stream's own error is returned rather
+// than a timeout.
+func TestSender_ExternalCancelReturnsStreamError(t *testing.T) {
 	defer goleak.VerifyNone(t)
-
-	closeRecvCh := make(chan message[*tspb.Timestamp], 1)
-	s := &stream[*tspb.Timestamp]{ch: make(chan message[*tspb.Timestamp]), closeRecvCh: closeRecvCh}
-	sender := rpcutil.NewSender(t.Context(), s)
-
-	closeRecvCh <- message[*tspb.Timestamp]{Val: tspb.Now()}
-	_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("cause"))
-	require.NoError(t, err)
-}
-
-func TestSender_SendTimeoutDoesNotLeakAfterCancel(t *testing.T) {
-	defer goleak.VerifyNone(t)
-
 	ctx, cancel := context.WithCancel(t.Context())
 	stream := &blockingSendStream[*tspb.Timestamp]{
 		ctx:          ctx,
 		sendStarted:  make(chan struct{}),
 		sendReturned: make(chan struct{}),
 	}
-	sender := rpcutil.NewSender(ctx, stream)
-
-	err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("test-cause"))
-	require.Error(t, err)
-	select {
-	case <-stream.sendStarted:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for sender goroutine to start Send")
-	}
-
-	cancel()
-	select {
-	case <-stream.sendReturned:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for blocked send to return")
-	}
-}
-
-// After a SendWithTimeoutCause times out, CloseAndRecvWithTimeoutCause must
-// not call stream.CloseAndRecv until the background sender goroutine has
-// returned from its in-flight stream.Send — gRPC client streams don't
-// support concurrent Send and CloseSend/CloseAndRecv on the same stream.
-func TestSender_CloseAndRecvWaitsForInFlightSend(t *testing.T) {
-	defer goleak.VerifyNone(t)
-
-	stream := &orderingStream[*tspb.Timestamp]{
-		sendBlock:        make(chan struct{}),
-		sendReturned:     make(chan struct{}),
-		closeRecvStarted: make(chan struct{}),
-		closeRecvReturn:  make(chan struct{}),
-	}
-	sender := rpcutil.NewSender(t.Context(), stream)
-
-	// Make a Send that times out, blocking the sender goroutine in stream.Send.
-	err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("send-cause"))
-	require.Error(t, err)
-
-	// Start CloseAndRecv in a goroutine; it should wait for the in-flight
-	// Send to return before calling stream.CloseAndRecv.
-	closeDone := make(chan error, 1)
+	sender := rpcutil.NewSender(cancel, stream)
 	go func() {
-		_, err := sender.CloseAndRecvWithTimeoutCause(hugeTimeout, fmt.Errorf("close-cause"))
-		closeDone <- err
+		<-stream.sendStarted
+		cancel()
 	}()
 
-	// Ensure stream.CloseAndRecv isn't called yet, Send is still blocked.
-	select {
-	case <-stream.closeRecvStarted:
-		t.Fatal("stream.CloseAndRecv was called before the in-flight Send returned")
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	// Unblock Send. The sender goroutine exits, done closes, and
-	// CloseAndRecvWithTimeoutCause now proceeds to call stream.CloseAndRecv.
-	close(stream.sendBlock)
-	select {
-	case <-stream.sendReturned:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for Send to return after unblock")
-	}
-	select {
-	case <-stream.closeRecvStarted:
-	case <-time.After(time.Second):
-		t.Fatal("stream.CloseAndRecv was not called after Send returned")
-	}
-
-	// Let stream.CloseAndRecv return so the test cleans up.
-	close(stream.closeRecvReturn)
-	select {
-	case err := <-closeDone:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("CloseAndRecvWithTimeoutCause did not return")
-	}
-}
-
-// If the background sender goroutine is still stuck in stream.Send (because
-// nobody has canceled the underlying ctx), CloseAndRecvWithTimeoutCause must
-// still honor its own timeout and return the given cause without blocking
-// forever waiting for the sender goroutine to drain.
-func TestSender_CloseAndRecvHonorsTimeoutWhileSendStuck(t *testing.T) {
-	defer goleak.VerifyNone(t)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	stream := &blockingSendStream[*tspb.Timestamp]{
-		ctx:          ctx,
-		sendStarted:  make(chan struct{}),
-		sendReturned: make(chan struct{}),
-	}
-	sender := rpcutil.NewSender(ctx, stream)
-
-	err := sender.SendWithTimeoutCause(tspb.Now(), time.Millisecond, fmt.Errorf("send-cause"))
-	require.Error(t, err)
-	<-stream.sendStarted
-
-	closeCause := fmt.Errorf("close-cause")
-	_, err = sender.CloseAndRecvWithTimeoutCause(time.Millisecond, closeCause)
-	require.Equal(t, closeCause, err)
-
-	// Cancel to let the stuck Send unblock so the test doesn't leak the
-	// background goroutine.
-	cancel()
-	<-stream.sendReturned
+	err := sender.SendWithTimeout(tspb.Now(), hugeTimeout)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 // TestMeterProviderGRPCViews runs a gRPC call through otelgrpc's client and
