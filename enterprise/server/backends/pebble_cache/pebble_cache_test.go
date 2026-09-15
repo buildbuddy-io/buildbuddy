@@ -298,14 +298,16 @@ func TestGetSet(t *testing.T) {
 }
 
 func TestPresenceCache(t *testing.T) {
-	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(1_000_000))
+	// The default configuration enables the presence cache without overrides.
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
 
 	const cacheName = "presence_test"
 	options := &pebble_cache.Options{
 		Name:                   cacheName,
+		Clock:                  clock,
 		RootDirectory:          testfs.MakeTempDir(t),
 		MaxSizeBytes:           int64(1_000_000_000),
 		MaxInlineFileSizeBytes: 100,
@@ -334,6 +336,15 @@ func TestPresenceCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, missing, "digest should be present")
 	require.Greater(t, testutil.ToFloat64(hitCtr), hitsBefore, "repeat FindMissing should hit the presence cache")
+
+	// After the default one-minute TTL, FindMissing must consult Pebble again
+	// so repeated presence checks do not indefinitely skip access-time updates.
+	clock.Advance(time.Minute)
+	hitsBefore = testutil.ToFloat64(hitCtr)
+	missing, err = pc.FindMissing(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.Empty(t, missing)
+	require.Equal(t, hitsBefore, testutil.ToFloat64(hitCtr), "expired entries must not be presence-cache hits")
 
 	// Deleting the blob must invalidate the presence cache; otherwise FindMissing
 	// would wrongly report it present (data loss).
@@ -1523,6 +1534,8 @@ func TestPartitionMinEvictionAge(t *testing.T) {
 }
 
 func TestPartitionJanitorCutoffThreshold(t *testing.T) {
+	// Check Pebble directly so the presence-cache TTL doesn't delay observing eviction.
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(0))
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 

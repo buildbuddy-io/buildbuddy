@@ -115,7 +115,7 @@ var (
 	gcsAtimeUpdateThreshold = flag.Duration("cache.pebble.gcs.atime_update_threshold", 0, "Don't update a GCS object's custom time (its atime) if it was updated more recently than this (0 updates on every atime update).")
 
 	// Presence cache. If the experiment framework is enabled, the experiment values take precedence.
-	presenceCacheMaxEntries = flag.Int64("cache.pebble.presence_cache.max_entries", 0, "A non-zero value enables a digest presence cache to satisfy FindMissing requests. Each entry is about 190 bytes so a 1 million entry cache would take about 190MB of memory.")
+	presenceCacheMaxEntries = flag.Int64("cache.pebble.presence_cache.max_entries", 1_000_000, "Maximum number of digests remembered by the presence cache to satisfy FindMissing requests. Set to 0 to disable. Each entry is about 190 bytes, so 1 million entries take about 190MB of memory.")
 	presenceCacheTTL        = flag.Duration("cache.pebble.presence_cache.ttl", 1*time.Minute, "TTL for the presence cache. Should be configured well below cache.pebble.atime_update_threshold")
 )
 
