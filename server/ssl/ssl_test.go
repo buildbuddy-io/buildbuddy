@@ -11,16 +11,18 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"flag"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -181,14 +183,10 @@ func TestFileCertificateReload(t *testing.T) {
 		return pair
 	}
 	first := writeCertificate()
-	for name, value := range map[string]string{
-		"ssl.enable_ssl": "true", "ssl.cert_file": certPath, "ssl.key_file": keyPath,
-		"ssl.cert_reload_interval": "10s",
-	} {
-		previous := flag.Lookup(name).Value.String()
-		require.NoError(t, flag.Set(name, value))
-		t.Cleanup(func() { require.NoError(t, flag.Set(name, previous)) })
-	}
+	flags.Set(t, "ssl.enable_ssl", true)
+	flags.Set(t, "ssl.cert_file", certPath)
+	flags.Set(t, "ssl.key_file", keyPath)
+	flags.Set(t, "ssl.cert_reload_interval", 10*time.Second)
 	hc := &certificateHealthChecker{}
 	env := real_environment.NewRealEnv(hc)
 	clock := clockwork.NewFakeClock()
@@ -207,11 +205,20 @@ func TestFileCertificateReload(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	require.NoError(t, clock.BlockUntilContext(ctx, 1))
+	failures := testutil.ToFloat64(metrics.SSLCertificateReloadFailures)
+	require.NoError(t, os.WriteFile(keyPath, []byte("invalid key"), 0600))
+	clock.Advance(10 * time.Second)
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(metrics.SSLCertificateReloadFailures) == failures+1
+	}, time.Second, time.Millisecond)
+	require.Equal(t, first.Certificate, get().Certificate, "failed reload preserves the previous certificate")
 	second := writeCertificate()
 	require.Equal(t, first.Certificate, get().Certificate)
 	clock.Advance(10 * time.Second)
 	require.Eventually(t, func() bool {
-		return string(get().Certificate[0]) == string(second.Certificate[0])
+		cert, err := config.GetCertificate(&tls.ClientHelloInfo{})
+		return err == nil && cert != nil && len(cert.Certificate) > 0 && string(cert.Certificate[0]) == string(second.Certificate[0])
 	}, time.Second, time.Millisecond)
+	require.Equal(t, second.Certificate, get().Certificate)
 	require.Equal(t, first.Certificate, original.Certificate, "previously returned certificates remain unchanged")
 }

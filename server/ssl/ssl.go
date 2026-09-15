@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/endpoint_urls/events_api_url"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -80,7 +80,6 @@ func NewCertCache(bs interfaces.Blobstore) *CertCache {
 
 type SSLService struct {
 	certificate           atomic.Pointer[tls.Certificate]
-	certificateReloadOnce sync.Once
 	env                   environment.Env
 	httpTLSConfig         *tls.Config
 	grpcTLSConfig         *tls.Config
@@ -187,14 +186,12 @@ func (s *SSLService) populateTLSConfig() error {
 			return err
 		}
 		s.certificate.Store(&certPair)
-		s.certificateReloadOnce.Do(func() {
-			ctx, cancel := context.WithCancel(context.Background())
-			s.env.GetHealthChecker().RegisterShutdownFunction(func(context.Context) error {
-				cancel()
-				return nil
-			})
-			go s.reloadCertificate(ctx, *certFile, *keyFile, *certReloadInterval)
+		ctx, cancel := context.WithCancel(context.Background())
+		s.env.GetHealthChecker().RegisterShutdownFunction(func(context.Context) error {
+			cancel()
+			return nil
 		})
+		go s.reloadCertificate(ctx, *certFile, *keyFile, *certReloadInterval)
 		getCert := func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
 			return s.certificate.Load(), nil
 		}
@@ -268,7 +265,8 @@ func (s *SSLService) reloadCertificate(ctx context.Context, certFile, keyFile st
 		case <-ticker.Chan():
 			certPair, err := tls.LoadX509KeyPair(certFile, keyFile)
 			if err != nil {
-				log.Warningf("Failed to reload TLS certificate: %s", err)
+				metrics.SSLCertificateReloadFailures.Inc()
+				log.Warningf("Failed to reload TLS certificate %q and key %q: %s", certFile, keyFile, err)
 				continue
 			}
 			s.certificate.Store(&certPair)
