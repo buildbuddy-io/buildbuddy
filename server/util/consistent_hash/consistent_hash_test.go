@@ -60,7 +60,7 @@ func TestNodesetOrderIndependence(t *testing.T) {
 func TestGetAllReplicas(t *testing.T) {
 	ch := consistent_hash.NewConsistentHash(consistent_hash.CRC32, numVnodes)
 
-	for _, numHosts := range []int{0, 1, 10} {
+	for _, numHosts := range []int{0, 1, 10, 300} {
 		t.Run(fmt.Sprintf("%vhosts", numHosts), func(t *testing.T) {
 			assert := assert.New(t)
 			hosts := make([]string, 0, numHosts)
@@ -273,6 +273,25 @@ func choose(n, k int) int {
 		result = result * (n - i) / (i + 1)
 	}
 	return result
+}
+
+func TestMaxSize(t *testing.T) {
+	ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 10)
+
+	hosts := make([]string, 0, 4097)
+	for i := range 4097 {
+		hosts = append(hosts, fmt.Sprintf("host-%d", i))
+	}
+
+	// Exactly maxSize items is allowed and every item is reachable.
+	require.NoError(t, ch.Set(hosts[:4096]...))
+	replicas := ch.GetAllReplicas("some-key")
+	require.Len(t, replicas, 4096)
+	require.ElementsMatch(t, hosts[:4096], replicas)
+
+	// One more is rejected and the ring is left untouched.
+	require.Error(t, ch.Set(hosts...))
+	require.Len(t, ch.GetItems(), 4096)
 }
 
 func TestSetFromMap(t *testing.T) {
