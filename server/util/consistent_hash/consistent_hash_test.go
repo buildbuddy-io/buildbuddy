@@ -379,6 +379,47 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 	}
 }
 
+// BenchmarkGetItemsParallel measures GetItems under concurrent access. The
+// "GetItems" variant is a read-only baseline; the "SetAndGetItems" variant
+// has every goroutine call Set before GetItems on each iteration, to show
+// how much writers holding the lock slow down readers.
+func BenchmarkGetItemsParallel(b *testing.B) {
+	hosts := make([]string, 0, 50)
+	for i := range 50 {
+		r, err := random.RandomString(5)
+		require.NoError(b, err)
+		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
+	}
+
+	for _, test := range []struct {
+		Name string
+		Set  bool
+	}{
+		{Name: "GetItems", Set: false},
+		{Name: "SetAndGetItems", Set: true},
+	} {
+		b.Run(test.Name, func(b *testing.B) {
+			ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 100)
+			require.NoError(b, ch.Set(hosts...))
+			b.ResetTimer()
+			b.ReportAllocs()
+			b.RunParallel(func(pb *testing.PB) {
+				// Set sorts its input in place, so give each goroutine its
+				// own copy.
+				myHosts := slices.Clone(hosts)
+				for pb.Next() {
+					if test.Set {
+						if err := ch.Set(myHosts...); err != nil {
+							b.Fatal(err)
+						}
+					}
+					_ = ch.GetItems()
+				}
+			})
+		})
+	}
+}
+
 // referenceImpl is a reference implementation of
 // consistent_hash.ConsistentHash, so we can make changes against the real
 // implementation and make sure that they still match the reference.
