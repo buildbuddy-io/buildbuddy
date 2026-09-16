@@ -2,6 +2,7 @@ package metronome_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -264,4 +265,68 @@ func TestEventPropertiesCoverAllLabels(t *testing.T) {
 		"period_start": "2026-05-15T12:35:00Z",
 		"period_end":   "2026-05-15T12:36:00Z",
 	}, properties, "properties other than labels")
+}
+
+func TestFindCustomerID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/v1/customers", r.URL.Path)
+		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+		if r.URL.Query().Get("ingest_alias") == "GR1" {
+			fmt.Fprint(w, `{"data":[{"id":"cust-1"}]}`)
+			return
+		}
+		fmt.Fprint(w, `{"data":[]}`)
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.read_only_api_key", "test-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+
+	c, err := metronome.NewReadOnlyClient(nil, nil)
+	require.NoError(t, err)
+	id, err := c.FindCustomerID(t.Context(), "GR1")
+	require.NoError(t, err)
+	assert.Equal(t, "cust-1", id)
+	id, err = c.FindCustomerID(t.Context(), "GR2")
+	require.NoError(t, err)
+	assert.Empty(t, id)
+}
+
+func TestGetCurrentInvoice(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/v1/customers/cust-1/invoices", r.URL.Path)
+		assert.Equal(t, "DRAFT", r.URL.Query().Get("status"))
+		fmt.Fprint(w, `{"data":[
+			{"id":"inv-2","type":"USAGE","status":"DRAFT","start_timestamp":"2026-09-01T00:00:00Z","end_timestamp":"2026-10-01T00:00:00Z","total":2400000,
+			 "line_items":[
+				{"name":"Action cache hits","type":"usage","quantity":2000,"unit_price":1200,"total":2400000},
+				{"name":"CPU minutes","type":"usage","quantity":0,"unit_price":250,"total":0}]},
+			{"id":"inv-1","type":"USAGE","status":"DRAFT","start_timestamp":"2026-08-01T00:00:00Z","end_timestamp":"2026-09-01T00:00:00Z","total":99}
+		]}`)
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.read_only_api_key", "test-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+
+	c, err := metronome.NewReadOnlyClient(nil, nil)
+	require.NoError(t, err)
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	invoice, err := c.GetCurrentInvoice(t.Context(), "cust-1", now)
+	require.NoError(t, err)
+	require.NotNil(t, invoice)
+	assert.Equal(t, float64(2400000), invoice.Total)
+	assert.Equal(t, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), invoice.StartTimestamp)
+	assert.Equal(t, []metronome.InvoiceLineItem{
+		{Name: "Action cache hits", Quantity: 2000, UnitPrice: 1200, Total: 2400000},
+		{Name: "CPU minutes", Quantity: 0, UnitPrice: 250, Total: 0},
+	}, invoice.LineItems)
+
+	invoice, err = c.GetCurrentInvoice(t.Context(), "cust-1", now.AddDate(0, 2, 0))
+	require.NoError(t, err)
+	assert.Nil(t, invoice)
 }

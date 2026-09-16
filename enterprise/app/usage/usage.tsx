@@ -2,6 +2,7 @@ import Long from "long";
 import moment from "moment";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
 import Select, { Option } from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
@@ -10,6 +11,7 @@ import rpcService, { CancelablePromise } from "../../../app/service/rpc_service"
 import { usage } from "../../../proto/usage_ts_proto";
 import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
 import UsageAlertsComponent from "./usage_alerts";
+import UsageBillCard from "./usage_bill";
 
 export interface UsageProps {
   user?: User;
@@ -545,6 +547,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     const detailed = shouldShowDetailedView(this.state.selectedPeriod);
     return (
       <>
+        {capabilities.config.usageBillEnabled && <UsageBillCard />}
         <div className="card usage-card">
           <div className="content">
             <div className="usage-period-header">

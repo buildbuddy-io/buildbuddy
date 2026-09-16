@@ -7,7 +7,9 @@ go_library(
     srcs = ["usage_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service",
     deps = [
+        "//enterprise/server/billing/metronome",
         "//enterprise/server/usage/config",
+        "//proto:group_go_proto",
         "//proto:usage_go_proto",
         "//proto:user_id_go_proto",
         "//server/environment",
@@ -18,6 +20,7 @@ go_library(
         "//server/util/authutil",
         "//server/util/db",
         "//server/util/log",
+        "//server/util/lru",
         "//server/util/status",
         "@com_github_jonboulle_clockwork//:clockwork",
         "@org_golang_google_protobuf//types/known/timestamppb",
@@ -33,8 +36,10 @@ go_test(
     srcs = ["usage_service_test.go"],
     deps = [
         ":usage_service",
+        "//enterprise/server/testutil/enterprise_testenv",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",
+        "//proto:group_go_proto",
         "//proto:usage_go_proto",
         "//proto:user_id_go_proto",
         "//server/interfaces",

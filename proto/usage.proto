@@ -242,3 +242,42 @@ message DeleteUsageAlertingRuleRequest {
 message DeleteUsageAlertingRuleResponse {
   context.ResponseContext response_context = 1;
 }
+
+message GetCurrentBillRequest {
+  context.RequestContext request_context = 1;
+}
+
+message GetCurrentBillResponse {
+  context.ResponseContext response_context = 1;
+
+  // The bill for the current billing period so far. Unset if the group is not
+  // billed for its usage.
+  Bill bill = 2;
+}
+
+// Bill is the cost of a group's usage in a billing period so far. Amounts are
+// in US cents and may be fractional.
+message Bill {
+  // Billing period, start inclusive and end exclusive.
+  google.protobuf.Timestamp period_start = 1;
+  google.protobuf.Timestamp period_end = 2;
+
+  double total_cents = 3;
+
+  // One entry per billed product, including products with no usage yet so
+  // that prices can be shown.
+  repeated BillLineItem line_items = 4;
+
+  // When the bill was read from the billing provider. Bills are cached.
+  google.protobuf.Timestamp fetched_at = 5;
+}
+
+message BillLineItem {
+  string name = 1;
+
+  // Quantity in the product's priced unit.
+  double quantity = 2;
+
+  double unit_price_cents = 3;
+  double total_cents = 4;
+}

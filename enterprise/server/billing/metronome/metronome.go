@@ -23,8 +23,9 @@ import (
 )
 
 var (
-	apiKey = flag.String("billing.metronome.api_key", "", "Metronome bearer token used to ingest usage events.", flag.Secret)
-	apiURL = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
+	apiKey         = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
+	readOnlyAPIKey = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
+	apiURL         = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
 )
 
 const (
@@ -97,11 +98,24 @@ type EventProperties struct {
 type Client struct {
 	httpClient   *http.Client
 	retryOptions *retry.Options
+	apiKey       string
+}
+
+func ReadOnlyConfigured() bool {
+	return *readOnlyAPIKey != ""
 }
 
 func NewClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
-	if *apiKey == "" {
-		return nil, status.FailedPreconditionError("billing.metronome.api_key is required")
+	return newClient(*apiKey, "billing.metronome.api_key", httpClient, retryOpts)
+}
+
+func NewReadOnlyClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
+	return newClient(*readOnlyAPIKey, "billing.metronome.read_only_api_key", httpClient, retryOpts)
+}
+
+func newClient(key, keyFlag string, httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
+	if key == "" {
+		return nil, status.FailedPreconditionErrorf("%s is required", keyFlag)
 	}
 	if *apiURL == "" {
 		return nil, status.FailedPreconditionError("billing.metronome.api_url is required")
@@ -116,6 +130,7 @@ func NewClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, erro
 	return &Client{
 		httpClient:   httpClient,
 		retryOptions: retryOpts,
+		apiKey:       strings.TrimSpace(key),
 	}, nil
 }
 
@@ -248,15 +263,84 @@ func isRetryable(err error) bool {
 func (c *Client) ingestToMetronome(ctx context.Context, events []MetronomeEvent) error {
 	// The ingest endpoint expects a bare JSON array of events.
 	// See: https://docs.metronome.com/api-reference/usage/ingest-events
-	body, err := json.Marshal(events)
+	return c.do(ctx, http.MethodPost, ingestPath, nil, events, nil)
+}
+
+// FindCustomerID returns "" if no customer has the ingest alias.
+func (c *Client) FindCustomerID(ctx context.Context, ingestAlias string) (string, error) {
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v1/customers", url.Values{"ingest_alias": {ingestAlias}}, nil, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Data) == 0 {
+		return "", nil
+	}
+	return resp.Data[0].ID, nil
+}
+
+// Invoice amounts are in the invoice's credit type, US cents for USD.
+type Invoice struct {
+	StartTimestamp time.Time         `json:"start_timestamp"`
+	EndTimestamp   time.Time         `json:"end_timestamp"`
+	Total          float64           `json:"total"`
+	LineItems      []InvoiceLineItem `json:"line_items"`
+}
+
+type InvoiceLineItem struct {
+	Name      string  `json:"name"`
+	Quantity  float64 `json:"quantity"`
+	UnitPrice float64 `json:"unit_price"`
+	Total     float64 `json:"total"`
+}
+
+// GetCurrentInvoice returns nil if the customer has no draft usage invoice for
+// the period containing now.
+func (c *Client) GetCurrentInvoice(ctx context.Context, customerID string, now time.Time) (*Invoice, error) {
+	var resp struct {
+		Data []Invoice `json:"data"`
+	}
+	query := url.Values{"status": {"DRAFT"}, "type": {"USAGE"}, "sort": {"date_desc"}}
+	if err := c.do(ctx, http.MethodGet, "/v1/customers/"+url.PathEscape(customerID)+"/invoices", query, nil, &resp); err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		inv := &resp.Data[i]
+		if !now.Before(inv.StartTimestamp) && now.Before(inv.EndTimestamp) {
+			return inv, nil
+		}
+	}
+	return nil, nil
+}
+
+// do sends a JSON request and decodes the response into out, if non-nil.
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
+	endpoint, err := url.JoinPath(*apiURL, path)
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, bytes.NewReader(body))
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	var reqBody io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reqBody)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -269,20 +353,10 @@ func (c *Client) ingestToMetronome(ctx context.Context, events []MetronomeEvent)
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return errorForStatusCode(resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
-	return nil
-}
-
-func (c *Client) newRequest(ctx context.Context, method string, body io.Reader) (*http.Request, error) {
-	endpoint, err := url.JoinPath(*apiURL, ingestPath)
-	if err != nil {
-		return nil, err
+	if out == nil {
+		return nil
 	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*apiKey))
-	return req, nil
+	return json.Unmarshal(respBody, out)
 }
 
 func errorForStatusCode(statusCode int, body string) error {
