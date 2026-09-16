@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -18,17 +17,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/util/agent"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/agent/agentutil"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/download"
-	cligit "github.com/buildbuddy-io/buildbuddy/cli/util/git"
 	"github.com/buildbuddy-io/buildbuddy/cli/view"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"google.golang.org/grpc/metadata"
 
+	cligit "github.com/buildbuddy-io/buildbuddy/cli/util/git"
 	invocation_util "github.com/buildbuddy-io/buildbuddy/cli/util/invocation"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	gitutil "github.com/buildbuddy-io/buildbuddy/server/util/git"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -240,24 +240,15 @@ func HandleFix(args []string) (int, error) {
 
 // findLatestFailure returns the invocation ID for the most recent failed build for the current branch.
 func findLatestFailure(ctx context.Context, target string) (string, error) {
-	var output bytes.Buffer
-	if err := runGit(ctx, "", &output, "symbolic-ref", "--short", "HEAD"); err != nil {
+	branch, err := cligit.CurrentBranch(ctx, "")
+	if err != nil {
 		return "", fmt.Errorf("find current branch (a checked-out branch is required): %w", err)
 	}
-	branch := strings.TrimSpace(output.String())
 
-	// Prefer the remote tracked by this branch, falling back to origin for
-	// branches without an upstream.
-	remote := "origin"
-	output.Reset()
-	if err := runGit(ctx, "", &output, "config", "--get", "branch."+branch+".remote"); err == nil && strings.TrimSpace(output.String()) != "" {
-		remote = strings.TrimSpace(output.String())
+	repoURL, err := invocationRepoURL(ctx)
+	if err != nil {
+		return "", err
 	}
-	output.Reset()
-	if err := runGit(ctx, "", &output, "remote", "get-url", remote); err != nil {
-		return "", fmt.Errorf("find repository URL for remote %q: %w", remote, err)
-	}
-	repoURL := strings.TrimSpace(output.String())
 
 	conn, err := grpc_client.DialSimple(target)
 	if err != nil {
@@ -275,12 +266,27 @@ func findLatestFailure(ctx context.Context, target string) (string, error) {
 		Count: 1,
 	})
 	if err != nil {
-		return "", fmt.Errorf("search failed invocations for %s on %s: %w", repoURL, branch, err)
+		return "", fmt.Errorf("search failed invocations for branch %s: %w", branch, err)
 	}
 	if len(rsp.GetInvocation()) == 0 {
-		return "", fmt.Errorf("no failed invocations found for %s on branch %s; pass an invocation ID or URL explicitly", repoURL, branch)
+		return "", fmt.Errorf("no failed invocations found for branch %s; pass an invocation ID or URL explicitly", branch)
 	}
 	return rsp.GetInvocation()[0].GetInvocationId(), nil
+}
+
+// Invocation search matches the normalized repo_url stored from REPO_URL build
+// metadata. cli/metadata gets REPO_URL from remote.origin.url, so use origin
+// even when the current branch tracks a different remote.
+func invocationRepoURL(ctx context.Context) (string, error) {
+	repoURL, err := cligit.Output(ctx, "", "config", "--get", "remote.origin.url")
+	if err != nil || repoURL == "" {
+		return "", fmt.Errorf("find origin repository URL; pass an invocation ID or URL explicitly")
+	}
+	normalizedRepoURL, err := gitutil.NormalizeRepoURL(repoURL)
+	if err != nil || normalizedRepoURL.String() == "" {
+		return "", fmt.Errorf("could not normalize origin repository URL; pass an invocation ID or URL explicitly")
+	}
+	return normalizedRepoURL.String(), nil
 }
 
 // fixFailure hands the failing invocation's output to an agent and asks it to fix
