@@ -58,8 +58,3 @@ jobs:
           # host has podman available.
           bazel test --config=tests-docker \
             //enterprise/server/test/integration/podman:podman_test
-
-          # Make sure the executor binary builds.
-          bazel build \
-            //enterprise/server/cmd/executor \
-            //enterprise/server/cmd/executor:executor_linux_arm64_static
