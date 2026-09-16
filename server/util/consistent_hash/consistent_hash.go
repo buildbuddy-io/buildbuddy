@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sort"
 	"strconv"
-	"sync"
+	"sync/atomic"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 )
@@ -40,12 +40,9 @@ var (
 const maxSize = 256
 
 type ConsistentHash struct {
-	keys                []int
-	items               []string
-	keyIndexToItemIndex []uint8
-	numVnodes           int
-	hashKey             HashFunction
-	mu                  sync.RWMutex
+	numVnodes int
+	hashKey   HashFunction
+	statePtr  atomic.Pointer[state]
 }
 
 // NewConsistentHash returns a new consistent hash ring.
@@ -57,18 +54,16 @@ type ConsistentHash struct {
 // vnodes decides how many copies of each server replica to place on the ring.
 // See https://en.wikipedia.org/wiki/Consistent_hashing#Variance_reduction
 func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
-	return &ConsistentHash{
-		numVnodes:           vnodes,
-		hashKey:             hashFunction,
-		keys:                make([]int, 0),
-		keyIndexToItemIndex: make([]uint8, 0),
+	c := &ConsistentHash{
+		numVnodes: vnodes,
+		hashKey:   hashFunction,
 	}
+	c.statePtr.Store(&state{keys: make([]int, 0), keyIndexToItemIndex: make([]uint8, 0)})
+	return c
 }
 
 func (c *ConsistentHash) GetItems() []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.items
+	return c.statePtr.Load().items
 }
 
 func (c *ConsistentHash) Set(items ...string) error {
@@ -123,27 +118,35 @@ func (c *ConsistentHash) set(keys, values []string) {
 		keyIndexToItemIndex[i] = ring[key]
 	}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.keys = hashedKeys
-	c.items = values
-	c.keyIndexToItemIndex = keyIndexToItemIndex
+	c.statePtr.Store(&state{
+		keys:                hashedKeys,
+		items:               values,
+		keyIndexToItemIndex: keyIndexToItemIndex,
+	})
+}
+
+type state struct {
+	keys                []int
+	items               []string
+	keyIndexToItemIndex []uint8
 }
 
 // Get returns the single "item" responsible for the specified key.
 func (c *ConsistentHash) Get(key string) string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	return c.statePtr.Load().get(key, c.hashKey)
+}
+
+func (c *state) get(key string, hashKey func(string) int) string {
 	if len(c.keys) == 0 {
 		return ""
 	}
-	idx := c.firstKey(key)
+	idx := c.firstKey(key, hashKey)
 	r := c.items[c.keyIndexToItemIndex[idx]]
 	return r
 }
 
-func (c *ConsistentHash) firstKey(key string) int {
-	h := c.hashKey(key)
+func (c *state) firstKey(key string, hashKey func(string) int) int {
+	h := hashKey(key)
 	startKeyIdx, _ := slices.BinarySearch(c.keys, h)
 	if startKeyIdx == len(c.keys) {
 		return 0
@@ -151,7 +154,7 @@ func (c *ConsistentHash) firstKey(key string) int {
 	return startKeyIdx
 }
 
-func (c *ConsistentHash) lookupVnodes(startKeyIdx int, fn func(vnodeIndex uint8) bool) {
+func (c *state) lookupVnodes(startKeyIdx int, fn func(vnodeIndex uint8) bool) {
 	done := false
 	for offset := 1; offset < len(c.keys) && !done; offset += 1 {
 		keyIdx := (startKeyIdx + offset)
@@ -166,12 +169,11 @@ func (c *ConsistentHash) lookupVnodes(startKeyIdx int, fn func(vnodeIndex uint8)
 }
 
 func (c *ConsistentHash) GetAllReplicas(key string) []string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if len(c.keys) == 0 {
-		return nil
-	}
-	startKeyIdx := c.firstKey(key)
+	return c.statePtr.Load().getAllReplicas(key, c.hashKey)
+}
+
+func (c *state) getAllReplicas(key string, hashKey func(string) int) []string {
+	startKeyIdx := c.firstKey(key, hashKey)
 	originalIndex := c.keyIndexToItemIndex[startKeyIdx]
 
 	replicas := make([]string, 0, len(c.items))

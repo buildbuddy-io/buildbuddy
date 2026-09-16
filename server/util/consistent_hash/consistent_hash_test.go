@@ -341,6 +341,18 @@ func TestSetFromMapStableKeys(t *testing.T) {
 }
 
 func BenchmarkGetAllReplicas(b *testing.B) {
+	keys := make([]string, 0, 10000)
+	for range cap(keys) {
+		k, err := random.RandomString(64)
+		require.NoError(b, err)
+		keys = append(keys, k)
+	}
+	hosts := make([]string, 0, 50)
+	for i := range cap(hosts) {
+		r, err := random.RandomString(5)
+		assert.Nil(b, err)
+		hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
+	}
 	for _, test := range []struct {
 		Name         string
 		HashFunction consistent_hash.HashFunction
@@ -350,30 +362,30 @@ func BenchmarkGetAllReplicas(b *testing.B) {
 		{Name: "SHA256/10000_vnodes", HashFunction: consistent_hash.SHA256, NumVnodes: 10000},
 	} {
 		b.Run(test.Name, func(b *testing.B) {
-			assert := assert.New(b)
 			ch := consistent_hash.NewConsistentHash(test.HashFunction, test.NumVnodes)
-
-			hosts := make([]string, 0)
-			for i := range 50 {
-				r, err := random.RandomString(5)
-				assert.Nil(err)
-				hosts = append(hosts, fmt.Sprintf("%s:%d", r, 1000+i))
-			}
-
 			if err := ch.Set(hosts...); err != nil {
 				b.Fatal(err)
 			}
-
-			keys := make([]string, 0, b.N)
-			for i := 0; i < b.N; i++ {
-				k, err := random.RandomString(64)
-				require.NoError(b, err)
-				keys = append(keys, k)
-			}
-			b.ResetTimer()
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				_ = ch.GetAllReplicas(keys[i])
+			for _, concurrentSet := range []bool{false, true} {
+				b.Run(fmt.Sprintf("concurrent_set=%v", concurrentSet), func(b *testing.B) {
+					b.ResetTimer()
+					b.ReportAllocs()
+					if concurrentSet {
+						b.RunParallel(func(pb *testing.PB) {
+							hosts := slices.Clone(hosts)
+							for i := 0; pb.Next(); i++ {
+								if err := ch.Set(hosts...); err != nil {
+									b.Fatal(err)
+								}
+								_ = ch.GetAllReplicas(keys[i%len(keys)])
+							}
+						})
+					} else {
+						for i := 0; b.Loop(); i++ {
+							_ = ch.GetAllReplicas(keys[i%len(keys)])
+						}
+					}
+				})
 			}
 		})
 	}
