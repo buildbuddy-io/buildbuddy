@@ -76,12 +76,6 @@ func multiTooltip() *common.VizTooltipOptionsBuilder {
 		Sort(common.SortOrderDescending)
 }
 
-func multiTooltipUnsorted() *common.VizTooltipOptionsBuilder {
-	return common.NewVizTooltipOptionsBuilder().
-		Mode(common.TooltipDisplayModeMulti).
-		Sort(common.SortOrderNone)
-}
-
 // colorProp pins a series to a fixed color; for use with OverrideByName.
 func colorProp(color string) []dashboard.DynamicConfigValue {
 	return []dashboard.DynamicConfigValue{
@@ -341,7 +335,7 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			FillOpacity(10).
 			ShowPoints(common.VisibilityModeNever).
 			Legend(hiddenLegend()).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_download_size_bytes_sum{region="${region}", job="buildbuddy-app"}[${window}]))`, ""))).
 		WithPanel(ts("Upload throughput", dash.UnitBinaryBytesPerSec).
 			Description("Total number of bytes uploaded by consumers of the cache, per second. This does _not_ represent the average upload speed across cache requests.").
@@ -349,14 +343,14 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			FillOpacity(10).
 			ShowPoints(common.VisibilityModeNever).
 			Legend(hiddenLegend()).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum(rate(buildbuddy_remote_cache_upload_size_bytes_sum{region="${region}", job="buildbuddy-app"}[${window}]))`, ""))).
 		WithPanel(ts("Action cache", dash.UnitOps).
 			Height(9).
 			Min(0).
 			ShowPoints(common.VisibilityModeNever).
 			Legend(rightLegend()).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			OverrideByName("Misses", colorProp("dark-red")).
 			WithTarget(dash.PromQuery(`sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region="${region}", job="buildbuddy-app", cache_type="action_cache"}[1m]))`, "{{cache_event_type}}"))).
 		WithPanel(ts("Content Addressable Store (CAS)", dash.UnitOps).
@@ -364,7 +358,7 @@ func remoteCacheRow() *dashboard.RowBuilder {
 			Min(0).
 			ShowPoints(common.VisibilityModeNever).
 			Legend(rightLegend()).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			OverrideByName("Misses", colorProp("dark-red")).
 			WithTarget(dash.PromQuery(`sum by (cache_event_type) (rate(buildbuddy_remote_cache_events{region="${region}", job="buildbuddy-app", cache_type="cas"}[${window}]))`, "{{cache_event_type}}"))).
 		WithPanel(ts("Tree cache", dash.UnitOps).
@@ -644,7 +638,7 @@ func redisRow() *dashboard.RowBuilder {
 			Min(0).
 			Decimals(0).
 			ShowPoints(common.VisibilityModeNever).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by(pod_name) (redis_connected_clients{region="${region}"})`, "{{pod_name}}"))).
 		WithPanel(ts("Total commands per second", "").
 			Height(10).
@@ -688,7 +682,7 @@ func remoteExecutionRow() *dashboard.RowBuilder {
 			Legend(tableLegend("lastNotNull", "mean").
 				SortBy("Last *").
 				SortDesc(true)).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_waiting_execution_result{region="${region}"}) by (group_id)`, "{{group_id}}"))).
 		WithPanel(ts("Num Execution Result Waiters (Max Across Apps)", dash.UnitShort).
 			FillOpacity(10).
@@ -709,14 +703,14 @@ func remoteExecutionRow() *dashboard.RowBuilder {
 ) > 0`, ""))).
 		WithPanel(ts("Task sizer reads", dash.UnitRequestsPerSec).
 			Min(0).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			OverrideByName("hit", colorProp("green")).
 			OverrideByName("error", colorProp("dark-red")).
 			OverrideByName("miss", colorProp("dark-orange")).
 			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_task_size_read_requests{region="${region}"}[${window}]))`, "{{status}}"))).
 		WithPanel(ts("Task sizer writes", dash.UnitRequestsPerSec).
 			Min(0).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			OverrideByName("hit", colorProp("green")).
 			OverrideByName("error", colorProp("dark-red")).
 			OverrideByName("miss", colorProp("dark-orange")).
@@ -817,7 +811,7 @@ func executorPoolRow() *dashboard.RowBuilder {
 		WithPanel(ts("Executor autoscaling", dash.UnitShort).
 			Min(0).
 			ShowPoints(common.VisibilityModeNever).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			OverrideByName("Avg queue length", []dashboard.DynamicConfigValue{
 				{Id: "color", Value: map[string]any{"fixedColor": "orange", "mode": "fixed"}},
 				{Id: "custom.lineWidth", Value: 3},
@@ -852,20 +846,37 @@ func executorPoolRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`kube_horizontalpodautoscaler_status_desired_replicas{region="${region}", horizontalpodautoscaler="${pool}-autoscaler"}`, "Autoscaler target").RefId("F")).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_tasks_executing{region="${region}", job="${pool}"})`, "Tasks running").RefId("G"))).
 		WithPanel(ts("Action stage durations (quantile=${quantile})", dash.UnitMicroseconds).
+			Description("Stages come from the executed action metadata timestamps. The RPC lines are client-side stream durations measured on the executor, so they include app latency: the OK LeaseTask stream spans claim, execution, PublishOperation close, and lease close; the NotFound LeaseTask line is the round trip for a claim that lost to another executor; the OK PublishOperation stream spans execution plus the app finalizing the operation. RPC buckets are coarse (5ms, 25ms, 100ms, 500ms, 1s, 5s, 10s, 30s), so those quantiles snap to bucket edges.").
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`histogram_quantile(
   ${quantile},
   sum by (le, stage) (rate(buildbuddy_remote_execution_executed_action_metadata_durations_usec_bucket{region="${region}", stage!="worker", job="${pool}"}[${window}]))
-)`, "{{stage}}"))).
+)`, "{{stage}}").RefId("A")).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  ${quantile},
+  sum by (le) (rate(rpc_client_call_duration_seconds_bucket{region="${region}", job="${pool}", rpc_method="scheduler.Scheduler/LeaseTask", rpc_response_status_code="OK"}[${window}]))
+) * 1e6`, "LeaseTask stream (OK)").RefId("B")).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  ${quantile},
+  sum by (le) (rate(rpc_client_call_duration_seconds_bucket{region="${region}", job="${pool}", rpc_method="scheduler.Scheduler/LeaseTask", rpc_response_status_code="NOT_FOUND"}[${window}]))
+) * 1e6`, "LeaseTask claim (NotFound)").RefId("C")).
+			WithTarget(dash.PromQuery(`histogram_quantile(
+  ${quantile},
+  sum by (le) (rate(rpc_client_call_duration_seconds_bucket{region="${region}", job="${pool}", rpc_method="build.bazel.remote.execution.v2.Execution/PublishOperation", rpc_response_status_code="OK"}[${window}]))
+) * 1e6`, "PublishOperation stream (OK)").RefId("D"))).
 		WithPanel(ts("Tasks executing by stage", "").
+			Description("Stages come from the executor's task lifecycle. The RPC lines are active streams to the app: a LeaseTask stream is open from the moment a task is dequeued (before the lease is granted) until the lease is closed; a PublishOperation stream is open only while the task is leased and running. The gap between LeaseTask and PublishOperation is tasks holding a slot while waiting on the scheduler to claim or finalize.").
 			Min(0).
-			Tooltip(multiTooltipUnsorted()).
-			WithTarget(dash.PromQuery(`sum by (stage) (buildbuddy_remote_execution_tasks_executing{region="${region}", job="${pool}"})`, "{{stage}}"))).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (stage) (buildbuddy_remote_execution_tasks_executing{region="${region}", job="${pool}"})`, "{{stage}}").RefId("A")).
+			WithTarget(dash.PromQuery(`sum(buildbuddy_grpc_client_rpcs_per_connection{region="${region}", job="${pool}", grpc_method="/scheduler.Scheduler/LeaseTask"})`, "LeaseTask RPCs").RefId("B")).
+			WithTarget(dash.PromQuery(`sum(buildbuddy_grpc_client_rpcs_per_connection{region="${region}", job="${pool}", grpc_method="/build.bazel.remote.execution.v2.Execution/PublishOperation"})`, "PublishOperation RPCs").RefId("C"))).
 		WithPanel(ts("Actions executed per second", dash.UnitOps).
 			Min(0).
 			FillOpacity(10).
 			ShowPoints(common.VisibilityModeNever).
 			SpanNulls(common.BoolOrFloat64{Bool: new(true)}).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (status) (rate(buildbuddy_remote_execution_count{region="${region}", job="${pool}"}[${window}]))`, "{{status}}"))).
 		WithPanel(ts("Avg resources allocated to tasks", "").
 			WithTarget(dash.PromQuery(`avg(buildbuddy_remote_execution_assigned_milli_cpu{region="${region}", job="${pool}"}
@@ -892,13 +903,13 @@ func executorPoolRow() *dashboard.RowBuilder {
 			WithTarget(dash.PromQuery(`quantile(0.5, sum by (nodename, pod) (1 - rate(node_cpu_seconds_total{region="${region}", mode="idle"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{region="${region}", pod=~"${pool}-[^-]+-[^-]+"}, "nodename", "$1", "node", "(.*)"))))`, "p50").RefId("C")).
 			WithTarget(dash.PromQuery(`quantile(0.9, sum by (nodename, pod) (1 - rate(node_cpu_seconds_total{region="${region}", mode="idle"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{region="${region}", pod=~"${pool}-[^-]+-[^-]+"}, "nodename", "$1", "node", "(.*)"))))`, "p90").RefId("D"))).
 		WithPanel(ts("Task memory usage", dash.UnitDecimalBytes).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_memory_usage_bytes{region="${region}", job="${pool}"})`, "Current memory usage").RefId("A")).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_peak_memory_usage_bytes{region="${region}", job="${pool}"})`, "Current peak memory usage").RefId("C")).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_assigned_ram_bytes{region="${region}", job="${pool}"})`, "Estimated memory usage").RefId("B")).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_assignable_ram_bytes{region="${region}", job="${pool}"})`, "Max assignable memory").RefId("D"))).
 		WithPanel(ts("Task CPU usage (each 100% = 1 fully utilized core)", dash.UnitPercentUnit).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum(1 - rate(node_cpu_seconds_total{region="${region}", mode="idle"}[${window}]) * on (nodename) group_left(pod) (label_replace(kube_pod_info{region="${region}", pod=~"${pool}-[^-]+-[^-]+"}, "nodename", "$1", "node", "(.*)")))`, "Node CPU").RefId("A")).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_assigned_milli_cpu{region="${region}",job="${pool}"})/1000`, "Estimated CPU").RefId("C")).
 			WithTarget(dash.PromQuery(`sum(buildbuddy_remote_execution_assignable_milli_cpu{region="${region}",job="${pool}"})/1000`, "Max assignable CPU").RefId("D"))).
@@ -914,7 +925,7 @@ func executorPoolRow() *dashboard.RowBuilder {
 		WithPanel(ts("File cache hit rate", dash.UnitPercentUnit).
 			AxisSoftMax(1).
 			AxisSoftMin(0).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			OverrideByName("p25", colorProp("red")).
 			OverrideByName("p50", colorProp("orange")).
 			OverrideByName("p75", colorProp("green")).
@@ -944,13 +955,13 @@ sum(rate(buildbuddy_remote_execution_file_cache_requests{region="${region}", job
 			Min(0).
 			AxisSoftMin(0).
 			Legend(tableLegend("lastNotNull")).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`buildbuddy_remote_execution_file_cache_last_eviction_age_usec{region="${region}", job="${pool}"}`, ""))).
 		WithPanel(ts("File cache added file size", dash.UnitDecimalBytes).
 			Min(0).
 			AxisSoftMin(0).
 			Legend(tableLegend("lastNotNull")).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`histogram_quantile(
   0.5,
   sum by (le) (rate(buildbuddy_remote_execution_file_cache_added_file_size_bytes_bucket{region="${region}", job="${pool}"}[${window}]))
@@ -1040,38 +1051,38 @@ func grpcRow() *dashboard.RowBuilder {
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`histogram_quantile(${quantile}, sum by (le, grpc_service, grpc_method) (rate(grpc_server_handling_seconds_bucket{region="${region}", job="${job}"}[${window}])))`, "/{{grpc_service}}/{{grpc_method}}"))).
 		WithPanel(ts("gRPC client messages sent by method", dash.UnitRequestsPerSec).
 			FillOpacity(5).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (grpc_method, grpc_service) (rate(grpc_client_msg_sent_total{region="${region}", job="${job}"}[${window}]))`, "/{{grpc_service}}/{{grpc_method}}"))).
 		WithPanel(ts("gRPC Client Request Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_request_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
 		WithPanel(ts("gRPC Client Response Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_client_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
 		WithPanel(ts("gRPC Server Request Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_request_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
 		WithPanel(ts("gRPC Server Response Bytes", dash.UnitBinaryBytesPerSec).
 			Legend(tableLegend("lastNotNull").
 				SortBy("Last *").
 				SortDesc(true)).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}")))
 }
 
@@ -1229,7 +1240,7 @@ func victoriaMetricsRow() *dashboard.RowBuilder {
 		WithPanel(ts("vmagent (global) - scrape download rate", dash.UnitBytesPerSec).
 			Min(0).
 			FillOpacity(10).
-			Tooltip(multiTooltipUnsorted()).
+			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum(rate(vm_promscrape_scrape_response_size_bytes_sum{region="${region}", app_kubernetes_io_instance="victoria-metrics-agent-global"}[${window}]))`, ""))).
 		WithPanel(ts("vmagent (global) - remote write upload rate", dash.UnitBytesPerSec).
 			Min(0).
