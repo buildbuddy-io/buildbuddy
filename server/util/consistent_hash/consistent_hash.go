@@ -173,6 +173,9 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 }
 
 func (c *state) getAllReplicas(key string, hashKey func(string) int) []string {
+	if len(c.keys) == 0 {
+		return nil
+	}
 	startKeyIdx := c.firstKey(key, hashKey)
 	originalIndex := c.keyIndexToItemIndex[startKeyIdx]
 
