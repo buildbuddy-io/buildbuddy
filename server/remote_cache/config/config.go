@@ -5,7 +5,7 @@ import (
 )
 
 var zstdTranscodingEnabled = flag.Bool("cache.zstd_transcoding_enabled", true, "Whether to accept requests to read/write zstd-compressed blobs, compressing/decompressing outgoing/incoming blobs on the fly.")
-var blackholeAnonymousCacheRequests = flag.Bool("auth.blackhole_anonymous_cache_requests", false, "If true and anonymous usage is enabled, anonymous remote cache reads return cache misses and writes are discarded.")
+var blackholeAnonymousCacheRequests = flag.Bool("auth.blackhole_anonymous_cache_requests", false, "If true and anonymous usage is enabled, anonymous remote cache reads return cache misses and writes are discarded.", flag.Internal)
 
 // Benchmarks show 128KB, 256KB, and 512KB all perform about the same. This
 // should be slightly smaller than 2^N, to allow for proto and gRPC

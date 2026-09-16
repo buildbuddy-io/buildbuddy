@@ -41,6 +41,7 @@ go_library(
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/db",
+        "//server/util/flag",
         "//server/util/git",
         "//server/util/log",
         "//server/util/paging",

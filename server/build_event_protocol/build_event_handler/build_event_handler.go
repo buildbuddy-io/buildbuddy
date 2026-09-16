@@ -3,7 +3,6 @@ package build_event_handler
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -40,6 +39,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
@@ -115,7 +115,7 @@ var (
 	enableChunkedEventLogs  = flag.Bool("storage.enable_chunked_event_logs", true, "If true, Event logs will be stored separately from the invocation proto in chunks.")
 	disablePersistArtifacts = flag.Bool("storage.disable_persist_cache_artifacts", false, "If disabled, buildbuddy will not persist cache artifacts in the blobstore. This may make older invocations not display properly.")
 	writeToOLAPDBEnabled    = flag.Bool("app.enable_write_to_olap_db", true, "If enabled, complete invocations will be flushed to OLAP DB")
-	blackholeAnonymousBES   = flag.Bool("auth.blackhole_anonymous_build_event_streams", false, "If true and anonymous usage is enabled, anonymous build event streams without an API key are acknowledged but discarded. A minimal invocation row is retained so the invocation page can explain why the build was not recorded.")
+	blackholeAnonymousBES   = flag.Bool("auth.blackhole_anonymous_build_event_streams", false, "If true and anonymous usage is enabled, anonymous build event streams without an API key are acknowledged but discarded. A minimal invocation row is retained so the invocation page can explain why the build was not recorded.", flag.Internal)
 
 	buildEventFilterStartThreshold = flag.Int("app.build_event_filter_start_threshold", 100_000, "When looking up an invocation, start filtering out unimportant events after this many events have been processed.")
 	cacheStatsFinalizationDelay    = flag.Duration("cache_stats_finalization_delay", 500*time.Millisecond, "The time allowed for all metrics collectors across all apps to flush their local cache stats to the backing storage, before finalizing stats in the DB.")

@@ -20,8 +20,6 @@ Auth is only configurable in the [Enterprise version](enterprise.md) of BuildBud
   - `client_id: ` The oauth client ID.
   - `client_secret: ` The oauth client secret.
 - `enable_anonymous_usage:` If true, unauthenticated build uploads will still be allowed but won't be associated with your organization.
-- `blackhole_anonymous_build_event_streams:` If true and anonymous usage is enabled, build event streams without an API key are acknowledged but discarded. A minimal invocation record is retained so the invocation page can explain why the build was not recorded.
-- `blackhole_anonymous_cache_requests:` If true and anonymous usage is enabled, remote cache reads without an API key return cache misses and writes are acknowledged but discarded.
 
 ### JWT signing key
 
