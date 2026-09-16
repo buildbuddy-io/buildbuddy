@@ -1,6 +1,12 @@
 name: "Update Helm Version"
 
 on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing application release tag (e.g. v2.307.0)"
+        required: true
+        type: string
   release:
     types:
       - "released"
@@ -11,8 +17,17 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      APP_TAG_NAME: ${{ inputs.release_tag || github.event.release.tag_name }}
 
     steps:
+      - name: Validate release tag
+        run: |
+          if [[ ! "$APP_TAG_NAME" =~ ^(enterprise-)?v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a release tag like v2.307.0 or enterprise-v2.307.0" >&2
+            exit 1
+          fi
+
       - name: Checkout Helm charts
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -28,7 +43,6 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-helm
 
-          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
           export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
 
           # shellcheck disable=SC2016
@@ -49,7 +63,7 @@ jobs:
           git add charts/buildbuddy-enterprise-cache-proxy/README.md
           git add charts/buildbuddy-enterprise-cache-proxy/values.yaml
 
-          git commit -m "Bumping Cache Proxy to ${{ github.event.release.tag_name }}" -a
+          git commit -m "Bumping Cache Proxy to $APP_TAG_NAME" -a
 
       - name: Push Cache Proxy changes
         uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
@@ -79,7 +93,6 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-helm
 
-          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
           export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
           CACHE_PROXY_VERSION_NUMBER=$(sed -rn 's/version: ([0-9\.]+) # Chart version/\1/gp' charts/buildbuddy-enterprise-cache-proxy/Chart.yaml)
           export CACHE_PROXY_VERSION_NUMBER
@@ -115,7 +128,7 @@ jobs:
           git add charts/buildbuddy
           git add charts/buildbuddy-executor
 
-          git commit -m "Bumping OSS and Executor to ${{ github.event.release.tag_name }}" -a
+          git commit -m "Bumping OSS and Executor to $APP_TAG_NAME" -a
 
       - name: Push OSS and Executor changes
         uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
@@ -145,7 +158,6 @@ jobs:
         run: |
           cd "$GITHUB_WORKSPACE"/buildbuddy-helm
 
-          export APP_TAG_NAME="${{ github.event.release.tag_name }}"
           export APP_VERSION_NUMBER=${APP_TAG_NAME#*v}
           EXECUTOR_VERSION_NUMBER=$(sed -rn 's/version: ([0-9\.]+) # Chart version/\1/gp' charts/buildbuddy-executor/Chart.yaml)
           export EXECUTOR_VERSION_NUMBER
@@ -172,7 +184,7 @@ jobs:
 
           git add charts/buildbuddy-enterprise
 
-          git commit -m "Bumping Enterprise to ${{ github.event.release.tag_name }}" -a
+          git commit -m "Bumping Enterprise to $APP_TAG_NAME" -a
 
       - name: Push Enterprise changes
         uses: ad-m/github-push-action@881a6320fdb16eb5318c5054f31c218aec2b324c # v1.3.0
