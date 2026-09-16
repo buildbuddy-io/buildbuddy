@@ -22,15 +22,21 @@ import (
 )
 
 const Usage = `
-usage: bb agent review [ --dry_run ] [ --force ]
+usage: bb agent review [ --dry_run ] [ --force ] [ --allow_fork ]
 
-Reviews the open GitHub pull request for the current branch, then posts the
+Reviews the open GitHub pull request for the checked-out branch, then posts the
 findings as PR review comments.
+
+The review reads the source from the local checkout, so to review another PR,
+check it out first with ` + "`gh pr checkout <pr>`" + `.
 
 Requires gh and a GitHub token in REPO_TOKEN, GH_TOKEN, or GITHUB_TOKEN.
 
 Drafts and PRs that already have a bot review are skipped; pass --force to
 review them anyway.
+
+By default, PRs from forks are refused, because reviewing one runs the agent over
+untrusted code; pass --allow_fork to review one anyway.
 
 Examples:
   bb agent review
@@ -42,8 +48,9 @@ Examples:
 var (
 	Flags = flag.NewFlagSet("review", flag.ContinueOnError)
 
-	dryRun = Flags.Bool("dry_run", false, "Print the review payload without posting it.")
-	force  = Flags.Bool("force", false, "Review the PR even if it is a draft or already has a bot review.")
+	dryRun    = Flags.Bool("dry_run", false, "Print the review payload without posting it.")
+	force     = Flags.Bool("force", false, "Review the PR even if it is a draft or already has a bot review.")
+	allowFork = Flags.Bool("allow_fork", false, "Review the PR even if it comes from a fork. See the warning that --allow_fork suppresses.")
 )
 
 // reviewAllowedTools restricts the review agent to reading the repo and the PR.
@@ -154,6 +161,11 @@ func HandleReview(args []string) (int, error) {
 	}
 	log.Printf("PR #%d on %s/%s  (head: %s, base: %s)", pr.GetNumber(), owner, repo, headShort, pr.GetBase().GetRef())
 
+	if !*allowFork && isFork(pr, owner, repo) {
+		log.Warnf("Reviewing this code runs an agent over untrusted code, which the agent reads as input. Proceed with caution. Read the diff yourself first, and pass --allow_fork to review it anyway.")
+		return 1, nil
+	}
+
 	// A PR is reviewed once, when it's ready for review, so skip drafts and PRs
 	// that already have a bot review to avoid spamming them with reviews.
 	if !*force {
@@ -228,6 +240,12 @@ func HandleReview(args []string) (int, error) {
 	return postReview(ctx, gh, owner, repo, pr.GetNumber(), headSHA, fullBody, inlineComments)
 }
 
+// isFork reports whether the PR's head branch lives in the given repo. If it doesn't,
+// it's assumed to be from a fork.
+func isFork(pr *github.PullRequest, owner, repo string) bool {
+	return pr.GetHead().GetRepo().GetFullName() != owner+"/"+repo
+}
+
 // shouldSkip reports whether the PR is a draft or already has a bot review.
 func shouldSkip(ctx context.Context, gh *github.Client, owner, repo string, pr *github.PullRequest) (bool, error) {
 	if pr.GetDraft() {
@@ -255,6 +273,7 @@ func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error
 		Model:           *agentflags.Model,
 		ReasoningEffort: *agentflags.Effort,
 		Prompt:          parsePrompt + reviewText,
+		CodexSandbox:    agentutil.SandboxReadOnly,
 	})
 	if err != nil {
 		return nil, err
