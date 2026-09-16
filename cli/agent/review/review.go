@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -180,7 +181,8 @@ func HandleReview(args []string) (int, error) {
 
 	// Have the agent generate the review.
 	log.Printf("%sRunning agent to review the PR (this may take a few minutes)...%s", terminal.Esc(90), terminal.Esc())
-	reviewRsp, err := agent.Run(ctx, &agentutil.RunRequest{
+	reviewBuf := &bytes.Buffer{}
+	err = agent.Run(ctx, &agentutil.RunRequest{
 		Agent:              *agentflags.Agent,
 		Model:              *agentflags.Model,
 		ReasoningEffort:    *agentflags.Effort,
@@ -191,11 +193,16 @@ func HandleReview(args []string) (int, error) {
 		// also write to the workspace; it is told not to edit anything.
 		CodexSandbox: agentutil.SandboxWorkspaceWrite,
 		CodexArgs:    []string{"--config", "sandbox_workspace_write.network_access=true"},
+		Output:       reviewBuf,
+		Progress:     io.Discard,
 	})
 	if err != nil {
 		return -1, fmt.Errorf("error running review agent: %w", err)
 	}
-	reviewText := reviewRsp.Output
+	reviewText := reviewBuf.String()
+	if strings.TrimSpace(reviewText) == "" {
+		return -1, fmt.Errorf("review produced no output.")
+	}
 
 	// Have the agent convert the review to structured JSON. If that fails,
 	// post the unstructured review as a single body comment.
@@ -268,12 +275,15 @@ func shouldSkip(ctx context.Context, gh *github.Client, owner, repo string, pr *
 
 // structureReview has the agent convert a free-form review into reviewJSON.
 func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error) {
-	rsp, err := agent.Run(ctx, &agentutil.RunRequest{
+	buf := &bytes.Buffer{}
+	err := agent.Run(ctx, &agentutil.RunRequest{
 		Agent:           *agentflags.Agent,
 		Model:           *agentflags.Model,
 		ReasoningEffort: *agentflags.Effort,
 		Prompt:          parsePrompt + reviewText,
 		CodexSandbox:    agentutil.SandboxReadOnly,
+		Output:          buf,
+		Progress:        io.Discard,
 	})
 	if err != nil {
 		return nil, err
@@ -281,7 +291,7 @@ func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error
 
 	// Strip accidental markdown fences.
 	var cleanLines []string
-	for line := range strings.SplitSeq(rsp.Output, "\n") {
+	for line := range strings.SplitSeq(buf.String(), "\n") {
 		if !strings.HasPrefix(line, "```") {
 			cleanLines = append(cleanLines, line)
 		}

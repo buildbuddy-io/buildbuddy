@@ -216,7 +216,7 @@ func fixFailure(ctx context.Context, failingOutput string, isTestFailure bool, o
 	prompt := fmt.Sprintf(fixPrompt, originalCommand, originalInvocationID, instructions, tail(failingOutput, maxFailureOutputBytes))
 
 	log.Printf("%sRunning agent to fix the failure (this may take a few minutes)...%s", terminal.Esc(90), terminal.Esc())
-	rsp, err := agent.Run(ctx, &agentutil.RunRequest{
+	err := agent.Run(ctx, &agentutil.RunRequest{
 		Agent:              *agentflags.Agent,
 		Model:              *agentflags.Model,
 		ReasoningEffort:    *agentflags.Effort,
@@ -228,7 +228,6 @@ func fixFailure(ctx context.Context, failingOutput string, isTestFailure bool, o
 	if err != nil {
 		return fmt.Errorf("error running agent: %w", err)
 	}
-	fmt.Println(rsp.Output)
 	return nil
 }
 
