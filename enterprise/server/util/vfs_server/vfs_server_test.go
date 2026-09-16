@@ -8,6 +8,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
@@ -23,10 +24,14 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/google/go-cmp/cmp"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -214,6 +219,157 @@ func TestCASFileFetchedOnDemand(t *testing.T) {
 	require.EqualValues(t, 1, stats.GetCasFilesAccessedCount())
 	require.EqualValues(t, 1, stats.GetFileDownloadCount())
 	require.Equal(t, d.GetSizeBytes(), stats.GetFileDownloadSizeBytes())
+}
+
+type failingByteStreamClient struct {
+	bspb.ByteStreamClient
+	err      error
+	failures int
+	attempts int
+}
+
+func (c *failingByteStreamClient) Read(ctx context.Context, req *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	c.attempts++
+	if c.attempts <= c.failures {
+		return nil, c.err
+	}
+	return c.ByteStreamClient.Read(ctx, req, opts...)
+}
+
+func TestCASFileDownloadRetried(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	contents := "download succeeds after retrying"
+	d := setFile(t, env, ctx, "", contents)
+	client := &failingByteStreamClient{
+		ByteStreamClient: env.GetByteStreamClient(),
+		err:              status.UnavailableError("cache unavailable"),
+		failures:         2,
+	}
+	env.SetByteStreamClient(client)
+	_, err := server.Prepare(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+			{Name: "input.txt", Digest: d},
+		}}},
+	}, nil)
+	require.NoError(t, err)
+
+	// GetBlob's existing retries recover the download without poisoning the
+	// action result or its contents.
+	require.Equal(t, contents, readFromVFS(t, server, "input.txt"))
+	require.Equal(t, 3, client.attempts)
+	require.NoError(t, server.TaskError())
+}
+
+func TestFailedPrefetchRetriedFromCAS(t *testing.T) {
+	ctx, env, server, _ := newServerWithEnv(t)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	contents := "downloaded without the failed prefetcher"
+	d := &repb.Digest{Hash: hash.String(contents), SizeBytes: int64(len(contents))}
+	layout := &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+			{Name: "a.txt", Digest: d},
+			{Name: "b.txt", Digest: d},
+		}}},
+	}
+
+	// Prefetch fails because the input is initially unavailable in CAS.
+	fetcher, err := dirtools.NewTreeFetcher(ctx, env, "", repb.DigestFunction_SHA256, layout.Inputs, &dirtools.DownloadTreeOpts{})
+	require.NoError(t, err)
+	_, err = fetcher.Start()
+	require.NoError(t, err)
+	_, err = fetcher.Wait()
+	require.Error(t, err)
+	setFile(t, env, ctx, "", contents)
+	_, err = server.Prepare(ctx, layout, fetcher)
+	require.NoError(t, err)
+
+	// Every reader must observe the prefetch failure and fall back to CAS,
+	// including readers that arrive after an earlier reader consumed the error.
+	require.Equal(t, contents, readFromVFS(t, server, "a.txt"))
+	require.Equal(t, contents, readFromVFS(t, server, "b.txt"))
+	require.NoError(t, server.TaskError())
+}
+
+func TestCASFileDownloadErrorRetainedUntilNextTask(t *testing.T) {
+	for _, testCase := range []struct {
+		name         string
+		err          error
+		code         codes.Code
+		wantAttempts int
+	}{
+		{name: "missing", err: status.NotFoundError("blob evicted"), code: codes.FailedPrecondition, wantAttempts: 1},
+		{name: "unavailable", err: status.UnavailableError("cache unavailable"), code: codes.Unavailable, wantAttempts: 4},
+		{name: "timeout", err: status.DeadlineExceededError("download timed out"), code: codes.DeadlineExceeded, wantAttempts: 4},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx, env, server, _ := newServerWithEnv(t)
+			d := setFile(t, env, ctx, "", "input contents")
+			client := &failingByteStreamClient{
+				ByteStreamClient: env.GetByteStreamClient(),
+				err:              testCase.err,
+				failures:         100,
+			}
+			env.SetByteStreamClient(client)
+			layout := &container.FileSystemLayout{
+				DigestFunction: repb.DigestFunction_SHA256,
+				Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+					{Name: "input.txt", Digest: d},
+				}}},
+			}
+			_, err := server.Prepare(ctx, layout, nil)
+			require.NoError(t, err)
+			node, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "input.txt"})
+			require.NoError(t, err)
+
+			// Preserve the final gRPC status without retrying missing blobs or
+			// multiplying the CAS downloader's retries for transient failures.
+			_, err = server.Open(ctx, &vfspb.OpenRequest{Id: node.GetId()})
+			require.Equal(t, testCase.code, gstatus.Code(err))
+			require.Equal(t, testCase.wantAttempts, client.attempts)
+			require.Equal(t, err, server.TaskError())
+			require.Contains(t, err.Error(), "input.txt")
+			if testCase.code == codes.FailedPrecondition {
+				failure := gstatus.Convert(err).Details()[0].(*errdetails.PreconditionFailure)
+				require.Equal(t, "MISSING", failure.GetViolations()[0].GetType())
+				require.Contains(t, failure.GetViolations()[0].GetSubject(), d.GetHash())
+			}
+
+			// A later successful open cannot undo the error already seen by the
+			// action, but a recycled workspace must start without that error.
+			client.failures = 0
+			require.Equal(t, "input contents", readFromVFS(t, server, "input.txt"))
+			require.Equal(t, err, server.TaskError())
+			_, err = server.Prepare(ctx, layout, nil)
+			require.NoError(t, err)
+			require.NoError(t, server.TaskError())
+		})
+	}
+}
+
+func TestCASFileDownloadCanceled(t *testing.T) {
+	ctx, _, server, _ := newServerWithEnv(t)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	_, err := server.Prepare(ctx, &container.FileSystemLayout{
+		DigestFunction: repb.DigestFunction_SHA256,
+		Inputs: &repb.Tree{Root: &repb.Directory{Files: []*repb.FileNode{
+			{Name: "input.txt", Digest: &repb.Digest{Hash: hash.String("input"), SizeBytes: 5}},
+		}}},
+	}, nil)
+	require.NoError(t, err)
+	node, err := server.Lookup(ctx, &vfspb.LookupRequest{ParentId: vfscommon.RootInodeId, Name: "input.txt"})
+	require.NoError(t, err)
+
+	// Cancellation must stop retries promptly and remain a gRPC cancellation.
+	cancel()
+	start := time.Now()
+	_, err = server.Open(ctx, &vfspb.OpenRequest{Id: node.GetId()})
+	require.Equal(t, codes.Canceled, gstatus.Code(err))
+	require.Equal(t, err, server.TaskError())
+	require.Less(t, time.Since(start), time.Second)
 }
 
 func TestCASFileRefetchedIfEvictedBeforeOpen(t *testing.T) {
