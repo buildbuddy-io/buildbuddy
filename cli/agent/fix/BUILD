@@ -5,8 +5,10 @@ package(default_visibility = ["//cli:__subpackages__"])
 go_library(
     name = "fix",
     srcs = [
+        "commit_message.go",
         "fix.go",
         "patch.go",
+        "push.go",
     ],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/agent/fix",
     deps = [
@@ -20,6 +22,7 @@ go_library(
         "//cli/util/agent",
         "//cli/util/agent/agentutil",
         "//cli/util/download",
+        "//cli/util/git",
         "//cli/util/invocation",
         "//cli/view",
         "//proto:buildbuddy_service_go_proto",

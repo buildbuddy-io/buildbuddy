@@ -15,7 +15,7 @@ export interface AIFixButtonProps {
 
 export default class AIFixButton extends React.Component<AIFixButtonProps> {
   private getCommand(agent: RemoteRunnerAgent) {
-    return `bb agent fix --agent=${agent} ${this.props.model.getInvocationId()}`;
+    return `bb agent fix --agent=${agent} --push ${this.props.model.getInvocationId()}`;
   }
 
   private async fixWithAI(agent: RemoteRunnerAgent) {
