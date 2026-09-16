@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -193,11 +194,15 @@ func HandleReview(args []string) (int, error) {
 		CodexSandbox: agentutil.SandboxWorkspaceWrite,
 		CodexArgs:    []string{"--config", "sandbox_workspace_write.network_access=true"},
 		Output:       reviewBuf,
+		Progress:     io.Discard,
 	})
 	if err != nil {
 		return -1, fmt.Errorf("error running review agent: %w", err)
 	}
 	reviewText := reviewBuf.String()
+	if strings.TrimSpace(reviewText) == "" {
+		return -1, fmt.Errorf("review produced no output.")
+	}
 
 	// Have the agent convert the review to structured JSON. If that fails,
 	// post the unstructured review as a single body comment.
@@ -278,6 +283,7 @@ func structureReview(ctx context.Context, reviewText string) (*reviewJSON, error
 		Prompt:          parsePrompt + reviewText,
 		CodexSandbox:    agentutil.SandboxReadOnly,
 		Output:          buf,
+		Progress:        io.Discard,
 	})
 	if err != nil {
 		return nil, err

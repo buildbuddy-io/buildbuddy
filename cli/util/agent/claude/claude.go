@@ -3,8 +3,6 @@ package claude
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -19,11 +17,8 @@ func Run(ctx context.Context, request *agentutil.RunRequest) error {
 	args := commandArgs(request)
 	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Stdin = strings.NewReader(request.Prompt)
-	cmd.Stdout = os.Stdout
-	if request.Output != nil {
-		cmd.Stdout = io.MultiWriter(os.Stdout, request.Output)
-	}
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = request.OutputWriter()
+	cmd.Stderr = request.ProgressWriter()
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("claude failed: %w", err)
 	}
