@@ -66,8 +66,8 @@ func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
 }
 
 func (c *ConsistentHash) GetItems() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.items
 }
 
