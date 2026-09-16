@@ -11,6 +11,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//:node_modules/recharts",
+        "//:node_modules/tslib",
         "//app/format",
         "//app/util:color",
     ],
