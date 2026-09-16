@@ -32,23 +32,19 @@ var (
 	}
 )
 
-// The maximum number of items that can be passed to Set(). This is before they
-// are multiplied by vnodes. It bounds the size of the fixed-size bitset used
-// for deduplication in GetAllReplicas, which lives on the stack, so it should
-// stay small (a few KB at most).
+// The maximum number of items that can be passed to Set(). It bounds the size
+// of the fixed-size bitset used for deduplication in GetAllReplicas, which
+// lives on the stack, so it should stay small (a few KB at most).
 const maxSize = 4096
 
-// Compile-time check that maxSize is a multiple of 64, so the bitset below
-// covers every index exactly. Negating a non-zero unsigned constant is a
-// compile error ("constant overflows uint").
+// Compile-time check that maxSize is a multiple of 64.
 const _ = -uint(maxSize % 64)
 
 // itemIndex is the type used to index into the items slice. It is narrower
 // than int to keep keyIndexToItemIndex compact.
 type itemIndex uint16
 
-// Compile-time check that every index below maxSize fits in itemIndex; this
-// fails with a constant overflow error if maxSize is raised too far.
+// Compile-time check that every index below maxSize fits in itemIndex.
 const _ = itemIndex(maxSize - 1)
 
 // replicaBitset tracks which items have been seen while walking the ring.
