@@ -135,6 +135,10 @@ func (*bitbucketGitProvider) CreateStatus(ctx context.Context, accessToken, grou
 	return status.UnimplementedError("Not implemented")
 }
 
+func (*bitbucketGitProvider) GetPullRequestData(ctx context.Context, accessToken, repoURL string, pullRequestNumber int64) (*interfaces.WebhookData, error) {
+	return nil, status.UnimplementedError("Not implemented")
+}
+
 func unmarshalBody(r *http.Request, payload any) error {
 	b, err := io.ReadAll(r.Body)
 	if err != nil {
