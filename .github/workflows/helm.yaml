@@ -14,6 +14,11 @@ on:
 permissions:
   contents: read
 
+# Both triggers update the same Helm repository branch.
+concurrency:
+  group: update-helm-version
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -22,9 +27,18 @@ jobs:
 
     steps:
       - name: Validate release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          if [[ ! "$APP_TAG_NAME" =~ ^(enterprise-)?v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected a release tag like v2.307.0 or enterprise-v2.307.0" >&2
+          if [[ ! "$APP_TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a release tag like v2.307.0" >&2
+            exit 1
+          fi
+
+          is_draft=$(gh release view "$APP_TAG_NAME" --repo "$GH_REPO" --json isDraft --jq '.isDraft')
+          if [[ "$is_draft" != false ]]; then
+            echo "Release $APP_TAG_NAME must be published, not a draft" >&2
             exit 1
           fi
 
