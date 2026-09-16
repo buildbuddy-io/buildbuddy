@@ -27,6 +27,7 @@ go_library(
         "//cli/view",
         "//proto:buildbuddy_service_go_proto",
         "//proto:invocation_go_proto",
+        "//proto:invocation_status_go_proto",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/uuid",

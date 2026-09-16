@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/log"
@@ -27,6 +28,7 @@ import (
 	invocation_util "github.com/buildbuddy-io/buildbuddy/cli/util/invocation"
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
+	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
@@ -38,17 +40,19 @@ const (
 )
 
 const Usage = `
-usage: bb agent fix <invocation> [ <target> ] [ --test_filter=<regex> ] [ --verify=false ] [ --push ]
+usage: bb agent fix [ <invocation> [ <target> ] ] [ --test_filter=<regex> ] [ --verify=false ] [ --push ]
 
 Fixes a failure from a previous invocation, then verifies the fix (disable with --verify=false).
 With --push, commits and pushes the fix to the current branch, or to a new
 branch when run from the default branch.
 
-  <invocation>  A BuildBuddy invocation ID or invocation URL.
+  <invocation>  Optional BuildBuddy invocation ID or URL. If omitted, uses the
+                most recent failed invocation for the current repo and branch.
   <target>      Optional. The failing test target, e.g. //foo:bar_test. With no
                 target, every failing target in the invocation is fixed.
 
 Examples:
+  bb agent fix
   bb agent fix 0f8fad5b-d9cb-469f-a165-70867728950e
   bb agent fix 0f8fad5b-d9cb-469f-a165-70867728950e //server/util/foo:foo_test
   bb agent fix https://app.buildbuddy.io/invocation/0f8fad5b-d9cb-469f-a165-70867728950e //foo:bar_test --test_filter=TestBaz
@@ -139,14 +143,9 @@ patch and why it fixes the failure. Use a max of 3 sentences.`
 // HandleFix receives only the positional args; the agent package parses Flags
 // before calling it.
 func HandleFix(args []string) (int, error) {
-	if len(args) < 1 || len(args) > 2 {
+	if len(args) > 2 {
 		log.Print(Usage)
 		return 1, nil
-	}
-
-	invocationID, err := parseInvocationID(args[0])
-	if err != nil {
-		return -1, err
 	}
 
 	targetLabel := ""
@@ -158,6 +157,21 @@ func HandleFix(args []string) (int, error) {
 	if key, err := login.GetAPIKey(); err == nil && key != "" {
 		ctx = metadata.AppendToOutgoingContext(ctx, "x-buildbuddy-api-key", key)
 	}
+
+	var invocationID string
+	var err error
+	if len(args) == 0 {
+		invocationID, err = findLatestFailure(ctx, *agentflags.APITarget)
+		if err == nil {
+			log.Printf("Using failed invocation %s", invocationID)
+		}
+	} else {
+		invocationID, err = parseInvocationID(args[0])
+	}
+	if err != nil {
+		return -1, err
+	}
+
 	var pushDestination *pushTarget
 	if *push {
 		pushDestination, err = checkPushPreconditions(ctx)
@@ -222,6 +236,51 @@ func HandleFix(args []string) (int, error) {
 	}
 
 	return 0, nil
+}
+
+// findLatestFailure returns the invocation ID for the most recent failed build for the current branch.
+func findLatestFailure(ctx context.Context, target string) (string, error) {
+	var output bytes.Buffer
+	if err := runGit(ctx, "", &output, "symbolic-ref", "--short", "HEAD"); err != nil {
+		return "", fmt.Errorf("find current branch (a checked-out branch is required): %w", err)
+	}
+	branch := strings.TrimSpace(output.String())
+
+	// Prefer the remote tracked by this branch, falling back to origin for
+	// branches without an upstream.
+	remote := "origin"
+	output.Reset()
+	if err := runGit(ctx, "", &output, "config", "--get", "branch."+branch+".remote"); err == nil && strings.TrimSpace(output.String()) != "" {
+		remote = strings.TrimSpace(output.String())
+	}
+	output.Reset()
+	if err := runGit(ctx, "", &output, "remote", "get-url", remote); err != nil {
+		return "", fmt.Errorf("find repository URL for remote %q: %w", remote, err)
+	}
+	repoURL := strings.TrimSpace(output.String())
+
+	conn, err := grpc_client.DialSimple(target)
+	if err != nil {
+		return "", fmt.Errorf("dial %q: %w", target, err)
+	}
+	defer conn.Close()
+
+	rsp, err := bbspb.NewBuildBuddyServiceClient(conn).SearchInvocation(ctx, &inpb.SearchInvocationRequest{
+		Query: &inpb.InvocationQuery{
+			RepoUrl:    repoURL,
+			BranchName: branch,
+			Status:     []ispb.OverallStatus{ispb.OverallStatus_FAILURE},
+		},
+		Sort:  &inpb.InvocationSort{SortField: inpb.InvocationSort_CREATED_AT_USEC_SORT_FIELD},
+		Count: 1,
+	})
+	if err != nil {
+		return "", fmt.Errorf("search failed invocations for %s on %s: %w", repoURL, branch, err)
+	}
+	if len(rsp.GetInvocation()) == 0 {
+		return "", fmt.Errorf("no failed invocations found for %s on branch %s; pass an invocation ID or URL explicitly", repoURL, branch)
+	}
+	return rsp.GetInvocation()[0].GetInvocationId(), nil
 }
 
 // fixFailure hands the failing invocation's output to an agent and asks it to fix
