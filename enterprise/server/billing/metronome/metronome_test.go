@@ -349,3 +349,81 @@ func TestEventPropertiesCoverAllLabels(t *testing.T) {
 		"period_end":   "2026-05-15T12:36:00Z",
 	}, properties, "properties other than labels")
 }
+
+func TestGetCurrentInvoice(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/v1/customers/cust-1/invoices", r.URL.Path)
+		assert.Equal(t, "Bearer read-only-key", r.Header.Get("Authorization"))
+		assert.Equal(t, "DRAFT", r.URL.Query().Get("status"))
+		fmt.Fprint(w, `{"data":[
+			{"id":"inv-2","type":"USAGE","status":"DRAFT","start_timestamp":"2026-09-01T00:00:00Z","end_timestamp":"2026-10-01T00:00:00Z","total":2400000,
+			 "line_items":[
+				{"name":"Action cache hits","type":"usage","quantity":2000,"unit_price":1200,"total":2400000,"starting_at":"2026-09-01T00:00:00Z","ending_before":"2026-09-19T00:00:00Z"},
+				{"name":"Monthly credit applied","type":"applied_commit_or_credit","quantity":null,"unit_price":null,"total":-4000,"starting_at":"2026-09-01T00:00:00Z","ending_before":"2026-09-19T00:00:00Z"},
+				{"name":"Action cache hits","type":"usage","quantity":0,"unit_price":2400,"total":0,"starting_at":"2026-09-19T00:00:00Z","ending_before":"2026-10-01T00:00:00Z"}]},
+			{"id":"inv-1","type":"USAGE","status":"DRAFT","start_timestamp":"2026-08-01T00:00:00Z","end_timestamp":"2026-09-01T00:00:00Z","total":99}
+		]}`)
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.read_only_api_key", "read-only-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+
+	c, err := metronome.NewReadOnlyClient(nil, nil)
+	require.NoError(t, err)
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	invoice, err := c.GetCurrentInvoice(t.Context(), "cust-1", now)
+	require.NoError(t, err)
+	require.NotNil(t, invoice)
+	assert.Equal(t, float64(2400000), invoice.Total)
+	assert.Equal(t, time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), invoice.StartTimestamp)
+	priceChange := time.Date(2026, 9, 19, 0, 0, 0, 0, time.UTC)
+	assert.Equal(t, []metronome.InvoiceLineItem{
+		{Name: "Action cache hits", Type: metronome.LineItemTypeUsage, Quantity: 2000, UnitPrice: 1200, Total: 2400000, StartingAt: invoice.StartTimestamp, EndingBefore: priceChange},
+		{Name: "Action cache hits", Type: metronome.LineItemTypeUsage, Quantity: 0, UnitPrice: 2400, Total: 0, StartingAt: priceChange, EndingBefore: invoice.EndTimestamp},
+	}, invoice.UsageLineItems())
+
+	invoice, err = c.GetCurrentInvoice(t.Context(), "cust-1", now.AddDate(0, 2, 0))
+	require.NoError(t, err)
+	assert.Nil(t, invoice)
+}
+
+func TestGetCredit(t *testing.T) {
+	var body map[string]any
+	balances := `{"data":[
+		{"type":"CREDIT","balance":1000,"access_schedule":{"schedule_items":[
+			{"amount":5000,"starting_at":"2026-09-01T00:00:00Z","ending_before":"2026-10-01T00:00:00Z"}]}},
+		{"type":"PREPAID","balance":700,"access_schedule":{"schedule_items":[
+			{"amount":900,"starting_at":"2026-09-01T00:00:00Z","ending_before":"2026-10-01T00:00:00Z"}]}}
+	]}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST /v1/contracts/customerBalances/list", r.Method+" "+r.URL.Path)
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		fmt.Fprint(w, balances)
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.read_only_api_key", "test-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+
+	c, err := metronome.NewReadOnlyClient(nil, nil)
+	require.NoError(t, err)
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	credit, err := c.GetCredit(t.Context(), "cust-1", now)
+	require.NoError(t, err)
+	assert.Equal(t, &metronome.Credit{Granted: 5000, Remaining: 1000}, credit)
+	assert.Equal(t, map[string]any{
+		"customer_id":               "cust-1",
+		"covering_date":             "2026-09-16T12:00:00Z",
+		"include_balance":           true,
+		"include_contract_balances": true,
+	}, body)
+
+	balances = `{"data":[]}`
+	credit, err = c.GetCredit(t.Context(), "cust-1", now)
+	require.NoError(t, err)
+	assert.Nil(t, credit)
+}

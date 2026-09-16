@@ -82,6 +82,128 @@
   color: var(--color-text-label);
 }
 
+.usage-page .usage-bill-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.usage-page .usage-bill-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-subtitle {
+  margin-top: 2px;
+  color: var(--color-text-label);
+}
+
+.usage-page .usage-bill-total {
+  font-size: 28px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.usage-page .usage-bill-table {
+  display: grid;
+  grid-template-columns: 1fr max-content max-content max-content;
+  align-items: baseline;
+}
+
+.usage-page .usage-bill-table > div {
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
+.usage-page .usage-bill-table > .usage-bill-heading {
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  background: var(--color-bg-secondary);
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-product {
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-line-period {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-label);
+}
+
+.usage-page .usage-bill-cost {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-table > .usage-bill-allowance {
+  padding-top: 0;
+  padding-left: 36px;
+  color: var(--color-text-label);
+}
+
+.usage-page .usage-bill-table > .usage-bill-allowance-value {
+  grid-column: 2 / span 3;
+  padding-left: 12px;
+}
+
+.usage-page .usage-bill-summary-label {
+  grid-column: 1 / span 3;
+}
+
+.usage-page .usage-bill-table > .usage-bill-total-row {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-primary);
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-credit {
+  margin: 8px 0 16px;
+}
+
+.usage-page .usage-bill-credit-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+  color: var(--color-text-label);
+}
+
+/* The track is a lighter step of the fill's hue, so the state reads across the whole bar. */
+.usage-page .usage-bill-meter {
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--color-blue-100);
+}
+
+.usage-page .usage-bill-meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--color-blue-600);
+}
+
+.usage-page .usage-bill-meter.low {
+  background: var(--color-amber-100);
+}
+
+.usage-page .usage-bill-meter.low .usage-bill-meter-fill {
+  background: var(--color-amber-800);
+}
+
+.usage-page .usage-bill-meter.used-up {
+  background: var(--color-red-100);
+}
+
+.usage-page .usage-bill-meter.used-up .usage-bill-meter-fill {
+  background: var(--color-red-600);
+}
+
 .usage-page .usage-alerting-header {
   margin-bottom: 16px;
 }

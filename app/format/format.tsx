@@ -403,6 +403,23 @@ export function formatWithCommas(num: number | Long | Number | undefined, option
   return (+num).toLocaleString("en-US", options);
 }
 
+/** Formats an amount in US cents as dollars, e.g. 815.84 -> "$8.16". */
+export function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+/** Formats a unit price in US cents, dropping the cents when whole, e.g. 10000 -> "$100", 25 -> "$0.25". */
+export function formatPrice(cents: number): string {
+  const dollars = cents / 100;
+  const fractionDigits = Number.isInteger(dollars) ? 0 : 2;
+  return dollars.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
 export function differenceInCalendarDays(start: Date, end: Date) {
   return moment(end).diff(start, "days");
 }
@@ -444,6 +461,8 @@ export default {
   formatCommitHash,
   formatRole,
   formatWithCommas,
+  formatCents,
+  formatPrice,
   formatDateRange,
   colorHashHue,
   enumLabel,
