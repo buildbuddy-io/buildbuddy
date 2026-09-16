@@ -133,20 +133,19 @@ type state struct {
 
 // Get returns the single "item" responsible for the specified key.
 func (c *ConsistentHash) Get(key string) string {
-	return c.statePtr.Load().get(key, c.hashKey)
+	return c.statePtr.Load().get(c.hashKey(key))
 }
 
-func (c *state) get(key string, hashKey func(string) int) string {
+func (c *state) get(key int) string {
 	if len(c.keys) == 0 {
 		return ""
 	}
-	idx := c.firstKey(key, hashKey)
+	idx := c.firstKey(key)
 	r := c.items[c.keyIndexToItemIndex[idx]]
 	return r
 }
 
-func (c *state) firstKey(key string, hashKey func(string) int) int {
-	h := hashKey(key)
+func (c *state) firstKey(h int) int {
 	startKeyIdx, _ := slices.BinarySearch(c.keys, h)
 	if startKeyIdx == len(c.keys) {
 		return 0
@@ -169,14 +168,14 @@ func (c *state) lookupVnodes(startKeyIdx int, fn func(vnodeIndex uint8) bool) {
 }
 
 func (c *ConsistentHash) GetAllReplicas(key string) []string {
-	return c.statePtr.Load().getAllReplicas(key, c.hashKey)
+	return c.statePtr.Load().getAllReplicas(c.hashKey(key))
 }
 
-func (c *state) getAllReplicas(key string, hashKey func(string) int) []string {
+func (c *state) getAllReplicas(key int) []string {
 	if len(c.keys) == 0 {
 		return nil
 	}
-	startKeyIdx := c.firstKey(key, hashKey)
+	startKeyIdx := c.firstKey(key)
 	originalIndex := c.keyIndexToItemIndex[startKeyIdx]
 
 	replicas := make([]string, 0, len(c.items))
