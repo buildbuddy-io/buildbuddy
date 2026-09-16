@@ -50,11 +50,14 @@ func TestIngestEvents(t *testing.T) {
 	for _, e := range gotEvents {
 		assert.Equal(t, "GR1", e.CustomerID)
 		assert.Equal(t, periodStart.Format(time.RFC3339), e.Timestamp)
-		assert.Equal(t, e.EventType, e.Properties["sku"])
+		assert.Equal(t, e.EventType, e.Properties.SKU)
 		assert.Equal(t, 67, len(e.TransactionID)) // "bb:" + 64 hex chars
 		txids[e.TransactionID] = true
 	}
 	assert.Len(t, txids, 2, "transaction IDs should be distinct per (sku, labels)")
+	assert.Equal(t, int64(2_000_000_000), gotEvents[1].Properties.Count)
+	assert.Equal(t, sku.OriginExternal, gotEvents[1].Properties.Origin)
+	assert.Equal(t, sku.ClientBazel, gotEvents[1].Properties.Client)
 }
 
 func TestIngestEventsBatching(t *testing.T) {
@@ -218,4 +221,47 @@ func TestTransactionIDDeterministic(t *testing.T) {
 	// Check that the transaction IDs are the same.
 	// Metronome de-dupes duplicate transaction IDs, which it important to prevent double-billing retries.
 	assert.Equal(t, gotEvents[0].TransactionID, gotEvents[1].TransactionID, "transaction ID must be independent of count and label-map iteration order")
+}
+
+func TestEventPropertiesCoverAllLabels(t *testing.T) {
+	var gotEvents []metronome.MetronomeEvent
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var batch []metronome.MetronomeEvent
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&batch))
+		gotEvents = append(gotEvents, batch...)
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.api_key", "test-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+
+	labels := map[sku.LabelName]sku.LabelValue{}
+	for _, name := range sku.LabelNames {
+		labels[name] = "test-" + name
+	}
+	periodStart := time.Date(2026, 5, 15, 12, 35, 0, 0, time.UTC)
+	c, err := metronome.NewClient(nil, nil)
+	require.NoError(t, err)
+	require.NoError(t, c.ReportUsage(t.Context(), []metronome.UsageEvent{{
+		GroupID: "GR1", PeriodStart: periodStart, PeriodEnd: periodStart.Add(metronome.WindowSize), SKU: sku.RemoteCacheCASHits, Count: 1,
+		Labels: labels,
+	}}))
+	require.Len(t, gotEvents, 1)
+
+	propertiesJSON, err := json.Marshal(gotEvents[0].Properties)
+	require.NoError(t, err)
+	var properties map[string]any
+	require.NoError(t, json.Unmarshal(propertiesJSON, &properties))
+	for _, name := range sku.LabelNames {
+		assert.Equal(t, "test-"+name, properties[name], "label %q", name)
+		delete(properties, name)
+	}
+	assert.Equal(t, map[string]any{
+		"group_id":     "GR1",
+		"sku":          string(sku.RemoteCacheCASHits),
+		"count":        float64(1),
+		"period_start": "2026-05-15T12:35:00Z",
+		"period_end":   "2026-05-15T12:36:00Z",
+	}, properties, "properties other than labels")
 }
