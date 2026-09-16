@@ -33,6 +33,25 @@ message KubernetesClusterCredentials {
   string client_cert_key = 6;
 }
 
+// TunnelZone is a DNS suffix that the client should route over the tunnel.
+message TunnelZone {
+  // The DNS suffix (e.g. dev.bb.internal).
+  string suffix = 1;
+
+  // If set, replaces suffix in a name before the gateway is asked to dial it,
+  // e.g. "cluster.local", so that a cluster-qualified name on the workstation
+  // is an ordinary in-cluster name on the wire.
+  string rewrite_to = 2;
+}
+
+// TunnelGateway is a relay gateway and the zones that should be routed to it.
+message TunnelGateway {
+  // gRPC target of the gateway, e.g. "grpcs://foo.bar.example".
+  string target = 1;
+
+  repeated TunnelZone zones = 2;
+}
+
 // TunnelCredentials is the credential used to authenticate against a WireGuard
 // gateway, identifying the holder as a specific person (email).
 message TunnelCredentials {
@@ -43,6 +62,9 @@ message TunnelCredentials {
 
   // The CA that issued client_cert (PEM encoded).
   string ca = 2;
+
+  // The relay gateways this credential is for and the DNS zones each serves.
+  repeated TunnelGateway gateways = 3;
 }
 
 message GenerateResponse {

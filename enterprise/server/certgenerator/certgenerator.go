@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -60,6 +61,7 @@ var (
 	tunnelCAKeyFile  = flag.String("certgenerator.tunnel.ca_key_file", "", "Path to a PEM encoded CA key file used to issue WireGuard gateway client certificates.")
 	tunnelCAKey      = flag.String("certgenerator.tunnel.ca_key", "", "PEM encoded CA key used to issue WireGuard gateway client certificates.", flag.Secret)
 	tunnelCertExpiry = flag.Duration("certgenerator.tunnel.validity", 12*time.Hour, "How long the generated gateway client certificate will be valid.")
+	tunnelGateways   = flag.Slice("certgenerator.tunnel.gateways", []TunnelGateway{}, "Relay gateways and the DNS zones each serves, sent to the tunnel client with its tunnel certificate. Every zone suffix must be under "+tunnelZoneParent+".")
 )
 
 const (
@@ -74,6 +76,25 @@ type KubernetesCluster struct {
 	ServerCA    string `yaml:"server_ca"`
 	ClientCA    string `yaml:"client_ca"`
 	ClientCAKey string `yaml:"client_ca_key"`
+}
+
+// tunnelZoneParent is the one DNS suffix the tunnel client routes to its own
+// resolver when it is installed. Every zone lives under it, so zones added
+// here later need no change on the workstation.
+const tunnelZoneParent = "bb.internal"
+
+// TunnelGateway is a relay gateway and the DNS zones it serves. See
+// TunnelGateway in certgenerator.proto.
+type TunnelGateway struct {
+	Target string       `yaml:"target"`
+	Zones  []TunnelZone `yaml:"zones"`
+}
+
+// TunnelZone is a DNS suffix the tunnel client claims. See TunnelZone in
+// certgenerator.proto.
+type TunnelZone struct {
+	Suffix    string `yaml:"suffix"`
+	RewriteTo string `yaml:"rewrite_to"`
 }
 
 type parsedKubernetesCluster struct {
@@ -135,6 +156,9 @@ type generator struct {
 	// tunnelCA issues WireGuard gateway client certificates. Nil when no
 	// tunnel CA is configured, in which case no such certificate is returned.
 	tunnelCA *ssl.CACert
+	// tunnelGateways is sent with each tunnel certificate: the relay gateways
+	// and the DNS zones each serves, so workstations need no zone config.
+	tunnelGateways []*cgpb.TunnelGateway
 }
 
 type claims struct {
@@ -250,7 +274,65 @@ func (g *generator) generateTunnelCert(c *claims, req *cgpb.GenerateRequest, rsp
 	rsp.TunnelCredentials = &cgpb.TunnelCredentials{
 		ClientCert: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
 		Ca:         string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: g.tunnelCA.Cert.Raw})),
+		Gateways:   g.tunnelGateways,
 	}
+	return nil
+}
+
+// parseTunnelGateways validates the configured gateways and zones.
+func parseTunnelGateways(gateways []TunnelGateway) ([]*cgpb.TunnelGateway, error) {
+	var out []*cgpb.TunnelGateway
+	seen := make(map[string]string) // zone suffix -> gateway target
+	for _, gw := range gateways {
+		target := strings.TrimSpace(gw.Target)
+		u, err := url.Parse(target)
+		if err != nil || (u.Scheme != "grpc" && u.Scheme != "grpcs") || u.Host == "" {
+			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: target must be a grpc:// or grpcs:// target", gw.Target)
+		}
+		if len(gw.Zones) == 0 {
+			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: no zones", target)
+		}
+		pgw := &cgpb.TunnelGateway{Target: target}
+		for _, z := range gw.Zones {
+			suffix := strings.ToLower(strings.Trim(strings.TrimSpace(z.Suffix), "."))
+			if suffix == "" {
+				return nil, status.FailedPreconditionErrorf("tunnel gateway %q: zone suffix is required", target)
+			}
+			if suffix != tunnelZoneParent && !strings.HasSuffix(suffix, "."+tunnelZoneParent) {
+				return nil, status.FailedPreconditionErrorf("tunnel zone %q: suffix must be under %s, which is what the client routes to the tunnel", suffix, tunnelZoneParent)
+			}
+			if other, dup := seen[suffix]; dup {
+				return nil, status.FailedPreconditionErrorf("tunnel zone %q: configured for both %s and %s", suffix, other, target)
+			}
+			seen[suffix] = target
+			pgw.Zones = append(pgw.Zones, &cgpb.TunnelZone{
+				Suffix:    suffix,
+				RewriteTo: strings.Trim(strings.TrimSpace(z.RewriteTo), "."),
+			})
+		}
+		out = append(out, pgw)
+	}
+	return out, nil
+}
+
+func (g *generator) loadTunnelConfig() error {
+	if *tunnelCAFile == "" && *tunnelCA == "" && *tunnelCAKeyFile == "" && *tunnelCAKey == "" {
+		if len(*tunnelGateways) > 0 {
+			return status.FailedPreconditionError("certgenerator.tunnel.gateways needs a tunnel CA")
+		}
+		return nil
+	}
+	ca, err := loadTunnelCA(*tunnelCAFile, *tunnelCA, *tunnelCAKeyFile, *tunnelCAKey)
+	if err != nil {
+		return err
+	}
+	gateways, err := parseTunnelGateways(*tunnelGateways)
+	if err != nil {
+		return err
+	}
+	g.tunnelCA = ca
+	g.tunnelGateways = gateways
+	log.Infof("Tunnel CA loaded; issuing gateway client certificates valid for %s, for %d gateways.", *tunnelCertExpiry, len(gateways))
 	return nil
 }
 
@@ -374,17 +456,9 @@ func newGenerator(ctx context.Context) (*generator, error) {
 		kubernetesClusters: kcs,
 	}
 
-	// Any tunnel flag opts in, so a CA with only its key configured fails
-	// here instead of silently issuing nothing.
-	if *tunnelCAFile != "" || *tunnelCA != "" || *tunnelCAKeyFile != "" || *tunnelCAKey != "" {
-		ca, err := loadTunnelCA(*tunnelCAFile, *tunnelCA, *tunnelCAKeyFile, *tunnelCAKey)
-		if err != nil {
-			return nil, err
-		}
-		g.tunnelCA = ca
-		log.Infof("Tunnel CA loaded; issuing gateway client certificates valid for %s.", *tunnelCertExpiry)
+	if err := g.loadTunnelConfig(); err != nil {
+		return nil, err
 	}
-
 	return g, nil
 }
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/relayauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
@@ -116,6 +117,111 @@ func TestGenerateTunnelCert_RoundTripsThroughTheGatewayVerifier(t *testing.T) {
 	require.Equal(t, "vadim@buildbuddy.io", id.Email)
 	require.Equal(t, wgKey, id.WireGuardPublicKey)
 	require.WithinDuration(t, cert.NotAfter, id.CertNotAfter, time.Second)
+}
+
+func TestGenerateTunnelCert_SendsTheGateways(t *testing.T) {
+	g, _ := newTunnelGenerator(t)
+	gateways, err := parseTunnelGateways([]TunnelGateway{
+		{Target: "grpcs://foo.bar.example", Zones: []TunnelZone{{Suffix: "foo.bb.internal", RewriteTo: "cluster.local"}}},
+		{Target: "grpc://192.168.8.1:1985", Zones: []TunnelZone{{Suffix: "bloop.boop.bb.internal"}, {Suffix: "beep.boop.bb.internal"}}},
+	})
+	require.NoError(t, err)
+	g.tunnelGateways = gateways
+	pubPEM, _ := clientKey(t)
+
+	rsp := &cgpb.GenerateResponse{}
+	require.NoError(t, g.generateTunnelCert(employee, &cgpb.GenerateRequest{TunnelPublicKey: pubPEM}, rsp))
+	got := rsp.GetTunnelCredentials().GetGateways()
+	require.Len(t, got, 2)
+	require.Equal(t, "grpcs://foo.bar.example", got[0].GetTarget())
+	require.Len(t, got[0].GetZones(), 1)
+	require.Equal(t, "foo.bb.internal", got[0].GetZones()[0].GetSuffix())
+	require.Equal(t, "cluster.local", got[0].GetZones()[0].GetRewriteTo())
+	require.Equal(t, "grpc://192.168.8.1:1985", got[1].GetTarget())
+	require.Len(t, got[1].GetZones(), 2)
+	require.Equal(t, "beep.boop.bb.internal", got[1].GetZones()[1].GetSuffix())
+	require.Empty(t, got[1].GetZones()[1].GetRewriteTo())
+}
+
+func TestParseTunnelGateways(t *testing.T) {
+	gateways, err := parseTunnelGateways([]TunnelGateway{
+		{Target: " grpcs://foo.bar.example ", Zones: []TunnelZone{
+			{Suffix: " Foo.bb.internal. "},
+			{Suffix: ".bar.baz.bb.internal", RewriteTo: "cluster.local."},
+		}},
+		{Target: "grpc://192.168.8.1:1985", Zones: []TunnelZone{{Suffix: "bb.internal"}}},
+	})
+	require.NoError(t, err)
+	require.Len(t, gateways, 2)
+	require.Equal(t, "grpcs://foo.bar.example", gateways[0].GetTarget())
+	zones := gateways[0].GetZones()
+	require.Len(t, zones, 2)
+	require.Equal(t, "foo.bb.internal", zones[0].GetSuffix(), "normalized the way the client matches names")
+	require.Equal(t, "bar.baz.bb.internal", zones[1].GetSuffix())
+	require.Equal(t, "cluster.local", zones[1].GetRewriteTo())
+	require.Equal(t, "bb.internal", gateways[1].GetZones()[0].GetSuffix(), "the parent itself is a valid zone")
+
+	empty, err := parseTunnelGateways(nil)
+	require.NoError(t, err)
+	require.Empty(t, empty)
+
+	zone := func(suffix string) []TunnelZone { return []TunnelZone{{Suffix: suffix}} }
+	for _, tc := range []struct {
+		name    string
+		gateway TunnelGateway
+		want    string
+	}{
+		{"a zone outside the parent", TunnelGateway{Target: "grpcs://g", Zones: zone("foo.bar.example")}, "must be under bb.internal"},
+		{"the bare TLD", TunnelGateway{Target: "grpcs://g", Zones: zone("internal")}, "must be under bb.internal"},
+		{"a lookalike", TunnelGateway{Target: "grpcs://g", Zones: zone("notbb.internal")}, "must be under bb.internal"},
+		{"no suffix", TunnelGateway{Target: "grpcs://g", Zones: zone("")}, "suffix is required"},
+		{"no zones", TunnelGateway{Target: "grpcs://g"}, "no zones"},
+		{"no target", TunnelGateway{Zones: zone("foo.bb.internal")}, "grpc:// or grpcs:// target"},
+		{"a target without a scheme", TunnelGateway{Target: "foo.bar.example:443", Zones: zone("foo.bb.internal")}, "grpc:// or grpcs:// target"},
+		{"an https target", TunnelGateway{Target: "https://foo.bar.example", Zones: zone("foo.bb.internal")}, "grpc:// or grpcs:// target"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseTunnelGateways([]TunnelGateway{tc.gateway})
+			require.ErrorContains(t, err, tc.want)
+			require.True(t, status.IsFailedPreconditionError(err), "a bad gateway must fail startup")
+		})
+	}
+
+	// A suffix belongs to one gateway, whichever entry it is repeated in.
+	_, err = parseTunnelGateways([]TunnelGateway{
+		{Target: "grpcs://a", Zones: zone("foo.bb.internal")},
+		{Target: "grpcs://b", Zones: zone("FOO.bb.internal.")},
+	})
+	require.ErrorContains(t, err, "configured for both grpcs://a and grpcs://b")
+	_, err = parseTunnelGateways([]TunnelGateway{
+		{Target: "grpcs://a", Zones: []TunnelZone{{Suffix: "foo.bb.internal"}, {Suffix: "foo.bb.internal"}}},
+	})
+	require.ErrorContains(t, err, "configured for both")
+}
+
+func TestLoadTunnelConfig(t *testing.T) {
+	gateway := TunnelGateway{Target: "grpcs://foo.bar.example", Zones: []TunnelZone{{Suffix: "foo.bb.internal"}}}
+
+	flags.Set(t, "certgenerator.tunnel.gateways", []TunnelGateway{gateway})
+	err := (&generator{}).loadTunnelConfig()
+	require.ErrorContains(t, err, "needs a tunnel CA", "gateways without a CA to send them with is a misconfiguration")
+
+	certPEM, keyPEM := newTestCA(t, true /*=isCA*/)
+	flags.Set(t, "certgenerator.tunnel.ca", certPEM)
+	flags.Set(t, "certgenerator.tunnel.ca_key", keyPEM)
+	g := &generator{}
+	require.NoError(t, g.loadTunnelConfig())
+	require.NotNil(t, g.tunnelCA)
+	require.Len(t, g.tunnelGateways, 1)
+
+	flags.Set(t, "certgenerator.tunnel.gateways", []TunnelGateway{{Target: "grpcs://g", Zones: []TunnelZone{{Suffix: "foo.bar.example"}}}})
+	require.Error(t, (&generator{}).loadTunnelConfig(), "a bad zone fails startup")
+
+	flags.Set(t, "certgenerator.tunnel.gateways", []TunnelGateway{})
+	g = &generator{}
+	require.NoError(t, g.loadTunnelConfig())
+	require.NotNil(t, g.tunnelCA)
+	require.Empty(t, g.tunnelGateways, "a CA with no gateways still issues certificates")
 }
 
 func TestGenerateTunnelCert_OnlyForPeople(t *testing.T) {
