@@ -12,6 +12,7 @@ go_library(
         "filecache.go",
         "filecache_darwin.go",
         "filecache_linux.go",
+        "filecache_nonlinux.go",
         "filecache_other.go",
         "filecache_unix.go",
         "filecache_windows.go",
@@ -51,6 +52,7 @@ go_test(
     name = "filecache_test",
     size = "small",
     srcs = [
+        "filecache_linux_test.go",
         "filecache_test.go",
         "filecache_windows_test.go",
     ],
@@ -71,5 +73,10 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_x_sync//errgroup",
-    ],
+    ] + select({
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
 )

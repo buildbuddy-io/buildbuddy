@@ -647,7 +647,7 @@ func TestFileCacheEvictionAgeAfterStartupScan(t *testing.T) {
 	const fsBlockSize = 4096
 	// Write a cache file directly into the cache directory, like a previous
 	// process would have, noting the time just before the write. The file's
-	// inode change time records when it was written.
+	// filesystem timestamps approximate when it was added.
 	filecacheRoot := testfs.MakeTempDir(t)
 	writeTime := time.Now()
 	writeFileContent(t, filecacheRoot, "ANON/"+hash.String("A"), "A", false)
@@ -678,7 +678,7 @@ func TestFileCacheEvictionAgeAfterStartupScan(t *testing.T) {
 	// The recorded eviction age should be measured from when the file was
 	// originally written, not from the scan, so it should include the delay
 	// before the filecache was started. Allow some slack in the upper bound,
-	// because the inode change time comes from the kernel's coarse clock,
+	// because filesystem timestamps come from the kernel's coarse clock,
 	// which can lag time.Now() by a few milliseconds.
 	age := testmetrics.GaugeValue(t, metrics.FileCacheLastEvictionAgeUsec)
 	minAge := 100 * time.Millisecond
