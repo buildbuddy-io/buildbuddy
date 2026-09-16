@@ -120,3 +120,79 @@ func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
 	assert.False(t, canWrite)
 	assert.Nil(t, err)
 }
+
+func TestIsGrantedForCacheWrite(t *testing.T) {
+	for _, test := range []struct {
+		name                     string
+		userCapabilities         []cappb.Capability
+		instanceName             string
+		generalWriteCapabilities cappb.Capability
+		granted                  bool
+	}{
+		{
+			name:                     "cache write grants regular instance",
+			userCapabilities:         []cappb.Capability{cappb.Capability_CACHE_WRITE},
+			instanceName:             "regular-instance",
+			generalWriteCapabilities: cappb.Capability_CACHE_WRITE,
+			granted:                  true,
+		},
+		{
+			name:                     "cache write grants image instance",
+			userCapabilities:         []cappb.Capability{cappb.Capability_CACHE_WRITE},
+			instanceName:             interfaces.OCIImageInstanceNamePrefix,
+			generalWriteCapabilities: cappb.Capability_CACHE_WRITE,
+			granted:                  true,
+		},
+		{
+			name:                     "image cache write grants image instance",
+			userCapabilities:         []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+			instanceName:             interfaces.OCIImageInstanceNamePrefix + "_manifest_content_",
+			generalWriteCapabilities: cappb.Capability_CACHE_WRITE,
+			granted:                  true,
+		},
+		{
+			name:                     "image cache write does not grant regular instance",
+			userCapabilities:         []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+			instanceName:             "regular-instance",
+			generalWriteCapabilities: cappb.Capability_CACHE_WRITE,
+			granted:                  false,
+		},
+		{
+			name:                     "image cache write grants image CAS instance",
+			userCapabilities:         []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+			instanceName:             interfaces.OCIImageInstanceNamePrefix,
+			generalWriteCapabilities: cappb.Capability_CACHE_WRITE | cappb.Capability_CAS_WRITE,
+			granted:                  true,
+		},
+		{
+			name:                     "CAS write does not grant regular AC instance",
+			userCapabilities:         []cappb.Capability{cappb.Capability_CAS_WRITE},
+			instanceName:             "regular-instance",
+			generalWriteCapabilities: cappb.Capability_CACHE_WRITE,
+			granted:                  false,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			user := &testauth.TestUser{
+				UserID:       "US1",
+				GroupID:      "GR1",
+				Capabilities: test.userCapabilities,
+			}
+			te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
+			authCtx := testauth.WithAuthenticatedUserInfo(context.Background(), user)
+
+			granted, err := capabilities.IsGrantedForCacheWrite(authCtx, te.GetAuthenticator(), test.instanceName, test.generalWriteCapabilities)
+
+			assert.NoError(t, err)
+			assert.Equal(t, test.granted, granted)
+		})
+	}
+}
+func TestIsGrantedForCacheWrite_AnonymousCacheWriteRemainsEnabled(t *testing.T) {
+	te := getTestEnv(t, emptyUserMap)
+
+	granted, err := capabilities.IsGrantedForCacheWrite(context.Background(), te.GetAuthenticator(), interfaces.OCIImageInstanceNamePrefix, cappb.Capability_CACHE_WRITE)
+
+	assert.NoError(t, err)
+	assert.True(t, granted)
+}

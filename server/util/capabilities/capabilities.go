@@ -2,6 +2,7 @@ package capabilities
 
 import (
 	"context"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -67,6 +68,21 @@ func IsGranted(ctx context.Context, authenticator interfaces.Authenticator, cap 
 		return false, err
 	}
 	return user.HasCapability(cap), nil
+}
+
+// IsGrantedForCacheWrite checks whether the caller can write to the given
+// cache instance. IMAGE_CACHE_WRITE grants write access only to the reserved
+// OCI image cache instance name prefix; the general cache write capabilities
+// continue to apply to all instance names.
+func IsGrantedForCacheWrite(ctx context.Context, authenticator interfaces.Authenticator, instanceName string, generalWriteCapabilities cappb.Capability) (bool, error) {
+	canWrite, err := IsGranted(ctx, authenticator, generalWriteCapabilities)
+	if err != nil || canWrite {
+		return canWrite, err
+	}
+	if !strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) {
+		return false, nil
+	}
+	return IsGranted(ctx, authenticator, cappb.Capability_IMAGE_CACHE_WRITE)
 }
 
 func ForAuthenticatedUser(ctx context.Context, authenticator interfaces.Authenticator) ([]cappb.Capability, error) {

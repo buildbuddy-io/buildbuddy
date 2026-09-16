@@ -2,8 +2,10 @@ package capabilities_server
 
 import (
 	"context"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -70,7 +72,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		c.CacheCapabilities = &repb.CacheCapabilities{
 			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
-				UpdateEnabled: s.actionCacheUpdateEnabled(ctx),
+				UpdateEnabled: s.actionCacheUpdateEnabled(ctx, req.GetInstanceName()),
 			},
 			CachePriorityCapabilities: &repb.PriorityCapabilities{
 				Priorities: []*repb.PriorityCapabilities_PriorityRange{
@@ -107,7 +109,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 	return &c, nil
 }
 
-func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool {
+func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context, instanceName string) bool {
 	// Bazel 6.0.0 is the earliest bazel version that supports returning
 	// "update_enabled: false" while also having the flag
 	// "--remote_upload_local_results=true" (which is the default). So to avoid
@@ -126,5 +128,8 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool 
 	if err != nil {
 		return true
 	}
-	return u.HasCapability(cappb.Capability_CACHE_WRITE)
+	if u.HasCapability(cappb.Capability_CACHE_WRITE) {
+		return true
+	}
+	return strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) && u.HasCapability(cappb.Capability_IMAGE_CACHE_WRITE)
 }

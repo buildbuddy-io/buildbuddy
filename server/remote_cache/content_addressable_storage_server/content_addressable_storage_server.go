@@ -227,7 +227,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	canWrite, err := capabilities.IsGrantedForCacheWrite(ctx, s.env.GetAuthenticator(), req.GetInstanceName(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
 	if err != nil {
 		return nil, err
 	}
@@ -1229,7 +1229,7 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGranted(ctx, s.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	canWrite, err := capabilities.IsGrantedForCacheWrite(ctx, s.env.GetAuthenticator(), req.GetInstanceName(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
 	if err != nil {
 		return nil, err
 	}

@@ -197,8 +197,8 @@ func (s *ActionCacheServerProxy) isLocalActionResultFresh(md *interfaces.CacheMe
 	return s.env.GetClock().Now().Sub(time.UnixMicro(md.LastModifyTimeUsec)) < ttl
 }
 
-func (s *ActionCacheServerProxy) shouldCacheUpdatedActionResult(ctx context.Context) bool {
-	canWrite, err := capabilities.IsGranted(ctx, s.authenticator, cappb.Capability_CACHE_WRITE)
+func (s *ActionCacheServerProxy) shouldCacheUpdatedActionResult(ctx context.Context, instanceName string) bool {
+	canWrite, err := capabilities.IsGrantedForCacheWrite(ctx, s.authenticator, instanceName, cappb.Capability_CACHE_WRITE)
 	if err != nil || !canWrite {
 		return false
 	}
@@ -412,7 +412,7 @@ func (s *ActionCacheServerProxy) UpdateActionResult(ctx context.Context, req *re
 	// REv2 guarantee that GetActionResult serves the most recent UpdateActionResult
 	// for all requests to the same endpoint (this proxy). Entries written while no
 	// client uses the TTL fast-path are simply never read back.
-	if *cacheActionResults && s.shouldCacheUpdatedActionResult(ctx) {
+	if *cacheActionResults && s.shouldCacheUpdatedActionResult(ctx, req.GetInstanceName()) {
 		cacheCtx, prefixErr := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 		if prefixErr == nil {
 			getReq := &repb.GetActionResultRequest{
