@@ -66,8 +66,8 @@ func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
 }
 
 func (c *ConsistentHash) GetItems() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.items
 }
 
@@ -102,27 +102,32 @@ func (c *ConsistentHash) SetFromMap(m map[string]string) error {
 }
 
 func (c *ConsistentHash) set(keys, values []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.keys = make([]int, 0, len(keys)*c.numVnodes)
+	// numVnodes and hashKey are immutable after construction, so the ring can
+	// be built without holding the lock. The lock is only taken to swap in the
+	// fully-built result.
+	hashedKeys := make([]int, 0, len(keys)*c.numVnodes)
 	ring := make(map[int]uint8, len(keys)*c.numVnodes)
-
-	c.items = values
 
 	for itemIndex, key := range keys {
 		for i := 0; i < c.numVnodes; i++ {
 			h := c.hashKey(strconv.Itoa(i) + key)
-			c.keys = append(c.keys, h)
+			hashedKeys = append(hashedKeys, h)
 			ring[h] = uint8(itemIndex)
 		}
 	}
-	sort.Ints(c.keys)
+	sort.Ints(hashedKeys)
 	// Precompute the mapping from key to item. This doesn't depened on the
 	// keys that are passed to Get or GetAllReplicas.
-	c.keyIndexToItemIndex = make([]uint8, len(c.keys))
-	for i, key := range c.keys {
-		c.keyIndexToItemIndex[i] = ring[key]
+	keyIndexToItemIndex := make([]uint8, len(hashedKeys))
+	for i, key := range hashedKeys {
+		keyIndexToItemIndex[i] = ring[key]
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys = hashedKeys
+	c.items = values
+	c.keyIndexToItemIndex = keyIndexToItemIndex
 }
 
 // Get returns the single "item" responsible for the specified key.
