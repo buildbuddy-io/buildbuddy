@@ -58,7 +58,12 @@ type ipRange struct {
 }
 
 type classifier struct {
-	ipRanges          []ipRange
+	// ipRanges holds public ranges, consulted for non-private IPs.
+	ipRanges []ipRange
+	// privateRanges holds ranges inside RFC 1918 / ULA space (e.g. PSC NAT
+	// subnets). They are consulted only for private IPs, before falling back
+	// to the generic "internal" destination.
+	privateRanges     []ipRange
 	cache             lru.LRU[Destination]
 	occasionallLogger log.Logger
 }
@@ -123,8 +128,21 @@ var (
 	//go:embed data/macstadium.csv
 	macstadiumRangesCSV []byte
 
+	// BuildBuddy-owned ranges used by our bare-metal datacenters. We own
+	// 23.176.168.0/24 (all SJC) and 216.226.68.0/22, which is split between
+	// sites: 216.226.68.0/24 is NUQ, the other three /24s are SJC.
 	metalRangesCSV []byte = []byte(`Metal,us-sjc,23.176.168.0/24
-Metal,us-sjc,216.226.68.0/22
+Metal,us-sjc,216.226.69.0/24
+Metal,us-sjc,216.226.70.0/24
+Metal,us-sjc,216.226.71.0/24
+Metal,us-nuq,216.226.68.0/24
+`)
+
+	// Private Service Connect NAT subnets. Traffic from customers connecting
+	// through a PSC endpoint arrives from these (private) ranges rather than
+	// from the customer's own IP, so they would otherwise be classified as
+	// "internal". One entry per service attachment NAT subnet.
+	pscRangesCSV []byte = []byte(`PSC,europe-west4,10.30.0.0/22
 `)
 	classifierOnce = sync.OnceValues(newClassifier)
 )
@@ -233,7 +251,7 @@ func (h *StatsHandler) initCounters(ctx context.Context) {
 }
 
 func newClassifier() (*classifier, error) {
-	var ranges []ipRange
+	var ranges, privateRanges []ipRange
 	for _, csv := range []struct {
 		name string
 		data []byte
@@ -244,6 +262,7 @@ func newClassifier() (*classifier, error) {
 		{"GCP", gcpRangesCSV},
 		{"MacStadium", macstadiumRangesCSV},
 		{"Metal", metalRangesCSV},
+		{"PSC", pscRangesCSV},
 	} {
 		entries, err := parseRangeEntries(csv.data)
 		if err != nil {
@@ -252,7 +271,13 @@ func newClassifier() (*classifier, error) {
 		slices.SortFunc(entries, func(a, b ipRange) int {
 			return b.prefix.Bits() - a.prefix.Bits()
 		})
-		ranges = append(ranges, entries...)
+		for _, entry := range entries {
+			if entry.prefix.Addr().IsPrivate() {
+				privateRanges = append(privateRanges, entry)
+			} else {
+				ranges = append(ranges, entry)
+			}
+		}
 	}
 	cache, err := lru.New(&lru.Config[Destination]{
 		MaxSize:    cacheMaxSize,
@@ -262,7 +287,7 @@ func newClassifier() (*classifier, error) {
 	if err != nil {
 		return nil, status.WrapError(err, "create egress classifier cache")
 	}
-	return &classifier{ipRanges: ranges, cache: cache, occasionallLogger: log.NamedSubLogger("trafficstats").EveryDuration(time.Minute)}, nil
+	return &classifier{ipRanges: ranges, privateRanges: privateRanges, cache: cache, occasionallLogger: log.NamedSubLogger("trafficstats").EveryDuration(time.Minute)}, nil
 }
 
 func parseRangeEntries(csvBytes []byte) ([]ipRange, error) {
@@ -315,6 +340,11 @@ func (c *classifier) classify(ipStr string) Destination {
 		return Destination{Provider: "loopback", Region: ""}
 	}
 	if ip.IsPrivate() {
+		for _, entry := range c.privateRanges {
+			if entry.prefix.Contains(ip) {
+				return entry.destination
+			}
+		}
 		return Destination{Provider: "internal", Region: ""}
 	}
 	cacheKey := ip.String()
