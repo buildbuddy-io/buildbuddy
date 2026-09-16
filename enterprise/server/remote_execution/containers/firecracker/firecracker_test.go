@@ -212,9 +212,18 @@ func newTestFileCache(ctx context.Context, t testing.TB, rootDir string, maxSize
 		{ubuntuImage, ubuntu20_04Ext4ImageRlocationpath},
 		{workflowsImage, workflowsExt4ImageRlocationpath},
 	} {
+		if image.ext4Rlocationpath == "" {
+			continue
+		}
 		addTestImageToFileCache(ctx, t, fc, rootDir, image.ref, image.ext4Rlocationpath)
 	}
 	return fc
+}
+
+func skipUnsupportedImage(t testing.TB, image string) {
+	if runtime.GOARCH == "arm64" && (image == imageWithDockerInstalled || image == workflowsImage) {
+		t.Skipf("OCI image %s is only available for amd64", image)
+	}
 }
 
 func addTestImageToFileCache(ctx context.Context, t testing.TB, fc interfaces.FileCache, rootDir, imageRef, ext4Rlocationpath string) {
@@ -2221,6 +2230,7 @@ func TestFirecracker_SnapshotSharing_MinWriteInterval(t *testing.T) {
 }
 
 func TestFirecracker_RemoteSnapshotSharing_RemoteInstanceName(t *testing.T) {
+	skipUnsupportedImage(t, workflowsImage)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -2479,6 +2489,7 @@ cat ./attempts
 }
 
 func TestFirecracker_LocalSnapshotSharing_ContainerImageChunksExpiredFromCache(t *testing.T) {
+	skipUnsupportedImage(t, workflowsImage)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	cfg := getExecutorConfig(t)
@@ -2669,6 +2680,8 @@ func TestFirecrackerBalloon(t *testing.T) {
 
 	cfg := getExecutorConfig(t)
 	opts := firecracker.ContainerOpts{
+		// Ubuntu provides Bash for the memory workload script.
+		// TODO: Use imageWithDockerV28Installed; this test does not require Ubuntu 20.04.
 		ContainerImage:         ubuntuImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
@@ -2757,6 +2770,8 @@ func TestFirecrackerBalloon_DecreasesMemorySnapshotSize(t *testing.T) {
 
 		cfg := getExecutorConfig(t)
 		opts := firecracker.ContainerOpts{
+			// Ubuntu provides the memory utilities used by the workload.
+			// TODO: Use imageWithDockerV28Installed; this test does not require Ubuntu 20.04.
 			ContainerImage:         ubuntuImage,
 			ActionWorkingDirectory: workDir,
 			VMConfiguration: &fcpb.VMConfiguration{
@@ -3357,8 +3372,9 @@ func TestFirecrackerRun_ReapOrphanedZombieProcess(t *testing.T) {
 	}
 
 	opts := firecracker.ContainerOpts{
-		// Use an ubuntu image since busybox doesn't support the `ps` options
-		// we need in the procinfo helper script.
+		// Ubuntu provides Bash and procps ps, whose options the procinfo helper
+		// needs to observe reparenting and zombie reaping.
+		// TODO: Use imageWithDockerV28Installed; this test does not require Ubuntu 20.04.
 		ContainerImage:         ubuntuImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
@@ -3606,7 +3622,7 @@ func TestFirecrackerRunWithIPv6Enabled(t *testing.T) {
 	assert.Equal(t, "ipv4_ipv6_enabled\n", string(res.Stdout))
 }
 
-func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
+func testFirecrackerRunWithDockerOverUDS(t *testing.T, opts firecracker.ContainerOpts) {
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -3633,18 +3649,15 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 		`},
 	}
 
-	opts := firecracker.ContainerOpts{
-		ContainerImage:         containerImage,
-		ActionWorkingDirectory: workDir,
-		VMConfiguration: &fcpb.VMConfiguration{
-			NumCpus:           1,
-			MemSizeMb:         2500,
-			NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
-			InitDockerd:       true,
-			ScratchDiskSizeMb: 100,
-		},
-		ExecutorConfig: getExecutorConfig(t),
+	opts.ActionWorkingDirectory = workDir
+	opts.VMConfiguration = &fcpb.VMConfiguration{
+		NumCpus:           1,
+		MemSizeMb:         2500,
+		NetworkMode:       fcpb.NetworkMode_NETWORK_MODE_EXTERNAL,
+		InitDockerd:       true,
+		ScratchDiskSizeMb: 100,
 	}
+	opts.ExecutorConfig = getExecutorConfig(t)
 	c, err := firecracker.NewContainer(ctx, env, &repb.ExecutionTask{}, opts)
 	if err != nil {
 		t.Fatal(err)
@@ -3670,13 +3683,23 @@ func testFirecrackerRunWithDockerOverUDS(t *testing.T, containerImage string) {
 }
 
 func TestFirecrackerRunWithDockerOverUDS(t *testing.T) {
-	testFirecrackerRunWithDockerOverUDS(t, imageWithDockerInstalled)
+	skipUnsupportedImage(t, imageWithDockerInstalled)
+	testFirecrackerRunWithDockerOverUDS(t, firecracker.ContainerOpts{
+		// Exercise Docker 20.10.7 startup and networking compatibility, which
+		// newer Docker images do not cover. This Ubuntu 16.04 image uses the
+		// legacy implementation of iptables 1.6.0.
+		ContainerImage: imageWithDockerInstalled,
+	})
 }
 
 func TestFirecrackerRunWithDockerV28OverUDS(t *testing.T) {
-	// docker v28 requires nf_raw in order to bind ports, so this tests that the
-	// 'raw' table is properly set up in the guest.
-	testFirecrackerRunWithDockerOverUDS(t, imageWithDockerV28Installed)
+	testFirecrackerRunWithDockerOverUDS(t, firecracker.ContainerOpts{
+		// Exercise Docker 28 port publishing through legacy iptables, which
+		// requires the guest kernel's raw table on amd64. goinit disables raw
+		// table rules on arm64. This Ubuntu 24.04 image has Docker 28.1.0 and
+		// iptables 1.8.10, with alternatives selecting the legacy implementation.
+		ContainerImage: imageWithDockerV28Installed,
+	})
 }
 
 func TestFirecrackerRunWithDockerDindOverUDS(t *testing.T) {
@@ -3685,14 +3708,17 @@ func TestFirecrackerRunWithDockerDindOverUDS(t *testing.T) {
 		t.Skipf("test is not yet supported on arm64")
 	}
 
-	// docker:dind has docker but doesn't have iptables-legacy, so this tests
-	// that we've properly set up the newer nftables-based iptables in the
-	// guest. It also tests that we've set up NAT correctly which is also needed
-	// to make this image work.
-	testFirecrackerRunWithDockerOverUDS(t, dockerDindImage)
+	testFirecrackerRunWithDockerOverUDS(t, firecracker.ContainerOpts{
+		// Exercise Docker networking and port publishing through nftables.
+		// This Alpine 3.23 image has Docker 29.2.1 and iptables 1.8.11, with
+		// iptables pointing to the nft implementation. goinit starts dockerd
+		// directly, bypassing the image entrypoint that can select legacy iptables.
+		ContainerImage: dockerDindImage,
+	})
 }
 
 func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -3743,6 +3769,7 @@ func TestFirecrackerRunWithDockerOverTCP(t *testing.T) {
 }
 
 func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -3781,6 +3808,7 @@ func TestFirecrackerRunWithDockerOverTCPDisabled(t *testing.T) {
 }
 
 func TestFirecrackerRunWithDockerMirror(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -3856,6 +3884,9 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 			})
 
 			opts := firecracker.ContainerOpts{
+				// Exercise Docker 20.10's registry mirror and Docker Hub fallback.
+				// The nested pull below uses docker.io; pulling from mirror.gcr.io
+				// directly would bypass the configured mirror under test.
 				ContainerImage:         imageWithDockerInstalled,
 				ActionWorkingDirectory: workDir,
 				VMConfiguration: &fcpb.VMConfiguration{
@@ -3894,6 +3925,7 @@ func TestFirecrackerRunWithDockerMirror(t *testing.T) {
 }
 
 func TestFirecrackerVMNotRecycledIfWorkspaceDeviceStillBusy(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	ctx := context.Background()
 	env := getTestEnv(ctx, t, envOpts{})
 	rootDir := testfs.MakeTempDir(t)
@@ -4024,6 +4056,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithNewContents(t *testing.T) {
 }
 
 func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -4133,6 +4166,7 @@ func TestFirecrackerExecWithRecycledWorkspaceWithDocker(t *testing.T) {
 }
 
 func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	if *skipDockerTests {
 		t.Skip()
 	}
@@ -4144,6 +4178,8 @@ func TestFirecrackerExecWithDockerFromSnapshot(t *testing.T) {
 	workDir := testfs.MakeDirAll(t, rootDir, "work")
 
 	opts := firecracker.ContainerOpts{
+		// Verify that Docker 20.10.7 can run containers after restoring a VM
+		// snapshot, preserving coverage for the older daemon version.
 		ContainerImage:         imageWithDockerInstalled,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{
@@ -4517,6 +4553,7 @@ func TestFirecrackerExecScriptLoadedFromDisk(t *testing.T) {
 }
 
 func TestFirecrackerHealthChecking(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	// Set health check durations to be short so that this test doesn't take a
 	// long time.
 	flags.Set(t, "executor.firecracker_health_check_interval", 1*time.Second)
@@ -4563,6 +4600,7 @@ func TestFirecrackerHealthChecking(t *testing.T) {
 }
 
 func TestFirecrackerStressIO(t *testing.T) {
+	skipUnsupportedImage(t, imageWithDockerInstalled)
 	// TODO: make these configurable via flags
 
 	// High-level orchestration options
@@ -4916,6 +4954,7 @@ free -h
 }
 
 func TestBazelBuild(t *testing.T) {
+	skipUnsupportedImage(t, workflowsImage)
 	if !*testBazelBuild {
 		t.Skip()
 	}
@@ -4931,6 +4970,7 @@ func TestBazelBuild(t *testing.T) {
 		bazelisk test //...
 	`}}
 	opts := firecracker.ContainerOpts{
+		// The workflows image includes Bazelisk for the Bazel build below.
 		ContainerImage:         workflowsImage,
 		ActionWorkingDirectory: workDir,
 		VMConfiguration: &fcpb.VMConfiguration{

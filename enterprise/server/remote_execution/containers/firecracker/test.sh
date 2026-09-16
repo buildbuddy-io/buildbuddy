@@ -3,7 +3,7 @@ set -e
 
 # Firecracker tests have to be run as root since they use FUSE mounts.
 # This is a convenience script intended for local development, which
-# builds the test as the current user and runs it as root.
+# builds the test remotely and runs it locally as root.
 #
 # Bazel args can be provided to this script.
 # Args after "--" are passed to the 'go test' command, e.g. "-test.run=MyTestFilter"
@@ -16,7 +16,9 @@ set -e
 # Make sure buildozer is installed
 ./tools/buildozer.sh
 
-BAZEL_ARGS=()
+# Image conversion actions require root, which the remote execution platform
+# provides without running the local Bazel server as root.
+BAZEL_ARGS=(--config=remote)
 # Read test 'args' attribute into GO_TEST_ARGS array
 mapfile -t GO_TEST_ARGS < <(
   ./tools/buildozer.sh -output_json 'print args' \

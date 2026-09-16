@@ -29,6 +29,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	ctr "github.com/google/go-containerregistry/pkg/v1"
 )
 
 const (
@@ -49,7 +50,7 @@ var (
 	conversionGroup singleflight.Group[string, string]
 
 	localCacheStoreExt4Images = flag.Bool("executor.local_cache_store_ext4_images", true, "If true, store converted Firecracker ext4 images in filecache instead of cacheRoot/images/ext4.")
-	excludeRootDeviceNodes    = flag.Bool("executor.exclude_root_device_nodes", false, "If true, omit entries under the root /dev directory when converting OCI images to ext4. Intended for unprivileged conversion actions.", flag.Internal)
+	excludeRootDeviceNodes    = flag.Bool("executor.exclude_root_device_nodes", false, "If true, omit entries under the root /dev directory when converting OCI images to ext4. Intended for conversion actions without mknod support.", flag.Internal)
 )
 
 func hashFile(filename string) (string, error) {
@@ -317,7 +318,11 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	if err := tmpImage.Close(); err != nil {
 		return "", fmt.Errorf("close temp disk image: %w", err)
 	}
-	if err := ConvertContainerToExt4FS(ctx, resolver, cacheRoot, containerImage, creds, useOCIFetcher, tmpImagePath); err != nil {
+	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, useOCIFetcher)
+	if err != nil {
+		return "", err
+	}
+	if err := ConvertContainerToExt4FS(ctx, img, cacheRoot, containerImage, tmpImagePath); err != nil {
 		return "", err
 	}
 	if !*localCacheStoreExt4Images || fileCache == nil {
@@ -342,16 +347,12 @@ func createExt4Image(ctx context.Context, resolver *oci.Resolver, fileCache inte
 	return "", nil
 }
 
-// ConvertContainerToExt4FS pulls an OCI image and writes its root filesystem
-// to an ext4 image at outputPath.
-func ConvertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, workspaceDir, containerImage string, creds oci.Credentials, useOCIFetcher bool, outputPath string) error {
+// ConvertContainerToExt4FS writes a resolved OCI image's root filesystem to an
+// ext4 image at outputPath. containerImage identifies the image in log messages.
+func ConvertContainerToExt4FS(ctx context.Context, img ctr.Image, workspaceDir, containerImage, outputPath string) error {
 	log.CtxInfof(ctx, "Downloading image %s and converting to ext4 format", containerImage)
 	start := time.Now()
 
-	img, err := resolver.Resolve(ctx, containerImage, oci.RuntimePlatform(), creds, useOCIFetcher)
-	if err != nil {
-		return err
-	}
 	rc := mutate.Extract(img)
 	defer rc.Close()
 
@@ -368,8 +369,8 @@ func ConvertContainerToExt4FS(ctx context.Context, resolver *oci.Resolver, works
 	if *excludeRootDeviceNodes {
 		tarArgs = append(tarArgs,
 			"--anchored",
-			// The ext4 generator runs as the unprivileged action user, so tar
-			// cannot recreate OCI device entries using mknod. Guest startup
+			// Conversion actions may lack CAP_MKNOD even when running as root,
+			// so tar cannot recreate OCI device entries. Guest startup
 			// mounts devtmpfs over /dev, so entries from this root directory
 			// would not be visible anyway.
 			"--exclude", "dev/*",

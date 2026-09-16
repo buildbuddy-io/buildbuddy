@@ -122,6 +122,21 @@ genrule(
     ],
 )
 
+_TEST_IMAGE_X_DEFS = {
+    "busyboxImage": BUSYBOX_IMAGE,
+    "busyboxOCIImageRlocationpath": "$(rlocationpath @busybox)",
+    "dockerDindImage": DOCKER_DIND_IMAGE,
+    "dockerHubBusyboxImage": DOCKER_HUB_BUSYBOX_IMAGE,
+    "imageWithDockerInstalled": DOCKER_ENABLED_IMAGE,
+    "imageWithDockerV28Installed": UBUNTU_24_04_IMAGE,
+    "ubuntuImage": UBUNTU_20_04_IMAGE,
+    "workflowsImage": WORKFLOWS_IMAGE,
+    "busyboxExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4)",
+    "dockerDindExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_dind.ext4)",
+    "ubuntu20_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4)",
+    "ubuntu24_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4)",
+}
+
 # NOTE: to run this test locally, use `test.sh` or `bench.sh`
 #
 # To remotely execute this test, select the bare test suite:
@@ -140,16 +155,20 @@ go_test(
     data = [
         "//enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4",
         "//enterprise/server/remote_execution/containers/firecracker/testdata:docker_dind.ext4",
-        "//enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4",
         "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4",
         "//enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4",
-        "//enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4",
         "@busybox",
-    ],
+    ] + select({
+        "@platforms//cpu:x86_64": [
+            "//enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4",
+            "//enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4",
+        ],
+        "//conditions:default": [],
+    }),
     exec_properties = {
         "test.Pool": "bare",
         # Firecracker startup and timing tests are sensitive to contention when
-        # too many shards share a bare-metal executor.
+        # too many shards share an executor.
         "test.EstimatedComputeUnits": "10",
         "test.use-self-hosted-executors": "true",
         "test.container-image": "none",
@@ -162,22 +181,13 @@ go_test(
     target_compatible_with = [
         "@platforms//os:linux",
     ],
-    x_defs = {
-        "busyboxImage": BUSYBOX_IMAGE,
-        "busyboxOCIImageRlocationpath": "$(rlocationpath @busybox)",
-        "dockerDindImage": DOCKER_DIND_IMAGE,
-        "dockerHubBusyboxImage": DOCKER_HUB_BUSYBOX_IMAGE,
-        "imageWithDockerInstalled": DOCKER_ENABLED_IMAGE,
-        "imageWithDockerV28Installed": UBUNTU_24_04_IMAGE,
-        "ubuntuImage": UBUNTU_20_04_IMAGE,
-        "workflowsImage": WORKFLOWS_IMAGE,
-        "busyboxExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:busybox.ext4)",
-        "dockerDindExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_dind.ext4)",
-        "dockerEnabledExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4)",
-        "ubuntu20_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_20_04.ext4)",
-        "ubuntu24_04Ext4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:ubuntu_24_04.ext4)",
-        "workflowsExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4)",
-    },
+    x_defs = select({
+        "@platforms//cpu:x86_64": _TEST_IMAGE_X_DEFS | {
+            "dockerEnabledExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:docker_enabled.ext4)",
+            "workflowsExt4ImageRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/containers/firecracker/testdata:workflows.ext4)",
+        },
+        "//conditions:default": _TEST_IMAGE_X_DEFS,
+    }),
     deps = [
         ":firecracker",
         "//enterprise/server/action_cache_server_proxy",
