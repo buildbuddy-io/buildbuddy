@@ -205,7 +205,6 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:                   *patternFilterEnabled,
 		BotSuggestionsEnabled:                  env.GetRunnerService() != nil,
-		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
 		ExecutionSearchEnabled:                 *executionSearchEnabled,
 		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
 		ActionResultOriginEnabled:              action_cache_server.RecordActionResultOriginEnabled(),

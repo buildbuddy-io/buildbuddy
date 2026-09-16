@@ -55,7 +55,6 @@ import (
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
@@ -1676,12 +1675,6 @@ type ExecutionCollector interface {
 	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error
 	GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
 	DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error
-}
-
-// SuggestionService enables fetching of suggestions.
-type SuggestionService interface {
-	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
-	MultipleProvidersConfigured() bool
 }
 
 type Encryptor interface {
