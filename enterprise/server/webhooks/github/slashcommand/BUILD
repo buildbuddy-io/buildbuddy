@@ -8,6 +8,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/slashcommand",
     deps = [
         "//enterprise/server/workflow/config",
+        "//enterprise/server/workflow/steps",
         "//proto:runner_go_proto",
     ],
 )

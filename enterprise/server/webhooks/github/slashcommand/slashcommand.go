@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/steps"
 	"github.com/buildbuddy-io/buildbuddy/proto/runner"
 )
 
@@ -21,6 +22,8 @@ var supportedCommands = []*command{
 			return &config.Action{
 				Name: "BB Code Review",
 				Steps: []*runner.Step{
+					steps.InstallClaude(),
+					steps.InstallGH(),
 					{
 						Run: `
 bb agent review --force

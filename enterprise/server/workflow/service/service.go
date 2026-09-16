@@ -1504,10 +1504,10 @@ func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID st
 	return ws.enqueueStartWorkflowTask(ctx, gitProvider, wd, wf)
 }
 
-// handleSlashCommand returns the workflow action to run for a pull request
+// getSlashCommandActions returns the actions to run for a pull request
 // slash command.
 // Returns no actions if the slash command should be ignored.
-func (ws *workflowService) handleSlashCommand(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) (*interfaces.WebhookData, []*config.Action, bool, error) {
+func (ws *workflowService) getSlashCommandActions(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) (*interfaces.WebhookData, []*config.Action, bool, error) {
 	action, ok := slashcommand.WorkflowAction(wd.CommentBody)
 	if !ok {
 		log.CtxInfof(ctx, "Ignoring unsupported pull request slash command %q", wd.CommentBody)
@@ -1551,10 +1551,10 @@ func (ws *workflowService) handleSlashCommand(ctx context.Context, gitProvider i
 	return &resolved, actions, isTrusted, nil
 }
 
-// handleWorkflow returns the actions from the repo's workflow config that match
+// getWorkflowActions returns the actions from the repo's workflow config that match
 // the webhook event, along with whether the event's commit is trusted. Returns
 // no actions if the event should be ignored.
-func (ws *workflowService) handleWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) ([]*config.Action, bool, error) {
+func (ws *workflowService) getWorkflowActions(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) ([]*config.Action, bool, error) {
 	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
 	if err != nil {
 		return nil, false, err
@@ -1611,9 +1611,9 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	var isTrusted bool
 	var err error
 	if wd.EventName == webhook_data.EventName.PullRequestComment {
-		wd, actions, isTrusted, err = ws.handleSlashCommand(ctx, gitProvider, wf, wd)
+		wd, actions, isTrusted, err = ws.getSlashCommandActions(ctx, gitProvider, wf, wd)
 	} else {
-		actions, isTrusted, err = ws.handleWorkflow(ctx, gitProvider, wf, wd)
+		actions, isTrusted, err = ws.getWorkflowActions(ctx, gitProvider, wf, wd)
 	}
 	if err != nil {
 		return err
