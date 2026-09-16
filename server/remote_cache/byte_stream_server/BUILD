@@ -17,6 +17,7 @@ go_library(
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/usage/sku",
+        "//server/util/authutil",
         "//server/util/bazel_deprecation",
         "//server/util/bazel_request",
         "//server/util/bytebufferpool",

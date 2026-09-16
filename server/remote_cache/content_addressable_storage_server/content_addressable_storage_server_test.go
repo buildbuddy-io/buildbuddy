@@ -162,6 +162,89 @@ func TestBatchUpdateBlobs(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestBlackholeAnonymousCacheRequests(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
+	te.SetAuthenticator(auth)
+	clientConn := runCASServer(ctx, t, te)
+	casClient := repb.NewContentAddressableStorageClient(clientConn)
+	bsClient := bspb.NewByteStreamClient(clientConn)
+
+	storedRN, storedData := testdigest.RandomCASResourceBuf(t, 10)
+	_, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: storedRN.GetDigest(), Data: storedData}},
+	})
+	require.NoError(t, err)
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", true)
+	emptyDigest := &repb.Digest{Hash: digest.EmptySha256}
+	findRsp, err := casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{storedRN.GetDigest(), emptyDigest},
+	})
+	require.NoError(t, err)
+	require.Equal(t, digestStrings(storedRN.GetDigest()), digestStrings(findRsp.GetMissingBlobDigests()...))
+
+	readRsp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+		Digests: []*repb.Digest{storedRN.GetDigest(), emptyDigest},
+	})
+	require.NoError(t, err)
+	require.Len(t, readRsp.GetResponses(), 2)
+	require.Equal(t, int32(gcodes.NotFound), readRsp.GetResponses()[0].GetStatus().GetCode())
+	require.Equal(t, int32(gcodes.OK), readRsp.GetResponses()[1].GetStatus().GetCode())
+
+	batchWriteRN, batchWriteData := testdigest.RandomCASResourceBuf(t, 10)
+	updateRsp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: batchWriteRN.GetDigest(), Data: batchWriteData}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), updateRsp.GetResponses()[0].GetStatus().GetCode())
+
+	readStream, err := bsClient.Read(ctx, &bspb.ReadRequest{ResourceName: digest.NewCASResourceName(storedRN.GetDigest(), "", repb.DigestFunction_SHA256).DownloadString()})
+	require.NoError(t, err)
+	_, err = readStream.Recv()
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+
+	byteStreamWriteDigest, err := cachetools.UploadBlobToCAS(ctx, bsClient, "", repb.DigestFunction_SHA256, []byte("discard me"))
+	require.NoError(t, err)
+	_, err = bsClient.QueryWriteStatus(ctx, &bspb.QueryWriteStatusRequest{
+		ResourceName: digest.NewCASResourceName(byteStreamWriteDigest, "", repb.DigestFunction_SHA256).NewUploadString(),
+	})
+	require.True(t, status.IsNotFoundError(err), "expected missing upload, got %v", err)
+
+	treeStream, err := casClient.GetTree(ctx, &repb.GetTreeRequest{RootDigest: storedRN.GetDigest(), DigestFunction: repb.DigestFunction_SHA256})
+	require.NoError(t, err)
+	_, err = treeStream.Recv()
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+
+	_, err = casClient.SplitBlob(ctx, &repb.SplitBlobRequest{BlobDigest: storedRN.GetDigest(), DigestFunction: repb.DigestFunction_SHA256})
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+	spliceRsp, err := casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{BlobDigest: storedRN.GetDigest()})
+	require.NoError(t, err)
+	require.Equal(t, storedRN.GetDigest(), spliceRsp.GetBlobDigest())
+
+	authCtx, err := auth.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	authenticatedRN, authenticatedData := testdigest.RandomCASResourceBuf(t, 10)
+	_, err = casClient.BatchUpdateBlobs(authCtx, &repb.BatchUpdateBlobsRequest{
+		Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: authenticatedRN.GetDigest(), Data: authenticatedData}},
+	})
+	require.NoError(t, err)
+	authenticatedReadRsp, err := casClient.BatchReadBlobs(authCtx, &repb.BatchReadBlobsRequest{Digests: []*repb.Digest{authenticatedRN.GetDigest()}})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), authenticatedReadRsp.GetResponses()[0].GetStatus().GetCode())
+	require.Equal(t, authenticatedData, authenticatedReadRsp.GetResponses()[0].GetData())
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+	findRsp, err = casClient.FindMissingBlobs(ctx, &repb.FindMissingBlobsRequest{
+		BlobDigests: []*repb.Digest{storedRN.GetDigest(), batchWriteRN.GetDigest(), byteStreamWriteDigest},
+	})
+	require.NoError(t, err)
+	require.ElementsMatch(t, digestStrings(batchWriteRN.GetDigest(), byteStreamWriteDigest), digestStrings(findRsp.GetMissingBlobDigests()...))
+}
+
 func TestBatchUpdateAndReadCompressedBlobs(t *testing.T) {
 	ctx := context.Background()
 	te := testenv.GetTestEnv(t)

@@ -141,6 +141,9 @@ func (s *meteredReadServerStream) Send(message *bspb.ReadResponse) error {
 }
 
 func (s *ByteStreamServerProxy) Read(req *bspb.ReadRequest, stream bspb.ByteStream_ReadServer) error {
+	if config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(stream.Context(), s.authenticator) {
+		return s.local.Read(req, stream)
+	}
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
@@ -915,6 +918,9 @@ func (s *meteredServerSideClientStream) detectCompressor(msg *bspb.WriteRequest)
 }
 
 func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error {
+	if config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(stream.Context(), s.authenticator) {
+		return s.local.Write(stream)
+	}
 	ctx, spn := tracing.StartSpan(stream.Context())
 	defer spn.End()
 
@@ -1735,6 +1741,9 @@ func (s *rawWriteStream) SendAndClose(resp *bspb.WriteResponse) error {
 func (s *rawWriteStream) Context() context.Context { return s.ctx }
 
 func (s *ByteStreamServerProxy) QueryWriteStatus(ctx context.Context, req *bspb.QueryWriteStatusRequest) (*bspb.QueryWriteStatusResponse, error) {
+	if config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.authenticator) {
+		return s.local.QueryWriteStatus(ctx, req)
+	}
 	if proxy_util.SkipRemote(ctx) {
 		return nil, status.UnimplementedError("Skip remote not implemented")
 	}

@@ -567,6 +567,13 @@ var (
 	// sum(rate(buildbuddy_invocation_count[5m]))
 	// ```
 
+	DiscardedAnonymousBuildEventStreamCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "discarded_anonymous_build_event_stream_count",
+		Help:      "The total number of anonymous build event streams discarded because they did not contain an API key.",
+	})
+
 	InvocationLogLiveChunkWrittenBytes = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",

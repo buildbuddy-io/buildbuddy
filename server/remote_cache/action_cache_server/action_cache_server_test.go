@@ -537,6 +537,41 @@ func getWithInlining(t *testing.T, ctx context.Context, client repb.ActionCacheC
 	return resp
 }
 
+func TestBlackholeAnonymousCacheRequests(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runACServer(ctx, t, te)
+	client := repb.NewActionCacheClient(clientConn)
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+	getReq := &repb.GetActionResultRequest{
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	updateReq := &repb.UpdateActionResultRequest{
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: 1},
+	}
+	_, err := client.UpdateActionResult(ctx, updateReq)
+	require.NoError(t, err)
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", true)
+	_, err = client.GetActionResult(ctx, getReq)
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+
+	updateReq.ActionResult = &repb.ActionResult{ExitCode: 2}
+	rsp, err := client.UpdateActionResult(ctx, updateReq)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), rsp.GetExitCode())
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+	rsp, err = client.GetActionResult(ctx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), rsp.GetExitCode())
+}
+
 // TestUserPrefixIsolatesGroups confirms an AC entry written under one group
 // is not visible to another group at the same action digest.
 func TestUserPrefixIsolatesGroups(t *testing.T) {
