@@ -44,10 +44,12 @@ actions:
     container_image: ubuntu-22.04
     os: "linux"
     arch: "arm64"
-    self_hosted: true
-    pool: default
     resource_requests:
       disk: 27GB
+    # ARM64 capacity is in the default prod pool and supports OCI isolation.
+    platform_properties:
+      Pool: "default"
+      workload-isolation-type: "oci"
     triggers:
       push:
         branches:

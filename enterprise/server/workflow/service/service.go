@@ -1109,7 +1109,11 @@ func (ws *workflowService) createActionForWorkflow(ctx context.Context, wf *tabl
 	os := strings.ToLower(workflowAction.OS)
 	computeUnits := *workflowsMacComputeUnits
 	// Use the CI runner image if the OS supports containerized actions.
-	isSharedFirecrackerWorkflow := *enableFirecracker && !workflowAction.SelfHosted
+	// Shared Linux workflows use Firecracker by default, unless the action
+	// explicitly requests another isolation type.
+	isolationTypeOverride := workflowAction.PlatformProperties[platform.WorkloadIsolationPropertyName]
+	isSharedFirecrackerWorkflow := *enableFirecracker && !workflowAction.SelfHosted &&
+		(isolationTypeOverride == "" || isolationTypeOverride == string(platform.FirecrackerContainerType))
 	if os == "" || os == platform.LinuxOperatingSystemName {
 		computeUnits = *workflowsLinuxComputeUnits
 		containerImage = ws.containerImage(workflowAction)
