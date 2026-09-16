@@ -443,13 +443,6 @@ common:linux-workflows --config=target-linux-x86
 common:linux-workflows --config=workflows
 common:linux-workflows --config=buildbuddy_remote_executor
 common:linux-workflows --build_metadata=TAGS=linux-workflow
-
-# Configuration used for Linux ARM64 workflows
-common:linux-arm64-workflows --config=remote-shared
-common:linux-arm64-workflows --config=target-linux-arm64
-common:linux-arm64-workflows --config=workflows
-common:linux-arm64-workflows --config=buildbuddy_remote_executor
-common:linux-arm64-workflows --build_metadata=TAGS=linux-arm64-workflow
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:linux-workflows --remote_header=x-buildbuddy-platform.enable-vfs=true
 
