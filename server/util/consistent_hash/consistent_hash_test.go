@@ -392,13 +392,13 @@ func BenchmarkGetItemsParallel(b *testing.B) {
 	}
 
 	for _, test := range []struct {
-		Name string
-		Set  bool
+		name string
+		set  bool
 	}{
-		{Name: "GetItems", Set: false},
-		{Name: "SetAndGetItems", Set: true},
+		{name: "GetItems", set: false},
+		{name: "SetAndGetItems", set: true},
 	} {
-		b.Run(test.Name, func(b *testing.B) {
+		b.Run(test.name, func(b *testing.B) {
 			ch := consistent_hash.NewConsistentHash(consistent_hash.SHA256, 100)
 			require.NoError(b, ch.Set(hosts...))
 			b.ResetTimer()
@@ -408,7 +408,7 @@ func BenchmarkGetItemsParallel(b *testing.B) {
 				// own copy.
 				myHosts := slices.Clone(hosts)
 				for pb.Next() {
-					if test.Set {
+					if test.set {
 						if err := ch.Set(myHosts...); err != nil {
 							b.Fatal(err)
 						}
