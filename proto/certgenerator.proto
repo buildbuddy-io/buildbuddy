@@ -49,6 +49,8 @@ message TunnelGateway {
   // gRPC target of the gateway, e.g. "grpcs://foo.bar.example".
   string target = 1;
 
+  // Zones never nest, within a gateway or across gateways, so every name
+  // belongs to exactly one gateway.
   repeated TunnelZone zones = 2;
 }
 

@@ -283,12 +283,17 @@ func (g *generator) generateTunnelCert(c *claims, req *cgpb.GenerateRequest, rsp
 func parseTunnelGateways(gateways []TunnelGateway) ([]*cgpb.TunnelGateway, error) {
 	var out []*cgpb.TunnelGateway
 	seen := make(map[string]string) // zone suffix -> gateway target
+	targets := make(map[string]bool)
 	for _, gw := range gateways {
 		target := strings.TrimSpace(gw.Target)
 		u, err := url.Parse(target)
 		if err != nil || (u.Scheme != "grpc" && u.Scheme != "grpcs") || u.Host == "" {
 			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: target must be a grpc:// or grpcs:// target", gw.Target)
 		}
+		if targets[target] {
+			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: listed twice", target)
+		}
+		targets[target] = true
 		if len(gw.Zones) == 0 {
 			return nil, status.FailedPreconditionErrorf("tunnel gateway %q: no zones", target)
 		}
@@ -301,8 +306,10 @@ func parseTunnelGateways(gateways []TunnelGateway) ([]*cgpb.TunnelGateway, error
 			if suffix != tunnelZoneParent && !strings.HasSuffix(suffix, "."+tunnelZoneParent) {
 				return nil, status.FailedPreconditionErrorf("tunnel zone %q: suffix must be under %s, which is what the client routes to the tunnel", suffix, tunnelZoneParent)
 			}
-			if other, dup := seen[suffix]; dup {
-				return nil, status.FailedPreconditionErrorf("tunnel zone %q: configured for both %s and %s", suffix, other, target)
+			for other, otherTarget := range seen {
+				if suffix == other || strings.HasSuffix(suffix, "."+other) || strings.HasSuffix(other, "."+suffix) {
+					return nil, status.FailedPreconditionErrorf("tunnel zone %q (%s) overlaps zone %q (%s)", suffix, target, other, otherTarget)
+				}
 			}
 			seen[suffix] = target
 			pgw.Zones = append(pgw.Zones, &cgpb.TunnelZone{

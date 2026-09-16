@@ -149,7 +149,7 @@ func TestParseTunnelGateways(t *testing.T) {
 			{Suffix: " Foo.bb.internal. "},
 			{Suffix: ".bar.baz.bb.internal", RewriteTo: "cluster.local."},
 		}},
-		{Target: "grpc://192.168.8.1:1985", Zones: []TunnelZone{{Suffix: "bb.internal"}}},
+		{Target: "grpc://192.168.8.1:1985", Zones: []TunnelZone{{Suffix: "qux.bb.internal"}}},
 	})
 	require.NoError(t, err)
 	require.Len(t, gateways, 2)
@@ -159,7 +159,11 @@ func TestParseTunnelGateways(t *testing.T) {
 	require.Equal(t, "foo.bb.internal", zones[0].GetSuffix(), "normalized the way the client matches names")
 	require.Equal(t, "bar.baz.bb.internal", zones[1].GetSuffix())
 	require.Equal(t, "cluster.local", zones[1].GetRewriteTo())
-	require.Equal(t, "bb.internal", gateways[1].GetZones()[0].GetSuffix(), "the parent itself is a valid zone")
+	require.Equal(t, "qux.bb.internal", gateways[1].GetZones()[0].GetSuffix())
+
+	alone, err := parseTunnelGateways([]TunnelGateway{{Target: "grpcs://a", Zones: []TunnelZone{{Suffix: "bb.internal"}}}})
+	require.NoError(t, err)
+	require.Equal(t, "bb.internal", alone[0].GetZones()[0].GetSuffix(), "the parent itself is a valid zone, if it is the only one")
 
 	empty, err := parseTunnelGateways(nil)
 	require.NoError(t, err)
@@ -187,16 +191,41 @@ func TestParseTunnelGateways(t *testing.T) {
 		})
 	}
 
-	// A suffix belongs to one gateway, whichever entry it is repeated in.
+	// Every name belongs to exactly one gateway: a suffix may not be repeated
+	// or nested, in either order, within a gateway or across gateways.
+	for _, tc := range []struct {
+		name string
+		a, b string
+	}{
+		{"repeated", "foo.bb.internal", "FOO.bb.internal."},
+		{"a child of an earlier zone", "bb.internal", "dev.bb.internal"},
+		{"a parent of an earlier zone", "dev.bb.internal", "bb.internal"},
+		{"deeper nesting", "foo.bb.internal", "a.b.foo.bb.internal"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseTunnelGateways([]TunnelGateway{
+				{Target: "grpcs://a", Zones: zone(tc.a)},
+				{Target: "grpcs://b", Zones: zone(tc.b)},
+			})
+			require.ErrorContains(t, err, "overlaps zone")
+			_, err = parseTunnelGateways([]TunnelGateway{
+				{Target: "grpcs://a", Zones: []TunnelZone{{Suffix: tc.a}, {Suffix: tc.b}}},
+			})
+			require.ErrorContains(t, err, "overlaps zone")
+		})
+	}
+	// Overlap is label-aligned: a shared string suffix is not a shared zone.
 	_, err = parseTunnelGateways([]TunnelGateway{
 		{Target: "grpcs://a", Zones: zone("foo.bb.internal")},
-		{Target: "grpcs://b", Zones: zone("FOO.bb.internal.")},
+		{Target: "grpcs://b", Zones: zone("notfoo.bb.internal")},
 	})
-	require.ErrorContains(t, err, "configured for both grpcs://a and grpcs://b")
+	require.NoError(t, err)
+
 	_, err = parseTunnelGateways([]TunnelGateway{
-		{Target: "grpcs://a", Zones: []TunnelZone{{Suffix: "foo.bb.internal"}, {Suffix: "foo.bb.internal"}}},
+		{Target: "grpcs://a", Zones: zone("foo.bb.internal")},
+		{Target: "grpcs://a ", Zones: zone("bar.bb.internal")},
 	})
-	require.ErrorContains(t, err, "configured for both")
+	require.ErrorContains(t, err, `tunnel gateway "grpcs://a": listed twice`)
 }
 
 func TestLoadTunnelConfig(t *testing.T) {
