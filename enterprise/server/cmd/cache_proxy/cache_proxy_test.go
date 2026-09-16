@@ -85,6 +85,15 @@ func requireListenerClosed(t *testing.T, l *shutdownListener) {
 	require.Error(t, err, "draining server must reject new connections")
 }
 
+func TestHTTPSRequiresTLSConfig(t *testing.T) {
+	hc := &shutdownHealthChecker{}
+	env := real_environment.NewRealEnv(hc)
+	listener := newShutdownListener(t)
+	err := serveHTTP(env, &http.Server{}, listener, true)
+	require.ErrorContains(t, err, "TLS is enabled but no TLS config is available")
+	require.Nil(t, hc.shutdown, "invalid TLS configuration must be rejected before server startup")
+}
+
 func TestHTTPShutdown(t *testing.T) {
 	for _, protocol := range []string{"http", "https"} {
 		for _, mode := range []string{"drain", "deadline"} {
@@ -109,7 +118,7 @@ func TestHTTPShutdown(t *testing.T) {
 				hc := &shutdownHealthChecker{}
 				env := real_environment.NewRealEnv(hc)
 				listener := newShutdownListener(t)
-				serveHTTP(env, server, listener)
+				require.NoError(t, serveHTTP(env, server, listener, protocol == "https"))
 				transport := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, ForceAttemptHTTP2: true}
 				defer transport.CloseIdleConnections()
 				client := &http.Client{Transport: transport, Timeout: 5 * time.Second}

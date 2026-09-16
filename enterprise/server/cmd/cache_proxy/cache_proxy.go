@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -203,13 +204,17 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to listen on SSL port %d: %s", *sslPort, err)
 		}
-		serveHTTP(env, sslServer, sslListener)
+		if err := serveHTTP(env, sslServer, sslListener, true); err != nil {
+			log.Fatalf("Failed to start HTTP server: %s", err)
+		}
 		server.Handler = http_interceptors.RedirectIfNotForwardedHTTPS(sslHandler)
 		httpListener, err := net.Listen("tcp", server.Addr)
 		if err != nil {
 			log.Fatalf("Failed to listen on port %d: %s", *port, err)
 		}
-		serveHTTP(env, server, httpListener)
+		if err := serveHTTP(env, server, httpListener, false); err != nil {
+			log.Fatalf("Failed to start HTTP server: %s", err)
+		}
 	} else {
 		log.Debug("SSL Disabled")
 		// If no SSL is enabled, we'll just serve things as-is.
@@ -217,13 +222,18 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to listen on port %d: %s", *port, err)
 		}
-		serveHTTP(env, server, lis)
+		if err := serveHTTP(env, server, lis, false); err != nil {
+			log.Fatalf("Failed to start HTTP server: %s", err)
+		}
 	}
 
 	env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
-func serveHTTP(env *real_environment.RealEnv, server *http.Server, listener net.Listener) {
+func serveHTTP(env *real_environment.RealEnv, server *http.Server, listener net.Listener, useTLS bool) error {
+	if useTLS && server.TLSConfig == nil {
+		return status.FailedPreconditionError("TLS is enabled but no TLS config is available")
+	}
 	env.GetHTTPServerWaitGroup().Add(1)
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {
 		defer env.GetHTTPServerWaitGroup().Done()
@@ -235,14 +245,19 @@ func serveHTTP(env *real_environment.RealEnv, server *http.Server, listener net.
 		return nil
 	})
 	go func() {
-		if server.TLSConfig != nil {
+		var err error
+		if useTLS {
 			log.Debugf("Listening for HTTPS traffic on %s", listener.Addr())
-			_ = server.ServeTLS(listener, "", "")
+			err = server.ServeTLS(listener, "", "")
 		} else {
 			log.Debugf("Listening for HTTP traffic on %s", listener.Addr())
-			_ = server.Serve(listener)
+			err = server.Serve(listener)
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP server on %s failed: %s", listener.Addr(), err)
 		}
 	}()
+	return nil
 }
 
 func startGRPCServers(env *real_environment.RealEnv) error {
