@@ -25,6 +25,7 @@ var (
 	memoryBytes       = flag.Int64("executor.memory_bytes", 0, "Optional maximum memory to allocate to execution tasks (approximate). Cannot set both this option and the SYS_MEMORY_BYTES env var.")
 	mmapMemoryBytes   = flag.Int64("executor.mmap_memory_bytes", 10e9, "Maximum memory to be allocated towards mmapped files for Firecracker copy-on-write functionality. This is subtraced from the configured memory_bytes. Has no effect if firecracker is disabled or snapshot sharing is disabled.")
 	milliCPU          = flag.Int64("executor.millicpu", 0, "Optional maximum CPU milliseconds to allocate to execution tasks (approximate). Cannot set both this option and the SYS_CPU env var.")
+	gpuMemoryBytes    = flag.Int64("executor.gpu_memory_bytes", 0, "Optional total GPU memory in bytes across all GPUs available to execution tasks. If unset, this is read from the SYS_GPU_MEMORY_BYTES env var, or else detected from the GPUs on the executor. Cannot set both this option and the SYS_GPU_MEMORY_BYTES env var. Requires executor.gpu_memory_tracking_enabled.")
 	diskBytes         = flag.Int64("executor.disk_bytes", 0, "Optional maximum disk bytes to allocate to execution task workspaces (approximate). If unset, this is derived from the capacity of the filesystem holding the build root, scaled by executor.disk_capacity_ratio.")
 	diskCapacityRatio = flag.Float64("executor.disk_capacity_ratio", 0.9, "Fraction of the build root filesystem's total capacity to report as assignable to task workspaces. Leaves headroom for the OS, the local filecache, and root-reserved blocks. Ignored if executor.disk_bytes is set.")
 	zoneOverride      = flag.String("zone_override", "", "A value that will override the auto-detected zone. Ignored if empty")
@@ -33,6 +34,7 @@ var (
 const (
 	cpuEnvVarName       = "SYS_CPU"
 	memoryEnvVarName    = "SYS_MEMORY_BYTES"
+	gpuMemoryEnvVarName = "SYS_GPU_MEMORY_BYTES"
 	nodeNameEnvVarName  = "MY_NODE_NAME"
 	hostnameEnvVarName  = "MY_HOSTNAME"
 	namespaceEnvVarName = "MY_NAMESPACE"
@@ -51,10 +53,11 @@ const (
 )
 
 var (
-	allocatedRAMBytes     int64
-	allocatedMmapRAMBytes int64
-	allocatedCPUMillis    int64
-	allocatedDiskBytes    int64
+	allocatedRAMBytes       int64
+	allocatedMmapRAMBytes   int64
+	allocatedCPUMillis      int64
+	allocatedGPUMemoryBytes int64
+	allocatedDiskBytes      int64
 )
 
 var (
@@ -181,6 +184,57 @@ func Configure(mmapLRUEnabled bool) error {
 	return nil
 }
 
+// GPUMemoryDetector detects the total GPU memory capacity of the executor.
+// This interface exists since the GPU package is currently an enterprise dep
+// and also has transitive enterprise deps.
+type GPUMemoryDetector interface {
+	GetTotalGPUMemoryBytes() (int64, error)
+}
+
+// ConfigureGPU sets the GPU memory capacity available to execution tasks from
+// the executor.gpu_memory_bytes flag, the SYS_GPU_MEMORY_BYTES env var, or the
+// detector, in that order. A nil detector means GPU memory tracking is
+// disabled. Any configured capacity is then rejected rather than ignored,
+// because for now GPU memory is only scheduled on executors that also measure
+// it.
+func ConfigureGPU(detector GPUMemoryDetector) error {
+	if *gpuMemoryBytes < 0 {
+		return status.InvalidArgumentErrorf("executor.gpu_memory_bytes must not be negative (got %d)", *gpuMemoryBytes)
+	}
+	if detector == nil {
+		if *gpuMemoryBytes > 0 || os.Getenv(gpuMemoryEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("executor.gpu_memory_bytes and %s require GPU memory tracking (executor.gpu_memory_tracking_enabled)", gpuMemoryEnvVarName)
+		}
+		allocatedGPUMemoryBytes = 0
+		return nil
+	}
+	if *gpuMemoryBytes > 0 {
+		if os.Getenv(gpuMemoryEnvVarName) != "" {
+			return status.InvalidArgumentErrorf("Only one of the 'executor.gpu_memory_bytes' config option and '%s' environment variable may be set", gpuMemoryEnvVarName)
+		}
+		allocatedGPUMemoryBytes = *gpuMemoryBytes
+		return nil
+	}
+	if v := os.Getenv(gpuMemoryEnvVarName); v != "" {
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", gpuMemoryEnvVarName, err)
+		}
+		if i < 0 {
+			return status.InvalidArgumentErrorf("%s must not be negative (got %d)", gpuMemoryEnvVarName, i)
+		}
+		allocatedGPUMemoryBytes = i
+		return nil
+	}
+	total, err := detector.GetTotalGPUMemoryBytes()
+	if err != nil {
+		return fmt.Errorf("detect total GPU memory: %w", err)
+	}
+	allocatedGPUMemoryBytes = total
+	log.Debugf("Set allocatedGPUMemoryBytes to %d (detected)", allocatedGPUMemoryBytes)
+	return nil
+}
+
 // ConfigureDiskCapacity sets the disk capacity reported as assignable to task
 // workspaces. If executor.disk_bytes is set, that value is used directly.
 // Otherwise the capacity is derived from the total size of the filesystem
@@ -238,6 +292,12 @@ func GetAllocatedMmapRAMBytes() int64 {
 
 func GetAllocatedCPUMillis() int64 {
 	return allocatedCPUMillis
+}
+
+// GetAllocatedGPUMemoryBytes returns the total GPU memory available to execution
+// tasks across all GPUs. A value of 0 means no GPU memory is available.
+func GetAllocatedGPUMemoryBytes() int64 {
+	return allocatedGPUMemoryBytes
 }
 
 // GetAllocatedDiskBytes returns the disk capacity allocated to task workspaces,
