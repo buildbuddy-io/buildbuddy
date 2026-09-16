@@ -2,6 +2,7 @@ import Long from "long";
 import moment from "moment";
 import React from "react";
 import { User } from "../../../app/auth/auth_service";
+import capabilities from "../../../app/capabilities/capabilities";
 import Select, { Option } from "../../../app/components/select/select";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
@@ -10,6 +11,7 @@ import rpcService, { CancelablePromise } from "../../../app/service/rpc_service"
 import { usage } from "../../../proto/usage_ts_proto";
 import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import UsageAlertsComponent from "./usage_alerts";
+import UsageBillCard from "./usage_bill";
 
 export interface UsageProps {
   user?: User;
@@ -26,6 +28,8 @@ interface State {
   response?: usage.GetUsageResponse;
   selectedPeriod: string;
   loading?: boolean;
+  /** Undefined until the bill request settles, null if the group has no bill. */
+  bill?: usage.IBill | null;
 }
 
 // This is the first month with usage numbers broken down by internal/external,
@@ -128,6 +132,15 @@ class UsageReport extends React.Component<UsageReportProps, State> {
   componentDidMount() {
     document.title = "Usage | BuildBuddy";
     this.fetchUsageForPeriod(this.state.selectedPeriod);
+    if (capabilities.config.usageBillEnabled) {
+      rpcService.service
+        .getCurrentBill(new usage.GetCurrentBillRequest())
+        .then((response) => this.setState({ bill: response.bill ?? null }))
+        .catch((e) => {
+          console.warn("Failed to load current bill", e);
+          this.setState({ bill: null });
+        });
+    }
   }
 
   private onChangePeriod(e: React.ChangeEvent<HTMLSelectElement>) {
@@ -556,31 +569,46 @@ class UsageReport extends React.Component<UsageReportProps, State> {
 
   render() {
     if (!this.state.response) return null;
+    // Wait for the bill so the top panel does not switch after it renders.
+    if (capabilities.config.usageBillEnabled && this.state.bill === undefined) return null;
 
     const orgName = this.props.user?.selectedGroup.name;
     // Selected period may not be found because of a pending or failed RPC.
     const selection = this.state.response.usage;
     const detailed = shouldShowDetailedView(this.state.selectedPeriod);
+    const periodHeader = (
+      <div className="usage-period-header">
+        <div>
+          {orgName && <div className="org-name">{orgName}</div>}
+          <div className="selected-period-label">
+            BuildBuddy usage for <span className="usage-period">{this.state.selectedPeriod} (UTC)</span>
+          </div>
+        </div>
+        <Select title="Usage period" value={this.state.selectedPeriod} onChange={this.onChangePeriod.bind(this)}>
+          {this.state.response.availableUsagePeriods.map((period, i) => (
+            <Option key={period} value={period}>
+              {period}
+              {i === 0 ? " (Current period)" : ""}
+            </Option>
+          ))}
+        </Select>
+      </div>
+    );
+    // The bill covers the current period only, and replaces the usage summary for it.
+    const isCurrentPeriod = this.state.selectedPeriod === this.state.response.availableUsagePeriods[0];
+    if (this.state.bill && isCurrentPeriod) {
+      return (
+        <>
+          <UsageBillCard bill={this.state.bill} periodHeader={periodHeader} />
+          {this.renderCharts(detailed)}
+        </>
+      );
+    }
     return (
       <>
         <div className="card usage-card">
           <div className="content">
-            <div className="usage-period-header">
-              <div>
-                {orgName && <div className="org-name">{orgName}</div>}
-                <div className="selected-period-label">
-                  BuildBuddy usage for <span className="usage-period">{this.state.selectedPeriod} (UTC)</span>
-                </div>
-              </div>
-              <Select title="Usage period" onChange={this.onChangePeriod.bind(this)}>
-                {this.state.response.availableUsagePeriods.map((period, i) => (
-                  <Option key={period} value={period}>
-                    {period}
-                    {i === 0 ? " (Current period)" : ""}
-                  </Option>
-                ))}
-              </Select>
-            </div>
+            {periodHeader}
             {this.state.loading && <div className="loading" />}
             {!this.state.loading && !selection && <span>Failed to load usage data.</span>}
             {!this.state.loading && selection && (

@@ -246,6 +246,8 @@ service BuildBuddyService {
       returns (usage.CreateUsageAlertingRuleResponse);
   rpc DeleteUsageAlertingRule(usage.DeleteUsageAlertingRuleRequest)
       returns (usage.DeleteUsageAlertingRuleResponse);
+  rpc GetCurrentBill(usage.GetCurrentBillRequest)
+      returns (usage.GetCurrentBillResponse);
 
   // Notification API
   rpc SendNotification(notification.SendNotificationRequest)

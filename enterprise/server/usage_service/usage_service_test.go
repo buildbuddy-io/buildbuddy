@@ -2,10 +2,15 @@ package usage_service_test
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/usage_service"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
@@ -22,6 +27,7 @@ import (
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -129,6 +135,88 @@ func TestGetUsage(t *testing.T) {
 		},
 	}
 	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
+}
+
+func TestGetCurrentBill(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		switch r.URL.Path {
+		case "/v1/customers":
+			if r.URL.Query().Get("ingest_alias") == "GR1" {
+				fmt.Fprint(w, `{"data":[{"id":"cust-1","ingest_aliases":["GR1"]}]}`)
+			} else {
+				fmt.Fprint(w, `{"data":[]}`)
+			}
+		case "/v1/customers/cust-1/invoices":
+			fmt.Fprint(w, `{"data":[{"id":"inv-1","type":"USAGE","status":"DRAFT","start_timestamp":"2024-02-01T00:00:00Z","end_timestamp":"2024-03-01T00:00:00Z","total":2396000,"line_items":[{"name":"Action cache hits","type":"usage","quantity":2000,"unit_price":1200,"total":2400000,"starting_at":"2024-02-01T00:00:00+00:00","ending_before":"2024-03-01T00:00:00+00:00"},{"name":"Monthly credit applied","type":"applied_commit_or_credit","quantity":null,"unit_price":null,"total":-4000,"starting_at":"2024-02-01T00:00:00+00:00","ending_before":"2024-03-01T00:00:00+00:00"}]}]}`)
+		case "/v1/contracts/customerBalances/list":
+			fmt.Fprint(w, `{"data":[{"type":"CREDIT","balance":1000,"access_schedule":{"schedule_items":[{"amount":5000,"starting_at":"2024-02-01T00:00:00Z","ending_before":"2024-03-01T00:00:00Z"}]}}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	flags.Set(t, "http.client.allow_localhost", true)
+	flags.Set(t, "billing.metronome.read_only_api_key", "test-key")
+	flags.Set(t, "billing.metronome.api_url", server.URL)
+
+	ctx := context.Background()
+	env := enterprise_testenv.New(t)
+	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1", "US2", "GR2"))
+	env.SetAuthenticator(ta)
+	for id, groupStatus := range map[string]grpb.Group_GroupStatus{
+		"GR1": grpb.Group_USAGE_BASED_GROUP_STATUS,
+		"GR2": grpb.Group_FREE_TIER_GROUP_STATUS,
+	} {
+		require.NoError(t, env.GetDBHandle().NewQuery(ctx, "test").Create(&tables.Group{GroupID: id, Status: groupStatus}))
+	}
+	now := time.Date(2024, 2, 22, 12, 0, 0, 0, time.UTC)
+	clock := clockwork.NewFakeClockAt(now)
+	service, err := usage_service.New(env, clock)
+	require.NoError(t, err)
+	ctx1, err := ta.WithAuthenticatedUser(ctx, "US1")
+	require.NoError(t, err)
+	ctx2, err := ta.WithAuthenticatedUser(ctx, "US2")
+	require.NoError(t, err)
+
+	_, err = service.GetCurrentBill(ctx1, &usagepb.GetCurrentBillRequest{})
+	require.True(t, status.IsUnimplementedError(err), "unexpected error: %v", err)
+	assert.EqualValues(t, 0, requests.Load())
+	flags.Set(t, "app.usage_bill_enabled", true)
+
+	periodStart := timestamppb.New(time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC))
+	periodEnd := timestamppb.New(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC))
+	expected := &usagepb.GetCurrentBillResponse{Bill: &usagepb.Bill{
+		PeriodStart: periodStart,
+		PeriodEnd:   periodEnd,
+		TotalCents:  2396000,
+		LineItems: []*usagepb.BillLineItem{
+			{Name: "Action cache hits", Quantity: 2000, UnitPriceCents: 1200, TotalCents: 2400000, PeriodStart: periodStart, PeriodEnd: periodEnd},
+		},
+		FetchedAt:          timestamppb.New(now),
+		CreditGrantedCents: 5000,
+		CreditUsedCents:    4000,
+	}}
+	rsp, err := service.GetCurrentBill(ctx1, &usagepb.GetCurrentBillRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff(expected, rsp, protocmp.Transform()))
+	assert.EqualValues(t, 3, requests.Load())
+
+	rsp, err = service.GetCurrentBill(ctx1, &usagepb.GetCurrentBillRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff(expected, rsp, protocmp.Transform()))
+	assert.EqualValues(t, 3, requests.Load())
+
+	clock.Advance(16 * time.Minute)
+	_, err = service.GetCurrentBill(ctx1, &usagepb.GetCurrentBillRequest{})
+	require.NoError(t, err)
+	assert.EqualValues(t, 6, requests.Load())
+
+	rsp, err = service.GetCurrentBill(ctx2, &usagepb.GetCurrentBillRequest{})
+	require.NoError(t, err)
+	assert.Nil(t, rsp.GetBill())
+	assert.EqualValues(t, 6, requests.Load())
 }
 
 func TestUsageFields_CoverEveryUsageFieldAndAlertingMetric(t *testing.T) {

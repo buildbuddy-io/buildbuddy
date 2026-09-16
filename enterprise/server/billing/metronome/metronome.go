@@ -25,6 +25,7 @@ import (
 
 var (
 	apiKey              = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
+	readOnlyAPIKey      = flag.String("billing.metronome.read_only_api_key", "", "Metronome API bearer token with read-only access, used by the app to read bills.", flag.Secret)
 	apiURL              = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
 	rateCardAlias       = flag.String("billing.metronome.rate_card_alias", "", "Alias of the rate card new contracts are created on.")
 	freeCreditCents     = flag.Int64("billing.metronome.free_credit_cents", 0, "Monthly credit in US cents granted on new contracts. 0 grants none.")
@@ -104,11 +105,24 @@ type EventProperties struct {
 type Client struct {
 	httpClient   *http.Client
 	retryOptions *retry.Options
+	apiKey       string
+}
+
+func ReadOnlyConfigured() bool {
+	return *readOnlyAPIKey != ""
 }
 
 func NewClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
-	if *apiKey == "" {
-		return nil, status.FailedPreconditionError("billing.metronome.api_key is required")
+	return newClient(*apiKey, "billing.metronome.api_key", httpClient, retryOpts)
+}
+
+func NewReadOnlyClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
+	return newClient(*readOnlyAPIKey, "billing.metronome.read_only_api_key", httpClient, retryOpts)
+}
+
+func newClient(key, keyFlag string, httpClient *http.Client, retryOpts *retry.Options) (*Client, error) {
+	if key == "" {
+		return nil, status.FailedPreconditionErrorf("%s is required", keyFlag)
 	}
 	if *apiURL == "" {
 		return nil, status.FailedPreconditionError("billing.metronome.api_url is required")
@@ -123,6 +137,7 @@ func NewClient(httpClient *http.Client, retryOpts *retry.Options) (*Client, erro
 	return &Client{
 		httpClient:   httpClient,
 		retryOptions: retryOpts,
+		apiKey:       strings.TrimSpace(key),
 	}, nil
 }
 
@@ -364,6 +379,118 @@ func (c *Client) CreateContract(ctx context.Context, customerID string, starting
 	return err
 }
 
+// Invoice amounts are in the invoice's credit type, US cents for USD.
+type Invoice struct {
+	StartTimestamp time.Time         `json:"start_timestamp"`
+	EndTimestamp   time.Time         `json:"end_timestamp"`
+	Total          float64           `json:"total"`
+	LineItems      []InvoiceLineItem `json:"line_items"`
+}
+
+type LineItemType string
+
+const (
+	LineItemTypeUsage                 LineItemType = "usage"
+	LineItemTypeAppliedCommitOrCredit LineItemType = "applied_commit_or_credit"
+)
+
+type InvoiceLineItem struct {
+	Name         string       `json:"name"`
+	Type         LineItemType `json:"type"`
+	Quantity     float64      `json:"quantity"`
+	UnitPrice    float64      `json:"unit_price"`
+	Total        float64      `json:"total"`
+	StartingAt   time.Time    `json:"starting_at"`
+	EndingBefore time.Time    `json:"ending_before"`
+}
+
+func (i *Invoice) UsageLineItems() []InvoiceLineItem {
+	var items []InvoiceLineItem
+	for _, item := range i.LineItems {
+		if item.Type == LineItemTypeUsage {
+			items = append(items, item)
+		}
+	}
+	return items
+}
+
+// GetCurrentInvoice returns nil if the customer has no draft usage invoice for
+// the period containing now.
+func (c *Client) GetCurrentInvoice(ctx context.Context, customerID string, now time.Time) (*Invoice, error) {
+	var resp struct {
+		Data []Invoice `json:"data"`
+	}
+	query := url.Values{"status": {"DRAFT"}, "type": {"USAGE"}, "sort": {"date_desc"}}
+	if err := c.do(ctx, http.MethodGet, "/v1/customers/"+url.PathEscape(customerID)+"/invoices", query, nil, &resp); err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		inv := &resp.Data[i]
+		if !now.Before(inv.StartTimestamp) && now.Before(inv.EndTimestamp) {
+			return inv, nil
+		}
+	}
+	return nil, nil
+}
+
+// Credit amounts are in US cents.
+type Credit struct {
+	Granted   float64
+	Remaining float64
+}
+
+const balanceTypeCredit = "CREDIT"
+
+type balancesRequest struct {
+	CustomerID              string `json:"customer_id"`
+	CoveringDate            string `json:"covering_date"`
+	IncludeBalance          bool   `json:"include_balance"`
+	IncludeContractBalances bool   `json:"include_contract_balances"`
+}
+
+// GetCredit returns the customer's credit for the period containing now, or
+// nil if it has none.
+func (c *Client) GetCredit(ctx context.Context, customerID string, now time.Time) (*Credit, error) {
+	var resp struct {
+		Data []struct {
+			Type           string  `json:"type"`
+			Balance        float64 `json:"balance"`
+			AccessSchedule struct {
+				ScheduleItems []struct {
+					Amount       float64   `json:"amount"`
+					StartingAt   time.Time `json:"starting_at"`
+					EndingBefore time.Time `json:"ending_before"`
+				} `json:"schedule_items"`
+			} `json:"access_schedule"`
+		} `json:"data"`
+	}
+	body := balancesRequest{
+		CustomerID:              customerID,
+		CoveringDate:            now.UTC().Format(time.RFC3339),
+		IncludeBalance:          true,
+		IncludeContractBalances: true,
+	}
+	if err := c.do(ctx, http.MethodPost, "/v1/contracts/customerBalances/list", nil, body, &resp); err != nil {
+		return nil, err
+	}
+	var credit *Credit
+	for _, b := range resp.Data {
+		if b.Type != balanceTypeCredit {
+			continue
+		}
+		if credit == nil {
+			credit = &Credit{}
+		}
+		credit.Remaining += b.Balance
+		for _, item := range b.AccessSchedule.ScheduleItems {
+			if !now.Before(item.StartingAt) && now.Before(item.EndingBefore) {
+				credit.Granted += item.Amount
+			}
+		}
+	}
+	return credit, nil
+}
+
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	endpoint, err := url.JoinPath(*apiURL, path)
 	if err != nil {
@@ -384,7 +511,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*apiKey))
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
