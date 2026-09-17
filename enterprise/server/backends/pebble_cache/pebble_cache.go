@@ -78,7 +78,7 @@ var (
 	scanForOrphanedFiles      = flag.Bool("cache.pebble.scan_for_orphaned_files", false, "If true, scan for orphaned files")
 	orphanDeleteDryRun        = flag.Bool("cache.pebble.orphan_delete_dry_run", true, "If set, log orphaned files instead of deleting them")
 	dirDeletionDelay          = flag.Duration("cache.pebble.dir_deletion_delay", time.Hour, "How old directories must be before being eligible for deletion when empty")
-	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", DefaultAtimeUpdateThreshold, "Don't update atime if it was updated more recently than this")
+	atimeUpdateThresholdFlag  = flag.Duration("cache.pebble.atime_update_threshold", -1, "Don't update atime if it was updated more recently than this. 0 updates atime on every access. If negative, use half of the smallest min_eviction_age across partitions, which keeps entries read at least once per min_eviction_age from being evicted, or 10m if that age is 0.")
 	atimeBufferSizeFlag       = flag.Int("cache.pebble.atime_buffer_size", DefaultAtimeBufferSize, "Buffer up to this many atime updates in a channel before dropping atime updates")
 	numAtimeUpdateWorkers     = flag.Int("cache.pebble.num_atime_update_workers", DefaultNumAtimeUpdateWorkers, "How many threads to use to update atimes")
 	sampleBufferSize          = flag.Int("cache.pebble.sample_buffer_size", DefaultSampleBufferSize, "Buffer up to this many samples for eviction sampling")
@@ -460,6 +460,11 @@ func validateOpts(opts *Options) error {
 		}
 	}
 
+	threshold := *opts.AtimeUpdateThreshold
+	if minAge := minEvictionAgeAcrossPartitions(opts); minAge > 0 && threshold > minAge/2 {
+		log.Warningf("Pebble cache %q atime_update_threshold (%s) exceeds half of the smallest min_eviction_age (%s), so entries read at intervals between %s and %s can be evicted while in use", opts.Name, threshold, minAge, max(minAge-threshold, 0), min(threshold, minAge))
+	}
+
 	for _, pm := range opts.PartitionMappings {
 		found := false
 		for _, p := range opts.Partitions {
@@ -489,9 +494,6 @@ func SetOptionDefaults(opts *Options) {
 	}
 	if opts.MaxInlineFileSizeBytes == 0 {
 		opts.MaxInlineFileSizeBytes = DefaultMaxInlineFileSizeBytes
-	}
-	if opts.AtimeUpdateThreshold == nil {
-		opts.AtimeUpdateThreshold = &DefaultAtimeUpdateThreshold
 	}
 	if opts.AtimeBufferSize == nil {
 		opts.AtimeBufferSize = &DefaultAtimeBufferSize
@@ -536,6 +538,31 @@ func SetOptionDefaults(opts *Options) {
 	if opts.MinBytesAutoZstdCompression == nil {
 		opts.MinBytesAutoZstdCompression = &DefaultMinBytesAutoZstdCompression
 	}
+	// Create the default partition after scalar defaults are set, so that it
+	// picks up the defaulted MaxSizeBytes, but before per-partition defaults
+	// are filled in.
+	ensureDefaultPartitionExists(opts)
+	setPartitionDefaults(opts)
+	if opts.AtimeUpdateThreshold == nil || *opts.AtimeUpdateThreshold < 0 {
+		minAge := minEvictionAgeAcrossPartitions(opts)
+		threshold := DefaultAtimeUpdateThreshold
+		if minAge > 0 {
+			threshold = minAge / 2
+		}
+		log.Infof("Pebble cache %q derived atime_update_threshold %s from smallest min_eviction_age %s", opts.Name, threshold, minAge)
+		opts.AtimeUpdateThreshold = &threshold
+	}
+}
+
+func minEvictionAgeAcrossPartitions(opts *Options) time.Duration {
+	minAge := time.Duration(0)
+	for _, part := range opts.Partitions {
+		age := *part.MinEvictionAge
+		if age > 0 && (minAge == 0 || age < minAge) {
+			minAge = age
+		}
+	}
+	return minAge
 }
 
 func setPartitionDefaults(opts *Options) {
@@ -635,11 +662,6 @@ func defaultPebbleOptions(mc *pebble.MetricsCollector, pcOpts *Options) *pebble.
 // NewPebbleCache creates a new cache from the provided env and opts.
 func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 	SetOptionDefaults(opts)
-	// Create the default partition after scalar defaults are set, so that it
-	// picks up the defaulted MaxSizeBytes, but before per-partition defaults
-	// are filled in.
-	ensureDefaultPartitionExists(opts)
-	setPartitionDefaults(opts)
 	if err := validateOpts(opts); err != nil {
 		return nil, err
 	}
