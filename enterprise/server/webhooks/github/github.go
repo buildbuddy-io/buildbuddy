@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"golang.org/x/oauth2"
 
@@ -199,13 +200,16 @@ func ParseWebhookData(event any) (*interfaces.WebhookData, error) {
 		return wd, nil
 
 	case *gh.IssueCommentEvent:
+		log.Infof("IssueCommentEvent: %+v", event)
 		// Pull request comments are delivered as issue_comment
 		// events. Ignore actions other than creation (i.e. comment edits or deletes),
 		// or if the comment is not associated with a pull request (i.e. if it's from a GitHub issue).
 		if event.GetAction() != "created" || event.GetIssue().GetPullRequestLinks() == nil {
+			log.Infof("IssueCommentEvent: not created or not associated with a pull request")
 			return nil, nil
 		}
 		if !slashcommand.IsCommand(event.GetComment().GetBody()) {
+			log.Infof("IssueCommentEvent: not a slash command")
 			return nil, nil
 		}
 		// The payload doesn't include the pull request's head or base refs, so
@@ -222,6 +226,7 @@ func ParseWebhookData(event any) (*interfaces.WebhookData, error) {
 			CommentBody:             event.GetComment().GetBody(),
 		}, nil
 	default:
+		log.Infof("IssueCommentEvent: unknown event type: %T", event)
 		return nil, nil
 	}
 }

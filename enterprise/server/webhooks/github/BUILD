@@ -13,6 +13,7 @@ go_library(
         "//server/environment",
         "//server/interfaces",
         "//server/util/git",
+        "//server/util/log",
         "//server/util/status",
         "@com_github_google_go_github_v59//github",
         "@org_golang_x_oauth2//:oauth2",
