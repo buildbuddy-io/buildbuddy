@@ -217,35 +217,37 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
   switch (ds.type) {
     case SeriesType.BAR:
       const color = ds.color ?? ChartColor.GREEN;
-      <Bar
-        className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(color) : ""}
-        yAxisId={axis}
-        name={ds.name}
-        dataKey={ds.extractValue}
-        isAnimationActive={false}
-        hide={hidden}
-        stackId={ds.stackId}
-        fill={getResolvedColor(color)}>
-        {data.map((date, datumIndex) => {
-          return (
-            <Cell
-              cursor={clickHandler ? "pointer" : "default"}
-              key={`cell-${datumIndex}`}
-              onClick={
-                !zoomFn && clickHandler
-                  ? (e) =>
-                      clickHandler(date, e, {
-                        x: xAxis ? (xAxis(date) ?? 0) : 0,
-                        y: chartHeight / 2, // who cares
-                        chartWidth,
-                        chartHeight,
-                      })
-                  : undefined
-              }
-            />
-          );
-        })}
-      </Bar>;
+      return (
+        <Bar
+          className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(color) : ""}
+          yAxisId={axis}
+          name={ds.name}
+          dataKey={ds.extractValue}
+          isAnimationActive={false}
+          hide={hidden}
+          stackId={ds.stackId}
+          fill={getResolvedColor(color)}>
+          {data.map((date, datumIndex) => {
+            return (
+              <Cell
+                cursor={clickHandler ? "pointer" : "default"}
+                key={`cell-${datumIndex}`}
+                onClick={
+                  !zoomFn && clickHandler
+                    ? (e) =>
+                        clickHandler(date, e, {
+                          x: xAxis ? (xAxis(date) ?? 0) : 0,
+                          y: chartHeight / 2, // who cares
+                          chartWidth,
+                          chartHeight,
+                        })
+                    : undefined
+                }
+              />
+            );
+          })}
+        </Bar>
+      );
     case SeriesType.LINE:
       return (
         <Line
