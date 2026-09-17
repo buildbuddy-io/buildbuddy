@@ -13,7 +13,7 @@ interface Props {
   subtitle?: string;
   data: NamedValue[] | undefined;
 
-  // returns a valid css color string (e.g., #ffff00) given a key from data.
+  /** Returns a valid css color string (e.g., #ffff00) given a key from data. */
   colorPicker?: (k: string) => string;
 
   // returns a human-readable string for a given value in the data.
