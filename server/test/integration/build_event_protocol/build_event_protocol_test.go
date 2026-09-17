@@ -60,7 +60,7 @@ func TestBuildWithRetry_InjectFailureAfterBuildFinished(t *testing.T) {
 	testInjectFailureAfterBazelEvent(t, &bespb.BuildEvent_Finished{})
 }
 
-func testInjectFailureAfterBazelEvent(t *testing.T, payloadMsg interface{}) {
+func testInjectFailureAfterBazelEvent(t *testing.T, payloadMsg any) {
 	app := buildbuddy.Run(t)
 	bepClient := app.PublishBuildEventClient(t)
 	proxy := StartBEPProxy(t, bepClient)
@@ -136,7 +136,7 @@ type StreamErrorInjector func(*StreamEvent) error
 // a Bazel event with the same payload type as the given message is successfully
 // forwarded to the build event server. The given message must be assignable to
 // BuildEvent.Payload, otherwise the test immediately fails.
-func AfterForwardBazelEvent(t *testing.T, payloadMsg interface{}) StreamErrorInjector {
+func AfterForwardBazelEvent(t *testing.T, payloadMsg any) StreamErrorInjector {
 	payloadType := reflect.TypeOf(payloadMsg)
 	payloadSuperType := reflect.TypeOf(&(&bespb.BuildEvent{}).Payload).Elem()
 	if !payloadType.AssignableTo(payloadSuperType) {

@@ -1,6 +1,7 @@
 package resources_test
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -72,6 +73,136 @@ func TestConfigure(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, test.expectedCPUMillis, resources.GetAllocatedCPUMillis())
 			}
+		})
+	}
+}
+
+// fakeGPUMemoryDetector reports a fixed GPU memory capacity or a detection
+// error.
+type fakeGPUMemoryDetector struct {
+	totalBytes int64
+	err        error
+}
+
+func (d fakeGPUMemoryDetector) GetTotalGPUMemoryBytes() (int64, error) {
+	return d.totalBytes, d.err
+}
+
+func TestConfigureGPU(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, resources.ConfigureGPU(nil))
+	})
+	detector := fakeGPUMemoryDetector{totalBytes: 24_000_000_000}
+	for _, testCase := range []struct {
+		name     string
+		flag     int64
+		env      string
+		detector resources.GPUMemoryDetector
+		want     int64
+		wantErr  string
+	}{
+		{name: "flag", flag: 8_000_000_000, detector: detector, want: 8_000_000_000},
+		{name: "env", env: "16000000000", detector: detector, want: 16_000_000_000},
+		{name: "detected", detector: detector, want: 24_000_000_000},
+		{name: "zero env skips detection", env: "0", detector: detector},
+		{name: "tracking disabled and unset"},
+		{name: "detection fails", detector: fakeGPUMemoryDetector{err: errors.New("NVML unavailable")}, wantErr: "detect total GPU memory: NVML unavailable"},
+		{name: "tracking disabled with flag", flag: 8_000_000_000, wantErr: "require GPU memory tracking"},
+		{name: "tracking disabled with env", env: "16000000000", wantErr: "require GPU memory tracking"},
+		{name: "tracking disabled with zero env", env: "0", wantErr: "require GPU memory tracking"},
+		{name: "conflicting flag and env", flag: 8_000_000_000, env: "16000000000", detector: detector, wantErr: "Only one"},
+		{name: "invalid env", env: "8GB", detector: detector, wantErr: "parse SYS_GPU_MEMORY_BYTES"},
+		{name: "overflowing env", env: "9223372036854775808", detector: detector, wantErr: "parse SYS_GPU_MEMORY_BYTES"},
+		{name: "negative env", env: "-1", detector: detector, wantErr: "SYS_GPU_MEMORY_BYTES must not be negative"},
+		{name: "negative flag", flag: -1, detector: detector, wantErr: "executor.gpu_memory_bytes must not be negative"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "executor.gpu_memory_bytes", testCase.flag)
+			t.Setenv("SYS_GPU_MEMORY_BYTES", testCase.env)
+
+			// With a detector, the flag wins over the env var, which wins over
+			// detection, and a failed detection fails configuration. A nil
+			// detector means tracking is disabled, which only allows an unset
+			// capacity. Ambiguous or invalid values fail before scheduling
+			// any work.
+			err := resources.ConfigureGPU(testCase.detector)
+			if testCase.wantErr != "" {
+				require.ErrorContains(t, err, testCase.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, testCase.want, resources.GetAllocatedGPUMemoryBytes())
+		})
+	}
+}
+
+func TestGetCustomResourceParentMap(t *testing.T) {
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "apple_simulator", Value: 2},
+		{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator", ParentAccounting: "ceil"},
+		{Name: "sim_version_18_0", Value: 2, Parent: "apple_simulator"},
+		{Name: "sim_version_17_0", Value: 2, Parent: "apple_simulator", ParentAccounting: "sum"},
+	})
+
+	parentMap, err := resources.GetCustomResourceParentMap()
+	require.NoError(t, err)
+	require.Equal(t, map[string]resources.CustomResourceParent{
+		"sim_version_26_5": {Name: "apple_simulator", Accounting: "ceil"},
+		"sim_version_18_0": {Name: "apple_simulator", Accounting: "sum"},
+		"sim_version_17_0": {Name: "apple_simulator", Accounting: "sum"},
+	}, parentMap)
+}
+
+func TestGetCustomResourceParentMap_Invalid(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		resources []resources.CustomResource
+	}{
+		{
+			name: "missing parent",
+			resources: []resources.CustomResource{
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator"},
+			},
+		},
+		{
+			name: "self parent",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2, Parent: "apple_simulator"},
+			},
+		},
+		{
+			name: "accounting without parent",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2, ParentAccounting: "ceil"},
+			},
+		},
+		{
+			name: "nested parents",
+			resources: []resources.CustomResource{
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator"},
+				{Name: "apple_simulator", Value: 2, Parent: "device"},
+				{Name: "device", Value: 2},
+			},
+		},
+		{
+			name: "parent cycle",
+			resources: []resources.CustomResource{
+				{Name: "a", Value: 2, Parent: "b"},
+				{Name: "b", Value: 2, Parent: "a"},
+			},
+		},
+		{
+			name: "unsupported parent accounting",
+			resources: []resources.CustomResource{
+				{Name: "apple_simulator", Value: 2},
+				{Name: "sim_version_26_5", Value: 2, Parent: "apple_simulator", ParentAccounting: "floor"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.custom_resources", test.resources)
+			_, err := resources.GetCustomResourceParentMap()
+			require.Error(t, err)
 		})
 	}
 }

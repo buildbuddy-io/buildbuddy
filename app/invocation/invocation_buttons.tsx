@@ -5,7 +5,7 @@ import InvocationCompareButton from "./invocation_compare_button";
 import InvocationMenuComponent from "./invocation_menu";
 import InvocationModel from "./invocation_model";
 import InvocationShareButton from "./invocation_share_button";
-import SuggestionButton from "./suggestion_button";
+import AIFixButton from "./ai_fix_button";
 import WorkflowRerunButton from "./workflow_rerun_button";
 
 export interface InvocationButtonsProps {
@@ -41,7 +41,7 @@ export default class InvocationButtons extends React.Component<InvocationButtons
         {showCancelButton && <InvocationCancelButton invocationId={this.props.model.getInvocationId()} />}
         <InvocationCompareButton invocationId={this.props.model.getInvocationId()} />
 
-        <SuggestionButton user={this.props.user} model={this.props.model} />
+        <AIFixButton user={this.props.user} model={this.props.model} />
         <InvocationShareButton
           user={this.props.user}
           model={this.props.model}

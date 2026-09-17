@@ -77,7 +77,7 @@ func generateProtos(t testing.TB, providerFn providerFunc) []protoMessage {
 	// randomized map iteration order.
 	faker.SetRandomSource(rand.NewSource(0))
 	res := make([]protoMessage, 0, numSamples)
-	for i := 0; i < numSamples; i++ {
+	for range numSamples {
 		pb := providerFn()
 		err := faker.FakeData(pb)
 		require.NoError(t, err, "unable to fake data")

@@ -36,7 +36,6 @@ go_library(
         "//proto:stats_go_proto",
         "//proto:storage_go_proto",
         "//proto:stored_invocation_go_proto",
-        "//proto:suggestion_go_proto",
         "//proto:telemetry_go_proto",
         "//proto:usage_go_proto",
         "//proto:user_list_go_proto",

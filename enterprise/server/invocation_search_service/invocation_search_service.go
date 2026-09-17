@@ -146,7 +146,7 @@ func (s *InvocationSearchService) IndexInvocation(ctx context.Context, invocatio
 func addPermissionsCheckToQuery(u interfaces.UserInfo, q *query_builder.Query) {
 	o := query_builder.OrClauses{}
 	o.AddOr("(perms & ? != 0)", perms.OTHERS_READ)
-	groupArgs := []interface{}{
+	groupArgs := []any{
 		perms.GROUP_READ,
 	}
 	groupParams := make([]string, 0)
@@ -231,7 +231,7 @@ func addOrderBy(sort *inpb.InvocationSort, q *query_builder.Query) {
 	}
 }
 
-func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields string, offset int64, limit int64, req *inpb.SearchInvocationRequest, isOlapQuery bool) (string, []interface{}, error) {
+func (s *InvocationSearchService) buildPrimaryQuery(ctx context.Context, fields string, offset int64, limit int64, req *inpb.SearchInvocationRequest, isOlapQuery bool) (string, []any, error) {
 	if req.GetQuery().GetRepoUrl() != "" {
 		norm, err := git.NormalizeRepoURL(req.GetQuery().GetRepoUrl())
 		if err == nil { // if we normalized successfully

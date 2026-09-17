@@ -951,7 +951,7 @@ type rawQuery struct {
 	db     *gorm.DB
 	ctx    context.Context
 	sql    string
-	values []interface{}
+	values []any
 }
 
 func (r *rawQuery) Exec() interfaces.DBResult {
@@ -959,11 +959,11 @@ func (r *rawQuery) Exec() interfaces.DBResult {
 	return interfaces.DBResult{Error: rb.Error, RowsAffected: rb.RowsAffected}
 }
 
-func (r *rawQuery) Take(dest interface{}) error {
+func (r *rawQuery) Take(dest any) error {
 	return r.db.Raw(r.sql, r.values...).Take(dest).Error
 }
 
-func (r *rawQuery) Scan(dest interface{}) error {
+func (r *rawQuery) Scan(dest any) error {
 	return r.db.Raw(r.sql, r.values...).Scan(dest).Error
 }
 
@@ -995,12 +995,12 @@ type query struct {
 	name string
 }
 
-func (q *query) Create(val interface{}) error {
+func (q *query) Create(val any) error {
 	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	return db.Create(val).Error
 }
 
-func (q *query) Update(val interface{}) error {
+func (q *query) Update(val any) error {
 	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	res := db.Updates(val)
 	if res.RowsAffected == 0 {
@@ -1009,7 +1009,7 @@ func (q *query) Update(val interface{}) error {
 	return nil
 }
 
-func (q *query) Raw(sql string, values ...interface{}) interfaces.DBRawQuery {
+func (q *query) Raw(sql string, values ...any) interfaces.DBRawQuery {
 	db := q.db.WithContext(q.ctx).Set(gormQueryNameKey, q.name)
 	return &rawQuery{db: db, ctx: q.ctx, sql: sql, values: values}
 }

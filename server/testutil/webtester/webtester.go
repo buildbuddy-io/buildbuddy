@@ -566,7 +566,7 @@ func GetOrCreatePersonalAPIKey(wt *WebTester, appBaseURL string) string {
 	}
 	wt.Find(`.api-key-value-hide`).Click()
 	apiKey := ""
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		apiKey = wt.Find(".api-key-value").Text()
 		// Wait for the API key value to load
 		if !strings.Contains(apiKey, "••••") {

@@ -827,10 +827,8 @@ func newOptionImpl(optName string, v *string, d *Definition) (Option, error) {
 
 	if d.PluginID() == StarlarkBuiltinPluginID {
 		return &starlarkOption{
-			BoolOrEnumOption: BoolOrEnumOption{
-				optionBase: base,
-				Value:      v,
-			},
+			optionBase: base,
+			Value:      v,
 		}, nil
 	}
 	if d.RequiresValue() {

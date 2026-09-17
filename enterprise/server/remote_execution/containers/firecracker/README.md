@@ -19,6 +19,10 @@ convenience scripts:
 ./enterprise/server/remote_execution/containers/firecracker/bench.sh
 ```
 
+These scripts build remotely by default because image conversion requires
+root, then run the test locally under `sudo`. A local conversion action fails
+with a message explaining this requirement.
+
 To run the executor locally with Firecracker enabled, you'll need to run
 `bazel` with `--run_under=sudo` and enable firecracker explicitly:
 
@@ -32,6 +36,12 @@ configured with `"workload-isolation-type": "firecracker"`.
 
 If you want to test workflows locally with firecracker, make sure to set
 `--app.workflows_enable_firecracker=true` on the app.
+
+### Test images
+
+The VM disk images used in `firecracker_test` are built as dependencies of the
+test to avoid slowing down tests with expensive EXT4 conversion work. All of the
+images used in tests are defined in `testdata/defs.bzl`.
 
 ## Troubleshooting
 

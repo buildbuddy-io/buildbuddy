@@ -16,10 +16,6 @@ func mustNewOption(t *testing.T, optName string, v *string, d *options.Definitio
 	return opt
 }
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func TestExpandConfigsWithPolicy(t *testing.T) {
 	// The explain command supports the following options:
 	// - bb_config
@@ -50,8 +46,8 @@ func TestExpandConfigsWithPolicy(t *testing.T) {
 	// Args: explain --config=untouched --bb_config=detailed invocation-id
 	args := &parsed.OrderedArgs{Args: []arguments.Argument{
 		&arguments.PositionalArgument{Value: "explain"},
-		mustNewOption(t, "config", ptr("untouched"), bazelConfigDefinition),
-		mustNewOption(t, "bb_config", ptr("detailed"), bbConfigDefinition),
+		mustNewOption(t, "config", new("untouched"), bazelConfigDefinition),
+		mustNewOption(t, "bb_config", new("detailed"), bbConfigDefinition),
 		&arguments.PositionalArgument{Value: "invocation-id"},
 	}}
 
@@ -138,20 +134,20 @@ func TestRemoveAndAccumulateStartupOption(t *testing.T) {
 	args := &parsed.OrderedArgs{
 		Args: []arguments.Argument{
 			mustNewOption(t, "no"+startupOptionBoolName, nil, startupOptionBoolDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("foo"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionMultiName, new("foo"), startupOptionMultiDefinition),
 			mustNewOption(t, startupOptionBoolName, nil, startupOptionBoolDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("bar"), startupOptionMultiDefinition),
-			mustNewOption(t, startupOptionRequiresValueName, ptr("foo"), startupOptionRequiresValueDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("bar"), startupOptionMultiDefinition),
-			mustNewOption(t, startupOptionRequiresValueName, ptr("bar"), startupOptionRequiresValueDefinition),
+			mustNewOption(t, startupOptionMultiName, new("bar"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionRequiresValueName, new("foo"), startupOptionRequiresValueDefinition),
+			mustNewOption(t, startupOptionMultiName, new("bar"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionRequiresValueName, new("bar"), startupOptionRequiresValueDefinition),
 			&arguments.PositionalArgument{Value: "command"},
 			mustNewOption(t, "no"+commandOptionBoolName, nil, commandOptionBoolDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("foo"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionMultiName, new("foo"), commandOptionMultiDefinition),
 			mustNewOption(t, commandOptionBoolName, nil, commandOptionBoolDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("bar"), commandOptionMultiDefinition),
-			mustNewOption(t, commandOptionRequiresValueName, ptr("bar"), commandOptionRequiresValueDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("foo"), commandOptionMultiDefinition),
-			mustNewOption(t, commandOptionRequiresValueName, ptr("foo"), commandOptionRequiresValueDefinition),
+			mustNewOption(t, commandOptionMultiName, new("bar"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionRequiresValueName, new("bar"), commandOptionRequiresValueDefinition),
+			mustNewOption(t, commandOptionMultiName, new("foo"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionRequiresValueName, new("foo"), commandOptionRequiresValueDefinition),
 		},
 	}
 
@@ -224,20 +220,20 @@ func TestRemoveAndAccumulateCommandOption(t *testing.T) {
 	args := &parsed.OrderedArgs{
 		Args: []arguments.Argument{
 			mustNewOption(t, "no"+startupOptionBoolName, nil, startupOptionBoolDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("foo"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionMultiName, new("foo"), startupOptionMultiDefinition),
 			mustNewOption(t, startupOptionBoolName, nil, startupOptionBoolDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("bar"), startupOptionMultiDefinition),
-			mustNewOption(t, startupOptionRequiresValueName, ptr("foo"), startupOptionRequiresValueDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("bar"), startupOptionMultiDefinition),
-			mustNewOption(t, startupOptionRequiresValueName, ptr("bar"), startupOptionRequiresValueDefinition),
+			mustNewOption(t, startupOptionMultiName, new("bar"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionRequiresValueName, new("foo"), startupOptionRequiresValueDefinition),
+			mustNewOption(t, startupOptionMultiName, new("bar"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionRequiresValueName, new("bar"), startupOptionRequiresValueDefinition),
 			&arguments.PositionalArgument{Value: "command"},
 			mustNewOption(t, "no"+commandOptionBoolName, nil, commandOptionBoolDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("foo"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionMultiName, new("foo"), commandOptionMultiDefinition),
 			mustNewOption(t, commandOptionBoolName, nil, commandOptionBoolDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("bar"), commandOptionMultiDefinition),
-			mustNewOption(t, commandOptionRequiresValueName, ptr("bar"), commandOptionRequiresValueDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("foo"), commandOptionMultiDefinition),
-			mustNewOption(t, commandOptionRequiresValueName, ptr("foo"), commandOptionRequiresValueDefinition),
+			mustNewOption(t, commandOptionMultiName, new("bar"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionRequiresValueName, new("bar"), commandOptionRequiresValueDefinition),
+			mustNewOption(t, commandOptionMultiName, new("foo"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionRequiresValueName, new("foo"), commandOptionRequiresValueDefinition),
 		},
 	}
 
@@ -310,28 +306,28 @@ func TestPrepend(t *testing.T) {
 	args := &parsed.OrderedArgs{
 		Args: []arguments.Argument{
 			mustNewOption(t, "no"+startupOptionBoolName, nil, startupOptionBoolDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("foo"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionMultiName, new("foo"), startupOptionMultiDefinition),
 			mustNewOption(t, startupOptionBoolName, nil, startupOptionBoolDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("bar"), startupOptionMultiDefinition),
-			mustNewOption(t, startupOptionRequiresValueName, ptr("foo"), startupOptionRequiresValueDefinition),
-			mustNewOption(t, startupOptionMultiName, ptr("bar"), startupOptionMultiDefinition),
-			mustNewOption(t, startupOptionRequiresValueName, ptr("bar"), startupOptionRequiresValueDefinition),
+			mustNewOption(t, startupOptionMultiName, new("bar"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionRequiresValueName, new("foo"), startupOptionRequiresValueDefinition),
+			mustNewOption(t, startupOptionMultiName, new("bar"), startupOptionMultiDefinition),
+			mustNewOption(t, startupOptionRequiresValueName, new("bar"), startupOptionRequiresValueDefinition),
 			&arguments.PositionalArgument{Value: "command"},
 			mustNewOption(t, "no"+commandOptionBoolName, nil, commandOptionBoolDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("foo"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionMultiName, new("foo"), commandOptionMultiDefinition),
 			mustNewOption(t, commandOptionBoolName, nil, commandOptionBoolDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("bar"), commandOptionMultiDefinition),
-			mustNewOption(t, commandOptionRequiresValueName, ptr("bar"), commandOptionRequiresValueDefinition),
-			mustNewOption(t, commandOptionMultiName, ptr("foo"), commandOptionMultiDefinition),
-			mustNewOption(t, commandOptionRequiresValueName, ptr("foo"), commandOptionRequiresValueDefinition),
+			mustNewOption(t, commandOptionMultiName, new("bar"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionRequiresValueName, new("bar"), commandOptionRequiresValueDefinition),
+			mustNewOption(t, commandOptionMultiName, new("foo"), commandOptionMultiDefinition),
+			mustNewOption(t, commandOptionRequiresValueName, new("foo"), commandOptionRequiresValueDefinition),
 		},
 	}
 	args.Prepend(
 		mustNewOption(t, "no"+commandOptionBoolName, nil, commandOptionBoolDefinition),
-		mustNewOption(t, commandOptionMultiName, ptr("foofoo"), commandOptionMultiDefinition),
+		mustNewOption(t, commandOptionMultiName, new("foofoo"), commandOptionMultiDefinition),
 		mustNewOption(t, commandOptionBoolName, nil, commandOptionBoolDefinition),
 		mustNewOption(t, "no"+startupOptionBoolName, nil, startupOptionBoolDefinition),
-		mustNewOption(t, startupOptionMultiName, ptr("foobar"), startupOptionMultiDefinition),
+		mustNewOption(t, startupOptionMultiName, new("foobar"), startupOptionMultiDefinition),
 		mustNewOption(t, startupOptionBoolName, nil, startupOptionBoolDefinition),
 	)
 

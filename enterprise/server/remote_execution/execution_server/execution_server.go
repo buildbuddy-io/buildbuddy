@@ -26,7 +26,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -95,6 +94,7 @@ var (
 
 	writeExecutionProgressStateToRedis = flag.Bool("remote_execution.write_execution_progress_state_to_redis", false, "If enabled, write initial execution metadata and progress updates (stage changes) to redis. This state is cleared when the execution is complete.", flag.Internal)
 	writeExecutionsToPrimaryDB         = flag.Bool("remote_execution.write_executions_to_primary_db", true, "If enabled, write executions and invocation-execution links to the primary DB.", flag.Internal)
+	chunkingEnabled                    = flag.Bool("remote_execution.chunking_enabled", false, "If true, executors upload outputs and download inputs using content-defined chunks.")
 
 	teeInstanceNamePrefix = flag.String("remote_execution.tee_instance_name_prefix", "", "Instance name prefix used to identify tee'ed actions", flag.Internal)
 )
@@ -678,8 +678,7 @@ func (s *ExecutionServer) getActionResultFromCache(ctx context.Context, d *diges
 	if err != nil {
 		return nil, err
 	}
-	chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
-	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), chunkingEnabled, s.env.GetExperimentFlagProvider(), actionResult); err != nil {
+	if err := action_cache_server.ValidateActionResult(ctx, s.cache, d.GetInstanceName(), d.GetDigestFunction(), actionResult); err != nil {
 		return nil, err
 	}
 	return actionResult, nil
@@ -928,41 +927,37 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	// Inject use-oci-fetcher platform property via experiment.
+	// Inject use-oci-fetcher platform property via experiment. The executor
+	// additionally gates this property on its executor.use_oci_fetcher flag.
 	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
-		const useOCIFetcherExperiment = "remote_execution.use_oci_fetcher"
 		const disableOCIFetcherExperiment = "remote_execution.disable_oci_fetcher"
-		useOCIFetcher, details := fp.BooleanDetails(ctx, useOCIFetcherExperiment, false)
-		disableOCIFetcher := fp.Boolean(ctx, disableOCIFetcherExperiment, true)
-		if useOCIFetcher == disableOCIFetcher {
-			log.CtxWarningf(
-				ctx,
-				"OCI fetcher experiment flags do not match: %s=%t, %s=%t; expected the values to be logical opposites",
-				useOCIFetcherExperiment, useOCIFetcher, disableOCIFetcherExperiment, disableOCIFetcher,
-			)
-		}
-		if useOCIFetcher {
+		disableOCIFetcher, details := fp.BooleanDetails(ctx, disableOCIFetcherExperiment, true)
+		if details.Variant() != "" {
 			executionTask.PlatformOverrides.Properties = append(
 				executionTask.PlatformOverrides.Properties,
 				&repb.Platform_Property{
 					Name:  "use-oci-fetcher",
-					Value: "true",
+					Value: strconv.FormatBool(!disableOCIFetcher),
 				})
-		}
-		if details.Variant() != "" {
-			executionTask.Experiments = append(executionTask.Experiments, useOCIFetcherExperiment+":"+details.Variant())
+			executionTask.Experiments = append(executionTask.Experiments, disableOCIFetcherExperiment+":"+details.Variant())
 		}
 	}
 
 	efp := s.env.GetExperimentFlagProvider()
-	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.upload_outputs_chunked", false) {
+	uploadOutputsChunked := *chunkingEnabled
+	downloadInputsChunked := *chunkingEnabled
+	if efp != nil {
+		uploadOutputsChunked = efp.Boolean(ctx, "executor.upload_outputs_chunked", uploadOutputsChunked)
+		downloadInputsChunked = efp.Boolean(ctx, "executor.download_inputs_chunked", downloadInputsChunked)
+	}
+	if uploadOutputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.upload_outputs_chunked")
 		executionTask.FastCdc_2020Params = chunking.FastCDCWriteParams(ctx, efp)
-		if efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
+		if efp != nil && efp.Boolean(ctx, cdc.SpliceWithoutValidationExperiment, false) {
 			executionTask.Experiments = append(executionTask.Experiments, cdc.SpliceWithoutValidationExperiment)
 		}
 	}
-	if efp != nil && chunking.Enabled(ctx, efp) && efp.Boolean(ctx, "executor.download_inputs_chunked", false) {
+	if downloadInputsChunked {
 		executionTask.Experiments = append(executionTask.Experiments, "executor.download_inputs_chunked")
 	}
 
@@ -971,11 +966,32 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
-		if efp.Boolean(ctx, snaputil.RemoteContainerImageReadsExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageReadsExperiment)
+		if efp.Boolean(ctx, "executor.remote_container_image_reads_enabled", false) {
+			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_reads_enabled")
 		}
-		if efp.Boolean(ctx, snaputil.RemoteContainerImageWritesExperiment, false) {
-			executionTask.Experiments = append(executionTask.Experiments, snaputil.RemoteContainerImageWritesExperiment)
+		if efp.Boolean(ctx, "executor.remote_container_image_writes_enabled", false) {
+			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_writes_enabled")
+		}
+	}
+
+	// NOTE: compute the task size before applying any volatile env overrides below,
+	// since the command hash is used as part of the task sizing key.
+	defaultTaskSize := tasksize.Default(executionTask)
+	requestedTaskSize := tasksize.Requested(executionTask)
+	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
+	measuredSize := s.taskSizer.Get(ctx, command, props)
+	var predictedSize *scpb.TaskSize
+	if measuredSize == nil {
+		predictedSize = s.taskSizer.Predict(ctx, action, command, props)
+	}
+
+	if measuredSize != nil {
+		// If we have a measured task size, make sure we associate the p90 cpu
+		// experiment arm with the task, so we can later evaluate the experiment
+		// results. Note, the first time this is evaluated, we'll use the avg
+		// sample, so we'll probably want to ignore the first few days of data.
+		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
+			executionTask.Experiments = append(executionTask.Experiments, experiment)
 		}
 	}
 
@@ -1012,25 +1028,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	}
 
 	executionTask.QueuedTimestamp = timestamppb.Now()
-	defaultTaskSize := tasksize.Default(executionTask)
-	requestedTaskSize := tasksize.Requested(executionTask)
-	taskSize := tasksize.ApplyLimitsWithRequestedSize(ctx, s.env.GetExperimentFlagProvider(), command, props, defaultTaskSize, requestedTaskSize)
-	measuredSize := s.taskSizer.Get(ctx, command, props)
-	var predictedSize *scpb.TaskSize
-	if measuredSize == nil {
-		predictedSize = s.taskSizer.Predict(ctx, action, command, props)
-	}
-
-	if measuredSize != nil {
-		// If we have a measured task size, make sure we associate the p90 cpu
-		// experiment arm with the task, so we can later evaluate the experiment
-		// results. Note, the first time this is evaluated, we'll use the avg
-		// sample, so we'll probably want to ignore the first few days of data.
-		if _, experiment := tasksize.EvaluateP90CPUTrial(ctx, s.env.GetExperimentFlagProvider(), command); experiment != "" {
-			executionTask.Experiments = append(executionTask.Experiments, experiment)
-		}
-	}
-
 	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
@@ -1074,6 +1071,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		ExecutorGroupId:   pool.GroupID,
 		TaskGroupId:       taskGroupID,
 		Priority:          req.GetExecutionPolicy().GetPriority(),
+		QueuedTimestamp:   executionTask.GetQueuedTimestamp(),
 	}
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {

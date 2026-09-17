@@ -3,7 +3,9 @@ package redisutil
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"path/filepath"
@@ -56,6 +58,46 @@ func (*logger) Printf(ctx context.Context, format string, args ...any) {
 		args = append([]any{filepath.Base(file), line}, args...)
 	}
 	log.CtxInfof(ctx, format, args...)
+}
+
+// IsTransientError reports whether err is one a Redis command may succeed
+// on if simply retried: a failed or dropped connection, a timeout, or a reply
+// Redis sends while it cannot serve the command yet, such as LOADING while a
+// dataset is restored. The replies follow what go-redis retries on its own
+// for a single command, in shouldRetry:
+// https://github.com/redis/go-redis/blob/cae67723092cac2cb441bc87044ab9edacb2484d/error.go#L28
+// (v8.11.5). Error replies inside a pipeline never get those retries, so a
+// caller that pipelines has to make the call itself. A canceled or expired
+// context is the caller's decision, not transient.
+func IsTransientError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	// An expired context means the caller gave up, which is not transient.
+	// Check the deadline sentinel directly because a network timeout also
+	// matches context.DeadlineExceeded through errors.Is, and a network
+	// timeout is transient.
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if e == context.DeadlineExceeded {
+			return false
+		}
+	}
+	var redisErr redis.Error
+	if !errors.As(err, &redisErr) {
+		// Retry transport failures, but not arbitrary client errors such as
+		// a closed pool, an unavailable Ring, or a malformed reply.
+		var netErr net.Error
+		return errors.As(err, &netErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+	}
+	if errors.Is(err, redis.Nil) {
+		return false
+	}
+	reply := redisErr.Error()
+	return reply == "ERR max number of clients reached" ||
+		strings.HasPrefix(reply, "LOADING ") ||
+		strings.HasPrefix(reply, "READONLY ") ||
+		strings.HasPrefix(reply, "CLUSTERDOWN ") ||
+		strings.HasPrefix(reply, "TRYAGAIN ")
 }
 
 func isRedisURI(redisTarget string) bool {
@@ -483,7 +525,7 @@ func (r *redlock) Unlock(ctx context.Context) error {
 }
 
 type valueExpiration struct {
-	value      interface{}
+	value      any
 	expiration time.Duration
 }
 
@@ -522,9 +564,9 @@ type CommandBuffer struct {
 	// Buffer for HINCRBY commands.
 	hincr map[string]map[string]int64
 	// Buffer for RPUSH commands.
-	rpush map[string][]interface{}
+	rpush map[string][]any
 	// Buffer for SADD commands.
-	sadd map[string]map[interface{}]struct{}
+	sadd map[string]map[any]struct{}
 	// Buffer for EXPIRE commands.
 	expire map[string]time.Duration
 	// Whether the server is shutting down.
@@ -542,8 +584,8 @@ func (c *CommandBuffer) init() {
 	c.set = map[string]valueExpiration{}
 	c.incr = map[string]int64{}
 	c.hincr = map[string]map[string]int64{}
-	c.rpush = map[string][]interface{}{}
-	c.sadd = map[string]map[interface{}]struct{}{}
+	c.rpush = map[string][]any{}
+	c.sadd = map[string]map[any]struct{}{}
 	c.expire = map[string]time.Duration{}
 }
 
@@ -595,7 +637,7 @@ func (c *CommandBuffer) HIncrBy(ctx context.Context, key, field string, incremen
 // If the server is shutting down, the command will be issued to Redis
 // synchronously using the given context. Otherwise, the command is added to
 // the buffer and the context is ignored.
-func (c *CommandBuffer) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+func (c *CommandBuffer) Set(ctx context.Context, key string, value any, expiration time.Duration) error {
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
@@ -613,7 +655,7 @@ func (c *CommandBuffer) Set(ctx context.Context, key string, value interface{}, 
 // If the server is shutting down, the command will be issued to Redis
 // synchronously using the given context. Otherwise, the command is added to
 // the buffer and the context is ignored.
-func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interface{}) error {
+func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...any) error {
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
@@ -623,7 +665,7 @@ func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interfa
 
 	set, ok := c.sadd[key]
 	if !ok {
-		set = make(map[interface{}]struct{}, len(members))
+		set = make(map[any]struct{}, len(members))
 		c.sadd[key] = set
 	}
 	for _, m := range members {
@@ -637,7 +679,7 @@ func (c *CommandBuffer) SAdd(ctx context.Context, key string, members ...interfa
 // If the server is shutting down, the command will be issued to Redis
 // synchronously using the given context. Otherwise, the command is added to
 // the buffer and the context is ignored.
-func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...interface{}) error {
+func (c *CommandBuffer) RPush(ctx context.Context, key string, values ...any) error {
 	c.mu.Lock()
 	if c.shouldFlushSynchronously() {
 		c.mu.Unlock()
@@ -714,7 +756,7 @@ func (c *CommandBuffer) Flush(ctx context.Context) error {
 		pipe.RPush(ctx, key, values...)
 	}
 	for key, set := range sadd {
-		members := []interface{}{}
+		members := []any{}
 		for member := range set {
 			members = append(members, member)
 		}

@@ -2,6 +2,7 @@ package tracing_test
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -57,9 +58,7 @@ func externalCarrier(extraHeaders map[string]string) propagation.MapCarrier {
 		"traceparent": externalTraceParent(),
 		"tracestate":  externalTraceState,
 	}
-	for k, v := range extraHeaders {
-		c[k] = v
-	}
+	maps.Copy(c, extraHeaders)
 	return c
 }
 

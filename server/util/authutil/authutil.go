@@ -57,6 +57,10 @@ const (
 	UserNotFoundMsg   = "User not found"
 	LoggedOutMsg      = "User logged out"
 	ExpiredSessionMsg = "User session expired"
+
+	// AdminDisplayName is the name of a "server administrator" shown to users
+	AdminDisplayName = "Buildbuddy Admin"
+	adminEmailSuffix = "@buildbuddy.io"
 )
 
 var (
@@ -67,6 +71,10 @@ var (
 
 func UserListsEnabled() bool {
 	return *enableUserLists
+}
+
+func IsAdminEmail(email string) bool {
+	return strings.HasSuffix(email, adminEmailSuffix)
 }
 
 // AuthorizeOrgAdmin checks whether the given user has ORG_ADMIN capability
@@ -152,6 +160,16 @@ func IsAnonymousUserError(err error) bool {
 		}
 	}
 	return false
+}
+
+// IsAnonymousRequest reports whether anonymous usage is enabled and the
+// request did not provide authentication credentials.
+func IsAnonymousRequest(ctx context.Context, authenticator interfaces.Authenticator) bool {
+	if !authenticator.AnonymousUsageEnabled(ctx) {
+		return false
+	}
+	_, err := authenticator.AuthenticatedUser(ctx)
+	return IsAnonymousUserError(err)
 }
 
 // Parses and returns a BuildBuddy API key from the given string.

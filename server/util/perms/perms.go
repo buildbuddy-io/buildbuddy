@@ -187,7 +187,7 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 	if u, err := auth.AuthenticatedUser(ctx); err == nil {
 		hasUser = true
 		if u.GetUserID() != "" {
-			groupArgs := []interface{}{
+			groupArgs := []any{
 				GROUP_READ,
 			}
 			groupParams := make([]string, 0)
@@ -200,7 +200,7 @@ func GetPermissionsCheckClauses(ctx context.Context, env environment.Env, q *que
 			o.AddOr(groupQueryStr, groupArgs...)
 			o.AddOr(fmt.Sprintf("(%sperms & ? != 0 AND %suser_id = ?)", tablePrefix, tablePrefix), OWNER_READ, u.GetUserID())
 		} else if u.GetGroupID() != "" {
-			groupArgs := []interface{}{
+			groupArgs := []any{
 				GROUP_READ,
 				u.GetGroupID(),
 			}

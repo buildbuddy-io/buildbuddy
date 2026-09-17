@@ -282,7 +282,7 @@ func TestSearchExecutions_Pagination(t *testing.T) {
 	env.SetAuthenticator(ta)
 
 	executions := make([]*olaptables.Execution, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		hash := fmt.Sprintf("a948904f2f0f479b8f8564cbf12dac6b5c8c3c1f7e8b4d6a3c2e1f0a9b8c7d%02x", i)
 		actionDigest := &repb.Digest{Hash: hash, SizeBytes: int64(100 + i*10)}
 		executionID := makeExecutionID(actionDigest)
@@ -346,7 +346,7 @@ func TestSearchExecutions_PaginationWithEmptyInvocationUUIDs(t *testing.T) {
 	env.SetAuthenticator(ta)
 
 	executions := make([]*olaptables.Execution, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		hash := fmt.Sprintf("b948904f2f0f479b8f8564cbf12dac6b5c8c3c1f7e8b4d6a3c2e1f0a9b8c7d%02x", i)
 		actionDigest := &repb.Digest{Hash: hash, SizeBytes: int64(100 + i*10)}
 		executionID := makeExecutionID(actionDigest)

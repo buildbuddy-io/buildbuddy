@@ -260,7 +260,7 @@ export default class CacheCardComponent extends React.Component<Props> {
     return (
       <div className="cache-chart-container">
         <ResponsiveContainer>
-          <PieChart>
+          <PieChart accessibilityLayer={false}>
             <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.color} />

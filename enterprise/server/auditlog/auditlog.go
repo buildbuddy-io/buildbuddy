@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
@@ -200,9 +200,9 @@ func (l *Logger) LogForUserList(ctx context.Context, userListID string, userList
 // FilterEntry redacts internal BuildBuddy user details from an audit log entry
 // for non-server-admin viewers.
 func FilterEntry(entry *alpb.Entry, userEmail string) {
-	if strings.HasSuffix(userEmail, "@buildbuddy.io") {
+	if authutil.IsAdminEmail(userEmail) {
 		entry.AuthenticationInfo.User = &alpb.AuthenticatedUser{
-			UserEmail: "Buildbuddy Admin",
+			UserEmail: authutil.AdminDisplayName,
 		}
 		entry.AuthenticationInfo.ClientIp = "0.0.0.0"
 	}

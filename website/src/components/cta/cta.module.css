@@ -1,3 +1,16 @@
-.button {
+.button.button {
   margin-top: 24px;
+  flex-grow: 0;
+}
+
+@media (max-width: 500px) {
+  .button.button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button.button {
+    transition: none;
+  }
 }

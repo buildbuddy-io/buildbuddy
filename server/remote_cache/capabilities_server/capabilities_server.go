@@ -67,7 +67,6 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		compressors = []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD}
 	}
 	if s.supportCAS {
-		chunkingEnabled := chunking.Enabled(ctx, s.env.GetExperimentFlagProvider())
 		c.CacheCapabilities = &repb.CacheCapabilities{
 			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
@@ -85,12 +84,9 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 			SymlinkAbsolutePathStrategy:     repb.SymlinkAbsolutePathStrategy_ALLOWED,
 			SupportedCompressors:            compressors,
 			SupportedBatchUpdateCompressors: compressors,
-			SplitBlobSupport:                chunkingEnabled,
-			SpliceBlobSupport:               chunkingEnabled,
-		}
-
-		if chunkingEnabled {
-			c.CacheCapabilities.FastCdc_2020Params = chunking.FastCDCParams(ctx, s.env.GetExperimentFlagProvider())
+			SplitBlobSupport:                true,
+			SpliceBlobSupport:               true,
+			FastCdc_2020Params:              chunking.FastCDCParams(),
 		}
 	}
 	if s.supportRemoteExec {

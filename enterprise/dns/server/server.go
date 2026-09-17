@@ -270,7 +270,7 @@ func (h *Handler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 func (d *zoneData) resolve(qName string, qType uint16) ([]dns.RR, int, bool) {
 	var answer []dns.RR
 	name := qName
-	for i := 0; i < maxCNAMEDepth; i++ {
+	for i := range maxCNAMEDepth {
 		records, ok := d.lookup(name)
 		if !ok {
 			// The queried name itself not existing is NXDOMAIN. Reaching a
@@ -378,10 +378,7 @@ func attachClientSubnetScopeIfPresent(m, r *dns.Msg) {
 		if !ok {
 			continue
 		}
-		udpSize := reqOPT.UDPSize()
-		if udpSize < dns.MinMsgSize {
-			udpSize = dns.MinMsgSize
-		}
+		udpSize := max(reqOPT.UDPSize(), dns.MinMsgSize)
 		respOPT := &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
 		respOPT.SetUDPSize(udpSize)
 		respOPT.Option = append(respOPT.Option, &dns.EDNS0_SUBNET{

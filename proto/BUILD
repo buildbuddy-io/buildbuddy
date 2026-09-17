@@ -726,7 +726,6 @@ proto_library(
         ":search_proto",
         ":secrets_proto",
         ":stats_proto",
-        ":suggestion_proto",
         ":target_proto",
         ":usage_proto",
         ":user_list_proto",
@@ -853,14 +852,6 @@ proto_library(
         "@com_google_protobuf//:duration_proto",
         "@com_google_protobuf//:timestamp_proto",
         "@googleapis//google/rpc:status_proto",
-    ],
-)
-
-proto_library(
-    name = "suggestion_proto",
-    srcs = ["suggestion.proto"],
-    deps = [
-        ":context_proto",
     ],
 )
 
@@ -1571,7 +1562,6 @@ go_proto_library(
         ":search_go_proto",
         ":secrets_go_proto",
         ":stats_go_proto",
-        ":suggestion_go_proto",
         ":target_go_proto",
         ":usage_go_proto",
         ":user_go_proto",
@@ -1810,16 +1800,6 @@ go_proto_library(
         ":trace_go_proto",
         ":upgrade_go_proto",
         "@org_golang_google_genproto_googleapis_rpc//status",
-    ],
-)
-
-go_proto_library(
-    name = "suggestion_go_proto",
-    importpath = "github.com/buildbuddy-io/buildbuddy/proto/suggestion",
-    mode = "messages_and_services",
-    proto = ":suggestion_proto",
-    deps = [
-        ":context_go_proto",
     ],
 )
 
@@ -2159,14 +2139,6 @@ ts_proto_library(
 ts_proto_library(
     name = "trace_ts_proto",
     proto = ":trace_proto",
-)
-
-ts_proto_library(
-    name = "suggestion_ts_proto",
-    proto = ":suggestion_proto",
-    deps = [
-        ":context_ts_proto",
-    ],
 )
 
 ts_proto_library(
@@ -2545,7 +2517,6 @@ ts_proto_library(
         ":search_ts_proto",
         ":secrets_ts_proto",
         ":stats_ts_proto",
-        ":suggestion_ts_proto",
         ":target_ts_proto",
         ":usage_ts_proto",
         ":user_list_ts_proto",

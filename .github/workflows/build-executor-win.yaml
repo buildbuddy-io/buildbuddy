@@ -2,8 +2,6 @@ name: "Build Windows executor"
 
 on:
   pull_request:
-    branches:
-      - master
 
 jobs:
   build:
@@ -119,7 +117,6 @@ jobs:
                    --windows_enable_symlinks `
                    test `
                    --config=untrusted-ci-windows `
-                   --test_tag_filters=-performance `
                    @authArgs `
                    -- `
                    //enterprise/server/cmd/executor:executor_windows_amd64 `
@@ -144,7 +141,8 @@ jobs:
       #              --windows_enable_symlinks `
       #              test `
       #              --config=untrusted-ci-windows `
-      #              --test_tag_filters=performance `
+      #              --config=performance `
+      #              --config=tests-performance `
       #              --test_output=all `
       #              @authArgs `
       #              -- `

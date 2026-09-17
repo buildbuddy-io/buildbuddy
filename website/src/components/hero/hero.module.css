@@ -13,7 +13,30 @@
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
-  justify-content: stretch;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.heroButton.heroButton {
+  flex-grow: 0;
+  min-height: 60px;
+  padding: 16px 26px;
+  border-radius: 12px;
+  gap: 10px;
+  line-height: 20px;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  transition:
+    box-shadow 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.heroButton svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  stroke-width: 2;
 }
 
 .image div {
@@ -119,6 +142,23 @@
 
   .hero .flipped .image img {
     animation: 0.2s ease-in-out 0s 1 animateInFromBottom;
+  }
+}
+
+@media (max-width: 500px) {
+  .buttons {
+    width: 100%;
+    gap: 12px;
+  }
+
+  .heroButton.heroButton {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroButton.heroButton {
+    transition: none;
   }
 }
 

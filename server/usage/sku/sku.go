@@ -87,6 +87,9 @@ const (
 	// TODO: client region (if known), server region
 )
 
+// LabelNames lists every label name. Keep it in sync with the constants above.
+var LabelNames = []LabelName{Client, Server, Origin, Proxy, OS, Arch, SelfHosted, IsolationType}
+
 // LabelValue is the value of a label.
 //
 // TODO: make this a type instead of type alias. GORM's ClickHouse plugin

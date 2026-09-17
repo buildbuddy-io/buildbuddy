@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
-	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/buildbuddy-io/buildbuddy/server/util/wgkeys"
 	"github.com/stretchr/testify/require"
@@ -26,17 +24,14 @@ import (
 	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 )
 
-// Setup starts a gateway composing the given hub services on a free UDP port,
+// Setup starts a gateway with the given options on a free UDP port,
 // registered for cleanup with t.
-func Setup(t testing.TB, ta *testauth.TestAuthenticator, services ...server.HubService) *server.Gateway {
+func Setup(t testing.TB, opts server.Options) *server.Gateway {
 	t.Helper()
 	flags.Set(t, "gateway.udp_listen_port", freeUDPPort(t))
 	flags.Set(t, "gateway.public_host", "127.0.0.1")
 
-	env := testenv.GetTestEnv(t)
-	env.SetAuthenticator(ta)
-
-	gw, err := server.New(env, services...)
+	gw, err := server.New(opts)
 	require.NoError(t, err)
 	t.Cleanup(gw.Close)
 	return gw
@@ -82,15 +77,31 @@ func RegisterAndConnect(t testing.TB, gw *server.Gateway, ctx context.Context, n
 	return RegisterAndConnectWithSessionID(t, gw, ctx, networkName, peerName, NextSessionID())
 }
 
+// RegisterAndConnectAs is RegisterAndConnect for credentials that have to name
+// the WireGuard key being registered, as tunnel certificates do: ctxFor is
+// called with the freshly generated public key.
+func RegisterAndConnectAs(t testing.TB, gw *server.Gateway, ctxFor func(pubKeyHex string) context.Context, networkName, peerName string) Peer {
+	t.Helper()
+	return connectPeer(t, gw, ctxFor, networkName, peerName, NextSessionID())
+}
+
 // RegisterAndConnectWithSessionID is like RegisterAndConnect but allows session ID to be specified by the caller.
+func RegisterAndConnectWithSessionID(t testing.TB, gw *server.Gateway, ctx context.Context, networkName, peerName, sessionID string) Peer {
+	t.Helper()
+	return connectPeer(t, gw, func(string) context.Context { return ctx }, networkName, peerName, sessionID)
+}
+
+// connectPeer is the fully general form: explicit session ID and a per-key
+// credential context.
 //
 // persistent_keepalive_interval=1 is used so that the first outbound packet
 // triggers an immediate WireGuard handshake rather than waiting for the
 // gateway to initiate one.
-func RegisterAndConnectWithSessionID(t testing.TB, gw *server.Gateway, ctx context.Context, networkName, peerName, sessionID string) Peer {
+func connectPeer(t testing.TB, gw *server.Gateway, ctxFor func(pubKeyHex string) context.Context, networkName, peerName, sessionID string) Peer {
 	t.Helper()
 	privKey, err := wgkeys.GeneratePrivateKey()
 	require.NoError(t, err)
+	ctx := ctxFor(privKey.PublicKey().Hex())
 
 	resp, cancel, done := StartConnect(t, gw, ctx, &gwpb.ConnectRequest{
 		NetworkName: networkName,

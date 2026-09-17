@@ -28,10 +28,8 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 	flags.Set(t, "app.read_usage_from_olap_db", true)
 
 	group := &tables.Group{
-		GroupID: "GR1",
-		Model: tables.Model{
-			CreatedAtUsec: time.Date(2023, 7, 9, 0, 0, 0, 0, time.UTC).UnixMicro(),
-		},
+		GroupID:       "GR1",
+		CreatedAtUsec: time.Date(2023, 7, 9, 0, 0, 0, 0, time.UTC).UnixMicro(),
 	}
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -44,7 +42,8 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 		UsageID:         "UG1",
 		GroupID:         "GR1",
 		PeriodStartUsec: time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC).UnixMicro(),
-		UsageCounts:     tables.UsageCounts{Invocations: 999, CASCacheHits: 999},
+		Invocations:     999,
+		CASCacheHits:    999,
 	})
 	require.NoError(t, err)
 

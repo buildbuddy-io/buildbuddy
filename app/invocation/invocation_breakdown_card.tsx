@@ -101,7 +101,7 @@ function renderBreakdown(data: Datum[], title: string, subtitle: string) {
       <div className="cache-subtitle">{subtitle}</div>
       <div className="cache-chart">
         <ResponsiveContainer width={100} height={100}>
-          <PieChart>
+          <PieChart accessibilityLayer={false}>
             <Pie data={data} dataKey="value" outerRadius={40} innerRadius={20}>
               {data.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={getChartColor(index)} />

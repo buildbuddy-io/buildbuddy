@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/directory_size"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
@@ -131,6 +132,12 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 		}
 		digestsToLookup = append(digestsToLookup, rn.ToProto())
 	}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		for _, rn := range digestsToLookup {
+			rsp.MissingBlobDigests = append(rsp.MissingBlobDigests, rn.GetDigest())
+		}
+		return rsp, nil
+	}
 	// Forward the incoming request's purpose so present/absent metrics are
 	// attributed to the originating code path.
 	missing, err := s.cache.FindMissing(findmissing.ContextWithPurpose(ctx, req.GetPurpose()), digestsToLookup)
@@ -143,9 +150,10 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 	// Otherwise, only check manifests for blobs above the current whole-blob
 	// write threshold. Blobs at or below the threshold should be uploaded as
 	// whole blobs.
-	if efp := s.env.GetExperimentFlagProvider(); len(missing) > 0 && !cdc.IsChunked(ctx) && chunking.Enabled(ctx, efp) {
+	if len(missing) > 0 && !cdc.IsChunked(ctx) {
 		checker := chunking.NewMissingChunkChecker(s.cache, repb.FindMissingBlobsRequest_FMB_CHUNK_VALIDATION)
-		maxChunkSizeBytes := chunking.MaxChunkSizeBytes(ctx, efp)
+		maxChunkSizeBytes := chunking.MaxChunkSizeBytes()
+		efp := s.env.GetExperimentFlagProvider()
 
 		var mu sync.Mutex
 		stillMissing := make([]*repb.Digest, 0, len(missing))
@@ -221,6 +229,15 @@ func (s *ContentAddressableStorageServer) FindMissingBlobs(ctx context.Context, 
 // provided data.
 func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
 	rsp := &repb.BatchUpdateBlobsResponse{}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		for _, uploadRequest := range req.Requests {
+			rsp.Responses = append(rsp.Responses, &repb.BatchUpdateBlobsResponse_Response{
+				Digest: uploadRequest.GetDigest(),
+				Status: &statuspb.Status{Code: int32(codes.OK)},
+			})
+		}
+		return rsp, nil
+	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
@@ -389,6 +406,23 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		}
 		totalDownloadSize += size
 	}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		for _, readDigest := range req.GetDigests() {
+			rn := digest.NewResourceName(readDigest, req.GetInstanceName(), rspb.CacheType_CAS, req.GetDigestFunction())
+			if err := rn.Validate(); err != nil {
+				return nil, err
+			}
+			code := codes.NotFound
+			if rn.IsEmpty() {
+				code = codes.OK
+			}
+			rsp.Responses = append(rsp.Responses, &repb.BatchReadBlobsResponse_Response{
+				Digest: rn.GetDigest(),
+				Status: &statuspb.Status{Code: int32(code)},
+			})
+		}
+		return rsp, nil
+	}
 	if qm := s.env.GetQuotaManager(); qm != nil {
 		if err := qm.Allow(ctx, quota.GetSKUKey(sku.RemoteCacheCASDownloadedBytes), totalDownloadSize); err != nil {
 			return nil, err
@@ -403,12 +437,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 	cacheRequest := make([]*rspb.ResourceName, 0, len(req.Digests))
 	rsp.Responses = make([]*repb.BatchReadBlobsResponse_Response, 0, len(req.Digests))
 	clientAcceptsZstd := remote_cache_config.ZstdTranscodingEnabled() && clientAcceptsCompressor(req.AcceptableCompressors, repb.Compressor_ZSTD)
-	efp := s.env.GetExperimentFlagProvider()
-	chunkingEnabled := chunking.Enabled(ctx, efp)
-	chunkedReadFallbackSizeBytes := int64(0)
-	if chunkingEnabled {
-		chunkedReadFallbackSizeBytes = chunking.MinChunkedReadFallbackSizeBytes(ctx, efp)
-	}
+	chunkedReadFallbackSizeBytes := chunking.MinChunkedReadFallbackSizeBytes()
 	readZstd := clientAcceptsZstd && s.cache.SupportsCompressor(repb.Compressor_ZSTD)
 
 	requestedResources := make([]*digest.ResourceName, 0, len(req.GetDigests()))
@@ -448,7 +477,7 @@ func (s *ContentAddressableStorageServer) BatchReadBlobs(ctx context.Context, re
 		// It's unexpected, but BatchReadBlobs may be used for blobs that are
 		// large enough to be chunked. If the blob was not found and it's large
 		// enough to be chunked, try to reassemble it from CDC chunks.
-		if (!ok || os.IsNotExist(err)) && chunkingEnabled && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
+		if (!ok || os.IsNotExist(err)) && rn.GetDigest().GetSizeBytes() > chunkedReadFallbackSizeBytes {
 			if assembled, assembleErr := s.readChunkedBlob(ctx, rn.GetDigest(), req.GetInstanceName(), req.GetDigestFunction(), readZstd); assembleErr == nil {
 				data = assembled
 				ok = true
@@ -859,6 +888,9 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 	if rootDirRN.IsEmpty() {
 		return nil
 	}
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(stream.Context(), s.env.GetAuthenticator()) {
+		return status.NotFoundError("tree root not found")
+	}
 
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.env.GetAuthenticator())
 	if err != nil {
@@ -960,7 +992,6 @@ func (s *ContentAddressableStorageServer) GetTree(req *repb.GetTreeRequest, stre
 
 		eg, egCtx := errgroup.WithContext(ctx)
 		for _, childDirWithDigest := range children {
-			childDirWithDigest := childDirWithDigest
 			l := level
 			eg.Go(func() error {
 				grandchild, err := fetch(egCtx, childDirWithDigest, l+1)
@@ -1229,6 +1260,11 @@ func (s *ContentAddressableStorageServer) SpliceBlob(ctx context.Context, req *r
 }
 
 func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *repb.SpliceBlobRequest) (*repb.SpliceBlobResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		return &repb.SpliceBlobResponse{
+			BlobDigest: req.GetBlobDigest(),
+		}, nil
+	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
@@ -1245,10 +1281,6 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		return &repb.SpliceBlobResponse{
 			BlobDigest: req.GetBlobDigest(),
 		}, nil
-	}
-
-	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
-		return nil, status.UnimplementedErrorf("SpliceBlob RPC is not currently enabled")
 	}
 
 	if cf := req.GetChunkingFunction(); cf != repb.ChunkingFunction_UNKNOWN && cf != repb.ChunkingFunction_FAST_CDC_2020 {
@@ -1349,14 +1381,21 @@ func (s *ContentAddressableStorageServer) SplitBlob(ctx context.Context, req *re
 	return resp, err
 }
 
+func (s *ContentAddressableStorageServer) GetChunkMapping(req *repb.GetChunkMappingRequest, stream repb.ContentAddressableStorage_GetChunkMappingServer) error {
+	return status.UnimplementedError("GetChunkMapping RPC is not currently implemented")
+}
+
+func (s *ContentAddressableStorageServer) RegisterChunkMapping(stream repb.ContentAddressableStorage_RegisterChunkMappingServer) error {
+	return status.UnimplementedError("RegisterChunkMapping RPC is not currently implemented")
+}
+
 func (s *ContentAddressableStorageServer) splitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*repb.SplitBlobResponse, error) {
+	if remote_cache_config.BlackholeAnonymousRequests() && authutil.IsAnonymousRequest(ctx, s.env.GetAuthenticator()) {
+		return nil, status.NotFoundError("blob not found")
+	}
 	ctx, err := prefix.AttachUserPrefixToContext(ctx, s.env.GetAuthenticator())
 	if err != nil {
 		return nil, err
-	}
-
-	if !chunking.Enabled(ctx, s.env.GetExperimentFlagProvider()) {
-		return nil, status.UnimplementedErrorf("SplitBlob RPC is not currently enabled")
 	}
 
 	cf := req.GetChunkingFunction()

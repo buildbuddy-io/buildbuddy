@@ -3,6 +3,7 @@ package gossip
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -125,9 +126,7 @@ func (gm *GossipManager) getTags() map[string]string {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 	rmap := make(map[string]string, len(gm.tags))
-	for tagName, tagValue := range gm.tags {
-		rmap[tagName] = tagValue
-	}
+	maps.Copy(rmap, gm.tags)
 	return rmap
 }
 

@@ -18,11 +18,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -72,7 +72,7 @@ type sharedDirectoryContextKey struct{}
 
 var (
 	enableAlwaysClone                = flag.Bool("executor.local_cache_always_clone", false, "If true, files from the filecache will always be cloned instead of hardlinked")
-	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", false, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
+	includeSubdirPrefix              = flag.Bool("executor.include_subdir_prefix", true, "If true, store files under subdirs named by a short prefix of the file digest. This can help improve throughput on systems with high core counts. The prefix length is controlled by subdir_prefix_length.")
 	subdirPrefixLength               = flag.Int("executor.subdir_prefix_length", 2, "The length of the subdir prefix to use if include_subdir_prefix is true.")
 	enableDiskFallbackOnStartup      = flag.Bool("executor.local_cache_enable_disk_fallback_during_startup_scan", true, "If true, fallback to disk lookups while initial local cache scan is in progress.", flag.Internal)
 	deleteFilecacheOnUncleanShutdown = flag.Bool("executor.delete_filecache_on_unclean_shutdown", false, "If true, record the current boot ID in a marker file in the filecache directory while running, and remove it on clean shutdown. If the marker is present at startup with a boot ID from a previous boot session, the machine rebooted before the previous process could shut down cleanly (e.g. power loss), so the filecache is wiped to avoid serving potentially corrupted files.")
@@ -666,11 +666,11 @@ func namespacedKey(keyPrefix string, node *repb.FileNode) (string, error) {
 }
 
 func groupIDStringFromContext(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		if len(c.GroupID) == 0 {
-			log.CtxWarning(ctx, "Empty group id")
+	if u, err := auth.UserFromTrustedJWT(ctx); err == nil {
+		groupID := u.GetGroupID()
+		if groupID != "" {
+			return groupID
 		}
-		return c.GroupID
 	}
 	return interfaces.AuthAnonymousUser
 }

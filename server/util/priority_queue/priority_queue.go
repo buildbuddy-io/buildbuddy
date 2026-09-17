@@ -108,10 +108,25 @@ func (pq *ThreadSafePriorityQueue[V]) zeroValue() V {
 	return zero
 }
 
+// Push adds a value with the given priority. Ties in priority are broken by
+// insertion time, earliest first, using the current time as the insertion
+// time. Use PushWithTime to specify the insertion time explicitly.
 func (pq *ThreadSafePriorityQueue[V]) Push(v V, priority float64) {
+	pq.PushWithTime(v, priority, time.Now())
+}
+
+// PushWithTime adds a value with the given priority, using the given time
+// instead of the current time to break ties among values with equal priority.
+// Passing an earlier time places the value ahead of equal-priority values
+// that were pushed more recently.
+func (pq *ThreadSafePriorityQueue[V]) PushWithTime(v V, priority float64, insertTime time.Time) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
-	heap.Push(&pq.inner, NewItem(v, priority))
+	heap.Push(&pq.inner, &Item[V]{
+		value:      v,
+		priority:   priority,
+		insertTime: insertTime,
+	})
 }
 
 func (pq *ThreadSafePriorityQueue[V]) Pop() (V, bool) {

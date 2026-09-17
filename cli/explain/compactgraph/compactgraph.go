@@ -250,29 +250,25 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 	diffWG := sync.WaitGroup{}
 	// Diff runfiles tree spawns first to compute exact content hashes that are used when diffing other spawns.
 	for _, output := range commonRunfilesTrees {
-		diffWG.Add(1)
-		go func() {
-			defer diffWG.Done()
+		diffWG.Go(func() {
 			spawnDiff, localChange, invalidatedBy := diffRunfilesTrees(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks, old.settings.workspaceRunfilesDirectory, old.settings.hashFunction)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:     spawnDiff,
 				localChange:   localChange,
 				invalidatedBy: invalidatedBy,
 			})
-		}()
+		})
 	}
 	diffWG.Wait()
 	for _, output := range commonSpawnOutputs {
-		diffWG.Add(1)
-		go func() {
-			defer diffWG.Done()
+		diffWG.Go(func() {
 			spawnDiff, localChange, invalidatedBy := diffSpawns(old.spawns[output], new.spawns[output], oldResolveSymlinks, newResolveSymlinks)
 			diffResults.Store(output, &diffResult{
 				spawnDiff:     spawnDiff,
 				localChange:   localChange,
 				invalidatedBy: invalidatedBy,
 			})
-		}()
+		})
 	}
 	diffWG.Wait()
 
@@ -320,11 +316,9 @@ func Diff(old, new *CompactGraph) (*spawn_diff.DiffResult, error) {
 		if result.localChange || !foundTransitiveCause {
 			if len(result.invalidates) > 0 {
 				// result.invalidates isn't modified after this point as the spawns are visited in topological order.
-				diffWG.Add(1)
-				go func() {
-					defer diffWG.Done()
+				diffWG.Go(func() {
 					result.spawnDiff.GetModified().TransitivelyInvalidated = flattenInvalidates(result.invalidates, isExecOutputPath(output))
-				}()
+				})
 			}
 			spawnDiffs = append(spawnDiffs, result.spawnDiff)
 		}

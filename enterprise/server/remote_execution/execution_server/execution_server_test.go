@@ -2,7 +2,9 @@ package execution_server_test
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -109,6 +111,33 @@ func (s *schedulerServerMock) CancelTask(ctx context.Context, taskID string) (bo
 	return true, nil
 }
 
+type taskSizerMock struct {
+	interfaces.TaskSizer
+
+	getCommand     *repb.Command
+	predictCommand *repb.Command
+}
+
+func (s *taskSizerMock) Get(ctx context.Context, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
+	s.getCommand = cmd.CloneVT()
+	return nil
+}
+
+func (s *taskSizerMock) Predict(ctx context.Context, action *repb.Action, cmd *repb.Command, props *platform.Properties) *scpb.TaskSize {
+	s.predictCommand = cmd.CloneVT()
+	return nil
+}
+
+type secretServiceMock struct {
+	interfaces.SecretService
+
+	envVars []*repb.Command_EnvironmentVariable
+}
+
+func (s *secretServiceMock) GetSecretEnvVars(ctx context.Context, groupID string, secretNames ...string) ([]*repb.Command_EnvironmentVariable, error) {
+	return s.envVars, nil
+}
+
 func setupEnvWithClock(t *testing.T, clock clockwork.Clock) (*testenv.TestEnv, *grpc.ClientConn, *testredis.Handle) {
 	env := testenv.GetTestEnv(t)
 	env.SetClock(clock)
@@ -209,6 +238,95 @@ func TestDispatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, task.GetRequestMetadata().GetToolDetails(), "ToolDetails should be nil")
 	assert.Equal(t, iid, task.GetRequestMetadata().GetToolInvocationId(), "invocation ID should be passed along")
+	assert.NotContains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	assert.NotContains(t, task.GetExperiments(), "executor.download_inputs_chunked")
+	assert.Nil(t, task.GetFastCdc_2020Params())
+}
+
+func TestDispatch_ChunkingConfigWithNoopExperimentProvider(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("enabled=%t", enabled), func(t *testing.T) {
+			flags.Set(t, "remote_execution.chunking_enabled", enabled)
+			env, _, _ := setupEnv(t)
+			require.NoError(t, experiments.Register(env))
+			require.NotNil(t, env.GetExperimentFlagProvider())
+
+			ctx := context.Background()
+			s := env.GetRemoteExecutionService()
+			ctx = withIncomingMetadata(t, ctx, &repb.RequestMetadata{
+				ToolInvocationId: "10243d8a-a329-4f46-abfb-bfbceed12baa",
+			})
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+
+			action := &repb.Action{}
+			arn := uploadAction(ctx, t, env, "" /*=instanceName*/, repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			require.NoError(t, s.Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, arn.NewUploadString()))
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.upload_outputs_chunked"))
+			assert.Equal(t, enabled, slices.Contains(task.GetExperiments(), "executor.download_inputs_chunked"))
+			if enabled {
+				require.NotNil(t, task.GetFastCdc_2020Params())
+				assert.Equal(t, uint64(1024*1024), task.GetFastCdc_2020Params().GetAvgChunkSizeBytes())
+			} else {
+				assert.Nil(t, task.GetFastCdc_2020Params())
+			}
+		})
+	}
+}
+
+func TestDispatch_TaskSizingUsesCommandWithoutInjectedSecrets(t *testing.T) {
+	env, _, _ := setupEnv(t)
+	sizer := &taskSizerMock{}
+	env.SetTaskSizer(sizer)
+	env.SetSecretService(&secretServiceMock{
+		envVars: []*repb.Command_EnvironmentVariable{{Name: "SECRET", Value: "secret-value"}},
+	})
+	s, err := execution_server.NewExecutionServer(env)
+	require.NoError(t, err)
+	ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(t.Context(), "US1")
+	require.NoError(t, err)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+	require.NoError(t, err)
+
+	// Completion reloads the command from CAS to record task sizes, so dispatch
+	// must use that command for sizing even when the task requests secrets.
+	cmd := &repb.Command{
+		Arguments:            []string{"echo", "hello"},
+		EnvironmentVariables: []*repb.Command_EnvironmentVariable{{Name: "ORIGINAL", Value: "original-value"}},
+	}
+	action := &repb.Action{
+		Platform: &repb.Platform{Properties: []*repb.Platform_Property{
+			{Name: "include-secrets", Value: "true"},
+		}},
+	}
+	arn := uploadActionWithCommand(ctx, t, env, "", repb.DigestFunction_SHA256, action, cmd)
+	err = s.Dispatch(ctx, &repb.ExecuteRequest{
+		ActionDigest:   arn.GetDigest(),
+		DigestFunction: arn.GetDigestFunction(),
+	}, action, arn.NewUploadString())
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(cmd, sizer.getCommand, protocmp.Transform()))
+	require.Empty(t, cmp.Diff(cmd, sizer.predictCommand, protocmp.Transform()))
+
+	// The executor receives the secret along with the original environment.
+	sched := env.GetSchedulerService().(*schedulerServerMock)
+	require.Len(t, sched.scheduleReqs, 1)
+	task := &repb.ExecutionTask{}
+	err = proto.Unmarshal(sched.scheduleReqs[0].GetSerializedTask(), task)
+	require.NoError(t, err)
+	envVars := make(map[string]string)
+	for _, envVar := range task.GetCommand().GetEnvironmentVariables() {
+		envVars[envVar.GetName()] = envVar.GetValue()
+	}
+	require.Equal(t, "secret-value", envVars["SECRET"])
+	require.Equal(t, "original-value", envVars["ORIGINAL"])
 }
 
 func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
@@ -219,14 +337,14 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 {
   "$schema": "https://flagd.dev/schema/v0/flags.json",
   "flags": {
-    "cache.chunking_enabled": {
+    "executor.upload_outputs_chunked": {
       "state": "ENABLED",
       "variants": {
         "on": true
       },
       "defaultVariant": "on"
     },
-    "executor.upload_outputs_chunked": {
+    "executor.download_inputs_chunked": {
       "state": "ENABLED",
       "variants": {
         "on": true
@@ -281,6 +399,7 @@ func TestDispatch_UploadOutputsChunkedMaxWriteSize(t *testing.T) {
 	err = proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task)
 	require.NoError(t, err)
 	require.Contains(t, task.GetExperiments(), "executor.upload_outputs_chunked")
+	require.Contains(t, task.GetExperiments(), "executor.download_inputs_chunked")
 	require.Contains(t, task.GetExperiments(), "splice-without-validation")
 	require.Equal(t, int64(123456789), task.GetFastCdc_2020Params().GetBuildbuddyMaxChunkedWriteSizeBytes())
 }
@@ -557,6 +676,41 @@ func TestDispatch_ContainerImageRewriteExperiment(t *testing.T) {
 					assert.False(t, strings.HasPrefix(exp, "remote_execution.container_image_rewrite:"), "unexpected experiment entry: %s", exp)
 				}
 			}
+		})
+	}
+}
+
+func TestDispatch_DisableOCIFetcherExperiment(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		disableOCIFetcher bool
+		wantUseOCIFetcher string
+	}{
+		{name: "enabled", disableOCIFetcher: false, wantUseOCIFetcher: "true"},
+		{name: "disabled", disableOCIFetcher: true, wantUseOCIFetcher: "false"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env, _, _ := setupEnv(t)
+			configureExperiments(t, env, map[string]bool{
+				"remote_execution.disable_oci_fetcher": tc.disableOCIFetcher,
+			})
+
+			ctx := context.Background()
+			ctx, err := env.GetAuthenticator().(*testauth.TestAuthenticator).WithAuthenticatedUser(ctx, "US1")
+			require.NoError(t, err)
+			action := &repb.Action{}
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, action)
+			ctx, err = prefix.AttachUserPrefixToContext(ctx, env.GetAuthenticator())
+			require.NoError(t, err)
+			err = env.GetRemoteExecutionService().Dispatch(ctx, &repb.ExecuteRequest{ActionDigest: arn.GetDigest()}, action, "12345678")
+			require.NoError(t, err)
+
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			require.Len(t, sched.scheduleReqs, 1)
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(sched.scheduleReqs[0].SerializedTask, task))
+			assert.Equal(t, tc.wantUseOCIFetcher, platform.FindValue(task.GetPlatformOverrides(), "use-oci-fetcher"))
+			assert.Contains(t, task.GetExperiments(), "remote_execution.disable_oci_fetcher:default")
 		})
 	}
 }

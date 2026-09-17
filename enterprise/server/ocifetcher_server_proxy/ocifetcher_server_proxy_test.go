@@ -207,8 +207,8 @@ func TestFetchBlob_ForwardsRequestUnchanged(t *testing.T) {
 	}{
 		{name: "NoSizeOrMediaType"},
 		{name: "SizeOnly", size: gproto.Int64(12345)},
-		{name: "MediaTypeOnly", mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
-		{name: "SizeAndMediaType", size: gproto.Int64(12345), mediaType: gproto.String("application/vnd.example.layer.v1.tar+gzip")},
+		{name: "MediaTypeOnly", mediaType: new("application/vnd.example.layer.v1.tar+gzip")},
+		{name: "SizeAndMediaType", size: gproto.Int64(12345), mediaType: new("application/vnd.example.layer.v1.tar+gzip")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -727,7 +727,7 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 	errs := make([]error, numClients)
 	results := make([][]byte, numClients)
 
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -753,7 +753,7 @@ func TestFetchBlob_Singleflight(t *testing.T) {
 	}
 	wg.Wait()
 
-	for i := 0; i < numClients; i++ {
+	for i := range numClients {
 		require.NoError(t, errs[i], "client %d got error", i)
 		require.Equal(t, expectedData, results[i], "client %d got wrong data", i)
 	}

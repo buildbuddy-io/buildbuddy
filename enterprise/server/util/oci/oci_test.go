@@ -225,6 +225,7 @@ func TestCredentialsToProto(t *testing.T) {
 }
 
 func newResolver(t *testing.T, te *testenv.TestEnv) *oci.Resolver {
+	flags.Set(t, "executor.use_oci_fetcher", true)
 	r, err := oci.NewResolver(te)
 	require.NoError(t, err)
 	return r
@@ -357,10 +358,8 @@ func TestResolve(t *testing.T) {
 				_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-					Add: pushedImage,
-					Descriptor: ctr.Descriptor{
-						Platform: &tc.imagePlatform,
-					},
+					Add:      pushedImage,
+					Platform: &tc.imagePlatform,
 				})
 				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -551,10 +550,8 @@ func TestResolve_Layers_DiffIDs(t *testing.T) {
 				_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
 
 				index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-					Add: pushedImage,
-					Descriptor: ctr.Descriptor{
-						Platform: &tc.imagePlatform,
-					},
+					Add:      pushedImage,
+					Platform: &tc.imagePlatform,
 				})
 				registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -807,10 +804,8 @@ func TestResolve_WithCache(t *testing.T) {
 			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: pushedImage,
-				Descriptor: ctr.Descriptor{
-					Platform: &tc.imagePlatform,
-				},
+				Add:      pushedImage,
+				Platform: &tc.imagePlatform,
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -1400,6 +1395,25 @@ func TestResolveImageDigest_CacheExpiration(t *testing.T) {
 	require.Empty(t, cmp.Diff(expectedRefresh, counter.Snapshot()))
 }
 
+func TestResolveWithOCIFetcher_DisabledByExecutor(t *testing.T) {
+	flags.Set(t, "executor.use_oci_fetcher", false)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	te := testenv.GetTestEnv(t)
+	registry := testregistry.Run(t, testregistry.Opts{})
+	registry.PushNamedImage(t, "test_image", nil)
+	r, err := oci.NewResolver(te)
+	require.NoError(t, err)
+
+	_, err = r.Resolve(
+		context.Background(),
+		registry.ImageAddress("test_image"),
+		&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
+		oci.Credentials{},
+		true, /*=useOCIFetcher*/
+	)
+	require.NoError(t, err)
+}
+
 // TestResolveWithOCIFetcher_NoClient verifies that Resolve fails with
 // FailedPreconditionError when useOCIFetcher=true but no OCIFetcherClient
 // is configured in the environment.
@@ -1544,10 +1558,8 @@ func TestResolveWithOCIFetcher(t *testing.T) {
 			_, pushedImage := registry.PushNamedImageWithFiles(t, tc.imageName+"_image", tc.imageFiles, nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: pushedImage,
-				Descriptor: ctr.Descriptor{
-					Platform: &tc.imagePlatform,
-				},
+				Add:      pushedImage,
+				Platform: &tc.imagePlatform,
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 
@@ -1644,10 +1656,8 @@ func TestResolveWithOCIFetcher_Layers_DiffIDs(t *testing.T) {
 			_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, tc.imageName+"_image", nil)
 
 			index := mutate.AppendManifests(empty.Index, mutate.IndexAddendum{
-				Add: pushedImage,
-				Descriptor: ctr.Descriptor{
-					Platform: &tc.imagePlatform,
-				},
+				Add:      pushedImage,
+				Platform: &tc.imagePlatform,
 			})
 			registry.PushIndex(t, index, tc.imageName+"_index", nil)
 

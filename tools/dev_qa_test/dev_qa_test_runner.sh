@@ -42,10 +42,6 @@ if [[ -z "${bazel_command}" ]]; then
   exit 1
 fi
 
-# Generate a unique run ID to ensure a fresh remote cache namespace.
-# This prevents AC (action cache) and CAS hits from previous runs.
-run_id="$(date +%s)-${RANDOM}"
-
 echo "=================================================="
 echo "Dev QA Test Runner"
 echo "=================================================="
@@ -54,7 +50,6 @@ echo "Workspace: ${workspace_dir}"
 echo "Tarball URL: ${tarball_url}"
 echo "Strip prefix: ${strip_prefix}"
 echo "Bazel command: ${bazel_command}"
-echo "Run ID: ${run_id}"
 echo "=================================================="
 
 cd "${workspace_dir}"
@@ -119,16 +114,9 @@ build:dev_qa_test --build_metadata=TAGS=qa-integration-test
 build:dev_qa_test --test_tag_filters=-performance,-webdriver,-docker,-bare
 test:dev_qa_test --flaky_test_attempts=3
 build:dev_qa_test --nocache_test_results
-build:dev_qa_test --noremote_accept_cached
-build:dev_qa_test --noremote_upload_local_results
-build:dev_qa_test --remote_instance_name=dev-qa-test/${run_id}
-build:dev_qa_test --modify_execution_info=.*=+no-remote-cache
-EOF
-
-cat >> .bazelrc <<EOF
 build:dev_qa_test --extra_toolchains=@toolchains_buildbuddy//toolchains/cc:ubuntu_gcc_x86_64
-build:dev_qa_test --platforms=@toolchains_buildbuddy//platforms:linux_x86_64
-build:dev_qa_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+build:dev_qa_test --platforms=@toolchains_buildbuddy//platforms:host_compatible
+build:dev_qa_test --extra_execution_platforms=@toolchains_buildbuddy//platforms:host_compatible
 EOF
 
 if [[ -n "${api_key}" ]]; then
@@ -155,8 +143,13 @@ echo "Running Bazel command: ${bazel_command}"
 echo "=================================================="
 
 set -x
-${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}
-exit_code=$?
+# Capture the status instead of letting `set -e` abort here, so the summary
+# below still runs on failure.
+if ${bazel} ${bazel_command} --config=dev_qa_test ${extra_bazel_flags}; then
+  exit_code=0
+else
+  exit_code=$?
+fi
 set +x
 
 echo "=================================================="

@@ -1,13 +1,19 @@
 @media (min-width: 997px) {
   .sign-up {
-    padding: 8px 18px;
-    border: 1px solid rgb(231, 231, 231);
-    border-radius: 8px;
+    padding: 9px 18px;
+    border: 1px solid #4b4b50;
+    border-radius: 10px;
     display: block;
     margin-left: 16px;
     font-weight: 600;
-    color: #000;
-    background-color: #fff;
+    color: #262629;
+    background: #fff;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.9) inset,
+      0 4px 12px rgba(28, 28, 31, 0.08);
+    transition:
+      box-shadow 160ms ease,
+      border-color 160ms ease;
   }
 }
 
@@ -22,11 +28,16 @@
 }
 
 .sign-up:hover {
-  border-color: #888;
+  color: #111;
+  border-color: #242428;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 7px 18px rgba(28, 28, 31, 0.12);
 }
 
-html[data-theme="dark"] .sign-up:hover {
-  background-color: rgba(231, 231, 231, 0.1);
+.sign-up:focus-visible {
+  outline: 3px solid rgba(73, 162, 245, 0.4);
+  outline-offset: 3px;
 }
 
 .navbar__brand {

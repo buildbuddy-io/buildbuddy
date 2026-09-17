@@ -33,6 +33,7 @@ go_test(
     deps = [
         "//cli/arg",
         "//cli/parser",
+        "//cli/parser/bazel_command",
         "//cli/parser/test_data",
         "//proto:spawn_diff_go_proto",
         "@com_github_stretchr_testify//assert",

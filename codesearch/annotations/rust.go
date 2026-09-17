@@ -231,8 +231,8 @@ func rustResolvePath(path, selfModule string) string {
 // rustParentModule returns the parent of a `::`-joined module path, or "" at
 // the crate root.
 func rustParentModule(module string) string {
-	if i := strings.LastIndex(module, "::"); i >= 0 {
-		return module[:i]
+	if before, _, ok := strings.CutLast(module, "::"); ok {
+		return before
 	}
 	return ""
 }

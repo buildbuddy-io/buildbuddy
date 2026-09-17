@@ -1,22 +1,11 @@
-import { Check, ChevronDown, Clock, Copy, Download, Info, Sparkles } from "lucide-react";
+import { Clock, Download } from "lucide-react";
 import React from "react";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import alertService from "../alert/alert_service";
 import capabilities from "../capabilities/capabilities";
 import Button, { OutlinedButton } from "../components/button/button";
-import { OutlinedButtonGroup } from "../components/button/button_group";
+import AIButton from "../components/button/ai_button";
 import LinkButton from "../components/button/link_button";
-import Dialog, {
-  DialogBody,
-  DialogFooter,
-  DialogFooterButtons,
-  DialogHeader,
-  DialogTitle,
-} from "../components/dialog/dialog";
-import Menu, { MenuItem } from "../components/menu/menu";
-import Modal from "../components/modal/modal";
-import Popup, { PopupContainer } from "../components/popup/popup";
-import { TextLink } from "../components/link/link";
 import SetupCodeComponent from "../docs/setup_code";
 import errorService from "../errors/error_service";
 import format from "../format/format";
@@ -25,7 +14,7 @@ import { Profile, readProfile, Thread } from "../trace/compact_trace";
 import TimingProfileDropTarget from "../trace/timing_profile_drop_target";
 import TraceViewer from "../trace/trace_viewer";
 import { copyToClipboard } from "../util/clipboard";
-import { RemoteRunnerAgent, triggerRemoteRun } from "../util/remote_runner";
+import { getRemoteRunnerAgentConfig, RemoteRunnerAgent, triggerRemoteRun } from "../util/remote_runner";
 import InvocationBreakdownCardComponent from "./invocation_breakdown_card";
 import InvocationModel from "./invocation_model";
 import { getTimingDataSuggestion, SuggestionComponent } from "./invocation_suggestion_card";
@@ -49,9 +38,6 @@ interface State {
   eventPageSize: number;
   localProfileName: string;
   viewerKey: number;
-  analyzeProfileAgent: RemoteRunnerAgent;
-  isAnalyzeProfileMenuOpen: boolean;
-  isAnalyzeProfileDialogOpen: boolean;
 }
 
 interface TraceEventRef {
@@ -89,9 +75,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     threadPageSize: window.localStorage[threadPageSizeStorageKey] || 10,
     eventPageSize: window.localStorage[eventPageSizeStorageKey] || 100,
     viewerKey: 0,
-    analyzeProfileAgent: "codex",
-    isAnalyzeProfileMenuOpen: false,
-    isAnalyzeProfileDialogOpen: false,
   };
 
   private progressRef = React.createRef<HTMLDivElement>();
@@ -435,136 +418,40 @@ export default class InvocationTimingCardComponent extends React.Component<Props
     return refs;
   }
 
-  private getAnalyzeProfileCommand() {
-    return `bb agent analyze-profile --agent=${this.state.analyzeProfileAgent} ${this.props.model.getInvocationId()}`;
+  private getAnalyzeProfileCommand(agent: RemoteRunnerAgent) {
+    return `bb agent analyze-profile --agent=${agent} ${this.props.model.getInvocationId()}`;
   }
 
   // suggestSpeedups runs `bb agent analyze-profile` on a remote runner.
-  private suggestSpeedups() {
-    triggerRemoteRun(
+  private suggestSpeedups(agent: RemoteRunnerAgent) {
+    return triggerRemoteRun(
       this.props.model,
-      this.getAnalyzeProfileCommand(),
+      this.getAnalyzeProfileCommand(agent),
       true,
-      new Map<string, string>([
-        ["env-secrets", this.state.analyzeProfileAgent === "claude" ? "ANTHROPIC_API_KEY" : "CODEX_API_KEY"],
-      ]),
+      new Map<string, string>([["env-secrets", getRemoteRunnerAgentConfig(agent).apiKeyEnvVar]]),
       ["--skip_auto_checkout=true"],
       "agent analyze-profile",
-      this.state.analyzeProfileAgent
+      agent
     );
   }
 
-  private copyAnalyzeProfileCommand() {
-    this.setState({ isAnalyzeProfileMenuOpen: false });
+  private copyAnalyzeProfileCommand(agent: RemoteRunnerAgent) {
     try {
-      copyToClipboard(this.getAnalyzeProfileCommand());
+      copyToClipboard(this.getAnalyzeProfileCommand(agent));
       alertService.success("Copied command to clipboard");
     } catch (e) {
       errorService.handleError(e);
     }
   }
 
-  private selectAnalyzeProfileAgent(agent: RemoteRunnerAgent) {
-    this.setState({ analyzeProfileAgent: agent, isAnalyzeProfileMenuOpen: false });
-  }
-
   private renderAnalyzeProfileActions() {
     return (
-      <PopupContainer className="timing-analyze-profile-actions">
-        <OutlinedButtonGroup>
-          <OutlinedButton onClick={this.suggestSpeedups.bind(this)}>
-            <Sparkles className="icon" />
-            Suggest speedups with AI
-          </OutlinedButton>
-          <OutlinedButton
-            className="icon-button"
-            aria-label="More ways to run bb agent analyze-profile"
-            aria-haspopup="menu"
-            aria-expanded={this.state.isAnalyzeProfileMenuOpen}
-            onClick={() => this.setState({ isAnalyzeProfileMenuOpen: true })}>
-            <ChevronDown />
-          </OutlinedButton>
-          <OutlinedButton
-            className="icon-button"
-            aria-label="How AI profile analysis works"
-            onClick={() => this.setState({ isAnalyzeProfileDialogOpen: true })}>
-            <Info />
-          </OutlinedButton>
-        </OutlinedButtonGroup>
-        <Popup
-          isOpen={this.state.isAnalyzeProfileMenuOpen}
-          onRequestClose={() => this.setState({ isAnalyzeProfileMenuOpen: false })}
-          anchor="right">
-          <Menu className="timing-analyze-profile-menu">
-            <li className="timing-analyze-profile-menu-label" role="presentation">
-              Run with
-            </li>
-            {(["claude", "codex"] as RemoteRunnerAgent[]).map((agent) => (
-              <MenuItem
-                key={agent}
-                className={this.state.analyzeProfileAgent === agent ? "selected" : ""}
-                role="menuitemradio"
-                aria-checked={this.state.analyzeProfileAgent === agent}
-                onClick={() => this.selectAnalyzeProfileAgent(agent)}>
-                <Check className="timing-analyze-profile-menu-icon check" />
-                <span>{agent === "claude" ? "Claude" : "Codex"}</span>
-              </MenuItem>
-            ))}
-            <li className="timing-analyze-profile-menu-divider" role="separator" />
-            <MenuItem onClick={this.copyAnalyzeProfileCommand.bind(this)}>
-              <Copy className="timing-analyze-profile-menu-icon" />
-              <span>Copy command to run locally</span>
-            </MenuItem>
-          </Menu>
-        </Popup>
-      </PopupContainer>
-    );
-  }
-
-  private renderAnalyzeProfileDialog() {
-    return (
-      <Modal
-        isOpen={this.state.isAnalyzeProfileDialogOpen}
-        onRequestClose={() => this.setState({ isAnalyzeProfileDialogOpen: false })}>
-        <Dialog className="timing-analyze-profile-dialog">
-          <DialogHeader>
-            <DialogTitle>AI timing profile analysis</DialogTitle>
-          </DialogHeader>
-          <DialogBody>
-            <p>
-              <span className="inline-code">bb agent analyze-profile</span> uses AI to analyze the timing profile
-              uploaded with this build and recommend ways to improve build performance.
-            </p>
-            <p>
-              <b>Run from the UI</b>
-              <br />
-              When triggered from the UI, the command will be run on a remote runner and the results will be rendered in
-              a new tab. The runner requires an{" "}
-              <TextLink href="/settings/org/secrets" target="_blank">
-                agent API-key stored as a BuildBuddy secret
-              </TextLink>
-              .
-            </p>
-            <p>
-              <b>Run locally</b>
-              <br />
-              The adjacent menu has a button to copy the command to run locally. On your local machine, the command can
-              use your existing agent sign-in.
-            </p>
-            <p>
-              Relevant profile data is sent to the AI provider, and provider charges may apply.{" "}
-              <TextLink href="https://www.buildbuddy.io/docs/cli-commands#bb-agent-analyze-profile" target="_blank">
-                See the docs for more info.
-              </TextLink>
-            </p>
-          </DialogBody>
-          <DialogFooter>
-            <DialogFooterButtons>
-              <Button onClick={() => this.setState({ isAnalyzeProfileDialogOpen: false })}>Done</Button>
-            </DialogFooterButtons>
-          </DialogFooter>
-        </Dialog>
-      </Modal>
+      <AIButton
+        label="Suggest speedups"
+        onClick={this.suggestSpeedups.bind(this)}
+        onCopyCommand={this.copyAnalyzeProfileCommand.bind(this)}
+        docsUrl="https://www.buildbuddy.io/docs/cli-commands#bb-agent-analyze-profile"
+      />
     );
   }
 
@@ -798,7 +685,6 @@ export default class InvocationTimingCardComponent extends React.Component<Props
               )}
           </div>
         </div>
-        {this.renderAnalyzeProfileDialog()}
       </>
     );
   }

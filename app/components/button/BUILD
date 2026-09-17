@@ -25,6 +25,23 @@ ts_library(
 )
 
 ts_library(
+    name = "ai_button",
+    srcs = ["ai_button.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/lucide-react",
+        "//:node_modules/react",
+        "//:node_modules/tslib",
+        "//app/components/button",
+        "//app/components/button:button_group",
+        "//app/components/menu",
+        "//app/components/popup",
+        "//app/components/spinner",
+        "//app/util:remote_runner",
+    ],
+)
+
+ts_library(
     name = "checkbox_button",
     srcs = ["checkbox_button.tsx"],
     deps = [

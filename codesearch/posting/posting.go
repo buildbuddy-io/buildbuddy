@@ -297,7 +297,7 @@ func (f *Freqs) appendFreq(n int, freq uint32) {
 			return
 		}
 		f.dense = f.dense[:0]
-		for i := 0; i < n; i++ {
+		for range n {
 			f.dense = append(f.dense, 1)
 		}
 		f.materialized = true
@@ -835,7 +835,7 @@ func decodeRLEFreqs(tail []byte, cardinality uint64) ([]uint32, error) {
 			return nil, fmt.Errorf("counted posting list runs total %d exceed cardinality %d", uint64(len(freqs))+runlen, cardinality)
 		}
 		freq := uint32(value)
-		for i := uint64(0); i < runlen; i++ {
+		for range runlen {
 			freqs = append(freqs, freq)
 		}
 	}

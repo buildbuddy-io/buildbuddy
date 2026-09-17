@@ -60,7 +60,7 @@ func New(ctx context.Context, opts *Options) *Retry {
 				)/math.Log(opts.Multiplier),
 			))
 			b := opts.InitialBackoff
-			for i := 0; i < tries; i++ {
+			for range tries {
 				maxTime += b
 				b = time.Duration(math.Min(float64(b)*opts.Multiplier, float64(opts.MaxBackoff)))
 			}

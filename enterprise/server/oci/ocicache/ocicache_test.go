@@ -291,7 +291,7 @@ func TestBlobUploader_BlobExists(t *testing.T) {
 	bsClient := te.GetByteStreamClient()
 	acClient := te.GetActionCacheClient()
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		up, err := ocicache.NewBlobUploader(ctx, bsClient, acClient, repo, hash, contentType, contentLength)
 		require.NoError(t, err)
 

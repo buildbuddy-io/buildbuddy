@@ -64,8 +64,9 @@ var (
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
-	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
+	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
+	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool. This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
 
 	upgradePromptMaxLags     = flag.Map("remote_execution.upgrade_prompt_max_lags", map[string]string{}, "Map from upgrade prompt urgency (LOW, MEDIUM, HIGH, or CRITICAL) to the maximum version lag (a semver-shaped diff, e.g. \"0.10.0\" tolerates at most 10 minor versions) an executor may fall behind the newest registered version before GetExecutionNodes prompts an upgrade at that urgency.")
@@ -117,9 +118,11 @@ const (
 	redisTaskAttempCountField        = "attemptCount"
 	redisTaskClaimedField            = "claimed"
 	redisTaskReconnectPeriodEndField = "reconnectPeriodEnd"
+	// JWT of the task owner. Sent to executors with every task reservation so
+	// that requests made on behalf of the task are authenticated as the task
+	// owner rather than as the executor.
+	redisTaskJWTField = "jwt"
 
-	// Maximum number of unclaimed task IDs we track per pool.
-	maxUnclaimedTasksTracked = 10_000
 	// TTL for sets used to track unclaimed tasks in Redis. TTL is extended when new tasks are added.
 	unclaimedTaskSetTTL = 1 * time.Hour
 	// Unclaimed tasks older than this are removed from the unclaimed tasks list.
@@ -135,6 +138,14 @@ const (
 	executorEnqueueTaskReservationTimeout = 100 * time.Millisecond
 
 	removeExecutorCleanupTimeout = 15 * time.Second
+
+	// How long to keep re-enqueueing an executor's handed-back task
+	// reservations after its registration stream has been cancelled due to
+	// the executor shutting down.
+	shutdownReEnqueueGracePeriod = 5 * time.Minute
+
+	// Timeout on re-enqueueing a single handed-back task reservation.
+	shutdownReEnqueuePerTaskTimeout = 15 * time.Second
 
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
@@ -404,13 +415,28 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				log.CtxInfof(ctx, "Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
 				// Remove the executor first so that we don't try to send any work its way.
 				removeConnectedExecutor()
-				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
+				// Extend the context here so that we can continue re-enqueueing
+				// after the executor has terminated.
+				reEnqueueCtx, cancelReEnqueue := background.ExtendContextForFinalization(ctx, shutdownReEnqueueGracePeriod)
+				taskIDs := req.GetShuttingDownRequest().GetTaskId()
+				for i, taskID := range taskIDs {
+					if reEnqueueCtx.Err() != nil {
+						// Re-enqueueing is a handful of Redis round trips per
+						// reservation, so running out of the grace period means
+						// Redis or the executor probes are pathologically slow.
+						alert.CtxUnexpectedEvent(reEnqueueCtx, "shutdown_reenqueue_grace_period_expired", "Gave up re-enqueueing task reservations for executor %q going down: grace period of %s after stream cancellation expired with %d of %d reservations not re-enqueued", executorID, shutdownReEnqueueGracePeriod, len(taskIDs)-i, len(taskIDs))
+						break
+					}
 					leaseID := ""
 					reconnectToken := ""
-					if err := h.scheduler.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
-						log.CtxWarningf(ctx, "Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
+					taskCtx, cancelTask := context.WithTimeout(reEnqueueCtx, shutdownReEnqueuePerTaskTimeout)
+					err := h.scheduler.reEnqueueTask(taskCtx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down")
+					cancelTask()
+					if err != nil {
+						log.CtxWarningf(reEnqueueCtx, "Could not re-enqueue task reservation %q for executor %q going down: %s", taskID, executorID, err)
 					}
 				}
+				cancelReEnqueue()
 			} else if req.GetAskForMoreWorkRequest() != nil {
 				poolKey := h.nodePoolKey(h.getRegistration())
 
@@ -469,8 +495,16 @@ func (h *executorHandle) EnqueueTaskReservation(ctx context.Context, req *scpb.E
 	req = req.CloneVT()
 	tracing.InjectProtoTraceMetadata(ctx, req.GetTraceMetadata(), func(m *tpb.Metadata) { req.TraceMetadata = m })
 
-	if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
-		req.Jwt = tokenString
+	// Prior to https://github.com/buildbuddy-io/buildbuddy/pull/13345, the
+	// JWT was populated from the context which could either
+	// be the user jwt (in the normal path) or the executor jwt (if this
+	// function was called from the execution work stream handler).
+	// This check maintains this behavior during rollouts from versions that
+	// didn't yet have this change.
+	if req.GetJwt() == "" {
+		if tokenString, ok := ctx.Value(authutil.ContextTokenStringKey).(string); ok {
+			req.Jwt = tokenString
+		}
 	}
 
 	if req.GetSchedulingMetadata() == nil {
@@ -751,7 +785,7 @@ func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map
 		return nil
 	}
 	if *debugExecutorLabelsKey != "" && platform.FindEffectiveValue(task, "debug-executor-labels-key") != *debugExecutorLabelsKey {
-		alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching debug-executor-labels-key; ignoring")
+		log.CtxWarningf(ctx, "debug-executor-labels %q used without a matching debug-executor-labels-key; ignoring", raw)
 		return nil
 	}
 	out := make(map[string]string)
@@ -1041,10 +1075,10 @@ func (np *nodePool) AddUnclaimedTask(ctx context.Context, taskID string) error {
 	if err != nil {
 		return err
 	}
-	if n > maxUnclaimedTasksTracked {
+	if n > *unclaimedTasksSetMaxSize {
 		// Trim the oldest tasks. We use the task insertion timestamp as the score so the oldest task is at rank 0, next
 		// oldest is at rank 1 and so on. We subtract 1 because the indexes are inclusive.
-		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-maxUnclaimedTasksTracked-1).Err(); err != nil {
+		if err := np.rdb.ZRemRangeByRank(ctx, key, 0, n-(*unclaimedTasksSetMaxSize)-1).Err(); err != nil {
 			log.CtxWarningf(ctx, "Error trimming unclaimed tasks: %s", err)
 		}
 	}
@@ -1070,27 +1104,37 @@ func (np *nodePool) SampleUnclaimedTasks(ctx context.Context, n int) ([]string, 
 	if err != nil {
 		return nil, err
 	}
-	// Random sample (without replacement) up to `count` tasks from the
-	// returned results.
-	rand.Shuffle(len(unclaimed), func(i, j int) {
+	// To avoid copying and shuffling the entire list just for a small sample, do
+	// an in-place Fisher-Yates shuffle stopping after n iterations, resulting in
+	// n randomly sampled tasks at the start of the list. Note that we need to
+	// hold the mutex here because the cache and concurrent Redis lookups can
+	// share this slice.
+	np.unclaimedTasksMu.Lock()
+	defer np.unclaimedTasksMu.Unlock()
+	n = min(n, len(unclaimed))
+	for i := range n {
+		j := i + rand.Intn(len(unclaimed)-i)
 		unclaimed[i], unclaimed[j] = unclaimed[j], unclaimed[i]
-	})
-	return unclaimed[:min(n, len(unclaimed))], nil
+	}
+	return slices.Clone(unclaimed[:n]), nil
 }
 
 // Gets all currently unclaimed tasks. If a TTL is configured, the result is
 // cached for a short duration to avoid excessive Redis compute, which can
 // become problematic for very large executor pools issuing a steady stream of
 // AskForMoreWorkRequests.
+// The returned slice is shared. Callers must hold unclaimedTasksMu while
+// accessing its elements.
 func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 	// The singleflight group should help reduce some concurrent lookups which
 	// are more likely to happen if the list is large.
 	unclaimed, _, err := np.unclaimedTasksSingleFlight.Do(ctx, "" /*=key*/, func(ctx context.Context) ([]string, error) {
+		np.unclaimedTasksMu.Lock()
 		if !np.unclaimedTasksExpiry.IsZero() && np.clock.Now().Before(np.unclaimedTasksExpiry) {
-			np.unclaimedTasksMu.Lock()
 			defer np.unclaimedTasksMu.Unlock()
 			return np.unclaimedTasks, nil
 		}
+		np.unclaimedTasksMu.Unlock()
 		unclaimed, err := np.rdb.ZRange(ctx, np.key.redisUnclaimedTasksKey(), 0, -1).Result()
 		if err != nil {
 			return nil, err
@@ -1109,7 +1153,7 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return slices.Clone(unclaimed), nil
+	return unclaimed, nil
 }
 
 type persistedTask struct {
@@ -1121,6 +1165,8 @@ type persistedTask struct {
 	// reconnectPeriodEnd is the time until which the task is reserved for the
 	// previous lease holder to reconnect. Zero if the task is not reserved.
 	reconnectPeriodEnd time.Time
+	// jwt is the task owner's JWT. Empty for anonymous tasks.
+	jwt string
 }
 
 type schedulerClient struct {
@@ -1251,6 +1297,10 @@ type SchedulerServer struct {
 	// executors.
 	detector *upgrade.Detector
 
+	// Limits checkTaskAccess logging to one line per task owner group per
+	// interval.
+	checkTaskAccessLogLimiter *perKeyLogLimiter
+
 	versionMu           sync.Mutex
 	newestVersion       *semver.Version
 	newestVersionExpiry time.Time
@@ -1338,6 +1388,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
+		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -1598,6 +1649,7 @@ func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executor
 			TaskId:             task.taskID,
 			TaskSize:           task.metadata.GetTaskSize(),
 			SchedulingMetadata: task.metadata,
+			Jwt:                task.jwt,
 		}
 		reqs = append(reqs, req)
 	}
@@ -1684,7 +1736,7 @@ func (s *SchedulerServer) sendCancellationRequests(ctx context.Context, taskID s
 	return nil
 }
 
-func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte) error {
+func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadata *scpb.SchedulingMetadata, serializedTask []byte, jwt string) error {
 	ctx, span := tracing.StartSpan(ctx)
 	defer span.End()
 
@@ -1693,11 +1745,12 @@ func (s *SchedulerServer) insertTask(ctx context.Context, taskID string, metadat
 		return status.InternalErrorf("unable to serialize scheduling metadata: %v", err)
 	}
 
-	props := map[string]interface{}{
+	props := map[string]any{
 		redisTaskProtoField:       serializedTask,
 		redisTaskMetadataField:    serializedMetadata,
 		redisTaskQueuedAtUsec:     time.Now().UnixMicro(),
 		redisTaskAttempCountField: 0,
+		redisTaskJWTField:         jwt,
 	}
 	c, err := s.rdb.HSet(ctx, s.redisKeyForTask(taskID), props).Result()
 	if err != nil {
@@ -1936,6 +1989,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		redisTaskQueuedAtUsec,
 		redisTaskAttempCountField,
 		redisTaskReconnectPeriodEndField,
+		redisTaskJWTField,
 	}
 	key := s.redisKeyForTask(taskID)
 	vals, err := s.rdb.HMGet(ctx, key, fields...).Result()
@@ -1998,6 +2052,10 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		}
 	}
 
+	// JWT field. Absent for anonymous tasks and for tasks inserted by
+	// older schedulers that don't persist it yet.
+	jwt, _ := vals[5].(string)
+
 	return &persistedTask{
 		taskID:             taskID,
 		metadata:           metadata,
@@ -2005,6 +2063,7 @@ func (s *SchedulerServer) readTask(ctx context.Context, taskID string) (*persist
 		queuedTimestamp:    time.UnixMicro(queuedAtUsec),
 		attemptCount:       attemptCount,
 		reconnectPeriodEnd: reconnectPeriodEnd,
+		jwt:                jwt,
 	}, nil
 }
 
@@ -2022,7 +2081,6 @@ type leaseMessage struct {
 	err error
 }
 
-// TODO(vadim): we should verify that the executor is authorized to read the task
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
 	ctx := stream.Context()
 	lastCheckin := time.Now()
@@ -2032,10 +2090,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	leaseID := ""
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
-	executorID := "unknown"
-	if p, ok := peer.FromContext(ctx); ok {
-		executorID = p.Addr.String()
-	}
+	executorID := peerAddress(ctx)
 
 	// If we've exited our event loop and the task is still claimed, then
 	// the worker did not finish properly and we should re-enqueue it.
@@ -2117,17 +2172,24 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		if !claimed {
 			log.CtxDebugf(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
+			task, err := s.readTask(ctx, req.GetTaskId())
+			if err != nil {
+				if status.IsNotFoundError(err) {
+					log.CtxInfof(ctx, "LeaseTask attempt failed: task does not exist")
+				} else {
+					log.CtxWarningf(ctx, "LeaseTask error reading task %s", err)
+				}
+				return err
+			}
+			if err := s.checkTaskAccess(ctx, task, executorID); err != nil {
+				return err
+			}
 			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)
 				return err
 			}
 			claimed = true
-			task, err := s.readTask(ctx, req.GetTaskId())
-			if err != nil {
-				log.CtxErrorf(ctx, "LeaseTask error reading task %s", err.Error())
-				return err
-			}
 
 			log.CtxInfof(ctx, "LeaseTask task successfully claimed by executor %q", executorID)
 
@@ -2201,9 +2263,8 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 			} else {
 				log.CtxWarningf(ctx, "Could not release lease for task %q: %s", taskID, err)
 			}
-
 			if req.GetReEnqueue() {
-				if _, err := s.ReEnqueueTask(ctx, &scpb.ReEnqueueTaskRequest{TaskId: taskID, Reason: req.GetReEnqueueReason().GetMessage()}); err != nil {
+				if err := s.reEnqueueTask(ctx, taskID, "" /*=leaseID*/, "" /*=reconnectToken*/, probesPerTask, req.GetReEnqueueReason().GetMessage()); err != nil {
 					log.CtxErrorf(ctx, "LeaseTask %q tried to re-enqueue task requested by executor but failed with err: %s", taskID, err)
 				}
 			}
@@ -2234,6 +2295,96 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 	}
 
+	return nil
+}
+
+// checkTaskAccessExperiment is a boolean experiment that controls whether
+// requests failing checkTaskAccess are rejected. It defaults to false, in
+// which case mismatches are only logged.
+const checkTaskAccessExperiment = "remote_execution.task_access_check"
+
+func (s *SchedulerServer) taskAccessCheckEnforced(ctx context.Context, taskGroupID string) bool {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, checkTaskAccessExperiment, false, experiments.WithContext("group_id", taskGroupID))
+}
+
+// checkTaskAccessLogInterval bounds how often checkTaskAccess logs about a
+// given task owner group.
+const checkTaskAccessLogInterval = time.Minute
+
+// perKeyLogLimiter allows one log line per key per interval.
+type perKeyLogLimiter struct {
+	clock    clockwork.Clock
+	interval time.Duration
+
+	mu sync.Mutex
+	// Last time a log line was allowed, by key.
+	last map[string]time.Time
+}
+
+func newPerKeyLogLimiter(clock clockwork.Clock, interval time.Duration) *perKeyLogLimiter {
+	return &perKeyLogLimiter{
+		clock:    clock,
+		interval: interval,
+		last:     make(map[string]time.Time),
+	}
+}
+
+// allow reports whether a log line for the given key should be emitted now
+// and, if so, records that it was.
+func (l *perKeyLogLimiter) allow(key string) bool {
+	now := l.clock.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if t, ok := l.last[key]; ok && now.Sub(t) < l.interval {
+		return false
+	}
+	l.last[key] = now
+	return true
+}
+
+// peerAddress returns the network address of the RPC caller, for logging.
+func peerAddress(ctx context.Context) string {
+	if p, ok := peer.FromContext(ctx); ok {
+		return p.Addr.String()
+	}
+	return "unknown"
+}
+
+// checkTaskAccess checks that an executor leasing or re-enqueueing a task
+// presents the task owner's identity.
+//
+// Mismatches are always logged. A mismatch is only rejected if
+// checkTaskAccessExperiment is enabled for the task owner's group.
+func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTask, executorID string) error {
+	taskGroupID := task.metadata.GetTaskGroupId()
+	if taskGroupID == "" || taskGroupID == interfaces.AuthAnonymousUser {
+		return nil
+	}
+
+	var mismatchErr error
+	if user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		mismatchErr = status.PermissionDeniedErrorf("request for task %q is not authenticated as the task owner (executors must send the task JWT with lease requests): %s", task.taskID, err)
+	} else if user.GetGroupID() != taskGroupID {
+		mismatchErr = status.PermissionDeniedErrorf("request for task %q is authenticated as group %q, which does not own the task", task.taskID, user.GetGroupID())
+	} else {
+		return nil
+	}
+
+	enforced := s.taskAccessCheckEnforced(ctx, taskGroupID)
+	if s.checkTaskAccessLogLimiter.allow(taskGroupID) {
+		if enforced {
+			log.CtxWarningf(ctx, "Rejected request from executor %q for task owned by group %q: %s", executorID, taskGroupID, mismatchErr)
+		} else {
+			log.CtxWarningf(ctx, "Request from executor %q does not match task owner group %q (not enforced): %s", executorID, taskGroupID, mismatchErr)
+		}
+	}
+	if enforced {
+		return mismatchErr
+	}
 	return nil
 }
 
@@ -2321,7 +2472,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 }
 
 func getWorkflowName(task *repb.ExecutionTask) string {
-	if !(ci_runner_util.IsRemoteRunnerTask(task)) {
+	if !platform.IsCIRunnerCommand(task.GetCommand()) {
 		return ""
 	}
 	for _, arg := range task.GetCommand().GetArguments() {
@@ -2572,13 +2723,15 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	}
 	taskID := req.GetTaskId()
 	metadata := req.GetMetadata()
-	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask()); err != nil {
+	jwt := s.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx)
+	if err := s.insertTask(ctx, taskID, metadata, req.GetSerializedTask(), jwt); err != nil {
 		return nil, err
 	}
 	enqueueRequest := &scpb.EnqueueTaskReservationRequest{
 		TaskId:             taskID,
 		TaskSize:           req.GetMetadata().GetTaskSize(),
 		SchedulingMetadata: metadata,
+		Jwt:                jwt,
 	}
 
 	opts := enqueueTaskReservationOpts{
@@ -2589,7 +2742,7 @@ func (s *SchedulerServer) ScheduleTask(ctx context.Context, req *scpb.ScheduleTa
 	if err := proto.Unmarshal(req.GetSerializedTask(), task); err != nil {
 		return nil, status.InternalErrorf("failed to unmarshal ExecutionTask: %s", err)
 	}
-	if ci_runner_util.IsRemoteRunnerTask(task) {
+	if platform.IsCIRunnerCommand(task.GetCommand()) {
 		emitRemoteRunnerMetric(ctx, task, metadata, "initial")
 	}
 	if err := s.enqueueTaskReservations(ctx, enqueueRequest, task, opts); err != nil {
@@ -2699,7 +2852,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 	}
 	log.CtxDebugf(ctx, "Re-enqueueing task")
 
-	if ci_runner_util.IsRemoteRunnerTask(task) {
+	if platform.IsCIRunnerCommand(task.GetCommand()) {
 		emitRemoteRunnerMetric(ctx, task, scheduledTask.metadata, "retry")
 	}
 
@@ -2712,6 +2865,7 @@ func (s *SchedulerServer) reEnqueueTask(ctx context.Context, taskID, leaseID, re
 		TaskSize:           scheduledTask.metadata.GetTaskSize(),
 		SchedulingMetadata: scheduledTask.metadata,
 		Delay:              durationpb.New(delay),
+		Jwt:                scheduledTask.jwt,
 	}
 	opts := enqueueTaskReservationOpts{
 		numReplicas:                  numReplicas,
@@ -2781,7 +2935,19 @@ func emitRemoteRunnerMetric(ctx context.Context, task *repb.ExecutionTask, md *s
 }
 
 func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueueTaskRequest) (*scpb.ReEnqueueTaskResponse, error) {
+	if req.GetLeaseId() == "" {
+		log.CtxWarning(ctx, "Rejected re-enqueue with no lease id")
+		return nil, status.FailedPreconditionError("lease id is required")
+	}
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
+	task, err := s.readTask(ctx, req.GetTaskId())
+	if err != nil {
+		log.CtxWarningf(ctx, "ReEnqueueTask failed to read task %q: %s", req.GetTaskId(), err)
+		return nil, err
+	}
+	if err := s.checkTaskAccess(ctx, task, peerAddress(ctx)); err != nil {
+		return nil, err
+	}
 	reconnectToken := ""
 	if err := s.reEnqueueTask(ctx, req.GetTaskId(), req.GetLeaseId(), reconnectToken, probesPerTask, req.GetReason()); err != nil {
 		log.CtxErrorf(ctx, "ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)

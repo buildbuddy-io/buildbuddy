@@ -24,7 +24,7 @@ func TestEncryptDecrypt(t *testing.T) {
 	// Generate a few random keys to encrypt/decrypt with.
 	numKeys := 10
 	keys := make([]*crypter.DerivedKey, numKeys)
-	for i := 0; i < numKeys; i++ {
+	for i := range numKeys {
 		keys[i] = &crypter.DerivedKey{Key: make([]byte, 32)}
 		_, err := rand.Read(keys[i].Key)
 		require.NoError(t, err)
@@ -147,10 +147,10 @@ func TestEncryptDecryptConcurrentClose(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
-	for g := 0; g < goroutines; g++ {
+	for g := range goroutines {
 		go func(g int) {
 			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+			for i := range iterations {
 				size := sizes[(g+i)%len(sizes)]
 				testData := make([]byte, size)
 				_, err := rand.Read(testData)

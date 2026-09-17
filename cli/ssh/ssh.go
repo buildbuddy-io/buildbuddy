@@ -607,8 +607,7 @@ func Run(ctx context.Context, opts Options) (int, error) {
 			if closed(connDead) {
 				return 1, status.UnavailableErrorf("connection to %s lost: no response from server", opts.Host)
 			}
-			var exitErr *gossh.ExitError
-			if errors.As(err, &exitErr) {
+			if exitErr, ok := errors.AsType[*gossh.ExitError](err); ok {
 				return exitErr.ExitStatus(), nil
 			}
 			return 1, status.WrapError(err, "running remote command")
@@ -640,8 +639,7 @@ func Run(ctx context.Context, opts Options) (int, error) {
 		return 1, nil
 	}
 	if err != nil {
-		var exitErr *gossh.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*gossh.ExitError](err); ok {
 			return exitErr.ExitStatus(), nil
 		}
 		// Server closed without an exit status (e.g. its idle timeout or

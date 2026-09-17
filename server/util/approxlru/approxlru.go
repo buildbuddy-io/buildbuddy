@@ -243,9 +243,7 @@ func (l *LRU[T]) evictSingleKey() (*Sample[T], error) {
 	if err := l.limiter.Wait(l.ctx); err != nil {
 		return nil, err
 	}
-	for i := len(l.samplePool) - 1; i >= 0; i-- {
-		sample := l.samplePool[i]
-
+	for i, sample := range slices.Backward(l.samplePool) {
 		l.mu.Lock()
 		oldLocalSizeBytes := l.localSizeBytes
 		oldGlobalSizeBytes := l.globalSizeBytes

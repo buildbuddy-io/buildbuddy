@@ -57,7 +57,7 @@ func TestOrClauses_Single(t *testing.T) {
 	qStr, qArgs := q.Build()
 
 	assert.Equal(t, "a = ?", strings.TrimSpace(qStr))
-	assert.Equal(t, []interface{}{1}, qArgs)
+	assert.Equal(t, []any{1}, qArgs)
 }
 
 func TestOrClauses_Multiple(t *testing.T) {
@@ -68,7 +68,7 @@ func TestOrClauses_Multiple(t *testing.T) {
 	qStr, qArgs := q.Build()
 
 	assert.Equal(t, "a = ? OR b = ?", strings.TrimSpace(qStr))
-	assert.Equal(t, []interface{}{1, 2}, qArgs)
+	assert.Equal(t, []any{1, 2}, qArgs)
 }
 
 func TestJoinClause(t *testing.T) {
@@ -98,7 +98,7 @@ func TestJoinClause(t *testing.T) {
 		WHERE (t.t1 > ?)
 	`
 	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
-	assert.Equal(t, []interface{}{4, 6, 10}, qArgs)
+	assert.Equal(t, []any{4, 6, 10}, qArgs)
 }
 
 func TestJoinInOriginalQuery(t *testing.T) {
@@ -114,7 +114,7 @@ func TestJoinInOriginalQuery(t *testing.T) {
 	`
 
 	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, q))
-	assert.Equal(t, []interface{}{"GR1"}, args)
+	assert.Equal(t, []any{"GR1"}, args)
 }
 
 func TestFromClause(t *testing.T) {
@@ -140,7 +140,7 @@ func TestFromClause(t *testing.T) {
 		LIMIT 5
 	`
 	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
-	assert.Equal(t, []interface{}{10, 5}, qArgs)
+	assert.Equal(t, []any{10, 5}, qArgs)
 }
 
 func TestWhereInClause(t *testing.T) {
@@ -172,5 +172,5 @@ func TestWhereInClause(t *testing.T) {
 		AND (d = ?)
 	`
 	assert.Equal(t, normalize(t, expectedQueryStr), normalize(t, qStr))
-	assert.Equal(t, []interface{}{1, 2, 3, 4}, qArgs)
+	assert.Equal(t, []any{1, 2, 3, 4}, qArgs)
 }

@@ -4,6 +4,7 @@
   align-items: center;
 }
 
+.donut-chart .recharts-wrapper,
 .donut-chart .recharts-responsive-container {
   flex-shrink: 0;
   margin-right: 32px;
@@ -32,4 +33,21 @@
 
 .donut-chart-legend-desc {
   font-weight: normal;
+}
+
+.donut-chart-title-block {
+  margin-bottom: 24px;
+}
+
+.donut-chart-title {
+  margin-top: 32px;
+  font-weight: 700;
+  display: flex;
+  font-size: 20px;
+}
+
+.donut-chart-subtitle {
+  margin-top: 4px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
 }

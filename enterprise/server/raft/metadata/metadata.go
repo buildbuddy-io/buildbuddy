@@ -3,6 +3,7 @@ package metadata
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sync"
@@ -639,9 +640,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 			return nil, status.InternalError("response not of type getMetadataResult")
 		}
 
-		for k, v := range res.found {
-			allFound[k] = v
-		}
+		maps.Copy(allFound, res.found)
 
 		for _, p := range res.atimeUpdates {
 			rc.sendAccessTimeUpdate(p)
@@ -729,9 +728,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 			return nil, status.InternalError("response not of type findResult")
 		}
 
-		for k, v := range res.found {
-			allFound[k] = v
-		}
+		maps.Copy(allFound, res.found)
 
 		for _, p := range res.atimeUpdates {
 			rc.sendAccessTimeUpdate(p)

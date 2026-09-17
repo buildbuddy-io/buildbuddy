@@ -4,7 +4,7 @@ import common from "../css/common.module.css";
 
 import Brands from "../components/brands/brands";
 import CTA from "../components/cta/cta";
-import Customers from "../components/customers/customers";
+import Logos from "../components/logos/logos";
 import Enterprise from "../components/enterprise/enterprise";
 import Hero from "../components/hero/hero";
 import Integrations from "../components/integrations/integrations";
@@ -18,7 +18,7 @@ function Index() {
     <Layout title="Bazel at Enterprise Scale">
       <div className={common.page}>
         <Hero image={require("../../static/img/ui.png")} bigImage={true} lessPadding={true} gradientButton={true} />
-        <Customers />
+        <Logos />
         <RBE />
         <Logs />
         <Enterprise />

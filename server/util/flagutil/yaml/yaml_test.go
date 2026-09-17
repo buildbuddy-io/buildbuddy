@@ -55,23 +55,23 @@ func TestGenerateYAMLTypeMapFromFlags(t *testing.T) {
 	)
 	require.NoError(t, err)
 	expected := map[string]any{
-		"bool": reflect.TypeOf((*bool)(nil)),
+		"bool": reflect.TypeFor[*bool](),
 		"one": map[string]any{
 			"two": map[string]any{
-				"int":          reflect.TypeOf((*int)(nil)),
-				"string_slice": reflect.TypeOf((*[]string)(nil)),
+				"int":          reflect.TypeFor[*int](),
+				"string_slice": reflect.TypeFor[*[]string](),
 				"two_and_a_half": map[string]any{
-					"float64": reflect.TypeOf((*float64)(nil)),
+					"float64": reflect.TypeFor[*float64](),
 				},
 				"three": map[string]any{
-					"struct_slice": reflect.TypeOf((*[]testStruct)(nil)),
+					"struct_slice": reflect.TypeFor[*[]testStruct](),
 				},
 			},
 		},
 		"a": map[string]any{
 			"b": map[string]any{
-				"string": reflect.TypeOf((*string)(nil)),
-				"url":    reflect.TypeOf((*flagtypes.URLFlag)(nil)),
+				"string": reflect.TypeFor[*string](),
+				"url":    reflect.TypeFor[*flagtypes.URLFlag](),
 			},
 		},
 	}
@@ -120,27 +120,27 @@ func TestBadGenerateYAMLTypeMapFromFlags(t *testing.T) {
 
 func TestRetypeAndFilterYAMLMap(t *testing.T) {
 	typeMap := map[string]any{
-		"bool": reflect.TypeOf((*bool)(nil)),
+		"bool": reflect.TypeFor[*bool](),
 		"one": map[string]any{
 			"two": map[string]any{
-				"int":          reflect.TypeOf((*int)(nil)),
-				"string_slice": reflect.TypeOf((*[]string)(nil)),
+				"int":          reflect.TypeFor[*int](),
+				"string_slice": reflect.TypeFor[*[]string](),
 				"two_and_a_half": map[string]any{
-					"float64": reflect.TypeOf((*float64)(nil)),
+					"float64": reflect.TypeFor[*float64](),
 				},
 				"three": map[string]any{
-					"struct_slice": reflect.TypeOf((*[]testStruct)(nil)),
+					"struct_slice": reflect.TypeFor[*[]testStruct](),
 				},
 			},
 		},
 		"a": map[string]any{
 			"b": map[string]any{
-				"string": reflect.TypeOf((*string)(nil)),
-				"url":    reflect.TypeOf((*flagtypes.URLFlag)(nil)),
+				"string": reflect.TypeFor[*string](),
+				"url":    reflect.TypeFor[*flagtypes.URLFlag](),
 			},
 		},
 		"foo": map[string]any{
-			"bar": reflect.TypeOf((*int64)(nil)),
+			"bar": reflect.TypeFor[*int64](),
 		},
 	}
 	yamlData := `
@@ -199,7 +199,7 @@ first:
 
 func TestBadRetypeAndFilterYAMLMap(t *testing.T) {
 	typeMap := map[string]any{
-		"bool": reflect.TypeOf((*bool)(nil)),
+		"bool": reflect.TypeFor[*bool](),
 	}
 	yamlData := `
 bool: 7

@@ -42,7 +42,7 @@ func NewExecutionSearchService(env environment.Env, h interfaces.DBHandle, oh in
 	}
 }
 
-func (s *ExecutionSearchService) rawQueryExecutions(ctx context.Context, query string, queryArgs ...interface{}) ([]*schema.Execution, error) {
+func (s *ExecutionSearchService) rawQueryExecutions(ctx context.Context, query string, queryArgs ...any) ([]*schema.Execution, error) {
 	rq := s.oh.NewQuery(ctx, "execution_search_service_search").Raw(query, queryArgs...)
 	return db.ScanAll(rq, &schema.Execution{})
 }

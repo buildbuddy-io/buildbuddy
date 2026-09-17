@@ -58,11 +58,11 @@ func (m *mockBSReadClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockBSReadClient) SendMsg(interface{}) error {
+func (m *mockBSReadClient) SendMsg(any) error {
 	return nil
 }
 
-func (m *mockBSReadClient) RecvMsg(interface{}) error {
+func (m *mockBSReadClient) RecvMsg(any) error {
 	return nil
 }
 
@@ -110,11 +110,11 @@ func (m *mockBSWriteClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockBSWriteClient) SendMsg(interface{}) error {
+func (m *mockBSWriteClient) SendMsg(any) error {
 	return nil
 }
 
-func (m *mockBSWriteClient) RecvMsg(interface{}) error {
+func (m *mockBSWriteClient) RecvMsg(any) error {
 	return nil
 }
 
@@ -192,11 +192,11 @@ func (m *mockGetTreeClient) Context() context.Context {
 	return context.Background()
 }
 
-func (m *mockGetTreeClient) SendMsg(interface{}) error {
+func (m *mockGetTreeClient) SendMsg(any) error {
 	return nil
 }
 
-func (m *mockGetTreeClient) RecvMsg(interface{}) error {
+func (m *mockGetTreeClient) RecvMsg(any) error {
 	return nil
 }
 
@@ -355,6 +355,14 @@ func (m *mockCASClient) SpliceBlob(ctx context.Context, req *repb.SpliceBlobRequ
 
 func (m *mockCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest, opts ...grpc.CallOption) (*repb.SplitBlobResponse, error) {
 	return nil, status.UnimplementedError("SplitBlob not implemented")
+}
+
+func (m *mockCASClient) GetChunkMapping(ctx context.Context, req *repb.GetChunkMappingRequest, opts ...grpc.CallOption) (repb.ContentAddressableStorage_GetChunkMappingClient, error) {
+	return nil, status.UnimplementedError("GetChunkMapping not implemented")
+}
+
+func (m *mockCASClient) RegisterChunkMapping(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_RegisterChunkMappingClient, error) {
+	return nil, status.UnimplementedError("RegisterChunkMapping not implemented")
 }
 
 type mockACClient struct {

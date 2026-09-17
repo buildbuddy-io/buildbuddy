@@ -68,7 +68,7 @@ func (c *collector) IncrementCount(ctx context.Context, key, field string, n int
 }
 
 func (c *collector) SetAddWithExpiry(ctx context.Context, key string, expiry time.Duration, members ...string) error {
-	membersIface := make([]interface{}, len(members))
+	membersIface := make([]any, len(members))
 	for i, member := range members {
 		membersIface[i] = member
 	}
@@ -116,7 +116,7 @@ func (c *collector) GetAll(ctx context.Context, keys ...string) ([]string, error
 }
 
 func (c *collector) ListAppend(ctx context.Context, key string, values ...string) error {
-	ifaces := make([]interface{}, 0, len(values))
+	ifaces := make([]any, 0, len(values))
 	for _, value := range values {
 		ifaces = append(ifaces, value)
 	}

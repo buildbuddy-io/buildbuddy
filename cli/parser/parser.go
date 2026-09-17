@@ -157,13 +157,12 @@ type Parser struct {
 	CommandOptionParser *Subparser
 }
 
-func NewParser(optionDefinitions []*options.Definition, commands []string, aliases map[string]string) *Parser {
+func NewParser(optionDefinitions []*options.Definition, commands []string) *Parser {
 	p := &Parser{
 		StartupOptionParser: &Subparser{
 			ByName:      map[string]*options.Definition{},
 			ByShortName: map[string]*options.Definition{},
 			Subcommands: set.From(commands...),
-			Aliases:     aliases,
 		},
 		CommandOptionParser: &Subparser{
 			ByName:      map[string]*options.Definition{},
@@ -180,14 +179,9 @@ func NewParser(optionDefinitions []*options.Definition, commands []string, alias
 // by the bb CLI. It does not load Bazel's full flag definitions.
 func GetNativeParser() *Parser {
 	definitions := slices.Collect(maps.Values(nativeDefinitions))
-	aliases := map[string]string{}
-	for alias, command := range cli_command.Aliases {
-		aliases[alias] = command.Name
-	}
 	p := NewParser(
 		definitions,
 		slices.Collect(maps.Keys(cli_command.CommandsByName)),
-		aliases,
 	)
 	commands := slices.Concat(
 		slices.Collect(bazel_command.Commands().All()),
@@ -288,10 +282,10 @@ func GetHelpParser() (*Parser, error) {
 		[]string{"--"},
 	)
 
-	aliases := maps.Clone(bazelParser.StartupOptionParser.Aliases)
-	maps.Insert(aliases, maps.All(nativeParser.StartupOptionParser.Aliases))
-
-	return NewParser(option_definitions, commands, aliases), nil
+	p := NewParser(option_definitions, commands)
+	// Recognize command shortcuts (e.g. `bb b` for `bb build`).
+	p.StartupOptionParser.Aliases = bazelParser.StartupOptionParser.Aliases
+	return p, nil
 }
 
 // GetBazelParser can parse bazel options, bb CLI native options, and plugin
@@ -634,7 +628,7 @@ func DecodeHelpFlagsAsProto(protoHelp string) (*bfpb.FlagCollection, error) {
 // OptionDefinitions, places each option definition into subparsers corresponding
 // to the commands it supports, and returns the resulting parser.
 func GenerateParser(flagCollection *bfpb.FlagCollection, commandsToPartition ...string) (*Parser, error) {
-	p := NewParser(nil, nil, nil)
+	p := NewParser(nil, nil)
 	for _, info := range flagCollection.FlagInfos {
 		if err := p.AddOptionDefinition(options.DefinitionFrom(info)); err != nil {
 			return nil, err
@@ -650,7 +644,7 @@ func GetParser() (*Parser, error) {
 func CanonicalizeArgs(args []string) ([]string, error) {
 	// Check for bazel command prior to running the parser to avoid the
 	// performance cost of generating the parser, which runs bazel.
-	bazelCommand, _ := GetBazelCommandAndIndex(args)
+	bazelCommand, _ := bazel_command.GetCommandAndIndex(args)
 	if bazelCommand == "" {
 		// Not a bazel command; no args to canonicalize.
 		return args, nil
@@ -1189,25 +1183,14 @@ func (p *Parser) consumeAndParseRCFiles(args *parsed.OrderedArgs, workspaceDir s
 	return parsedNamedConfigs, defaultConfig, nil
 }
 
-// TODO: Return an empty string if the subcommand happens to come after
-// a bb-specific command. For example, `bb install --path test` should
-// return an empty string, not "test".
-// TODO: More robust parsing of startup options. For example, this has a bug
-// that passing `bazel --output_base build test ...` returns "build" as the
-// bazel command, even though "build" is the argument to --output_base.
-func GetBazelCommandAndIndex(args []string) (string, int) {
-	for i, a := range args {
-		if bazel_command.IsCommand(a) {
-			return a, i
-		}
-	}
-	return "", -1
-}
-
 // GetFirstTargetPattern makes a best-attempt effort to return the first target
 // pattern in a bazel command.
 func GetFirstTargetPattern(args []string) string {
-	_, bazelCmdIdx := GetBazelCommandAndIndex(args)
+	_, bazelCmdIdx := bazel_command.GetCommandAndIndex(args)
+	if bazelCmdIdx == -1 {
+		// No bazel command, so there is no target pattern to find.
+		return ""
+	}
 	for i := bazelCmdIdx + 1; i < len(args); i++ {
 		s := args[i]
 		// Skip over the shortened compilation_mode flag and its value (Ex. -c opt)

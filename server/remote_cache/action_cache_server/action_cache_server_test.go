@@ -537,6 +537,41 @@ func getWithInlining(t *testing.T, ctx context.Context, client repb.ActionCacheC
 	return resp
 }
 
+func TestBlackholeAnonymousCacheRequests(t *testing.T) {
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	clientConn := runACServer(ctx, t, te)
+	client := repb.NewActionCacheClient(clientConn)
+	actionDigest := &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1}
+	getReq := &repb.GetActionResultRequest{
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+	}
+	updateReq := &repb.UpdateActionResultRequest{
+		ActionDigest:   actionDigest,
+		DigestFunction: repb.DigestFunction_SHA256,
+		ActionResult:   &repb.ActionResult{ExitCode: 1},
+	}
+	_, err := client.UpdateActionResult(ctx, updateReq)
+	require.NoError(t, err)
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", true)
+	_, err = client.GetActionResult(ctx, getReq)
+	require.True(t, status.IsNotFoundError(err), "expected cache miss, got %v", err)
+
+	updateReq.ActionResult = &repb.ActionResult{ExitCode: 2}
+	rsp, err := client.UpdateActionResult(ctx, updateReq)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), rsp.GetExitCode())
+
+	flags.Set(t, "auth.blackhole_anonymous_cache_requests", false)
+	rsp, err = client.GetActionResult(ctx, getReq)
+	require.NoError(t, err)
+	require.Equal(t, int32(1), rsp.GetExitCode())
+}
+
 // TestUserPrefixIsolatesGroups confirms an AC entry written under one group
 // is not visible to another group at the same action digest.
 func TestUserPrefixIsolatesGroups(t *testing.T) {
@@ -722,13 +757,7 @@ func TestValidateActionResult_ChunkedOutputFile(t *testing.T) {
 		},
 	}
 
-	chunkingEnabled := true
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingEnabled, te.GetExperimentFlagProvider(), ar))
-
-	chunkingDisabled := false
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, chunkingDisabled, te.GetExperimentFlagProvider(), ar)
-	require.Error(t, err)
-	assert.True(t, status.IsNotFoundError(err))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar))
 }
 
 func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
@@ -760,18 +789,14 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 			{Path: "output", TreeDigest: treeDigest},
 		},
 	}
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar))
 	require.NoError(t, action_cache_server.ValidateActionResult(ctx, &getErrorCache{
 		Cache: cache,
 		match: func(r *rspb.ResourceName) bool {
 			return r.GetCacheType() == rspb.CacheType_CAS && digest.Equal(r.GetDigest(), treeDigest)
 		},
 		err: os.ErrNotExist,
-	}, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
-
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, false, te.GetExperimentFlagProvider(), ar)
-	require.Error(t, err)
-	assert.True(t, status.IsNotFoundError(err))
+	}, "", repb.DigestFunction_SHA256, ar))
 
 	tree.Root.Files[0].Name = "y" + tree.Root.Files[0].GetName()[1:]
 	corruptTreeData, err := proto.Marshal(tree)
@@ -781,7 +806,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 	for i, data := range corruptChunkData {
 		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
 	}
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	require.True(t, status.IsDataLossError(err), "expected DataLoss, got %s", err)
 
@@ -789,7 +814,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTree(t *testing.T) {
 		require.NoError(t, cache.Set(ctx, chunkRNs[i], data))
 	}
 	require.NoError(t, cache.Delete(ctx, chunkRNs[1]))
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }
@@ -810,7 +835,7 @@ func TestValidateActionResult_ChunkedOutputDirectoryTreeInfersDigestFunction(t *
 	treeDigest, _ := storeChunkedBlob(t, ctx, cache, treeData, repb.DigestFunction_SHA1)
 	ar := &repb.ActionResult{OutputDirectories: []*repb.OutputDirectory{{TreeDigest: treeDigest}}}
 
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_UNKNOWN, true, te.GetExperimentFlagProvider(), ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_UNKNOWN, ar))
 }
 
 func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *testing.T) {
@@ -832,7 +857,7 @@ func TestValidateActionResult_DoesNotReconstructOversizedOutputDirectoryTree(t *
 		SizeBytes: rpcutil.GRPCMaxSizeBytes + 1,
 	}}}}
 
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }
@@ -848,7 +873,7 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 
 	ar := &repb.ActionResult{}
 	var lastChunkRN *rspb.ResourceName
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		chunk1RN, chunk1Data := testdigest.RandomCASResourceBuf(t, 4*1024)
 		chunk2RN, chunk2Data := testdigest.RandomCASResourceBuf(t, 4*1024)
 		require.NoError(t, cache.Set(ctx, chunk1RN, chunk1Data))
@@ -871,11 +896,11 @@ func TestValidateActionResult_ManyChunkedOutputFiles(t *testing.T) {
 		lastChunkRN = chunk2RN
 	}
 
-	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar))
+	require.NoError(t, action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar))
 
 	// Deleting a single chunk should make validation fail with NotFound.
 	require.NoError(t, cache.Delete(ctx, lastChunkRN))
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }
@@ -915,7 +940,7 @@ func TestValidateActionResult_DiscardsChunkedOutputFileBelowCurrentWriteThreshol
 		},
 	}
 
-	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, true, te.GetExperimentFlagProvider(), ar)
+	err = action_cache_server.ValidateActionResult(ctx, cache, "", repb.DigestFunction_SHA256, ar)
 	require.Error(t, err)
 	assert.True(t, status.IsNotFoundError(err))
 }

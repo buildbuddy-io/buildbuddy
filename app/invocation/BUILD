@@ -22,7 +22,6 @@ ts_library(
         "//app/invocation:execution_status",
         "//app/invocation:invocation_action_card",
         "//app/invocation:invocation_artifacts_card",
-        "//app/invocation:invocation_bot_card",
         "//app/invocation:invocation_build_logs_card",
         "//app/invocation:invocation_cache_card",
         "//app/invocation:invocation_coverage_card",
@@ -57,6 +56,7 @@ ts_library(
         "//proto:execution_stats_ts_proto",
         "//proto:grpc_code_ts_proto",
         "//proto:grpc_status_ts_proto",
+        "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
         "//proto/api/v1:common_ts_proto",
     ],
@@ -240,12 +240,12 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//app/auth:auth_service",
+        "//app/invocation:ai_fix_button",
         "//app/invocation:invocation_cancel_button",
         "//app/invocation:invocation_compare_button",
         "//app/invocation:invocation_menu",
         "//app/invocation:invocation_model",
         "//app/invocation:invocation_share_button",
-        "//app/invocation:suggestion_button",
         "//app/invocation:workflow_rerun_button",
     ],
 )
@@ -506,7 +506,6 @@ ts_library(
         "//proto:remote_execution_ts_proto",
         "//proto:resource_ts_proto",
         "//proto:spawn_ts_proto",
-        "//proto:suggestion_ts_proto",
         "//proto/api/v1:common_ts_proto",
     ],
 )
@@ -533,6 +532,7 @@ ts_jasmine_node_test(
         "//app/auth:user",
         "//app/capabilities",
         "//app/util:react",
+        "//proto:build_event_stream_ts_proto",
         "//proto:group_ts_proto",
         "//proto:invocation_status_ts_proto",
         "//proto:invocation_ts_proto",
@@ -549,6 +549,7 @@ ts_library(
         "//app/capabilities",
         "//app/components/breadcrumbs",
         "//app/components/button",
+        "//app/components/link",
         "//app/errors:error_service",
         "//app/service:rpc_service",
         "//app/util:errors",
@@ -705,13 +706,8 @@ ts_library(
         "//app/alert:alert_service",
         "//app/capabilities",
         "//app/components/button",
-        "//app/components/button:button_group",
+        "//app/components/button:ai_button",
         "//app/components/button:link_button",
-        "//app/components/dialog",
-        "//app/components/link",
-        "//app/components/menu",
-        "//app/components/modal",
-        "//app/components/popup",
         "//app/docs:setup_code",
         "//app/errors:error_service",
         "//app/format",
@@ -772,34 +768,20 @@ ts_library(
 )
 
 ts_library(
-    name = "invocation_bot_card",
-    srcs = ["invocation_bot_card.tsx"],
+    name = "ai_fix_button",
+    srcs = ["ai_fix_button.tsx"],
     deps = [
         "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "suggestion_button",
-    srcs = ["suggestion_button.tsx"],
-    deps = [
-        "//:node_modules/@types/react",
-        "//:node_modules/lucide-react",
         "//:node_modules/react",
         "//:node_modules/tslib",
+        "//app/alert:alert_service",
         "//app/auth:user",
         "//app/capabilities",
-        "//app/components/button",
-        "//app/components/button:button_group",
-        "//app/components/dialog",
-        "//app/components/menu",
-        "//app/components/modal",
-        "//app/components/popup",
-        "//app/components/spinner",
+        "//app/components/button:ai_button",
+        "//app/errors:error_service",
         "//app/invocation:invocation_model",
-        "//app/service:rpc_service",
+        "//app/util:clipboard",
+        "//app/util:remote_runner",
     ],
 )
 
@@ -961,5 +943,18 @@ ts_library(
         "//app/components/button:link_button",
         "//app/components/dialog",
         "//app/components/modal",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "invocation_not_found_test",
+    srcs = ["invocation_not_found_test.ts"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//app/capabilities",
+        "//app/invocation:invocation_not_found",
     ],
 )

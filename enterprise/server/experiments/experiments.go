@@ -132,7 +132,7 @@ func (fp *FlagProvider) Statusz(ctx context.Context) string {
 // Options is evaluated by a set of Option functions, which configure it.
 type Options struct {
 	targetingKey string
-	attributes   map[string]interface{}
+	attributes   map[string]any
 }
 type Option func(*Options)
 
@@ -156,7 +156,7 @@ type Option func(*Options)
 func (fp *FlagProvider) getEvaluationContext(ctx context.Context, opts ...any) openfeature.EvaluationContext {
 	options := &Options{
 		targetingKey: interfaces.AuthAnonymousUser,
-		attributes:   make(map[string]interface{}, 0),
+		attributes:   make(map[string]any, 0),
 	}
 
 	if claims, err := claims.ClaimsFromContext(ctx); err == nil {
@@ -235,7 +235,7 @@ func ObjectToProto(object map[string]any, dest proto.Message) error {
 // the flag is evaluated. This allows selectively enabling flags only when they
 // make sense. For example, you might want to only enable a certain performance
 // optimization if the platform is linux, etc.
-func WithContext(key string, value interface{}) Option {
+func WithContext(key string, value any) Option {
 	return func(o *Options) {
 		o.attributes[key] = value
 	}

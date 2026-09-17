@@ -199,10 +199,7 @@ func computeNumCPUs(milliCPU int64, allowOverhead bool) int {
 		return rawNumCPUs
 	}
 
-	overheadCPUs := int(*cpuLeaserOverhead*float64(milliCPU)) / 1000
-	if overheadCPUs < *cpuLeaserMinOverhead {
-		overheadCPUs = *cpuLeaserMinOverhead
-	}
+	overheadCPUs := max(int(*cpuLeaserOverhead*float64(milliCPU))/1000, *cpuLeaserMinOverhead)
 	return rawNumCPUs + overheadCPUs
 }
 

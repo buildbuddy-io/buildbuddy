@@ -15,7 +15,6 @@ import { options } from "../../proto/option_filters_ts_proto";
 import { build } from "../../proto/remote_execution_ts_proto";
 import { resource } from "../../proto/resource_ts_proto";
 import { tools } from "../../proto/spawn_ts_proto";
-import { suggestion } from "../../proto/suggestion_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import { IconType } from "../favicon/favicon";
 import format, { formatDate } from "../format/format";
@@ -36,7 +35,6 @@ export default class InvocationModel {
   readonly invocation: invocation.Invocation;
   readonly cacheStats: cache.CacheStats[];
   scoreCard?: cache.ScoreCard;
-  botSuggestions: string[] = [];
   onChange: Subject<void> = new Subject();
 
   targets: build_event_stream.BuildEvent[] = [];
@@ -791,6 +789,13 @@ export default class InvocationModel {
     return this.invocation.invocationStatus === InvocationStatus.PARTIAL_INVOCATION_STATUS;
   }
 
+  isFailed() {
+    if (this.hasRunStatus()) {
+      return this.invocation.runStatus === invocation_status.OverallStatus.FAILURE;
+    }
+    return this.isComplete() && !this.invocation.success;
+  }
+
   isRunInProgress() {
     return this.invocation.runStatus === invocation_status.OverallStatus.IN_PROGRESS;
   }
@@ -956,25 +961,6 @@ export default class InvocationModel {
 
   hasChunkedEventLogs(): boolean {
     return this.invocation.hasChunkedEventLogs || false;
-  }
-
-  fetchSuggestions(service: string) {
-    let req = new suggestion.GetSuggestionRequest();
-    if (service == "openai") {
-      req.service = suggestion.SuggestionService.OPENAI;
-    }
-    req.invocationId = this.getInvocationId();
-    return rpcService.service
-      .getSuggestion(req)
-      .then((res) => {
-        this.botSuggestions = res.suggestion;
-        this.onChange.next();
-      })
-      .catch((err) => {
-        console.error(err);
-        this.botSuggestions = ["Error getting a fix suggestion :("];
-        this.onChange.next();
-      });
   }
 
   /**

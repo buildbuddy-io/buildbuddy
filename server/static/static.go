@@ -62,12 +62,12 @@ var (
 	ipRulesUIEnabled                       = flag.Bool("app.ip_rules_ui_enabled", false, "If set, show the IP rules tab in settings page.")
 	traceViewerEnabled                     = flag.Bool("app.trace_viewer_enabled", false, "Whether the new trace viewer is enabled.")
 	popupAuthEnabled                       = flag.Bool("app.popup_auth_enabled", false, "Whether popup windows should be used for authentication.")
-	streamingHTTPEnabled                   = flag.Bool("app.streaming_http_enabled", false, "Whether to support server-streaming http requests between server and web UI.")
+	streamingHTTPEnabled                   = flag.Bool("app.streaming_http_enabled", true, "Whether to support server-streaming http requests between server and web UI.")
 	codeReviewEnabled                      = flag.Bool("app.code_review_enabled", false, "If set, show the code review UI.")
 	codeSearchEnabled                      = flag.Bool("app.codesearch_enabled", false, "If set, show the code search UI.")
 	orgAdminApiKeyCreationEnabled          = flag.Bool("app.org_admin_api_key_creation_enabled", false, "If set, SCIM API keys will be able to be created in the UI.")
 	readerWriterRolesEnabled               = flag.Bool("app.reader_writer_roles_enabled", true, "If set, Reader/Writer roles will be enabled in the user management UI.")
-	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", false, "If set, the UI will stream invocation logs instead of polling.")
+	invocationLogStreamingEnabled          = flag.Bool("app.invocation_log_streaming_enabled", true, "If set, the UI will stream invocation logs instead of polling.")
 	targetFlakesUIEnabled                  = flag.Bool("app.target_flakes_ui_enabled", false, "If set, show some fancy new features for analyzing flakes.")
 	bazelButtonsEnabled                    = flag.Bool("app.bazel_buttons_enabled", false, "If set, show remote bazel buttons in the UI.")
 	communityLinksEnabled                  = flag.Bool("app.community_links_enabled", true, "If set, show links to BuildBuddy community in the UI.")
@@ -204,8 +204,7 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		UserOwnedKeysEnabled:                   env.GetAuthDB() != nil && env.GetAuthDB().GetUserOwnedKeysEnabled(),
 		TrendsHeatmapEnabled:                   iss_config.TrendsHeatmapEnabled() && env.GetOLAPDBHandle() != nil,
 		PatternFilterEnabled:                   *patternFilterEnabled,
-		BotSuggestionsEnabled:                  env.GetSuggestionService() != nil,
-		MultipleSuggestionProviders:            env.GetSuggestionService() != nil && env.GetSuggestionService().MultipleProvidersConfigured(),
+		BotSuggestionsEnabled:                  env.GetRunnerService() != nil,
 		ExecutionSearchEnabled:                 *executionSearchEnabled,
 		TrendsSummaryEnabled:                   *trendsSummaryEnabled,
 		ActionResultOriginEnabled:              action_cache_server.RecordActionResultOriginEnabled(),

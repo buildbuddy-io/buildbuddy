@@ -62,7 +62,7 @@ func (tc *testCache) sample(ctx context.Context, n int) ([]*approxlru.Sample[*en
 	defer tc.mu.Unlock()
 
 	var samples []*approxlru.Sample[*entry]
-	for i := 0; i < n; i++ {
+	for range n {
 		if len(tc.data) == 0 {
 			break
 		}
@@ -107,7 +107,7 @@ func newCache(t *testing.T, maxSizeBytes int64) (*testCache, *approxlru.LRU[*ent
 func fillCache(t *testing.T, c *testCache, n int, sizeBytes int64) {
 	atime := time.Now().Add(-1 * time.Hour * time.Duration(n))
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		c.Add(&entry{
 			id:        strconv.Itoa(i),
 			sizeBytes: sizeBytes,
@@ -157,7 +157,7 @@ func TestRefresh(t *testing.T) {
 	// Update atimes on the oldest atimes to avoid evicting them.
 	var refreshedIDs []string
 	c.mu.Lock()
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		c.data[i].atime = time.Now()
 		refreshedIDs = append(refreshedIDs, c.data[i].id)
 	}
@@ -169,7 +169,7 @@ func TestRefresh(t *testing.T) {
 	waitForEviction(t, l)
 
 	c.mu.Lock()
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if c.data[i].id != refreshedIDs[i] {
 			require.FailNowf(t, "early eviction", "entry %q should not have been evicted yet", refreshedIDs[i])
 		}

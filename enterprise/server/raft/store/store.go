@@ -457,7 +457,6 @@ func New(env environment.Env, cfg *raftConfig.ServerConfig, opts ...Option) (*St
 	egStarter.SetLimit(numReplicaStarter)
 	numReplicas := len(nodeHostInfo.LogInfo)
 	for i, logInfo := range nodeHostInfo.LogInfo {
-		i, logInfo := i, logInfo
 		if !nodeHost.HasNodeInfo(logInfo.ShardID, logInfo.ReplicaID) {
 			// Skip nodes not on this machine.
 			continue
@@ -1199,7 +1198,6 @@ func (s *Store) tryDroppingLeadership(ctx context.Context, nhidToPodIndex map[st
 	eg := errgroup.Group{}
 	remainingLeader := 0
 	for _, clusterInfo := range nodeHostInfo.ShardInfoList {
-		clusterInfo := clusterInfo
 		if clusterInfo.LeaderID != clusterInfo.ReplicaID || clusterInfo.Term == 0 {
 			// skip if not the leader
 			continue

@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/server/cache/dirtools"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -32,8 +31,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rpcutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
-	"github.com/open-feature/go-sdk/openfeature"
-	"github.com/open-feature/go-sdk/openfeature/memprovider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -862,7 +859,7 @@ func TestDownloadTreeDedupeInflight(t *testing.T) {
 	totalTransferCount := int64(0)
 
 	eg := errgroup.Group{}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		eg.Go(func() error {
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: tmpDir})
 			if err != nil {
@@ -918,7 +915,6 @@ func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
 
 	eg := errgroup.Group{}
 	for _, rootDir := range []string{tmpDirA, tmpDirB} {
-		rootDir := rootDir
 		eg.Go(func() error {
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
 			if err != nil {
@@ -931,7 +927,7 @@ func TestDownloadTreeBatchDownloadNotDeduped(t *testing.T) {
 		})
 	}
 
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		select {
 		case <-cc.getMultiCalls:
 		case <-time.After(2 * time.Second):
@@ -980,7 +976,6 @@ func TestDownloadTreeBytestreamDownloadDeduped(t *testing.T) {
 	start := make(chan struct{})
 	eg := errgroup.Group{}
 	for _, rootDir := range []string{tmpDirA, tmpDirB} {
-		rootDir := rootDir
 		eg.Go(func() error {
 			<-start
 			info, err := dirtools.DownloadTree(ctx, env, "", repb.DigestFunction_SHA256, directory, &dirtools.DownloadTreeOpts{RootDir: rootDir})
@@ -1254,7 +1249,7 @@ func TestDownloadTree_InputFetchMetadataPreservesUnsetLeafIndices(t *testing.T) 
 	info, err := dirtools.DownloadTree(ctx, env, instanceName, repb.DigestFunction_SHA256, tree, &dirtools.DownloadTreeOpts{
 		RootDir:                  tmpDir,
 		RecordInputFetchMetadata: true,
-		Skip: map[fspath.Key]*repb.FileNode{
+		KnownInputs: map[fspath.Key]*repb.FileNode{
 			fspath.NewKey("preserved.txt", false): preservedNode,
 		},
 	})
@@ -1653,24 +1648,7 @@ func TestDownloadTreeDirectlyToFileCache(t *testing.T) {
 func TestDownloadTree_ChunkedInputFiles_ReusesCachedChunksAndUpdatesLocations(t *testing.T) {
 	flags.Set(t, "cache.client.enable_download_compression", false)
 
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	env, ctx := testEnv(t)
-	env.SetExperimentFlagProvider(fp)
-
 	fileCache := &countingFileCache{
 		FileCache: env.GetFileCache(),
 		adds:      make(map[string]int),

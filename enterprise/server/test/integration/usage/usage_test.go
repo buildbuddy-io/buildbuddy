@@ -80,21 +80,21 @@ func TestGetUsage_ParentAdminFetchesChildGroupUsage(t *testing.T) {
 	now := time.Now().UTC()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	seeded := &tables.Usage{
-		GroupID:         childGroupID,
-		PeriodStartUsec: monthStart.UnixMicro(),
-		Region:          "test",
-		FinalBeforeUsec: monthStart.Add(30 * 24 * time.Hour).UnixMicro(),
-		UsageCounts: tables.UsageCounts{
-			Invocations:                3,
-			CASCacheHits:               1,
-			ActionCacheHits:            2,
-			TotalDownloadSizeBytes:     2048,
-			LinuxExecutionDurationUsec: 111,
-			TotalUploadSizeBytes:       4096,
-			TotalCachedActionExecUsec:  222,
-			CPUNanos:                   333,
-		},
-		UsageLabels: tables.UsageLabels{Origin: "internal", Client: "bazel", Server: "app"},
+		GroupID:                    childGroupID,
+		PeriodStartUsec:            monthStart.UnixMicro(),
+		Region:                     "test",
+		FinalBeforeUsec:            monthStart.Add(30 * 24 * time.Hour).UnixMicro(),
+		Invocations:                3,
+		CASCacheHits:               1,
+		ActionCacheHits:            2,
+		TotalDownloadSizeBytes:     2048,
+		LinuxExecutionDurationUsec: 111,
+		TotalUploadSizeBytes:       4096,
+		TotalCachedActionExecUsec:  222,
+		CPUNanos:                   333,
+		Origin:                     "internal",
+		Client:                     "bazel",
+		Server:                     "app",
 	}
 	db := app.DB()
 	require.NoError(t, db.Create(seeded).Error)

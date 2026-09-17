@@ -2,12 +2,10 @@ name: PR
 
 on:
   pull_request:
-    branches:
-      - master
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-16cpu
     if: "!contains(github.event.head_commit.message, 'ci skip')"
 
     steps:

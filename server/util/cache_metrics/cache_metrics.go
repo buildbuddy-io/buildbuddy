@@ -3,6 +3,7 @@ package cache_metrics
 import (
 	"fmt"
 	"io"
+	"maps"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
@@ -42,12 +43,8 @@ func MakeCacheLabels(tier CacheTier, backend string) prometheus.Labels {
 
 func appendLabels(a prometheus.Labels, b prometheus.Labels) prometheus.Labels {
 	labels := prometheus.Labels{}
-	for k, v := range a {
-		labels[k] = v
-	}
-	for k, v := range b {
-		labels[k] = v
-	}
+	maps.Copy(labels, a)
+	maps.Copy(labels, b)
 	return labels
 }
 

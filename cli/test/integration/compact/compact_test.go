@@ -31,7 +31,7 @@ func TestPrintCompactExec(t *testing.T) {
 				b, err := os.ReadFile(expectedJson)
 				require.NoError(t, err)
 
-				for i := 0; i < 3; i++ {
+				for i := range 3 {
 					t.Run(fmt.Sprintf("run_%d", i), func(t *testing.T) {
 						out, err := testcli.CombinedOutput(testcli.Command(t, ws, "print", "--compact_execution_log", absPath, fmt.Sprintf("--sort=%t", isSorted)))
 						assert.NoError(t, err)

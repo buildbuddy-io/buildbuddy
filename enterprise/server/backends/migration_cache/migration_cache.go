@@ -598,7 +598,6 @@ func (mc *MigrationCache) SetMulti(ctx context.Context, kvs map[*rspb.ResourceNa
 func deleteMulti(ctx context.Context, dest interfaces.Cache, kvs map[*rspb.ResourceName][]byte) {
 	eg, gctx := errgroup.WithContext(ctx)
 	for r := range kvs {
-		r := r
 		eg.Go(func() error {
 			deleteErr := dest.Delete(gctx, r)
 			if deleteErr != nil && !status.IsNotFoundError(deleteErr) {
@@ -1202,25 +1201,21 @@ func (mc *MigrationCache) Stop() error {
 	var wg sync.WaitGroup
 	var srcShutdownErr, dstShutdownErr error
 	if src, canStopSrc := mc.defaultConfigDoNotUseDirectly.src.(interfaces.StoppableCache); canStopSrc {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			srcShutdownErr = src.Stop()
 			if srcShutdownErr != nil {
 				log.Warningf("Migration src cache shutdown err: %s", srcShutdownErr)
 			}
-		}()
+		})
 	}
 
 	if dest, canStopDest := mc.defaultConfigDoNotUseDirectly.dest.(interfaces.StoppableCache); canStopDest {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			dstShutdownErr = dest.Stop()
 			if dstShutdownErr != nil {
 				log.Warningf("Migration dest cache shutdown err: %s", dstShutdownErr)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

@@ -1769,7 +1769,7 @@ func (sm *Replica) Update(entries []dbsm.Entry) ([]dbsm.Entry, error) {
 //
 // The Lookup method is a read only method, it should never change the state
 // of IOnDiskStateMachine.
-func (sm *Replica) Lookup(key interface{}) (interface{}, error) {
+func (sm *Replica) Lookup(key any) (any, error) {
 	reqBuf, ok := key.([]byte)
 	if !ok {
 		return nil, status.FailedPreconditionError("Cannot convert key to []byte")
@@ -1852,7 +1852,7 @@ func (sm *Replica) Sync() error {
 //
 // PrepareSnapshot returns an error when there is unrecoverable error for
 // preparing the snapshot.
-func (sm *Replica) PrepareSnapshot() (interface{}, error) {
+func (sm *Replica) PrepareSnapshot() (any, error) {
 	db, err := sm.leaser.DB()
 	if err != nil {
 		return nil, err
@@ -2071,7 +2071,7 @@ func (sm *Replica) applySnapshotFromReader(r io.Reader, db ReplicaWriter) error 
 // e.g. disk error preventing you from saving the snapshot.
 //
 // Note: we assume that local range will be saved before data in the [start, end).
-func (sm *Replica) SaveSnapshot(preparedSnap interface{}, w io.Writer, quit <-chan struct{}) error {
+func (sm *Replica) SaveSnapshot(preparedSnap any, w io.Writer, quit <-chan struct{}) error {
 	snap, ok := preparedSnap.(*pebble.Snapshot)
 	if !ok {
 		return status.FailedPreconditionError("unable to coerce snapshot to *pebble.Snapshot")

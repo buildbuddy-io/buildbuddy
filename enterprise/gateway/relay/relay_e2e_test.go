@@ -8,10 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/apikeyauth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/certauth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/relay"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/server"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/gateway/testgateway"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauthrelay"
 	"github.com/buildbuddy-io/buildbuddy/server/util/relaywire"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -21,7 +24,10 @@ import (
 // setupRelayGateway creates a gateway running the relay service.
 func setupRelayGateway(t testing.TB, ta *testauth.TestAuthenticator) *server.Gateway {
 	t.Helper()
-	return testgateway.Setup(t, ta, relay.New())
+	return testgateway.Setup(t, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{relay.New()},
+	})
 }
 
 // startEchoServer starts a TCP server on localhost that echoes what it reads
@@ -147,7 +153,10 @@ func TestRelay_NotComposedMeansNoListener(t *testing.T) {
 	// A gateway that does not compose the relay (the customer-facing shape)
 	// must not have a relay listener at all.
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("user1", "group1"))
-	gw := testgateway.Setup(t, ta, server.DNSService())
+	gw := testgateway.Setup(t, server.Options{
+		Authenticator: apikeyauth.New(ta),
+		HubServices:   []server.HubService{server.DNSService()},
+	})
 	ctx, err := ta.WithAuthenticatedUser(context.Background(), "user1")
 	require.NoError(t, err)
 
@@ -199,4 +208,39 @@ func TestRelay_TargetRefusesConnection(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, status.IsUnavailableError(err), "got %v", err)
 	require.Contains(t, status.Message(err), "refused", "the gateway's dial error reaches the client verbatim")
+}
+
+func TestRelay_CertGatewayEndToEnd(t *testing.T) {
+	// The employee tunnel-gateway shape, end to end: certificate
+	// authentication, then egress through the relay.
+	const audience = "relay.moon.buildbuddy.io"
+	echoPort := startEchoServer(t)
+
+	ca := testauthrelay.NewCA(t)
+	flags.Set(t, "gateway.cert_auth.ca", ca.PEM())
+	flags.Set(t, "gateway.cert_auth.audience", audience)
+	certAuth, err := certauth.New()
+	require.NoError(t, err)
+	gw := testgateway.Setup(t, server.Options{
+		Authenticator: certAuth,
+		HubServices:   []server.HubService{relay.New()},
+	})
+	signer := ca.Signer(t, "vadim@buildbuddy.io")
+
+	peer := testgateway.RegisterAndConnectAs(t, gw, func(pubKey string) context.Context {
+		return testauthrelay.CredentialContext(t, signer, audience, pubKey)
+	}, "net1", "")
+
+	conn, err := dialRelay(t, peer, "localhost", echoPort)
+	require.NoError(t, err)
+	defer conn.Close()
+
+	const want = "hello from an employee"
+	_, err = io.WriteString(conn, want)
+	require.NoError(t, err)
+	require.NoError(t, conn.(interface{ CloseWrite() error }).CloseWrite())
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	got, err := io.ReadAll(conn)
+	require.NoError(t, err)
+	require.Equal(t, want, string(got))
 }

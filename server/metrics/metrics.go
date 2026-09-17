@@ -40,10 +40,6 @@ const (
 	// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
 	InvocationStatusLabel = "invocation_status"
 
-	// Whether live invocation log chunks were written to the key-value store
-	// with suffix-only writes: `true` or `false` (experiment arm).
-	LogSuffixWritesEnabledLabel = "suffix_writes_enabled"
-
 	// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
@@ -523,6 +519,15 @@ var (
 )
 
 var (
+	// ## SSL metrics
+
+	SSLCertificateReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ssl",
+		Name:      "certificate_reload_failures_total",
+		Help:      "Number of failed TLS certificate reloads. The server retains the last successfully loaded certificate on failure.",
+	})
+
 	// ## Invocation build event metrics
 	//
 	// All invocation metrics are recorded at the _end_ of each invocation.
@@ -558,13 +563,18 @@ var (
 	// sum(rate(buildbuddy_invocation_count[5m]))
 	// ```
 
-	InvocationLogLiveChunkWrittenBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+	DiscardedAnonymousBuildEventStreamCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "discarded_anonymous_build_event_stream_count",
+		Help:      "The total number of anonymous build event streams discarded because they did not contain an API key.",
+	})
+
+	InvocationLogLiveChunkWrittenBytes = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "log_live_chunk_written_bytes",
 		Help:      "Total number of bytes written to the key-value store for live (in-progress) invocation log tail chunks.",
-	}, []string{
-		LogSuffixWritesEnabledLabel,
 	})
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -1019,6 +1029,38 @@ var (
 		StatusLabel,
 	})
 
+	// DistributedCacheBackfillCount counts distributed cache backfills (read
+	// repairs) of a single digest to a single peer, by whether the blob was
+	// sent to the peer as a reference to shared storage or as inline bytes,
+	// and by the backfill's gRPC status code ("OK" on success). A backfill
+	// that fails by reference and then falls back to bytes is counted once,
+	// under "bytes". Backfills skipped because the peer already had the blob
+	// are not counted.
+	DistributedCacheBackfillCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_backfill_count",
+		Help:      "Count of distributed cache backfills, by whether the blob was sent to the peer as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheBackfillSizeBytes totals the sizes of the blobs
+	// backfilled (read-repaired) to peers, with the same labels and counting
+	// rules as DistributedCacheBackfillCount. Sizes are the digest's
+	// (uncompressed) size, so compressed transfers count the full blob size
+	// rather than the exact bytes moved.
+	DistributedCacheBackfillSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_backfill_size_bytes",
+		Help:      "Total digest sizes of blobs backfilled to distributed cache peers, by whether the blob was sent as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
+	})
+
 	DistributedCacheBackfillLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
@@ -1095,6 +1137,38 @@ var (
 		Help:      "Total digest sizes of blobs written to distributed cache peers, by whether the payload was sent as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheWriteRequestType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheGetWithMetadataResponseCount counts distributed cache
+	// peer GetWithMetadata responses by whether the payload was received as
+	// a reference to shared storage or as inline bytes, and by the gRPC
+	// status code of turning the response into bytes ("OK" on success).
+	// Responses that fail before any payload is received have no payload
+	// type and are not counted.
+	DistributedCacheGetWithMetadataResponseCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_with_metadata_response_count",
+		Help:      "Count of distributed cache peer GetWithMetadata responses, by whether the payload was received as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
+		StatusHumanReadableLabel,
+	})
+
+	// DistributedCacheGetWithMetadataResponseSizeBytes totals the digest
+	// sizes of blobs fetched from peers via GetWithMetadata, by whether the
+	// payload was received as a reference to shared storage or as inline
+	// bytes, and by the gRPC status code of turning the response into bytes
+	// ("OK" on success). Sizes are the requested digest's (uncompressed)
+	// size rather than the exact bytes transferred.
+	DistributedCacheGetWithMetadataResponseSizeBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "distributed_cache_get_with_metadata_response_size_bytes",
+		Help:      "Total digest sizes of blobs fetched from distributed cache peers via GetWithMetadata, by whether the payload was received as a reference or as inline bytes, and by status code.",
+	}, []string{
+		DistributedCacheReadResponseType,
 		StatusHumanReadableLabel,
 	})
 
@@ -3553,14 +3627,16 @@ var (
 		CacheNameLabel,
 	})
 
-	PebbleCacheAtimeUpdateGCSErrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	PebbleCacheGCSOperationCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
-		Name:      "pebble_cache_atime_update_gcs_error_count",
-		Help:      "Count of atime update errors from GCS.",
+		Name:      "pebble_cache_gcs_operation_count",
+		Help:      "Count of GCS operations performed by the pebble cache.",
 	}, []string{
+		OpLabel,
 		PartitionID,
 		CacheNameLabel,
+		StatusHumanReadableLabel,
 	})
 
 	PebbleCacheAtimeDeltaWhenRead = promauto.NewHistogramVec(prometheus.HistogramOpts{

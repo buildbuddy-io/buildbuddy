@@ -15,6 +15,7 @@ go_library(
         "//cli/log",
         "//cli/login",
         "//cli/parser",
+        "//cli/parser/bazel_command",
         "//cli/storage",
         "//cli/terminal",
         "//proto:build_event_stream_go_proto",

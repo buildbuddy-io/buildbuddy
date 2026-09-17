@@ -117,10 +117,8 @@ func NewSelfAuth() (*selfAuth, error) {
 	q.SetString(strings.Join(strings.Fields(qString), ""), 10)
 
 	privateKey := &rsa.PrivateKey{
-		PublicKey: rsa.PublicKey{
-			N: &n,
-			E: e,
-		},
+		N:      &n,
+		E:      e,
 		D:      &d,
 		Primes: []*big.Int{&p, &q},
 	}
@@ -207,7 +205,7 @@ func (o *selfAuth) Authorize(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func writeJSONResponse(w http.ResponseWriter, r *http.Request, v interface{}) {
+func writeJSONResponse(w http.ResponseWriter, r *http.Request, v any) {
 	rsp, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

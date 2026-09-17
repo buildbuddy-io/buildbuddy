@@ -89,18 +89,19 @@ h1 {
 }
 
 .articleGrid {
-  box-shadow:
-    0px 0px 0px 1px rgba(0, 0, 0, 0.12),
-    0px 1px 1px -0.5px rgba(0, 0, 0, 0.12),
-    0px 3px 3px -1.5px rgba(0, 0, 0, 0.12),
-    0px 6px 6px -3px rgba(0, 0, 0, 0.12);
-  padding: 32px 24px;
+  border: 1px solid var(--ifm-color-emphasis-200);
+  background-color: var(--ifm-card-background-color);
+  box-shadow: 0 4px 16px rgba(28, 28, 31, 0.04);
+  padding: 32px;
   border-radius: 16px;
   cursor: pointer;
   max-height: 500px;
   overflow: hidden;
   position: relative;
   height: 100%;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .articleGrid:after {
@@ -111,15 +112,60 @@ h1 {
   bottom: 0;
   left: 0;
   right: 0;
-  background-image: linear-gradient(transparent, white);
+  background-image: linear-gradient(transparent, var(--ifm-card-background-color));
+  pointer-events: none;
 }
 
-.articleGrid:hover {
-  box-shadow:
-    0px 0px 0px 1px rgba(0, 0, 0, 0.12),
-    0px 1px 1px -0.5px rgba(0, 0, 0, 0.12),
-    0px 3px 3px -1.5px rgba(0, 0, 0, 0.12),
-    0px 6px 6px -3px rgba(0, 0, 0, 0.12),
-    0px 8px 12px -6px rgba(0, 0, 0, 0.12),
-    0px 10px 24px -12px rgba(0, 0, 0, 0.12);
+.articleGrid:hover,
+.articleGrid:focus-within {
+  border-color: var(--ifm-color-emphasis-300);
+  box-shadow: 0 8px 24px rgba(28, 28, 31, 0.07);
+}
+
+.articleGrid .blogPostTitleGrid a,
+.articleGrid .blogPostTitleGrid a:hover {
+  color: var(--ifm-font-color-base);
+}
+
+.articleGrid .heading {
+  gap: 12px;
+  margin: 20px 0;
+  line-height: 1.5;
+}
+
+.articleGrid .headingPhoto {
+  flex-shrink: 0;
+  border-color: var(--ifm-color-emphasis-200);
+  padding: 2px;
+}
+
+.articleGrid .headingPhoto :global(.avatar__photo) {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
+.articleGrid .blogPostDate {
+  color: var(--ifm-color-emphasis-600);
+  font-size: 0.8rem;
+}
+
+.articleGrid :global(.markdown) {
+  color: var(--ifm-color-emphasis-800);
+}
+
+.articleGrid :global(.markdown) img {
+  border-radius: 8px;
+}
+
+@media (max-width: 800px) {
+  .articleGrid {
+    padding: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .articleGrid {
+    transition: none;
+  }
 }

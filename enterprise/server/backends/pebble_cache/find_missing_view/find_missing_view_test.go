@@ -231,7 +231,7 @@ func TestFindMissingViewReset(t *testing.T) {
 // fuzzing doesn't run under bazel.
 func TestFindMissingViewRandomized(t *testing.T) {
 	rng := rand.New(rand.NewSource(20260708))
-	for i := 0; i < 100_000; i++ {
+	for i := range 100_000 {
 		b := randomWireBuffer(t, rng)
 		checkViewAgainstFullUnmarshal(t, b)
 		if t.Failed() {

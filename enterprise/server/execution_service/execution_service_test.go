@@ -85,7 +85,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					InvocationID:     iid1,
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.OTHERS_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			wantExecutions: []*espb.Execution{},
@@ -97,7 +98,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					InvocationID:     iid1,
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.OTHERS_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			executions: []*olaptables.Execution{
@@ -127,7 +129,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					GroupID:          "GR1",
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.GROUP_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			executions: []*olaptables.Execution{
@@ -157,7 +160,8 @@ func TestGetExecution_OLAPOnly(t *testing.T) {
 					GroupID:          "GR1",
 					InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 					Perms:            perms.GROUP_READ,
-					Model:            tables.Model{CreatedAtUsec: testTimestampUsec, UpdatedAtUsec: testTimestampUsec},
+					CreatedAtUsec:    testTimestampUsec,
+					UpdatedAtUsec:    testTimestampUsec,
 				},
 			},
 			executions: []*olaptables.Execution{
@@ -356,7 +360,8 @@ func TestGetExecution_PrimaryDBIncludesInvocationLinkType(t *testing.T) {
 		InvocationID:     iid,
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.OTHERS_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -369,7 +374,8 @@ func TestGetExecution_PrimaryDBIncludesInvocationLinkType(t *testing.T) {
 		ExecutionID:         executionID,
 		InvocationID:        iid,
 		Perms:               perms.OTHERS_READ,
-		Model:               tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:       nowUsec,
+		UpdatedAtUsec:       nowUsec,
 		QueuedTimestampUsec: nowUsec,
 	}).Error)
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation_execution").Create(&tables.InvocationExecution{
@@ -461,10 +467,8 @@ func TestGetExecutionDownloads(t *testing.T) {
 			GroupID:          ownerUser.GetGroupID(),
 			InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 			Perms:            invocationPerms,
-			Model: tables.Model{
-				CreatedAtUsec: nowUsec,
-				UpdatedAtUsec: nowUsec,
-			},
+			CreatedAtUsec:    nowUsec,
+			UpdatedAtUsec:    nowUsec,
 		}).Error
 		require.NoError(t, err)
 		err = app.GetDBHandle().GORM(ownerCtx, "create_execution").Create(&tables.Execution{
@@ -474,10 +478,8 @@ func TestGetExecutionDownloads(t *testing.T) {
 			InvocationID:        invocationID,
 			Perms:               executionPerms,
 			QueuedTimestampUsec: nowUsec,
-			Model: tables.Model{
-				CreatedAtUsec: nowUsec,
-				UpdatedAtUsec: nowUsec,
-			},
+			CreatedAtUsec:       nowUsec,
+			UpdatedAtUsec:       nowUsec,
 		}).Error
 		require.NoError(t, err)
 		err = app.GetDBHandle().GORM(ownerCtx, "create_invocation_execution").Create(&tables.InvocationExecution{
@@ -639,7 +641,8 @@ func TestGetExecution_OLAPOnly_ExactFilters(t *testing.T) {
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -722,7 +725,8 @@ func TestGetExecution_OLAPOnly_DoesNotCollapseDistinctExecutions(t *testing.T) {
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -778,7 +782,8 @@ func TestGetExecution_OLAPOnly_BufferedExecutionIncludesInvocationLinkType(t *te
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -827,7 +832,8 @@ func TestGetExecution_PrefersOLAPWithoutDuplicatingPrimary(t *testing.T) {
 		GroupID:          "GR1",
 		InvocationStatus: int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
 		Perms:            perms.GROUP_READ,
-		Model:            tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:    nowUsec,
+		UpdatedAtUsec:    nowUsec,
 	}
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation").Create(invocation).Error)
 
@@ -838,7 +844,8 @@ func TestGetExecution_PrefersOLAPWithoutDuplicatingPrimary(t *testing.T) {
 		InvocationID:        iid,
 		GroupID:             "GR1",
 		Perms:               perms.GROUP_READ,
-		Model:               tables.Model{CreatedAtUsec: nowUsec, UpdatedAtUsec: nowUsec},
+		CreatedAtUsec:       nowUsec,
+		UpdatedAtUsec:       nowUsec,
 		QueuedTimestampUsec: nowUsec,
 	}).Error)
 	require.NoError(t, env.GetDBHandle().GORM(ctx, "test_create_invocation_execution").Create(&tables.InvocationExecution{

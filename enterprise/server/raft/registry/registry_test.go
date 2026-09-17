@@ -151,10 +151,8 @@ func TestDynamicRegistryRemoveShard(t *testing.T) {
 
 func TestStaticRegistryResolveWithPodWatcher(t *testing.T) {
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "server-0",
-			Namespace: "ns",
-		},
+		Name:      "server-0",
+		Namespace: "ns",
 		Status: corev1.PodStatus{
 			PodIP: "10.0.0.1",
 		},

@@ -8,7 +8,17 @@ import rpcService from "../service/rpc_service";
 
 const DEFAULT_CONTAINER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04:latest";
 
-export type RemoteRunnerAgent = "claude" | "codex";
+export const REMOTE_RUNNER_AGENTS = [
+  { id: "claude", name: "Claude", apiKeyEnvVar: "ANTHROPIC_API_KEY" },
+  { id: "codex", name: "Codex", apiKeyEnvVar: "CODEX_API_KEY" },
+] as const;
+
+export type RemoteRunnerAgent = (typeof REMOTE_RUNNER_AGENTS)[number]["id"];
+export const DEFAULT_REMOTE_RUNNER_AGENT: RemoteRunnerAgent = "codex";
+
+export function getRemoteRunnerAgentConfig(agent: RemoteRunnerAgent) {
+  return REMOTE_RUNNER_AGENTS.find((config) => config.id === agent)!;
+}
 
 const SETUP_CLAUDE_COMMAND = `
 set -euo pipefail
@@ -78,7 +88,7 @@ export function triggerRemoteRun(
     platformProps = new Map<string, string>();
   }
 
-  if (!platformProps.has("container-image")) {
+  if (!platformProps.has("container-image") && platformProps.get("OSFamily") !== "darwin") {
     platformProps.set("container-image", DEFAULT_CONTAINER_IMAGE);
   }
 
@@ -125,7 +135,7 @@ export function triggerRemoteRun(
     name: name,
   });
 
-  rpcService.service
+  return rpcService.service
     .run(request)
     .then((response: runner.RunResponse) => {
       let url = `/invocation/${response.invocationId}?queued=true`;

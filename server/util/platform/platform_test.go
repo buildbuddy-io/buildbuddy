@@ -19,6 +19,20 @@ import (
 	gstatus "google.golang.org/grpc/status"
 )
 
+func TestIsCIRunnerCommand(t *testing.T) {
+	for _, executable := range []string{
+		"./buildbuddy_ci_runner",
+		"./buildbuddy_ci_runner.exe",
+		`.\buildbuddy_ci_runner`,
+		`.\buildbuddy_ci_runner.exe`,
+	} {
+		cmd := &repb.Command{Arguments: []string{executable}}
+		require.True(t, IsCIRunnerCommand(cmd))
+	}
+
+	require.False(t, IsCIRunnerCommand(&repb.Command{Arguments: []string{"./something_else"}}))
+}
+
 func TestParse_OS(t *testing.T) {
 	for _, testCase := range []struct {
 		rawValue      string

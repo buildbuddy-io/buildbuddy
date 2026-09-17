@@ -21,9 +21,14 @@ export function ChangelogHeader({ selectedTagUrl = null }: ChangelogHeaderProps)
 
   return (
     <>
-      <section className={styles.filters}>
+      <header className={styles.header}>
+        <h1 className={styles.title}>Changelog</h1>
+        <p className={styles.subtitle}>The latest improvements to BuildBuddy.</p>
+      </header>
+      <nav className={styles.filters} aria-label="Filter changelog">
         <Link
           to="/changelog"
+          aria-current={!normalizedSelectedTagUrl ? "page" : undefined}
           className={clsx(styles.filterButton, !normalizedSelectedTagUrl && styles.filterButtonActive)}>
           all
         </Link>
@@ -32,6 +37,7 @@ export function ChangelogHeader({ selectedTagUrl = null }: ChangelogHeaderProps)
             key={tag.label}
             to={tag.url}
             data-noBrokenLinkCheck={true}
+            aria-current={normalizedSelectedTagUrl === tag.url.toLowerCase() ? "page" : undefined}
             className={clsx(
               styles.filterButton,
               normalizedSelectedTagUrl === tag.url.toLowerCase() && styles.filterButtonActive
@@ -39,7 +45,7 @@ export function ChangelogHeader({ selectedTagUrl = null }: ChangelogHeaderProps)
             {tag.label}
           </Link>
         ))}
-      </section>
+      </nav>
     </>
   );
 }

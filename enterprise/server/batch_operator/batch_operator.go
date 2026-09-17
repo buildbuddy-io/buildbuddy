@@ -494,7 +494,7 @@ func (u *batchOperator) flushBatches(ctx context.Context) int {
 	// Remove batches to flush and release the mutex before sending RPCs.
 	batchesToFlush := map[string]*DigestBatch{}
 	authHeaders := map[string]map[string][]string{}
-	u.batchesByGroupID.Range(func(key, value interface{}) bool {
+	u.batchesByGroupID.Range(func(key, value any) bool {
 		groupID, ok := key.(string)
 		if !ok {
 			alert.UnexpectedEvent("batch-operator-unexpected-key-type", "[%s] batchesByGroupID contains key with unexpected type. actual type: %T", u.name, key)

@@ -86,8 +86,6 @@ func (f *fakeChannelz) GetChannel(ctx context.Context, in *channelzpb.GetChannel
 	return &channelzpb.GetChannelResponse{Channel: ch}, nil
 }
 
-func i64(v int64) *int64 { return &v }
-
 func socket(id int64, remote, local *int64, started, succeeded, failed int64) *channelzpb.Socket {
 	d := &channelzpb.SocketData{StreamsStarted: started, StreamsSucceeded: succeeded, StreamsFailed: failed}
 	if remote != nil {
@@ -159,13 +157,13 @@ func TestCollect(t *testing.T) {
 	const remote = "grpc://remote:443"
 	const other = "grpc://other:443"
 	// Blocked: remote window 0, 100 open streams.
-	f.addChannel(1, 11, 101, remote, socket(101, i64(0), i64(1000), 105, 5, 0))
+	f.addChannel(1, 11, 101, remote, socket(101, new(int64(0)), new(int64(1000)), 105, 5, 0))
 	// Healthy: remote window 500000, 1 open stream.
-	f.addChannel(2, 12, 102, remote, socket(102, i64(500_000), i64(2000), 10, 8, 1))
+	f.addChannel(2, 12, 102, remote, socket(102, new(int64(500_000)), new(int64(2000)), 10, 8, 1))
 	// Unknown remote window (nil wrapper), 0 open streams.
-	f.addChannel(3, 13, 103, remote, socket(103, nil, i64(3000), 3, 3, 0))
+	f.addChannel(3, 13, 103, remote, socket(103, nil, new(int64(3000)), 3, 3, 0))
 	// Different target.
-	f.addChannel(4, 14, 104, other, socket(104, i64(12345), i64(4000), 2, 2, 0))
+	f.addChannel(4, 14, 104, other, socket(104, new(int64(12345)), new(int64(4000)), 2, 2, 0))
 	// Socket that vanished mid-walk: should be skipped, not fail the pass.
 	f.addChannel(5, 15, 105, remote, nil)
 	f.missing[105] = true
@@ -209,7 +207,7 @@ func TestCollect_NestedChildChannels(t *testing.T) {
 	const target = "xds:///remote:443"
 	// The top channel (1) has no direct subchannel; its socket lives under child
 	// channel 2, reachable only via ChannelRef + GetChannel.
-	f.addNestedChannel(1, 2, 21, 201, target, socket(201, i64(0), i64(1000), 100, 0, 0))
+	f.addNestedChannel(1, 2, 21, 201, target, socket(201, new(int64(0)), new(int64(1000)), 100, 0, 0))
 
 	conns, err := collect(context.Background(), f)
 	require.NoError(t, err)
@@ -222,9 +220,9 @@ func TestCollect_NestedChildChannels(t *testing.T) {
 func TestSampleAggregates(t *testing.T) {
 	f := newFake()
 	const target = "grpc://sample-test:443"
-	f.addChannel(1, 11, 101, target, socket(101, i64(0), i64(1000), 100, 0, 0))     // blocked
-	f.addChannel(2, 12, 102, target, socket(102, i64(0), i64(1000), 50, 0, 0))      // blocked
-	f.addChannel(3, 13, 103, target, socket(103, i64(500_000), i64(1000), 5, 4, 0)) // healthy
+	f.addChannel(1, 11, 101, target, socket(101, new(int64(0)), new(int64(1000)), 100, 0, 0))     // blocked
+	f.addChannel(2, 12, 102, target, socket(102, new(int64(0)), new(int64(1000)), 50, 0, 0))      // blocked
+	f.addChannel(3, 13, 103, target, socket(103, new(int64(500_000)), new(int64(1000)), 5, 4, 0)) // healthy
 
 	require.NoError(t, sample(context.Background(), f))
 

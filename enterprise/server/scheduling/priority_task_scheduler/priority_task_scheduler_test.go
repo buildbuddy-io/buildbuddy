@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -100,6 +101,47 @@ func TestTaskQueue_MultipleGroups(t *testing.T) {
 	require.Nil(t, q.Dequeue())
 }
 
+func TestTaskQueue_PrioritizesByAppQueuedTimestamp(t *testing.T) {
+	ctx := t.Context()
+	startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	clock := clockwork.NewFakeClockAt(startTime)
+	q := newTaskQueue(clock)
+
+	// Enqueue a task that was first enqueued on the app just now.
+	fresh := newTaskReservationRequest("fresh", testGroupID1, 0)
+	fresh.SchedulingMetadata.QueuedTimestamp = timestamppb.New(clock.Now())
+	q.Enqueue(ctx, fresh)
+
+	clock.Advance(time.Second)
+
+	// Enqueue a task that was first enqueued on the app a minute before the
+	// other tasks, simulating a task that was retried on this executor after
+	// originally being queued elsewhere. Even though it arrives at this
+	// executor last, it has been waiting the longest overall, so it should be
+	// dequeued before the other same-priority tasks.
+	retried := newTaskReservationRequest("retried", testGroupID1, 0)
+	retried.SchedulingMetadata.QueuedTimestamp = timestamppb.New(startTime.Add(-time.Minute))
+	q.Enqueue(ctx, retried)
+
+	// Enqueue a task with no app queued timestamp, simulating an app that
+	// doesn't set the field yet. It should fall back to the local enqueue
+	// time, placing it after the tasks queued on the app earlier.
+	legacy := newTaskReservationRequest("legacy", testGroupID1, 0)
+	q.Enqueue(ctx, legacy)
+
+	// Enqueue a task with a higher priority; explicit priority should take
+	// precedence over queued timestamps.
+	urgent := newTaskReservationRequest("urgent", testGroupID1, -1000)
+	urgent.SchedulingMetadata.QueuedTimestamp = timestamppb.New(clock.Now())
+	q.Enqueue(ctx, urgent)
+
+	require.Equal(t, "urgent", q.Dequeue().GetTaskId())
+	require.Equal(t, "retried", q.Dequeue().GetTaskId())
+	require.Equal(t, "fresh", q.Dequeue().GetTaskId())
+	require.Equal(t, "legacy", q.Dequeue().GetTaskId())
+	require.Nil(t, q.Dequeue())
+}
+
 func TestTaskQueue_DedupesTasks(t *testing.T) {
 	ctx := t.Context()
 	q := newTaskQueue(clockwork.NewRealClock())
@@ -111,6 +153,130 @@ func TestTaskQueue_DedupesTasks(t *testing.T) {
 	require.Equal(t, "1", q.Dequeue().GetTaskId())
 	require.Equal(t, 0, q.Len())
 	require.Nil(t, q.Dequeue())
+}
+
+func TestPriorityTaskScheduler_CanFitTaskWithGPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		capacity int64
+		reserved int64
+		request  int64
+		wantFit  bool
+	}{
+		{name: "CPU task without GPU capacity", wantFit: true},
+		{name: "GPU task without GPU capacity", request: 1},
+		{name: "exact capacity", capacity: 8, request: 8, wantFit: true},
+		{name: "exceeds capacity", capacity: 8, request: 9},
+		{name: "exact remaining capacity", capacity: 8, reserved: 5, request: 3, wantFit: true},
+		{name: "exceeds remaining capacity", capacity: 8, reserved: 5, request: 4},
+		{name: "CPU task when GPU memory is full", capacity: 8, reserved: 8, wantFit: true},
+		{name: "CPU task after skipped GPU tasks", capacity: 8, reserved: 12, wantFit: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			q := &PriorityTaskScheduler{
+				resourceCapacity: &resourceCounts{RAMBytes: 100, CPUMillis: 100, GPUMemoryBytes: testCase.capacity},
+			}
+			reserved := &resourceCounts{GPUMemoryBytes: testCase.reserved}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{
+				TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: testCase.request},
+			}}
+
+			// GPU requests must fit the unreserved capacity. CPU-only tasks
+			// can run even if earlier tasks reserve more GPU memory than exists.
+			require.Equal(t, testCase.wantFit, q.canFitTask(task, reserved))
+			require.Equal(t, testCase.reserved, reserved.GPUMemoryBytes)
+		})
+	}
+}
+
+// fakeGPUMemoryDetector reports a fixed GPU memory capacity.
+type fakeGPUMemoryDetector struct{ totalBytes int64 }
+
+func (d fakeGPUMemoryDetector) GetTotalGPUMemoryBytes() (int64, error) {
+	return d.totalBytes, nil
+}
+
+func TestPriorityTaskScheduler_GPUMemoryAccounting(t *testing.T) {
+	t.Cleanup(func() {
+		require.NoError(t, resources.ConfigureGPU(nil))
+	})
+	t.Setenv("SYS_GPU_MEMORY_BYTES", "")
+	require.NoError(t, resources.ConfigureGPU(fakeGPUMemoryDetector{totalBytes: 8_000_000_000}))
+	q, err := NewPriorityTaskScheduler(testenv.GetTestEnv(t), NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{
+		RAMBytesCapacityOverride:  100,
+		CPUMillisCapacityOverride: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(q.rootCancel)
+	require.Equal(t, int64(8_000_000_000), q.resourceCapacity.GPUMemoryBytes)
+	require.Empty(t, q.resourceCapacity.Custom)
+
+	size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: 4_000_000_000}
+	first := &scpb.EnqueueTaskReservationRequest{TaskId: "first", TaskSize: size}
+	second := &scpb.EnqueueTaskReservationRequest{TaskId: "second", TaskSize: size}
+	queued := &queuedTask{EnqueueTaskReservationRequest: second}
+
+	// Tasks can share the configured GPU memory until their combined usage
+	// fills it, even though no custom GPU resource is configured.
+	q.trackTask(first, nil)
+	require.True(t, q.canFitTask(queued, q.resourcesUsed))
+	q.trackTask(second, nil)
+	require.Equal(t, int64(8_000_000_000), q.resourcesUsed.GPUMemoryBytes)
+	require.False(t, q.canFitTask(queued, q.resourcesUsed))
+	require.Contains(t, q.stats(), "GPU memory: 8,000,000,000 of 8,000,000,000 bytes allocated (0 remaining)")
+
+	// Completing a task releases its memory so another GPU task can start.
+	q.untrackTask(first, nil)
+	require.Equal(t, int64(4_000_000_000), q.resourcesUsed.GPUMemoryBytes)
+	require.True(t, q.canFitTask(queued, q.resourcesUsed))
+	q.untrackTask(second, nil)
+	require.Zero(t, q.resourcesUsed.GPUMemoryBytes)
+}
+
+func TestPriorityTaskScheduler_QueueSkipping_GPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		used             resourceCounts
+		concurrencyLimit int64
+		requests         []int64
+		wantTaskID       string
+	}{
+		{name: "first GPU task fits", requests: []int64{8, 4, 0}, wantTaskID: "0"},
+		{name: "GPU task fits remaining capacity", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{4, 8, 0}, wantTaskID: "0"},
+		{name: "small GPU task cannot delay large task", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{8, 4}},
+		{name: "CPU task skips blocked GPU tasks", used: resourceCounts{GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}, wantTaskID: "2"},
+		{name: "CPU reservations prevent skipping", used: resourceCounts{CPUMillis: 98, GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}},
+		{name: "RAM reservations prevent skipping", used: resourceCounts{RAMBytes: 98, GPUMemoryBytes: 4}, requests: []int64{8, 4, 0}},
+		{name: "concurrency reservations prevent skipping", used: resourceCounts{GPUMemoryBytes: 4, Concurrency: 1}, concurrencyLimit: 2, requests: []int64{8, 0}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			q := &PriorityTaskScheduler{
+				q:                newTaskQueue(clockwork.NewRealClock()),
+				resourceCapacity: &resourceCounts{RAMBytes: 100, CPUMillis: 100, GPUMemoryBytes: 8, Concurrency: testCase.concurrencyLimit},
+				resourcesUsed:    &testCase.used,
+			}
+			for i, gpuMemory := range testCase.requests {
+				q.q.Enqueue(t.Context(), &scpb.EnqueueTaskReservationRequest{
+					TaskId:   fmt.Sprint(i),
+					TaskSize: &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1, EstimatedGpuMemoryBytes: gpuMemory},
+				})
+			}
+
+			// Backfilling must reserve the resources needed by skipped GPU
+			// tasks so later work cannot delay their start.
+			before := q.resourcesUsed.Clone()
+			task, pos := q.getNextSchedulableTask(t.Context())
+			if testCase.wantTaskID == "" {
+				require.Nil(t, task)
+				require.Nil(t, pos)
+			} else {
+				require.NotNil(t, task)
+				require.Equal(t, testCase.wantTaskID, task.GetTaskId())
+				require.Equal(t, task, q.q.DequeueAt(pos))
+			}
+			require.Equal(t, before, q.resourcesUsed, "searching the queue must not change active resource usage")
+		})
+	}
 }
 
 func TestPriorityTaskScheduler_CustomResourcesDontPreventNormalTaskScheduling(t *testing.T) {
@@ -304,6 +470,496 @@ func TestPriorityTaskScheduler_QueueSkipping_LargeCustomResourceTasksNotIndefini
 		execution2.ScheduledTask.GetExecutionTask().GetExecutionId(),
 	}
 	require.ElementsMatch(t, []string{gpuSmall1TaskID, gpuLargeTaskID}, startedTaskIDs)
+}
+
+func TestPriorityTaskScheduler_CustomResourceParentAccountingCeil(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "apple_simulator", Value: 2.0},
+		{Name: "sim_version_26_5", Value: 2.0, Parent: "apple_simulator", ParentAccounting: "ceil"},
+		{Name: "sim_version_18_0", Value: 2.0, Parent: "apple_simulator", ParentAccounting: "ceil"},
+	})
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	simSize := func(name string, value float32) *scpb.TaskSize {
+		return &scpb.TaskSize{
+			EstimatedMilliCpu:    1000,
+			EstimatedMemoryBytes: 1000,
+			CustomResources:      []*scpb.CustomResource{{Name: name, Value: value}},
+		}
+	}
+	enqueue := func(taskID string, size *scpb.TaskSize) {
+		_, err := scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+			TaskId:             taskID,
+			TaskSize:           size,
+			SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: size},
+		})
+		require.NoError(t, err)
+	}
+	waitForStart := func(taskID string) *FakeExecution {
+		select {
+		case execution := <-executor.StartedExecutions:
+			require.Equal(t, taskID, execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+			return execution
+		case <-time.After(1 * time.Second):
+			require.FailNowf(t, "timed out waiting for task to start", "task %q did not start", taskID)
+			return nil
+		}
+	}
+	requireNoStart := func() {
+		select {
+		case execution := <-executor.StartedExecutions:
+			require.FailNowf(t, "no task should have started", "task %q started", execution.ScheduledTask.GetExecutionTask().GetExecutionId())
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+
+	sim26UIID := fakeTaskID("sim-26-5-ui")
+	sim26Small1ID := fakeTaskID("sim-26-5-small-1")
+	sim26Small2ID := fakeTaskID("sim-26-5-small-2")
+	sim18SmallID := fakeTaskID("sim-18-0-small")
+
+	// 1 + 0.1 + 0.1 for the same simulator version should consume 2 parent
+	// simulator slots after summing and ceiling the version bucket.
+	enqueue(sim26UIID, simSize("sim_version_26_5", 1.0))
+	sim26UI := waitForStart(sim26UIID)
+	enqueue(sim26Small1ID, simSize("sim_version_26_5", 0.1))
+	sim26Small1 := waitForStart(sim26Small1ID)
+	enqueue(sim26Small2ID, simSize("sim_version_26_5", 0.1))
+	sim26Small2 := waitForStart(sim26Small2ID)
+
+	// A different simulator version would need a third parent simulator slot,
+	// so it should wait.
+	enqueue(sim18SmallID, simSize("sim_version_18_0", 0.1))
+	requireNoStart()
+	require.Equal(t, 1, scheduler.q.Len())
+
+	// Dropping from 1.2 to 1.1 still rounds to 2 parent simulator slots.
+	sim26Small1.Complete()
+	requireNoStart()
+	require.Equal(t, 1, scheduler.q.Len())
+
+	// Dropping to 1.0 rounds to 1 parent simulator slot, leaving room for the
+	// 18.0 simulator version bucket.
+	sim26Small2.Complete()
+	sim18Small := waitForStart(sim18SmallID)
+
+	sim26UI.Complete()
+	sim18Small.Complete()
+}
+
+func TestPriorityTaskScheduler_CanFitTaskWithParentResources(t *testing.T) {
+	q := &PriorityTaskScheduler{
+		resourceCapacity: &resourceCounts{
+			RAMBytes:  100,
+			CPUMillis: 100,
+			Custom: map[string]customResourceCount{
+				"parent": customResource(2),
+				"a":      customResource(1.5),
+				"b":      customResource(3),
+				"other":  customResource(1),
+			},
+		},
+		customResourceParents: map[string]resources.CustomResourceParent{
+			"a": {Name: "parent", Accounting: "ceil"},
+			"b": {Name: "parent", Accounting: "ceil"},
+		},
+	}
+	for _, test := range []struct {
+		name     string
+		reserved map[string]float32
+		request  map[string]float32
+		wantFit  bool
+	}{
+		{
+			name: "unused children consume no parent units", wantFit: true,
+			request: map[string]float32{"parent": 2},
+		},
+		{
+			name:    "child capacity still applies",
+			request: map[string]float32{"a": 1.6},
+		},
+		{
+			name: "same child shares parent units", wantFit: true,
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"a": 0.1},
+		},
+		{
+			name:     "different children use separate parent units",
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"b": 0.1},
+		},
+		{
+			name: "exact whole unit leaves room for sibling", wantFit: true,
+			reserved: map[string]float32{"a": 1}, request: map[string]float32{"b": 0.1},
+		},
+		{
+			name:     "smallest fraction rounds up",
+			reserved: map[string]float32{"a": 1, "b": 0.1}, request: map[string]float32{"a": 0.000001},
+		},
+		{
+			name:     "direct parent request includes child usage",
+			reserved: map[string]float32{"a": 1.1}, request: map[string]float32{"parent": 0.1},
+		},
+		{
+			name:     "child request includes direct parent usage",
+			reserved: map[string]float32{"parent": 1.1}, request: map[string]float32{"a": 0.1},
+		},
+		{
+			name:    "parent and children in one request",
+			request: map[string]float32{"parent": 0.1, "a": 0.1, "b": 0.1},
+		},
+		{
+			name: "siblings in one request fit", wantFit: true,
+			request: map[string]float32{"a": 0.1, "b": 0.1},
+		},
+		{
+			name: "unrelated reserved resources do not block task", wantFit: true,
+			reserved: map[string]float32{"a": 3}, request: map[string]float32{"other": 1},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			reserved := &resourceCounts{Custom: make(map[string]customResourceCount)}
+			for name, value := range test.reserved {
+				reserved.Custom[name] = customResource(value)
+			}
+			size := &scpb.TaskSize{EstimatedMemoryBytes: 1, EstimatedMilliCpu: 1}
+			for name, value := range test.request {
+				size.CustomResources = append(size.CustomResources, &scpb.CustomResource{Name: name, Value: value})
+			}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{TaskSize: size}}
+			before := reserved.Clone()
+			require.Equal(t, test.wantFit, q.canFitTask(task, reserved))
+			require.Equal(t, before, reserved, "checking capacity must not change reservations")
+		})
+	}
+}
+
+func TestPriorityTaskScheduler_CustomResourceParentAccountingModes(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		modeA     string
+		modeB     string
+		wantUsage float32
+		wantFit   bool
+	}{
+		{name: "default sum", wantUsage: 1.45, wantFit: true},
+		{name: "explicit sum", modeA: "sum", modeB: "sum", wantUsage: 1.45, wantFit: true},
+		{name: "ceil", modeA: "ceil", modeB: "ceil", wantUsage: 3.25},
+		{name: "mixed ceil and sum", modeA: "ceil", modeB: "sum", wantUsage: 2.35},
+		{name: "mixed default and ceil", modeB: "ceil", wantUsage: 2.35},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+				{Name: "parent", Value: 2},
+				{Name: "a", Value: 2, Parent: "parent", ParentAccounting: test.modeA},
+				{Name: "b", Value: 2, Parent: "parent", ParentAccounting: test.modeB},
+			})
+			q, err := NewPriorityTaskScheduler(testenv.GetTestEnv(t), NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{
+				RAMBytesCapacityOverride:  100,
+				CPUMillisCapacityOverride: 100,
+			})
+			require.NoError(t, err)
+			size := &scpb.TaskSize{
+				EstimatedMemoryBytes: 1,
+				EstimatedMilliCpu:    1,
+				CustomResources: []*scpb.CustomResource{
+					{Name: "a", Value: 1.1},
+					{Name: "b", Value: 0.1},
+					{Name: "parent", Value: 0.25},
+				},
+			}
+			task := &queuedTask{EnqueueTaskReservationRequest: &scpb.EnqueueTaskReservationRequest{TaskSize: size}}
+			require.Equal(t, test.wantFit, q.canFitTask(task, q.resourcesUsed))
+			require.Equal(t, customResource(test.wantUsage), q.customResourceUsed(q.taskResourceCounts(size), "parent"))
+		})
+	}
+}
+
+func TestPriorityTaskScheduler_MaxConcurrentTasks(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	// Give the executor far more CPU and memory than the tasks need, so that
+	// the concurrency limit is the only thing that can hold tasks back.
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.max_concurrent_tasks", 2)
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	oneCPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+	}
+
+	// Enqueue three small tasks. Only two should start, since starting the
+	// third would exceed the concurrency limit even though there is plenty of
+	// CPU and memory to spare.
+	var taskIDs []string
+	for i := range 3 {
+		taskID := fakeTaskID(fmt.Sprintf("task-%d", i))
+		taskIDs = append(taskIDs, taskID)
+		_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+			TaskId:             taskID,
+			TaskSize:           oneCPU,
+			SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+		})
+		require.NoError(t, err)
+	}
+	execution1 := <-executor.StartedExecutions
+	execution2 := <-executor.StartedExecutions
+
+	// Give the scheduler a chance to (incorrectly) start the third task.
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no more tasks should start until a running task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	queueLen := scheduler.q.Len()
+	require.Equal(t, 1, queueLen)
+
+	// Complete one of the running tasks. This frees up a concurrency slot, so
+	// the third task should start.
+	execution1.Complete()
+	execution3 := <-executor.StartedExecutions
+	queueLen = scheduler.q.Len()
+	require.Equal(t, 0, queueLen)
+
+	startedTaskIDs := []string{
+		execution1.ScheduledTask.GetExecutionTask().GetExecutionId(),
+		execution2.ScheduledTask.GetExecutionTask().GetExecutionId(),
+		execution3.ScheduledTask.GetExecutionTask().GetExecutionId(),
+	}
+	require.ElementsMatch(t, taskIDs, startedTaskIDs)
+
+	// Complete the remaining executions to allow a clean shutdown.
+	execution2.Complete()
+	execution3.Complete()
+}
+
+func TestPriorityTaskScheduler_MaxConcurrentTasks_PreventsQueueSkipping(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	// Give the executor far more CPU and memory than the tasks need, along
+	// with a single GPU and a concurrency limit of 2. Custom resources enable
+	// the queue skipping logic, which is where concurrency reservations for
+	// queued tasks come into play.
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.custom_resources", []resources.CustomResource{
+		{Name: "gpu", Value: 1.0},
+	})
+	flags.Set(t, "executor.max_concurrent_tasks", 2)
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	oneCPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+	}
+	oneCPUAndOneGPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+		CustomResources:      []*scpb.CustomResource{{Name: "gpu", Value: 1.0}},
+	}
+	gpuTask1ID := fakeTaskID("gpu-task-1")
+	gpuTask2ID := fakeTaskID("gpu-task-2")
+	cpuTask1ID := fakeTaskID("cpu-task-1")
+
+	// Start a GPU task, which takes the only GPU and one of the two
+	// concurrency slots.
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuTask1ID,
+		TaskSize:           oneCPUAndOneGPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPUAndOneGPU},
+	})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	startedTaskID := execution1.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, gpuTask1ID, startedTaskID)
+
+	// Enqueue a second GPU task, then a CPU-only task. The second GPU task
+	// is blocked waiting for the GPU, and it reserves the remaining
+	// concurrency slot while it waits. So even though the CPU-only task
+	// would fit in terms of CPU, memory, and GPU, it must not skip ahead.
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             gpuTask2ID,
+		TaskSize:           oneCPUAndOneGPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPUAndOneGPU},
+	})
+	require.NoError(t, err)
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             cpuTask1ID,
+		TaskSize:           oneCPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+	})
+	require.NoError(t, err)
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no tasks should start until the first GPU task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	queueLen := scheduler.q.Len()
+	require.Equal(t, 2, queueLen)
+
+	// Complete the first GPU task. The second GPU task is at the front of the
+	// queue and can now take the GPU, so it should start before the CPU-only
+	// task.
+	execution1.Complete()
+	execution2 := <-executor.StartedExecutions
+	startedTaskID = execution2.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, gpuTask2ID, startedTaskID)
+
+	// Complete the second GPU task, which lets the CPU-only task start.
+	execution2.Complete()
+	execution3 := <-executor.StartedExecutions
+	startedTaskID = execution3.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, cpuTask1ID, startedTaskID)
+	queueLen = scheduler.q.Len()
+	require.Equal(t, 0, queueLen)
+	execution3.Complete()
+}
+
+func TestPriorityTaskScheduler_ExclusiveTaskScheduling(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	env.SetRemoteExecutionClient(&FakeExecutionClient{})
+
+	// Give the executor far more CPU and memory than the tasks need, so that
+	// exclusive scheduling is the only thing that can hold tasks back.
+	flags.Set(t, "executor.millicpu", 30_000)
+	flags.Set(t, "executor.memory_bytes", 64_000_000_000)
+	flags.Set(t, "executor.exclusive_task_scheduling", true)
+	err := resources.Configure(false /*=mmapLRUEnabled*/)
+	require.NoError(t, err)
+
+	executor := NewFakeExecutor()
+	runnerPool := &FakeRunnerPool{}
+	leaser := NewFakeTaskLeaser()
+
+	scheduler, err := NewPriorityTaskScheduler(env, executor, runnerPool, leaser, &Options{})
+	require.NoError(t, err)
+	scheduler.Start()
+	ctx := context.Background()
+	t.Cleanup(func() {
+		err := scheduler.Stop()
+		require.NoError(t, err)
+		assert.NoError(t, scheduler.Shutdown(ctx))
+	})
+
+	oneCPU := &scpb.TaskSize{
+		EstimatedMilliCpu:    1000,
+		EstimatedMemoryBytes: 1000,
+	}
+
+	// Enqueue two small tasks. Only the first should start, since exclusive
+	// task scheduling allows a single task at a time.
+	task1ID := fakeTaskID("task-1")
+	task2ID := fakeTaskID("task-2")
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             task1ID,
+		TaskSize:           oneCPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+	})
+	require.NoError(t, err)
+	_, err = scheduler.EnqueueTaskReservation(ctx, &scpb.EnqueueTaskReservationRequest{
+		TaskId:             task2ID,
+		TaskSize:           oneCPU,
+		SchedulingMetadata: &scpb.SchedulingMetadata{TaskSize: oneCPU},
+	})
+	require.NoError(t, err)
+	execution1 := <-executor.StartedExecutions
+	startedTaskID := execution1.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, task1ID, startedTaskID)
+
+	// Give the scheduler a chance to (incorrectly) start the second task.
+	select {
+	case ex := <-executor.StartedExecutions:
+		require.FailNowf(t, "no more tasks should start until the running task completes", "task %q started", ex.ScheduledTask.GetExecutionTask().GetExecutionId())
+	case <-time.After(100 * time.Millisecond):
+	}
+	queueLen := scheduler.q.Len()
+	require.Equal(t, 1, queueLen)
+
+	// Complete the running task. The second task should start.
+	execution1.Complete()
+	execution2 := <-executor.StartedExecutions
+	startedTaskID = execution2.ScheduledTask.GetExecutionTask().GetExecutionId()
+	require.Equal(t, task2ID, startedTaskID)
+	queueLen = scheduler.q.Len()
+	require.Equal(t, 0, queueLen)
+	execution2.Complete()
+}
+
+func TestNewPriorityTaskScheduler_RejectsInvalidConcurrencyLimit(t *testing.T) {
+	for _, testCase := range []struct {
+		name                    string
+		exclusiveTaskScheduling bool
+		maxConcurrentTasks      int
+	}{
+		{name: "both flags set", exclusiveTaskScheduling: true, maxConcurrentTasks: 1},
+		{name: "negative max_concurrent_tasks", maxConcurrentTasks: -1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			flags.Set(t, "executor.exclusive_task_scheduling", testCase.exclusiveTaskScheduling)
+			flags.Set(t, "executor.max_concurrent_tasks", testCase.maxConcurrentTasks)
+
+			// The scheduler should refuse to start up with a concurrency limit
+			// that is either conflicting or nonsensical, rather than picking
+			// an interpretation on its own.
+			_, err := NewPriorityTaskScheduler(env, NewFakeExecutor(), &FakeRunnerPool{}, NewFakeTaskLeaser(), &Options{})
+			require.Error(t, err)
+			isInvalidArgument := status.IsInvalidArgumentError(err)
+			require.True(t, isInvalidArgument, "unexpected error: %s", err)
+		})
+	}
 }
 
 func TestPriorityTaskScheduler_ExecutionErrorHandling(t *testing.T) {

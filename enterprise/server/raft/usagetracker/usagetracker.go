@@ -426,7 +426,7 @@ var digestRunes = []rune("abcdef1234567890")
 func (pu *partitionUsage) randomKey(n int) []byte {
 	var randKey strings.Builder
 	randKey.WriteString(pu.partitionKeyPrefix() + "/")
-	for i := 0; i < n; i++ {
+	for range n {
 		randKey.WriteString(string(digestRunes[rand.Intn(len(digestRunes))]))
 	}
 	return []byte(randKey.String())
@@ -605,7 +605,7 @@ func (pu *partitionUsage) updateEvictionMetrics(samples []*approxlru.Sample[*evi
 
 func (pu *partitionUsage) sample(ctx context.Context, k int) ([]*approxlru.Sample[*evictionKey], error) {
 	samples := make([]*approxlru.Sample[*evictionKey], 0, k)
-	for i := 0; i < k; i++ {
+	for range k {
 		s, ok := <-pu.samples
 		if ok {
 			samples = append(samples, s)
@@ -721,11 +721,8 @@ func (ut *Tracker) Start() {
 		pu.gcsDeleteCancel = gcsCancel
 		gcsEg, gcsGctx := errgroup.WithContext(gcsCtx)
 		pu.gcsDeleteEg = gcsEg
-		numGCSWorkers := pu.numGCSDeleteWorkers
-		if numGCSWorkers < 1 {
-			numGCSWorkers = 1
-		}
-		for i := 0; i < numGCSWorkers; i++ {
+		numGCSWorkers := max(pu.numGCSDeleteWorkers, 1)
+		for range numGCSWorkers {
 			pu.gcsDeleteEg.Go(func() error {
 				pu.processGCSDeletions(gcsGctx)
 				return nil

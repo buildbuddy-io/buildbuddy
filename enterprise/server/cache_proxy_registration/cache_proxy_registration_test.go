@@ -148,8 +148,7 @@ func TestStreamHeartbeats_ShutdownRemovesProxy(t *testing.T) {
 	registry, client := startTestRegistry(t, map[string]interfaces.UserInfo{testAPIKey: streamUser})
 
 	node := &cppb.CacheProxyNode{Host: "host-x", ProxyId: "proxy-x", Version: "v1"}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	streamCtx := outgoingCtx(ctx, testAPIKey)
 
 	shutdownCh := make(chan struct{})
@@ -194,8 +193,7 @@ func TestStreamHeartbeats_UnauthorizedReturnsError(t *testing.T) {
 	noCap := userWithCapabilities("U1", testGroupID, cappb.Capability_CACHE_WRITE)
 	_, client := startTestRegistry(t, map[string]interfaces.UserInfo{"NOCAP_KEY": noCap})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	streamCtx := outgoingCtx(ctx, "NOCAP_KEY")
 
 	err := streamHeartbeats(streamCtx, make(chan struct{}), client, &cppb.CacheProxyNode{Host: "h", ProxyId: "id"})
@@ -336,12 +334,12 @@ func TestSendHeartbeat_FlagMutationRaciness(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			_ = sendHeartbeat(stream, &cppb.RegisterCacheProxyRequest{Node: node})
 		}
 	}()
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		flags.Set(t, "cache_proxy.app_target", fmt.Sprintf("grpcs://app-%d.example.com", i))
 	}
 	<-done

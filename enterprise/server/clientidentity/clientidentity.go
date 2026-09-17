@@ -153,7 +153,7 @@ func ClearIdentity(ctx context.Context) context.Context {
 func (s *Service) NewIdentityHeader(si *interfaces.ClientIdentity, expiration time.Duration) (string, error) {
 	expirationTime := s.clock.Now().Add(expiration)
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, &claims{
-		StandardClaims: jwt.StandardClaims{ExpiresAt: expirationTime.Unix()},
+		ExpiresAt:      expirationTime.Unix(),
 		ClientIdentity: *si,
 	})
 	return t.SignedString(s.signingKey)
@@ -201,7 +201,7 @@ func (s *Service) ValidateIncomingIdentity(ctx context.Context) (context.Context
 	var verifyErr error
 	for _, key := range s.verificationKeys {
 		c := &claims{}
-		_, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (interface{}, error) {
+		_, err := jwt.ParseWithClaims(headerValue, c, func(token *jwt.Token) (any, error) {
 			return key, nil
 		})
 		if err == nil {

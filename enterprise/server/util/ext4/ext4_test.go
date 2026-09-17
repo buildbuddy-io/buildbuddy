@@ -42,7 +42,7 @@ func TestE2E(t *testing.T) {
 	// Create a "random" looking directory full of random digests.
 	// Save a map of path -> digest hash.
 	pathHashMap := make(map[string]string, 0)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		parentDir := filepath.Join(rootDir, randomDir(allowedPaths))
 		disk.EnsureDirectoryExists(parentDir)
 		r, buf := testdigest.RandomCASResourceBuf(t, 1000)

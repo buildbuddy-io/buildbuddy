@@ -84,12 +84,10 @@ func newHitTrackerClient(ctx context.Context, env *real_environment.RealEnv, con
 	}
 	go factory.batcher()
 	for i := 0; i < *remoteHitTrackerWorkers; i++ {
-		factory.wg.Add(1)
-		go func() {
+		factory.wg.Go(func() {
 			ticker := env.GetClock().NewTicker(*remoteHitTrackerPollInterval).Chan()
 			factory.sender(ctx, ticker)
-			factory.wg.Done()
-		}()
+		})
 	}
 	env.GetHealthChecker().RegisterShutdownFunction(factory.shutdown)
 	return &factory

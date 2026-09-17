@@ -13,7 +13,7 @@ func GetCPUs() ([]CPUInfo, error) {
 	}
 
 	nodes := make([]int, len(cpuList.List))
-	for i := 0; i < len(cpuList.List); i++ {
+	for i := range len(cpuList.List) {
 		nodes[i] = i
 	}
 	return toCPUInfos(nodes, 0), nil

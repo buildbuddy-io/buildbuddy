@@ -579,7 +579,7 @@ func BenchmarkActionCacheTTLFullBuildWithProxyAppLatency(b *testing.B) {
 			require.NoError(b, proxyServer.Start())
 
 			var buildFile strings.Builder
-			for i := 0; i < actionCount; i++ {
+			for i := range actionCount {
 				fmt.Fprintf(&buildFile, "genrule(name = \"out_%03d\", outs = [\"out_%03d.txt\"], cmd = \"echo out_%03d > $@\")\n", i, i, i)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

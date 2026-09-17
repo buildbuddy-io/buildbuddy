@@ -191,10 +191,10 @@ func TestBuildLogs_CompletedInvocation(t *testing.T) {
 	publishStarted(t, bep)
 
 	expected := &bytes.Buffer{}
-	for p := 0; p < 100; p++ {
+	for p := range 100 {
 		var stderr strings.Builder
 		var stdout strings.Builder
-		for line := 0; line < 100; line++ {
+		for line := range 100 {
 			stderr.WriteString(fmt.Sprintf("stderr event %d, line %d\n", p, line))
 			stdout.WriteString(fmt.Sprintf("stdout event %d, line %d\n", p, line))
 		}
@@ -240,10 +240,10 @@ func TestBuildLogs_InProgressInvocation(t *testing.T) {
 	publishStarted(t, bep)
 
 	expected := &bytes.Buffer{}
-	for p := 0; p < 100; p++ {
+	for p := range 100 {
 		var stderr strings.Builder
 		var stdout strings.Builder
-		for line := 0; line < 100; line++ {
+		for line := range 100 {
 			stderr.WriteString(fmt.Sprintf("stderr event %d, line %d\n", p, line))
 			stdout.WriteString(fmt.Sprintf("stdout event %d, line %d\n", p, line))
 		}

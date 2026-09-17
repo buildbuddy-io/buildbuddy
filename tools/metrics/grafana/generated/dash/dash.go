@@ -39,6 +39,11 @@ const (
 	UnitMicroseconds = "µs"
 	// UnitMilliseconds is a duration in ms, rescaled to larger units as it grows.
 	UnitMilliseconds = "ms"
+	// UnitDurationMs takes a count of milliseconds and renders it as a
+	// compound duration, breaking it into the largest units that fit
+	// (days, hours, minutes) rather than rescaling to a single unit the
+	// way UnitMilliseconds does.
+	UnitDurationMs = "dtdurationms"
 	// UnitNone is a plain unabbreviated number with no suffix.
 	UnitNone = "none"
 	// UnitOps formats as operations/sec ("ops/s").
@@ -54,6 +59,10 @@ const (
 	UnitShort = "short"
 	// UnitWatts formats as watts with SI prefixes (W, kW, MW).
 	UnitWatts = "watt"
+	// UnitVolts formats as volts with SI prefixes (V, kV).
+	UnitVolts = "volt"
+	// UnitAmps formats as amperes with SI prefixes (A, kA).
+	UnitAmps = "amp"
 )
 
 // Prometheus returns a reference to the default prometheus metrics datasource
@@ -124,6 +133,10 @@ func Stat(title, unit string) *stat.PanelBuilder {
 		Unit(unit).
 		GraphMode(common.BigValueGraphModeNone).
 		ColorMode(common.BigValueColorModeValue).
+		// The SDK serializes an unset orientation as "" rather than "auto".
+		// Grafana treats anything but "horizontal" as vertical, which stacks
+		// multi-series stats and shows only the first tile.
+		Orientation(common.VizOrientationAuto).
 		ReduceOptions(
 			common.NewReduceDataOptionsBuilder().
 				Calcs([]string{"lastNotNull"}).

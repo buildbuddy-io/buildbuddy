@@ -51,7 +51,7 @@ func (ctx *disconnectedContext) cancel(err error) {
 	ctx.err = err
 	close(ctx.done)
 }
-func (ctx *disconnectedContext) Value(key interface{}) interface{} {
+func (ctx *disconnectedContext) Value(key any) any {
 	return ctx.parent.Value(key)
 }
 

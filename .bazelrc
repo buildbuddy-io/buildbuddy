@@ -21,16 +21,8 @@ import %workspace%/shared.bazelrc
 # so OSS / anonymous users can still send events to our server.
 common --config=anon-bes
 
-# Don't run Docker and Firecracker tests by default, because they cannot be run on all environments
-# Firecracker tests can only be run on Linux machines with bare execution, and we want to avoid a hard dependency
-# on Docker for development
-#
-# Exclude tests which require BuildBuddy Secrets from the default unauthenticated builds
-# These often require "include-secrets: true" exec property in their BUILD file.
-#
-# Don't run benchmarks by default; benchmarks should only run if we are
-# explicitly doing performance testing.
-common --test_tag_filters=-docker,-bare,-secrets,-performance
+# Use the local test suite by default. Suite definitions live in shared.bazelrc.
+common --config=tests-local
 
 # CI invocations from public repo should be publicly accessible.
 common:ci-shared --build_metadata=VISIBILITY=PUBLIC
@@ -39,6 +31,12 @@ common:ci-shared --build_metadata=VISIBILITY=PUBLIC
 common:ci --config=ci-shared
 common:ci --config=remote-minimal
 common:ci --remote_instance_name=buildbuddy-io/buildbuddy/ci/rin20260818
+# Select the CI suite after the remote config. Bare tests run in the separate
+# "Baremetal tests" workflow in this repo.
+common:ci --config=tests-ci
+
+# Extend the imported config with this repo's CI suite.
+common:untrusted-ci --config=tests-ci
 
 # Configuration used for GitHub actions-based CI for anonymous users (e.g. external contributors)
 common:ci-anon --config=ci

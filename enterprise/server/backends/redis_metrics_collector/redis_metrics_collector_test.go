@@ -30,7 +30,7 @@ func TestSetAndGetAll(t *testing.T) {
 	// Do a bunch of Set() operations
 	keys := make([]string, 0, nKeys)
 	expectedValues := make([]string, 0, nKeys)
-	for i := 0; i < nKeys; i++ {
+	for i := range nKeys {
 		key := fmt.Sprintf("key_%d", i)
 		keys = append(keys, key)
 		val := fmt.Sprintf("val_%d", i)

@@ -17,6 +17,7 @@ RBE configuration must be enabled in your `config.yaml` file, but most configura
 **Optional**
 
 - `enable_remote_exec:` True if remote execution should be enabled.
+- `chunking_enabled:` Enables content-defined chunking for remote execution. Executors upload outputs and download inputs using content-defined chunks. Bazel-side chunking is supported by the cache server by default and can be enabled with Bazel's `--experimental_remote_cache_chunking` flag.
 - `default_pool_name:` The default executor pool to use if one is not specified.
 
 ## Example section
@@ -24,6 +25,21 @@ RBE configuration must be enabled in your `config.yaml` file, but most configura
 ```yaml title="config.yaml"
 remote_execution:
   enable_remote_exec: true
+```
+
+### Content-defined chunking
+
+The app server sends the chunking configuration to executors with each execution task, so executors do not need a separate chunking configuration.
+
+`cache.chunking.ac_key_salt` should be set to a stable, random secret before enabling chunking. It prevents clients from predicting the internal action-cache keys used for chunk manifests. Use the same value on every app server and cache proxy. Changing or removing it makes existing chunked-only manifests stored with the old value unavailable.
+
+```yaml title="config.yaml"
+remote_execution:
+  enable_remote_exec: true
+  chunking_enabled: true
+cache:
+  chunking:
+    ac_key_salt: "replace-with-a-stable-random-secret"
 ```
 
 ## Executor config

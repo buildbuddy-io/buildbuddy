@@ -241,3 +241,19 @@ func (r *RoutingCASClient) SplitBlob(ctx context.Context, req *repb.SplitBlobReq
 	}
 	return primaryClient.SplitBlob(ctx, req, opts...)
 }
+
+func (r *RoutingCASClient) GetChunkMapping(ctx context.Context, req *repb.GetChunkMappingRequest, opts ...grpc.CallOption) (repb.ContentAddressableStorage_GetChunkMappingClient, error) {
+	primaryClient, _, err := r.router.GetCASClients(ctx)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
+	}
+	return primaryClient.GetChunkMapping(ctx, req, opts...)
+}
+
+func (r *RoutingCASClient) RegisterChunkMapping(ctx context.Context, opts ...grpc.CallOption) (repb.ContentAddressableStorage_RegisterChunkMappingClient, error) {
+	primaryClient, _, err := r.router.GetCASClients(ctx)
+	if err != nil {
+		return nil, status.InternalErrorf("Failed to get primary CAS client: %s", err)
+	}
+	return primaryClient.RegisterChunkMapping(ctx, opts...)
+}

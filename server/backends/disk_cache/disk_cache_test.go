@@ -451,7 +451,7 @@ func TestFileAtomicity(t *testing.T) {
 	lock := sync.RWMutex{}
 	eg, gctx := errgroup.WithContext(ctx)
 	r, buf := testdigest.RandomCASResourceBuf(t, 100000)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		eg.Go(func() error {
 			lock.Lock()
 			defer lock.Unlock()
@@ -482,7 +482,7 @@ func TestAsyncLoading(t *testing.T) {
 
 	// Write some pre-existing data.
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 10000; i++ {
+	for range 10000 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 1000)
 		dest := filepath.Join(anonPath, rn.GetDigest().GetHash())
 		err := os.WriteFile(dest, buf, 0644)
@@ -509,7 +509,7 @@ func TestAsyncLoading(t *testing.T) {
 		}
 	}
 	// Write some more files, just to ensure the LRU is appended to.
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		if err := dc.Set(ctx, r, buf); err != nil {
 			t.Fatal(err)
@@ -555,7 +555,7 @@ func testEviction(t *testing.T, rootDir string) {
 
 	// Fill the cache.
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 999; i++ {
+	for range 999 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		err := dc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -587,7 +587,7 @@ func testEviction(t *testing.T, rootDir string) {
 
 	// Write more data to push out what's left of the original digests.
 
-	for i := 0; i < 500; i++ {
+	for range 500 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		err := dc.Set(ctx, r, buf)
 		require.NoError(t, err)
@@ -640,7 +640,7 @@ func TestJanitorThread(t *testing.T) {
 	}
 	// Fill the cache.
 	resources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 999; i++ {
+	for range 999 {
 		r, buf := testdigest.RandomCASResourceBuf(t, 10000)
 		err := dc.Set(ctx, r, buf)
 		if err != nil {

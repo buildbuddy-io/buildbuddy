@@ -15,11 +15,13 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -109,6 +111,66 @@ func TestFilecache(t *testing.T) {
 	assert.True(t, secondLink, "original file should still link")
 	assert.FileExists(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"))
 	assertFileContents(t, filepath.Join(baseDir, "my/fun/second-fastlinkedfile"), "my/fun/file")
+}
+
+func jwtForGroup(t *testing.T, groupID string) string {
+	authCtx := claims.AuthContextWithJWT(t.Context(), &claims.Claims{GroupID: groupID}, nil)
+	token, ok := authCtx.Value(authutil.ContextTokenStringKey).(string)
+	require.True(t, ok)
+	require.NotEmpty(t, token)
+	return token
+}
+
+func TestFileCacheGroupFromTrustedJWT(t *testing.T) {
+	const authenticatedGroupID = "GR12345"
+	flags.Set(t, "auth.jwt_key", "server-test-key")
+	authenticatedJWT := jwtForGroup(t, authenticatedGroupID)
+	anonymousJWT := jwtForGroup(t, interfaces.AuthAnonymousUser)
+	// Model a self-hosted executor which does not have the server's signing key.
+	flags.Set(t, "auth.jwt_key", "executor-test-key")
+
+	for _, test := range []struct {
+		name        string
+		jwt         string
+		wantGroupID string
+	}{
+		{name: "authenticated", jwt: authenticatedJWT, wantGroupID: authenticatedGroupID},
+		{name: "anonymous", jwt: anonymousJWT, wantGroupID: interfaces.AuthAnonymousUser},
+		{name: "invalid", jwt: "invalid", wantGroupID: interfaces.AuthAnonymousUser},
+		{name: "missing", wantGroupID: interfaces.AuthAnonymousUser},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			if test.jwt != "" {
+				ctx = context.WithValue(ctx, authutil.ContextTokenStringKey, test.jwt)
+			}
+			if test.name == "authenticated" {
+				_, err := claims.ClaimsFromContext(ctx)
+				require.Error(t, err, "JWT should not be verifiable with the executor key")
+			}
+
+			fcDir := testfs.MakeTempDir(t)
+			fc, err := filecache.NewFileCache(fcDir, 100_000, false)
+			require.NoError(t, err)
+			t.Cleanup(func() { fc.Close() })
+			fc.WaitForDirectoryScanToComplete()
+
+			workspaceDir := testfs.MakeTempDir(t)
+			source := writeFileContent(t, workspaceDir, "source", "source", false)
+			node := nodeFromString("source", false)
+			require.NoError(t, fc.AddFile(ctx, node, source))
+
+			// Files are stored under the group directory, sharded into a
+			// subdirectory named by the first two characters of the digest
+			// hash (the default subdir prefix length).
+			cacheFileName := node.GetDigest().GetHash()
+			shardDir := cacheFileName[:2]
+			require.FileExists(t, filepath.Join(fcDir, test.wantGroupID, shardDir, cacheFileName))
+			if test.wantGroupID != interfaces.AuthAnonymousUser {
+				require.NoFileExists(t, filepath.Join(fcDir, interfaces.AuthAnonymousUser, shardDir, cacheFileName))
+			}
+		})
+	}
 }
 
 func TestFileCacheGroupIsolation(t *testing.T) {
@@ -596,14 +658,14 @@ func TestFileCacheEvictionAfterStartupScan(t *testing.T) {
 }
 
 func TestScanWithConcurrentAdd(t *testing.T) {
-	for trial := 0; trial < 100; trial++ {
+	for trial := range 100 {
 		ctx := context.Background()
 		filecacheRoot := testfs.MakeTempDir(t)
 
 		const n = 100
 		var nodes [n]*repb.FileNode
 		var nodeContents [n]string
-		for i := 0; i < n; i++ {
+		for i := range n {
 			name := fmt.Sprint(i)
 			executable := i%2 == 0
 			nodes[i] = nodeFromString(name, executable)
@@ -633,7 +695,7 @@ func TestScanWithConcurrentAdd(t *testing.T) {
 
 		// The directory scan should be resilient to this race condition -
 		// linking any file should work.
-		for i := 0; i < n; i++ {
+		for i := range n {
 			ok := fc.FastLinkFile(ctx, nodes[i], filepath.Join(fc.TempDir(), fmt.Sprintf("out-%d", i)))
 			require.True(t, ok, "link node %d (test trial %d)", i, trial)
 		}
@@ -648,8 +710,12 @@ func TestFileAccessBeforeInitialScanCompleteFallsBackToFilesystem(t *testing.T) 
 	filecacheRoot := testfs.MakeTempDir(t)
 	outDir := testfs.MakeTempDir(t)
 
+	// Seed the cache directory with a file laid out the way a previous
+	// executor run would have written it: under the group directory, sharded
+	// by the first two characters of the digest hash.
 	node := nodeFromString("content", false)
-	writeFileContent(t, filecacheRoot, "ANON/"+node.GetDigest().GetHash(), "content", false)
+	digestHash := node.GetDigest().GetHash()
+	writeFileContent(t, filecacheRoot, "ANON/"+digestHash[:2]+"/"+digestHash, "content", false)
 
 	fc, err := filecache.NewFileCache(filecacheRoot, 10_000_000, false)
 	require.NoError(t, err)
@@ -719,6 +785,10 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 	var unprefixedNodes []*repb.FileNode
 	{
+		// Start with subdir prefixing disabled so the cache is populated in
+		// the legacy flat layout, which is what an executor upgraded from a
+		// version without sharding will have on disk.
+		flags.Set(t, "executor.include_subdir_prefix", false)
 		fc, err := filecache.NewFileCache(fcDir, 4096*10, false)
 		if err != nil {
 			t.Fatal(err)
@@ -726,7 +796,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 		fc.WaitForDirectoryScanToComplete()
 
 		nodes := make([]*repb.FileNode, 10)
-		for i := 0; i < len(nodes); i++ {
+		for i := range nodes {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
 			name := rn.GetDigest().GetHash()
 			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
@@ -769,7 +839,7 @@ func TestFileCacheEvictionAfterSubdirPrefixing(t *testing.T) {
 
 		// Add new files to the cache.
 		nodes := make([]*repb.FileNode, 10)
-		for i := 0; i < len(nodes); i++ {
+		for i := range nodes {
 			rn, buf := testdigest.RandomCASResourceBuf(t, 4096)
 			name := rn.GetDigest().GetHash()
 			writeFileContent(t, scratchDir, name, string(buf), false /*executable*/)
@@ -1295,7 +1365,6 @@ func BenchmarkFilecacheLink(b *testing.B) {
 				eg := &errgroup.Group{}
 				eg.SetLimit(100)
 				for _, node := range nodes {
-					node := node
 					eg.Go(func() error {
 						if rand.Float64() > test.ReadFraction {
 							err := fc.AddFile(ctx, node, filepath.Join(tmp, node.GetName()))
@@ -1375,7 +1444,6 @@ func BenchmarkContainsAdd(b *testing.B) {
 				eg := &errgroup.Group{}
 				eg.SetLimit(100)
 				for path, node := range nodes {
-					path, node := path, node
 					eg.Go(func() error {
 						if !fc.ContainsFile(ctx, node) {
 							require.NoError(b, fc.AddFile(ctx, node, path))

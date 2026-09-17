@@ -3,7 +3,6 @@ package distributed_client
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -47,16 +46,6 @@ import (
 )
 
 const (
-	// writeBufSizeBytes controls the maximum size of buffers used for writing
-	// to a remote cache. This is also the maximum payload size for each
-	// WriteRequest, though with ioutil.DoubleBufferWriter, payloads will be
-	// smaller unless the remote cache is falling behind. Experiments and
-	// benchmarks show that 128KB, 256KB, and 512KB are all about as fast.
-	// Values outside that range cause more allocation in gRPC code. This
-	// should be slightly smaller than 2^N, to allow for proto and gRPC
-	// overhead.
-	writeBufSizeBytes = 512 * 1000 // 512 KB
-
 	// Reference verification outcomes.
 	VerificationSuccess = "success"
 	VerificationFailure = "failure"
@@ -110,7 +99,7 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		log:            logger,
 		readRefLogger:  logger.EveryN(100),
 		writeRefLogger: logger.EveryN(100),
-		bufPool:        bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
+		bufPool:        bytebufferpool.VariableSize(*config.ReadBufSizeBytes),
 		listenAddr:     listenAddr,
 		mu:             &sync.Mutex{},
 		// server goes here
@@ -371,7 +360,7 @@ func (c *Proxy) referenceReadMode(ctx context.Context) (sendReference bool, send
 	if fp.Boolean(ctx, "distributed_cache.verify_read_gcs_references", false) {
 		return true, true
 	}
-	if fp.Boolean(ctx, "distributed_cache.read_gcs_references", false) {
+	if fp.Boolean(ctx, "distributed_cache.read_gcs_references", true) {
 		return true, false
 	}
 	return false, true
@@ -635,12 +624,16 @@ func (c *Proxy) RemoteMetadata(ctx context.Context, peer string, r *rspb.Resourc
 	if err != nil {
 		return nil, err
 	}
+	return cacheMetadataFromProto(md), nil
+}
+
+func cacheMetadataFromProto(md *dcpb.MetadataResponse) *interfaces.CacheMetadata {
 	return &interfaces.CacheMetadata{
 		StoredSizeBytes:    md.GetStoredSizeBytes(),
 		DigestSizeBytes:    md.GetDigestSizeBytes(),
 		LastAccessTimeUsec: md.GetLastAccessUsec(),
 		LastModifyTimeUsec: md.GetLastModifyUsec(),
-	}, nil
+	}
 }
 
 func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
@@ -648,6 +641,8 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	if err != nil {
 		return nil, nil, err
 	}
+	// The requester resource, captured before possible modification below.
+	requested := r
 	// Fetch compressed data over the wire and decompress it locally, like
 	// RemoteReader and RemoteGetMulti do.
 	decompress := c.shouldReadCompressed(r)
@@ -659,20 +654,62 @@ func (c *Proxy) RemoteGetWithMetadata(ctx context.Context, peer string, r *rspb.
 	if err != nil {
 		return nil, nil, err
 	}
-	data := rsp.GetData()
-	if decompress {
-		data, err = compression.DecompressZstd(make([]byte, 0, digest.SafeBufferSize(r, maxDecompressBufSizeBytes)), data)
+	var data []byte
+	// If the peer sends bytes and a reference, use the bytes.
+	if ref := rsp.GetReference(); ref != nil && len(rsp.GetData()) == 0 && requested.GetDigest().GetSizeBytes() > 0 {
+		rc, err := c.dereference(ctx, peer, ref, requested, 0, 0)
+		if err != nil {
+			recordGetWithMetadataResponseMetrics("reference", requested, status.MetricsLabel(err))
+			return nil, nil, err
+		}
+		defer rc.Close()
+		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(requested, maxDecompressBufSizeBytes)))
+		_, err = io.Copy(buf, rc)
+		recordGetWithMetadataResponseMetrics("reference", requested, status.MetricsLabel(err))
 		if err != nil {
 			return nil, nil, err
 		}
+		data = buf.Bytes()
+	} else if decompress {
+		data, err = compression.DecompressZstd(make([]byte, 0, digest.SafeBufferSize(r, maxDecompressBufSizeBytes)), rsp.GetData())
+		recordGetWithMetadataResponseMetrics("bytes", requested, status.MetricsLabel(err))
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		data = rsp.GetData()
+		recordGetWithMetadataResponseMetrics("bytes", requested, codes.OK.String())
 	}
-	md := rsp.GetMetadata()
-	return data, &interfaces.CacheMetadata{
-		StoredSizeBytes:    md.GetStoredSizeBytes(),
-		DigestSizeBytes:    md.GetDigestSizeBytes(),
-		LastAccessTimeUsec: md.GetLastAccessUsec(),
-		LastModifyTimeUsec: md.GetLastModifyUsec(),
-	}, nil
+	return data, cacheMetadataFromProto(rsp.GetMetadata()), nil
+}
+
+func recordGetWithMetadataResponseMetrics(responseType string, r *rspb.ResourceName, statusLabel string) {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheReadResponseType: responseType,
+		metrics.StatusHumanReadableLabel:         statusLabel,
+	}
+	metrics.DistributedCacheGetWithMetadataResponseCount.With(labels).Inc()
+	metrics.DistributedCacheGetWithMetadataResponseSizeBytes.With(labels).Add(float64(r.GetDigest().GetSizeBytes()))
+}
+
+// referenceMatches reports whether ref identifies the content named by r.
+// Compressor, encryption, and partition/group are peer-local and may
+// legitimately differ, so they are not compared.
+func referenceMatches(ref *refpb.Reference, r *rspb.ResourceName) bool {
+	fr := ref.GetMetadata().GetFileRecord()
+	// CAS content is instance-independent, so the instance name only
+	// matters for other cache types.
+	if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS && fr.GetIsolation().GetRemoteInstanceName() != r.GetInstanceName() {
+		return false
+	}
+	return digest.Equal(fr.GetDigest(), r.GetDigest()) &&
+		fr.GetDigestFunction() == r.GetDigestFunction() &&
+		fr.GetIsolation().GetCacheType() == r.GetCacheType()
+}
+
+func referenceMismatchError(peer string, ref *refpb.Reference, r *rspb.ResourceName) error {
+	return status.InternalErrorf("peer %q returned a reference for %s, but %s was requested",
+		peer, digest.String(ref.GetMetadata().GetFileRecord().GetDigest()), digest.String(r.GetDigest()))
 }
 
 func (c *Proxy) RemoteFindMissing(ctx context.Context, peer string, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
@@ -757,9 +794,39 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 }
 
 func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	client, err := c.getClient(ctx, peer)
+	ref, rc, err := c.remoteRead(ctx, peer, r, offset, limit)
 	if err != nil {
 		return nil, err
+	}
+	if ref == nil {
+		return rc, nil
+	}
+	refReader, err := c.dereference(ctx, peer, ref, r, offset, limit)
+	recordReadResponseMetrics("reference", r, status.MetricsLabel(err))
+	return refReader, err
+}
+
+// RemoteReaderOrReference reads r from peer like RemoteReader, except that
+// when the peer answers with a reference to r's bytes in shared storage
+// instead of the bytes themselves, the reference is returned as-is rather
+// than dereferenced. Exactly one of the reference and the reader is non-nil
+// on success.
+func (c *Proxy) RemoteReaderOrReference(ctx context.Context, peer string, r *rspb.ResourceName) (*refpb.Reference, io.ReadCloser, error) {
+	ref, rc, err := c.remoteRead(ctx, peer, r, 0, 0)
+	if ref != nil {
+		recordReadResponseMetrics("reference", r, codes.OK.String())
+	}
+	return ref, rc, err
+}
+
+// remoteRead reads r from peer, returning either a reader of its bytes or,
+// when the peer's response is a reference alone, the reference for the caller
+// to dereference or forward. Reads answered by reference record their
+// response metric only once the caller has decided what to do with it.
+func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (*refpb.Reference, io.ReadCloser, error) {
+	client, err := c.getClient(ctx, peer)
+	if err != nil {
+		return nil, nil, err
 	}
 	// Pebble rejects offset/limit when the request matches the stored compressor,
 	// so skip the rewrite on the partial-read path.
@@ -778,11 +845,11 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 	}
 	stream, err := client.Read(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	rc, err := newDistributedCacheReader(stream, r.GetDigest().GetSizeBytes() == offset)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if rc.rsp.GetReference() != nil {
@@ -790,19 +857,7 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
 
-		// Confirm the reference identifies the requested content. Compressor,
-		// encryption, and partition/group are peer-local and may legitimately
-		// differ; the instance name is only ignored for CAS, where content is
-		// instance-independent.
-		fr := ref.GetMetadata().GetFileRecord()
-		frd := ref.GetMetadata().GetFileRecord().GetDigest()
-		refMatches := frd.GetHash() == r.GetDigest().GetHash() &&
-			frd.GetSizeBytes() == r.GetDigest().GetSizeBytes() &&
-			fr.GetDigestFunction() == r.GetDigestFunction() &&
-			fr.GetIsolation().GetCacheType() == r.GetCacheType()
-		if fr.GetIsolation().GetCacheType() != rspb.CacheType_CAS {
-			refMatches = refMatches && fr.GetIsolation().GetRemoteInstanceName() == r.GetInstanceName()
-		}
+		refMatches := referenceMatches(ref, r)
 
 		// If the server is also streaming the data, serve those bytes to the
 		// caller and verify that dereferencing the reference produces the
@@ -815,21 +870,21 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 				if err != nil {
 					rc.Close()
 					recordReadResponseMetrics("bytes", r, status.MetricsLabel(err))
-					return nil, err
+					return nil, nil, err
 				}
 				byteReader = dr
 			}
 			recordReadResponseMetrics("bytes", r, codes.OK.String())
 			if !refMatches {
 				// Verification is best-effort: log bad refs, but don't fail.
-				c.log.Errorf("Reference verification failed for %q from peer %q: reference identifies %s/%d", ResourceIsolationString(r), peer, frd.GetHash(), frd.GetSizeBytes())
+				c.log.Errorf("Reference verification failed for %q: %s", ResourceIsolationString(r), referenceMismatchError(peer, ref, r))
 				metrics.DistributedCacheReferenceVerificationCount.With(
 					prometheus.Labels{
 						metrics.GroupID:                  groupIDForMetrics(ctx),
 						metrics.VerificationOutcomeLabel: VerificationFailure,
 						metrics.StatusHumanReadableLabel: codes.Internal.String(),
 					}).Inc()
-				return byteReader, nil
+				return nil, byteReader, nil
 			}
 			refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
 			if err != nil {
@@ -842,38 +897,37 @@ func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceN
 						metrics.VerificationOutcomeLabel: VerificationError,
 						metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
 					}).Inc()
-				return byteReader, nil
+				return nil, byteReader, nil
 			}
-			return NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer, groupIDForMetrics(ctx)), nil
+			return nil, NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer, groupIDForMetrics(ctx)), nil
 		}
 
-		// The reference is the whole response: dereference it.
+		// The reference is the whole response.
 		if !refMatches {
 			rc.Close()
 			recordReadResponseMetrics("reference", r, codes.Internal.String())
-			return nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
+			frd := ref.GetMetadata().GetFileRecord().GetDigest()
+			return nil, nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
 				peer, frd.GetHash(), frd.GetSizeBytes(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
 		}
 		if err := rc.Close(); err != nil {
 			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
 		}
-		refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
-		recordReadResponseMetrics("reference", r, status.MetricsLabel(err))
-		return refReader, err
+		return ref, nil, nil
 	}
 
 	if !decompress {
 		recordReadResponseMetrics("bytes", r, codes.OK.String())
-		return rc, nil
+		return nil, rc, nil
 	}
 	dr, err := compression.NewZstdDecompressingReader(rc)
 	if err != nil {
 		rc.Close()
 		recordReadResponseMetrics("bytes", r, status.MetricsLabel(err))
-		return nil, err
+		return nil, nil, err
 	}
 	recordReadResponseMetrics("bytes", r, codes.OK.String())
-	return dr, nil
+	return nil, dr, nil
 }
 
 // groupIDForMetrics returns the authenticated group ID in ctx, for metric
@@ -910,6 +964,9 @@ func recordWriteRequestMetrics(requestType string, r *rspb.ResourceName, statusL
 }
 
 func (c *Proxy) dereference(ctx context.Context, peer string, ref *refpb.Reference, requested *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if !referenceMatches(ref, requested) {
+		return nil, referenceMismatchError(peer, ref, requested)
+	}
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
 	if !ok {
 		return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
@@ -1093,7 +1150,7 @@ func (r *distributedCacheReader) Close() error {
 
 type streamWriteCloser struct {
 	cancelFunc      context.CancelFunc
-	sender          rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	sender          *rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
 	r               *rspb.ResourceName
 	ref             *refpb.Reference
 	refMustBeCloned bool
@@ -1107,8 +1164,8 @@ type streamWriteCloser struct {
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
-	err := wc.sender.SendWithTimeoutCause(req, *peerWriteTimeout, context.DeadlineExceeded)
-	if errors.Is(err, context.DeadlineExceeded) {
+	err := wc.sender.SendWithTimeout(req, *peerWriteTimeout)
+	if status.IsDeadlineExceededError(err) {
 		err = status.DeadlineExceededErrorf("timed out sending distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
@@ -1116,8 +1173,8 @@ func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
 }
 
 func (wc *streamWriteCloser) closeAndRecv() (*dcpb.WriteResponse, error) {
-	rsp, err := wc.sender.CloseAndRecvWithTimeoutCause(*peerWriteTimeout, context.DeadlineExceeded)
-	if errors.Is(err, context.DeadlineExceeded) {
+	rsp, err := wc.sender.CloseAndRecvWithTimeout(*peerWriteTimeout)
+	if status.IsDeadlineExceededError(err) {
 		err = status.DeadlineExceededErrorf("timed out finalizing distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
@@ -1192,12 +1249,10 @@ func (wc *streamWriteCloser) commit() error {
 }
 
 func (wc *streamWriteCloser) Close() error {
-	// Cancel the stream ctx to unblock any in-flight stream.Send() in the
-	// Sender's background goroutine and let gRPC clean up the stream.
-	// Deliberately do NOT call stream.CloseAndRecv() here: if Commit() was
-	// called successfully it already did, and if the write was abandoned the
-	// stream is already broken, so CloseAndRecv would just race against an
-	// unwinding Send and leak a goroutine stuck in waitOnHeader.
+	// Cancel the stream ctx to let gRPC clean up the stream. Deliberately do
+	// NOT call stream.CloseAndRecv() here: if Commit() was called
+	// successfully it already did, and if the write was abandoned the stream
+	// is already broken.
 	wc.cancelFunc()
 	return nil
 }
@@ -1208,8 +1263,11 @@ func (wc *streamWriteCloser) Close() error {
 // for; the receiving peer records a hinted handoff so the data can be
 // forwarded once that peer returns.
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
-	return dbw, err
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 // VerifiedWriter is a CommittedWriteCloser whose write stream's final message
@@ -1231,11 +1289,11 @@ func (w *VerifiedWriter) SetReference(ref *refpb.Reference) {
 // whose final stream message carries the reference bound via SetReference, if
 // any, for the peer to verify against the written bytes.
 func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (*VerifiedWriter, error) {
-	dbw, swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 	if err != nil {
 		return nil, err
 	}
-	return &VerifiedWriter{CommittedWriteCloser: dbw, swc: swc}, nil
+	return &VerifiedWriter{CommittedWriteCloser: swc, swc: swc}, nil
 }
 
 // RemoteReferenceWriter opens a write stream that writes r to the peer by
@@ -1244,21 +1302,24 @@ func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer stri
 // referenced blob's ownership semantics via mustClone. Like the byte path, a
 // peer that already has r is not an error.
 func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
-	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
-	return dbw, err
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
-func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (interfaces.CommittedWriteCloser, *streamWriteCloser, error) {
+func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (*streamWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
 		cancel()
-		return nil, nil, err
+		return nil, err
 	}
 
 	requestType := "bytes"
@@ -1267,7 +1328,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 	}
 	wc := &streamWriteCloser{
 		cancelFunc:      cancel,
-		sender:          rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		sender:          rpcutil.NewSender(cancel, stream),
 		peer:            peer,
 		handoffPeer:     handoffPeer,
 		r:               r,
@@ -1275,7 +1336,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 		refMustBeCloned: refMustBeCloned,
 		requestType:     requestType,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), wc, nil
+	return wc, nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

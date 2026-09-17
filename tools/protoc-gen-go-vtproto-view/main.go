@@ -38,6 +38,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"text/template"
@@ -136,9 +137,7 @@ func (p *viewGen) common(extra D) D {
 		"Skip":             p.helper("Skip"),
 		"EndGroupType":     int(protowire.EndGroupType),
 	}
-	for k, v := range extra {
-		d[k] = v
-	}
+	maps.Copy(d, extra)
 	return d
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/filestore"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/mockgcs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lockmap"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -143,20 +144,41 @@ func fileMetadata(i int, eligible bool) *sgpb.FileMetadata {
 // eligible, eligibleEvery=0: none).
 func newBenchEvictor(b *testing.B, eligibleEvery int) (*partitionEvictor, pebble.IPebbleDB) {
 	b.Helper()
-	db, err := pebble.Open("", "bench", &cpebble.Options{FS: vfs.NewMem()})
-	require.NoError(b, err)
-	b.Cleanup(func() { db.Close() })
+	db := newMemDB(b)
 	fileStorer := filestore.New()
 	for i := range numKeys {
 		md := fileMetadata(i, eligibleEvery > 0 && i%eligibleEvery == 0)
-		key, err := fileStorer.PebbleKey(md.GetFileRecord())
-		require.NoError(b, err)
-		keyBytes, err := key.Bytes(filestore.Version5)
-		require.NoError(b, err)
-		buf, err := md.MarshalVT()
-		require.NoError(b, err)
-		require.NoError(b, db.Set(keyBytes, buf, cpebble.NoSync))
+		writeFileMetadata(b, db, fileStorer, md)
 	}
+	return newTestEvictor(b, fileStorer, db), db
+}
+
+func newMemDB(tb testing.TB) pebble.IPebbleDB {
+	tb.Helper()
+	db, err := pebble.Open("", "test", &cpebble.Options{FS: vfs.NewMem()})
+	require.NoError(tb, err)
+	tb.Cleanup(func() { db.Close() })
+	return db
+}
+
+// writeFileMetadata stores md in db under its pebble key and returns the key
+// and its raw bytes.
+func writeFileMetadata(tb testing.TB, db pebble.IPebbleDB, fileStorer filestore.Store, md *sgpb.FileMetadata) (filestore.PebbleKey, []byte) {
+	tb.Helper()
+	key, err := fileStorer.PebbleKey(md.GetFileRecord())
+	require.NoError(tb, err)
+	keyBytes, err := key.Bytes(filestore.Version5)
+	require.NoError(tb, err)
+	buf, err := md.MarshalVT()
+	require.NoError(tb, err)
+	require.NoError(tb, db.Set(keyBytes, buf, cpebble.NoSync))
+	return key, keyBytes
+}
+
+// newTestEvictor builds a real partitionEvictor over db for the bench
+// partition. It does not start the sampler or delete workers.
+func newTestEvictor(tb testing.TB, fileStorer filestore.Store, db pebble.IPebbleDB) *partitionEvictor {
+	tb.Helper()
 	part := disk.Partition{
 		ID:                benchPartitionID,
 		MaxSizeBytes:      100,
@@ -180,8 +202,54 @@ func newBenchEvictor(b *testing.B, eligibleEvery int) (*partitionEvictor, pebble
 		20,            /*=deleteBufferSize*/
 		1,             /*=numDeleteWorkers*/
 	)
-	require.NoError(b, err)
-	return evictor, db
+	require.NoError(tb, err)
+	return evictor
+}
+
+// TestEvictorDeleteFileGCSBlob asserts that evicting a record that owns its
+// GCS blob deletes the blob, while evicting a record for a shared blob leaves
+// the blob in place for the other records that refer to it.
+func TestEvictorDeleteFileGCSBlob(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		t.Run(fmt.Sprintf("shared=%v", shared), func(t *testing.T) {
+			ctx := context.Background()
+			clock := clockwork.NewFakeClock()
+			gcs := mockgcs.New(clock)
+			fileStorer := filestore.New(filestore.WithGCSBlobstore(gcs, "app"), filestore.WithClock(clock))
+			db := newMemDB(t)
+
+			md := fileMetadata(0, true /*=eligible*/)
+			bw, err := fileStorer.BlobWriter(ctx, md.GetFileRecord())
+			require.NoError(t, err)
+			_, err = bw.Write([]byte("blob contents"))
+			require.NoError(t, err)
+			require.NoError(t, bw.Commit())
+			require.NoError(t, bw.Close())
+			md.StorageMetadata = bw.Metadata()
+			md.StorageMetadata.GcsMetadata.Shared = shared
+			blobName := md.GetStorageMetadata().GetGcsMetadata().GetBlobName()
+			key, keyBytes := writeFileMetadata(t, db, fileStorer, md)
+
+			evictor := newTestEvictor(t, fileStorer, db)
+			err = evictor.deleteFile(keyBytes, key, md.GetFileRecord().GetIsolation().GetGroupId(), md.GetLastModifyUsec(), md.GetStoredSizeBytes(), md.GetStorageMetadata())
+			require.NoError(t, err)
+
+			// The record is always deleted.
+			_, closer, err := db.Get(keyBytes)
+			require.ErrorIs(t, err, cpebble.ErrNotFound)
+			if closer != nil {
+				closer.Close()
+			}
+
+			// The blob is only deleted if the record owned it.
+			_, err = gcs.Reader(ctx, blobName, 0, 0)
+			if shared {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
 }
 
 // BenchmarkSampleGenerator runs the real sampler goroutine end to end —

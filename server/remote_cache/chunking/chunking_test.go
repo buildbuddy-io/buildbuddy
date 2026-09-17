@@ -33,10 +33,9 @@ type getMultiBatchRecordingCache struct {
 }
 
 func TestAvgChunkSizeDefault(t *testing.T) {
-	ctx := context.Background()
-	require.Equal(t, int64(1024*1024), chunking.AvgChunkSizeBytes(ctx, nil))
-	require.Equal(t, uint64(1024*1024), chunking.FastCDCParams(ctx, nil).GetAvgChunkSizeBytes())
-	require.Equal(t, int64(4*1024*1024), chunking.MaxChunkSizeBytes(ctx, nil))
+	require.Equal(t, int64(1024*1024), chunking.AvgChunkSizeBytes())
+	require.Equal(t, uint64(1024*1024), chunking.FastCDCParams().GetAvgChunkSizeBytes())
+	require.Equal(t, int64(4*1024*1024), chunking.MaxChunkSizeBytes())
 }
 
 func (c *getMultiBatchRecordingCache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
@@ -140,11 +139,11 @@ func TestShouldReadChunkedUsesReadFallbackThreshold(t *testing.T) {
 		Hash:      "hash",
 		SizeBytes: 3 * 1024 * 1024,
 	}))
-	assert.True(t, chunking.ShouldReadChunked(ctx, nil, 3*1024*1024, 0, 0))
+	assert.True(t, chunking.ShouldReadChunked(3*1024*1024, 0, 0))
 	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 3*1024*1024, 0, 0))
 	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, 5*1024*1024, 0, 0))
-	assert.False(t, chunking.ShouldReadChunked(ctx, nil, 2*1024*1024, 0, 0))
-	assert.False(t, chunking.ShouldReadChunked(ctx, nil, 3*1024*1024, 0, 1024))
+	assert.False(t, chunking.ShouldReadChunked(2*1024*1024, 0, 0))
+	assert.False(t, chunking.ShouldReadChunked(3*1024*1024, 0, 1024))
 }
 
 func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
@@ -152,9 +151,7 @@ func TestReadFallbackThresholdClampsToMaxChunkSize(t *testing.T) {
 	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", 4*1024*1024+1)
 
 	require.NoError(t, chunking.ValidateConfig())
-	ctx := context.Background()
-	efp := booleanFlagProvider{}
-	require.Equal(t, chunking.MaxChunkSizeBytes(ctx, efp), chunking.MinChunkedReadFallbackSizeBytes(ctx, efp))
+	require.Equal(t, chunking.MaxChunkSizeBytes(), chunking.MinChunkedReadFallbackSizeBytes())
 }
 
 func TestGetBlobRejectsForgedManifestSizes(t *testing.T) {
@@ -182,7 +179,7 @@ func TestGetBlobRejectsForgedManifestSizes(t *testing.T) {
 		SizeBytes: chunkCount * firstForgedChunkDigest.GetSizeBytes(),
 	}
 	chunkDigests := make([]*repb.Digest, chunkCount)
-	for i := 0; i < chunkCount-1; i++ {
+	for i := range chunkCount - 1 {
 		chunkDigests[i] = firstForgedChunkDigest
 	}
 	chunkDigests[chunkCount-1] = lastForgedChunkDigest
@@ -213,7 +210,7 @@ func TestChunker_DeterministicChunking(t *testing.T) {
 	const averageSize = 16 * 1024
 
 	var runs [2][][]byte
-	for run := 0; run < 2; run++ {
+	for run := range 2 {
 		var chunks [][]byte
 		writeChunkFn := func(data []byte) error {
 			chunk := make([]byte, len(data))
@@ -281,7 +278,7 @@ func TestStoreAndLoad(t *testing.T) {
 			require.NoError(t, err)
 
 			var chunkDigests []*repb.Digest
-			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), func(data []byte) error {
+			c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
 				d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 				if err != nil {
 					return err
@@ -344,7 +341,7 @@ func TestStore_MissingChunk(t *testing.T) {
 	require.NoError(t, err)
 
 	var chunkDigests []*repb.Digest
-	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), func(data []byte) error {
+	c, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), func(data []byte) error {
 		d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
 		if err != nil {
 			return err
@@ -621,7 +618,7 @@ func TestMissingChunkChecker_Concurrent(t *testing.T) {
 	checker := chunking.NewMissingChunkChecker(cache, repb.FindMissingBlobsRequest_UNKNOWN)
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(32)
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		manifest, want := manifestAllPresent, false
 		if i%2 == 0 {
 			manifest, want = manifestWithMissing, true
@@ -652,8 +649,7 @@ func (c *findMissingTrackingCache) FindMissing(ctx context.Context, resources []
 
 type booleanFlagProvider struct {
 	interfaces.ExperimentFlagProvider
-	values    map[string]bool
-	intValues map[string]int64
+	values map[string]bool
 }
 
 func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defaultValue bool, opts ...any) bool {
@@ -664,38 +660,12 @@ func (p booleanFlagProvider) Boolean(ctx context.Context, flagName string, defau
 	return v
 }
 
-func (p booleanFlagProvider) Int64(ctx context.Context, flagName string, defaultValue int64, opts ...any) int64 {
-	v, ok := p.intValues[flagName]
-	if ok {
-		return v
-	}
-	return defaultValue
-}
-
-func TestEnabled_FallsBackToExperimentFlag(t *testing.T) {
-	ctx := context.Background()
-	assert.True(t, chunking.Enabled(ctx, nil))
-}
-
-func TestEnabled_UsesExperimentFlag(t *testing.T) {
-	ctx := context.Background()
-	assert.False(t, chunking.Enabled(ctx, booleanFlagProvider{
-		values: map[string]bool{"cache.chunking_enabled": false},
-	}))
-	assert.True(t, chunking.Enabled(ctx, booleanFlagProvider{
-		values: map[string]bool{"cache.chunking_enabled": true},
-	}))
-}
-
 func TestShouldReadChunkedOnProxy_UsesExperimentFlag(t *testing.T) {
 	ctx := context.Background()
-	size := chunking.MaxChunkSizeBytes(ctx, nil) + 1
+	size := chunking.MaxChunkSizeBytes() + 1
 	assert.True(t, chunking.ShouldReadChunkedOnProxy(ctx, nil, size, 0, 0))
 	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
 		values: map[string]bool{"cache_proxy.attempt_chunked_reads": false},
-	}, size, 0, 0))
-	assert.False(t, chunking.ShouldReadChunkedOnProxy(ctx, booleanFlagProvider{
-		values: map[string]bool{"cache.chunking_enabled": false},
 	}, size, 0, 0))
 }
 
@@ -723,10 +693,7 @@ func BenchmarkStore(b *testing.B) {
 			const chunkSize = 512 * 1024
 			var chunkDigests []*repb.Digest
 			for i := 0; i < len(blobData); i += chunkSize {
-				end := i + chunkSize
-				if end > len(blobData) {
-					end = len(blobData)
-				}
+				end := min(i+chunkSize, len(blobData))
 				chunk := blobData[i:end]
 				d, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
 				require.NoError(b, err)

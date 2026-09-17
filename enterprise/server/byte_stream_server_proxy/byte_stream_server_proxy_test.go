@@ -170,6 +170,16 @@ func (c *noOpCAS) SplitBlob(ctx context.Context, req *repb.SplitBlobRequest) (*r
 	return nil, status.InternalError("SplitBlob RPC is not currently implemented")
 }
 
+func (c *noOpCAS) GetChunkMapping(req *repb.GetChunkMappingRequest, stream repb.ContentAddressableStorage_GetChunkMappingServer) error {
+	c.t.Fatal("Unexpected call to GetChunkMapping")
+	return status.InternalError("GetChunkMapping RPC is not currently implemented")
+}
+
+func (c *noOpCAS) RegisterChunkMapping(stream repb.ContentAddressableStorage_RegisterChunkMappingServer) error {
+	c.t.Fatal("Unexpected call to RegisterChunkMapping")
+	return status.InternalError("RegisterChunkMapping RPC is not currently implemented")
+}
+
 func TestWriteChunkedFallsBackAboveMaxSize(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"cache.chunking_max_write_size_bytes": {
@@ -345,7 +355,7 @@ type casRPCRecorder struct {
 }
 
 func recordCASUnaryInterceptor(rec *casRPCRecorder) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		rec.mu.Lock()
 		switch {
 		case strings.HasSuffix(method, "/FindMissingBlobs"):
@@ -376,7 +386,7 @@ func recordCASUnaryInterceptor(rec *casRPCRecorder) grpc.UnaryClientInterceptor 
 }
 
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		count.Add(1)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
@@ -1295,14 +1305,6 @@ func BenchmarkWriteUnique(b *testing.B) {
 
 func TestReadChunked(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1528,14 +1530,6 @@ func TestReadChecksPreconditions(t *testing.T) {
 func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 	// Setup environment.
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1575,7 +1569,7 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -1684,14 +1678,6 @@ func TestReadChunkedFastPathSkipsSplitBlob(t *testing.T) {
 
 func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1737,7 +1723,7 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -1848,14 +1834,6 @@ func TestReadChunkedEncryptedRemoteOnly(t *testing.T) {
 
 func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -1893,7 +1871,7 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -1962,14 +1940,6 @@ func TestReadChunkedEncryptedRemoteOnlyFallsBackToFullBlob(t *testing.T) {
 
 func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2018,7 +1988,7 @@ func TestReadChunkedCompressedWarmLocal(t *testing.T) {
 	go remoteRun()
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -2234,14 +2204,6 @@ func (r *faultyReader) Read(p []byte) (int, error) {
 
 func TestReadChunkedWithOffset(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2411,14 +2373,6 @@ func TestReadChunkedWithOffset(t *testing.T) {
 
 func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2450,7 +2404,7 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 
 	var splitBlobCalls atomic.Int32
 	remoteConn, err := testenv.LocalGRPCConn(ctx, remoteLis, grpc.WithUnaryInterceptor(func(
-		ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+		ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
 	) error {
 		if strings.HasSuffix(method, "/SplitBlob") {
 			splitBlobCalls.Add(1)
@@ -2503,14 +2457,6 @@ func TestReadChunkedFallsBackToLocalBlob(t *testing.T) {
 
 func TestReadChunkedPartialLocalFailure(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2672,14 +2618,6 @@ func TestReadRemoteChunkRetryClassification(t *testing.T) {
 
 func TestWriteChunked(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -2773,10 +2711,7 @@ func TestWriteChunked(t *testing.T) {
 	require.NoError(t, err)
 	remaining := compressedData
 	for len(remaining) > 0 {
-		chunkSize := 1_000_000
-		if chunkSize > len(remaining) {
-			chunkSize = len(remaining)
-		}
+		chunkSize := min(1_000_000, len(remaining))
 		err = uploadStream.Send(&bspb.WriteRequest{
 			ResourceName: blobRN.NewUploadString(),
 			WriteOffset:  int64(len(compressedData) - len(remaining)),
@@ -2842,14 +2777,6 @@ func TestWriteChunked(t *testing.T) {
 
 func TestWriteChunkedEncryptedRemoteOnly(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3002,14 +2929,6 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 	flags.Set(t, "cache.zstd_transcoding_enabled", true)
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3165,14 +3084,6 @@ func TestWriteChunkedGroupsFindMissingAndBatchesUploads(t *testing.T) {
 
 func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3256,10 +3167,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	require.NoError(t, err)
 	remaining := originalData
 	for len(remaining) > 0 {
-		chunkSize := 100_000
-		if chunkSize > len(remaining) {
-			chunkSize = len(remaining)
-		}
+		chunkSize := min(100_000, len(remaining))
 		err = uploadStream.Send(&bspb.WriteRequest{
 			ResourceName: uploadString,
 			WriteOffset:  int64(len(originalData) - len(remaining)),
@@ -3295,7 +3203,7 @@ func TestWriteChunkedFallbackBelowThreshold(t *testing.T) {
 	require.Equal(t, originalData, downloadedData)
 }
 
-func networkLatencyUnaryInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func networkLatencyUnaryInterceptor(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	time.Sleep(simulatedBenchRTT())
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
@@ -3306,7 +3214,7 @@ type delayedRecvClientStream struct {
 	recvCount int
 }
 
-func (s *delayedRecvClientStream) RecvMsg(m interface{}) error {
+func (s *delayedRecvClientStream) RecvMsg(m any) error {
 	if strings.HasSuffix(s.method, "/Read") {
 		if s.recvCount == 0 {
 			time.Sleep(simulatedBenchRTT())
@@ -3353,14 +3261,6 @@ func setupChunkedBenchmarkEnv(b *testing.B) (bspb.ByteStreamClient, context.Cont
 	log.Configure()
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.intercept_and_chunk_large_writes": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3445,14 +3345,6 @@ func setupChunkedReadBenchmarkEnv(b *testing.B) *chunkedReadBenchmarkEnv {
 	log.Configure()
 
 	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
 		"cache_proxy.attempt_chunked_reads": {
 			State:          memprovider.Enabled,
 			DefaultVariant: "true",
@@ -3584,7 +3476,7 @@ func prepareChunkedReadBenchmarkData(b *testing.B, ctx context.Context, size int
 		})
 		return nil
 	}
-	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes(ctx, nil)), writeChunkFn)
+	cdcChunker, err := chunking.NewChunker(ctx, int(chunking.AvgChunkSizeBytes()), writeChunkFn)
 	require.NoError(b, err)
 	_, err = cdcChunker.Write(originalData)
 	require.NoError(b, err)

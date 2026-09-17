@@ -10,7 +10,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/compiler/protogen"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -102,7 +101,7 @@ func codeGeneratorRequest(t *testing.T, path string) *pluginpb.CodeGeneratorRequ
 	add(fd)
 	return &pluginpb.CodeGeneratorRequest{
 		FileToGenerate: []string{path},
-		Parameter:      proto.String(strings.Join(params, ",")),
+		Parameter:      new(strings.Join(params, ",")),
 		ProtoFile:      files,
 	}
 }

@@ -210,7 +210,7 @@ func createAWSClientWithCreds(arn *awsKMSARN) (registry.KMSClient, error) {
 	creds := awscreds.NewStaticCredentialsFromCreds(*credValue)
 	sess, err := awssession.NewSession(&aws.Config{
 		Credentials: creds,
-		Region:      aws.String(arn.region),
+		Region:      new(arn.region),
 	})
 	if err != nil {
 		return nil, status.UnknownErrorf("could not create session: %s", err)

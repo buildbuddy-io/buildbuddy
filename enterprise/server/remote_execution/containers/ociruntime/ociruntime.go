@@ -1619,12 +1619,8 @@ func getUser(ctx context.Context, image *Image, rootfsPath string, dockerUserPro
 		UID:            uid,
 		GID:            gid,
 		AdditionalGids: gids,
-		Umask:          pointer(uint32(022)), // 0644 file perms by default
+		Umask:          new(uint32(022)), // 0644 file perms by default
 	}, nil
-}
-
-func pointer[T any](val T) *T {
-	return &val
 }
 
 func toInt32s(in []int) []int32 {
@@ -1889,7 +1885,6 @@ func (s *ImageStore) pull(ctx context.Context, imageName string, creds oci.Crede
 	var eg errgroup.Group
 	eg.SetLimit(min(8, runtime.NumCPU()))
 	for _, layer := range layers {
-		layer := layer
 		resolvedLayer := &ImageLayer{}
 		resolvedImage.Layers = append(resolvedImage.Layers, resolvedLayer)
 		eg.Go(func() (err error) {

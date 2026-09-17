@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
@@ -53,7 +54,7 @@ const (
 )
 
 func requestCountingUnaryInterceptor(count *atomic.Int32) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		count.Add(1)
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
@@ -216,7 +217,7 @@ func TestBatchUpdateBlobsCompressorMetricsLabelsAreBounded(t *testing.T) {
 func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
 	wait := time.Millisecond
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		// The read that enqueued this atime update is processed asynchronously
 		// by the batcher goroutine, so the pending batch may not be ready when
 		// the sender's flush fires. Advance the clock on every iteration (rather
@@ -240,7 +241,7 @@ func expectAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *a
 
 func expectNoAtimeUpdate(t *testing.T, clock *clockwork.FakeClock, requestCount *atomic.Int32) {
 	requestCount.Store(0)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		clock.Advance(atimeUpdatePeriod + time.Second)
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -355,7 +356,7 @@ func TestFindMissingBlobs_Caching(t *testing.T) {
 	// within the TTL are served from the local cache.
 	findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 	require.Equal(t, int32(1), requestCount.Load())
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		findMissing(ctx, proxy, []*repb.Digest{barDigestProto}, []*repb.Digest{}, t)
 	}
 	require.Equal(t, int32(1), requestCount.Load())
@@ -438,7 +439,6 @@ func TestFindMissingBlobs_BypassCache(t *testing.T) {
 	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
 	fp, err := experiments.NewFlagProvider(t.Name())
 	require.NoError(t, err)
-
 	ctx := testContext()
 	conn, requestCount, _ := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
 	proxyEnv := testenv.GetTestEnv(t)
@@ -850,26 +850,10 @@ func BenchmarkBatchUpdateBlobs(b *testing.B) {
 }
 
 func TestSpliceBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
-	remoteEnv.SetExperimentFlagProvider(fp)
 	conn, requestCount, _ := runRemoteCASS(ctx, remoteEnv, t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 
@@ -902,26 +886,10 @@ func TestSpliceBlob(t *testing.T) {
 }
 
 func TestSplitBlob(t *testing.T) {
-	testProvider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"cache.chunking_enabled": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "true",
-			Variants: map[string]any{
-				"true":  true,
-				"false": false,
-			},
-		},
-	})
-	require.NoError(t, openfeature.SetNamedProviderAndWait(t.Name(), testProvider))
-	fp, err := experiments.NewFlagProvider(t.Name())
-	require.NoError(t, err)
-
 	ctx := testContext()
 	remoteEnv := testenv.GetTestEnv(t)
-	remoteEnv.SetExperimentFlagProvider(fp)
 	conn, _, _ := runRemoteCASS(ctx, remoteEnv, t)
 	proxyEnv := testenv.GetTestEnv(t)
-	proxyEnv.SetExperimentFlagProvider(fp)
 	proxyConn := runCASProxy(ctx, conn, proxyEnv, t)
 	proxy := repb.NewContentAddressableStorageClient(proxyConn)
 	remote := repb.NewContentAddressableStorageClient(conn)
@@ -957,6 +925,27 @@ func TestSplitBlob(t *testing.T) {
 	require.Equal(t, 2, len(splitResp.ChunkDigests))
 	require.Equal(t, chunk1Digest.Hash, splitResp.ChunkDigests[0].Hash)
 	require.Equal(t, chunk2Digest.Hash, splitResp.ChunkDigests[1].Hash)
+}
+
+func TestChunkMappingRPCsForwarded(t *testing.T) {
+	ctx := testContext()
+	conn, _, streamRequests := runRemoteCASS(ctx, testenv.GetTestEnv(t), t)
+	proxyConn := runCASProxy(ctx, conn, testenv.GetTestEnv(t), t)
+	proxy := repb.NewContentAddressableStorageClient(proxyConn)
+
+	streamRequests.Store(0)
+	getStream, err := proxy.GetChunkMapping(ctx, &repb.GetChunkMappingRequest{})
+	require.NoError(t, err)
+	_, err = getStream.Recv()
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+	require.Equal(t, int32(1), streamRequests.Load())
+
+	registerStream, err := proxy.RegisterChunkMapping(ctx)
+	require.NoError(t, err)
+	_ = registerStream.Send(&repb.RegisterChunkMappingRequest{})
+	_, err = registerStream.CloseAndRecv()
+	require.Equal(t, codes.Unimplemented, status.Code(err))
+	require.Equal(t, int32(2), streamRequests.Load())
 }
 
 func BenchmarkGetTree(b *testing.B) {

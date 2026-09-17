@@ -106,14 +106,26 @@ message GetWithMetadataRequest {
   resource.ResourceName resource = 1;
 }
 
+// Next Tag: 4
 message GetWithMetadataResponse {
+  // The bytes of the data. Mutually exclusive with reference.
   bytes data = 1;
+
+  // A reference to the data. Mutually exlusive with data.
+  reference.Reference reference = 3;
+
   MetadataResponse metadata = 2;
 }
 
+// Next Tag: 4
 message KV {
   Key key = 1;
+
+  // The bytes of the value. Mutually exclusive with value_reference.
   bytes value = 2;
+
+  // A reference to the value. Mutually exclusive with value.
+  reference.Reference value_reference = 3;
 }
 
 message GetMultiRequest {

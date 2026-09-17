@@ -40,6 +40,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	gstatus "google.golang.org/grpc/status"
 )
 
 var (
@@ -317,9 +318,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 	cas := env.GetContentAddressableStorageClient()
 
 	for batch := range slices.Chunk(filesToUpload, 1000) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			req := &repb.FindMissingBlobsRequest{
 				DigestFunction: digestFunction,
 				InstanceName:   instanceName,
@@ -353,7 +352,7 @@ func uploadMissingFiles(ctx context.Context, uploader *cachetools.BatchCASUpload
 				// If the reader errored and returned, don't block forever
 			case batches <- batchResult{files: batch, presentBytes: presentBytes}:
 			}
-		}()
+		})
 	}
 
 	go func() {
@@ -638,12 +637,12 @@ type FilePointer struct {
 }
 
 // removeExisting removes any existing file pointed to by the FilePointer if
-// it exists in the opts.Skip (pre-existing files) map. This is needed so that
+// it exists in the opts.KnownInputs map. This is needed so that
 // we overwrite existing files without silently dropping errors when linking
 // the file. (Note, it is not needed when writing a fresh copy of the file.)
 func removeExisting(fp *FilePointer, opts *DownloadTreeOpts) error {
 	pathKey := fspath.NewKey(fp.RelativePath, opts.CaseInsensitive)
-	if _, ok := opts.Skip[pathKey]; ok {
+	if _, ok := opts.KnownInputs[pathKey]; ok {
 		if err := os.Remove(fp.FullPath); err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -730,7 +729,8 @@ type BatchFileFetcher struct {
 	filesToFetch            FileMap
 	opts                    *DownloadTreeOpts
 	onlyDownloadToFileCache bool
-	doneErr                 chan error
+	failed                  chan struct{}
+	fetchErr                error // Set before failed is closed.
 
 	mu               sync.Mutex
 	remainingFetches map[fetchKey]struct{}
@@ -769,7 +769,7 @@ func newBatchFileFetcher(ctx context.Context, env environment.Env, instanceName 
 		filesToFetch:            filesToFetch,
 		opts:                    opts,
 		onlyDownloadToFileCache: opts.RootDir == "",
-		doneErr:                 make(chan error, 1),
+		failed:                  make(chan struct{}),
 		remainingFetches:        remainingFetches,
 		fetchWaiters:            make(map[fetchKey][]chan struct{}),
 		downloadsBitmap:         downloadsBitmap,
@@ -912,7 +912,10 @@ type digestToFetch struct {
 func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 	defer func() {
 		if retErr != nil {
-			ff.doneErr <- retErr
+			// Wake every waiting VFS reader, including future reads, so they
+			// can retry directly from CAS instead of waiting indefinitely.
+			ff.fetchErr = status.WrapError(gstatus.Convert(retErr).Err(), "fetcher failed")
+			close(ff.failed)
 		}
 	}()
 
@@ -950,7 +953,6 @@ func (ff *BatchFileFetcher) FetchFiles(opts *DownloadTreeOpts) (retErr error) {
 		// Attempt to link digests from the file cache. Digests that are not
 		// present in the filecache will be added to the fetchQueue channel.
 		for dk, filePointers := range ff.filesToFetch {
-			filePointers := filePointers
 
 			// Write empty files directly (skip checking cache and downloading).
 			if digest.IsEmptyHash(dk.ToDigest(), ff.digestFunction) && !ff.onlyDownloadToFileCache {
@@ -1221,8 +1223,8 @@ func (ff *BatchFileFetcher) Fetch(ctx context.Context, node *repb.FileNode) erro
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case err := <-ff.doneErr:
-		return status.WrapError(err, "fetcher failed")
+	case <-ff.failed:
+		return ff.fetchErr
 	case <-done:
 		return nil
 	}
@@ -1262,10 +1264,15 @@ type DownloadTreeOpts struct {
 	// CaseInsensitive specifies whether the filesystem is case-insensitive.
 	// If true, the paths will be normalized to lowercase.
 	CaseInsensitive bool
-	// Skip specifies file paths to skip, along with their file nodes. If the
-	// file metadata or contents to be downloaded don't match the file in this
-	// map, then it is re-downloaded (not skipped).
-	Skip map[fspath.Key]*repb.FileNode
+	// KnownInputs maps workspace-relative input paths to file nodes retained
+	// from previous tasks. When TrackTransfers is enabled, paths also present
+	// in the current tree are returned in InputsState.Exist so cleanup can
+	// preserve them.
+	//
+	// When RootDir is set, unchanged known inputs are reused without downloading.
+	// When RootDir is empty, cache availability is checked independently since
+	// evicting cached contents does not remove the corresponding VFS entry.
+	KnownInputs map[fspath.Key]*repb.FileNode
 	// RootDir specifies the destination directory for the downloaded tree.
 	// If not specified, tree digests will be downloaded directly into the filecache.
 	RootDir string
@@ -1559,11 +1566,22 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				}
 
 				pathKey := fspath.NewKey(relPath, f.opts.CaseInsensitive)
-				skippedNode, ok := f.opts.Skip[pathKey]
+				knownNode, ok := f.opts.KnownInputs[pathKey]
 				if ok {
 					trackExistsFn(relPath, node)
 				}
-				if ok && nodesEqual(node, skippedNode) {
+				// To avoid downloading inputs again when reusing a workspace,
+				// the caller supplies KnownInputs, a map of input paths and
+				// file metadata retained from previous tasks. If the file
+				// exists from a previous task and its contents haven't changed,
+				// we can skip downloading it.
+				//
+				// Edge case: for VFS prefetch, the file contents live in the
+				// file cache, which can evict them without removing the VFS
+				// entry. An unchanged known input therefore does not guarantee
+				// that the contents are available. Let prefetch check the file
+				// cache to decide whether another download is needed.
+				if ok && nodesEqual(node, knownNode) && !onlyDownloadToFileCache {
 					return
 				}
 				dk := newFetchKey(d, node.IsExecutable)

@@ -14,7 +14,7 @@ func TestDeltaEncodeAndDecode(t *testing.T) {
 			expectedValues := []int64{}
 			// Construct a sequence with some positive values, some negative
 			// values, some repeats
-			for i := 0; i < n; i++ {
+			for i := range n {
 				val := int64(i/2 - n/4)
 				expectedValues = append(expectedValues, val)
 			}

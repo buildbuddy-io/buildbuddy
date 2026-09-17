@@ -132,7 +132,7 @@ func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) 
 	dirPerms := fs.FileMode(0777)
 	var rootDir string
 	maxAttempts := 10
-	for i := 0; i < maxAttempts; i++ {
+	for i := range maxAttempts {
 		rootDir = filepath.Join(parentDir, newRandomBuildDirCandidate())
 		if err := os.Mkdir(rootDir, dirPerms); err == nil {
 			break
@@ -353,7 +353,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
 	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
 	if ws.Opts.Preserve {
-		opts.Skip = ws.Inputs
+		opts.KnownInputs = ws.Inputs
 		opts.TrackTransfers = true
 	}
 	tf, err := dirtools.NewTreeFetcher(ctx, ws.env, execReq.GetInstanceName(), execReq.GetDigestFunction(), layout.Inputs, opts)
@@ -411,8 +411,12 @@ func (ws *Workspace) AddRemoteRunnerBinaries(ctx context.Context) error {
 	if err := ws.AddCIRunner(ctx); err != nil {
 		return err
 	}
-	if err := ws.AddCLI(ctx); err != nil {
-		return err
+	// The bb CLI is not embedded on Windows, but the CI runner can still use
+	// its embedded Bazelisk binary.
+	if len(cli_bundle.CLIBytes) > 0 {
+		if err := ws.AddCLI(ctx); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -563,7 +567,6 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	var logsMu sync.Mutex
 	serverLogs := make(map[string]*repb.LogFile, len(cmdResult.AuxiliaryLogs))
 	for name, b := range cmdResult.AuxiliaryLogs {
-		name, b := name, b
 		eg.Go(func() error {
 			d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
 			if err != nil {
@@ -669,6 +672,15 @@ func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 		return nil
 	}
 	return ws.vfsServer.ComputeStats()
+}
+
+// VFSError returns the first input download error exposed to the current task,
+// or nil if VFS is disabled or no download failed after retries.
+func (ws *Workspace) VFSError() error {
+	if ws.vfsServer == nil {
+		return nil
+	}
+	return ws.vfsServer.TaskError()
 }
 
 // TaskFinished informs the workspace that task execution is done.

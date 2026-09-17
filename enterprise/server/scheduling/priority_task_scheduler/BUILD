@@ -19,6 +19,7 @@ go_library(
         "//server/util/alert",
         "//server/util/authutil",
         "//server/util/bazel_request",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/priority_queue",
         "//server/util/proto",
@@ -53,5 +54,6 @@ go_test(
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )

@@ -9,6 +9,8 @@ go_library(
     deps = [
         "//cli/agent/agentflags",
         "//cli/agent/analyze_profile",
+        "//cli/agent/fix",
+        "//cli/agent/review",
         "//cli/arg",
         "//cli/log",
     ],

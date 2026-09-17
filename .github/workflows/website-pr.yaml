@@ -2,8 +2,6 @@ name: Build Website
 
 on:
   pull_request:
-    branches:
-      - master
     paths:
       - ".github/workflows/website-pr.yaml"
       - "docs/**"

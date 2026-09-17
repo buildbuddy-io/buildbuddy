@@ -46,7 +46,7 @@ func TestHostNetAllocator(t *testing.T) {
 	uniqueCIDRs := map[string]struct{}{}
 
 	// Reserve all possible CIDRs
-	for i := 0; i < n; i++ {
+	for i := range n {
 		nets[i], err = a.Get()
 		require.NoError(t, err, "Get(%d)", i)
 		uniqueCIDRs[nets[i].HostIPWithCIDR()] = struct{}{}
@@ -77,7 +77,7 @@ func TestHostNetAllocator(t *testing.T) {
 	}
 
 	// Attempting to get a new host net should now fail
-	for i := 0; i < n; i++ {
+	for range n {
 		net, err := a.Get()
 		require.Error(t, err)
 		require.Nil(t, net)
@@ -102,7 +102,7 @@ func TestConcurrentSetupAndCleanup(t *testing.T) {
 
 	eg, gCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(8)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		// Note: gCtx is only used for short-circuiting this loop.
 		// Each goroutine is allowed to run to completion, to avoid leaving
 		// things in a messy state.

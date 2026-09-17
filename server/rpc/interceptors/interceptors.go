@@ -64,14 +64,14 @@ func (w *wrappedServerStreamWithContext) Context() context.Context {
 
 // ContextReplacingStreamServerInterceptor is a helper to make a stream interceptor that modifies a context.
 func contextReplacingStreamServerInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		return handler(srv, &wrappedServerStreamWithContext{stream, ctxFn(stream.Context())})
 	}
 }
 
 // ContextReplacingStreamServerInterceptor is a helper to make a unary interceptor that modifies a context.
 func contextReplacingUnaryServerInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		return handler(ctxFn(ctx), req)
 	}
 }
@@ -85,7 +85,7 @@ func contextReplacingStreamClientInterceptor(ctxFn func(ctx context.Context) con
 
 // contextReplacingUnaryClientInterceptor is a helper to make a unary interceptor that modifies a context.
 func contextReplacingUnaryClientInterceptor(ctxFn func(ctx context.Context) context.Context) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		return invoker(ctxFn(ctx), method, req, reply, cc, opts...)
 	}
 }
@@ -235,7 +235,7 @@ func authUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor
 }
 
 func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			if err := capabilities_filter.AuthorizeRPC(stream.Context(), env, info.FullMethod); err != nil {
 				return err
@@ -246,7 +246,7 @@ func roleAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInter
 }
 
 func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if strings.HasPrefix(info.FullMethod, buildBuddyServicePrefix) {
 			if err := capabilities_filter.AuthorizeRPC(ctx, env, info.FullMethod); err != nil {
 				return nil, err
@@ -257,7 +257,7 @@ func roleAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 }
 
 func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if irs := env.GetIPRulesEnforcer(); irs != nil {
 			newCtx, err := irs.Authorize(ctx)
 			if err != nil {
@@ -270,7 +270,7 @@ func ipAuthUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercept
 }
 
 func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if irs := env.GetIPRulesEnforcer(); irs != nil {
 			newCtx, err := irs.Authorize(stream.Context())
 			if err != nil {
@@ -283,7 +283,7 @@ func ipAuthStreamServerInterceptor(env environment.Env) grpc.StreamServerInterce
 }
 
 func identityUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if cis := env.GetClientIdentityService(); cis != nil {
 			newCtx, err := cis.ValidateIncomingIdentity(ctx)
 			if err != nil {
@@ -296,7 +296,7 @@ func identityUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterce
 }
 
 func identityStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if cis := env.GetClientIdentityService(); cis != nil {
 			newCtx, err := cis.ValidateIncomingIdentity(stream.Context())
 			if err != nil {
@@ -445,7 +445,7 @@ func invocationIDLoggerUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 // requestContextProtoUnaryServerInterceptor is a server interceptor that
 // copies the request context from the request message into the context.
 func requestContextProtoUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		msg, ok := req.(proto.Message)
 		if ok {
 			protoCtx := requestcontext.GetProtoRequestContext(msg)
@@ -457,7 +457,7 @@ func requestContextProtoUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 
 // logRequestUnaryServerInterceptor defers a call to log the GRPC request.
 func logRequestUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		start := time.Now()
 		r, err := handler(ctx, req)
 		log.LogGRPCRequest(ctx, info.FullMethod, time.Since(start), err)
@@ -467,7 +467,7 @@ func logRequestUnaryServerInterceptor() grpc.UnaryServerInterceptor {
 
 // logRequestUnaryServerInterceptor defers a call to log the GRPC request.
 func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		start := time.Now()
 		err := handler(srv, stream)
 		log.LogGRPCRequest(stream.Context(), info.FullMethod, time.Since(start), err)
@@ -476,7 +476,7 @@ func logRequestStreamServerInterceptor() grpc.StreamServerInterceptor {
 }
 
 func groupStatusUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if gs := env.GetGroupStatusChecker(); gs != nil {
 			if err := gs.CheckAllowed(ctx); err != nil {
 				return nil, err
@@ -487,7 +487,7 @@ func groupStatusUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInte
 }
 
 func groupStatusStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if gs := env.GetGroupStatusChecker(); gs != nil {
 			if err := gs.CheckAllowed(stream.Context()); err != nil {
 				return err
@@ -498,7 +498,7 @@ func groupStatusStreamServerInterceptor(env environment.Env) grpc.StreamServerIn
 }
 
 func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if qm := env.GetQuotaManager(); qm != nil {
 			err := qm.Allow(ctx, rpcQuotaPrefix+info.FullMethod, 1)
 			if err != nil {
@@ -510,7 +510,7 @@ func quotaUnaryServerInterceptor(env environment.Env) grpc.UnaryServerIntercepto
 }
 
 func quotaStreamServerInterceptor(env environment.Env) grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if qm := env.GetQuotaManager(); qm != nil {
 			err := qm.Allow(stream.Context(), rpcQuotaPrefix+info.FullMethod, 1)
 			if err != nil {
@@ -528,7 +528,7 @@ func alertOnPanic(err any) {
 }
 
 func unaryRecoveryInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (rsp interface{}, err error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (rsp any, err error) {
 		defer func() {
 			if panicErr := recover(); panicErr != nil {
 				rsp = nil
@@ -542,7 +542,7 @@ func unaryRecoveryInterceptor() grpc.UnaryServerInterceptor {
 }
 
 func streamRecoveryInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		defer func() {
 			if panicErr := recover(); panicErr != nil {
 				err = status.InternalError("A panic occurred")
@@ -661,14 +661,14 @@ func propagateBazelRequestMetadataToSpan(ctx context.Context) {
 }
 
 func propagateRequestMetadataToSpanUnaryServerInterceptor() grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
 		propagateBazelRequestMetadataToSpan(ctx)
 		return handler(ctx, req)
 	}
 }
 
 func propagateRequestMetadataToSpanStreamServerInterceptor() grpc.StreamServerInterceptor {
-	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx := stream.Context()
 		propagateBazelRequestMetadataToSpan(ctx)
 		return handler(srv, stream)

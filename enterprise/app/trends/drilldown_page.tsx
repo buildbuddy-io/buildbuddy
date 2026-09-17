@@ -3,8 +3,7 @@ import { X, ZoomIn } from "lucide-react";
 import moment from "moment";
 import React from "react";
 
-import { Bar, BarChart, CartesianGrid, Tooltip, TooltipProps, XAxis } from "recharts";
-import { CategoricalChartState } from "recharts/types/chart/types";
+import { Bar, BarChart, CartesianGrid, MouseHandlerDataParam, Tooltip, TooltipContentProps, XAxis } from "recharts";
 import { User } from "../../../app/auth/user";
 import capabilities from "../../../app/capabilities/capabilities";
 import Banner from "../../../app/components/banner/banner";
@@ -618,11 +617,15 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     window.scrollTo({ top: 0 });
   }
 
-  handleBarClick(d: stats.DrilldownType, e?: CategoricalChartState) {
-    if (!e || !e.activePayload || e.activePayload.length === 0) {
+  handleBarClick(d: stats.DrilldownType, entries: stats.DrilldownEntry[], e?: MouseHandlerDataParam) {
+    if (!e || !e.isTooltipActive || e.activeTooltipIndex === undefined) {
       return;
     }
-    const originalLabel = (e.activePayload[0].payload as stats.DrilldownEntry).label || "";
+    const entry = entries[Number(e.activeTooltipIndex)];
+    if (!entry) {
+      return;
+    }
+    const originalLabel = entry.label || "";
 
     switch (d) {
       case stats.DrilldownType.USER_DRILLDOWN_TYPE:
@@ -740,7 +743,7 @@ export default class DrilldownPageComponent extends React.Component<Props, State
     return label;
   }
 
-  renderCustomTooltip(drilldownType: string, drilldownTypeEnum: stats.DrilldownType, p: TooltipProps<any, any>) {
+  renderCustomTooltip(drilldownType: string, drilldownTypeEnum: stats.DrilldownType, p: TooltipContentProps<any, any>) {
     if (!this.state.drilldownData) {
       return null;
     }
@@ -1035,10 +1038,11 @@ export default class DrilldownPageComponent extends React.Component<Props, State
                                   {this.formatDrilldownType(chart.drilldownType)}
                                 </div>
                                 <BarChart
+                                  accessibilityLayer={false}
                                   width={300}
                                   height={200}
                                   data={chart.entry}
-                                  onClick={this.handleBarClick.bind(this, chart.drilldownType)}>
+                                  onClick={this.handleBarClick.bind(this, chart.drilldownType, chart.entry)}>
                                   <CartesianGrid strokeDasharray="3 3" />
                                   <XAxis
                                     interval="preserveStart"

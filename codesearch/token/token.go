@@ -699,7 +699,7 @@ func (tt *SparseNgramTokenizer) toBytes(r []rune) []byte {
 	// of stringTemp and be done. Otherwise, fall through to calling
 	// utf8.EncodeRune below.
 	ascii := true
-	for i := 0; i < len(r); i++ {
+	for i := range r {
 		if r[i] > unicode.MaxASCII {
 			ascii = false
 			break

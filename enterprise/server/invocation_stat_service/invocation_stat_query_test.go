@@ -22,9 +22,9 @@ func TestGetDrilldownSubquery_ExitCode(t *testing.T) {
 		},
 	}
 	where := "WHERE group_id = 'GR1'"
-	whereArgs := []interface{}{}
+	whereArgs := []any{}
 	drilldown := "success = true"
-	drilldownArgs := []interface{}{}
+	drilldownArgs := []any{}
 	col := "exit_code"
 
 	query, args := iss.getDrilldownSubquery(ctx, drilldownFields, req, where, whereArgs, drilldown, drilldownArgs, col)
@@ -46,9 +46,9 @@ func TestGetDrilldownSubquery_NonExitCode(t *testing.T) {
 		},
 	}
 	where := "WHERE group_id = 'GR1'"
-	whereArgs := []interface{}{}
+	whereArgs := []any{}
 	drilldown := "success = true"
-	drilldownArgs := []interface{}{}
+	drilldownArgs := []any{}
 	col := "worker"
 
 	query, _ := iss.getDrilldownSubquery(ctx, drilldownFields, req, where, whereArgs, drilldown, drilldownArgs, col)

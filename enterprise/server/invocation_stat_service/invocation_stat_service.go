@@ -237,9 +237,9 @@ func (i *InvocationStatService) getTrendTimeSettings(tq *stpb.TrendQuery, timezo
 	}
 }
 
-func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
+func (i *InvocationStatService) getTrendBasicQuery(tq *stpb.TrendQuery, timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []any) {
 	var q string
-	var qArgs []interface{}
+	var qArgs []any
 	if i.isOLAPDBEnabled() {
 		if i.finerTimeBucketsEnabled() {
 			bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
@@ -510,12 +510,12 @@ func (i *InvocationStatService) getInvocationTrend(ctx context.Context, req *stp
 	return res, nil
 }
 
-func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []interface{}) {
+func (i *InvocationStatService) getExecutionTrendQuery(timeSettings *trendTimeSettings, timezoneOffsetMinutes int32) (string, []any) {
 	if !i.finerTimeBucketsEnabled() {
 		return fmt.Sprintf("SELECT %s as name,", i.olapdbh.DateFromUsecTimestamp("updated_at_usec", timezoneOffsetMinutes)) + `
 		quantilesExactExclusive(0.5, 0.75, 0.9, 0.95, 0.99)(IF(worker_start_timestamp_usec > queued_timestamp_usec AND queued_timestamp_usec > 0, worker_start_timestamp_usec - queued_timestamp_usec, 0)) AS queue_duration_usec_quantiles,
 		SUM(GREATEST(COALESCE(worker_completed_timestamp_usec - worker_start_timestamp_usec, 0), 0)) as total_build_time_usec
-		FROM "Executions"`, make([]interface{}, 0)
+		FROM "Executions"`, make([]any, 0)
 	}
 
 	bucketStr, bucketArgs := i.olapdbh.BucketFromUsecTimestamp("updated_at_usec", timeSettings.location, timeSettings.interval.ClickhouseInterval())
@@ -710,7 +710,7 @@ var coarseLogStepMultipliers = []int64{1, 2, 4, 6, 8}
 
 // getMetricMinMax returns the smallest and largest values of the given metric
 // matching the where clause. found is false when there are no matching rows.
-func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}) (low int64, high int64, found bool, err error) {
+func (i *InvocationStatService) getMetricMinMax(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []any) (low int64, high int64, found bool, err error) {
 	rangeQuery := fmt.Sprintf(`SELECT min(%s) as low, max(%s) as high FROM "%s" %s`, metric, metric, table, whereClauseStr)
 	rq := i.olapdbh.NewQuery(ctx, "invocation_stat_service_metric_range").Raw(rangeQuery, whereClauseArgs...)
 	valueRange := struct {
@@ -847,7 +847,7 @@ func subdivideLogBuckets(buckets []int64, stepMultipliers []int64) []int64 {
 	return subdivided
 }
 
-func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []interface{}, logScale bool) (buckets []int64, arrayStr string, hadNegative bool, err error) {
+func (i *InvocationStatService) getMetricBuckets(ctx context.Context, table string, metric string, whereClauseStr string, whereClauseArgs []any, logScale bool) (buckets []int64, arrayStr string, hadNegative bool, err error) {
 	low, high, found, err := i.getMetricMinMax(ctx, table, metric, whereClauseStr, whereClauseArgs)
 	if err != nil {
 		return nil, "", false, err
@@ -971,7 +971,7 @@ type HeatmapQueryInputs = struct {
 	HadNegativeMetricValues bool
 }
 
-func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []interface{}, requestContext *ctxpb.RequestContext, logScale bool) (*HeatmapQueryInputs, error) {
+func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table string, metric string, q *stpb.TrendQuery, whereClauseStr string, whereClauseArgs []any, requestContext *ctxpb.RequestContext, logScale bool) (*HeatmapQueryInputs, error) {
 	timestampBuckets, timestampArrayStr, err := i.getTimestampBuckets(q, requestContext)
 	if err != nil {
 		return nil, err
@@ -1001,7 +1001,7 @@ func (i *InvocationStatService) generateQueryInputs(ctx context.Context, table s
 		HadNegativeMetricValues: hadNegative}, nil
 }
 
-func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []interface{}, error) {
+func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q *stpb.TrendQuery, reqCtx *ctxpb.RequestContext) (string, []any, error) {
 	placeholderQuery := query_builder.NewQuery("")
 	if err := i.addWhereClauses(placeholderQuery, q, m.Execution != nil, reqCtx); err != nil {
 		return "", nil, err
@@ -1015,7 +1015,7 @@ func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q 
 
 type QueryAndBuckets = struct {
 	Query                   string
-	QueryArgs               []interface{}
+	QueryArgs               []any
 	TimestampBuckets        []int64
 	MetricBuckets           []int64
 	HadNegativeMetricValues bool
@@ -1269,7 +1269,7 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	return rsp, err
 }
 
-func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilldownFields []string, req *stpb.GetStatDrilldownRequest, where string, whereArgs []interface{}, drilldown string, drilldownArgs []interface{}, col string) (string, []interface{}) {
+func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilldownFields []string, req *stpb.GetStatDrilldownRequest, where string, whereArgs []any, drilldown string, drilldownArgs []any, col string) (string, []any) {
 	// This is really ugly--the clickhouse SQL engine doesn't play nice with GORM
 	// when you set a field name to NULL that matches a field in the table you are
 	// selecting--it blows away the type info and turns it into Sql.RawBytes.  To
@@ -1321,12 +1321,12 @@ func (i *InvocationStatService) getDrilldownSubquery(ctx context.Context, drilld
 		nulledOutFieldList, drilldown, drilldown, table, where, groupByCol), args
 }
 
-func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{}, error) {
+func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []any, error) {
 	if len(filters) == 0 {
-		return "FALSE", []interface{}{}, nil
+		return "FALSE", []any{}, nil
 	}
 	var result []string
-	var resultArgs []interface{}
+	var resultArgs []any
 	for _, f := range filters[:] {
 		str, args, err := filter.GenerateFilterStringAndArgs(f)
 		if err != nil {
@@ -1341,7 +1341,7 @@ func getDrilldownQueryFilter(filters []*sfpb.StatFilter) (string, []interface{},
 // TODO(jdhollen): This can be made much efficient using GROUPING SETS when we
 // are able to upgrade to clickhouse 22.6 or later.  The release date for 22.8
 // from Altinity is supposed to be 2023-02-15.
-func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []interface{}, error) {
+func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb.GetStatDrilldownRequest) (string, []any, error) {
 	if req.GetDrilldownMetric() == nil {
 		return "", nil, status.InvalidArgumentError("Missing metric for drilldown request.")
 	}
@@ -1366,7 +1366,7 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 
 	whereString, whereArgs := placeholderQuery.Build()
 
-	args := make([]interface{}, 0)
+	args := make([]any, 0)
 	queries := make([]string, 0)
 	subQStr, subQArgs := i.getDrilldownSubquery(ctx, drilldownFields, req, whereString, whereArgs, drilldownStr, drilldownArgs, "")
 	queries = append(queries, subQStr)

@@ -214,8 +214,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		var maxBytesErr *http.MaxBytesError
-		if errors.As(err, &maxBytesErr) {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "MCP request body is too large", http.StatusRequestEntityTooLarge)
 			return
 		}
@@ -412,7 +411,7 @@ func (s *Service) invokeAPITool(ctx context.Context, generatedTool mcptools.Tool
 	if results[0].IsNil() {
 		return nil, status.InternalErrorf("API method %s returned no response", generatedTool.RPCName)
 	}
-	responseProto, ok := results[0].Interface().(proto.Message)
+	responseProto, ok := reflect.TypeAssert[proto.Message](results[0])
 	if !ok {
 		return nil, status.InternalErrorf("API method %s returned a non-proto response", generatedTool.RPCName)
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser"
+	"github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/parser/test_data"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -131,7 +132,7 @@ func TestRemovesOutputBaseAfterEachRun(t *testing.T) {
 	var runner fakeRunner
 	var buildRuns int
 	runner.onRun = func(ctx context.Context, call commandCall) error {
-		command, _ := parser.GetBazelCommandAndIndex(call.args)
+		command, _ := bazel_command.GetCommandAndIndex(call.args)
 		if command == "shutdown" {
 			return nil
 		}
@@ -184,7 +185,7 @@ func outputBaseFromArgs(t *testing.T, args []string) string {
 func bazelCommands(calls []commandCall) []string {
 	var commands []string
 	for _, call := range calls {
-		command, _ := parser.GetBazelCommandAndIndex(call.args)
+		command, _ := bazel_command.GetCommandAndIndex(call.args)
 		commands = append(commands, command)
 	}
 	return commands

@@ -55,7 +55,6 @@ import (
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
@@ -392,7 +391,7 @@ type DBRawQuery interface {
 	// Take executes the query and scans the resulting row into the target
 	// struct. An error is returned if no records match. To check for this
 	// error use db.IsRecordNotFound.
-	Take(dest interface{}) error
+	Take(dest any) error
 	// Exec executes the raw modification query and returns the result.
 	Exec() DBResult
 	// IterateRaw executes the select query and iterates over the raw result
@@ -403,13 +402,13 @@ type DBRawQuery interface {
 
 type DBQuery interface {
 	// Create inserts a new row using the passed GORM-annotated struct.
-	Create(val interface{}) error
+	Create(val any) error
 	// Update updates an existing row using the primary key of the given
 	// GORM-annotated struct. Returns gorm.ErrRecordNotFound if a matching
 	// row does not exist.
-	Update(val interface{}) error
+	Update(val any) error
 	// Raw prepares a raw query.
-	Raw(sql string, values ...interface{}) DBRawQuery
+	Raw(sql string, values ...any) DBRawQuery
 }
 
 type DB interface {
@@ -487,7 +486,7 @@ type OLAPDBHandle interface {
 	FlushTestTargetStatuses(ctx context.Context, entries []*schema.TestTargetStatus) error
 	FlushUsages(ctx context.Context, entries []*schema.RawUsage) error
 	InsertAuditLog(ctx context.Context, entry *schema.AuditLog) error
-	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []interface{})
+	BucketFromUsecTimestamp(fieldName string, loc *time.Location, interval string) (string, []any)
 }
 
 type InvocationDB interface {
@@ -501,6 +500,9 @@ type InvocationDB interface {
 	LookupExpiredInvocations(ctx context.Context, cutoffTime time.Time, limit int) ([]*tables.Invocation, error)
 	LookupChildInvocations(ctx context.Context, parentRunID string) ([]string, error)
 	DeleteInvocation(ctx context.Context, invocationID string) error
+	// DeleteInvocations deletes the invocations and their execution rows and links
+	// in a single transaction. Missing IDs are ignored.
+	DeleteInvocations(ctx context.Context, invocationIDs []string) error
 	DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *UserInfo, invocationID string) error
 	FillCounts(ctx context.Context, log *telpb.TelemetryStat) error
 	SetNowFunc(now func() time.Time)
@@ -919,6 +921,8 @@ type GitProvider interface {
 	// commit SHA.
 	CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error
 
+	GetPullRequestData(ctx context.Context, accessToken, repoURL string, pullRequestNumber int64) (*WebhookData, error)
+
 	// TODO(bduffany): ListRepos
 }
 
@@ -983,6 +987,14 @@ type WebhookData struct {
 	// type (see config.PullRequestTrigger.Types).
 	// Ex: "opened", "synchronize", "ready_for_review"
 	PullRequestAction string
+
+	// CommentAuthor and CommentBody identify the author and contents
+	// of a pull request comment, if applicable.
+	CommentAuthor string
+	CommentBody   string
+
+	// PullRequestIsDraft is whether the pull request is a draft, if applicable.
+	PullRequestIsDraft bool
 
 	// ChangedFiles is the list of files changed by branch push events. Only
 	// populated for branch push events.
@@ -1663,12 +1675,6 @@ type ExecutionCollector interface {
 	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error
 	GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
 	DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error
-}
-
-// SuggestionService enables fetching of suggestions.
-type SuggestionService interface {
-	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
-	MultipleProvidersConfigured() bool
 }
 
 type Encryptor interface {

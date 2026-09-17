@@ -13,14 +13,14 @@ import (
 var (
 	// Used for type conversions between flags and normal go types
 	flagTypeToGoTypeMap = map[reflect.Type]reflect.Type{
-		flagTypeFromFlagFuncName("Bool"):     reflect.TypeOf((*bool)(nil)),
-		flagTypeFromFlagFuncName("Duration"): reflect.TypeOf((*time.Duration)(nil)),
-		flagTypeFromFlagFuncName("Float64"):  reflect.TypeOf((*float64)(nil)),
-		flagTypeFromFlagFuncName("Int"):      reflect.TypeOf((*int)(nil)),
-		flagTypeFromFlagFuncName("Int64"):    reflect.TypeOf((*int64)(nil)),
-		flagTypeFromFlagFuncName("Uint"):     reflect.TypeOf((*uint)(nil)),
-		flagTypeFromFlagFuncName("Uint64"):   reflect.TypeOf((*uint64)(nil)),
-		flagTypeFromFlagFuncName("String"):   reflect.TypeOf((*string)(nil)),
+		flagTypeFromFlagFuncName("Bool"):     reflect.TypeFor[*bool](),
+		flagTypeFromFlagFuncName("Duration"): reflect.TypeFor[*time.Duration](),
+		flagTypeFromFlagFuncName("Float64"):  reflect.TypeFor[*float64](),
+		flagTypeFromFlagFuncName("Int"):      reflect.TypeFor[*int](),
+		flagTypeFromFlagFuncName("Int64"):    reflect.TypeFor[*int64](),
+		flagTypeFromFlagFuncName("Uint"):     reflect.TypeFor[*uint](),
+		flagTypeFromFlagFuncName("Uint64"):   reflect.TypeFor[*uint64](),
+		flagTypeFromFlagFuncName("String"):   reflect.TypeFor[*string](),
 	}
 	goTypeToFlagTypeMap = invertMap(flagTypeToGoTypeMap)
 
@@ -54,7 +54,7 @@ func ZeroFlagValueFromType[T any]() flag.Value {
 	if !ok || t.Kind() != reflect.Pointer {
 		return nil
 	}
-	zero, ok := reflect.New(t.Elem()).Interface().(flag.Value)
+	zero, ok := reflect.TypeAssert[flag.Value](reflect.New(t.Elem()))
 	if !ok {
 		return nil
 	}
@@ -150,8 +150,8 @@ func ConvertFlagValue(value flag.Value) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if addr.CanConvert(reflect.TypeOf((*reflect.Value)(nil))) {
-		addr = *addr.Convert(reflect.TypeOf((*reflect.Value)(nil))).Interface().(*reflect.Value)
+	if addr.CanConvert(reflect.TypeFor[*reflect.Value]()) {
+		addr = *addr.Convert(reflect.TypeFor[*reflect.Value]()).Interface().(*reflect.Value)
 		if !addr.CanConvert(t) {
 			return nil, status.InternalErrorf("Flag of type %T with concrete type *reflect.Value wrapping type %T could not be converted to %s.", value, addr.Interface(), t)
 		}
@@ -263,8 +263,8 @@ func getDereferencedValueFrom[T any](flagset *flag.FlagSet, value flag.Value, na
 	if err != nil {
 		return Zero[T](), status.InternalErrorf("Error dereferencing flag %s: %v", name, err)
 	}
-	t := reflect.TypeOf((*T)(nil))
-	if t == reflect.TypeOf((*any)(nil)) {
+	t := reflect.TypeFor[*T]()
+	if t == reflect.TypeFor[*any]() {
 		return reflect.ValueOf(converted).Elem().Interface().(T), nil
 	}
 	v, ok := converted.(*T)
@@ -276,7 +276,7 @@ func getDereferencedValueFrom[T any](flagset *flag.FlagSet, value flag.Value, na
 
 // Zero returns a zero-value of the provided type.
 func Zero[T any]() T {
-	return *reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	return *reflect.New(reflect.TypeFor[T]()).Interface().(*T)
 }
 
 // ResetFlags resets all flags to their default values, as specified by
@@ -319,7 +319,7 @@ func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValue
 	// flag.Value interface's Set method, so it can be set with newValueString.
 	blankFlagValue := reflect.New(reflect.TypeOf(unwrapped).Elem()).Interface().(flag.Value)
 
-	if reflect.ValueOf(blankFlagValue).CanConvert(reflect.TypeOf((*reflect.Value)(nil))) {
+	if reflect.ValueOf(blankFlagValue).CanConvert(reflect.TypeFor[*reflect.Value]()) {
 		t, err := GetTypeForFlagValue(unwrapped)
 		if err != nil {
 			return status.InternalErrorf("Error getting type for copy of flag %s: %s", name, err)
@@ -329,7 +329,7 @@ func setWithOverride(flagset *flag.FlagSet, flagValue flag.Value, name, newValue
 		// reflect.Value instead of aliasing their value directly (such as, for
 		// example, JSONSliceFlag and JSONStructFlag) in order to correctly
 		// initialize them.
-		blankValueAddr := reflect.ValueOf(blankFlagValue).Convert(reflect.TypeOf((*reflect.Value)(nil))).Interface().(*reflect.Value)
+		blankValueAddr := reflect.ValueOf(blankFlagValue).Convert(reflect.TypeFor[*reflect.Value]()).Interface().(*reflect.Value)
 		*blankValueAddr = reflect.New(t.Elem())
 	}
 

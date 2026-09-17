@@ -653,7 +653,7 @@ func TestRemoteIPRulesDeduped(t *testing.T) {
 
 	// Issue several parallel checks to ensure there's only one outgoing RPC.
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		wg.Go(func() { require.NoError(t, irs.Check(allowedCtx, "GR1", "")) })
 	}
 	iprs.mu.Unlock()

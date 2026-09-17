@@ -458,6 +458,14 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			}
 		}
 
+		// If a VFS (FUSE) download failed, always return that as the command
+		// error so that the task can be retried (even if the task ignored the
+		// FS error and succeeded, it may have produced an incorrect result).
+		if err := r.Workspace.VFSError(); err != nil {
+			res.Error = err
+			res.ExitCode = commandutil.NoExitCode
+		}
+
 		// If the task reported an error, and it was OOM-killed, make sure to
 		// return the OOM error as the effective task error.
 		if oomErr := context.Cause(ctx); res.Error != nil && oom.IsError(oomErr) {
@@ -695,8 +703,7 @@ func (r *taskRunner) isCIRunner() bool {
 	task := r.task
 	r.p.mu.RUnlock()
 
-	args := task.GetCommand().GetArguments()
-	return len(args) > 0 && args[0] == "./buildbuddy_ci_runner"
+	return platform.IsCIRunnerCommand(task.GetCommand())
 }
 
 func (r *taskRunner) cleanupCIRunner(ctx context.Context) error {
@@ -1127,7 +1134,6 @@ func (p *pool) Warmup(ctx context.Context) {
 
 	eg, ctx := errgroup.WithContext(ctx)
 	for _, cfg := range WarmupConfigs() {
-		cfg := cfg
 		eg.Go(func() error {
 			return p.warmupImage(ctx, &cfg)
 		})
@@ -1475,8 +1481,7 @@ func (p *pool) take(ctx context.Context, key *rnpb.RunnerKey) *taskRunner {
 		return nil
 	}
 
-	for i := len(p.runners) - 1; i >= 0; i-- {
-		r := p.runners[i]
+	for _, r := range slices.Backward(p.runners) {
 		if key.GroupId != r.key.GroupId || r.getState() != paused {
 			continue
 		}

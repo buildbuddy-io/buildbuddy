@@ -419,7 +419,6 @@ func GetExecutionLogs(ctx context.Context, bsClient bspb.ByteStreamClient, insta
 	var mu sync.Mutex
 	eg, egctx := errgroup.WithContext(ctx)
 	for name, logFile := range serverLogs {
-		name := name
 		d := logFile.GetDigest()
 		if d == nil {
 			continue

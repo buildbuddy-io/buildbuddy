@@ -146,7 +146,7 @@ func derivedKey(groupID string, key *tables.EncryptionKeyVersion, kms interfaces
 
 func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfaces.DBHandle, kms interfaces.KMS) ([]byte, *sgpb.EncryptionMetadata, error) {
 	var query string
-	var args []interface{}
+	var args []any
 	if ck.KeyID != "" {
 		query = `
 			SELECT * FROM "EncryptionKeyVersions" ekv
@@ -154,14 +154,14 @@ func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfac
 			WHERE ek.group_id = ? 
 			AND ekv.encryption_key_id = ? AND ekv.version = ?
 		`
-		args = []interface{}{ck.GroupID, ck.KeyID, ck.Version}
+		args = []any{ck.GroupID, ck.KeyID, ck.Version}
 	} else {
 		query = `
 			SELECT * FROM "EncryptionKeyVersions" ekv
 			JOIN "EncryptionKeys" ek ON ekv.encryption_key_id = ek.encryption_key_id
 			WHERE ek.group_id = ?
 		`
-		args = []interface{}{ck.GroupID}
+		args = []any{ck.GroupID}
 	}
 
 	ekv := &tables.EncryptionKeyVersion{}
@@ -264,7 +264,7 @@ func (c *Crypter) reencryptKey(ctx context.Context, ekv *encryptionKeyVersionWit
 		WHERE encryption_key_id = ? AND version = ?
 	`
 	now := c.clock.Now()
-	args := []interface{}{encMasterKeyPortion, encGroupKeyPortion, now.UnixMicro(), now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
+	args := []any{encMasterKeyPortion, encGroupKeyPortion, now.UnixMicro(), now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
 	if err := c.dbh.NewQuery(ctx, "crypter_update_key_version").Raw(q, args...).Exec().Error; err != nil {
 		return err
 	}
@@ -329,7 +329,7 @@ func (c *Crypter) keyReencryptorIteration(cutoff time.Time) error {
 				WHERE encryption_key_id = ? AND version = ?
 			`
 		now := c.clock.Now()
-		args := []interface{}{now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
+		args := []any{now.UnixMicro(), ekv.EncryptionKeyID, ekv.Version}
 		if err := c.dbh.NewQuery(uCtx, "crypter_update_encryption_timestamp").Raw(q, args...).Exec().Error; err != nil {
 			log.Warningf("could not update attempt timestamp: %s", err)
 		}

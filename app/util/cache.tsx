@@ -59,6 +59,8 @@ type RequiredNonNullable<T> = { [k in keyof T]: NonNullable<T[k]> };
 export interface BytestreamURL extends RequiredNonNullable<resource.IResourceName> {
   /** Bytestream service address host or host:port. */
   address: string;
+
+  digest: Digest;
 }
 
 /**

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -522,6 +523,58 @@ type DirUsage struct {
 	UsedBytes  uint64
 	FreeBytes  uint64
 	AvailBytes uint64
+}
+
+// ResolveSizeBytes parses a size that is either an absolute number of bytes
+// (e.g. "10000000000") or a percentage of the total size of the filesystem
+// containing path (e.g. "80%"). If path does not exist yet, the closest
+// existing ancestor directory is used to look up the filesystem size.
+//
+// Absolute values are parsed the same way as an int64 flag, so Go-style digit
+// separators (e.g. "1_000_000_000") and base prefixes are accepted.
+func ResolveSizeBytes(value, path string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if !strings.HasSuffix(value, "%") {
+		n, err := strconv.ParseInt(value, 0, 64)
+		if err != nil {
+			return 0, status.InvalidArgumentErrorf("invalid size %q: expected a number of bytes or a percentage like \"80%%\"", value)
+		}
+		return n, nil
+	}
+	pct, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(value, "%")), 64)
+	if err != nil || math.IsNaN(pct) || pct <= 0 || pct > 100 {
+		return 0, status.InvalidArgumentErrorf("invalid size %q: percentage must be in (0, 100]", value)
+	}
+	fsPath, err := nearestExistingDir(path)
+	if err != nil {
+		return 0, err
+	}
+	usage, err := GetDirUsage(fsPath)
+	if err != nil {
+		return 0, status.WrapErrorf(err, "get filesystem size for %q", fsPath)
+	}
+	return int64(float64(usage.TotalBytes) * pct / 100), nil
+}
+
+// nearestExistingDir returns path if it exists, otherwise its closest existing
+// ancestor.
+func nearestExistingDir(path string) (string, error) {
+	p, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	for {
+		if _, err := os.Stat(p); err == nil {
+			return p, nil
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return "", status.NotFoundErrorf("no existing ancestor directory found for %q", path)
+		}
+		p = parent
+	}
 }
 
 // MoveFile attempts to rename the src file to the dest file. If the src and

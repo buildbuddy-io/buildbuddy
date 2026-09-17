@@ -44,10 +44,7 @@ func Monitor(pid int, listener Listener, processTerminated <-chan struct{}) *rep
 			ts.Update() // ignore error
 			listener(ts.Total())
 		}
-		pollInterval = time.Duration(float64(pollInterval) * statsPollBackoff)
-		if pollInterval > statsMaxPollInterval {
-			pollInterval = statsMaxPollInterval
-		}
+		pollInterval = min(time.Duration(float64(pollInterval)*statsPollBackoff), statsMaxPollInterval)
 	}
 }
 

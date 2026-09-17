@@ -10,7 +10,7 @@ PODMAN_STATIC_SHA256_AMD64 = "6a1c06b78d7dad15d8d7155a180874939a04bd39ce2f64726c
 PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8ebffeac424b0ba"
 
 # The bb CLI version used by //tools/lint for `bb fix` and `bb mod deps`.
-BB_CLI_VERSION = "5.0.333"
+BB_CLI_VERSION = "5.0.466"
 
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
@@ -34,9 +34,9 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
             'package(default_visibility = ["//visibility:public"])',
             'filegroup(name = "firecracker", srcs = ["release-{release}/firecracker-{release}"])',
             'filegroup(name = "jailer", srcs = ["release-{release}/jailer-{release}"])',
-        ]).format(release = "v1.15.1-x86_64"),
-        sha256 = "d4a32ab2322d887ca1bc4a4e7afa9cc35393e6362dfc2b3becb389d362e4275a",
-        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.15.1/firecracker-v1.15.1-x86_64.tgz"],
+        ]).format(release = "v1.16.2-x86_64"),
+        sha256 = "32e3cdcd4081f91fe2b024a266f57dcb3b4e5fec5033e0cb22467ad7f7820bda",
+        urls = ["https://github.com/firecracker-microvm/firecracker/releases/download/v1.16.2/firecracker-v1.16.2-x86_64.tgz"],
     )
     http_archive(
         name = "com_github_firecracker_microvm_firecracker_arm64",
@@ -194,27 +194,27 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-darwin-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-darwin-arm64"],
-        sha256 = "2db883718453f0437a7bcb408e889dbf8539cdc4d61c8ebc3807a1a88d02ff08",
+        name = "io_bazel_bazel-9.2.0-darwin-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-darwin-arm64"],
+        sha256 = "dd466352a3e4d3581b8898740ee1ff208866ccbe25f8d367c5dcb950219587e6",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-darwin-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-darwin-x86_64"],
-        sha256 = "6fd490084bdccf044d7a6d8360a26f8770fa09f4e624328efea292f493204930",
+        name = "io_bazel_bazel-9.2.0-darwin-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-darwin-x86_64"],
+        sha256 = "14c9bcb01303b38192e0e2895051c1bcf19bf89d7e416f5aeeeb48b6b624cfbf",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-linux-arm64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-linux-arm64"],
-        sha256 = "82d1163884e45a6a7ff764cc01197b1b1ed497000726b84dc4b47c1dfc8a2bb4",
+        name = "io_bazel_bazel-9.2.0-linux-arm64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-linux-arm64"],
+        sha256 = "049dd21f40ad979db11c3ee68c96a42ce75f1185e69ac61ab20de1501427a410",
         executable = True,
     )
     http_file(
-        name = "io_bazel_bazel-9.1.1-linux-x86_64",
-        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.1.1/bazel-9.1.1-linux-x86_64"],
-        sha256 = "857bed5d2756b4d998d3caebf2d941d13d434c4eda4b1d6d7dda205736c25a93",
+        name = "io_bazel_bazel-9.2.0-linux-x86_64",
+        urls = ["https://github.com/bazelbuild/bazel/releases/download/9.2.0/bazel-9.2.0-linux-x86_64"],
+        sha256 = "7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694",
         executable = True,
     )
     http_file(
@@ -242,6 +242,12 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         executable = True,
     )
     http_file(
+        name = "com_github_bazelbuild_bazelisk-bazelisk-windows-amd64",
+        urls = ["https://github.com/bazelbuild/bazelisk/releases/download/v1.25.0/bazelisk-windows-amd64.exe"],
+        sha256 = "641a3dfebd717703675f912917735c44b45cf6300bfdfb924537f3cfbffcdd92",
+        executable = True,
+    )
+    http_file(
         name = "org_kernel_git_linux_kernel-vmlinux",
         sha256 = "0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f",
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-x86_64-v5.15-0e1ec2bd6a3a6e5a50b220401dd14174eee234b532dcf1279777a181221d502f"],
@@ -262,28 +268,28 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-arm64",
         executable = True,
-        integrity = "sha256-NIFvkFPQj2UW9voLTzgbVup7WAC6vzJo3w316d1sKVI=",
+        integrity = "sha256-TknY15EfrnJ8ETCY5hrETfITJaibK8vv1KPZSTzHt6M=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-arm64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-x86_64",
         executable = True,
-        integrity = "sha256-B0rhObAwP/aGdtwnw7iZuCarOTS/jxp2eaUE8M67o5A=",
+        integrity = "sha256-uj3uG2RRSCx6w0DREhA3snFqXKBGX5a/zYp2BBYPBTk=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-darwin-x86_64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-linux-arm64",
         executable = True,
-        integrity = "sha256-08m6+utxtg0CrYDgeNz/ZkZprSLeTMkjSKe5BPD9SW8=",
+        integrity = "sha256-haHXS2dlsoFYYk8LXK31EBBoYBh0ZwrtQerUEAlFTb0=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-arm64".format(version = BB_CLI_VERSION)],
     )
 
     http_file(
         name = "io_buildbuddy_bb_cli-linux-x86_64",
         executable = True,
-        integrity = "sha256-TaoceuYO8XWwHFvEYAoEyBb2CvQsLnLIzVft9qwr5f0=",
+        integrity = "sha256-32GiCcxF7P+QWbsE4BzB28K5ihKHFcraKipUu03rpIU=",
         urls = ["https://github.com/buildbuddy-io/bazel/releases/download/{version}/bazel-{version}-linux-x86_64".format(version = BB_CLI_VERSION)],
     )
 

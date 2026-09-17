@@ -35,20 +35,21 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/open-feature/go-sdk/openfeature/memprovider"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
 var (
@@ -157,7 +158,7 @@ func TestBasicReadWrite(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -228,7 +229,7 @@ func TestGetPeerLookupMetrics(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		// Do a write, then Get and GetWithMetadata it back through each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, distributedCaches[i%3].Set(ctx, rn, buf))
@@ -380,7 +381,7 @@ func TestReadWrite_Compression(t *testing.T) {
 			}
 			distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				// Do a write, and ensure it was written to all nodes.
 				rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 				writeRN := rn.CloneVT()
@@ -725,7 +726,7 @@ func TestReadWriteWithFailedNode(t *testing.T) {
 	// still have reference to them via the Nodes list.
 	waitForShutdown(dc3)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -795,7 +796,7 @@ func TestReadWriteWithFailedAndRestoredNode(t *testing.T) {
 	assert.Nil(t, err)
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -860,7 +861,7 @@ func TestBackfill(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -1176,7 +1177,7 @@ func TestContainsMulti(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1292,7 +1293,7 @@ func TestFindMissing(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1304,7 +1305,7 @@ func TestFindMissing(t *testing.T) {
 	// Generate some more digests, but don't write them to the cache.
 	resourcesNotWritten := make([]*rspb.ResourceName, 0)
 	digestsNotWritten := make([]*repb.Digest, 0)
-	for i := 0; i < 70; i++ {
+	for range 70 {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		resourcesNotWritten = append(resourcesNotWritten, rn)
 		digestsNotWritten = append(digestsNotWritten, rn.GetDigest())
@@ -1389,7 +1390,7 @@ func TestGetMulti(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1411,7 +1412,7 @@ func TestGetMulti(t *testing.T) {
 
 	// Generate some more digests, but don't write them to the cache.
 	resourcesNotWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 70; i++ {
+	for range 70 {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 		resourcesNotWritten = append(resourcesNotWritten, rn)
 	}
@@ -1525,7 +1526,7 @@ func TestHintedHandoff(t *testing.T) {
 	assert.Nil(t, err)
 
 	digestsWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		j := i % len(distributedCaches)
@@ -1615,7 +1616,7 @@ func TestDelete(t *testing.T) {
 	}
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -1673,7 +1674,7 @@ func TestDelete_NonExistentFile(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, _ := testdigest.RandomCASResourceBuf(t, 100)
 
 		// Do a delete on a file that does not exist.
@@ -1796,7 +1797,7 @@ func TestExtraNodes(t *testing.T) {
 	waitForReady(t, config3.ListenAddr)
 
 	written := make([]*rspb.ResourceName, 0)
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		// Do a write - should be visible from all nodes
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc1.Set(ctx, rn, buf); err != nil {
@@ -1918,7 +1919,7 @@ func TestExtraNodes(t *testing.T) {
 	waitForReady(t, config8.ListenAddr)
 	waitForReady(t, config9.ListenAddr)
 
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		// Do a write - should be written to new nodes
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc6.Set(ctx, rn, buf); err != nil {
@@ -1950,6 +1951,9 @@ func TestExtraNodes(t *testing.T) {
 }
 
 func TestExtraNodesReadOnly(t *testing.T) {
+	// Preserve coverage of migrations from the legacy ring to SHA256.
+	flags.Set(t, "cache.distributed_cache.consistent_hash_function", "CRC32")
+	flags.Set(t, "cache.distributed_cache.consistent_hash_vnodes", 100)
 	// Use new nodes for reads ONLY. No content should be written.
 	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", true)
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
@@ -1994,7 +1998,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 
 	// Write some data.
 	written := make([]*rspb.ResourceName, 0)
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc1.Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2103,7 +2107,7 @@ func TestExtraNodesReadOnly(t *testing.T) {
 
 	// Now write some new data. It should only be written to the old nodes
 	// because the newly added nodes are read-only.
-	for i := 0; i < numDigestsToWrite; i++ {
+	for i := range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := caches[i%len(caches)].Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2127,6 +2131,9 @@ func TestExtraNodesReadOnly(t *testing.T) {
 }
 
 func TestExtraNodesReadWrite(t *testing.T) {
+	// Preserve coverage of migrations from the legacy ring to SHA256.
+	flags.Set(t, "cache.distributed_cache.consistent_hash_function", "CRC32")
+	flags.Set(t, "cache.distributed_cache.consistent_hash_vnodes", 100)
 	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", false)
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_vnodes", 10000)
@@ -2170,7 +2177,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 
 	// Write some data.
 	written := make([]*rspb.ResourceName, 0)
-	for i := 0; i < numDigestsToWrite; i++ {
+	for range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := dc1.Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2277,7 +2284,7 @@ func TestExtraNodesReadWrite(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < numDigestsToWrite; i++ {
+	for i := range numDigestsToWrite {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := caches[i%len(caches)].Set(ctx, rn, buf); err != nil {
 			require.NoError(t, err)
@@ -2300,11 +2307,12 @@ func TestReadThroughLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	// Use the flag's default lookaside size, as server registration does.
 	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
-		LookasideCacheSizeBytes: 100_000,
+		LookasideCacheSizeBytes: *lookasideCacheSizeBytes,
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.
@@ -2335,7 +2343,7 @@ func TestReadThroughLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -2461,7 +2469,7 @@ func TestGetMultiLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 
 	resourcesWritten := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure it was written to all nodes.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -2560,7 +2568,7 @@ func TestLookasideLimits(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 1_000_000)
@@ -2631,7 +2639,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		rn.InstanceName = digest.TreeCacheRemoteInstanceName
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
@@ -2668,7 +2676,7 @@ func TestTreeCacheLookaside(t *testing.T) {
 	// Now write some other AC content (without the special tree-cache
 	// remote instance name), and verify it's not put in the lookaside
 	// cache.
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -2742,7 +2750,7 @@ func TestReadThroughLocalCache(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node,
 		// both via the base cache and distributed cache for each node.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -2819,7 +2827,7 @@ func TestGetMultiReadThroughLocalCache(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -2899,7 +2907,7 @@ func TestGetMultiReadThroughLocalCacheSkipsMutableAC(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Plain AC entries (not tree-cache) are mutable and must not be
 		// served from a read-through local cache.
 		rn, buf := testdigest.RandomACResourceBuf(t, 100)
@@ -2970,7 +2978,7 @@ func TestGetMultiReadThroughLocalCacheWithLookaside(t *testing.T) {
 
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		if err := distributedCaches[i%3].Set(ctx, rn, buf); err != nil {
 			t.Fatal(err)
@@ -3028,7 +3036,7 @@ func newReadthroughPeerSelectionCache(t *testing.T) *Cache {
 }
 
 func digestWithNoSameZonePrimary(t *testing.T, c *Cache) *repb.Digest {
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		buf := []byte(fmt.Sprintf("readthrough-peer-selection-%d", i))
 		d, err := digest.Compute(bytes.NewReader(buf), repb.DigestFunction_SHA256)
 		require.NoError(t, err)
@@ -3384,7 +3392,7 @@ func TestNoEncryptedContentsInLookaside(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	allResources := make([]*rspb.ResourceName, 0)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		// Do a write, and ensure we can read it back from each node via the
 		// distributed cache.
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
@@ -3478,7 +3486,7 @@ func TestLookasidePartitionIsolation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read from partition A multiple times to populate the lookaside cache.
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		reader, err := dc.Reader(ctx1, rnA, 0, 0)
 		require.NoError(t, err)
 		gotA, err := io.ReadAll(reader)
@@ -3698,17 +3706,15 @@ func (pc *partitionedCache) RegisterAtimeUpdater(updater interfaces.DigestOperat
 
 func fakeKubePod(name, namespace, ip string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-			Labels:    map[string]string{"app": "cache"},
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "apps/v1",
-					Kind:       "ReplicaSet",
-					Name:       "cache-rs",
-					Controller: func() *bool { b := true; return &b }(),
-				},
+		Name:      name,
+		Namespace: namespace,
+		Labels:    map[string]string{"app": "cache"},
+		OwnerReferences: []metav1.OwnerReference{
+			{
+				APIVersion: "apps/v1",
+				Kind:       "ReplicaSet",
+				Name:       "cache-rs",
+				Controller: func() *bool { b := true; return &b }(),
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -3726,10 +3732,8 @@ func fakeKubePod(name, namespace, ip string) *corev1.Pod {
 
 func fakeKubeReplicaSet(namespace string) *appsv1.ReplicaSet {
 	return &appsv1.ReplicaSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cache-rs",
-			Namespace: namespace,
-		},
+		Name:      "cache-rs",
+		Namespace: namespace,
 		Spec: appsv1.ReplicaSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"app": "cache"},
@@ -3808,7 +3812,7 @@ func TestKubeDiscoveryReadWrite(t *testing.T) {
 	distributedCaches := []interfaces.Cache{dc1, dc2, dc3}
 	baseCaches := []interfaces.Cache{memoryCache1, memoryCache2, memoryCache3}
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		err := distributedCaches[i%3].Set(ctx, rn, buf)
 		require.NoError(t, err)
@@ -3939,12 +3943,28 @@ type referenceMemoryCache struct {
 	byteCommits     int
 	refWrites       int
 	refWritesCloned int
+	refWritesShared int
+	// shareReferences marks the references this node hands out as shared,
+	// standing in for a node whose records don't own their blobs.
+	shareReferences bool
+}
+
+func (c *referenceMemoryCache) setShareReferences(share bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.shareReferences = share
 }
 
 func (c *referenceMemoryCache) counts() (byteCommits, refWrites, refWritesCloned int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.byteCommits, c.refWrites, c.refWritesCloned
+}
+
+func (c *referenceMemoryCache) sharedRefWrites() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.refWritesShared
 }
 
 func (c *referenceMemoryCache) makeReference(r *rspb.ResourceName, name string, sizeBytes int64) *refpb.Reference {
@@ -3981,7 +4001,11 @@ func (c *referenceMemoryCache) ReadReference(ctx context.Context, r *rspb.Resour
 	if !ok {
 		return nil, status.NotFoundError("not in shared storage")
 	}
-	return c.makeReference(r, name, int64(len(data))), nil
+	ref := c.makeReference(r, name, int64(len(data)))
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().Shared = c.shareReferences
+	return ref, nil
 }
 
 func (c *referenceMemoryCache) CreateReference(ctx context.Context, r *rspb.ResourceName) (interfaces.ReferenceWriter, error) {
@@ -4040,6 +4064,9 @@ func (c *referenceMemoryCache) WriteReference(ctx context.Context, ref *refpb.Re
 	if mustClone {
 		c.refWritesCloned++
 	}
+	if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetShared() {
+		c.refWritesShared++
+	}
 	return nil
 }
 
@@ -4075,22 +4102,49 @@ func (w *referenceMemoryCacheWriter) Close() error {
 // provider must be installed before any servers start (background goroutines
 // read it without synchronization).
 func setWriteReferenceExperiments(t *testing.T, writeReferences bool, verifyReferences bool) {
-	provider := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
-		"distributed_cache.write_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": writeReferences},
-		},
-		"distributed_cache.verify_write_gcs_references": {
-			State:          memprovider.Enabled,
-			DefaultVariant: "on",
-			Variants:       map[string]any{"on": verifyReferences},
-		},
+	setReferenceExperiments(t, map[string]bool{
+		"distributed_cache.write_gcs_references":        writeReferences,
+		"distributed_cache.verify_write_gcs_references": verifyReferences,
 	})
+}
+
+func setReferenceExperiments(t *testing.T, flags map[string]bool) {
+	memFlags := make(map[string]memprovider.InMemoryFlag, len(flags))
+	for name, value := range flags {
+		memFlags[name] = memprovider.InMemoryFlag{
+			State:          memprovider.Enabled,
+			DefaultVariant: "on",
+			Variants:       map[string]any{"on": value},
+		}
+	}
+	provider := memprovider.NewInMemoryProvider(memFlags)
 	require.NoError(t, openfeature.SetProviderAndWait(provider))
 	t.Cleanup(func() {
 		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
 	})
+}
+
+// backfillMetrics holds successful backfills by request type: how many, and
+// the total digest size.
+type backfillMetrics struct {
+	count map[string]float64
+	size  map[string]float64
+}
+
+func backfillCounts(t *testing.T) backfillMetrics {
+	sumOK := func(metric *prometheus.CounterVec) map[string]float64 {
+		out := map[string]float64{}
+		for _, v := range testmetrics.CounterValues(t, metric) {
+			if v.Labels[metrics.StatusHumanReadableLabel] == codes.OK.String() {
+				out[v.Labels[metrics.DistributedCacheWriteRequestType]] += v.Value
+			}
+		}
+		return out
+	}
+	return backfillMetrics{
+		count: sumOK(metrics.DistributedCacheBackfillCount),
+		size:  sumOK(metrics.DistributedCacheBackfillSizeBytes),
+	}
 }
 
 func writeVerificationCounts(t *testing.T) map[string]float64 {
@@ -4111,10 +4165,10 @@ func TestWriteByReference(t *testing.T) {
 	require.NoError(t, err)
 	env.SetExperimentFlagProvider(fp)
 
-	newCluster := func(t *testing.T, n int) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore) {
+	newCluster := func(t *testing.T, n int, configure ...func(*Options)) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore) {
 		store := &sharedBlobStore{blobs: map[string][]byte{}}
 		var peers []string
-		for i := 0; i < n; i++ {
+		for range n {
 			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
 		}
 		baseConfig := Options{
@@ -4123,6 +4177,9 @@ func TestWriteByReference(t *testing.T) {
 			// its own copy to keep the peers iteration order stable.
 			Nodes:              slices.Clone(peers),
 			DisableLocalLookup: true,
+		}
+		for _, fn := range configure {
+			fn(&baseConfig)
 		}
 		var dcs []*Cache
 		var locals []*referenceMemoryCache
@@ -4171,6 +4228,65 @@ func TestWriteByReference(t *testing.T) {
 		require.Equal(t, 0, byteCommits)
 		require.Equal(t, 3, refWrites)
 		require.Equal(t, 2, refWritesCloned) // Only 2 of the 3 should clone.
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("share flag distributes shared references without cloning", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": true,
+			"distributed_cache.share_gcs_references": true,
+		})
+		_, dcs, locals, store := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+
+		// The blob was staged once and every node refers to it as shared,
+		// so none of them cloned it.
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, refWritesCloned := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		require.Equal(t, 0, refWritesCloned)
+		for _, l := range locals {
+			require.Equal(t, 1, l.sharedRefWrites())
+		}
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("share flag with local writes", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": true,
+			"distributed_cache.share_gcs_references": true,
+		})
+		// With 3 nodes and a replication factor of 3, the coordinator is
+		// always a write peer, so its reference write goes through the local
+		// path instead of the peer protocol.
+		_, dcs, locals, store := newCluster(t, 3, func(o *Options) { o.EnableLocalWrites = true })
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+
+		require.Equal(t, 1, store.uploadCount())
+		byteCommits, refWrites, refWritesCloned := totals(locals)
+		require.Equal(t, 0, byteCommits)
+		require.Equal(t, 3, refWrites)
+		require.Equal(t, 0, refWritesCloned)
+		for _, l := range locals {
+			require.Equal(t, 1, l.sharedRefWrites())
+		}
+		assertReplicated(t, locals, dcs, rn)
+	})
+
+	t.Run("share flag alone leaves the byte path alone", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references": false,
+			"distributed_cache.share_gcs_references": true,
+		})
+		_, dcs, locals, _ := newCluster(t, 3)
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		byteCommits, refWrites, _ := totals(locals)
+		require.Equal(t, 3, byteCommits)
+		require.Equal(t, 0, refWrites)
 		assertReplicated(t, locals, dcs, rn)
 	})
 
@@ -4278,7 +4394,7 @@ func TestWriteByReference(t *testing.T) {
 	t.Run("caches without reference support write bytes", func(t *testing.T) {
 		setWriteReferenceExperiments(t, true, false)
 		var peers []string
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
 		}
 		baseConfig := Options{
@@ -4308,5 +4424,210 @@ func TestWriteByReference(t *testing.T) {
 		for _, dc := range dcs {
 			readAndCompareDigest(t, ctx, dc, rn)
 		}
+	})
+}
+
+func TestBackfillByReference(t *testing.T) {
+	env, _, ctx := getEnvAuthAndCtx(t)
+	singleCacheSizeBytes := int64(1000000)
+
+	// Install the experiment flag provider once, before any servers start;
+	// subtests control flag values through the openfeature provider.
+	fp, err := experiments.NewFlagProvider("")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	// newCluster starts a 3-node cluster and returns it with a blob written
+	// by bytes to every node, so each node holds it locally and it is in
+	// shared storage.
+	newCluster := func(t *testing.T) ([]string, []*Cache, []*referenceMemoryCache, *sharedBlobStore, *rspb.ResourceName) {
+		store := &sharedBlobStore{blobs: map[string][]byte{}}
+		var peers []string
+		for range 3 {
+			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))
+		}
+		baseConfig := Options{
+			ReplicationFactor:  3,
+			Nodes:              slices.Clone(peers),
+			DisableLocalLookup: true,
+		}
+		var dcs []*Cache
+		var locals []*referenceMemoryCache
+		for _, peer := range peers {
+			local := &referenceMemoryCache{Cache: newMemoryCache(t, singleCacheSizeBytes), store: store}
+			config := baseConfig
+			config.ListenAddr = peer
+			dcs = append(dcs, startNewDCache(t, env, config, local))
+			locals = append(locals, local)
+		}
+		for _, peer := range peers {
+			waitForReady(t, peer)
+		}
+		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
+		require.NoError(t, dcs[0].Set(ctx, rn, buf))
+		for _, local := range locals {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 1, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		return peers, dcs, locals, store, rn
+	}
+	// backfill copies rn from peers[0] to peers[1] and peers[2] via dcs[0].
+	backfill := func(t *testing.T, peers []string, dcs []*Cache, rn *rspb.ResourceName) {
+		ps := peerset.New([]string{peers[1], peers[2], peers[0]}, nil)
+		for p := ps.GetNextPeer(); p != ""; p = ps.GetNextPeer() {
+		}
+		dcs[0].backfillPeers(ctx, dcs[0].getBackfillOrders(rn, ps))
+	}
+	assertBackfilled := func(t *testing.T, locals []*referenceMemoryCache, rn *rspb.ResourceName) {
+		for i, local := range locals {
+			exists, err := local.Contains(ctx, rn)
+			require.NoError(t, err)
+			require.True(t, exists, "blob was not backfilled to peer %d", i)
+			readAndCompareDigest(t, ctx, local, rn)
+		}
+	}
+	// assertBackfillCounts checks that the successful backfills recorded
+	// since before, by mechanism, are exactly the two destinations' backfills
+	// of rn by the expected mechanism.
+	assertBackfillCounts := func(t *testing.T, before backfillMetrics, requestType string, rn *rspb.ResourceName) {
+		after := backfillCounts(t)
+		for _, rt := range []string{"reference", "bytes"} {
+			wantCount, wantSize := before.count[rt], before.size[rt]
+			if rt == requestType {
+				wantCount += 2
+				wantSize += 2 * float64(rn.GetDigest().GetSizeBytes())
+			}
+			require.Equal(t, wantCount, after.count[rt], "successful %q backfills", rt)
+			require.Equal(t, wantSize, after.size[rt], "successful %q backfill bytes", rt)
+		}
+	}
+
+	t.Run("forwards the source's reference", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references":    false,
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, store, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		uploadsBefore := store.uploadCount()
+		countsBefore := backfillCounts(t)
+
+		backfill(t, peers, dcs, rn)
+
+		// Each destination cloned the source's blob from shared storage;
+		// nothing was re-uploaded and no bytes were written.
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, refWritesCloned := local.counts()
+			require.Equal(t, 1, byteCommits) // The initial Set.
+			require.Equal(t, 1, refWrites)
+			require.Equal(t, 1, refWritesCloned)
+		}
+		require.Equal(t, uploadsBefore, store.uploadCount())
+		assertBackfilled(t, locals, rn)
+		assertBackfillCounts(t, countsBefore, "reference", rn)
+	})
+
+	t.Run("forwards a shared reference without cloning", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references":    false,
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, store, rn := newCluster(t)
+		locals[0].setShareReferences(true)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		uploadsBefore := store.uploadCount()
+		countsBefore := backfillCounts(t)
+
+		backfill(t, peers, dcs, rn)
+
+		// The source's blob is shared, so each destination took the
+		// reference as is instead of cloning the blob.
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, refWritesCloned := local.counts()
+			require.Equal(t, 1, byteCommits) // The initial Set.
+			require.Equal(t, 1, refWrites)
+			require.Equal(t, 0, refWritesCloned)
+			require.Equal(t, 1, local.sharedRefWrites())
+		}
+		require.Equal(t, uploadsBefore, store.uploadCount())
+		assertBackfilled(t, locals, rn)
+		assertBackfillCounts(t, countsBefore, "reference", rn)
+	})
+
+	t.Run("falls back to bytes when the source sends bytes", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references":    false,
+			"distributed_cache.read_gcs_references":     false,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, _, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		countsBefore := backfillCounts(t)
+
+		backfill(t, peers, dcs, rn)
+
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 2, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		assertBackfilled(t, locals, rn)
+		assertBackfillCounts(t, countsBefore, "bytes", rn)
+	})
+
+	t.Run("falls back to bytes when the reference write fails", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references":    false,
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": true,
+		})
+		peers, dcs, locals, _, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		// The source still mints references from the shared store, but the
+		// destinations cannot resolve them, so their reference writes fail.
+		locals[1].store = &sharedBlobStore{blobs: map[string][]byte{}}
+		locals[2].store = &sharedBlobStore{blobs: map[string][]byte{}}
+		countsBefore := backfillCounts(t)
+
+		backfill(t, peers, dcs, rn)
+
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 2, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		assertBackfilled(t, locals, rn)
+		// A repair that falls back is counted once, under the mechanism
+		// that succeeded.
+		assertBackfillCounts(t, countsBefore, "bytes", rn)
+	})
+
+	t.Run("experiment off copies bytes", func(t *testing.T) {
+		setReferenceExperiments(t, map[string]bool{
+			"distributed_cache.write_gcs_references":    false,
+			"distributed_cache.read_gcs_references":     true,
+			"distributed_cache.backfill_gcs_references": false,
+		})
+		peers, dcs, locals, _, rn := newCluster(t)
+		require.NoError(t, locals[1].Delete(ctx, rn))
+		require.NoError(t, locals[2].Delete(ctx, rn))
+		countsBefore := backfillCounts(t)
+
+		backfill(t, peers, dcs, rn)
+
+		for _, local := range locals[1:] {
+			byteCommits, refWrites, _ := local.counts()
+			require.Equal(t, 2, byteCommits)
+			require.Equal(t, 0, refWrites)
+		}
+		assertBackfilled(t, locals, rn)
+		assertBackfillCounts(t, countsBefore, "bytes", rn)
 	})
 }

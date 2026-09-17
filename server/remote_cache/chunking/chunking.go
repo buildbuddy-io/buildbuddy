@@ -16,7 +16,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -47,25 +46,13 @@ const (
 	defaultMaxChunkedWriteSizeBytes = -1
 )
 
-func AvgChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
-	if efp == nil {
-		return *avgChunkSizeBytes
-	}
-	if v := efp.Int64(ctx, "cache.avg_chunk_size_override", 0); v > 0 {
-		if v < 1024 || v > 1024*1024 || v&(v-1) != 0 {
-			alert.CtxUnexpectedEvent(ctx, "invalid_cache_avg_chunk_size_override", "Ignoring invalid cache.avg_chunk_size_override %d", v)
-			return *avgChunkSizeBytes
-		}
-		return v
-	}
+func AvgChunkSizeBytes() int64 {
 	return *avgChunkSizeBytes
 }
 
 // FastCDCParams returns the FastCDC2020 parameters if chunking is configured.
-// The avg chunk size may vary by group. This is safe because manifests are AC
-// entries, and AC entries are namespaced by group in the cache key.
-func FastCDCParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
-	v := AvgChunkSizeBytes(ctx, efp)
+func FastCDCParams() *repb.FastCdc2020Params {
+	v := AvgChunkSizeBytes()
 	if v <= 0 {
 		return nil
 	}
@@ -76,15 +63,15 @@ func FastCDCParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *
 }
 
 func FastCDCWriteParams(ctx context.Context, efp interfaces.ExperimentFlagProvider) *repb.FastCdc2020Params {
-	params := FastCDCParams(ctx, efp)
+	params := FastCDCParams()
 	if params != nil {
 		params.BuildbuddyMaxChunkedWriteSizeBytes = MaxWriteSizeBytes(ctx, efp)
 	}
 	return params
 }
 
-func MaxChunkSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
-	return AvgChunkSizeBytes(ctx, efp) * 4
+func MaxChunkSizeBytes() int64 {
+	return AvgChunkSizeBytes() * 4
 }
 
 // MaxSupportedChunkSizeBytes is the process-wide chunk size buffer consumers
@@ -105,8 +92,8 @@ func MaxCompressedChunkReadSizeBytes() int64 {
 // at most MaxChunkSizeBytes(). Presence and AC validation should instead use
 // MaxChunkSizeBytes(), so blobs below the current write threshold are not
 // accepted as manifest-only.
-func MinChunkedReadFallbackSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
-	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes(ctx, efp))
+func MinChunkedReadFallbackSizeBytes() int64 {
+	return min(*minChunkedReadFallbackSizeBytes, MaxChunkSizeBytes())
 }
 
 func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvider) int64 {
@@ -117,7 +104,7 @@ func MaxWriteSizeBytes(ctx context.Context, efp interfaces.ExperimentFlagProvide
 }
 
 func ShouldUploadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, d *repb.Digest) bool {
-	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(ctx, efp), MaxWriteSizeBytes(ctx, efp))
+	return ShouldUploadChunkedWithMax(d, AvgChunkSizeBytes(), MaxWriteSizeBytes(ctx, efp))
 }
 
 // ShouldUploadChunkedWithMax returns whether a blob is eligible for chunked upload.
@@ -140,23 +127,14 @@ func ValidateConfig() error {
 	return nil
 }
 
-func Enabled(ctx context.Context, efp interfaces.ExperimentFlagProvider) bool {
-	return efp == nil || efp.Boolean(ctx, "cache.chunking_enabled", true)
-}
-
-func ShouldReadChunked(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
-	// Check digest first since it's faster than reading efp flag
-	// and very likely to be false.
-	return digestSizeBytes > MinChunkedReadFallbackSizeBytes(ctx, efp) &&
-		limit == 0 &&
-		Enabled(ctx, efp)
+func ShouldReadChunked(digestSizeBytes, offset, limit int64) bool {
+	return digestSizeBytes > MinChunkedReadFallbackSizeBytes() && limit == 0
 }
 
 func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
-	return digestSizeBytes > MaxChunkSizeBytes(ctx, efp) &&
+	return digestSizeBytes > MaxChunkSizeBytes() &&
 		limit == 0 &&
-		(efp == nil ||
-			(Enabled(ctx, efp) && efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true)))
+		(efp == nil || efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
 }
 
 type WriteFunc func([]byte) error

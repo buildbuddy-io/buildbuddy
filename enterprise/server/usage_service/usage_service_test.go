@@ -43,10 +43,8 @@ func testUsageUser(userID, groupID string, caps ...cappb.Capability) *testauth.T
 
 func TestGetUsage(t *testing.T) {
 	group := &tables.Group{
-		GroupID: "GR1",
-		Model: tables.Model{
-			CreatedAtUsec: time.Date(2023, 7, 9, 0, 0, 0, 0, time.UTC).UnixMicro(),
-		},
+		GroupID:       "GR1",
+		CreatedAtUsec: time.Date(2023, 7, 9, 0, 0, 0, 0, time.UTC).UnixMicro(),
 	}
 	ctx := context.Background()
 	env := testenv.GetTestEnv(t)
@@ -66,27 +64,29 @@ func TestGetUsage(t *testing.T) {
 			UsageID:         "UG1",
 			GroupID:         "GR1",
 			PeriodStartUsec: time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC).UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 13, CASCacheHits: 10_000},
+			Invocations:     13,
+			CASCacheHits:    10_000,
 		},
 		{
 			UsageID:         "UG1",
 			GroupID:         "GR1",
 			PeriodStartUsec: time.Date(2024, 2, 4, 1, 0, 0, 0, time.UTC).UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 15, CASCacheHits: 12_000},
+			Invocations:     15,
+			CASCacheHits:    12_000,
 		},
 		// GR1, previous usage period
 		{
 			UsageID:         "UG2",
 			GroupID:         "GR1",
 			PeriodStartUsec: time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC).UnixMicro(),
-			UsageCounts:     tables.UsageCounts{CASCacheHits: 77},
+			CASCacheHits:    77,
 		},
 		// GR2, current usage period
 		{
 			UsageID:         "UG3",
 			GroupID:         "GR2",
 			PeriodStartUsec: time.Date(2024, 2, 3, 0, 0, 0, 0, time.UTC).UnixMicro(),
-			UsageCounts:     tables.UsageCounts{Invocations: 107},
+			Invocations:     107,
 		},
 	} {
 		err = env.GetDBHandle().NewQuery(ctx, "test").Create(row)

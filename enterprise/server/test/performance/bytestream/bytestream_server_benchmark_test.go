@@ -34,7 +34,7 @@ import (
 )
 
 var (
-	benchAll = flag.Bool("all", false, "Run all benchmarks, or just a sample if this is false. Defaults to false to reduce CI time.")
+	benchAll = flag.Bool("all", false, "Run all benchmarks, or just a subset if this is false. Defaults to false to reduce CI time.")
 )
 
 // Mostly copied from bytestream_server_test.go
@@ -64,8 +64,8 @@ func (c *slowCache) Writer(ctx context.Context, r *rspb.ResourceName) (interface
 	}
 	if rf, ok := w.(io.ReaderFrom); ok {
 		return &slowWriterReaderFrom{
-			slowWriter: slowWriter{CommittedWriteCloser: w},
-			ReaderFrom: rf,
+			CommittedWriteCloser: w,
+			ReaderFrom:           rf,
 		}, nil
 	}
 	return &slowWriter{
@@ -222,7 +222,7 @@ func BenchmarkWrite(b *testing.B) {
 			},
 		} {
 			for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
-				if !*benchAll && (!parallel || compressor == repb.Compressor_IDENTITY || test.cacheType == "slow") {
+				if !*benchAll && (compressor == repb.Compressor_IDENTITY || test.cacheType != "fast") {
 					continue
 				}
 				b.Run(fmt.Sprintf("parallel=%v/cache_type=%v/compressor=%v", parallel, test.cacheType, compressor), func(b *testing.B) {
@@ -358,7 +358,7 @@ func BenchmarkRead(b *testing.B) {
 			},
 		} {
 			for _, compressor := range []repb.Compressor_Value{repb.Compressor_IDENTITY, repb.Compressor_ZSTD} {
-				if !*benchAll && (!parallel || compressor == repb.Compressor_IDENTITY || test.cacheType == "slow") {
+				if !*benchAll && (compressor == repb.Compressor_IDENTITY || test.cacheType != "fast") {
 					continue
 				}
 				b.Run(fmt.Sprintf("parallel=%v/cache_type=%v/compressor=%v", parallel, test.cacheType, compressor), func(b *testing.B) {
@@ -467,14 +467,5 @@ func chunkSizes() []int {
 			4 * 1000 * 1000,
 		}
 	}
-	return []int{
-		16 * 1000,
-		16 * 1024,
-		32 * 1000,
-		128 * 1000,
-		256 * 1000,
-		256 * 1024,
-		512 * 1000,
-		1000 * 1000,
-	}
+	return []int{256 * 1000}
 }

@@ -68,7 +68,7 @@ func TestStringSliceFlag(t *testing.T) {
 	assert.Equal(t, []string{"yes", "si", "hai", "yes", "si", "hai"}, testSlice)
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "", reflect.New(reflect.TypeOf((*StringSliceFlag)(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeFor[StringSliceFlag]()).Interface().(flag.Value).String())
 }
 
 func TestStructSliceFlag(t *testing.T) {
@@ -117,7 +117,7 @@ func TestStructSliceFlag(t *testing.T) {
 	assert.Equal(t, []testStruct{{}, {Field: 1}, {Meadow: "Paradise"}, {}, {Field: 1}, {Meadow: "Paradise"}}, testSlice)
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*JSONSliceFlag[[]testStruct])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "[]", reflect.New(reflect.TypeFor[JSONSliceFlag[[]testStruct]]()).Interface().(flag.Value).String())
 }
 
 func TestProtoSliceFlag(t *testing.T) {
@@ -166,7 +166,7 @@ func TestProtoSliceFlag(t *testing.T) {
 	assert.Equal(t, []*timestamppb.Timestamp{{}, {Seconds: 1}, {Nanos: 99}, {}, {Seconds: 1}, {Nanos: 99}}, testSlice)
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*JSONSliceFlag[[]*timestamppb.Timestamp])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "[]", reflect.New(reflect.TypeFor[JSONSliceFlag[[]*timestamppb.Timestamp]]()).Interface().(flag.Value).String())
 }
 
 func TestJSONStructFlag(t *testing.T) {
@@ -189,7 +189,7 @@ func TestJSONStructFlag(t *testing.T) {
 	assert.Equal(t, testStruct{Field: 5, Meadow: "runnymede"}, (flags.Lookup(flagName).Value.(*JSONStructFlag[testStruct]).Struct()))
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "{}", reflect.New(reflect.TypeOf((*JSONStructFlag[testStruct])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "{}", reflect.New(reflect.TypeFor[JSONStructFlag[testStruct]]()).Interface().(flag.Value).String())
 }
 
 func TestJSONMapFlag(t *testing.T) {
@@ -229,7 +229,7 @@ func TestJSONMapFlag(t *testing.T) {
 	assert.Error(t, err)
 
 	// `String` should not panic on zero-constructed flag.
-	assert.Equal(t, "{}", reflect.New(reflect.TypeOf((*JSONMapFlag[map[string]string])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "{}", reflect.New(reflect.TypeFor[JSONMapFlag[map[string]string]]()).Interface().(flag.Value).String())
 }
 
 func TestFlagAlias(t *testing.T) {
@@ -253,10 +253,10 @@ func TestFlagAlias(t *testing.T) {
 	assert.Equal(t, "string", asf.(common.NameAliasable).AliasedName())
 	asfType, err := common.GetTypeForFlagValue(asf)
 	require.NoError(t, err)
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), asfType)
+	assert.Equal(t, reflect.TypeFor[*string](), asfType)
 	asfYAMLType, err := flagyaml.GetYAMLTypeForFlagValue(asf)
 	require.NoError(t, err)
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), asfYAMLType)
+	assert.Equal(t, reflect.TypeFor[*string](), asfYAMLType)
 
 	aasf := flags.Lookup("string_alias").Value
 	assert.Equal(t, "meow", aasf.String())
@@ -264,10 +264,10 @@ func TestFlagAlias(t *testing.T) {
 	assert.Equal(t, "string", aasf.(common.NameAliasable).AliasedName())
 	aasfType, err := common.GetTypeForFlagValue(asf)
 	require.NoError(t, err)
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasfType)
+	assert.Equal(t, reflect.TypeFor[*string](), aasfType)
 	aasfYAMLType, err := flagyaml.GetYAMLTypeForFlagValue(asf)
 	require.NoError(t, err)
-	assert.Equal(t, reflect.TypeOf((*string)(nil)), aasfYAMLType)
+	assert.Equal(t, reflect.TypeFor[*string](), aasfYAMLType)
 
 	p := Alias[string](flags, "string_alias_alias")
 	assert.Equal(t, aas, p)
@@ -527,9 +527,9 @@ deprecated_string_slice:
 	assert.True(t, ok)
 
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "[]", reflect.New(reflect.TypeOf((*tags.TaggedFlagValue[[]testStruct, *JSONSliceFlag[[]testStruct]])(nil)).Elem()).Interface().(flag.Value).String())
-	assert.Equal(t, "{}", reflect.New(reflect.TypeOf((*tags.TaggedFlagValue[struct{}, *JSONStructFlag[struct{}]])(nil)).Elem()).Interface().(flag.Value).String())
-	assert.Equal(t, "", reflect.New(reflect.TypeOf((*tags.TaggedFlagValue[string, flag.Value])(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "[]", reflect.New(reflect.TypeFor[tags.TaggedFlagValue[[]testStruct, *JSONSliceFlag[[]testStruct]]]()).Interface().(flag.Value).String())
+	assert.Equal(t, "{}", reflect.New(reflect.TypeFor[tags.TaggedFlagValue[struct{}, *JSONStructFlag[struct{}]]]()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeFor[tags.TaggedFlagValue[string, flag.Value]]()).Interface().(flag.Value).String())
 }
 
 func TestDeprecate(t *testing.T) {
@@ -594,5 +594,5 @@ deprecated_string_slice:
 
 func TestURLFlag(t *testing.T) {
 	// `String` should not panic on zero-constructed flag
-	assert.Equal(t, "", reflect.New(reflect.TypeOf((*URLFlag)(nil)).Elem()).Interface().(flag.Value).String())
+	assert.Equal(t, "", reflect.New(reflect.TypeFor[URLFlag]()).Interface().(flag.Value).String())
 }

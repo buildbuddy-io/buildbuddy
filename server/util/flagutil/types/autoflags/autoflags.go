@@ -19,7 +19,7 @@ import (
 // output, or use `DeprecatedTag(migrationPlan)` to mark a flag that has been
 // deprecated and provide its migration plan.
 func New[T any](flagset *flag.FlagSet, name string, defaultValue T, usage string, tags ...flagtags.Taggable) *T {
-	value := reflect.New(reflect.TypeOf((*T)(nil)).Elem()).Interface().(*T)
+	value := reflect.New(reflect.TypeFor[T]()).Interface().(*T)
 	Var(flagset, value, name, defaultValue, usage, tags...)
 	return value
 }

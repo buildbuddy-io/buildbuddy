@@ -15,6 +15,7 @@ go_library(
         "//server/interfaces",
         "//server/metrics",
         "//server/real_environment",
+        "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/util/authutil",
         "//server/util/cdc",
@@ -61,5 +62,6 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//metadata",
+        "@org_golang_google_grpc//status",
     ],
 )

@@ -27,6 +27,9 @@ import (
 )
 
 const (
+	// CIRunnerExecutableBaseName is the platform-independent CI runner binary name.
+	CIRunnerExecutableBaseName = "buildbuddy_ci_runner"
+
 	// BuildBuddy ubuntu images. When adding images here, also update
 	// the image aliases in enterprise/server/workflow/service/service.go
 	Ubuntu16_04Image = "gcr.io/flame-public/executor-docker-default:enterprise-v1.6.0"
@@ -890,13 +893,24 @@ func AllowsRemoteSnapshots(cmd *repb.Command, platform, platformOverrides *repb.
 // or a GitHub Actions runner task. These commands are longer-running and may
 // themselves invoke bazel.
 func IsCIRunner(cmd *repb.Command, platform *repb.Platform) bool {
-	if len(cmd.GetArguments()) > 0 && cmd.GetArguments()[0] == "./buildbuddy_ci_runner" {
+	if IsCIRunnerCommand(cmd) {
 		return true
 	}
 	if FindValue(platform, "github-actions-runner-labels") != "" {
 		return true
 	}
 	return false
+}
+
+// IsCIRunnerCommand returns whether the command invokes the BuildBuddy CI runner.
+func IsCIRunnerCommand(cmd *repb.Command) bool {
+	args := cmd.GetArguments()
+	if len(args) == 0 {
+		return false
+	}
+	commandPath := strings.ReplaceAll(args[0], `\`, "/")
+	return commandPath == "./"+CIRunnerExecutableBaseName ||
+		commandPath == "./"+CIRunnerExecutableBaseName+".exe"
 }
 
 func Retryable(task *repb.ExecutionTask) bool {

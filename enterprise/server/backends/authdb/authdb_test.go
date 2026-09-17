@@ -46,7 +46,7 @@ func TestSessionInsertUpdateDeleteRead(t *testing.T) {
 
 	// Insert many sessions; should all succeed
 	const nSessions = 10
-	for i := 0; i < nSessions; i++ {
+	for i := range nSessions {
 		sid := strconv.Itoa(i)
 		s := &tables.Session{
 			SubID:        "SubID-" + sid,
@@ -72,7 +72,7 @@ func TestSessionInsertUpdateDeleteRead(t *testing.T) {
 	require.NoError(t, err)
 
 	// Read back all the sessions, including the updated and deleted ones.
-	for i := 0; i < nSessions; i++ {
+	for i := range nSessions {
 		sid := strconv.Itoa(i)
 		s, err := adb.ReadSession(ctx, sid)
 		if sid == sidToDelete {

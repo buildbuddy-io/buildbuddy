@@ -5,8 +5,6 @@ on:
     branches:
       - "master"
   pull_request:
-    branches:
-      - "*"
 
 jobs:
   test:
@@ -47,18 +45,21 @@ jobs:
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
 
-          bazel test --test_tag_filters=-performance,-docker \
+          bazel test --config=tests-linux-arm64 \
             -- \
             //enterprise/server/remote_execution/... \
             //enterprise/server/test/integration/remote_execution/... \
             -//enterprise/server/remote_execution/containers/firecracker/... \
-            -//enterprise/server/test/integration/remote_execution:remote_execution_test
+            -//enterprise/server/test/integration/remote_execution:remote_execution_test \
+            //app/util:shlex_test
 
           # Run a separate bazel invocation to invoke tests with the "docker" tag.
           # TODO: improve platform setup so that we can run this whenever the
           # host has podman available.
-          bazel test --test_tag_filters=+docker \
+          bazel test --config=tests-docker \
             //enterprise/server/test/integration/podman:podman_test
 
           # Make sure the executor binary builds.
-          bazel build //enterprise/server/cmd/executor
+          bazel build \
+            //enterprise/server/cmd/executor \
+            //enterprise/server/cmd/executor:executor_linux_arm64_static

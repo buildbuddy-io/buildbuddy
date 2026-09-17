@@ -56,8 +56,8 @@ var (
 	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
 	nodes                        = flag.Slice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
 	enableKubernetesDiscovery    = flag.Bool("cache.distributed_cache.kubernetes_discovery", false, "If true, use the Kubernetes API to discover peer cache nodes by finding pods owned by the same controller (Deployment or StatefulSet). The pod must have RBAC permissions to get/list/watch pods and get replicasets/statefulsets.")
-	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
-	consistentHashVNodes         = flag.Int("cache.distributed_cache.consistent_hash_vnodes", 100, "The number of copies (virtual nodes) of each peer on the consistent hash ring")
+	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
+	consistentHashVNodes         = flag.Int("cache.distributed_cache.consistent_hash_vnodes", 10000, "The number of copies (virtual nodes) of each peer on the consistent hash ring")
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
@@ -65,11 +65,11 @@ var (
 	enableBackfill               = flag.Bool("cache.distributed_cache.enable_backfill", true, "If enabled, digests written to avoid unavailable nodes will be backfilled when those nodes return")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
 	newNodes                     = flag.Slice("cache.distributed_cache.new_nodes", []string{}, "The new nodeset to add data too. Useful for migrations. ** Enterprise only **")
-	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
-	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 100, "The number of copies of each peer on the new consistent hash ring")
+	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
+	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 10000, "The number of copies of each peer on the new consistent hash ring")
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
 
-	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
+	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 1_000_000_000, "Maximum size in bytes of the in-memory lookaside cache, which avoids disk lookups for frequently accessed small objects. Set to 0 to disable.")
 	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "The maximum TTL of items served from the lookaside cache. When this flag is set to a duration >0, items will only be served from the lookaside cache if they were added less than this long ago. If it is set to a duration <=0, no TTL check will occur before serving items from the lookaside cache. This value should be << atime_update_threshold when used in the authoritative cache.")
 	maxLookasideEntryBytes   = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
 	maxHintedHandoffsPerPeer = flag.Int64("cache.distributed_cache.max_hinted_handoffs_per_peer", 100_000, "The maximum number of hinted handoffs to keep in memory. Each hinted handoff is a digest (~64 bytes), prefix, and peer (40 bytes). So keeping around 100000 of these means an extra 10MB per peer.")
@@ -1004,9 +1004,7 @@ func (c *Cache) remoteGetMulti(ctx context.Context, peer string, rns []*rspb.Res
 		// ones, instead instead of copying into an empty map.
 		return remoteResults, nil
 	}
-	for k, v := range remoteResults {
-		results[k] = v
-	}
+	maps.Copy(results, remoteResults)
 	return results, nil
 }
 
@@ -1083,6 +1081,19 @@ func (c *Cache) remoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 	return c.distributedProxy.RemoteWriter(ctx, peer, handoffPeer, r)
 }
 
+// remoteReferenceWriter is remoteWriter's counterpart for writing r to peer
+// by reference; the write happens when the returned writer is committed.
+func (c *Cache) remoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
+	if c.opts.EnableLocalWrites && peer == c.opts.ListenAddr {
+		refCache, ok := c.local.(interfaces.ReferenceCache)
+		if !ok {
+			return nil, status.UnimplementedErrorf("the local cache (%T) cannot accept references", c.local)
+		}
+		return &localReferenceWriteCloser{ctx: ctx, refCache: refCache, ref: ref, rn: r, mustClone: mustClone}, nil
+	}
+	return c.distributedProxy.RemoteReferenceWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+}
+
 func (c *Cache) remoteDelete(ctx context.Context, peer string, r *rspb.ResourceName) error {
 	if !c.opts.DisableLocalLookup && peer == c.opts.ListenAddr {
 		return c.local.Delete(ctx, r)
@@ -1102,15 +1113,23 @@ func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
+	w, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
 	if err != nil {
 		return err
 	}
-	defer rwc.Close()
-	if _, err := io.Copy(rwc, r); err != nil {
+	defer w.Close()
+	_, rIsWriterTo := r.(io.WriterTo)
+	_, wIsReaderFrom := w.(io.ReaderFrom)
+	var buf []byte
+	if !rIsWriterTo && !wIsReaderFrom {
+		// If neither optimization applies, specify a bigger buffer than
+		// io.Copy's default 32KB, to reduce the number of round trips.
+		buf = make([]byte, digest.SafeBufferSize(rn, 256*1000))
+	}
+	if _, err := io.CopyBuffer(w, r, buf); err != nil {
 		return err
 	}
-	return rwc.Commit()
+	return w.Commit()
 }
 
 func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source string, dest string) error {
@@ -1137,11 +1156,44 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 	//    appropriate.
 	// 3) A GetWithMetadata call, which doesn't write to those caches, so as
 	//    with FindMissing/Contains, we shouldn't either.
+	//
+	// If the source responds with a reference, forward it to the destination
+	// instead of reading the bytes through this node. Only immutable CAS
+	// entries go by reference; AC entries are generally small.
+	if c.backfillByReference(ctx) && rn.GetCacheType() == rspb.CacheType_CAS {
+		ref, r, err := c.distributedProxy.RemoteReaderOrReference(ctx, source, rn)
+		if err != nil {
+			return recordBackfill(rn, "bytes", err)
+		}
+		if ref == nil {
+			defer r.Close()
+			return recordBackfill(rn, "bytes", c.copyBytes(ctx, r, dest, rn))
+		}
+		err = c.copyReference(ctx, ref, dest, rn)
+		if err == nil {
+			return recordBackfill(rn, "reference", nil)
+		}
+		c.log.CtxDebugf(ctx, "Error backfilling %s to peer %s by reference, falling back to bytes: %s", rn.GetDigest().GetHash(), dest, err)
+	}
 	r, err := c.distributedProxy.RemoteReader(ctx, source, rn, 0, 0)
 	if err != nil {
-		return err
+		return recordBackfill(rn, "bytes", err)
 	}
 	defer r.Close()
+	return recordBackfill(rn, "bytes", c.copyBytes(ctx, r, dest, rn))
+}
+
+func recordBackfill(rn *rspb.ResourceName, requestType string, err error) error {
+	labels := prometheus.Labels{
+		metrics.DistributedCacheWriteRequestType: requestType,
+		metrics.StatusHumanReadableLabel:         status.MetricsLabel(err),
+	}
+	metrics.DistributedCacheBackfillCount.With(labels).Inc()
+	metrics.DistributedCacheBackfillSizeBytes.With(labels).Add(float64(rn.GetDigest().GetSizeBytes()))
+	return err
+}
+
+func (c *Cache) copyBytes(ctx context.Context, r io.Reader, dest string, rn *rspb.ResourceName) error {
 	rwc, err := c.remoteWriter(ctx, dest, "", rn)
 	if err != nil {
 		return err
@@ -1151,6 +1203,26 @@ func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source stri
 		return err
 	}
 	return rwc.Commit()
+}
+
+// copyReference writes rn to dest by reference. The source peer keeps its own
+// record of the referenced blob, so unless the blob is shared, dest must clone.
+func (c *Cache) copyReference(ctx context.Context, ref *refpb.Reference, dest string, rn *rspb.ResourceName) error {
+	mustClone := !ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetShared()
+	rwc, err := c.remoteReferenceWriter(ctx, dest, "", rn, ref, mustClone)
+	if err != nil {
+		return err
+	}
+	defer rwc.Close()
+	return rwc.Commit()
+}
+
+func (c *Cache) backfillByReference(ctx context.Context) bool {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "distributed_cache.backfill_gcs_references", false)
 }
 
 type backfillOrder struct {
@@ -1358,8 +1430,6 @@ func (c *Cache) FindMissing(ctx context.Context, resources []*rspb.ResourceName)
 		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
-			peer := peer
-			resources := resources
 			eg.Go(func() error {
 				peerRsp, err := c.remoteFindMissing(gCtx, peer, resources)
 				peerMissingHashes := make(map[string]struct{})
@@ -1522,8 +1592,6 @@ func (c *Cache) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (m
 		lookups++
 		eg, gCtx := errgroup.WithContext(ctx)
 		for peer, resources := range peerRequests {
-			peer := peer
-			resources := resources
 			eg.Go(func() error {
 				peerRsp, err := c.remoteGetMulti(gCtx, peer, resources)
 				mu.Lock()
@@ -1616,7 +1684,6 @@ func (mc *multiWriteCloser) SetReference(ref *refpb.Reference) {
 func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 	var eg errgroup.Group
 	for _, wc := range mc.peerClosers {
-		wc := wc
 		eg.Go(func() error {
 			n, err := wc.Write(data)
 			if err != nil {
@@ -1635,8 +1702,6 @@ func (mc *multiWriteCloser) Write(data []byte) (int, error) {
 func (mc *multiWriteCloser) Commit() error {
 	var eg errgroup.Group
 	for peer, wc := range mc.peerClosers {
-		wc := wc
-		peer := peer
 		eg.Go(func() error {
 			if err := wc.Commit(); err != nil {
 				return err
@@ -1685,7 +1750,7 @@ func (c *Cache) referenceWriteMode(ctx context.Context) (sendReference bool, sen
 	if fp.Boolean(ctx, "distributed_cache.verify_write_gcs_references", false) {
 		return true, true
 	}
-	if fp.Boolean(ctx, "distributed_cache.write_gcs_references", false) {
+	if fp.Boolean(ctx, "distributed_cache.write_gcs_references", true) {
 		return true, false
 	}
 	return false, true
@@ -1909,10 +1974,26 @@ func (l *localReferenceWriteCloser) Close() error {
 	return nil
 }
 
+func (c *Cache) shareGCSReferences(ctx context.Context) bool {
+	fp := c.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, "distributed_cache.share_gcs_references", false)
+}
+
 // referenceMultiWriter is like byteMultiWriter, but the peers receive only
 // the reference; committing the returned writer performs the reference
 // writes.
 func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.ReferenceCache, r *rspb.ResourceName, ref *refpb.Reference) (interfaces.CommittedWriteCloser, error) {
+	shared := false
+	if c.shareGCSReferences(ctx) {
+		if ref.GetMetadata().GetStorageMetadata().GetGcsMetadata() != nil {
+			ref = ref.CloneVT()
+			ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().Shared = true
+			shared = true
+		}
+	}
 	refMustBeCloned := false
 	return c.openMultiWriter(ctx, r, func(peer, hintedHandoff string) (interfaces.CommittedWriteCloser, error) {
 		var wc interfaces.CommittedWriteCloser
@@ -1925,8 +2006,11 @@ func (c *Cache) referenceMultiWriter(ctx context.Context, refCache interfaces.Re
 				return nil, err
 			}
 		}
-		// At most one peer can own the reference. Other peers must clone.
-		refMustBeCloned = true
+		// Unless the blob is shared, at most one peer can own the reference
+		// and other peers must clone.
+		if !shared {
+			refMustBeCloned = true
+		}
 		return wc, nil
 	})
 }

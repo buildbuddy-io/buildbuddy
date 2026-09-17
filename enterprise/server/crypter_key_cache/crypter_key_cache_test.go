@@ -273,7 +273,7 @@ func TestAlreadyCanceledContextDoesNotPoisonCache(t *testing.T) {
 	// There is some singleflighting happening internally, which involves some
 	// background goroutines. Run several iterations to try to trigger different
 	// race conditions.
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		// Use a fresh cache each iteration to ensure we initiate a new
 		// singleflighted request. Note that the cache TTL is effectively
 		// infinite since we never advance the clock.
@@ -358,25 +358,21 @@ func TestRaciness(t *testing.T) {
 	var wg sync.WaitGroup
 	numGoroutines := 100
 
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numGoroutines {
+		wg.Go(func() {
 			key, err := cache.EncryptionKey(ctx)
 			require.NoError(t, err)
 			require.Equal(t, expectedKey, key.Key)
-		}()
+		})
 	}
 	wg.Wait()
 
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numGoroutines {
+		wg.Go(func() {
 			key, err := cache.DecryptionKey(ctx, expectedMetadata)
 			require.NoError(t, err)
 			require.Equal(t, expectedKey, key.Key)
-		}()
+		})
 	}
 	wg.Wait()
 }

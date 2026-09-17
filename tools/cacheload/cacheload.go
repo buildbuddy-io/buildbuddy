@@ -261,7 +261,7 @@ func main() {
 			writeQPSCounter.Inc()
 
 			if *readQPS > 0 {
-				for i := 0; i < readsPerWrite; i++ {
+				for range readsPerWrite {
 					select {
 					case writtenDigests <- d:
 					default:

@@ -1,12 +1,20 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//cli:__subpackages__"])
+# gazelle:default_visibility //cli:__subpackages__,//enterprise:__subpackages__,//server:__subpackages__
+package(default_visibility = [
+    "//cli:__subpackages__",
+    "//enterprise:__subpackages__",
+    "//server:__subpackages__",
+])
 
 go_library(
     name = "bazel_command",
     srcs = ["bazel_command.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/parser/bazel_command",
-    deps = ["//server/util/lib/set"],
+    deps = [
+        "//cli/cli_command",
+        "//server/util/lib/set",
+    ],
 )
 
 go_test(

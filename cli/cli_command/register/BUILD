@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -12,7 +12,6 @@ go_library(
         "//cli/agent",
         "//cli/agent/agentflags",
         "//cli/analyze",
-        "//cli/ask",
         "//cli/box",
         "//cli/cli_command",
         "//cli/detect",
@@ -29,6 +28,7 @@ go_library(
         "//cli/remote_download",
         "//cli/remotebazel",
         "//cli/search",
+        "//cli/secrets",
         "//cli/ssh",
         "//cli/ssh_server",
         "//cli/ui",
@@ -36,5 +36,15 @@ go_library(
         "//cli/upload",
         "//cli/versioncmd",
         "//cli/view",
+    ],
+)
+
+go_test(
+    name = "register_test",
+    srcs = ["register_test.go"],
+    deps = [
+        ":register",
+        "//cli/cli_command",
+        "@com_github_stretchr_testify//require",
     ],
 )

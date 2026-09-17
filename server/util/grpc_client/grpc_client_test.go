@@ -51,14 +51,8 @@ func requireTraffic(t *testing.T, percent, numRequests, margin, actual int) {
 	} else if percent == 100 {
 		require.Equal(t, numRequests, actual, fmt.Sprintf("Expected server receiving 100%% of traffic to receive %d requests (actually received %d)", numRequests, actual))
 	} else {
-		lowerBound := int(math.Floor(float64(numRequests)*float64(percent)/100.0)) - margin
-		if lowerBound < 0 {
-			lowerBound = 0
-		}
-		upperBound := int(math.Ceil(float64(numRequests)*float64(percent)/100.0)) + margin
-		if upperBound > numRequests {
-			upperBound = numRequests
-		}
+		lowerBound := max(int(math.Floor(float64(numRequests)*float64(percent)/100.0))-margin, 0)
+		upperBound := min(int(math.Ceil(float64(numRequests)*float64(percent)/100.0))+margin, numRequests)
 		require.True(t, actual <= upperBound && actual >= lowerBound,
 			fmt.Sprintf("Expected server receiving %d%% of traffic to receive between [%d, %d] requests (actually received %d)", percent, lowerBound, upperBound, actual))
 	}
@@ -95,7 +89,7 @@ func TestClientConnPoolSplitter(t *testing.T) {
 		require.NoError(t, err)
 
 		splitterClient := pspb.NewApiClient(splitter)
-		for i := 0; i < numRequests; i++ {
+		for range numRequests {
 			_, err := splitterClient.Ping(ctx, &pspb.PingRequest{})
 			require.NoError(t, err)
 		}

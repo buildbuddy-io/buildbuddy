@@ -11,7 +11,7 @@ go_library(
         "//cli/bazelisk",
         "//cli/config",
         "//cli/log",
-        "//cli/parser",
+        "//cli/parser/bazel_command",
         "//cli/storage",
         "//cli/terminal",
         "//cli/workspace",

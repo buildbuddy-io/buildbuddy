@@ -521,6 +521,8 @@ func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, ev
 		return a.handlePullRequestEvent(ctx, eventType, event)
 	case *github.PullRequestReviewEvent:
 		return a.handlePullRequestReviewEvent(ctx, eventType, event)
+	case *github.IssueCommentEvent:
+		return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
 	default:
 		// Event type not yet handled
 		return nil
@@ -1068,10 +1070,10 @@ func (a *GitHubApp) CreateRepo(ctx context.Context, req *rppb.CreateRepoRequest)
 			organization = req.Owner
 		}
 		_, _, err := githubClient.Repositories.Create(ctx, organization, &github.Repository{
-			Name:        github.String(req.Name),
-			Description: github.String(req.Description),
-			Private:     github.Bool(req.Private),
-			AutoInit:    github.Bool(req.Template == ""),
+			Name:        new(req.Name),
+			Description: new(req.Description),
+			Private:     new(req.Private),
+			AutoInit:    new(req.Template == ""),
 		})
 		if err != nil {
 			return nil, err
@@ -1319,11 +1321,39 @@ func (a *GitHubApp) createInstallationToken(ctx context.Context, installationID 
 	if err != nil {
 		return nil, err
 	}
-	t, res, err := client.CreateInstallationToken(ctx, installationID, nil)
-	if err := checkResponse(res, err); err != nil {
+	t, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (*github.InstallationToken, error) {
+		t, res, err := client.CreateInstallationToken(ctx, installationID, nil)
+		if err != nil {
+			if !isRetryableInstallationTokenError(res, err) {
+				return nil, retry.NonRetryableError(err)
+			}
+			return nil, err
+		}
+		return t, nil
+	})
+	if err != nil {
 		return nil, status.UnauthenticatedErrorf("failed to create installation token: %s", status.Message(err))
 	}
 	return t, nil
+}
+
+func isRetryableInstallationTokenError(res *github.Response, err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	// Transport errors, including TCP read timeouts, generally don't have an
+	// HTTP response and are safe to retry.
+	if res == nil {
+		return true
+	}
+	statusCode := res.StatusCode
+	if statusCode == http.StatusRequestTimeout || statusCode == http.StatusTooManyRequests || statusCode >= 500 {
+		return true
+	}
+	// Don't retry any 400 error codes, other than rate limit errors.
+	var rateLimitErr *github.RateLimitError
+	var abuseRateLimitErr *github.AbuseRateLimitError
+	return errors.As(err, &rateLimitErr) || errors.As(err, &abuseRateLimitErr)
 }
 
 func (a *GitHubApp) authorizeUserInstallationAccess(ctx context.Context, userToken string, installationID int64) error {
@@ -1866,10 +1896,8 @@ func (a *GitHubApp) GetGithubCommits(ctx context.Context, req *ghpb.GetGithubCom
 	}
 
 	commits, _, err := client.Repositories.ListCommits(ctx, req.Owner, req.Repo, &github.CommitsListOptions{
-		SHA: req.Sha,
-		ListOptions: github.ListOptions{
-			PerPage: int(req.PerPage),
-		},
+		SHA:     req.Sha,
+		PerPage: int(req.PerPage),
 	})
 	if err != nil {
 		return nil, err
@@ -2054,7 +2082,7 @@ func (a *GitHubApp) CreateGithubPullRequestComment(ctx context.Context, req *ghp
 			PullRequestID:       githubv4.NewID(req.GetPullId()),
 			PullRequestReviewID: githubv4.NewID(reviewId),
 			Path:                githubv4.String(req.GetPath()),
-			Line:                githubv4.NewInt(githubv4.Int(int(req.GetLine()))),
+			Line:                new(githubv4.Int(int(req.GetLine()))),
 			Side:                &side,
 			Body:                githubv4.String(req.GetBody()),
 		}
@@ -2354,7 +2382,7 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 		}
 		input := githubv4.AddPullRequestReviewInput{
 			PullRequestID: req.GetPullRequestId(),
-			Body:          githubv4.NewString(githubv4.String(replyBody)),
+			Body:          new(githubv4.String(replyBody)),
 			Event:         &event,
 		}
 		err := graphqlClient.Mutate(ctx, &m, input, nil)
@@ -2372,7 +2400,7 @@ func (a *GitHubApp) SendGithubPullRequestReview(ctx context.Context, req *ghpb.S
 
 	input := githubv4.SubmitPullRequestReviewInput{
 		PullRequestReviewID: githubv4.NewID(reviewID),
-		Body:                githubv4.NewString(githubv4.String(replyBody)),
+		Body:                new(githubv4.String(replyBody)),
 		Event:               event,
 	}
 	err = graphqlClient.Mutate(ctx, &m, input, nil)
@@ -2517,7 +2545,7 @@ func (a *GitHubApp) GetGithubPullRequestDetails(ctx context.Context, req *ghpb.G
 	eg, gCtx := errgroup.WithContext(ctx)
 
 	graph := &prDetailsQuery{}
-	vars := map[string]interface{}{
+	vars := map[string]any{
 		"repoOwner":  githubv4.String(req.GetOwner()),
 		"repoName":   githubv4.String(req.GetRepo()),
 		"pullNumber": githubv4.Int(req.GetPull()),
@@ -2769,10 +2797,10 @@ func (a *GitHubApp) getIncomingAndOutgoingPRs(ctx context.Context, username stri
 	eg, gCtx := errgroup.WithContext(ctx)
 	incomingGraph := &prSearchQuery{}
 	outgoingGraph := &prSearchQuery{}
-	incomingVars := map[string]interface{}{
+	incomingVars := map[string]any{
 		"searchQuery": githubv4.String(fmt.Sprintf("is:open is:pr user-review-requested:%s archived:false draft:false", username)),
 	}
-	outgoingVars := map[string]interface{}{
+	outgoingVars := map[string]any{
 		"searchQuery": githubv4.String(fmt.Sprintf("is:open is:pr author:%s archived:false draft:false", username)),
 	}
 

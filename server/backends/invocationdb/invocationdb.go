@@ -60,17 +60,25 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		// Insert worked; we're done.
 		return true, nil
 	}
+	// Missing API key rows are placeholders, not invocation attempts. If the
+	// insert conflicted, do not let the placeholder overwrite an existing row.
+	if ti.InvocationStatus == int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS) {
+		return false, nil
+	}
 	// Insert failed due to conflict; update the existing row instead.
 	created := false
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		existing := &tables.Invocation{}
 		err := tx.NewQuery(ctx, "invocationdb_find_existing_attempt").Raw(`
-				SELECT attempt FROM "Invocations"
-				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
+				SELECT attempt, invocation_status FROM "Invocations"
+				WHERE invocation_id = ? AND invocation_status <> ?
+				AND (invocation_status = ? OR updated_at_usec > ?)
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
 			int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+			int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS),
 			tx.NowFunc().Add(-invocationReconnectWindow).UnixMicro(),
-		).Take(ti)
+		).Take(existing)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// The invocation either succeeded or is past the reconnect
@@ -80,13 +88,14 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 			return err
 		}
 
-		// ti had Attempt populated with the previous attempt value, so update it.
-		if ti.Attempt == 0 {
+		if existing.InvocationStatus == int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS) {
+			ti.Attempt = 1
+		} else if existing.Attempt == 0 {
 			// This invocation was attempted before we added Attempt count, this is at
 			// least the second attempt.
 			ti.Attempt = 2
 		} else {
-			ti.Attempt += 1
+			ti.Attempt = existing.Attempt + 1
 		}
 		result = tx.GORM(ctx, "invocationdb_update_invocation_attempt").Updates(ti)
 		created = result.RowsAffected > 0
@@ -258,7 +267,7 @@ func (d *InvocationDB) FillCounts(ctx context.Context, stat *telpb.TelemetryStat
 }
 
 func (d *InvocationDB) DeleteInvocation(ctx context.Context, invocationID string) error {
-	return d.deleteInvocation(ctx, d.h, invocationID)
+	return d.DeleteInvocations(ctx, []string{invocationID})
 }
 
 func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authenticatedUser *interfaces.UserInfo, invocationID string) error {
@@ -294,20 +303,27 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 	})
 }
 
-func (d *InvocationDB) deleteInvocation(ctx context.Context, tx interfaces.DB, invocationID string) error {
-	if err := tx.NewQuery(ctx, "invocationdb_delete_invocation").Raw(
-		`DELETE FROM "Invocations" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
-		return err
+func (d *InvocationDB) DeleteInvocations(ctx context.Context, invocationIDs []string) error {
+	if len(invocationIDs) == 0 {
+		return nil
 	}
-	if err := tx.NewQuery(ctx, "invocationdb_delete_executions").Raw(
-		`DELETE FROM "Executions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
-		return err
+	args := make([]any, len(invocationIDs))
+	for i, id := range invocationIDs {
+		args[i] = id
 	}
-	if err := tx.NewQuery(ctx, "invocationdb_delete_execution_links").Raw(
-		`DELETE FROM "InvocationExecutions" WHERE invocation_id = ?`, invocationID).Exec().Error; err != nil {
-		return err
-	}
-	return nil
+	where := ` WHERE invocation_id IN (?` + strings.Repeat(",?", len(args)-1) + `)`
+	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		if err := tx.NewQuery(ctx, "invocationdb_delete_invocations").Raw(
+			`DELETE FROM "Invocations"`+where, args...).Exec().Error; err != nil {
+			return err
+		}
+		if err := tx.NewQuery(ctx, "invocationdb_delete_executions").Raw(
+			`DELETE FROM "Executions"`+where, args...).Exec().Error; err != nil {
+			return err
+		}
+		return tx.NewQuery(ctx, "invocationdb_delete_execution_links").Raw(
+			`DELETE FROM "InvocationExecutions"`+where, args...).Exec().Error
+	})
 }
 
 func (d *InvocationDB) SetNowFunc(now func() time.Time) {

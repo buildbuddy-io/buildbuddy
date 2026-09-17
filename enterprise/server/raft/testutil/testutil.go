@@ -347,16 +347,16 @@ func (tp *TestingProposer) SyncPropose(ctx context.Context, session *dbcl.Sessio
 	return entries[0].Result, nil
 }
 
-func (tp *TestingProposer) SyncRead(ctx context.Context, rangeID uint64, query interface{}) (interface{}, error) {
+func (tp *TestingProposer) SyncRead(ctx context.Context, rangeID uint64, query any) (any, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 func (tp *TestingProposer) ReadIndex(rangeID uint64, timeout time.Duration) (*dragonboat.RequestState, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
-func (tp *TestingProposer) ReadLocalNode(rs *dragonboat.RequestState, query interface{}) (interface{}, error) {
+func (tp *TestingProposer) ReadLocalNode(rs *dragonboat.RequestState, query any) (any, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
-func (tp *TestingProposer) StaleRead(rangeID uint64, query interface{}) (interface{}, error) {
+func (tp *TestingProposer) StaleRead(rangeID uint64, query any) (any, error) {
 	return nil, status.UnimplementedError("not implemented in testingProposer")
 }
 

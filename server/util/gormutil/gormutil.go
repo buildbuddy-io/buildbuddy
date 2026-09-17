@@ -116,6 +116,6 @@ func (l *Logger) LogMode(level logger.LogLevel) logger.Interface {
 
 // ParamsFilter implements gorm's ParamsFilter interface, ensuring that queries
 // are logged without parameter values showing up in the logs.
-func (l *Logger) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+func (l *Logger) ParamsFilter(ctx context.Context, sql string, params ...any) (string, []any) {
 	return sql, nil
 }

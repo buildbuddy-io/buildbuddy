@@ -12,10 +12,7 @@ import (
 // randomly-sized chunks.
 func WriteInRandomChunks(t *testing.T, w interfaces.CommittedWriteCloser, data []byte) {
 	for len(data) > 0 {
-		n := rand.Intn(2048)
-		if n > len(data) {
-			n = len(data)
-		}
+		n := min(rand.Intn(2048), len(data))
 		_, err := w.Write(data[:n])
 		require.NoError(t, err)
 		data = data[n:]
