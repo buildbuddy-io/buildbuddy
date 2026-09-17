@@ -79,11 +79,17 @@ func (p *ClientConnPool) Check(ctx context.Context) error {
 	for _, c := range p.conns {
 		connState := c.GetState()
 		if connState == connectivity.Ready {
+			c.wasEverReady.Store(true)
 			goodConns++
 			continue
 		}
 		if connState == connectivity.Idle {
 			c.Connect()
+			goodConns++
+			continue
+		}
+		if !c.wasEverReady.Load() {
+			// See comment in GetReadyConnection.
 			goodConns++
 			continue
 		}
