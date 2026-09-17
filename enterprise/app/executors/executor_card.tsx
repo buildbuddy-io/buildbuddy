@@ -89,7 +89,7 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div className="executor-custom-resource">
                   {this.props.node.assignableCustomResources.map((r) => {
                     return (
-                      <div className="executor-custom-resource-wrapper">
+                      <div className="executor-custom-resource-wrapper" key={r.name}>
                         <div className="executor-custom-resource-key">{r.name}: </div>
                         <div>{r.value}</div>
                       </div>
