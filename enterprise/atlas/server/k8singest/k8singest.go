@@ -248,18 +248,38 @@ func enrichJob(e *summaries.Entry, u *unstructured.Unstructured) {
 	failed, _, _ := unstructured.NestedInt64(u.Object, "status", "failed")
 	active, _, _ := unstructured.NestedInt64(u.Object, "status", "active")
 	switch {
+	case conditionTrue(u, "Complete"):
+		e.Phase = "Complete"
+	case conditionTrue(u, "Failed"):
+		e.Phase = "Failed"
 	case active > 0:
 		e.Phase = "Active"
-	case failed > 0 && succeeded == 0:
-		e.Phase = "Failed"
-	case succeeded > 0:
-		e.Phase = "Complete"
+	case failed > 0:
+		e.Phase = "Retrying"
 	}
 	completions := int64(1)
 	if n, ok, _ := unstructured.NestedInt64(u.Object, "spec", "completions"); ok {
 		completions = n
 	}
 	e.Ready = fmt.Sprintf("%d/%d", succeeded, completions)
+}
+
+// conditionTrue reports whether status.conditions has the named condition
+// with status True.
+func conditionTrue(u *unstructured.Unstructured, name string) bool {
+	conditions, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	for _, c := range conditions {
+		cm, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _, _ := unstructured.NestedString(cm, "type")
+		st, _, _ := unstructured.NestedString(cm, "status")
+		if typ == name && st == "True" {
+			return true
+		}
+	}
+	return false
 }
 
 func enrichCronJob(e *summaries.Entry, u *unstructured.Unstructured) {
@@ -298,17 +318,29 @@ func (a *Store) put(obj any) error {
 }
 
 func (a *Store) Delete(obj any) error {
-	// Tombstones from a missed delete carry only the key.
-	if d, ok := obj.(cache.DeletedFinalStateUnknown); ok {
-		a.s.Delete(d.Key)
-		return nil
-	}
-	e, err := Summarize(a.res, obj)
+	key, err := a.keyOf(obj)
 	if err != nil {
 		return err
 	}
-	a.s.Delete(e.Key())
+	a.s.Delete(key)
 	return nil
+}
+
+// keyOf returns the store key for anything cache.Store may be handed: a
+// Kubernetes object, a tombstone from a missed delete (which carries only the
+// key), or an entry that List returned.
+func (a *Store) keyOf(obj any) (string, error) {
+	switch o := obj.(type) {
+	case cache.DeletedFinalStateUnknown:
+		return o.Key, nil
+	case *summaries.Entry:
+		return o.Key(), nil
+	}
+	e, err := Summarize(a.res, obj)
+	if err != nil {
+		return "", err
+	}
+	return e.Key(), nil
 }
 
 // Replace substitutes the full contents, as a Reflector does after each relist.
@@ -346,11 +378,11 @@ func (a *Store) ListKeys() []string {
 }
 
 func (a *Store) Get(obj any) (any, bool, error) {
-	e, err := Summarize(a.res, obj)
+	key, err := a.keyOf(obj)
 	if err != nil {
 		return nil, false, err
 	}
-	return a.GetByKey(e.Key())
+	return a.GetByKey(key)
 }
 
 func (a *Store) GetByKey(key string) (any, bool, error) {

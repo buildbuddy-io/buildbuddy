@@ -236,9 +236,11 @@ func (ix *Index) Scan(cluster, kind string, fn func(*Entry)) {
 }
 
 // GetEntry looks up a single entry by identity.
-func (ix *Index) GetEntry(cluster, resource, namespace, name string) (*Entry, bool) {
+func (ix *Index) GetEntry(cluster, group, resource, namespace, name string) (*Entry, bool) {
 	for _, s := range ix.snapshot() {
-		if s.res.Cluster != cluster || s.res.Resource != resource {
+		// A resource name is unique within its group, not across groups:
+		// "events" exists in both the core group and events.k8s.io.
+		if s.res.Cluster != cluster || s.res.Group != group || s.res.Resource != resource {
 			continue
 		}
 		key := name

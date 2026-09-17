@@ -159,6 +159,35 @@ func TestSummarizeNode(t *testing.T) {
 	require.Equal(t, "control-plane", e.Extra["roles"])
 }
 
+func TestSummarizeJob(t *testing.T) {
+	jobRes := summaries.ResourceType{Cluster: "uswest1", Group: "batch", Version: "v1", Resource: "jobs", Kind: "Job", Namespaced: true}
+	job := func(status map[string]any) *unstructured.Unstructured {
+		return &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "batch/v1", "kind": "Job",
+			"metadata": map[string]any{"name": "backup", "namespace": "prod"},
+			"spec":     map[string]any{"completions": int64(1)},
+			"status":   status,
+		}}
+	}
+	for _, tc := range []struct {
+		name   string
+		status map[string]any
+		want   string
+	}{
+		{"running", map[string]any{"active": int64(1)}, "Active"},
+		{"in backoff between retries", map[string]any{"failed": int64(1)}, "Retrying"},
+		{"failed for good", map[string]any{"failed": int64(3), "conditions": []any{map[string]any{"type": "Failed", "status": "True"}}}, "Failed"},
+		{"complete", map[string]any{"succeeded": int64(1), "conditions": []any{map[string]any{"type": "Complete", "status": "True"}}}, "Complete"},
+		{"not started", map[string]any{}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, err := Summarize(jobRes, job(tc.status))
+			require.NoError(t, err)
+			require.Equal(t, tc.want, e.Phase)
+		})
+	}
+}
+
 func TestSummarizePartialMetadata(t *testing.T) {
 	cm := &metav1.PartialObjectMetadata{
 		Name:      "app-config",
@@ -192,11 +221,17 @@ func TestStoreAdapter(t *testing.T) {
 	// Replace swaps the full contents, as a reflector relist does.
 	require.NoError(t, s.Replace([]any{testPod("c", "prod")}, ""))
 	require.Equal(t, []string{"prod/c"}, s.ListKeys())
-	_, ok = ix.GetEntry("uswest1", "pods", "prod", "c")
+	_, ok = ix.GetEntry("uswest1", "", "pods", "prod", "c")
 	require.True(t, ok, "entries land in the index the search runs over")
 	require.Equal(t, 1, ix.Search("node-a", 10).Total, "and are searchable by summarized fields")
 
-	require.NoError(t, s.Delete(testPod("c", "prod")))
+	// What List returned can be handed back, as cache.Store promises.
+	listed := s.List()
+	require.Len(t, listed, 1)
+	_, ok, err = s.Get(listed[0])
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NoError(t, s.Delete(listed[0]))
 	require.Empty(t, s.List())
 
 	// Tombstones from a missed delete carry only the key.

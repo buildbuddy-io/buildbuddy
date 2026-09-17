@@ -65,11 +65,17 @@ func (q Query) matches(e *Entry) bool {
 		return false
 	}
 	for _, l := range q.Labels {
-		if k, v, ok := strings.Cut(l, "="); ok {
-			if e.Labels[k] != v {
-				return false
+		// The query was lowercased when parsed; labels are matched the same
+		// way, since values such as "Helm" are ordinary.
+		k, v, hasValue := strings.Cut(l, "=")
+		found := false
+		for lk, lv := range e.Labels {
+			if strings.ToLower(lk) == k && (!hasValue || strings.ToLower(lv) == v) {
+				found = true
+				break
 			}
-		} else if _, ok := e.Labels[l]; !ok {
+		}
+		if !found {
 			return false
 		}
 	}

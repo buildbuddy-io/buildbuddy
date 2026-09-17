@@ -17,7 +17,7 @@ func podEntry(name, ns string) *Entry {
 		Cluster: podRes.Cluster, Version: podRes.Version, Resource: podRes.Resource, Kind: podRes.Kind,
 		Namespace:  ns,
 		Name:       name,
-		Labels:     map[string]string{"app": "web"},
+		Labels:     map[string]string{"app": "web", "app.kubernetes.io/managed-by": "Helm"},
 		Owner:      "ReplicaSet/web-7d9f",
 		Phase:      "Running",
 		Ready:      "1/1",
@@ -50,7 +50,7 @@ func TestStoreLifecycle(t *testing.T) {
 	s.Replace([]*Entry{podEntry("c", "prod")})
 	require.True(t, s.Synced())
 	require.Equal(t, 1, s.Count())
-	e, ok := ix.GetEntry("uswest1", "pods", "prod", "c")
+	e, ok := ix.GetEntry("uswest1", "", "pods", "prod", "c")
 	require.True(t, ok)
 	require.Equal(t, "prod/c", e.Key())
 
@@ -114,6 +114,9 @@ func TestSearch(t *testing.T) {
 		require.Equal(t, 3, ix.Search("label:app=web", 10).Total)
 		require.Equal(t, 0, ix.Search("label:app=db", 10).Total)
 		require.Equal(t, 3, ix.Search("label:app", 10).Total)
+		// Label values are matched case-insensitively, like everything else.
+		require.Equal(t, 3, ix.Search("label:app.kubernetes.io/managed-by=Helm", 10).Total)
+		require.Equal(t, 3, ix.Search("label:App=WEB", 10).Total)
 	})
 
 	t.Run("matches non-name fields via the blob", func(t *testing.T) {
@@ -157,8 +160,19 @@ func TestScanAndGetEntry(t *testing.T) {
 	ix.Scan("uswest1", "Pod", func(e *Entry) { names = append(names, e.Name) })
 	require.Equal(t, []string{"a"}, names)
 
-	_, ok := ix.GetEntry("uswest1", "pods", "prod", "a")
+	_, ok := ix.GetEntry("uswest1", "", "pods", "prod", "a")
 	require.True(t, ok)
-	_, ok = ix.GetEntry("uswest1", "pods", "prod", "zzz")
+	_, ok = ix.GetEntry("uswest1", "", "pods", "prod", "zzz")
+	require.False(t, ok)
+
+	// The same resource name in two groups is two resource types.
+	core := ix.NewStore(ResourceType{Cluster: "uswest1", Version: "v1", Resource: "events", Kind: "Event", Namespaced: true})
+	newer := ix.NewStore(ResourceType{Cluster: "uswest1", Group: "events.k8s.io", Version: "v1", Resource: "events", Kind: "Event", Namespaced: true})
+	core.Put(&Entry{Cluster: "uswest1", Version: "v1", Resource: "events", Kind: "Event", Namespace: "prod", Name: "boot"})
+	newer.Put(&Entry{Cluster: "uswest1", Group: "events.k8s.io", Version: "v1", Resource: "events", Kind: "Event", Namespace: "prod", Name: "boot"})
+	e, ok := ix.GetEntry("uswest1", "events.k8s.io", "events", "prod", "boot")
+	require.True(t, ok)
+	require.Equal(t, "events.k8s.io", e.Group)
+	_, ok = ix.GetEntry("uswest1", "nosuch.example", "events", "prod", "boot")
 	require.False(t, ok)
 }
