@@ -79,7 +79,7 @@ export default class DonutChart extends React.Component<Props> {
           {data?.map((entry, index) => {
             const label = entry.name === OTHER_LABEL ? "Other" : entry.name;
             return (
-              <div className="donut-chart-label">
+              <div key={entry.name} className="donut-chart-label">
                 <span className="donut-chart-swatch" style={{ backgroundColor: colorPicker(entry, index) }}></span>
                 <span>
                   <span className="donut-chart-legend-value">{valueFormatter(entry.value)}</span>{" "}
