@@ -124,6 +124,9 @@ message Group {
 
     // The group is billed for its usage.
     USAGE_BASED_GROUP_STATUS = 5;
+
+    // The group is an open source project and is not billed.
+    OPEN_SOURCE_GROUP_STATUS = 6;
   }
 
   // The status of the group.
