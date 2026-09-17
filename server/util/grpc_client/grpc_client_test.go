@@ -159,7 +159,7 @@ func TestClose_DeletesPendingRPCMetricSeries(t *testing.T) {
 	pool, err := grpc_client.DialInternal(te, target)
 	require.NoError(t, err)
 	client := pspb.NewApiClient(pool)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_, err := client.Ping(ctx, &pspb.PingRequest{})
 		require.NoError(t, err)
 	}
