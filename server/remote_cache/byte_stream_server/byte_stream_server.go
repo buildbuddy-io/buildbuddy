@@ -34,7 +34,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/grpc/peer"
 
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -596,7 +595,7 @@ func (s *ByteStreamServer) beginWrite(ctx context.Context, req *bspb.WriteReques
 		}
 	}
 
-	canWrite, err := capabilities.IsGrantedForCacheWrite(ctx, s.env.GetAuthenticator(), r.GetInstanceName(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	canWrite, err := capabilities.CanWriteCAS(ctx, s.env.GetAuthenticator(), r.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}

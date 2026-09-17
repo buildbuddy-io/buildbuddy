@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 )
 
@@ -33,4 +34,22 @@ func TestRoleProtoAndStringConversions(t *testing.T) {
 	require.Error(t, err)
 	_, err = role.Parse("")
 	require.Error(t, err)
+}
+
+func TestToCapabilities(t *testing.T) {
+	for _, test := range []struct {
+		role role.Role
+		want []cappb.Capability
+	}{
+		{role.Admin, []cappb.Capability{cappb.Capability_CACHE_WRITE, cappb.Capability_CAS_WRITE, cappb.Capability_IMAGE_CACHE_WRITE, cappb.Capability_ORG_ADMIN}},
+		{role.Writer, []cappb.Capability{cappb.Capability_CACHE_WRITE, cappb.Capability_CAS_WRITE, cappb.Capability_IMAGE_CACHE_WRITE}},
+		{role.Developer, []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_IMAGE_CACHE_WRITE}},
+		{role.Reader, nil},
+	} {
+		t.Run(test.role.String(), func(t *testing.T) {
+			caps, err := role.ToCapabilities(test.role)
+			require.NoError(t, err)
+			require.ElementsMatch(t, test.want, caps)
+		})
+	}
 }

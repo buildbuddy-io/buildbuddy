@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -36,6 +37,7 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -971,4 +973,135 @@ func apiKeyIDs(keys []*tables.APIKey) []string {
 		ids[i] = k.APIKeyID
 	}
 	return ids
+}
+
+func setupUserOwnedKeyTest(t *testing.T) (*testenv.TestEnv, *tables.User, context.Context) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	env := setupEnv(t)
+	u := enterprise_testauth.CreateRandomUser(t, env, "example.com")
+	require.Len(t, u.Groups, 1)
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), u.UserID)
+	require.NoError(t, err)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, env, u.Groups[0].Group.GroupID, true)
+	return env, u, ctx
+}
+
+func TestUserOwnedImageCacheWrite_CreateAndUpdate(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		role       role.Role
+		callerCaps []cappb.Capability // nil authenticates as the user, not an API key
+		allowed    bool
+	}{
+		{name: "admin", role: role.Admin, allowed: true},
+		{name: "writer", role: role.Writer, allowed: true},
+		{name: "developer", role: role.Developer, allowed: true},
+		{name: "reader", role: role.Reader, allowed: false},
+		{name: "cache_write_implies_image_write", role: role.Writer, callerCaps: []cappb.Capability{cappb.Capability_CACHE_WRITE}, allowed: true},
+		{name: "image_write", role: role.Developer, callerCaps: []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE}, allowed: true},
+		{name: "cas_write_does_not_imply_image_write", role: role.Developer, callerCaps: []cappb.Capability{cappb.Capability_CAS_WRITE}, allowed: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			env, u, adminCtx := setupUserOwnedKeyTest(t)
+			adb := env.GetAuthDB()
+			gid := u.Groups[0].Group.GroupID
+			var callerKey *tables.APIKey
+			var err error
+			if test.callerCaps != nil {
+				callerKey, err = adb.CreateUserAPIKey(adminCtx, gid, u.UserID, "caller", test.callerCaps, 0)
+				require.NoError(t, err)
+			}
+			r, err := role.ToProto(test.role)
+			require.NoError(t, err)
+			err = env.GetUserDB().UpdateGroupUsers(adminCtx, gid, []*grpb.UpdateGroupUsersRequest_Update{{
+				UserId: &uidpb.UserId{Id: u.UserID}, Role: r,
+			}})
+			require.NoError(t, err)
+			auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			ctx, err := auth.WithAuthenticatedUser(context.Background(), u.UserID)
+			require.NoError(t, err)
+			if callerKey != nil {
+				ctx = auth.AuthContextFromAPIKey(context.Background(), callerKey.Value)
+			}
+
+			imageCaps := []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE}
+			key, err := adb.CreateUserAPIKey(ctx, gid, u.UserID, "image", imageCaps, 0)
+			if test.allowed {
+				require.NoError(t, err)
+				akg, err := adb.GetAPIKeyGroupFromAPIKey(context.Background(), key.Value)
+				require.NoError(t, err)
+				require.Equal(t, capabilities.ToInt(imageCaps), akg.GetCapabilities())
+			} else {
+				require.True(t, status.IsPermissionDeniedError(err), "%v", err)
+			}
+
+			key, err = adb.CreateUserAPIKey(ctx, gid, u.UserID, "update", nil, 0)
+			require.NoError(t, err)
+			key.Capabilities = capabilities.ToInt(imageCaps)
+			err = adb.UpdateAPIKey(ctx, key)
+			if test.allowed {
+				require.NoError(t, err)
+				akg, err := adb.GetAPIKeyGroupFromAPIKey(context.Background(), key.Value)
+				require.NoError(t, err)
+				require.Equal(t, capabilities.ToInt(imageCaps), akg.GetCapabilities())
+			} else {
+				require.True(t, status.IsPermissionDeniedError(err), "%v", err)
+			}
+		})
+	}
+}
+
+func TestUserOwnedImageCacheWrite_RoleMask(t *testing.T) {
+	for _, r := range []role.Role{role.Admin, role.Writer, role.Developer, role.Reader} {
+		t.Run(r.String(), func(t *testing.T) {
+			env, u, adminCtx := setupUserOwnedKeyTest(t)
+			adb := env.GetAuthDB()
+			gid := u.Groups[0].Group.GroupID
+			keys := make(map[cappb.Capability]*tables.APIKey)
+			for _, c := range []cappb.Capability{
+				cappb.Capability_IMAGE_CACHE_WRITE,
+				cappb.Capability_CAS_WRITE,
+				cappb.Capability_CACHE_WRITE,
+				cappb.Capability_CACHE_WRITE | cappb.Capability_IMAGE_CACHE_WRITE,
+			} {
+				key, err := adb.CreateUserAPIKey(adminCtx, gid, u.UserID, c.String(), capabilities.FromInt(int32(c)), 0)
+				require.NoError(t, err)
+				keys[c] = key
+			}
+			protoRole, err := role.ToProto(r)
+			require.NoError(t, err)
+			err = env.GetUserDB().UpdateGroupUsers(adminCtx, gid, []*grpb.UpdateGroupUsersRequest_Update{{
+				UserId: &uidpb.UserId{Id: u.UserID}, Role: protoRole,
+			}})
+			require.NoError(t, err)
+			for requested, key := range keys {
+				want := requested
+				if requested&cappb.Capability_CACHE_WRITE != 0 {
+					want = cappb.Capability_CACHE_WRITE
+					if r == role.Developer {
+						want = cappb.Capability_CAS_WRITE | cappb.Capability_IMAGE_CACHE_WRITE
+					}
+				}
+				if r == role.Reader {
+					want = 0
+				}
+				// Provision another key using the admin context after changing the
+				// role, to test read-time masking independently of userdb's eager
+				// capability updates during role changes.
+				newKey, err := adb.CreateUserAPIKey(adminCtx, gid, u.UserID, "after role change", capabilities.FromInt(int32(requested)), 0)
+				require.NoError(t, err)
+				for _, key := range []*tables.APIKey{key, newKey} {
+					akg, err := adb.GetAPIKeyGroupFromAPIKey(context.Background(), key.Value)
+					require.NoError(t, err)
+					require.Equal(t, int32(want), akg.GetCapabilities(), "key capabilities: %v", requested)
+					akg, err = adb.GetAPIKeyGroupFromAPIKeyID(context.Background(), key.APIKeyID)
+					require.NoError(t, err)
+					require.Equal(t, int32(want), akg.GetCapabilities(), "key capabilities: %v", requested)
+				}
+			}
+		})
+	}
 }

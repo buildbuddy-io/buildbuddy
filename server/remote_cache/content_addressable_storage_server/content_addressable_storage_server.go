@@ -41,7 +41,6 @@ import (
 	"google.golang.org/grpc/codes"
 
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -227,7 +226,7 @@ func (s *ContentAddressableStorageServer) BatchUpdateBlobs(ctx context.Context, 
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGrantedForCacheWrite(ctx, s.env.GetAuthenticator(), req.GetInstanceName(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	canWrite, err := capabilities.CanWriteCAS(ctx, s.env.GetAuthenticator(), req.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}
@@ -1229,7 +1228,7 @@ func (s *ContentAddressableStorageServer) spliceBlob(ctx context.Context, req *r
 		return nil, err
 	}
 
-	canWrite, err := capabilities.IsGrantedForCacheWrite(ctx, s.env.GetAuthenticator(), req.GetInstanceName(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	canWrite, err := capabilities.CanWriteCAS(ctx, s.env.GetAuthenticator(), req.GetInstanceName())
 	if err != nil {
 		return nil, err
 	}

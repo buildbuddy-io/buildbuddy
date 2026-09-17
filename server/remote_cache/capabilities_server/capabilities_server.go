@@ -2,16 +2,14 @@ package capabilities_server
 
 import (
 	"context"
-	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -128,8 +126,5 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context, insta
 	if err != nil {
 		return true
 	}
-	if u.HasCapability(cappb.Capability_CACHE_WRITE) {
-		return true
-	}
-	return strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) && u.HasCapability(cappb.Capability_IMAGE_CACHE_WRITE)
+	return u.HasCapability(capabilities.ActionCacheWriteCapabilities(instanceName))
 }

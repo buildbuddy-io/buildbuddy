@@ -17,6 +17,7 @@ go_test(
     srcs = ["role_test.go"],
     deps = [
         ":role",
+        "//proto:capability_go_proto",
         "//proto:group_go_proto",
         "@com_github_stretchr_testify//require",
     ],

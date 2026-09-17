@@ -2,6 +2,7 @@ package capabilities
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -30,6 +31,7 @@ var (
 	UserAPIKeyCapabilitiesMask = ToInt([]cappb.Capability{
 		cappb.Capability_CACHE_WRITE,
 		cappb.Capability_CAS_WRITE,
+		cappb.Capability_IMAGE_CACHE_WRITE,
 	})
 )
 
@@ -70,19 +72,31 @@ func IsGranted(ctx context.Context, authenticator interfaces.Authenticator, cap 
 	return user.HasCapability(cap), nil
 }
 
-// IsGrantedForCacheWrite checks whether the caller can write to the given
-// cache instance. IMAGE_CACHE_WRITE grants write access only to the reserved
-// OCI image cache instance name prefix; the general cache write capabilities
-// continue to apply to all instance names.
-func IsGrantedForCacheWrite(ctx context.Context, authenticator interfaces.Authenticator, instanceName string, generalWriteCapabilities cappb.Capability) (bool, error) {
-	canWrite, err := IsGranted(ctx, authenticator, generalWriteCapabilities)
-	if err != nil || canWrite {
-		return canWrite, err
-	}
+// ActionCacheWriteCapabilities returns the capabilities that independently grant
+// writes to the given action cache instance. Restricted AC client identity checks
+// must still be performed separately.
+func ActionCacheWriteCapabilities(instanceName string) cappb.Capability {
+	caps := cappb.Capability_CACHE_WRITE
 	if !strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) {
-		return false, nil
+		return caps
 	}
-	return IsGranted(ctx, authenticator, cappb.Capability_IMAGE_CACHE_WRITE)
+	// Path-based caches clean instance names when constructing storage keys.
+	// Do not let an image-only writer escape the reserved namespace using "..".
+	if slices.Contains(strings.Split(instanceName, "/"), "..") {
+		return caps
+	}
+	return caps | cappb.Capability_IMAGE_CACHE_WRITE
+}
+
+// CanWriteActionCache checks whether the caller has write permission for the
+// given action cache instance. It does not replace restricted client identity checks.
+func CanWriteActionCache(ctx context.Context, authenticator interfaces.Authenticator, instanceName string) (bool, error) {
+	return IsGranted(ctx, authenticator, ActionCacheWriteCapabilities(instanceName))
+}
+
+// CanWriteCAS checks whether the caller has write permission for the given CAS instance.
+func CanWriteCAS(ctx context.Context, authenticator interfaces.Authenticator, instanceName string) (bool, error) {
+	return IsGranted(ctx, authenticator, ActionCacheWriteCapabilities(instanceName)|cappb.Capability_CAS_WRITE)
 }
 
 func ForAuthenticatedUser(ctx context.Context, authenticator interfaces.Authenticator) ([]cappb.Capability, error) {
