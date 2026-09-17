@@ -458,11 +458,9 @@ func validateOpts(opts *Options) error {
 		if *p.MinEvictionAge < 0 {
 			return status.FailedPreconditionErrorf("Partition %q min_eviction_age must not be negative", p.ID)
 		}
-	}
-
-	threshold := *opts.AtimeUpdateThreshold
-	if minAge := minEvictionAgeAcrossPartitions(opts); minAge > 0 && threshold > minAge/2 {
-		log.Warningf("Pebble cache %q atime_update_threshold (%s) exceeds half of the smallest min_eviction_age (%s), so entries read at intervals between %s and %s can be evicted while in use", opts.Name, threshold, minAge, max(minAge-threshold, 0), min(threshold, minAge))
+		if age, threshold := *p.MinEvictionAge, *opts.AtimeUpdateThreshold; age > 0 && threshold > age/2 {
+			log.Warningf("Pebble cache %q partition %q has atime_update_threshold (%s) above half of its min_eviction_age (%s), so entries read at intervals between %s and %s can be evicted while in use", opts.Name, p.ID, threshold, age, max(age-threshold, 0), min(threshold, age))
+		}
 	}
 
 	for _, pm := range opts.PartitionMappings {
@@ -544,25 +542,20 @@ func SetOptionDefaults(opts *Options) {
 	ensureDefaultPartitionExists(opts)
 	setPartitionDefaults(opts)
 	if opts.AtimeUpdateThreshold == nil || *opts.AtimeUpdateThreshold < 0 {
-		minAge := minEvictionAgeAcrossPartitions(opts)
-		threshold := DefaultAtimeUpdateThreshold
-		if minAge > 0 {
-			threshold = minAge / 2
+		threshold := partitionAtimeUpdateThreshold(opts.Partitions[0])
+		for _, part := range opts.Partitions[1:] {
+			threshold = min(threshold, partitionAtimeUpdateThreshold(part))
 		}
-		log.Infof("Pebble cache %q derived atime_update_threshold %s from smallest min_eviction_age %s", opts.Name, threshold, minAge)
+		log.Infof("Pebble cache %q derived atime_update_threshold %s from partition min_eviction_age settings", opts.Name, threshold)
 		opts.AtimeUpdateThreshold = &threshold
 	}
 }
 
-func minEvictionAgeAcrossPartitions(opts *Options) time.Duration {
-	minAge := time.Duration(0)
-	for _, part := range opts.Partitions {
-		age := *part.MinEvictionAge
-		if age > 0 && (minAge == 0 || age < minAge) {
-			minAge = age
-		}
+func partitionAtimeUpdateThreshold(part disk.Partition) time.Duration {
+	if age := *part.MinEvictionAge; age > 0 {
+		return age / 2
 	}
-	return minAge
+	return DefaultAtimeUpdateThreshold
 }
 
 func setPartitionDefaults(opts *Options) {
