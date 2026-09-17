@@ -245,6 +245,57 @@ func BenchmarkClassifierClassify(b *testing.B) {
 	})
 }
 
+func TestClassifier_MetalRanges(t *testing.T) {
+	classifier := newTestClassifier(t)
+
+	for _, tc := range []struct {
+		name string
+		ip   string
+		want Destination
+	}{
+		{name: "sjc_23_176_168", ip: "23.176.168.49", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "sjc_216_226_69", ip: "216.226.69.212", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "sjc_216_226_70", ip: "216.226.70.138", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "sjc_216_226_71", ip: "216.226.71.2", want: Destination{Provider: "metal", Region: "us-sjc"}},
+		{name: "nuq_216_226_68", ip: "216.226.68.35", want: Destination{Provider: "metal", Region: "us-nuq"}},
+		{name: "nuq_last_ip", ip: "216.226.68.255", want: Destination{Provider: "metal", Region: "us-nuq"}},
+		{name: "sjc_first_ip_after_nuq", ip: "216.226.69.0", want: Destination{Provider: "metal", Region: "us-sjc"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifier.classify(tc.ip); got != tc.want {
+				t.Errorf("classify(%q) = %+v, want %+v", tc.ip, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestClassifier_PrivateRanges(t *testing.T) {
+	classifier := newTestClassifier(t)
+
+	for _, tc := range []struct {
+		name string
+		ip   string
+		want Destination
+	}{
+		{name: "psc_nat_ip", ip: "10.30.1.7", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "psc_nat_ip_with_port", ip: "10.30.1.7:51234", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "psc_nat_ip_ipv4_mapped", ip: "::ffff:10.30.1.7", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "psc_nat_range_last_ip", ip: "10.30.3.255", want: Destination{Provider: "psc", Region: "europe-west4"}},
+		{name: "adjacent_private_ip_is_internal", ip: "10.30.4.0", want: Destination{Provider: "internal", Region: ""}},
+		{name: "privatelink_nlb_ip", ip: "192.168.124.241", want: Destination{Provider: "privatelink", Region: "us-west-2"}},
+		{name: "privatelink_nlb_ip_with_port", ip: "192.168.242.116:40012", want: Destination{Provider: "privatelink", Region: "us-west-2"}},
+		{name: "privatelink_neighbor_is_internal", ip: "192.168.124.242", want: Destination{Provider: "internal", Region: ""}},
+		{name: "other_private_ip_is_internal", ip: "192.168.1.1", want: Destination{Provider: "internal", Region: ""}},
+		{name: "public_ip_uses_provider_data", ip: "3.4.12.4", want: Destination{Provider: "aws", Region: "eu-west-1"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifier.classify(tc.ip); got != tc.want {
+				t.Errorf("classify(%q) = %+v, want %+v", tc.ip, got, tc.want)
+			}
+		})
+	}
+}
+
 func newTestClassifier(t testing.TB) *classifier {
 	t.Helper()
 	classifier, err := newClassifier()
