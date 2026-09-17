@@ -102,6 +102,7 @@ func TestValidate(t *testing.T) {
 		{"a child of an earlier zone", []Zone{{Suffix: "bb.internal", Gateway: "a"}, {Suffix: "foo.bb.internal", Gateway: "b"}}, "overlaps zone"},
 		{"a parent of an earlier zone", []Zone{{Suffix: "foo.bb.internal", Gateway: "a"}, {Suffix: "bb.internal", Gateway: "b"}}, "overlaps zone"},
 		{"deeper nesting", []Zone{{Suffix: "foo.bb.internal", Gateway: "a"}, {Suffix: "a.b.foo.bb.internal", Gateway: "b"}}, "overlaps zone"},
+		{"a gateway under two credentials", []Zone{{Suffix: "foo.bb.internal", Gateway: "grpcs://a", Credential: "x"}, {Suffix: "bar.bb.internal", Gateway: "GRPCS://a", Credential: "y"}}, "listed by both"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := (&Config{Zones: tc.zones}).Validate()

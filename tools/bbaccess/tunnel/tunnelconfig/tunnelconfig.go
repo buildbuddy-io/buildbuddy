@@ -209,6 +209,7 @@ func Load(path string) (*Config, error) {
 // overlaps no other, so that every name belongs to exactly one gateway.
 func (c *Config) Validate() error {
 	seen := make(map[string]Zone, len(c.Zones))
+	gateways := make(map[string]string, len(c.Zones)) // gateway target -> credential
 	for _, z := range c.Zones {
 		s := normalize(z.Suffix)
 		if s == "" {
@@ -217,9 +218,16 @@ func (c *Config) Validate() error {
 		if !UnderParent(s) {
 			return fmt.Errorf("zone %q from %s: suffix must be under %s, the suffix routed to the tunnel", s, z.Credential, Parent)
 		}
-		if strings.TrimSpace(z.Gateway) == "" {
+		g := strings.ToLower(strings.TrimSpace(z.Gateway))
+		if g == "" {
 			return fmt.Errorf("zone %q from %s: gateway is required", s, z.Credential)
 		}
+		// A tunnel to a gateway is authenticated with one credential, so a
+		// gateway belongs to one server.
+		if other, ok := gateways[g]; ok && other != z.Credential {
+			return fmt.Errorf("gateway %q is listed by both %s and %s", g, other, z.Credential)
+		}
+		gateways[g] = z.Credential
 		for o, oz := range seen {
 			if s == o || strings.HasSuffix(s, "."+o) || strings.HasSuffix(o, "."+s) {
 				return fmt.Errorf("zone %q from %s overlaps zone %q from %s", s, z.Credential, o, oz.Credential)
