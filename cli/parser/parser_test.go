@@ -115,7 +115,6 @@ build:nested --nested_flag
 			options.NewDefinition("nested_flag", options.WithNegative(), options.WithSupportFor("build")),
 		},
 		[]string{"run", "explain"},
-		nil,
 	)
 	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
 	require.NoError(t, err)
@@ -190,7 +189,6 @@ run:b --bb_config=a
 	p := NewParser(
 		[]*options.Definition{bbrc.NewConfigOptionDefinition("run")},
 		[]string{"run"},
-		nil,
 	)
 	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
 	require.NoError(t, err)
@@ -505,7 +503,6 @@ run:second --second_flag
 			options.NewDefinition("second_flag", options.WithNegative(), options.WithSupportFor("run")),
 		},
 		[]string{"run"},
-		nil,
 	)
 	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
 	require.NoError(t, err)
@@ -545,7 +542,6 @@ agent:fast --effort=low
 			options.NewDefinition("effort", options.WithRequiresValue(), options.WithSupportFor("agent")),
 		},
 		[]string{"agent"},
-		nil,
 	)
 	namedConfigs, defaultConfig, err := p.ParseBBRCFiles(ws, filepath.Join(ws, ".bbrc"))
 	require.NoError(t, err)

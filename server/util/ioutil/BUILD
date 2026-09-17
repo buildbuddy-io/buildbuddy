@@ -20,7 +20,6 @@ go_test(
         ":ioutil",
         "//server/testutil/testdigest",
         "//server/testutil/testfs",
-        "//server/util/bytebufferpool",
         "@com_github_google_go_cmp//cmp",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

@@ -206,3 +206,38 @@ func TestAttemptLogic(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, created)
 }
+
+func TestAuthenticatedInvocationReplacesMissingAPIKeyPlaceholder(t *testing.T) {
+	env, authenticator, ctx := getEnvAuthAndCtx(t)
+	dbh := env.GetDBHandle()
+	idb := invocationdb.NewInvocationDB(env, dbh)
+	dbh.SetNowFunc(func() time.Time { return time.Unix(0, 0) })
+
+	created, err := idb.CreateInvocation(ctx, &tables.Invocation{
+		InvocationID:     "reused-invocation-id",
+		InvocationStatus: int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS),
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	dbh.SetNowFunc(func() time.Time { return time.Unix(int64((5 * time.Hour).Seconds()), 0) })
+	authenticatedCtx, err := authenticator.WithAuthenticatedUser(ctx, "user1")
+	require.NoError(t, err)
+	realInvocation := &tables.Invocation{
+		InvocationID:     "reused-invocation-id",
+		InvocationStatus: int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS),
+		Pattern:          "//real:build",
+	}
+	created, err = idb.CreateInvocation(authenticatedCtx, realInvocation)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.Equal(t, uint64(1), realInvocation.Attempt)
+
+	stored, err := idb.LookupInvocation(authenticatedCtx, realInvocation.InvocationID)
+	require.NoError(t, err)
+	require.Equal(t, "//real:build", stored.Pattern)
+	require.Equal(t, uint64(1), stored.Attempt)
+	require.Equal(t, int64(inspb.InvocationStatus_PARTIAL_INVOCATION_STATUS), stored.InvocationStatus)
+	require.Equal(t, "user1", stored.UserID)
+	require.Equal(t, "group1", stored.GroupID)
+}

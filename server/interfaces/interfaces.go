@@ -55,7 +55,6 @@ import (
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	telpb "github.com/buildbuddy-io/buildbuddy/proto/telemetry"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	ulpb "github.com/buildbuddy-io/buildbuddy/proto/user_list"
@@ -922,6 +921,8 @@ type GitProvider interface {
 	// commit SHA.
 	CreateStatus(ctx context.Context, accessToken, groupID, repoURL, commitSHA string, payload any) error
 
+	GetPullRequestData(ctx context.Context, accessToken, repoURL string, pullRequestNumber int64) (*WebhookData, error)
+
 	// TODO(bduffany): ListRepos
 }
 
@@ -986,6 +987,11 @@ type WebhookData struct {
 	// type (see config.PullRequestTrigger.Types).
 	// Ex: "opened", "synchronize", "ready_for_review"
 	PullRequestAction string
+
+	// CommentAuthor and CommentBody identify the author and contents
+	// of a pull request comment, if applicable.
+	CommentAuthor string
+	CommentBody   string
 
 	// PullRequestIsDraft is whether the pull request is a draft, if applicable.
 	PullRequestIsDraft bool
@@ -1669,12 +1675,6 @@ type ExecutionCollector interface {
 	AddExecutionInvocationLink(ctx context.Context, link *sipb.StoredInvocationLink, bidirectional bool) error
 	GetExecutionInvocationLinks(ctx context.Context, executionID string) ([]*sipb.StoredInvocationLink, error)
 	DeleteExecutionInvocationLinks(ctx context.Context, executionID string) error
-}
-
-// SuggestionService enables fetching of suggestions.
-type SuggestionService interface {
-	GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error)
-	MultipleProvidersConfigured() bool
 }
 
 type Encryptor interface {

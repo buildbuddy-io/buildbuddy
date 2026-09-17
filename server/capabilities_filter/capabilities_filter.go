@@ -111,7 +111,6 @@ var (
 		buildBuddyServicePrefix + "GetStatHeatmap",
 		buildBuddyServicePrefix + "GetStatDrilldown",
 		buildBuddyServicePrefix + "GetTargetTrends",
-		buildBuddyServicePrefix + "GetSuggestion",
 		buildBuddyServicePrefix + "SearchExecution",
 		buildBuddyServicePrefix + "GetTargetStats",
 		buildBuddyServicePrefix + "GetDailyTargetStats",

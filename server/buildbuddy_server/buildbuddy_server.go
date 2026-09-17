@@ -37,7 +37,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/target"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
@@ -83,7 +82,6 @@ import (
 	srpb "github.com/buildbuddy-io/buildbuddy/proto/search"
 	skpb "github.com/buildbuddy-io/buildbuddy/proto/secrets"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
-	supb "github.com/buildbuddy-io/buildbuddy/proto/suggestion"
 	trpb "github.com/buildbuddy-io/buildbuddy/proto/target"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
@@ -1945,10 +1943,7 @@ func (s *BuildBuddyServer) WriteEventLog(stream bbspb.BuildBuddyService_WriteEve
 			default:
 				return status.InvalidArgumentErrorf("Unsupported log type %s", req.GetType())
 			}
-			// Attach the invocation ID to the context so experiments evaluated
-			// by the log writer can target and bucket by invocation.
-			writerCtx := bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{ToolInvocationId: req.GetMetadata().GetInvocationId()})
-			eventLogWriter, err = eventlog.NewEventLogWriter(writerCtx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), s.env.GetExperimentFlagProvider(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
+			eventLogWriter, err = eventlog.NewEventLogWriter(ctx, s.env.GetBlobstore(), s.env.GetKeyValStore(), s.env.GetPubSub(), pubsubChannel, eventLogPath, eventlog.DefaultTerminalLineLength, eventlog.DefaultTerminalLinesBuffered)
 			if err != nil {
 				return err
 			}
@@ -2411,13 +2406,6 @@ func (s *BuildBuddyServer) DeleteUsageAlertingRule(ctx context.Context, req *usa
 func (s *BuildBuddyServer) SendNotification(ctx context.Context, req *npb.SendNotificationRequest) (*npb.SendNotificationResponse, error) {
 	if ns := s.env.GetNotificationService(); ns != nil {
 		return ns.SendNotification(ctx, req)
-	}
-	return nil, status.UnimplementedError("Not implemented")
-}
-
-func (s *BuildBuddyServer) GetSuggestion(ctx context.Context, req *supb.GetSuggestionRequest) (*supb.GetSuggestionResponse, error) {
-	if us := s.env.GetSuggestionService(); us != nil {
-		return us.GetSuggestion(ctx, req)
 	}
 	return nil, status.UnimplementedError("Not implemented")
 }

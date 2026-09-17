@@ -60,17 +60,25 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 		// Insert worked; we're done.
 		return true, nil
 	}
+	// Missing API key rows are placeholders, not invocation attempts. If the
+	// insert conflicted, do not let the placeholder overwrite an existing row.
+	if ti.InvocationStatus == int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS) {
+		return false, nil
+	}
 	// Insert failed due to conflict; update the existing row instead.
 	created := false
 	err := d.h.Transaction(ctx, func(tx interfaces.DB) error {
+		existing := &tables.Invocation{}
 		err := tx.NewQuery(ctx, "invocationdb_find_existing_attempt").Raw(`
-				SELECT attempt FROM "Invocations"
-				WHERE invocation_id = ? AND invocation_status <> ? AND updated_at_usec > ? 
+				SELECT attempt, invocation_status FROM "Invocations"
+				WHERE invocation_id = ? AND invocation_status <> ?
+				AND (invocation_status = ? OR updated_at_usec > ?)
 				`+d.h.SelectForUpdateModifier(),
 			ti.InvocationID,
 			int64(inspb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+			int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS),
 			tx.NowFunc().Add(-invocationReconnectWindow).UnixMicro(),
-		).Take(ti)
+		).Take(existing)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				// The invocation either succeeded or is past the reconnect
@@ -80,13 +88,14 @@ func (d *InvocationDB) registerInvocationAttempt(ctx context.Context, ti *tables
 			return err
 		}
 
-		// ti had Attempt populated with the previous attempt value, so update it.
-		if ti.Attempt == 0 {
+		if existing.InvocationStatus == int64(inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS) {
+			ti.Attempt = 1
+		} else if existing.Attempt == 0 {
 			// This invocation was attempted before we added Attempt count, this is at
 			// least the second attempt.
 			ti.Attempt = 2
 		} else {
-			ti.Attempt += 1
+			ti.Attempt = existing.Attempt + 1
 		}
 		result = tx.GORM(ctx, "invocationdb_update_invocation_attempt").Updates(ti)
 		created = result.RowsAffected > 0

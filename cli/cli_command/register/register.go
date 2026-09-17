@@ -9,7 +9,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/agent"
 	"github.com/buildbuddy-io/buildbuddy/cli/agent/agentflags"
 	"github.com/buildbuddy-io/buildbuddy/cli/analyze"
-	"github.com/buildbuddy-io/buildbuddy/cli/ask"
 	"github.com/buildbuddy-io/buildbuddy/cli/box"
 	"github.com/buildbuddy-io/buildbuddy/cli/cli_command"
 	"github.com/buildbuddy-io/buildbuddy/cli/detect"
@@ -26,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/remote_download"
 	"github.com/buildbuddy-io/buildbuddy/cli/remotebazel"
 	"github.com/buildbuddy-io/buildbuddy/cli/search"
+	"github.com/buildbuddy-io/buildbuddy/cli/secrets"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh"
 	"github.com/buildbuddy-io/buildbuddy/cli/ssh_server"
 	"github.com/buildbuddy-io/buildbuddy/cli/ui"
@@ -50,7 +50,6 @@ var implementationsByCommandName = map[string]implementation{
 	"add":             {handler: add.HandleAdd, flags: add.Flags},
 	"agent":           {handler: agent.HandleAgent, flags: agentflags.SharedAgentFlags},
 	"analyze":         {handler: analyze.HandleAnalyze, flags: analyze.Flags},
-	"ask":             {handler: ask.HandleAsk, flags: ask.Flags},
 	"box":             {handler: box.HandleBox, flags: box.Flags},
 	"detect":          {handler: detect.HandleDetect, flags: detect.Flags},
 	"download":        {handler: download.HandleDownload, flags: download.Flags},
@@ -67,6 +66,7 @@ var implementationsByCommandName = map[string]implementation{
 	"remote":          {handler: remotebazel.HandleRemoteBazel, flags: remotebazel.RemoteFlagset},
 	"remote-download": {handler: remote_download.HandleRemoteDownload, flags: remote_download.Flags},
 	"search":          {handler: search.HandleSearch, flags: search.Flags},
+	"secrets":         {handler: secrets.HandleSecrets, flags: secrets.Flags},
 	"ssh":             {handler: ssh.HandleSSH, flags: ssh.Flags},
 	"ssh-server":      {handler: ssh_server.HandleSSHServer, flags: ssh_server.Flags},
 	"ui":              {handler: ui.HandleUI, flags: ui.Flags},

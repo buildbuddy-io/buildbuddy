@@ -40,17 +40,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 
 	refpb "github.com/buildbuddy-io/buildbuddy/proto/reference"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	sgpb "github.com/buildbuddy-io/buildbuddy/proto/storage"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
 var (
@@ -1952,6 +1951,9 @@ func TestExtraNodes(t *testing.T) {
 }
 
 func TestExtraNodesReadOnly(t *testing.T) {
+	// Preserve coverage of migrations from the legacy ring to SHA256.
+	flags.Set(t, "cache.distributed_cache.consistent_hash_function", "CRC32")
+	flags.Set(t, "cache.distributed_cache.consistent_hash_vnodes", 100)
 	// Use new nodes for reads ONLY. No content should be written.
 	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", true)
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
@@ -2129,6 +2131,9 @@ func TestExtraNodesReadOnly(t *testing.T) {
 }
 
 func TestExtraNodesReadWrite(t *testing.T) {
+	// Preserve coverage of migrations from the legacy ring to SHA256.
+	flags.Set(t, "cache.distributed_cache.consistent_hash_function", "CRC32")
+	flags.Set(t, "cache.distributed_cache.consistent_hash_vnodes", 100)
 	flags.Set(t, "cache.distributed_cache.new_nodes_read_only", false)
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_function", "SHA256")
 	flags.Set(t, "cache.distributed_cache.new_consistent_hash_vnodes", 10000)
@@ -2302,11 +2307,12 @@ func TestReadThroughLookaside(t *testing.T) {
 	peer1 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer2 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
 	peer3 := fmt.Sprintf("localhost:%d", testport.FindFree(t))
+	// Use the flag's default lookaside size, as server registration does.
 	baseConfig := Options{
 		ReplicationFactor:       3,
 		Nodes:                   []string{peer1, peer2, peer3},
 		DisableLocalLookup:      true,
-		LookasideCacheSizeBytes: 100_000,
+		LookasideCacheSizeBytes: *lookasideCacheSizeBytes,
 	}
 
 	// Setup a distributed cache, 3 nodes, R = 3.

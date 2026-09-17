@@ -64,7 +64,7 @@ var (
 	leaseReconnectGracePeriod    = flag.Duration("remote_execution.lease_reconnect_grace_period", 1*time.Second, "How long to delay re-enqueued tasks in order to allow the previous lease holder to renew its lease (following a server shutdown).")
 	maxSchedulingDelay           = flag.Duration("remote_execution.max_scheduling_delay", 5*time.Second, "Max duration that actions can sit in a non-preferred executor's queue before they are executed.")
 	cgroupSettingsEnabled        = flag.Bool("remote_execution.cgroup_settings_enabled", true, "Apply cgroup2 settings to Linux executions.")
-	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", false, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
+	proactiveCancellationEnabled = flag.Bool("remote_execution.proactive_cancellation_enabled", true, "If true, the scheduler will proactively cancel task reservations on executors when a task is completed by another executor.")
 	debugExecutorLabelsKey       = flag.String("remote_execution.debug_executor_labels_key", "", "If set, requests using the 'debug-executor-labels' platform property must also set the 'debug-executor-labels-key' platform property to this value, otherwise the requested labels are ignored. If empty, anyone can use 'debug-executor-labels'.", flag.Secret)
 	unclaimedTasksSetMaxSize     = flag.Int64("remote_execution.unclaimed_tasks_set_max_size", 100_000, "Max number of unclaimed tasks to track in redis per executor pool. This set of tasks is used for eager work assignments (when executors newly join a pool) and work-stealing requests (when executors are nearly idle).")
 	unclaimedTasksCacheTTL       = flag.Duration("remote_execution.unclaimed_tasks_cache_ttl", 1*time.Second, "If set, cache the unclaimed task list in memory for up to this TTL", flag.Internal)
@@ -138,6 +138,14 @@ const (
 	executorEnqueueTaskReservationTimeout = 100 * time.Millisecond
 
 	removeExecutorCleanupTimeout = 15 * time.Second
+
+	// How long to keep re-enqueueing an executor's handed-back task
+	// reservations after its registration stream has been cancelled due to
+	// the executor shutting down.
+	shutdownReEnqueueGracePeriod = 5 * time.Minute
+
+	// Timeout on re-enqueueing a single handed-back task reservation.
+	shutdownReEnqueuePerTaskTimeout = 15 * time.Second
 
 	// How often we revalidate credentials for an open registration stream.
 	checkRegistrationCredentialsInterval = 5 * time.Minute
@@ -407,13 +415,28 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				log.CtxInfof(ctx, "Executor %q is going away, re-enqueueing %d task reservations", executorID, len(req.GetShuttingDownRequest().GetTaskId()))
 				// Remove the executor first so that we don't try to send any work its way.
 				removeConnectedExecutor()
-				for _, taskID := range req.GetShuttingDownRequest().GetTaskId() {
+				// Extend the context here so that we can continue re-enqueueing
+				// after the executor has terminated.
+				reEnqueueCtx, cancelReEnqueue := background.ExtendContextForFinalization(ctx, shutdownReEnqueueGracePeriod)
+				taskIDs := req.GetShuttingDownRequest().GetTaskId()
+				for i, taskID := range taskIDs {
+					if reEnqueueCtx.Err() != nil {
+						// Re-enqueueing is a handful of Redis round trips per
+						// reservation, so running out of the grace period means
+						// Redis or the executor probes are pathologically slow.
+						alert.CtxUnexpectedEvent(reEnqueueCtx, "shutdown_reenqueue_grace_period_expired", "Gave up re-enqueueing task reservations for executor %q going down: grace period of %s after stream cancellation expired with %d of %d reservations not re-enqueued", executorID, shutdownReEnqueueGracePeriod, len(taskIDs)-i, len(taskIDs))
+						break
+					}
 					leaseID := ""
 					reconnectToken := ""
-					if err := h.scheduler.reEnqueueTask(ctx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down"); err != nil {
-						log.CtxWarningf(ctx, "Could not re-enqueue task reservation for executor %q going down: %s", executorID, err)
+					taskCtx, cancelTask := context.WithTimeout(reEnqueueCtx, shutdownReEnqueuePerTaskTimeout)
+					err := h.scheduler.reEnqueueTask(taskCtx, taskID, leaseID, reconnectToken, 1 /*=numReplicas*/, "executor shutting down")
+					cancelTask()
+					if err != nil {
+						log.CtxWarningf(reEnqueueCtx, "Could not re-enqueue task reservation %q for executor %q going down: %s", taskID, executorID, err)
 					}
 				}
+				cancelReEnqueue()
 			} else if req.GetAskForMoreWorkRequest() != nil {
 				poolKey := h.nodePoolKey(h.getRegistration())
 
@@ -762,7 +785,7 @@ func parseDebugExecutorLabels(ctx context.Context, task *repb.ExecutionTask) map
 		return nil
 	}
 	if *debugExecutorLabelsKey != "" && platform.FindEffectiveValue(task, "debug-executor-labels-key") != *debugExecutorLabelsKey {
-		alert.CtxUnexpectedEvent(ctx, "unauthorized_debug_executor_labels", "debug-executor-labels used without a matching debug-executor-labels-key; ignoring")
+		log.CtxWarningf(ctx, "debug-executor-labels %q used without a matching debug-executor-labels-key; ignoring", raw)
 		return nil
 	}
 	out := make(map[string]string)
@@ -1274,6 +1297,10 @@ type SchedulerServer struct {
 	// executors.
 	detector *upgrade.Detector
 
+	// Limits checkTaskAccess logging to one line per task owner group per
+	// interval.
+	checkTaskAccessLogLimiter *perKeyLogLimiter
+
 	versionMu           sync.Mutex
 	newestVersion       *semver.Version
 	newestVersionExpiry time.Time
@@ -1361,6 +1388,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
+		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -2053,7 +2081,6 @@ type leaseMessage struct {
 	err error
 }
 
-// TODO(vadim): we should verify that the executor is authorized to read the task
 func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error {
 	ctx := stream.Context()
 	lastCheckin := time.Now()
@@ -2063,10 +2090,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 	leaseID := ""
 
 	// TODO(vadim): remove after executor ID in lease request is rolled out
-	executorID := "unknown"
-	if p, ok := peer.FromContext(ctx); ok {
-		executorID = p.Addr.String()
-	}
+	executorID := peerAddress(ctx)
 
 	// If we've exited our event loop and the task is still claimed, then
 	// the worker did not finish properly and we should re-enqueue it.
@@ -2148,17 +2172,24 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 		if !claimed {
 			log.CtxDebugf(ctx, "LeaseTask attempt (reconnect=%t) from executor %q", req.GetReconnectToken() != "", executorID)
+			task, err := s.readTask(ctx, req.GetTaskId())
+			if err != nil {
+				if status.IsNotFoundError(err) {
+					log.CtxInfof(ctx, "LeaseTask attempt failed: task does not exist")
+				} else {
+					log.CtxWarningf(ctx, "LeaseTask error reading task %s", err)
+				}
+				return err
+			}
+			if err := s.checkTaskAccess(ctx, task, executorID); err != nil {
+				return err
+			}
 			leaseID, err = s.claimTask(ctx, taskID, req.GetReconnectToken(), req.GetSupportsReconnect())
 			if err != nil {
 				log.CtxDebugf(ctx, "LeaseTask claim attempt (reconnect=%t) failed: %s", req.GetReconnectToken() != "", err)
 				return err
 			}
 			claimed = true
-			task, err := s.readTask(ctx, req.GetTaskId())
-			if err != nil {
-				log.CtxErrorf(ctx, "LeaseTask error reading task %s", err.Error())
-				return err
-			}
 
 			log.CtxInfof(ctx, "LeaseTask task successfully claimed by executor %q", executorID)
 
@@ -2264,6 +2295,96 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		}
 	}
 
+	return nil
+}
+
+// checkTaskAccessExperiment is a boolean experiment that controls whether
+// requests failing checkTaskAccess are rejected. It defaults to false, in
+// which case mismatches are only logged.
+const checkTaskAccessExperiment = "remote_execution.task_access_check"
+
+func (s *SchedulerServer) taskAccessCheckEnforced(ctx context.Context, taskGroupID string) bool {
+	fp := s.env.GetExperimentFlagProvider()
+	if fp == nil {
+		return false
+	}
+	return fp.Boolean(ctx, checkTaskAccessExperiment, false, experiments.WithContext("group_id", taskGroupID))
+}
+
+// checkTaskAccessLogInterval bounds how often checkTaskAccess logs about a
+// given task owner group.
+const checkTaskAccessLogInterval = time.Minute
+
+// perKeyLogLimiter allows one log line per key per interval.
+type perKeyLogLimiter struct {
+	clock    clockwork.Clock
+	interval time.Duration
+
+	mu sync.Mutex
+	// Last time a log line was allowed, by key.
+	last map[string]time.Time
+}
+
+func newPerKeyLogLimiter(clock clockwork.Clock, interval time.Duration) *perKeyLogLimiter {
+	return &perKeyLogLimiter{
+		clock:    clock,
+		interval: interval,
+		last:     make(map[string]time.Time),
+	}
+}
+
+// allow reports whether a log line for the given key should be emitted now
+// and, if so, records that it was.
+func (l *perKeyLogLimiter) allow(key string) bool {
+	now := l.clock.Now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if t, ok := l.last[key]; ok && now.Sub(t) < l.interval {
+		return false
+	}
+	l.last[key] = now
+	return true
+}
+
+// peerAddress returns the network address of the RPC caller, for logging.
+func peerAddress(ctx context.Context) string {
+	if p, ok := peer.FromContext(ctx); ok {
+		return p.Addr.String()
+	}
+	return "unknown"
+}
+
+// checkTaskAccess checks that an executor leasing or re-enqueueing a task
+// presents the task owner's identity.
+//
+// Mismatches are always logged. A mismatch is only rejected if
+// checkTaskAccessExperiment is enabled for the task owner's group.
+func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTask, executorID string) error {
+	taskGroupID := task.metadata.GetTaskGroupId()
+	if taskGroupID == "" || taskGroupID == interfaces.AuthAnonymousUser {
+		return nil
+	}
+
+	var mismatchErr error
+	if user, err := s.env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+		mismatchErr = status.PermissionDeniedErrorf("request for task %q is not authenticated as the task owner (executors must send the task JWT with lease requests): %s", task.taskID, err)
+	} else if user.GetGroupID() != taskGroupID {
+		mismatchErr = status.PermissionDeniedErrorf("request for task %q is authenticated as group %q, which does not own the task", task.taskID, user.GetGroupID())
+	} else {
+		return nil
+	}
+
+	enforced := s.taskAccessCheckEnforced(ctx, taskGroupID)
+	if s.checkTaskAccessLogLimiter.allow(taskGroupID) {
+		if enforced {
+			log.CtxWarningf(ctx, "Rejected request from executor %q for task owned by group %q: %s", executorID, taskGroupID, mismatchErr)
+		} else {
+			log.CtxWarningf(ctx, "Request from executor %q does not match task owner group %q (not enforced): %s", executorID, taskGroupID, mismatchErr)
+		}
+	}
+	if enforced {
+		return mismatchErr
+	}
 	return nil
 }
 
@@ -2819,6 +2940,14 @@ func (s *SchedulerServer) ReEnqueueTask(ctx context.Context, req *scpb.ReEnqueue
 		return nil, status.FailedPreconditionError("lease id is required")
 	}
 	ctx = log.EnrichContext(ctx, log.ExecutionIDKey, req.GetTaskId())
+	task, err := s.readTask(ctx, req.GetTaskId())
+	if err != nil {
+		log.CtxWarningf(ctx, "ReEnqueueTask failed to read task %q: %s", req.GetTaskId(), err)
+		return nil, err
+	}
+	if err := s.checkTaskAccess(ctx, task, peerAddress(ctx)); err != nil {
+		return nil, err
+	}
 	reconnectToken := ""
 	if err := s.reEnqueueTask(ctx, req.GetTaskId(), req.GetLeaseId(), reconnectToken, probesPerTask, req.GetReason()); err != nil {
 		log.CtxErrorf(ctx, "ReEnqueueTask failed for task %q: %s", req.GetTaskId(), err)

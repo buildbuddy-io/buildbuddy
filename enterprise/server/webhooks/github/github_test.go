@@ -227,3 +227,96 @@ func TestParseWebhookData_UnhandledPullRequestAction_Ignored(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Nil(t, data)
 }
+
+func TestParseWebhookData_CommentEvent(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		action        string
+		isPullRequest bool
+		body          string
+		want          *interfaces.WebhookData
+	}{
+		{
+			name:          "supported command on pull request",
+			action:        "created",
+			isPullRequest: true,
+			body:          "/bb-review",
+			want: &interfaces.WebhookData{
+				EventName:               "pull_request_comment",
+				TargetRepoURL:           "https://github.com/test/repo.git",
+				TargetRepoDefaultBranch: "main",
+				IsTargetRepoPublic:      true,
+				PullRequestNumber:       7,
+				CommentAuthor:           "maintainer",
+				CommentBody:             "/bb-review",
+			},
+		},
+		{
+			name:          "supported command with whitespace",
+			action:        "created",
+			isPullRequest: true,
+			body:          "  /bb-review\n",
+			want: &interfaces.WebhookData{
+				EventName:               "pull_request_comment",
+				TargetRepoURL:           "https://github.com/test/repo.git",
+				TargetRepoDefaultBranch: "main",
+				IsTargetRepoPublic:      true,
+				PullRequestNumber:       7,
+				CommentAuthor:           "maintainer",
+				CommentBody:             "  /bb-review\n",
+			},
+		},
+		{
+			name:          "unsupported command",
+			action:        "created",
+			isPullRequest: true,
+			body:          "  /unsupported-command\n",
+		},
+		{
+			name:          "non-command comment",
+			action:        "created",
+			isPullRequest: true,
+			body:          "please take another look",
+		},
+		{
+			name:          "edited comment",
+			action:        "edited",
+			isPullRequest: true,
+			body:          "/bb-review",
+		},
+		{
+			name:          "deleted comment",
+			action:        "deleted",
+			isPullRequest: true,
+			body:          "/bb-review",
+		},
+		{
+			name:          "comment on issue",
+			action:        "created",
+			isPullRequest: false,
+			body:          "/bb-review",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			issue := &gh.Issue{Number: new(7)}
+			if tc.isPullRequest {
+				issue.PullRequestLinks = &gh.PullRequestLinks{URL: new("https://api.github.com/repos/test/repo/pulls/7")}
+			}
+			event := &gh.IssueCommentEvent{
+				Action: new(tc.action),
+				Repo: &gh.Repository{
+					CloneURL:      new("https://github.com/test/repo.git"),
+					DefaultBranch: new("main"),
+					Private:       new(false),
+				},
+				Issue:   issue,
+				Comment: &gh.IssueComment{Body: new(tc.body), User: &gh.User{Login: new("maintainer")}},
+			}
+
+			data, err := github.ParseWebhookData(event)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, data)
+		})
+	}
+}

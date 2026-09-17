@@ -85,7 +85,7 @@ func TestSetOptionDefaults(t *testing.T) {
 	require.Equal(t, pebble_cache.DefaultMaxSizeBytes, opts.MaxSizeBytes)
 	require.Equal(t, pebble_cache.DefaultBlockCacheSizeBytes, opts.BlockCacheSizeBytes)
 	require.Equal(t, pebble_cache.DefaultMaxInlineFileSizeBytes, opts.MaxInlineFileSizeBytes)
-	require.Equal(t, &pebble_cache.DefaultAtimeUpdateThreshold, opts.AtimeUpdateThreshold)
+	require.Equal(t, pebble_cache.DefaultMinEvictionAge/2, *opts.AtimeUpdateThreshold)
 	require.Equal(t, &pebble_cache.DefaultAtimeBufferSize, opts.AtimeBufferSize)
 	require.Equal(t, &pebble_cache.DefaultMinEvictionAge, opts.MinEvictionAge)
 
@@ -135,6 +135,84 @@ func TestSetOptionDefaults(t *testing.T) {
 	require.Equal(t, &atimeUpdateThreshold, opts.AtimeUpdateThreshold)
 	require.Equal(t, &atimeBufferSize, opts.AtimeBufferSize)
 	require.Equal(t, &minEvictionAge, opts.MinEvictionAge)
+}
+
+func TestSetOptionDefaults_AtimeUpdateThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		threshold      *time.Duration
+		minEvictionAge *time.Duration
+		partitions     []disk.Partition
+		want           time.Duration
+	}{
+		{
+			name:           "derived from the cache-wide min eviction age",
+			minEvictionAge: new(6 * time.Hour),
+			want:           3 * time.Hour,
+		},
+		{
+			name:           "derived from the smallest partition override",
+			minEvictionAge: new(6 * time.Hour),
+			partitions: []disk.Partition{
+				{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1},
+				{ID: "a", MaxSizeBytes: 1, MinEvictionAge: new(time.Hour)},
+				{ID: "b", MaxSizeBytes: 1, MinEvictionAge: new(4 * time.Hour)},
+			},
+			want: 30 * time.Minute,
+		},
+		{
+			name:           "cache-wide min eviction age is ignored when every partition overrides it",
+			minEvictionAge: new(time.Hour),
+			partitions: []disk.Partition{
+				{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1, MinEvictionAge: new(2 * time.Hour)},
+				{ID: "a", MaxSizeBytes: 1, MinEvictionAge: new(4 * time.Hour)},
+			},
+			want: time.Hour,
+		},
+		{
+			name:           "negative threshold is derived like unset",
+			threshold:      new(time.Duration(-1)),
+			minEvictionAge: new(6 * time.Hour),
+			want:           3 * time.Hour,
+		},
+		{
+			name:           "zero min eviction age falls back to the fixed default",
+			minEvictionAge: new(time.Duration(0)),
+			want:           pebble_cache.DefaultAtimeUpdateThreshold,
+		},
+		{
+			name:           "zero-age partition does not mask a positive partition age",
+			minEvictionAge: new(6 * time.Hour),
+			partitions: []disk.Partition{
+				{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1, MinEvictionAge: new(time.Duration(0))},
+				{ID: "a", MaxSizeBytes: 1, MinEvictionAge: new(5 * time.Minute)},
+			},
+			want: 150 * time.Second,
+		},
+		{
+			name:           "explicit zero threshold is kept",
+			threshold:      new(time.Duration(0)),
+			minEvictionAge: new(6 * time.Hour),
+			want:           0,
+		},
+		{
+			name:           "explicit threshold above half the min eviction age is kept",
+			threshold:      new(3 * time.Hour),
+			minEvictionAge: new(4 * time.Hour),
+			want:           3 * time.Hour,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := &pebble_cache.Options{
+				AtimeUpdateThreshold: tc.threshold,
+				MinEvictionAge:       tc.minEvictionAge,
+				Partitions:           tc.partitions,
+			}
+			pebble_cache.SetOptionDefaults(opts)
+			got := *opts.AtimeUpdateThreshold
+			require.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestIsolation(t *testing.T) {
@@ -298,14 +376,16 @@ func TestGetSet(t *testing.T) {
 }
 
 func TestPresenceCache(t *testing.T) {
-	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(1_000_000))
+	// The default configuration enables the presence cache without overrides.
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 	ctx := getAnonContext(t, te)
+	clock := clockwork.NewFakeClock()
 
 	const cacheName = "presence_test"
 	options := &pebble_cache.Options{
 		Name:                   cacheName,
+		Clock:                  clock,
 		RootDirectory:          testfs.MakeTempDir(t),
 		MaxSizeBytes:           int64(1_000_000_000),
 		MaxInlineFileSizeBytes: 100,
@@ -334,6 +414,15 @@ func TestPresenceCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, missing, "digest should be present")
 	require.Greater(t, testutil.ToFloat64(hitCtr), hitsBefore, "repeat FindMissing should hit the presence cache")
+
+	// After the default one-minute TTL, FindMissing must consult Pebble again
+	// so repeated presence checks do not indefinitely skip access-time updates.
+	clock.Advance(time.Minute)
+	hitsBefore = testutil.ToFloat64(hitCtr)
+	missing, err = pc.FindMissing(ctx, []*rspb.ResourceName{r})
+	require.NoError(t, err)
+	require.Empty(t, missing)
+	require.Equal(t, hitsBefore, testutil.ToFloat64(hitCtr), "expired entries must not be presence-cache hits")
 
 	// Deleting the blob must invalidate the presence cache; otherwise FindMissing
 	// would wrongly report it present (data loss).
@@ -1523,6 +1612,8 @@ func TestPartitionMinEvictionAge(t *testing.T) {
 }
 
 func TestPartitionJanitorCutoffThreshold(t *testing.T) {
+	// Check Pebble directly so the presence-cache TTL doesn't delay observing eviction.
+	flags.Set(t, "cache.pebble.presence_cache.max_entries", int64(0))
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, emptyUserMap))
 

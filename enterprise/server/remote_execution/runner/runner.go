@@ -458,6 +458,14 @@ func (r *taskRunner) Run(ctx context.Context, ioStats *repb.IOStats) (res *inter
 			}
 		}
 
+		// If a VFS (FUSE) download failed, always return that as the command
+		// error so that the task can be retried (even if the task ignored the
+		// FS error and succeeded, it may have produced an incorrect result).
+		if err := r.Workspace.VFSError(); err != nil {
+			res.Error = err
+			res.ExitCode = commandutil.NoExitCode
+		}
+
 		// If the task reported an error, and it was OOM-killed, make sure to
 		// return the OOM error as the effective task error.
 		if oomErr := context.Cause(ctx); res.Error != nil && oom.IsError(oomErr) {

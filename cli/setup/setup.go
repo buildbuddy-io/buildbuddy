@@ -37,7 +37,7 @@ func Setup(bazelArgs *arg.BazelArgs, execArgs []string, tempDir string) (*Result
 	}
 
 	// Save some flags from the current invocation for non-Bazel commands such
-	// as `bb ask`. Flags are saved before the sidecar rewrites them, since API
+	// as `bb explain`. Flags are saved before the sidecar rewrites them, since API
 	// requests require the original resolved values.
 	bazelArgs, err = flaghistory.SaveFlags(bazelArgs)
 	if err != nil {

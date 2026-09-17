@@ -3,7 +3,6 @@ package distributed_client
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -47,16 +46,6 @@ import (
 )
 
 const (
-	// writeBufSizeBytes controls the maximum size of buffers used for writing
-	// to a remote cache. This is also the maximum payload size for each
-	// WriteRequest, though with ioutil.DoubleBufferWriter, payloads will be
-	// smaller unless the remote cache is falling behind. Experiments and
-	// benchmarks show that 128KB, 256KB, and 512KB are all about as fast.
-	// Values outside that range cause more allocation in gRPC code. This
-	// should be slightly smaller than 2^N, to allow for proto and gRPC
-	// overhead.
-	writeBufSizeBytes = 512 * 1000 // 512 KB
-
 	// Reference verification outcomes.
 	VerificationSuccess = "success"
 	VerificationFailure = "failure"
@@ -110,7 +99,7 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		log:            logger,
 		readRefLogger:  logger.EveryN(100),
 		writeRefLogger: logger.EveryN(100),
-		bufPool:        bytebufferpool.VariableSize(max(*config.ReadBufSizeBytes, writeBufSizeBytes)),
+		bufPool:        bytebufferpool.VariableSize(*config.ReadBufSizeBytes),
 		listenAddr:     listenAddr,
 		mu:             &sync.Mutex{},
 		// server goes here
@@ -191,15 +180,29 @@ func digestToKey(d *repb.Digest) *dcpb.Key {
 	}
 }
 
+func (c *Proxy) CloseInactiveClients(stillActive set.View[string]) {
+	c.mu.Lock()
+	var poolsToClose []*grpc_client.ClientConnPool
+	for peer, pool := range c.clients {
+		if !stillActive.Contains(peer) {
+			delete(c.clients, peer)
+			poolsToClose = append(poolsToClose, pool)
+		}
+	}
+	c.mu.Unlock()
+	for _, p := range poolsToClose {
+		p.Close()
+	}
+}
+
 func (c *Proxy) getClient(ctx context.Context, peer string) (dcpb.DistributedCacheClient, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if client, ok := c.clients[peer]; ok {
-		conn, err := client.GetReadyConnection()
-		if err != nil {
-			return nil, status.UnavailableErrorf("no connections to peer %q are ready", peer)
+		if err := client.Check(ctx); err != nil {
+			return nil, status.UnavailableErrorf("no connections to peer %q are ready: %v", peer, err)
 		}
-		return dcpb.NewDistributedCacheClient(conn), nil
+		return dcpb.NewDistributedCacheClient(client), nil
 	}
 	log.Debugf("Creating new client for peer: %q", peer)
 
@@ -1147,7 +1150,7 @@ func (r *distributedCacheReader) Close() error {
 
 type streamWriteCloser struct {
 	cancelFunc      context.CancelFunc
-	sender          rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
+	sender          *rpcutil.Sender[*dcpb.WriteRequest, *dcpb.WriteResponse]
 	r               *rspb.ResourceName
 	ref             *refpb.Reference
 	refMustBeCloned bool
@@ -1161,8 +1164,8 @@ type streamWriteCloser struct {
 }
 
 func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
-	err := wc.sender.SendWithTimeoutCause(req, *peerWriteTimeout, context.DeadlineExceeded)
-	if errors.Is(err, context.DeadlineExceeded) {
+	err := wc.sender.SendWithTimeout(req, *peerWriteTimeout)
+	if status.IsDeadlineExceededError(err) {
 		err = status.DeadlineExceededErrorf("timed out sending distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
@@ -1170,8 +1173,8 @@ func (wc *streamWriteCloser) send(req *dcpb.WriteRequest) error {
 }
 
 func (wc *streamWriteCloser) closeAndRecv() (*dcpb.WriteResponse, error) {
-	rsp, err := wc.sender.CloseAndRecvWithTimeoutCause(*peerWriteTimeout, context.DeadlineExceeded)
-	if errors.Is(err, context.DeadlineExceeded) {
+	rsp, err := wc.sender.CloseAndRecvWithTimeout(*peerWriteTimeout)
+	if status.IsDeadlineExceededError(err) {
 		err = status.DeadlineExceededErrorf("timed out finalizing distributed cache write to peer %q for %s", wc.peer, ResourceIsolationString(wc.r))
 		wc.cancelFunc()
 	}
@@ -1246,12 +1249,10 @@ func (wc *streamWriteCloser) commit() error {
 }
 
 func (wc *streamWriteCloser) Close() error {
-	// Cancel the stream ctx to unblock any in-flight stream.Send() in the
-	// Sender's background goroutine and let gRPC clean up the stream.
-	// Deliberately do NOT call stream.CloseAndRecv() here: if Commit() was
-	// called successfully it already did, and if the write was abandoned the
-	// stream is already broken, so CloseAndRecv would just race against an
-	// unwinding Send and leak a goroutine stuck in waitOnHeader.
+	// Cancel the stream ctx to let gRPC clean up the stream. Deliberately do
+	// NOT call stream.CloseAndRecv() here: if Commit() was called
+	// successfully it already did, and if the write was abandoned the stream
+	// is already broken.
 	wc.cancelFunc()
 	return nil
 }
@@ -1262,8 +1263,11 @@ func (wc *streamWriteCloser) Close() error {
 // for; the receiving peer records a hinted handoff so the data can be
 // forwarded once that peer returns.
 func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
-	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
-	return dbw, err
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 // VerifiedWriter is a CommittedWriteCloser whose write stream's final message
@@ -1285,11 +1289,11 @@ func (w *VerifiedWriter) SetReference(ref *refpb.Reference) {
 // whose final stream message carries the reference bound via SetReference, if
 // any, for the peer to verify against the written bytes.
 func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (*VerifiedWriter, error) {
-	dbw, swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
+	swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
 	if err != nil {
 		return nil, err
 	}
-	return &VerifiedWriter{CommittedWriteCloser: dbw, swc: swc}, nil
+	return &VerifiedWriter{CommittedWriteCloser: swc, swc: swc}, nil
 }
 
 // RemoteReferenceWriter opens a write stream that writes r to the peer by
@@ -1298,21 +1302,24 @@ func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer stri
 // referenced blob's ownership semantics via mustClone. Like the byte path, a
 // peer that already has r is not an error.
 func (c *Proxy) RemoteReferenceWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, mustClone bool) (interfaces.CommittedWriteCloser, error) {
-	dbw, _, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
-	return dbw, err
+	w, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, ref, mustClone)
+	if err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
-func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (interfaces.CommittedWriteCloser, *streamWriteCloser, error) {
+func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName, ref *refpb.Reference, refMustBeCloned bool) (*streamWriteCloser, error) {
 	client, err := c.getClient(ctx, peer)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	stream, err := client.Write(ctx)
 	if err != nil {
 		cancel()
-		return nil, nil, err
+		return nil, err
 	}
 
 	requestType := "bytes"
@@ -1321,7 +1328,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 	}
 	wc := &streamWriteCloser{
 		cancelFunc:      cancel,
-		sender:          rpcutil.NewSender[*dcpb.WriteRequest, *dcpb.WriteResponse](ctx, stream),
+		sender:          rpcutil.NewSender(cancel, stream),
 		peer:            peer,
 		handoffPeer:     handoffPeer,
 		r:               r,
@@ -1329,7 +1336,7 @@ func (c *Proxy) newRemoteWriter(ctx context.Context, peer, handoffPeer string, r
 		refMustBeCloned: refMustBeCloned,
 		requestType:     requestType,
 	}
-	return ioutil.NewDoubleBufferWriter(ctx, wc, c.bufPool, digest.SafeBufferSize(r, writeBufSizeBytes), writeBufSizeBytes), wc, nil
+	return wc, nil
 }
 
 func (c *Proxy) SendHeartbeat(ctx context.Context, peer string) error {

@@ -34,6 +34,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/kubediscovery"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lib/set"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/peerset"
@@ -55,8 +56,8 @@ var (
 	groupName                    = flag.String("cache.distributed_cache.group_name", "", "A unique name for this distributed cache group. ** Enterprise only **")
 	nodes                        = flag.Slice("cache.distributed_cache.nodes", []string{}, "The hardcoded list of peer distributed cache nodes. If this is set, redis_target will be ignored. ** Enterprise only **")
 	enableKubernetesDiscovery    = flag.Bool("cache.distributed_cache.kubernetes_discovery", false, "If true, use the Kubernetes API to discover peer cache nodes by finding pods owned by the same controller (Deployment or StatefulSet). The pod must have RBAC permissions to get/list/watch pods and get replicasets/statefulsets.")
-	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
-	consistentHashVNodes         = flag.Int("cache.distributed_cache.consistent_hash_vnodes", 100, "The number of copies (virtual nodes) of each peer on the consistent hash ring")
+	consistentHashFunction       = flag.String("cache.distributed_cache.consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
+	consistentHashVNodes         = flag.Int("cache.distributed_cache.consistent_hash_vnodes", 10000, "The number of copies (virtual nodes) of each peer on the consistent hash ring")
 	replicationFactor            = flag.Int("cache.distributed_cache.replication_factor", 1, "How many total servers the data should be replicated to. Must be >= 1. ** Enterprise only **")
 	clusterSize                  = flag.Int("cache.distributed_cache.cluster_size", 0, "The total number of nodes in this cluster. Required for health checking. ** Enterprise only **")
 	enableLocalWrites            = flag.Bool("cache.distributed_cache.enable_local_writes", false, "If enabled, shortcuts distributed writes that belong to the local shard to local cache instead of making an RPC.")
@@ -64,11 +65,11 @@ var (
 	enableBackfill               = flag.Bool("cache.distributed_cache.enable_backfill", true, "If enabled, digests written to avoid unavailable nodes will be backfilled when those nodes return")
 	enableLocalCompressionLookup = flag.Bool("cache.distributed_cache.enable_local_compression_lookup", true, "If enabled, checks the local cache for compression support. If not set, distributed compression defaults to off.")
 	newNodes                     = flag.Slice("cache.distributed_cache.new_nodes", []string{}, "The new nodeset to add data too. Useful for migrations. ** Enterprise only **")
-	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "CRC32", "A consistent hash function to use when hashing data. CRC32 or SHA256")
-	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 100, "The number of copies of each peer on the new consistent hash ring")
+	newConsistentHashFunction    = flag.String("cache.distributed_cache.new_consistent_hash_function", "SHA256", "A consistent hash function to use when hashing data. CRC32 or SHA256")
+	newConsistentHashVNodes      = flag.Int("cache.distributed_cache.new_consistent_hash_vnodes", 10000, "The number of copies of each peer on the new consistent hash ring")
 	newNodesReadOnly             = flag.Bool("cache.distributed_cache.new_nodes_read_only", false, "If true, only attempt to read from the newNodes set; do not write to them yet")
 
-	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 0, "If > 0 ; lookaside cache will be enabled")
+	lookasideCacheSizeBytes  = flag.Int64("cache.distributed_cache.lookaside_cache_size_bytes", 1_000_000_000, "Maximum size in bytes of the in-memory lookaside cache, which avoids disk lookups for frequently accessed small objects. Set to 0 to disable.")
 	lookasideCacheTTL        = flag.Duration("cache.distributed_cache.lookaside_cache_ttl", 1*time.Minute, "The maximum TTL of items served from the lookaside cache. When this flag is set to a duration >0, items will only be served from the lookaside cache if they were added less than this long ago. If it is set to a duration <=0, no TTL check will occur before serving items from the lookaside cache. This value should be << atime_update_threshold when used in the authoritative cache.")
 	maxLookasideEntryBytes   = flag.Int64("cache.distributed_cache.max_lookaside_entry_bytes", 10_000, "The biggest allowed entry size in the lookaside cache.")
 	maxHintedHandoffsPerPeer = flag.Int64("cache.distributed_cache.max_hinted_handoffs_per_peer", 100_000, "The maximum number of hinted handoffs to keep in memory. Each hinted handoff is a digest (~64 bytes), prefix, and peer (40 bytes). So keeping around 100000 of these means an extra 10MB per peer.")
@@ -288,6 +289,8 @@ func NewDistributedCache(env environment.Env, c interfaces.Cache, opts Options, 
 			dc.log.Infof("distributed cache peer set changed to %v", peers)
 			if err := chash.SetFromMap(peers); err != nil {
 				dc.log.Errorf("Error setting peers in consistent hash: %s", err)
+			} else {
+				dc.distributedProxy.CloseInactiveClients(set.FromSeq(maps.Values(peers)))
 			}
 		})
 	} else {
@@ -1110,15 +1113,23 @@ func (c *Cache) sendFile(ctx context.Context, rn *rspb.ResourceName, dest string
 		return err
 	}
 	defer r.Close()
-	rwc, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
+	w, err := c.distributedProxy.RemoteWriter(ctx, dest, "", rn)
 	if err != nil {
 		return err
 	}
-	defer rwc.Close()
-	if _, err := io.Copy(rwc, r); err != nil {
+	defer w.Close()
+	_, rIsWriterTo := r.(io.WriterTo)
+	_, wIsReaderFrom := w.(io.ReaderFrom)
+	var buf []byte
+	if !rIsWriterTo && !wIsReaderFrom {
+		// If neither optimization applies, specify a bigger buffer than
+		// io.Copy's default 32KB, to reduce the number of round trips.
+		buf = make([]byte, digest.SafeBufferSize(rn, 256*1000))
+	}
+	if _, err := io.CopyBuffer(w, r, buf); err != nil {
 		return err
 	}
-	return rwc.Commit()
+	return w.Commit()
 }
 
 func (c *Cache) copyFile(ctx context.Context, rn *rspb.ResourceName, source string, dest string) error {

@@ -38,7 +38,7 @@ var (
 	pool                         = flag.String("executor.pool", "", "Executor pool name. Only one of this config option or the MY_POOL environment variable should be specified.")
 	labels                       = flag.Map[string, string]("executor.labels", map[string]string{}, "Optional labels identifying this executor, similar to Kubernetes labels (e.g. 'canary=true,experiment-ramfs=control,region=us-east1'). Reported to the scheduler at registration and used for server-side debug routing via the 'debug-executor-labels' platform property.")
 	xcodeSimulatorRuntimes       = flag.Slice("executor.xcode_simulator_runtimes", []string{}, "Optional Xcode Simulator Runtime strings to report in executor metadata.")
-	proactiveCancellationEnabled = flag.Bool("executor.proactive_cancellation_enabled", false, "Whether the executor supports proactive task cancellation.", flag.Internal)
+	proactiveCancellationEnabled = flag.Bool("executor.proactive_cancellation_enabled", true, "Whether the executor supports proactive task cancellation.", flag.Internal)
 )
 
 const (
@@ -124,6 +124,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		Port:                      1,
 		AssignableMemoryBytes:     resources.GetAllocatedRAMBytes(),
 		AssignableMilliCpu:        resources.GetAllocatedCPUMillis(),
+		AssignableGpuMemoryBytes:  resources.GetAllocatedGPUMemoryBytes(),
 		AssignableDiskBytes:       resources.GetAllocatedDiskBytes(),
 		AssignableCustomResources: customResources,
 		OsFamily:                  resources.GetOSFamily(),

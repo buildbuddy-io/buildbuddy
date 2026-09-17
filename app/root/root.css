@@ -487,15 +487,6 @@ a.card:hover {
   border-left: 6px solid transparent;
 }
 
-.card-suggestion.card-suggestion-bot {
-  background: var(--color-status-info);
-  color: var(--color-text-inverted);
-}
-
-.card-suggestion.card-suggestion-bot svg {
-  stroke: var(--color-icon-inverted);
-}
-
 .card.dark {
   background-color: var(--color-terminal-bg);
   color: var(--color-terminal-text);
@@ -1958,4 +1949,14 @@ code .comment {
 
 .recharts-tooltip-cursor {
   fill: var(--color-chart-hover-cursor);
+}
+
+.recharts-wrapper:focus,
+.recharts-wrapper *:focus {
+  outline: none;
+}
+
+.recharts-wrapper:focus-visible,
+.recharts-wrapper *:focus-visible {
+  outline: revert;
 }

@@ -3,7 +3,9 @@ package redisutil
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"path/filepath"
@@ -56,6 +58,46 @@ func (*logger) Printf(ctx context.Context, format string, args ...any) {
 		args = append([]any{filepath.Base(file), line}, args...)
 	}
 	log.CtxInfof(ctx, format, args...)
+}
+
+// IsTransientError reports whether err is one a Redis command may succeed
+// on if simply retried: a failed or dropped connection, a timeout, or a reply
+// Redis sends while it cannot serve the command yet, such as LOADING while a
+// dataset is restored. The replies follow what go-redis retries on its own
+// for a single command, in shouldRetry:
+// https://github.com/redis/go-redis/blob/cae67723092cac2cb441bc87044ab9edacb2484d/error.go#L28
+// (v8.11.5). Error replies inside a pipeline never get those retries, so a
+// caller that pipelines has to make the call itself. A canceled or expired
+// context is the caller's decision, not transient.
+func IsTransientError(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	// An expired context means the caller gave up, which is not transient.
+	// Check the deadline sentinel directly because a network timeout also
+	// matches context.DeadlineExceeded through errors.Is, and a network
+	// timeout is transient.
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if e == context.DeadlineExceeded {
+			return false
+		}
+	}
+	var redisErr redis.Error
+	if !errors.As(err, &redisErr) {
+		// Retry transport failures, but not arbitrary client errors such as
+		// a closed pool, an unavailable Ring, or a malformed reply.
+		var netErr net.Error
+		return errors.As(err, &netErr) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)
+	}
+	if errors.Is(err, redis.Nil) {
+		return false
+	}
+	reply := redisErr.Error()
+	return reply == "ERR max number of clients reached" ||
+		strings.HasPrefix(reply, "LOADING ") ||
+		strings.HasPrefix(reply, "READONLY ") ||
+		strings.HasPrefix(reply, "CLUSTERDOWN ") ||
+		strings.HasPrefix(reply, "TRYAGAIN ")
 }
 
 func isRedisURI(redisTarget string) bool {

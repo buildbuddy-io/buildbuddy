@@ -750,6 +750,20 @@ func (e *Executor) stop() {
 	e.env.GetHealthChecker().WaitForGracefulShutdown()
 }
 
+// BeginShutdown starts a graceful shutdown of the executor without waiting for
+// it to finish, like a SIGTERM would. The executor hands its queued task
+// reservations back to the scheduler and stops claiming work, but its
+// registration stream stays open until the shutdown completes and
+// DisconnectExecutor is called.
+func (e *Executor) BeginShutdown() {
+	e.env.GetHealthChecker().Shutdown()
+}
+
+// WaitForShutdown blocks until a shutdown started with BeginShutdown completes.
+func (e *Executor) WaitForShutdown() {
+	e.env.GetHealthChecker().WaitForGracefulShutdown()
+}
+
 // ShutdownTaskScheduler stops the task scheduler from de-queueing any more work.
 func (e *Executor) ShutdownTaskScheduler() {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultWaitTimeout)
@@ -959,6 +973,46 @@ func (r *Env) RemoveExecutor(executor *Executor) {
 	executor.stop()
 	delete(r.executors, executor.id)
 	r.waitForExecutorRegistration()
+}
+
+// DisconnectExecutor simulates the executor process exiting. It waits until
+// the scheduler has unregistered the executor, which happens when the
+// scheduler receives the executor's shutdown hand-back, then tears down the
+// registration stream with no further coordination with the server and stops
+// tracking the executor. Use it after BeginShutdown and WaitForShutdown to
+// model an executor that exits as soon as its own graceful shutdown completes,
+// whether or not the scheduler is done re-enqueueing its work.
+func (r *Env) DisconnectExecutor(executor *Executor) {
+	if _, ok := r.executors[executor.id]; !ok {
+		assert.FailNow(r.t, fmt.Sprintf("Executor %q not in executor map", executor.id))
+	}
+	r.waitForExecutorUnregistered(executor.id)
+	executor.cancelRegistration()
+	delete(r.executors, executor.id)
+}
+
+// waitForExecutorUnregistered waits until the scheduler no longer lists the
+// executor with the given ID.
+func (r *Env) waitForExecutorUnregistered(executorID string) {
+	ctx := r.WithUserID(context.Background(), r.UserID1)
+	client := r.GetBuildBuddyServiceClient()
+	req := &scpb.GetExecutionNodesRequest{
+		RequestContext: &ctxpb.RequestContext{
+			GroupId: r.GroupID1,
+		},
+	}
+	require.Eventually(r.t, func() bool {
+		rsp, err := client.GetExecutionNodes(ctx, req)
+		if err != nil {
+			return false
+		}
+		for _, e := range rsp.GetExecutor() {
+			if e.GetNode().GetExecutorId() == executorID {
+				return false
+			}
+		}
+		return true
+	}, defaultWaitTimeout, 100*time.Millisecond, "executor %q should be unregistered from the scheduler", executorID)
 }
 
 // waitForExecutorRegistration waits until the set of all registered executors matches expected internal set.

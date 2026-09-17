@@ -521,6 +521,8 @@ func (a *GitHubApp) handleWebhookEvent(ctx context.Context, eventType string, ev
 		return a.handlePullRequestEvent(ctx, eventType, event)
 	case *github.PullRequestReviewEvent:
 		return a.handlePullRequestReviewEvent(ctx, eventType, event)
+	case *github.IssueCommentEvent:
+		return a.maybeTriggerBuildBuddyWorkflow(ctx, eventType, event)
 	default:
 		// Event type not yet handled
 		return nil

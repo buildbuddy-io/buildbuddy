@@ -58,12 +58,6 @@ func TestGetCommandAndIndex(t *testing.T) {
 			expectedIndex: -1,
 		},
 		{
-			name:          "cli command alias",
-			args:          []string{"wtf", "test"},
-			expectedCmd:   "",
-			expectedIndex: -1,
-		},
-		{
 			name:          "no command",
 			args:          []string{"--output_base=/tmp/foo"},
 			expectedCmd:   "",
