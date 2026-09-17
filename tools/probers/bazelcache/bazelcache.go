@@ -319,6 +319,7 @@ func (p *prober) checkByteStream(compressor repb.Compressor_Value) error {
 	})
 }
 
+// Oversized responses fail with io.ErrShortWrite, which is fine.
 type byteWriterAt []byte
 
 func (b byteWriterAt) WriteAt(p []byte, off int64) (int, error) {
