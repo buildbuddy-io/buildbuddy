@@ -30,6 +30,7 @@ go_test(
     deps = [
         ":rpcutil",
         "//server/util/proto",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_prometheus_client_golang//prometheus",
         "@com_github_prometheus_client_model//io/prometheus/client:go",
