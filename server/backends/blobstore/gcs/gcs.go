@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	storageapi "google.golang.org/api/storage/v1"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -38,15 +39,19 @@ var (
 	gcsProjectID       = flag.String("storage.gcs.project_id", "", "The Google Cloud project ID of the project owning the above credentials and GCS bucket.")
 	useGRPC            = flag.Bool("storage.gcs.use_grpc", true, "Whether to use the gRPC client for GCS", flag.Internal)
 	grpcPoolSize       = flag.Int("storage.gcs.grpc_pool_size", 2, "The number of gRPC connections to open to GCS. Only used when `use_grpc=true`", flag.Internal)
+
+	archiveAfterDays      = flag.Int64("storage.gcs.archive_after_days", 0, "Archive live Standard blobs after this many days since creation. Reconciles the bucket lifecycle at startup; 0 disables reconciliation and leaves existing lifecycle rules unchanged.")
+	archiveSizeAboveBytes = flag.Int64("storage.gcs.archive_size_above_bytes", 2*1024*1024, "Compressed object size lower bound in bytes (exclusive) for the Archive lifecycle rule. 0 disables the size filter.")
 )
 
 // GCSBlobStore implements the blobstore API on top of the google cloud storage API.
 type GCSBlobStore struct {
-	gcsClient    *storage.Client
-	bucketHandle *storage.BucketHandle
-	projectID    string
-	compress     bool
-	metricLabel  string
+	clientOptions []option.ClientOption
+	gcsClient     *storage.Client
+	bucketHandle  *storage.BucketHandle
+	projectID     string
+	compress      bool
+	metricLabel   string
 }
 
 func UseGCSBlobStore() bool {
@@ -54,10 +59,10 @@ func UseGCSBlobStore() bool {
 }
 
 func NewGCSBlobStoreFromFlags(ctx context.Context) (*GCSBlobStore, error) {
-	return NewGCSBlobStore(ctx, *gcsBucket, *gcsCredentialsFile, *gcsCredentials, *gcsProjectID, true /*=enableCompression*/)
+	return NewGCSBlobStore(ctx, *gcsBucket, *gcsCredentialsFile, *gcsCredentials, *gcsProjectID, true /*=enableCompression*/, *archiveAfterDays, *archiveSizeAboveBytes)
 }
 
-func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID string, enableCompression bool) (*GCSBlobStore, error) {
+func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID string, enableCompression bool, archiveAfterDays, archiveSizeAboveBytes int64) (*GCSBlobStore, error) {
 	opts := make([]option.ClientOption, 0)
 	if creds != "" && credsFile != "" {
 		return nil, status.FailedPreconditionError("GCS credentials should be specified either via file or directly, but not both")
@@ -70,6 +75,8 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 		opts = append(opts, option.WithCredentialsJSON([]byte(creds)))
 	}
 
+	// Keep credential options without the gRPC-specific options for bucket metadata calls.
+	clientOptions := append([]option.ClientOption(nil), opts...)
 	var gcsClient *storage.Client
 	var err error
 	if *useGRPC {
@@ -89,13 +96,18 @@ func NewGCSBlobStore(ctx context.Context, bucket, credsFile, creds, projectID st
 		return nil, err
 	}
 	g := &GCSBlobStore{
-		gcsClient:   gcsClient,
-		projectID:   projectID,
-		compress:    enableCompression,
-		metricLabel: "gcs/" + bucket,
+		clientOptions: clientOptions,
+		gcsClient:     gcsClient,
+		projectID:     projectID,
+		compress:      enableCompression,
+		metricLabel:   "gcs/" + bucket,
 	}
 	err = g.createBucketIfNotExists(ctx, bucket)
 	if err != nil {
+		return nil, err
+	}
+	if err := g.setBucketArchiveLifecycle(ctx, archiveAfterDays, archiveSizeAboveBytes); err != nil {
+		g.gcsClient.Close()
 		return nil, err
 	}
 	log.Debug("GCS blobstore configured")
@@ -460,6 +472,54 @@ func (g *GCSBlobStore) Reader(ctx context.Context, blobName string, offset, limi
 	} else {
 		return reader, nil
 	}
+}
+
+// setBucketArchiveLifecycle owns the bucket's lifecycle, like SetBucketCustomTimeTTL.
+func (g *GCSBlobStore) setBucketArchiveLifecycle(ctx context.Context, ageDays, sizeAboveBytes int64) error {
+	bucket := g.bucketHandle.BucketName()
+	if ageDays == 0 {
+		log.CtxInfof(ctx, "bucket %q reconciliation disabled; leaving existing rules unchanged", bucket)
+		return nil
+	}
+	// The high-level storage client does not yet expose lifecycle size conditions.
+	api, err := storageapi.NewService(ctx, g.clientOptions...)
+	if err != nil {
+		return err
+	}
+	attrs, err := api.Buckets.Get(bucket).Context(ctx).Do()
+	if err != nil {
+		return err
+	}
+	if attrs.Autoclass != nil && attrs.Autoclass.Enabled {
+		return status.FailedPreconditionError("archive lifecycle rule requires autoclass to be disabled")
+	}
+	if attrs.Lifecycle != nil {
+		for _, rule := range attrs.Lifecycle.Rule {
+			if rule != nil && rule.Action != nil && rule.Condition != nil &&
+				rule.Action.Type == "SetStorageClass" && rule.Action.StorageClass == "ARCHIVE" &&
+				rule.Condition.Age != nil && *rule.Condition.Age == ageDays &&
+				rule.Condition.SizeAboveBytes == sizeAboveBytes {
+				log.CtxInfof(ctx, "bucket %q already has a matching rule (age_days=%d, size_above_bytes=%d); leaving existing rules unchanged", bucket, ageDays, sizeAboveBytes)
+				return nil
+			}
+		}
+	}
+	lifecycle := &storageapi.BucketLifecycle{Rule: []*storageapi.BucketLifecycleRule{{
+		Action: &storageapi.BucketLifecycleRuleAction{Type: "SetStorageClass", StorageClass: "ARCHIVE"},
+		Condition: &storageapi.BucketLifecycleRuleCondition{
+			Age:                 new(ageDays),
+			IsLive:              new(true),
+			MatchesStorageClass: []string{"STANDARD"},
+			SizeAboveBytes:      sizeAboveBytes,
+		},
+	}}}
+	log.CtxInfof(ctx, "bucket %q replacing lifecycle rules with archive rule (age_days=%d, size_above_bytes=%d)", bucket, ageDays, sizeAboveBytes)
+	_, err = api.Buckets.Patch(bucket, &storageapi.Bucket{Lifecycle: lifecycle}).Context(ctx).Do()
+	if err != nil {
+		return err
+	}
+	log.CtxInfof(ctx, "bucket %q successfully updated (age_days=%d, size_above_bytes=%d)", bucket, ageDays, sizeAboveBytes)
+	return nil
 }
 
 func (g *GCSBlobStore) SetBucketCustomTimeTTL(ctx context.Context, ageInDays int64) error {

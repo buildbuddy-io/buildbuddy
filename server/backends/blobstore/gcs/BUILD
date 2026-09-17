@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "gcs",
@@ -21,8 +21,20 @@ go_library(
         "@org_golang_google_api//googleapi",
         "@org_golang_google_api//iterator",
         "@org_golang_google_api//option",
+        "@org_golang_google_api//storage/v1:storage",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+    ],
+)
+
+go_test(
+    name = "gcs_test",
+    srcs = ["gcs_test.go"],
+    embed = [":gcs"],
+    deps = [
+        "@com_google_cloud_go_storage//:storage",
+        "@org_golang_google_api//option",
+        "@org_golang_google_api//storage/v1:storage",
     ],
 )

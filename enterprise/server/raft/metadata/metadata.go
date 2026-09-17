@@ -194,7 +194,7 @@ func NewFromFlags(env *real_environment.RealEnv) (*Server, error) {
 		// Create a new GCS Client with compression disabled. This cache
 		// will already compress blobs before storing them, so we don't
 		// want the gcs lib to attempt to compress them too.
-		gcsBlobstore, err := gcs.NewGCSBlobStore(env.GetServerContext(), gcsConfig.Bucket, "", gcsConfig.Credentials, gcsConfig.ProjectID, false /*=enableCompression*/)
+		gcsBlobstore, err := gcs.NewGCSBlobStore(env.GetServerContext(), gcsConfig.Bucket, "", gcsConfig.Credentials, gcsConfig.ProjectID, false /*=enableCompression*/, 0 /*=archiveAfterDays*/, 0 /*=archiveSizeAboveBytes*/)
 		if err != nil {
 			return nil, err
 		}

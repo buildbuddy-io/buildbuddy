@@ -690,7 +690,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 			// want the gcs lib to attempt to compress them too.
 			ctx := env.GetServerContext()
 			var err error
-			gcsBlobstore, err = gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/)
+			gcsBlobstore, err = gcs.NewGCSBlobStore(ctx, opts.GCSBucket, "", opts.GCSCredentials, opts.GCSProjectID, false /*=enableCompression*/, 0 /*=archiveAfterDays*/, 0 /*=archiveSizeAboveBytes*/)
 			if err != nil {
 				return nil, err
 			}

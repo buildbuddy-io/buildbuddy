@@ -48,7 +48,7 @@ func New(ctx context.Context) (flagdsync.ISync, error) {
 		return nil, status.InvalidArgumentErrorf("experiments.gcs.poll_interval must be positive, got %s", *pollInterval)
 	}
 
-	bs, err := gcs.NewGCSBlobStore(ctx, *bucket, *credentialsFile, *credentials, *projectID, false /*=enableCompression*/)
+	bs, err := gcs.NewGCSBlobStore(ctx, *bucket, *credentialsFile, *credentials, *projectID, false /*=enableCompression*/, 0 /*=archiveAfterDays*/, 0 /*=archiveSizeAboveBytes*/)
 	if err != nil {
 		return nil, err
 	}

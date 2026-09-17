@@ -161,7 +161,7 @@ func startDNSServer(env *real_environment.RealEnv) error {
 		if *acmeTSIGName == "" {
 			return status.FailedPreconditionError("dns.acme.gcs.bucket is set but dns.acme.tsig_key_name is empty; RFC2136 UPDATEs could not be authenticated")
 		}
-		bs, err := gcs.NewGCSBlobStore(context.Background(), *acmeGCSBucket, *acmeGCSCredFile, *acmeGCSCreds, *acmeGCSProject, false /*=enableCompression*/)
+		bs, err := gcs.NewGCSBlobStore(context.Background(), *acmeGCSBucket, *acmeGCSCredFile, *acmeGCSCreds, *acmeGCSProject, false /*=enableCompression*/, 0 /*=archiveAfterDays*/, 0 /*=archiveSizeAboveBytes*/)
 		if err != nil {
 			return status.WrapError(err, "init ACME challenge blobstore")
 		}
@@ -182,7 +182,7 @@ func startDNSServer(env *real_environment.RealEnv) error {
 		if *gcsPollInterval <= 0 {
 			return status.InvalidArgumentErrorf("--dns.gcs.poll_interval must be positive, got %s", *gcsPollInterval)
 		}
-		bs, err := gcs.NewGCSBlobStore(context.Background(), *gcsBucket, *gcsCredFile, *gcsCreds, *gcsProject, false /*=enableCompression*/)
+		bs, err := gcs.NewGCSBlobStore(context.Background(), *gcsBucket, *gcsCredFile, *gcsCreds, *gcsProject, false /*=enableCompression*/, 0 /*=archiveAfterDays*/, 0 /*=archiveSizeAboveBytes*/)
 		if err != nil {
 			return status.WrapError(err, "init zone-file blobstore")
 		}
