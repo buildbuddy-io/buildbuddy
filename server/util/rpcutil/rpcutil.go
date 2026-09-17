@@ -119,10 +119,10 @@ func init() {
 	// get a 1MiB from the pool, we would clear the whole thing, even though we
 	// only use a part of it.
 	pool, err := mem.NewBinaryTieredBufferPool(
-		8,
-		12, // Go page size, 4KB
-		14, // 16KB (max HTTP/2 frame size used by gRPC)
-		15, // 32KB (default buffer size for io.Copy)
+		8,	// 256 bytes
+		12, // Go page size, 4KiB
+		14, // 16KiB (max HTTP/2 frame size used by gRPC)
+		15, // 32KiB (default buffer size for io.Copy)
 		16, // 64KiB
 		17, // 128KiB
 		18, // 256KiB
