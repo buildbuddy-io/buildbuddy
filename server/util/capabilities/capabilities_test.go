@@ -135,6 +135,7 @@ func TestCanWriteCache(t *testing.T) {
 		{name: interfaces.OCIImageInstanceNamePrefix + "/nested/../../regular-instance"},
 		{name: interfaces.OCIImageInstanceNamePrefix + "/.."},
 		{name: "other/" + interfaces.OCIImageInstanceNamePrefix},
+		{name: "./" + interfaces.OCIImageInstanceNamePrefix},
 	} {
 		instanceName := instance.name
 		for _, test := range []struct {

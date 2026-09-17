@@ -48,9 +48,6 @@ const (
 	apiKeyEncryptionBackfillBatchSize = 100
 
 	impersonationAPIKeyDuration = 1 * time.Hour
-
-	// CACHE_WRITE includes both unrestricted CAS writes and scoped image writes.
-	impliedCacheWriteCapabilities = int32(cappb.Capability_CAS_WRITE | cappb.Capability_IMAGE_CACHE_WRITE)
 )
 
 const (
@@ -619,11 +616,11 @@ func (d *AuthDB) fetchAPIKeys(ctx context.Context, queryName, subDomain string, 
 			// Expand CACHE_WRITE before masking so its implied capabilities survive
 			// even if the user's role no longer allows unrestricted cache writes.
 			if row.Capabilities&int32(cappb.Capability_CACHE_WRITE) != 0 {
-				row.Capabilities |= impliedCacheWriteCapabilities
+				row.Capabilities |= capabilities.CacheWriteImpliedMask
 			}
 			row.Capabilities &= mask
 			if row.Capabilities&int32(cappb.Capability_CACHE_WRITE) != 0 {
-				row.Capabilities &^= impliedCacheWriteCapabilities
+				row.Capabilities &^= capabilities.CacheWriteImpliedMask
 			}
 		}
 		out = append(out, row)
@@ -892,7 +889,7 @@ func (d *AuthDB) authorizeNewAPIKeyCapabilities(ctx context.Context, userID, gro
 		requestedCapabilities := capabilities.ToInt(caps)
 		userCapabilitiesMask := capabilities.ToInt(userCapabilities)
 		if userCapabilitiesMask&int32(cappb.Capability_CACHE_WRITE) != 0 {
-			userCapabilitiesMask |= impliedCacheWriteCapabilities
+			userCapabilitiesMask |= capabilities.CacheWriteImpliedMask
 		}
 		if requestedCapabilities&userCapabilitiesMask != requestedCapabilities && !slices.Contains(userCapabilities, cappb.Capability_ORG_ADMIN) {
 			return status.PermissionDeniedError("user does not have permission to assign these API key capabilities")

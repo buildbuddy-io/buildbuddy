@@ -136,7 +136,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
       return [capability.Capability.CACHE_WRITE];
     }
     if (allowList.includes(capability.Capability.CAS_WRITE)) {
-      return [capability.Capability.CAS_WRITE];
+      return CAS_ONLY_CAPABILITIES.filter((c) => allowList.includes(c));
     }
     return [];
   }
@@ -307,7 +307,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 
   private onSelectCASOnly(onChange: (name: string, value: any) => any) {
-    onChange("capability", [capability.Capability.CAS_WRITE]);
+    onChange("capability", CAS_ONLY_CAPABILITIES);
   }
 
   private onSelectReadWrite(onChange: (name: string, value: any) => any) {
@@ -418,7 +418,7 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
                     type="radio"
                     onChange={this.onSelectCASOnly.bind(this, onChange)}
                     checked={isCASOnly(request)}
-                    disabled={!this.canSetCapabilities([capability.Capability.CAS_WRITE])}
+                    disabled={!this.canSetCapabilities(CAS_ONLY_CAPABILITIES)}
                     debug-id="cas-only-radio-button"
                   />
                   <span>
@@ -707,6 +707,10 @@ export default class ApiKeysComponent extends React.Component<ApiKeysComponentPr
   }
 }
 
+// CAS-only keys cannot write action cache entries, except for the container
+// image entries that trusted executors write on the key's behalf.
+const CAS_ONLY_CAPABILITIES = [capability.Capability.CAS_WRITE, capability.Capability.IMAGE_CACHE_WRITE];
+
 function capabilitiesToInt(capabilities: capability.Capability[]): number {
   let out = 0;
   for (const capability of capabilities) {
@@ -724,7 +728,11 @@ function isReadWrite<T extends ApiKeyFields>(apiKey: T | null) {
 }
 
 function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
-  return hasExactCapabilities(apiKey, [capability.Capability.CAS_WRITE]);
+  // Keys created before IMAGE_CACHE_WRITE existed only have CAS_WRITE.
+  return (
+    hasExactCapabilities(apiKey, CAS_ONLY_CAPABILITIES) ||
+    hasExactCapabilities(apiKey, [capability.Capability.CAS_WRITE])
+  );
 }
 
 function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {

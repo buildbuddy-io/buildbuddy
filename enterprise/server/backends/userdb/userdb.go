@@ -776,9 +776,9 @@ func (d *UserDB) updateUserRole(ctx context.Context, tx interfaces.DB, userID st
 	// so they survive a role change that removes unrestricted cache writes.
 	err = tx.NewQuery(ctx, "userdb_update_user_role_api_key_capabilities").Raw(`
 		UPDATE "APIKeys"
-		SET capabilities = (capabilities | CASE WHEN capabilities & ? != 0 THEN ? ELSE 0 END) & ?
+		SET capabilities = (capabilities | CASE WHEN (capabilities & ?) != 0 THEN ? ELSE 0 END) & ?
 		WHERE user_id = ? AND group_id = ?
-	`, int32(cappb.Capability_CACHE_WRITE), int32(cappb.Capability_CAS_WRITE|cappb.Capability_IMAGE_CACHE_WRITE), capabilities.ToInt(maxCapabilitiesForNewRole), userID, groupID).Exec().Error
+	`, int32(cappb.Capability_CACHE_WRITE), capabilities.CacheWriteImpliedMask, capabilities.ToInt(maxCapabilitiesForNewRole), userID, groupID).Exec().Error
 	if err != nil {
 		return err
 	}
