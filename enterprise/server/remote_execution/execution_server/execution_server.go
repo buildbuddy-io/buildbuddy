@@ -1072,6 +1072,12 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		TaskGroupId:       taskGroupID,
 		Priority:          req.GetExecutionPolicy().GetPriority(),
 		QueuedTimestamp:   executionTask.GetQueuedTimestamp(),
+		// Read the effective value here rather than from props, which were
+		// parsed before experiments appended their platform overrides above.
+		// Pass along the raw value rather than coercing unknown types, so that
+		// an unsupported request fails at scheduling time with a message
+		// naming the type that no executor supports.
+		RequestedIsolationType: platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName),
 	}
 	serializedTask, err := proto.Marshal(executionTask)
 	if err != nil {

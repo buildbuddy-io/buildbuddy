@@ -753,9 +753,10 @@ func newScheduleRequest(ctx context.Context, t *testing.T, env environment.Env, 
 	return &scpb.ScheduleTaskRequest{
 		TaskId: taskID,
 		Metadata: &scpb.SchedulingMetadata{
-			Os:       defaultOS,
-			Arch:     defaultArch,
-			TaskSize: size,
+			Os:                     defaultOS,
+			Arch:                   defaultArch,
+			TaskSize:               size,
+			RequestedIsolationType: opts.props[platform.WorkloadIsolationPropertyName],
 		},
 		SerializedTask: taskBytes,
 	}
@@ -2001,6 +2002,118 @@ func TestAskForMoreWork_DebugExecutorLabels_MissingKey(t *testing.T) {
 
 	taskID := scheduleTask(ctx, t, env, map[string]string{"debug-executor-labels": "foo=1,bar=2"})
 	assertLabelsIgnored(taskID, executor1, executor2)
+}
+
+// registerIsolationTypeExecutorPair registers two executors in the same pool,
+// one supporting only OCI isolation and the other supporting only firecracker
+// isolation.
+func registerIsolationTypeExecutorPair(ctx context.Context, t *testing.T, env environment.Env) (ociExecutor, firecrackerExecutor *fakeExecutor) {
+	ociExecutor = newFakeExecutorWithId(ctx, t, "oci", env.GetSchedulerClient())
+	ociExecutor.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor.Register()
+
+	firecrackerExecutor = newFakeExecutorWithId(ctx, t, "firecracker", env.GetSchedulerClient())
+	firecrackerExecutor.node.SupportedIsolationTypes = []string{"firecracker"}
+	firecrackerExecutor.Register()
+	return ociExecutor, firecrackerExecutor
+}
+
+func TestScheduleTask_RespectsRequestedIsolationType(t *testing.T) {
+	// Disable the unclaimed tasks cache so that the scheduled task is
+	// immediately visible to AskForMoreWork and to executors joining the pool.
+	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	ociExecutor, firecrackerExecutor := registerIsolationTypeExecutorPair(ctx, t, env)
+
+	// Schedule a task requesting firecracker isolation. Only the firecracker
+	// executor can run it, so the initial reservation should go there and the
+	// OCI executor should get nothing, even though probesPerTask exceeds the
+	// number of compatible executors.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"workload-isolation-type": "firecracker"})
+	nextReservation(t, firecrackerExecutor, taskID)
+	ociExecutor.EnsureTaskNotReceived(taskID)
+
+	// The task is unclaimed, so it's eligible for work stealing. The OCI
+	// executor asking for more work should only get a backoff response, not
+	// the task.
+	ociExecutor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	rsp := ociExecutor.NextSchedulerMessage()
+	require.Nil(t, rsp.GetEnqueueTaskReservationRequest())
+	require.Greater(t, rsp.GetAskForMoreWorkResponse().GetDelay().AsDuration(), time.Duration(0))
+
+	// The firecracker executor asking for more work should be offered the
+	// unclaimed task again.
+	firecrackerExecutor.Send(&scpb.RegisterAndStreamWorkRequest{
+		AskForMoreWorkRequest: &scpb.AskForMoreWorkRequest{},
+	})
+	nextReservation(t, firecrackerExecutor, taskID)
+
+	// Executors joining the pool are eagerly offered unclaimed tasks. A new
+	// OCI executor should not be offered the task, but a new firecracker
+	// executor should.
+	ociExecutor2 := newFakeExecutorWithId(ctx, t, "oci2", env.GetSchedulerClient())
+	ociExecutor2.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor2.Register()
+	ociExecutor2.EnsureTaskNotReceived(taskID)
+
+	firecrackerExecutor2 := newFakeExecutorWithId(ctx, t, "firecracker2", env.GetSchedulerClient())
+	firecrackerExecutor2.node.SupportedIsolationTypes = []string{"firecracker"}
+	firecrackerExecutor2.Register()
+	nextReservation(t, firecrackerExecutor2, taskID)
+}
+
+func TestScheduleTask_NoRequestedIsolationType_RunsOnAnyExecutor(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	ociExecutor, firecrackerExecutor := registerIsolationTypeExecutorPair(ctx, t, env)
+
+	// Schedule a task that doesn't request an isolation type. Either executor
+	// can run it using its own default, so both should receive a reservation
+	// (probesPerTask exceeds the number of executors).
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+	ociExecutor.WaitForTask(taskID)
+	firecrackerExecutor.WaitForTask(taskID)
+}
+
+func TestScheduleTask_ExecutorWithUnknownIsolationTypes(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// Register an executor that doesn't report its supported isolation types,
+	// as older executor versions don't, alongside one that only supports OCI.
+	unknownExecutor := newFakeExecutorWithId(ctx, t, "unknown", env.GetSchedulerClient())
+	unknownExecutor.Register()
+	ociExecutor := newFakeExecutorWithId(ctx, t, "oci", env.GetSchedulerClient())
+	ociExecutor.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor.Register()
+
+	// Schedule a task requesting firecracker isolation. The scheduler can't
+	// tell whether the executor with unknown isolation types supports it, so
+	// that executor is not filtered out and should get the reservation, while
+	// the OCI executor should be filtered out.
+	taskID := scheduleTask(ctx, t, env, map[string]string{"workload-isolation-type": "firecracker"})
+	unknownExecutor.WaitForTask(taskID)
+	ociExecutor.EnsureTaskNotReceived(taskID)
+}
+
+func TestScheduleTask_NoExecutorSupportsRequestedIsolationType(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	ociExecutor := newFakeExecutorWithId(ctx, t, "oci", env.GetSchedulerClient())
+	ociExecutor.node.SupportedIsolationTypes = []string{"oci"}
+	ociExecutor.Register()
+
+	// Schedule a task requesting firecracker isolation when the only executor
+	// in the pool supports OCI. Scheduling should fail with an error naming
+	// the unsupported isolation type, rather than enqueueing the task on an
+	// executor that would reject it.
+	req := newScheduleRequest(ctx, t, env, scheduleOpts{props: map[string]string{"workload-isolation-type": "firecracker"}})
+	_, err := env.GetSchedulerService().ScheduleTask(ctx, req)
+	require.True(t, status.IsUnavailableError(err), "expected Unavailable error, got: %v", err)
+	require.Contains(t, err.Error(), `support workload isolation type "firecracker"`)
+	ociExecutor.EnsureTaskNotReceived(req.GetTaskId())
 }
 
 func TestGetExecutionNodes(t *testing.T) {
