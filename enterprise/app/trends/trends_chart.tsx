@@ -55,7 +55,7 @@ export interface ChartDataSeries {
   dot?: boolean;
 }
 
-export interface ChartYAxis {
+interface ChartYAxis {
   allowDecimals?: boolean;
   formatTickValue?: (datum: number, index: number) => string;
 }
@@ -173,7 +173,7 @@ function TrendsChartTooltip({
       if (!s) {
         return undefined;
       }
-      const axis = s.usesSecondaryAxis ? secondaryScale! : primaryScale!;
+      const axis = s.usesSecondaryAxis ? secondaryScale : primaryScale;
       if (!axis) {
         return undefined;
       }
@@ -311,14 +311,6 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
     }
   }
 
-  componentDidMount(): void {
-    console.log("tc mount...");
-  }
-
-  componentWillUnmount(): void {
-    console.log("tc unmount..");
-  }
-
   onMouseDown(e: MouseHandlerDataParam) {
     if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
@@ -328,11 +320,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
   }
 
   onMouseMove(e: MouseHandlerDataParam) {
-    if (!this.props.onZoomSelection) {
-      return;
-    }
-
-    if (!e) {
+    if (!this.props.onZoomSelection || !e) {
       this.setState({ refAreaLeft: undefined, refAreaRight: undefined });
       return;
     }
@@ -380,7 +368,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             accessibilityLayer={false}
             data={this.props.data}
             onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
-            onMouseMove={this.onMouseMove.bind(this)}
+            onMouseMove={this.props.onZoomSelection && this.onMouseMove.bind(this)}
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" yAxisId="primary" />
             {!this.props.hideLegend && <Legend onClick={this.onLegendClick.bind(this)} />}
