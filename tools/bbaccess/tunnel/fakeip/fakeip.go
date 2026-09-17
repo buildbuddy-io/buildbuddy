@@ -52,11 +52,12 @@ func NewTable(prefix netip.Prefix) (*Table, error) {
 	}
 	base := addrToUint32(prefix.Masked().Addr())
 	size := uint32(1) << (32 - prefix.Bits())
-	// Skip the network address and the address the TUN itself holds (.0.1),
-	// and leave the broadcast address alone.
-	const reservedAtStart = 2
+	// Skip the network address, the address the TUN itself holds (.0.1) and,
+	// on macOS, its point-to-point peer (.0.2); leave the broadcast address
+	// alone.
+	const reservedAtStart = 3
 	return &Table{
-		prefix: prefix,
+		prefix: prefix.Masked(),
 		first:  base + reservedAtStart,
 		count:  size - reservedAtStart - 1,
 		byName: make(map[string]netip.Addr),

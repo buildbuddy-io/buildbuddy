@@ -60,9 +60,11 @@ func (s *Server) Start(addr string) error {
 	for range 2 {
 		select {
 		case err := <-errCh:
+			s.Shutdown() // whichever listener did start
 			return fmt.Errorf("starting DNS server on %s: %w", addr, err)
 		case <-started:
 		case <-time.After(10 * time.Second):
+			s.Shutdown()
 			return fmt.Errorf("timed out starting DNS server on %s", addr)
 		}
 	}
@@ -84,7 +86,9 @@ func (s *Server) handle(w dns.ResponseWriter, req *dns.Msg) {
 	resp.Authoritative = true
 
 	for _, q := range req.Question {
-		name := strings.TrimSuffix(q.Name, ".")
+		// Lower case before the name reaches the table: resolvers that
+		// randomize query case (0x20) must not allocate an address per variant.
+		name := strings.ToLower(strings.TrimSuffix(q.Name, "."))
 
 		if q.Qtype == dns.TypePTR {
 			s.answerPTR(resp, q)
@@ -159,10 +163,12 @@ func (s *Server) answerPTR(resp *dns.Msg, q dns.Question) {
 
 // addrFromARPA parses "4.3.2.1.in-addr.arpa." into 1.2.3.4.
 func addrFromARPA(name string) (netip.Addr, bool) {
-	n := strings.TrimSuffix(strings.ToLower(strings.TrimSuffix(name, ".")), ".in-addr.arpa")
-	if n == name {
+	const suffix = ".in-addr.arpa"
+	n := strings.ToLower(strings.TrimSuffix(name, "."))
+	if !strings.HasSuffix(n, suffix) {
 		return netip.Addr{}, false
 	}
+	n = strings.TrimSuffix(n, suffix)
 	parts := strings.Split(n, ".")
 	if len(parts) != 4 {
 		return netip.Addr{}, false
