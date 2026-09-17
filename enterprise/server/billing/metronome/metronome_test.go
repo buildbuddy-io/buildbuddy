@@ -2,6 +2,7 @@ package metronome_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -221,6 +222,60 @@ func TestTransactionIDDeterministic(t *testing.T) {
 	// Check that the transaction IDs are the same.
 	// Metronome de-dupes duplicate transaction IDs, which it important to prevent double-billing retries.
 	assert.Equal(t, gotEvents[0].TransactionID, gotEvents[1].TransactionID, "transaction ID must be independent of count and label-map iteration order")
+}
+
+func TestCreateCustomerAndContract(t *testing.T) {
+	var contract map[string]any
+	conflict := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+		switch r.Method + " " + r.URL.Path {
+		case "POST /v1/customers":
+			var body map[string]any
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			assert.Equal(t, "Acme", body["name"])
+			assert.Equal(t, []any{"GR1"}, body["ingest_aliases"])
+			fmt.Fprint(w, `{"data":{"id":"cust-1"}}`)
+		case "POST /v1/contracts/create":
+			if conflict {
+				http.Error(w, "uniqueness key already used", http.StatusConflict)
+				return
+			}
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&contract))
+			fmt.Fprint(w, `{"data":{"id":"contract-1"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	testflags.Set(t, "http.client.allow_localhost", true)
+	testflags.Set(t, "billing.metronome.api_key", "test-key")
+	testflags.Set(t, "billing.metronome.api_url", server.URL)
+	testflags.Set(t, "billing.metronome.rate_card_alias", "self-serve")
+	testflags.Set(t, "billing.metronome.free_credit_cents", int64(12345))
+	testflags.Set(t, "billing.metronome.free_credit_product_id", "prod-credit")
+
+	c, err := metronome.NewClient(nil, nil)
+	require.NoError(t, err)
+	id, err := c.CreateCustomer(t.Context(), "Acme", "GR1")
+	require.NoError(t, err)
+	assert.Equal(t, "cust-1", id)
+
+	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, c.CreateContract(t.Context(), "cust-1", start, "GR1"))
+	assert.Equal(t, "cust-1", contract["customer_id"])
+	assert.Equal(t, "self-serve", contract["rate_card_alias"])
+	assert.Equal(t, "2026-09-01T00:00:00Z", contract["starting_at"])
+	assert.Equal(t, "GR1", contract["uniqueness_key"])
+	credit := contract["recurring_credits"].([]any)[0].(map[string]any)
+	assert.Equal(t, "prod-credit", credit["product_id"])
+	assert.Equal(t, "MONTHLY", credit["recurrence_frequency"])
+	assert.Equal(t, "2026-09-01T00:00:00Z", credit["starting_at"])
+	assert.Equal(t, map[string]any{"unit_price": float64(12345), "quantity": float64(1)}, credit["access_amount"])
+
+	conflict = true
+	require.NoError(t, c.CreateContract(t.Context(), "cust-1", start, "GR1"))
 }
 
 func TestEventPropertiesCoverAllLabels(t *testing.T) {

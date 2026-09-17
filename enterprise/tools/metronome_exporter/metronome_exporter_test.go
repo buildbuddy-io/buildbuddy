@@ -22,6 +22,10 @@ import (
 type fakeMetronomeClient struct {
 	reported   [][]metronome.UsageEvent
 	failOnCall int
+
+	customers map[string]string
+	created   []string
+	contracts map[string]time.Time
 }
 
 func (c *fakeMetronomeClient) ReportUsage(ctx context.Context, events []metronome.UsageEvent) error {
@@ -29,6 +33,27 @@ func (c *fakeMetronomeClient) ReportUsage(ctx context.Context, events []metronom
 		return errors.New("metronome unavailable")
 	}
 	c.reported = append(c.reported, append([]metronome.UsageEvent(nil), events...))
+	return nil
+}
+
+func (c *fakeMetronomeClient) FindCustomerID(ctx context.Context, ingestAlias string) (string, error) {
+	return c.customers[ingestAlias], nil
+}
+
+func (c *fakeMetronomeClient) CreateCustomer(ctx context.Context, name, ingestAlias string) (string, error) {
+	if c.customers == nil {
+		c.customers = map[string]string{}
+	}
+	c.customers[ingestAlias] = "cust-" + ingestAlias
+	c.created = append(c.created, ingestAlias)
+	return c.customers[ingestAlias], nil
+}
+
+func (c *fakeMetronomeClient) CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error {
+	if c.contracts == nil {
+		c.contracts = map[string]time.Time{}
+	}
+	c.contracts[customerID] = startingAt
 	return nil
 }
 
@@ -206,6 +231,33 @@ func TestExport_DryRunDoesNotModifyState(t *testing.T) {
 	}))
 	require.NoError(t, export(ctx, env, nil /*=client*/, now))
 	requireState(t, env, from)
+}
+
+func TestExport_CreatesCustomersForGroupsWithUsage(t *testing.T) {
+	env := setupClickHouseEnv(t)
+	ctx := t.Context()
+	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
+	labels := map[sku.LabelName]sku.LabelValue{sku.Client: sku.ClientBazel}
+	seedState(t, env, from)
+	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
+		rawUsage("GR1", from, sku.BuildEventsBESCount, labels, 2),
+		rawUsage("GR2", from.Add(metronome.WindowSize), sku.BuildEventsBESCount, labels, 3),
+	}))
+
+	client := &fakeMetronomeClient{customers: map[string]string{"GR2": "existing-GR2"}}
+	require.NoError(t, export(ctx, env, client, from.Add(2*metronome.WindowSize).Add(minAge)))
+
+	monthStart := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	require.Equal(t, []string{"GR1"}, client.created)
+	require.Equal(t, map[string]time.Time{"cust-GR1": monthStart}, client.contracts)
+
+	require.NoError(t, env.GetOLAPDBHandle().FlushUsages(ctx, []*schema.RawUsage{
+		rawUsage("GR1", from.Add(2*metronome.WindowSize), sku.BuildEventsBESCount, labels, 5),
+	}))
+	client.contracts = nil
+	require.NoError(t, export(ctx, env, client, from.Add(3*metronome.WindowSize).Add(minAge)))
+	require.Equal(t, []string{"GR1"}, client.created)
+	require.Empty(t, client.contracts)
 }
 
 func TestQueryUsageRows(t *testing.T) {
