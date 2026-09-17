@@ -1,6 +1,8 @@
 package cli_command
 
-import "flag"
+import (
+	"flag"
+)
 
 type Command struct {
 	Name string
@@ -95,6 +97,10 @@ var Commands = []*Command{
 	{
 		Name: "search",
 		Help: "Searches for code in the remote codesearch index.",
+	},
+	{
+		Name: "secrets",
+		Help: "Manages organization secrets (--help shows subcommands).",
 	},
 	{
 		Name: "ssh",
