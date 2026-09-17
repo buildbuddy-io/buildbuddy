@@ -28,7 +28,7 @@ go_library(
 
 go_test(
     name = "grpc_client_test",
-    size = "medium",
+    size = "small",
     srcs = [
         "grpc_client_internal_test.go",
         "grpc_client_test.go",
