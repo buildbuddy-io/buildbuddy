@@ -13,12 +13,12 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/cgroup"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/ociruntime"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/vbd"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/cpuset"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
-	"github.com/buildbuddy-io/buildbuddy/server/util/flagutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/networking"
 	"github.com/prometheus/client_golang/prometheus"
@@ -144,10 +144,7 @@ func enableTaskCgroupControllers(path string) error {
 	if cpuset.LeasingEnabled() {
 		requiredBy["cpuset"] = "executor.cpu_leaser.enable"
 	}
-	memoryLimitEnabled, err := flagutil.GetDereferencedValue[bool]("executor.oci.enable_cgroup_memory_limit")
-	if err != nil {
-		log.Warningf("Could not read executor.oci.enable_cgroup_memory_limit flag value: %s", err)
-	} else if memoryLimitEnabled {
+	if ociruntime.CgroupMemoryLimitEnabled() {
 		requiredBy["memory"] = "executor.oci.enable_cgroup_memory_limit"
 	}
 

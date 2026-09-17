@@ -186,6 +186,12 @@ var (
 	}
 )
 
+// CgroupMemoryLimitEnabled returns whether task cgroup memory limits are
+// enabled via the executor.oci.enable_cgroup_memory_limit flag.
+func CgroupMemoryLimitEnabled() bool {
+	return *enableCgroupMemoryLimit
+}
+
 type provider struct {
 	env environment.Env
 
