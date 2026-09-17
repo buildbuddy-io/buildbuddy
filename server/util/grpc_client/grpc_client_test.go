@@ -6,15 +6,20 @@ import (
 	"math"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
 	pspb "github.com/buildbuddy-io/buildbuddy/proto/ping_service"
+	dto "github.com/prometheus/client_model/go"
 )
 
 type TestService struct {
@@ -95,4 +100,90 @@ func TestClientConnPoolSplitter(t *testing.T) {
 		first.requests.Store(int64(0))
 		second.requests.Store(int64(0))
 	}
+}
+
+// pendingRPCSeriesCount returns the number of series in the
+// PendingClientRPCsPerConnection gauge vec that carry the given target label.
+// A series persists at value 0 after its RPC finishes, so this observes which
+// (target, pool, method, connection) combinations ever carried an RPC.
+func pendingRPCSeriesCount(t *testing.T, target string) int {
+	ch := make(chan prometheus.Metric)
+	go func() {
+		metrics.PendingClientRPCsPerConnection.Collect(ch)
+		close(ch)
+	}()
+	count := 0
+	for m := range ch {
+		d := &dto.Metric{}
+		require.NoError(t, m.Write(d))
+		for _, lp := range d.GetLabel() {
+			if lp.GetName() == metrics.GRPCTargetLabel && lp.GetValue() == target {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func TestCheck(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+
+	// A pool aimed at a live server reports healthy. Ping first: it blocks
+	// until a connection is ready, making the check deterministic.
+	ts := startServer(t, te)
+	_, err := pspb.NewApiClient(ts.client).Ping(ctx, &pspb.PingRequest{})
+	require.NoError(t, err)
+	require.NoError(t, ts.client.Check(ctx))
+
+	// A pool that has never managed to connect gets the benefit of the doubt:
+	// RPCs dispatched to it ride the connection attempts (and fail fast
+	// themselves if the target is down), so Check stays healthy even as the
+	// connections cycle through CONNECTING and TRANSIENT_FAILURE.
+	deadPool, err := grpc_client.DialSimpleWithPoolSize(fmt.Sprintf("grpc://localhost:%d", testport.FindFree(t)), 2)
+	require.NoError(t, err)
+	require.Never(t, func() bool { return deadPool.Check(ctx) != nil }, 2*time.Second, 100*time.Millisecond)
+
+	// Once a connection has been ready, losing the server makes the pool
+	// unhealthy.
+	port := testport.FindFree(t)
+	server, err := grpc_server.New(te, port, false /*=ssl*/, grpc_server.GRPCServerConfig{})
+	require.NoError(t, err)
+	pspb.RegisterApiServer(server.GetServer(), &TestService{})
+	require.NoError(t, server.Start())
+	pool, err := grpc_client.DialInternalWithPoolSize(te, fmt.Sprintf("grpc://localhost:%d", port), 1)
+	require.NoError(t, err)
+	_, err = pspb.NewApiClient(pool).Ping(ctx, &pspb.PingRequest{})
+	require.NoError(t, err)
+	// This Check observes the connection in the Ready state, which is what
+	// disqualifies it from benefit-of-the-doubt treatment after the stop.
+	require.NoError(t, pool.Check(ctx))
+	server.GetServer().Stop()
+	require.Eventually(t, func() bool {
+		err := pool.Check(ctx)
+		return err != nil && status.IsUnavailableError(err)
+	}, 15*time.Second, 50*time.Millisecond)
+}
+
+func TestClose_DeletesPendingRPCMetricSeries(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	port := testport.FindFree(t)
+	server, err := grpc_server.New(te, port, false /*=ssl*/, grpc_server.GRPCServerConfig{})
+	require.NoError(t, err)
+	pspb.RegisterApiServer(server.GetServer(), &TestService{})
+	require.NoError(t, server.Start())
+
+	target := fmt.Sprintf("grpc://localhost:%d", port)
+	pool, err := grpc_client.DialInternal(te, target)
+	require.NoError(t, err)
+	client := pspb.NewApiClient(pool)
+	for range 10 {
+		_, err := client.Ping(ctx, &pspb.PingRequest{})
+		require.NoError(t, err)
+	}
+	require.NotZero(t, pendingRPCSeriesCount(t, target))
+
+	require.NoError(t, pool.Close())
+	require.Zero(t, pendingRPCSeriesCount(t, target))
 }
