@@ -41,9 +41,9 @@ func TestToCapabilities(t *testing.T) {
 		role role.Role
 		want []cappb.Capability
 	}{
-		{role.Admin, []cappb.Capability{cappb.Capability_CACHE_WRITE, cappb.Capability_CAS_WRITE, cappb.Capability_IMAGE_CACHE_WRITE, cappb.Capability_ORG_ADMIN}},
-		{role.Writer, []cappb.Capability{cappb.Capability_CACHE_WRITE, cappb.Capability_CAS_WRITE, cappb.Capability_IMAGE_CACHE_WRITE}},
-		{role.Developer, []cappb.Capability{cappb.Capability_CAS_WRITE, cappb.Capability_IMAGE_CACHE_WRITE}},
+		{role.Admin, []cappb.Capability{cappb.Capability_CACHE_WRITE, cappb.Capability_CAS_WRITE, cappb.Capability_ORG_ADMIN}},
+		{role.Writer, []cappb.Capability{cappb.Capability_CACHE_WRITE, cappb.Capability_CAS_WRITE}},
+		{role.Developer, []cappb.Capability{cappb.Capability_CAS_WRITE}},
 		{role.Reader, nil},
 	} {
 		t.Run(test.role.String(), func(t *testing.T) {

@@ -1866,9 +1866,8 @@ func TestUserOwnedKeys_ChangeRole_UpdatesCapabilities(t *testing.T) {
 	akg, err := env.GetAuthDB().GetAPIKeyGroupFromAPIKey(ctx, us1Key.Value)
 	require.NoError(t, err)
 	assert.Equal(t, capabilities.ToInt([]cappb.Capability{
-		// Preserve the narrower write capabilities after losing CACHE_WRITE.
+		// CACHE_WRITE should have been demoted to CAS_WRITE.
 		cappb.Capability_CAS_WRITE,
-		cappb.Capability_IMAGE_CACHE_WRITE,
 	}), akg.GetCapabilities())
 }
 
@@ -2612,7 +2611,6 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			UserRole: role.Developer,
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CAS_WRITE,
-				cappb.Capability_IMAGE_CACHE_WRITE,
 			},
 		},
 		{
@@ -2621,7 +2619,6 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CACHE_WRITE,
 				cappb.Capability_CAS_WRITE,
-				cappb.Capability_IMAGE_CACHE_WRITE,
 				cappb.Capability_ORG_ADMIN,
 			},
 		},
@@ -2631,7 +2628,6 @@ func TestCapabilitiesForUserRole(t *testing.T) {
 			ExpectedCapabilities: []cappb.Capability{
 				cappb.Capability_CACHE_WRITE,
 				cappb.Capability_CAS_WRITE,
-				cappb.Capability_IMAGE_CACHE_WRITE,
 			},
 		},
 		{
@@ -3331,7 +3327,7 @@ func TestRemoveUserListFromGroup_UserAPIKeyStillWorksForDirectMember(t *testing.
 	// Key should still exist with capabilities constrained to Developer's max.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via direct membership")
-	assert.Equal(t, int32(cappb.Capability_CAS_WRITE), akg.GetCapabilities())
+	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
 }
 
 func TestRemoveUserFromUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T) {
@@ -3383,7 +3379,7 @@ func TestRemoveUserFromUserList_UserAPIKeyStillWorksForDirectMember(t *testing.T
 	// Key should still exist — Developer still grants CAS_WRITE.
 	akg, err := adb.GetAPIKeyGroupFromAPIKey(ctx, us2Key.Value)
 	require.NoError(t, err, "key should still be valid via direct membership")
-	assert.Equal(t, int32(cappb.Capability_CAS_WRITE), akg.GetCapabilities())
+	assert.Equal(t, capabilities.ToInt(role.DeveloperCapabilities), akg.GetCapabilities())
 }
 
 func TestDeleteUserList_InvalidatesUserAPIKeysForIndirectMembers(t *testing.T) {

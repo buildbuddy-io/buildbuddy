@@ -31,16 +31,6 @@ var (
 	UserAPIKeyCapabilitiesMask = ToInt([]cappb.Capability{
 		cappb.Capability_CACHE_WRITE,
 		cappb.Capability_CAS_WRITE,
-		cappb.Capability_IMAGE_CACHE_WRITE,
-	})
-
-	// CacheWriteImpliedMask is the mask form of the narrower write capabilities
-	// implied by CACHE_WRITE. When a role mask removes CACHE_WRITE from an API
-	// key, these capabilities are preserved so the key keeps the writes that
-	// the new role still allows.
-	CacheWriteImpliedMask = ToInt([]cappb.Capability{
-		cappb.Capability_CAS_WRITE,
-		cappb.Capability_IMAGE_CACHE_WRITE,
 	})
 )
 
