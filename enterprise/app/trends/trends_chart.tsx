@@ -21,6 +21,8 @@ import {
   TooltipProps,
   useChartHeight,
   useChartWidth,
+  useXAxisInverseScale,
+  useXAxisScale,
   useYAxisScale,
   XAxis,
   YAxis,
@@ -209,6 +211,7 @@ function TrendsChartTooltip({
 function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDataSeriesProps) {
   const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
   const clickHandler = ds.onClick;
+  const xAxis = useXAxisScale(axis);
   const chartWidth = useChartWidth() ?? 0;
   const chartHeight = useChartHeight() ?? 0;
   switch (ds.type) {
@@ -223,17 +226,25 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
         hide={hidden}
         stackId={ds.stackId}
         fill={getResolvedColor(color)}>
-        {data.map((date, datumIndex) => (
-          <Cell
-            cursor={clickHandler ? "pointer" : "default"}
-            key={`cell-${datumIndex}`}
-            onClick={
-              !zoomFn && clickHandler
-                ? (e) => clickHandler(date, e, { x: 0, y: 0, chartWidth, chartHeight })
-                : undefined
-            }
-          />
-        ))}
+        {data.map((date, datumIndex) => {
+          return (
+            <Cell
+              cursor={clickHandler ? "pointer" : "default"}
+              key={`cell-${datumIndex}`}
+              onClick={
+                !zoomFn && clickHandler
+                  ? (e) =>
+                      clickHandler(date, e, {
+                        x: xAxis ? (xAxis(date) ?? 0) : 0,
+                        y: chartHeight / 2, // who cares
+                        chartWidth,
+                        chartHeight,
+                      })
+                  : undefined
+              }
+            />
+          );
+        })}
       </Bar>;
     case SeriesType.LINE:
       return (
