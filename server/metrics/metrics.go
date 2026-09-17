@@ -40,10 +40,6 @@ const (
 	// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
 	InvocationStatusLabel = "invocation_status"
 
-	// Whether live invocation log chunks were written to the key-value store
-	// with suffix-only writes: `true` or `false` (experiment arm).
-	LogSuffixWritesEnabledLabel = "suffix_writes_enabled"
-
 	// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
@@ -574,13 +570,11 @@ var (
 		Help:      "The total number of anonymous build event streams discarded because they did not contain an API key.",
 	})
 
-	InvocationLogLiveChunkWrittenBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+	InvocationLogLiveChunkWrittenBytes = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "log_live_chunk_written_bytes",
 		Help:      "Total number of bytes written to the key-value store for live (in-progress) invocation log tail chunks.",
-	}, []string{
-		LogSuffixWritesEnabledLabel,
 	})
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
