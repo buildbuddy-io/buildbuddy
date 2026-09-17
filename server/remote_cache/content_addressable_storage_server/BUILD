@@ -19,6 +19,7 @@ go_library(
         "//server/remote_cache/digest",
         "//server/remote_cache/directory_size",
         "//server/usage/sku",
+        "//server/util/authutil",
         "//server/util/background",
         "//server/util/bazel_request",
         "//server/util/capabilities",

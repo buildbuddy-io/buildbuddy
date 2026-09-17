@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/snaputil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github/slashcommand"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/webhook_data"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/workflow/config"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/github"
@@ -582,11 +583,16 @@ func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflo
 		}
 	}
 
+	return ws.suppressActions(ctx, wf, wd, filteredActions), nil
+}
+
+// suppressActions removes actions whose execution is suppressed via experiment.
+func (ws *workflowService) suppressActions(ctx context.Context, wf *tables.Workflow, wd *interfaces.WebhookData, actions []*config.Action) []*config.Action {
 	efp := ws.env.GetExperimentFlagProvider()
 	if efp == nil {
-		return filteredActions, nil
+		return actions
 	}
-	filteredActions = slices.DeleteFunc(filteredActions, func(a *config.Action) bool {
+	return slices.DeleteFunc(actions, func(a *config.Action) bool {
 		suppressWorkflowExecution := efp.Boolean(ctx, suppressWorkflowExecutionExperimentName, false,
 			experiments.WithContext("group_id", wf.GroupID),
 			experiments.WithContext("workflow_action_name", a.Name),
@@ -600,8 +606,6 @@ func (ws *workflowService) filterActions(ctx context.Context, wf *tables.Workflo
 		}
 		return false
 	})
-
-	return filteredActions, nil
 }
 
 func (ws *workflowService) getWorkflowByID(ctx context.Context, workflowID string) (*tables.Workflow, error) {
@@ -1500,10 +1504,60 @@ func (ws *workflowService) startLegacyWorkflow(ctx context.Context, webhookID st
 	return ws.enqueueStartWorkflowTask(ctx, gitProvider, wd, wf)
 }
 
-func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow, env map[string]string) error {
+// getSlashCommandActions returns the actions to run for a pull request
+// slash command.
+// Returns no actions if the slash command should be ignored.
+func (ws *workflowService) getSlashCommandActions(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) (*interfaces.WebhookData, []*config.Action, bool, error) {
+	action, ok := slashcommand.WorkflowAction(wd.CommentBody)
+	if !ok {
+		log.CtxInfof(ctx, "Ignoring unsupported pull request slash command %q", wd.CommentBody)
+		return nil, nil, false, nil
+	}
+
+	// Only trusted commenters may run slash commands.
+	isCommenterTrusted, err := gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.CommentAuthor)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if !isCommenterTrusted {
+		log.CtxInfof(ctx, "Ignoring slash command %q from untrusted user %q", wd.CommentBody, wd.CommentAuthor)
+		return nil, nil, false, nil
+	}
+
+	// The payload for comments doesn't include some metadata required to run a workflow, so fetch it from
+	// the associated pull request.
+	prData, err := gitProvider.GetPullRequestData(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestNumber)
+	if err != nil {
+		return nil, nil, false, status.WrapError(err, "fetch pull request data for slash command")
+	}
+	resolved := *wd
+	resolved.PushedRepoURL = prData.PushedRepoURL
+	resolved.PushedBranch = prData.PushedBranch
+	resolved.SHA = prData.SHA
+	resolved.TargetBranch = prData.TargetBranch
+	resolved.PullRequestAuthor = prData.PullRequestAuthor
+	resolved.PullRequestIsDraft = prData.PullRequestIsDraft
+
+	// A trusted commenter only authorizes dispatching the command. It doesn't
+	// vouch for the pull request's code, which a fork author can change after
+	// the commenter last reviewed it (or even between the comment and the
+	// metadata fetch above). Commands on pull requests from untrusted authors
+	// must run as untrusted so that their code never gets access to secrets.
+	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, &resolved)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	actions := ws.suppressActions(ctx, wf, &resolved, []*config.Action{action})
+	return &resolved, actions, isTrusted, nil
+}
+
+// getWorkflowActions returns the actions from the repo's workflow config that match
+// the webhook event, along with whether the event's commit is trusted. Returns
+// no actions if the event should be ignored.
+func (ws *workflowService) getWorkflowActions(ctx context.Context, gitProvider interfaces.GitProvider, wf *tables.Workflow, wd *interfaces.WebhookData) ([]*config.Action, bool, error) {
 	isTrusted, err := ws.isTrustedCommit(ctx, gitProvider, wf, wd)
 	if err != nil {
-		return err
+		return nil, false, err
 	}
 	// If this is a PR approval event and the PR is untrusted, then re-run the
 	// workflow as a trusted workflow, but only if the approver is trusted, and
@@ -1511,21 +1565,17 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 	if wd.PullRequestApprover != "" {
 		if isTrusted {
 			log.CtxInfof(ctx, "Ignoring approving pull request review for %s (pull request is already trusted)", wf.WorkflowID)
-			return nil
+			return nil, false, nil
 		}
 		isApproverTrusted, err := gitProvider.IsTrusted(ctx, wf.AccessToken, wd.TargetRepoURL, wd.PullRequestApprover)
 		if err != nil {
-			return err
+			return nil, false, err
 		}
 		if !isApproverTrusted {
 			log.CtxInfof(ctx, "Ignoring approving pull request review for %s (approver is untrusted)", wf.WorkflowID)
-			return nil
+			return nil, false, nil
 		}
 		isTrusted = true
-	}
-	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
-	if err != nil {
-		return err
 	}
 
 	cfg, fetchErr := ws.fetchWorkflowConfig(ctx, gitProvider, wf, wd)
@@ -1533,23 +1583,46 @@ func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interf
 		if err := ws.createWorkflowConfigErrorStatus(ctx, wf, wd, fetchErr); err != nil {
 			log.CtxWarningf(ctx, "Failed to create workflow config error status: %s", err)
 		}
-		return status.WrapError(fetchErr, "fetch workflow config")
+		return nil, false, status.WrapError(fetchErr, "fetch workflow config")
 	}
 
 	if shouldUpdateScheduledWorkflows(wd, wf.GitRepository) {
 		err := ws.updateScheduledWorkflows(ctx, wf.GitRepository, cfg, wd.TargetRepoDefaultBranch)
 		if err != nil {
-			return err
+			return nil, false, err
 		}
 	}
 
 	// If there is no config, the user does not have one configured.
 	// Do nothing in this case.
 	if cfg == nil {
-		return nil
+		return nil, false, nil
 	}
 
 	actions, err := ws.filterActions(ctx, wf, wd, cfg.Actions, nil /*actionFilter*/)
+	if err != nil {
+		return nil, false, err
+	}
+	return actions, isTrusted, nil
+}
+
+func (ws *workflowService) startWorkflow(ctx context.Context, gitProvider interfaces.GitProvider, wd *interfaces.WebhookData, wf *tables.Workflow, env map[string]string) error {
+	var actions []*config.Action
+	var isTrusted bool
+	var err error
+	if wd.EventName == webhook_data.EventName.PullRequestComment {
+		wd, actions, isTrusted, err = ws.getSlashCommandActions(ctx, gitProvider, wf, wd)
+	} else {
+		actions, isTrusted, err = ws.getWorkflowActions(ctx, gitProvider, wf, wd)
+	}
+	if err != nil {
+		return err
+	}
+	if len(actions) == 0 {
+		return nil
+	}
+
+	apiKey, err := ws.apiKeyForWorkflow(ctx, wf)
 	if err != nil {
 		return err
 	}

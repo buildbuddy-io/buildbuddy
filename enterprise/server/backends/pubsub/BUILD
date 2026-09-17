@@ -7,8 +7,10 @@ go_library(
     srcs = ["pubsub.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/backends/pubsub",
     deps = [
+        "//enterprise/server/util/redisutil",
         "//server/interfaces",
         "//server/util/alert",
+        "//server/util/flag",
         "//server/util/log",
         "//server/util/status",
         "@com_github_go_redis_redis_v8//:redis",
@@ -24,6 +26,7 @@ go_test(
         "//enterprise/server/testutil/testredis",
         "//enterprise/server/util/redisutil",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_go_redis_redis_v8//:redis",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

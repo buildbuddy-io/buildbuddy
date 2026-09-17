@@ -20,6 +20,8 @@ func formatStatus(inv *inpb.Invocation) string {
 		return "In progress"
 	case inspb.InvocationStatus_DISCONNECTED_INVOCATION_STATUS:
 		return "Disconnected"
+	case inspb.InvocationStatus_MISSING_API_KEY_INVOCATION_STATUS:
+		return "Missing API key"
 	default:
 		return "Unknown"
 	}

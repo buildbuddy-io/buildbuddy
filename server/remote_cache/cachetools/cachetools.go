@@ -558,7 +558,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 	buf := uploadBufPool.Get(bufSize)
 	defer uploadBufPool.Put(buf)
 	bytesUploaded := int64(0)
-	sender := rpcutil.NewSender(ctx, stream)
+	sender := rpcutil.NewSender(cancel, stream)
 	resourceName := r.NewUploadString()
 	for {
 		n, err := ioutil.ReadTryFillBuffer(rc, buf)
@@ -575,7 +575,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 		resourceName = "" // Only set resource name on first request
 
-		err = sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+		err = sender.SendWithTimeout(req, *casRPCTimeout)
 		if err != nil {
 			// If the blob already exists in the CAS, the server will respond EOF.
 			// It is safe to stop sending writes.
@@ -590,7 +590,7 @@ func uploadFromReader(ctx context.Context, bsClient bspb.ByteStreamClient, r *di
 		}
 
 	}
-	rsp, err := sender.CloseAndRecvWithTimeoutCause(*casRPCTimeout, status.DeadlineExceededError("Timed out waiting for CloseAndRecv"))
+	rsp, err := sender.CloseAndRecvWithTimeout(*casRPCTimeout)
 	if err != nil {
 		// If there is a hash mismatch and the reader supports seeking, re-hash
 		// to check whether a concurrent mutation has occurred.
@@ -1571,10 +1571,9 @@ func maybeSetCompressor(rn *digest.CASResourceName) {
 }
 
 type UploadWriter struct {
-	ctx          context.Context
 	cancel       context.CancelFunc
 	stream       bspb.ByteStream_WriteClient
-	sender       rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
+	sender       *rpcutil.Sender[*bspb.WriteRequest, *bspb.WriteResponse]
 	uploadString string
 
 	bytesUploaded int64
@@ -1636,7 +1635,7 @@ func (uw *UploadWriter) flush(finish bool) error {
 		WriteOffset:  uw.bytesUploaded,
 		FinishWrite:  finish,
 	}
-	uw.sendErr = uw.sender.SendWithTimeoutCause(req, *casRPCTimeout, status.DeadlineExceededError("Timed out sending Write request"))
+	uw.sendErr = uw.sender.SendWithTimeout(req, *casRPCTimeout)
 	if uw.sendErr != nil {
 		if uw.sendErr == io.EOF {
 			// The server closed the stream, so we need to call CloseAndRecv
@@ -1744,10 +1743,9 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 	}
 
 	bufSize := int64(digest.SafeBufferSize(r.ToProto(), uploadBufSizeBytes))
-	sender := rpcutil.NewSender[*bspb.WriteRequest, *bspb.WriteResponse](ctx, stream)
+	sender := rpcutil.NewSender(cancel, stream)
 	if r.GetCompressor() == repb.Compressor_ZSTD {
 		return &UploadWriter{
-			ctx:          ctx,
 			cancel:       cancel,
 			stream:       stream,
 			sender:       sender,
@@ -1758,7 +1756,6 @@ func NewUploadWriter(ctx context.Context, bsClient bspb.ByteStreamClient, r *dig
 		}, nil
 	}
 	return &UploadWriter{
-		ctx:          ctx,
 		cancel:       cancel,
 		stream:       stream,
 		sender:       sender,

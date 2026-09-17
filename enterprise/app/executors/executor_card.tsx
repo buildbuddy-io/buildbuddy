@@ -83,24 +83,22 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 </div>
               </>
             )}
-            {this.props.details &&
-              this.props.node.assignableCustomResources &&
-              this.props.node.assignableCustomResources.length > 0 && (
-                <div className="executor-section">
-                  <div className="executor-section-title">Assignable Resources:</div>
-                  <div className="executor-custom-resource">
-                    {this.props.node.assignableCustomResources.map((r) => {
-                      return (
-                        <div className="executor-custom-resource-wrapper">
-                          <div className="executor-custom-resource-key">{r.name}: </div>
-                          <div>{r.value}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
+            {this.props.node.assignableCustomResources && this.props.node.assignableCustomResources.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Assignable Resources:</div>
+                <div className="executor-custom-resource">
+                  {this.props.node.assignableCustomResources.map((r) => {
+                    return (
+                      <div className="executor-custom-resource-wrapper" key={r.name}>
+                        <div className="executor-custom-resource-key">{r.name}: </div>
+                        <div>{r.value}</div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            {this.props.details && this.props.node.xcodeVersions && this.props.node.xcodeVersions.length > 0 && (
+              </div>
+            )}
+            {this.props.node.xcodeVersions && this.props.node.xcodeVersions.length > 0 && (
               <div className="executor-section">
                 {this.props.node.xcodeVersions.length == 1 && (
                   <div className="executor-section-title">Xcode Version:</div>
@@ -111,14 +109,12 @@ export default class ExecutorCardComponent extends React.Component<Props> {
                 <div>{this.props.node.xcodeVersions.join(", ")}</div>
               </div>
             )}
-            {this.props.details &&
-              this.props.node.xcodeSimulatorRuntimes &&
-              this.props.node.xcodeSimulatorRuntimes.length > 0 && (
-                <div className="executor-section">
-                  <div className="executor-section-title">Xcode Simulator Runtimes:</div>
-                  <div>{this.props.node.xcodeSimulatorRuntimes.join(", ")}</div>
-                </div>
-              )}
+            {this.props.node.xcodeSimulatorRuntimes && this.props.node.xcodeSimulatorRuntimes.length > 0 && (
+              <div className="executor-section">
+                <div className="executor-section-title">Xcode Simulator Runtimes:</div>
+                <div>{this.props.node.xcodeSimulatorRuntimes.join(", ")}</div>
+              </div>
+            )}
             {this.props.details &&
               this.props.node.supportedIsolationTypes &&
               this.props.node.supportedIsolationTypes.length > 0 && (

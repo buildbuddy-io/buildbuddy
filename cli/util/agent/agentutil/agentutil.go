@@ -1,5 +1,10 @@
 package agentutil
 
+import (
+	"io"
+	"os"
+)
+
 const (
 	Claude = "claude"
 	Codex  = "codex"
@@ -17,6 +22,13 @@ type RunRequest struct {
 	ReasoningEffort string
 	Prompt          string
 
+	// Output overrides the default output stream for the agent's result.
+	Output io.Writer
+
+	// Progress overrides the default output stream for the agent's
+	// turn-by-turn activity and diagnostics.
+	Progress io.Writer
+
 	// ClaudeAllowedTools restricts which tools Claude may call.
 	ClaudeAllowedTools []string
 
@@ -28,8 +40,19 @@ type RunRequest struct {
 	CodexArgs []string
 }
 
-type RunResponse struct {
-	Output        string
-	SessionID     string
-	ResumeCommand string
+// OutputWriter returns the writer for the agent's result.
+func (r *RunRequest) OutputWriter() io.Writer {
+	if r.Output != nil {
+		return r.Output
+	}
+	return os.Stdout
+}
+
+// ProgressWriter returns the writer for the agent's turn-by-turn activity and
+// diagnostics.
+func (r *RunRequest) ProgressWriter() io.Writer {
+	if r.Progress != nil {
+		return r.Progress
+	}
+	return os.Stderr
 }

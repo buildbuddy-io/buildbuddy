@@ -32,17 +32,36 @@ var (
 	}
 )
 
-// The maximum number of items that can be passed to Set(). This is before they
-// are multiplied by vnodes. Using 256 allows us to use uint8 values in a few
-// places and an array of size 256 instead of a slice for deduplication.
-// Increasing this would require changing all fields with uint8 values, and
-// rethinking the deduplication strategy.
-const maxSize = 256
+// The maximum number of items that can be passed to Set(). It bounds the size
+// of the fixed-size bitset used for deduplication in GetAllReplicas, which
+// lives on the stack, so it should stay small (a few KB at most).
+const maxSize = 4096
+
+// Compile-time check that maxSize is a multiple of 64.
+const _ = -uint(maxSize % 64)
+
+// itemIndex is the type used to index into the items slice. It is narrower
+// than int to keep keyIndexToItemIndex compact.
+type itemIndex uint16
+
+// Compile-time check that every index below maxSize fits in itemIndex.
+const _ = itemIndex(maxSize - 1)
+
+// replicaBitset tracks which items have been seen while walking the ring.
+type replicaBitset [maxSize / 64]uint64
+
+func (b *replicaBitset) has(i itemIndex) bool {
+	return b[i/64]&(1<<(i%64)) != 0
+}
+
+func (b *replicaBitset) add(i itemIndex) {
+	b[i/64] |= 1 << (i % 64)
+}
 
 type ConsistentHash struct {
 	keys                []int
 	items               []string
-	keyIndexToItemIndex []uint8
+	keyIndexToItemIndex []itemIndex
 	numVnodes           int
 	hashKey             HashFunction
 	mu                  sync.RWMutex
@@ -61,13 +80,13 @@ func NewConsistentHash(hashFunction HashFunction, vnodes int) *ConsistentHash {
 		numVnodes:           vnodes,
 		hashKey:             hashFunction,
 		keys:                make([]int, 0),
-		keyIndexToItemIndex: make([]uint8, 0),
+		keyIndexToItemIndex: make([]itemIndex, 0),
 	}
 }
 
 func (c *ConsistentHash) GetItems() []string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.items
 }
 
@@ -102,27 +121,32 @@ func (c *ConsistentHash) SetFromMap(m map[string]string) error {
 }
 
 func (c *ConsistentHash) set(keys, values []string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.keys = make([]int, 0, len(keys)*c.numVnodes)
-	ring := make(map[int]uint8, len(keys)*c.numVnodes)
+	// numVnodes and hashKey are immutable after construction, so the ring can
+	// be built without holding the lock. The lock is only taken to swap in the
+	// fully-built result.
+	hashedKeys := make([]int, 0, len(keys)*c.numVnodes)
+	ring := make(map[int]itemIndex, len(keys)*c.numVnodes)
 
-	c.items = values
-
-	for itemIndex, key := range keys {
+	for idx, key := range keys {
 		for i := 0; i < c.numVnodes; i++ {
 			h := c.hashKey(strconv.Itoa(i) + key)
-			c.keys = append(c.keys, h)
-			ring[h] = uint8(itemIndex)
+			hashedKeys = append(hashedKeys, h)
+			ring[h] = itemIndex(idx)
 		}
 	}
-	sort.Ints(c.keys)
+	sort.Ints(hashedKeys)
 	// Precompute the mapping from key to item. This doesn't depened on the
 	// keys that are passed to Get or GetAllReplicas.
-	c.keyIndexToItemIndex = make([]uint8, len(c.keys))
-	for i, key := range c.keys {
-		c.keyIndexToItemIndex[i] = ring[key]
+	keyIndexToItemIndex := make([]itemIndex, len(hashedKeys))
+	for i, key := range hashedKeys {
+		keyIndexToItemIndex[i] = ring[key]
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.keys = hashedKeys
+	c.items = values
+	c.keyIndexToItemIndex = keyIndexToItemIndex
 }
 
 // Get returns the single "item" responsible for the specified key.
@@ -146,7 +170,7 @@ func (c *ConsistentHash) firstKey(key string) int {
 	return startKeyIdx
 }
 
-func (c *ConsistentHash) lookupVnodes(startKeyIdx int, fn func(vnodeIndex uint8) bool) {
+func (c *ConsistentHash) lookupVnodes(startKeyIdx int, fn func(vnodeIndex itemIndex) bool) {
 	done := false
 	for offset := 1; offset < len(c.keys) && !done; offset += 1 {
 		keyIdx := (startKeyIdx + offset)
@@ -171,15 +195,15 @@ func (c *ConsistentHash) GetAllReplicas(key string) []string {
 
 	replicas := make([]string, 0, len(c.items))
 	replicas = append(replicas, c.items[originalIndex])
-	var replicaSet [maxSize]bool // This doesn't allocate since it's on the stack.
-	replicaSet[originalIndex] = true
+	var replicaSet replicaBitset // This doesn't allocate since it's on the stack.
+	replicaSet.add(originalIndex)
 
-	c.lookupVnodes(startKeyIdx, func(vnodeIndex uint8) bool {
+	c.lookupVnodes(startKeyIdx, func(vnodeIndex itemIndex) bool {
 		// If we already visited this vnode's corresponding replica, skip.
-		if replicaSet[vnodeIndex] {
+		if replicaSet.has(vnodeIndex) {
 			return false
 		}
-		replicaSet[vnodeIndex] = true
+		replicaSet.add(vnodeIndex)
 		replicas = append(replicas, c.items[vnodeIndex])
 		return len(replicas) == len(c.items)
 	})

@@ -40,10 +40,6 @@ const (
 	// Invocation status: `success`, `failure`, `disconnected`, or `unknown`.
 	InvocationStatusLabel = "invocation_status"
 
-	// Whether live invocation log chunks were written to the key-value store
-	// with suffix-only writes: `true` or `false` (experiment arm).
-	LogSuffixWritesEnabledLabel = "suffix_writes_enabled"
-
 	// Cache type: `action` for action cache, `cas` for content-addressable storage.
 	CacheTypeLabel = "cache_type"
 
@@ -523,6 +519,15 @@ var (
 )
 
 var (
+	// ## SSL metrics
+
+	SSLCertificateReloadFailures = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "ssl",
+		Name:      "certificate_reload_failures_total",
+		Help:      "Number of failed TLS certificate reloads. The server retains the last successfully loaded certificate on failure.",
+	})
+
 	// ## Invocation build event metrics
 	//
 	// All invocation metrics are recorded at the _end_ of each invocation.
@@ -558,13 +563,18 @@ var (
 	// sum(rate(buildbuddy_invocation_count[5m]))
 	// ```
 
-	InvocationLogLiveChunkWrittenBytes = promauto.NewCounterVec(prometheus.CounterOpts{
+	DiscardedAnonymousBuildEventStreamCount = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "invocation",
+		Name:      "discarded_anonymous_build_event_stream_count",
+		Help:      "The total number of anonymous build event streams discarded because they did not contain an API key.",
+	})
+
+	InvocationLogLiveChunkWrittenBytes = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "invocation",
 		Name:      "log_live_chunk_written_bytes",
 		Help:      "Total number of bytes written to the key-value store for live (in-progress) invocation log tail chunks.",
-	}, []string{
-		LogSuffixWritesEnabledLabel,
 	})
 
 	InvocationDurationUs = promauto.NewHistogramVec(prometheus.HistogramOpts{
@@ -1773,8 +1783,8 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_download_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Per-file download duration during remote execution, in **microseconds**.",
+		Buckets:   durationUsecBuckets(10*time.Millisecond, 10*time.Minute, 3),
+		Help:      "Time spent downloading files during remote execution, in **microseconds**.",
 	})
 
 	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -1804,8 +1814,8 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_upload_duration_usec",
-		Buckets:   coarseMicrosecondToHour,
-		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
+		Buckets:   durationUsecBuckets(10*time.Millisecond, 10*time.Minute, 3),
+		Help:      "Time spent uploading files during remote execution, in **microseconds**.",
 	})
 
 	NetworkingCommandDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{

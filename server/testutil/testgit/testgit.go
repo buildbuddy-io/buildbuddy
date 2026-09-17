@@ -50,9 +50,10 @@ type FakeProvider struct {
 
 	// Faked values
 
-	WebhookData  *interfaces.WebhookData
-	FileContents map[string]string
-	TrustedUsers []string
+	WebhookData     *interfaces.WebhookData
+	PullRequestData *interfaces.WebhookData
+	FileContents    map[string]string
+	TrustedUsers    []string
 
 	RegisterWebhookError error
 	GetFileContentsError error
@@ -96,6 +97,12 @@ func (p *FakeProvider) GetFileContents(ctx context.Context, accessToken, repoURL
 		return nil, status.NotFoundError("Not found")
 	}
 	return []byte(contents), nil
+}
+func (p *FakeProvider) GetPullRequestData(ctx context.Context, accessToken, repoURL string, pullRequestNumber int64) (*interfaces.WebhookData, error) {
+	if p.PullRequestData == nil {
+		return nil, status.NotFoundError("Not found")
+	}
+	return p.PullRequestData, nil
 }
 func (p *FakeProvider) IsTrusted(ctx context.Context, accessToken, repoURL, user string) (bool, error) {
 	return slices.Contains(p.TrustedUsers, user), nil
