@@ -84,6 +84,9 @@ type tunnel struct {
 	// dropSelf removes this tunnel from its manager, so the stream watcher can
 	// retire an evicted tunnel and the next use registers a fresh one.
 	dropSelf func(*tunnel)
+	// failSelf retires this tunnel after a failed bring-up and records the
+	// failure, so that callers back off.
+	failSelf func(*tunnel, error)
 
 	mu           sync.Mutex
 	ready        chan struct{} // closed when up or failed
@@ -151,58 +154,54 @@ func (m *Manager) Prewarm(ctx context.Context, zone tunnelconfig.Zone) {
 // Concurrent callers wait on the same bring-up rather than racing to register
 // several peers.
 func (m *Manager) get(ctx context.Context, zone tunnelconfig.Zone) (*tunnel, error) {
-	m.mu.Lock()
-	if f, ok := m.failures[zone.Gateway]; ok {
-		if time.Now().Before(f.until) {
-			m.mu.Unlock()
-			return nil, f.err
+	for attempt := 0; ; attempt++ {
+		m.mu.Lock()
+		if f, ok := m.failures[zone.Gateway]; ok {
+			if time.Now().Before(f.until) {
+				m.mu.Unlock()
+				return nil, f.err
+			}
+			delete(m.failures, zone.Gateway)
 		}
-		delete(m.failures, zone.Gateway)
-	}
-	t, ok := m.tunnels[zone.Gateway]
-	if !ok {
-		t = &tunnel{
-			target:   zone.Gateway,
-			zone:     zone,
-			creds:    m.creds,
-			dropSelf: func(tt *tunnel) { m.drop(tt.target, tt) },
-			ready:    make(chan struct{}),
-			lastUsed: time.Now(),
+		t, ok := m.tunnels[zone.Gateway]
+		if !ok {
+			t = &tunnel{
+				target:   zone.Gateway,
+				zone:     zone,
+				creds:    m.creds,
+				dropSelf: func(tt *tunnel) { m.drop(tt.target, tt) },
+				failSelf: func(tt *tunnel, err error) { m.dropFailed(tt.target, tt, err) },
+				ready:    make(chan struct{}),
+				lastUsed: time.Now(),
+			}
+			m.tunnels[zone.Gateway] = t
+			go t.bringUp()
 		}
-		m.tunnels[zone.Gateway] = t
-		go t.bringUp()
-	}
-	m.mu.Unlock()
+		m.mu.Unlock()
 
-	select {
-	case <-t.ready:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+		select {
+		case <-t.ready:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 
-	t.mu.Lock()
-	up, bringUpErr := t.up, t.err
-	t.mu.Unlock()
-
-	if !up {
-		// Don't cache a failed tunnel: the next attempt should retry cleanly.
-		// This must run with t.mu released — drop closes the tunnel, which
-		// takes that lock.
-		m.drop(zone.Gateway, t)
-		if bringUpErr == nil {
-			// The tunnel came up and was torn down again between the map
-			// lookup and here — an idle reap or another caller's retry. There
-			// is no bring-up error to report, and returning a nil tunnel with
-			// a nil error would panic the caller.
-			bringUpErr = fmt.Errorf("tunnel to %s was torn down while connecting; retry", zone.Gateway)
+		t.mu.Lock()
+		up, bringUpErr := t.up, t.err
+		t.mu.Unlock()
+		if up {
+			return t, nil
+		}
+		if bringUpErr != nil {
+			// The bring-up retired the tunnel and armed the backoff itself.
 			return nil, bringUpErr
 		}
-		m.mu.Lock()
-		m.failures[zone.Gateway] = &failedSetup{err: bringUpErr, until: time.Now().Add(failureBackoff)}
-		m.mu.Unlock()
-		return nil, bringUpErr
+		// The tunnel came up and was torn down again between the map lookup
+		// and here — an idle reap or another caller's retry. Its replacement
+		// is one loop away.
+		if attempt == 2 {
+			return nil, fmt.Errorf("tunnel to %s keeps being torn down while connecting", zone.Gateway)
+		}
 	}
-	return t, nil
 }
 
 // drop removes t from the manager (if it is still the current tunnel) and
@@ -211,6 +210,19 @@ func (m *Manager) drop(target string, t *tunnel) {
 	m.mu.Lock()
 	if m.tunnels[target] == t {
 		delete(m.tunnels, target)
+	}
+	m.mu.Unlock()
+	t.close()
+}
+
+// dropFailed retires a tunnel whose bring-up failed and records the failure
+// so that callers back off, in one step: the record can never land on a
+// replacement that another caller has since brought up.
+func (m *Manager) dropFailed(target string, t *tunnel, err error) {
+	m.mu.Lock()
+	if m.tunnels[target] == t {
+		delete(m.tunnels, target)
+		m.failures[target] = &failedSetup{err: err, until: time.Now().Add(failureBackoff)}
 	}
 	m.mu.Unlock()
 	t.close()
@@ -255,12 +267,16 @@ func (t *tunnel) bringUp() {
 	close(t.ready)
 	t.mu.Unlock()
 
-	if abandoned && err == nil {
+	switch {
+	case abandoned && err == nil:
 		// Canceling the stream is the deregistration.
 		s.close()
-		return
-	}
-	if err == nil {
+	case err != nil:
+		// Retire the failed tunnel here rather than in a waiting caller, which
+		// may have given up: the entry must not outlive the attempt, or the
+		// next caller is served this failure long after the gateway recovered.
+		t.failSelf(t, err)
+	default:
 		go t.watchStream(s.stream)
 	}
 }
@@ -681,7 +697,9 @@ func (m *Manager) Status() []Status {
 			AssignedIP:  t.assigned.String(),
 			HubIP:       t.hubIP.String(),
 			ActiveConns: t.activeConns,
-			IdleFor:     time.Since(t.lastUsed),
+		}
+		if t.activeConns == 0 {
+			s.IdleFor = time.Since(t.lastUsed)
 		}
 		t.mu.Unlock()
 		if ts, ok := t.lastHandshake(); ok {

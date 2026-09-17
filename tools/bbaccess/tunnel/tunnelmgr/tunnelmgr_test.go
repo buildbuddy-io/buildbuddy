@@ -58,6 +58,28 @@ func TestDialFailsWhenGatewayIsUnreachable(t *testing.T) {
 	}
 }
 
+// TestCanceledCallerDoesNotLeaveADeadTunnel: a caller that gives up while the
+// tunnel is still coming up must not leave the failed attempt behind for the
+// next caller to trip over. The bring-up retires it and arms the backoff.
+func TestCanceledCallerDoesNotLeaveADeadTunnel(t *testing.T) {
+	mgr := New(noCredentials{}, time.Minute)
+	t.Cleanup(mgr.Close)
+	zone := unreachableGateway(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := mgr.Dial(ctx, zone, "host.foo.bb.internal", 22)
+	require.ErrorIs(t, err, context.Canceled)
+
+	require.Eventually(t, func() bool {
+		mgr.mu.Lock()
+		defer mgr.mu.Unlock()
+		_, pending := mgr.tunnels[zone.Gateway]
+		_, failed := mgr.failures[zone.Gateway]
+		return !pending && failed
+	}, 60*time.Second, 50*time.Millisecond, "the failed bring-up should retire itself and arm the backoff")
+}
+
 // TestConcurrentDialsToAFailingGatewayAllReturn covers the same path with
 // several callers racing, which is what happens when a burst of DNS queries
 // prewarms a gateway that is down.
