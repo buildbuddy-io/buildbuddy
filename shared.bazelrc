@@ -268,6 +268,7 @@ common:cache-shared --remote_cache_compression
 common:cache-shared --experimental_remote_cache_compression_threshold=100
 common:cache-shared --experimental_remote_cache_chunking
 common:cache-shared --remote_timeout=10m
+common:cache-shared --jobs=100
 
 common:cache-dev --config=cache-shared
 common:cache-dev --config=dev
