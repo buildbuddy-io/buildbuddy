@@ -883,6 +883,7 @@ func NewPebbleCache(env environment.Env, opts *Options) (*PebbleCache, error) {
 				pc.blobDirectory,
 				pc.leaser,
 				pc.locker,
+				pc.presence,
 				pc,
 				clock,
 				opts.Name,
@@ -2551,10 +2552,10 @@ func (p *PebbleCache) deleteMetadataOnly(ctx context.Context, key filestore.Pebb
 		return err
 	}
 
+	p.presence.Remove(key)
 	if err := db.Delete(fileMetadataKey, pebble.NoSync); err != nil {
 		return err
 	}
-	p.presence.Remove(key)
 	p.sendSizeUpdate(fileMetadata.GetFileRecord().GetIsolation().GetPartitionId(), key.CacheType(), deleteSizeOp, fileMetadata, fileMetadataKey)
 	return nil
 }
@@ -2570,13 +2571,13 @@ func (p *PebbleCache) deleteFileAndMetadata(ctx context.Context, key filestore.P
 	if err != nil {
 		return err
 	}
+	p.presence.Remove(key)
 	// N.B. This deletes the file metadata. Because inlined files are stored
 	// with their metadata, this means we don't need to delete the metadata
 	// again below in the switch statement.
 	if err := db.Delete(keyBytes, pebble.NoSync); err != nil {
 		return err
 	}
-	p.presence.Remove(key)
 
 	storageMetadata := md.GetStorageMetadata()
 	partitionID := md.GetFileRecord().GetIsolation().GetPartitionId()
@@ -2992,6 +2993,7 @@ type partitionEvictor struct {
 	blobDir       string
 	dbGetter      pebble.Leaser
 	locker        lockmap.Locker[string]
+	presence      *PresenceCache
 	versionGetter versionGetter
 	samples       chan *approxlru.Sample[*evictionKey]
 	deletes       chan *approxlru.Sample[*evictionKey]
@@ -3030,8 +3032,10 @@ func newPartitionEvictor(
 	ctx context.Context,
 	part disk.Partition,
 	fileStorer filestore.Store,
-	blobDir string, dbg pebble.Leaser,
+	blobDir string,
+	dbg pebble.Leaser,
 	locker lockmap.Locker[string],
+	presence *PresenceCache,
 	vg versionGetter,
 	clock clockwork.Clock,
 	cacheName string,
@@ -3061,6 +3065,7 @@ func newPartitionEvictor(
 		numDeleteWorkers:         numDeleteWorkers,
 		includeMetadataSize:      includeMetadataSize,
 		sizeByGroup:              make(map[string]int64),
+		presence:                 presence,
 	}
 	metricLbls := prometheus.Labels{
 		metrics.PartitionID:    part.ID,
@@ -3606,6 +3611,7 @@ func (e *partitionEvictor) deleteFile(rawKey []byte, key filestore.PebbleKey, gr
 	}
 	defer db.Close()
 
+	e.presence.Remove(key)
 	if err := db.Delete(rawKey, pebble.NoSync); err != nil {
 		return err
 	}
