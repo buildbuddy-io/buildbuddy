@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -36,6 +37,7 @@ import (
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -971,4 +973,55 @@ func apiKeyIDs(keys []*tables.APIKey) []string {
 		ids[i] = k.APIKeyID
 	}
 	return ids
+}
+
+func setupUserOwnedKeyTest(t *testing.T) (*testenv.TestEnv, *tables.User, context.Context) {
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	env := setupEnv(t)
+	u := enterprise_testauth.CreateRandomUser(t, env, "example.com")
+	require.Len(t, u.Groups, 1)
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), u.UserID)
+	require.NoError(t, err)
+	enterprise_testauth.SetUserOwnedKeysEnabled(t, ctx, env, u.Groups[0].Group.GroupID, true)
+	return env, u, ctx
+}
+
+// IMAGE_CACHE_WRITE is intended for org-level keys only: admins can assign it
+// to a group key, and no role grants it to users or user-owned keys.
+func TestImageCacheWrite_GroupKeyOnly(t *testing.T) {
+	env, u, adminCtx := setupUserOwnedKeyTest(t)
+	adb := env.GetAuthDB()
+	gid := u.Groups[0].Group.GroupID
+	imageCaps := []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE}
+
+	groupKey, err := adb.CreateAPIKey(adminCtx, gid, "image", imageCaps, 0, false)
+	require.NoError(t, err)
+	akg, err := adb.GetAPIKeyGroupFromAPIKey(context.Background(), groupKey.Value)
+	require.NoError(t, err)
+	require.Equal(t, capabilities.ToInt(imageCaps), akg.GetCapabilities())
+
+	for _, r := range []role.Role{role.Admin, role.Writer, role.Developer, role.Reader} {
+		t.Run(r.String(), func(t *testing.T) {
+			protoRole, err := role.ToProto(r)
+			require.NoError(t, err)
+			err = env.GetUserDB().UpdateGroupUsers(adminCtx, gid, []*grpb.UpdateGroupUsersRequest_Update{{
+				UserId: &uidpb.UserId{Id: u.UserID}, Role: protoRole,
+			}})
+			require.NoError(t, err)
+			auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+			ctx, err := auth.WithAuthenticatedUser(context.Background(), u.UserID)
+			require.NoError(t, err)
+
+			_, err = adb.CreateUserAPIKey(ctx, gid, u.UserID, "image", imageCaps, 0)
+			require.True(t, status.IsPermissionDeniedError(err), "%v", err)
+
+			// Role changes must not grant the capability to group keys either.
+			akg, err := adb.GetAPIKeyGroupFromAPIKey(context.Background(), groupKey.Value)
+			require.NoError(t, err)
+			require.Equal(t, capabilities.ToInt(imageCaps), akg.GetCapabilities())
+		})
+	}
 }

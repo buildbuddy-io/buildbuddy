@@ -20,4 +20,8 @@ enum Capability {
   REGISTER_CACHE_PROXY = 32;  // 2^5
   // Allows sending notifications (such as email) via the notification API.
   SEND_NOTIFICATION = 64;  // 2^6
+  // Allows writing container image entries to the content-addressable store
+  // and action cache. This capability only applies to the reserved OCI image
+  // cache instance name prefix.
+  IMAGE_CACHE_WRITE = 128;  // 2^7
 }

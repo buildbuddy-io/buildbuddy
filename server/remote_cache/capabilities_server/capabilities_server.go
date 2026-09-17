@@ -8,8 +8,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/chunking"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 
-	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	smpb "github.com/buildbuddy-io/buildbuddy/proto/semver"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -70,7 +70,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 		c.CacheCapabilities = &repb.CacheCapabilities{
 			DigestFunctions: digest.SupportedDigestFunctions(),
 			ActionCacheUpdateCapabilities: &repb.ActionCacheUpdateCapabilities{
-				UpdateEnabled: s.actionCacheUpdateEnabled(ctx),
+				UpdateEnabled: s.actionCacheUpdateEnabled(ctx, req.GetInstanceName()),
 			},
 			CachePriorityCapabilities: &repb.PriorityCapabilities{
 				Priorities: []*repb.PriorityCapabilities_PriorityRange{
@@ -107,7 +107,7 @@ func (s *CapabilitiesServer) GetCapabilities(ctx context.Context, req *repb.GetC
 	return &c, nil
 }
 
-func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool {
+func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context, instanceName string) bool {
 	// Bazel 6.0.0 is the earliest bazel version that supports returning
 	// "update_enabled: false" while also having the flag
 	// "--remote_upload_local_results=true" (which is the default). So to avoid
@@ -126,5 +126,5 @@ func (s *CapabilitiesServer) actionCacheUpdateEnabled(ctx context.Context) bool 
 	if err != nil {
 		return true
 	}
-	return u.HasCapability(cappb.Capability_CACHE_WRITE)
+	return u.HasCapability(capabilities.ActionCacheWriteCapabilities(instanceName))
 }

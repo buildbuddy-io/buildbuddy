@@ -6,7 +6,6 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server",
     visibility = ["//visibility:public"],
     deps = [
-        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:semver_go_proto",
         "//server/environment",
@@ -15,6 +14,7 @@ go_library(
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
         "//server/util/bazel_request",
+        "//server/util/capabilities",
     ],
 )
 
@@ -23,9 +23,12 @@ go_test(
     srcs = ["capabilities_server_test.go"],
     deps = [
         ":capabilities_server",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/interfaces",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/bazel_request",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",

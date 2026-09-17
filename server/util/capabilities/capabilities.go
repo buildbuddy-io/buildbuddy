@@ -2,6 +2,8 @@ package capabilities
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
@@ -67,6 +69,40 @@ func IsGranted(ctx context.Context, authenticator interfaces.Authenticator, cap 
 		return false, err
 	}
 	return user.HasCapability(cap), nil
+}
+
+// scopedWriteCapabilities returns the capabilities that grant writes only
+// within the reserved namespace containing instanceName, or 0 if instanceName
+// is not in a reserved namespace.
+func scopedWriteCapabilities(instanceName string) cappb.Capability {
+	if !strings.HasPrefix(instanceName, interfaces.OCIImageInstanceNamePrefix) {
+		return 0
+	}
+	// Path-based caches clean instance names when constructing storage keys.
+	// Do not let an image-only writer escape the reserved namespace using "..".
+	if slices.Contains(strings.Split(instanceName, "/"), "..") {
+		return 0
+	}
+	return cappb.Capability_IMAGE_CACHE_WRITE
+}
+
+// ActionCacheWriteCapabilities returns the capabilities that independently grant
+// writes to the given action cache instance. Restricted AC client identity checks
+// must still be performed separately.
+func ActionCacheWriteCapabilities(instanceName string) cappb.Capability {
+	return cappb.Capability_CACHE_WRITE | scopedWriteCapabilities(instanceName)
+}
+
+// CanWriteActionCache checks whether the caller has write permission for the
+// given action cache instance. It does not replace restricted client identity checks.
+func CanWriteActionCache(ctx context.Context, authenticator interfaces.Authenticator, instanceName string) (bool, error) {
+	return IsGranted(ctx, authenticator, ActionCacheWriteCapabilities(instanceName))
+}
+
+// CanWriteCAS checks whether the caller has write permission for the given CAS instance.
+func CanWriteCAS(ctx context.Context, authenticator interfaces.Authenticator, instanceName string) (bool, error) {
+	caps := cappb.Capability_CACHE_WRITE | cappb.Capability_CAS_WRITE | scopedWriteCapabilities(instanceName)
+	return IsGranted(ctx, authenticator, caps)
 }
 
 func ForAuthenticatedUser(ctx context.Context, authenticator interfaces.Authenticator) ([]cappb.Capability, error) {

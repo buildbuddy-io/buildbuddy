@@ -727,6 +727,10 @@ function isCASOnly<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.CAS_WRITE]);
 }
 
+function isImageCacheWriterKey<T extends ApiKeyFields>(apiKey: T | null) {
+  return hasExactCapabilities(apiKey, [capability.Capability.IMAGE_CACHE_WRITE]);
+}
+
 function isExecutorKey<T extends ApiKeyFields>(apiKey: T | null) {
   return hasExactCapabilities(apiKey, [capability.Capability.CACHE_WRITE, capability.Capability.REGISTER_EXECUTOR]);
 }
@@ -767,6 +771,8 @@ function describeCapabilities<T extends ApiKeyFields>(apiKey: T) {
     capabilities = "Audit log reader";
   } else if (isSendNotificationKey(apiKey)) {
     capabilities = "Send notifications";
+  } else if (isImageCacheWriterKey(apiKey)) {
+    capabilities = "Image cache writer";
   }
   if (apiKey.visibleToDevelopers) {
     capabilities += " (*)";

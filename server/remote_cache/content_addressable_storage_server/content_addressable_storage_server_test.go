@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/clientidentity"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
+	"github.com/buildbuddy-io/buildbuddy/server/backends/disk_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_metrics_collector"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -1631,4 +1633,118 @@ func TestStreamingChunkMappingRPCsUnimplemented(t *testing.T) {
 	require.NoError(t, err)
 	_, err = registerStream.CloseAndRecv()
 	require.Equal(t, gcodes.Unimplemented, gstatus.Code(err))
+}
+
+// Successful write responses are also returned to read-only callers, so check
+// the stored contents rather than relying on the response status alone.
+func TestImageCacheWriteCapabilities(t *testing.T) {
+	flags.Set(t, "cache.min_chunked_read_fallback_size_bytes", int64(0))
+	for _, tc := range []struct {
+		name         string
+		capability   cappb.Capability
+		instanceName string
+		wantStored   bool
+	}{
+		{"image prefix", cappb.Capability_IMAGE_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix, true},
+		{"image suffix", cappb.Capability_IMAGE_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix + "image/layer", true},
+		{"dots within component", cappb.Capability_IMAGE_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix + "image..name/layer", true},
+		{"ordinary instance", cappb.Capability_IMAGE_CACHE_WRITE, "ordinary", false},
+		{"empty instance", cappb.Capability_IMAGE_CACHE_WRITE, "", false},
+		{"root traversal", cappb.Capability_IMAGE_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix + "/../ordinary", false},
+		{"nested traversal", cappb.Capability_IMAGE_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix + "image/nested/../layer", false},
+		{"trailing traversal", cappb.Capability_IMAGE_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix + "image/..", false},
+		{"read only image", cappb.Capability_UNKNOWN_CAPABILITY, interfaces.OCIImageInstanceNamePrefix, false},
+		{"CAS writer ordinary", cappb.Capability_CAS_WRITE, "ordinary", true},
+		{"CAS writer image", cappb.Capability_CAS_WRITE, interfaces.OCIImageInstanceNamePrefix, true},
+		{"CAS writer traversal", cappb.Capability_CAS_WRITE, interfaces.OCIImageInstanceNamePrefix + "/../ordinary", true},
+		{"cache writer ordinary", cappb.Capability_CACHE_WRITE, "ordinary", true},
+		{"cache writer image", cappb.Capability_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix, true},
+		{"cache writer traversal", cappb.Capability_CACHE_WRITE, interfaces.OCIImageInstanceNamePrefix + "/../ordinary", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, rpc := range []string{"BatchUpdateBlobs", "ByteStreamWrite", "SpliceBlob"} {
+				t.Run(rpc, func(t *testing.T) {
+					te := testenv.GetTestEnv(t)
+					te.SetAuthenticator(testauth.NewTestAuthenticator(t, nil))
+					// Disk cache joins instance paths, unlike memory CAS which ignores
+					// instances. This makes traversal into an ordinary namespace real.
+					cache, err := disk_cache.NewDiskCache(te, &disk_cache.Options{RootDirectory: t.TempDir()}, 10_000_000)
+					require.NoError(t, err)
+					cache.WaitUntilMapped()
+					te.SetCache(cache)
+					ctx := testauth.WithAuthenticatedUserInfo(context.Background(), &testauth.TestUser{
+						UserID: "US1", GroupID: "GR1", Capabilities: []cappb.Capability{tc.capability},
+					})
+					conn := runCASServer(ctx, t, te)
+					t.Cleanup(func() { conn.Close() })
+					casClient := repb.NewContentAddressableStorageClient(conn)
+					data := []byte("first chunk / second chunk")
+					d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+					require.NoError(t, err)
+
+					switch rpc {
+					case "BatchUpdateBlobs":
+						rsp, err := casClient.BatchUpdateBlobs(ctx, &repb.BatchUpdateBlobsRequest{
+							InstanceName: tc.instanceName, DigestFunction: repb.DigestFunction_SHA256,
+							Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: d, Data: data}},
+						})
+						require.NoError(t, err)
+						require.Len(t, rsp.GetResponses(), 1)
+						require.Equal(t, int32(gcodes.OK), rsp.GetResponses()[0].GetStatus().GetCode())
+					case "ByteStreamWrite":
+						stream, err := bspb.NewByteStreamClient(conn).Write(ctx)
+						require.NoError(t, err)
+						// Do not use NewUploadString: it cleans the instance path,
+						// preventing traversal components from reaching the server.
+						resource := fmt.Sprintf("%s/uploads/%s/blobs/%s/%d", tc.instanceName, uuid.NewString(), d.GetHash(), d.GetSizeBytes())
+						require.NoError(t, stream.Send(&bspb.WriteRequest{ResourceName: resource, Data: data, FinishWrite: true}))
+						rsp, err := stream.CloseAndRecv()
+						require.NoError(t, err)
+						require.Equal(t, d.GetSizeBytes(), rsp.GetCommittedSize())
+					case "SpliceBlob":
+						// Seed chunks using an unrestricted key so even denied splice
+						// requests have valid, present chunks to assemble.
+						writerCtx := testauth.WithAuthenticatedUserInfo(context.Background(), &testauth.TestUser{
+							UserID: "US2", GroupID: "GR1", Capabilities: []cappb.Capability{cappb.Capability_CACHE_WRITE},
+						})
+						var chunks []*repb.Digest
+						for _, chunk := range [][]byte{data[:12], data[12:]} {
+							chunkDigest, err := digest.Compute(bytes.NewReader(chunk), repb.DigestFunction_SHA256)
+							require.NoError(t, err)
+							rsp, err := casClient.BatchUpdateBlobs(writerCtx, &repb.BatchUpdateBlobsRequest{
+								InstanceName: tc.instanceName, DigestFunction: repb.DigestFunction_SHA256,
+								Requests: []*repb.BatchUpdateBlobsRequest_Request{{Digest: chunkDigest, Data: chunk}},
+							})
+							require.NoError(t, err)
+							require.Equal(t, int32(gcodes.OK), rsp.GetResponses()[0].GetStatus().GetCode())
+							chunks = append(chunks, chunkDigest)
+						}
+						rsp, err := casClient.SpliceBlob(ctx, &repb.SpliceBlobRequest{
+							InstanceName: tc.instanceName, DigestFunction: repb.DigestFunction_SHA256,
+							BlobDigest: d, ChunkDigests: chunks,
+						})
+						require.NoError(t, err)
+						require.Equal(t, d, rsp.GetBlobDigest())
+					}
+
+					// Inspect both the requested namespace and the directory it would
+					// resolve to on disk ("ordinary" for the root traversal cases).
+					for _, instanceName := range []string{tc.instanceName, path.Clean(tc.instanceName)} {
+						rsp, err := casClient.BatchReadBlobs(ctx, &repb.BatchReadBlobsRequest{
+							InstanceName: instanceName, DigestFunction: repb.DigestFunction_SHA256, Digests: []*repb.Digest{d},
+						})
+						require.NoError(t, err)
+						require.Len(t, rsp.GetResponses(), 1)
+						if tc.wantStored {
+							require.Equal(t, int32(gcodes.OK), rsp.GetResponses()[0].GetStatus().GetCode())
+							require.Equal(t, data, rsp.GetResponses()[0].GetData())
+						} else {
+							require.Equal(t, int32(gcodes.NotFound), rsp.GetResponses()[0].GetStatus().GetCode())
+							require.Empty(t, rsp.GetResponses()[0].GetData())
+						}
+					}
+				})
+			}
+		})
+	}
 }

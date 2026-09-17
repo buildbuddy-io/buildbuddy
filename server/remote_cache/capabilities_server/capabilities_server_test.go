@@ -6,11 +6,14 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/capabilities_server"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -37,4 +40,95 @@ func TestGetCapabilities_CDCDoesNotVaryWithExperiments(t *testing.T) {
 	assert.True(t, rsp.GetCacheCapabilities().GetSplitBlobSupport())
 	assert.True(t, rsp.GetCacheCapabilities().GetSpliceBlobSupport())
 	assert.Equal(t, uint64(1024*1024), rsp.GetCacheCapabilities().GetFastCdc_2020Params().GetAvgChunkSizeBytes())
+}
+
+func TestGetCapabilities_ImageCacheWrite(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		capabilities  []cappb.Capability
+		instanceName  string
+		updateEnabled bool
+	}{
+		{
+			name:          "image capability enables image instance updates",
+			capabilities:  []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+			instanceName:  interfaces.OCIImageInstanceNamePrefix,
+			updateEnabled: true,
+		},
+		{
+			name:          "image capability disables regular instance updates",
+			capabilities:  []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+			instanceName:  "regular-instance",
+			updateEnabled: false,
+		},
+		{
+			name:         "image capability disables traversal instance updates",
+			capabilities: []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+			instanceName: interfaces.OCIImageInstanceNamePrefix + "/../regular-instance",
+		},
+		{
+			name:         "CAS capability does not enable image AC updates",
+			capabilities: []cappb.Capability{cappb.Capability_CAS_WRITE},
+			instanceName: interfaces.OCIImageInstanceNamePrefix,
+		},
+		{
+			name:          "cache write enables regular instance updates",
+			capabilities:  []cappb.Capability{cappb.Capability_CACHE_WRITE},
+			instanceName:  "regular-instance",
+			updateEnabled: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			user := &testauth.TestUser{
+				UserID:       "US1",
+				GroupID:      "GR1",
+				Capabilities: test.capabilities,
+			}
+			env := testenv.GetTestEnv(t)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{user.UserID: user}))
+			s := capabilities_server.NewCapabilitiesServer(env, true, false, false)
+			ctx := testauth.WithAuthenticatedUserInfo(t.Context(), user)
+			ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{
+				ToolDetails: &repb.ToolDetails{ToolName: "bazel", ToolVersion: "6.0.0"},
+			})
+
+			rsp, err := s.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{InstanceName: test.instanceName})
+
+			require.NoError(t, err)
+			assert.Equal(t, test.updateEnabled, rsp.GetCacheCapabilities().GetActionCacheUpdateCapabilities().GetUpdateEnabled())
+		})
+	}
+}
+
+func TestGetCapabilities_ActionCacheUpdateCompatibility(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		version       string
+		authenticated bool
+		enabled       bool
+	}{
+		{name: "unknown version", authenticated: true, enabled: true},
+		{name: "old Bazel", version: "5.4.0", authenticated: true, enabled: true},
+		{name: "modern Bazel read only", version: "6.0.0", authenticated: true},
+		{name: "unauthenticated", version: "6.0.0", enabled: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			user := &testauth.TestUser{UserID: "US1", GroupID: "GR1"}
+			env := testenv.GetTestEnv(t)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{user.UserID: user}))
+			ctx := t.Context()
+			if test.authenticated {
+				ctx = testauth.WithAuthenticatedUserInfo(ctx, user)
+			}
+			if test.version != "" {
+				ctx = bazel_request.OverrideRequestMetadata(ctx, &repb.RequestMetadata{
+					ToolDetails: &repb.ToolDetails{ToolName: "bazel", ToolVersion: test.version},
+				})
+			}
+			s := capabilities_server.NewCapabilitiesServer(env, true, false, false)
+			rsp, err := s.GetCapabilities(ctx, &repb.GetCapabilitiesRequest{InstanceName: interfaces.OCIImageInstanceNamePrefix})
+			require.NoError(t, err)
+			assert.Equal(t, test.enabled, rsp.GetCacheCapabilities().GetActionCacheUpdateCapabilities().GetUpdateEnabled())
+		})
+	}
 }

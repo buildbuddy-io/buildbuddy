@@ -120,3 +120,62 @@ func TestIsGranted_TestUserWithoutCapability_False(t *testing.T) {
 	assert.False(t, canWrite)
 	assert.Nil(t, err)
 }
+
+func TestCanWriteCache(t *testing.T) {
+	for _, instance := range []struct {
+		name  string
+		image bool
+	}{
+		{name: ""},
+		{name: "regular-instance"},
+		{name: interfaces.OCIImageInstanceNamePrefix, image: true},
+		{name: interfaces.OCIImageInstanceNamePrefix + "_manifest_content_", image: true},
+		{name: interfaces.OCIImageInstanceNamePrefix + "/nested", image: true},
+		{name: interfaces.OCIImageInstanceNamePrefix + "/../regular-instance"},
+		{name: interfaces.OCIImageInstanceNamePrefix + "/nested/../../regular-instance"},
+		{name: interfaces.OCIImageInstanceNamePrefix + "/.."},
+		{name: "other/" + interfaces.OCIImageInstanceNamePrefix},
+		{name: "./" + interfaces.OCIImageInstanceNamePrefix},
+	} {
+		instanceName := instance.name
+		for _, test := range []struct {
+			name    string
+			caps    []cappb.Capability
+			cas, ac bool
+		}{
+			{name: "read only"},
+			{name: "cache write", caps: []cappb.Capability{cappb.Capability_CACHE_WRITE}, cas: true, ac: true},
+			{name: "CAS write", caps: []cappb.Capability{cappb.Capability_CAS_WRITE}, cas: true},
+			{name: "unrelated capability", caps: []cappb.Capability{cappb.Capability_REGISTER_EXECUTOR}},
+			{name: "image write", caps: []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+				cas: instance.image,
+				ac:  instance.image},
+		} {
+			t.Run(instanceName+"/"+test.name, func(t *testing.T) {
+				user := &testauth.TestUser{UserID: "US1", GroupID: "GR1", Capabilities: test.caps}
+				te := getTestEnv(t, map[string]interfaces.UserInfo{user.UserID: user})
+				ctx := testauth.WithAuthenticatedUserInfo(t.Context(), user)
+				cas, err := capabilities.CanWriteCAS(ctx, te.GetAuthenticator(), instanceName)
+				assert.NoError(t, err)
+				assert.Equal(t, test.cas, cas)
+				ac, err := capabilities.CanWriteActionCache(ctx, te.GetAuthenticator(), instanceName)
+				assert.NoError(t, err)
+				assert.Equal(t, test.ac, ac)
+			})
+		}
+	}
+}
+
+func TestCanWriteCache_Anonymous(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		for _, instanceName := range []string{"regular-instance", interfaces.OCIImageInstanceNamePrefix} {
+			auth := nullauth.NewNullAuthenticator(enabled)
+			cas, err := capabilities.CanWriteCAS(t.Context(), auth, instanceName)
+			assert.NoError(t, err)
+			assert.Equal(t, enabled, cas)
+			ac, err := capabilities.CanWriteActionCache(t.Context(), auth, instanceName)
+			assert.NoError(t, err)
+			assert.Equal(t, enabled, ac)
+		}
+	}
+}

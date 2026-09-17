@@ -7,9 +7,12 @@ go_test(
     srcs = ["action_cache_server_test.go"],
     deps = [
         "//enterprise/server/clientidentity",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
+        "//server/backends/disk_cache",
         "//server/interfaces",
         "//server/remote_cache/digest",
+        "//server/testutil/testauth",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/util/random",
