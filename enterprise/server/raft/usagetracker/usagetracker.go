@@ -363,6 +363,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 					return
 				}
 				batch = nil
+				timer.Reset(evictFlushPeriod)
 			}
 		}
 	})
