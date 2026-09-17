@@ -63,9 +63,10 @@ func TestAddressesAreUniqueAndInRange(t *testing.T) {
 		addr, err := table.Lookup(name)
 		require.NoError(t, err)
 		require.True(t, prefix.Contains(addr), "%s is outside %s", addr, prefix)
-		// The first two addresses are reserved for the interface itself.
+		// The first three addresses are reserved for the interface itself.
 		require.NotEqual(t, "198.18.0.0", addr.String())
 		require.NotEqual(t, "198.18.0.1", addr.String())
+		require.NotEqual(t, "198.18.0.2", addr.String())
 		if prev, dup := seen[addr]; dup {
 			t.Fatalf("%s and %s both got %s", prev, name, addr)
 		}
@@ -74,13 +75,15 @@ func TestAddressesAreUniqueAndInRange(t *testing.T) {
 }
 
 func TestExhaustion(t *testing.T) {
-	// /30: 4 addresses, minus 2 reserved at the start and the broadcast
-	// address, leaves exactly 1 usable.
-	table, err := NewTable(netip.MustParsePrefix("198.18.0.0/30"))
+	// /29: 8 addresses, minus 3 reserved at the start and the broadcast
+	// address, leaves exactly 4 usable.
+	table, err := NewTable(netip.MustParsePrefix("198.18.0.0/29"))
 	require.NoError(t, err)
-	_, err = table.Lookup("first.foo.bb.internal")
-	require.NoError(t, err)
-	_, err = table.Lookup("second.foo.bb.internal")
+	for i := range 4 {
+		_, err = table.Lookup(fmt.Sprintf("host-%d.foo.bb.internal", i))
+		require.NoError(t, err)
+	}
+	_, err = table.Lookup("one-too-many.foo.bb.internal")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "exhausted")
 }

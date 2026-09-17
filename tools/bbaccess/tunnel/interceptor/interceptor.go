@@ -42,6 +42,11 @@ const (
 )
 
 // Dialer opens a connection to host:port through the gateway for a zone.
+// connectTimeout bounds the dial through the gateway. Linux retransmits a SYN
+// for about two minutes and macOS for about 75 seconds before giving up, so
+// a dial that takes longer than this would fail on the client anyway.
+const connectTimeout = 60 * time.Second
+
 type Dialer interface {
 	Dial(ctx context.Context, zone tunnelconfig.Zone, host string, port int) (net.Conn, error)
 }
@@ -57,6 +62,9 @@ type Interceptor struct {
 
 	closeOnce sync.Once
 	done      chan struct{}
+	// ctx is canceled by Close, so dials in flight end with the daemon.
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	activeConns atomic.Int64
 	totalConns  atomic.Int64
@@ -75,6 +83,7 @@ func New(dev tun.Device, cfg *tunnelconfig.Config, table *fakeip.Table, dialer D
 		dial:  dialer,
 		done:  make(chan struct{}),
 	}
+	i.ctx, i.cancel = context.WithCancel(context.Background())
 
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
@@ -233,8 +242,12 @@ func (i *Interceptor) connect(r *tcp.ForwarderRequest, zone tunnelconfig.Zone, n
 	start := time.Now()
 
 	// The dial happens before the endpoint is created, so the client stays in
-	// SYN_SENT — and retransmits — until we know whether this will work.
-	upstream, err := i.dial.Dial(context.Background(), zone, target, port)
+	// SYN_SENT — and retransmits — until we know whether this will work. The
+	// timeout keeps that inside the client's own SYN retransmission window,
+	// and bounds how long a stuck gateway can hold a forwarder slot.
+	ctx, cancel := context.WithTimeout(i.ctx, connectTimeout)
+	defer cancel()
+	upstream, err := i.dial.Dial(ctx, zone, target, port)
 	if err != nil {
 		log.Printf("tunnel: %s:%d — %s", name, port, err)
 		r.Complete(true /* send RST → "connection refused" */)
@@ -267,27 +280,26 @@ type closeWriter interface{ CloseWrite() error }
 
 // splice copies in both directions and propagates half-close, so that
 // `ssh host cmd` and `git fetch` — which send EOF and then wait for the reply —
-// terminate instead of hanging.
+// terminate instead of hanging. A copy that ends in an error rather than EOF
+// closes both sides: the other direction may be blocked on an idle client
+// that would otherwise never let it finish.
 func splice(local, upstream net.Conn) {
 	done := make(chan struct{}, 2)
-	go func() {
-		io.Copy(upstream, local)
-		if cw, ok := upstream.(closeWriter); ok {
-			cw.CloseWrite()
-		} else {
-			upstream.Close()
-		}
-		done <- struct{}{}
-	}()
-	go func() {
-		io.Copy(local, upstream)
-		if cw, ok := local.(closeWriter); ok {
-			cw.CloseWrite()
-		} else {
+	copyThenClose := func(dst, src net.Conn) {
+		_, err := io.Copy(dst, src)
+		switch cw, ok := dst.(closeWriter); {
+		case err != nil:
 			local.Close()
+			upstream.Close()
+		case ok:
+			cw.CloseWrite()
+		default:
+			dst.Close()
 		}
 		done <- struct{}{}
-	}()
+	}
+	go copyThenClose(upstream, local)
+	go copyThenClose(local, upstream)
 	<-done
 	<-done
 }
@@ -300,6 +312,7 @@ func (i *Interceptor) Stats() (active, total int64) {
 func (i *Interceptor) Close() {
 	i.closeOnce.Do(func() {
 		close(i.done)
+		i.cancel()
 		i.ep.Close()
 		i.stack.Close()
 		i.dev.Close()
