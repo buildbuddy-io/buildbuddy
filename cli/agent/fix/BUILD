@@ -37,7 +37,10 @@ go_library(
 
 go_test(
     name = "fix_test",
-    srcs = ["fix_test.go"],
+    srcs = [
+        "fix_test.go",
+        "push_test.go",
+    ],
     embed = [":fix"],
     deps = [
         "//cli/parser",

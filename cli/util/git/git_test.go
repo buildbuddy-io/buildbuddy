@@ -31,3 +31,24 @@ func TestRun_RedactsCredentialsInError(t *testing.T) {
 	require.True(t, errors.As(err, &exitErr))
 	require.Equal(t, 7, exitErr.ExitCode())
 }
+
+func TestPushRemote_Precedence(t *testing.T) {
+	repo := t.TempDir()
+	run := func(args ...string) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "git %v: %s", args, output)
+	}
+	run("init")
+	run("config", "branch.feature.remote", "upstream")
+	require.Equal(t, "upstream", git.PushRemote(context.Background(), repo, "feature"))
+	run("config", "remote.pushDefault", "origin")
+	require.Equal(t, "origin", git.PushRemote(context.Background(), repo, "feature"))
+	run("config", "branch.feature.pushRemote", "fork")
+	require.Equal(t, "fork", git.PushRemote(context.Background(), repo, "feature"))
+	run("config", "--unset", "branch.feature.pushRemote")
+	run("config", "--unset", "remote.pushDefault")
+	run("config", "--unset", "branch.feature.remote")
+	require.Equal(t, "origin", git.PushRemote(context.Background(), repo, "feature"))
+}

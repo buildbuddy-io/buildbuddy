@@ -69,6 +69,19 @@ func BranchRemote(ctx context.Context, dir, branch string) string {
 	return remote
 }
 
+// PushRemote returns the remote Git should use to push a branch. A
+// branch-specific push remote takes precedence over the repository-wide push
+// default, then the branch's fetch remote.
+func PushRemote(ctx context.Context, dir, branch string) string {
+	for _, key := range []string{"branch." + branch + ".pushRemote", "remote.pushDefault"} {
+		remote, err := Output(ctx, dir, "config", "--get", key)
+		if err == nil && remote != "" {
+			return remote
+		}
+	}
+	return BranchRemote(ctx, dir, branch)
+}
+
 // IsWorktreeClean reports whether tracked and untracked files are unchanged.
 func IsWorktreeClean(ctx context.Context) (bool, error) {
 	root, err := Root(ctx)
