@@ -227,7 +227,7 @@ func (pu *partitionUsage) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + pu.part.ID
 }
 
-// deleteBatchResult tracks the outcome of evicting one range.
+// deleteBatchResult tracks the outcome of evictions on one range.
 type deleteBatchResult struct {
 	evicted   []*approxlru.Sample[*evictionKey]
 	numFailed int
