@@ -16,7 +16,7 @@ interface Props {
   /** Returns a valid css color string (e.g., #ffff00) given a key from data. */
   colorPicker?: (k: string) => string;
 
-  // returns a human-readable string for a given value in the data.
+  /** Returns a human-readable string for a given value in the data. */
   valueFormatter?: (v: number) => string;
 }
 
