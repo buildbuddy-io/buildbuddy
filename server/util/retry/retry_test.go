@@ -2,6 +2,7 @@ package retry_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -166,6 +167,19 @@ func TestRetryDoWithExpiredContext(t *testing.T) {
 		})
 		require.Error(t, err)
 	}
+}
+
+func TestRetryDoContextDoneKeepsLastError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	_, err := retry.Do(ctx, retry.DefaultOptions(), func(ctx context.Context) (int, error) {
+		// Cancel during the backoff that follows this failed attempt.
+		cancel()
+		return 0, status.UnavailableError("connection reset")
+	})
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.Canceled), err)
+	require.True(t, status.IsUnavailableError(err), err)
+	require.Contains(t, err.Error(), "connection reset")
 }
 
 func TestRetryDo(t *testing.T) {
