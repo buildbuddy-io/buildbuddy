@@ -181,6 +181,15 @@ func TestSetOptionDefaults_AtimeUpdateThreshold(t *testing.T) {
 			want:           pebble_cache.DefaultAtimeUpdateThreshold,
 		},
 		{
+			name:           "zero-age partition does not mask a positive partition age",
+			minEvictionAge: new(6 * time.Hour),
+			partitions: []disk.Partition{
+				{ID: pebble_cache.DefaultPartitionID, MaxSizeBytes: 1, MinEvictionAge: new(time.Duration(0))},
+				{ID: "a", MaxSizeBytes: 1, MinEvictionAge: new(5 * time.Minute)},
+			},
+			want: 150 * time.Second,
+		},
+		{
 			name:           "explicit zero threshold is kept",
 			threshold:      new(time.Duration(0)),
 			minEvictionAge: new(6 * time.Hour),

@@ -462,7 +462,7 @@ func validateOpts(opts *Options) error {
 
 	threshold := *opts.AtimeUpdateThreshold
 	if minAge := minEvictionAgeAcrossPartitions(opts); minAge > 0 && threshold > minAge/2 {
-		log.Warningf("Pebble cache %q atime_update_threshold (%s) exceeds half of the smallest min_eviction_age (%s), so entries read at intervals between %s and %s can be evicted while in use", opts.Name, threshold, minAge, max(minAge-threshold, 0), threshold)
+		log.Warningf("Pebble cache %q atime_update_threshold (%s) exceeds half of the smallest min_eviction_age (%s), so entries read at intervals between %s and %s can be evicted while in use", opts.Name, threshold, minAge, max(minAge-threshold, 0), min(threshold, minAge))
 	}
 
 	for _, pm := range opts.PartitionMappings {
@@ -555,9 +555,12 @@ func SetOptionDefaults(opts *Options) {
 }
 
 func minEvictionAgeAcrossPartitions(opts *Options) time.Duration {
-	minAge := *opts.Partitions[0].MinEvictionAge
-	for _, part := range opts.Partitions[1:] {
-		minAge = min(minAge, *part.MinEvictionAge)
+	minAge := time.Duration(0)
+	for _, part := range opts.Partitions {
+		age := *part.MinEvictionAge
+		if age > 0 && (minAge == 0 || age < minAge) {
+			minAge = age
+		}
 	}
 	return minAge
 }
