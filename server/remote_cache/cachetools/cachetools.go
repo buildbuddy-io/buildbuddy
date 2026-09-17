@@ -143,6 +143,16 @@ func FindMissingBlobs(ctx context.Context, casClient repb.ContentAddressableStor
 	})
 }
 
+// BatchUpdateBlobs issues a BatchUpdateBlobs RPC with retry behavior and the
+// standard CAS RPC timeout applied to each attempt.
+func BatchUpdateBlobs(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.BatchUpdateBlobsRequest) (*repb.BatchUpdateBlobsResponse, error) {
+	return retry.Do(ctx, retryOptions("BatchUpdateBlobs"), func(ctx context.Context) (*repb.BatchUpdateBlobsResponse, error) {
+		ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
+		defer cancel()
+		return casClient.BatchUpdateBlobs(ctx, req)
+	})
+}
+
 func spliceBlobWithRetries(ctx context.Context, casClient repb.ContentAddressableStorageClient, req *repb.SpliceBlobRequest) error {
 	// SpliceBlob verifies all chunks server-side (read + hash), so it needs
 	// more time than a typical CAS RPC. Scale by chunk count, clamped to
@@ -1149,11 +1159,7 @@ func (ul *BatchCASUploader) flushCurrentBatch() error {
 	}
 	ul.unsentBatchSize = 0
 	ul.eg.Go(func() error {
-		rsp, err := retry.Do(ul.ctx, retryOptions("BatchUpdateBlobs"), func(ctx context.Context) (*repb.BatchUpdateBlobsResponse, error) {
-			ctx, cancel := context.WithTimeout(ctx, *casRPCTimeout)
-			defer cancel()
-			return casClient.BatchUpdateBlobs(ctx, req)
-		})
+		rsp, err := BatchUpdateBlobs(ul.ctx, casClient, req)
 		if err != nil {
 			return err
 		}
