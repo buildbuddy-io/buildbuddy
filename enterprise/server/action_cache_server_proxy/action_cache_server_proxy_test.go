@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
@@ -627,6 +628,92 @@ func TestActionCacheProxy_UpdateActionResultRefreshesLocalResultWithinTTL(t *tes
 	require.Equal(t, int32(2), rsp.GetExitCode())
 	require.Equal(t, 0, countingClient.getCount)
 	require.Equal(t, 1, countingClient.updateCount)
+}
+
+func TestActionCacheProxy_ImageOnlyKeyRefreshesLocalResultWithinTTL(t *testing.T) {
+	flags.Set(t, "cache_proxy.cache_action_results", true)
+	key, err := random.RandomString(16)
+	require.NoError(t, err)
+	flags.Set(t, "app.client_identity.key", key)
+	flags.Set(t, "app.client_identity.client", interfaces.ClientIdentityExecutor)
+
+	for _, tc := range []struct {
+		name         string
+		instanceName string
+		wantExitCode int32
+	}{
+		{"image instance", interfaces.OCIImageInstanceNamePrefix + "manifest", 2},
+		{"ordinary instance", "ordinary", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			ta := testauth.NewTestAuthenticator(t, nil)
+			env.SetAuthenticator(ta)
+			require.NoError(t, clientidentity.Register(env))
+			setActionCacheTTL(t, env, 60)
+			ctx := testauth.WithAuthenticatedUserInfo(context.Background(), &testauth.TestUser{
+				GroupID: "GR123", Capabilities: []cappb.Capability{cappb.Capability_IMAGE_CACHE_WRITE},
+			})
+			ctx, err := env.GetClientIdentityService().AddIdentityToContext(ctx)
+			require.NoError(t, err)
+			// The remote RPC validates the outgoing identity; validate it here too
+			// since we call the proxy directly rather than through its interceptor.
+			md, ok := metadata.FromOutgoingContext(ctx)
+			require.True(t, ok)
+			ctx, err = env.GetClientIdentityService().ValidateIncomingIdentity(metadata.NewIncomingContext(ctx, md))
+			require.NoError(t, err)
+
+			remoteServer, err := action_cache_server.NewActionCacheServer(env)
+			require.NoError(t, err)
+			grpcServer, run, lis := testenv.RegisterLocalGRPCServer(t, env)
+			repb.RegisterActionCacheServer(grpcServer, remoteServer)
+			go run()
+			conn, err := testenv.LocalGRPCConn(ctx, lis)
+			require.NoError(t, err)
+			t.Cleanup(func() { conn.Close() })
+			remoteAC := repb.NewActionCacheClient(conn)
+			countingClient := &countingActionCacheClient{realAC: remoteAC}
+
+			getReq := &repb.GetActionResultRequest{
+				InstanceName:   tc.instanceName,
+				ActionDigest:   &repb.Digest{Hash: strings.Repeat("a", 64), SizeBytes: 1024},
+				DigestFunction: repb.DigestFunction_SHA256,
+			}
+			cache := newLocalOnlyCache()
+			seedLocalActionResult(t, cache, getReq, &repb.ActionResult{ExitCode: 1}, env.GetClock().Now().Add(-time.Second).UnixMicro())
+			proxy := &ActionCacheServerProxy{
+				supportsEncryption: func(context.Context) bool { return false },
+				env:                env, authenticator: ta, localCache: cache, remoteACClient: countingClient,
+			}
+
+			rsp, err := proxy.GetActionResult(ctx, getReq)
+			require.NoError(t, err)
+			require.Equal(t, int32(1), rsp.GetExitCode())
+			require.Zero(t, countingClient.getCount)
+
+			_, err = proxy.UpdateActionResult(ctx, &repb.UpdateActionResultRequest{
+				InstanceName: tc.instanceName, ActionDigest: getReq.GetActionDigest(),
+				DigestFunction: getReq.GetDigestFunction(), ActionResult: &repb.ActionResult{ExitCode: 2},
+			})
+			require.NoError(t, err)
+			require.Equal(t, 1, countingClient.updateCount)
+
+			// A successful remote response is not enough: unauthorized writes are
+			// no-op successes and must not replace the existing local entry.
+			rsp, err = proxy.GetActionResult(ctx, getReq)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantExitCode, rsp.GetExitCode())
+			require.Zero(t, countingClient.getCount, "the result must come from the local TTL fast path")
+
+			rsp, err = remoteAC.GetActionResult(ctx, getReq)
+			if tc.wantExitCode == 2 {
+				require.NoError(t, err)
+				require.Equal(t, int32(2), rsp.GetExitCode())
+			} else {
+				require.True(t, status.IsNotFoundError(err), "%v", err)
+			}
+		})
+	}
 }
 
 func TestActionCacheProxy_UpdateActionResultDoesNotLeaveFreshRequestVariantStale(t *testing.T) {

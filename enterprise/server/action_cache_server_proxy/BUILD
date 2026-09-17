@@ -42,6 +42,7 @@ go_test(
         "//enterprise/server/clientidentity",
         "//enterprise/server/experiments",
         "//enterprise/server/util/proxy_util",
+        "//proto:capability_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",
         "//server/interfaces",
