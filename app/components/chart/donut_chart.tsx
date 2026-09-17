@@ -102,7 +102,7 @@ export default class DonutChart extends React.Component<Props> {
 
     if (this.props.title) {
       return (
-        <div>
+        <div className="donut-chart-title-block">
           <div className="donut-chart-title">{this.props.title}</div>
           {Boolean(this.props.subtitle) && <div className="donut-chart-subtitle">{this.props.subtitle}</div>}
           {donut}
