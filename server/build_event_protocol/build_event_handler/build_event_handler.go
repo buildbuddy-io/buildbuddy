@@ -59,6 +59,7 @@ import (
 	apipb "github.com/buildbuddy-io/buildbuddy/proto/api/v1"
 	bepb "github.com/buildbuddy-io/buildbuddy/proto/build_events"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	pgpb "github.com/buildbuddy-io/buildbuddy/proto/pagination"
@@ -834,10 +835,17 @@ type EventChannel struct {
 	requestedTerminalColumns         int
 	requestedTerminalLines           int
 	logWriter                        *eventlog.EventLogWriter
-	onClose                          func()
-	stopRedisRefresher               func()
-	attempt                          uint64
-	groupIDForMetrics                string
+	// A producer that tells its output streams apart gets each one stored in its
+	// own log as well. logWriter keeps the merged view existing readers expect.
+	splitWriters map[elpb.LogType]*eventlog.EventLogWriter
+	// Whether this invocation's producer tells its output streams apart. Sticky
+	// once set: a later event carrying only stderr is still a split producer's,
+	// and gating on the fields themselves would drop it.
+	splitStreams       bool
+	onClose            func()
+	stopRedisRefresher func()
+	attempt            uint64
+	groupIDForMetrics  string
 
 	// isVoid determines whether all EventChannel operations are NOPs. This is set
 	// when we're retrying an invocation that is already complete, or is
@@ -916,6 +924,18 @@ func (e *EventChannel) FinalizeInvocation(iid string) error {
 			// mark the invocation disconnected below.
 			if disconnected {
 				log.CtxWarningf(ctx, "Failed to flush invocation events to blobstore: %s", err)
+			} else {
+				return err
+			}
+		}
+	}
+	// A client reads these logs instead of the build log, not as well as it, so
+	// losing one loses output. Return the error like the build log does, so the
+	// client retries rather than being handed a silently truncated stream.
+	for _, w := range e.splitWriters {
+		if err := w.Close(ctx); err != nil {
+			if disconnected {
+				log.CtxWarningf(ctx, "Failed to flush split output log to blobstore: %s", err)
 			} else {
 				return err
 			}
@@ -1268,6 +1288,38 @@ func (e *EventChannel) InitializeLogWriter(iid string) error {
 	return err
 }
 
+// writeSplitLog appends s to one of the split output logs, opening it on first
+// use.
+func (e *EventChannel) writeSplitLog(iid string, logType elpb.LogType, s string) error {
+	if s == "" {
+		return nil
+	}
+	w := e.splitWriters[logType]
+	if w == nil {
+		// Raw, not rendered: a client writes these straight to its own streams,
+		// so they have to be the bytes the command produced. logWriter keeps
+		// the rendered merged view for readers that want a screen.
+		var err error
+		w, err = eventlog.NewRawEventLogWriter(
+			e.ctx,
+			e.env.GetBlobstore(),
+			e.env.GetKeyValStore(),
+			e.env.GetPubSub(),
+			eventlog.LogPubSubChannel(logType, iid),
+			eventlog.SplitLogPath(logType, iid, e.attempt),
+		)
+		if err != nil {
+			return err
+		}
+		if e.splitWriters == nil {
+			e.splitWriters = map[elpb.LogType]*eventlog.EventLogWriter{}
+		}
+		e.splitWriters[logType] = w
+	}
+	_, err := w.Write(e.ctx, []byte(s))
+	return err
+}
+
 func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid string) error {
 	if err := e.redactor.RedactAPIKey(e.ctx, event.GetBuildEvent()); err != nil {
 		return err
@@ -1315,7 +1367,24 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 					return err
 				}
 			}
-			n, err := e.logWriter.Write(e.ctx, append([]byte(p.Progress.GetStderr()), []byte(p.Progress.GetStdout())...))
+			// Store each stream on its own; the build log below still holds the
+			// merged view.
+			e.splitStreams = e.splitStreams || p.Progress.GetSplitStreams()
+			stdout, narration := p.Progress.GetStdout(), p.Progress.GetNarration()
+			if e.splitStreams {
+				if err := e.writeSplitLog(iid, elpb.LogType_STDOUT_LOG, stdout); err != nil {
+					return err
+				}
+				if err := e.writeSplitLog(iid, elpb.LogType_NARRATION_LOG, narration); err != nil {
+					return err
+				}
+				if err := e.writeSplitLog(iid, elpb.LogType_STDERR_LOG, p.Progress.GetStderr()); err != nil {
+					return err
+				}
+			}
+			// The producer's stderr field already carries its narration
+			// interleaved, so the merged log keeps the order it always had.
+			n, err := e.logWriter.Write(e.ctx, []byte(p.Progress.GetStderr()+stdout))
 			if err == nil {
 				if n > 0 {
 					metrics.EventLogBytesWritten.With(map[string]string{
@@ -1330,6 +1399,7 @@ func (e *EventChannel) processSingleEvent(event *inpb.InvocationEvent, iid strin
 			// writing it separately to blobstore
 			p.Progress.Stderr = ""
 			p.Progress.Stdout = ""
+			p.Progress.Narration = ""
 		}
 	}
 

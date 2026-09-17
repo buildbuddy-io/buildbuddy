@@ -2405,3 +2405,163 @@ func TestTruncateStringSlice(t *testing.T) {
 		})
 	}
 }
+
+// progressEventFromSplitProducer builds a progress event as a producer that
+// tells its streams apart emits one.
+func progressEventFromSplitProducer(stdout, stderr, narration string) *anypb.Any {
+	progressAny := &anypb.Any{}
+	progressAny.MarshalFrom(&bspb.BuildEvent{
+		Payload: &bspb.BuildEvent_Progress{
+			Progress: &bspb.Progress{
+				Stderr:       stderr,
+				Stdout:       stdout,
+				Narration:    narration,
+				SplitStreams: true,
+			},
+		},
+		Id: &bspb.BuildEventId{Id: &bspb.BuildEventId_Progress{}},
+	})
+	return progressAny
+}
+
+// TestProgressStreamsAreStoredSeparately checks a producer that tells its
+// streams apart gets each one stored in its own log.
+func TestProgressStreamsAreStoredSeparately(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	require.NoError(t, channel.HandleEvent(request))
+	request = streamRequest(progressEventFromSplitProducer("//some:target\n", "Loading: 1 packages loaded\n", "Syncing existing repo...\n"), testInvocationID, 2)
+	require.NoError(t, channel.HandleEvent(request))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	cs := chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
+	readLog := func(path string) string {
+		b, err := cs.ReadBlob(ctx, path)
+		require.NoError(t, err)
+		return string(b)
+	}
+
+	// The build log keeps the merged view every existing reader expects, in the
+	// order it always had: the producer's stderr, then its stdout.
+	buildLog := readLog(eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	assert.Equal(t, "Loading: 1 packages loaded\n//some:target\n", buildLog)
+
+	// Each stream is also stored on its own, holding only itself.
+	stdoutLog := readLog(eventlog.GetStdoutLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	assert.Equal(t, "//some:target\n", stdoutLog)
+	stderrLog := readLog(eventlog.GetStderrLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	assert.Equal(t, "Loading: 1 packages loaded\n", stderrLog)
+	narrationLog := readLog(eventlog.GetNarrationLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	assert.Equal(t, "Syncing existing repo...\n", narrationLog)
+}
+
+// TestProgressWithoutStdoutKeepsOneLog covers a producer that does not tell its
+// streams apart, such as bazel itself: with nothing on the other fields, no
+// extra logs are opened.
+func TestProgressWithoutStdoutKeepsOneLog(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	require.NoError(t, channel.HandleEvent(request))
+	request = streamRequest(progressEventWithOutput("", "Loading: 1 packages loaded\n"), testInvocationID, 2)
+	require.NoError(t, channel.HandleEvent(request))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	cs := chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
+	exists, err := cs.BlobExists(ctx, eventlog.GetEventLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	require.NoError(t, err)
+	assert.True(t, exists)
+	exists, err = cs.BlobExists(ctx, eventlog.GetStdoutLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	require.NoError(t, err)
+	assert.False(t, exists)
+	exists, err = cs.BlobExists(ctx, eventlog.GetNarrationLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	require.NoError(t, err)
+	assert.False(t, exists)
+	exists, err = cs.BlobExists(ctx, eventlog.GetStderrLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	require.NoError(t, err)
+	assert.False(t, exists)
+}
+
+// TestProgressStderrOnlyStillSplits covers the common shape a naive gate would
+// drop: a split producer reporting a tick that carries only stderr, which is
+// most of what bazel emits and all of what quiet mode reports.
+func TestProgressStderrOnlyStillSplits(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	require.NoError(t, channel.HandleEvent(request))
+	// Every tick carries only stderr, as a quiet `bb remote build` does.
+	request = streamRequest(progressEventFromSplitProducer("", "ERROR: something broke\n", ""), testInvocationID, 2)
+	require.NoError(t, channel.HandleEvent(request))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	cs := chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
+	b, err := cs.ReadBlob(ctx, eventlog.GetStderrLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	require.NoError(t, err)
+	assert.Equal(t, "ERROR: something broke\n", string(b))
+}
+
+// TestProgressSplitIsStickyAcrossEvents checks the split holds for the whole
+// invocation rather than being re-decided per event.
+func TestProgressSplitIsStickyAcrossEvents(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("USER1", "GROUP1"))
+	te.SetAuthenticator(auth)
+	ctx := context.Background()
+	testUUID, err := uuid.NewRandom()
+	require.NoError(t, err)
+	testInvocationID := testUUID.String()
+
+	handler := build_event_handler.NewBuildEventHandler(te)
+	channel, err := handler.OpenChannel(ctx, testInvocationID)
+	require.NoError(t, err)
+	defer channel.Close()
+
+	request := streamRequest(startedEvent("--remote_header='"+authutil.APIKeyHeader+"=USER1'"), testInvocationID, 1)
+	require.NoError(t, channel.HandleEvent(request))
+	request = streamRequest(progressEventFromSplitProducer("out\n", "first\n", ""), testInvocationID, 2)
+	require.NoError(t, channel.HandleEvent(request))
+	// A later tick with nothing but stderr, and no marker of its own.
+	request = streamRequest(progressEventWithOutput("", "second\n"), testInvocationID, 3)
+	require.NoError(t, channel.HandleEvent(request))
+	require.NoError(t, channel.FinalizeInvocation(testInvocationID))
+
+	cs := chunkstore.New(te.GetBlobstore(), &chunkstore.ChunkstoreOptions{})
+	b, err := cs.ReadBlob(ctx, eventlog.GetStderrLogPathFromInvocationIdAndAttempt(testInvocationID, 1))
+	require.NoError(t, err)
+	assert.Equal(t, "first\nsecond\n", string(b))
+}

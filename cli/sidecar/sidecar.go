@@ -232,9 +232,11 @@ func (i *Instance) PrintLogsSince(t time.Time) {
 		os.Stderr.WriteString("---\n")
 		log.Printf("BuildBuddy CLI sidecar logs for this build:")
 		for _, line := range lines {
-			fmt.Print(line)
+			// stderr, like the header above: these are diagnostics, and stdout
+			// carries what the build itself printed.
+			fmt.Fprint(os.Stderr, line)
 			if !strings.HasSuffix(line, "\n") {
-				fmt.Println()
+				fmt.Fprintln(os.Stderr)
 			}
 		}
 	}

@@ -80,6 +80,12 @@ message RunRequest {
   // Empty means the repo root.
   string working_directory = 21;
 
+  // How the client wants the run's output reported. Fields rather than
+  // runner_flags entries so the app can translate them into flags for the
+  // runner it ships: an older app drops the field, where an unrecognized
+  // runner flag would be fatal.
+  OutputOptions output_options = 22;
+
   // DEPRECATED: Use wait_mode instead.
   // If true, start the runner but do not wait for the action to be scheduled.
   bool async = 9 [deprecated = true];
@@ -93,6 +99,21 @@ message RunRequest {
 
   // Arch on which to run. Defaults to "amd64".
   string arch = 8 [deprecated = true];
+}
+
+// OutputOptions describes how a client wants a run's output reported.
+message OutputOptions {
+  // Keep the runner's own narration out of the invocation log.
+  bool quiet = 1;
+
+  // Run each command with its stdout and stderr on separate fds and report
+  // them apart. Without this a command gets one shared terminal.
+  bool split_streams = 2;
+
+  // Whether the client's own stdout and stderr are terminals. With
+  // split_streams each of the command's streams gets a pty or a pipe to match.
+  bool stdout_is_tty = 3;
+  bool stderr_is_tty = 4;
 }
 
 message Step {

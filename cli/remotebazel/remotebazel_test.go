@@ -4,13 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/login"
@@ -19,11 +17,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/storage"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testgit"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testshell"
-	"github.com/buildbuddy-io/buildbuddy/server/util/lockingbuffer"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
-	"github.com/buildbuddy-io/buildbuddy/server/util/terminal"
-	"github.com/creack/pty"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 
@@ -41,12 +35,17 @@ type scriptedBuildBuddyClient struct {
 	bbspb.BuildBuddyServiceClient
 
 	mu sync.Mutex
-	// Results returned from successive Recv calls, shared across all streams
-	// the client returns; once exhausted, Recv returns io.EOF.
-	script []scriptedRecv
+	// Results returned from successive Recv calls on the stream for each log,
+	// keyed by log type; once a log's script is exhausted, Recv returns io.EOF.
+	// printLogs reads the logs concurrently, so each gets its own script rather
+	// than competing for one.
+	scripts map[elpb.LogType][]scriptedRecv
 	// ChunkId of each GetEventLog request: the initial request, plus the
 	// chunk each reconnect resumed from.
 	requestedChunkIDs []string
+	// Simulates a server predating the split logs, which serves the build log
+	// for any log type it does not recognize.
+	legacyServer bool
 }
 
 type scriptedRecv struct {
@@ -60,7 +59,7 @@ func (c *scriptedBuildBuddyClient) GetEventLog(ctx context.Context, req *elpb.Ge
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.requestedChunkIDs = append(c.requestedChunkIDs, req.GetChunkId())
-	return &scriptedEventLogStream{client: c}, nil
+	return &scriptedEventLogStream{client: c, logType: req.GetType()}, nil
 }
 
 // scriptedEventLogStream returns the scripted results, then ends the stream
@@ -68,22 +67,33 @@ func (c *scriptedBuildBuddyClient) GetEventLog(ctx context.Context, req *elpb.Ge
 type scriptedEventLogStream struct {
 	grpc.ClientStream
 
-	client *scriptedBuildBuddyClient
+	client  *scriptedBuildBuddyClient
+	logType elpb.LogType
 }
 
 func (s *scriptedEventLogStream) Recv() (*elpb.GetEventLogChunkResponse, error) {
 	c := s.client
 	c.mu.Lock()
-	if len(c.script) == 0 {
+	if len(c.scripts[s.logType]) == 0 {
 		c.mu.Unlock()
 		return nil, io.EOF
 	}
-	next := c.script[0]
-	c.script = c.script[1:]
+	next := c.scripts[s.logType][0]
+	c.scripts[s.logType] = c.scripts[s.logType][1:]
 	c.mu.Unlock()
 
 	if next.hook != nil {
 		next.hook()
+	}
+	if next.rsp != nil {
+		// A real server reports which log it served, so a client can tell when
+		// it was given the build log for a type the server did not recognize.
+		next.rsp.ServedType = s.logType
+		if c.legacyServer {
+			// A server predating the split logs has no such field at all, so
+			// it decodes as the zero value - not as BUILD_LOG.
+			next.rsp.ServedType = elpb.LogType_UNKNOWN_LOG
+		}
 	}
 	return next.rsp, next.err
 }
@@ -305,255 +315,89 @@ func TestParseRemoteCliFlags(t *testing.T) {
 	}
 }
 
-func TestLiveLogUpdate(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		previous   []string
-		current    []string
-		wantDelete int
-		wantPrint  int
-	}{
-		{
-			name:      "initial render",
-			current:   []string{"setup", "progress"},
-			wantPrint: 0,
-		},
-		{
-			name:       "append stable lines",
-			previous:   []string{"setup"},
-			current:    []string{"setup", "progress"},
-			wantDelete: 0,
-			wantPrint:  1,
-		},
-		{
-			name:       "redraw changed suffix",
-			previous:   []string{"setup", "progress 1", "fetch 1"},
-			current:    []string{"setup", "progress 2", "fetch 2"},
-			wantDelete: 2,
-			wantPrint:  1,
-		},
-		{
-			name:       "redraw whole chunk if no prefix matches",
-			previous:   []string{"old setup", "old progress"},
-			current:    []string{"new setup", "new progress"},
-			wantDelete: 2,
-			wantPrint:  0,
-		},
-		{
-			name:       "truncate stale live lines",
-			previous:   []string{"setup", "progress", "stale"},
-			current:    []string{"setup", "progress"},
-			wantDelete: 1,
-			wantPrint:  2,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			deleteCount, printFrom := liveLogUpdate(tc.previous, tc.current)
-			require.Equal(t, tc.wantDelete, deleteCount)
-			require.Equal(t, tc.wantPrint, printFrom)
-		})
-	}
-}
-
-func TestStreamLogs_TerminalClearDoesNotReplayStableLogs(t *testing.T) {
+// TestPrintLogs_RoutesEachLogToItsOwnStream checks that the command's stdout
+// lands on this process's stdout and nothing else does.
+func TestPrintLogs_RoutesEachLogToItsOwnStream(t *testing.T) {
 	client := &scriptedBuildBuddyClient{
-		script: []scriptedRecv{
-			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 1\n"),
-				NextChunkId: "0001",
-				Live:        true,
-			}},
-			{
-				rsp: &elpb.GetEventLogChunkResponse{
-					Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\n"),
-					NextChunkId: "0001",
-					Live:        true,
-				},
-				// Clear the terminal, as a user might mid-build. Duplicate
-				// logs should not be reprinted afterwards. The hook runs on
-				// the drawing goroutine, so the clear lands after the first
-				// response is drawn and before the second one is.
-				hook: func() {
-					_, _ = os.Stdout.Write([]byte("\x1b[2J\x1b[H"))
-				},
+		scripts: map[elpb.LogType][]scriptedRecv{
+			elpb.LogType_STDOUT_LOG: {
+				{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("//some:target\n")}},
 			},
-			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer: []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\nDone.\n"),
-			}},
-		},
-	}
-
-	raw, rendered := runStreamLogsWithPTY(t, client, nil)
-
-	// On failure, dump the captured output.
-	t.Cleanup(func() {
-		if t.Failed() {
-			t.Logf("rendered logs:\n%s\x1b[0m", rendered)
-		}
-	})
-
-	// Stable logs should not be duplicated.
-	require.Equal(t, 1, strings.Count(rendered, "Analyzing: 2"))
-	require.Equal(t, 1, strings.Count(rendered, "Done."))
-
-	// Stale logs should not be printed.
-	require.NotContains(t, rendered, "Analyzing: 1")
-
-	// After the terminal was cleared, stable logs should not be reprinted.
-	require.NotContains(t, rendered, "Applied patch cleanly.")
-
-	// The raw output should contain the original logs before they were cleared.
-	require.Equal(t, 1, strings.Count(raw, "Applied patch cleanly."))
-
-}
-
-func TestStreamLogs_TypedInputDoesNotCorruptOutput(t *testing.T) {
-	var ptmx *os.File
-	client := &scriptedBuildBuddyClient{
-		script: []scriptedRecv{
-			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 1\n"),
-				NextChunkId: "0001",
-				Live:        true,
-			}},
-			{
-				rsp: &elpb.GetEventLogChunkResponse{
-					Buffer:      []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\n"),
-					NextChunkId: "0001",
-					Live:        true,
-				},
-				// Type input into the terminal, as a user might mid-build.
-				hook: func() {
-					_, err := ptmx.Write([]byte("typed input\n"))
-					if !assert.NoError(t, err) {
-						return
-					}
-					// Read the line back to force the kernel's echo decision
-					// to happen now, while echo is still disabled. Otherwise
-					// it may process the input only after streamLogs restores
-					// echo.
-					readBack := make(chan string, 1)
-					go func() {
-						buf := make([]byte, 64)
-						n, _ := os.Stdin.Read(buf)
-						readBack <- string(buf[:n])
-					}()
-					select {
-					case line := <-readBack:
-						// The read should return the typed line, confirming
-						// the line discipline consumed it rather than the read
-						// returning early on some other input.
-						assert.Equal(t, "typed input\n", line)
-					case <-time.After(10 * time.Second):
-						t.Error("timed out reading typed input back from the tty")
-					}
-				},
+			// The runner interleaves its narration into the command's stderr in
+			// the order it was written, so this is one ordered stream.
+			elpb.LogType_STDERR_LOG: {
+				{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("Syncing existing repo...\nLoading: 1 packages loaded\n")}},
 			},
-			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer: []byte("Applied patch cleanly.\nSetup completed.\nAnalyzing: 2\nDone.\n"),
-			}},
 		},
 	}
 
-	_, rendered := runStreamLogsWithPTY(t, client, func(p *os.File) {
-		ptmx = p
-	})
+	stdout, stderr, err := runPrintLogsWithCapturedOutput(t, client)
 
-	// On failure, dump the captured output.
-	t.Cleanup(func() {
-		if t.Failed() {
-			t.Logf("rendered logs:\n%s\x1b[0m", rendered)
-		}
-	})
-
-	// Input should not be echoed into the terminal, to prevent corrupting log streaming.
-	require.NotContains(t, rendered, "typed input")
-
-	// No logs should be duplicated.
-	require.Equal(t, 1, strings.Count(rendered, "Applied patch cleanly."))
-	require.Equal(t, 1, strings.Count(rendered, "Setup completed."))
-	require.Equal(t, 1, strings.Count(rendered, "Analyzing: 2"))
-	require.Equal(t, 1, strings.Count(rendered, "Done."))
+	require.NoError(t, err)
+	require.Equal(t, "//some:target\n", stdout)
+	require.Equal(t, "Syncing existing repo...\nLoading: 1 packages loaded\n", stderr)
 }
 
-func TestStreamLogs_ReconnectsAfterTransientStreamError(t *testing.T) {
+// TestPrintLogs_FallsBackForAServerWithoutSplitLogs covers version skew: an
+// older app serves the build log for a type it does not recognize.
+func TestPrintLogs_FallsBackForAServerWithoutSplitLogs(t *testing.T) {
 	client := &scriptedBuildBuddyClient{
-		script: []scriptedRecv{
-			// Serve a live chunk with some in-progress output.
-			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer:      []byte("Applied patch cleanly.\nAnalyzing: 1\n"),
-				NextChunkId: "0001",
-				Live:        true,
-			}},
-			// Drop the stream with a retryable error, as when the app
-			// restarts during a deploy. streamLogs should reconnect instead
-			// of returning the error, which would cancel the remote run.
-			{err: status.UnavailableError("connection reset by peer")},
-			// After the reconnect, re-serve the live chunk from the start,
-			// now with fresh progress.
-			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer:      []byte("Applied patch cleanly.\nAnalyzing: 2\n"),
-				NextChunkId: "0001",
-				Live:        true,
-			}},
-			// Finalize the chunk and end the log.
-			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer: []byte("Applied patch cleanly.\nAnalyzing: 2\nDone.\n"),
-			}},
+		legacyServer: true,
+		scripts: map[elpb.LogType][]scriptedRecv{
+			elpb.LogType_STDOUT_LOG: {{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("merged log\n")}}},
+			elpb.LogType_STDERR_LOG: {{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("merged log\n")}}},
+			elpb.LogType_BUILD_LOG:  {{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("merged log\n")}}},
 		},
 	}
 
-	_, rendered := runStreamLogsWithPTY(t, client, nil)
+	stdout, stderr, err := runPrintLogsWithCapturedOutput(t, client)
 
-	// On failure, dump the captured output.
-	t.Cleanup(func() {
-		if t.Failed() {
-			t.Logf("rendered logs:\n%s\x1b[0m", rendered)
-		}
-	})
-
-	// The reconnect should resume from the live chunk rather than restarting
-	// the log from the beginning.
-	require.Equal(t, []string{"", "0001"}, client.requestedChunkIDs)
-
-	// The re-served chunk should be deduplicated against what was already
-	// drawn: stable lines appear exactly once, and the stale progress line is
-	// replaced by the fresh one.
-	require.Equal(t, 1, strings.Count(rendered, "Applied patch cleanly."))
-	require.Equal(t, 1, strings.Count(rendered, "Analyzing: 2"))
-	require.Equal(t, 1, strings.Count(rendered, "Done."))
-	require.NotContains(t, rendered, "Analyzing: 1")
+	require.NoError(t, err)
+	// The behaviour a client had before the split logs existed: the merged log,
+	// exactly once - not copied onto every stream, and not an error.
+	require.Equal(t, "merged log\n", strings.TrimRight(stdout, "\n")+"\n")
+	require.Empty(t, stderr)
 }
 
 func TestPrintLogs(t *testing.T) {
 	client := &scriptedBuildBuddyClient{
-		script: []scriptedRecv{
+		scripts: map[elpb.LogType][]scriptedRecv{elpb.LogType_STDOUT_LOG: {
+			// The live chunk grows; what it already served is not served again.
 			{rsp: &elpb.GetEventLogChunkResponse{
 				Buffer:      []byte("Analyzing: 1\n"),
 				NextChunkId: "0001",
 				Live:        true,
 			}},
 			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer:      []byte("Analyzing: 2\nBuilding.\n"),
+				Buffer:      []byte("Analyzing: 1\nBuilding.\n"),
+				NextChunkId: "0001",
+				Live:        true,
+			}},
+			// The chunk finalizes, and the next one starts where it ended.
+			{rsp: &elpb.GetEventLogChunkResponse{
+				Buffer:      []byte("Analyzing: 1\nBuilding.\n"),
 				NextChunkId: "0002",
 			}},
 			{rsp: &elpb.GetEventLogChunkResponse{
-				Buffer: []byte("Done.\n"),
+				Buffer:      []byte("Done.\n"),
+				NextChunkId: "0002",
+				Live:        true,
 			}},
-		},
+		}},
 	}
 
 	out, err := runPrintLogsWithCapturedStdout(t, client)
 
 	require.NoError(t, err)
-	// Analyzing: 1 should not get printed because it was
-	// a live chunk that was overwritten.
-	require.Equal(t, "Analyzing: 2\nBuilding.\nDone.\n", out)
+	// Live chunks are streamed as they arrive rather than held until they are
+	// finalized, so a local run and a remote one show output at the same point,
+	// and nothing is shown twice.
+	require.Equal(t, "Analyzing: 1\nBuilding.\nDone.\n", out)
 }
 
 func TestPrintLogs_ReturnsStreamError(t *testing.T) {
 	client := &scriptedBuildBuddyClient{
-		script: []scriptedRecv{
+		scripts: map[elpb.LogType][]scriptedRecv{elpb.LogType_STDOUT_LOG: {
 			// Serve a finalized chunk, which should be printed.
 			{rsp: &elpb.GetEventLogChunkResponse{
 				Buffer:      []byte("Analyzing: 1\n"),
@@ -563,13 +407,76 @@ func TestPrintLogs_ReturnsStreamError(t *testing.T) {
 			// return the error rather than treating it as a clean end of
 			// the log.
 			{err: status.NotFoundError("invocation not found")},
-		},
+		}},
 	}
 
 	out, err := runPrintLogsWithCapturedStdout(t, client)
 
 	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
 	require.Equal(t, "Analyzing: 1\n", out)
+}
+
+// TestOutputOptions_Quiet checks the output settings reach the app as request
+// fields rather than runner flags, which an older app could not parse.
+func TestOutputOptions_Quiet(t *testing.T) {
+	require.NotContains(t, runnerFlags(), "--quiet")
+	require.False(t, outputOptions().GetQuiet())
+
+	setQuietForTest(t)
+
+	o := outputOptions()
+	require.True(t, o.GetQuiet())
+	// What the runner is told must match what printLogs will read.
+	require.Equal(t, splitOutput(), o.GetSplitStreams())
+	require.NotContains(t, runnerFlags(), "--quiet")
+}
+
+func TestParseRemoteCliFlags_Quiet(t *testing.T) {
+	setQuietForTest(t)
+	for _, tc := range []struct {
+		name           string
+		inputArgs      []string
+		expectedOutput []string
+	}{
+		{
+			name:           "long form",
+			inputArgs:      []string{"--quiet", "build", "//..."},
+			expectedOutput: []string{"build", "//..."},
+		},
+		{
+			name:           "short form",
+			inputArgs:      []string{"-q", "build", "//..."},
+			expectedOutput: []string{"build", "//..."},
+		},
+		{
+			name:           "explicit value",
+			inputArgs:      []string{"--quiet=true", "build", "//..."},
+			expectedOutput: []string{"build", "//..."},
+		},
+		{
+			// A bare boolean flag must not consume the flag that follows it.
+			name:           "startup flag after the short form",
+			inputArgs:      []string{"-q", "--output_base=/tmp/base", "build", "//..."},
+			expectedOutput: []string{"--output_base=/tmp/base", "build", "//..."},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, RemoteFlagset.Set("quiet", "false"))
+
+			actualOutput, err := parseRemoteCliFlags(tc.inputArgs)
+
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedOutput, actualOutput)
+			require.True(t, *quiet)
+		})
+	}
+}
+
+// setQuietForTest restores the process-global flag value after the test.
+func setQuietForTest(t *testing.T) {
+	previous := *quiet
+	*quiet = true
+	t.Cleanup(func() { *quiet = previous })
 }
 
 func TestGitConfig_BranchAndSha(t *testing.T) {
@@ -1051,78 +958,168 @@ func TestGetRemoteRunnerTarget(t *testing.T) {
 	}
 }
 
-// Helper to run the streamLogs function with a test terminal.
-// The setup callback, if set, receives the pty master before log streaming
-// starts; script hooks can capture it to interact with the terminal
-// mid-stream.
-// The first output is the exact output captured from the terminal, including ANSI escape sequences.
-// The second output is the rendered output, with ANSI escape sequences removed.
-func runStreamLogsWithPTY(t *testing.T, client bbspb.BuildBuddyServiceClient, setup func(ptmx *os.File)) (string, string) {
-	// This helper swaps the process-global os.Stdin/os.Stdout, so the test must
-	// not run in parallel. t.Setenv makes the testing package panic if
-	// t.Parallel() is ever called on this test (in either order), enforcing
-	// non-parallel execution at runtime.
-	t.Setenv("BB_REMOTEBAZEL_PTY_TEST", "1")
-
-	ptmx, tty, err := pty.Open()
-	require.NoError(t, err)
-	defer ptmx.Close()
-
-	require.NoError(t, pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80}))
-
-	oldStdin := os.Stdin
-	oldStdout := os.Stdout
-	os.Stdin = tty
-	os.Stdout = tty
-	defer func() {
-		os.Stdin = oldStdin
-		os.Stdout = oldStdout
-	}()
-
-	output := lockingbuffer.New()
-	copyDone := make(chan struct{})
-	go func() {
-		defer close(copyDone)
-		_, _ = io.Copy(output, ptmx)
-	}()
-
-	if setup != nil {
-		setup(ptmx)
-	}
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- streamLogs(context.Background(), client, "test-invocation-id")
-	}()
-	err = <-errCh
-	require.NoError(t, err)
-
-	_ = tty.Close()
-	<-copyDone
-
-	raw := output.String()
-	screen, err := terminal.NewScreenWriter(math.MaxInt, 0)
-	require.NoError(t, err)
-	_, err = screen.Write([]byte(raw))
-	require.NoError(t, err)
-	rendered := screen.OutputAccumulator.String() + screen.Render()
-
-	return raw, rendered
-}
-
 // Helper to run the printLogs function with os.Stdout captured, returning the
 // captured output and the error returned by printLogs.
 func runPrintLogsWithCapturedStdout(t *testing.T, client bbspb.BuildBuddyServiceClient) (string, error) {
+	stdout, _, err := runPrintLogsWithCapturedOutput(t, client)
+	return stdout, err
+}
+
+// runPrintLogsWithCapturedOutput runs printLogs with both of this process's
+// output streams captured, so which stream each log reached can be asserted.
+func runPrintLogsWithCapturedOutput(t *testing.T, client bbspb.BuildBuddyServiceClient) (stdout, stderr string, printErr error) {
+	outR, outW, err := os.Pipe()
+	require.NoError(t, err)
+	errR, errW, err := os.Pipe()
+	require.NoError(t, err)
+	oldStdout, oldStderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = outW, errW
+	defer func() { os.Stdout, os.Stderr = oldStdout, oldStderr }()
+
+	printErr = printLogs(t.Context(), client, "test-invocation-id")
+
+	require.NoError(t, outW.Close())
+	require.NoError(t, errW.Close())
+	out, err := io.ReadAll(outR)
+	require.NoError(t, err)
+	errOut, err := io.ReadAll(errR)
+	require.NoError(t, err)
+	return string(out), string(errOut), printErr
+}
+
+// TestLogStream_WaitsForInvocationToBeCreated covers the window between
+// dispatching a run and its invocation existing, where reads fail NotFound.
+func TestLogStream_WaitsForInvocationToBeCreated(t *testing.T) {
+	client := &scriptedBuildBuddyClient{
+		scripts: map[elpb.LogType][]scriptedRecv{
+			elpb.LogType_STDOUT_LOG: {
+				{err: status.NotFoundError("invocation not found")},
+				{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("Done.\n")}},
+			},
+		},
+	}
+
+	out, err := runPrintLogsWithCapturedStdout(t, client)
+
+	require.NoError(t, err)
+	require.Equal(t, "Done.\n", out)
+}
+
+// TestLogStream_ReturnsNotFoundAfterFirstResponse covers the other side: once
+// read from, a NotFound is a real error rather than a run yet to start.
+func TestLogStream_ReturnsNotFoundAfterFirstResponse(t *testing.T) {
+	client := &scriptedBuildBuddyClient{
+		scripts: map[elpb.LogType][]scriptedRecv{
+			elpb.LogType_STDOUT_LOG: {
+				{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("Analyzing: 1\n")}},
+				{err: status.NotFoundError("invocation not found")},
+			},
+		},
+	}
+
+	out, err := runPrintLogsWithCapturedStdout(t, client)
+
+	require.True(t, status.IsNotFoundError(err), "expected NotFound, got: %v", err)
+	require.Equal(t, "Analyzing: 1\n", out)
+}
+
+// TestDetermineRemote_DoesNotPromptWithoutATerminal checks that no prompt is
+// drawn when nothing can answer it, which would wedge the run.
+func TestDetermineRemote_DoesNotPromptWithoutATerminal(t *testing.T) {
+	repoPath, _ := testgit.MakeTempRepo(t, map[string]string{"a.txt": "a"})
+	testshell.Run(t, repoPath, `git remote add fork https://github.com/example/fork.git`)
+	testshell.Run(t, repoPath, `git remote add upstream https://github.com/example/upstream.git`)
+
+	// Other tests in this binary chdir into temp dirs that are removed before
+	// this one runs, which leaves the process with no working directory at all
+	// and makes t.Chdir fail on its own Getwd. Land somewhere real first.
+	_ = os.Chdir(os.TempDir())
+	t.Chdir(repoPath)
+
+	// os.Stdin is not a terminal under `bazel test`, which is the same
+	// situation as a piped or scripted run.
+	_, err := determineRemote()
+
+	require.Error(t, err)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got: %v", err)
+	// The error has to say what to set, or a caller is left guessing.
+	require.Contains(t, err.Error(), "remote-bazel-remote-name")
+}
+
+// TestPrintLogs_ReadsTheMergedLogWhenBothStreamsShareADestination covers
+// cross-stream ordering: two readers on two logs race, so when both streams
+// lead to one place the merged log is what gets read.
+func TestPrintLogs_ReadsTheMergedLogWhenBothStreamsShareADestination(t *testing.T) {
+	client := &scriptedBuildBuddyClient{
+		scripts: map[elpb.LogType][]scriptedRecv{
+			elpb.LogType_BUILD_LOG: {
+				{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("INFO: Loading\n//some:target\nINFO: Done\n")}},
+			},
+			// Reading either of these would lose the interleaving.
+			elpb.LogType_STDOUT_LOG: {
+				{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("//some:target\n")}},
+			},
+			elpb.LogType_STDERR_LOG: {
+				{rsp: &elpb.GetEventLogChunkResponse{Buffer: []byte("INFO: Loading\nINFO: Done\n")}},
+			},
+		},
+	}
+
+	// One pipe for both streams, as a terminal or `> file 2>&1` gives. A
+	// regular file does not count: two opens of one file have independent
+	// write positions, so locally they would overwrite rather than interleave.
 	r, w, err := os.Pipe()
 	require.NoError(t, err)
-	oldStdout := os.Stdout
-	os.Stdout = w
-	defer func() { os.Stdout = oldStdout }()
-
-	printErr := printLogs(t.Context(), client, "test-invocation-id")
-
-	require.NoError(t, w.Close())
-	out, err := io.ReadAll(r)
+	got := make(chan string, 1)
+	go func() {
+		b, _ := io.ReadAll(r)
+		got <- string(b)
+	}()
+	oldStdout, oldStderr := os.Stdout, os.Stderr
+	os.Stdout, os.Stderr = w, w
+	err = printLogs(t.Context(), client, "test-invocation-id")
+	os.Stdout, os.Stderr = oldStdout, oldStderr
 	require.NoError(t, err)
-	return string(out), printErr
+	require.NoError(t, w.Close())
+
+	require.Contains(t, <-got, "INFO: Loading\n//some:target\nINFO: Done")
+}
+
+// TestSplitOutput covers where the command's streams are kept apart. Two opens
+// of one regular file are deliberately not a shared destination: they have
+// independent write positions, so locally they would overwrite rather than
+// interleave.
+func TestSplitOutput(t *testing.T) {
+	pipeR, pipeW, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { pipeR.Close(); pipeW.Close() })
+	otherR, otherW, err := os.Pipe()
+	require.NoError(t, err)
+	t.Cleanup(func() { otherR.Close(); otherW.Close() })
+	path := filepath.Join(t.TempDir(), "out")
+	fileA, err := os.Create(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { fileA.Close() })
+	fileB, err := os.OpenFile(path, os.O_WRONLY, 0)
+	require.NoError(t, err)
+	t.Cleanup(func() { fileB.Close() })
+
+	for _, tc := range []struct {
+		name           string
+		stdout, stderr *os.File
+		want           bool
+	}{
+		{name: "one pipe for both", stdout: pipeW, stderr: pipeW, want: false},
+		{name: "separate pipes", stdout: pipeW, stderr: otherW, want: true},
+		{name: "two opens of one file", stdout: fileA, stderr: fileB, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldStdout, oldStderr := os.Stdout, os.Stderr
+			os.Stdout, os.Stderr = tc.stdout, tc.stderr
+			got := splitOutput()
+			os.Stdout, os.Stderr = oldStdout, oldStderr
+
+			require.Equal(t, tc.want, got)
+		})
+	}
 }

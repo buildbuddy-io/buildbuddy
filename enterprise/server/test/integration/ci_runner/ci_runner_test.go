@@ -439,6 +439,57 @@ actions:
 	assert.False(t, result.DoNotRecycle)
 }
 
+func TestCIRunner_Quiet_LogHoldsOnlyCommandOutput(t *testing.T) {
+	wsPath := testfs.MakeTempDir(t)
+
+	repoPath, headCommitSHA := testgit.MakeTempRepo(t, map[string]string{
+		"buildbuddy.yaml": `
+actions:
+  - name: "Test"
+    triggers:
+      push: { branches: [ master ] }
+    steps:
+      - run: echo "output of the requested command"
+`,
+	})
+	runnerFlags := []string{
+		"--quiet",
+		"--workflow_id=test-workflow",
+		"--action_name=Test",
+		"--trigger_event=push",
+		"--pushed_repo_url=file://" + repoPath,
+		"--pushed_branch=master",
+		"--commit_sha=" + headCommitSHA,
+		"--target_repo_url=file://" + repoPath,
+		"--target_branch=master",
+	}
+	app := buildbuddy.Run(t)
+	runnerFlags = append(runnerFlags, app.BESBazelFlags()...)
+
+	result := invokeRunner(t, runnerFlags, []string{}, wsPath)
+
+	checkRunnerResult(t, result)
+
+	runnerInvocation := getRunnerInvocation(t, app, result)
+	// Quiet mode keeps the runner's narration out of the invocation log, so the
+	// log holds only what the requested command printed.
+	assert.Equal(t, "output of the requested command", strings.TrimSpace(runnerInvocation.ConsoleBuffer))
+	// Needles avoid the runner's color escapes, which fall between the `$` and
+	// the command line it echoes.
+	for _, narration := range []string{
+		"git init",
+		"Configuring repository",
+		"Setup completed",
+		"command exited with code",
+		"Remote run completed at",
+	} {
+		assert.NotContains(t, runnerInvocation.ConsoleBuffer, narration)
+		// Narration is kept out of the invocation, not dropped: it still
+		// reaches stderr, which the executor captures as the action's stderr.
+		assert.Contains(t, result.Output, narration)
+	}
+}
+
 func TestCIRunner_RunsBashCommands_BazelWithOptions(t *testing.T) {
 	wsPath := testfs.MakeTempDir(t)
 

@@ -1876,10 +1876,7 @@ func (s *BuildBuddyServer) GetEventLog(req *elpb.GetEventLogChunkRequest, stream
 	logsUpdated := make(<-chan string)
 	pubsub := s.env.GetPubSub()
 	if pubsub != nil {
-		pubsubChannel := eventlog.GetEventLogPubSubChannel(req.GetInvocationId())
-		if req.GetType() == elpb.LogType_RUN_LOG {
-			pubsubChannel = eventlog.GetRunLogPubSubChannel(req.GetInvocationId())
-		}
+		pubsubChannel := eventlog.LogPubSubChannel(req.GetType(), req.GetInvocationId())
 		subscriber := pubsub.Subscribe(ctx, pubsubChannel)
 		defer subscriber.Close()
 		logsUpdated = subscriber.Chan()
