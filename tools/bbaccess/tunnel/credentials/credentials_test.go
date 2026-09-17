@@ -21,6 +21,7 @@ func TestGatewayHost(t *testing.T) {
 		want   string
 	}{
 		{"grpcs://gateway.example", "gateway.example"},
+		{"grpcs://Gateway.Example:443", "gateway.example"},
 		{"grpcs://gateway.example:443", "gateway.example"},
 		{"grpc://127.0.0.1:1985", "127.0.0.1"},
 		{"gateway.example:1985", "gateway.example"},
@@ -112,41 +113,20 @@ func TestStoreKeyIsNotWorldReadable(t *testing.T) {
 	assert.Equal(t, os.FileMode(0600), info.Mode().Perm(), "the private key must not be readable by others")
 }
 
-func TestLoadResolvesTheOnlyCredential(t *testing.T) {
-	// The common case: one bbaccess environment, so the config needn't name it.
-	ca := testauthrelay.NewCA(t)
+func TestLoadRequiresAName(t *testing.T) {
+	// Every zone names the credential of the server that sent it, so there is
+	// never a reason to guess between dev and prod.
 	store, err := NewStore(t.TempDir())
 	require.NoError(t, err)
-	certPEM, keyPEM := ca.IssuePEM(t, "someone@example.com", time.Time{})
-	writeCredential(t, store, "certs_example", certPEM, keyPEM)
-
-	signer, err := store.Load("")
-	require.NoError(t, err)
-	assert.Equal(t, "someone@example.com", signer.Email())
-}
-
-func TestLoadWithSeveralCredentialsAsksWhichOne(t *testing.T) {
-	// Guessing between dev and prod would silently point someone at the wrong
-	// environment, so this must be an error the config can fix.
-	ca := testauthrelay.NewCA(t)
-	store, err := NewStore(t.TempDir())
-	require.NoError(t, err)
-	for _, name := range []string{"certs_example", "certs_buildbuddy_dev"} {
-		certPEM, keyPEM := ca.IssuePEM(t, "someone@example.com", time.Time{})
-		writeCredential(t, store, name, certPEM, keyPEM)
-	}
-
 	_, err = store.Load("")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "credential")
+	require.ErrorContains(t, err, "credential name is required")
 }
 
-func TestLoadWithNoCredentialsPointsAtBbcert(t *testing.T) {
+func TestLoadWithNoCredentialPointsAtBbaccess(t *testing.T) {
 	store, err := NewStore(filepath.Join(t.TempDir(), "does-not-exist"))
 	require.NoError(t, err)
-	_, err = store.Load("")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bbaccess")
+	_, err = store.Load("certs_example")
+	require.ErrorContains(t, err, "run bbaccess")
 }
 
 func TestAttachMintsACredentialForTheKey(t *testing.T) {

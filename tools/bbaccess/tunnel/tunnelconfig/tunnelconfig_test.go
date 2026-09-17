@@ -129,6 +129,11 @@ zones:
 	require.Empty(t, cfg.Zones, "zones come from the certificate servers, not the config file")
 }
 
+// writes counts gateways files written, so that each gets a later
+// modification time than the last regardless of filesystem timestamp
+// resolution: modification times are what Refresh watches.
+var writes int
+
 // writeGateways stands in for bbaccess storing what a certificate server sent.
 func writeGateways(t *testing.T, dir, name string, g ServerGateways) string {
 	t.Helper()
@@ -136,9 +141,8 @@ func writeGateways(t *testing.T, dir, name string, g ServerGateways) string {
 	require.NoError(t, err)
 	path := filepath.Join(dir, name+GatewaysSuffix)
 	require.NoError(t, os.WriteFile(path, b, 0644))
-	// Modification times are what Refresh watches; make sure consecutive
-	// writes within the test never share one.
-	require.NoError(t, os.Chtimes(path, time.Now(), time.Now().Add(time.Duration(len(b))*time.Second)))
+	writes++
+	require.NoError(t, os.Chtimes(path, time.Now(), time.Now().Add(time.Duration(writes)*time.Second)))
 	return path
 }
 
@@ -164,6 +168,17 @@ func TestServerGateways(t *testing.T) {
 	changed, err := cfg.Refresh()
 	require.NoError(t, err)
 	require.False(t, changed, "nothing changed on disk")
+
+	// Every bbaccess run rewrites the file; the same content is not a change.
+	writeGateways(t, dir, "certs_example", ServerGateways{Gateways: []ServerGateway{
+		{Target: "grpcs://foo.bar.example", Zones: []ServerZone{
+			{Suffix: "foo.bb.internal", RewriteTo: "cluster.local"},
+			{Suffix: "bar.bb.internal"},
+		}},
+	}})
+	changed, err = cfg.Refresh()
+	require.NoError(t, err)
+	require.False(t, changed, "same zones, new modification time")
 
 	// A change on disk is picked up by the next Refresh.
 	path := writeGateways(t, dir, "certs_example", ServerGateways{Gateways: []ServerGateway{
@@ -199,7 +214,8 @@ func TestServerGateways(t *testing.T) {
 	// A file that no longer parses does the same, and is not reported again
 	// until it changes.
 	require.NoError(t, os.WriteFile(other, []byte("gateways: ["), 0644))
-	require.NoError(t, os.Chtimes(other, time.Now(), time.Now().Add(time.Hour)))
+	writes++
+	require.NoError(t, os.Chtimes(other, time.Now(), time.Now().Add(time.Duration(writes)*time.Second)))
 	changed, err = cfg.Refresh()
 	require.Error(t, err)
 	require.False(t, changed)
@@ -215,6 +231,25 @@ func TestServerGateways(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Empty(t, cfg.Zones)
+}
+
+func TestServerGatewaysRecoverFromABadFile(t *testing.T) {
+	// bbaccess loads the config before it fetches anything, so a bad file
+	// must not stop the run that would rewrite it: the files stay watched.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "certs_example"+GatewaysSuffix)
+	require.NoError(t, os.WriteFile(path, []byte("gateways: ["), 0644))
+	cfg := Default()
+	require.Error(t, cfg.UseServerGateways(dir))
+	require.Empty(t, cfg.Zones)
+
+	writeGateways(t, dir, "certs_example", ServerGateways{Gateways: []ServerGateway{
+		{Target: "grpcs://foo.bar.example", Zones: []ServerZone{{Suffix: "foo.bb.internal"}}},
+	}})
+	changed, err := cfg.Refresh()
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Len(t, cfg.Zones, 1)
 }
 
 // `tunnel install` needs root and the macOS daemon runs as root, but both must

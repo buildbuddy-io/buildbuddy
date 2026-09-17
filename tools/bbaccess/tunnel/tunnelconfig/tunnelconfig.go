@@ -281,14 +281,13 @@ type serverZones struct {
 }
 
 // UseServerGateways loads the gateway files bbaccess wrote into dir, and makes
-// Refresh follow them.
+// Refresh follow them. A file that cannot be loaded is reported, but the files
+// are followed regardless: the next bbaccess run rewrites it, and the Refresh
+// after that picks it up.
 func (c *Config) UseServerGateways(dir string) error {
 	c.server = &serverZones{dir: dir}
-	if _, err := c.Refresh(); err != nil {
-		c.server = nil
-		return err
-	}
-	return nil
+	_, err := c.Refresh()
+	return err
 }
 
 // Refresh re-reads the gateway files if any changed since the last load, and
@@ -324,6 +323,9 @@ func (c *Config) Refresh() (changed bool, err error) {
 	for _, f := range slices.Sorted(maps.Keys(now)) {
 		b, err := os.ReadFile(f)
 		if err != nil {
+			if os.IsNotExist(err) {
+				continue // removed since the listing
+			}
 			return false, err
 		}
 		var g ServerGateways
@@ -334,6 +336,11 @@ func (c *Config) Refresh() (changed bool, err error) {
 	}
 	if err := (&Config{Zones: zones}).Validate(); err != nil {
 		return false, err
+	}
+	// A rewritten file with the same content, which is what every bbaccess
+	// run produces, is not a change.
+	if slices.Equal(c.Zones, zones) {
+		return false, nil
 	}
 	s.mu.Lock()
 	c.Zones = zones

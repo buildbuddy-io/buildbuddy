@@ -71,7 +71,7 @@ func (s *Store) EnsureKey(name string) ([]byte, error) {
 	if err := os.MkdirAll(s.dir, 0700); err != nil {
 		return nil, fmt.Errorf("creating %s: %w", s.dir, err)
 	}
-	_, keyPath := s.paths(name)
+	certPath, keyPath := s.paths(name)
 
 	keyPEM, err := os.ReadFile(keyPath)
 	switch {
@@ -81,7 +81,10 @@ func (s *Store) EnsureKey(name string) ([]byte, error) {
 		}
 		// A key we cannot use is a key we will never be able to sign with.
 		// Replace it; the next certificate will be issued for the new one.
+		// The old certificate goes too, so that until then the credential is
+		// plainly missing rather than mismatched.
 		log.Warningf("Replacing unreadable tunnel key %s", keyPath)
+		os.Remove(certPath)
 	case !os.IsNotExist(err):
 		return nil, fmt.Errorf("reading %s: %w", keyPath, err)
 	}
@@ -214,28 +217,16 @@ func (s *Store) Names() ([]string, error) {
 	return names, nil
 }
 
-// Load returns a signer for the named credential. An empty name resolves to the
-// only credential present, which is the common case for someone who runs bbaccess
-// against a single environment.
+// Load returns a signer for the named credential.
 func (s *Store) Load(name string) (*relayauth.Signer, error) {
 	if name == "" {
-		names, err := s.Names()
-		if err != nil {
-			return nil, fmt.Errorf("listing credentials in %s: %w", s.dir, err)
-		}
-		switch len(names) {
-		case 0:
-			return nil, fmt.Errorf("no tunnel credential in %s; run bbaccess to get one", s.dir)
-		case 1:
-			name = names[0]
-		default:
-			return nil, fmt.Errorf("several tunnel credentials in %s (%s); name one with 'credential:' in the zone config",
-				s.dir, strings.Join(names, ", "))
-		}
+		return nil, fmt.Errorf("credential name is required")
 	}
-
 	certPath, keyPath := s.paths(name)
 	certPEM, err := os.ReadFile(certPath)
+	if os.IsNotExist(err) {
+		return nil, fmt.Errorf("no tunnel credential %q in %s; run bbaccess to get one", name, s.dir)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %w", certPath, err)
 	}
@@ -296,9 +287,10 @@ func GatewayHost(target string) string {
 		return ""
 	}
 	if host, _, err := net.SplitHostPort(target); err == nil {
-		return host
+		return strings.ToLower(host)
 	}
 	// No port, or an unbracketed IPv6 literal; either way there is nothing
-	// further to strip.
-	return strings.Trim(target, "[]")
+	// further to strip. Lower case, since the gateway compares the audience
+	// exactly.
+	return strings.ToLower(strings.Trim(target, "[]"))
 }
