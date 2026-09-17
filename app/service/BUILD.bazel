@@ -18,11 +18,11 @@ ts_library(
     name = "rpc_service",
     srcs = ["rpc_service.ts"],
     deps = [
-        ":length_prefixed",
         "//:node_modules/protobufjs",
         "//:node_modules/rxjs",
         "//:node_modules/tslib",
         "//app/capabilities",
+        "//app/service:length_prefixed",
         "//app/util:async",
         "//app/util:errors",
         "//proto:buildbuddy_service_ts_proto",

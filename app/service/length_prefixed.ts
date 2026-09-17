@@ -1,14 +1,14 @@
-import { BrowserHeaders } from "browser-headers";
-import { google as google_code } from "../../proto/grpc_code_ts_proto";
-import { google as google_status } from "../../proto/grpc_status_ts_proto";
-import { GRPCStatusError } from "../util/errors";
-
 /**
  * Framing for gRPC-style streaming over plain HTTP: the request and each
  * response message travel as `Length-Prefixed-Message`s, with the final gRPC
  * status encoded as trailers in a frame of its own. Shared by every RPC
  * service the UIs talk to.
  */
+
+import { BrowserHeaders } from "browser-headers";
+import { google as google_code } from "../../proto/grpc_code_ts_proto";
+import { google as google_status } from "../../proto/grpc_status_ts_proto";
+import { GRPCStatusError } from "../util/errors";
 
 // GRPC over HTTP requires protobuf messages to be sent in a series of `Length-Prefixed-Message`s
 // Here's what a Length-Prefixed-Message looks like:

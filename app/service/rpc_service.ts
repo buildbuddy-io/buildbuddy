@@ -1,12 +1,12 @@
 import * as protobufjs from "protobufjs";
 import { Subject } from "rxjs";
 import { $stream, buildbuddy } from "../../proto/buildbuddy_service_ts_proto";
-import { lengthPrefixMessage, readLengthPrefixedStream, statusFromHeaders } from "./length_prefixed";
 import { context } from "../../proto/context_ts_proto";
 import { google as google_code } from "../../proto/grpc_code_ts_proto";
 import capabilities from "../capabilities/capabilities";
 import { CancelablePromise } from "../util/async";
 import { FetchError, GRPCStatusError, HTTPStatusError, parseGRPCStatus } from "../util/errors";
+import { lengthPrefixMessage, readLengthPrefixedStream, statusFromHeaders } from "./length_prefixed";
 
 /** Return type for unary RPCs. */
 export { CancelablePromise } from "../util/async";
