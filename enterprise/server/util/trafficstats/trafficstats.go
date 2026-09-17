@@ -138,11 +138,29 @@ Metal,us-sjc,216.226.71.0/24
 Metal,us-nuq,216.226.68.0/24
 `)
 
-	// Private Service Connect NAT subnets. Traffic from customers connecting
-	// through a PSC endpoint arrives from these (private) ranges rather than
-	// from the customer's own IP, so they would otherwise be classified as
-	// "internal". One entry per service attachment NAT subnet.
+	// GCP Private Service Connect NAT subnets. Traffic from customers
+	// connecting through a PSC endpoint arrives from these (private) ranges
+	// rather than from the customer's own IP, so they would otherwise be
+	// classified as "internal".
+	//
+	// $ gcloud compute networks subnets list --project=flame-build \
+	//     --filter="purpose=PRIVATE_SERVICE_CONNECT" \
+	//     --format="value(region.basename(),ipCidrRange)"
 	pscRangesCSV []byte = []byte(`PSC,europe-west4,10.30.0.0/22
+`)
+
+	// AWS PrivateLink. Customers connecting through the VPC endpoint service
+	// reach the cache proxies via the internal NLB "prod-us-west-2-privatelink",
+	// which does not preserve client IPs for PrivateLink traffic, so the pods
+	// see the NLB's own private IPs (one ENI per AZ) as the peer.
+	//
+	// $ aws ec2 describe-network-interfaces --region us-west-2 \
+	//     --filters "Name=description,Values=ELB net/prod-us-west-2-privatelink/*" \
+	//     --query 'NetworkInterfaces[*].PrivateIpAddress'
+	privatelinkRangesCSV []byte = []byte(`PrivateLink,us-west-2,192.168.124.241/32
+PrivateLink,us-west-2,192.168.147.52/32
+PrivateLink,us-west-2,192.168.189.194/32
+PrivateLink,us-west-2,192.168.242.116/32
 `)
 	classifierOnce = sync.OnceValues(newClassifier)
 )
@@ -263,6 +281,7 @@ func newClassifier() (*classifier, error) {
 		{"MacStadium", macstadiumRangesCSV},
 		{"Metal", metalRangesCSV},
 		{"PSC", pscRangesCSV},
+		{"PrivateLink", privatelinkRangesCSV},
 	} {
 		entries, err := parseRangeEntries(csv.data)
 		if err != nil {

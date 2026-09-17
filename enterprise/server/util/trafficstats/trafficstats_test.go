@@ -282,6 +282,9 @@ func TestClassifier_PrivateRanges(t *testing.T) {
 		{name: "psc_nat_ip_ipv4_mapped", ip: "::ffff:10.30.1.7", want: Destination{Provider: "psc", Region: "europe-west4"}},
 		{name: "psc_nat_range_last_ip", ip: "10.30.3.255", want: Destination{Provider: "psc", Region: "europe-west4"}},
 		{name: "adjacent_private_ip_is_internal", ip: "10.30.4.0", want: Destination{Provider: "internal", Region: ""}},
+		{name: "privatelink_nlb_ip", ip: "192.168.124.241", want: Destination{Provider: "privatelink", Region: "us-west-2"}},
+		{name: "privatelink_nlb_ip_with_port", ip: "192.168.242.116:40012", want: Destination{Provider: "privatelink", Region: "us-west-2"}},
+		{name: "privatelink_neighbor_is_internal", ip: "192.168.124.242", want: Destination{Provider: "internal", Region: ""}},
 		{name: "other_private_ip_is_internal", ip: "192.168.1.1", want: Destination{Provider: "internal", Region: ""}},
 		{name: "public_ip_uses_provider_data", ip: "3.4.12.4", want: Destination{Provider: "aws", Region: "eu-west-1"}},
 	} {
