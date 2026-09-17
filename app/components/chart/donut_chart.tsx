@@ -1,6 +1,6 @@
 import React from "react";
 import { Cell, Pie, PieChart, ResponsiveContainer } from "recharts";
-import { getChartColor } from "../../util/color";
+import { getChartColor, getUniformBrightnessColor } from "../../util/color";
 import format from "../../format/format";
 
 export interface NamedValue {
@@ -20,7 +20,7 @@ interface Props {
   valueFormatter?: (v: number) => string;
 }
 
-const OTHER_LABEL = "Other";
+const OTHER_LABEL = "&&__Other__&&";
 const MAX_LEGEND_ENTRIES = 5;
 
 // A little function that converts an ordered list of name keys into a color
@@ -34,7 +34,7 @@ export function makeColorPicker(values: string[]): (name: string) => string {
   }
 
   const mapped = new Map(dedupedArray.map((v, i) => [v, getChartColor(i)]));
-  return (n: string) => mapped.get(n) ?? "#eee";
+  return (n: string) => mapped.get(n) ?? getUniformBrightnessColor(n);
 }
 export default class DonutChart extends React.Component<Props> {
   render() {
@@ -76,23 +76,26 @@ export default class DonutChart extends React.Component<Props> {
           </PieChart>
         </ResponsiveContainer>
         <div>
-          {data?.map((entry, index) => (
-            <div className="donut-chart-label">
-              <span className="donut-chart-swatch" style={{ backgroundColor: colorPicker(entry, index) }}></span>
-              <span>
-                <span className="donut-chart-legend-value">{valueFormatter(entry.value)}</span>{" "}
-                <span
-                  className="donut-chart-legend-desc"
-                  title={
-                    other > 0 && index == MAX_LEGEND_ENTRIES
-                      ? otherLabels.join(", ")
-                      : `${entry.name} (${format.percent(entry.value / sum.value)}%)`
-                  }>
-                  {entry.name} ({format.percent(entry.value / sum.value)}%)
+          {data?.map((entry, index) => {
+            const label = entry.name === OTHER_LABEL ? "Other" : entry.name;
+            return (
+              <div className="donut-chart-label">
+                <span className="donut-chart-swatch" style={{ backgroundColor: colorPicker(entry, index) }}></span>
+                <span>
+                  <span className="donut-chart-legend-value">{valueFormatter(entry.value)}</span>{" "}
+                  <span
+                    className="donut-chart-legend-desc"
+                    title={
+                      other > 0 && index == MAX_LEGEND_ENTRIES
+                        ? otherLabels.join(", ")
+                        : `${entry.name} (${format.percent(entry.value / sum.value)}%)`
+                    }>
+                    {label} ({format.percent(entry.value / sum.value)}%)
+                  </span>
                 </span>
-              </span>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
       </div>
     );

@@ -35,6 +35,10 @@
   font-weight: normal;
 }
 
+.donut-chart-title-block {
+  margin-bottom: 24px;
+}
+
 .donut-chart-title {
   margin-top: 32px;
   font-weight: 700;
@@ -43,7 +47,6 @@
 }
 
 .donut-chart-subtitle {
-  margin-bottom: 24px;
   margin-top: 4px;
   color: var(--color-text-secondary);
   font-size: 14px;
