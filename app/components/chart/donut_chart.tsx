@@ -23,9 +23,11 @@ interface Props {
 const OTHER_LABEL = "&&__Other__&&";
 const MAX_LEGEND_ENTRIES = 5;
 
-// A little function that converts an ordered list of name keys into a color
-// mapping.  This is useful for staying consistent when showing multiple donuts
-// with the same keys in close proximity to each other.
+/**
+ * A little function that converts an ordered list of name keys into a color
+ * mapping.  This is useful for staying consistent when showing multiple donuts
+ * with the same keys in close proximity to each other.
+ */
 export function makeColorPicker(values: string[]): (name: string) => string {
   const deduped: Set<string> = new Set(values);
   const dedupedArray = [...deduped];
