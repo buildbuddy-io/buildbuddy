@@ -8,7 +8,7 @@ import { bytes, count, formatWithCommas } from "../../../app/format/format";
 import router, { Path, TrendsChartId } from "../../../app/router/router";
 import rpcService, { CancelablePromise } from "../../../app/service/rpc_service";
 import { usage } from "../../../proto/usage_ts_proto";
-import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
+import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import UsageAlertsComponent from "./usage_alerts";
 
 export interface UsageProps {
@@ -188,6 +188,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
               data={dates}
               dataSeries={[
                 {
+                  type: SeriesType.BAR,
                   name: "invocations",
                   extractValue: (ts) => +(this.getUsage(ts).invocations ?? 0),
                   formatHoverValue: (value) => (value || 0) + " invocations",
@@ -213,6 +214,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
               data={dates}
               dataSeries={[
                 {
+                  type: SeriesType.BAR,
                   name: "action cache hits",
                   extractValue: (ts) => +(this.getUsage(ts).actionCacheHits ?? 0),
                   formatHoverValue: (value) => (value || 0) + " action cache hits",
@@ -238,6 +240,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
               data={dates}
               dataSeries={[
                 {
+                  type: SeriesType.BAR,
                   name: "cached build minutes",
                   extractValue: (ts) => +(this.getUsage(ts).totalCachedActionExecUsec ?? 0),
                   formatHoverValue: (value) => formatMinutes(value || 0),
@@ -263,6 +266,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
               data={dates}
               dataSeries={[
                 {
+                  type: SeriesType.BAR,
                   name: "content addressable storage cache hits",
                   extractValue: (ts) => +(this.getUsage(ts).casCacheHits ?? 0),
                   formatHoverValue: (value) => (value || 0) + " CAS cache hits",
@@ -289,6 +293,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "internal",
                     extractValue: (ts) => +(this.getUsage(ts).totalInternalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " internal downloads",
@@ -297,6 +302,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     color: ChartColor.GREY,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: "workflows",
                     extractValue: (ts) => +(this.getUsage(ts).totalWorkflowDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " workflows downloads",
@@ -305,6 +311,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     color: ChartColor.BASICALLY_BLACK,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: "external",
                     extractValue: (ts) => +(this.getUsage(ts).totalExternalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " external downloads",
@@ -329,6 +336,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "total cache download (bytes)",
                     extractValue: (ts) => +(this.getUsage(ts).totalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " downloaded",
@@ -356,6 +364,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "internal",
                     extractValue: (ts) => +(this.getUsage(ts).totalInternalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " internal uploads",
@@ -364,6 +373,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     color: ChartColor.GREY,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: "workflows",
                     extractValue: (ts) => +(this.getUsage(ts).totalWorkflowUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " workflows uploads",
@@ -372,6 +382,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     color: ChartColor.BASICALLY_BLACK,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: "external",
                     extractValue: (ts) => +(this.getUsage(ts).totalExternalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " external uploads",
@@ -396,6 +407,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "total cache upload (bytes)",
                     extractValue: (ts) => +(this.getUsage(ts).totalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => bytes(value || 0) + " uploaded",
@@ -423,6 +435,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "workflows",
                     extractValue: (ts) => +(this.getUsage(ts).cloudWorkflowLinuxExecutionDurationUsec ?? 0),
                     formatHoverValue: (value) => formatMinutes(value || 0, "workflow"),
@@ -431,6 +444,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     color: ChartColor.BASICALLY_BLACK,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: "rbe",
                     extractValue: (ts) => +(this.getUsage(ts).cloudRbeLinuxExecutionDurationUsec ?? 0),
                     formatHoverValue: (value) => formatMinutes(value || 0, "rbe"),
@@ -455,6 +469,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "linux remote execution duration (minutes)",
                     extractValue: (ts) => +(this.getUsage(ts).linuxExecutionDurationUsec ?? 0),
                     formatHoverValue: (value) => formatMinutes(value || 0),
@@ -482,6 +497,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "workflows",
                     extractValue: (ts) => +(this.getUsage(ts).cloudWorkflowCpuNanos ?? 0) / 1000,
                     formatHoverValue: (value) => formatMinutes(value || 0, "workflow"),
@@ -490,6 +506,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     color: ChartColor.BASICALLY_BLACK,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: "rbe",
                     extractValue: (ts) => +(this.getUsage(ts).cloudRbeCpuNanos ?? 0) / 1000,
                     formatHoverValue: (value) => formatMinutes(value || 0, "rbe"),
@@ -514,6 +531,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 data={dates}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "linux remote execution cpu time",
                     extractValue: (ts) => +(this.getUsage(ts).cloudRbeCpuNanos ?? 0 / 1000),
                     formatHoverValue: (value) => formatMinutes(value || 0),

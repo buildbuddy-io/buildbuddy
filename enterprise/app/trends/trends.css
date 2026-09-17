@@ -73,12 +73,15 @@
   box-shadow:
     0 3px 6px var(--color-shadow-tooltip),
     0 3px 6px var(--color-shadow-tooltip-alt);
-  pointer-events: none;
   z-index: 1;
 }
 
 .trend-chart-hover-label {
   font-weight: 600;
+}
+
+.trend-chart-hover .color-swatch {
+  display: inline-block;
 }
 
 .trends-clickable-bar:hover,

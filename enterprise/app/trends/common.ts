@@ -41,7 +41,8 @@ export function computeTimeKeys(
 ): { timeKeys: number[]; ticks: number[] } {
   if (!interval) {
     // Just let recharts pick the days to render.
-    return { timeKeys: timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime()), ticks: [] };
+    const timeKeys = timeDay.range(timeDay.floor(domain[0]), domain[1]).map((v) => v.getTime());
+    return { timeKeys, ticks: timeKeys };
   } else if (interval.type == stats.IntervalType.INTERVAL_TYPE_HOUR) {
     // First, round down to the nearest interval in the local time.
     // For example, for a 2-hour interval, this will round 3:30 to 2:00.

@@ -15,7 +15,7 @@ import { copyToClipboard } from "../../../app/util/clipboard";
 import { timestampToDateWithFallback } from "../../../app/util/proto";
 import { target } from "../../../proto/target_ts_proto";
 import { getProtoFilterParams } from "../filter/filter_util";
-import TrendsChartComponent, { ChartColor } from "../trends/trends_chart";
+import TrendsChartComponent, { ChartColor, SeriesType } from "../trends/trends_chart";
 import TapEmptyStateComponent from "./tap_empty_state";
 
 interface Props {
@@ -511,6 +511,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
               data={dates}
               dataSeries={[
                 {
+                  type: SeriesType.BAR,
                   name: "flakes",
                   extractValue: (ts) => +(this.getChartData(ts).flakyRuns ?? 0),
                   formatHoverValue: (value) => this.renderPluralCount(value, "flake"),
@@ -518,6 +519,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
                   color: ChartColor.ORANGE,
                 },
                 {
+                  type: SeriesType.BAR,
                   name: "likely flakes",
                   extractValue: (ts) => +(this.getChartData(ts).likelyFlakyRuns ?? 0),
                   formatHoverValue: (value) => this.renderPluralCount(value, "likely flake"),

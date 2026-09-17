@@ -16,7 +16,7 @@ import { computeTimeKeys, getAverage, getTotal } from "./common";
 import DrilldownPageComponent from "./drilldown_page";
 import PercentilesChartComponent from "./percentile_chart";
 import TrendsSummaryCard from "./summary_card";
-import TrendsChartComponent, { ChartColor } from "./trends_chart";
+import TrendsChartComponent, { ChartColor, SeriesType } from "./trends_chart";
 
 const BITS_PER_BYTE = 8;
 
@@ -311,6 +311,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: `failed builds (${format.count(
                       getTotal(this.getStats(), (stat) => +(stat.failedBuilds ?? 0))
                     )})`,
@@ -321,6 +322,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.RED,
                   },
                   {
+                    type: SeriesType.BAR,
                     name: `successful builds (${format.count(
                       getTotal(this.getStats(), (stat) => +(stat.successfulBuilds ?? 0))
                     )})`,
@@ -331,6 +333,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     color: ChartColor.GREEN,
                   },
                   {
+                    type: SeriesType.LINE,
                     name: `average build duration (${format.durationUsec(
                       getAverage(
                         this.getStats().filter((stat) => stat.completedInvocationCount),
@@ -345,7 +348,6 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       );
                     },
                     formatHoverValue: (value) => `${format.durationSec(value)} average`,
-                    isLine: true,
                     usesSecondaryAxis: true,
                   },
                 ]}
@@ -386,6 +388,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   data={this.state.timeKeys}
                   dataSeries={[
                     {
+                      type: SeriesType.BAR,
                       name: "average build duration",
                       extractValue: (tsMillis) => {
                         let stat = this.getStat(tsMillis);
@@ -395,6 +398,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       onClick: this.onBarClicked.bind(this, "", ""),
                     },
                     {
+                      type: SeriesType.BAR,
                       name: "slowest build duration",
                       extractValue: (tsMillis) => +(this.getStat(tsMillis).maxDurationUsec ?? 0) / 1000000,
                       formatHoverValue: (value) => `${format.durationSec(value || 0)} slowest`,
@@ -457,6 +461,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: `total download size (${format.bytes(
                       getTotal(this.getStats(), (stat) => +(stat.totalDownloadSizeBytes ?? 0))
                     )})`,
@@ -464,12 +469,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     formatHoverValue: (value) => `${format.bytes(value || 0)} downloaded`,
                   },
                   {
+                    type: SeriesType.LINE,
                     name: "download rate",
                     extractValue: (tsMillis) =>
                       (+(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0) * BITS_PER_BYTE) /
                       (+(this.getStat(tsMillis).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND),
                     formatHoverValue: (value) => format.bitsPerSecond(value || 0),
-                    isLine: true,
                     usesSecondaryAxis: true,
                   },
                 ]}
@@ -492,6 +497,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: `total upload size (${format.bytes(
                       getTotal(this.getStats(), (stat) => +(stat.totalUploadSizeBytes ?? 0))
                     )})`,
@@ -499,12 +505,12 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     formatHoverValue: (value) => `${format.bytes(value || 0)} uploaded`,
                   },
                   {
+                    type: SeriesType.LINE,
                     name: "upload rate",
                     extractValue: (tsMillis) =>
                       (+(this.getStat(tsMillis).totalUploadSizeBytes ?? 0) * BITS_PER_BYTE) /
                       (+(this.getStat(tsMillis).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND),
                     formatHoverValue: (value) => format.bitsPerSecond(value || 0),
-                    isLine: true,
                     usesSecondaryAxis: true,
                   },
                 ]}
@@ -529,6 +535,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                   data={this.state.timeKeys}
                   dataSeries={[
                     {
+                      type: SeriesType.BAR,
                       name: "saved cpu time",
                       extractValue: (tsMillis) =>
                         +(this.getStat(tsMillis).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND,
@@ -550,6 +557,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "users with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).userCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " users",
@@ -569,6 +577,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "commits with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).commitCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " commits",
@@ -588,6 +597,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "branches with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).branchCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " branches",
@@ -607,6 +617,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "hosts with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).hostCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " hosts",
@@ -626,6 +637,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                 data={this.state.timeKeys}
                 dataSeries={[
                   {
+                    type: SeriesType.BAR,
                     name: "repos with builds",
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).repoCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " repos",
@@ -648,6 +660,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     id="build_time"
                     dataSeries={[
                       {
+                        type: SeriesType.BAR,
                         name: `build time, minutes (${format.durationUsec(
                           getTotal(this.getExecutionStats(), (stat) => +(stat.totalBuildTimeUsec ?? 0))
                         )})`,
