@@ -2,6 +2,7 @@ package rpcutil
 
 import (
 	"context"
+	"log"
 	"sync"
 	"time"
 
@@ -117,17 +118,21 @@ func init() {
 	// tier, so they would allocate a lot more memory, plus every time we would
 	// get a 1MiB from the pool, we would clear the whole thing, even though we
 	// only use a part of it.
-	experimental.SetDefaultBufferPool(mem.NewTieredBufferPool(
-		256,
-		4<<10,   // 4KiB
-		16<<10,  // 16KiB (max HTTP/2 frame size used by gRPC)
-		32<<10,  // 32KiB (default buffer size for io.Copy)
-		64<<10,  // 64KiB
-		128<<10, // 128KiB
-		256<<10, // 256KiB
-		512<<10, // 512KiB
-		1<<20,   // 1MiB
-	))
+	pool, err := mem.NewBinaryTieredBufferPool(
+		8,  // 256 bytes
+		12, // Go page size, 4KiB
+		14, // 16KiB (max HTTP/2 frame size used by gRPC)
+		15, // 32KiB (default buffer size for io.Copy)
+		16, // 64KiB
+		17, // 128KiB
+		18, // 256KiB
+		19, // 512KiB
+		20, // 1MB
+	)
+	if err != nil {
+		log.Fatalf("Failed to create default buffer pool: %v", err)
+	}
+	experimental.SetDefaultBufferPool(pool)
 }
 
 type StreamMsg[T proto.Message] struct {
