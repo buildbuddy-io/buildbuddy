@@ -1783,8 +1783,8 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_download_duration_usec",
-		Buckets:   prometheus.ExponentialBuckets(1, 10, 9),
-		Help:      "Per-file download duration during remote execution, in **microseconds**.",
+		Buckets:   durationUsecBuckets(10*time.Millisecond, 10*time.Minute, 3),
+		Help:      "Time spent downloading files during remote execution, in **microseconds**.",
 	})
 
 	FileUploadCount = promauto.NewHistogram(prometheus.HistogramOpts{
@@ -1814,8 +1814,8 @@ var (
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",
 		Name:      "file_upload_duration_usec",
-		Buckets:   coarseMicrosecondToHour,
-		Help:      "Per-file upload duration during remote execution, in **microseconds**.",
+		Buckets:   durationUsecBuckets(10*time.Millisecond, 10*time.Minute, 3),
+		Help:      "Time spent uploading files during remote execution, in **microseconds**.",
 	})
 
 	NetworkingCommandDurationUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
