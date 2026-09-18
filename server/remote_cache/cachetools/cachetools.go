@@ -639,7 +639,7 @@ func uploadFromReaderWithChunking(ctx context.Context, env environment.Env, r *d
 	}
 	var chunkedBlobSize int64
 	var chunkDigests []*repb.Digest
-	chunker, err := chunking.NewChunker(ctx, int(chunkingParams.GetAvgChunkSizeBytes()), func(chunkData []byte) error {
+	chunker, err := chunking.NewChunker(ctx, int(chunkingParams.GetAvgChunkSizeBytes()), uint64(chunkingParams.GetSeed()), func(chunkData []byte) error {
 		if _, err := blobHasher.Write(chunkData); err != nil {
 			return err
 		}
