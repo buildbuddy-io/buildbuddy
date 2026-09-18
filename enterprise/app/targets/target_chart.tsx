@@ -1,7 +1,6 @@
 import moment from "moment";
 import React from "react";
-import * as format from "../../../app/format/format";
-import TrendsChartComponent, { ChartDataSeries, ChartYAxis } from "../trends/trends_chart";
+import TrendsChartComponent, { ChartDataSeries } from "../trends/trends_chart";
 import { execution_stats } from "../../../proto/execution_stats_ts_proto";
 import FilledButton from "../../../app/components/button/button";
 import router from "../../../app/router/router";
