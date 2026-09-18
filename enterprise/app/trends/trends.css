@@ -73,7 +73,6 @@
   box-shadow:
     0 3px 6px var(--color-shadow-tooltip),
     0 3px 6px var(--color-shadow-tooltip-alt);
-  pointer-events: none;
   z-index: 1;
 }
 
@@ -81,33 +80,12 @@
   font-weight: 600;
 }
 
-.trends-clickable-bar:hover,
-.trends-clickable-bar.green:hover {
-  fill: var(--color-chart-bar-hover-green);
+.trend-chart-hover .color-swatch {
+  display: inline-block;
 }
 
-.trends-clickable-bar.red:hover {
-  fill: var(--color-chart-bar-hover-red);
-}
-
-.trends-clickable-bar.orange:hover {
-  fill: var(--color-amber-800);
-}
-
-.trends-clickable-bar.black {
-  fill: var(--color-chart-black);
-}
-
-.trends-clickable-bar.black:hover {
-  fill: var(--color-chart-bar-hover-black);
-}
-
-.trends-clickable-bar.grey:hover {
-  fill: var(--color-chart-bar-hover-grey);
-}
-
-.trends-clickable-bar.blue:hover {
-  fill: var(--color-chart-bar-hover-blue);
+.trends-clickable-bar .recharts-bar-rectangle:hover {
+  fill-opacity: 0.7;
 }
 
 .trends svg.recharts-surface {
