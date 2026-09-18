@@ -21,6 +21,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -35,6 +36,7 @@ import (
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -71,6 +73,7 @@ type Mirror struct {
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
+	registryAPIKey            = flag.String("ociregistry.api_key", "", "API key used to authenticate OCI registry cache reads and writes.", flag.Secret)
 	registryDomain            = flag.String("ociregistry.domain", "", "The domain on which the registry is hosted.")
 	mirrorConfigs             = flag.Slice("ociregistry.mirrors", []Mirror{}, "List of repositories to mirror.")
 )
@@ -167,6 +170,17 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}).Add(float64(rw.bytesWritten))
 }
 
+func (r *registry) cacheContext(ctx context.Context) (context.Context, error) {
+	if *registryAPIKey != "" {
+		ctx = r.env.GetAuthenticator().AuthContextFromAPIKey(ctx, *registryAPIKey)
+		md, _ := metadata.FromOutgoingContext(ctx)
+		if len(md.Get(authutil.APIKeyHeader)) == 0 {
+			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *registryAPIKey)
+		}
+	}
+	return prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
+}
+
 // The OCI registry is intended to be a read-through cache for public OCI images
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
@@ -174,7 +188,7 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
+	ctx, err := r.cacheContext(ctx)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
 		return

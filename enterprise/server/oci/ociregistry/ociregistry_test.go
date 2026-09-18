@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,10 +21,45 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
+
+type recordingActionCacheClient struct {
+	repb.ActionCacheClient
+	apiKey string
+}
+
+func (c *recordingActionCacheClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	md, _ := metadata.FromOutgoingContext(ctx)
+	values := md.Get(authutil.APIKeyHeader)
+	if len(values) > 0 {
+		c.apiKey = values[len(values)-1]
+	}
+	return nil, status.InternalError("stop after recording request metadata")
+}
+
+func TestCacheAPIKey(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	flags.Set(t, "ociregistry.api_key", "test-api-key")
+	recordingClient := &recordingActionCacheClient{}
+	te.SetActionCacheClient(recordingClient)
+
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodGet, "/v2/library/alpine/manifests/sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	rsp := httptest.NewRecorder()
+	ocireg.ServeHTTP(rsp, req)
+
+	require.Equal(t, "test-api-key", recordingClient.apiKey)
+}
 
 type simplePullTestCase struct {
 	name                     string

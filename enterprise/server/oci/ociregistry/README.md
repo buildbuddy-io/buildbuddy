@@ -25,6 +25,8 @@ When serving a request for a manifest or layer, the registry server will first c
 
 The registry server stores data in both the action cache (AC) and the content addressable store (CAS).
 
+By default, these cache operations use the identity of the incoming registry request. Since the registry endpoint is public, requests without BuildBuddy credentials use the anonymous cache namespace. Set `--ociregistry.api_key` to authenticate all AC and CAS reads and writes with a dedicated BuildBuddy API key. This setting does not affect credentials forwarded to upstream OCI registries.
+
 ### Current cache organization for public images
 
 - The manifest or layer contents are stored as a blob in the CAS, to allow the registry to serve `GET` requests. The manifest or layer digest is the same for the CAS and for the upstream registry.
