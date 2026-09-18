@@ -322,15 +322,9 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 // logGetExecutionCaller logs who is calling GetExecution, how they
 // authenticated, and what they asked for. This should be temporary.
 func (es *ExecutionService) logGetExecutionCaller(ctx context.Context, req *espb.GetExecutionRequest, numExecutions int) {
-	source := "anonymous"
 	var userID, groupID, apiKeyID string
 	if u, err := es.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		userID, groupID, apiKeyID = u.GetUserID(), u.GetGroupID(), u.GetAPIKeyInfo().ID
-		if apiKeyID != "" {
-			source = "api_key"
-		} else {
-			source = "ui_cookie"
-		}
 	}
 	firstMD := func(key string) string {
 		if vals := metadata.ValueFromIncomingContext(ctx, key); len(vals) > 0 {
@@ -339,8 +333,8 @@ func (es *ExecutionService) logGetExecutionCaller(ctx context.Context, req *espb
 		return ""
 	}
 	log.CtxInfof(ctx,
-		"GetExecution for %v inline executions: source=%s user_id=%q group_id=%q api_key_id=%q client_ip=%q referer=%q user_agent=%q request=%v",
-		numExecutions, source, userID, groupID, apiKeyID, clientip.Get(ctx), firstMD("referer"), firstMD("user-agent"), req)
+		"GetExecution for %v inline executions: user_id=%q group_id=%q api_key_id=%q client_ip=%q referer=%q user_agent=%q request=%v",
+		numExecutions, userID, groupID, apiKeyID, clientip.Get(ctx), firstMD("referer"), firstMD("user-agent"), req)
 }
 
 func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
