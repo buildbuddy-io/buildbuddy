@@ -29,6 +29,19 @@ func makeExecutionID(actionDigest *repb.Digest) string {
 	return digest.NewCASResourceName(actionDigest, "buildbuddy-io/buildbuddy", repb.DigestFunction_SHA256).NewUploadString()
 }
 
+// quantileValue returns the value recorded for the given quantile (0-100),
+// failing the test if the quantile is not present.
+func quantileValue(t *testing.T, quantiles []*espb.Quantile, quantile int32) int64 {
+	t.Helper()
+	for _, q := range quantiles {
+		if q.GetQuantile() == quantile {
+			return q.GetValue()
+		}
+	}
+	require.Failf(t, "quantile not found", "p%d not present in %v", quantile, quantiles)
+	return 0
+}
+
 func TestSearchExecutions(t *testing.T) {
 	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "testenv.reuse_server", true)
@@ -443,6 +456,7 @@ func TestGetExecutionTimeline(t *testing.T) {
 			TargetLabel:                  target,
 			Command:                      "build",
 			Stage:                        int64(repb.ExecutionStage_COMPLETED),
+			QueuedTimestampUsec:          testTimestampUsec + 1000000,
 			WorkerStartTimestampUsec:     testTimestampUsec + 1000000,
 			WorkerCompletedTimestampUsec: testTimestampUsec + 5000000,
 			CPUNanos:                     2000000000,
@@ -456,6 +470,7 @@ func TestGetExecutionTimeline(t *testing.T) {
 			TargetLabel:                  target,
 			Command:                      "test",
 			Stage:                        int64(repb.ExecutionStage_COMPLETED),
+			QueuedTimestampUsec:          testTimestampUsec,
 			WorkerStartTimestampUsec:     testTimestampUsec,
 			WorkerCompletedTimestampUsec: testTimestampUsec + 2000000,
 			CPUNanos:                     1000000000,
@@ -526,14 +541,15 @@ func TestGetExecutionTimeline(t *testing.T) {
 	require.Len(t, timeline.AggregatedStats, 1)
 	bucket := timeline.AggregatedStats[0]
 	assert.Equal(t, testDayStartUsec, bucket.GetBucketStartTimeUsec())
-	assert.Equal(t, int64(6000000), bucket.GetSummary().GetDurationUsecTotal())
-	assert.Equal(t, int64(2000000), bucket.GetSummary().GetDurationUsecP50())
-	assert.Equal(t, int64(4000000), bucket.GetSummary().GetDurationUsecP90())
-	assert.Equal(t, int64(3000000000), bucket.GetSummary().GetCpuNanosTotal())
-	assert.Equal(t, int64(1000000000), bucket.GetSummary().GetCpuNanosP50())
-	assert.Equal(t, int64(2000000000), bucket.GetSummary().GetCpuNanosP90())
-	assert.Equal(t, int64(256*1024*1024), bucket.GetSummary().GetPeakMemoryP50())
-	assert.Equal(t, int64(512*1024*1024), bucket.GetSummary().GetPeakMemoryP90())
+	summary := bucket.GetSummary()
+	assert.Equal(t, int64(6000000), summary.GetDurationUsecTotal())
+	assert.Equal(t, int64(2000000), quantileValue(t, summary.GetDurationUsec(), 50))
+	assert.Equal(t, int64(4000000), quantileValue(t, summary.GetDurationUsec(), 90))
+	assert.Equal(t, int64(3000000000), summary.GetCpuNanosTotal())
+	assert.Equal(t, int64(1000000000), quantileValue(t, summary.GetCpuNanos(), 50))
+	assert.Equal(t, int64(2000000000), quantileValue(t, summary.GetCpuNanos(), 90))
+	assert.Equal(t, int64(256*1024*1024), quantileValue(t, summary.GetPeakMemory(), 50))
+	assert.Equal(t, int64(512*1024*1024), quantileValue(t, summary.GetPeakMemory(), 90))
 
 	// The shared ExecutionQuery filters should apply.
 	rsp, err = service.GetExecutionTimeline(testCtx, &espb.GetExecutionTimelineRequest{
