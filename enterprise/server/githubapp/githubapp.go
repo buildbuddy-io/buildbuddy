@@ -278,9 +278,12 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 	`, u.GetGroupID())
 	res := &ghpb.GetLinkedReposResponse{}
 	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
+		app, err := s.GetGitHubAppWithID(row.AppID)
+		readWrite := err == nil && app == s.readWriteApp
 		res.Repos = append(res.Repos, &ghpb.GitRepository{
 			RepoUrl:                  row.RepoURL,
 			UseDefaultWorkflowConfig: row.UseDefaultWorkflowConfig,
+			ReadWriteAppInstalled:    readWrite,
 		})
 		return nil
 	})
