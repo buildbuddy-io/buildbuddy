@@ -131,24 +131,6 @@ function customScatterDot(color: string, clickable: boolean): ScatterCustomizedS
   return <Dot r={3} />;
 }
 
-function chartColorToCssClass(c: ChartColor | string): string {
-  switch (c) {
-    case ChartColor.BLUE:
-      return "blue";
-    case ChartColor.GREY:
-      return "grey";
-    case ChartColor.RED:
-      return "red";
-    case ChartColor.ORANGE:
-      return "orange";
-    case ChartColor.GREEN:
-      return "green";
-    case ChartColor.BASICALLY_BLACK:
-      return "black";
-  }
-  return c;
-}
-
 function TrendsChartTooltip({
   active,
   payload,
@@ -235,7 +217,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
     case SeriesType.BAR:
       return (
         <Bar
-          className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(ds.color) : ""}
+          className={ds.onClick ? "trends-clickable-bar" : ""}
           yAxisId={axis}
           name={ds.name}
           dataKey={ds.extractValue}
