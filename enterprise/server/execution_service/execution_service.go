@@ -339,7 +339,7 @@ func (es *ExecutionService) logGetExecutionCaller(ctx context.Context, req *espb
 		return ""
 	}
 	log.CtxInfof(ctx,
-		"GetExecution for %v executions: source=%s user_id=%q group_id=%q api_key_id=%q client_ip=%q referer=%q user_agent=%q request=%v",
+		"GetExecution for %v inline executions: source=%s user_id=%q group_id=%q api_key_id=%q client_ip=%q referer=%q user_agent=%q request=%v",
 		numExecutions, source, userID, groupID, apiKeyID, clientip.Get(ctx), firstMD("referer"), firstMD("user-agent"), req)
 }
 
@@ -360,9 +360,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	}
 
 	if req.GetInlineExecuteResponse() {
-		if len(executions) > 1 {
-			es.logGetExecutionCaller(ctx, req, len(executions))
-		}
+		fetchedExecutions := 0
 		// If inlined responses are requested, fetch them now.
 		var eg errgroup.Group
 		eg.SetLimit(runtime.GOMAXPROCS(0)) // Don't create unlimited goroutines.
@@ -371,6 +369,7 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 			if ex.GetStage() != repb.ExecutionStage_COMPLETED {
 				continue
 			}
+			fetchedExecutions++
 			eg.Go(func() error {
 				// TODO: if the authenticated user has access to the group
 				// that owns the execution, switch to that group's ctx.
@@ -383,6 +382,9 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 				ex.ExecuteResponse = res
 				return nil
 			})
+		}
+		if fetchedExecutions > 1 {
+			es.logGetExecutionCaller(ctx, req, fetchedExecutions)
 		}
 		if err := eg.Wait(); err != nil {
 			log.CtxInfof(ctx, "Failed to fetch inline execution response(s): %s", err)
