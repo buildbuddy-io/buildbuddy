@@ -651,8 +651,9 @@ type runMultiKeyFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 // response-idempotent retry semantics once a logical batch can repartition
 // across ranges (for example after a split).
 //
-// RunMultiKey returns a combined slice of the values returned from successful
-// fn calls.
+// RunMultiKey returns results from successful fn calls, even if another call
+// fails. Results are best effort because a failure cancels calls still in
+// flight.
 func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc, mods ...Option) ([]any, error) {
 	ctx, spn := tracing.StartNamedSpan(ctx, "sender.Sender.RunMultiKey")
 	defer spn.End()
@@ -699,7 +700,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 	for retrier.Next() {
 		keysByRange, err := s.partitionKeysByRange(ctx, remainingKeys, skipRangeCache)
 		if err != nil {
-			return nil, err
+			return rsps, err
 		}
 
 		// We'll repopulate remaining keys below.
@@ -713,7 +714,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 			// https://github.com/golang/go/issues/77893 is fixed.
 			for _, rk := range keysByRange {
 				if err := runForRange(ctx, rk); err != nil {
-					return nil, err
+					return rsps, err
 				}
 			}
 		} else {
@@ -723,7 +724,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 				eg.Go(func() error { return runForRange(egCtx, rk) })
 			}
 			if err := eg.Wait(); err != nil {
-				return nil, err
+				return rsps, err
 			}
 		}
 
@@ -732,7 +733,7 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 		}
 		skipRangeCache = true
 	}
-	return nil, status.UnavailableErrorf("sender.RunMultiKey retries exceeded, err: %s", lastError)
+	return rsps, status.UnavailableErrorf("sender.RunMultiKey retries exceeded, err: %s", lastError)
 }
 
 func (s *Sender) SyncPropose(ctx context.Context, key []byte, batchCmd *rfpb.BatchCmdRequest) (*rfpb.BatchCmdResponse, error) {
