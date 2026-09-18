@@ -359,10 +359,13 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 					timer.Reset(evictFlushPeriod)
 				}
 			case <-timer.C:
-				if !sendBatch(batch) {
-					return
+				if len(batch) > 0 {
+					if !sendBatch(batch) {
+						return
+					}
+					batch = nil
 				}
-				batch = nil
+				timer.Reset(evictFlushPeriod)
 			}
 		}
 	})
