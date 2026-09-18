@@ -9,6 +9,7 @@ go_library(
     deps = [
         "//enterprise/server/invocation_stat_service",
         "//enterprise/server/util/execution",
+        "//enterprise/server/util/stats",
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",

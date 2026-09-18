@@ -12,6 +12,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/invocation_stat_service"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/execution"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/stats"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/build_event_protocol/invocation_format"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -261,7 +262,7 @@ func (s *ExecutionSearchService) addExecutionQueryFilters(q *query_builder.Query
 // bucket size is chosen to keep the response under ~50 intervals for the
 // queried date range, falling back to 1-day buckets when finer time buckets
 // are disabled.
-func executionTimelineInterval(query *expb.ExecutionQuery, timezone string) (invocation_stat_service.StatInterval, *time.Location) {
+func executionTimelineInterval(query *expb.ExecutionQuery, timezone string) (stats.StatInterval, *time.Location) {
 	endTime := time.Now()
 	if end := query.GetUpdatedBefore(); end.IsValid() {
 		endTime = end.AsTime()
@@ -276,9 +277,9 @@ func executionTimelineInterval(query *expb.ExecutionQuery, timezone string) (inv
 		location = time.UTC
 	}
 
-	interval := invocation_stat_service.StatInterval1Day
+	interval := stats.StatInterval1Day
 	if invocation_stat_service.FinerTimeBucketsEnabled() {
-		interval = invocation_stat_service.ComputeTrendsInterval(endTime.Sub(startTime))
+		interval = stats.ComputeStatInterval(endTime.Sub(startTime))
 	}
 	return interval, location
 }
@@ -377,7 +378,7 @@ func timelineKey(cleanedOutputPath, mnemonic, os, arch string) string {
 // quantilesExactLow is used because it matches the nearest-rank percentiles
 // this service previously computed in Go (including returning the lower of
 // the two middle values for the median of an even-sized set).
-func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *expb.GetExecutionTimelineRequest, groupID string, interval invocation_stat_service.StatInterval, location *time.Location) ([]*timelineStatsRow, error) {
+func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *expb.GetExecutionTimelineRequest, groupID string, interval stats.StatInterval, location *time.Location) ([]*timelineStatsRow, error) {
 	durationUsec, err := filter.ExecutionMetricToDbField(stat_filter.ExecutionMetricType_EXECUTION_WALL_TIME_EXECUTION_METRIC)
 	if err != nil {
 		return nil, err
