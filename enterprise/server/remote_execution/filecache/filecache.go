@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
 
 const (
@@ -1019,6 +1020,230 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 		return 0, err
 	}
 	return len(b), nil
+}
+
+// NewCacheAdapter exposes complete CAS blobs stored in filecache.
+// Like filecache, CAS entries are shared across instances within a group.
+func NewCacheAdapter(fc interfaces.FileCache) interfaces.Cache {
+	return &cacheAdapter{fc: fc}
+}
+
+type cacheAdapter struct{ fc interfaces.FileCache }
+
+func (c *cacheAdapter) validate(ctx context.Context, r *rspb.ResourceName) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if r.GetCacheType() != rspb.CacheType_CAS || r.GetCompressor() != repb.Compressor_IDENTITY {
+		return status.UnimplementedError("filecache adapter supports identity CAS resources only")
+	}
+	if _, ok := sharedDirectoryFromContext(ctx); ok {
+		return status.InvalidArgumentError("CAS adapter cannot use a shared directory namespace")
+	}
+	return digest.Validate(r.GetDigest(), r.GetDigestFunction())
+}
+
+func (c *cacheAdapter) open(ctx context.Context, r *rspb.ResourceName) (*os.File, error) {
+	if err := c.validate(ctx, r); err != nil {
+		return nil, err
+	}
+	for _, executable := range []bool{false, true} {
+		f, err := c.fc.Open(ctx, &repb.FileNode{Digest: r.GetDigest(), IsExecutable: executable})
+		if status.IsNotFoundError(err) || os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		info, err := f.Stat()
+		if err != nil {
+			f.Close()
+			return nil, err
+		}
+		if info.Size() != r.GetDigest().GetSizeBytes() {
+			f.Close()
+			continue
+		}
+		return f, nil
+	}
+	return nil, status.NotFoundError("blob not found in filecache")
+}
+
+type cacheReader struct {
+	io.Reader
+	io.Closer
+}
+
+func (c *cacheAdapter) Reader(ctx context.Context, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
+	if offset < 0 || limit < 0 || offset > r.GetDigest().GetSizeBytes() {
+		return nil, status.OutOfRangeError("invalid read range")
+	}
+	f, err := c.open(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	length := r.GetDigest().GetSizeBytes() - offset
+	if limit > 0 {
+		length = min(length, limit)
+	}
+	return &cacheReader{Reader: io.NewSectionReader(f, offset, length), Closer: f}, nil
+}
+
+func (c *cacheAdapter) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
+	f, err := c.open(ctx, r)
+	if status.IsNotFoundError(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, f.Close()
+}
+
+func (c *cacheAdapter) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
+	var missing []*repb.Digest
+	for _, r := range resources {
+		hit, err := c.Contains(ctx, r)
+		if err != nil {
+			return nil, err
+		}
+		if !hit {
+			missing = append(missing, r.GetDigest())
+		}
+	}
+	return missing, nil
+}
+
+func (c *cacheAdapter) Get(ctx context.Context, r *rspb.ResourceName) ([]byte, error) {
+	reader, err := c.Reader(ctx, r, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+func (c *cacheAdapter) GetMulti(ctx context.Context, resources []*rspb.ResourceName) (map[*repb.Digest][]byte, error) {
+	result := make(map[*repb.Digest][]byte, len(resources))
+	for _, r := range resources {
+		data, err := c.Get(ctx, r)
+		if status.IsNotFoundError(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		result[r.GetDigest()] = data
+	}
+	return result, nil
+}
+
+func cacheMetadata(f *os.File) (*interfaces.CacheMetadata, error) {
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	// FileCache does not expose its LRU access timestamps.
+	return &interfaces.CacheMetadata{StoredSizeBytes: info.Size(), DigestSizeBytes: info.Size(), LastModifyTimeUsec: info.ModTime().UnixMicro()}, nil
+}
+
+func (c *cacheAdapter) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
+	f, err := c.open(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return cacheMetadata(f)
+}
+
+func (c *cacheAdapter) GetWithMetadata(ctx context.Context, r *rspb.ResourceName) ([]byte, *interfaces.CacheMetadata, error) {
+	f, err := c.open(ctx, r)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer f.Close()
+	md, err := cacheMetadata(f)
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := io.ReadAll(f)
+	return data, md, err
+}
+
+type cacheWriter struct {
+	interfaces.CommittedWriteCloser
+	ctx           context.Context
+	written, size int64
+}
+
+func (w *cacheWriter) Write(data []byte) (int, error) {
+	if err := w.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := w.CommittedWriteCloser.Write(data)
+	w.written += int64(n)
+	return n, err
+}
+
+func (w *cacheWriter) Commit() error {
+	if err := w.ctx.Err(); err != nil {
+		return err
+	}
+	if w.written != w.size {
+		return status.DataLossError("blob size does not match digest")
+	}
+	return w.CommittedWriteCloser.Commit()
+}
+
+func (c *cacheAdapter) Writer(ctx context.Context, r *rspb.ResourceName) (interfaces.CommittedWriteCloser, error) {
+	if err := c.validate(ctx, r); err != nil {
+		return nil, err
+	}
+	w, err := c.fc.Writer(ctx, &repb.FileNode{Digest: r.GetDigest()}, r.GetDigestFunction())
+	if err != nil {
+		return nil, err
+	}
+	return &cacheWriter{CommittedWriteCloser: w, ctx: ctx, size: r.GetDigest().GetSizeBytes()}, nil
+}
+
+func (c *cacheAdapter) Set(ctx context.Context, r *rspb.ResourceName, data []byte) error {
+	w, err := c.Writer(ctx, r)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+	if _, err := w.Write(data); err != nil {
+		return err
+	}
+	return w.Commit()
+}
+
+func (c *cacheAdapter) SetMulti(ctx context.Context, values map[*rspb.ResourceName][]byte) error {
+	for r, data := range values {
+		if err := c.Set(ctx, r, data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *cacheAdapter) Delete(ctx context.Context, r *rspb.ResourceName) error {
+	if err := c.validate(ctx, r); err != nil {
+		return err
+	}
+	c.fc.DeleteFile(ctx, &repb.FileNode{Digest: r.GetDigest()})
+	c.fc.DeleteFile(ctx, &repb.FileNode{Digest: r.GetDigest(), IsExecutable: true})
+	return nil
+}
+
+func (c *cacheAdapter) Partition(ctx context.Context, instanceName string) (string, error) {
+	return "filecache", nil
+}
+func (c *cacheAdapter) SupportsCompressor(compressor repb.Compressor_Value) bool {
+	return compressor == repb.Compressor_IDENTITY
+}
+func (c *cacheAdapter) RegisterAtimeUpdater(interfaces.DigestOperator) error {
+	return status.UnimplementedError("filecache atime updater unsupported")
 }
 
 type verifiedWriter struct {

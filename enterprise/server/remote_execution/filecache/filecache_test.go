@@ -1,6 +1,7 @@
 package filecache_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -33,7 +34,130 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 )
+
+func TestCacheAdapter(t *testing.T) {
+	for _, digestFunction := range []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3} {
+		t.Run(digestFunction.String(), func(t *testing.T) {
+			fc, err := filecache.NewFileCache(t.TempDir(), 1_000_000, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			t.Cleanup(func() { require.NoError(t, fc.Close()) })
+			cache := filecache.NewCacheAdapter(fc)
+			ctx := context.WithValue(t.Context(), authutil.ContextTokenStringKey, jwtForGroup(t, "GR1"))
+			otherCtx := context.WithValue(t.Context(), authutil.ContextTokenStringKey, jwtForGroup(t, "GR2"))
+			data := []byte("abcdefghij")
+			d, err := digest.Compute(bytes.NewReader(data), digestFunction)
+			require.NoError(t, err)
+			r := digest.NewCASResourceName(d, "instance", digestFunction).ToProto()
+			for _, executable := range []bool{false, true} {
+				t.Run(fmt.Sprintf("executable=%t", executable), func(t *testing.T) {
+					node := &repb.FileNode{Digest: d, IsExecutable: executable}
+					_, err := fc.Write(ctx, node, data)
+					require.NoError(t, err)
+					reader, err := cache.Reader(ctx, r, 2, 4)
+					require.NoError(t, err)
+					// An already-open reader remains valid after eviction.
+					require.NoError(t, cache.Delete(ctx, r))
+					got, err := io.ReadAll(reader)
+					require.NoError(t, err)
+					require.NoError(t, reader.Close())
+					require.Equal(t, "cdef", string(got))
+					_, err = cache.Reader(ctx, r, 0, 0)
+					require.True(t, status.IsNotFoundError(err), "%v", err)
+				})
+			}
+			require.NoError(t, cache.Set(ctx, r, data))
+			_, err = cache.Get(otherCtx, r)
+			require.True(t, status.IsNotFoundError(err), "%v", err)
+			got, md, err := cache.GetWithMetadata(ctx, r)
+			require.NoError(t, err)
+			require.Equal(t, data, got)
+			require.Equal(t, int64(len(data)), md.StoredSizeBytes)
+			for _, bounds := range [][2]int64{{-1, 0}, {0, -1}, {11, 0}} {
+				_, err := cache.Reader(ctx, r, bounds[0], bounds[1])
+				require.True(t, status.IsOutOfRangeError(err), "%v", err)
+			}
+			for _, bounds := range [][2]int64{{7, 0}, {7, 100}, {10, 0}} {
+				reader, err := cache.Reader(ctx, r, bounds[0], bounds[1])
+				require.NoError(t, err)
+				got, err := io.ReadAll(reader)
+				require.NoError(t, err)
+				require.NoError(t, reader.Close())
+				require.Equal(t, string(data[bounds[0]:]), string(got))
+			}
+			// CAS bytes are shared across instance names within a group, like filecache.
+			otherInstance := digest.NewCASResourceName(d, "other-instance", digestFunction).ToProto()
+			got, err = cache.Get(ctx, otherInstance)
+			require.NoError(t, err)
+			require.Equal(t, data, got)
+			missing := digest.NewCASResourceName(&repb.Digest{Hash: d.Hash, SizeBytes: d.SizeBytes + 1}, "instance", digestFunction).ToProto()
+			_, err = cache.Get(ctx, missing)
+			require.True(t, status.IsNotFoundError(err), "%v", err)
+			multi, err := cache.GetMulti(ctx, []*rspb.ResourceName{r, missing})
+			require.NoError(t, err)
+			require.Len(t, multi, 1)
+			missingDigests, err := cache.FindMissing(ctx, []*rspb.ResourceName{r, missing})
+			require.NoError(t, err)
+			require.Equal(t, []*repb.Digest{missing.Digest}, missingDigests)
+			for _, unsupported := range []*rspb.ResourceName{
+				digest.NewACResourceName(d, "instance", digestFunction).ToProto(),
+				{Digest: d, CacheType: rspb.CacheType_CAS, DigestFunction: digestFunction, Compressor: repb.Compressor_ZSTD},
+			} {
+				_, err := cache.Get(ctx, unsupported)
+				require.True(t, status.IsUnimplementedError(err), "%v", err)
+			}
+		})
+	}
+}
+
+func TestCacheAdapterWriter(t *testing.T) {
+	for _, digestFunction := range []repb.DigestFunction_Value{repb.DigestFunction_SHA256, repb.DigestFunction_BLAKE3} {
+		for _, mode := range []string{"commit", "abort", "short", "wrong-hash", "wrong-size"} {
+			t.Run(digestFunction.String()+"/"+mode, func(t *testing.T) {
+				fc, err := filecache.NewFileCache(t.TempDir(), 1_000_000, false)
+				require.NoError(t, err)
+				fc.WaitForDirectoryScanToComplete()
+				t.Cleanup(func() { require.NoError(t, fc.Close()) })
+				cache := filecache.NewCacheAdapter(fc)
+				data := []byte("contents")
+				d, err := digest.Compute(bytes.NewReader(data), digestFunction)
+				require.NoError(t, err)
+				if mode == "wrong-size" {
+					d.SizeBytes++
+				}
+				r := digest.NewCASResourceName(d, "", digestFunction).ToProto()
+				writer, err := cache.Writer(t.Context(), r)
+				require.NoError(t, err)
+				defer writer.Close()
+				if mode == "short" {
+					data = data[:2]
+				}
+				if mode == "wrong-hash" {
+					data = []byte("CONTENTS")
+				}
+				_, err = writer.Write(data)
+				require.NoError(t, err)
+				hit, err := cache.Contains(t.Context(), r)
+				require.NoError(t, err)
+				require.False(t, hit)
+				if mode != "abort" {
+					err := writer.Commit()
+					if mode == "commit" {
+						require.NoError(t, err)
+					} else {
+						require.True(t, status.IsDataLossError(err), "%v", err)
+					}
+				}
+				require.NoError(t, writer.Close())
+				hit, err = cache.Contains(t.Context(), r)
+				require.NoError(t, err)
+				require.Equal(t, mode == "commit", hit)
+			})
+		}
+	}
+}
 
 func writeFile(t *testing.T, base string, path string, executable bool) {
 	content := path
