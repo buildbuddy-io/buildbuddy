@@ -276,11 +276,27 @@ func (s *GitHubAppService) GetLinkedGitHubRepos(ctx context.Context) (*ghpb.GetL
 		WHERE group_id = ?
 		ORDER BY repo_url ASC
 	`, u.GetGroupID())
+	installations, err := s.GetGitHubAppInstallations(ctx)
+	if err != nil {
+		return nil, status.InternalErrorf("failed to query installations: %s", err)
+	}
+	ownerAppIDs := make(map[string]int64, len(installations))
+	for _, in := range installations {
+		ownerAppIDs[in.Owner] = in.AppID
+	}
 	res := &ghpb.GetLinkedReposResponse{}
 	err = db.ScanEach(rq, func(ctx context.Context, row *tables.GitRepository) error {
+		readWrite := false
+		if parsedURL, err := gitutil.ParseGitHubRepoURL(row.RepoURL); err == nil {
+			if appID, ok := ownerAppIDs[parsedURL.Owner]; ok {
+				app, err := s.GetGitHubAppWithID(appID)
+				readWrite = err == nil && app == s.readWriteApp
+			}
+		}
 		res.Repos = append(res.Repos, &ghpb.GitRepository{
 			RepoUrl:                  row.RepoURL,
 			UseDefaultWorkflowConfig: row.UseDefaultWorkflowConfig,
+			ReadWriteAppInstalled:    readWrite,
 		})
 		return nil
 	})
