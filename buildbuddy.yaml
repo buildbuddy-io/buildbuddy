@@ -157,7 +157,7 @@ actions:
       - run: |
           enterprise/tools/agents/setup-gh.sh
           enterprise/tools/agents/claude/setup.sh
-          bazel run //enterprise/tools/agent_review --config=linux-workflows
+          bb agent review
 
 plugins:
   - path: cli/plugins/go-deps
