@@ -27,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -71,6 +72,7 @@ type Mirror struct {
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
+	cacheAPIKey               = flag.String("ociregistry.cache_api_key", "", "API key used to authenticate OCI registry cache reads and writes.", flag.Secret)
 	registryDomain            = flag.String("ociregistry.domain", "", "The domain on which the registry is hosted.")
 	mirrorConfigs             = flag.Slice("ociregistry.mirrors", []Mirror{}, "List of repositories to mirror.")
 )
@@ -136,7 +138,27 @@ func New(env environment.Env) (*registry, error) {
 	if *registryDomain != "" {
 		r.mirrors = *mirrorConfigs
 	}
+	if err := r.checkCacheAPIKey(context.Background()); err != nil {
+		return nil, err
+	}
 	return r, nil
+}
+
+// checkCacheAPIKey verifies at startup that the configured registry API key
+// authenticates, so that a misconfigured key fails the release rather than
+// failing every registry request.
+func (r *registry) checkCacheAPIKey(ctx context.Context) error {
+	if *cacheAPIKey == "" {
+		return nil
+	}
+	ctx, err := r.cacheContext(ctx)
+	if err == nil {
+		_, err = r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	}
+	if err != nil {
+		return status.FailedPreconditionErrorf("ociregistry.cache_api_key is not a valid API key: %s", err)
+	}
+	return nil
 }
 
 type instrumentedWriter struct {
@@ -167,6 +189,16 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}).Add(float64(rw.bytesWritten))
 }
 
+func (r *registry) cacheContext(ctx context.Context) (context.Context, error) {
+	if *cacheAPIKey != "" {
+		// The registry API key is a server-owned credential, so it should not be
+		// scoped by the subdomain of the incoming registry request.
+		ctx = subdomain.Context(ctx, "")
+		ctx = r.env.GetAuthenticator().AuthContextFromAPIKey(ctx, *cacheAPIKey)
+	}
+	return prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
+}
+
 // The OCI registry is intended to be a read-through cache for public OCI images
 // (to cut down on the number of API calls to Docker Hub and on bandwidth).
 // handleRegistryRequest implements just enough of the [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec/blob/main/spec.md)
@@ -174,9 +206,10 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // This registry does not support resumable pulls via the Range header.
 func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Request) {
 	ctx := req.Context()
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
+	ctx, err := r.cacheContext(ctx)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
+		log.CtxErrorf(ctx, "Could not authenticate OCI registry cache access: %s", err)
+		http.Error(w, "could not authenticate OCI registry cache access", http.StatusInternalServerError)
 		return
 	}
 
