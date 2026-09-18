@@ -260,11 +260,14 @@ func openLog(pathOrId string) (io.ReadCloser, error) {
 	f, err := os.Open(pathOrId)
 	if err == nil {
 		return f, nil
-	} else if !os.IsNotExist(err) || !uuid.Pattern.MatchString(pathOrId) {
+	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	matches := uuid.Pattern.FindStringSubmatch(pathOrId)
-	invocationId := matches[1]
+	invocationId, ok := uuid.ParseInvocationID(pathOrId)
+	if !ok {
+		// Not an invocation ID either, so report the original open error.
+		return nil, err
+	}
 
 	ctx := context.Background()
 	target, err := download.ResolveTarget(*apiTarget)

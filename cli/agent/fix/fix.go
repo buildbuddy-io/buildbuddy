@@ -166,7 +166,11 @@ func HandleFix(args []string) (int, error) {
 			log.Printf("Using failed invocation %s", invocationID)
 		}
 	} else {
-		invocationID, err = parseInvocationID(args[0])
+		var ok bool
+		invocationID, ok = uuid.ParseInvocationID(args[0])
+		if !ok {
+			return -1, fmt.Errorf("%q is not an invocation ID or invocation URL", args[0])
+		}
 	}
 	if err != nil {
 		return -1, err
@@ -393,16 +397,6 @@ func fetchInvocation(ctx context.Context, target, invocationID string) (*inpb.In
 		return nil, fmt.Errorf("invocation %s not found", invocationID)
 	}
 	return rsp.GetInvocation()[0], nil
-}
-
-// parseInvocationID accepts either a bare invocation ID or an invocation URL
-// and returns the invocation ID.
-func parseInvocationID(s string) (string, error) {
-	matches := uuid.Pattern.FindStringSubmatch(s)
-	if matches == nil {
-		return "", fmt.Errorf("%q is not an invocation ID or invocation URL", s)
-	}
-	return matches[1], nil
 }
 
 // tail returns the last max bytes of s, noting how much was dropped. Test
