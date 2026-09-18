@@ -40,10 +40,13 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 
 	ofpb "github.com/buildbuddy-io/buildbuddy/proto/oci_fetcher"
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
+	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var manifestRequestRegexp = regexp.MustCompile("/v2/.*/manifests/.*")
@@ -1825,6 +1828,92 @@ func TestResolveWithOCIFetcher_Concurrency(t *testing.T) {
 		pushedDiffID := pushedDigestToDiffID[result.digest]
 		require.Equal(t, pushedDiffID, result.diffID)
 	}
+}
+
+// countingACClient wraps an ActionCacheClient and counts calls.
+type countingACClient struct {
+	repb.ActionCacheClient
+	calls atomic.Int32
+}
+
+func (c *countingACClient) GetActionResult(ctx context.Context, in *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	c.calls.Add(1)
+	return c.ActionCacheClient.GetActionResult(ctx, in, opts...)
+}
+
+func (c *countingACClient) UpdateActionResult(ctx context.Context, in *repb.UpdateActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
+	c.calls.Add(1)
+	return c.ActionCacheClient.UpdateActionResult(ctx, in, opts...)
+}
+
+// countingBSClient wraps a ByteStreamClient and counts calls.
+type countingBSClient struct {
+	bspb.ByteStreamClient
+	calls atomic.Int32
+}
+
+func (c *countingBSClient) Read(ctx context.Context, in *bspb.ReadRequest, opts ...grpc.CallOption) (bspb.ByteStream_ReadClient, error) {
+	c.calls.Add(1)
+	return c.ByteStreamClient.Read(ctx, in, opts...)
+}
+
+func (c *countingBSClient) Write(ctx context.Context, opts ...grpc.CallOption) (bspb.ByteStream_WriteClient, error) {
+	c.calls.Add(1)
+	return c.ByteStreamClient.Write(ctx, opts...)
+}
+
+// TestResolveWithOCIFetcher_NoDirectCacheAccess verifies that when
+// useOCIFetcher=true, the executor does not talk to the ActionCache or
+// ByteStream services directly: the OCIFetcher server owns all manifest and
+// blob caching. Direct executor reads/writes are redundant (the OCIFetcher
+// server already performs them) and, when routed through a cache proxy, they
+// populate the proxy's local cache under a different key than the one the
+// OCIFetcher proxy uses, so they never produce hits.
+func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
+	te := setupTestEnvWithCache(t)
+	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
+	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
+	registry := testregistry.Run(t, testregistry.Opts{})
+	imageName := "test_no_direct_cache_access"
+	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName, nil)
+	pushedLayers, err := pushedImage.Layers()
+	require.NoError(t, err)
+
+	// The OCIFetcher server registered by setupTestEnvWithCache already holds
+	// the raw AC and BS clients, so wrapping the env's clients here only
+	// counts calls made directly by the executor-side Resolver.
+	acClient := &countingACClient{ActionCacheClient: te.GetActionCacheClient()}
+	bsClient := &countingBSClient{ByteStreamClient: te.GetByteStreamClient()}
+	te.SetActionCacheClient(acClient)
+	te.SetByteStreamClient(bsClient)
+
+	ctx := contextWithUnverifiedJWT(&claims.Claims{UserID: "US123"})
+	// Pull twice: the first pull populates the OCIFetcher server's cache and
+	// the second should be served from it. Neither should touch the AC or BS
+	// from the executor.
+	for range 2 {
+		pulledImage, err := newResolver(t, te).Resolve(
+			ctx,
+			registry.ImageAddress(imageName),
+			&rgpb.Platform{Arch: runtime.GOARCH, Os: runtime.GOOS},
+			oci.Credentials{},
+			true, /*=useOCIFetcher*/
+		)
+		require.NoError(t, err)
+		layers, err := pulledImage.Layers()
+		require.NoError(t, err)
+		require.Len(t, layers, len(pushedLayers))
+		for _, layer := range layers {
+			rc, err := layer.Compressed()
+			require.NoError(t, err)
+			_, err = io.ReadAll(rc)
+			require.NoError(t, err)
+			require.NoError(t, rc.Close())
+		}
+	}
+
+	require.Equal(t, int32(0), acClient.calls.Load(), "executor made direct ActionCache calls with useOCIFetcher=true")
+	require.Equal(t, int32(0), bsClient.calls.Load(), "executor made direct ByteStream calls with useOCIFetcher=true")
 }
 
 func TestRegistryETLDPlusOne(t *testing.T) {
