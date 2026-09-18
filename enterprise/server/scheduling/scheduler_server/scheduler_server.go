@@ -1297,9 +1297,10 @@ type SchedulerServer struct {
 	// executors.
 	detector *upgrade.Detector
 
-	// Limits checkTaskAccess logging to one line per task owner group per
-	// interval.
-	checkTaskAccessLogLimiter *perKeyLogLimiter
+	// Logs about checkTaskAccess mismatches, sampled per task owner group so
+	// that one group's executors neither flood the logs nor drown out other
+	// groups.
+	checkTaskAccessLog *log.PerKeySampledLogger
 
 	versionMu           sync.Mutex
 	newestVersion       *semver.Version
@@ -1388,7 +1389,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
-		checkTaskAccessLogLimiter:         newPerKeyLogLimiter(clock, checkTaskAccessLogInterval),
+		checkTaskAccessLog:                log.NamedSubLogger("check-task-access").EveryDurationPerKey(checkTaskAccessLogInterval),
 	}
 	s.schedulerClientCache = newSchedulerClientCache(env, s.ownHostPort, s)
 	return s, nil
@@ -2315,37 +2316,6 @@ func (s *SchedulerServer) taskAccessCheckEnforced(ctx context.Context, taskGroup
 // given task owner group.
 const checkTaskAccessLogInterval = time.Minute
 
-// perKeyLogLimiter allows one log line per key per interval.
-type perKeyLogLimiter struct {
-	clock    clockwork.Clock
-	interval time.Duration
-
-	mu sync.Mutex
-	// Last time a log line was allowed, by key.
-	last map[string]time.Time
-}
-
-func newPerKeyLogLimiter(clock clockwork.Clock, interval time.Duration) *perKeyLogLimiter {
-	return &perKeyLogLimiter{
-		clock:    clock,
-		interval: interval,
-		last:     make(map[string]time.Time),
-	}
-}
-
-// allow reports whether a log line for the given key should be emitted now
-// and, if so, records that it was.
-func (l *perKeyLogLimiter) allow(key string) bool {
-	now := l.clock.Now()
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	if t, ok := l.last[key]; ok && now.Sub(t) < l.interval {
-		return false
-	}
-	l.last[key] = now
-	return true
-}
-
 // peerAddress returns the network address of the RPC caller, for logging.
 func peerAddress(ctx context.Context) string {
 	if p, ok := peer.FromContext(ctx); ok {
@@ -2374,17 +2344,12 @@ func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTa
 		return nil
 	}
 
-	enforced := s.taskAccessCheckEnforced(ctx, taskGroupID)
-	if s.checkTaskAccessLogLimiter.allow(taskGroupID) {
-		if enforced {
-			log.CtxWarningf(ctx, "Rejected request from executor %q for task owned by group %q: %s", executorID, taskGroupID, mismatchErr)
-		} else {
-			log.CtxWarningf(ctx, "Request from executor %q does not match task owner group %q (not enforced): %s", executorID, taskGroupID, mismatchErr)
-		}
-	}
-	if enforced {
+	l := s.checkTaskAccessLog.ForKey(taskGroupID)
+	if s.taskAccessCheckEnforced(ctx, taskGroupID) {
+		l.CtxWarningf(ctx, "Rejected request from executor %q for task owned by group %q: %s", executorID, taskGroupID, mismatchErr)
 		return mismatchErr
 	}
+	l.CtxWarningf(ctx, "Request from executor %q does not match task owner group %q (not enforced): %s", executorID, taskGroupID, mismatchErr)
 	return nil
 }
 
