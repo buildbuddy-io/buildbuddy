@@ -217,7 +217,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
     case SeriesType.BAR:
       return (
         <Bar
-          className={ds.onClick ? "trends-clickable-bar" : ""}
+          className={clickHandler ? "trends-clickable-bar" : ""}
           yAxisId={axis}
           name={ds.name}
           dataKey={ds.extractValue}
@@ -365,6 +365,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
 
   render() {
     const hasSecondaryAxis = this.props.secondaryYAxis !== undefined;
+    const topLevelClickHandler = this.props.onClick;
 
     return (
       <div
@@ -375,7 +376,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
         <div className="trend-chart-title">{this.props.title}</div>
         <ResponsiveContainer width="100%" height={300}>
           <ComposedChart
-            onClick={(_, e) => this.props.onClick && this.props.onClick(e)}
+            onClick={topLevelClickHandler ? (_, e) => topLevelClickHandler(e) : undefined}
             accessibilityLayer={false}
             data={this.props.data}
             onMouseDown={this.props.onZoomSelection && this.onMouseDown.bind(this)}
