@@ -77,6 +77,7 @@ interface Props {
   primaryYAxis: ChartYAxis;
   secondaryYAxis?: ChartYAxis;
   hideLegend?: boolean;
+  tooltipEntryLimit?: number;
   customTooltip?: JSX.Element;
   onClick?: MouseEventHandler<SVGGraphicsElement>;
 
@@ -121,17 +122,14 @@ function getResolvedColor(color: ChartColor | string): string {
   return color;
 }
 
-function customDot(color: string, clickable: boolean): ScatterCustomizedShape {
+/**
+ * Creates a scatter dot with a bigger clickable area.  This overrides recharts'
+ * (infuriating) default behavior, which only looks at the X axis when deciding
+ * hover in composed charts.
+ */
+function customScatterDot(color: string, clickable: boolean): ScatterCustomizedShape {
   if (clickable) {
-    return (
-      <circle
-        r={3}
-        fill={color}
-        stroke="transparent"
-        strokeWidth={15} // Adds 15px of invisible clickable padding around the dot
-        cursor="pointer"
-      />
-    );
+    return <circle r={3} fill={color} stroke="transparent" strokeWidth={15} cursor="pointer" />;
   }
   return <Dot r={3} />;
 }
@@ -304,7 +302,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
                 }
               : undefined
           }
-          shape={customDot(scatterColor, Boolean(clickHandler))}
+          shape={customScatterDot(scatterColor, Boolean(clickHandler))}
         />
       );
     case SeriesType.AREA:
@@ -430,6 +428,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
               <Tooltip
                 content={
                   <TrendsChartTooltip
+                    limit={this.props.tooltipEntryLimit ?? 0}
                     formatLabel={this.props.formatHoverXAxisLabel}
                     shouldRender={() => this.shouldRenderTooltip()}
                     dataSeries={this.props.dataSeries.filter((_, index) => !this.state.hiddenSeries.has(index))}
