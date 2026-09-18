@@ -249,7 +249,7 @@ func failureLogs(ctx context.Context, invocationID, target, testFilter string) (
 		targets = []string{target}
 	}
 	var buf bytes.Buffer
-	if _, err := view.ViewFilteredTestOutput(ctx, bbClient, downloader, &buf, invocationID, targets, testFilter); err != nil {
+	if _, err := view.ViewFilteredTestOutput(ctx, bbClient, downloader, &buf, invocationID, targets, testFilter, view.FilteredTestOutputOptions{SuppressWarningLogs: true}); err != nil {
 		return "", false, fmt.Errorf("read test output of invocation %s: %w", invocationID, err)
 	}
 	if buf.Len() > 0 {
@@ -260,15 +260,27 @@ func failureLogs(ctx context.Context, invocationID, target, testFilter string) (
 	if err := view.ViewErrors(ctx, bbClient, downloader, &buf, invocationID); err != nil {
 		return "", false, fmt.Errorf("read errors of invocation %s: %w", invocationID, err)
 	}
-	if buf.Len() == 0 {
-		// Failure output unexpectedly could not be read.
-		return "", false, fmt.Errorf(
-			"could not read the failure output of invocation %s: no test or build output was retrievable. "+
-				"This is often because the build did not use a remote cache. "+
-				"The logs are viewable at %s/invocation/%s",
-			invocationID, *agentflags.HTTPTarget, invocationID)
+	if buf.Len() > 0 {
+		return buf.String(), false, nil
 	}
-	return buf.String(), false, nil
+
+	// Test artifacts from local Bazel runs may be unavailable remotely, and
+	// remote runner failures may have no structured error. Fetch general logs from
+	// the invocation in that case.
+	_, err = view.ViewLogs(ctx, bbClient, &buf, invocationID, 1000)
+	if err != nil {
+		return "", false, fmt.Errorf("read logs of invocation %s: %w", invocationID, err)
+	}
+	if buf.Len() > 0 {
+		return buf.String(), false, nil
+	}
+
+	// Failure output unexpectedly could not be read.
+	return "", false, fmt.Errorf(
+		"could not read the failure output of invocation %s: no test or build output was retrievable. "+
+			"This is often because the build did not use a remote cache. "+
+			"The logs are viewable at %s/invocation/%s",
+		invocationID, *agentflags.HTTPTarget, invocationID)
 }
 
 // withTarget replaces the target patterns in a Bazel command with a

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"regexp"
@@ -124,13 +125,17 @@ func HandleView(args []string) (exitCode int, err error) {
 	}
 	if len(targets) > 0 || *testFilter != "" {
 		bsClient := bspb.NewByteStreamClient(conn)
-		return ViewFilteredTestOutput(ctx, bbClient, download.NewByteStreamDownloader(bsClient), os.Stdout, invocationID, targets, *testFilter)
+		return ViewFilteredTestOutput(ctx, bbClient, download.NewByteStreamDownloader(bsClient), os.Stdout, invocationID, targets, *testFilter, FilteredTestOutputOptions{})
 	}
 
+	return ViewLogs(ctx, bbClient, os.Stdout, invocationID, int32(*lines))
+}
+
+func ViewLogs(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, w io.Writer, invocationID string, minLines int32) (int, error) {
 	// If the invocation has run logs, only print the run logs and not the build logs.
 	req := &elpb.GetEventLogChunkRequest{
 		InvocationId: invocationID,
-		MinLines:     int32(*lines),
+		MinLines:     minLines,
 		Type:         elpb.LogType_RUN_LOG,
 	}
 	header := "RUN LOGS"
@@ -150,8 +155,8 @@ func HandleView(args []string) (exitCode int, err error) {
 
 	// Print the log chunk
 	if len(resp.Buffer) > 0 {
-		fmt.Printf("===== %s =====\n", header)
-		fmt.Print(string(resp.Buffer))
+		fmt.Fprintf(w, "===== %s =====\n", header)
+		fmt.Fprint(w, string(resp.Buffer))
 	}
 
 	return 0, nil
