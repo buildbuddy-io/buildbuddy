@@ -17,6 +17,7 @@ go_library(
         "//server/http/httpclient",
         "//server/metrics",
         "//server/real_environment",
+        "//server/util/authutil",
         "//server/util/clientip",
         "//server/util/flag",
         "//server/util/log",
@@ -28,6 +29,7 @@ go_library(
         "@com_github_google_go_containerregistry//pkg/v1:pkg",
         "@com_github_prometheus_client_golang//prometheus",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -43,13 +45,18 @@ go_test(
         ":ociregistry",
         "//enterprise/server/clientidentity",
         "//enterprise/server/testutil/testregistry",
+        "//proto:remote_execution_go_proto",
         "//server/interfaces",
         "//server/testutil/testcache",
         "//server/testutil/testenv",
         "//server/testutil/testport",
+        "//server/util/authutil",
         "//server/util/random",
+        "//server/util/status",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
