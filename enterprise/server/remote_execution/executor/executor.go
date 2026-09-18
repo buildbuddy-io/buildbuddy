@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/auth"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/byte_stream_server_proxy"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/content_addressable_storage_server_proxy"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_auth"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
@@ -19,7 +21,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/rpc/interceptors"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
@@ -28,6 +32,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/metricsutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
@@ -38,6 +43,7 @@ import (
 	"github.com/docker/go-units"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -46,6 +52,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 )
 
 var (
@@ -77,6 +84,61 @@ type Executor struct {
 	id         string
 	hostID     string
 	hostname   string
+}
+
+type cacheProxyEnv struct {
+	environment.Env
+	cache    interfaces.Cache
+	localCAS repb.ContentAddressableStorageServer
+	localBS  interfaces.ByteStreamServer
+}
+
+func (e *cacheProxyEnv) GetCache() interfaces.Cache                              { return e.cache }
+func (e *cacheProxyEnv) GetLocalCASServer() repb.ContentAddressableStorageServer { return e.localCAS }
+func (e *cacheProxyEnv) GetLocalByteStreamServer() interfaces.ByteStreamServer   { return e.localBS }
+
+// NewCacheProxy serves authenticated CAS and ByteStream requests without changing
+// the executor's cache backend or upstream clients.
+func NewCacheProxy(env environment.Env, cache interfaces.Cache) (*grpc.Server, error) {
+	if cache == nil || env.GetAuthenticator() == nil {
+		return nil, status.FailedPreconditionError("executor cache proxy requires a cache and authenticator")
+	}
+	proxyEnv := &cacheProxyEnv{Env: env, cache: cache}
+	var err error
+	proxyEnv.localCAS, err = content_addressable_storage_server.NewContentAddressableStorageServer(proxyEnv)
+	if err != nil {
+		return nil, err
+	}
+	proxyEnv.localBS, err = byte_stream_server.NewByteStreamServer(proxyEnv)
+	if err != nil {
+		return nil, err
+	}
+	cas, err := content_addressable_storage_server_proxy.New(proxyEnv)
+	if err != nil {
+		return nil, err
+	}
+	bs, err := byte_stream_server_proxy.New(proxyEnv)
+	if err != nil {
+		return nil, err
+	}
+	config := grpc_server.GRPCServerConfig{
+		PostAuthUnaryInterceptors: []grpc.UnaryServerInterceptor{func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+			if _, err := env.GetAuthenticator().AuthenticatedUser(ctx); err != nil {
+				return nil, err
+			}
+			return handler(ctx, req)
+		}},
+		PostAuthStreamInterceptors: []grpc.StreamServerInterceptor{func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+			if _, err := env.GetAuthenticator().AuthenticatedUser(stream.Context()); err != nil {
+				return err
+			}
+			return handler(srv, stream)
+		}},
+	}
+	server := grpc.NewServer(grpc_server.CommonGRPCServerOptionsWithConfig(proxyEnv, config)...)
+	repb.RegisterContentAddressableStorageServer(server, cas)
+	bspb.RegisterByteStreamServer(server, bs)
+	return server, nil
 }
 
 func NewExecutor(env environment.Env, id, hostID, hostname string, runnerPool interfaces.RunnerPool) (*Executor, error) {
