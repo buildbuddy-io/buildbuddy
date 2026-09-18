@@ -727,6 +727,26 @@ func getAssignableCustomResource(en *scpb.ExecutionNode, name string) float32 {
 	return 0
 }
 
+// nodeSupportsIsolationType reports whether the node can run a task requesting
+// the given workload isolation type. This may return false-positives for older
+// executors that don't advertise their supported isolation types.
+func nodeSupportsIsolationType(en *scpb.ExecutionNode, isolationType string) bool {
+	if isolationType == "" {
+		// No requested isolation type (which means use the executor default),
+		// or this request is coming from an older app that doesn't set
+		// isolation type in SchedulingMetadata yet. Either way, treat the node
+		// as compatible.
+		return true
+	}
+	if len(en.GetSupportedIsolationTypes()) == 0 {
+		// The execution node is running an old version that doesn't advertise
+		// its supported isolation types. Treat the node as compatible to avoid
+		// a breaking change.
+		return true
+	}
+	return slices.Contains(en.GetSupportedIsolationTypes(), isolationType)
+}
+
 func (en *executionNode) String() string {
 	if en.handle != nil {
 		return fmt.Sprintf("connected executor(%s)", en.GetExecutorId())
@@ -738,6 +758,16 @@ func nodesThatFit(nodes []*executionNode, taskSize *scpb.TaskSize) []*executionN
 	var out []*executionNode
 	for _, node := range nodes {
 		if nodeCanFitTask(node.ExecutionNode, taskSize) {
+			out = append(out, node)
+		}
+	}
+	return out
+}
+
+func filterToIsolationType(nodes []*executionNode, isolationType string) []*executionNode {
+	var out []*executionNode
+	for _, node := range nodes {
+		if nodeSupportsIsolationType(node.ExecutionNode, isolationType) {
 			out = append(out, node)
 		}
 	}
@@ -982,7 +1012,9 @@ func (np *nodePool) RefreshNodes(ctx context.Context) error {
 	return nil
 }
 
-func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int, error) {
+// NodeCount returns the number of nodes in the pool that can run a task with
+// the given size and requested isolation type, or an error if there are none.
+func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize, isolationType string) (int, error) {
 	if err := np.RefreshNodes(ctx); err != nil {
 		return 0, err
 	}
@@ -993,18 +1025,28 @@ func (np *nodePool) NodeCount(ctx context.Context, taskSize *scpb.TaskSize) (int
 		return 0, status.UnavailableErrorf("No registered executors in pool %q with os %q with arch %q.", np.key.pool, np.key.os, np.key.arch)
 	}
 
+	// Track resource constraints separately from isolation type constraints so
+	// that we can report a more informative error.
 	fitCount := 0
+	compatibleCount := 0
 	for _, node := range np.nodes {
-		if nodeCanFitTask(node.ExecutionNode, taskSize) {
-			fitCount++
+		if !nodeCanFitTask(node.ExecutionNode, taskSize) {
+			continue
+		}
+		fitCount++
+		if nodeSupportsIsolationType(node.ExecutionNode, isolationType) {
+			compatibleCount++
 		}
 	}
 
 	if fitCount == 0 {
 		return 0, errTaskSizeTooLarge(np.key.pool, np.key.os, np.key.arch, taskSize)
 	}
+	if compatibleCount == 0 {
+		return 0, errIsolationTypeUnsupported(np.key.pool, np.key.os, np.key.arch, isolationType)
+	}
 
-	return fitCount, nil
+	return compatibleCount, nil
 }
 
 func (np *nodePool) AddConnectedExecutor(node *scpb.ExecutionNode, handle *executorHandle) bool {
@@ -1939,6 +1981,10 @@ func (s *SchedulerServer) sampleUnclaimedTasks(ctx context.Context, count int, n
 		if !nodeCanFitTask(node, task.metadata.GetTaskSize()) {
 			continue
 		}
+		// Filter to tasks whose requested isolation type the node supports.
+		if !nodeSupportsIsolationType(node, task.metadata.GetRequestedIsolationType()) {
+			continue
+		}
 		// Filter to tasks with a compatible hostname pattern.
 		if pattern := task.metadata.GetHostnamePattern(); pattern != "" {
 			p, err := regexp.Compile(pattern)
@@ -2506,13 +2552,14 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 	pool := enqueueRequest.GetSchedulingMetadata().GetPool()
 	hostnamePattern := enqueueRequest.GetSchedulingMetadata().GetHostnamePattern()
 	routingConfig := enqueueRequest.GetSchedulingMetadata().GetRoutingConfig()
+	isolationType := enqueueRequest.GetSchedulingMetadata().GetRequestedIsolationType()
 
 	key := nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID}
 
 	log.CtxDebugf(ctx, "Enqueueing task reservations, pool_key=%+v", key)
 
 	nodeBalancer := s.getOrCreatePool(key)
-	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize())
+	nodeCount, err := nodeBalancer.NodeCount(ctx, enqueueRequest.GetTaskSize(), isolationType)
 	if err != nil {
 		return err
 	}
@@ -2578,6 +2625,10 @@ func (s *SchedulerServer) enqueueTaskReservations(ctx context.Context, enqueueRe
 			// NOTE: if adding more filtering here, also update the filtering in
 			// sampleUnclaimedTasks, to ensure that executors not matching the
 			// filters cannot steal this task.
+			candidateNodes = filterToIsolationType(candidateNodes, isolationType)
+			if len(candidateNodes) == 0 {
+				return errIsolationTypeUnsupported(pool, os, arch, isolationType)
+			}
 			var debugExecutorID string
 			debugExecutorID, candidateNodes = filterToDebugExecutorID(candidateNodes, task)
 			if len(candidateNodes) == 0 {
@@ -3119,4 +3170,10 @@ func errTaskSizeTooLarge(pool, os, arch string, size *scpb.TaskSize) error {
 	return status.UnavailableErrorf(
 		"no registered executors in pool %q with os %q with arch %q can fit a task with %s",
 		pool, os, arch, tasksize.String(size))
+}
+
+func errIsolationTypeUnsupported(pool, os, arch, isolationType string) error {
+	return status.UnavailableErrorf(
+		"no registered executors in pool %q with os %q with arch %q support workload isolation type %q",
+		pool, os, arch, isolationType)
 }

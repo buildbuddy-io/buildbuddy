@@ -297,7 +297,7 @@ message CgroupSettings {
   optional int32 numa_node = 19;
 }
 
-// Next ID: 18
+// Next ID: 19
 message SchedulingMetadata {
   // DEPRECATED. This field has two different meanings:
   // 1. The execution server sets this to the task size "estimate" which only
@@ -384,6 +384,17 @@ message SchedulingMetadata {
   // ties, so that a task retried on another executor doesn't lose its place
   // in line.
   google.protobuf.Timestamp queued_timestamp = 17;
+
+  // The workload isolation type explicitly requested via the
+  // "workload-isolation-type" platform property, if any. Executors in a pool
+  // may support different sets of isolation types, so the scheduler uses this
+  // to avoid enqueueing the task on executors that don't support the
+  // requested type. Empty if the task did not request a specific isolation
+  // type, in which case any executor in the pool may run the task using its
+  // own default isolation type.
+  //
+  // Ex. "firecracker"
+  string requested_isolation_type = 18;
 }
 
 message RoutingConfig {
