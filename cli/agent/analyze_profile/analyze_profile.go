@@ -67,8 +67,8 @@ func analyzeTimingProfile(invocationIDOrURL string) (int, error) {
 	ctx := context.Background()
 
 	invocationID := invocationIDOrURL
-	if matches := uuid.Pattern.FindStringSubmatch(invocationIDOrURL); matches != nil {
-		invocationID = matches[1]
+	if id, ok := uuid.ParseInvocationID(invocationIDOrURL); ok {
+		invocationID = id
 	}
 
 	profilePath, err := downloadTimingProfile(ctx, invocationID)
