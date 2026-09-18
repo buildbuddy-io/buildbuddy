@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package atlas;
+
+// ResourceType identifies a resource type in one cluster.
+message ResourceType {
+  string cluster = 1;
+  string group = 2;
+  string version = 3;
+  // Plural resource name as used in API paths, e.g. "deployments".
+  string resource = 4;
+  string kind = 5;
+  bool namespaced = 6;
+}
+
+message Port {
+  string name = 1;
+  int32 port = 2;
+  // Empty means TCP.
+  string protocol = 3;
+  int32 node_port = 4;
+}
+
+// Entry is the indexed summary of one object.
+message Entry {
+  string cluster = 1;
+  string group = 2;
+  string version = 3;
+  string resource = 4;
+  string kind = 5;
+  string namespace = 6;
+  string name = 7;
+  string uid = 8;
+  google.protobuf.Timestamp created = 9;
+  map<string, string> labels = 10;
+  // The controlling owner as "Kind/name", e.g. "ReplicaSet/web-7d9f".
+  string owner = 11;
+  string phase = 12;
+  // "ready/desired" for workloads and pods.
+  string ready = 13;
+  int64 restarts = 14;
+  string node = 15;
+  repeated string ips = 16;
+  repeated string images = 17;
+  repeated string containers = 18;
+  repeated Port ports = 19;
+  map<string, string> selector = 20;
+  // Kind-specific display pairs (schedule, kubelet version, ...).
+  map<string, string> extra = 21;
+}
+
+message SearchRequest {
+  // Free text plus kind:/ns:/cluster:/label: filters.
+  string query = 1;
+  // Maximum entries returned per kind. Zero means the server default.
+  int32 group_limit = 2;
+}
+
+message SearchGroup {
+  string kind = 1;
+  // Total is the total number of matches whereas entries is capped at the
+  // per-group max.
+  int32 total = 2;
+  repeated Entry entries = 3;
+}
+
+message SearchResponse {
+  repeated SearchGroup groups = 1;
+  int32 total = 2;
+  int64 took_usec = 3;
+}
+
+message GetObjectRequest {
+  string cluster = 1;
+  string group = 2;
+  string version = 3;
+  string resource = 4;
+  string namespace = 5;
+  string name = 6;
+}
+
+// PortLink is a connectable port rendered as a tunnel DNS name.
+message PortLink {
+  enum Via {
+    UNKNOWN_VIA = 0;
+    POD = 1;
+    SERVICE = 2;
+  }
+  string name = 1;
+  int32 port = 2;
+  string protocol = 3;
+  // Tunnel DNS name; empty when the cluster has no zone for this path.
+  string host = 4;
+  string host_port = 5;
+  // Set when the port looks like something a browser can open.
+  string url = 6;
+  Via via = 7;
+  // The service's name when via is SERVICE on a pod page.
+  string via_name = 8;
+}
+
+message Relations {
+  // Ownership chain, nearest first (Pod -> ReplicaSet -> Deployment).
+  repeated Entry owners = 1;
+  Entry node = 2;
+  repeated Entry pods = 3;
+  // Counts every related pod, while pods is capped.
+  int32 pods_total = 4;
+  repeated Entry jobs = 5;
+  repeated Entry services = 6;
+}
+
+message Event {
+  string type = 1;
+  string reason = 2;
+  string message = 3;
+  int64 count = 4;
+  google.protobuf.Timestamp last_seen = 5;
+}
+
+message GetObjectResponse {
+  string kind = 1;
+  // The indexed summary, when the object is indexed.
+  Entry entry = 2;
+  // The live object as YAML, Secret data redacted.
+  string yaml = 3;
+  repeated PortLink ports = 4;
+  Relations relations = 5;
+  repeated Event events = 6;
+  // Why events are missing, when they are.
+  string events_error = 7;
+}
+
+message GetStatusRequest {}
+
+message ResourceTypeStatus {
+  ResourceType resource = 1;
+  int32 count = 2;
+  bool synced = 3;
+  string error = 4;
+  google.protobuf.Timestamp error_time = 5;
+}
+
+message ClusterStatus {
+  string name = 1;
+  string svc_zone = 2;
+  string pod_zone = 3;
+  string discovery_error = 4;
+  google.protobuf.Timestamp last_discovery = 5;
+  int32 total_objects = 6;
+  repeated ResourceTypeStatus resources = 7;
+}
+
+message GetStatusResponse {
+  repeated ClusterStatus clusters = 1;
+}
+
+message StreamLogsRequest {
+  string cluster = 1;
+  string namespace = 2;
+  string name = 3;
+  string container = 4;
+  // How far back to start; zero means the server default.
+  int64 tail_lines = 5;
+  // Keep the stream open as new lines arrive.
+  bool follow = 6;
+  // Read the previous container run instead of the current one.
+  bool previous = 7;
+}
+
+message StreamLogsResponse {
+  // A chunk of log output. Chunk boundaries need not fall on line breaks.
+  bytes data = 1;
+}
+
+// FrontendConfig is rendered into the page by the server for the UI to read.
+message FrontendConfig {
+  // The path the UI is mounted under, without a trailing slash; empty at the
+  // root.
+  string base_path = 1;
+  string app_bundle_hash = 2;
+  string version = 3;
+}
+
+service AtlasService {
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc GetObject(GetObjectRequest) returns (GetObjectResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse);
+}
