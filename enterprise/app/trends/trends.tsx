@@ -349,6 +349,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     },
                     formatHoverValue: (value) => `${format.durationSec(value)} average`,
                     usesSecondaryAxis: true,
+                    color: ChartColor.BLUE,
                   },
                 ]}
                 primaryYAxis={{
@@ -396,6 +397,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       },
                       formatHoverValue: (value) => `${format.durationSec(value || 0)} average`,
                       onClick: this.onBarClicked.bind(this, "", ""),
+                      color: ChartColor.GREEN,
                     },
                     {
                       type: SeriesType.BAR,
@@ -403,6 +405,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       extractValue: (tsMillis) => +(this.getStat(tsMillis).maxDurationUsec ?? 0) / 1000000,
                       formatHoverValue: (value) => `${format.durationSec(value || 0)} slowest`,
                       onClick: this.onBarClicked.bind(this, "", "duration"),
+                      color: ChartColor.GREEN,
                     },
                   ]}
                   primaryYAxis={{
@@ -467,6 +470,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalDownloadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} downloaded`,
+                    color: ChartColor.GREEN,
                   },
                   {
                     type: SeriesType.LINE,
@@ -476,6 +480,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       (+(this.getStat(tsMillis).totalDownloadUsec ?? 0) * SECONDS_PER_MICROSECOND),
                     formatHoverValue: (value) => format.bitsPerSecond(value || 0),
                     usesSecondaryAxis: true,
+                    color: ChartColor.BLUE,
                   },
                 ]}
                 primaryYAxis={{
@@ -503,6 +508,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     )})`,
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).totalUploadSizeBytes ?? 0),
                     formatHoverValue: (value) => `${format.bytes(value || 0)} uploaded`,
+                    color: ChartColor.GREEN,
                   },
                   {
                     type: SeriesType.LINE,
@@ -512,6 +518,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       (+(this.getStat(tsMillis).totalUploadUsec ?? 0) * SECONDS_PER_MICROSECOND),
                     formatHoverValue: (value) => format.bitsPerSecond(value || 0),
                     usesSecondaryAxis: true,
+                    color: ChartColor.BLUE,
                   },
                 ]}
                 primaryYAxis={{
@@ -540,6 +547,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                       extractValue: (tsMillis) =>
                         +(this.getStat(tsMillis).totalCpuMicrosSaved ?? 0) * SECONDS_PER_MICROSECOND,
                       formatHoverValue: (value) => `${format.durationSec(value || 0)} CPU time saved`,
+                      color: ChartColor.GREEN,
                     },
                   ]}
                   primaryYAxis={{
@@ -562,6 +570,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).userCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " users",
                     onClick: this.onBarClicked.bind(this, "#users", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
@@ -582,6 +591,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).commitCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " commits",
                     onClick: this.onBarClicked.bind(this, "#commits", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
@@ -602,6 +612,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).branchCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " branches",
                     onClick: this.onBarClicked.bind(this, "#branches", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
@@ -622,6 +633,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).hostCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " hosts",
                     onClick: this.onBarClicked.bind(this, "#hosts", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
@@ -642,6 +654,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                     extractValue: (tsMillis) => +(this.getStat(tsMillis).repoCount ?? 0),
                     formatHoverValue: (value) => (value || 0) + " repos",
                     onClick: this.onBarClicked.bind(this, "#repos", ""),
+                    color: ChartColor.GREEN,
                   },
                 ]}
                 primaryYAxis={{
@@ -667,6 +680,7 @@ export default class TrendsComponent extends React.Component<Props, State> {
                         extractValue: (tsMillis) =>
                           +(+(this.getExecutionStat(tsMillis).totalBuildTimeUsec ?? 0) / 60e6).toPrecision(3),
                         formatHoverValue: (value) => `${format.count(value || 0)} minutes of build time`,
+                        color: ChartColor.GREEN,
                       },
                     ]}
                     primaryYAxis={{

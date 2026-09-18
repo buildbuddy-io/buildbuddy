@@ -51,10 +51,11 @@ export interface ChartDataSeries {
   extractValue: (datum: number) => any | null;
   onClick?: (datum: number, e: MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
   type: SeriesType;
+  color: ChartColor | string;
   usesSecondaryAxis?: boolean;
   stackId?: string;
-  color?: ChartColor | string;
   dot?: boolean;
+  connectNulls?: boolean;
 }
 
 interface ChartYAxis {
@@ -93,6 +94,7 @@ interface TrendsChartTooltipProps
   formatLabel: (datum: any) => string;
   shouldRender: () => boolean;
   dataSeries: ChartDataSeries[];
+  limit: number;
 }
 
 interface RenderedDataSeriesProps {
@@ -159,51 +161,71 @@ function TrendsChartTooltip({
   shouldRender,
   dataSeries,
   coordinate,
+  limit,
 }: TrendsChartTooltipProps) {
   if (!active || !payload || payload.length < 1 || !coordinate || !shouldRender()) {
     return null;
   }
 
-  const seriesByName = new Map(dataSeries.map((ds) => [ds.name, ds]));
-  const primaryScale = useYAxisScale("primary");
-  const secondaryScale = useYAxisScale("secondary");
-
-  // Show the 3 closest lines.
-  const payloadsToShow = payload
-    .map((e) => {
-      const s = seriesByName.get(e.name as string);
-      if (!s) {
-        return undefined;
+  // If there are more than `limit` series, show the ones that are closest to
+  // the mouse.  Otherwise, show them in a consistent order.
+  let renderedPayloads: JSX.Element[] = [];
+  if (limit > 0) {
+    const seriesByName = new Map(dataSeries.map((ds) => [ds.name, ds]));
+    const primaryScale = useYAxisScale("primary");
+    const secondaryScale = useYAxisScale("secondary");
+    renderedPayloads = payload
+      .map((e) => {
+        const s = seriesByName.get(e.name as string);
+        if (!s) {
+          return undefined;
+        }
+        const axis = s.usesSecondaryAxis ? secondaryScale : primaryScale;
+        if (!axis) {
+          return undefined;
+        }
+        return {
+          yCoord: axis(e.value as number)!,
+          dataSeries: s,
+          payloadEntry: e,
+        };
+      })
+      .filter((v) => v !== undefined)
+      .sort((a, b) => Math.abs(a.yCoord - coordinate.y) - Math.abs(b.yCoord - coordinate.y))
+      .slice(0, 3)
+      .sort((a, b) => a.yCoord - b.yCoord)
+      .map((data) => {
+        const value = data.payloadEntry.value as number;
+        return (
+          <div key={data.payloadEntry.name}>
+            <div className="color-swatch" style={{ backgroundColor: getResolvedColor(data.dataSeries.color) }} />
+            {data.dataSeries.formatHoverValue ? data.dataSeries.formatHoverValue(value) : value}
+          </div>
+        );
+      });
+  } else {
+    renderedPayloads = dataSeries.map((ds, index) => {
+      if (index >= payload.length) {
+        return <></>;
       }
-      const axis = s.usesSecondaryAxis ? secondaryScale : primaryScale;
-      if (!axis) {
-        return undefined;
+      const data = payload[index];
+      if (data === undefined) {
+        return <></>;
       }
-      return {
-        yCoord: axis(e.value as number)!,
-        dataSeries: s,
-        payloadEntry: e,
-      };
-    })
-    .filter((v) => v !== undefined)
-    .sort((a, b) => Math.abs(a.yCoord - coordinate.y) - Math.abs(b.yCoord - coordinate.y))
-    .slice(0, 3)
-    .sort((a, b) => a.yCoord - b.yCoord);
+      const value = data.value as number;
+      return (
+        <div key={index}>
+          <div className="color-swatch" style={{ backgroundColor: getResolvedColor(ds.color) }} />
+          {ds.formatHoverValue ? ds.formatHoverValue(value) : value}
+        </div>
+      );
+    });
+  }
 
   return (
     <div className="trend-chart-hover">
       <div className="trend-chart-hover-label">{formatLabel(payload[0].payload)}</div>
-      <div className="trend-chart-hover-value">
-        {payloadsToShow.map((data, index) => {
-          const value = data.payloadEntry.value as number;
-          return (
-            <div key={data.payloadEntry.name}>
-              <div className="color-swatch" style={{ backgroundColor: data.dataSeries.color }} />
-              {data.dataSeries.formatHoverValue ? data.dataSeries.formatHoverValue(value) : value}
-            </div>
-          );
-        })}
-      </div>
+      <div className="trend-chart-hover-value">{renderedPayloads}</div>
     </div>
   );
 }
@@ -216,17 +238,16 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
   const chartHeight = useChartHeight() ?? 0;
   switch (ds.type) {
     case SeriesType.BAR:
-      const color = ds.color ?? ChartColor.GREEN;
       return (
         <Bar
-          className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(color) : ""}
+          className={ds.onClick ? "trends-clickable-bar " + chartColorToCssClass(ds.color) : ""}
           yAxisId={axis}
           name={ds.name}
           dataKey={ds.extractValue}
           isAnimationActive={false}
           hide={hidden}
           stackId={ds.stackId}
-          fill={getResolvedColor(color)}>
+          fill={getResolvedColor(ds.color)}>
           {data.map((date, datumIndex) => {
             return (
               <Cell
@@ -258,14 +279,14 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
           dataKey={ds.extractValue}
           isAnimationActive={false}
           hide={hidden}
-          connectNulls={true}
+          connectNulls={ds.connectNulls}
           focusable={false}
-          stroke={getResolvedColor(ds.color ?? ChartColor.BLUE)}
+          stroke={getResolvedColor(ds.color)}
           {...(highlight && { strokeWidth: 3 })}
         />
       );
     case SeriesType.SCATTER:
-      const scatterColor = getResolvedColor(ds.color ?? ChartColor.BLUE);
+      const scatterColor = getResolvedColor(ds.color);
       return (
         <Scatter
           yAxisId={axis}
@@ -296,7 +317,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
           hide={hidden}
           stroke={"rgba(0,0,0,0)"}
           opacity={0.2}
-          connectNulls={true}
+          connectNulls={ds.connectNulls}
           activeDot={false}
           focusable={false}
         />
@@ -385,13 +406,7 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             onMouseUp={this.props.onZoomSelection && this.onMouseUp.bind(this)}>
             <CartesianGrid strokeDasharray="3 3" yAxisId="primary" />
             {!this.props.hideLegend && <Legend onClick={this.onLegendClick.bind(this)} />}
-            <XAxis
-              type="number"
-              domain={["dataMin", "dataMax"]}
-              dataKey={(v) => v}
-              tickFormatter={this.props.formatXAxisLabel}
-              ticks={this.props.ticks}
-            />
+            <XAxis dataKey={(v) => v} tickFormatter={this.props.formatXAxisLabel} ticks={this.props.ticks} />
             <YAxis
               yAxisId="primary"
               tickFormatter={this.props.primaryYAxis.formatTickValue}
@@ -413,7 +428,6 @@ export default class TrendsChartComponent extends React.Component<Props, State> 
             />
             {this.props.customTooltip ?? (
               <Tooltip
-                cursor={false}
                 content={
                   <TrendsChartTooltip
                     formatLabel={this.props.formatHoverXAxisLabel}

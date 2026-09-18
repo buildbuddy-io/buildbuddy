@@ -228,6 +228,7 @@ class PercentilesChartTooltip extends React.Component<PercentilesChartTooltipPro
               ({ series, index }) =>
                 !this.props.hiddenSeries.has(index) && (
                   <div key={series.name}>
+                    <div className="color-swatch" style={{ backgroundColor: series.stroke }} />
                     {series.name.toLowerCase()}: {format.durationSec(series.dataKey(data))}
                   </div>
                 )
