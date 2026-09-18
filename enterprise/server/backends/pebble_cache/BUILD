@@ -68,6 +68,7 @@ go_test(
         "//enterprise/server/raft/keys",
         "//enterprise/server/util/pebble",
         "//enterprise/server/util/proxy_util",
+        "//proto:encryption_go_proto",
         "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

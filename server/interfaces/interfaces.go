@@ -1692,7 +1692,10 @@ type Crypter interface {
 
 	ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error)
 
-	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser) (Encryptor, error)
+	// NewEncryptor uses the key ID and version in em, which must be non-nil.
+	// Pass the metadata selected for the file record to keep its key consistent
+	// with the key used for encryption.
+	NewEncryptor(ctx context.Context, d *repb.Digest, w CommittedWriteCloser, em *sgpb.EncryptionMetadata) (Encryptor, error)
 	NewDecryptor(ctx context.Context, d *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata) (Decryptor, error)
 
 	enpb.EncryptionServiceServer

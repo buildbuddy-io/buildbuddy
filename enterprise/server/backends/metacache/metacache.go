@@ -220,9 +220,9 @@ func (c *Cache) encryptionEnabled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-// activeEncryption returns the Encryption config to use for new file records,
-// or nil if encryption is not enabled for the caller.
-func (c *Cache) activeEncryption(ctx context.Context) (*sgpb.Encryption, error) {
+// activeEncryption selects the key metadata for file records and encryptors so
+// that a write uses the same key for both. It returns nil if encryption is disabled.
+func (c *Cache) activeEncryption(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
 	enabled, err := c.encryptionEnabled(ctx)
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func (c *Cache) activeEncryption(ctx context.Context) (*sgpb.Encryption, error) 
 	if err != nil {
 		return nil, status.UnavailableErrorf("encryption key not available: %s", err)
 	}
-	return &sgpb.Encryption{KeyId: ak.GetEncryptionKeyId()}, nil
+	return ak, nil
 }
 
 func (c *Cache) userGroupID(ctx context.Context) string {
@@ -254,7 +254,7 @@ func (c *Cache) lookupPartitionID(remoteInstanceName, groupID string) string {
 	return DefaultPartitionID
 }
 
-func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
+func (c *Cache) makeFileRecord(groupID string, encryptionMetadata *sgpb.EncryptionMetadata, r *rspb.ResourceName) (*sgpb.FileRecord, error) {
 	digestFunction := r.GetDigestFunction()
 	if digestFunction == repb.DigestFunction_UNKNOWN {
 		digestFunction = repb.DigestFunction_SHA256
@@ -263,6 +263,10 @@ func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *r
 		return nil, err
 	}
 
+	var encryption *sgpb.Encryption
+	if encryptionMetadata != nil {
+		encryption = &sgpb.Encryption{KeyId: encryptionMetadata.GetEncryptionKeyId()}
+	}
 	return &sgpb.FileRecord{
 		Isolation: &sgpb.Isolation{
 			CacheType:          r.GetCacheType(),
@@ -279,7 +283,7 @@ func (c *Cache) makeFileRecord(groupID string, encryption *sgpb.Encryption, r *r
 
 // lookupMetadata returns the file metadata for r, or a NotFound error if it
 // does not exist.
-func (c *Cache) lookupMetadata(ctx context.Context, r *rspb.ResourceName, encryption *sgpb.Encryption) (*sgpb.FileMetadata, error) {
+func (c *Cache) lookupMetadata(ctx context.Context, r *rspb.ResourceName, encryption *sgpb.EncryptionMetadata) (*sgpb.FileMetadata, error) {
 	fileRecord, err := c.makeFileRecord(c.userGroupID(ctx), encryption, r)
 	if err != nil {
 		return nil, err
@@ -394,13 +398,12 @@ func (c *Cache) writerForRecord(ctx context.Context, fileRecord *sgpb.FileRecord
 	}
 }
 
-func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64, fn writeMetadataFn) (interfaces.CommittedWriteCloser, error) {
+func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecord, sizeHint int64, fn writeMetadataFn, encryptionMetadata *sgpb.EncryptionMetadata) (interfaces.CommittedWriteCloser, error) {
 	wcm, err := c.writerForRecord(ctx, fileRecord, sizeHint)
 	if err != nil {
 		return nil, err
 	}
 
-	var encryptionMetadata *sgpb.EncryptionMetadata
 	cwc := ioutil.NewCustomCommitWriteCloser(wcm)
 	cwc.SetCommitFn(func(bytesWritten int64) error {
 		now := c.opts.Clock.Now().UnixMicro()
@@ -420,8 +423,8 @@ func (c *Cache) newWrappedWriter(ctx context.Context, fileRecord *sgpb.FileRecor
 	})
 
 	wc := interfaces.CommittedWriteCloser(cwc)
-	if fileRecord.GetEncryption() != nil {
-		ewc, err := c.env.GetCrypter().NewEncryptor(ctx, fileRecord.GetDigest(), wc)
+	if encryptionMetadata != nil {
+		ewc, err := c.env.GetCrypter().NewEncryptor(ctx, fileRecord.GetDigest(), wc, encryptionMetadata)
 		if err != nil {
 			_ = wc.Close()
 			return nil, status.UnavailableErrorf("encryptor not available: %s", err)
@@ -480,7 +483,7 @@ func (c *Cache) writer(ctx context.Context, r *rspb.ResourceName, sizeHint int64
 		return nil, err
 	}
 
-	wc, err := c.newWrappedWriter(ctx, fileRecord, sizeHint, fn)
+	wc, err := c.newWrappedWriter(ctx, fileRecord, sizeHint, fn, encryption)
 	if err != nil {
 		return nil, err
 	}
@@ -837,7 +840,7 @@ func (c *Cache) Delete(ctx context.Context, r *rspb.ResourceName) (resultErr err
 	return c.deleteFileAndMetadata(ctx, fileRecord, 0 /*=matchAtime*/)
 }
 
-func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64, encryption *sgpb.Encryption) (io.ReadCloser, error) {
+func (c *Cache) reader(ctx context.Context, md *sgpb.FileMetadata, r *rspb.ResourceName, uncompressedOffset, uncompressedLimit int64, encryption *sgpb.EncryptionMetadata) (io.ReadCloser, error) {
 	// If this object is somehow stored as a zero-length file, pretend it
 	// does not exist.
 	if md.GetStoredSizeBytes() == 0 {
