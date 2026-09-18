@@ -7,6 +7,7 @@ import (
 	"flag"
 	"io"
 	"path"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/paging"
@@ -29,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/timeseries"
 	"github.com/buildbuddy-io/buildbuddy/server/util/trace_events"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/metadata"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	capb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -316,6 +319,30 @@ func (es *ExecutionService) getInvocationExecutionsFromOLAPDB(ctx context.Contex
 	return dedupedExecutions, nil
 }
 
+// logGetExecutionCaller logs who is calling GetExecution, how they
+// authenticated, and what they asked for. This should be temporary.
+func (es *ExecutionService) logGetExecutionCaller(ctx context.Context, req *espb.GetExecutionRequest, numExecutions int) {
+	source := "anonymous"
+	var userID, groupID, apiKeyID string
+	if u, err := es.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
+		userID, groupID, apiKeyID = u.GetUserID(), u.GetGroupID(), u.GetAPIKeyInfo().ID
+		if apiKeyID != "" {
+			source = "api_key"
+		} else {
+			source = "ui_cookie"
+		}
+	}
+	firstMD := func(key string) string {
+		if vals := metadata.ValueFromIncomingContext(ctx, key); len(vals) > 0 {
+			return vals[0]
+		}
+		return ""
+	}
+	log.CtxInfof(ctx,
+		"GetExecution for %v executions: source=%s user_id=%q group_id=%q api_key_id=%q client_ip=%q referer=%q user_agent=%q request=%v",
+		numExecutions, source, userID, groupID, apiKeyID, clientip.Get(ctx), firstMD("referer"), firstMD("user-agent"), req)
+}
+
 func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecutionRequest) (*espb.GetExecutionResponse, error) {
 	if es.env.GetDBHandle() == nil {
 		return nil, status.FailedPreconditionError("database not configured")
@@ -333,8 +360,12 @@ func (es *ExecutionService) GetExecution(ctx context.Context, req *espb.GetExecu
 	}
 
 	if req.GetInlineExecuteResponse() {
+		if len(executions) > 1 {
+			es.logGetExecutionCaller(ctx, req, len(executions))
+		}
 		// If inlined responses are requested, fetch them now.
 		var eg errgroup.Group
+		eg.SetLimit(runtime.GOMAXPROCS(0)) // Don't create unlimited goroutines.
 		for _, ex := range rsp.Execution {
 			// The execute response is only cached once the execution completes.
 			if ex.GetStage() != repb.ExecutionStage_COMPLETED {
