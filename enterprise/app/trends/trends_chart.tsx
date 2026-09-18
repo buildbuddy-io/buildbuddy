@@ -45,7 +45,7 @@ export interface ClickCoordinateInfo {
 export interface ChartDataSeries {
   name: string;
   formatHoverValue?: (datum: number) => string | JSX.Element;
-  extractValue: (datum: number) => any | null;
+  extractValue: (datum: number) => number | null;
   onClick?: (datum: number, e: MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
   type: SeriesType;
   color: ChartColor | string;
@@ -128,7 +128,7 @@ function customScatterDot(color: string, clickable: boolean): ScatterCustomizedS
   if (clickable) {
     return <circle r={3} fill={color} stroke="transparent" strokeWidth={15} cursor="pointer" />;
   }
-  return <Dot r={3} />;
+  return <Dot r={3} fill={color} stroke="transparent" />;
 }
 
 function TrendsChartTooltip({
@@ -140,6 +140,9 @@ function TrendsChartTooltip({
   coordinate,
   limit,
 }: TrendsChartTooltipProps) {
+  const primaryScale = useYAxisScale("primary");
+  const secondaryScale = useYAxisScale("secondary");
+
   if (!active || !payload || payload.length < 1 || !coordinate || !shouldRender()) {
     return null;
   }
@@ -149,8 +152,6 @@ function TrendsChartTooltip({
   let renderedPayloads: JSX.Element[] = [];
   if (limit > 0) {
     const seriesByName = new Map(dataSeries.map((ds) => [ds.name, ds]));
-    const primaryScale = useYAxisScale("primary");
-    const secondaryScale = useYAxisScale("secondary");
     renderedPayloads = payload
       .map((e) => {
         const s = seriesByName.get(e.name as string);
@@ -169,7 +170,7 @@ function TrendsChartTooltip({
       })
       .filter((v) => v !== undefined)
       .sort((a, b) => Math.abs(a.yCoord - coordinate.y) - Math.abs(b.yCoord - coordinate.y))
-      .slice(0, 3)
+      .slice(0, limit)
       .sort((a, b) => a.yCoord - b.yCoord)
       .map((data) => {
         const value = data.payloadEntry.value as number;
@@ -210,13 +211,14 @@ function TrendsChartTooltip({
 function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDataSeriesProps) {
   const axis = ds.usesSecondaryAxis ? "secondary" : "primary";
   const clickHandler = ds.onClick;
-  const xAxis = useXAxisScale(axis);
+  const xAxis = useXAxisScale();
   const chartWidth = useChartWidth() ?? 0;
   const chartHeight = useChartHeight() ?? 0;
   switch (ds.type) {
     case SeriesType.BAR:
       return (
         <Bar
+          key={ds.name}
           className={clickHandler ? "trends-clickable-bar" : ""}
           yAxisId={axis}
           name={ds.name}
@@ -249,6 +251,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
     case SeriesType.LINE:
       return (
         <Line
+          key={ds.name}
           activeDot={ds.hideActiveDot ? false : { pointerEvents: "none" }}
           yAxisId={axis}
           name={ds.name}
@@ -266,6 +269,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
       const scatterColor = getResolvedColor(ds.color);
       return (
         <Scatter
+          key={ds.name}
           yAxisId={axis}
           name={ds.name}
           dataKey={ds.extractValue}
@@ -287,12 +291,14 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
     case SeriesType.AREA:
       return (
         <Area
+          key={ds.name}
           yAxisId={axis}
           name={ds.name}
           dataKey={ds.extractValue}
           isAnimationActive={false}
           hide={hidden}
           stroke={"rgba(0,0,0,0)"}
+          fill={getResolvedColor(ds.color)}
           opacity={0.2}
           connectNulls={ds.connectNulls}
           activeDot={false}
