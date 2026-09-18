@@ -109,6 +109,7 @@ var (
 // will return false.
 type fileCache struct {
 	rootDir      string
+	statFile     func(string) (fileMetadata, error)
 	lock         sync.Mutex
 	l            lru.LRU[*entry]
 	dirScanDone  chan struct{}
@@ -132,10 +133,10 @@ type fileCache struct {
 // entry is used to hold a value in the LRU.
 type entry struct {
 	// addedAtUsec is the time that the file was added to the file cache, in
-	// microseconds since the Unix epoch.
+	// microseconds since the Unix epoch. For files recovered from disk, this is
+	// an estimate derived from filesystem timestamps.
 	addedAtUsec int64
-	// sizeBytes is the file size as reported by the original FileNode metadata
-	// when the file was added to the file cache.
+	// sizeBytes is the estimated disk usage when the entry was added.
 	sizeBytes int64
 
 	// directoryHandle contains a non-nil directory handle if this entry
@@ -145,6 +146,40 @@ type entry struct {
 
 func sizeFn(v *entry) int64 {
 	return v.sizeBytes
+}
+
+type fileMetadata struct {
+	sizeBytes     int64
+	timestampUsec int64
+}
+
+func statFile(path string) (fileMetadata, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileMetadata{}, err
+	}
+	sizeBytes, err := disk.EstimatedFileDiskUsage(info)
+	if err != nil {
+		return fileMetadata{}, err
+	}
+	timestampUsec, _ := ctimeUsec(info)
+	return fileMetadata{sizeBytes: sizeBytes, timestampUsec: timestampUsec}, nil
+}
+
+// Filesystem timestamps keep recovered entries from appearing newly added after
+// every restart. On Linux, prefer inode birth time when the cache filesystem
+// supports it, because hardlink creation and removal update ctime. Birth time
+// can predate cache insertion, and replacing an entry with a fresh inode loses
+// its earlier history. The ctime fallback can underestimate residency after
+// cache hits, but is generally better than the scan time. Mtime is unsuitable
+// because build tools can set it arbitrarily far in the past. Missing or invalid
+// timestamps (nonpositive or in the future) fall back to now.
+func scannedAddTimeUsec(timestampUsec int64) int64 {
+	now := time.Now().UnixMicro()
+	if timestampUsec > 0 && timestampUsec < now {
+		return timestampUsec
+	}
+	return now
 }
 
 func evictFn(rootDir string) func(string, *entry, lru.EvictionReason) {
@@ -218,9 +253,14 @@ func (h *directoryHandle) moveToTrash() error {
 	return h.filecache.trash(h.path)
 }
 
-// NewFileCache constructs an fileCache with maxSize that will cache files
-// in rootDir.
-// If deleteContent is true, the root dir will be deleted and recreated.
+// NewFileCache constructs a cache in rootDir with capacity maxSizeBytes. If
+// deleteContent is true, the root dir will be deleted and recreated.
+//
+// On Linux, the constructor probes the cache filesystem for birth time (btime)
+// support. If btime is unsupported by the FS then ctime is used instead, which
+// is slightly more accurate than using time.Now but still inaccurate as it
+// measures the time the file's link count last changed, which could just be its
+// last use time.
 func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*fileCache, error) {
 	ctx := context.TODO()
 
@@ -266,6 +306,9 @@ func NewFileCache(rootDir string, maxSizeBytes int64, deleteContent bool) (*file
 	if err := os.MkdirAll(c.TempDir(), 0755); err != nil {
 		return nil, fmt.Errorf("create filecache temp dir: %w", err)
 	}
+	// Select the metadata syscall before the scan starts. Cache files are on
+	// this filesystem, so unsupported birth time needs only a constructor probe.
+	c.statFile = getStatFunc(rootDir)
 	if !testOnlyDisableInitialDirectoryScan {
 		go c.scanDir()
 	}
@@ -735,13 +778,9 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 	// to the old link would suddenly change to point to the new content,
 	// which is not good.
 
-	info, err := os.Stat(existingFilePath)
+	metadata, err := c.statFile(existingFilePath)
 	if err != nil {
 		return wrapOSError(err, "stat")
-	}
-	sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
-	if err != nil {
-		return wrapOSError(err, "estimate disk usage")
 	}
 
 	k, err := namespacedKey(keyPrefix, node)
@@ -767,6 +806,8 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	addedAtUsec := time.Now().UnixMicro()
+
 	// If we're adding the file from the path where it should already exist
 	// (i.e. during the initial directory scan), and if it's already tracked in
 	// the LRU (i.e. another action added it concurrently with the scan), then
@@ -775,7 +816,17 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 		if c.l.Contains(k) {
 			return nil
 		}
+		// Estimate when the previous process added this file from its persisted
+		// timestamp, so a restart does not reset its eviction age to zero.
+		addedAtUsec = scannedAddTimeUsec(metadata.timestampUsec)
 	} else {
+		// If we're replacing an existing entry for this key, keep its original
+		// add time so that the eviction age metric reflects how long the
+		// content has been in the cache, not the time since the last re-add.
+		if existing, ok := c.l.Get(k); ok {
+			addedAtUsec = existing.addedAtUsec
+		}
+
 		// If the file being added is not already at the path where we expect it
 		// (i.e. it's being added from some action workspace), then remove and
 		// unlink any existing entry, then hardlink to the destination path.
@@ -798,8 +849,8 @@ func (c *fileCache) addFileWithKeyPrefix(keyPrefix string, node *repb.FileNode, 
 	}
 
 	e := &entry{
-		addedAtUsec: time.Now().UnixMicro(),
-		sizeBytes:   sizeOnDisk,
+		addedAtUsec: addedAtUsec,
+		sizeBytes:   metadata.sizeBytes,
 	}
 	metrics.FileCacheAddedFileSizeBytes.Observe(float64(e.sizeBytes))
 	metrics.FileCacheAddedFileBytesCount.With(prometheus.Labels{
@@ -1167,14 +1218,8 @@ func (c *fileCache) containsWithStatFallback(key string) bool {
 	}
 
 	path := filecachePath(c.rootDir, key)
-	info, err := os.Stat(path)
+	metadata, err := c.statFile(path)
 	if err != nil {
-		return false
-	}
-
-	sizeOnDisk, err := disk.EstimatedFileDiskUsage(info)
-	if err != nil {
-		log.Warningf("Failed to estimate filecache entry size for %q: %s", path, err)
 		return false
 	}
 
@@ -1184,8 +1229,8 @@ func (c *fileCache) containsWithStatFallback(key string) bool {
 		return true
 	}
 	success := c.l.Add(key, &entry{
-		addedAtUsec: time.Now().UnixMicro(),
-		sizeBytes:   sizeOnDisk,
+		addedAtUsec: scannedAddTimeUsec(metadata.timestampUsec),
+		sizeBytes:   metadata.sizeBytes,
 	})
 	if !success {
 		log.Warningf("Could not add key %q to filecache LRU after stat fallback", key)
