@@ -14,6 +14,7 @@ ts_library(
         "//:node_modules/moment",
         "//:node_modules/react",
         "//app/auth:auth_service",
+        "//app/capabilities",
         "//app/components/select",
         "//app/errors:error_service",
         "//app/format",
@@ -21,6 +22,7 @@ ts_library(
         "//app/service:rpc_service",
         "//enterprise/app/trends:trends_chart",
         "//enterprise/app/usage:usage_alerts",
+        "//enterprise/app/usage:usage_bill",
         "//proto:usage_ts_proto",
     ],
 )
@@ -66,6 +68,38 @@ ts_jasmine_node_test(
         ":usage_alerts_model",
         "//:node_modules/@types/long",
         "//:node_modules/long",
+        "//:node_modules/tslib",
+        "//proto:usage_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "usage_bill",
+    srcs = ["usage_bill.tsx"],
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/moment",
+        "//:node_modules/react",
+        "//app/service:rpc_service",
+        "//enterprise/app/usage:usage_bill_model",
+        "//proto:usage_ts_proto",
+    ],
+)
+
+ts_library(
+    name = "usage_bill_model",
+    srcs = ["usage_bill_model.ts"],
+    deps = [
+        "//app/format",
+        "//proto:usage_ts_proto",
+    ],
+)
+
+ts_jasmine_node_test(
+    name = "usage_bill_model_test",
+    srcs = ["usage_bill_model_test.ts"],
+    deps = [
+        ":usage_bill_model",
         "//:node_modules/tslib",
         "//proto:usage_ts_proto",
     ],

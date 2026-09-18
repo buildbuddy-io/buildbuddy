@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/billing/metronome"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
@@ -16,11 +17,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	usage_config "github.com/buildbuddy-io/buildbuddy/enterprise/server/usage/config"
+	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	usagepb "github.com/buildbuddy-io/buildbuddy/proto/usage"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
@@ -28,6 +31,7 @@ import (
 var (
 	usageStartDate      = flag.String("app.usage_start_date", "", "If set, usage data will only be viewable on or after this timestamp. Specified in RFC3339 format, like 2021-10-01T00:00:00Z")
 	alertsEnabled       = flag.Bool("app.usage_alerts_enabled", false, "If set, usage alerts will be enabled in the UI.")
+	billEnabled         = flag.Bool("app.usage_bill_enabled", false, "If set, the current bill from Metronome can be viewed on the usage page.")
 	readUsageFromOLAPDB = flag.Bool("app.read_usage_from_olap_db", false, "If enabled, read Usage page data from OLAP DB.")
 )
 
@@ -35,6 +39,8 @@ const (
 	// MaxUsageAlertingRulesPerGroup is the maximum number of usage alerting
 	// rules a group can create.
 	MaxUsageAlertingRulesPerGroup = 100
+
+	billCacheTTL = 15 * time.Minute
 )
 
 // UsageField defines a Usage proto field returned by GetUsage.
@@ -290,6 +296,10 @@ type usageService struct {
 	// data to the user. We return usage data from the start of the month
 	// corresponding to this date.
 	start time.Time
+
+	// metronome is nil if the read-only key is not configured.
+	metronome *metronome.Client
+	bills     lru.LRU[*usagepb.Bill]
 }
 
 // Register registers the usage service if usage tracking is enabled.
@@ -311,18 +321,40 @@ func New(env environment.Env, clock clockwork.Clock) (*usageService, error) {
 	if readFromOLAPDB && olapdbh == nil {
 		return nil, status.FailedPreconditionError("OLAP DB handle must be configured when app.read_usage_from_olap_db is true")
 	}
-	return &usageService{
+	s := &usageService{
 		env:            env,
 		clock:          clock,
 		olapdbh:        olapdbh,
 		readFromOLAPDB: readFromOLAPDB,
 		start:          configuredUsageStartDate(),
-	}, nil
+	}
+	if metronome.ReadOnlyConfigured() {
+		client, err := metronome.NewReadOnlyClient(nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		s.metronome = client
+		s.bills, err = lru.New(&lru.Config[*usagepb.Bill]{
+			Clock:      clock,
+			TTL:        billCacheTTL,
+			SizeFn:     func(*usagepb.Bill) int64 { return 1 },
+			MaxSize:    10_000,
+			ThreadSafe: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+	return s, nil
 }
 
 // GetAlertsEnabled returns whether usage alerting should be exposed to the frontend.
 func (s *usageService) GetAlertsEnabled() bool {
 	return *alertsEnabled
+}
+
+func (s *usageService) GetBillEnabled() bool {
+	return *billEnabled && s.metronome != nil
 }
 
 // Just a little function to make testing less miserable.
@@ -405,6 +437,68 @@ func (s *usageService) GetUsage(ctx context.Context, req *usagepb.GetUsageReques
 	}
 
 	return s.GetUsageInternal(ctx, g, req)
+}
+
+func (s *usageService) GetCurrentBill(ctx context.Context, req *usagepb.GetCurrentBillRequest) (*usagepb.GetCurrentBillResponse, error) {
+	if !s.GetBillEnabled() {
+		return nil, status.UnimplementedError("viewing the current bill is not enabled")
+	}
+	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	groupID := u.GetGroupID()
+	if bill, ok := s.bills.Get(groupID); ok {
+		return &usagepb.GetCurrentBillResponse{Bill: bill}, nil
+	}
+	g, err := s.env.GetUserDB().GetGroupByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	var bill *usagepb.Bill
+	if g.Status == grpb.Group_USAGE_BASED_GROUP_STATUS {
+		bill, err = s.fetchBill(ctx, groupID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	s.bills.Add(groupID, bill)
+	return &usagepb.GetCurrentBillResponse{Bill: bill}, nil
+}
+
+// fetchBill returns nil if the group has no Metronome customer or no invoice
+// for the current period.
+func (s *usageService) fetchBill(ctx context.Context, groupID string) (*usagepb.Bill, error) {
+	customerID, err := s.metronome.FindCustomerID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if customerID == "" {
+		return nil, nil
+	}
+	now := s.clock.Now()
+	invoice, err := s.metronome.GetCurrentInvoice(ctx, customerID, now)
+	if err != nil {
+		return nil, err
+	}
+	if invoice == nil {
+		return nil, nil
+	}
+	bill := &usagepb.Bill{
+		PeriodStart: timestamppb.New(invoice.StartTimestamp),
+		PeriodEnd:   timestamppb.New(invoice.EndTimestamp),
+		TotalCents:  invoice.Total,
+		FetchedAt:   timestamppb.New(now),
+	}
+	for _, item := range invoice.LineItems {
+		bill.LineItems = append(bill.LineItems, &usagepb.BillLineItem{
+			Name:           item.Name,
+			Quantity:       item.Quantity,
+			UnitPriceCents: item.UnitPrice,
+			TotalCents:     item.Total,
+		})
+	}
+	return bill, nil
 }
 
 func (s *usageService) GetUsageAlertingRules(ctx context.Context, req *usagepb.GetUsageAlertingRulesRequest) (*usagepb.GetUsageAlertingRulesResponse, error) {

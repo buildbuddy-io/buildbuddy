@@ -82,6 +82,68 @@
   color: var(--color-text-label);
 }
 
+.usage-page .usage-bill-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 16px;
+}
+
+.usage-page .usage-bill-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-subtitle {
+  margin-top: 2px;
+  color: var(--color-text-label);
+}
+
+.usage-page .usage-bill-total {
+  font-size: 28px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.usage-page .usage-bill-table {
+  display: grid;
+  grid-template-columns: 1fr max-content max-content max-content;
+  gap: 6px 24px;
+  align-items: baseline;
+}
+
+.usage-page .usage-bill-heading {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-label);
+}
+
+.usage-page .usage-bill-product {
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.usage-page .usage-bill-cost {
+  font-weight: 600;
+}
+
+.usage-page .usage-bill-notes {
+  margin-top: 24px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--color-text-label);
+}
+
 .usage-page .usage-alerting-header {
   margin-bottom: 16px;
 }
