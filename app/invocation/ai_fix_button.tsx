@@ -14,8 +14,8 @@ export interface AIFixButtonProps {
 }
 
 export default class AIFixButton extends React.Component<AIFixButtonProps> {
-  private getCommand(agent: RemoteRunnerAgent) {
-    return `bb agent fix --agent=${agent} ${this.props.model.getInvocationId()}`;
+  private getCommand(agent: RemoteRunnerAgent, push: boolean) {
+    return `bb agent fix --agent=${agent}${push ? " --push" : ""} ${this.props.model.getInvocationId()}`;
   }
 
   private async fixWithAI(agent: RemoteRunnerAgent) {
@@ -26,7 +26,7 @@ export default class AIFixButton extends React.Component<AIFixButtonProps> {
       const canCheckout = Boolean(repoURL) && (await supportsRemoteRun(repoURL));
       await triggerRemoteRun(
         this.props.model,
-        this.getCommand(agent),
+        this.getCommand(agent, canCheckout),
         true,
         new Map<string, string>([
           ["EstimatedComputeUnits", "3"],
@@ -43,7 +43,7 @@ export default class AIFixButton extends React.Component<AIFixButtonProps> {
 
   private copyCommand(agent: RemoteRunnerAgent) {
     try {
-      copyToClipboard(this.getCommand(agent));
+      copyToClipboard(this.getCommand(agent, false));
       alertService.success("Copied command to clipboard");
     } catch (e) {
       errorService.handleError(e);

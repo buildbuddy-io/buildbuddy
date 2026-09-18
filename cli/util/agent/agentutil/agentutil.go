@@ -25,8 +25,11 @@ type RunRequest struct {
 	// Output overrides the default output stream for the agent's result.
 	Output io.Writer
 
-	// Progress overrides the default output stream for the agent's
-	// turn-by-turn activity and diagnostics.
+	// Progress receives the agent's turn-by-turn activity and diagnostics.
+	// By default, this output is discarded.
+	//
+	// This is only supported for Codex, which streams progress to stderr.
+	// Claude does not separate its output into separate streams.
 	Progress io.Writer
 
 	// ClaudeAllowedTools restricts which tools Claude may call.
@@ -54,5 +57,5 @@ func (r *RunRequest) ProgressWriter() io.Writer {
 	if r.Progress != nil {
 		return r.Progress
 	}
-	return os.Stderr
+	return io.Discard
 }
