@@ -1,26 +1,32 @@
 package sender_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/constants"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/header"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/keys"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/rbuilder"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/testutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	rfpb "github.com/buildbuddy-io/buildbuddy/proto/raft"
+	rfspb "github.com/buildbuddy-io/buildbuddy/proto/raft_service"
 	gstatus "google.golang.org/grpc/status"
 )
 
@@ -349,4 +355,52 @@ func TestSyncProposeCASIsIdempotentOnReplicaRetry(t *testing.T) {
 	buf, err := s1.Sender().DirectRead(ctx, key)
 	require.NoError(t, err)
 	require.Equal(t, newValue, buf)
+}
+
+// Verify completed results are returned when another range fails.
+func TestRunMultiKeyReturnsPartialResultsOnError(t *testing.T) {
+	flags.Set(t, "cache.raft.enable_driver", false)
+	flags.Set(t, "cache.raft.target_range_size_bytes", 0)
+	flags.Set(t, "cache.raft.zombie_node_scan_interval", 0)
+	flags.Set(t, "cache.raft.enable_txn_cleanup", false)
+
+	sf := testutil.NewStoreFactory(t)
+	s1 := sf.NewStore(t, testutil.StoreOptions{})
+	// Prevent a blocked callback from hanging the test.
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	stores := []*testutil.TestingStore{s1}
+	sf.InitializeShardsForMetaRange(t, ctx, stores...)
+	sf.InitializeShardsForPartition(t, ctx, disk.Partition{ID: "default", NumRanges: 2}, s1)
+	for i := 1; i <= 3; i++ {
+		testutil.WaitForRangeLease(t, ctx, stores, uint64(i))
+	}
+
+	// A range's start key belongs to that range.
+	goodKey := s1.GetRange(2).GetStart()
+	badKey := s1.GetRange(3).GetStart()
+
+	// Fail only after the successful callback runs.
+	succeeded := make(chan struct{})
+	// The callback may be retried.
+	var closeOnce sync.Once
+	rsps, err := s1.Sender().RunMultiKey(ctx, []*sender.KeyMeta{
+		{Key: goodKey},
+		{Key: badKey},
+	}, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+		if bytes.Equal(keys[0].Key, badKey) {
+			select {
+			case <-succeeded:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return nil, status.InternalError("range failed")
+		}
+		closeOnce.Do(func() { close(succeeded) })
+		return "ok", nil
+	})
+	require.Error(t, err)
+	require.True(t, status.IsInternalError(err), "expected Internal error, got: %s", err)
+	require.Equal(t, []any{"ok"}, rsps)
 }
