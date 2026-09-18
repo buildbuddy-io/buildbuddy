@@ -22,13 +22,17 @@ import (
 // failingTestStatuses are the target statuses that can carry failed test cases.
 var failingTestStatuses = []cmpb.Status{cmpb.Status_FAILED, cmpb.Status_FLAKY, cmpb.Status_TIMED_OUT}
 
+type FilteredTestOutputOptions struct {
+	SuppressWarningLogs bool
+}
+
 // ViewFilteredTestOutput writes the output of failed test cases to w.
 //
 // If one or more target labels are given, only those targets are inspected.
 // Within each target, only failed test cases whose
 // name matches testFilter (a regular expression) are printed; an empty
 // testFilter matches every failed case.
-func ViewFilteredTestOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, downloader download.Downloader, w io.Writer, invocationID string, targets []string, testFilter string) (int, error) {
+func ViewFilteredTestOutput(ctx context.Context, bbClient bbspb.BuildBuddyServiceClient, downloader download.Downloader, w io.Writer, invocationID string, targets []string, testFilter string, opts FilteredTestOutputOptions) (int, error) {
 	re, err := regexp.Compile(testFilter)
 	if err != nil {
 		return 1, fmt.Errorf("invalid --test_filter %q: %w", testFilter, err)
@@ -36,7 +40,9 @@ func ViewFilteredTestOutput(ctx context.Context, bbClient bbspb.BuildBuddyServic
 
 	targetsSpecified := len(targets) > 0
 	if !targetsSpecified {
-		log.Warnf("No target specified; searching all failed test targets in the invocation. This is slow — pass one or more target labels to improve performance.")
+		if !opts.SuppressWarningLogs {
+			log.Warnf("No target specified; searching all failed test targets in the invocation. This is slow — pass one or more target labels to improve performance.")
+		}
 		targets, err = failedTestTargets(ctx, bbClient, invocationID)
 		if err != nil {
 			return -1, err
@@ -68,7 +74,7 @@ func ViewFilteredTestOutput(ctx context.Context, bbClient bbspb.BuildBuddyServic
 	}
 	// Summarize when nothing was printed, unless every named target simply had
 	// no test results (already reported per-target above).
-	if matches == 0 && !(targetsSpecified && noResults == len(targets)) {
+	if !opts.SuppressWarningLogs && matches == 0 && !(targetsSpecified && noResults == len(targets)) {
 		if testFilter != "" {
 			log.Printf("No failed test cases matching %q found.", testFilter)
 		} else {
