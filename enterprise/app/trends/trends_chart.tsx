@@ -51,7 +51,7 @@ export interface ChartDataSeries {
   color: ChartColor | string;
   usesSecondaryAxis?: boolean;
   stackId?: string;
-  dot?: boolean;
+  hideActiveDot?: boolean;
   connectNulls?: boolean;
 }
 
@@ -267,7 +267,7 @@ function RenderedDataSeries({ ds, hidden, highlight, data, zoomFn }: RenderedDat
     case SeriesType.LINE:
       return (
         <Line
-          activeDot={false}
+          activeDot={ds.hideActiveDot ? false : { pointerEvents: "none" }}
           yAxisId={axis}
           name={ds.name}
           dot={false}
