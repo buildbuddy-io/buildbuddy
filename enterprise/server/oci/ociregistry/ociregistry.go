@@ -21,13 +21,13 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/clientip"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -36,7 +36,6 @@ import (
 	ctrname "github.com/google/go-containerregistry/pkg/name"
 	ctr "github.com/google/go-containerregistry/pkg/v1"
 	bspb "google.golang.org/genproto/googleapis/bytestream"
-	"google.golang.org/grpc/metadata"
 )
 
 const (
@@ -172,11 +171,10 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 func (r *registry) cacheContext(ctx context.Context) (context.Context, error) {
 	if *registryAPIKey != "" {
+		// The registry API key is a server-owned credential, so it should not be
+		// scoped by the subdomain of the incoming registry request.
+		ctx = subdomain.Context(ctx, "")
 		ctx = r.env.GetAuthenticator().AuthContextFromAPIKey(ctx, *registryAPIKey)
-		md, _ := metadata.FromOutgoingContext(ctx)
-		if len(md.Get(authutil.APIKeyHeader)) == 0 {
-			ctx = metadata.AppendToOutgoingContext(ctx, authutil.APIKeyHeader, *registryAPIKey)
-		}
 	}
 	return prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
 }
@@ -190,7 +188,8 @@ func (r *registry) handleRegistryRequest(w http.ResponseWriter, req *http.Reques
 	ctx := req.Context()
 	ctx, err := r.cacheContext(ctx)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("could not attach user prefix: %s", err), http.StatusInternalServerError)
+		log.CtxErrorf(ctx, "Could not authenticate OCI registry cache access: %s", err)
+		http.Error(w, "could not authenticate OCI registry cache access", http.StatusInternalServerError)
 		return
 	}
 

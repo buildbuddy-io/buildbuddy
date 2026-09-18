@@ -18,12 +18,16 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociregistry"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testregistry"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testport"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -34,31 +38,69 @@ import (
 
 type recordingActionCacheClient struct {
 	repb.ActionCacheClient
-	apiKey string
+	groupID          string
+	userPrefix       string
+	hasJWT           bool
+	hasRawAPIKey     bool
+	requestSubdomain string
+	called           bool
+	err              error
 }
 
 func (c *recordingActionCacheClient) GetActionResult(ctx context.Context, req *repb.GetActionResultRequest, opts ...grpc.CallOption) (*repb.ActionResult, error) {
-	md, _ := metadata.FromOutgoingContext(ctx)
-	values := md.Get(authutil.APIKeyHeader)
-	if len(values) > 0 {
-		c.apiKey = values[len(values)-1]
+	c.called = true
+	userClaims, err := claims.ClaimsFromContext(ctx)
+	if err != nil {
+		c.err = err
+		return nil, status.InternalError("stop after recording request context")
 	}
-	return nil, status.InternalError("stop after recording request metadata")
+	c.groupID = userClaims.GetGroupID()
+	c.userPrefix, c.err = prefix.UserPrefixFromContext(ctx)
+	_, c.hasJWT = ctx.Value(authutil.ContextTokenStringKey).(string)
+	md, _ := metadata.FromOutgoingContext(ctx)
+	c.hasRawAPIKey = len(md.Get(authutil.APIKeyHeader)) > 0
+	c.requestSubdomain = subdomain.Get(ctx)
+	return nil, status.InternalError("stop after recording request context")
 }
 
 func TestCacheAPIKey(t *testing.T) {
 	te := testenv.GetTestEnv(t)
-	flags.Set(t, "ociregistry.api_key", "test-api-key")
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	flags.Set(t, "ociregistry.api_key", "US1")
 	recordingClient := &recordingActionCacheClient{}
 	te.SetActionCacheClient(recordingClient)
 
 	ocireg, err := ociregistry.New(te)
 	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodGet, "/v2/library/alpine/manifests/sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", nil)
+	req = req.WithContext(subdomain.Context(req.Context(), "registry"))
 	rsp := httptest.NewRecorder()
 	ocireg.ServeHTTP(rsp, req)
 
-	require.Equal(t, "test-api-key", recordingClient.apiKey)
+	require.NoError(t, recordingClient.err)
+	require.Equal(t, "GR1", recordingClient.groupID)
+	require.Equal(t, "GR1/", recordingClient.userPrefix)
+	require.True(t, recordingClient.hasJWT)
+	require.False(t, recordingClient.hasRawAPIKey)
+	require.Empty(t, recordingClient.requestSubdomain)
+}
+
+func TestInvalidCacheAPIKeyFailsClosed(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	flags.Set(t, "ociregistry.api_key", "invalid-key")
+	recordingClient := &recordingActionCacheClient{}
+	te.SetActionCacheClient(recordingClient)
+
+	ocireg, err := ociregistry.New(te)
+	require.NoError(t, err)
+	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
+	rsp := httptest.NewRecorder()
+	ocireg.ServeHTTP(rsp, req)
+
+	require.Equal(t, http.StatusInternalServerError, rsp.Code)
+	require.Equal(t, "could not authenticate OCI registry cache access\n", rsp.Body.String())
+	require.False(t, recordingClient.called)
 }
 
 type simplePullTestCase struct {
