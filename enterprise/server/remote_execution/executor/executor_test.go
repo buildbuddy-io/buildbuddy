@@ -1,8 +1,10 @@
 package executor_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +16,7 @@ import (
 	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/test/integration/remote_execution/rbetest"
@@ -25,7 +28,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/rexec"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -34,6 +39,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,8 +48,122 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
+	bspb "google.golang.org/genproto/googleapis/bytestream"
 	gstatus "google.golang.org/grpc/status"
 )
+
+func TestCacheProxy(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, testauth.TestUsers("U1", "G1", "U2", "G2"))
+	env.SetAuthenticator(auth)
+	_, run, upstreamListener := testenv.RegisterLocalGRPCServer(t, env)
+	testcache.Setup(t, env, upstreamListener)
+	go run()
+	ctx, err := auth.WithAuthenticatedUser(t.Context(), "U1")
+	require.NoError(t, err)
+	ctx, err = prefix.AttachUserPrefixToContext(ctx, auth)
+	require.NoError(t, err)
+	jwt, err := auth.TestJWTForUserID("U1")
+	require.NoError(t, err)
+	requestCtx := metadata.NewOutgoingContext(t.Context(), metadata.Pairs(authutil.ContextTokenStringKey, jwt))
+	fc, err := filecache.NewFileCache(t.TempDir(), 1_000_000, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	t.Cleanup(func() { require.NoError(t, fc.Close()) })
+	originalCache := env.GetCache()
+	originalBS := env.GetByteStreamClient()
+	originalCAS := env.GetContentAddressableStorageClient()
+	server, err := executor.NewCacheProxy(env, filecache.NewCacheAdapter(fc))
+	require.NoError(t, err)
+	require.Same(t, originalCache, env.GetCache())
+	require.Same(t, originalBS, env.GetByteStreamClient())
+	require.Same(t, originalCAS, env.GetContentAddressableStorageClient())
+	lis := bufconn.Listen(1024 * 1024)
+	go server.Serve(lis)
+	t.Cleanup(server.Stop)
+	conn, err := testenv.LocalGRPCConn(t.Context(), lis)
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	bs := bspb.NewByteStreamClient(conn)
+	cas := repb.NewContentAddressableStorageClient(conn)
+	data := []byte("abcdefghij")
+	d, err := cachetools.UploadBlob(ctx, originalBS, "instance", repb.DigestFunction_SHA256, bytes.NewReader(data))
+	require.NoError(t, err)
+	rn := digest.NewCASResourceName(d, "instance", repb.DigestFunction_SHA256)
+	read := func(ctx context.Context, offset, limit int64) ([]byte, error) {
+		stream, err := bs.Read(ctx, &bspb.ReadRequest{ResourceName: rn.DownloadString(), ReadOffset: offset, ReadLimit: limit})
+		if err != nil {
+			return nil, err
+		}
+		var result []byte
+		for {
+			rsp, err := stream.Recv()
+			if err == io.EOF {
+				return result, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, rsp.GetData()...)
+		}
+	}
+	got, err := read(requestCtx, 2, 4)
+	require.NoError(t, err)
+	require.Equal(t, "cdef", string(got))
+	require.False(t, fc.ContainsFile(ctx, &repb.FileNode{Digest: d}))
+	got, err = read(requestCtx, 0, 0)
+	require.NoError(t, err)
+	require.Equal(t, data, got)
+	require.True(t, fc.ContainsFile(ctx, &repb.FileNode{Digest: d}))
+	require.NoError(t, originalCache.Delete(ctx, rn.ToProto()))
+	got, err = read(requestCtx, 7, 0)
+	require.NoError(t, err)
+	require.Equal(t, "hij", string(got))
+	batch, err := cas.BatchReadBlobs(requestCtx, &repb.BatchReadBlobsRequest{InstanceName: "instance", Digests: []*repb.Digest{d}, DigestFunction: repb.DigestFunction_SHA256})
+	require.NoError(t, err)
+	require.Len(t, batch.GetResponses(), 1)
+	require.Equal(t, int32(codes.OK), batch.Responses[0].GetStatus().GetCode())
+	require.Equal(t, data, batch.Responses[0].GetData())
+	otherJWT, err := auth.TestJWTForUserID("U2")
+	require.NoError(t, err)
+	_, err = read(metadata.NewOutgoingContext(t.Context(), metadata.Pairs(authutil.ContextTokenStringKey, otherJWT)), 0, 0)
+	require.True(t, status.IsNotFoundError(err), "%v", err)
+	for _, unauthCtx := range []context.Context{t.Context(), metadata.NewOutgoingContext(t.Context(), metadata.Pairs(authutil.ContextTokenStringKey, "invalid"))} {
+		_, err := read(unauthCtx, 0, 0)
+		require.True(t, status.IsUnauthenticatedError(err), "%v", err)
+		_, err = cas.BatchReadBlobs(unauthCtx, &repb.BatchReadBlobsRequest{Digests: []*repb.Digest{d}, DigestFunction: repb.DigestFunction_SHA256})
+		require.True(t, status.IsUnauthenticatedError(err), "%v", err)
+	}
+	dir := &repb.Directory{Files: []*repb.FileNode{{Name: "input", Digest: d}}}
+	root, err := cachetools.UploadProto(ctx, originalBS, "instance", repb.DigestFunction_SHA256, dir)
+	require.NoError(t, err)
+	tree, err := cas.GetTree(requestCtx, &repb.GetTreeRequest{InstanceName: "instance", RootDigest: root, DigestFunction: repb.DigestFunction_SHA256})
+	require.NoError(t, err)
+	var directories []*repb.Directory
+	for {
+		rsp, err := tree.Recv()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		directories = append(directories, rsp.GetDirectories()...)
+	}
+	require.Empty(t, cmp.Diff([]*repb.Directory{dir}, directories, protocmp.Transform()))
+	output := []byte("output")
+	outDigest, err := cachetools.UploadBlob(requestCtx, bs, "instance", repb.DigestFunction_SHA256, bytes.NewReader(output))
+	require.NoError(t, err)
+	var out bytes.Buffer
+	require.NoError(t, cachetools.GetBlob(ctx, originalBS, digest.NewCASResourceName(outDigest, "instance", repb.DigestFunction_SHA256), &out))
+	require.Equal(t, output, out.Bytes())
+}
+
+func TestCacheProxyRequiresUpstreamClients(t *testing.T) {
+	env := testenv.GetTestEnv(t)
+	_, err := executor.NewCacheProxy(env, env.GetCache())
+	require.Error(t, err)
+	_, err = executor.NewCacheProxy(env, nil)
+	require.True(t, status.IsFailedPreconditionError(err), "%v", err)
+}
 
 type mockExecutionServer struct {
 	repb.UnimplementedExecutionServer
