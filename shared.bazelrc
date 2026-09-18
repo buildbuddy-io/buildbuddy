@@ -447,6 +447,9 @@ common:linux-workflows --build_metadata=TAGS=linux-workflow
 # Configuration used for Linux ARM64 workflows. The workflow runner itself is
 # x86_64; only build actions are scheduled on ARM64 executors.
 common:linux-arm64-workflows --config=remote-shared
+# Prefer ARM64 for all compatible actions. This overrides remote-shared's
+# multi-architecture execution platform list, where x86_64 is first.
+common:linux-arm64-workflows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_arm64
 common:linux-arm64-workflows --config=target-linux-arm64
 common:linux-arm64-workflows --config=workflows
 common:linux-arm64-workflows --config=buildbuddy_remote_executor
