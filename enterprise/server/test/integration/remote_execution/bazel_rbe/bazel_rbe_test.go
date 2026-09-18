@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testbazel"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
@@ -45,6 +46,23 @@ func TestSimpleAction_Exit0(t *testing.T) {
 	env.ShutdownBuildBuddyServers()
 	assert.Equal(t, 1, GetNumInvocationsFlushedToOLAPDB(t, env))
 	assert.Equal(t, 1, GetNumExecutionsFlushedToOLAPDB(t, env))
+}
+
+func TestReadOnlyAPIKey_RemoteExecutionRejected(t *testing.T) {
+	env := setup(t)
+	readOnlyAPIKey := env.CreateAPIKey(t, nil)
+
+	res := runRemoteShellActionViaBazel(
+		t,
+		context.Background(),
+		env,
+		"exit 0",
+		fmt.Sprintf("--remote_header=%s=%s", authutil.APIKeyHeader, readOnlyAPIKey),
+	)
+
+	require.Error(t, res.Error)
+	assert.Contains(t, res.Stderr, "API key does not have permission to use remote execution")
+	assert.Equal(t, 0, tasksStarted(t))
 }
 
 func TestSimpleAction_Exit1(t *testing.T) {
