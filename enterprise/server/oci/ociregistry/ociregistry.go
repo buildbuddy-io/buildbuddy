@@ -138,7 +138,27 @@ func New(env environment.Env) (*registry, error) {
 	if *registryDomain != "" {
 		r.mirrors = *mirrorConfigs
 	}
+	if err := r.checkCacheAPIKey(context.Background()); err != nil {
+		return nil, err
+	}
 	return r, nil
+}
+
+// checkCacheAPIKey verifies at startup that the configured registry API key
+// authenticates, so that a misconfigured key fails the release rather than
+// failing every registry request.
+func (r *registry) checkCacheAPIKey(ctx context.Context) error {
+	if *registryAPIKey == "" {
+		return nil
+	}
+	ctx, err := r.cacheContext(ctx)
+	if err == nil {
+		_, err = r.env.GetAuthenticator().AuthenticatedUser(ctx)
+	}
+	if err != nil {
+		return status.FailedPreconditionErrorf("ociregistry.api_key is not a valid API key: %s", err)
+	}
+	return nil
 }
 
 type instrumentedWriter struct {
