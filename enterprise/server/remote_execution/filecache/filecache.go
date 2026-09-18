@@ -717,7 +717,10 @@ func (c *fileCache) Open(ctx context.Context, node *repb.FileNode) (f *os.File, 
 		hit := f != nil
 		c.requestCounter[hit].Inc()
 	}()
+	return c.open(ctx, node)
+}
 
+func (c *fileCache) open(ctx context.Context, node *repb.FileNode) (*os.File, error) {
 	keyPrefix := keyPrefixFromContext(ctx)
 	key, err := namespacedKey(keyPrefix, node)
 	if err != nil {
@@ -1024,11 +1027,11 @@ func (c *fileCache) Write(ctx context.Context, node *repb.FileNode, b []byte) (n
 
 // NewCacheAdapter exposes complete CAS blobs stored in filecache.
 // Like filecache, CAS entries are shared across instances within a group.
-func NewCacheAdapter(fc interfaces.FileCache) interfaces.Cache {
+func NewCacheAdapter(fc *fileCache) interfaces.Cache {
 	return &cacheAdapter{fc: fc}
 }
 
-type cacheAdapter struct{ fc interfaces.FileCache }
+type cacheAdapter struct{ fc *fileCache }
 
 func (c *cacheAdapter) validate(ctx context.Context, r *rspb.ResourceName) error {
 	if err := ctx.Err(); err != nil {
@@ -1043,12 +1046,13 @@ func (c *cacheAdapter) validate(ctx context.Context, r *rspb.ResourceName) error
 	return digest.Validate(r.GetDigest(), r.GetDigestFunction())
 }
 
-func (c *cacheAdapter) open(ctx context.Context, r *rspb.ResourceName) (*os.File, error) {
+func (c *cacheAdapter) open(ctx context.Context, r *rspb.ResourceName) (f *os.File, err error) {
+	defer func() { c.fc.requestCounter[f != nil].Inc() }()
 	if err := c.validate(ctx, r); err != nil {
 		return nil, err
 	}
 	for _, executable := range []bool{false, true} {
-		f, err := c.fc.Open(ctx, &repb.FileNode{Digest: r.GetDigest(), IsExecutable: executable})
+		f, err := c.fc.open(ctx, &repb.FileNode{Digest: r.GetDigest(), IsExecutable: executable})
 		if status.IsNotFoundError(err) || os.IsNotExist(err) {
 			continue
 		}
@@ -1090,14 +1094,11 @@ func (c *cacheAdapter) Reader(ctx context.Context, r *rspb.ResourceName, offset,
 }
 
 func (c *cacheAdapter) Contains(ctx context.Context, r *rspb.ResourceName) (bool, error) {
-	f, err := c.open(ctx, r)
-	if status.IsNotFoundError(err) {
-		return false, nil
-	}
-	if err != nil {
+	if err := c.validate(ctx, r); err != nil {
 		return false, err
 	}
-	return true, f.Close()
+	return c.fc.ContainsFile(ctx, &repb.FileNode{Digest: r.GetDigest()}) ||
+		c.fc.ContainsFile(ctx, &repb.FileNode{Digest: r.GetDigest(), IsExecutable: true}), nil
 }
 
 func (c *cacheAdapter) FindMissing(ctx context.Context, resources []*rspb.ResourceName) ([]*repb.Digest, error) {
@@ -1143,8 +1144,8 @@ func cacheMetadata(f *os.File) (*interfaces.CacheMetadata, error) {
 	if err != nil {
 		return nil, err
 	}
-	// FileCache does not expose its LRU access timestamps.
-	return &interfaces.CacheMetadata{StoredSizeBytes: info.Size(), DigestSizeBytes: info.Size(), LastModifyTimeUsec: info.ModTime().UnixMicro()}, nil
+	// FileCache does not track access timestamps; use modification time as a fallback.
+	return &interfaces.CacheMetadata{StoredSizeBytes: info.Size(), DigestSizeBytes: info.Size(), LastModifyTimeUsec: info.ModTime().UnixMicro(), LastAccessTimeUsec: info.ModTime().UnixMicro()}, nil
 }
 
 func (c *cacheAdapter) Metadata(ctx context.Context, r *rspb.ResourceName) (*interfaces.CacheMetadata, error) {
@@ -1231,8 +1232,11 @@ func (c *cacheAdapter) Delete(ctx context.Context, r *rspb.ResourceName) error {
 	if err := c.validate(ctx, r); err != nil {
 		return err
 	}
-	c.fc.DeleteFile(ctx, &repb.FileNode{Digest: r.GetDigest()})
-	c.fc.DeleteFile(ctx, &repb.FileNode{Digest: r.GetDigest(), IsExecutable: true})
+	removed := c.fc.DeleteFile(ctx, &repb.FileNode{Digest: r.GetDigest()})
+	removedExecutable := c.fc.DeleteFile(ctx, &repb.FileNode{Digest: r.GetDigest(), IsExecutable: true})
+	if !removed && !removedExecutable {
+		return status.NotFoundError("blob not found in filecache")
+	}
 	return nil
 }
 

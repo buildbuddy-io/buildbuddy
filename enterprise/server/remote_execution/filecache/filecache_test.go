@@ -56,8 +56,12 @@ func TestCacheAdapter(t *testing.T) {
 					node := &repb.FileNode{Digest: d, IsExecutable: executable}
 					_, err := fc.Write(ctx, node, data)
 					require.NoError(t, err)
+					hits := testmetrics.CounterValueForLabels(t, metrics.FileCacheRequests, map[string]string{metrics.FileCacheRequestStatusLabel: "hit"})
+					misses := testmetrics.CounterValueForLabels(t, metrics.FileCacheRequests, map[string]string{metrics.FileCacheRequestStatusLabel: "miss"})
 					reader, err := cache.Reader(ctx, r, 2, 4)
 					require.NoError(t, err)
+					require.Equal(t, hits+1, testmetrics.CounterValueForLabels(t, metrics.FileCacheRequests, map[string]string{metrics.FileCacheRequestStatusLabel: "hit"}))
+					require.Equal(t, misses, testmetrics.CounterValueForLabels(t, metrics.FileCacheRequests, map[string]string{metrics.FileCacheRequestStatusLabel: "miss"}))
 					// An already-open reader remains valid after eviction.
 					require.NoError(t, cache.Delete(ctx, r))
 					got, err := io.ReadAll(reader)
@@ -66,6 +70,9 @@ func TestCacheAdapter(t *testing.T) {
 					require.Equal(t, "cdef", string(got))
 					_, err = cache.Reader(ctx, r, 0, 0)
 					require.True(t, status.IsNotFoundError(err), "%v", err)
+					require.Equal(t, hits+1, testmetrics.CounterValueForLabels(t, metrics.FileCacheRequests, map[string]string{metrics.FileCacheRequestStatusLabel: "hit"}))
+					require.Equal(t, misses+1, testmetrics.CounterValueForLabels(t, metrics.FileCacheRequests, map[string]string{metrics.FileCacheRequestStatusLabel: "miss"}))
+					require.True(t, status.IsNotFoundError(cache.Delete(ctx, r)))
 				})
 			}
 			require.NoError(t, cache.Set(ctx, r, data))
@@ -75,6 +82,11 @@ func TestCacheAdapter(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, data, got)
 			require.Equal(t, int64(len(data)), md.StoredSizeBytes)
+			require.Positive(t, md.LastAccessTimeUsec)
+			require.Equal(t, md.LastModifyTimeUsec, md.LastAccessTimeUsec)
+			metadata, err := cache.Metadata(ctx, r)
+			require.NoError(t, err)
+			require.Equal(t, md, metadata)
 			for _, bounds := range [][2]int64{{-1, 0}, {0, -1}, {11, 0}} {
 				_, err := cache.Reader(ctx, r, bounds[0], bounds[1])
 				require.True(t, status.IsOutOfRangeError(err), "%v", err)
@@ -100,7 +112,8 @@ func TestCacheAdapter(t *testing.T) {
 			require.Len(t, multi, 1)
 			missingDigests, err := cache.FindMissing(ctx, []*rspb.ResourceName{r, missing})
 			require.NoError(t, err)
-			require.Equal(t, []*repb.Digest{missing.Digest}, missingDigests)
+			// Presence checks use filecache's hash-only keys; reads validate size.
+			require.Empty(t, missingDigests)
 			for _, unsupported := range []*rspb.ResourceName{
 				digest.NewACResourceName(d, "instance", digestFunction).ToProto(),
 				{Digest: d, CacheType: rspb.CacheType_CAS, DigestFunction: digestFunction, Compressor: repb.Compressor_ZSTD},
@@ -108,6 +121,47 @@ func TestCacheAdapter(t *testing.T) {
 				_, err := cache.Get(ctx, unsupported)
 				require.True(t, status.IsUnimplementedError(err), "%v", err)
 			}
+			_, err = fc.Write(ctx, &repb.FileNode{Digest: d, IsExecutable: true}, data)
+			require.NoError(t, err)
+			require.NoError(t, cache.Delete(ctx, r))
+			require.False(t, fc.ContainsFile(ctx, &repb.FileNode{Digest: d}))
+			require.False(t, fc.ContainsFile(ctx, &repb.FileNode{Digest: d, IsExecutable: true}))
+			require.True(t, status.IsNotFoundError(cache.Delete(ctx, r)))
+		})
+	}
+}
+
+func TestCacheAdapterPresenceChecksUseLRU(t *testing.T) {
+	for _, executable := range []bool{false, true} {
+		t.Run(fmt.Sprintf("executable=%t", executable), func(t *testing.T) {
+			fc, err := filecache.NewFileCache(t.TempDir(), 1_000_000, false)
+			require.NoError(t, err)
+			fc.WaitForDirectoryScanToComplete()
+			t.Cleanup(func() { require.NoError(t, fc.Close()) })
+			cache := filecache.NewCacheAdapter(fc)
+			data := []byte("contents")
+			d, err := digest.Compute(bytes.NewReader(data), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			r := digest.NewCASResourceName(d, "", repb.DigestFunction_SHA256).ToProto()
+			node := &repb.FileNode{Digest: d, IsExecutable: executable}
+			_, err = fc.Write(t.Context(), node, data)
+			require.NoError(t, err)
+			f, err := fc.Open(t.Context(), node)
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
+			// Keep the LRU entry but hide the file to catch filesystem presence checks.
+			hidden := f.Name() + ".hidden"
+			require.NoError(t, os.Rename(f.Name(), hidden))
+			defer func() { require.NoError(t, os.Rename(hidden, f.Name())) }()
+			hit, err := cache.Contains(t.Context(), r)
+			require.NoError(t, err)
+			require.True(t, hit)
+			missingDigest, err := digest.Compute(bytes.NewReader([]byte("missing")), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			missing := digest.NewCASResourceName(missingDigest, "", repb.DigestFunction_SHA256).ToProto()
+			missingDigests, err := cache.FindMissing(t.Context(), []*rspb.ResourceName{r, missing})
+			require.NoError(t, err)
+			require.Equal(t, []*repb.Digest{missingDigest}, missingDigests)
 		})
 	}
 }
