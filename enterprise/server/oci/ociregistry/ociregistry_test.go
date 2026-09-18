@@ -85,15 +85,27 @@ func TestCacheAPIKey(t *testing.T) {
 	require.Empty(t, recordingClient.requestSubdomain)
 }
 
-func TestInvalidCacheAPIKeyFailsClosed(t *testing.T) {
+func TestInvalidCacheAPIKeyFailsStartup(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
 	flags.Set(t, "ociregistry.api_key", "invalid-key")
+
+	_, err := ociregistry.New(te)
+	require.True(t, status.IsFailedPreconditionError(err), "expected FailedPrecondition, got %v", err)
+	require.Contains(t, err.Error(), "ociregistry.api_key")
+}
+
+func TestRevokedCacheAPIKeyFailsClosed(t *testing.T) {
+	te := testenv.GetTestEnv(t)
+	te.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1")))
+	flags.Set(t, "ociregistry.api_key", "US1")
 	recordingClient := &recordingActionCacheClient{}
 	te.SetActionCacheClient(recordingClient)
 
 	ocireg, err := ociregistry.New(te)
 	require.NoError(t, err)
+	// Simulate the key being revoked after startup.
+	flags.Set(t, "ociregistry.api_key", "invalid-key")
 	req := httptest.NewRequest(http.MethodGet, "/v2/", nil)
 	rsp := httptest.NewRecorder()
 	ocireg.ServeHTTP(rsp, req)
