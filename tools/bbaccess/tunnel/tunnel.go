@@ -95,6 +95,9 @@ func RunDaemon(cfg *tunnelconfig.Config) error {
 		return err
 	}
 	if len(cfg.Zones) == 0 {
+		if err := cfg.LastError(); err != nil {
+			return fmt.Errorf("no zones: the relay gateways on disk could not be loaded (%s); run bbaccess to rewrite them", err)
+		}
 		return fmt.Errorf("no zones: run bbaccess to fetch the relay gateways from the certificate server")
 	}
 
@@ -102,10 +105,19 @@ func RunDaemon(cfg *tunnelconfig.Config) error {
 	if err != nil {
 		return err
 	}
+	// Fail fast on a missing or unusable credential, but per zone: a gateways
+	// file left behind by a server no longer in use must not keep every other
+	// zone from working.
+	usable := 0
 	for _, zone := range cfg.Zones {
 		if _, err := store.Load(zone.Credential); err != nil {
-			return fmt.Errorf("zone *.%s: %w", zone.Suffix, err)
+			log.Warningf("Zone *.%s is unusable until bbaccess is re-run: %s", zone.Suffix, err)
+			continue
 		}
+		usable++
+	}
+	if usable == 0 {
+		return fmt.Errorf("no zone has a usable credential; run bbaccess to get one")
 	}
 	return daemon.Run(cfg, store)
 }

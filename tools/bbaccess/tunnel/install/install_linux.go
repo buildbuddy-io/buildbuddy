@@ -32,6 +32,9 @@ func Install(cfg *tunnelconfig.Config) error {
 	if err != nil {
 		return fmt.Errorf("parsing fake_cidr %q: %w", cfg.FakeCIDR, err)
 	}
+	if !prefix.Addr().Is4() {
+		return fmt.Errorf("fake_cidr %q must be an IPv4 range", cfg.FakeCIDR)
+	}
 	addr := firstAddr(prefix)
 
 	// Recreate the interface so a changed owner or CIDR takes effect.

@@ -186,6 +186,9 @@ func selfUpdate() {
 }
 
 func fetchCerts() {
+	if os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "" {
+		log.Fatalf("Run bbaccess as yourself, not under sudo; sudo is only for 'bbaccess tunnel install'.")
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Could not determine home directory: %s", err)
@@ -235,7 +238,8 @@ func fetchCerts() {
 
 	cfg, _, err := tunnel.LoadConfig()
 	if err != nil {
-		log.Fatalf("Could not load the tunnel config: %s", err)
+		log.Warningf("Not fetching a tunnel credential: %s", err)
+		cfg = nil
 	}
 
 	for _, srv := range targets {
@@ -244,9 +248,14 @@ func fetchCerts() {
 		}
 	}
 
-	tunnel.PrintCredentialStatus(cfg)
+	if cfg != nil {
+		tunnel.PrintCredentialStatus(cfg)
+	}
 
 	if *runTunnel {
+		if cfg == nil {
+			log.Fatalf("Cannot start the tunnel daemon without its config.")
+		}
 		log.Infof("Starting the tunnel daemon. Interrupt to stop it.")
 		if err := tunnel.RunDaemon(cfg); err != nil {
 			log.Fatalf("Tunnel daemon: %s", err)
@@ -272,10 +281,12 @@ func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte,
 	}
 	// The tunnel credential is named after the server that issues it,
 	credName := strings.TrimPrefix(serverToSuffix(server), "__")
-	if tunnelPub, err := tunnel.EnsureCredentialKey(cfg, credName); err != nil {
-		log.Warningf("Not requesting a tunnel certificate: %s", err)
-	} else {
-		req.TunnelPublicKey = string(tunnelPub)
+	if cfg != nil {
+		if tunnelPub, err := tunnel.EnsureCredentialKey(cfg, credName); err != nil {
+			log.Warningf("Not requesting a tunnel certificate: %s", err)
+		} else {
+			req.TunnelPublicKey = string(tunnelPub)
+		}
 	}
 	resp, err := client.Generate(ctx, req)
 	if err != nil {
@@ -333,6 +344,9 @@ func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte,
 		}
 	}
 
+	if cfg == nil {
+		return nil
+	}
 	tc := resp.GetTunnelCredentials()
 	if tc.GetClientCert() != "" {
 		dir, err := tunnel.StoreCredentialCert(cfg, credName, []byte(tc.GetClientCert()))

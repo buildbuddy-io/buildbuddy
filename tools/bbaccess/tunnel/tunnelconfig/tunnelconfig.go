@@ -286,6 +286,9 @@ type serverZones struct {
 	mu   sync.RWMutex // guards Config.Zones once Refresh may replace it
 	dir  string
 	seen map[string]time.Time // gateway file -> modification time last loaded
+	// lastErr is why the last load failed, until a file changes and it is
+	// tried again; the zones from before it stay in effect meanwhile.
+	lastErr error
 }
 
 // UseServerGateways loads the gateway files bbaccess wrote into dir, and makes
@@ -326,7 +329,25 @@ func (c *Config) Refresh() (changed bool, err error) {
 		return false, nil
 	}
 	s.seen = now
+	changed, err = c.load(now)
+	s.lastErr = err
+	return changed, err
+}
 
+// LastError returns why the last attempt to load the gateways files failed,
+// or nil. The files are not read again until one of them changes, so this is
+// what to show for as long as the zones are stale.
+func (c *Config) LastError() error {
+	if c.server == nil {
+		return nil
+	}
+	return c.server.lastErr
+}
+
+// load reads the gateways files listed in now and replaces the zones if they
+// differ from the current ones.
+func (c *Config) load(now map[string]time.Time) (changed bool, err error) {
+	s := c.server
 	var zones []Zone
 	for _, f := range slices.Sorted(maps.Keys(now)) {
 		b, err := os.ReadFile(f)

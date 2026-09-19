@@ -31,25 +31,30 @@ import (
 	gwsvcpb "github.com/buildbuddy-io/buildbuddy/proto/gateway_service"
 )
 
-func freePort(t testing.TB, network string) int {
+// freePort returns a port free on both UDP and TCP. Every listener in these
+// tests is on UDP, and the DNS server also binds TCP on its port, so one
+// rule covers all of them.
+func freePort(t testing.TB) int {
 	t.Helper()
-	if network == "udp" {
+	for range 20 {
 		l, err := net.ListenPacket("udp", "127.0.0.1:0")
 		require.NoError(t, err)
-		defer l.Close()
-		return l.LocalAddr().(*net.UDPAddr).Port
+		port := l.LocalAddr().(*net.UDPAddr).Port
+		l.Close()
+		if tl, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)); err == nil {
+			tl.Close()
+			return port
+		}
 	}
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	t.Fatal("could not find a port free on both UDP and TCP")
+	return 0
 }
 
 func startCertGateway(t *testing.T, ca *testauthrelay.CA, audience string) string {
 	t.Helper()
 	flags.Set(t, "gateway.cert_auth.ca", ca.PEM())
 	flags.Set(t, "gateway.cert_auth.audience", audience)
-	flags.Set(t, "gateway.udp_listen_port", freePort(t, "udp"))
+	flags.Set(t, "gateway.udp_listen_port", freePort(t))
 	flags.Set(t, "gateway.public_host", "127.0.0.1")
 
 	env := testenv.GetTestEnv(t)
@@ -127,7 +132,7 @@ func TestDaemon_ResolveAndRelay(t *testing.T) {
 		RewriteTo:  "localhost",
 		Credential: "certs_example",
 	}}
-	cfg.DNSListen = fmt.Sprintf("127.0.0.1:%d", freePort(t, "udp"))
+	cfg.DNSListen = fmt.Sprintf("127.0.0.1:%d", freePort(t))
 
 	table, err := fakeip.NewTable(netip.MustParsePrefix(cfg.FakeCIDR))
 	require.NoError(t, err)
@@ -261,7 +266,7 @@ func TestDaemon_WrongAudienceIsRejectedEndToEnd(t *testing.T) {
 func TestDaemon_DNSBehavior(t *testing.T) {
 	cfg := tunnelconfig.Default()
 	cfg.Zones = []tunnelconfig.Zone{{Suffix: "foo.bb.internal", Gateway: "grpc://localhost:1"}}
-	cfg.DNSListen = fmt.Sprintf("127.0.0.1:%d", freePort(t, "udp"))
+	cfg.DNSListen = fmt.Sprintf("127.0.0.1:%d", freePort(t))
 
 	table, err := fakeip.NewTable(netip.MustParsePrefix(cfg.FakeCIDR))
 	require.NoError(t, err)

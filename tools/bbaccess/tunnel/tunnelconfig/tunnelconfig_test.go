@@ -224,6 +224,7 @@ func TestServerGateways(t *testing.T) {
 	changed, err = cfg.Refresh()
 	require.NoError(t, err)
 	require.False(t, changed)
+	require.Error(t, cfg.LastError(), "the reason stays available while the file is ignored")
 
 	// Removing the files drops their zones.
 	require.NoError(t, os.Remove(path))
@@ -232,6 +233,7 @@ func TestServerGateways(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Empty(t, cfg.Zones)
+	require.NoError(t, cfg.LastError())
 }
 
 func TestServerGatewaysRecoverFromABadFile(t *testing.T) {
