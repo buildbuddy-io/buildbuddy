@@ -108,7 +108,7 @@ func (s StatInterval) IntervalProto() *stpb.StatsInterval {
 	}
 }
 
-// ComputeTrendsInterval returns the stats bucket size to use for a response
+// ComputeStatInterval returns the stats bucket size to use for a response
 // covering a time range of the given duration.
 // These values are currently set to keep us under ~50 intervals in a response.
 // We need to make some visual improvements to cache charts so that they're
