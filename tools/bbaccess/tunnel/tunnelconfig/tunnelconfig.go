@@ -71,8 +71,8 @@ type Zone struct {
 
 // Config is the daemon's configuration.
 type Config struct {
-	// Zones is the merged zone list from the gateways files, kept current by
-	// Refresh.
+	// Zones is the union of every gateways file in the credential directory,
+	// one per certificate server, kept current by Refresh.
 	Zones []Zone `yaml:"-"`
 
 	// DNSListen is the address the local DNS server binds.
