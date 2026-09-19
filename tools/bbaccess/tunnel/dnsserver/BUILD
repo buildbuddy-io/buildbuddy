@@ -15,7 +15,6 @@ go_library(
     ],
 )
 
-
 go_test(
     name = "dnsserver_test",
     srcs = ["dnsserver_test.go"],
