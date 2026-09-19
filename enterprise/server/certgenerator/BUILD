@@ -41,6 +41,7 @@ go_test(
         "//proto:certgenerator_go_proto",
         "//server/util/relayauth",
         "//server/util/status",
+        "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
     ],
 )
