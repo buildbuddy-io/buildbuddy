@@ -1,7 +1,7 @@
-// The workstation daemon (tools/bbaccess/tunnel) end to end, against an
-// in-process relay gateway. It lives here rather than beside the daemon
+// Package daemontest runs the workstation daemon (tools/bbaccess/tunnel) end
+// to end against an in-process relay gateway. It lives under enterprise
 // because composing a gateway needs enterprise packages.
-package relay_test
+package daemontest
 
 import (
 	"context"

@@ -35,24 +35,3 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-go_test(
-    name = "daemon_e2e_test",
-    srcs = ["daemon_e2e_test.go"],
-    deps = [
-        ":relay",
-        "//enterprise/gateway/certauth",
-        "//enterprise/gateway/server",
-        "//proto:gateway_service_go_proto",
-        "//server/testutil/testauthrelay",
-        "//server/testutil/testenv",
-        "//server/util/testing/flags",
-        "//tools/bbaccess/tunnel/credentials",
-        "//tools/bbaccess/tunnel/dnsserver",
-        "//tools/bbaccess/tunnel/fakeip",
-        "//tools/bbaccess/tunnel/tunnelconfig",
-        "//tools/bbaccess/tunnel/tunnelmgr",
-        "@com_github_miekg_dns//:dns",
-        "@com_github_stretchr_testify//require",
-    ],
-)
