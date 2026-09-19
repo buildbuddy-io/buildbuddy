@@ -192,6 +192,7 @@ func newTestEvictor(tb testing.TB, fileStorer filestore.Store, db pebble.IPebble
 		"", /*=blobDir*/
 		pebble.NewDBLeaser(db),
 		lockmap.New[string](),
+		&PresenceCache{},
 		benchVersionGetter{},
 		clockwork.NewRealClock(),
 		"bench",
