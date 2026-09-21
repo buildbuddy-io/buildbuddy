@@ -30,7 +30,9 @@ jobs:
 
       # These tests need mount privileges, which the BuildBuddy arm64 executors
       # don't provide. Everything else in the arm64 suite runs in the
-      # "Test (linux_arm64)" action in buildbuddy.yaml.
+      # "Test (linux_arm64)" action in buildbuddy.yaml. Both targets are tagged
+      # "docker", which the default tests-local suite filters out, so select
+      # that tag explicitly.
       - name: Run tests
         run: |
           cat >> user.bazelrc <<'EOF'
@@ -48,6 +50,6 @@ jobs:
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
 
-          bazelisk test --config=race --nocache_test_results \
+          bazelisk test --config=race --config=tests-docker --nocache_test_results \
             //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test
