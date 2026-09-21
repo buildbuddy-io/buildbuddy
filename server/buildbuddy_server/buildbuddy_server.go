@@ -2272,6 +2272,38 @@ func (s *BuildBuddyServer) UpdateGitHubRepoSettings(ctx context.Context, req *gh
 	return rsp, nil
 }
 
+func (s *BuildBuddyServer) GetManagedWorkflows(ctx context.Context, req *ghpb.GetManagedWorkflowsRequest) (*ghpb.GetManagedWorkflowsResponse, error) {
+	gh := s.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	repo, err := git.ParseGitHubRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
+	if err != nil {
+		return nil, err
+	}
+	return a.GetManagedWorkflows(ctx, req)
+}
+
+func (s *BuildBuddyServer) UpdateManagedWorkflow(ctx context.Context, req *ghpb.UpdateManagedWorkflowRequest) (*ghpb.UpdateManagedWorkflowResponse, error) {
+	gh := s.env.GetGitHubAppService()
+	if gh == nil {
+		return nil, status.UnimplementedError("Not implemented")
+	}
+	repo, err := git.ParseGitHubRepoURL(req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	a, err := gh.GetGitHubAppForOwner(ctx, repo.Owner)
+	if err != nil {
+		return nil, err
+	}
+	return a.UpdateManagedWorkflow(ctx, req)
+}
+
 func (s *BuildBuddyServer) GetGitHubAppInstallPath(ctx context.Context, req *ghpb.GetGithubAppInstallPathRequest) (*ghpb.GetGithubAppInstallPathResponse, error) {
 	gh := s.env.GetGitHubAppService()
 	if gh == nil {

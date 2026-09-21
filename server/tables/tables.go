@@ -750,6 +750,19 @@ func (g *GitRepository) TableName() string {
 	return "GitRepositories"
 }
 
+// ManagedWorkflow represents a BB backend-defined workflow that customers have enabled.
+type ManagedWorkflow struct {
+	Model
+	GroupID      string `gorm:"primaryKey"`
+	RepoURL      string `gorm:"primaryKey"`
+	WorkflowType int32  `gorm:"primaryKey"`
+	Enabled      bool   `gorm:"not null;default:0"`
+}
+
+func (m *ManagedWorkflow) TableName() string {
+	return "ManagedWorkflows"
+}
+
 // Workflow represents a set of BuildBuddy actions to be run in response to
 // events published to a Git webhook.
 //
@@ -1553,6 +1566,7 @@ func RegisterTables() {
 	registerTable("IE", &InvocationExecution{})
 	registerTable("IN", &Invocation{})
 	registerTable("IR", &IPRule{})
+	registerTable("MW", &ManagedWorkflow{})
 	registerTable("QB", &QuotaBucket{})
 	registerTable("QG", &QuotaGroup{})
 	registerTable("RE", &GitRepository{})

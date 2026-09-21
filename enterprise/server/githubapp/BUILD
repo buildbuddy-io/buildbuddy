@@ -37,6 +37,7 @@ go_library(
         "@com_github_golang_jwt_jwt_v4//:jwt",
         "@com_github_google_go_github_v59//github",
         "@com_github_shurcool_githubv4//:githubv4",
+        "@io_gorm_gorm//clause",
         "@org_golang_x_oauth2//:oauth2",
         "@org_golang_x_sync//errgroup",
     ],
@@ -49,6 +50,7 @@ go_test(
     embed = [":githubapp"],
     deps = [
         "//enterprise/server/testutil/enterprise_testenv",
+        "//proto:github_go_proto",
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",

@@ -122,6 +122,7 @@ var (
 		buildBuddyServicePrefix + "GetWorkflowHistory",
 		// Github configuration (read-only).
 		buildBuddyServicePrefix + "GetLinkedGitHubRepos",
+		buildBuddyServicePrefix + "GetManagedWorkflows",
 		// Per-invocation actions
 		buildBuddyServicePrefix + "UpdateInvocation",
 		buildBuddyServicePrefix + "DeleteInvocation",
@@ -184,6 +185,7 @@ var (
 		buildBuddyServicePrefix + "LinkGitHubRepo",
 		buildBuddyServicePrefix + "UnlinkGitHubRepo",
 		buildBuddyServicePrefix + "UpdateGitHubRepoSettings",
+		buildBuddyServicePrefix + "UpdateManagedWorkflow",
 		// Org API key management
 		buildBuddyServicePrefix + "CreateApiKey",
 		buildBuddyServicePrefix + "UpdateApiKey",
