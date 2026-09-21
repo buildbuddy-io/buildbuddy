@@ -18,7 +18,6 @@ actions:
     container_image: ubuntu-22.04
     resource_requests:
       disk: 27GB
-      memory: 16GB
     triggers:
       push:
         branches:
