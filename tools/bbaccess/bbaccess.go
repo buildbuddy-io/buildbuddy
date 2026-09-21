@@ -17,6 +17,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel"
+	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tunnelconfig"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/update"
 
 	cgpb "github.com/buildbuddy-io/buildbuddy/proto/certgenerator"
@@ -25,6 +27,8 @@ import (
 var (
 	servers    = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times. Defaults to the servers built into this binary, if any (see `bbaccess version`).")
 	autoUpdate = flag.Bool("auto_update", true, "Check for a newer published bbaccess before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
+
+	runTunnel = flag.Bool("tunnel", false, "After fetching certificates, run the tunnel daemon in the foreground.")
 )
 
 // defaultServers is a server list stamped in at link time, separated by
@@ -118,6 +122,12 @@ func main() {
 			selfUpdate()
 		}
 		fetchCerts()
+	case "tunnel":
+		// "tunnel" takes a second word of its own.
+		tunnelCommand, args := splitCommand(args)
+		if err := tunnel.Handle(tunnelCommand, args); err != nil {
+			log.Fatalf("%s", err)
+		}
 	case "update":
 		os.Exit(update.Run(context.Background(), args))
 	case "version":
@@ -176,6 +186,9 @@ func selfUpdate() {
 }
 
 func fetchCerts() {
+	if os.Geteuid() == 0 && os.Getenv("SUDO_USER") != "" {
+		log.Fatalf("Run bbaccess as yourself, not under sudo; sudo is only for 'bbaccess tunnel install'.")
+	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Could not determine home directory: %s", err)
@@ -223,14 +236,34 @@ func fetchCerts() {
 		log.Infof("Using the built-in servers: %s", strings.Join(targets, ", "))
 	}
 
+	cfg, _, err := tunnel.LoadConfig()
+	if err != nil {
+		log.Warningf("Not fetching a tunnel credential: %s", err)
+		cfg = nil
+	}
+
 	for _, srv := range targets {
-		if err := fetchCert(ctx, srv, homeDir, keyFile, pub, token); err != nil {
+		if err := fetchCert(ctx, srv, homeDir, keyFile, pub, token, cfg); err != nil {
 			log.Errorf("Failed to fetch cert from %s: %s", srv, err)
+		}
+	}
+
+	if cfg != nil {
+		tunnel.PrintCredentialStatus(cfg)
+	}
+
+	if *runTunnel {
+		if cfg == nil {
+			log.Fatalf("Cannot start the tunnel daemon without its config.")
+		}
+		log.Infof("Starting the tunnel daemon. Interrupt to stop it.")
+		if err := tunnel.RunDaemon(cfg); err != nil {
+			log.Fatalf("Tunnel daemon: %s", err)
 		}
 	}
 }
 
-func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte, token string) error {
+func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte, token string, cfg *tunnelconfig.Config) error {
 	log.Infof("Requesting certificate from %s.", server)
 
 	conn, err := grpc_client.DialSimple(server)
@@ -245,6 +278,15 @@ func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte,
 	}
 	if pub != nil {
 		req.SshPublicKey = string(pub)
+	}
+	// The tunnel credential is named after the server that issues it,
+	credName := strings.TrimPrefix(serverToSuffix(server), "__")
+	if cfg != nil {
+		if tunnelPub, err := tunnel.EnsureCredentialKey(cfg, credName); err != nil {
+			log.Warningf("Not requesting a tunnel certificate: %s", err)
+		} else {
+			req.TunnelPublicKey = string(tunnelPub)
+		}
 	}
 	resp, err := client.Generate(ctx, req)
 	if err != nil {
@@ -300,6 +342,37 @@ func fetchCert(ctx context.Context, server, homeDir, keyFile string, pub []byte,
 		if err := updateKubectlConfig(ctx, kc); err != nil {
 			log.Warningf("Could not generate kubectl config for cluster %q: %s", kc.Name, err)
 		}
+	}
+
+	if cfg == nil {
+		return nil
+	}
+	tc := resp.GetTunnelCredentials()
+	if tc.GetClientCert() != "" {
+		dir, err := tunnel.StoreCredentialCert(cfg, credName, []byte(tc.GetClientCert()))
+		if err != nil {
+			log.Warningf("Could not store the tunnel credential: %s", err)
+		} else {
+			log.Infof("Wrote tunnel credential %q to %q.", credName, dir)
+		}
+	}
+
+	gateways := tunnelconfig.ServerGateways{}
+	for _, gw := range tc.GetGateways() {
+		sg := tunnelconfig.ServerGateway{Target: gw.GetTarget()}
+		for _, z := range gw.GetZones() {
+			sg.Zones = append(sg.Zones, tunnelconfig.ServerZone{Suffix: z.GetSuffix(), RewriteTo: z.GetRewriteTo()})
+		}
+		gateways.Gateways = append(gateways.Gateways, sg)
+	}
+	if len(gateways.Gateways) == 0 {
+		if err := tunnel.RemoveGateways(cfg, credName); err != nil {
+			log.Warningf("Could not remove the stale relay gateways from %s: %s", server, err)
+		}
+	} else if err := tunnel.StoreGateways(cfg, credName, gateways); err != nil {
+		log.Warningf("Could not store the relay gateways from %s: %s", server, err)
+	} else {
+		log.Infof("Wrote %d relay gateway(s) from %s.", len(gateways.Gateways), server)
 	}
 
 	return nil
