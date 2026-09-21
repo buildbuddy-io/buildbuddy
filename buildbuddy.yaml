@@ -29,7 +29,7 @@ actions:
           - "*"
     steps:
       - run: >-
-          bazel test //... --config=linux-arm64-workflows --config=race --config=tests-linux-arm64
+          bazel test --config=linux-arm64-workflows --config=race --config=tests-linux-arm64
           --
           //enterprise/server/remote_execution/...
           //enterprise/server/test/integration/remote_execution/...
