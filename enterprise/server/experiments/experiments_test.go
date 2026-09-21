@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/random"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/open-feature/go-sdk/openfeature"
@@ -28,6 +29,29 @@ import (
 	flagd "github.com/open-feature/go-sdk-contrib/providers/flagd/pkg"
 	openfeatureTesting "github.com/open-feature/go-sdk/openfeature/testing"
 )
+
+var (
+	testExperiment = expflag.Bool("experiments_test.expflag", false, "Exercises expflag evaluation through the registered provider.")
+)
+
+func TestRegisterSetsExpflagProvider(t *testing.T) {
+	require.NoError(t, experiments.Register(testenv.GetTestEnv(t)))
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+	provider := openfeatureTesting.NewTestProvider()
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	t.Cleanup(provider.Cleanup)
+	provider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		testExperiment.Name(): {
+			State:          memprovider.Enabled,
+			DefaultVariant: "enabled",
+			Variants:       map[string]any{"enabled": true},
+		},
+	})
+
+	value, details := testExperiment.GetWithDetails(t.Context())
+	require.True(t, value)
+	require.Equal(t, "enabled", details.GetVariant())
+}
 
 func TestNoopProviderProvidesDefaults(t *testing.T) {
 	ctx := context.Background()

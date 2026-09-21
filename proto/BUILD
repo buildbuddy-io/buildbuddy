@@ -802,9 +802,16 @@ proto_library(
 )
 
 proto_library(
+    name = "experiments_proto",
+    srcs = ["experiments.proto"],
+    deps = ["@com_google_protobuf//:struct_proto"],
+)
+
+proto_library(
     name = "remote_execution_proto",
     srcs = ["remote_execution.proto"],
     deps = [
+        ":experiments_proto",
         ":scheduler_proto",
         ":semver_proto",
         "@com_google_protobuf//:any_proto",
@@ -1757,11 +1764,18 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "experiments_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/experiments",
+    proto = ":experiments_proto",
+)
+
+go_proto_library(
     name = "remote_execution_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/remote_execution",
     mode = "messages_and_services",
     proto = ":remote_execution_proto",
     deps = [
+        ":experiments_go_proto",
         ":scheduler_go_proto",
         ":semver_go_proto",
         "@com_google_cloud_go_longrunning//autogen/longrunningpb",
@@ -2536,11 +2550,23 @@ ts_proto_library(
 )
 
 ts_proto_library(
+    name = "struct_ts_proto",
+    proto = "@com_google_protobuf//:struct_proto",
+)
+
+ts_proto_library(
+    name = "experiments_ts_proto",
+    proto = ":experiments_proto",
+    deps = [":struct_ts_proto"],
+)
+
+ts_proto_library(
     name = "remote_execution_ts_proto",
     proto = ":remote_execution_proto",
     deps = [
         ":any_ts_proto",
         ":duration_ts_proto",
+        ":experiments_ts_proto",
         ":google_api_annotations_ts_proto",
         ":google_longrunning_ts_proto",
         ":grpc_status_ts_proto",

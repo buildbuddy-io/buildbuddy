@@ -28,6 +28,7 @@ import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/wrappers.proto";
 import "google/rpc/status.proto";
+import "proto/experiments.proto";
 import "proto/scheduler.proto";
 
 option csharp_namespace = "Build.Bazel.Remote.Execution.V2";
@@ -2888,7 +2889,7 @@ message OriginMetadata {
   string invocation_id = 1;
 }
 
-// Next tag: 9
+// Next tag: 13
 message ExecutionTask {
   ExecuteRequest execute_request = 1;
   Action action = 4;
@@ -2899,8 +2900,14 @@ message ExecutionTask {
   google.protobuf.Timestamp queued_timestamp = 7;
   Platform platform_overrides = 8;
   RequestMetadata request_metadata = 9;
-  repeated string experiments = 10;
+  // Deprecated: use experiment_flags instead.
+  repeated string experiments = 10 [ deprecated = true ];
   FastCdc2020Params fast_cdc_2020_params = 11;
+
+  // Experiment flags evaluated by the app for this task. The executor reads
+  // these instead of evaluating experiments itself, so that both sides see the
+  // same values. See server/util/expflag.
+  repeated experiments.EvaluatedFlag experiment_flags = 12;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well
