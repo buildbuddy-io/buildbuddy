@@ -1,0 +1,50 @@
+name: "Test privileged linux/arm64 integrations"
+
+on:
+  push:
+    branches:
+      - "master"
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04-16cpu-arm64-arm-limited
+    if: "!contains(github.event.head_commit.message, 'ci skip')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+
+      - name: Setup Bazel Go module cache
+        uses: ./.github/actions/setup-bazel-go-mod-cache
+
+      # podman_test installs the pinned podman-static distribution under /.
+      # Remove the runner's preinstalled Podman so the test does not use it.
+      - name: Uninstall podman
+        run: |
+          sudo apt-get remove -y podman
+          # Hack to work around https://github.com/containers/podman/issues/9164
+          find /dev/shm -name 'libpod*' -exec sudo rm -rf {} +
+
+      - name: Run privileged tests
+        run: |
+          cat >> user.bazelrc <<'EOF'
+          common --config=cache
+          common --repository_cache=~/repo-cache
+          common --bes_backend=remote.buildbuddy.io
+          common --bes_results_url=https://app.buildbuddy.io/invocation/
+          common --experimental_remote_downloader=remote.buildbuddy.io
+          common --remote_cache=remote.buildbuddy.io
+          common --flaky_test_attempts=3
+          common --local_test_jobs=1
+          common --build_metadata=ROLE=CI
+          common --build_metadata=DISABLE_COMMIT_STATUS_REPORTING=true
+          common --color=yes
+          common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
+          EOF
+
+          bazelisk test --config=race --config=tests-linux-arm64 --nocache_test_results \
+            //enterprise/server/remote_execution/vbd:vbd_test
+
+          bazelisk test --config=race --config=tests-docker --nocache_test_results \
+            //enterprise/server/test/integration/podman:podman_test
