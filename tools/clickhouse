@@ -27,6 +27,9 @@ if ! command -v "$docker" &>/dev/null; then
 fi
 
 start_clickhouse() {
+  local data_dir="/tmp/${USER}_clickhouse_data"
+  mkdir -p "$data_dir"
+
   # If outputting to a terminal, run docker in interactive mode and exit.
   # If outputting to a pipe, run docker in detached mode, and continue the
   # health checks below.
@@ -42,7 +45,7 @@ start_clickhouse() {
     --publish="$BB_CLICKHOUSE_PORT:9000" \
     --publish="$BB_CLICKHOUSE_HTTP_PORT:8123" \
     --env="CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1" \
-    --volume="/tmp/${USER}_clickhouse_data:/var/lib/clickhouse" \
+    --volume="$data_dir:/var/lib/clickhouse" \
     "$BB_CLICKHOUSE_IMAGE" >/dev/null
 }
 
