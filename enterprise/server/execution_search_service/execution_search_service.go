@@ -262,7 +262,7 @@ func (s *ExecutionSearchService) addExecutionQueryFilters(q *query_builder.Query
 // bucket size is chosen to keep the response under ~50 intervals for the
 // queried date range, falling back to 1-day buckets when finer time buckets
 // are disabled.
-func executionTimelineInterval(query *expb.ExecutionQuery, timezone string) (stats.StatInterval, *time.Location) {
+func executionTimelineInterval(query *expb.ExecutionQuery, timezone string, finerTimeBuckets bool) (stats.StatInterval, *time.Location) {
 	endTime := time.Now()
 	if end := query.GetUpdatedBefore(); end.IsValid() {
 		endTime = end.AsTime()
@@ -278,7 +278,7 @@ func executionTimelineInterval(query *expb.ExecutionQuery, timezone string) (sta
 	}
 
 	interval := stats.StatInterval1Day
-	if invocation_stat_service.FinerTimeBucketsEnabled() {
+	if finerTimeBuckets {
 		interval = stats.ComputeStatInterval(endTime.Sub(startTime))
 	}
 	return interval, location
@@ -487,7 +487,7 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 		return nil, err
 	}
 
-	interval, location := executionTimelineInterval(req.GetQuery(), req.GetRequestContext().GetTimezone())
+	interval, location := executionTimelineInterval(req.GetQuery(), req.GetRequestContext().GetTimezone(), stats.FinerTimeBucketsEnabled())
 
 	statsRows, err := s.queryTimelineStats(ctx, req, u.GetGroupID(), interval, location)
 	if err != nil {
