@@ -3,6 +3,7 @@ load("//server/util/bazel:defs.bzl", "bazel_binary_targets")
 
 bazel_binary_targets(
     versions = ["9.2.0"],
+    visibility = ["//visibility:public"],
 )
 
 go_library(

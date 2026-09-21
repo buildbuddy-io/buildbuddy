@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
-# Dev QA Test Runner for rules_bazel_integration_test
+# Dev QA Test Runner, invoked by dev_qa_test.go (see BUILD).
 # This script downloads a source tarball, injects BuildBuddy toolchain,
 # and runs Bazel commands against it using BuildBuddy RBE.
 
 set -euo pipefail
 
-bazel="${BIT_BAZEL_BINARY:-}"
-workspace_dir="${BIT_WORKSPACE_DIR:-}"
+bazel="${DEV_QA_BAZEL_BINARY:-}"
+workspace_dir="${DEV_QA_WORKSPACE_DIR:-}"
 
 tarball_url="${QA_TARBALL_URL:-}"
 strip_prefix="${QA_STRIP_PREFIX:-}"
@@ -18,12 +18,12 @@ bb_app_endpoint="${BB_APP_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 bb_grpc_endpoint="${BB_GRPC_ENDPOINT:-buildbuddy.buildbuddy.dev}"
 
 if [[ -z "${bazel}" ]]; then
-  echo >&2 "ERROR: BIT_BAZEL_BINARY not set"
+  echo >&2 "ERROR: DEV_QA_BAZEL_BINARY not set"
   exit 1
 fi
 
 if [[ -z "${workspace_dir}" ]]; then
-  echo >&2 "ERROR: BIT_WORKSPACE_DIR not set"
+  echo >&2 "ERROR: DEV_QA_WORKSPACE_DIR not set"
   exit 1
 fi
 

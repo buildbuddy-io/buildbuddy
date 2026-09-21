@@ -1,6 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 
-# Prebuilt bb CLI binary, used by //tools/lint.
+# Prebuilt bb CLI binary, used by //tools/lint and //tools/dev_qa.
 # This avoids building the full bb CLI from source (which pulls in
 # Kubernetes client-go, gRPC xDS, etc.) just to shell out to `bb fix`.
 #
@@ -17,7 +17,10 @@ alias(
         "//platforms/configs:linux_arm64": "@io_buildbuddy_bb_cli-linux-arm64//file:downloaded",
         "//platforms/configs:linux_x86_64": "@io_buildbuddy_bb_cli-linux-x86_64//file:downloaded",
     }),
-    visibility = ["//tools/lint:__pkg__"],
+    visibility = [
+        "//tools/dev_qa:__pkg__",
+        "//tools/lint:__pkg__",
+    ],
 )
 
 py_binary(
