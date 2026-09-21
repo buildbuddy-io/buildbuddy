@@ -16,6 +16,7 @@ go_library(
     deps = [
         "//tools/bbaccess/tunnel/daemon",
         "//tools/bbaccess/tunnel/tunnelconfig",
+        "@com_github_mattn_go_isatty//:go-isatty",
     ],  # keep
 )
 

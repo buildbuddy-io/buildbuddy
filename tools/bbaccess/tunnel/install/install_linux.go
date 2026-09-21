@@ -9,10 +9,14 @@ package install
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -91,16 +95,7 @@ func installResolved(cfg *tunnelconfig.Config) error {
 		return err
 	}
 	domains := daemon.ResolverDomains(cfg)
-	routing := make([]string, 0, len(domains))
-	for _, d := range domains {
-		routing = append(routing, "~"+d)
-	}
-
-	content := fmt.Sprintf(`# Written by "bbaccess tunnel install". Remove with "bbaccess tunnel uninstall".
-[Resolve]
-DNS=%s:%s
-Domains=%s
-`, host, port, strings.Join(routing, " "))
+	content := resolvedDropInContent(host, port, domains)
 
 	if err := os.MkdirAll("/etc/systemd/resolved.conf.d", 0o755); err != nil {
 		return fmt.Errorf("creating /etc/systemd/resolved.conf.d: %w", err)
@@ -109,9 +104,7 @@ Domains=%s
 		return fmt.Errorf("writing %s: %w", resolvedDropIn, err)
 	}
 	if out, err := exec.Command("systemctl", "restart", "systemd-resolved").CombinedOutput(); err != nil {
-		return fmt.Errorf("restarting systemd-resolved: %w: %s\n\nIf this machine does not use systemd-resolved, "+
-			"point your resolver at %s for these domains manually: %s",
-			err, out, cfg.DNSListen, strings.Join(domains, " "))
+		return fmt.Errorf("restarting systemd-resolved: %w: %s", err, out)
 	}
 	fmt.Printf("Configured systemd-resolved: %s → %s\n", strings.Join(domains, ", "), cfg.DNSListen)
 	return nil
@@ -133,6 +126,103 @@ func Uninstall(cfg *tunnelconfig.Config) error {
 	run("systemctl", "restart", "systemd-resolved")
 	fmt.Printf("Removed %s, %s and %s\n", cfg.TUNName, deviceUnitPath, resolvedDropIn)
 	return nil
+}
+
+// resolvedDropInContent renders the systemd-resolved drop-in to send lookups
+// to our DNS server.
+func resolvedDropInContent(host, port string, domains []string) string {
+	routing := make([]string, 0, len(domains))
+	for _, d := range domains {
+		routing = append(routing, "~"+d)
+	}
+	return fmt.Sprintf(`# Written by "bbaccess tunnel install". Remove with "bbaccess tunnel uninstall".
+[Resolve]
+DNS=%s:%s
+Domains=%s
+`, host, port, strings.Join(routing, " "))
+}
+
+// sysClassNet is where the kernel describes network devices
+// Can be modified by tests.
+var sysClassNet = "/sys/class/net"
+
+// deviceOwner returns the uid that owns a TUN device.
+func deviceOwner(dev string) (int, error) {
+	b, err := os.ReadFile(filepath.Join(sysClassNet, dev, "owner"))
+	if os.IsNotExist(err) {
+		return -1, nil
+	}
+	if err != nil {
+		return -1, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(b)))
+}
+
+// needed reports why the tunnel is not installed for the invoking user, or ""
+// if it is.
+func needed(cfg *tunnelconfig.Config) (string, error) {
+	uid := os.Getuid()
+	if name := os.Getenv("SUDO_USER"); os.Geteuid() == 0 && name != "" {
+		// Under sudo, the device must belong to the person, not to root.
+		u, err := user.Lookup(name)
+		if err != nil {
+			return "", err
+		}
+		uid, _ = strconv.Atoi(u.Uid)
+	}
+	prefix, err := netip.ParsePrefix(cfg.FakeCIDR)
+	if err != nil || !prefix.Addr().Is4() {
+		return "", fmt.Errorf("fake_cidr %q must be an IPv4 range", cfg.FakeCIDR)
+	}
+
+	ifc, err := net.InterfaceByName(cfg.TUNName)
+	if err != nil {
+		return fmt.Sprintf("the TUN device %s does not exist", cfg.TUNName), nil
+	}
+	owner, err := deviceOwner(cfg.TUNName)
+	if err != nil {
+		return "", err
+	}
+	if owner != uid {
+		// The tunnel is expected to be used by a single user.
+		// Error out on user mismatch.
+		return "", fmt.Errorf("the TUN device %s is owned by %s, not by you; the tunnel supports a single user per machine", cfg.TUNName, userName(owner))
+	}
+	want := netip.PrefixFrom(firstAddr(prefix), prefix.Bits()).String()
+	addrs, err := ifc.Addrs()
+	if err != nil {
+		return "", err
+	}
+	hasAddr := false
+	for _, a := range addrs {
+		if a.String() == want {
+			hasAddr = true
+		}
+	}
+	if !hasAddr {
+		return fmt.Sprintf("the TUN device %s does not carry %s", cfg.TUNName, want), nil
+	}
+	if _, err := os.Stat(deviceUnitPath); err != nil {
+		return "the device would not survive a reboot", nil
+	}
+
+	host, port, err := splitListen(cfg.DNSListen)
+	if err != nil {
+		return "", err
+	}
+	got, err := os.ReadFile(resolvedDropIn)
+	if err != nil || string(got) != resolvedDropInContent(host, port, daemon.ResolverDomains(cfg)) {
+		return fmt.Sprintf("DNS for %s is not routed to the daemon", tunnelconfig.Parent), nil
+	}
+	return "", nil
+}
+
+// userName describes a uid for an error message.
+func userName(uid int) string {
+	if u, err := user.LookupId(strconv.Itoa(uid)); err == nil {
+		return u.Username
+	}
+	return fmt.Sprintf("uid %d", uid)
 }
 
 func run(name string, args ...string) {

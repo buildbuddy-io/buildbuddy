@@ -31,7 +31,7 @@ func Install(cfg *tunnelconfig.Config) error {
 
 	for _, domain := range daemon.ResolverDomains(cfg) {
 		path := filepath.Join(resolverDir, domain)
-		content := fmt.Sprintf("# Written by \"bbaccess tunnel install\". Remove with \"bbaccess tunnel uninstall\".\nnameserver %s\nport %s\n", host, port)
+		content := resolverFileContent(host, port)
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		}
@@ -41,6 +41,25 @@ func Install(cfg *tunnelconfig.Config) error {
 	fmt.Printf("\nInstalled. Start the daemon with:\n\n    sudo bbaccess tunnel run\n\n"+
 		"(macOS requires root to create the %s interface; the Linux daemon does not.)\n", "utun")
 	return nil
+}
+
+func resolverFileContent(host, port string) string {
+	return fmt.Sprintf("# Written by \"bbaccess tunnel install\". Remove with \"bbaccess tunnel uninstall\".\nnameserver %s\nport %s\n", host, port)
+}
+
+// needed reports why the tunnel is not installed, or "" if it is.
+func needed(cfg *tunnelconfig.Config) (string, error) {
+	host, port, err := splitHostPort(cfg.DNSListen)
+	if err != nil {
+		return "", fmt.Errorf("parsing dns_listen %q: %w", cfg.DNSListen, err)
+	}
+	for _, domain := range daemon.ResolverDomains(cfg) {
+		got, err := os.ReadFile(filepath.Join(resolverDir, domain))
+		if err != nil || string(got) != resolverFileContent(host, port) {
+			return fmt.Sprintf("DNS for %s is not routed to the daemon", domain), nil
+		}
+	}
+	return "", nil
 }
 
 // Uninstall removes the resolver files Install wrote.
