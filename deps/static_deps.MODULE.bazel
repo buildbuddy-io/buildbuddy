@@ -1,6 +1,10 @@
 install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
 use_repo(
     install_static_dependencies_ext,
+    "clickhouse_darwin_amd64",
+    "clickhouse_darwin_arm64",
+    "clickhouse_linux_amd64",
+    "clickhouse_linux_arm64",
     "cloudprober",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
