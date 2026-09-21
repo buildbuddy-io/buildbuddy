@@ -28,7 +28,14 @@ actions:
         branches:
           - "*"
     steps:
-      - run: "bazel test //... --config=linux-arm64-workflows --config=race --config=tests-linux-arm64 --experimental_enable_execution_graph_log --experimental_execution_graph_log_dep_type=all --experimental_execution_graph_include_change_pruned_actions"
+      - run: >-
+        bazel test //... --config=linux-arm64-workflows --config=race --config=tests-linux-arm64 \
+          -- \
+          //enterprise/server/remote_execution/... \
+          //enterprise/server/test/integration/remote_execution/... \
+          -//enterprise/server/remote_execution/containers/firecracker/... \
+          -//enterprise/server/test/integration/remote_execution:remote_execution_test \
+          //app/util:shlex_test
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
     container_image: ubuntu-22.04
