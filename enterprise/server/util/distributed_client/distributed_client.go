@@ -73,7 +73,6 @@ type Proxy struct {
 	env                   environment.Env
 	cache                 interfaces.Cache
 	log                   log.Logger
-	readRefLogger         log.Logger
 	writeRefLogger        log.Logger
 	bufPool               *bytebufferpool.VariableSizePool
 	mu                    *sync.Mutex
@@ -97,7 +96,6 @@ func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
 		env:            env,
 		cache:          c,
 		log:            logger,
-		readRefLogger:  logger.EveryN(100),
 		writeRefLogger: logger.EveryN(100),
 		bufPool:        bytebufferpool.VariableSize(*config.ReadBufSizeBytes),
 		listenAddr:     listenAddr,
@@ -376,22 +374,14 @@ func (c *Proxy) GetMulti(ctx context.Context, req *dcpb.GetMultiRequest) (*dcpb.
 	return rsp, nil
 }
 
-// referenceReadMode returns whether Read should send the client a reference
-// to the blob's location in shared storage, and whether it should stream the
-// blob's bytes, based on the reference-read experiments. Sending both lets
-// the client verify the reference against the authoritative byte stream.
-func (c *Proxy) referenceReadMode(ctx context.Context) (sendReference bool, sendBytes bool) {
+// sendReadReferences returns whether Read should answer with a reference to
+// the blob's location in shared storage instead of streaming its bytes.
+func (c *Proxy) sendReadReferences(ctx context.Context) bool {
 	fp := c.env.GetExperimentFlagProvider()
 	if fp == nil {
-		return false, true
+		return false
 	}
-	if fp.Boolean(ctx, "distributed_cache.verify_read_gcs_references", false) {
-		return true, true
-	}
-	if fp.Boolean(ctx, "distributed_cache.read_gcs_references", true) {
-		return true, false
-	}
-	return false, true
+	return fp.Boolean(ctx, "distributed_cache.read_gcs_references", true)
 }
 
 func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadServer) error {
@@ -402,26 +392,14 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 	up, _ := prefix.UserPrefixFromContext(ctx)
 	rn := req.GetResource()
 
-	sendReference, sendBytes := c.referenceReadMode(ctx)
-	var ref *refpb.Reference
-	if refCache, ok := c.cache.(interfaces.ReferenceCache); ok {
-		if sendReference {
-			if r, err := refCache.ReadReference(ctx, rn); err == nil {
-				ref = r
+	// If no reference can be minted, fall through and stream the bytes.
+	if refCache, ok := c.cache.(interfaces.ReferenceCache); ok && c.sendReadReferences(ctx) {
+		if ref, err := refCache.ReadReference(ctx, rn); err == nil && ref != nil {
+			if err := stream.Send(&dcpb.ReadResponse{Reference: ref}); err != nil {
+				return err
 			}
+			return nil
 		}
-		// If no reference was minted, just stream the bytes.
-		if ref == nil {
-			sendBytes = true
-		}
-	}
-
-	if ref != nil && !sendBytes {
-		if err := stream.Send(&dcpb.ReadResponse{Reference: ref}); err != nil {
-			return err
-		}
-		c.readRefLogger.Debugf("Read(%q) succeeded by reference (user prefix: %s)", ResourceIsolationString(rn), up)
-		return nil
 	}
 
 	reader, err := c.cache.Reader(ctx, rn, req.GetOffset(), req.GetLimit())
@@ -430,15 +408,6 @@ func (c *Proxy) Read(req *dcpb.ReadRequest, stream dcpb.DistributedCache_ReadSer
 		return err
 	}
 	defer reader.Close()
-
-	// In verification mode, only send the reference once the byte reader has
-	// been opened successfully, so a missing blob surfaces to the client the
-	// same way it does today.
-	if ref != nil {
-		if err := stream.Send(&dcpb.ReadResponse{Reference: ref}); err != nil {
-			return err
-		}
-	}
 
 	bufSize := int64(digest.SafeBufferSize(rn, *config.ReadBufSizeBytes))
 	copyBuf := c.bufPool.Get(bufSize)
@@ -859,9 +828,6 @@ func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceNam
 	// Pebble rejects offset/limit when the request matches the stored compressor,
 	// so skip the rewrite on the partial-read path.
 	decompress := offset == 0 && limit == 0 && c.shouldReadCompressed(r)
-	// The resource the caller actually asked for, captured before any
-	// transport-only compressor rewrite below.
-	requested := r
 	if decompress {
 		r = r.CloneVT()
 		r.Compressor = repb.Compressor_ZSTD
@@ -885,58 +851,10 @@ func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceNam
 		// proto to the pool, but the reference may live longer, so clone it.
 		ref := rc.rsp.GetReference().CloneVT()
 
-		refMatches := referenceMatches(ref, r)
-
-		// If the server is also streaming the data, serve those bytes to the
-		// caller and verify that dereferencing the reference produces the
-		// same stream. This lets us verify references end-to-end while the
-		// byte stream remains the source of truth.
-		if rc.moreData() {
-			byteReader := io.ReadCloser(rc)
-			if decompress {
-				dr, err := compression.NewZstdDecompressingReader(rc)
-				if err != nil {
-					rc.Close()
-					recordReadResponseMetrics("bytes", r, status.MetricsLabel(err))
-					return nil, nil, err
-				}
-				byteReader = dr
-			}
-			recordReadResponseMetrics("bytes", r, codes.OK.String())
-			if !refMatches {
-				// Verification is best-effort: log bad refs, but don't fail.
-				c.log.Errorf("Reference verification failed for %q: %s", ResourceIsolationString(r), referenceMismatchError(peer, ref, r))
-				metrics.DistributedCacheReferenceVerificationCount.With(
-					prometheus.Labels{
-						metrics.GroupID:                  groupIDForMetrics(ctx),
-						metrics.VerificationOutcomeLabel: VerificationFailure,
-						metrics.StatusHumanReadableLabel: codes.Internal.String(),
-					}).Inc()
-				return nil, byteReader, nil
-			}
-			refReader, err := c.dereference(ctx, peer, ref, requested, offset, limit)
-			if err != nil {
-				// Verification is best-effort: the byte stream is
-				// authoritative, so log and serve it.
-				c.log.Warningf("Cannot verify reference for %q from peer %q: %s", ResourceIsolationString(r), peer, err)
-				metrics.DistributedCacheReferenceVerificationCount.With(
-					prometheus.Labels{
-						metrics.GroupID:                  groupIDForMetrics(ctx),
-						metrics.VerificationOutcomeLabel: VerificationError,
-						metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
-					}).Inc()
-				return nil, byteReader, nil
-			}
-			return nil, NewVerifyingReadCloser(byteReader, refReader, c.log, r, peer, groupIDForMetrics(ctx)), nil
-		}
-
-		// The reference is the whole response.
-		if !refMatches {
+		if !referenceMatches(ref, r) {
 			rc.Close()
 			recordReadResponseMetrics("reference", r, codes.Internal.String())
-			frd := ref.GetMetadata().GetFileRecord().GetDigest()
-			return nil, nil, status.InternalErrorf("peer %q returned a reference for %s/%d, but %s/%d was requested",
-				peer, frd.GetHash(), frd.GetSizeBytes(), r.GetDigest().GetHash(), r.GetDigest().GetSizeBytes())
+			return nil, nil, referenceMismatchError(peer, ref, r)
 		}
 		if err := rc.Close(); err != nil {
 			c.log.Warningf("Error closing read stream after receiving a reference: %s", err)
@@ -1000,107 +918,6 @@ func (c *Proxy) dereference(ctx context.Context, peer string, ref *refpb.Referen
 		return nil, status.FailedPreconditionErrorf("peer %q returned a reference, but the local cache (%T) cannot dereference", peer, c.cache)
 	}
 	return refCache.Dereference(ctx, ref, requested, offset, limit)
-}
-
-// verifyingReadCloser serves bytes from primary while reading the same number
-// of bytes from secondary and comparing the two streams. It logs the outcome
-// and records a metric for analysis.
-type verifyingReadCloser struct {
-	primary   io.ReadCloser
-	secondary io.ReadCloser
-	log       log.Logger
-	resource  *rspb.ResourceName
-	peer      string
-	groupID   string
-
-	scratch  []byte
-	compared int64
-	done     bool
-}
-
-func NewVerifyingReadCloser(primary, secondary io.ReadCloser, log log.Logger, r *rspb.ResourceName, peer, groupID string) io.ReadCloser {
-	return &verifyingReadCloser{
-		primary:   primary,
-		secondary: secondary,
-		log:       log,
-		resource:  r,
-		peer:      peer,
-		groupID:   groupID,
-	}
-}
-
-func (v *verifyingReadCloser) verify(p []byte) {
-	if v.done {
-		return
-	}
-	if len(p) > cap(v.scratch) {
-		v.scratch = make([]byte, len(p))
-	}
-	scratch := v.scratch[:len(p)]
-	if _, err := io.ReadFull(v.secondary, scratch); err != nil {
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes ended early at offset %d", v.compared))
-		} else {
-			v.report(VerificationError, status.WrapErrorf(err, "error reading dereferenced bytes at offset %d", v.compared))
-		}
-		return
-	}
-	if !bytes.Equal(p, scratch) {
-		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes differ from streamed bytes at offset %d", v.compared))
-		return
-	}
-	v.compared += int64(len(p))
-}
-
-func (v *verifyingReadCloser) verifyEOF() {
-	if v.done {
-		return
-	}
-	var b [1]byte
-	n, err := v.secondary.Read(b[:])
-	switch {
-	case n == 0 && err == io.EOF:
-		v.report(VerificationSuccess, nil)
-	case n != 0 || err == nil:
-		v.report(VerificationFailure, status.InternalErrorf("dereferenced bytes continue past streamed bytes at offset %d", v.compared))
-	default:
-		v.report(VerificationError, status.WrapErrorf(err, "error reading dereferenced bytes at offset %d", v.compared))
-	}
-}
-
-func (v *verifyingReadCloser) report(verificationStatus string, err error) {
-	v.done = true
-	switch verificationStatus {
-	case VerificationFailure:
-		v.log.Errorf("Reference verification failed for %q from peer %q: %s", ResourceIsolationString(v.resource), v.peer, err)
-	case VerificationError:
-		v.log.Warningf("Reference verification error for %q from peer %q: %s", ResourceIsolationString(v.resource), v.peer, err)
-	}
-	metrics.DistributedCacheReferenceVerificationCount.With(
-		prometheus.Labels{
-			metrics.GroupID:                  v.groupID,
-			metrics.VerificationOutcomeLabel: verificationStatus,
-			metrics.StatusHumanReadableLabel: status.MetricsLabel(err),
-		}).Inc()
-}
-
-func (v *verifyingReadCloser) Read(p []byte) (int, error) {
-	n, err := v.primary.Read(p)
-	if n > 0 {
-		v.verify(p[:n])
-	}
-	if err == io.EOF {
-		v.verifyEOF()
-	}
-	return n, err
-}
-
-func (v *verifyingReadCloser) Close() error {
-	err := v.primary.Close()
-	if serr := v.secondary.Close(); err == nil {
-		err = serr
-	}
-	return err
 }
 
 type distributedCacheReader struct {
