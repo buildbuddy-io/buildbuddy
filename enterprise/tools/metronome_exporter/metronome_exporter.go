@@ -3,7 +3,8 @@
 // Reads usage data from ClickHouse for free tier and usage based groups and
 // ingests per-SKU events into Metronome. Designed to run as a scheduled
 // cronjob: each run exports the usage recorded since the previous run, tracked
-// in the BillingExportState table.
+// in the BillingExportState table. A group gets a Metronome customer and
+// contract the first time it reports usage.
 //
 // Metronome deduplicates events with the same transaction ID, so re-running
 // is safe, if necessary.
@@ -84,7 +85,7 @@ func run() error {
 		return fmt.Errorf("configure log: %w", err)
 	}
 
-	var client usageReporter
+	var client metronomeClient
 	if !*dryRun {
 		var err error
 		client, err = metronome.NewClient(nil, nil)
@@ -111,13 +112,16 @@ func run() error {
 
 type window struct{ from, to time.Time }
 
-type usageReporter interface {
+type metronomeClient interface {
 	ReportUsage(ctx context.Context, events []metronome.UsageEvent) error
+	FindCustomerID(ctx context.Context, ingestAlias string) (string, error)
+	CreateCustomer(ctx context.Context, name, ingestAlias string) (string, error)
+	CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error
 }
 
 // A nil client is a dry run: nothing is sent and the export state is not
 // modified.
-func export(ctx context.Context, env *real_environment.RealEnv, client usageReporter, now time.Time) error {
+func export(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, now time.Time) error {
 	latest := now.UTC().Add(-minAge).Truncate(metronome.WindowSize)
 	state, err := loadState(ctx, env)
 	if err != nil {
@@ -169,7 +173,7 @@ func loadState(ctx context.Context, env *real_environment.RealEnv) (*tables.Bill
 	return state, nil
 }
 
-func advanceState(ctx context.Context, env *real_environment.RealEnv, client usageReporter, state *tables.BillingExportState, end time.Time) error {
+func advanceState(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, state *tables.BillingExportState, end time.Time) error {
 	if client == nil {
 		return nil
 	}
@@ -207,7 +211,8 @@ func exportedGroupIDs(ctx context.Context, env *real_environment.RealEnv) ([]str
 	return ids, nil
 }
 
-func exportAll(ctx context.Context, env *real_environment.RealEnv, client usageReporter, groups []string, w *window, state *tables.BillingExportState) error {
+func exportAll(ctx context.Context, env *real_environment.RealEnv, client metronomeClient, groups []string, w *window, state *tables.BillingExportState) error {
+	customersChecked := map[string]bool{}
 	totalEventCount := 0
 	// Export in increments of metronome.WindowSize.
 	for start := w.from; start.Before(w.to); start = start.Add(metronome.WindowSize) {
@@ -233,6 +238,17 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client usageR
 					log.Infof("DRY-RUN group=%s period=[%s, %s) sku=%s count=%d labels=%v", e.GroupID, e.PeriodStart.Format(time.RFC3339), e.PeriodEnd.Format(time.RFC3339), e.SKU, e.Count, e.Labels)
 				}
 			} else {
+				for _, r := range rows {
+					if customersChecked[r.GroupID] {
+						continue
+					}
+					customersChecked[r.GroupID] = true
+					// Not fatal: Metronome matches the usage to the customer
+					// once a later run creates it.
+					if err := ensureCustomer(ctx, client, r.GroupID, start); err != nil {
+						log.Warningf("Failed to set up Metronome customer for group %s: %s", r.GroupID, err)
+					}
+				}
 				if err := client.ReportUsage(ctx, events); err != nil {
 					return err
 				}
@@ -245,6 +261,27 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client usageR
 	}
 	log.Infof("Exported %d event(s)", totalEventCount)
 	return nil
+}
+
+func ensureCustomer(ctx context.Context, client metronomeClient, groupID string, usageTime time.Time) error {
+	if !metronome.RateCardConfigured() {
+		return nil
+	}
+	customerID, err := client.FindCustomerID(ctx, groupID)
+	if err != nil {
+		return err
+	}
+	if customerID == "" {
+		customerID, err = client.CreateCustomer(ctx, groupID, groupID)
+		if err != nil {
+			return err
+		}
+		log.Infof("Created Metronome customer %s for group %s", customerID, groupID)
+	}
+	// Runs for existing customers too, in case an earlier run failed after
+	// creating the customer. The contract covers the whole month of the usage.
+	monthStart := time.Date(usageTime.Year(), usageTime.Month(), 1, 0, 0, 0, 0, time.UTC)
+	return client.CreateContract(ctx, customerID, monthStart, groupID)
 }
 
 // queryUsageRows returns per-minute usage rows in the window [from, to). The "Usage"

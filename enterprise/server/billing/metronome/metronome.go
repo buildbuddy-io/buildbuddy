@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,13 +24,19 @@ import (
 )
 
 var (
-	apiKey = flag.String("billing.metronome.api_key", "", "Metronome bearer token used to ingest usage events.", flag.Secret)
-	apiURL = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
+	apiKey              = flag.String("billing.metronome.api_key", "", "Metronome API bearer token.", flag.Secret)
+	apiURL              = flag.String("billing.metronome.api_url", "https://api.metronome.com", "Metronome API base URL.", flag.Internal)
+	rateCardAlias       = flag.String("billing.metronome.rate_card_alias", "", "Alias of the rate card new contracts are created on.")
+	freeCreditCents     = flag.Int64("billing.metronome.free_credit_cents", 0, "Monthly credit in US cents granted on new contracts. 0 grants none.")
+	freeCreditProductID = flag.String("billing.metronome.free_credit_product_id", "", "ID of the Metronome product the monthly credit is issued against.")
 )
 
 const (
 	ingestPath                = "/v1/ingest"
 	MaxEventsPerIngestRequest = 100
+
+	// Metronome's built-in "USD (cents)" credit type, the same in every account.
+	usdCentsCreditTypeID = "2714e483-4ff1-48e4-9e25-ac732e8f24f2"
 
 	// Caution: Do not change this value!
 	// Each Metronome event should cover a window of this size, aligned to the nearest interval of this duration.
@@ -248,15 +255,139 @@ func isRetryable(err error) bool {
 func (c *Client) ingestToMetronome(ctx context.Context, events []MetronomeEvent) error {
 	// The ingest endpoint expects a bare JSON array of events.
 	// See: https://docs.metronome.com/api-reference/usage/ingest-events
-	body, err := json.Marshal(events)
+	return c.do(ctx, http.MethodPost, ingestPath, nil, events, nil)
+}
+
+// FindCustomerID returns "" if no customer has the ingest alias.
+func (c *Client) FindCustomerID(ctx context.Context, ingestAlias string) (string, error) {
+	var resp struct {
+		Data []struct {
+			ID            string   `json:"id"`
+			IngestAliases []string `json:"ingest_aliases"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/v1/customers", url.Values{"ingest_alias": {ingestAlias}}, nil, &resp); err != nil {
+		return "", err
+	}
+	// Don't rely on the API filter alone.
+	for _, customer := range resp.Data {
+		if slices.Contains(customer.IngestAliases, ingestAlias) {
+			return customer.ID, nil
+		}
+	}
+	return "", nil
+}
+
+type customerRequest struct {
+	Name          string   `json:"name"`
+	IngestAliases []string `json:"ingest_aliases"`
+}
+
+func (c *Client) CreateCustomer(ctx context.Context, name, ingestAlias string) (string, error) {
+	var resp struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	body := customerRequest{Name: name, IngestAliases: []string{ingestAlias}}
+	if err := c.do(ctx, http.MethodPost, "/v1/customers", nil, body, &resp); err != nil {
+		return "", err
+	}
+	return resp.Data.ID, nil
+}
+
+type contractRequest struct {
+	CustomerID       string            `json:"customer_id"`
+	RateCardAlias    string            `json:"rate_card_alias"`
+	StartingAt       string            `json:"starting_at"`
+	UniquenessKey    string            `json:"uniqueness_key"`
+	RecurringCredits []recurringCredit `json:"recurring_credits,omitempty"`
+}
+
+type recurringCredit struct {
+	Name                string         `json:"name"`
+	ProductID           string         `json:"product_id"`
+	Priority            int            `json:"priority"`
+	StartingAt          string         `json:"starting_at"`
+	RecurrenceFrequency string         `json:"recurrence_frequency"`
+	CommitDuration      commitDuration `json:"commit_duration"`
+	AccessAmount        accessAmount   `json:"access_amount"`
+}
+
+type commitDuration struct {
+	Unit  string `json:"unit"`
+	Value int    `json:"value"`
+}
+
+type accessAmount struct {
+	CreditTypeID string `json:"credit_type_id"`
+	UnitPrice    int64  `json:"unit_price"`
+	Quantity     int    `json:"quantity"`
+}
+
+func RateCardConfigured() bool {
+	return *rateCardAlias != ""
+}
+
+// CreateContract creates a contract on the configured rate card with the
+// configured monthly credit. It is a no-op if a contract with the uniqueness
+// key already exists.
+func (c *Client) CreateContract(ctx context.Context, customerID string, startingAt time.Time, uniquenessKey string) error {
+	if *rateCardAlias == "" {
+		return status.FailedPreconditionError("billing.metronome.rate_card_alias is required")
+	}
+	if *freeCreditCents > 0 && *freeCreditProductID == "" {
+		return status.FailedPreconditionError("billing.metronome.free_credit_product_id is required when billing.metronome.free_credit_cents is set")
+	}
+	start := startingAt.UTC().Format(time.RFC3339)
+	body := contractRequest{
+		CustomerID:    customerID,
+		RateCardAlias: *rateCardAlias,
+		StartingAt:    start,
+		UniquenessKey: uniquenessKey,
+	}
+	if *freeCreditCents > 0 {
+		body.RecurringCredits = []recurringCredit{{
+			Name:                "Monthly credit",
+			ProductID:           *freeCreditProductID,
+			Priority:            1,
+			StartingAt:          start,
+			RecurrenceFrequency: "MONTHLY",
+			CommitDuration:      commitDuration{Unit: "PERIODS", Value: 1},
+			AccessAmount:        accessAmount{CreditTypeID: usdCentsCreditTypeID, UnitPrice: *freeCreditCents, Quantity: 1},
+		}}
+	}
+	err := c.do(ctx, http.MethodPost, "/v1/contracts/create", nil, body, nil)
+	if status.IsAlreadyExistsError(err) {
+		return nil
+	}
+	return err
+}
+
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
+	endpoint, err := url.JoinPath(*apiURL, path)
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, bytes.NewReader(body))
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	var reqBody io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reqBody)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*apiKey))
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -269,20 +400,10 @@ func (c *Client) ingestToMetronome(ctx context.Context, events []MetronomeEvent)
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return errorForStatusCode(resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
-	return nil
-}
-
-func (c *Client) newRequest(ctx context.Context, method string, body io.Reader) (*http.Request, error) {
-	endpoint, err := url.JoinPath(*apiURL, ingestPath)
-	if err != nil {
-		return nil, err
+	if out == nil {
+		return nil
 	}
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(*apiKey))
-	return req, nil
+	return json.Unmarshal(respBody, out)
 }
 
 func errorForStatusCode(statusCode int, body string) error {
@@ -296,6 +417,8 @@ func errorForStatusCode(statusCode int, body string) error {
 		return status.PermissionDeniedError(message)
 	case http.StatusNotFound:
 		return status.NotFoundError(message)
+	case http.StatusConflict:
+		return status.AlreadyExistsError(message)
 	case http.StatusTooManyRequests:
 		return status.ResourceExhaustedError(message)
 	}
