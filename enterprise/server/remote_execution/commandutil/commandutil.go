@@ -409,6 +409,12 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 		if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
 			return exitCode, status.DeadlineExceededErrorf("command timed out: %s", err.Error())
 		}
+		if ws, ok := processState.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGSEGV {
+			// A segmentation fault is a command failure, not a transient executor
+			// error. Use the shell convention of 128 + signal so clients report
+			// the failure instead of retrying the execution.
+			return 128 + int(ws.Signal()), nil
+		}
 		// If the command didn't time out, it was probably killed by the kernel due to OOM.
 		return exitCode, status.ResourceExhaustedErrorf("command was killed: %s", err.Error())
 	}
