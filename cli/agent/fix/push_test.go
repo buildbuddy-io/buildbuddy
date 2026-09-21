@@ -58,7 +58,7 @@ func TestCommitAndPush_CreatesNewBranchOffDefaultBranch(t *testing.T) {
 			work, bare := setupPushRepo(t, defaultBranch, defaultBranch)
 			target, err := checkPushPreconditions(context.Background())
 			require.NoError(t, err)
-			require.True(t, target.isDefaultBranch)
+			require.True(t, target.createBranch)
 			require.NoError(t, os.WriteFile(filepath.Join(work, "file.txt"), []byte("fixed\n"), 0600))
 			require.NoError(t, commitAndPush(context.Background(), target, "", "12345678-0000-0000-0000-000000000000"))
 			require.Equal(t, target.base, testGit(t, bare, "rev-parse", "refs/heads/"+defaultBranch))
@@ -73,11 +73,43 @@ func TestCommitAndPush_PushesDirectlyToNonDefaultBranch(t *testing.T) {
 	work, bare := setupPushRepo(t, "main", "feature")
 	target, err := checkPushPreconditions(context.Background())
 	require.NoError(t, err)
-	require.False(t, target.isDefaultBranch)
+	require.False(t, target.createBranch)
 	require.NoError(t, os.WriteFile(filepath.Join(work, "file.txt"), []byte("fixed\n"), 0600))
 	require.NoError(t, commitAndPush(context.Background(), target, "", "12345678-0000-0000-0000-000000000000"))
 	require.Equal(t, "feature", testGit(t, work, "symbolic-ref", "--short", "HEAD"))
 	require.Equal(t, testGit(t, work, "rev-parse", "HEAD"), testGit(t, bare, "rev-parse", "refs/heads/feature"))
+}
+
+func TestCommitAndPush_CreatesNewBranchFromDetachedHead(t *testing.T) {
+	work, bare := setupPushRepo(t, "main", "feature")
+	testGit(t, work, "checkout", "--detach")
+	target, err := checkPushPreconditions(context.Background())
+	require.NoError(t, err)
+	require.True(t, target.createBranch)
+	require.Equal(t, "origin", target.remote)
+	require.NoError(t, os.WriteFile(filepath.Join(work, "file.txt"), []byte("fixed\n"), 0600))
+	require.NoError(t, commitAndPush(context.Background(), target, "", "12345678-0000-0000-0000-000000000000"))
+	require.Equal(t, target.base, testGit(t, bare, "rev-parse", "refs/heads/feature"))
+	newBranch := testGit(t, work, "symbolic-ref", "--short", "HEAD")
+	require.Contains(t, newBranch, "bb-agent-fix/12345678-")
+	require.Equal(t, testGit(t, work, "rev-parse", "HEAD"), testGit(t, bare, "rev-parse", "refs/heads/"+newBranch))
+}
+
+func TestCheckPushPreconditions_DetachedHeadUsesOnlyRemote(t *testing.T) {
+	work, _ := setupPushRepo(t, "main", "main")
+	testGit(t, work, "remote", "rename", "origin", "upstream")
+	testGit(t, work, "checkout", "--detach")
+	target, err := checkPushPreconditions(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "upstream", target.remote)
+}
+
+func TestCheckPushPreconditions_DetachedHeadFailsWithUnreachableRemote(t *testing.T) {
+	work, bare := setupPushRepo(t, "main", "main")
+	testGit(t, work, "checkout", "--detach")
+	require.NoError(t, os.RemoveAll(bare))
+	_, err := checkPushPreconditions(context.Background())
+	require.Error(t, err)
 }
 
 func TestCommitAndPush_UsesPushRemoteInsteadOfFetchRemote(t *testing.T) {
