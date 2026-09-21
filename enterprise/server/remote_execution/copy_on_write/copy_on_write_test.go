@@ -313,6 +313,8 @@ func TestCOW_SparseData(t *testing.T) {
 	require.Equal(t, len(dataOut), n)
 
 	// Inspect the chunk files and ensure they have the expected physical size.
+	// Some executor filesystems allocate four physical blocks for a single
+	// sparse write, so tolerate the same 1-or-4 block behavior as dirty chunks.
 	for i := range chunks {
 		chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
 		// We wrote one data block per chunk except for the one chunk that was
@@ -324,7 +326,7 @@ func TestCOW_SparseData(t *testing.T) {
 			continue
 		}
 		nb := numIOBlocks(t, chunkPath)
-		require.Equal(t, int64(1), nb, "chunk %d IO block count", i)
+		require.True(t, nb == 1 || nb == 4, "unexpected chunk %d IO block count (%d)", i, nb)
 	}
 
 	// Now write a single data byte to the empty chunk (0), and sync it to disk.
