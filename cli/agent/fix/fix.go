@@ -72,6 +72,10 @@ const fixPrompt = `Fix this failing command by editing the current working tree.
 
 Apply a minimal, correct fix. Do not disable, skip, or delete failing tests or
 checks. Do not commit, push, or open a pull request. Do not add new tests.
+If a test timed out, do not merely increase its timeout. Look for ways to modify
+the test to preserve coverage while making it faster, such as eliminating
+redundant work, reusing setup, or tightening waits and retries. Only increase
+the timeout if no safe optimization addresses the underlying cause.
 Write verification logs and other scratch files outside the Git worktree (for
 example, under $TMPDIR). Before finishing, remove temporary files you created,
 including any that ended up in the worktree. Keep files needed for the fix.
