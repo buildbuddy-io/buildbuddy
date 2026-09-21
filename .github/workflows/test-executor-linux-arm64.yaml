@@ -1,4 +1,4 @@
-name: "Test privileged linux/arm64 integrations"
+name: "Test linux/arm64 mount + podman"
 
 on:
   push:
@@ -18,15 +18,20 @@ jobs:
       - name: Setup Bazel Go module cache
         uses: ./.github/actions/setup-bazel-go-mod-cache
 
-      # podman_test installs the pinned podman-static distribution under /.
-      # Remove the runner's preinstalled Podman so the test does not use it.
+      # podman_test installs its own version of podman under / in order to test
+      # the same version that we use in the executor while not having to
+      # configure various podman directory paths. For now just uninstall the
+      # podman installation that already comes with the GH actions runner.
       - name: Uninstall podman
         run: |
           sudo apt-get remove -y podman
           # Hack to work around https://github.com/containers/podman/issues/9164
-          find /dev/shm -name 'libpod*' -exec sudo rm -rf {} +
+          find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
 
-      - name: Run privileged tests
+      # These tests need mount privileges, which the BuildBuddy arm64 executors
+      # don't provide. Everything else in the arm64 suite runs in the
+      # "Test (linux_arm64)" action in buildbuddy.yaml.
+      - name: Run tests
         run: |
           cat >> user.bazelrc <<'EOF'
           common --config=cache
@@ -43,8 +48,6 @@ jobs:
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
 
-          bazelisk test --config=race --config=tests-linux-arm64 --nocache_test_results \
-            //enterprise/server/remote_execution/vbd:vbd_test
-
-          bazelisk test --config=race --config=tests-docker --nocache_test_results \
+          bazelisk test --config=race --nocache_test_results \
+            //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test
