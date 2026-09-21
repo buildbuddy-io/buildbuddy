@@ -64,7 +64,7 @@ var (
 	Flags = flag.NewFlagSet("fix", flag.ContinueOnError)
 
 	testFilter = Flags.String("test_filter", "", "If set, fix only matching failed test cases. Passed to Bazel as --test_filter, and used to select which failures are sent to the agent. The value is a test-name pattern (regular expression).")
-	verify     = Flags.Bool("verify", true, "If true, the agent reruns the original command against the modified workspace to verify the fix, first reproducing test failures in case they are flaky. Set to false to skip rerunning the command for faster fixes.")
+	verify     = Flags.Bool("verify", false, "If true, the agent reruns the original command against the modified workspace to verify the fix, first reproducing test failures in case they are flaky. Set to false to skip rerunning the command for faster fixes.")
 	push       = Flags.Bool("push", false, "Commit and push the fix; create a new branch when run from the default branch.")
 )
 
