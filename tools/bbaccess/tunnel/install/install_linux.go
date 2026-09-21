@@ -104,9 +104,7 @@ func installResolved(cfg *tunnelconfig.Config) error {
 		return fmt.Errorf("writing %s: %w", resolvedDropIn, err)
 	}
 	if out, err := exec.Command("systemctl", "restart", "systemd-resolved").CombinedOutput(); err != nil {
-		return fmt.Errorf("restarting systemd-resolved: %w: %s\n\nIf this machine does not use systemd-resolved, "+
-			"point your resolver at %s for these domains manually: %s",
-			err, out, cfg.DNSListen, strings.Join(domains, " "))
+		return fmt.Errorf("restarting systemd-resolved: %w: %s", err, out)
 	}
 	fmt.Printf("Configured systemd-resolved: %s → %s\n", strings.Join(domains, ", "), cfg.DNSListen)
 	return nil
@@ -130,9 +128,8 @@ func Uninstall(cfg *tunnelconfig.Config) error {
 	return nil
 }
 
-// resolvedDropInContent renders the systemd-resolved drop-in: each domain is
-// a routing domain (the "~" prefix), so only those queries come to the
-// daemon and everything else is untouched.
+// resolvedDropInContent renders the systemd-resolved drop-in to send lookups
+// to our DNS server.
 func resolvedDropInContent(host, port string, domains []string) string {
 	routing := make([]string, 0, len(domains))
 	for _, d := range domains {
@@ -145,8 +142,8 @@ Domains=%s
 `, host, port, strings.Join(routing, " "))
 }
 
-// sysClassNet is where the kernel describes network devices; a variable so
-// tests can point it at a fixture.
+// sysClassNet is where the kernel describes network devices
+// Can be modified by tests.
 var sysClassNet = "/sys/class/net"
 
 // deviceOwner returns the uid that owns a TUN device.
@@ -187,7 +184,9 @@ func needed(cfg *tunnelconfig.Config) (string, error) {
 		return "", err
 	}
 	if owner != uid {
-		return fmt.Sprintf("the TUN device %s is owned by uid %d, not by you", cfg.TUNName, owner), nil
+		// The tunnel is expected to be used by a single user.
+		// Error out on user mismatch.
+		return "", fmt.Errorf("the TUN device %s is owned by %s, not by you; the tunnel supports a single user per machine", cfg.TUNName, userName(owner))
 	}
 	want := netip.PrefixFrom(firstAddr(prefix), prefix.Bits()).String()
 	addrs, err := ifc.Addrs()
@@ -216,6 +215,14 @@ func needed(cfg *tunnelconfig.Config) (string, error) {
 		return fmt.Sprintf("DNS for %s is not routed to the daemon", tunnelconfig.Parent), nil
 	}
 	return "", nil
+}
+
+// userName describes a uid for an error message.
+func userName(uid int) string {
+	if u, err := user.LookupId(strconv.Itoa(uid)); err == nil {
+		return u.Username
+	}
+	return fmt.Sprintf("uid %d", uid)
 }
 
 func run(name string, args ...string) {

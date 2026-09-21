@@ -7,6 +7,7 @@ import (
 	"os/exec"
 
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tunnelconfig"
+	"github.com/mattn/go-isatty"
 )
 
 // EnsureInstalled runs the privileged setup if the tunnel is not installed.
@@ -23,7 +24,7 @@ func EnsureInstalled(cfg *tunnelconfig.Config) error {
 		// Already privileged (macOS runs the daemon under sudo).
 		return Install(cfg)
 	}
-	if !stdinIsTerminal() {
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
 		return fmt.Errorf("the tunnel is not installed (%s); run: sudo bbaccess tunnel install", reason)
 	}
 	exe, err := os.Executable()
@@ -36,18 +37,7 @@ func EnsureInstalled(cfg *tunnelconfig.Config) error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("installing the tunnel: %w", err)
 	}
-	// Re-run the check to verify that the installation succeeded.
-	if reason, err := needed(cfg); err != nil {
-		return err
-	} else if reason != "" {
-		return fmt.Errorf("the tunnel is still not installed (%s); see the output above", reason)
-	}
 	return nil
-}
-
-func stdinIsTerminal() bool {
-	fi, err := os.Stdin.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
 // splitHostPort splits a "host:port" listen address, defaulting the host to

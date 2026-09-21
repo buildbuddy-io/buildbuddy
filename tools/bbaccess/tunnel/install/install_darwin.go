@@ -47,8 +47,7 @@ func resolverFileContent(host, port string) string {
 	return fmt.Sprintf("# Written by \"bbaccess tunnel install\". Remove with \"bbaccess tunnel uninstall\".\nnameserver %s\nport %s\n", host, port)
 }
 
-// needed reports why the tunnel is not installed, or "" if it is. Only the
-// resolver files persist on macOS; the utun is created by the daemon itself.
+// needed reports why the tunnel is not installed, or "" if it is.
 func needed(cfg *tunnelconfig.Config) (string, error) {
 	host, port, err := splitHostPort(cfg.DNSListen)
 	if err != nil {
