@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -33,6 +34,13 @@ func Install(cfg *tunnelconfig.Config) error {
 	user := os.Getenv("SUDO_USER")
 	if user == "" {
 		return fmt.Errorf("cannot tell which user should own the TUN device: run this through sudo")
+	}
+	// Sanity check values before we write the unit file.
+	if !unitWord.MatchString(user) {
+		return fmt.Errorf("SUDO_USER %q is not a plain user name", user)
+	}
+	if !unitWord.MatchString(cfg.TUNName) || len(cfg.TUNName) > maxIfaceName {
+		return fmt.Errorf("tun_name %q must be 1-%d characters from [A-Za-z0-9._-]", cfg.TUNName, maxIfaceName)
 	}
 
 	prefix, err := netip.ParsePrefix(cfg.FakeCIDR)
@@ -132,6 +140,12 @@ func run(name string, args ...string) {
 }
 
 const tunMTU = 1400
+
+// maxIfaceName is IFNAMSIZ minus the terminator.
+const maxIfaceName = 15
+
+// unitWord is used to sanity check the tun device name and username in the unit
+var unitWord = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // deviceUnitParams fills the systemd unit that creates the TUN device.
 type deviceUnitParams struct {

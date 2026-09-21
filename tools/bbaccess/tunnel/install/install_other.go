@@ -1,4 +1,5 @@
-//go:build !linux && !darwin
+// Android satisfies the linux constraint but the Linux installer opts out of it.
+//go:build (!linux && !darwin) || android
 
 package install
 
