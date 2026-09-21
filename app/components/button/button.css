@@ -156,10 +156,6 @@
   border-bottom-left-radius: 0;
 }
 
-.ai-button-actions {
-  align-self: flex-start;
-}
-
 .ai-button-actions .spinner {
   --size: 16px;
 
