@@ -250,12 +250,16 @@ func fetchCerts() {
 
 	if cfg != nil {
 		tunnel.PrintCredentialStatus(cfg)
+		if !*runTunnel {
+			tunnel.PrintDaemonStatus(cfg)
+		}
 	}
 
 	if *runTunnel {
 		if cfg == nil {
 			log.Fatalf("Cannot start the tunnel daemon without its config.")
 		}
+		fmt.Println()
 		if err := tunnel.StartDaemon(cfg); err != nil {
 			log.Fatalf("Tunnel daemon: %s", err)
 		}

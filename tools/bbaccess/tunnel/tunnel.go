@@ -50,6 +50,7 @@ func Handle(subcommand string, args []string) error {
 	case "status":
 		daemon.PrintStatus(cfg, args)
 		PrintCredentialStatus(cfg)
+		PrintDaemonStatus(cfg)
 		return nil
 	case "start":
 		return StartDaemon(cfg)
@@ -228,7 +229,10 @@ func PrintCredentialStatus(cfg *tunnelconfig.Config) {
 		}
 		fmt.Printf("  %s: %s, %s\n", name, signer.Email(), state)
 	}
+}
 
+// PrintDaemonStatus reports whether the daemon is running.
+func PrintDaemonStatus(cfg *tunnelconfig.Config) {
 	fmt.Printf("\nDaemon:\n")
 	if daemonRunning(cfg.DNSListen) {
 		pid, _ := runningPid()
