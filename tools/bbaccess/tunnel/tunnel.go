@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"runtime"
 	"slices"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/credentials"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/daemon"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/install"
-	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tundev"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tunnelconfig"
 )
 
@@ -98,8 +96,17 @@ func useServerGateways(cfg *tunnelconfig.Config) {
 
 // RunDaemon runs the daemon in the foreground and blocks.
 func RunDaemon(cfg *tunnelconfig.Config) error {
+	pidPath, err := runtimePath(pidFileName)
+	if err != nil {
+		return err
+	}
+	pf, err := holdPidFile(pidPath)
+	if err != nil {
+		return err
+	}
+	defer pf.release()
 	if daemonRunning(cfg.DNSListen) {
-		return fmt.Errorf("a tunnel daemon is already running%s", pidNote())
+		return fmt.Errorf("something is already answering on %s", cfg.DNSListen)
 	}
 	store, err := prepare(cfg)
 	if err != nil {
@@ -138,9 +145,6 @@ func prepare(cfg *tunnelconfig.Config) (*credentials.Store, error) {
 	}
 	if usable == 0 {
 		return nil, fmt.Errorf("no zone has a usable credential; run bbaccess to get one")
-	}
-	if tundev.RequiresRoot() && os.Geteuid() != 0 {
-		return nil, fmt.Errorf("the tunnel daemon needs root on %s; run this again with sudo", runtime.GOOS)
 	}
 	// Last, since it may ask for a password.
 	if err := install.EnsureInstalled(cfg); err != nil {
@@ -227,7 +231,8 @@ func PrintCredentialStatus(cfg *tunnelconfig.Config) {
 
 	fmt.Printf("\nDaemon:\n")
 	if daemonRunning(cfg.DNSListen) {
-		fmt.Printf("  running%s (DNS listener answering on %s)\n", pidNote(), cfg.DNSListen)
+		pid, _ := runningPid()
+		fmt.Printf("  running%s (DNS listener answering on %s)\n", pidNote(pid), cfg.DNSListen)
 		if logPath, err := runtimePath(logFileName); err == nil && tunnelconfig.Exists(logPath) {
 			fmt.Printf("  log: %s\n", logPath)
 		}

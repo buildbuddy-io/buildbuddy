@@ -15,7 +15,6 @@ go_library(
         "//tools/bbaccess/tunnel/credentials",
         "//tools/bbaccess/tunnel/daemon",
         "//tools/bbaccess/tunnel/install",
-        "//tools/bbaccess/tunnel/tundev",
         "//tools/bbaccess/tunnel/tunnelconfig",
         "//tools/bbaccess/update",
     ],
@@ -23,7 +22,10 @@ go_library(
 
 go_test(
     name = "tunnel_test",
-    srcs = ["background_test.go"],
+    srcs = [
+        "background_test.go",
+        "background_unix_test.go",
+    ],
     embed = [":tunnel"],
     deps = ["@com_github_stretchr_testify//require"],
 )

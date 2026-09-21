@@ -19,24 +19,23 @@ const (
 	pidFileName  = "tunnel.pid"
 	logFileName  = "tunnel.log"
 	startTimeout = 10 * time.Second
-	stopTimeout  = 10 * time.Second
+	stopGrace    = 5 * time.Second // after SIGTERM, before SIGKILL
 	logTailLines = 20
 )
 
 // StartDaemon starts the daemon in the background, if it's not already running.
 func StartDaemon(cfg *tunnelconfig.Config) error {
-	if daemonRunning(cfg.DNSListen) {
-		fmt.Printf("The tunnel daemon is already running%s.\n", pidNote())
+	if pid, held := runningPid(); held {
+		fmt.Printf("The tunnel daemon is already running%s.\n", pidNote(pid))
 		return nil
+	}
+	if daemonRunning(cfg.DNSListen) {
+		return fmt.Errorf("something is already answering on %s; stop it first", cfg.DNSListen)
 	}
 	if _, err := prepare(cfg); err != nil {
 		return err
 	}
 	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	pidPath, err := runtimePath(pidFileName)
 	if err != nil {
 		return err
 	}
@@ -66,73 +65,97 @@ func StartDaemon(cfg *tunnelconfig.Config) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting the tunnel daemon: %w", err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
-
-	poll := time.NewTicker(200 * time.Millisecond)
-	defer poll.Stop()
-	deadline := time.Now().Add(startTimeout)
-	for !daemonRunning(cfg.DNSListen) {
+	done := make(chan struct{})
+	var waitErr error
+	go func() { waitErr = cmd.Wait(); close(done) }()
+	exited := func() bool {
 		select {
-		case err := <-exited:
-			return fmt.Errorf("the tunnel daemon exited (%s); the end of %s:\n%s", exitStatus(err), logPath, logTail(logPath))
-		case <-poll.C:
-		}
-		if time.Now().After(deadline) {
-			cmd.Process.Kill()
-			return fmt.Errorf("the tunnel daemon did not start within %s; the end of %s:\n%s", startTimeout, logPath, logTail(logPath))
+		case <-done:
+			return true
+		default:
+			return false
 		}
 	}
-	pid := cmd.Process.Pid
-	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(pid)+"\n"), 0o644); err != nil {
-		return fmt.Errorf("the tunnel daemon is running (pid %d) but its pid file could not be written: %w", pid, err)
+
+	if !waitUntil(func() bool { return exited() || daemonRunning(cfg.DNSListen) }, startTimeout) {
+		msg := fmt.Sprintf("the tunnel daemon did not start within %s", startTimeout)
+		if err := stopProcess(cmd.Process, exited); err != nil {
+			msg += fmt.Sprintf(" and could not be stopped (pid %d): %s", cmd.Process.Pid, err)
+		}
+		return fmt.Errorf("%s; the end of %s:\n%s", msg, logPath, logTail(logPath))
 	}
-	fmt.Printf("Started the tunnel daemon (pid %d), logging to %s. Stop it with: bbaccess tunnel stop\n", pid, logPath)
+	if exited() {
+		return fmt.Errorf("the tunnel daemon exited (%s); the end of %s:\n%s", exitStatus(waitErr), logPath, logTail(logPath))
+	}
+	fmt.Printf("Started the tunnel daemon (pid %d), logging to %s. Stop it with: bbaccess tunnel stop\n", cmd.Process.Pid, logPath)
 	return nil
 }
 
-// StopDaemon stops a daemon started with StartDaemon.
+// StopDaemon stops the daemon.
 func StopDaemon(cfg *tunnelconfig.Config) error {
 	pidPath, err := runtimePath(pidFileName)
 	if err != nil {
 		return err
 	}
-	pid, err := readPid(pidPath)
-	if errors.Is(err, os.ErrNotExist) {
+	pid, held := runningPid()
+	if !held {
 		if daemonRunning(cfg.DNSListen) {
-			return fmt.Errorf("a tunnel daemon is answering on %s but was not started with bbaccess tunnel start; stop it where it runs", cfg.DNSListen)
+			return fmt.Errorf("something is answering on %s but no tunnel daemon holds %s; stop it where it runs", cfg.DNSListen, pidPath)
 		}
+		os.Remove(pidPath) // left behind by a daemon that died
 		fmt.Println("The tunnel daemon is not running.")
 		return nil
 	}
-	if err != nil {
-		return err
-	}
-	if !daemonRunning(cfg.DNSListen) {
-		os.Remove(pidPath)
-		fmt.Println("The tunnel daemon is not running.")
-		return nil
+	if pid == 0 {
+		return fmt.Errorf("the tunnel daemon is still starting; try again")
 	}
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		return err
 	}
-	if err := proc.Signal(syscall.SIGTERM); err != nil {
+	gone := func() bool { _, held := runningPid(); return !held }
+	if err := stopProcess(proc, gone); err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			return fmt.Errorf("the tunnel daemon (pid %d) belongs to another user; run this with sudo", pid)
 		}
 		return fmt.Errorf("stopping the tunnel daemon (pid %d): %w", pid, err)
 	}
-	deadline := time.Now().Add(stopTimeout)
-	for processAlive(pid) {
+	os.Remove(pidPath) // left behind if it had to be killed
+	fmt.Printf("Stopped the tunnel daemon (pid %d).\n", pid)
+	return nil
+}
+
+// stopProcess sends SIGTERM, then SIGKILL if gone does not report it ended
+// within the grace period.
+func stopProcess(p *os.Process, gone func() bool) error {
+	if err := p.Signal(syscall.SIGTERM); err != nil {
+		if errors.Is(err, os.ErrProcessDone) {
+			return nil
+		}
+		return err
+	}
+	if waitUntil(gone, stopGrace) {
+		return nil
+	}
+	if err := p.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	if waitUntil(gone, stopGrace) {
+		return nil
+	}
+	return errors.New("still running after SIGKILL")
+}
+
+// waitUntil polls cond until it holds or timeout passes.
+func waitUntil(cond func() bool, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for !cond() {
 		if time.Now().After(deadline) {
-			return fmt.Errorf("the tunnel daemon (pid %d) did not exit within %s", pid, stopTimeout)
+			return false
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	os.Remove(pidPath)
-	fmt.Printf("Stopped the tunnel daemon (pid %d).\n", pid)
-	return nil
+	return true
 }
 
 // runtimePath returns the path of one of the daemon's run-time files, which
@@ -143,6 +166,72 @@ func runtimePath(name string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, name), nil
+}
+
+var errLocked = errors.New("locked by another process")
+
+// pidFile is held locked by the daemon for as long as it runs.
+type pidFile struct {
+	f    *os.File
+	path string
+}
+
+// holdPidFile locks the pid file and records our pid in it.
+func holdPidFile(path string) (*pidFile, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := lockExclusive(f); err != nil {
+		f.Close()
+		if errors.Is(err, errLocked) {
+			pid, _ := lockedPid(path)
+			return nil, fmt.Errorf("a tunnel daemon is already running%s", pidNote(pid))
+		}
+		return nil, fmt.Errorf("locking %s: %w", path, err)
+	}
+	if err := f.Truncate(0); err != nil {
+		f.Close()
+		return nil, err
+	}
+	if _, err := f.WriteString(strconv.Itoa(os.Getpid()) + "\n"); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return &pidFile{f: f, path: path}, nil
+}
+
+// release removes the file, then drops the lock.
+func (p *pidFile) release() {
+	os.Remove(p.path)
+	p.f.Close()
+}
+
+// runningPid reports whether a daemon holds the pid file, and its pid (0 if
+// it has not written it yet).
+func runningPid() (int, bool) {
+	path, err := runtimePath(pidFileName)
+	if err != nil {
+		return 0, false
+	}
+	return lockedPid(path)
+}
+
+func lockedPid(path string) (int, bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, false
+	}
+	defer f.Close()
+	held, err := lockHeld(f)
+	if err != nil || !held {
+		return 0, false
+	}
+	pid, _ := readPid(path)
+	return pid, true
 }
 
 func readPid(path string) (int, error) {
@@ -158,14 +247,9 @@ func readPid(path string) (int, error) {
 	return pid, nil
 }
 
-// pidNote describes the recorded pid for a message, or is empty.
-func pidNote() string {
-	path, err := runtimePath(pidFileName)
-	if err != nil {
-		return ""
-	}
-	pid, err := readPid(path)
-	if err != nil {
+// pidNote describes a pid for a message, or is empty.
+func pidNote(pid int) string {
+	if pid <= 0 {
 		return ""
 	}
 	return fmt.Sprintf(" (pid %d)", pid)

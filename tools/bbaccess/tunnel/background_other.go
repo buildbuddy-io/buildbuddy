@@ -9,7 +9,6 @@ import (
 
 func detachAttr() *syscall.SysProcAttr { return nil }
 
-func processAlive(pid int) bool {
-	_, err := os.FindProcess(pid)
-	return err == nil
-}
+func lockExclusive(f *os.File) error { return nil }
+
+func lockHeld(f *os.File) (bool, error) { return false, nil }

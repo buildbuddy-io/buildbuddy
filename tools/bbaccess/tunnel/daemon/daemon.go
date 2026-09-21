@@ -59,12 +59,6 @@ func Run(cfg *tunnelconfig.Config, creds tunnelmgr.Credentials) error {
 	}
 	defer d.close()
 
-	d.dns = dnsserver.New(cfg, table, d.mgr)
-	if err := d.dns.Start(cfg.DNSListen); err != nil {
-		return err
-	}
-	log.Infof("DNS server listening on %s", cfg.DNSListen)
-
 	dev, err := tundev.Open(cfg.TUNName)
 	if err != nil {
 		return err
@@ -81,6 +75,14 @@ func Run(cfg *tunnelconfig.Config, creds tunnelmgr.Credentials) error {
 	}
 	d.intr.Start()
 	log.Infof("Intercepting %s on %s", cfg.FakeCIDR, name)
+
+	// The CLI uses DNS to check if the daemon is up and running so it starts ]
+	// last.
+	d.dns = dnsserver.New(cfg, table, d.mgr)
+	if err := d.dns.Start(cfg.DNSListen); err != nil {
+		return err
+	}
+	log.Infof("DNS server listening on %s", cfg.DNSListen)
 
 	logZones(cfg)
 	log.Infof("Ready. Tunnels are established on first use and torn down after %s idle.", idle)
