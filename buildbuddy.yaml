@@ -28,6 +28,7 @@ actions:
         branches:
           - "*"
     steps:
+      # vbd_test needs mount privileges; it runs in the GitHub arm64 workflow.
       # TODO: stop excluding copy_on_write_test once TestCOW_SparseData accounts
       # for the arm64 executors' filesystem allocation unit.
       - run: >-
@@ -37,6 +38,7 @@ actions:
           //enterprise/server/test/integration/remote_execution/...
           -//enterprise/server/remote_execution/containers/firecracker/...
           -//enterprise/server/test/integration/remote_execution:remote_execution_test
+          -//enterprise/server/remote_execution/vbd:vbd_test
           -//enterprise/server/remote_execution/copy_on_write:copy_on_write_test
           //app/util:shlex_test
     allow_concurrent_runs: false

@@ -21,8 +21,6 @@ go_test(
         # Test requires mount() privileges.
         "test.workload-isolation-type": "firecracker",
     },
-    # Like vfs_test: needs privileges only available on CI.
-    tags = ["docker"],
     target_compatible_with = [
         "@platforms//os:linux",
     ],
