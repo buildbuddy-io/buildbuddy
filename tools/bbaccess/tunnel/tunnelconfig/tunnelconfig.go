@@ -118,11 +118,21 @@ func Default() *Config {
 
 // Path returns the path of the daemon config file.
 func Path() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "tunnel.yaml"), nil
+}
+
+// Dir returns the directory of the config file, where the daemon also keeps
+// its run-time files.
+func Dir() (string, error) {
 	dir, err := UserConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "buildbuddy", "tunnel.yaml"), nil
+	return filepath.Join(dir, "buildbuddy"), nil
 }
 
 // UserConfigDir returns the config directory of the person running the command,
