@@ -265,6 +265,14 @@ def install_static_dependencies(workspace_name = "buildbuddy"):
         urls = ["https://storage.googleapis.com/buildbuddy-tools/binaries/linux/vmlinux-aarch64-v5.10-e6870fdc288621a5c9e3424bcd7ddee03816483e61846368de25e93f3db8e52e"],
         executable = True,
     )
+
+    # Mozilla root CA bundle, for actions running in images that do not ship
+    # CA certificates.
+    http_file(
+        name = "se_curl_cacert",
+        sha256 = "f66dff1bdf8f96060b8177976f8b7d9254bc89bc4db933d769f7384d28480bc9",
+        urls = ["https://curl.se/ca/cacert-2026-08-13.pem"],
+    )
     http_file(
         name = "io_buildbuddy_bb_cli-darwin-arm64",
         executable = True,

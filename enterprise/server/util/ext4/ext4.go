@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -38,6 +40,15 @@ const (
 
 	mke2fsPath  = "/sbin/mke2fs"
 	debugfsPath = "/sbin/debugfs"
+
+	// Filesystem UUID and directory hash seed used for reproducible images.
+	// mke2fs otherwise generates both randomly.
+	reproducibleUUID     = "3b3f1e6a-2a0c-4d1e-9d7e-6f0a7c1b2d3e"
+	reproducibleHashSeed = "9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+)
+
+var (
+	reproducibleImages = flag.Bool("executor.reproducible_ext4_images", false, "If true, fix the filesystem UUID and directory hash seed of ext4 images created from directories, skip copying extended attributes, and clamp all timestamps to the newest file mtime in the tree, so that a freshly extracted directory tree produces a byte-identical image on every run. Requires e2fsprogs 1.47.2 or later.", flag.Internal)
 )
 
 // EnsureDependencies verifies that all external binaries required for ext4
@@ -77,10 +88,31 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		"-r", "1",
 		"-b", fmt.Sprintf("%d", blockSize),
 		"-t", "ext4",
-		outputFile,
-		fmt.Sprintf("%dK", sizeBytes/iecKilobyte),
 	}
+	var env []string
+	if *reproducibleImages {
+		// Remove all sources of non-determinism:
+		// - Set filesystem UUID to a fixed value (-U)
+		// - Set a fixed directory hash seed (-E hash_seed)
+		// - Clamp extraction-time atimes and ctimes to the newest non-future
+		//   file mtime (SOURCE_DATE_EPOCH)
+		// - Skip xattrs, which may contain host-assigned security.selinux
+		//   labels on SELinux hosts (-E no_copy_xattrs)
+		//
+		// mke2fs only clamps timestamps that are newer than the epoch, so the
+		// epoch must not be in the future. Bazel install dirs deliberately set
+		// file mtimes ten years ahead, so those files are skipped when picking
+		// the newest mtime.
+		epoch, err := newestFileModTime(inputDir, time.Now())
+		if err != nil {
+			return status.WrapError(err, "find newest file mtime")
+		}
+		args = append(args, "-U", reproducibleUUID, "-E", "hash_seed="+reproducibleHashSeed+",no_copy_xattrs")
+		env = append(os.Environ(), fmt.Sprintf("SOURCE_DATE_EPOCH=%d", epoch))
+	}
+	args = append(args, outputFile, fmt.Sprintf("%dK", sizeBytes/iecKilobyte))
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Env = env
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
@@ -101,6 +133,29 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		}
 	}
 	return nil
+}
+
+// newestFileModTime returns the newest mtime (Unix seconds) among regular
+// files under dir that are not dated after now, or 0 if there are none.
+func newestFileModTime(dir string, now time.Time) (int64, error) {
+	var newest int64
+	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if mtime := info.ModTime().Unix(); mtime <= now.Unix() {
+			newest = max(newest, mtime)
+		}
+		return nil
+	})
+	return newest, err
 }
 
 // MakeEmptyImage creates a new empty ext4 disk image of the specified size
@@ -163,12 +218,21 @@ func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {
 		if err != nil {
 			return err
 		}
-		// stat() does not account for file or symlink metadata or for
-		// filesystem data structures like indirect blocks which consume disk
-		// space, so add 2 extra disk blocks for each entry as a rough way to
-		// account for this. Also note that stat() blocks are always 512 bytes
-		// regardless of the FS settings.
-		total += blockSize + info.Sys().(*syscall.Stat_t).Blocks*512
+		// Estimate from the entry type and size rather than from the blocks
+		// the host filesystem allocated, which vary with the filesystem type
+		// and allocation state and would make the image size depend on the
+		// host. Count a block per entry for its inode and metadata, plus the
+		// data blocks a regular file needs and a data block for each
+		// directory.
+		total += blockSize
+		switch {
+		case info.Mode().IsRegular():
+			// Round the file size up to whole blocks.
+			blocks := (info.Size() + blockSize - 1) / blockSize
+			total += blocks * blockSize
+		case info.IsDir():
+			total += blockSize
+		}
 		return nil
 	})
 	if err != nil {
