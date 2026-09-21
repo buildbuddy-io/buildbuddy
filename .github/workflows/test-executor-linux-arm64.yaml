@@ -28,9 +28,6 @@ jobs:
           # Hack to work around https://github.com/containers/podman/issues/9164
           find /dev/shm -name 'libpod*' | xargs -r sudo rm -rf
 
-      # These tests need mount privileges, which the BuildBuddy arm64 executors
-      # don't provide. Everything else in the arm64 suite runs in the
-      # "Test (linux_arm64)" action in buildbuddy.yaml.
       - name: Run tests
         run: |
           cat >> user.bazelrc <<'EOF'
