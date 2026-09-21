@@ -19,7 +19,6 @@ go_library(
         "//proto:storage_go_proto",
         "//server/interfaces",
         "//server/metrics",
-        "//server/util/alert",
         "//server/util/approxlru",
         "//server/util/disk",
         "//server/util/log",
@@ -39,7 +38,6 @@ go_test(
     srcs = ["usagetracker_test.go"],
     embed = [":usagetracker"],
     deps = [
-        "//enterprise/server/raft/sender",
         "//proto:raft_go_proto",
         "//proto:raft_service_go_proto",
         "//server/util/approxlru",

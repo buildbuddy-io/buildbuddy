@@ -385,22 +385,22 @@ func TestRunMultiKeyReturnsPartialResultsOnError(t *testing.T) {
 	succeeded := make(chan struct{})
 	// The callback may be retried.
 	var closeOnce sync.Once
-	rsps, err := s1.Sender().RunMultiKey(ctx, []*sender.KeyMeta{
+	rsps, err := s1.Sender().RunMultiKey(ctx, []*sender.KeyMeta[struct{}]{
 		{Key: goodKey},
 		{Key: badKey},
-	}, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+	}, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta[struct{}]) (string, error) {
 		if bytes.Equal(keys[0].Key, badKey) {
 			select {
 			case <-succeeded:
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return "", ctx.Err()
 			}
-			return nil, status.InternalError("range failed")
+			return "", status.InternalError("range failed")
 		}
 		closeOnce.Do(func() { close(succeeded) })
 		return "ok", nil
 	})
 	require.Error(t, err)
 	require.True(t, status.IsInternalError(err), "expected Internal error, got: %s", err)
-	require.Equal(t, []any{"ok"}, rsps)
+	require.Equal(t, []string{"ok"}, rsps)
 }
