@@ -51,7 +51,6 @@ go_test(
     tags = ["block-network"],
     deps = [
         "//enterprise/server/experiments",
-        "//enterprise/server/util/distributed_client",
         "//proto:reference_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

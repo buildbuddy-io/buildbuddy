@@ -454,10 +454,6 @@ const (
 	// operator-controlled zone files, so cardinality is bounded. Named
 	// "dns_zone" because ZoneLabel ("zone") is the availability zone of a node.
 	DNSZoneLabel = "dns_zone"
-
-	// The outcome of a verification operation. One of: ["success", "failure",
-	// "error"]
-	VerificationOutcomeLabel = "outcome"
 )
 
 // Label value constants
@@ -1169,24 +1165,6 @@ var (
 		Help:      "Total digest sizes of blobs fetched from distributed cache peers via GetWithMetadata, by whether the payload was received as a reference or as inline bytes, and by status code.",
 	}, []string{
 		DistributedCacheReadResponseType,
-		StatusHumanReadableLabel,
-	})
-
-	// DistributedCacheReferenceWriteVerificationCount counts verifications of
-	// references received alongside authoritative data bytes on distributed
-	// cache writes, by outcome: "success" (the dereferenced content hashed to
-	// the written digest), "failure" (the hashes differed), or "error"
-	// (verification could not be run or completed). The status label carries
-	// the gRPC code of the error that produced the outcome ("OK" on success).
-	// Verification is observe-only and never affects the write itself.
-	DistributedCacheReferenceWriteVerificationCount = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: bbNamespace,
-		Subsystem: "remote_cache",
-		Name:      "distributed_cache_reference_write_verification_count",
-		Help:      "Count of reference verifications on distributed cache writes, by group, outcome, and error code.",
-	}, []string{
-		GroupID,
-		VerificationOutcomeLabel,
 		StatusHumanReadableLabel,
 	})
 
