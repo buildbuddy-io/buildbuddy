@@ -144,6 +144,17 @@ minimal fix.
 After editing, summarize a concise root-cause diagnosis and description of the
 patch and why it fixes the failure. Use a max of 3 sentences.`
 
+const remoteVerificationInstructions = `
+
+Run Bazel build, test, and run commands used for reproduction or verification
+in a BuildBuddy remote runner: replace 'bazel <args>' with 'bb remote <args>'.
+Preserve the original Bazel arguments. If the build fails because of out-of-memory, retry once with
+'--runner_exec_properties=EstimatedMemory=XGB'. For a disk-exhaustion failure,
+retry once with '--runner_exec_properties=EstimatedFreeDiskBytes=XGB'. Put
+the runner flag immediately after 'bb remote'. Be conservative with resource requests; only
+request the minimum you think is needed for the build to complete. Only retry once, and
+report all invocation URLs if a retry was needed.`
+
 // HandleFix receives only the positional args; the agent package parses Flags
 // before calling it.
 func HandleFix(args []string) (int, error) {
@@ -300,12 +311,7 @@ func invocationRepoURL(ctx context.Context) (string, error) {
 // fixFailure hands the failing invocation's output to an agent and asks it to fix
 // the underlying cause. The agent edits the working tree in place.
 func fixFailure(ctx context.Context, failingOutput string, isTestFailure bool, originalCommand []string, originalInvocationID string, captureOutput bool) (string, error) {
-	instructions := deterministicVerificationInstructions
-	if !*verify {
-		instructions = noVerifyInstructions
-	} else if isTestFailure {
-		instructions = flakyVerificationInstructions
-	}
+	instructions := verificationInstructions(isTestFailure)
 	prompt := fmt.Sprintf(fixPrompt, originalCommand, originalInvocationID, instructions, tail(failingOutput, maxFailureOutputBytes))
 	var output bytes.Buffer
 	var agentOutput io.Writer
@@ -328,6 +334,18 @@ func fixFailure(ctx context.Context, failingOutput string, isTestFailure bool, o
 		return output.String(), fmt.Errorf("error running agent: %w", err)
 	}
 	return output.String(), nil
+}
+
+func verificationInstructions(isTestFailure bool) string {
+	if !*verify {
+		return noVerifyInstructions
+	}
+	instructions := deterministicVerificationInstructions
+	if isTestFailure {
+		instructions = flakyVerificationInstructions
+	}
+	instructions += remoteVerificationInstructions
+	return instructions
 }
 
 // failureLogs reads an invocation failure. It also reports whether the failure
