@@ -1175,17 +1175,30 @@ func TestWriteTimeout(t *testing.T) {
 	require.NoError(t, c.StartListening())
 	waitUntilServerIsAlive(localPeer)
 
-	// Use a size just large enough to flush through the double buffer to
-	// the underlying stream, where writes will block on the hanging server.
+	// A single gRPC send can queue the entire message without waiting for the
+	// server to read it. Send multiple chunks to exhaust the transport buffers
+	// and block on the hanging server's flow-control window.
 	testSize := int64(3 * readBufSizeBytes)
 	rn, buf := testdigest.RandomCASResourceBuf(t, testSize)
+	// Bound the write if the per-send timeout stops working, without allowing
+	// this outer deadline to satisfy the timeout assertion below.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	wc, err := c.RemoteWriter(ctx, hangingPeer, noHandoff, rn)
 	require.NoError(t, err)
 	defer wc.Close()
 
-	_, err = wc.Write(buf)
+	for len(buf) > 0 {
+		chunkSize := min(len(buf), 64*1024)
+		_, err = wc.Write(buf[:chunkSize])
+		if err != nil {
+			break
+		}
+		buf = buf[chunkSize:]
+	}
+	require.NoError(t, ctx.Err(), "write should fail before the outer deadline")
 	require.Error(t, err)
-	require.True(t, isCanceledOrDeadlineExceeded(err), "expected cancelled or deadline exceeded, got %s", err)
+	require.True(t, status.IsDeadlineExceededError(err), "expected deadline exceeded, got %s", err)
 }
 
 func TestCommitTimeout(t *testing.T) {
