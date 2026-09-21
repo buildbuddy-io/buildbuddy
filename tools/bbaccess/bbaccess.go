@@ -28,7 +28,7 @@ var (
 	servers    = flag.Slice("server", []string{}, "gRPC target(s) for the certificate server(s). Can be specified multiple times. Defaults to the servers built into this binary, if any (see `bbaccess version`).")
 	autoUpdate = flag.Bool("auto_update", true, "Check for a newer published bbaccess before running, and switch to it. "+update.NoUpdateEnv+"=1 disables the check regardless.")
 
-	runTunnel = flag.Bool("tunnel", false, "After fetching certificates, run the tunnel daemon in the foreground.")
+	runTunnel = flag.Bool("tunnel", false, "After fetching certificates, start the tunnel daemon in the background if it is not running.")
 )
 
 // defaultServers is a server list stamped in at link time, separated by
@@ -256,8 +256,7 @@ func fetchCerts() {
 		if cfg == nil {
 			log.Fatalf("Cannot start the tunnel daemon without its config.")
 		}
-		log.Infof("Starting the tunnel daemon. Interrupt to stop it.")
-		if err := tunnel.RunDaemon(cfg); err != nil {
+		if err := tunnel.StartDaemon(cfg); err != nil {
 			log.Fatalf("Tunnel daemon: %s", err)
 		}
 	}

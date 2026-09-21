@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
 	"slices"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/credentials"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/daemon"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/install"
+	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tundev"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tunnelconfig"
 )
 
@@ -21,7 +23,9 @@ Reach production infrastructure by its internal DNS names.
 
 Commands:
   install     One-time privileged setup (TUN device and split DNS). Run with sudo.
-  run         Run the daemon.
+  start       Start the daemon in the background. bbaccess --tunnel does this automatically.
+  stop        Stop the daemon.
+  run         Run the daemon in the foreground.
   status      Show the configuration, and how given names would be routed.
   uninstall   Undo install.
 `
@@ -49,6 +53,10 @@ func Handle(subcommand string, args []string) error {
 		daemon.PrintStatus(cfg, args)
 		PrintCredentialStatus(cfg)
 		return nil
+	case "start":
+		return StartDaemon(cfg)
+	case "stop":
+		return StopDaemon(cfg)
 	case "run":
 		return RunDaemon(cfg)
 	case "":
@@ -88,22 +96,34 @@ func useServerGateways(cfg *tunnelconfig.Config) {
 	}
 }
 
-// RunDaemon starts the daemon in the foreground and blocks.
+// RunDaemon runs the daemon in the foreground and blocks.
 func RunDaemon(cfg *tunnelconfig.Config) error {
+	if daemonRunning(cfg.DNSListen) {
+		return fmt.Errorf("a tunnel daemon is already running%s", pidNote())
+	}
+	store, err := prepare(cfg)
+	if err != nil {
+		return err
+	}
+	return daemon.Run(cfg, store)
+}
+
+// prepare does the preparation work before the daemon can start.
+func prepare(cfg *tunnelconfig.Config) (*credentials.Store, error) {
 	// bbaccess may have written new gateway files since the config was loaded.
 	if _, err := cfg.Refresh(); err != nil {
-		return err
+		return nil, err
 	}
 	if len(cfg.Zones) == 0 {
 		if err := cfg.LastError(); err != nil {
-			return fmt.Errorf("no zones: the relay gateways on disk could not be loaded (%s); run bbaccess to rewrite them", err)
+			return nil, fmt.Errorf("no zones: the relay gateways on disk could not be loaded (%s); run bbaccess to rewrite them", err)
 		}
-		return fmt.Errorf("no zones: run bbaccess to fetch the relay gateways from the certificate server")
+		return nil, fmt.Errorf("no zones: run bbaccess to fetch the relay gateways from the certificate server")
 	}
 
 	store, err := credentials.NewStore(cfg.CredentialDir)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// Fail fast on a missing or unusable credential, but per zone: a gateways
 	// file left behind by a server no longer in use must not keep every other
@@ -117,13 +137,16 @@ func RunDaemon(cfg *tunnelconfig.Config) error {
 		usable++
 	}
 	if usable == 0 {
-		return fmt.Errorf("no zone has a usable credential; run bbaccess to get one")
+		return nil, fmt.Errorf("no zone has a usable credential; run bbaccess to get one")
+	}
+	if tundev.RequiresRoot() && os.Geteuid() != 0 {
+		return nil, fmt.Errorf("the tunnel daemon needs root on %s; run this again with sudo", runtime.GOOS)
 	}
 	// Last, since it may ask for a password.
 	if err := install.EnsureInstalled(cfg); err != nil {
-		return err
+		return nil, err
 	}
-	return daemon.Run(cfg, store)
+	return store, nil
 }
 
 // EnsureCredentialKey returns the PEM public key of the tunnel keypair stored
@@ -204,9 +227,12 @@ func PrintCredentialStatus(cfg *tunnelconfig.Config) {
 
 	fmt.Printf("\nDaemon:\n")
 	if daemonRunning(cfg.DNSListen) {
-		fmt.Printf("  running (DNS listener answering on %s)\n", cfg.DNSListen)
+		fmt.Printf("  running%s (DNS listener answering on %s)\n", pidNote(), cfg.DNSListen)
+		if logPath, err := runtimePath(logFileName); err == nil && tunnelconfig.Exists(logPath) {
+			fmt.Printf("  log: %s\n", logPath)
+		}
 	} else {
-		fmt.Printf("  not running — start it with: bbaccess tunnel run\n")
+		fmt.Printf("  not running — start it with: bbaccess tunnel start\n")
 	}
 }
 
