@@ -9,10 +9,14 @@ package install
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -91,16 +95,7 @@ func installResolved(cfg *tunnelconfig.Config) error {
 		return err
 	}
 	domains := daemon.ResolverDomains(cfg)
-	routing := make([]string, 0, len(domains))
-	for _, d := range domains {
-		routing = append(routing, "~"+d)
-	}
-
-	content := fmt.Sprintf(`# Written by "bbaccess tunnel install". Remove with "bbaccess tunnel uninstall".
-[Resolve]
-DNS=%s:%s
-Domains=%s
-`, host, port, strings.Join(routing, " "))
+	content := resolvedDropInContent(host, port, domains)
 
 	if err := os.MkdirAll("/etc/systemd/resolved.conf.d", 0o755); err != nil {
 		return fmt.Errorf("creating /etc/systemd/resolved.conf.d: %w", err)
@@ -133,6 +128,94 @@ func Uninstall(cfg *tunnelconfig.Config) error {
 	run("systemctl", "restart", "systemd-resolved")
 	fmt.Printf("Removed %s, %s and %s\n", cfg.TUNName, deviceUnitPath, resolvedDropIn)
 	return nil
+}
+
+// resolvedDropInContent renders the systemd-resolved drop-in: each domain is
+// a routing domain (the "~" prefix), so only those queries come to the
+// daemon and everything else is untouched.
+func resolvedDropInContent(host, port string, domains []string) string {
+	routing := make([]string, 0, len(domains))
+	for _, d := range domains {
+		routing = append(routing, "~"+d)
+	}
+	return fmt.Sprintf(`# Written by "bbaccess tunnel install". Remove with "bbaccess tunnel uninstall".
+[Resolve]
+DNS=%s:%s
+Domains=%s
+`, host, port, strings.Join(routing, " "))
+}
+
+// sysClassNet is where the kernel describes network devices; a variable so
+// tests can point it at a fixture.
+var sysClassNet = "/sys/class/net"
+
+// deviceOwner returns the uid that owns a TUN device.
+func deviceOwner(dev string) (int, error) {
+	b, err := os.ReadFile(filepath.Join(sysClassNet, dev, "owner"))
+	if os.IsNotExist(err) {
+		return -1, nil
+	}
+	if err != nil {
+		return -1, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(b)))
+}
+
+// needed reports why the tunnel is not installed for the invoking user, or ""
+// if it is.
+func needed(cfg *tunnelconfig.Config) (string, error) {
+	uid := os.Getuid()
+	if name := os.Getenv("SUDO_USER"); os.Geteuid() == 0 && name != "" {
+		// Under sudo, the device must belong to the person, not to root.
+		u, err := user.Lookup(name)
+		if err != nil {
+			return "", err
+		}
+		uid, _ = strconv.Atoi(u.Uid)
+	}
+	prefix, err := netip.ParsePrefix(cfg.FakeCIDR)
+	if err != nil || !prefix.Addr().Is4() {
+		return "", fmt.Errorf("fake_cidr %q must be an IPv4 range", cfg.FakeCIDR)
+	}
+
+	ifc, err := net.InterfaceByName(cfg.TUNName)
+	if err != nil {
+		return fmt.Sprintf("the TUN device %s does not exist", cfg.TUNName), nil
+	}
+	owner, err := deviceOwner(cfg.TUNName)
+	if err != nil {
+		return "", err
+	}
+	if owner != uid {
+		return fmt.Sprintf("the TUN device %s is owned by uid %d, not by you", cfg.TUNName, owner), nil
+	}
+	want := netip.PrefixFrom(firstAddr(prefix), prefix.Bits()).String()
+	addrs, err := ifc.Addrs()
+	if err != nil {
+		return "", err
+	}
+	hasAddr := false
+	for _, a := range addrs {
+		if a.String() == want {
+			hasAddr = true
+		}
+	}
+	if !hasAddr {
+		return fmt.Sprintf("the TUN device %s does not carry %s", cfg.TUNName, want), nil
+	}
+	if _, err := os.Stat(deviceUnitPath); err != nil {
+		return "the device would not survive a reboot", nil
+	}
+
+	host, port, err := splitListen(cfg.DNSListen)
+	if err != nil {
+		return "", err
+	}
+	got, err := os.ReadFile(resolvedDropIn)
+	if err != nil || string(got) != resolvedDropInContent(host, port, daemon.ResolverDomains(cfg)) {
+		return fmt.Sprintf("DNS for %s is not routed to the daemon", tunnelconfig.Parent), nil
+	}
+	return "", nil
 }
 
 func run(name string, args ...string) {

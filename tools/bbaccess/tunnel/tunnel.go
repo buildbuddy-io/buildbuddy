@@ -119,6 +119,10 @@ func RunDaemon(cfg *tunnelconfig.Config) error {
 	if usable == 0 {
 		return fmt.Errorf("no zone has a usable credential; run bbaccess to get one")
 	}
+	// Last, since it may ask for a password.
+	if err := install.EnsureInstalled(cfg); err != nil {
+		return err
+	}
 	return daemon.Run(cfg, store)
 }
 
