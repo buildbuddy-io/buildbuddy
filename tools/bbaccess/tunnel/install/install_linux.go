@@ -1,8 +1,10 @@
+//go:build !android
+
 // Package install performs the privileged setup the tunnel needs:
-//   - creates the TUN device through which relayed traffic flows and adds routes
-//     to send the reserved relay range to the TUN device.
-//   - configures systemd DNS resolver to route the relayed suffix to the bbaccess
-//     DNS resolver
+//   - a systemd unit that creates the TUN device through which relayed traffic
+//     flows so that it survives reboots.
+//   - a systemd-resolved drop-in routing the relayed suffix to the bbaccess
+//     DNS resolver.
 package install
 
 import (
@@ -11,12 +13,17 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"text/template"
 
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/daemon"
 	"github.com/buildbuddy-io/buildbuddy/tools/bbaccess/tunnel/tunnelconfig"
 )
 
-const resolvedDropIn = "/etc/systemd/resolved.conf.d/buildbuddy-tunnel.conf"
+const (
+	resolvedDropIn = "/etc/systemd/resolved.conf.d/buildbuddy-tunnel.conf"
+	deviceUnitName = "bbaccess-tunnel-device.service"
+	deviceUnitPath = "/etc/systemd/system/" + deviceUnitName
+)
 
 func Install(cfg *tunnelconfig.Config) error {
 	if os.Geteuid() != 0 {
@@ -35,23 +42,31 @@ func Install(cfg *tunnelconfig.Config) error {
 	if !prefix.Addr().Is4() {
 		return fmt.Errorf("fake_cidr %q must be an IPv4 range", cfg.FakeCIDR)
 	}
-	addr := firstAddr(prefix)
+	addr := netip.PrefixFrom(firstAddr(prefix), prefix.Bits())
 
-	// Recreate the interface so a changed owner or CIDR takes effect.
-	run("ip", "link", "del", cfg.TUNName)
-
-	if out, err := exec.Command("ip", "tuntap", "add", "dev", cfg.TUNName, "mode", "tun", "user", user).CombinedOutput(); err != nil {
-		return fmt.Errorf("creating %s: %w: %s", cfg.TUNName, err, out)
+	// The unit needs an absolute path.
+	// ip lives in /sbin or /usr/sbin depending on the distribution.
+	ipPath, err := exec.LookPath("ip")
+	if err != nil {
+		return fmt.Errorf("finding the ip command: %w", err)
 	}
-	// The MTU is set here because changing it later needs CAP_NET_ADMIN, which
-	// the unprivileged daemon will not have.
-	if out, err := exec.Command("ip", "link", "set", "dev", cfg.TUNName, "mtu", "1400", "up").CombinedOutput(); err != nil {
-		return fmt.Errorf("bringing up %s: %w: %s", cfg.TUNName, err, out)
+	unit, err := deviceUnit(deviceUnitParams{IPCommand: ipPath, User: user, Dev: cfg.TUNName, Addr: addr, MTU: tunMTU})
+	if err != nil {
+		return fmt.Errorf("rendering %s: %w", deviceUnitName, err)
 	}
-	if out, err := exec.Command("ip", "addr", "add", fmt.Sprintf("%s/%d", addr, prefix.Bits()), "dev", cfg.TUNName).CombinedOutput(); err != nil {
-		return fmt.Errorf("assigning %s to %s: %w: %s", addr, cfg.TUNName, err, out)
+	if err := os.WriteFile(deviceUnitPath, []byte(unit), 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", deviceUnitPath, err)
 	}
-	fmt.Printf("Created %s (owner %s), routing %s\n", cfg.TUNName, user, cfg.FakeCIDR)
+	for _, args := range [][]string{
+		{"daemon-reload"},
+		{"enable", deviceUnitName},
+		{"restart", deviceUnitName},
+	} {
+		if out, err := exec.Command("systemctl", args...).CombinedOutput(); err != nil {
+			return fmt.Errorf("systemctl %s: %w: %s", strings.Join(args, " "), err, out)
+		}
+	}
+	fmt.Printf("Created %s (owner %s), routing %s; %s recreates it at boot\n", cfg.TUNName, user, cfg.FakeCIDR, deviceUnitName)
 
 	if err := installResolved(cfg); err != nil {
 		return err
@@ -99,17 +114,60 @@ func Uninstall(cfg *tunnelconfig.Config) error {
 	if os.Geteuid() != 0 {
 		return fmt.Errorf("this must run as root: sudo bbaccess tunnel uninstall")
 	}
-	run("ip", "link", "del", cfg.TUNName)
+	run("systemctl", "disable", "--now", deviceUnitName)
+	if err := os.Remove(deviceUnitPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing %s: %w", deviceUnitPath, err)
+	}
+	run("systemctl", "daemon-reload")
 	if err := os.Remove(resolvedDropIn); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("removing %s: %w", resolvedDropIn, err)
 	}
 	run("systemctl", "restart", "systemd-resolved")
-	fmt.Printf("Removed %s and %s\n", cfg.TUNName, resolvedDropIn)
+	fmt.Printf("Removed %s, %s and %s\n", cfg.TUNName, deviceUnitPath, resolvedDropIn)
 	return nil
 }
 
 func run(name string, args ...string) {
 	exec.Command(name, args...).Run()
+}
+
+const tunMTU = 1400
+
+// deviceUnitParams fills the systemd unit that creates the TUN device.
+type deviceUnitParams struct {
+	IPCommand string       // absolute path of the ip command
+	User      string       // owner of the device
+	Dev       string       // interface name
+	Addr      netip.Prefix // the device's address
+	MTU       int
+}
+
+// deviceUnitTemplate is the template for the systemd unit that sets up the
+// tun devices.
+var deviceUnitTemplate = template.Must(template.New("unit").Parse(`# Written by "bbaccess tunnel install". Remove with "bbaccess tunnel uninstall".
+[Unit]
+Description=bbaccess tunnel: TUN device {{.Dev}} for the placeholder range
+Before=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-{{.IPCommand}} link del {{.Dev}}
+ExecStart={{.IPCommand}} tuntap add dev {{.Dev}} mode tun user {{.User}}
+ExecStart={{.IPCommand}} link set dev {{.Dev}} mtu {{.MTU}} up
+ExecStart={{.IPCommand}} addr add {{.Addr}} dev {{.Dev}}
+ExecStop={{.IPCommand}} link del {{.Dev}}
+
+[Install]
+WantedBy=multi-user.target
+`))
+
+func deviceUnit(p deviceUnitParams) (string, error) {
+	var b strings.Builder
+	if err := deviceUnitTemplate.Execute(&b, p); err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }
 
 func firstAddr(prefix netip.Prefix) netip.Addr {
