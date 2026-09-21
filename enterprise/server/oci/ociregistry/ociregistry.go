@@ -144,9 +144,6 @@ func New(env environment.Env) (*registry, error) {
 	return r, nil
 }
 
-// checkCacheAPIKey verifies at startup that the configured registry API key
-// authenticates, so that a misconfigured key fails the release rather than
-// failing every registry request.
 func (r *registry) checkCacheAPIKey(ctx context.Context) error {
 	if *cacheAPIKey == "" {
 		return nil
