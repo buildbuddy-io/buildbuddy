@@ -159,8 +159,8 @@ common:tests-macos --test_tag_filters=-performance,-webdriver,-docker,-bare
 # Windows CI runs locally and excludes benchmarks.
 common:tests-windows --test_tag_filters=-performance
 
-# Linux arm64 CI excludes benchmarks and bare tests.
-common:tests-linux-arm64 --test_tag_filters=-performance,-bare
+# Linux arm64 CI excludes benchmarks, bare tests, and Docker tests.
+common:tests-linux-arm64 --test_tag_filters=-performance,-bare,-docker
 
 common:tests-bare --test_tag_filters=+bare
 common:tests-bare --build_tag_filters=+bare
