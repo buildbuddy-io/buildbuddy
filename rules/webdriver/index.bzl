@@ -73,6 +73,7 @@ def go_web_test_suite(
     web_test_suite(
         name = name,
         args = args,
+        browser_overrides = browser_overrides,
         browsers = browsers,
         config = config,
         data = web_test_data,
