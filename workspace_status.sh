@@ -44,8 +44,11 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # Note: the "STABLE_" suffix causes these to be part of the "stable" workspace
 # status, which may trigger rebuilds of certain targets if these values change
 # and you're building with the "--stamp" flag.
-latest_version_tag=$(./tools/latest_version_tag.sh)
-echo "STABLE_VERSION_TAG $latest_version_tag"
+# Release builds run at a commit that release.py has tagged with its version
+# (e.g. "v2.310.0"). Everything else is a dev build. The version itself is
+# chosen by the release branch's VERSION file in buildbuddy-internal.
+version_tag=$(git describe --tags --exact-match --match 'v*' HEAD 2>/dev/null || echo dev)
+echo "STABLE_VERSION_TAG $version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
 
 latest_cli_version_tag=$(./tools/latest_cli_version_tag.sh)
