@@ -25,10 +25,9 @@ TEST_IMAGES = {
     "workflows": (WORKFLOWS_IMAGE, ["x86_64"]),
 }
 
-# This execution image is also used by TestFirecrackerRunWithDockerV28OverUDS
-# and includes tar and mke2fs. Pin it independently of the test image references
-# so updating a test image does not rebuild every ext4 image.
-_BUILDER_IMAGE = "docker://gcr.io/flame-public/rbe-ubuntu24-04@sha256:f7db0d4791247f032fdb4451b7c3ba90e567923a341cc6dc43abfc283436791a"
+# To get deterministic EXT4 images, use e2fsprogs >=1.47.2 (via Ubuntu >=26.04),
+# which supports clamping timestamps using the SOURCE_DATE_EPOCH env var.
+_BUILDER_IMAGE = "docker://mirror.gcr.io/library/ubuntu@sha256:da6fc2be547864451aa253836dd926da33623312df4a9a243e35dc877c378a78"
 
 def _ext4_image(name, image, arch):
     if "@sha256:" not in image:
@@ -36,8 +35,20 @@ def _ext4_image(name, image, arch):
     native.genrule(
         name = name,
         testonly = True,
+        srcs = ["@se_curl_cacert//file"],
         outs = [name + ".ext4"],
-        cmd = "$(location //enterprise/server/remote_execution/containers/firecracker/testdata/generate_ext4_image) --executor.exclude_root_device_nodes=true --image '%s' --arch %s --output '$@'" % (image, arch),
+        cmd = """
+            # Provision certs manually since the stock Ubuntu 26.04 image
+            # doesn't have certs
+            SSL_CERT_FILE=$(location @se_curl_cacert//file) \\
+            $(location //enterprise/server/remote_execution/containers/firecracker/testdata/generate_ext4_image) \\
+                --app.log_level=warn \\
+                --executor.exclude_root_device_nodes=true \\
+                --executor.reproducible_ext4_images=true \\
+                --image '%s' \\
+                --arch %s \\
+                --output '$@'
+        """ % (image, arch),
         exec_compatible_with = ["@platforms//os:linux"],
         exec_properties = {
             "container-image": _BUILDER_IMAGE,

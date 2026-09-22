@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
@@ -38,6 +39,20 @@ const (
 
 	mke2fsPath  = "/sbin/mke2fs"
 	debugfsPath = "/sbin/debugfs"
+
+	// Filesystem UUID and directory hash seed used for reproducible images.
+	// mke2fs otherwise generates both randomly.
+	reproducibleUUID     = "3b3f1e6a-2a0c-4d1e-9d7e-6f0a7c1b2d3e"
+	reproducibleHashSeed = "9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+
+	// SOURCE_DATE_EPOCH for reproducible images: 2026-01-01T00:00:00Z. mke2fs
+	// clamps every timestamp newer than this to it, so the value only needs
+	// to be in the past and never needs updating.
+	reproducibleImageEpoch = 1767225600
+)
+
+var (
+	reproducibleImages = flag.Bool("executor.reproducible_ext4_images", false, "If true, fix the filesystem UUID and directory hash seed of ext4 images created from directories, skip copying extended attributes, and clamp all timestamps newer than 2026-01-01 to that date, so that a freshly extracted directory tree produces a byte-identical image on every run. Files newer than that date lose their mtime, which breaks pre-warmed Bazel install bases. Requires e2fsprogs 1.47.2 or later.", flag.Internal)
 )
 
 // EnsureDependencies verifies that all external binaries required for ext4
@@ -77,10 +92,22 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		"-r", "1",
 		"-b", fmt.Sprintf("%d", blockSize),
 		"-t", "ext4",
-		outputFile,
-		fmt.Sprintf("%dK", sizeBytes/iecKilobyte),
 	}
+	var env []string
+	if *reproducibleImages {
+		// Remove all sources of non-determinism:
+		// - Set filesystem UUID to a fixed value (-U)
+		// - Set a fixed directory hash seed (-E hash_seed)
+		// - Clamp all timestamps newer than a fixed date, which includes the
+		//   extraction-time atimes and ctimes, to that date (SOURCE_DATE_EPOCH)
+		// - Skip xattrs, which may contain host-assigned security.selinux
+		//   labels on SELinux hosts (-E no_copy_xattrs)
+		args = append(args, "-U", reproducibleUUID, "-E", "hash_seed="+reproducibleHashSeed+",no_copy_xattrs")
+		env = append(os.Environ(), fmt.Sprintf("SOURCE_DATE_EPOCH=%d", reproducibleImageEpoch))
+	}
+	args = append(args, outputFile, fmt.Sprintf("%dK", sizeBytes/iecKilobyte))
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Env = env
 	if out, err := cmd.CombinedOutput(); err != nil {
 		log.Errorf("Error running %q: %s %s", cmd.String(), err, out)
 		return status.InternalErrorf("%s: %s", err, out)
@@ -163,12 +190,21 @@ func DiskSizeBytes(ctx context.Context, inputDir string) (int64, error) {
 		if err != nil {
 			return err
 		}
-		// stat() does not account for file or symlink metadata or for
-		// filesystem data structures like indirect blocks which consume disk
-		// space, so add 2 extra disk blocks for each entry as a rough way to
-		// account for this. Also note that stat() blocks are always 512 bytes
-		// regardless of the FS settings.
-		total += blockSize + info.Sys().(*syscall.Stat_t).Blocks*512
+		// Estimate from the entry type and size rather than from the blocks
+		// the host filesystem allocated, which vary with the filesystem type
+		// and allocation state and would make the image size depend on the
+		// host. Count a block per entry for its inode and metadata, plus the
+		// data blocks a regular file needs and a data block for each
+		// directory.
+		total += blockSize
+		switch {
+		case info.Mode().IsRegular():
+			// Round the file size up to whole blocks.
+			blocks := (info.Size() + blockSize - 1) / blockSize
+			total += blocks * blockSize
+		case info.IsDir():
+			total += blockSize
+		}
 		return nil
 	})
 	if err != nil {

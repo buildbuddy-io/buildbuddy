@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/oci/ociconv"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/oci"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
+	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 
 	rgpb "github.com/buildbuddy-io/buildbuddy/proto/registry"
 )
@@ -24,8 +24,11 @@ var (
 
 func main() {
 	flag.Parse()
+	if err := log.Configure(); err != nil {
+		log.Fatalf("configure logging: %s", err)
+	}
 	if err := run(context.Background()); err != nil {
-		log.Fatal(err)
+		log.Fatalf("%s", err)
 	}
 }
 
