@@ -24,6 +24,6 @@ go_binary(
 genrule(
     name = "cdc_json",
     outs = ["cdc.json"],
-    cmd = "$(location :cdc) > $@",
+    cmd = "$(execpath :cdc) > $@",
     tools = [":cdc"],
 )

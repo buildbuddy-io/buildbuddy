@@ -22,6 +22,6 @@ go_binary(
 genrule(
     name = "oci_image_fetches_json",
     outs = ["oci-image-fetches.json"],
-    cmd = "$(location :oci_image_fetches) > $@",
+    cmd = "$(execpath :oci_image_fetches) > $@",
     tools = [":oci_image_fetches"],
 )

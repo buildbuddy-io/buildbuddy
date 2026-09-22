@@ -24,6 +24,6 @@ go_binary(
 genrule(
     name = "nameserver_json",
     outs = ["nameserver.json"],
-    cmd = "$(location :nameserver) > $@",
+    cmd = "$(execpath :nameserver) > $@",
     tools = [":nameserver"],
 )

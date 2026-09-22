@@ -23,6 +23,6 @@ go_binary(
 genrule(
     name = "cache_proxy_json",
     outs = ["cache-proxy.json"],
-    cmd = "$(location :cache_proxy) > $@",
+    cmd = "$(execpath :cache_proxy) > $@",
     tools = [":cache_proxy"],
 )
