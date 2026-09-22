@@ -568,7 +568,7 @@ func mirrorToCache(
 	//
 	// TODO: Support cache uploads with unknown digest length, so that we can
 	// pipe directly from the HTTP response to the cache.
-	tmpFilePath, err := tempCopy(rsp.Body)
+	tmpFilePath, err := copyToTempFile(rsp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +643,10 @@ func mirrorToCache(
 	return blobDigest, nil
 }
 
-func tempCopy(r io.Reader) (path string, err error) {
+// copyToTempFile copies r into a new scratch file, closes it, and returns its path.
+// The caller must remove the file. On failure the partial file is closed and
+// removed, and the returned path is empty.
+func copyToTempFile(r io.Reader) (path string, err error) {
 	f, err := scratchspace.CreateTemp("remote-asset-fetch-*")
 	if err != nil {
 		return "", status.UnavailableErrorf("failed to create temp file for download: %s", err)
