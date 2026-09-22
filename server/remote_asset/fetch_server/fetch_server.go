@@ -278,23 +278,12 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if err != nil {
 		return nil, err
 	}
-	for _, checksum := range opts.checksums {
-		checksumFunc := checksum.digestFunction
-		blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, checksum.hash)
-		// If the digestFunc is supplied and differ from the checksum sri,
-		// after looking up the cached blob using checksum sri, re-upload
-		// that blob using the requested digestFunc.
-		if blobDigest != nil && checksumFunc != opts.storageDigestFunction {
-			blobDigest = p.rewriteToCache(ctx, blobDigest, req.GetInstanceName(), checksumFunc, opts.storageDigestFunction)
-		}
-
-		if blobDigest != nil {
-			return &rapb.FetchBlobResponse{
-				Status:         &statuspb.Status{Code: int32(gcodes.OK)},
-				BlobDigest:     blobDigest,
-				DigestFunction: opts.storageDigestFunction,
-			}, nil
-		}
+	if blobDigest := p.findCachedBlob(ctx, req.GetInstanceName(), opts.storageDigestFunction, opts.checksums); blobDigest != nil {
+		return &rapb.FetchBlobResponse{
+			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
+			BlobDigest:     blobDigest,
+			DigestFunction: opts.storageDigestFunction,
+		}, nil
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
@@ -379,7 +368,22 @@ func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirecto
 	return nil, status.UnimplementedError("FetchDirectory is not yet implemented")
 }
 
-func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Digest, instanceName string, fromFunc, toFunc repb.DigestFunction_Value) *repb.Digest {
+// findCachedBlob tries each checksum in order. Lookup, renewal, and conversion
+// failures are treated as cache misses so another checksum or origin can be tried.
+func (p *FetchServer) findCachedBlob(ctx context.Context, instanceName string, storageFunc repb.DigestFunction_Value, checksums []checksum) *repb.Digest {
+	for _, checksum := range checksums {
+		blobDigest := p.lookupAndRenewBlob(ctx, instanceName, checksum.digestFunction, checksum.hash)
+		if blobDigest != nil && checksum.digestFunction != storageFunc {
+			blobDigest = p.copyCachedBlobWithDigestFunction(ctx, blobDigest, instanceName, checksum.digestFunction, storageFunc)
+		}
+		if blobDigest != nil {
+			return blobDigest
+		}
+	}
+	return nil
+}
+
+func (p *FetchServer) copyCachedBlobWithDigestFunction(ctx context.Context, blobDigest *repb.Digest, instanceName string, fromFunc, toFunc repb.DigestFunction_Value) *repb.Digest {
 	tmpFile, err := scratchspace.CreateTemp("remote-asset-fetch-*")
 	if err != nil {
 		log.CtxErrorf(ctx, "failed to create temp file: %s", err)
@@ -411,7 +415,7 @@ func (p *FetchServer) rewriteToCache(ctx context.Context, blobDigest *repb.Diges
 	return storageDigest
 }
 
-func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, checksumFunc repb.DigestFunction_Value, expectedChecksum string) *repb.Digest {
+func (p *FetchServer) lookupAndRenewBlob(ctx context.Context, instanceName string, checksumFunc repb.DigestFunction_Value, expectedChecksum string) *repb.Digest {
 	blobDigest := &repb.Digest{
 		Hash: expectedChecksum,
 		// The digest size is unknown since the client only sends up
