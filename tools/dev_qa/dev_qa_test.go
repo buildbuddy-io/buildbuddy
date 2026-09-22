@@ -164,6 +164,7 @@ func TestDevQA(t *testing.T) {
 			"--remote_runner="+*remoteRunner,
 			"--env=GIT_REPO_DEFAULT_BRANCH=master",
 			"test", "//server/util/lru/...",
+			"--nocache_test_results",
 			"--bes_results_url=https://"+*qaAppEndpoint+"/invocation/",
 			"--bes_backend=grpcs://"+*qaGRPCEndpoint,
 			"--remote_cache=grpcs://"+*qaGRPCEndpoint,
