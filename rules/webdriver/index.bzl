@@ -11,6 +11,8 @@
 # We can't use go_web_test_suite from rules_webtesting because it doesn't
 # propagate exec_properties to the underlying web_test target.
 
+"""WebDriver test-suite macro with BuildBuddy execution defaults."""
+
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 load("@rules_webtesting//web:web.bzl", "web_test_suite")
 
@@ -35,6 +37,28 @@ def go_web_test_suite(
         wrapped_test_tags = DEFAULT_WRAPPED_TEST_TAGS,
         exec_properties = {},
         **kwargs):
+    """Defines a Go WebDriver test and its browser test suite.
+
+    Args:
+      name: Name of the web test suite.
+      shard_count: Number of test shards; required.
+      browsers: Browser targets used by the suite.
+      args: Command-line arguments passed to the tests.
+      browser_overrides: Per-browser web_test_suite attribute overrides.
+      config: Web test configuration target.
+      flaky: Whether the tests are flaky.
+      local: Whether the tests must run locally.
+      size: Bazel test size.
+      tags: Tags applied to the web test suite.
+      test_suite_tags: Tags applied to the generated native test suite.
+      timeout: Bazel test timeout.
+      visibility: Visibility of the web test suite.
+      web_test_data: Runtime data for the web test suite.
+      wrapped_test_tags: Tags applied to the wrapped Go test.
+      exec_properties: Execution properties applied to the tests.
+      **kwargs: Additional arguments passed to the wrapped Go test.
+    """
+
     # TODO(bduffany): Generate a test to automatically enforce `shard_count == number of tests`
     if not shard_count:
         fail("shard_count should be set to match the number of tests to ensure that tests are run in parallel.")

@@ -1,3 +1,5 @@
+"""Rules for exposing tools from the configured Go SDK."""
+
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@io_bazel_rules_go//go:def.bzl", "go_context")
 load(
