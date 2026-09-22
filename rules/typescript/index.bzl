@@ -76,7 +76,7 @@ def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
 
     jasmine_test(
         name = name,
-        size = "small",
+        size = size,
         args = ["*.test.js"],
         chdir = native.package_name(),
         data = [":%s_commonjs.test.js" % name],

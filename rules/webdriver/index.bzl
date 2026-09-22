@@ -23,7 +23,6 @@ def go_web_test_suite(
         shard_count = None,
         browsers = None,
         args = None,
-        browser_overrides = None,
         config = None,
         flaky = None,
         local = None,
