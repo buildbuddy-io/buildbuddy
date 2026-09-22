@@ -112,27 +112,45 @@ func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []s
 		return fmt.Errorf("run bb fix: %w", err)
 	}
 	// In diff mode, fail if the diff is non-empty.
+	var fixErr error
 	if !fix && stdoutCounter.Count() > 0 {
-		return fmt.Errorf("bb fix found lint errors")
+		fixErr = fmt.Errorf("bb fix found lint errors")
 	}
-	return runBuildifier(ctx, stdout, stderr, fix)
+	return errors.Join(fixErr, runBuildifier(ctx, stdout, stderr, fix, files))
 }
 
-func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool) error {
-	if !fix {
-		return runBuildifierPass(ctx, stdout, stderr, "check", "warn")
+func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool, files []string) error {
+	files = filterToBuildifierFiles(files)
+	if len(files) == 0 {
+		return nil
 	}
-	fixErr := runBuildifierPass(ctx, stdout, stderr, "fix", "fix")
-	checkErr := runBuildifierPass(ctx, stdout, stderr, "check", "warn")
+	if !fix {
+		return runBuildifierPass(ctx, stdout, stderr, "check", "warn", files)
+	}
+	fixErr := runBuildifierPass(ctx, stdout, stderr, "fix", "fix", files)
+	checkErr := runBuildifierPass(ctx, stdout, stderr, "check", "warn", files)
 	return errors.Join(fixErr, checkErr)
 }
 
-func runBuildifierPass(ctx context.Context, stdout, stderr io.Writer, mode, lintMode string) error {
+func filterToBuildifierFiles(files []string) []string {
+	var filtered []string
+	for _, file := range files {
+		name := filepath.Base(file)
+		if name == "BUILD" || strings.HasPrefix(name, "WORKSPACE") ||
+			slices.Contains([]string{".bzl", ".bazel", ".star"}, filepath.Ext(name)) {
+			filtered = append(filtered, file)
+		}
+	}
+	return filtered
+}
+
+func runBuildifierPass(ctx context.Context, stdout, stderr io.Writer, mode, lintMode string, files []string) error {
 	cmd, err := getRunfileToolCommand(ctx, buildifierRlocationpath)
 	if err != nil {
 		return fmt.Errorf("get buildifier command: %w", err)
 	}
-	cmd.Args = append(cmd.Args, "-mode="+mode, "-lint="+lintMode, "-r", ".")
+	cmd.Args = append(cmd.Args, "-mode="+mode, "-lint="+lintMode)
+	cmd.Args = append(cmd.Args, files...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
