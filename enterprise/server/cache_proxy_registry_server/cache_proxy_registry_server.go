@@ -5,9 +5,13 @@
 // REGISTER_CACHE_PROXY capability) and open a client-streaming RPC
 // (RegisterAndStreamHeartbeat). The server persists each heartbeat as a
 // RegisteredCacheProxy entry in a per-group Redis hash, along with an ACL
-// scoped to that group. While the stream is open, credentials are
-// periodically re-validated so a revoked or downgraded API key terminates
-// the stream rather than continuing to write registrations.
+// scoped to that group. Registrations live in the remote execution Redis
+// (the same one executor registrations use) so that, in multi-cluster
+// deployments where each cluster has its own default Redis, proxies
+// registering with any cluster are visible from the apps serving the UI.
+// While the stream is open, credentials are periodically re-validated so a
+// revoked or downgraded API key terminates the stream rather than
+// continuing to write registrations.
 //
 // The companion GetCacheProxies RPC reads that hash, drops entries that
 // haven't checked in for a while, applies ACL filtering, and returns the
@@ -78,7 +82,7 @@ type CacheProxyRegistryServer struct {
 }
 
 func Register(env *real_environment.RealEnv) error {
-	if env.GetDefaultRedisClient() == nil {
+	if env.GetRemoteExecutionRedisClient() == nil {
 		return nil
 	}
 	triggers, err := upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
@@ -98,7 +102,7 @@ func upgradeTriggersFromFlags() (map[uppb.Prompt_Urgency]upgrade.Trigger, error)
 }
 
 func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector) (*CacheProxyRegistryServer, error) {
-	rdb := env.GetDefaultRedisClient()
+	rdb := env.GetRemoteExecutionRedisClient()
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for cache proxy registration")
 	}
