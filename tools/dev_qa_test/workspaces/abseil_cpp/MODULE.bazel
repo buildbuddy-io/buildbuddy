@@ -1,0 +1,4 @@
+# Placeholder MODULE.bazel for bazel_integration_test framework
+# The actual MODULE.bazel will be downloaded from the abseil-cpp tarball
+# and placed in a subdirectory by the test runner.
+module(name = "abseil_cpp_qa_test_placeholder")
