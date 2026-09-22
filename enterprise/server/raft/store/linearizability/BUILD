@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 # Linearizability tests for the metadata server. Tagged "manual" so
 # they only run when explicitly targeted.
 #
@@ -42,5 +44,3 @@ go_test(
         "@com_github_stretchr_testify//require",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])

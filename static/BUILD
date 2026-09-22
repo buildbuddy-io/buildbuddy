@@ -4,11 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 filegroup(
     name = "static",
-    srcs = glob([
-        "favicon/**",
-        "image/**",
+    srcs = [
         "favicon.ico",
         "index.html",
+    ] + glob([
+        "favicon/**",
+        "image/**",
     ]),
 )
 
