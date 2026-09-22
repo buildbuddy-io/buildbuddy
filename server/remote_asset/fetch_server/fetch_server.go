@@ -338,6 +338,10 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 
 	log.CtxInfof(ctx, "Fetch: returning NotFound after trying %d URIs", len(req.GetUris()))
+	return fetchFailureResponse(lastFetchUri, lastFetchErr), nil
+}
+
+func fetchFailureResponse(uri string, fetchErr error) *rapb.FetchBlobResponse {
 	return &rapb.FetchBlobResponse{
 		Status: &statuspb.Status{
 			// Note: returning NotFound here because the other error codes in
@@ -346,9 +350,9 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			// make sense in some cases, but it's unclear at the moment whether
 			// there is any benefit to using those.)
 			Code:    int32(gcodes.NotFound),
-			Message: status.Message(lastFetchErr),
+			Message: status.Message(fetchErr),
 		},
-		Uri: lastFetchUri,
+		Uri: uri,
 		// Workaround for a bug in Bazel 8 and earlier: Bazel doesn't check
 		// the status code and continues to look up the digest in the cache
 		// even in the case of an error. The lookup for the empty Digest
@@ -361,7 +365,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			Hash:      strings.Repeat("1", 64),
 			SizeBytes: 1,
 		},
-	}, nil
+	}
 }
 
 func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirectoryRequest) (*rapb.FetchDirectoryResponse, error) {
