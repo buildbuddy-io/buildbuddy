@@ -312,11 +312,17 @@ func TestFetchBlobWithCache(t *testing.T) {
 }
 
 func TestFetchBlobMismatch(t *testing.T) {
+	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name                string
 		checksumQualifier   string
 		requestedDigestFunc repb.DigestFunction_Value
 		expectedDigestFunc  repb.DigestFunction_Value
+		chunked             bool
+		knownLength         bool
+		wantResponseCode    gcodes.Code
+		wantMessage         string
 	}{
 		{
 			name:                "default_digest_func__sri_sha1",
@@ -372,15 +378,32 @@ func TestFetchBlobMismatch(t *testing.T) {
 			requestedDigestFunc: repb.DigestFunction_BLAKE3,
 			expectedDigestFunc:  repb.DigestFunction_BLAKE3,
 		},
+		{
+			name:                "wrong_sha256_known_length_direct",
+			checksumQualifier:   checksumQualifierFromContent(t, wrongSHA256.GetHash(), repb.DigestFunction_SHA256),
+			requestedDigestFunc: repb.DigestFunction_SHA256,
+			knownLength:         true,
+			wantResponseCode:    gcodes.NotFound,
+			wantMessage:         "failed to upload",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "storage.tempdir", t.TempDir())
 			ctx := context.Background()
 			te := testenv.GetTestEnv(t)
 			require.NoError(t, scratchspace.Init())
 			clientConn := runFetchServer(ctx, t, te)
 			fetchClient := rapb.NewFetchClient(clientConn)
 
+			var requests atomic.Int64
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if tc.knownLength {
+					w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+				}
+				if tc.chunked {
+					w.(http.Flusher).Flush()
+				}
 				fmt.Fprint(w, content)
 			}))
 			defer ts.Close()
@@ -399,9 +422,23 @@ func TestFetchBlobMismatch(t *testing.T) {
 			}
 			resp, err := fetchClient.FetchBlob(ctx, request)
 
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			require.NotNil(t, resp)
-			assert.Equal(t, int32(0), resp.GetStatus().Code)
+			assert.Equal(t, int32(tc.wantResponseCode), resp.GetStatus().Code)
+			assert.Equal(t, int64(1), requests.Load())
+			if tc.wantResponseCode != gcodes.OK {
+				assert.Contains(t, resp.GetStatus().GetMessage(), tc.wantMessage)
+				if tc.knownLength {
+					cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+					require.NoError(t, err)
+					claimedDigest := &repb.Digest{Hash: wrongSHA256.GetHash(), SizeBytes: int64(len(content))}
+					rn := digest.NewCASResourceName(claimedDigest, "", repb.DigestFunction_SHA256)
+					present, err := te.GetCache().Contains(cacheCtx, rn.ToProto())
+					require.NoError(t, err)
+					assert.False(t, present, "mismatched content must not be stored under the claimed digest")
+				}
+				return
+			}
 			assert.Equal(t, "", resp.GetStatus().Message)
 			assert.Equal(t, tc.expectedDigestFunc, resp.GetDigestFunction())
 			assert.Contains(t, resp.GetUri(), ts.URL)
