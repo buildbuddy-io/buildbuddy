@@ -539,18 +539,10 @@ func mirrorToCache(
 		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %d %s", safeURI, rsp.StatusCode, http.StatusText(rsp.StatusCode))
 	}
 
-	var checksumFunc repb.DigestFunction_Value
-	var expectedChecksum string
-	if len(checksums) == 1 {
-		checksumFunc = checksums[0].digestFunction
-		expectedChecksum = checksums[0].hash
-	}
-
-	// If we know what the hash should be and the content length is known,
-	// then we know the full digest, and can pipe directly from the HTTP
-	// response to cache.
-	if checksumFunc == storageFunc && expectedChecksum != "" && rsp.ContentLength >= 0 {
-		d, err := uploadResponseDirectly(ctx, bsClient, remoteInstanceName, storageFunc, expectedChecksum, rsp)
+	// A single checksum with a known size can be uploaded directly. Multiple
+	// alternatives need the staged path so a later checksum can still match.
+	if len(checksums) == 1 && checksums[0].digestFunction == storageFunc && checksums[0].hash != "" && rsp.ContentLength >= 0 {
+		d, err := uploadResponseDirectly(ctx, bsClient, remoteInstanceName, storageFunc, checksums[0].hash, rsp)
 		if err != nil {
 			return nil, err
 		}
@@ -574,66 +566,9 @@ func mirrorToCache(
 		}
 	}()
 
-	// Multiple alternatives cannot use the direct-upload path: a mismatch
-	// against one checksum must not prevent another checksum from matching.
-	// Fetch once, and compute each digest function at most once while checking
-	// the alternatives against the downloaded file.
-	if len(checksums) > 1 {
-		hashes := make(map[repb.DigestFunction_Value]string)
-		for _, checksum := range checksums {
-			hash, ok := hashes[checksum.digestFunction]
-			if !ok {
-				rn, err := cachetools.ComputeFileDigest(tmpFilePath, remoteInstanceName, checksum.digestFunction)
-				if err != nil {
-					return nil, status.UnavailableErrorf("failed to compute checksum digest: %s", err)
-				}
-				hash = rn.GetDigest().GetHash()
-				hashes[checksum.digestFunction] = hash
-			}
-			if hash == checksum.hash {
-				checksumFunc = checksum.digestFunction
-				expectedChecksum = checksum.hash
-				break
-			}
-		}
-		if expectedChecksum == "" {
-			return nil, status.InvalidArgumentErrorf("response body checksum for %q did not match any supported checksum", safeURI)
-		}
-	}
-
-	// If the requested digestFunc is supplied and differ from the checksum sri,
-	// verify the downloaded file with the checksum sri before storing it to our cache.
-	//
-	// This will store the downloaded blob in our cache twice:
-	//  - One entry using the checksum digest function for future cache hits.
-	//  - One entry using the storage digest function for client to download.
-	//
-	// TODO(sluongng): We can track download information in a KV store with value
-	// pointing to the CAS entry. That way, we would only need to store the download
-	// blob once.
-	if checksumFunc != storageFunc {
-		checksumDigestRN, err := cachetools.ComputeFileDigest(tmpFilePath, remoteInstanceName, checksumFunc)
-		if err != nil {
-			return nil, status.UnavailableErrorf("failed to compute checksum digest: %s", err)
-		}
-		if expectedChecksum != "" && checksumDigestRN.GetDigest().GetHash() != expectedChecksum {
-			return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", safeURI, checksumDigestRN.GetDigest().Hash, expectedChecksum)
-		}
-		if _, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, checksumFunc, tmpFilePath); err != nil {
-			// Best effort storing downloaded blob to our cache.
-			// This is Ok to fail because subsequent requests will simply get no cache hits
-			// and download blob again from upstream URL.
-			log.CtxWarningf(ctx, "failed to cache object with checksumFunc: %s", err)
-		}
-	}
-	blobDigest, err := cachetools.UploadFile(ctx, bsClient, remoteInstanceName, storageFunc, tmpFilePath)
+	blobDigest, err := cacheDownloadedFile(ctx, bsClient, remoteInstanceName, tmpFilePath, safeURI, storageFunc, checksums)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
-	}
-	// If the requested digestFunc is supplied is the same with the checksum sri,
-	// verify the expected checksum of the downloaded file after storing it in our cache.
-	if checksumFunc == storageFunc && expectedChecksum != "" && blobDigest.Hash != expectedChecksum {
-		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", safeURI, blobDigest.Hash, expectedChecksum)
+		return nil, err
 	}
 	log.CtxDebugf(ctx, "Mirrored %s to cache (digest: %s)", safeURI, digest.String(blobDigest))
 	return blobDigest, nil
@@ -649,6 +584,74 @@ func uploadResponseDirectly(ctx context.Context, bsClient bspb.ByteStreamClient,
 		return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
 	}
 	return d, nil
+}
+
+// matchingChecksum returns the first matching alternative, computing each digest
+// function at most once while checking the file. The caller owns the file.
+func matchingChecksum(path, instanceName, safeURI string, checksums []checksum) (checksum, error) {
+	hashes := make(map[repb.DigestFunction_Value]string)
+	for _, expected := range checksums {
+		hash, ok := hashes[expected.digestFunction]
+		if !ok {
+			rn, err := cachetools.ComputeFileDigest(path, instanceName, expected.digestFunction)
+			if err != nil {
+				return checksum{}, status.UnavailableErrorf("failed to compute checksum digest: %s", err)
+			}
+			hash = rn.GetDigest().GetHash()
+			hashes[expected.digestFunction] = hash
+		}
+		if hash == expected.hash {
+			return expected, nil
+		}
+	}
+	return checksum{}, status.InvalidArgumentErrorf("response body checksum for %q did not match any supported checksum", safeURI)
+}
+
+// cacheDownloadedFile validates and publishes a staged download. The caller owns
+// the file and removes it after this function returns.
+func cacheDownloadedFile(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName, path, safeURI string, storageFunc repb.DigestFunction_Value, checksums []checksum) (*repb.Digest, error) {
+	var expected checksum
+	if len(checksums) == 1 {
+		expected = checksums[0]
+	} else if len(checksums) > 1 {
+		var err error
+		expected, err = matchingChecksum(path, instanceName, safeURI, checksums)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Publish the checksum representation for future lookups when it differs
+	// from the requested storage digest function. This extra copy is best effort.
+	// Legacy behavior also makes an unnecessary UNKNOWN (SHA256) copy for
+	// checksumless requests; this refactor leaves that behavior unchanged.
+	//
+	// TODO(sluongng): Track download information in a KV store pointing to the CAS
+	// entry, so the downloaded blob only needs to be stored once.
+	if expected.digestFunction != storageFunc {
+		checksumDigestRN, err := cachetools.ComputeFileDigest(path, instanceName, expected.digestFunction)
+		if err != nil {
+			return nil, status.UnavailableErrorf("failed to compute checksum digest: %s", err)
+		}
+		if expected.hash != "" && checksumDigestRN.GetDigest().GetHash() != expected.hash {
+			return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", safeURI, checksumDigestRN.GetDigest().Hash, expected.hash)
+		}
+		if _, err := cachetools.UploadFile(ctx, bsClient, instanceName, expected.digestFunction, path); err != nil {
+			// A failed checksum copy only prevents future cache hits. Publishing
+			// under the client's requested storage digest is still required below.
+			log.CtxWarningf(ctx, "failed to cache object with checksumFunc: %s", err)
+		}
+	}
+	blobDigest, err := cachetools.UploadFile(ctx, bsClient, instanceName, storageFunc, path)
+	if err != nil {
+		return nil, status.UnavailableErrorf("failed to add object to cache: %s", err)
+	}
+	// Keep same-algorithm validation after the upload, including the existing
+	// single-checksum staged path. Moving it earlier changes publication behavior.
+	if expected.digestFunction == storageFunc && expected.hash != "" && blobDigest.Hash != expected.hash {
+		return nil, status.InvalidArgumentErrorf("response body checksum for %q was %q but wanted %q", safeURI, blobDigest.Hash, expected.hash)
+	}
+	return blobDigest, nil
 }
 
 // copyToTempFile copies r into a new scratch file, closes it, and returns its path.

@@ -314,6 +314,8 @@ func TestFetchBlobWithCache(t *testing.T) {
 func TestFetchBlobMismatch(t *testing.T) {
 	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
+	wrongSHA512, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA512)
+	require.NoError(t, err)
 	for _, tc := range []struct {
 		name                string
 		checksumQualifier   string
@@ -385,6 +387,21 @@ func TestFetchBlobMismatch(t *testing.T) {
 			knownLength:         true,
 			wantResponseCode:    gcodes.NotFound,
 			wantMessage:         "failed to upload",
+		},
+		{
+			name:                "wrong_sha256_chunked_staged_same_algorithm",
+			checksumQualifier:   checksumQualifierFromContent(t, wrongSHA256.GetHash(), repb.DigestFunction_SHA256),
+			requestedDigestFunc: repb.DigestFunction_SHA256,
+			chunked:             true,
+			wantResponseCode:    gcodes.NotFound,
+			wantMessage:         "response body checksum",
+		},
+		{
+			name:                "wrong_sha512_staged_cross_algorithm",
+			checksumQualifier:   checksumQualifierFromContent(t, wrongSHA512.GetHash(), repb.DigestFunction_SHA512),
+			requestedDigestFunc: repb.DigestFunction_SHA256,
+			wantResponseCode:    gcodes.NotFound,
+			wantMessage:         "response body checksum",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -893,6 +910,8 @@ func TestFetchBlob_InvalidChecksum(t *testing.T) {
 		{"invalid_base64", "sha256-!", ""},
 		{"short_hash", "sha256-" + base64.StdEncoding.EncodeToString(make([]byte, 31)), ""},
 		{"long_hash", "sha256-" + base64.StdEncoding.EncodeToString(make([]byte, 33)), ""},
+		{"no_supported_algorithms_in_list", "sha999-AAAA sha888-BBBB", "No supported checksum algorithm"},
+		{"malformed_supported_token_with_match", "sha256-not-base64 " + sha256CRI, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
@@ -922,8 +941,8 @@ func TestFetchBlob_ChecksumSRIList(t *testing.T) {
 		name              string
 		checksum          string
 		chunked           bool
-		wantRPCCode       gcodes.Code
 		wantResponseCode  gcodes.Code
+		wantMessage       string
 		wantOriginFetches int64
 	}{
 		{
@@ -972,21 +991,10 @@ func TestFetchBlob_ChecksumSRIList(t *testing.T) {
 			wantOriginFetches: 1,
 		},
 		{
-			name:              "no_supported_checksum_algorithms",
-			checksum:          "sha999-AAAA sha888-BBBB",
-			wantRPCCode:       gcodes.InvalidArgument,
-			wantOriginFetches: 0,
-		},
-		{
-			name:              "malformed_supported_token_rejected_even_with_match",
-			checksum:          "sha256-not-base64 " + sha256CRI,
-			wantRPCCode:       gcodes.InvalidArgument,
-			wantOriginFetches: 0,
-		},
-		{
 			name:              "none_match",
 			checksum:          wrongSHA256CRI + " " + wrongSHA512CRI,
 			wantResponseCode:  gcodes.NotFound,
+			wantMessage:       "did not match any supported checksum",
 			wantOriginFetches: 1,
 		},
 	} {
@@ -1009,21 +1017,16 @@ func TestFetchBlob_ChecksumSRIList(t *testing.T) {
 				Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: tc.checksum}},
 				DigestFunction: repb.DigestFunction_SHA256,
 			})
-			if tc.wantRPCCode != gcodes.OK {
-				require.Equal(t, tc.wantRPCCode, gstatus.Code(err))
-				require.Nil(t, resp)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, int32(tc.wantResponseCode), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
-				if tc.name == "none_match" {
-					require.Contains(t, resp.GetStatus().GetMessage(), "did not match any supported checksum")
-				}
-				if tc.wantResponseCode == gcodes.OK {
-					var got bytes.Buffer
-					rn := digest.NewCASResourceName(resp.GetBlobDigest(), "", resp.GetDigestFunction())
-					require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), rn, &got))
-					require.Equal(t, content, got.String())
-				}
+			require.NoError(t, err)
+			require.Equal(t, int32(tc.wantResponseCode), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
+			if tc.wantMessage != "" {
+				require.Contains(t, resp.GetStatus().GetMessage(), tc.wantMessage)
+			}
+			if tc.wantResponseCode == gcodes.OK {
+				var got bytes.Buffer
+				rn := digest.NewCASResourceName(resp.GetBlobDigest(), "", resp.GetDigestFunction())
+				require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), rn, &got))
+				require.Equal(t, content, got.String())
 			}
 			require.Equal(t, tc.wantOriginFetches, requests.Load())
 		})
