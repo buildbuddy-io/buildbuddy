@@ -532,6 +532,7 @@ func StartAndRunServices(env *real_environment.RealEnv, grpcConfig grpc_server.G
 		Addr:    fmt.Sprintf("%s:%d", *listen, *port),
 		Handler: env.GetMux(),
 	}
+	static.RegisterAutoRefreshHandler(env, server)
 
 	env.GetHTTPServerWaitGroup().Add(1)
 	env.GetHealthChecker().RegisterShutdownFunction(func(ctx context.Context) error {

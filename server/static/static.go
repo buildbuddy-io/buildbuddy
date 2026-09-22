@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/region"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/subdomain"
+	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
 	"github.com/buildbuddy-io/buildbuddy/server/version"
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -78,6 +80,14 @@ var (
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
+	autoRefresh      = flag.Bool("auto_refresh", os.Getenv("BB_DEV_AUTO_REFRESH") == "1", "If set, the web UI reloads itself when the server restarts. Intended for local development. Defaults to true if BB_DEV_AUTO_REFRESH=1 is set in the environment.", flag.Internal)
+)
+
+var (
+	// serverID identifies this server process. The auto-refresh script uses it
+	// to tell a server restart apart from a dropped connection to the same
+	// server.
+	serverID = uuid.New()
 )
 
 func FSFromRelPath(relPath string) (fs.FS, error) {
@@ -156,6 +166,35 @@ func setCacheHeaders(h http.Handler, appBundleHash string) http.Handler {
 	})
 }
 
+// RegisterAutoRefreshHandler registers the endpoint that static/auto_refresh.js
+// uses to detect server restarts, if auto-refresh is enabled.
+//
+// The script sends the ID of the server that rendered the page. If the ID
+// matches this server, the handler holds the request open until the server
+// shuts down, and the script reconnects after the request ends. If the ID
+// doesn't match, the page came from an earlier server process, so the handler
+// tells the script to reload the page.
+func RegisterAutoRefreshHandler(env environment.Env, server *http.Server) {
+	if !*autoRefresh {
+		return
+	}
+	// Unblock clients immediately on shutdown to avoid delaying restarts.
+	shutdown := make(chan struct{})
+	server.RegisterOnShutdown(func() { close(shutdown) })
+	env.GetMux().Handle("/_/auto-refresh", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The client's server ID is from an old server process; reload.
+		if r.URL.Query().Get("server_id") != serverID {
+			w.WriteHeader(http.StatusResetContent)
+			return
+		}
+		// Wait indefinitely until shutdown.
+		select {
+		case <-r.Context().Done():
+		case <-shutdown:
+		}
+	}))
+}
+
 type FrontendTemplateData struct {
 	// StylePath is the path to the main styles for the app.
 	StylePath string
@@ -167,6 +206,11 @@ type FrontendTemplateData struct {
 	Config template.JS
 	// Nonce is the Content-Security-Policy nonce value.
 	Nonce string
+	// AutoRefresh decides whether to render the script that reloads the page
+	// when the server restarts.
+	AutoRefresh bool
+	// ServerID identifies the server process that rendered the page.
+	ServerID string
 }
 
 func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.Template, version, jsPath, stylePath, appBundleHash string, w http.ResponseWriter) {
@@ -260,6 +304,8 @@ func serveIndexTemplate(ctx context.Context, env environment.Env, tpl *template.
 		GaEnabled:        !*disableGA,
 		Config:           template.JS(configJSON),
 		Nonce:            nonce,
+		AutoRefresh:      *autoRefresh,
+		ServerID:         serverID,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
