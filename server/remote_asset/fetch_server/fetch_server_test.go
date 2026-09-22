@@ -98,9 +98,10 @@ func checksumQualifierFromContent(t *testing.T, contentHash string, digestFunc r
 
 func TestFetchBlob(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		content    string
-		digestFunc repb.DigestFunction_Value
+		name           string
+		content        string
+		digestFunc     repb.DigestFunction_Value
+		trailingBadURI bool
 	}{
 		{
 			name:       "default_digest_func",
@@ -127,6 +128,12 @@ func TestFetchBlob(t *testing.T) {
 			content:    "blake3",
 			digestFunc: repb.DigestFunction_BLAKE3,
 		},
+		{
+			name:           "successful_mirror_skips_invalid_trailing_uri",
+			content:        content,
+			digestFunc:     repb.DigestFunction_SHA256,
+			trailingBadURI: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -137,13 +144,19 @@ func TestFetchBlob(t *testing.T) {
 			contentDigest, err := digest.Compute(bytes.NewReader([]byte(tc.content)), tc.digestFunc)
 			require.NoError(t, err)
 
+			var requests atomic.Int64
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
 				fmt.Fprint(w, tc.content)
 			}))
 			defer ts.Close()
+			uris := []string{ts.URL}
+			if tc.trailingBadURI {
+				uris = append(uris, "http://%zz")
+			}
 
 			resp, err := fetchClient.FetchBlob(ctx, &rapb.FetchBlobRequest{
-				Uris: []string{ts.URL},
+				Uris: uris,
 				Qualifiers: []*rapb.Qualifier{
 					{
 						Name:  fetch_server.ChecksumQualifier,
@@ -156,9 +169,10 @@ func TestFetchBlob(t *testing.T) {
 			require.NotNil(t, resp)
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
 			assert.Equal(t, "", resp.GetStatus().Message)
-			assert.Contains(t, resp.GetUri(), ts.URL)
+			assert.Equal(t, ts.URL, resp.GetUri())
 			assert.Equal(t, contentDigest.GetHash(), resp.GetBlobDigest().GetHash())
 			assert.Equal(t, contentDigest.GetSizeBytes(), resp.GetBlobDigest().GetSizeBytes())
+			assert.Equal(t, int64(1), requests.Load())
 		})
 	}
 }
@@ -470,96 +484,134 @@ func TestFetchBlobWithBazelQualifiers(t *testing.T) {
 }
 
 func TestFetchBlobWithHeaderUrl(t *testing.T) {
-	ctx := context.Background()
-	te := testenv.GetTestEnv(t)
-	require.NoError(t, scratchspace.Init())
-	clientConn := runFetchServer(ctx, t, te)
-	fetchClient := rapb.NewFetchClient(clientConn)
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, []string{"hvalue"}, r.Header.Values("hkey"))
-		fmt.Fprint(w, "some blob")
-	}))
-	defer ts.Close()
-	invalidTs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "no blob here", http.StatusForbidden)
-	}))
-	defer ts.Close()
-
 	for _, tc := range []struct {
-		name       string
-		uris       []string
-		qualifiers []*rapb.Qualifier
+		name              string
+		firstURI          bool
+		qualifiers        []*rapb.Qualifier
+		wantFirstHeaders  map[string][]string
+		wantSecondHeaders map[string][]string
 	}{
 		{
 			name: "single_url",
-			uris: []string{
-				ts.URL,
-			},
 			qualifiers: []*rapb.Qualifier{
-				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
-					Value: "hvalue",
-				},
+				{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey", Value: "hvalue"},
 			},
+			wantSecondHeaders: map[string][]string{"hkey": {"hvalue"}},
 		},
 		{
-			name: "second_url",
-			uris: []string{
-				invalidTs.URL,
-				ts.URL,
-			},
+			name:     "second_url",
+			firstURI: true,
 			qualifiers: []*rapb.Qualifier{
-				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
-					Value: "hvalue",
-				},
+				{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey", Value: "hvalue"},
 			},
+			wantSecondHeaders: map[string][]string{"hkey": {"hvalue"}},
 		},
 		{
-			name: "multiple_urls",
-			uris: []string{
-				invalidTs.URL,
-				ts.URL,
-			},
+			name:     "multiple_urls",
+			firstURI: true,
 			qualifiers: []*rapb.Qualifier{
-				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
-					Value: "hvalue0",
-				},
-				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey",
-					Value: "hvalue",
-				},
+				{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey", Value: "hvalue0"},
+				{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "1:hkey", Value: "hvalue"},
 			},
+			wantFirstHeaders:  map[string][]string{"hkey": {"hvalue0"}},
+			wantSecondHeaders: map[string][]string{"hkey": {"hvalue"}},
 		},
 		{
 			name: "header_override",
-			uris: []string{
-				ts.URL,
-			},
 			qualifiers: []*rapb.Qualifier{
-				{
-					Name:  fetch_server.BazelHttpHeaderPrefixQualifier + "hkey",
-					Value: "hvalue0",
-				},
-				{
-					Name:  fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey",
-					Value: "hvalue",
-				},
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "hkey", Value: "hvalue0"},
+				{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:hkey", Value: "hvalue"},
+			},
+			wantSecondHeaders: map[string][]string{"hkey": {"hvalue"}},
+		},
+		{
+			name:     "repeated_headers_and_uri_override",
+			firstURI: true,
+			qualifiers: []*rapb.Qualifier{
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "shared", Value: "shared-1"},
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "shared", Value: "shared-2"},
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "override", Value: "shared-override-1"},
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "override", Value: "shared-override-2"},
+				{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:override", Value: "first-1"},
+				{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:override", Value: "first-2"},
+			},
+			wantFirstHeaders: map[string][]string{
+				"shared":   {"shared-1", "shared-2"},
+				"override": {"first-2"},
+			},
+			wantSecondHeaders: map[string][]string{
+				"shared":   {"shared-1", "shared-2"},
+				"override": {"shared-override-1", "shared-override-2"},
 			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "storage.tempdir", t.TempDir())
+			require.NoError(t, scratchspace.Init())
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			fetchClient := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+			var firstRequests, secondRequests atomic.Int64
+			headerKeys := []string{"hkey", "shared", "override"}
+			first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				firstRequests.Add(1)
+				for _, key := range headerKeys {
+					assert.Equal(t, tc.wantFirstHeaders[key], r.Header.Values(key), key)
+				}
+				http.Error(w, "no blob here", http.StatusForbidden)
+			}))
+			defer first.Close()
+			second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				secondRequests.Add(1)
+				for _, key := range headerKeys {
+					assert.Equal(t, tc.wantSecondHeaders[key], r.Header.Values(key), key)
+				}
+				fmt.Fprint(w, "some blob")
+			}))
+			defer second.Close()
+			uris := []string{second.URL}
+			if tc.firstURI {
+				uris = []string{first.URL, second.URL}
+			}
 			request := &rapb.FetchBlobRequest{
-				Uris:       tc.uris,
+				Uris:       uris,
 				Qualifiers: tc.qualifiers,
 			}
 			resp, err := fetchClient.FetchBlob(ctx, request)
 			require.NoError(t, err)
 			require.NotNil(t, resp)
+			require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
+			require.Equal(t, second.URL, resp.GetUri())
+			if tc.firstURI {
+				require.Equal(t, int64(1), firstRequests.Load())
+			} else {
+				require.Zero(t, firstRequests.Load())
+			}
+			require.Equal(t, int64(1), secondRequests.Load())
 		})
 	}
+}
+
+func TestFetchBlob_WarmCacheHitSkipsURIParsing(t *testing.T) {
+	flags.Set(t, "storage.tempdir", t.TempDir())
+	require.NoError(t, scratchspace.Init())
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.NoError(t, te.GetCache().Set(ctx, digest.NewCASResourceName(checksumDigest, "", repb.DigestFunction_SHA256).ToProto(), []byte(content)))
+
+	resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+		Uris:       []string{"http://%zz"},
+		Qualifiers: []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
+	require.Empty(t, resp.GetUri())
+	require.Equal(t, checksumDigest, resp.GetBlobDigest())
 }
 
 func TestFetchBlobWithUnknownQualifiers(t *testing.T) {
