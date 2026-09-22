@@ -114,21 +114,14 @@ func TestDirectoryToImageAutoSize_Reproducible(t *testing.T) {
 	// Build a tree with a nested directory, a symlink, and files with
 	// different mtimes, all of which end up in the image metadata. Like a
 	// freshly extracted archive, the files keep their creation-time atimes.
-	// One file is dated far in the future, the way Bazel dates its install
-	// base, to show that it does not stop the extraction-time atimes and
-	// ctimes from being clamped.
 	inputDir := testfs.MakeDirAll(t, root, "input")
 	testfs.WriteAllFileContents(t, inputDir, map[string]string{
-		"a.txt":      "hello",
-		"dir/b.txt":  "world",
-		"future.txt": "later",
+		"a.txt":     "hello",
+		"dir/b.txt": "world",
 	})
 	err := os.Symlink("a.txt", filepath.Join(inputDir, "link"))
 	require.NoError(t, err)
 	err = os.Chtimes(filepath.Join(inputDir, "a.txt"), time.Now(), time.Unix(1_600_000_000, 0))
-	require.NoError(t, err)
-	future := time.Now().Add(10 * 365 * 24 * time.Hour)
-	err = os.Chtimes(filepath.Join(inputDir, "future.txt"), future, future)
 	require.NoError(t, err)
 
 	firstImage := filepath.Join(root, "first.ext4")

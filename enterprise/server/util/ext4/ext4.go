@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -45,10 +44,15 @@ const (
 	// mke2fs otherwise generates both randomly.
 	reproducibleUUID     = "3b3f1e6a-2a0c-4d1e-9d7e-6f0a7c1b2d3e"
 	reproducibleHashSeed = "9c8b7a6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d"
+
+	// SOURCE_DATE_EPOCH for reproducible images: 2026-01-01T00:00:00Z. mke2fs
+	// clamps every timestamp newer than this to it, so the value only needs
+	// to be in the past and never needs updating.
+	reproducibleImageEpoch = 1767225600
 )
 
 var (
-	reproducibleImages = flag.Bool("executor.reproducible_ext4_images", false, "If true, fix the filesystem UUID and directory hash seed of ext4 images created from directories, skip copying extended attributes, and clamp all timestamps to the newest file mtime in the tree, so that a freshly extracted directory tree produces a byte-identical image on every run. Requires e2fsprogs 1.47.2 or later.", flag.Internal)
+	reproducibleImages = flag.Bool("executor.reproducible_ext4_images", false, "If true, fix the filesystem UUID and directory hash seed of ext4 images created from directories, skip copying extended attributes, and clamp all timestamps newer than 2026-01-01 to that date, so that a freshly extracted directory tree produces a byte-identical image on every run. Files newer than that date lose their mtime, which breaks pre-warmed Bazel install bases. Requires e2fsprogs 1.47.2 or later.", flag.Internal)
 )
 
 // EnsureDependencies verifies that all external binaries required for ext4
@@ -94,21 +98,12 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		// Remove all sources of non-determinism:
 		// - Set filesystem UUID to a fixed value (-U)
 		// - Set a fixed directory hash seed (-E hash_seed)
-		// - Clamp extraction-time atimes and ctimes to the newest non-future
-		//   file mtime (SOURCE_DATE_EPOCH)
+		// - Clamp all timestamps newer than a fixed date, which includes the
+		//   extraction-time atimes and ctimes, to that date (SOURCE_DATE_EPOCH)
 		// - Skip xattrs, which may contain host-assigned security.selinux
 		//   labels on SELinux hosts (-E no_copy_xattrs)
-		//
-		// mke2fs only clamps timestamps that are newer than the epoch, so the
-		// epoch must not be in the future. Bazel install dirs deliberately set
-		// file mtimes ten years ahead, so those files are skipped when picking
-		// the newest mtime.
-		epoch, err := newestFileModTime(inputDir, time.Now())
-		if err != nil {
-			return status.WrapError(err, "find newest file mtime")
-		}
 		args = append(args, "-U", reproducibleUUID, "-E", "hash_seed="+reproducibleHashSeed+",no_copy_xattrs")
-		env = append(os.Environ(), fmt.Sprintf("SOURCE_DATE_EPOCH=%d", epoch))
+		env = append(os.Environ(), fmt.Sprintf("SOURCE_DATE_EPOCH=%d", reproducibleImageEpoch))
 	}
 	args = append(args, outputFile, fmt.Sprintf("%dK", sizeBytes/iecKilobyte))
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
@@ -133,29 +128,6 @@ func DirectoryToImage(ctx context.Context, inputDir, outputFile string, sizeByte
 		}
 	}
 	return nil
-}
-
-// newestFileModTime returns the newest mtime (Unix seconds) among regular
-// files under dir that are not dated after now, or 0 if there are none.
-func newestFileModTime(dir string, now time.Time) (int64, error) {
-	var newest int64
-	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if mtime := info.ModTime().Unix(); mtime <= now.Unix() {
-			newest = max(newest, mtime)
-		}
-		return nil
-	})
-	return newest, err
 }
 
 // MakeEmptyImage creates a new empty ext4 disk image of the specified size
