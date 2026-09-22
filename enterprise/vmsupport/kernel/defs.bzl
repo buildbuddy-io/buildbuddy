@@ -1,3 +1,5 @@
+"""Rules for building Firecracker guest kernels."""
+
 load("@io_bazel_rules_go//go:def.bzl", "go_binary")
 load("//rules:platform_transitions.bzl", "linux_arm64_alias", "linux_x86_64_alias")
 

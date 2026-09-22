@@ -1,3 +1,5 @@
+"""Declares pinned static dependencies used by the BuildBuddy workspace."""
+
 load("@bazel_skylib//lib:modules.bzl", "modules")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive", "http_file")
 
@@ -13,7 +15,9 @@ PODMAN_STATIC_SHA256_ARM64 = "703ffad8972aa2db70a173c80804a88185e6c2dc8a88a247a8
 BB_CLI_VERSION = "5.0.466"
 
 # Manually created
-def install_static_dependencies(workspace_name = "buildbuddy"):
+def install_static_dependencies():
+    """Installs static third-party archives and files."""
+
     http_archive(
         name = "clickhouse_linux_amd64",
         urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-amd64.tgz"],

@@ -1,3 +1,5 @@
+"""Rule for hashing the contents of source files."""
+
 # Calculates the sha1 of the contents of the files in `srcs` and outputs it to a file called `name`.sum.
 # Also produces a file called `name`.list.sum which contains intermediate checksums for each file.
 def sha(name, srcs, **kwargs):

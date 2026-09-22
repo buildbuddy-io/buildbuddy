@@ -1,3 +1,5 @@
+"""BuildBuddy TypeScript library and test macros."""
+
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_jasmine//jasmine:defs.bzl", "jasmine_test")
 load("@aspect_rules_swc//swc:defs.bzl", "swc_compile")
@@ -23,6 +25,15 @@ def ts_library(name, srcs, tsconfig = "//:tsconfig", **kwargs):
     )
 
 def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
+    """Defines a Jasmine test for a single TypeScript source file.
+
+    Args:
+      name: Name of the test target.
+      srcs: A list containing exactly one TypeScript test source.
+      deps: TypeScript dependencies of the test.
+      size: Bazel test size.
+      **kwargs: Additional arguments passed to the generated targets.
+    """
     if len(srcs) != 1:
         fail("srcs must contain exactly one TS source file")
 
