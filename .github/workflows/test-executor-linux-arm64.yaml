@@ -1,4 +1,5 @@
-name: "Test linux/arm64 executor"
+# TODO: remove this workflow once firecracker is generally available on arm64.
+name: "Test linux/arm64 (root tests)"
 
 on:
   push:
@@ -45,16 +46,7 @@ jobs:
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
 
-          bazel test --config=tests-linux-arm64 \
-            -- \
-            //enterprise/server/remote_execution/... \
-            //enterprise/server/test/integration/remote_execution/... \
-            -//enterprise/server/remote_execution/containers/firecracker/... \
-            -//enterprise/server/test/integration/remote_execution:remote_execution_test \
-            //app/util:shlex_test
-
-          # Run a separate bazel invocation to invoke tests with the "docker" tag.
-          # TODO: improve platform setup so that we can run this whenever the
-          # host has podman available.
-          bazel test --config=tests-docker \
+          bazelisk test --config=race --test_tag_filters= \
+            //enterprise/server/remote_execution/copy_on_write:copy_on_write_test \
+            //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test
