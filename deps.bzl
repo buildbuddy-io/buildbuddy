@@ -15,6 +15,35 @@ BB_CLI_VERSION = "5.0.466"
 # Manually created
 def install_static_dependencies(workspace_name = "buildbuddy"):
     http_archive(
+        name = "clickhouse_linux_amd64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-amd64.tgz"],
+        sha256 = "4fd9c705eb4952335c30ca09fa29a021e63d0e7e05da7f8d9f965e2f4cfb246a",
+        strip_prefix = "clickhouse-common-static-25.3.14.14",
+        build_file_content = 'exports_files(["usr/bin/clickhouse"])',
+    )
+    http_archive(
+        name = "clickhouse_linux_arm64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-common-static-25.3.14.14-arm64.tgz"],
+        sha256 = "e82a0a450ad4e57b952be933294f805267c160e13d8cc89d6145f2647027edaf",
+        strip_prefix = "clickhouse-common-static-25.3.14.14",
+        build_file_content = 'exports_files(["usr/bin/clickhouse"])',
+    )
+    http_file(
+        name = "clickhouse_darwin_amd64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-macos"],
+        sha256 = "4136ebc67aee500b7c02804d8116977d59264d937e8e78793ab4d54b538b516b",
+        downloaded_file_path = "clickhouse",
+        executable = True,
+    )
+    http_file(
+        name = "clickhouse_darwin_arm64",
+        urls = ["https://github.com/ClickHouse/ClickHouse/releases/download/v25.3.14.14-lts/clickhouse-macos-aarch64"],
+        sha256 = "468e33062f3cbfeb6bbaa8709b7fdd31c73a177e31cb60ed7933452a6685648b",
+        downloaded_file_path = "clickhouse",
+        executable = True,
+    )
+
+    http_archive(
         name = "com_github_buildbuddy_io_protoc_gen_protobufjs",
         integrity = "sha256-0Glb6xE/18H8cVTsfolRVmAOX1Rgrm3XAkJMT1W1dkI=",
         urls = ["https://github.com/buildbuddy-io/protoc-gen-protobufjs/releases/download/v0.0.14/protoc-gen-protobufjs-v0.0.14.tar.gz"],

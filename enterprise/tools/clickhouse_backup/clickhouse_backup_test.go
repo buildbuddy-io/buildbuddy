@@ -4,9 +4,10 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,7 +31,8 @@ var (
 
 func TestClickHouseBackupAndRestore(t *testing.T) {
 	// Configure a local backup disk for testing.
-	backupDir := testfs.MakeTempDir(t)
+	backupDir := filepath.Join(testfs.MakeTempDir(t), "backups with spaces")
+	require.NoError(t, os.Mkdir(backupDir, 0700))
 	configDir := testfs.MakeTempDir(t)
 	configPath := testfs.WriteFile(t, configDir, "disk_backup.xml", `
 <clickhouse>
@@ -38,19 +40,19 @@ func TestClickHouseBackupAndRestore(t *testing.T) {
 		<disks>
 			<backups>
 				<type>local</type>
-				<path>/backups/</path>
+				<path from_env="BB_CLICKHOUSE_TEST_BACKUP_DIR"/>
 			</backups>
 		</disks>
 	</storage_configuration>
 	<backups>
 		<allowed_disk>backups</allowed_disk>
-		<allowed_path>/backups/</allowed_path>
+		<allowed_path from_env="BB_CLICKHOUSE_TEST_BACKUP_DIR"/>
 	</backups>
 </clickhouse>
 `)
 
-	// Run a ClickHouse cluster with the configured backup disk.
-	dsn := startCluster(t, "--config_file", configPath, "--volume", backupDir+`:/backups/:rw`)
+	envFile := testfs.WriteFile(t, configDir, "backup.env", "BB_CLICKHOUSE_TEST_BACKUP_DIR="+backupDir+"/\n")
+	dsn := startCluster(t, "--config_file", configPath, "--env_file", envFile)
 
 	// Set up the OLAP DB handle.
 	flags.Set(t, "olap_database.data_source", dsn)
@@ -122,46 +124,56 @@ func runBackupTool(t *testing.T, args ...string) {
 }
 
 func startCluster(t *testing.T, args ...string) (dsn string) {
-	// TODO: remove docker-compose dependency.
-	ensureDockerComposeInstalled(t)
-
-	clickhouseClusterPath, err := runfiles.Rlocation(clickhouseClusterRlocationpath)
+	binary, err := runfiles.Rlocation(clickhouseClusterRlocationpath)
 	require.NoError(t, err)
-	cmd := exec.Command(clickhouseClusterPath, args...)
+	cmd := exec.Command(binary, args...)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
-	err = cmd.Start()
-	require.NoError(t, err, "start clickhouse_cluster")
+	require.NoError(t, cmd.Start(), "start clickhouse_cluster")
+	done := make(chan struct{})
+	var waitErr error
+	go func() {
+		waitErr = cmd.Wait()
+		close(done)
+	}()
 	t.Cleanup(func() {
-		cmd.Process.Signal(os.Interrupt)
-		_ = cmd.Wait()
+		select {
+		case <-done:
+		default:
+			if err := cmd.Process.Signal(os.Interrupt); err != nil {
+				t.Logf("signal clickhouse_cluster: %s", err)
+			}
+		}
+		select {
+		case <-done:
+		case <-time.After(40 * time.Second):
+			_ = cmd.Process.Kill()
+			<-done
+			t.Error("cluster shutdown timed out")
+		}
+		require.NoError(t, waitErr, "stop clickhouse_cluster")
 	})
-	addr := "localhost:9201"
-	dsn = fmt.Sprintf("clickhouse://%s/default", addr)
-	options, err := chgo.ParseDSN(dsn)
-	require.NoError(t, err)
-	// Wait for the cluster to be ready.
-	require.Eventually(t, func() bool {
-		conn, err := chgo.Open(options)
-		if err != nil {
-			return false
+	for _, addr := range []string{"127.0.0.1:9201", "127.0.0.1:9202"} {
+		require.Eventually(t, func() bool {
+			select {
+			case <-done:
+				return true
+			default:
+			}
+			conn, err := chgo.Open(&chgo.Options{Addr: []string{addr}, DialTimeout: time.Second})
+			if err != nil {
+				return false
+			}
+			defer conn.Close()
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			return conn.Ping(ctx) == nil
+		}, 2*time.Minute, 20*time.Millisecond)
+		select {
+		case <-done:
+			t.Fatalf("cluster exited during startup: %v", waitErr)
+		default:
 		}
-		defer conn.Close()
-		if err := conn.Ping(t.Context()); err != nil {
-			return false
-		}
-		return true
-	}, 2*time.Minute, 10*time.Millisecond)
-
-	return dsn
-}
-
-func ensureDockerComposeInstalled(t *testing.T) {
-	if _, err := exec.LookPath("docker-compose"); err == nil {
-		return
 	}
-	if os.Getuid() == 0 {
-		b, err := exec.Command("sh", "-c", `apt update && apt install -y docker-compose`).CombinedOutput()
-		require.NoError(t, err, "install docker-compose", string(b))
-	}
+	return "clickhouse://127.0.0.1:9201/default"
 }
