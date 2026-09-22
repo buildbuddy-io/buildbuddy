@@ -183,30 +183,37 @@ func parseChecksumQualifier(qualifier *rapb.Qualifier) ([]checksum, error) {
 	return checksums, nil
 }
 
-func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest) (*rapb.FetchBlobResponse, error) {
-	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env.GetAuthenticator())
-	if err != nil {
-		return nil, err
-	}
+type fetchOptions struct {
+	storageDigestFunction repb.DigestFunction_Value
+	checksums             []checksum
+	sharedHeaders         http.Header
+	uriHeaders            map[int]http.Header
+}
 
+// parseFetchOptions parses qualifiers only. URIs are checked when attempted, so
+// a cache hit or successful mirror does not require validating unused URIs.
+func parseFetchOptions(ctx context.Context, req *rapb.FetchBlobRequest) (*fetchOptions, error) {
 	storageFunc := req.GetDigestFunction()
 	if storageFunc == repb.DigestFunction_UNKNOWN {
 		storageFunc = repb.DigestFunction_SHA256
 	}
+	opts := &fetchOptions{
+		storageDigestFunction: storageFunc,
+		sharedHeaders:         make(http.Header),
+		uriHeaders:            make(map[int]http.Header),
+	}
 	var unsupportedQualifierNames []string
-	sharedHeader := make(http.Header)
-	uriHeaders := make(map[int]http.Header)
-	var checksums []checksum
+	var err error
 	for _, qualifier := range req.GetQualifiers() {
 		if qualifier.GetName() == ChecksumQualifier {
-			checksums, err = parseChecksumQualifier(qualifier)
+			opts.checksums, err = parseChecksumQualifier(qualifier)
 			if err != nil {
 				return nil, err
 			}
 			continue
 		}
 		if after, ok := strings.CutPrefix(qualifier.GetName(), BazelHttpHeaderPrefixQualifier); ok {
-			sharedHeader.Add(
+			opts.sharedHeaders.Add(
 				after,
 				qualifier.GetValue(),
 			)
@@ -230,11 +237,11 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				log.CtxWarningf(ctx, "Failed to decode URI index: %s", err)
 				continue
 			}
-			if _, found := uriHeaders[uriIndex]; !found {
+			if _, found := opts.uriHeaders[uriIndex]; !found {
 				// If the URI index is not found, create a new header map.
-				uriHeaders[uriIndex] = make(http.Header)
+				opts.uriHeaders[uriIndex] = make(http.Header)
 			}
-			uriHeaders[uriIndex].Add(halves[1], qualifier.GetValue())
+			opts.uriHeaders[uriIndex].Add(halves[1], qualifier.GetValue())
 			continue
 		}
 		if qualifier.GetName() == BazelCanonicalIDQualifier {
@@ -246,21 +253,46 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if len(unsupportedQualifierNames) > 0 {
 		return nil, makeUnsupportedQualifiersErrStatus(unsupportedQualifierNames)
 	}
-	for _, checksum := range checksums {
+	return opts, nil
+}
+
+func (o *fetchOptions) headersForURI(index int) http.Header {
+	header := o.sharedHeaders.Clone()
+	for key, values := range o.uriHeaders[index] {
+		for _, value := range values {
+			// URI-specific headers override shared headers. Preserve the
+			// existing last-value-wins behavior for repeated overrides.
+			header.Set(key, value)
+		}
+	}
+	return header
+}
+
+func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest) (*rapb.FetchBlobResponse, error) {
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, p.env.GetAuthenticator())
+	if err != nil {
+		return nil, err
+	}
+
+	opts, err := parseFetchOptions(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	for _, checksum := range opts.checksums {
 		checksumFunc := checksum.digestFunction
 		blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, checksum.hash)
 		// If the digestFunc is supplied and differ from the checksum sri,
 		// after looking up the cached blob using checksum sri, re-upload
 		// that blob using the requested digestFunc.
-		if blobDigest != nil && checksumFunc != storageFunc {
-			blobDigest = p.rewriteToCache(ctx, blobDigest, req.GetInstanceName(), checksumFunc, storageFunc)
+		if blobDigest != nil && checksumFunc != opts.storageDigestFunction {
+			blobDigest = p.rewriteToCache(ctx, blobDigest, req.GetInstanceName(), checksumFunc, opts.storageDigestFunction)
 		}
 
 		if blobDigest != nil {
 			return &rapb.FetchBlobResponse{
 				Status:         &statuspb.Status{Code: int32(gcodes.OK)},
 				BlobDigest:     blobDigest,
-				DigestFunction: storageFunc,
+				DigestFunction: opts.storageDigestFunction,
 			}, nil
 		}
 	}
@@ -292,24 +324,15 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI at index %d", i)
 		}
-		header := sharedHeader.Clone()
-		if uriHeader, found := uriHeaders[i]; found {
-			for k, v := range uriHeader {
-				for _, vv := range v {
-					// URI-specific headers take precedence over shared headers.
-					header.Set(k, vv)
-				}
-			}
-		}
 		blobDigest, err := mirrorToCache(
 			ctx,
 			bsClient,
 			req.GetInstanceName(),
 			httpClient,
 			uri,
-			header,
-			storageFunc,
-			checksums,
+			opts.headersForURI(i),
+			opts.storageDigestFunction,
+			opts.checksums,
 		)
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", redactedURI(uri), err)
@@ -321,7 +344,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			Uri:            uri,
 			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
 			BlobDigest:     blobDigest,
-			DigestFunction: storageFunc,
+			DigestFunction: opts.storageDigestFunction,
 		}, nil
 	}
 
