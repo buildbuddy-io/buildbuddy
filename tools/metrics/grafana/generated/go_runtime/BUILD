@@ -22,6 +22,6 @@ go_binary(
 genrule(
     name = "go_runtime_json",
     outs = ["go-runtime.json"],
-    cmd = "$(location :go_runtime) > $@",
+    cmd = "$(execpath :go_runtime) > $@",
     tools = [":go_runtime"],
 )

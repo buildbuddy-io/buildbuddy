@@ -24,7 +24,7 @@ genrule(
     name = "generate_mdx",
     outs = ["docs.mdx"],
     cmd_bash = """
-    ./$(location :generate_docs) -output_path="$@"
+    $(execpath :generate_docs) -output_path="$@"
     """,
     tools = [
         ":generate_docs",

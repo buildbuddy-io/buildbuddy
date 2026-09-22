@@ -24,6 +24,6 @@ go_binary(
 genrule(
     name = "buildbuddy_json",
     outs = ["buildbuddy.json"],
-    cmd = "$(location :buildbuddy) > $@",
+    cmd = "$(execpath :buildbuddy) > $@",
     tools = [":buildbuddy"],
 )

@@ -8,7 +8,7 @@ sh_test(
         ":testdata_sha.sum",
     ],
     env = {
-        "TESTDATA_SUM": "$(location :testdata_sha.sum)",
+        "TESTDATA_SUM": "$(rootpath :testdata_sha.sum)",
     },
 )
 

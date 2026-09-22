@@ -8,9 +8,9 @@ genrule(
     outs = ["initrd.cpio"],
     cmd_bash = """
         env \
-            GOINIT=$(location //enterprise/server/cmd/goinit:goinit) \
-            CPIO=$(location //enterprise/tools/cpio) \
-            ./$(location mkinitrd.sh) \
+            GOINIT=$(execpath //enterprise/server/cmd/goinit:goinit) \
+            CPIO=$(execpath //enterprise/tools/cpio) \
+            $(execpath mkinitrd.sh) \
             "$@"
     """,
     tools = [
