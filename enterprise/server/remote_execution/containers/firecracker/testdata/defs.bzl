@@ -63,6 +63,7 @@ def _ext4_image(name, image, arch):
         tools = ["//enterprise/server/remote_execution/containers/firecracker/testdata/generate_ext4_image"],
     )
 
+# buildifier: disable=unnamed-macro
 def firecracker_test_images():
     """Defines conversion actions and test image aliases for each supported arch."""
     for name, (image, arches) in TEST_IMAGES.items():

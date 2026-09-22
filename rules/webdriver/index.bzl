@@ -44,7 +44,6 @@ def go_web_test_suite(
       shard_count: Number of test shards; required.
       browsers: Browser targets used by the suite.
       args: Command-line arguments passed to the tests.
-      browser_overrides: Per-browser web_test_suite attribute overrides.
       config: Web test configuration target.
       flaky: Whether the tests are flaky.
       local: Whether the tests must run locally.
