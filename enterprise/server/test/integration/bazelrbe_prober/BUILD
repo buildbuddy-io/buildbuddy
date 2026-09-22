@@ -1,5 +1,7 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
+package(default_visibility = ["//enterprise:__subpackages__"])
+
 go_test(
     name = "bazelrbe_prober_test",
     srcs = ["bazelrbe_prober_test.go"],
@@ -22,5 +24,3 @@ go_test(
         "@io_bazel_rules_go//go/runfiles",
     ],
 )
-
-package(default_visibility = ["//enterprise:__subpackages__"])
