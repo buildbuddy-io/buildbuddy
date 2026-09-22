@@ -82,7 +82,7 @@ type CacheProxyRegistryServer struct {
 }
 
 func Register(env *real_environment.RealEnv) error {
-	if registryRedisClient(env) == nil {
+	if env.GetRemoteExecutionRedisClient() == nil {
 		return nil
 	}
 	triggers, err := upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
@@ -101,15 +101,8 @@ func upgradeTriggersFromFlags() (map[uppb.Prompt_Urgency]upgrade.Trigger, error)
 	return upgrade.ParseTriggers(*upgradePromptMaxLags, *upgradePromptMinVersions)
 }
 
-func registryRedisClient(env environment.Env) redis.UniversalClient {
-	if rdb := env.GetRemoteExecutionRedisClient(); rdb != nil {
-		return rdb
-	}
-	return env.GetDefaultRedisClient()
-}
-
 func NewCacheProxyRegistryServer(env environment.Env, detector *upgrade.Detector) (*CacheProxyRegistryServer, error) {
-	rdb := registryRedisClient(env)
+	rdb := env.GetRemoteExecutionRedisClient()
 	if rdb == nil {
 		return nil, status.FailedPreconditionError("Redis is required for cache proxy registration")
 	}
