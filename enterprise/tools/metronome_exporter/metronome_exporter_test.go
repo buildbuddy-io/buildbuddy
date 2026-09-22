@@ -238,7 +238,7 @@ func TestExport_DryRunDoesNotModifyState(t *testing.T) {
 }
 
 func TestExport_CreatesCustomersForGroupsWithUsage(t *testing.T) {
-	flags.Set(t, "billing.metronome.rate_card_alias", "self-serve")
+	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
 	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -263,7 +263,7 @@ func TestExport_CreatesCustomersForGroupsWithUsage(t *testing.T) {
 	require.Equal(t, []string{"GR1"}, client.created)
 }
 
-func TestExport_SkipsCustomersWithoutRateCard(t *testing.T) {
+func TestExport_SkipsCustomersWithoutPackage(t *testing.T) {
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
 	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)
@@ -281,7 +281,7 @@ func TestExport_SkipsCustomersWithoutRateCard(t *testing.T) {
 }
 
 func TestExport_ReportsUsageWhenCustomerSetupFails(t *testing.T) {
-	flags.Set(t, "billing.metronome.rate_card_alias", "self-serve")
+	flags.Set(t, "billing.metronome.package_alias", "self-serve-free")
 	env := setupClickHouseEnv(t)
 	ctx := t.Context()
 	from := time.Date(2026, 6, 8, 12, 0, 0, 0, time.UTC)

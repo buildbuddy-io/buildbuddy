@@ -252,9 +252,7 @@ func TestCreateCustomerAndContract(t *testing.T) {
 	testflags.Set(t, "http.client.allow_localhost", true)
 	testflags.Set(t, "billing.metronome.api_key", "test-key")
 	testflags.Set(t, "billing.metronome.api_url", server.URL)
-	testflags.Set(t, "billing.metronome.rate_card_alias", "self-serve")
-	testflags.Set(t, "billing.metronome.free_credit_cents", int64(12345))
-	testflags.Set(t, "billing.metronome.free_credit_product_id", "prod-credit")
+	testflags.Set(t, "billing.metronome.package_alias", "self-serve-free")
 
 	c, err := metronome.NewClient(nil, nil)
 	require.NoError(t, err)
@@ -264,20 +262,17 @@ func TestCreateCustomerAndContract(t *testing.T) {
 
 	start := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, c.CreateContract(t.Context(), "cust-1", start, "GR1"))
-	assert.Equal(t, "cust-1", contract["customer_id"])
-	assert.Equal(t, "self-serve", contract["rate_card_alias"])
-	assert.Equal(t, "2026-09-01T00:00:00Z", contract["starting_at"])
-	assert.Equal(t, "GR1", contract["uniqueness_key"])
-	credit := contract["recurring_credits"].([]any)[0].(map[string]any)
-	assert.Equal(t, "prod-credit", credit["product_id"])
-	assert.Equal(t, "MONTHLY", credit["recurrence_frequency"])
-	assert.Equal(t, "2026-09-01T00:00:00Z", credit["starting_at"])
-	assert.Equal(t, map[string]any{"credit_type_id": "2714e483-4ff1-48e4-9e25-ac732e8f24f2", "unit_price": float64(12345), "quantity": float64(1)}, credit["access_amount"])
+	assert.Equal(t, map[string]any{
+		"customer_id":    "cust-1",
+		"package_alias":  "self-serve-free",
+		"starting_at":    "2026-09-01T00:00:00Z",
+		"uniqueness_key": "GR1",
+	}, contract)
 
 	conflict = true
 	require.NoError(t, c.CreateContract(t.Context(), "cust-1", start, "GR1"))
 
-	testflags.Set(t, "billing.metronome.free_credit_product_id", "")
+	testflags.Set(t, "billing.metronome.package_alias", "")
 	err = c.CreateContract(t.Context(), "cust-1", start, "GR1")
 	require.True(t, status.IsFailedPreconditionError(err), "unexpected error: %v", err)
 }

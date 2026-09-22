@@ -264,7 +264,7 @@ func exportAll(ctx context.Context, env *real_environment.RealEnv, client metron
 }
 
 func ensureCustomer(ctx context.Context, client metronomeClient, groupID string, usageTime time.Time) error {
-	if !metronome.RateCardConfigured() {
+	if !metronome.PackageConfigured() {
 		return nil
 	}
 	customerID, err := client.FindCustomerID(ctx, groupID)
