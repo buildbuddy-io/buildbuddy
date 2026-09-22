@@ -136,8 +136,10 @@ func filterToBuildifierFiles(files []string) []string {
 	var filtered []string
 	for _, file := range files {
 		name := filepath.Base(file)
-		if name == "BUILD" || strings.HasPrefix(name, "WORKSPACE") ||
-			slices.Contains([]string{".bzl", ".bazel", ".star"}, filepath.Ext(name)) {
+		ext := filepath.Ext(name)
+		if name == "BUILD" || name == "WORKSPACE" || name == "WORKSPACE.bzlmod" ||
+			slices.Contains([]string{".bazel", ".BUILD", ".bzl", ".sky", ".star"}, ext) ||
+			(ext == ".oss" && (strings.HasPrefix(name, "BUILD.") || strings.HasPrefix(name, "WORKSPACE."))) {
 			filtered = append(filtered, file)
 		}
 	}
