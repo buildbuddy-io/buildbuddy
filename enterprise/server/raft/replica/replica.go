@@ -1184,22 +1184,37 @@ func (sm *Replica) find(db ReplicaReader, req *rfpb.FindRequest) (*rfpb.FindResp
 		return nil, err
 	}
 
-	iter, err := db.NewIter(nil /*default iterOptions*/)
+	// Report missing and unparseable records as absent.
+	buf, closer, err := db.Get(req.GetKey())
+	if err == pebble.ErrNotFound {
+		return &rfpb.FindResponse{}, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	defer iter.Close()
+	defer closer.Close()
 
-	fileMetadata, err := lookupFileMetadata(iter, req.GetKey())
-	// A zero-length stored file is an anomaly the read path treats as missing,
-	// so report it absent here too.
-	present := err == nil && fileMetadata.GetStoredSizeBytes() != 0
+	// Decode only the fields find needs instead of the full FileMetadata,
+	// which may hold inline file data.
+	var md sgpb.FileMetadataRaftFindView
+	if len(buf) == 0 || md.UnmarshalWire(buf) != nil {
+		return &rfpb.FindResponse{}, nil
+	}
 
-	return &rfpb.FindResponse{
-		Present:        present,
-		LastAccessUsec: fileMetadata.GetLastAccessUsec(),
-		GcsMetadata:    fileMetadata.GetStorageMetadata().GetGcsMetadata(),
-	}, nil
+	rsp := &rfpb.FindResponse{
+		// A zero-length stored file is an anomaly the read path treats as
+		// missing, so report it absent here too.
+		Present:        md.StoredSizeBytes != 0,
+		LastAccessUsec: md.LastAccessUsec,
+	}
+	if md.StorageMetadata.HasGcsMetadata {
+		gcs := md.StorageMetadata.GcsMetadata
+		rsp.GcsMetadata = &sgpb.StorageMetadata_GCSMetadata{
+			BlobName:           gcs.BlobName,
+			LastCustomTimeUsec: gcs.LastCustomTimeUsec,
+		}
+	}
+	return rsp, nil
 }
 
 func (sm *Replica) updateAtime(wb pebble.Batch, req *rfpb.UpdateAtimeRequest) (*rfpb.UpdateAtimeResponse, error) {
