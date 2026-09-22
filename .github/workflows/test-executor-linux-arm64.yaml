@@ -1,4 +1,5 @@
-name: "Test linux/arm64 mount + podman"
+# TODO: remove this workflow once firecracker is generally available on arm64.
+name: "Test linux/arm64 (root tests)"
 
 on:
   push:
