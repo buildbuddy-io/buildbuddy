@@ -68,7 +68,7 @@ require (
 	github.com/bazelbuild/buildtools v0.0.0-20260211083412-859bfffeef82
 	github.com/bazelbuild/rules_go v0.63.0
 	github.com/bazelbuild/rules_webtesting v0.2.1-0.20250911195827-e09c04b7d4d1
-	github.com/bduffany/godemon v0.0.0-20221115232931-09721d48e30e
+	github.com/bduffany/godemon v0.0.0-20260723173444-708d6492475e
 	github.com/beevik/etree v1.6.0
 	github.com/bits-and-blooms/bloom/v3 v3.7.0
 	github.com/bojand/ghz v0.120.0
@@ -90,7 +90,7 @@ require (
 	github.com/dustinkirkland/golang-petname v0.0.0-20260215035315-f0c533e9ce9b
 	github.com/elastic/gosigar v0.14.4-0.20250606160555-44388520074d
 	github.com/firecracker-microvm/firecracker-go-sdk v0.0.0-20241028184712-f74f43bb036d
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gabriel-vasile/mimetype v1.4.4
 	github.com/gliderlabs/ssh v0.3.8
 	github.com/go-enry/go-enry/v2 v2.8.7
@@ -260,7 +260,7 @@ require (
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
 	github.com/bits-and-blooms/bitset v1.24.4 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
-	github.com/bmatcuk/doublestar/v4 v4.9.1 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/bufbuild/protocompile v0.5.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
@@ -298,6 +298,7 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/fsnotify/fsevents v0.2.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/getsentry/sentry-go v0.28.1 // indirect
 	github.com/go-chi/chi/v5 v5.3.0 // indirect
