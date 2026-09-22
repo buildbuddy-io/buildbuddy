@@ -26,7 +26,7 @@
 //	    against the dev app. Needs BB_PROBER_ORG_API_KEY, DEV_UI_PROBER_SLUG
 //	    and -buildbuddy_commit.
 //	mac_rbe
-//	    The abseil_cpp suite driven from a macOS host so that the inner
+//	    A few abseil_cpp tests driven from a macOS host so that the inner
 //	    bazel targets Mac RBE executors. Skipped on other hosts.
 //	    Needs BB_DEV_MAC_QA_KEY.
 //
@@ -101,6 +101,18 @@ var (
 			"QA_BAZEL_COMMAND": "test //...",
 			// Exclude tests that need timezone data (missing in RBE containers) and benchmarks.
 			"QA_EXTRA_BAZEL_FLAGS": "--test_tag_filters=-performance,-webdriver,-docker,-bare,-benchmark -- -//absl/time:time_test -//absl/time/internal/cctz:time_zone_format_test -//absl/time/internal/cctz:time_zone_lookup_test -//absl/random/internal:randen_benchmarks",
+		},
+	}
+
+	// abseilCppSmoke is abseilCpp cut down to a few tests: enough to prove that
+	// an executor pool can compile, link and run C++ without waiting for all of
+	// //... (which takes ~7 minutes on Mac RBE).
+	abseilCppSmoke = ossRepo{
+		name: "abseil_cpp_smoke",
+		env: map[string]string{
+			"QA_TARBALL_URL":   abseilCpp.env["QA_TARBALL_URL"],
+			"QA_STRIP_PREFIX":  abseilCpp.env["QA_STRIP_PREFIX"],
+			"QA_BAZEL_COMMAND": "test //absl/base:config_test //absl/strings:str_cat_test //absl/container:flat_hash_map_test",
 		},
 	}
 
@@ -214,7 +226,7 @@ func TestDevQA(t *testing.T) {
 			t.Skip("mac_rbe must be driven from a macOS host so that the inner bazel targets Mac RBE executors")
 		}
 		t.Parallel()
-		runOSSRepo(t, abseilCpp, *macAppEndpoint, *macGRPCEndpoint, secret(t, macQAKeyEnv))
+		runOSSRepo(t, abseilCppSmoke, *macAppEndpoint, *macGRPCEndpoint, secret(t, macQAKeyEnv))
 	})
 }
 
