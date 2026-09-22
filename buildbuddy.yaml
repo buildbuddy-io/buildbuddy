@@ -191,7 +191,15 @@ actions:
       memory: 16GB
     steps:
       - run: |
-          bb detect nondeterminism --bazel_command='build //... --config=linux-workflows' --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
+          # HACK: bb detect nondeterminism defaults its BES endpoints to
+          # production, overriding the endpoints the ci_runner configured for
+          # this environment. Read them from the ci_runner's bazelrc instead.
+          RC="$BUILDBUDDY_CI_RUNNER_ROOT_DIR/buildbuddy.bazelrc"
+          BES_BACKEND=$(sed -n 's/^common --bes_backend=//p' "$RC")
+          BES_RESULTS_URL=$(sed -n 's/^common --bes_results_url=//p' "$RC")
+          : "${BES_BACKEND:?no --bes_backend found in $RC}"
+          : "${BES_RESULTS_URL:?no --bes_results_url found in $RC}"
+          bb detect nondeterminism --bazel_command='build //... --config=linux-workflows' --bes_backend="$BES_BACKEND" --bes_results_url="$BES_RESULTS_URL" --notify_email --notify_slack=BB_CHECKS_SLACK_WEBHOOK_URL
   - name: Code review
     container_image: ubuntu-22.04
     triggers:
