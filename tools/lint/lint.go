@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +35,7 @@ var (
 
 // Set via x_defs in BUILD file.
 var (
+	buildifierRlocationpath  string
 	goimportsRlocationpath   string
 	goRlocationpath          string
 	clangFormatRlocationpath string
@@ -112,6 +114,29 @@ func runBBFix(ctx context.Context, stdout, stderr io.Writer, fix bool, files []s
 	// In diff mode, fail if the diff is non-empty.
 	if !fix && stdoutCounter.Count() > 0 {
 		return fmt.Errorf("bb fix found lint errors")
+	}
+	return runBuildifier(ctx, stdout, stderr, fix)
+}
+
+func runBuildifier(ctx context.Context, stdout, stderr io.Writer, fix bool) error {
+	if !fix {
+		return runBuildifierPass(ctx, stdout, stderr, "check", "warn")
+	}
+	fixErr := runBuildifierPass(ctx, stdout, stderr, "fix", "fix")
+	checkErr := runBuildifierPass(ctx, stdout, stderr, "check", "warn")
+	return errors.Join(fixErr, checkErr)
+}
+
+func runBuildifierPass(ctx context.Context, stdout, stderr io.Writer, mode, lintMode string) error {
+	cmd, err := getRunfileToolCommand(ctx, buildifierRlocationpath)
+	if err != nil {
+		return fmt.Errorf("get buildifier command: %w", err)
+	}
+	cmd.Args = append(cmd.Args, "-mode="+mode, "-lint="+lintMode, "-r", ".")
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run buildifier with mode %q and lint mode %q: %w", mode, lintMode, err)
 	}
 	return nil
 }

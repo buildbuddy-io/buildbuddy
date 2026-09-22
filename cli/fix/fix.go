@@ -30,7 +30,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/bazelbuild/buildtools/edit"
+	"github.com/bazel-contrib/buildtools/v10/edit"
 	"github.com/buildbuddy-io/buildbuddy/cli/add"
 	"github.com/buildbuddy-io/buildbuddy/cli/arg"
 	"github.com/buildbuddy-io/buildbuddy/cli/bazelisk"
@@ -40,8 +40,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/cli/workspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 
+	buildifier "github.com/bazel-contrib/buildtools/v10/buildifier"
 	gazelle "github.com/bazelbuild/bazel-gazelle/cmd/gazelle"
-	buildifier "github.com/bazelbuild/buildtools/buildifier"
 )
 
 var (

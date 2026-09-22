@@ -10,6 +10,11 @@ inject_repo(
     "zlib",
 )
 
+inject_repo(
+    go_deps,
+    go_sys = "org_golang_x_sys",
+)
+
 # Go repos with patches
 go_deps.module_override(
     patch_strip = 1,
@@ -51,7 +56,7 @@ go_deps.module_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = ["@com_github_buildbuddy_io_buildbuddy//buildpatches:buildifier.patch"],
-    path = "github.com/bazelbuild/buildtools",
+    path = "github.com/bazel-contrib/buildtools/v10",
 )
 go_deps.module_override(
     patch_strip = 1,
@@ -212,8 +217,8 @@ use_repo(
     "com_github_aws_aws_sdk_go_v2_service_sts",
     "com_github_aws_smithy_go",
     "com_github_azure_azure_storage_blob_go",
+    "com_github_bazel_contrib_buildtools_v10",
     "com_github_bazelbuild_bazelisk",
-    "com_github_bazelbuild_buildtools",
     "com_github_bduffany_godemon",
     "com_github_beevik_etree",
     "com_github_bits_and_blooms_bloom_v3",
