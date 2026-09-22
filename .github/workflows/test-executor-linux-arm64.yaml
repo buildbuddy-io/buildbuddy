@@ -46,11 +46,7 @@ jobs:
           common --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }}
           EOF
 
-          bazelisk test --config=race \
+          bazelisk test --config=race --test_tag_filters= \
             //enterprise/server/remote_execution/copy_on_write:copy_on_write_test \
-            //enterprise/server/remote_execution/vbd:vbd_test
-
-          # podman_test is tagged "docker", which the default tests-local suite
-          # filters out, so select that tag in a separate invocation.
-          bazelisk test --config=race --config=tests-docker \
+            //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test

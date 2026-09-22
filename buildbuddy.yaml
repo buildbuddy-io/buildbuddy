@@ -35,11 +35,11 @@ actions:
           --
           //enterprise/server/remote_execution/...
           //enterprise/server/test/integration/remote_execution/...
+          //app/util:shlex_test
           -//enterprise/server/remote_execution/containers/firecracker/...
           -//enterprise/server/test/integration/remote_execution:remote_execution_test
           -//enterprise/server/remote_execution/vbd:vbd_test
           -//enterprise/server/remote_execution/copy_on_write:copy_on_write_test
-          //app/util:shlex_test
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
     container_image: ubuntu-22.04
