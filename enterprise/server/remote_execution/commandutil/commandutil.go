@@ -30,6 +30,8 @@ const (
 	// never started, or its actual exit code could not be determined because of an
 	// error.
 	NoExitCode = -2
+	// SegmentationFaultExitCode follows the shell convention of 128 + SIGSEGV.
+	SegmentationFaultExitCode = 128 + int(syscall.SIGSEGV)
 )
 
 var (
@@ -413,7 +415,7 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 			// A segmentation fault is a command failure, not a transient executor
 			// error. Use the shell convention of 128 + signal so clients report
 			// the failure instead of retrying the execution.
-			return 128 + int(ws.Signal()), nil
+			return SegmentationFaultExitCode, nil
 		}
 		// If the command didn't time out, it was probably killed by the kernel due to OOM.
 		return exitCode, status.ResourceExhaustedErrorf("command was killed: %s", err.Error())
