@@ -45,7 +45,7 @@ start_clickhouse() {
     --publish="$BB_CLICKHOUSE_PORT:9000" \
     --publish="$BB_CLICKHOUSE_HTTP_PORT:8123" \
     --env="CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1" \
-    --volume="$data_dir:/var/lib/clickhouse" \
+    --volume="$(realpath "$data_dir"):/var/lib/clickhouse" \
     "$BB_CLICKHOUSE_IMAGE" >/dev/null
 }
 
