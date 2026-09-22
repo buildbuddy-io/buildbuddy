@@ -30,7 +30,7 @@ const (
 	// never started, or its actual exit code could not be determined because of an
 	// error.
 	NoExitCode = -2
-	// SegmentationFaultExitCode follows the shell convention of 128 + SIGSEGV.
+	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
 	SegmentationFaultExitCode = 128 + int(syscall.SIGSEGV)
 )
 
