@@ -2019,10 +2019,8 @@ func registerIsolationTypeExecutorPair(ctx context.Context, t *testing.T, env en
 }
 
 func TestScheduleTask_RespectsRequestedIsolationType(t *testing.T) {
-	// Disable the unclaimed tasks cache so that the scheduled task is
-	// immediately visible to AskForMoreWork and to executors joining the pool.
-	flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", 0*time.Second)
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	clock := clockwork.NewFakeClock()
+	env, ctx := getEnv(t, &schedulerOpts{options: Options{Clock: clock}}, "user1")
 
 	ociExecutor, firecrackerExecutor := registerIsolationTypeExecutorPair(ctx, t, env)
 
@@ -2033,6 +2031,9 @@ func TestScheduleTask_RespectsRequestedIsolationType(t *testing.T) {
 	taskID := scheduleTask(ctx, t, env, map[string]string{"workload-isolation-type": "firecracker"})
 	nextReservation(t, firecrackerExecutor, taskID)
 	ociExecutor.EnsureTaskNotReceived(taskID)
+	// Expire the unclaimed tasks cache so that the task is visible to
+	// AskForMoreWork and to executors joining the pool.
+	clock.Advance(2 * time.Second)
 
 	// The task is unclaimed, so it's eligible for work stealing. The OCI
 	// executor asking for more work should only get a backoff response, not
