@@ -381,8 +381,16 @@ func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	return pebbleKey.Bytes(filestore.Version6)
 }
 
-func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta[*sgpb.FileRecord], error) {
-	keys := make([]*sender.KeyMeta[*sgpb.FileRecord], 0, len(fileRecords))
+// Key types for the sender's multi-key operations, one per meta type.
+type (
+	fileRecordKeyMeta = sender.KeyMeta[*sgpb.FileRecord]
+	atimeKeyMeta      = sender.KeyMeta[atimeUpdateMeta]
+	setKeyMeta        = sender.KeyMeta[*mdpb.SetRequest_SetOperation]
+	deleteKeyMeta     = sender.KeyMeta[*mdpb.DeleteRequest_DeleteOperation]
+)
+
+func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*fileRecordKeyMeta, error) {
+	keys := make([]*fileRecordKeyMeta, 0, len(fileRecords))
 	for _, fileRecord := range fileRecords {
 		fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 		if err != nil {
@@ -468,7 +476,7 @@ func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.Sto
 }
 
 func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
-	var keys []*sender.KeyMeta[atimeUpdateMeta]
+	var keys []*atimeKeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)
 	defer timer.Stop()
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
@@ -493,7 +501,7 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		// UpdateAtime is safe to send through RunMultiKey: retries may be
 		// re-executed on current state rather than replaying the original
 		// response, but the state-machine effect is monotonic/no-op on replay.
-		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta[atimeUpdateMeta]) (*rfpb.SyncProposeResponse, error) {
+		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*atimeKeyMeta) (*rfpb.SyncProposeResponse, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
 				batch.Add(&rfpb.UpdateAtimeRequest{
@@ -585,7 +593,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta[*sgpb.FileRecord]) (getMetadataResult, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*fileRecordKeyMeta) (getMetadataResult, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.GetRequest{
@@ -668,7 +676,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta[*sgpb.FileRecord]) (findMetadataResult, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*fileRecordKeyMeta) (findMetadataResult, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.FindRequest{
@@ -735,8 +743,8 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 	return rsp, nil
 }
 
-func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*sender.KeyMeta[*mdpb.SetRequest_SetOperation], error) {
-	keys := make([]*sender.KeyMeta[*mdpb.SetRequest_SetOperation], 0, len(setOperations))
+func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*setKeyMeta, error) {
+	keys := make([]*setKeyMeta, 0, len(setOperations))
 	for _, setOperation := range setOperations {
 		fileMetadataKey, err := rc.fileMetadataKey(setOperation.GetFileMetadata().GetFileRecord())
 		if err != nil {
@@ -765,7 +773,7 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta[*mdpb.SetRequest_SetOperation]) (struct{}, error) {
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*setKeyMeta) (struct{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			fm := k.Meta.GetFileMetadata()
@@ -795,8 +803,8 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	return &mdpb.SetResponse{}, nil
 }
 
-func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequest_DeleteOperation) ([]*sender.KeyMeta[*mdpb.DeleteRequest_DeleteOperation], error) {
-	var keys []*sender.KeyMeta[*mdpb.DeleteRequest_DeleteOperation]
+func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequest_DeleteOperation) ([]*deleteKeyMeta, error) {
+	var keys []*deleteKeyMeta
 	for _, deleteOperation := range deleteOperations {
 		fileMetadataKey, err := rc.fileMetadataKey(deleteOperation.GetFileRecord())
 		if err != nil {
@@ -823,7 +831,7 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	// Shard the query by key and query shards in parallel.
 	// Delete is safe to send through RunMultiKey: once the key is gone,
 	// duplicate retries still return success.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta[*mdpb.DeleteRequest_DeleteOperation]) (struct{}, error) {
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*deleteKeyMeta) (struct{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.DeleteRequest{
