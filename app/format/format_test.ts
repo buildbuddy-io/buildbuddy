@@ -106,6 +106,22 @@ describe("formatWithCommas", () => {
   });
 });
 
+describe("formatCents", () => {
+  it("should format cents as dollars", () => {
+    expect(format.formatCents(98765.4)).toEqual("$987.65");
+    expect(format.formatCents(0)).toEqual("$0.00");
+    expect(format.formatCents(123456)).toEqual("$1,234.56");
+  });
+});
+
+describe("formatPrice", () => {
+  it("should drop the cents when whole", () => {
+    expect(format.formatPrice(12)).toEqual("$0.12");
+    expect(format.formatPrice(7)).toEqual("$0.07");
+    expect(format.formatPrice(300000)).toEqual("$3,000");
+  });
+});
+
 describe("bytes", () => {
   it("should abbreviate large numbers", () => {
     expect(format.bytes(0)).toEqual("0B");

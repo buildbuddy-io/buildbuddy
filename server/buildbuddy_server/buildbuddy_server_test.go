@@ -113,7 +113,15 @@ func (s *fakeUsageService) DeleteUsageAlertingRule(ctx context.Context, req *usa
 	return &usagepb.DeleteUsageAlertingRuleResponse{}, nil
 }
 
+func (s *fakeUsageService) GetCurrentBill(ctx context.Context, req *usagepb.GetCurrentBillRequest) (*usagepb.GetCurrentBillResponse, error) {
+	return &usagepb.GetCurrentBillResponse{}, nil
+}
+
 func (s *fakeUsageService) GetAlertsEnabled() bool {
+	return true
+}
+
+func (s *fakeUsageService) GetBillEnabled() bool {
 	return true
 }
 
