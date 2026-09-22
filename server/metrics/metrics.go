@@ -3651,6 +3651,39 @@ var (
 		CacheNameLabel,
 	})
 
+	PebbleCacheCASAgeWhenAtimeUpdated = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_cache",
+		Name:      "pebble_cache_cas_age_when_atime_updated",
+		Buckets: customDurationBuckets(
+			time.Duration.Milliseconds,
+			[]time.Duration{
+				1 * time.Hour,
+				3 * time.Hour,
+				6 * time.Hour,
+				12 * time.Hour,
+				1 * day,
+				2 * day,
+				3 * day,
+				4 * day,
+				5 * day,
+				6 * day,
+				7 * day,
+				10 * day,
+				14 * day,
+				21 * day,
+				30 * day,
+				60 * day,
+				90 * day,
+				180 * day,
+				365 * day,
+			}),
+		Help: "Time since last write to a CAS entry when its atime was updated (msec)",
+	}, []string{
+		PartitionID,
+		CacheNameLabel,
+	})
+
 	PebbleCacheEvictionSamplesChanSize = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
