@@ -8,7 +8,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
@@ -24,6 +30,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -727,4 +735,390 @@ func TestFetchDirectory(t *testing.T) {
 	resp, err := fetchClient.FetchDirectory(ctx, &rapb.FetchDirectoryRequest{})
 	assert.EqualError(t, err, "rpc error: code = Unimplemented desc = FetchDirectory is not yet implemented")
 	assert.Nil(t, resp)
+}
+
+func TestFetchBlob_InvalidChecksum(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+	var requests atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		fmt.Fprint(w, content)
+	}))
+	defer origin.Close()
+	for _, tc := range []struct {
+		name, checksum, wantMessage string
+	}{
+		{"empty", "", ""},
+		{"unknown_algorithm", "sha999-AAAA", "No supported checksum algorithm"},
+		{"missing_separator", "sha256", ""},
+		{"empty_hash", "sha256-", ""},
+		{"invalid_base64", "sha256-!", ""},
+		{"short_hash", "sha256-" + base64.StdEncoding.EncodeToString(make([]byte, 31)), ""},
+		{"long_hash", "sha256-" + base64.StdEncoding.EncodeToString(make([]byte, 33)), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+				Uris:       []string{origin.URL},
+				Qualifiers: []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: tc.checksum}},
+			})
+			require.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
+			if tc.wantMessage != "" {
+				require.Contains(t, gstatus.Convert(err).Message(), tc.wantMessage)
+			}
+			require.Zero(t, requests.Load(), "invalid integrity constraints must not fetch the origin")
+		})
+	}
+}
+
+func TestFetchBlob_ChecksumSRIList(t *testing.T) {
+	flags.Set(t, "storage.tempdir", t.TempDir())
+	require.NoError(t, scratchspace.Init())
+	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	wrongSHA512, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA512)
+	require.NoError(t, err)
+	wrongSHA256CRI := checksumQualifierFromContent(t, wrongSHA256.GetHash(), repb.DigestFunction_SHA256)
+	wrongSHA512CRI := checksumQualifierFromContent(t, wrongSHA512.GetHash(), repb.DigestFunction_SHA512)
+
+	for _, tc := range []struct {
+		name              string
+		checksum          string
+		chunked           bool
+		wantRPCCode       gcodes.Code
+		wantResponseCode  gcodes.Code
+		wantOriginFetches int64
+	}{
+		{
+			name:              "unsupported_then_matching_supported_known_length",
+			checksum:          "sha999-AAAA " + sha256CRI,
+			wantResponseCode:  gcodes.OK,
+			wantOriginFetches: 1,
+		},
+		{
+			name:              "matching_supported_then_unsupported_chunked",
+			checksum:          sha256CRI + " sha999-AAAA",
+			chunked:           true,
+			wantResponseCode:  gcodes.OK,
+			wantOriginFetches: 1,
+		},
+		{
+			name:              "matching_first_then_wrong_same_algorithm",
+			checksum:          sha256CRI + " " + wrongSHA256CRI,
+			wantResponseCode:  gcodes.OK,
+			wantOriginFetches: 1,
+		},
+		{
+			name:              "whitespace_separated_alternatives",
+			checksum:          "sha999-AAAA\t" + sha256CRI + "\nsha888-BBBB",
+			chunked:           true,
+			wantResponseCode:  gcodes.OK,
+			wantOriginFetches: 1,
+		},
+		{
+			name:              "same_algorithm_first_wrong_second_matches",
+			checksum:          wrongSHA256CRI + " " + sha256CRI,
+			wantResponseCode:  gcodes.OK,
+			wantOriginFetches: 1,
+		},
+		{
+			name:              "matching_checksum_different_from_storage",
+			checksum:          wrongSHA256CRI + " " + sha512CRI,
+			wantResponseCode:  gcodes.OK,
+			wantOriginFetches: 1,
+		},
+		{
+			name:              "cross_algorithm_first_wrong_second_matches",
+			checksum:          wrongSHA512CRI + " " + sha256CRI,
+			chunked:           true,
+			wantResponseCode:  gcodes.OK,
+			wantOriginFetches: 1,
+		},
+		{
+			name:              "no_supported_checksum_algorithms",
+			checksum:          "sha999-AAAA sha888-BBBB",
+			wantRPCCode:       gcodes.InvalidArgument,
+			wantOriginFetches: 0,
+		},
+		{
+			name:              "malformed_supported_token_rejected_even_with_match",
+			checksum:          "sha256-not-base64 " + sha256CRI,
+			wantRPCCode:       gcodes.InvalidArgument,
+			wantOriginFetches: 0,
+		},
+		{
+			name:              "none_match",
+			checksum:          wrongSHA256CRI + " " + wrongSHA512CRI,
+			wantResponseCode:  gcodes.NotFound,
+			wantOriginFetches: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+			var requests atomic.Int64
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if tc.chunked {
+					w.(http.Flusher).Flush()
+				}
+				fmt.Fprint(w, content)
+			}))
+			defer origin.Close()
+
+			resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+				Uris:           []string{origin.URL},
+				Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: tc.checksum}},
+				DigestFunction: repb.DigestFunction_SHA256,
+			})
+			if tc.wantRPCCode != gcodes.OK {
+				require.Equal(t, tc.wantRPCCode, gstatus.Code(err))
+				require.Nil(t, resp)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, int32(tc.wantResponseCode), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
+				if tc.name == "none_match" {
+					require.Contains(t, resp.GetStatus().GetMessage(), "did not match any supported checksum")
+				}
+				if tc.wantResponseCode == gcodes.OK {
+					var got bytes.Buffer
+					rn := digest.NewCASResourceName(resp.GetBlobDigest(), "", resp.GetDigestFunction())
+					require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), rn, &got))
+					require.Equal(t, content, got.String())
+				}
+			}
+			require.Equal(t, tc.wantOriginFetches, requests.Load())
+		})
+	}
+}
+
+func TestFetchBlob_ChecksumSRIListCacheHitAndConversion(t *testing.T) {
+	flags.Set(t, "storage.tempdir", t.TempDir())
+	require.NoError(t, scratchspace.Init())
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.NoError(t, te.GetCache().Set(ctx, digest.NewCASResourceName(checksumDigest, "", repb.DigestFunction_SHA256).ToProto(), []byte(content)))
+
+	wrongSHA256, err := digest.Compute(strings.NewReader("wrong"), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	var requests atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		http.Error(w, "cached content should not be fetched", http.StatusInternalServerError)
+	}))
+	defer origin.Close()
+
+	resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+		Uris: []string{origin.URL},
+		Qualifiers: []*rapb.Qualifier{{
+			Name:  fetch_server.ChecksumQualifier,
+			Value: checksumQualifierFromContent(t, wrongSHA256.GetHash(), repb.DigestFunction_SHA256) + " " + sha256CRI,
+		}},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
+	require.Equal(t, repb.DigestFunction_BLAKE3, resp.GetDigestFunction())
+	require.Zero(t, requests.Load())
+	var got bytes.Buffer
+	require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), digest.NewCASResourceName(resp.GetBlobDigest(), "", resp.GetDigestFunction()), &got))
+	require.Equal(t, content, got.String())
+}
+
+func TestFetchBlob_CompressionCompatibility(t *testing.T) {
+	for _, compressed := range []bool{false, true} {
+		for _, chunked := range []bool{false, true} {
+			t.Run(fmt.Sprintf("compression=%t/chunked=%t", compressed, chunked), func(t *testing.T) {
+				flags.Set(t, "cache.zstd_transcoding_enabled", compressed)
+				flags.Set(t, "storage.tempdir", t.TempDir())
+				require.NoError(t, scratchspace.Init())
+				ctx := context.Background()
+				te := testenv.GetTestEnv(t)
+				conn := runFetchServer(ctx, t, te)
+				origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if chunked {
+						w.(http.Flusher).Flush()
+					}
+					fmt.Fprint(w, content)
+				}))
+				defer origin.Close()
+				resp, err := rapb.NewFetchClient(conn).FetchBlob(ctx, &rapb.FetchBlobRequest{
+					Uris:           []string{origin.URL},
+					Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+					DigestFunction: repb.DigestFunction_SHA256,
+				})
+				require.NoError(t, err)
+				require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
+				var got bytes.Buffer
+				rn := digest.NewCASResourceName(resp.GetBlobDigest(), "", resp.GetDigestFunction())
+				require.NoError(t, cachetools.GetBlob(ctx, bspb.NewByteStreamClient(conn), rn, &got))
+				require.Equal(t, content, got.String())
+			})
+		}
+	}
+}
+
+func TestFetchBlob_FailedDownloadCleansScratchFiles(t *testing.T) {
+	scratchRoot := t.TempDir()
+	flags.Set(t, "storage.tempdir", scratchRoot)
+	require.NoError(t, scratchspace.Init())
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No checksum is supplied, so this truncated response takes the scratch-file
+		// path even though the origin advertises a content length.
+		w.Header().Set("Content-Length", "100")
+		fmt.Fprint(w, "partial")
+	}))
+	defer origin.Close()
+	resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{Uris: []string{origin.URL}})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.NotFound), resp.GetStatus().GetCode())
+	entries, err := os.ReadDir(filepath.Join(scratchRoot, "buildbuddy-scratch"))
+	require.NoError(t, err)
+	require.Empty(t, entries, "failed downloads must not leave partial scratch files")
+}
+
+func TestFetchBlob_RedactsURLSecrets(t *testing.T) {
+	ctx := context.Background()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ok":
+			fmt.Fprint(w, content)
+		case "/redirect-loop":
+			w.Header().Set("Location", r.URL.String())
+			w.WriteHeader(http.StatusFound)
+		case "/redirect":
+			// net/http's error includes the invalid Location and its nested parse error.
+			w.Header().Set("Location", "http://redirect-user:redirect-password@example.test/%zz?token=redirect-token#redirect-fragment")
+			w.WriteHeader(http.StatusFound)
+		default:
+			http.Error(w, "missing", http.StatusNotFound)
+		}
+	}))
+	defer origin.Close()
+	deadOrigin := httptest.NewServer(http.NotFoundHandler())
+	deadOrigin.Close()
+	tlsOrigin := httptest.NewTLSServer(http.NotFoundHandler())
+	defer tlsOrigin.Close()
+	for _, tc := range []struct {
+		name, uri   string
+		code        gcodes.Code
+		rpcError    bool
+		wantMessage string
+	}{
+		{"success", origin.URL + "/ok", gcodes.OK, false, ""},
+		{"http_error", origin.URL + "/missing", gcodes.NotFound, false, "HTTP 404"},
+		{"redirect_parse_error", origin.URL + "/redirect", gcodes.NotFound, false, "request failed"},
+		{"redirect_limit", origin.URL + "/redirect-loop", gcodes.NotFound, false, "stopped after 10 redirects"},
+		{"tls_error", tlsOrigin.URL + "/asset", gcodes.NotFound, false, "TLS certificate verification failed"},
+		{"private_ip", origin.URL + "/ok", gcodes.NotFound, false, "IP address not allowed"},
+		{"network_error", deadOrigin.URL + "/asset", gcodes.NotFound, false, "connection refused"},
+		{"parse_error", origin.URL + "/%zz", gcodes.InvalidArgument, true, ""},
+		{"opaque_uri", "https:opaque-token", gcodes.NotFound, false, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logFile, err := os.CreateTemp(t.TempDir(), "fetch-logs")
+			require.NoError(t, err)
+			t.Cleanup(func() { logFile.Close() })
+			originalLogger := zlog.Logger
+			zlog.Logger = zerolog.New(logFile).Level(zerolog.DebugLevel)
+			// Restore only after the environment has stopped its server goroutines.
+			t.Cleanup(func() { zlog.Logger = originalLogger })
+			te := testenv.GetTestEnv(t)
+			runFetchServer(ctx, t, te)
+			if tc.name == "private_ip" {
+				flags.Set(t, "remote_asset.allowed_private_ips", []string{})
+				flags.Set(t, "http.client.allow_localhost", false)
+			}
+			server, err := fetch_server.NewFetchServer(te)
+			require.NoError(t, err)
+			uri := strings.Replace(tc.uri, "://", "://origin-user:origin-password@", 1) + "?token=origin-token#origin-fragment"
+			resp, err := server.FetchBlob(ctx, &rapb.FetchBlobRequest{
+				Uris:         []string{uri},
+				InstanceName: tc.name,
+				Qualifiers:   []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+			})
+			var message string
+			if tc.rpcError {
+				require.Equal(t, tc.code, gstatus.Code(err))
+				message = err.Error()
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, int32(tc.code), resp.GetStatus().GetCode())
+				require.Equal(t, uri, resp.GetUri(), "protocol URI must remain unchanged")
+				message = resp.GetStatus().GetMessage()
+			}
+			if tc.wantMessage != "" {
+				assert.Contains(t, message, tc.wantMessage)
+			}
+			logs, err := os.ReadFile(logFile.Name())
+			require.NoError(t, err)
+			if !tc.rpcError {
+				require.NotEmpty(t, logs)
+			}
+			for _, secret := range []string{"origin-user", "origin-password", "origin-token", "origin-fragment", "redirect-user", "redirect-password", "redirect-token", "redirect-fragment", "opaque-token"} {
+				assert.NotContains(t, string(logs), secret)
+				assert.NotContains(t, message, secret)
+			}
+			if !tc.rpcError && tc.name != "opaque_uri" {
+				parsed, err := url.Parse(tc.uri)
+				require.NoError(t, err)
+				assert.Contains(t, string(logs), parsed.Host, "retain useful origin context")
+			}
+		})
+	}
+}
+
+func TestFetchBlob_DigestConversionClosesScratchFile(t *testing.T) {
+	scratchRoot := t.TempDir()
+	flags.Set(t, "storage.tempdir", scratchRoot)
+	require.NoError(t, scratchspace.Init())
+	// Disable finalizers so they cannot hide a leaked descriptor before we check.
+	previousGCPercent := debug.SetGCPercent(-1)
+	defer debug.SetGCPercent(previousGCPercent)
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	client := rapb.NewFetchClient(runFetchServer(ctx, t, te))
+	ctx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+	require.NoError(t, err)
+	checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	require.NoError(t, te.GetCache().Set(ctx, digest.NewResourceName(checksumDigest, "", resource.CacheType_CAS, repb.DigestFunction_SHA256).ToProto(), []byte(content)))
+	// The origin cannot be fetched, so success requires converting the cached blob.
+	resp, err := client.FetchBlob(ctx, &rapb.FetchBlobRequest{
+		Uris:           []string{"urn:cached-asset"},
+		Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+		DigestFunction: repb.DigestFunction_BLAKE3,
+	})
+	require.NoError(t, err)
+	require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode())
+	var got bytes.Buffer
+	require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), digest.NewCASResourceName(resp.GetBlobDigest(), "", resp.GetDigestFunction()), &got))
+	require.Equal(t, content, got.String())
+	entries, err := os.ReadDir(filepath.Join(scratchRoot, "buildbuddy-scratch"))
+	require.NoError(t, err)
+	require.Empty(t, entries)
+	if runtime.GOOS != "linux" {
+		return
+	}
+	descriptors, err := os.ReadDir("/proc/self/fd")
+	require.NoError(t, err)
+	for _, descriptor := range descriptors {
+		target, err := os.Readlink(filepath.Join("/proc/self/fd", descriptor.Name()))
+		// Descriptors may close while enumerating.
+		if os.IsNotExist(err) {
+			continue
+		}
+		require.NoError(t, err)
+		assert.NotContains(t, target, scratchRoot, "digest conversion must close its temporary file, not just unlink it")
+	}
 }
