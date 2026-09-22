@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/raft/sender"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
@@ -46,7 +47,7 @@ func testSamples(n int) ([]*approxlru.Sample[*evictionKey], []*evictionKeyMeta) 
 			Key:       &evictionKey{bytes: []byte{byte('a' + i)}},
 			Timestamp: time.UnixMicro(int64(1000 + i)),
 		}
-		keys[i] = &evictionKeyMeta{Key: samples[i].Key.bytes, Meta: samples[i]}
+		keys[i] = sender.NewKeyMeta(samples[i].Key.bytes, samples[i])
 	}
 	return samples, keys
 }

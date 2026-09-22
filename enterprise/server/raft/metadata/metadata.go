@@ -388,7 +388,7 @@ func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*send
 		if err != nil {
 			return nil, err
 		}
-		keys = append(keys, &sender.KeyMeta[*sgpb.FileRecord]{Key: fileMetadataKey, Meta: fileRecord})
+		keys = append(keys, sender.NewKeyMeta(fileMetadataKey, fileRecord))
 	}
 	return keys, nil
 }
@@ -539,13 +539,10 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
 				continue
 			}
-			keys = append(keys, &sender.KeyMeta[atimeUpdateMeta]{
-				Key: key,
-				Meta: atimeUpdateMeta{
-					accessTimeUsec:     rc.clock.Now().UnixMicro(),
-					lastCustomTimeUsec: customTimeUsec,
-				},
-			})
+			keys = append(keys, sender.NewKeyMeta(key, atimeUpdateMeta{
+				accessTimeUsec:     rc.clock.Now().UnixMicro(),
+				lastCustomTimeUsec: customTimeUsec,
+			}))
 			if len(keys) >= atimeWriteBatchSize {
 				flush()
 			}
@@ -745,7 +742,7 @@ func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOp
 		if err != nil {
 			return nil, err
 		}
-		keys = append(keys, &sender.KeyMeta[*mdpb.SetRequest_SetOperation]{Key: fileMetadataKey, Meta: setOperation})
+		keys = append(keys, sender.NewKeyMeta(fileMetadataKey, setOperation))
 	}
 	return keys, nil
 }
@@ -805,7 +802,7 @@ func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequ
 		if err != nil {
 			return nil, err
 		}
-		keys = append(keys, &sender.KeyMeta[*mdpb.DeleteRequest_DeleteOperation]{Key: fileMetadataKey, Meta: deleteOperation})
+		keys = append(keys, sender.NewKeyMeta(fileMetadataKey, deleteOperation))
 	}
 	return keys, nil
 }

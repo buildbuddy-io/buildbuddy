@@ -582,6 +582,12 @@ type KeyMeta[M any] struct {
 	Meta M
 }
 
+// NewKeyMeta returns a key with meta attached. It infers M, so callers do not
+// spell out the KeyMeta instantiation.
+func NewKeyMeta[M any](key []byte, meta M) *KeyMeta[M] {
+	return &KeyMeta[M]{Key: key, Meta: meta}
+}
+
 type rangeKeys[M any] struct {
 	keys []*KeyMeta[M]
 	rd   *rfpb.RangeDescriptor

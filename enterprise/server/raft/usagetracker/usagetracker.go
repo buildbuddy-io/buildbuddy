@@ -338,10 +338,7 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case sampleToDelete := <-pu.deletes:
-				batch = append(batch, &evictionKeyMeta{
-					Key:  sampleToDelete.Key.bytes,
-					Meta: sampleToDelete,
-				})
+				batch = append(batch, sender.NewKeyMeta(sampleToDelete.Key.bytes, sampleToDelete))
 				if len(batch) >= pu.evictionBatchSize {
 					if !sendBatch(batch) {
 						return
