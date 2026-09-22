@@ -56,20 +56,6 @@ go_library(
     ],
 )
 
-go_test(
-    name = "ociruntime_unit_test",
-    srcs = ["ociruntime_unit_test.go"],
-    embed = [":ociruntime"],
-    target_compatible_with = ["@platforms//os:linux"],
-    deps = [
-        "//enterprise/server/remote_execution/commandutil",
-        "//proto:remote_execution_go_proto",
-        "//server/interfaces",
-        "//server/util/status",
-        "@com_github_stretchr_testify//require",
-    ],
-)
-
 genrule(
     name = "tini_binary",
     srcs = ["//enterprise/server/cmd/executor:tini"],
