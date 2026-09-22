@@ -1038,13 +1038,14 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 // getAPIKeyCreationMetadata returns a map from API Key ID to a CreationMetadata
 // proto containing creation metadata for the API key.
 func (s *BuildBuddyServer) getAPIKeyCreationMetadata(ctx context.Context, groupID string, keys []*tables.APIKey) (map[string]*akpb.CreationMetadata, error) {
-	u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err != nil || authutil.AuthorizeOrgAdmin(u, groupID) != nil {
-		// Only org admins can see creation metadata for API keys.
-		return nil, nil
-	}
-
 	isServerAdmin := claims.AuthorizeServerAdmin(ctx) == nil
+	if !isServerAdmin {
+		u, err := s.env.GetAuthenticator().AuthenticatedUser(ctx)
+		if err != nil || authutil.AuthorizeOrgAdmin(u, groupID) != nil {
+			// Only org and server admins can see API key creation metadata.
+			return nil, nil
+		}
+	}
 
 	udb := s.env.GetUserDB()
 	creatorNames := map[string]string{}
