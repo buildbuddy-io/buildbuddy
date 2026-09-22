@@ -22,8 +22,8 @@
 //	    `bb remote test //server/util/...` on a Mac arm64 dev remote runner.
 //	    Needs BB_DEV_MAC_QA_KEY and -buildbuddy_commit.
 //	webdriver
-//	    Runs the webdriver invocation tests on prod RBE, driving a browser
-//	    against the dev app. Needs BB_PROBER_ORG_API_KEY, DEV_UI_PROBER_SLUG
+//	    Builds and runs the webdriver invocation tests on dev RBE, driving a
+//	    browser against the dev app. Needs BB_QA_DEV_KEY, DEV_UI_PROBER_SLUG
 //	    and -buildbuddy_commit.
 //	mac_rbe
 //	    A few abseil_cpp tests driven from a macOS host so that the inner
@@ -58,17 +58,15 @@ var (
 	buildbuddyCommit  = flag.String("buildbuddy_commit", "", "buildbuddy-io/buildbuddy commit SHA to run the remote_bazel, mac_remote_runner and webdriver suites against.")
 	buildbuddyRepoURL = flag.String("buildbuddy_repo_url", "https://github.com/buildbuddy-io/buildbuddy.git", "Git URL that buildbuddy is cloned from.")
 
-	qaAppEndpoint  = flag.String("qa_app_endpoint", "buildbuddy-qa-dev.buildbuddy.dev", "App host for the OSS repo suites and the remote_bazel suite.")
-	qaGRPCEndpoint = flag.String("qa_grpc_endpoint", "buildbuddy-qa-dev.buildbuddy.dev", "gRPC host for the OSS repo suites and the remote_bazel suite.")
+	qaAppEndpoint  = flag.String("qa_app_endpoint", "buildbuddy-qa-dev.buildbuddy.dev", "App host for the OSS repo, remote_bazel and webdriver suites.")
+	qaGRPCEndpoint = flag.String("qa_grpc_endpoint", "buildbuddy-qa-dev.buildbuddy.dev", "gRPC host for the OSS repo, remote_bazel and webdriver suites.")
 
 	macAppEndpoint  = flag.String("mac_app_endpoint", "app.buildbuddy.dev", "App host for the mac_rbe and mac_remote_runner suites.")
 	macGRPCEndpoint = flag.String("mac_grpc_endpoint", "remote.buildbuddy.dev", "gRPC host for the mac_rbe and mac_remote_runner suites.")
 
 	remoteRunner = flag.String("remote_runner", "grpcs://remote.buildbuddy.dev", "Remote runner target for the bb remote suites.")
 
-	webdriverRBEAppEndpoint  = flag.String("webdriver_rbe_app_endpoint", "app.buildbuddy.io", "App host that the webdriver suite's own invocation is streamed to.")
-	webdriverRBEGRPCEndpoint = flag.String("webdriver_rbe_grpc_endpoint", "remote.buildbuddy.io", "gRPC host that builds and executes the webdriver suite.")
-	webdriverAppEndpoint     = flag.String("webdriver_app_endpoint", "https://app.buildbuddy.dev", "App URL that the webdriver suite drives a browser against.")
+	webdriverAppEndpoint = flag.String("webdriver_app_endpoint", "https://app.buildbuddy.dev", "App URL that the webdriver suite drives a browser against (the browser logs in to the group that -remote_sso_slug selects there).")
 
 	// Injected via x_defs.
 	runnerScriptRlocationpath string
@@ -79,10 +77,9 @@ var (
 
 // Environment variables holding secrets.
 const (
-	qaDevKeyEnv     = "BB_QA_DEV_KEY"
-	macQAKeyEnv     = "BB_DEV_MAC_QA_KEY"
-	proberOrgKeyEnv = "BB_PROBER_ORG_API_KEY"
-	proberSlugEnv   = "DEV_UI_PROBER_SLUG"
+	qaDevKeyEnv   = "BB_QA_DEV_KEY"
+	macQAKeyEnv   = "BB_DEV_MAC_QA_KEY"
+	proberSlugEnv = "DEV_UI_PROBER_SLUG"
 )
 
 // ossRepo is a third-party repo that dev_qa_test_runner.sh downloads and runs
@@ -199,18 +196,21 @@ func TestDevQA(t *testing.T) {
 
 	t.Run("webdriver", func(t *testing.T) {
 		t.Parallel()
-		apiKey := secret(t, proberOrgKeyEnv)
+		apiKey := secret(t, qaDevKeyEnv)
 		slug := secret(t, proberSlugEnv)
 		repoDir := cloneBuildBuddy(t)
-		err := os.WriteFile(filepath.Join(repoDir, "user.bazelrc"), []byte("build --config=auto-release\n"), 0644)
+		// probers-shared selects the RBE platforms and toolchains (and
+		// minimal downloads) without choosing an endpoint; those are given
+		// explicitly below.
+		err := os.WriteFile(filepath.Join(repoDir, "user.bazelrc"), []byte("build --config=probers-shared\n"), 0644)
 		require.NoError(t, err)
 		runCommand(t, repoDir, nil, runfile(t, bazel9Rlocationpath),
 			"test", "enterprise/server/test/webdriver/invocation/...",
 			"--remote_header=x-buildbuddy-api-key="+apiKey,
-			"--bes_results_url=https://"+*webdriverRBEAppEndpoint+"/invocation/",
-			"--bes_backend=grpcs://"+*webdriverRBEGRPCEndpoint,
-			"--remote_cache=grpcs://"+*webdriverRBEGRPCEndpoint,
-			"--remote_executor=grpcs://"+*webdriverRBEGRPCEndpoint,
+			"--bes_results_url=https://"+*qaAppEndpoint+"/invocation/",
+			"--bes_backend=grpcs://"+*qaGRPCEndpoint,
+			"--remote_cache=grpcs://"+*qaGRPCEndpoint,
+			"--remote_executor=grpcs://"+*qaGRPCEndpoint,
 			"--test_arg=-webdriver_target=remote",
 			"--test_arg=-remote_app_endpoint="+*webdriverAppEndpoint,
 			"--test_arg=-remote_sso_slug="+slug,
