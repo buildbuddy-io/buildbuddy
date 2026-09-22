@@ -550,13 +550,9 @@ func mirrorToCache(
 	// then we know the full digest, and can pipe directly from the HTTP
 	// response to cache.
 	if checksumFunc == storageFunc && expectedChecksum != "" && rsp.ContentLength >= 0 {
-		d := &repb.Digest{Hash: expectedChecksum, SizeBytes: rsp.ContentLength}
-		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
-		if remote_cache_config.ZstdTranscodingEnabled() {
-			rn.SetCompressor(repb.Compressor_ZSTD)
-		}
-		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
-			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
+		d, err := uploadResponseDirectly(ctx, bsClient, remoteInstanceName, storageFunc, expectedChecksum, rsp)
+		if err != nil {
+			return nil, err
 		}
 		log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", safeURI, digest.String(d))
 		return d, nil
@@ -641,6 +637,18 @@ func mirrorToCache(
 	}
 	log.CtxDebugf(ctx, "Mirrored %s to cache (digest: %s)", safeURI, digest.String(blobDigest))
 	return blobDigest, nil
+}
+
+func uploadResponseDirectly(ctx context.Context, bsClient bspb.ByteStreamClient, instanceName string, storageFunc repb.DigestFunction_Value, hash string, rsp *http.Response) (*repb.Digest, error) {
+	d := &repb.Digest{Hash: hash, SizeBytes: rsp.ContentLength}
+	rn := digest.NewCASResourceName(d, instanceName, storageFunc)
+	if remote_cache_config.ZstdTranscodingEnabled() {
+		rn.SetCompressor(repb.Compressor_ZSTD)
+	}
+	if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
+		return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
+	}
+	return d, nil
 }
 
 // copyToTempFile copies r into a new scratch file, closes it, and returns its path.
