@@ -576,18 +576,24 @@ func (s *Sender) runPropose(ctx context.Context, key []byte, batchCmd *rfpb.Batc
 	return status.UnavailableErrorf("sender.runPropose retries exceeded for key: %q err: %s", key, lastError)
 }
 
-// KeyMeta contains a key with arbitrary data attached.
-type KeyMeta struct {
+// KeyMeta contains a key with caller-defined data attached.
+type KeyMeta[M any] struct {
 	Key  []byte
-	Meta any
+	Meta M
 }
 
-type rangeKeys struct {
-	keys []*KeyMeta
+// NewKeyMeta returns a key with meta attached. It infers M, so callers do not
+// spell out the KeyMeta instantiation.
+func NewKeyMeta[M any](key []byte, meta M) *KeyMeta[M] {
+	return &KeyMeta[M]{Key: key, Meta: meta}
+}
+
+type rangeKeys[M any] struct {
+	keys []*KeyMeta[M]
 	rd   *rfpb.RangeDescriptor
 }
 
-func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skipRangeCache bool) (map[uint64]*rangeKeys, error) {
+func (s *Sender) partitionKeysByRange[M any](ctx context.Context, keys []*KeyMeta[M], skipRangeCache bool) (map[uint64]*rangeKeys[M], error) {
 	ctx, span := tracing.StartNamedSpan(ctx, "sender.Sender.partitionKeysByRange")
 	defer span.End()
 
@@ -620,7 +626,7 @@ func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skip
 	}
 
 	// Partition keys by range.
-	keysByRange := make(map[uint64]*rangeKeys)
+	keysByRange := make(map[uint64]*rangeKeys[M])
 	for i, keyMeta := range keys {
 		rd := rds[i]
 		if v, ok := keysByRange[rd.GetRangeId()]; ok {
@@ -630,14 +636,14 @@ func (s *Sender) partitionKeysByRange(ctx context.Context, keys []*KeyMeta, skip
 				return s.partitionKeysByRange(ctx, keys, skipRangeCache)
 			}
 		} else {
-			keysByRange[rd.GetRangeId()] = &rangeKeys{rd: rd}
+			keysByRange[rd.GetRangeId()] = &rangeKeys[M]{rd: rd}
 		}
 		keysByRange[rd.GetRangeId()].keys = append(keysByRange[rd.GetRangeId()].keys, keyMeta)
 	}
 	return keysByRange, nil
 }
 
-type runMultiKeyFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*KeyMeta) (any, error)
+type runMultiKeyFunc[M, R any] func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*KeyMeta[M]) (R, error)
 
 // RunMultiKey is similar to Run but works on multiple keys to support batch
 // operations.
@@ -654,7 +660,7 @@ type runMultiKeyFunc func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header
 // RunMultiKey returns results from successful fn calls, even if another call
 // fails. Results are best effort because a failure cancels calls still in
 // flight.
-func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKeyFunc, mods ...Option) ([]any, error) {
+func (s *Sender) RunMultiKey[M, R any](ctx context.Context, keys []*KeyMeta[M], fn runMultiKeyFunc[M, R], mods ...Option) ([]R, error) {
 	ctx, spn := tracing.StartNamedSpan(ctx, "sender.Sender.RunMultiKey")
 	defer spn.End()
 	opts := defaultOptions()
@@ -665,11 +671,11 @@ func (s *Sender) RunMultiKey(ctx context.Context, keys []*KeyMeta, fn runMultiKe
 	retrier := retry.DefaultWithContext(ctx)
 	skipRangeCache := false
 	var mu sync.Mutex
-	var rsps []any
+	var rsps []R
 	remainingKeys := keys
 	var lastError error
-	runForRange := func(ctx context.Context, rk *rangeKeys) error {
-		var rangeRsp any
+	runForRange := func(ctx context.Context, rk *rangeKeys[M]) error {
+		var rangeRsp R
 		i, err := s.tryReplicas(ctx, rk.rd, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header) error {
 			rsp, err := fn(ctx, c, h, rk.keys)
 			if err != nil {

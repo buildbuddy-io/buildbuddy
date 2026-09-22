@@ -2,7 +2,6 @@ package usagetracker
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -20,7 +19,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/pebble"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
-	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/approxlru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -227,6 +225,9 @@ func (pu *partitionUsage) partitionKeyPrefix() string {
 	return filestore.PartitionDirectoryPrefix + pu.part.ID
 }
 
+// evictionKeyMeta is a key to evict with its eviction sample.
+type evictionKeyMeta = sender.KeyMeta[*approxlru.Sample[*evictionKey]]
+
 // deleteBatchResult tracks the outcome of evictions on one range.
 type deleteBatchResult struct {
 	evicted   []*approxlru.Sample[*evictionKey]
@@ -238,14 +239,11 @@ type deleteBatchResult struct {
 //
 // Per-key failures are returned in the result so successful deletes can still
 // update metrics and enqueue GCS cleanup.
-func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (*deleteBatchResult, error) {
+func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*evictionKeyMeta) (*deleteBatchResult, error) {
 	batch := rbuilder.NewBatchBuilder()
 	samples := make([]*approxlru.Sample[*evictionKey], 0, len(keys))
 	for _, k := range keys {
-		sample, ok := k.Meta.(*approxlru.Sample[*evictionKey])
-		if !ok {
-			return nil, errors.New("meta not type of approxlru.Sample[*evictionKey]")
-		}
+		sample := k.Meta
 		samples = append(samples, sample)
 		batch.Add(&rfpb.DeleteRequest{
 			Key:        k.Key,
@@ -276,7 +274,7 @@ func (pu *partitionUsage) deleteBatch(ctx context.Context, c rfspb.ApiClient, h 
 	return res, nil
 }
 
-func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender.KeyMeta) {
+func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*evictionKeyMeta) {
 	if len(keys) == 0 {
 		return
 	}
@@ -288,19 +286,12 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 
 	// Eviction delete is replay-safe: a duplicate retry after the entry is gone
 	// still returns success, so this path does not need sender-owned sessions.
-	rsps, err := pu.sender.RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
-		return pu.deleteBatch(ctx, c, h, keys)
-	})
+	rsps, err := pu.sender.RunMultiKey(ctx, keys, pu.deleteBatch)
 	failed := err != nil
 	if err != nil {
 		log.Warning(err.Error())
 	}
-	for _, rsp := range rsps {
-		res, ok := rsp.(*deleteBatchResult)
-		if !ok {
-			alert.UnexpectedEvent("raft_unexpected_delete_rsp", "response not type of *deleteBatchResult")
-			continue
-		}
+	for _, res := range rsps {
 		if res.numFailed > 0 {
 			failed = true
 			log.Warningf("failed to evict %d keys in partition %s, last error: %s", res.numFailed, pu.part.ID, res.lastErr)
@@ -325,14 +316,14 @@ func (pu *partitionUsage) sendDeleteRequests(ctx context.Context, keys []*sender
 }
 
 func (pu *partitionUsage) processEviction(ctx context.Context) {
-	batches := make(chan []*sender.KeyMeta, 1)
+	batches := make(chan []*evictionKeyMeta, 1)
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		defer close(batches)
 		// sendBatch hands a batch to the dispatcher, but bails out on ctx.Done
 		// so the batcher stops promptly on shutdown instead of blocking until
 		// pu.deletes drains. Returns false if ctx was cancelled (return then).
-		sendBatch := func(b []*sender.KeyMeta) bool {
+		sendBatch := func(b []*evictionKeyMeta) bool {
 			select {
 			case batches <- b:
 				return true
@@ -340,17 +331,14 @@ func (pu *partitionUsage) processEviction(ctx context.Context) {
 				return false
 			}
 		}
-		var batch []*sender.KeyMeta
+		var batch []*evictionKeyMeta
 		timer := time.NewTimer(evictFlushPeriod)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case sampleToDelete := <-pu.deletes:
-				batch = append(batch, &sender.KeyMeta{
-					Key:  sampleToDelete.Key.bytes,
-					Meta: sampleToDelete,
-				})
+				batch = append(batch, sender.NewKeyMeta(sampleToDelete.Key.bytes, sampleToDelete))
 				if len(batch) >= pu.evictionBatchSize {
 					if !sendBatch(batch) {
 						return
