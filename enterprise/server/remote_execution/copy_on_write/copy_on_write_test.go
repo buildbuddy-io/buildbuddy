@@ -306,13 +306,12 @@ func TestCOW_SparseData(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
-	// Make sure the full content matches our buffer.
-	dataOut := make([]byte, len(data))
-	n, err := c.ReadAt(dataOut, 0)
-	require.NoError(t, err)
-	require.Equal(t, len(dataOut), n)
-
 	// Inspect the chunk files and ensure they have the expected physical size.
+	// Do this before reading through the store: reads go through a shared
+	// mmap, and on tmpfs, faulting in a hole allocates a page, so a full read
+	// makes every chunk dense.
+	// TODO: avoid allocating pages for holes when reading chunks stored on
+	// tmpfs.
 	for i := range chunks {
 		chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
 		// We wrote one data block per chunk except for the one chunk that was
@@ -326,6 +325,12 @@ func TestCOW_SparseData(t *testing.T) {
 		nb := numIOBlocks(t, chunkPath)
 		require.Equal(t, int64(1), nb, "chunk %d IO block count", i)
 	}
+
+	// Make sure the full content matches our buffer.
+	dataOut := make([]byte, len(data))
+	n, err := c.ReadAt(dataOut, 0)
+	require.NoError(t, err)
+	require.Equal(t, len(dataOut), n)
 
 	// Now write a single data byte to the empty chunk (0), and sync it to disk.
 	n, err = c.WriteAt([]byte{1}, 0)

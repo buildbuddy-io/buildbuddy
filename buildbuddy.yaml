@@ -29,8 +29,6 @@ actions:
           - "*"
     steps:
       # vbd_test needs mount privileges; it runs in the GitHub arm64 workflow.
-      # TODO: stop excluding copy_on_write_test once TestCOW_SparseData accounts
-      # for the arm64 executors' filesystem allocation unit.
       - run: >-
           bazel test --config=linux-arm64-workflows --config=race --config=tests-linux-arm64
           --
@@ -40,7 +38,6 @@ actions:
           -//enterprise/server/remote_execution/containers/firecracker/...
           -//enterprise/server/test/integration/remote_execution:remote_execution_test
           -//enterprise/server/remote_execution/vbd:vbd_test
-          -//enterprise/server/remote_execution/copy_on_write:copy_on_write_test
     allow_concurrent_runs: false
   - name: Build public release artifacts (linux_amd64) # with -c opt and no race detection
     container_image: ubuntu-22.04

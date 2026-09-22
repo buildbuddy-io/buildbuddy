@@ -47,6 +47,5 @@ jobs:
           EOF
 
           bazelisk test --config=race --test_tag_filters= \
-            //enterprise/server/remote_execution/copy_on_write:copy_on_write_test \
             //enterprise/server/remote_execution/vbd:vbd_test \
             //enterprise/server/test/integration/podman:podman_test
