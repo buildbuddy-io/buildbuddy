@@ -28,6 +28,7 @@ import (
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
 const (
@@ -121,6 +122,7 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	q.AddWhereClause("invocation_uuid != ''")
+	q.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
 
 	if err := s.addExecutionQueryFilters(q, req.GetQuery()); err != nil {
 		return nil, err
