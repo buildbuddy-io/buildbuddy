@@ -18,6 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/api_key"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 	"github.com/buildbuddy-io/buildbuddy/server/util/role"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -107,7 +108,7 @@ func TestCreateGroup(t *testing.T) {
 		userCtx, parentGroup.GroupID, "admin",
 		[]cappb.Capability{cappb.Capability_ORG_ADMIN},
 		0, /*=expiresIn*/
-		false /*=visibleToDevelopers*/)
+		api_key.DefaultAPIKeyVisibility)
 	require.NoError(t, err)
 	adminKeyCtx := te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
 
@@ -369,7 +370,7 @@ func TestCreateGroup_Allowed(t *testing.T) {
 					userCtx, group.GroupID, "admin",
 					[]cappb.Capability{cappb.Capability_ORG_ADMIN},
 					0, /*=expiresIn*/
-					false /*=visibleToDevelopers*/)
+					api_key.DefaultAPIKeyVisibility)
 				require.NoError(t, err)
 				requestCtx = te.GetAuthenticator().AuthContextFromAPIKey(ctx, adminKey.Value)
 			} else if tc.userAPIKey {

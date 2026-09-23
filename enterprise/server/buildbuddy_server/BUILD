@@ -19,6 +19,7 @@ go_test(
         "//server/tables",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
+        "//server/util/api_key",
         "//server/util/request_context",
         "//server/util/role",
         "//server/util/status",
