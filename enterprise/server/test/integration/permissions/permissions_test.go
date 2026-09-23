@@ -25,11 +25,16 @@ func requestContext(c *permissionstest.Client, groupID string) *ctxpb.RequestCon
 
 func requireRPCCode(t *testing.T, err error, code codes.Code) *permissionstest.RPCError {
 	t.Helper()
+	return requireRPCCodeHTTP(t, err, code, http.StatusInternalServerError)
+}
+
+func requireRPCCodeHTTP(t *testing.T, err error, code codes.Code, httpStatus int) *permissionstest.RPCError {
+	t.Helper()
 	require.Error(t, err)
 	require.Equal(t, code, status.Code(err))
 	var rpcErr *permissionstest.RPCError
 	require.ErrorAs(t, err, &rpcErr)
-	require.Equal(t, http.StatusInternalServerError, rpcErr.HTTPStatus)
+	require.Equal(t, httpStatus, rpcErr.HTTPStatus)
 	return rpcErr
 }
 
@@ -196,7 +201,7 @@ func TestOrganizationSettingsAndMembershipRequireSelectedOrgAdmin(t *testing.T) 
 				BotSuggestionsEnabled:       true,
 				DeveloperOrgCreationEnabled: true,
 			}, &grpb.UpdateGroupResponse{})
-			rpcErr := requireRPCCode(t, err, codes.PermissionDenied)
+			rpcErr := requireRPCCodeHTTP(t, err, codes.PermissionDenied, http.StatusForbidden)
 			require.Equal(t, "permission denied", rpcErr.Message)
 
 			err = c.RPC("GetGroupUsers", &grpb.GetGroupUsersRequest{
@@ -204,7 +209,7 @@ func TestOrganizationSettingsAndMembershipRequireSelectedOrgAdmin(t *testing.T) 
 				GroupId:               f.OrgA,
 				GroupMembershipStatus: []grpb.GroupMembershipStatus{grpb.GroupMembershipStatus_MEMBER},
 			}, &grpb.GetGroupUsersResponse{})
-			requireRPCCode(t, err, codes.PermissionDenied)
+			requireRPCCodeHTTP(t, err, codes.PermissionDenied, http.StatusForbidden)
 
 			err = c.RPC("UpdateGroupUsers", &grpb.UpdateGroupUsersRequest{
 				RequestContext: requestContext(c, f.OrgA),
@@ -214,7 +219,7 @@ func TestOrganizationSettingsAndMembershipRequireSelectedOrgAdmin(t *testing.T) 
 					Role:   grpb.Group_ADMIN_ROLE,
 				}},
 			}, &grpb.UpdateGroupUsersResponse{})
-			requireRPCCode(t, err, codes.PermissionDenied)
+			requireRPCCodeHTTP(t, err, codes.PermissionDenied, http.StatusForbidden)
 		})
 	}
 
@@ -236,7 +241,7 @@ func TestOrganizationSettingsAndMembershipRequireSelectedOrgAdmin(t *testing.T) 
 		BotSuggestionsEnabled:       true,
 		DeveloperOrgCreationEnabled: true,
 	}, &grpb.UpdateGroupResponse{})
-	requireRPCCode(t, err, codes.PermissionDenied)
+	requireRPCCodeHTTP(t, err, codes.PermissionDenied, http.StatusForbidden)
 
 	require.NoError(t, f.App.DB().Where("group_id = ?", f.OrgA).Take(&orgA).Error)
 	require.Equal(t, "Organization A updated by admin", orgA.Name, "denied writes must not mutate the org")
@@ -312,7 +317,7 @@ func TestMembershipDowngradeAndRemovalAffectExistingSession(t *testing.T) {
 		RequestContext: requestContext(developer, f.OrgA),
 		UserId:         f.Users[permissionstest.DeveloperName].ID,
 	}, &akpb.GetApiKeysResponse{})
-	requireRPCCode(t, err, codes.PermissionDenied)
+	requireRPCCodeHTTP(t, err, codes.PermissionDenied, http.StatusForbidden)
 }
 
 func TestOrganizationAPIKeysAreRoleAndOrganizationScoped(t *testing.T) {
@@ -359,7 +364,21 @@ func TestOrganizationAPIKeysAreRoleAndOrganizationScoped(t *testing.T) {
 	}, forgedBody))
 	require.Equal(t, []string{"a-hidden", "a-visible"}, labels(forgedBody))
 
-	err := admin.RPC("GetApiKey", &akpb.GetApiKeyRequest{
+	developerVisible := &akpb.GetApiKeyResponse{}
+	require.NoError(t, developer.RPC("GetApiKey", &akpb.GetApiKeyRequest{
+		RequestContext: requestContext(developer, f.OrgA),
+		ApiKeyId:       aVisible.GetId(),
+	}, developerVisible))
+	require.Equal(t, aVisible.GetId(), developerVisible.GetApiKey().GetId(), "developer-visible key is a positive control for direct key reads")
+
+	err := developer.RPC("GetApiKey", &akpb.GetApiKeyRequest{
+		RequestContext: requestContext(developer, f.OrgA),
+		ApiKeyId:       aHidden.GetId(),
+	}, &akpb.GetApiKeyResponse{})
+	rpcErr := requireRPCCode(t, err, codes.PermissionDenied)
+	require.Equal(t, "permission denied", rpcErr.Message)
+
+	err = admin.RPC("GetApiKey", &akpb.GetApiKeyRequest{
 		RequestContext: requestContext(admin, f.OrgA),
 		ApiKeyId:       bHidden.GetId(),
 	}, &akpb.GetApiKeyResponse{})
@@ -385,7 +404,7 @@ func TestOrganizationAPIKeysAreRoleAndOrganizationScoped(t *testing.T) {
 				RequestContext: requestContext(tc.c, f.OrgA),
 				Label:          "unauthorized-" + tc.name,
 			}, &akpb.CreateApiKeyResponse{})
-			rpcErr := requireRPCCode(t, err, codes.PermissionDenied)
+			rpcErr := requireRPCCodeHTTP(t, err, codes.PermissionDenied, http.StatusForbidden)
 			require.Equal(t, "permission denied", rpcErr.Message)
 		})
 	}

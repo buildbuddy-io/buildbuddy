@@ -121,7 +121,7 @@ func New(t *testing.T) *Fixture {
 		buildbuddy_enterprise.DefaultAppConfig(t),
 		buildbuddy_enterprise.NoAuthConfig,
 		"--auth.enable_self_auth=false",
-		"--auth.enable_anonymous_usage=false",
+		"--auth.enable_anonymous_usage=true",
 		"--auth.oauth_providers="+string(providerJSON),
 		"--http.client.allow_localhost=true",
 		"--app.user_owned_keys_enabled=true",
