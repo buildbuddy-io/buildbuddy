@@ -2,11 +2,14 @@ package fetch_server
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,6 +27,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/buildbuddy-io/buildbuddy/server/util/retry"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
@@ -43,6 +47,8 @@ import (
 
 var (
 	allowedPrivateIPs = flag.Slice("remote_asset.allowed_private_ips", []string{}, "Allowed IP ranges for fetching remote assets. Private IPs are disallowed by default.")
+	maxFetchRetries   = flag.Int("remote_asset.max_fetch_retries", 3, "Maximum number of times to retry fetching remote assets after transient errors (connection errors, TLS timeouts, HTTP 5xx, etc.). Set to 0 to disable retries.")
+	fetchRetryBackoff = flag.Duration("remote_asset.fetch_retry_initial_backoff", 1*time.Second, "Initial backoff before retrying a failed remote asset fetch. Backoff doubles on each retry, up to 10x this value.")
 )
 
 const (
@@ -53,6 +59,60 @@ const (
 
 	maxHTTPTimeout = 60 * time.Minute
 )
+
+var errTooManyRedirects = errors.New("stopped after 10 redirects")
+
+// retryableError marks a fetch error as transient, meaning that the same URI
+// may succeed if it is fetched again.
+type retryableError struct {
+	err error
+}
+
+func (e *retryableError) Error() string { return e.err.Error() }
+func (e *retryableError) Unwrap() error { return e.err }
+
+func retryable(err error) error {
+	return &retryableError{err: err}
+}
+
+func isRetryable(err error) bool {
+	var r *retryableError
+	return errors.As(err, &r)
+}
+
+// isRetryableHTTPStatus returns whether an HTTP response status code indicates
+// a transient server-side condition.
+func isRetryableHTTPStatus(code int) bool {
+	return code == http.StatusRequestTimeout || code == http.StatusTooManyRequests || code >= 500
+}
+
+// isRetryableTransportError returns whether an error returned from
+// http.Client.Do for the given URL is likely to be transient (e.g. connection
+// reset, TLS handshake timeout, DNS hiccup).
+//
+// Transport errors are retried by default, since the transient ones mostly
+// have unexported types. Known permanent failures are excluded below.
+func isRetryableTransportError(ctx context.Context, u *url.URL, err error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	if u == nil || (u.Scheme != "http" && u.Scheme != "https") {
+		// http.Client.Do rejects unsupported schemes before any I/O.
+		return false
+	}
+	if errors.Is(err, httpclient.ErrIPNotAllowed) || errors.Is(err, errTooManyRedirects) {
+		return false
+	}
+	// Certificate verification failures and DNS names that do not exist are
+	// permanent: retrying them only delays the failure.
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+		return false
+	}
+	if dnsErr, ok := errors.AsType[*net.DNSError](err); ok && dnsErr.IsNotFound {
+		return false
+	}
+	return true
+}
 
 // makeUnsupportedQualifiersErrStatus creates a gRPC status error that includes a list of unsupported qualifiers.
 func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
@@ -283,7 +343,7 @@ func (p *FetchServer) fetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	// Curl doesn't automatically set this after redirects either.
 	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {
-			return fmt.Errorf("stopped after 10 redirects")
+			return errTooManyRedirects
 		}
 		req.Header.Del("Referer")
 		return nil
@@ -293,16 +353,12 @@ func (p *FetchServer) fetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
 	defer cancel()
 
-	// Keep track of the last fetch error so that if we fail to fetch, we at
-	// least have something we can return to the client.
-	var lastFetchErr error
-	var lastFetchUri string
-
-	for i, uri := range req.GetUris() {
-		_, err := url.Parse(uri)
-		if err != nil {
-			return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
-		}
+	// Compute per-URI headers up front. URIs are validated lazily, when they
+	// are attempted, so that an unused malformed fallback URI does not fail a
+	// request that an earlier URI satisfies.
+	uris := req.GetUris()
+	headers := make([]http.Header, len(uris))
+	for i := range uris {
 		header := sharedHeader.Clone()
 		if uriHeader, found := uriHeaders[i]; found {
 			for k, v := range uriHeader {
@@ -312,29 +368,68 @@ func (p *FetchServer) fetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				}
 			}
 		}
-		blobDigest, err := mirrorToCache(
-			ctx,
-			bsClient,
-			req.GetInstanceName(),
-			httpClient,
-			uri,
-			header,
-			storageFunc,
-			checksumFunc,
-			expectedChecksum,
-		)
-		if err != nil {
-			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
-			lastFetchUri = uri
-			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", uri, err)
-			continue
+		headers[i] = header
+	}
+
+	// Keep track of the last fetch error so that if we fail to fetch, we at
+	// least have something we can return to the client.
+	var lastFetchErr error
+	var lastFetchUri string
+
+	// Each round tries every URI that hasn't failed permanently, so that
+	// mirrors are tried before backing off. URIs which fail with a transient
+	// error (connection errors, TLS timeouts, HTTP 5xx, etc.) are retried in
+	// the next round, until retries are exhausted or the request times out.
+	pending := make([]int, len(uris))
+	for i := range uris {
+		pending[i] = i
+	}
+	maxAttempts := 1 + max(0, *maxFetchRetries)
+	retrier := retry.New(ctx, &retry.Options{
+		// Attempts are bounded by maxAttempts below.
+		MaxRetries:     math.MaxInt,
+		InitialBackoff: *fetchRetryBackoff,
+		MaxBackoff:     10 * *fetchRetryBackoff,
+		Multiplier:     2,
+	})
+	for attempt := 1; len(pending) > 0 && attempt <= maxAttempts && retrier.Next(); attempt++ {
+		if attempt > 1 {
+			log.CtxInfof(ctx, "Retrying fetch of %d URI(s) (attempt %d of %d)", len(pending), attempt, maxAttempts)
 		}
-		return &rapb.FetchBlobResponse{
-			Uri:            uri,
-			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
-			BlobDigest:     blobDigest,
-			DigestFunction: storageFunc,
-		}, nil
+		var retryableURIs []int
+		for _, i := range pending {
+			uri := uris[i]
+			if _, err := url.Parse(uri); err != nil {
+				return nil, status.InvalidArgumentErrorf("unparsable URI: %q", uri)
+			}
+			blobDigest, err := mirrorToCache(
+				ctx,
+				bsClient,
+				req.GetInstanceName(),
+				httpClient,
+				uri,
+				headers[i],
+				storageFunc,
+				checksumFunc,
+				expectedChecksum,
+			)
+			if err != nil {
+				lastFetchErr = fmt.Errorf("%s: %w", uri, err)
+				lastFetchUri = uri
+				log.CtxWarningf(ctx, "Failed to mirror %q to cache (attempt %d): %s", uri, attempt, err)
+				if isRetryable(err) && ctx.Err() == nil {
+					retryableURIs = append(retryableURIs, i)
+				}
+				continue
+			}
+			return &rapb.FetchBlobResponse{
+				Uri:            uri,
+				Status:         &statuspb.Status{Code: int32(gcodes.OK)},
+				BlobDigest:     blobDigest,
+				DigestFunction: storageFunc,
+			}, nil
+		}
+		pending = retryableURIs
 	}
 
 	log.CtxInfof(ctx, "Fetch: returning NotFound for %s", req.GetUris())
@@ -465,12 +560,24 @@ func mirrorToCache(
 	req.Header = header
 	rsp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
+		fetchErr := status.UnavailableErrorf("failed to fetch %q: HTTP GET failed: %s", uri, err)
+		if isRetryableTransportError(ctx, req.URL, err) {
+			return nil, retryable(fetchErr)
+		}
+		return nil, fetchErr
 	}
 	defer rsp.Body.Close()
 	if rsp.StatusCode < 200 || rsp.StatusCode >= 400 {
-		return nil, status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
+		err := status.UnavailableErrorf("failed to fetch %q: HTTP %s", uri, rsp.Status)
+		if isRetryableHTTPStatus(rsp.StatusCode) {
+			return nil, retryable(err)
+		}
+		return nil, err
 	}
+	// Record errors reading the response body (e.g. connection reset
+	// mid-download) so that they can be retried, as opposed to other errors
+	// such as checksum mismatches.
+	body := &readErrRecorder{r: rsp.Body}
 
 	// If we know what the hash should be and the content length is known,
 	// then we know the full digest, and can pipe directly from the HTTP
@@ -479,8 +586,12 @@ func mirrorToCache(
 		d := &repb.Digest{Hash: expectedChecksum, SizeBytes: rsp.ContentLength}
 		rn := digest.NewCASResourceName(d, remoteInstanceName, storageFunc)
 		rn.SetCompressor(repb.Compressor_ZSTD)
-		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, rsp.Body); err != nil {
-			return nil, status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
+		if _, _, err := cachetools.UploadFromReader(ctx, bsClient, rn, body); err != nil {
+			err = status.UnavailableErrorf("failed to upload %s to cache: %s", digest.String(d), err)
+			if body.err != nil && ctx.Err() == nil {
+				return nil, retryable(err)
+			}
+			return nil, err
 		}
 		log.CtxInfof(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(d))
 		return d, nil
@@ -492,8 +603,11 @@ func mirrorToCache(
 	//
 	// TODO: Support cache uploads with unknown digest length, so that we can
 	// pipe directly from the HTTP response to the cache.
-	tmpFilePath, err := tempCopy(rsp.Body)
+	tmpFilePath, err := tempCopy(body)
 	if err != nil {
+		if body.err != nil && ctx.Err() == nil {
+			return nil, retryable(err)
+		}
 		return nil, err
 	}
 	defer func() {
@@ -538,6 +652,29 @@ func mirrorToCache(
 	}
 	log.CtxDebugf(ctx, "Mirrored %s to cache (digest: %s)", uri, digest.String(blobDigest))
 	return blobDigest, nil
+}
+
+// readErrRecorder records the first non-EOF error returned by the underlying
+// reader.
+//
+// Non-EOF errors are also wrapped, since some readers (e.g. ReadTryFillBuffer,
+// used by cachetools uploads) treat io.ErrUnexpectedEOF as a short read rather
+// than an error, which would cause them to spin forever if the HTTP connection
+// is dropped before the full Content-Length has been received.
+type readErrRecorder struct {
+	r   io.Reader
+	err error
+}
+
+func (r *readErrRecorder) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if err != nil && err != io.EOF {
+		err = fmt.Errorf("read response body: %w", err)
+		if r.err == nil {
+			r.err = err
+		}
+	}
+	return n, err
 }
 
 func tempCopy(r io.Reader) (path string, err error) {

@@ -3,20 +3,26 @@ package fetch_server_test
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
+	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
@@ -810,6 +816,8 @@ func (o *fetchOrigin) unblock() {
 func newDirectFetchServer(t *testing.T, env *testenv.TestEnv) *fetch_server.FetchServer {
 	t.Helper()
 	require.NoError(t, scratchspace.Init())
+	// Dedupe tests count origin requests per flight; keep retries out of it.
+	flags.Set(t, "remote_asset.max_fetch_retries", 0)
 	conn := runFetchServer(context.Background(), t, env)
 	t.Cleanup(func() { conn.Close() })
 	server, err := fetch_server.NewFetchServer(env)
@@ -1010,6 +1018,258 @@ func TestFetchBlobDedupeRetriesFailedFlight(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode())
 	require.Equal(t, int32(2), origin.requests.Load())
+}
+
+func TestFetchBlobRetries(t *testing.T) {
+	// dropConnection sends a partial body and then closes the connection,
+	// simulating a connection reset mid-download.
+	dropConnection := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Length", fmt.Sprint(len(content)))
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, content[:3])
+		w.(http.Flusher).Flush()
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err == nil {
+			conn.Close()
+		}
+	}
+	for _, tc := range []struct {
+		name              string
+		checksumQualifier string
+		// handler serves the given (1-indexed) request to the server.
+		handler          func(w http.ResponseWriter, attempt int64)
+		expectedCode     gcodes.Code
+		expectedRequests int64
+	}{
+		{
+			name: "retries_server_errors",
+			handler: func(w http.ResponseWriter, attempt int64) {
+				if attempt < 3 {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				fmt.Fprint(w, content)
+			},
+			expectedCode:     gcodes.OK,
+			expectedRequests: 3,
+		},
+		{
+			name: "retries_too_many_requests",
+			handler: func(w http.ResponseWriter, attempt int64) {
+				if attempt < 2 {
+					w.WriteHeader(http.StatusTooManyRequests)
+					return
+				}
+				fmt.Fprint(w, content)
+			},
+			expectedCode:     gcodes.OK,
+			expectedRequests: 2,
+		},
+		{
+			name:              "retries_dropped_connection_streaming_upload",
+			checksumQualifier: sha256CRI,
+			handler: func(w http.ResponseWriter, attempt int64) {
+				if attempt < 2 {
+					dropConnection(w)
+					return
+				}
+				fmt.Fprint(w, content)
+			},
+			expectedCode:     gcodes.OK,
+			expectedRequests: 2,
+		},
+		{
+			name: "retries_dropped_connection_temp_file",
+			handler: func(w http.ResponseWriter, attempt int64) {
+				if attempt < 2 {
+					dropConnection(w)
+					return
+				}
+				fmt.Fprint(w, content)
+			},
+			expectedCode:     gcodes.OK,
+			expectedRequests: 2,
+		},
+		{
+			name: "gives_up_after_max_retries",
+			handler: func(w http.ResponseWriter, attempt int64) {
+				w.WriteHeader(http.StatusBadGateway)
+			},
+			expectedCode:     gcodes.NotFound,
+			expectedRequests: 3, // 1 attempt + 2 retries
+		},
+		{
+			name: "does_not_retry_not_found",
+			handler: func(w http.ResponseWriter, attempt int64) {
+				w.WriteHeader(http.StatusNotFound)
+			},
+			expectedCode:     gcodes.NotFound,
+			expectedRequests: 1,
+		},
+		{
+			name:              "does_not_retry_checksum_mismatch",
+			checksumQualifier: sha256CRI,
+			handler: func(w http.ResponseWriter, attempt int64) {
+				fmt.Fprint(w, "not the expected content")
+			},
+			expectedCode:     gcodes.NotFound,
+			expectedRequests: 1,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			require.NoError(t, scratchspace.Init())
+			flags.Set(t, "remote_asset.max_fetch_retries", 2)
+			flags.Set(t, "remote_asset.fetch_retry_initial_backoff", time.Millisecond)
+			clientConn := runFetchServer(ctx, t, te)
+			fetchClient := rapb.NewFetchClient(clientConn)
+
+			var requests atomic.Int64
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				tc.handler(w, requests.Add(1))
+			}))
+			defer ts.Close()
+
+			request := &rapb.FetchBlobRequest{Uris: []string{ts.URL}}
+			if tc.checksumQualifier != "" {
+				request.Qualifiers = []*rapb.Qualifier{
+					{Name: fetch_server.ChecksumQualifier, Value: tc.checksumQualifier},
+				}
+			}
+			resp, err := fetchClient.FetchBlob(ctx, request)
+			require.NoError(t, err)
+			assert.Equal(t, int32(tc.expectedCode), resp.GetStatus().GetCode(), "status: %s", resp.GetStatus().GetMessage())
+			assert.Equal(t, tc.expectedRequests, requests.Load())
+			if tc.expectedCode == gcodes.OK {
+				expectedDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+				require.NoError(t, err)
+				assert.Equal(t, expectedDigest.GetHash(), resp.GetBlobDigest().GetHash())
+			}
+		})
+	}
+}
+
+func TestIsRetryableTransportError(t *testing.T) {
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	httpsURL := &url.URL{Scheme: "https", Host: "example.com"}
+	for _, tc := range []struct {
+		name      string
+		ctx       context.Context
+		url       *url.URL
+		err       error
+		retryable bool
+	}{
+		{"connection_reset", context.Background(), httpsURL, &url.Error{Op: "Get", Err: syscall.ECONNRESET}, true},
+		{"tls_handshake_timeout", context.Background(), httpsURL, &url.Error{Op: "Get", Err: errors.New("net/http: TLS handshake timeout")}, true},
+		{"dns_temporary", context.Background(), httpsURL, &url.Error{Op: "Get", Err: &net.DNSError{Err: "server misbehaving", IsTemporary: true}}, true},
+		{"dns_not_found", context.Background(), httpsURL, &url.Error{Op: "Get", Err: &net.DNSError{Err: "no such host", IsNotFound: true}}, false},
+		{"certificate_verification", context.Background(), httpsURL, &url.Error{Op: "Get", Err: &tls.CertificateVerificationError{Err: errors.New("unknown authority")}}, false},
+		{"ip_not_allowed", context.Background(), httpsURL, &url.Error{Op: "Get", Err: fmt.Errorf("dial: %w", httpclient.ErrIPNotAllowed)}, false},
+		{"unsupported_scheme", context.Background(), &url.URL{Scheme: "ftp", Host: "example.com"}, &url.Error{Op: "Get", Err: errors.New("unsupported protocol scheme \"ftp\"")}, false},
+		{"context_canceled", canceledCtx, httpsURL, &url.Error{Op: "Get", Err: context.Canceled}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.retryable, fetch_server.IsRetryableTransportError(tc.ctx, tc.url, tc.err))
+		})
+	}
+}
+
+func TestFetchBlobDoesNotRetryCertificateErrors(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	flags.Set(t, "remote_asset.max_fetch_retries", 2)
+	flags.Set(t, "remote_asset.fetch_retry_initial_backoff", time.Millisecond)
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	// The fetch server does not trust the httptest CA, so every attempt fails
+	// during the TLS handshake and never reaches the handler. Count handshakes
+	// instead of requests.
+	var handshakes atomic.Int64
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, content)
+	}))
+	ts.TLS = &tls.Config{
+		GetConfigForClient: func(*tls.ClientHelloInfo) (*tls.Config, error) {
+			handshakes.Add(1)
+			return nil, nil
+		},
+	}
+	ts.StartTLS()
+	defer ts.Close()
+
+	resp, err := fetchClient.FetchBlob(ctx, &rapb.FetchBlobRequest{Uris: []string{ts.URL}})
+	require.NoError(t, err)
+	assert.Equal(t, int32(gcodes.NotFound), resp.GetStatus().GetCode())
+	assert.Contains(t, resp.GetStatus().GetMessage(), "certificate")
+	assert.Equal(t, int64(1), handshakes.Load())
+}
+
+func TestFetchBlobValidatesURIsLazily(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	flags.Set(t, "remote_asset.max_fetch_retries", 2)
+	flags.Set(t, "remote_asset.fetch_retry_initial_backoff", time.Millisecond)
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, content)
+	}))
+	defer ts.Close()
+	const badURI = "::not a uri"
+
+	// A malformed fallback URI must not fail a request satisfied by an
+	// earlier URI, with or without retry rounds.
+	resp, err := fetchClient.FetchBlob(ctx, &rapb.FetchBlobRequest{Uris: []string{ts.URL, badURI}})
+	require.NoError(t, err)
+	assert.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode(), "status: %s", resp.GetStatus().GetMessage())
+	assert.Equal(t, ts.URL, resp.GetUri())
+
+	// A malformed URI that is attempted is still rejected.
+	_, err = fetchClient.FetchBlob(ctx, &rapb.FetchBlobRequest{Uris: []string{badURI, ts.URL}})
+	require.Error(t, err)
+	assert.Equal(t, gcodes.InvalidArgument, gstatus.Code(err))
+}
+
+func TestFetchBlobRetriesWithMirrors(t *testing.T) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	flags.Set(t, "remote_asset.max_fetch_retries", 2)
+	flags.Set(t, "remote_asset.fetch_retry_initial_backoff", time.Millisecond)
+	clientConn := runFetchServer(ctx, t, te)
+	fetchClient := rapb.NewFetchClient(clientConn)
+
+	// The first mirror permanently fails, so it should only be tried once.
+	var notFoundRequests atomic.Int64
+	notFound := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		notFoundRequests.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer notFound.Close()
+	// The second mirror fails transiently once, then succeeds.
+	var flakyRequests atomic.Int64
+	flaky := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if flakyRequests.Add(1) < 2 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprint(w, content)
+	}))
+	defer flaky.Close()
+
+	resp, err := fetchClient.FetchBlob(ctx, &rapb.FetchBlobRequest{
+		Uris: []string{notFound.URL, flaky.URL},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode(), "status: %s", resp.GetStatus().GetMessage())
+	assert.Equal(t, flaky.URL, resp.GetUri())
+	assert.Equal(t, int64(1), notFoundRequests.Load())
+	assert.Equal(t, int64(2), flakyRequests.Load())
 }
 
 func TestFetchDirectory(t *testing.T) {

@@ -16,6 +16,10 @@ import (
 	"golang.org/x/net/publicsuffix"
 )
 
+// ErrIPNotAllowed is returned (wrapped) when a request is blocked because it
+// would connect to a disallowed (e.g. private) IP address.
+var ErrIPNotAllowed = errors.New("IP address not allowed")
+
 // Tests often need to make HTTP requests to localhost -- set this flag to permit those requests.
 var allowLocalhost = flag.Bool("http.client.allow_localhost", false, "Allow HTTP requests to localhost")
 
@@ -52,7 +56,7 @@ func blockingDialerControl(allowed []*net.IPNet) dialerControl {
 		}
 		if (!ip.IsGlobalUnicast() || ip.IsPrivate()) && !(ip.IsLoopback() && *allowLocalhost) {
 			log.Infof("Dialer control blocked address %s", address)
-			return errors.New("IP address not allowed")
+			return ErrIPNotAllowed
 		}
 		return nil
 	}
