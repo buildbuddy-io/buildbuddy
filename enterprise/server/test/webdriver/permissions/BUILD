@@ -9,6 +9,7 @@ go_web_test_suite(
     deps = [
         "//enterprise/server/testutil/buildbuddy_enterprise",
         "//enterprise/server/testutil/permissionstest",
+        "//proto:acl_go_proto",
         "//proto:api_key_go_proto",
         "//proto:capability_go_proto",
         "//proto:context_go_proto",

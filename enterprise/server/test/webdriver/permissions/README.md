@@ -11,6 +11,9 @@ mocked authorization result, or external login account is needed.
 bazel test //enterprise/server/testutil/testoidc:testoidc_test \
   //enterprise/server/test/integration/permissions:permissions_test \
   //enterprise/server/test/webdriver/permissions:permissions_test \
+  //enterprise/server/backends/authdb:authdb_test \
+  //enterprise/server/auditlog:auditlog_test \
+  //server/backends/invocationdb:invocationdb_test \
   --config=remote --test_output=errors
 ```
 
@@ -22,6 +25,8 @@ Its explicit target is important: WebDriver suites are tagged `manual` by defaul
 The tests are destructive to their **disposable fixture only**; they are not
 intended to run against a deployed instance or a production database. “Local-only”
 means the test starts its own server, including when the whole test runs remotely.
+The audit logger regression also uses a disposable real ClickHouse database; its
+Bazel target selects a Docker-capable remote runner.
 
 ## Fixtures and identities
 
@@ -48,7 +53,10 @@ The test OIDC provider binds each authorization code and refresh token to its
 selected identity. It has its own ephemeral signing key and serves discovery and
 JWKS endpoints. The app validates real signed ID tokens and creates real sessions.
 The browser tests use a new WebDriver session for each identity to isolate both
-cookies and local/session storage.
+cookies and local/session storage. HTTP fixture login additionally verifies the
+returned user ID and email with `GetUser` in the same session, so a failed login
+cannot masquerade as a role-based denial. Browser login selects the exact OIDC
+subject rather than relying on native select typeahead.
 
 ## Browser coverage
 
@@ -59,12 +67,14 @@ cookies and local/session storage.
   an administrator's role downgrade without logging the browser out.
 - An authorized organization edit, checked against the real database, with the
   other organization unchanged.
-- Real Bazel/BEP uploads in both organizations, followed by history and direct
-  invocation access checks across all four roles and an outsider.
+- Real Bazel/BEP uploads using both personal and organization API keys, followed
+  by history and direct invocation access checks across all four roles and an
+  outsider.
 - Cookie-authenticated invocation and build-log RPCs, plus search queries with
   substituted foreign organization IDs, using those real uploaded resources.
-- Logout, anonymous access to private invocations, and outsider/anonymous access
-  after making the same invocation public.
+- Logout and anonymous browser/HTTP access to private invocations and logs;
+  outsider/anonymous access after sharing via `UpdateInvocation`, preserving the
+  existing owner and group ACL bits.
 
 ## HTTP RPC coverage
 
@@ -75,18 +85,42 @@ hidden controls:
   including a groupless user and the dual-role user.
 - Organization settings and membership administration, including attempts to
   elevate one's own role and substitute another organization's ID.
-- Organization key listing, direct reads, and creation; admin-only keys remain
-  inaccessible by ID, not merely absent from lists.
+- Organization key listing, creation, and both direct-read endpoints across
+  Admin/Developer/Writer/Reader roles. Hidden keys are denied to non-admin user
+  sessions; a key-authenticated caller can retrieve itself, but not sibling keys.
 - Personal-key ownership and organization isolation, including authorized admin
   access and rejected attempts to forge another owner.
 - Role downgrade and membership removal using an existing session, without
   disabling the production auth caches.
+- Invocation updates and deletes by owners and other members of each role,
+  including read-only ACLs and cross-org/public resources. Denied mutations leave
+  rows and ACLs unchanged; public read access never grants deletion rights.
+- No-cookie RPC requests with forged user/group IDs under both anonymous-usage
+  settings, including absence of returned data and mutation side effects.
 - Persisted database state after rejected writes.
+
+### API-key revocation and audit attribution
+
+A separate real-CAS test uses a personal API key before downgrade, after downgrade,
+and after membership removal. It verifies actual persisted blobs: read-only CAS
+writes intentionally acknowledge success without storing data, so an OK status
+alone is not a sufficient assertion. This test explicitly disables
+`auth.api_key_group_cache_ttl` to test enforcement on fresh DB lookups. Production
+uses a five-minute cache by default; this test does **not** promise immediate
+key revocation under default settings. The existing session test keeps those
+production defaults unchanged.
+
+The audit logger regression invokes the real `UpdateInvocation` handler using
+hidden organization and impersonation keys, then reads real ClickHouse audit
+entries and verifies their key IDs, labels, resource IDs, and mutation payloads.
 
 The hidden-org-key direct-read regression exposed a gap in `AuthDB.GetAPIKey`:
 list filtering was enforced, but direct reads previously relied on the key's
 broader group-read ACL. Direct reads now enforce the member-visibility flag for
-non-admins as well; personal-key owner access is unchanged.
+non-admins as well; personal-key owner access is unchanged. The only additional
+exception is the authenticated API key's own ID, which the audit logger must be
+able to resolve. This exception cannot be selected by forging request-context
+identity fields and does not expose other hidden keys.
 
 ## Extending coverage
 
@@ -103,8 +137,9 @@ feature is exhaustively covered**. Add each new resource/action with:
 6. Browser assertions that wait for data loading before checking absence.
 
 Future coverage should include ClickHouse-backed trends/executions, artifact and
-bytestream downloads, workflows, remote execution cancellation, usage, audit logs,
-server-admin impersonation, SAML-specific policy, and feature-flag combinations.
+bytestream downloads, workflows, remote execution cancellation, usage, broader
+audit-log visibility and server-admin impersonation scenarios, SAML-specific
+policy, and additional feature-flag combinations.
 SQLite exercises real SQL authorization paths; it does not establish equivalence
 with MySQL/PostgreSQL or ClickHouse. Add dedicated database variants where query
 paths differ rather than substituting a mock database.

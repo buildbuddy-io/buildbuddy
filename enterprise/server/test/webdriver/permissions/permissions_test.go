@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
@@ -31,7 +32,7 @@ func login(t *testing.T, f *permissionstest.Fixture, name string) *webtester.Web
 	t.Helper()
 	wt := webtester.New(t)
 	wt.Get(f.LoginURL())
-	wt.FindWithTimeout(`select[name="user"]`, 10*time.Second).SendKeys(f.Users[name].Email)
+	wt.FindWithTimeout(fmt.Sprintf(`select[name="user"] option[value="%s"]`, f.Users[name].Subject), 10*time.Second).Click()
 	wt.Find(`button[type="submit"]`).Click()
 	wt.FindWithTimeout(`[debug-id="org-picker"]`, 10*time.Second)
 	require.Equal(t, f.Users[name].Email, wt.Find(`.org-picker-profile-name`).GetAttribute("title"))
@@ -219,8 +220,9 @@ func TestInvocationVisibility(t *testing.T) {
 	ws := testbazel.MakeTempModule(t, map[string]string{
 		"BUILD": `genrule(name = "permission_sentinel", outs = ["sentinel.txt"], cmd = "echo permission-sentinel > $@")`,
 	})
-	// Upload real BEP data and logs, rather than seeding an invocation row whose
-	// missing blob could make an authorization failure look like a missing build.
+	// Upload one invocation using the organization API key used by typical CI,
+	// and one using a personal API key. This keeps the browser fixture small
+	// while exercising visibility for both authentication paths.
 	ids := map[string]string{}
 	for _, name := range []string{"admin", "outsider"} {
 		t.Run("upload_"+name, func(t *testing.T) {
@@ -230,12 +232,19 @@ func TestInvocationVisibility(t *testing.T) {
 				group = f.OrgB
 			}
 			key := &akpb.CreateApiKeyResponse{}
-			require.NoError(t, c.RPC("CreateUserApiKey", &akpb.CreateApiKeyRequest{
+			method := "CreateUserApiKey"
+			req := &akpb.CreateApiKeyRequest{
 				RequestContext: &ctxpb.RequestContext{GroupId: group},
 				UserId:         f.Users[name].ID,
-				Label:          "invocation-upload",
+				Label:          "invocation-upload-personal",
 				Capability:     []cappb.Capability{cappb.Capability_CAS_WRITE},
-			}, key))
+			}
+			if name == "outsider" {
+				method = "CreateApiKey"
+				req.UserId = ""
+				req.Label = "invocation-upload-org"
+			}
+			require.NoError(t, c.RPC(method, req, key))
 			require.NotEmpty(t, key.GetApiKey().GetValue())
 			args := append([]string{"//:permission_sentinel", "--remote_header=x-buildbuddy-api-key=" + key.GetApiKey().GetValue()}, f.App.BESBazelFlags()...)
 			result := testbazel.Invoke(context.Background(), t, ws, "build", args...)
@@ -279,11 +288,91 @@ func TestInvocationVisibility(t *testing.T) {
 		wt.FindWithTimeout(`[debug-id="login-button"]`, 10*time.Second)
 		wt.AssertNotFound(`[debug-id="invocation-details"]`)
 	})
-	// Sharing changes the same existing resource, so the successful public case
-	// is a positive control for the negative direct-link assertions above.
-	result := f.App.DB().Model(&tables.Invocation{}).Where("invocation_id = ?", ids["admin"]).Update("perms", perms.GROUP_READ|perms.GROUP_WRITE|perms.OTHERS_READ)
-	require.NoError(t, result.Error)
-	require.EqualValues(t, 1, result.RowsAffected)
+	anon := f.AnonymousClient()
+	privateInvocation := &inpb.GetInvocationResponse{}
+	err := anon.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: anon.RequestContext,
+		Lookup:         &inpb.InvocationLookup{InvocationId: ids["admin"]},
+	}, privateInvocation)
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Empty(t, privateInvocation.GetInvocation())
+	privateLogs := &elpb.GetEventLogChunkResponse{}
+	err = anon.RPC("GetEventLogChunk", &elpb.GetEventLogChunkRequest{
+		RequestContext: anon.RequestContext,
+		InvocationId:   ids["admin"],
+	}, privateLogs)
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Empty(t, privateLogs.GetBuffer())
+
+	// Sharing changes the same existing resource through the production RPC, so
+	// the successful public case is a positive control for the negative direct-link
+	// assertions above. Enable the owning organization's sharing policy through
+	// UpdateGroup while preserving its other fixture settings.
+	admin := f.Login(t, f.Users["admin"])
+	var org tables.Group
+	require.NoError(t, f.App.DB().Where("group_id = ?", f.OrgA).Take(&org).Error)
+	require.NoError(t, admin.RPC("UpdateGroup", &grpb.UpdateGroupRequest{
+		RequestContext:                    &ctxpb.RequestContext{GroupId: f.OrgA},
+		Id:                                f.OrgA,
+		Name:                              org.Name,
+		UrlIdentifier:                     org.URLIdentifier,
+		SharingEnabled:                    true,
+		UseGroupOwnedExecutors:            org.UseGroupOwnedExecutors,
+		SuggestionPreference:              org.SuggestionPreference,
+		UserOwnedKeysEnabled:              org.UserOwnedKeysEnabled,
+		RestrictCleanWorkflowRunsToAdmins: org.RestrictCleanWorkflowRunsToAdmins,
+		BotSuggestionsEnabled:             org.BotSuggestionsEnabled,
+		DeveloperOrgCreationEnabled:       org.DeveloperOrgCreationEnabled,
+		CodeSearchEnabled:                 org.CodeSearchEnabled,
+	}, &grpb.UpdateGroupResponse{}))
+	var sharingEnabled tables.Group
+	require.NoError(t, f.App.DB().Where("group_id = ?", f.OrgA).Take(&sharingEnabled).Error)
+	require.True(t, sharingEnabled.SharingEnabled)
+	before := &inpb.GetInvocationResponse{}
+	require.NoError(t, admin.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: f.OrgA},
+		Lookup:         &inpb.InvocationLookup{InvocationId: ids["admin"]},
+	}, before))
+	require.Len(t, before.GetInvocation(), 1)
+	acl := before.GetInvocation()[0].GetAcl()
+	require.NotNil(t, acl)
+	publicACL := &aclpb.ACL{
+		UserId:            acl.GetUserId(),
+		GroupId:           acl.GetGroupId(),
+		OwnerPermissions:  acl.GetOwnerPermissions(),
+		GroupPermissions:  acl.GetGroupPermissions(),
+		OthersPermissions: &aclpb.ACL_Permissions{Read: true},
+	}
+	require.NoError(t, admin.RPC("UpdateInvocation", &inpb.UpdateInvocationRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: f.OrgA},
+		InvocationId:   ids["admin"],
+		Acl:            publicACL,
+	}, &inpb.UpdateInvocationResponse{}))
+	var shared tables.Invocation
+	require.NoError(t, f.App.DB().Where("invocation_id = ?", ids["admin"]).Take(&shared).Error)
+	require.EqualValues(t, perms.OTHERS_READ, shared.Perms&perms.OTHERS_READ)
+	require.EqualValues(t, before.GetInvocation()[0].GetAcl().GetOwnerPermissions().GetRead(), shared.Perms&perms.OWNER_READ != 0)
+	require.EqualValues(t, before.GetInvocation()[0].GetAcl().GetOwnerPermissions().GetWrite(), shared.Perms&perms.OWNER_WRITE != 0)
+	after := &inpb.GetInvocationResponse{}
+	require.NoError(t, admin.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: &ctxpb.RequestContext{GroupId: f.OrgA},
+		Lookup:         &inpb.InvocationLookup{InvocationId: ids["admin"]},
+	}, after))
+	require.Len(t, after.GetInvocation(), 1)
+	require.Equal(t, publicACL, after.GetInvocation()[0].GetAcl())
+	publicInvocation := &inpb.GetInvocationResponse{}
+	require.NoError(t, anon.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: anon.RequestContext,
+		Lookup:         &inpb.InvocationLookup{InvocationId: ids["admin"]},
+	}, publicInvocation))
+	require.Len(t, publicInvocation.GetInvocation(), 1)
+	require.Equal(t, ids["admin"], publicInvocation.GetInvocation()[0].GetInvocationId())
+	publicLogs := &elpb.GetEventLogChunkResponse{}
+	require.NoError(t, anon.RPC("GetEventLogChunk", &elpb.GetEventLogChunkRequest{
+		RequestContext: anon.RequestContext,
+		InvocationId:   ids["admin"],
+	}, publicLogs))
+	require.NotEmpty(t, publicLogs.GetBuffer(), "public log read must use the uploaded BEP blob")
 	for _, name := range []string{"outsider", "anonymous"} {
 		t.Run("public_"+name, func(t *testing.T) {
 			var wt *webtester.WebTester
