@@ -2,6 +2,7 @@ package fetch_server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -22,8 +23,10 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -72,6 +75,13 @@ func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
 type FetchServer struct {
 	env                  environment.Env
 	allowedPrivateIPNets []*net.IPNet
+	fetches              singleflight.Group[fetchKey, *rapb.FetchBlobResponse]
+}
+
+type fetchKey struct {
+	userPrefix  string
+	authHash    [sha256.Size]byte
+	requestHash [sha256.Size]byte
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -161,7 +171,35 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if err != nil {
 		return nil, err
 	}
+	userPrefix, err := prefix.UserPrefixFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	requestBytes, err := (proto.MarshalOptions{Deterministic: true}).Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	// Share only identical requests in the same cache and authorization scope.
+	// Hash the JWT and request, which may contain credentials and signed URLs.
+	key := fetchKey{
+		userPrefix:  userPrefix,
+		authHash:    sha256.Sum256([]byte(p.env.GetAuthenticator().TrustedJWTFromAuthContext(ctx))),
+		requestHash: sha256.Sum256(requestBytes),
+	}
+	rsp, _, err := p.fetches.Do(ctx, key, func(ctx context.Context) (*rapb.FetchBlobResponse, error) {
+		// Each caller can stop waiting independently. The shared work is canceled
+		// when all callers leave; the fetch timeout is still enforced below.
+		return p.fetchBlob(ctx, req)
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Callers must not share mutable response protos.
+	return proto.Clone(rsp).(*rapb.FetchBlobResponse), nil
+}
 
+func (p *FetchServer) fetchBlob(ctx context.Context, req *rapb.FetchBlobRequest) (*rapb.FetchBlobResponse, error) {
+	var err error
 	storageFunc := req.GetDigestFunction()
 	if storageFunc == repb.DigestFunction_UNKNOWN {
 		storageFunc = repb.DigestFunction_SHA256
