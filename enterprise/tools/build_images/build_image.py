@@ -147,9 +147,11 @@ def set_up_buildx_container(container_name, stdout=sys.stdout, stderr=sys.stderr
         print(f"No buildx container named {container_name}, creating it...", file=stdout)
         completed_process = subprocess.run(["docker", "buildx", "create", "--name", container_name])
         if completed_process.returncode == 0:
-            print("Success!", stdout)
+            print("Success!", file=stdout)
         else:
-            print("Failed to create buildx container.", stderr)
+            print("Failed to create buildx container.", file=stderr)
+            return False
+    return True
 
 def resolve_userpass(userpass: str, registry: str):
     """Returns (user, password), prompting for the password if necessary."""
@@ -244,7 +246,8 @@ def main():
                 print("Exiting...", file=sys.stdout)
                 return 0
 
-    set_up_buildx_container(args.buildx_container_name)
+    if not set_up_buildx_container(args.buildx_container_name):
+        return 1
 
     docker_build_args = (
             ["docker", "buildx"] +
@@ -260,4 +263,4 @@ def main():
     print(f"Executed command:\n{completed_process.args}", file=sys.stdout)
     return completed_process.returncode
 
-main()
+sys.exit(main())
