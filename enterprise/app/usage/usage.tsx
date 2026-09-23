@@ -554,12 +554,56 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     );
   }
 
+  renderSnapshotUsage(olapUsage: usage.OLAPUsage) {
+    const rows = [
+      ...olapUsage.remoteSnapshotSavedBytes.map((row) => snapshotUsageRow("Remote snapshots", row)),
+      ...olapUsage.localSnapshotSavedBytes.map((row) => snapshotUsageRow("Local snapshots", row)),
+    ];
+    const totalBytes = rows.reduce((sum, row) => sum + row.value, 0);
+    return (
+      <>
+        <div className="usage-resource-name">Snapshot bytes saved</div>
+        <div className="usage-value" title={formatWithCommas(totalBytes)}>
+          {formatBytes(totalBytes, totalBytes)}
+        </div>
+        {renderBreakdownTable(
+          breakdownTableRows(rows, SNAPSHOT_USAGE_LEVELS, (bytes) => bytes === 0),
+          (bytes) => formatBytes(bytes, totalBytes),
+          (bytes) => formatWithCommas(bytes)
+        )}
+      </>
+    );
+  }
+
+  renderComputeUsage(olapUsage: usage.OLAPUsage) {
+    const rows = [
+      ...olapUsage.fixedComputeNanos.map((row) => computeUsageRow("Fixed compute", row)),
+      ...olapUsage.flexibleComputeNanos.map((row) => computeUsageRow("Flexible compute", row)),
+    ];
+    const totalNanos = rows.reduce((sum, row) => sum + row.value, 0);
+    return (
+      <>
+        <div className="usage-resource-name">Compute unit</div>
+        <div className="usage-value" title={formatComputeNanos(totalNanos)}>
+          {formatMinutes(totalNanos / 1000)}
+        </div>
+        {renderBreakdownTable(
+          breakdownTableRows(rows, COMPUTE_USAGE_LEVELS, (nanos) => roundedMinutes(nanos) === 0),
+          (nanos) => formatMinutes(nanos / 1000),
+          formatComputeNanos
+        )}
+      </>
+    );
+  }
+
   render() {
     if (!this.state.response) return null;
 
     const orgName = this.props.user?.selectedGroup.name;
     // Selected period may not be found because of a pending or failed RPC.
     const selection = this.state.response.usage;
+    // Only set when the server read usage from the OLAP DB.
+    const olapUsage = this.state.response.olapUsage;
     const detailed = shouldShowDetailedView(this.state.selectedPeriod);
     return (
       <>
@@ -653,7 +697,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
-                <div className="usage-resource-name">Linux remote execution duration</div>
+                {olapUsage && this.renderSnapshotUsage(olapUsage)}
+                <div className="usage-resource-name">Linux remote execution</div>
                 <div className="usage-value">{formatMinutes(Number(selection.linuxExecutionDurationUsec))}</div>
                 {detailed && (
                   <>
@@ -675,7 +720,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
-                <div className="usage-resource-name">Linux cpu duration</div>
+                <div className="usage-resource-name">Linux cpu</div>
                 <div className="usage-value">{formatMinutes(+selection.cloudCpuNanos / 1000)}</div>
                 {detailed && (
                   <>
@@ -697,6 +742,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
+                {olapUsage && this.renderComputeUsage(olapUsage)}
                 {Boolean(selection.totalCustomerProxyDownloadSizeBytes) && (
                   <>
                     <div className="usage-resource-name">Total bytes downloaded from cache proxy</div>
@@ -772,4 +818,174 @@ function formatBytes(bytes: Long | number, totalBytes: Long | number) {
 
 function formatMinutes(usec: number, category?: string): string {
   return `${formatWithCommas(Math.round(usec / 60e6))}${category ? " " + category : ""} minutes`;
+}
+
+function formatComputeNanos(nanos: number | Long): string {
+  return `${formatWithCommas(nanos)} compute-unit-nanoseconds`;
+}
+
+function roundedMinutes(nanos: number): number {
+  return Math.round(nanos / 60e9);
+}
+
+// Clients that identify BuildBuddy workflow runners. Keep in sync with the
+// workflow client labels used by the usage service.
+const WORKFLOW_CLIENTS = new Set(["executor-workflows", "bazel"]);
+
+const HOSTING_ORDER = ["Cloud", "Self-hosted"];
+const POOL_ORDER = ["RBE", "Workflows"];
+
+function hostingName(labels: { [name: string]: string }): string {
+  return labels["self_hosted"] === "true" ? "Self-hosted" : "Cloud";
+}
+
+function poolName(labels: { [name: string]: string }): string {
+  return WORKFLOW_CLIENTS.has(labels["client"] ?? "") ? "Workflows" : "RBE";
+}
+
+/**
+ * A usage count resolved into the dimensions shown in a breakdown table: the
+ * value of each grouping level, from outermost to innermost, and optionally
+ * the leaf columns shown below the last group. Labels that aren't shown are
+ * dropped, so several server rows may map to the same dimensions; they are
+ * summed when the table is built.
+ */
+interface BreakdownUsageRow {
+  groups: string[];
+  leaf?: string[];
+  value: number;
+}
+
+/** Grouping levels of the compute usage table, from outermost to innermost,
+ * with the display order of each level's values. Leaf rows below the last
+ * level show the isolation type, OS and arch. */
+const COMPUTE_USAGE_LEVELS = [HOSTING_ORDER, ["Fixed compute", "Flexible compute"], POOL_ORDER];
+
+function computeUsageRow(computeType: string, row: usage.LabeledUsage): BreakdownUsageRow {
+  const labels = row.labels;
+  return {
+    groups: [hostingName(labels), computeType, poolName(labels)],
+    leaf: [labels["isolation_type"] || "unknown", labels["os"] || "unknown", labels["arch"] || "unknown"],
+    value: Number(row.count),
+  };
+}
+
+/** Grouping levels of the snapshot usage table, from outermost to innermost. */
+const SNAPSHOT_USAGE_LEVELS = [HOSTING_ORDER, ["Remote snapshots", "Local snapshots"], POOL_ORDER];
+
+function snapshotUsageRow(snapshotType: string, row: usage.LabeledUsage): BreakdownUsageRow {
+  const labels = row.labels;
+  return {
+    groups: [hostingName(labels), snapshotType, poolName(labels)],
+    value: Number(row.count),
+  };
+}
+
+/** A row of a rendered breakdown table: either a group heading carrying the
+ * sum of everything nested under it, or a leaf row. */
+interface BreakdownTableRow {
+  key: string;
+  // 1-based nesting depth.
+  level: number;
+  // Cells shown before the value: the group name, or the leaf columns.
+  cells: string[];
+  isGroup: boolean;
+  // Whether this is the deepest kind of row in its table. Leaf rows are
+  // styled differently from the groups above them.
+  isLeaf: boolean;
+  value: number;
+}
+
+/**
+ * Flattens usage rows into table rows, grouped by each of the levels in turn.
+ * Group rows carry the sum of the rows nested under them. Rows whose value is
+ * zero according to isZero (which may round) are omitted.
+ */
+function breakdownTableRows(
+  rows: BreakdownUsageRow[],
+  levels: string[][],
+  isZero: (value: number) => boolean,
+  level = 0,
+  keyPrefix = ""
+): BreakdownTableRow[] {
+  if (level === levels.length) {
+    return breakdownLeafRows(rows, level + 1, keyPrefix, isZero);
+  }
+  const out: BreakdownTableRow[] = [];
+  for (const name of levels[level]) {
+    const group = rows.filter((row) => row.groups[level] === name);
+    const value = group.reduce((sum, row) => sum + row.value, 0);
+    if (isZero(value)) continue;
+    const key = keyPrefix + name + "/";
+    // The last group level is the deepest row type unless leaf columns follow.
+    const isLeaf = level + 1 === levels.length && !group.some((row) => row.leaf);
+    out.push(
+      { key, level: level + 1, cells: [name], isGroup: true, isLeaf, value },
+      ...breakdownTableRows(group, levels, isZero, level + 1, key)
+    );
+  }
+  return out;
+}
+
+function breakdownLeafRows(
+  rows: BreakdownUsageRow[],
+  level: number,
+  keyPrefix: string,
+  isZero: (value: number) => boolean
+): BreakdownTableRow[] {
+  const merged = new Map<string, BreakdownTableRow>();
+  for (const { leaf, value } of rows) {
+    if (!leaf) continue;
+    const key = keyPrefix + leaf.join("/");
+    const existing = merged.get(key);
+    if (existing) {
+      existing.value += value;
+    } else {
+      merged.set(key, { key, level, cells: leaf, isGroup: false, isLeaf: true, value });
+    }
+  }
+  return Array.from(merged.values())
+    .filter((row) => !isZero(row.value))
+    .sort((a, b) => compareCells(a.cells, b.cells));
+}
+
+function compareCells(a: string[], b: string[]): number {
+  for (let i = 0; i < Math.min(a.length, b.length); i++) {
+    const c = a[i].localeCompare(b[i]);
+    if (c) return c;
+  }
+  return a.length - b.length;
+}
+
+function renderBreakdownTable(
+  rows: BreakdownTableRow[],
+  formatValue: (value: number) => string,
+  formatTitle: (value: number) => string
+) {
+  if (!rows.length) return null;
+  // Group rows span all of the leaf columns.
+  const leafColumns = Math.max(1, ...rows.filter((row) => !row.isGroup).map((row) => row.cells.length));
+  return (
+    <table className="usage-breakdown-table">
+      <tbody>
+        {rows.map((row) => (
+          <tr
+            key={row.key}
+            className={`usage-breakdown-level-${row.level} ${row.isLeaf ? "usage-breakdown-leaf" : ""}`}>
+            {row.cells.map((cell, i) => (
+              <td
+                key={i}
+                colSpan={row.isGroup ? leafColumns : 1}
+                style={i === 0 ? { paddingLeft: 24 + 16 * (row.level - 1) } : undefined}>
+                {cell}
+              </td>
+            ))}
+            <td className="usage-breakdown-value" title={formatTitle(row.value)}>
+              {formatValue(row.value)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }

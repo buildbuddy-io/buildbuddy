@@ -37,6 +37,34 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 	service, err := usage_service.New(env, clockwork.NewFakeClockAt(now))
 	require.NoError(t, err)
 
+	rbeFirecrackerLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutor,
+		sku.Origin:        sku.OriginInternal,
+		sku.Server:        sku.ServerApp,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.SelfHostedFalse,
+		sku.IsolationType: "firecracker",
+	}
+	workflowFirecrackerLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutorWorkflows,
+		sku.Origin:        sku.OriginInternal,
+		sku.Server:        sku.ServerApp,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.SelfHostedFalse,
+		sku.IsolationType: "firecracker",
+	}
+	rbeOCILabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutor,
+		sku.Origin:        sku.OriginInternal,
+		sku.Server:        sku.ServerApp,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.SelfHostedFalse,
+		sku.IsolationType: "oci",
+	}
+
 	// Seed primary DB usage that would be visible if the OLAP flag were ignored.
 	err = env.GetDBHandle().NewQuery(ctx, "test_create_primary_db_usage").Create(&tables.Usage{
 		UsageID:         "UG1",
@@ -188,6 +216,73 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			PeriodStart: time.Date(2024, 2, 3, 0, 9, 0, 0, time.UTC),
 			Count:       13_000,
 		},
+		// Compute usage is returned per label combination, summed across the
+		// whole month.
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFixedComputeNanos,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 10, 0, 0, time.UTC),
+			Count:       5_000,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFixedComputeNanos,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 4, 0, 10, 0, 0, time.UTC),
+			Count:       6_000,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFixedComputeNanos,
+			Labels:      orderedmap.FromMap(workflowFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 11, 0, 0, time.UTC),
+			Count:       7_000,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFlexibleComputeNanos,
+			Labels:      orderedmap.FromMap(rbeOCILabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 12, 0, 0, time.UTC),
+			Count:       8_000,
+		},
+		// Label combinations with zero usage should not be returned.
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFlexibleComputeNanos,
+			Labels:      orderedmap.FromMap(workflowFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 12, 0, 0, time.UTC),
+			Count:       0,
+		},
+		// Snapshot bytes are also returned per label combination.
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes,
+			Labels:      orderedmap.FromMap(workflowFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 13, 0, 0, time.UTC),
+			Count:       1_001,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 13, 0, 0, time.UTC),
+			Count:       2_002,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteLocalSnapshotSavedBytes,
+			Labels:      orderedmap.FromMap(workflowFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 14, 0, 0, time.UTC),
+			Count:       3_003,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteLocalSnapshotSavedBytes,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 14, 0, 0, time.UTC),
+			Count:       4_004,
+		},
 		{
 			GroupID:     "GR1",
 			SKU:         sku.BuildEventsBESCount,
@@ -201,6 +296,36 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			Labels:      orderedmap.FromMap(map[sku.LabelName]sku.LabelValue(nil)),
 			PeriodStart: time.Date(2024, 2, 4, 0, 2, 0, 0, time.UTC),
 			Count:       12_000,
+		},
+		// OLAP-only usage outside the requested month should not be returned.
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFixedComputeNanos,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 1, 3, 0, 10, 0, 0, time.UTC),
+			Count:       77_000,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 1, 3, 0, 13, 0, 0, time.UTC),
+			Count:       77,
+		},
+		// OLAP-only usage for a different group should not be returned.
+		{
+			GroupID:     "GR2",
+			SKU:         sku.RemoteExecutionExecuteFixedComputeNanos,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 10, 0, 0, time.UTC),
+			Count:       107_000,
+		},
+		{
+			GroupID:     "GR2",
+			SKU:         sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes,
+			Labels:      orderedmap.FromMap(rbeFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 13, 0, 0, time.UTC),
+			Count:       107,
 		},
 		// Usage outside the requested month should not be returned.
 		{
@@ -284,6 +409,31 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			"2023-08",
 			"2023-07",
 		},
+		OlapUsage: &usagepb.OLAPUsage{
+			FixedComputeNanos: []*usagepb.LabeledUsage{
+				{Labels: rbeFirecrackerLabels, Count: 11_000},
+				{Labels: workflowFirecrackerLabels, Count: 7_000},
+			},
+			FlexibleComputeNanos: []*usagepb.LabeledUsage{
+				{Labels: rbeOCILabels, Count: 8_000},
+			},
+			RemoteSnapshotSavedBytes: []*usagepb.LabeledUsage{
+				{Labels: workflowFirecrackerLabels, Count: 1_001},
+				{Labels: rbeFirecrackerLabels, Count: 2_002},
+			},
+			LocalSnapshotSavedBytes: []*usagepb.LabeledUsage{
+				{Labels: workflowFirecrackerLabels, Count: 3_003},
+				{Labels: rbeFirecrackerLabels, Count: 4_004},
+			},
+		},
 	}
-	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
+	assert.Empty(t, cmp.Diff(
+		expectedResponse, rsp,
+		protocmp.Transform(),
+		// Labeled rows are ordered by labels, which is not meaningful to the
+		// test; compare them as sets.
+		protocmp.SortRepeated(func(a, b *usagepb.LabeledUsage) bool {
+			return a.GetCount() < b.GetCount()
+		}),
+	))
 }

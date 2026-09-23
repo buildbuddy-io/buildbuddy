@@ -82,6 +82,35 @@
   color: var(--color-text-label);
 }
 
+/* Nested breakdown table, spanning both columns of the usage table. */
+.usage-page .usage-breakdown-table {
+  grid-column: 1 / -1;
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 4px;
+  font: inherit;
+}
+
+/* Rows are indented per nesting level via an inline padding-left. */
+.usage-page .usage-breakdown-table td {
+  padding: 2px 16px 2px 0;
+  white-space: nowrap;
+}
+
+.usage-page .usage-breakdown-table td.usage-breakdown-value {
+  padding-right: 0;
+  text-align: right;
+  width: 100%;
+}
+
+.usage-page .usage-breakdown-level-1 td:first-child {
+  font-weight: 600;
+}
+
+.usage-page .usage-breakdown-leaf {
+  color: var(--color-text-label);
+}
+
 .usage-page .usage-alerting-header {
   margin-bottom: 16px;
 }

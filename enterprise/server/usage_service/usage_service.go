@@ -14,6 +14,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
+	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -234,6 +235,21 @@ var UsageFields = []UsageField{
 	},
 }
 
+// olapOnlyUsageSKUs are the SKUs returned in OLAPUsage. These metrics are only
+// recorded in the OLAP DB, so they have no UsageFields entry: UsageFields
+// requires a primary DB expression and a UsageAlertingMetric for each field.
+// Nothing prevents alerting on them (usage alerts are evaluated against the
+// OLAP DB); it just needs an alerting metric and a UsageFields entry whose
+// primary DB expression is 0. Each SKU is returned per label combination
+// rather than as a single aggregate, so the Usage page can break it down as
+// it likes.
+var olapOnlyUsageSKUs = []sku.SKU{
+	sku.RemoteExecutionExecuteFixedComputeNanos,
+	sku.RemoteExecutionExecuteFlexibleComputeNanos,
+	sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes,
+	sku.RemoteExecutionExecuteLocalSnapshotSavedBytes,
+}
+
 // UsageFieldForAlertingMetric returns the Usage field mapped to an alerting metric.
 func UsageFieldForAlertingMetric(metric usagepb.UsageAlertingMetric_Value) (*UsageField, bool) {
 	for i := range UsageFields {
@@ -350,13 +366,25 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 		end = addCalendarMonths(start, 1)
 	}
 
-	usages, err := s.scanUsages(ctx, g.GroupID, start, end, req.GetUseOlap())
+	useOLAP := s.readFromOLAPDB || req.GetUseOlap()
+	if useOLAP && s.olapdbh == nil {
+		return nil, status.FailedPreconditionError("OLAP DB handle must be configured for usage OLAP reads")
+	}
+
+	usages, err := s.scanUsages(ctx, g.GroupID, start, end, useOLAP)
 	if err != nil {
 		return nil, err
 	}
 
 	rsp := &usagepb.GetUsageResponse{
 		AvailableUsagePeriods: availableUsagePeriods,
+	}
+	if useOLAP {
+		olapUsage, err := s.scanOLAPOnlyUsage(ctx, g.GroupID, start, end)
+		if err != nil {
+			return nil, err
+		}
+		rsp.OlapUsage = olapUsage
 	}
 	period := getUsagePeriod(start).String()
 
@@ -540,10 +568,7 @@ func (s *usageService) countUsageAlertingRules(ctx context.Context, dbh interfac
 }
 
 func (s *usageService) scanUsages(ctx context.Context, groupID string, start, end time.Time, useOLAP bool) ([]*usagepb.Usage, error) {
-	if s.readFromOLAPDB || useOLAP {
-		if s.olapdbh == nil {
-			return nil, status.FailedPreconditionError("OLAP DB handle must be configured for usage OLAP reads")
-		}
+	if useOLAP {
 		return s.scanOLAPUsages(ctx, groupID, start, end)
 	}
 	return s.scanPrimaryDBUsages(ctx, groupID, start, end)
@@ -581,6 +606,42 @@ func (s *usageService) scanOLAPUsages(ctx context.Context, groupID string, start
 		ORDER BY period ASC
 	`, start, end, groupID)
 	return db.ScanAll(rq, &usagepb.Usage{})
+}
+
+// scanOLAPOnlyUsage returns the usage metrics that are only recorded in the
+// OLAP DB, aggregated over [start, end) per (SKU, labels) combination so that
+// every non-zero row in the Usage view is visible on the Usage page.
+func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, start, end time.Time) (*usagepb.OLAPUsage, error) {
+	rows, err := db.ScanAll(s.olapdbh.NewQuery(ctx, "usage_service_scan_olap_only").Raw(`
+		SELECT sku, labels, SUM(count) AS count
+		FROM Usage
+		WHERE period_start >= ? AND period_start < ?
+		AND group_id = ?
+		AND sku IN ?
+		GROUP BY sku, labels
+		HAVING count > 0
+		ORDER BY sku, labels
+	`, start, end, groupID, olapOnlyUsageSKUs), &schema.Usage{})
+	if err != nil {
+		return nil, err
+	}
+	olapUsage := &usagepb.OLAPUsage{}
+	for _, row := range rows {
+		labeled := &usagepb.LabeledUsage{Labels: row.Labels, Count: row.Count}
+		switch row.SKU {
+		case sku.RemoteExecutionExecuteFixedComputeNanos:
+			olapUsage.FixedComputeNanos = append(olapUsage.FixedComputeNanos, labeled)
+		case sku.RemoteExecutionExecuteFlexibleComputeNanos:
+			olapUsage.FlexibleComputeNanos = append(olapUsage.FlexibleComputeNanos, labeled)
+		case sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes:
+			olapUsage.RemoteSnapshotSavedBytes = append(olapUsage.RemoteSnapshotSavedBytes, labeled)
+		case sku.RemoteExecutionExecuteLocalSnapshotSavedBytes:
+			olapUsage.LocalSnapshotSavedBytes = append(olapUsage.LocalSnapshotSavedBytes, labeled)
+		default:
+			return nil, status.InternalErrorf("unexpected OLAP-only usage SKU %q", row.SKU)
+		}
+	}
+	return olapUsage, nil
 }
 
 func validateUsageAlertingRuleConfiguration(config *usagepb.UsageAlertingRuleConfiguration) error {
