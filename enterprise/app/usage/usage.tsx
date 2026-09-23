@@ -569,8 +569,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
 
   renderSnapshotUsage(olapUsage: usage.OLAPUsage) {
     const rows = [
-      ...olapUsage.remoteSnapshotSavedBytes.map((row) => snapshotUsageRow("Remote snapshots", row)),
-      ...olapUsage.localSnapshotSavedBytes.map((row) => snapshotUsageRow("Local snapshots", row)),
+      ...olapUsage.remoteSnapshotSavedBytes.map((row) => executionUsageRow("Remote snapshots", row, false)),
+      ...olapUsage.localSnapshotSavedBytes.map((row) => executionUsageRow("Local snapshots", row, false)),
     ];
     const totalBytes = rows.reduce((sum, row) => sum + row.value, 0);
     return (
@@ -590,8 +590,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
 
   renderComputeUsage(olapUsage: usage.OLAPUsage) {
     const rows = [
-      ...olapUsage.fixedComputeNanos.map((row) => computeUsageRow("Fixed compute", row)),
-      ...olapUsage.flexibleComputeNanos.map((row) => computeUsageRow("Flexible compute", row)),
+      ...olapUsage.fixedComputeNanos.map((row) => executionUsageRow("Fixed compute", row, true)),
+      ...olapUsage.flexibleComputeNanos.map((row) => executionUsageRow("Flexible compute", row, true)),
     ];
     const totalNanos = rows.reduce((sum, row) => sum + row.value, 0);
     return (
@@ -852,14 +852,6 @@ function roundedMinutes(nanos: number): number {
 const HOSTING_ORDER = ["Cloud", "Self-hosted"];
 const POOL_ORDER = ["RBE", "Workflows"];
 
-function hostingName(row: usage.ExecutionUsage): string {
-  return row.selfHosted ? "Self-hosted" : "Cloud";
-}
-
-function poolName(row: usage.ExecutionUsage): string {
-  return row.workflow ? "Workflows" : "RBE";
-}
-
 /**
  * A usage count resolved into the dimensions shown in a breakdown table: the
  * value of each grouping level, from outermost to innermost, and optionally
@@ -871,28 +863,26 @@ interface BreakdownUsageRow {
   value: number;
 }
 
+/**
+ * Resolves a server row into the dimensions shown in a breakdown table:
+ * hosting, then the given type name, then pool, and if requested the
+ * isolation type, OS and arch as leaf columns.
+ */
+function executionUsageRow(typeName: string, row: usage.ExecutionUsage, withLeafColumns: boolean): BreakdownUsageRow {
+  return {
+    groups: [row.selfHosted ? "Self-hosted" : "Cloud", typeName, row.workflow ? "Workflows" : "RBE"],
+    leaf: withLeafColumns ? [row.isolationType, row.os, row.arch] : undefined,
+    value: Number(row.count),
+  };
+}
+
 /** Grouping levels of the compute usage table, from outermost to innermost,
  * with the display order of each level's values. Leaf rows below the last
  * level show the isolation type, OS and arch. */
 const COMPUTE_USAGE_LEVELS = [HOSTING_ORDER, ["Fixed compute", "Flexible compute"], POOL_ORDER];
 
-function computeUsageRow(computeType: string, row: usage.ExecutionUsage): BreakdownUsageRow {
-  return {
-    groups: [hostingName(row), computeType, poolName(row)],
-    leaf: [row.isolationType, row.os, row.arch],
-    value: Number(row.count),
-  };
-}
-
 /** Grouping levels of the snapshot usage table, from outermost to innermost. */
 const SNAPSHOT_USAGE_LEVELS = [HOSTING_ORDER, ["Remote snapshots", "Local snapshots"], POOL_ORDER];
-
-function snapshotUsageRow(snapshotType: string, row: usage.ExecutionUsage): BreakdownUsageRow {
-  return {
-    groups: [hostingName(row), snapshotType, poolName(row)],
-    value: Number(row.count),
-  };
-}
 
 /** A row of a rendered breakdown table: either a group heading carrying the
  * sum of everything nested under it, or a leaf row. */
