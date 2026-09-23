@@ -897,7 +897,6 @@ function snapshotUsageRow(snapshotType: string, row: usage.ExecutionUsage): Brea
 /** A row of a rendered breakdown table: either a group heading carrying the
  * sum of everything nested under it, or a leaf row. */
 interface BreakdownTableRow {
-  key: string;
   // 1-based nesting depth.
   level: number;
   // Cells shown before the value: the group name, or the leaf columns.
@@ -914,22 +913,17 @@ function breakdownTableRows(
   rows: BreakdownUsageRow[],
   levels: string[][],
   isZero: (value: number) => boolean,
-  level = 0,
-  keyPrefix = ""
+  level = 0
 ): BreakdownTableRow[] {
   if (level === levels.length) {
-    return breakdownLeafRows(rows, level + 1, keyPrefix, isZero);
+    return breakdownLeafRows(rows, level + 1, isZero);
   }
   const out: BreakdownTableRow[] = [];
   for (const name of levels[level]) {
     const group = rows.filter((row) => row.groups[level] === name);
     const value = group.reduce((sum, row) => sum + row.value, 0);
     if (isZero(value)) continue;
-    const key = keyPrefix + name + "/";
-    out.push(
-      { key, level: level + 1, cells: [name], value },
-      ...breakdownTableRows(group, levels, isZero, level + 1, key)
-    );
+    out.push({ level: level + 1, cells: [name], value }, ...breakdownTableRows(group, levels, isZero, level + 1));
   }
   return out;
 }
@@ -937,7 +931,6 @@ function breakdownTableRows(
 function breakdownLeafRows(
   rows: BreakdownUsageRow[],
   level: number,
-  keyPrefix: string,
   isZero: (value: number) => boolean
 ): BreakdownTableRow[] {
   // The server returns one row per combination of leaf dimensions, already
@@ -945,7 +938,7 @@ function breakdownLeafRows(
   const out: BreakdownTableRow[] = [];
   for (const { leaf, value } of rows) {
     if (leaf && !isZero(value)) {
-      out.push({ key: keyPrefix + leaf.join("/"), level, cells: leaf, value });
+      out.push({ level, cells: leaf, value });
     }
   }
   return out;
@@ -965,9 +958,9 @@ function renderBreakdownTable(
   return (
     <table className="usage-breakdown-table">
       <tbody>
-        {rows.map((row) => (
+        {rows.map((row, i) => (
           <tr
-            key={row.key}
+            key={i}
             className={`usage-breakdown-level-${row.level} ${row.level === maxLevel ? "usage-breakdown-leaf" : ""}`}>
             {row.cells.map((cell, i) => (
               <td
