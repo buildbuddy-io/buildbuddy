@@ -42,6 +42,7 @@ RUN apt-get update && \
       less \
       netcat-traditional \
       openssh-client \
+      slirp4netns \
       sudo \
       unzip \
       wget \
