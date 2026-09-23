@@ -235,7 +235,9 @@ func (wt *WebTester) screenshot(tag string) error {
 	// TEST_UNDECLARED_OUTPUTS_DIR is usually defined by Bazel. If this test is
 	// run outside of Bazel for whatever reason, this will just be an empty
 	// string, which is interpreted by CreateTemp as "use the OS-default temp dir"
-	screenshotFile, err := os.CreateTemp(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), fmt.Sprintf("%s.%s.screenshot-*.png", wt.t.Name(), tag))
+	// Subtest names contain slashes, which CreateTemp rejects in its pattern.
+	name := strings.ReplaceAll(wt.t.Name(), "/", "_")
+	screenshotFile, err := os.CreateTemp(os.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"), fmt.Sprintf("%s.%s.screenshot-*.png", name, tag))
 	if err != nil {
 		return err
 	}
