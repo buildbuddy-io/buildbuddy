@@ -902,10 +902,6 @@ interface BreakdownTableRow {
   level: number;
   // Cells shown before the value: the group name, or the leaf columns.
   cells: string[];
-  isGroup: boolean;
-  // Whether this is the deepest kind of row in its table. Leaf rows are
-  // styled differently from the groups above them.
-  isLeaf: boolean;
   value: number;
 }
 
@@ -930,10 +926,8 @@ function breakdownTableRows(
     const value = group.reduce((sum, row) => sum + row.value, 0);
     if (isZero(value)) continue;
     const key = keyPrefix + name + "/";
-    // The last group level is the deepest row type unless leaf columns follow.
-    const isLeaf = level + 1 === levels.length && !group.some((row) => row.leaf);
     out.push(
-      { key, level: level + 1, cells: [name], isGroup: true, isLeaf, value },
+      { key, level: level + 1, cells: [name], value },
       ...breakdownTableRows(group, levels, isZero, level + 1, key)
     );
   }
@@ -951,7 +945,7 @@ function breakdownLeafRows(
   const out: BreakdownTableRow[] = [];
   for (const { leaf, value } of rows) {
     if (leaf && !isZero(value)) {
-      out.push({ key: keyPrefix + leaf.join("/"), level, cells: leaf, isGroup: false, isLeaf: true, value });
+      out.push({ key: keyPrefix + leaf.join("/"), level, cells: leaf, value });
     }
   }
   return out;
@@ -964,19 +958,21 @@ function renderBreakdownTable(
   formatTitle?: (value: number) => string
 ) {
   if (!rows.length) return null;
-  // Group rows span all of the leaf columns.
-  const leafColumns = Math.max(1, ...rows.filter((row) => !row.isGroup).map((row) => row.cells.length));
+  // Rows at the deepest level are leaves. Group rows have a single cell, which
+  // spans all of the leaf columns.
+  const maxLevel = Math.max(...rows.map((row) => row.level));
+  const columns = Math.max(...rows.map((row) => row.cells.length));
   return (
     <table className="usage-breakdown-table">
       <tbody>
         {rows.map((row) => (
           <tr
             key={row.key}
-            className={`usage-breakdown-level-${row.level} ${row.isLeaf ? "usage-breakdown-leaf" : ""}`}>
+            className={`usage-breakdown-level-${row.level} ${row.level === maxLevel ? "usage-breakdown-leaf" : ""}`}>
             {row.cells.map((cell, i) => (
               <td
                 key={i}
-                colSpan={row.isGroup ? leafColumns : 1}
+                colSpan={row.cells.length === 1 ? columns : 1}
                 style={i === 0 ? { paddingLeft: 24 + 16 * (row.level - 1) } : undefined}>
                 {cell}
               </td>
