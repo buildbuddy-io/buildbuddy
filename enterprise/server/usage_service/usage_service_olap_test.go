@@ -422,6 +422,26 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			CloudCpuNanos:                           24_000,
 			CloudRbeCpuNanos:                        11_000,
 			CloudWorkflowCpuNanos:                   13_000,
+			// Execution usage rows are expected in the query's order: cloud before
+			// self-hosted, RBE before workflows, then by isolation type, OS and
+			// arch. Compute usage is converted from nanoseconds to microseconds.
+			FixedComputeUsec: []*usagepb.ExecutionUsage{
+				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 12},
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 7},
+				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 9},
+			},
+			FlexibleComputeUsec: []*usagepb.ExecutionUsage{
+				{IsolationType: "oci", Os: "linux", Arch: "x86_64", Count: 8},
+				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: (math.MaxInt64 + 1_000) / 1_000},
+			},
+			RemoteSnapshotSavedBytes: []*usagepb.ExecutionUsage{
+				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 2_002},
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 1_001},
+			},
+			LocalSnapshotSavedBytes: []*usagepb.ExecutionUsage{
+				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 4_004},
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 3_003},
+			},
 		},
 		DailyUsage: []*usagepb.Usage{
 			{
@@ -459,29 +479,6 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			"2023-09",
 			"2023-08",
 			"2023-07",
-		},
-		// Execution usage rows are expected in the query's order: cloud before
-		// self-hosted, RBE before workflows, then by isolation type, OS and
-		// arch.
-		OlapUsage: &usagepb.OLAPUsage{
-			// Compute usage is converted from nanoseconds to microseconds.
-			FixedComputeUsec: []*usagepb.ExecutionUsage{
-				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 12},
-				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 7},
-				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 9},
-			},
-			FlexibleComputeUsec: []*usagepb.ExecutionUsage{
-				{IsolationType: "oci", Os: "linux", Arch: "x86_64", Count: 8},
-				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: (math.MaxInt64 + 1_000) / 1_000},
-			},
-			RemoteSnapshotSavedBytes: []*usagepb.ExecutionUsage{
-				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 2_002},
-				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 1_001},
-			},
-			LocalSnapshotSavedBytes: []*usagepb.ExecutionUsage{
-				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 4_004},
-				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 3_003},
-			},
 		},
 	}
 	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))

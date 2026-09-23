@@ -568,10 +568,10 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     );
   }
 
-  renderSnapshotUsage(olapUsage: usage.OLAPUsage) {
+  renderSnapshotUsage(selection: usage.Usage) {
     const rows = [
-      ...olapUsage.remoteSnapshotSavedBytes.map((row) => executionUsageRow("Remote snapshots", row, false)),
-      ...olapUsage.localSnapshotSavedBytes.map((row) => executionUsageRow("Local snapshots", row, false)),
+      ...selection.remoteSnapshotSavedBytes.map((row) => executionUsageRow("Remote snapshots", row, false)),
+      ...selection.localSnapshotSavedBytes.map((row) => executionUsageRow("Local snapshots", row, false)),
     ];
     // Don't show the section to orgs that don't use snapshots.
     if (!rows.length) return null;
@@ -592,10 +592,10 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     );
   }
 
-  renderComputeUsage(olapUsage: usage.OLAPUsage) {
+  renderComputeUsage(selection: usage.Usage) {
     const rows = [
-      ...olapUsage.fixedComputeUsec.map((row) => executionUsageRow("Fixed compute", row, true)),
-      ...olapUsage.flexibleComputeUsec.map((row) => executionUsageRow("Flexible compute", row, true)),
+      ...selection.fixedComputeUsec.map((row) => executionUsageRow("Fixed compute", row, true)),
+      ...selection.flexibleComputeUsec.map((row) => executionUsageRow("Flexible compute", row, true)),
     ];
     // Don't show the section to orgs that don't use remote execution.
     if (!rows.length) return null;
@@ -629,8 +629,6 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     const orgName = this.props.user?.selectedGroup.name;
     // Selected period may not be found because of a pending or failed RPC.
     const selection = this.state.response.usage;
-    // Only set when the server read usage from the OLAP DB.
-    const olapUsage = this.state.response.olapUsage;
     const detailed = shouldShowDetailedView(this.state.selectedPeriod);
     const periodHeader = (
       <div className="usage-period-header">
@@ -737,7 +735,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
-                {olapUsage && this.renderSnapshotUsage(olapUsage)}
+                {this.renderSnapshotUsage(selection)}
                 <div className="usage-resource-name">Linux remote execution</div>
                 <div className="usage-value">{formatMinutes(Number(selection.linuxExecutionDurationUsec))}</div>
                 {detailed && (
@@ -782,7 +780,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
-                {olapUsage && this.renderComputeUsage(olapUsage)}
+                {this.renderComputeUsage(selection)}
                 {Boolean(selection.totalCustomerProxyDownloadSizeBytes) && (
                   <>
                     <div className="usage-resource-name">Total bytes downloaded from cache proxy</div>

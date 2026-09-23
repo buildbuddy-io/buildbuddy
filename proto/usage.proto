@@ -31,10 +31,6 @@ message GetUsageResponse {
   // The available usage periods that may be specified in a subsequent
   // GetUsageRequest.
   repeated string available_usage_periods = 3;
-
-  // Usage numbers for the requested UTC month that are only recorded in the
-  // OLAP DB. Unset when usage was read from the primary DB.
-  OLAPUsage olap_usage = 5;
 }
 
 // ExecutionUsage is a usage count for a single combination of execution
@@ -60,33 +56,6 @@ message ExecutionUsage {
 
   // The usage count for this combination of dimensions.
   int64 count = 6;
-}
-
-// OLAPUsage represents BuildBuddy resources used for a particular time period
-// that are only counted in the OLAP DB.
-message OLAPUsage {
-  // Fixed compute usage, in compute-unit-microseconds (one compute unit
-  // reserved for one microsecond), for each combination of execution
-  // dimensions with non-zero usage. Fixed compute is charged for the compute
-  // units reserved by an action for its whole execution duration. Firecracker
-  // actions and actions that request EstimatedComputeUnits are charged as
-  // fixed compute.
-  repeated ExecutionUsage fixed_compute_usec = 1;
-
-  // Flexible compute usage, in compute-unit-microseconds, for each
-  // combination of execution dimensions with non-zero usage. Flexible compute
-  // is charged for the compute units the scheduler estimated for an action,
-  // for its whole execution duration.
-  repeated ExecutionUsage flexible_compute_usec = 2;
-
-  // The number of bytes of VM snapshots saved to the remote cache, for each
-  // combination of execution dimensions with non-zero usage. Bytes saved
-  // remotely are not also counted as saved locally.
-  repeated ExecutionUsage remote_snapshot_saved_bytes = 3;
-
-  // The number of bytes of VM snapshots saved only to the executor's local
-  // disk, for each combination of execution dimensions with non-zero usage.
-  repeated ExecutionUsage local_snapshot_saved_bytes = 4;
 }
 
 // Usage represents a count of BuildBuddy resources used for a particular time
@@ -166,6 +135,29 @@ message Usage {
   // The number of bytes uploaded to cache through a customer-managed
   // (customer-run) cache proxy.
   int64 total_customer_proxy_upload_size_bytes = 21;
+
+  // Fixed compute usage, in compute-unit-microseconds (one compute unit
+  // reserved for one microsecond), for each combination of execution
+  // dimensions with non-zero usage. Fixed compute is charged for the compute
+  // units reserved by an action for its whole execution duration. Firecracker
+  // actions and actions that request EstimatedComputeUnits are charged as
+  // fixed compute.
+  repeated ExecutionUsage fixed_compute_usec = 22;
+
+  // Flexible compute usage, in compute-unit-microseconds, for each
+  // combination of execution dimensions with non-zero usage. Flexible compute
+  // is charged for the compute units the scheduler estimated for an action,
+  // for its whole execution duration.
+  repeated ExecutionUsage flexible_compute_usec = 23;
+
+  // The number of bytes of VM snapshots saved to the remote cache, for each
+  // combination of execution dimensions with non-zero usage. Bytes saved
+  // remotely are not also counted as saved locally.
+  repeated ExecutionUsage remote_snapshot_saved_bytes = 24;
+
+  // The number of bytes of VM snapshots saved only to the executor's local
+  // disk, for each combination of execution dimensions with non-zero usage.
+  repeated ExecutionUsage local_snapshot_saved_bytes = 25;
 }
 
 // Alerting rule for usage-based alerts.

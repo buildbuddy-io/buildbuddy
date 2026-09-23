@@ -22,6 +22,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -223,11 +224,13 @@ func TestUsageFields_CoverEveryUsageFieldAndAlertingMetric(t *testing.T) {
 	usageFieldNames := map[string]struct{}{}
 	fields := (&usagepb.Usage{}).ProtoReflect().Descriptor().Fields()
 	for i := range fields.Len() {
-		fieldName := string(fields.Get(i).Name())
-		if fieldName == "period" {
+		field := fields.Get(i)
+		// Repeated fields are per-dimension breakdowns that are only available
+		// from the OLAP DB, so they have no UsageFields entry.
+		if field.Name() == "period" || field.Cardinality() == protoreflect.Repeated {
 			continue
 		}
-		usageFieldNames[fieldName] = struct{}{}
+		usageFieldNames[string(field.Name())] = struct{}{}
 	}
 
 	alertingMetrics := map[usagepb.UsageAlertingMetric_Value]struct{}{}

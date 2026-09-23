@@ -241,8 +241,9 @@ var UsageFields = []UsageField{
 	},
 }
 
-// olapOnlyUsageSKUs are the SKUs returned in OLAPUsage. These metrics are only
-// recorded in the OLAP DB, so they have no UsageFields entry: UsageFields
+// olapOnlyUsageSKUs are the SKUs returned as per-dimension breakdowns in
+// Usage. These metrics are only recorded in the OLAP DB, so they have no
+// UsageFields entry: UsageFields
 // requires a primary DB expression and a UsageAlertingMetric for each field.
 // Nothing prevents alerting on them (usage alerts are evaluated against the
 // OLAP DB); it just needs an alerting metric and a UsageFields entry whose
@@ -432,13 +433,6 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 	rsp := &usagepb.GetUsageResponse{
 		AvailableUsagePeriods: availableUsagePeriods,
 	}
-	if useOLAP {
-		olapUsage, err := s.scanOLAPOnlyUsage(ctx, g.GroupID, start, end)
-		if err != nil {
-			return nil, err
-		}
-		rsp.OlapUsage = olapUsage
-	}
 	period := getUsagePeriod(start).String()
 
 	aggregateUsage := &usagepb.Usage{
@@ -466,6 +460,12 @@ func (s *usageService) GetUsageInternal(ctx context.Context, g *tables.Group, re
 		aggregateUsage.CloudCpuNanos += u.GetCloudCpuNanos()
 		aggregateUsage.CloudRbeCpuNanos += u.GetCloudRbeCpuNanos()
 		aggregateUsage.CloudWorkflowCpuNanos += u.GetCloudWorkflowCpuNanos()
+	}
+
+	if useOLAP {
+		if err := s.addOLAPOnlyUsage(ctx, g.GroupID, start, end, aggregateUsage); err != nil {
+			return nil, err
+		}
 	}
 
 	rsp.Usage = aggregateUsage
@@ -713,7 +713,7 @@ func (s *usageService) scanPrimaryDBUsages(ctx context.Context, groupID string, 
 		GROUP BY period
 		ORDER BY period ASC
 	`, start.UnixMicro(), end.UnixMicro(), groupID)
-	return db.ScanAll(rq, &usagepb.Usage{})
+	return scanUsageRows(rq)
 }
 
 func (s *usageService) scanOLAPUsages(ctx context.Context, groupID string, start, end time.Time) ([]*usagepb.Usage, error) {
@@ -730,14 +730,80 @@ func (s *usageService) scanOLAPUsages(ctx context.Context, groupID string, start
 		GROUP BY period
 		ORDER BY period ASC
 	`, start, end, groupID)
-	return db.ScanAll(rq, &usagepb.Usage{})
+	return scanUsageRows(rq)
 }
 
-// scanOLAPOnlyUsage returns the usage metrics that are only recorded in the
+// usageRow is the scan target for the per-period usage queries: the Usage
+// proto without its repeated breakdown fields, which gorm can't scan into
+// since it mistakes them for relations. Field names must match the
+// UsageFields names, converted to CamelCase.
+type usageRow struct {
+	Period                                  string
+	Invocations                             int64
+	ActionCacheHits                         int64
+	TotalCachedActionExecUsec               int64
+	CasCacheHits                            int64
+	TotalDownloadSizeBytes                  int64
+	TotalExternalDownloadSizeBytes          int64
+	TotalInternalDownloadSizeBytes          int64
+	TotalWorkflowDownloadSizeBytes          int64
+	TotalUploadSizeBytes                    int64
+	TotalExternalUploadSizeBytes            int64
+	TotalInternalUploadSizeBytes            int64
+	TotalWorkflowUploadSizeBytes            int64
+	TotalCustomerProxyDownloadSizeBytes     int64
+	TotalCustomerProxyUploadSizeBytes       int64
+	LinuxExecutionDurationUsec              int64
+	CloudRbeLinuxExecutionDurationUsec      int64
+	CloudWorkflowLinuxExecutionDurationUsec int64
+	CloudCpuNanos                           int64
+	CloudRbeCpuNanos                        int64
+	CloudWorkflowCpuNanos                   int64
+}
+
+func (r *usageRow) toProto() *usagepb.Usage {
+	return &usagepb.Usage{
+		Period:                                  r.Period,
+		Invocations:                             r.Invocations,
+		ActionCacheHits:                         r.ActionCacheHits,
+		TotalCachedActionExecUsec:               r.TotalCachedActionExecUsec,
+		CasCacheHits:                            r.CasCacheHits,
+		TotalDownloadSizeBytes:                  r.TotalDownloadSizeBytes,
+		TotalExternalDownloadSizeBytes:          r.TotalExternalDownloadSizeBytes,
+		TotalInternalDownloadSizeBytes:          r.TotalInternalDownloadSizeBytes,
+		TotalWorkflowDownloadSizeBytes:          r.TotalWorkflowDownloadSizeBytes,
+		TotalUploadSizeBytes:                    r.TotalUploadSizeBytes,
+		TotalExternalUploadSizeBytes:            r.TotalExternalUploadSizeBytes,
+		TotalInternalUploadSizeBytes:            r.TotalInternalUploadSizeBytes,
+		TotalWorkflowUploadSizeBytes:            r.TotalWorkflowUploadSizeBytes,
+		TotalCustomerProxyDownloadSizeBytes:     r.TotalCustomerProxyDownloadSizeBytes,
+		TotalCustomerProxyUploadSizeBytes:       r.TotalCustomerProxyUploadSizeBytes,
+		LinuxExecutionDurationUsec:              r.LinuxExecutionDurationUsec,
+		CloudRbeLinuxExecutionDurationUsec:      r.CloudRbeLinuxExecutionDurationUsec,
+		CloudWorkflowLinuxExecutionDurationUsec: r.CloudWorkflowLinuxExecutionDurationUsec,
+		CloudCpuNanos:                           r.CloudCpuNanos,
+		CloudRbeCpuNanos:                        r.CloudRbeCpuNanos,
+		CloudWorkflowCpuNanos:                   r.CloudWorkflowCpuNanos,
+	}
+}
+
+func scanUsageRows(rq interfaces.DBRawQuery) ([]*usagepb.Usage, error) {
+	rows, err := db.ScanAll(rq, &usageRow{})
+	if err != nil {
+		return nil, err
+	}
+	usages := make([]*usagepb.Usage, 0, len(rows))
+	for _, row := range rows {
+		usages = append(usages, row.toProto())
+	}
+	return usages, nil
+}
+
+// addOLAPOnlyUsage adds to agg the usage metrics that are only recorded in the
 // OLAP DB, aggregated over [start, end) per combination of the execution
 // dimensions returned to the Usage page. Labels that aren't returned (client,
 // origin, server) are summed over.
-func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, start, end time.Time) (*usagepb.OLAPUsage, error) {
+func (s *usageService) addOLAPOnlyUsage(ctx context.Context, groupID string, start, end time.Time, agg *usagepb.Usage) error {
 	type executionUsageRow struct {
 		SKU           sku.SKU
 		SelfHosted    bool
@@ -765,9 +831,8 @@ func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, st
 		ORDER BY sku, self_hosted, workflow, isolation_type, os, arch
 	`, computeUsageSKUs, start, end, groupID, olapOnlyUsageSKUs), &executionUsageRow{})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	olapUsage := &usagepb.OLAPUsage{}
 	for _, row := range rows {
 		u := &usagepb.ExecutionUsage{
 			SelfHosted:    row.SelfHosted,
@@ -779,18 +844,18 @@ func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, st
 		}
 		switch row.SKU {
 		case sku.RemoteExecutionExecuteFixedComputeNanos:
-			olapUsage.FixedComputeUsec = append(olapUsage.FixedComputeUsec, u)
+			agg.FixedComputeUsec = append(agg.FixedComputeUsec, u)
 		case sku.RemoteExecutionExecuteFlexibleComputeNanos:
-			olapUsage.FlexibleComputeUsec = append(olapUsage.FlexibleComputeUsec, u)
+			agg.FlexibleComputeUsec = append(agg.FlexibleComputeUsec, u)
 		case sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes:
-			olapUsage.RemoteSnapshotSavedBytes = append(olapUsage.RemoteSnapshotSavedBytes, u)
+			agg.RemoteSnapshotSavedBytes = append(agg.RemoteSnapshotSavedBytes, u)
 		case sku.RemoteExecutionExecuteLocalSnapshotSavedBytes:
-			olapUsage.LocalSnapshotSavedBytes = append(olapUsage.LocalSnapshotSavedBytes, u)
+			agg.LocalSnapshotSavedBytes = append(agg.LocalSnapshotSavedBytes, u)
 		default:
-			return nil, status.InternalErrorf("unexpected OLAP-only usage SKU %q", row.SKU)
+			return status.InternalErrorf("unexpected OLAP-only usage SKU %q", row.SKU)
 		}
 	}
-	return olapUsage, nil
+	return nil
 }
 
 func validateUsageAlertingRuleConfiguration(config *usagepb.UsageAlertingRuleConfiguration) error {
