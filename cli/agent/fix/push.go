@@ -15,11 +15,11 @@ import (
 )
 
 type pushTarget struct {
-	root            string // Absolute path to the Git worktree root.
-	remote          string // Remote that contains the branch to update.
-	branch          string // Branch checked out before the agent runs.
-	base            string // HEAD before the agent runs; must match the remote branch.
-	isDefaultBranch bool   // Whether the default branch (i.e. `main` or `master`) is currently checked out.
+	root         string // Absolute path to the Git worktree root.
+	remote       string // Remote that contains the branch to update.
+	branch       string // Branch checked out before the agent runs, or empty if HEAD is detached.
+	base         string // HEAD before the agent runs; must match the remote branch.
+	createBranch bool   // Whether to create and push to a new branch, rather than pushing to the current branch.
 }
 
 // checkPushPreconditions returns metadata required to push to if the push is possible.
@@ -36,13 +36,19 @@ func checkPushPreconditions(ctx context.Context) (*pushTarget, error) {
 	if err != nil {
 		return nil, err
 	}
-	branch, err := cligit.CurrentBranch(ctx, root)
-	if err != nil {
-		return nil, fmt.Errorf("--push requires a checked-out branch: %w", err)
-	}
 	base, err := cligit.HeadCommit(ctx, root)
 	if err != nil {
 		return nil, err
+	}
+	branch, err := cligit.CurrentBranch(ctx, root)
+	if err != nil {
+		// HEAD is detached, so push the fix to a new branch.
+		remote := detachedPushRemote(ctx, root)
+		// Fail fast if the remote is unreachable or we lack read access.
+		if err := cligit.Run(ctx, root, io.Discard, "ls-remote", "--exit-code", remote, "HEAD"); err != nil {
+			return nil, fmt.Errorf("cannot read remote %s; check Git credentials: %w", remote, err)
+		}
+		return &pushTarget{root: root, remote: remote, base: base, createBranch: true}, nil
 	}
 	remote := pushRemote(ctx, root, branch)
 
@@ -57,7 +63,7 @@ func checkPushPreconditions(ctx context.Context) (*pushTarget, error) {
 	}
 	return &pushTarget{
 		root: root, remote: remote, branch: branch, base: base,
-		isDefaultBranch: branch == defaultBranch || branch == "main" || branch == "master",
+		createBranch: defaultBranch == "" || branch == defaultBranch,
 	}, nil
 }
 
@@ -71,6 +77,21 @@ func pushRemote(ctx context.Context, root, branch string) string {
 	}
 	// Locally, use the configured Git push remote.
 	return cligit.PushRemote(ctx, root, branch)
+}
+
+// detachedPushRemote returns the remote to push to when HEAD is detached and
+// there is no branch-specific config. If the default remote doesn't exist,
+// falls back to the repo's only remote.
+func detachedPushRemote(ctx context.Context, root string) string {
+	remote := pushRemote(ctx, root, "")
+	if _, err := cligit.Output(ctx, root, "config", "--get", "remote."+remote+".url"); err == nil {
+		return remote
+	}
+	remotes, err := cligit.Output(ctx, root, "remote")
+	if err == nil && remotes != "" && !strings.Contains(remotes, "\n") {
+		return remotes
+	}
+	return remote
 }
 
 func parseRemoteRefs(output, branch string) (branchHead, defaultBranch string) {
@@ -114,7 +135,7 @@ func commitAndPush(ctx context.Context, target *pushTarget, summary, invocationI
 		return err
 	}
 	pushBranch := target.branch
-	if target.isDefaultBranch {
+	if target.createBranch {
 		shortID := invocationID
 		if len(shortID) > 8 {
 			shortID = shortID[:8]
@@ -123,7 +144,7 @@ func commitAndPush(ctx context.Context, target *pushTarget, summary, invocationI
 		if err := cligit.Run(ctx, target.root, io.Discard, "checkout", "-b", pushBranch); err != nil {
 			return fmt.Errorf("create fix branch %s: %w", pushBranch, err)
 		}
-		log.Printf("Created fix branch %s from %s", pushBranch, target.branch)
+		log.Printf("Created fix branch %s", pushBranch)
 	}
 	commitArgs := []string{"commit", "-m", message, "-m", "Original failing invocation: " + invocationID}
 	if err := cligit.Run(ctx, target.root, &output, commitArgs...); err != nil {
