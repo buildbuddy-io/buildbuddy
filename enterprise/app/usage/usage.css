@@ -67,6 +67,12 @@
   font-weight: 600;
 }
 
+.usage-page .usage-resource-name-with-help {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .usage-page .usage-value {
   margin-top: 4px;
   text-align: right;

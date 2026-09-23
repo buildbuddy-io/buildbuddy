@@ -17,6 +17,7 @@ ts_library(
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/select",
+        "//app/components/tooltip:help_tooltip",
         "//app/errors:error_service",
         "//app/format",
         "//app/router",

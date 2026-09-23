@@ -4,6 +4,7 @@ import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Select, { Option } from "../../../app/components/select/select";
+import HelpTooltip from "../../../app/components/tooltip/help_tooltip";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
 import router, { Path, TrendsChartId } from "../../../app/router/router";
@@ -600,7 +601,15 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     const totalNanos = rows.reduce((sum, row) => sum + row.value, 0);
     return (
       <>
-        <div className="usage-resource-name">Compute unit</div>
+        <div className="usage-resource-name usage-resource-name-with-help">
+          <span>Compute unit</span>
+          <HelpTooltip>
+            A compute unit is 1 CPU, 2.5GiB of memory or 25GiB of disk, whichever an action needs the most of. Fixed
+            compute charges the units an action reserves, for Firecracker actions and actions that set
+            EstimatedComputeUnits. Flexible compute charges the units the scheduler estimated for the action. Units are
+            multiplied by execution time and shown in minutes.
+          </HelpTooltip>
+        </div>
         <div className="usage-value">{formatMinutes(totalNanos / 1000)}</div>
         {renderBreakdownTable(
           breakdownTableRows(rows, COMPUTE_USAGE_LEVELS, (nanos) => roundedMinutes(nanos) === 0),
