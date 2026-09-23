@@ -6,6 +6,7 @@ go_library(
     data = [
         "//tools/bb",
         "//tools/prettier",
+        "@com_github_bazel_contrib_buildtools_v10//buildifier",
         "@io_bazel_rules_go//go",
         "@llvm//tools:clang-format",
         "@org_golang_x_tools//cmd/goimports",
@@ -13,6 +14,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/tools/lint",
     visibility = ["//visibility:private"],
     x_defs = {
+        "buildifierRlocationpath": "$(rlocationpath @com_github_bazel_contrib_buildtools_v10//buildifier)",
         "goimportsRlocationpath": "$(rlocationpath @org_golang_x_tools//cmd/goimports)",
         "goRlocationpath": "$(rlocationpath @io_bazel_rules_go//go)",
         "clangFormatRlocationpath": "$(rlocationpath @llvm//tools:clang-format)",

@@ -863,6 +863,8 @@ github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df h1:GSoSVRLo
 github.com/barkimedes/go-deepcopy v0.0.0-20220514131651-17c30cfc62df/go.mod h1:hiVxq5OP2bUGBRNS3Z/bt/reCLFNbdcST6gISi1fiOM=
 github.com/bazel-contrib/bazel-gazelle/v2 v2.0.0-3 h1:Mq3iQ30V39RGCErrbnhHFOAcnxpWTIrk35Pc9guNfOY=
 github.com/bazel-contrib/bazel-gazelle/v2 v2.0.0-3/go.mod h1:B76PjnaM2KyUG8ypV/ePHHDmGbyUNZ2PCEdEQIJISQM=
+github.com/bazel-contrib/buildtools/v10 v10.0.1 h1:EDWvBDkDuYgKCt0OOVTFjaYCPQMzGKUISCdjBjXV53c=
+github.com/bazel-contrib/buildtools/v10 v10.0.1/go.mod h1:r2TrnWEmFBvbYF1T/SkhkNccU/4vX69SCp9yY6las9M=
 github.com/bazelbuild/bazel-gazelle v0.53.0 h1:qNh2WraxM8cjIeHZQ7QPTTSPbkrX9Z0GkhtGbiz1ToE=
 github.com/bazelbuild/bazel-gazelle v0.53.0/go.mod h1:ncMNvFUTYi5NRQ7wVrOmxjKaR0+mvm02lhBt7UOXlVc=
 github.com/bazelbuild/bazelisk v1.25.1-0.20250219134847-cdb99bfb1b7d h1:ewduqIuhzpKB6Uw887ecLrnC9abSQHqofklqlfJgs3k=
@@ -1683,6 +1685,8 @@ github.com/google/pprof v0.0.0-20250403155104-27863c87afa6/go.mod h1:boTsfXsheKC
 github.com/google/renameio v0.1.0/go.mod h1:KWCgfxg9yswjAJkECMjeO8J8rahYeXnNhOm40UhjYkI=
 github.com/google/s2a-go v0.1.9 h1:LGD7gtMgezd8a/Xak7mEWL0PjoTQFvpRudN895yqKW0=
 github.com/google/s2a-go v0.1.9/go.mod h1:YA0Ei2ZQL3acow2O62kdp9UlnvMmU7kA6Eutn0dXayM=
+github.com/google/safeopen v0.0.0-20260327150837-43626d6f4685 h1:NcJjfIYRDHuboRtptwjtdQflVDKgXSqTIfwu9PpE9uo=
+github.com/google/safeopen v0.0.0-20260327150837-43626d6f4685/go.mod h1:D59KewtQCiD2Avi8N/v2zb/xTYaefwJl+ux2ejB58GQ=
 github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 h1:El6M4kTTCOh6aBiKaUGG7oYTSPP8MxqL4YI3kZKwcP4=
 github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510/go.mod h1:pupxD2MaaD3pAXIBCelhxNneeOaAeabZDe5s4K6zSpQ=
 github.com/google/uuid v1.0.0/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+yHo=

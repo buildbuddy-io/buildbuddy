@@ -2,10 +2,10 @@ diff --git a/buildifier/BUILD.bazel b/buildifier/BUILD.bazel
 index 860cc7e..327f7b5 100644
 --- a/buildifier/BUILD.bazel
 +++ b/buildifier/BUILD.bazel
-@@ -76,7 +76,7 @@ go_library(
+@@ -105,7 +105,7 @@ go_library(
      name = "buildifier_lib",
      srcs = ["buildifier.go"],
-     importpath = "github.com/bazelbuild/buildtools/buildifier",
+     importpath = "github.com/bazel-contrib/buildtools/v10/buildifier",
 -    visibility = ["//visibility:private"],
 +    visibility = ["//visibility:public"],
      x_defs = {
@@ -75,13 +75,3 @@ index 477aa12..437cad2 100644
 -load("@rules_proto//proto:defs.bzl", "proto_library")
 +load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
  load("//build:build_defs.bzl", "go_proto_checkedin_test")
-diff --git a/warn/docs/BUILD.bazel b/warn/docs/BUILD.bazel
-index 3d40918..c3cb979 100644
---- a/warn/docs/BUILD.bazel
-+++ b/warn/docs/BUILD.bazel
-@@ -1,4 +1,4 @@
- load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
- load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
--load("@rules_proto//proto:defs.bzl", "proto_library")
-+load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
- load(":build_defs.bzl", "documentation")
