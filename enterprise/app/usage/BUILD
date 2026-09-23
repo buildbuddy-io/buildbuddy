@@ -13,6 +13,7 @@ ts_library(
         "//:node_modules/long",
         "//:node_modules/moment",
         "//:node_modules/react",
+        "//:node_modules/tslib",
         "//app/auth:auth_service",
         "//app/capabilities",
         "//app/components/select",
