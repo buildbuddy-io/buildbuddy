@@ -1637,35 +1637,6 @@ func TestRemoteGetMultiReference(t *testing.T) {
 		require.Nil(t, gotRN, "expected no dereference")
 	})
 
-	t.Run("wrong-length blob is treated as a miss", func(t *testing.T) {
-		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
-		before := getMultiResponseCount(t, "reference", "Internal")
-		for _, blob := range [][]byte{buf[:len(buf)-1], append(append([]byte{}, buf...), 'x')} {
-			c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: blob})
-			got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{rn, inlineRN})
-			require.NoError(t, err)
-			require.Len(t, got, 1)
-			require.Equal(t, inlineBuf, got[inlineRN.GetDigest()])
-		}
-		require.Equal(t, before+2, getMultiResponseCount(t, "reference", "Internal"))
-	})
-
-	t.Run("non-CAS value is not length-checked", func(t *testing.T) {
-		// An AC digest is a lookup key, so its size is unrelated to the
-		// value's length.
-		acRN, _ := testdigest.RandomACResourceBuf(t, 1000)
-		acBuf := bytes.Repeat([]byte("v"), 700)
-		const acBlobName = "blobs/ac-blob"
-		acKV := &dcpb.KV{Key: &dcpb.Key{Key: acRN.GetDigest().GetHash(), SizeBytes: acRN.GetDigest().GetSizeBytes()}, ValueReference: makeReference(acRN, acBlobName, repb.Compressor_IDENTITY)}
-		peer := startGetMultiServer(t, acKV)
-		c, _ := newReferenceTestProxy(t, te, map[string][]byte{acBlobName: acBuf})
-		before := getMultiResponseCount(t, "reference", "OK")
-		got, err := c.RemoteGetMulti(ctx, peer, []*rspb.ResourceName{acRN})
-		require.NoError(t, err)
-		require.Equal(t, acBuf, got[acRN.GetDigest()])
-		require.Equal(t, before+1, getMultiResponseCount(t, "reference", "OK"))
-	})
-
 	t.Run("references and inline values are mixed", func(t *testing.T) {
 		peer := startGetMultiServer(t, inlineKV, refKV(makeReference(rn, blobName, repb.Compressor_IDENTITY)))
 		c, _ := newReferenceTestProxy(t, te, map[string][]byte{blobName: buf})

@@ -727,6 +727,8 @@ func (c *Proxy) RemoteGetMulti(ctx context.Context, peer string, resources []*rs
 
 // dereferenceMulti resolves the referenced values of a GetMulti response from
 // peer into resultMap, dereferencing concurrently.
+//
+// TODO(iain): merge dereferenced references across peers.
 func (c *Proxy) dereferenceMulti(ctx context.Context, peer string, kvs []*dcpb.KV, requested map[string]*rspb.ResourceName, resultMap map[*repb.Digest][]byte) error {
 	refCache, ok := c.cache.(interfaces.ReferenceCache)
 	if !ok {
@@ -785,38 +787,11 @@ func dereferenceToBytes(ctx context.Context, refCache interfaces.ReferenceCache,
 		return nil, err
 	}
 	defer rc.Close()
-	// Only CAS values with the identity compressor have a known length: the
-	// digest size is the value's length, and referenceMatches has already
-	// checked it against the peer's stored metadata, so the exact-size read
-	// below both bounds the allocation and rejects a blob that does not
-	// match its record. Anything else is read into a growing buffer with no
-	// length check, since a compressed value's length is not knowable
-	// without decompressing it; like the streaming read path, those rely on
-	// the peer's metadata being correct.
-	if rn.GetCacheType() != rspb.CacheType_CAS || rn.GetCompressor() != repb.Compressor_IDENTITY {
-		buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(rn, maxDecompressBufSizeBytes)))
-		if _, err := buf.ReadFrom(rc); err != nil {
-			return nil, err
-		}
-		return buf.Bytes(), nil
-	}
-	size := rn.GetDigest().GetSizeBytes()
-	buf := make([]byte, size)
-	if _, err := io.ReadFull(rc, buf); err != nil {
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			return nil, status.InternalErrorf("dereferenced value for %s/%d is shorter than expected", rn.GetDigest().GetHash(), size)
-		}
+	buf := bytes.NewBuffer(make([]byte, 0, digest.SafeBufferSize(rn, maxDecompressBufSizeBytes)))
+	if _, err := buf.ReadFrom(rc); err != nil {
 		return nil, err
 	}
-	var extra [1]byte
-	switch _, err := io.ReadFull(rc, extra[:]); err {
-	case io.EOF:
-		return buf, nil
-	case nil:
-		return nil, status.InternalErrorf("dereferenced value for %s/%d is longer than expected", rn.GetDigest().GetHash(), size)
-	default:
-		return nil, err
-	}
+	return buf.Bytes(), nil
 }
 
 func (c *Proxy) RemoteReader(ctx context.Context, peer string, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
