@@ -48,10 +48,10 @@ func Root(ctx context.Context) (string, error) {
 	return root, nil
 }
 
-// CurrentBranch returns the checked-out branch name. It returns an error when
+// CurrentBranch returns the checked-out branch name, or an empty string when
 // HEAD is detached.
 func CurrentBranch(ctx context.Context, dir string) (string, error) {
-	return Output(ctx, dir, "symbolic-ref", "--short", "HEAD")
+	return Output(ctx, dir, "branch", "--show-current")
 }
 
 // HeadCommit returns the commit SHA at HEAD.

@@ -157,7 +157,7 @@ func ConfigureRemoteOrigin(t testing.TB, dir, url string) {
 }
 
 func CurrentBranch(t testing.TB, dir string) string {
-	output := testshell.Run(t, dir, `git rev-parse --abbrev-ref HEAD`)
+	output := testshell.Run(t, dir, `git branch --show-current`)
 	return strings.TrimSpace(output)
 }
 

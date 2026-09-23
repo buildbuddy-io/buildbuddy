@@ -36,7 +36,7 @@ commit_sha=$(git rev-parse HEAD)
 echo "COMMIT_SHA $commit_sha"
 
 # Empty in detached HEAD state.
-git_branch=$(git symbolic-ref --short -q HEAD || true)
+git_branch=$(git branch --show-current)
 echo "GIT_BRANCH $git_branch"
 
 git_tree_status=$(git diff-index --quiet HEAD -- && echo 'Clean' || echo 'Modified')

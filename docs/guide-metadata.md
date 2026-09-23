@@ -43,7 +43,7 @@ BuildBuddy allows you to group invocations by the git branch on which they were 
 You can provide the current git branch with Bazel's build_metadata flag with the key `BRANCH_NAME`. You can do this by adding the flag to your bazel invocations:
 
 ```bash
---build_metadata=BRANCH_NAME=$(git symbolic-ref --short -q HEAD)
+--build_metadata=BRANCH_NAME=$(git branch --show-current)
 ```
 
 Note: you cannot add this particular flag to your `.bazelrc` file because it does not support parameter substitution. If you're looking for a solution that supports your `.bazelrc` file, try the Workspace info method below.
