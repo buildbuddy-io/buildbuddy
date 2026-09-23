@@ -13,9 +13,15 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/webtester"
 	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
+	elpb "github.com/buildbuddy-io/buildbuddy/proto/eventlog"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -49,7 +55,7 @@ func checkSettings(t *testing.T, f *permissionstest.Fixture, wt *webtester.WebTe
 		if admin {
 			selector := `.organization-edit-form`
 			if path == "/settings/org/members" {
-				selector = `.org-members`
+				selector = `.org-members-list`
 			}
 			wt.FindWithTimeout(selector, 10*time.Second)
 		} else {
@@ -105,11 +111,13 @@ func TestRoleSettings(t *testing.T) {
 func selectOrg(t *testing.T, wt *webtester.WebTester, name string) {
 	t.Helper()
 	webtester.ExpandSidebarOptions(wt)
+	wt.FindWithTimeout(`.org-list`, 10*time.Second)
 	for _, item := range wt.FindAll(`.org-list [role="menuitem"]`) {
 		if item.Text() == name {
 			item.Click()
 			require.Eventually(t, func() bool {
-				return wt.Find(`.org-picker-profile-org`).Text() == name
+				orgs := wt.FindAll(`.org-picker-profile-org`)
+				return len(orgs) == 1 && orgs[0].Text() == name
 			}, 10*time.Second, 100*time.Millisecond)
 			return
 		}
@@ -156,6 +164,53 @@ func TestOrganizationSwitching(t *testing.T) {
 		}},
 	}, &grpb.UpdateGroupUsersResponse{}))
 	checkSettings(t, f, wt, false)
+	require.Equal(t, updated.Name, wt.Find(`.org-picker-profile-org`).Text(), "downgrade must be observed in B, not by falling back to Reader org A")
+}
+
+func checkInvocationRPCs(t *testing.T, f *permissionstest.Fixture, name, own, other string) {
+	t.Helper()
+	c := f.Login(t, f.Users[name])
+	group, foreignGroup := f.OrgA, f.OrgB
+	if name == "outsider" {
+		group, foreignGroup = foreignGroup, group
+	}
+	ctx := &ctxpb.RequestContext{GroupId: group}
+	inv := &inpb.GetInvocationResponse{}
+	require.NoError(t, c.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: ctx, Lookup: &inpb.InvocationLookup{InvocationId: own},
+	}, inv))
+	require.Len(t, inv.GetInvocation(), 1)
+	require.Equal(t, own, inv.GetInvocation()[0].GetInvocationId())
+	denied := &inpb.GetInvocationResponse{}
+	err := c.RPC("GetInvocation", &inpb.GetInvocationRequest{
+		RequestContext: ctx, Lookup: &inpb.InvocationLookup{InvocationId: other},
+	}, denied)
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Empty(t, denied.GetInvocation())
+
+	logs := &elpb.GetEventLogChunkResponse{}
+	require.NoError(t, c.RPC("GetEventLogChunk", &elpb.GetEventLogChunkRequest{
+		RequestContext: ctx, InvocationId: own,
+	}, logs))
+	require.NotEmpty(t, logs.GetBuffer(), "positive control: real uploaded build logs")
+	deniedLogs := &elpb.GetEventLogChunkResponse{}
+	err = c.RPC("GetEventLogChunk", &elpb.GetEventLogChunkRequest{
+		RequestContext: ctx, InvocationId: other,
+	}, deniedLogs)
+	require.Equal(t, codes.PermissionDenied, status.Code(err), "%v", err)
+	require.Empty(t, deniedLogs.GetBuffer())
+
+	search := &inpb.SearchInvocationResponse{}
+	require.NoError(t, c.RPC("SearchInvocation", &inpb.SearchInvocationRequest{
+		RequestContext: ctx, Query: &inpb.InvocationQuery{GroupId: group},
+	}, search))
+	require.Len(t, search.GetInvocation(), 1)
+	require.Equal(t, own, search.GetInvocation()[0].GetInvocationId())
+	foreignSearch := &inpb.SearchInvocationResponse{}
+	require.NoError(t, c.RPC("SearchInvocation", &inpb.SearchInvocationRequest{
+		RequestContext: ctx, Query: &inpb.InvocationQuery{GroupId: foreignGroup},
+	}, foreignSearch))
+	require.Empty(t, foreignSearch.GetInvocation(), "query group substitution must not bypass row ACLs")
 }
 
 func TestInvocationVisibility(t *testing.T) {
@@ -169,10 +224,22 @@ func TestInvocationVisibility(t *testing.T) {
 	ids := map[string]string{}
 	for _, name := range []string{"admin", "outsider"} {
 		t.Run("upload_"+name, func(t *testing.T) {
-			wt := login(t, f, name)
-			key := webtester.GetOrCreatePersonalAPIKey(wt, f.App.HTTPURL())
-			args := append([]string{"//:permission_sentinel", "--remote_header=x-buildbuddy-api-key=" + key}, f.App.BESBazelFlags()...)
+			c := f.Login(t, f.Users[name])
+			group := f.OrgA
+			if name == "outsider" {
+				group = f.OrgB
+			}
+			key := &akpb.CreateApiKeyResponse{}
+			require.NoError(t, c.RPC("CreateUserApiKey", &akpb.CreateApiKeyRequest{
+				RequestContext: &ctxpb.RequestContext{GroupId: group},
+				UserId:         f.Users[name].ID,
+				Label:          "invocation-upload",
+				Capability:     []cappb.Capability{cappb.Capability_CAS_WRITE},
+			}, key))
+			require.NotEmpty(t, key.GetApiKey().GetValue())
+			args := append([]string{"//:permission_sentinel", "--remote_header=x-buildbuddy-api-key=" + key.GetApiKey().GetValue()}, f.App.BESBazelFlags()...)
 			result := testbazel.Invoke(context.Background(), t, ws, "build", args...)
+			require.NoError(t, result.Error, "Bazel failed: %s", result.Stderr)
 			require.NotEmpty(t, result.InvocationID)
 			ids[name] = result.InvocationID
 		})
@@ -185,6 +252,7 @@ func TestInvocationVisibility(t *testing.T) {
 			if name == "outsider" {
 				own, other = other, own
 			}
+			checkInvocationRPCs(t, f, name, own, other)
 			wt.Get(f.App.HTTPURL())
 			require.Eventually(t, func() bool {
 				return len(wt.FindAll(fmt.Sprintf(`[href="/invocation/%s"]`, own))) > 0

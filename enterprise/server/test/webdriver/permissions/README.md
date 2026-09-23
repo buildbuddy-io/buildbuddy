@@ -11,12 +11,14 @@ mocked authorization result, or external login account is needed.
 bazel test //enterprise/server/testutil/testoidc:testoidc_test \
   //enterprise/server/test/integration/permissions:permissions_test \
   //enterprise/server/test/webdriver/permissions:permissions_test \
-  --test_output=errors
+  --config=remote --test_output=errors
 ```
 
 On a VM configured for BuildBuddy remote runs, replace `bazel` with `bb remote`.
-The browser suite uses the existing Chromium/WebDriver Bazel infrastructure. Its
-explicit target is important: WebDriver suites are tagged `manual` by default.
+The browser suite uses the existing Chromium/WebDriver Bazel infrastructure;
+`--config=remote` runs it in the WebDriver image with Chromium's shared libraries.
+Running it without remote execution requires those libraries on the test host.
+Its explicit target is important: WebDriver suites are tagged `manual` by default.
 The tests are destructive to their **disposable fixture only**; they are not
 intended to run against a deployed instance or a production database. “Local-only”
 means the test starts its own server, including when the whole test runs remotely.
@@ -53,13 +55,16 @@ cookies and local/session storage.
 - Admin vs. Developer/Writer/Reader settings navigation and direct URLs.
 - Organization API-key labels: admin-only, member-visible, and other-org keys.
 - Personal API-key creation controls for each member role.
-- Switching the same user between a Reader org and an Admin org.
+- Switching the same user between a Reader org and an Admin org, then observing
+  an administrator's role downgrade without logging the browser out.
 - An authorized organization edit, checked against the real database, with the
   other organization unchanged.
 - Real Bazel/BEP uploads in both organizations, followed by history and direct
   invocation access checks across all four roles and an outsider.
-- Anonymous access to private invocations and outsider/anonymous access after
-  making the same invocation public.
+- Cookie-authenticated invocation and build-log RPCs, plus search queries with
+  substituted foreign organization IDs, using those real uploaded resources.
+- Logout, anonymous access to private invocations, and outsider/anonymous access
+  after making the same invocation public.
 
 The companion HTTP RPC suite tests backend enforcement independently of hidden
 controls. Its assertions should include both an authorized positive control and
