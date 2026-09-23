@@ -59,10 +59,10 @@ func TestOpenCloseReplica(t *testing.T) {
 
 type entryMaker struct {
 	index uint64
-	t     *testing.T
+	t     testing.TB
 }
 
-func newEntryMaker(t *testing.T) *entryMaker {
+func newEntryMaker(t testing.TB) *entryMaker {
 	return &entryMaker{
 		t: t,
 	}
@@ -77,7 +77,7 @@ func (em *entryMaker) makeEntry(batch *rbuilder.BatchBuilder) dbsm.Entry {
 	return dbsm.Entry{Cmd: buf, Index: em.index}
 }
 
-func writeRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, key []byte, rd *rfpb.RangeDescriptor) {
+func writeRangeDescriptor(t testing.TB, em *entryMaker, r *replica.Replica, key []byte, rd *rfpb.RangeDescriptor) {
 	rdBuf, err := proto.Marshal(rd)
 	require.NoError(t, err)
 	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.DirectWriteRequest{
@@ -92,7 +92,7 @@ func writeRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, key 
 	require.Equal(t, 1, len(writeRsp))
 }
 
-func writeLocalRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
+func writeLocalRangeDescriptor(t testing.TB, em *entryMaker, r *replica.Replica, rd *rfpb.RangeDescriptor) {
 	writeRangeDescriptor(t, em, r, constants.LocalRangeKey, rd)
 }
 
@@ -160,7 +160,7 @@ func writer(t *testing.T, em *entryMaker, r *replica.Replica, h *rfpb.Header, fi
 	return wc
 }
 
-func writeDefaultRangeDescriptor(t *testing.T, em *entryMaker, r *replica.Replica) *rfpb.RangeDescriptor {
+func writeDefaultRangeDescriptor(t testing.TB, em *entryMaker, r *replica.Replica) *rfpb.RangeDescriptor {
 	rd := &rfpb.RangeDescriptor{
 		Start:      keys.Key{constants.UnsplittableMaxByte},
 		End:        keys.MaxByte,
@@ -1358,7 +1358,8 @@ func TestFileWriteAndFind(t *testing.T) {
 		FileRecord: fileRecord,
 		StorageMetadata: &sgpb.StorageMetadata{
 			GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
-				BlobName: "blob",
+				BlobName:           "blob",
+				LastCustomTimeUsec: now,
 			},
 		},
 		StoredSizeBytes: 1000,
@@ -1397,6 +1398,7 @@ func TestFileWriteAndFind(t *testing.T) {
 	require.True(t, findRsp.GetPresent())
 	require.Equal(t, now, findRsp.GetLastAccessUsec())
 	require.Equal(t, "blob", findRsp.GetGcsMetadata().GetBlobName())
+	require.Equal(t, now, findRsp.GetGcsMetadata().GetLastCustomTimeUsec())
 }
 
 // A zero-length record is an anomaly the read path rejects, so Find must report
@@ -1453,6 +1455,178 @@ func TestFileFindZeroLengthReportsAbsent(t *testing.T) {
 	findRsp, err := rbuilder.NewBatchResponse(readRsp).FindResponse(0)
 	require.NoError(t, err)
 	require.False(t, findRsp.GetPresent(), "zero-length record must report absent")
+}
+
+// Find must report a missing record absent, and must not report GCS metadata
+// for a record that isn't stored in GCS.
+func TestFileFindMissingAndInline(t *testing.T) {
+	repl := testutil.NewTestingReplica(t, 1, 1)
+	require.NotNil(t, repl)
+	t.Cleanup(func() {
+		require.NoError(t, repl.Close())
+	})
+
+	stopc := make(chan struct{})
+	_, err := repl.Open(stopc)
+	require.NoError(t, err)
+	em := newEntryMaker(t)
+	writeDefaultRangeDescriptor(t, em, repl.Replica)
+
+	fs := filestore.New()
+	fileMetadataKey := func(fileRecord *sgpb.FileRecord) []byte {
+		key, err := fs.PebbleKey(fileRecord)
+		require.NoError(t, err)
+		keyBytes, err := key.Bytes(filestore.Version5)
+		require.NoError(t, err)
+		return keyBytes
+	}
+
+	now := time.Now().UnixMicro()
+	inlineRecord, buf := randomRecord(t, defaultPartition, 1000)
+	inlineKey := fileMetadataKey(inlineRecord)
+	entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+		Key: inlineKey,
+		FileMetadata: &sgpb.FileMetadata{
+			FileRecord: inlineRecord,
+			StorageMetadata: &sgpb.StorageMetadata{
+				InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
+					Data: buf,
+				},
+			},
+			StoredSizeBytes: 1000,
+			LastAccessUsec:  now,
+		},
+	}))
+	_, err = repl.Update([]dbsm.Entry{entry})
+	require.NoError(t, err)
+
+	missingRecord, _ := randomRecord(t, defaultPartition, 1000)
+	reqBuf, err := rbuilder.NewBatchBuilder().Add(&rfpb.FindRequest{
+		Key: inlineKey,
+	}).Add(&rfpb.FindRequest{
+		Key: fileMetadataKey(missingRecord),
+	}).ToBuf()
+	require.NoError(t, err)
+	readRsp, err := repl.Lookup(reqBuf)
+	require.NoError(t, err)
+	batchRsp := rbuilder.NewBatchResponse(readRsp)
+
+	inlineRsp, err := batchRsp.FindResponse(0)
+	require.NoError(t, err)
+	require.True(t, inlineRsp.GetPresent())
+	require.Equal(t, now, inlineRsp.GetLastAccessUsec())
+	require.Nil(t, inlineRsp.GetGcsMetadata())
+
+	missingRsp, err := batchRsp.FindResponse(1)
+	require.NoError(t, err)
+	require.False(t, missingRsp.GetPresent())
+	require.Zero(t, missingRsp.GetLastAccessUsec())
+	require.Nil(t, missingRsp.GetGcsMetadata())
+}
+
+func BenchmarkFind(b *testing.B) {
+	for _, storage := range []struct {
+		name            string
+		digestSizeBytes int64
+		gcs             bool
+	}{
+		{"512B-inline", 512, false},
+		{"32KiB-inline", 32 * 1024, false},
+		{"1KiB-gcs", 1024, true},
+	} {
+		for _, present := range []bool{true, false} {
+			name := fmt.Sprintf("storage=%s/present=%v", storage.name, present)
+			b.Run(name, func(b *testing.B) {
+				benchmarkFind(b, storage.digestSizeBytes, storage.gcs, present)
+			})
+		}
+	}
+}
+
+// benchmarkFind times a Lookup of one batch of FindRequests, the shape of a
+// metadata server SyncRead, against a replica holding (or not holding) every
+// requested record.
+func benchmarkFind(b *testing.B, digestSizeBytes int64, gcs bool, present bool) {
+	repl := testutil.NewTestingReplica(b, 1, 1)
+	b.Cleanup(func() {
+		require.NoError(b, repl.Close())
+	})
+	_, err := repl.Open(make(chan struct{}))
+	require.NoError(b, err)
+	em := newEntryMaker(b)
+	writeDefaultRangeDescriptor(b, em, repl.Replica)
+
+	fs := filestore.New()
+	now := time.Now().UnixMicro()
+	batch := rbuilder.NewBatchBuilder()
+	numRecords := 100
+	for range numRecords {
+		r, buf := testdigest.RandomCASResourceBuf(b, digestSizeBytes)
+		fileRecord := &sgpb.FileRecord{
+			Isolation: &sgpb.Isolation{
+				CacheType:   rspb.CacheType_CAS,
+				PartitionId: defaultPartition,
+				GroupId:     interfaces.AuthAnonymousUser,
+			},
+			Digest:         r.GetDigest(),
+			DigestFunction: repb.DigestFunction_SHA256,
+		}
+		key, err := fs.PebbleKey(fileRecord)
+		require.NoError(b, err)
+		fileMetadataKey, err := key.Bytes(filestore.Version5)
+		require.NoError(b, err)
+		batch.Add(&rfpb.FindRequest{Key: fileMetadataKey})
+		if !present {
+			continue
+		}
+
+		storageMetadata := &sgpb.StorageMetadata{
+			InlineMetadata: &sgpb.StorageMetadata_InlineMetadata{
+				Data:          buf,
+				CreatedAtNsec: time.Now().UnixNano(),
+			},
+		}
+		if gcs {
+			storageMetadata = &sgpb.StorageMetadata{
+				GcsMetadata: &sgpb.StorageMetadata_GCSMetadata{
+					BlobName:           r.GetDigest().GetHash(),
+					LastCustomTimeUsec: now,
+				},
+			}
+		}
+		entry := em.makeEntry(rbuilder.NewBatchBuilder().Add(&rfpb.SetRequest{
+			Key: fileMetadataKey,
+			FileMetadata: &sgpb.FileMetadata{
+				FileRecord:      fileRecord,
+				StorageMetadata: storageMetadata,
+				StoredSizeBytes: digestSizeBytes,
+				LastAccessUsec:  now,
+				LastModifyUsec:  now,
+			},
+		}))
+		_, err = repl.Update([]dbsm.Entry{entry})
+		require.NoError(b, err)
+	}
+	reqBuf, err := batch.ToBuf()
+	require.NoError(b, err)
+
+	// Check the results once, outside the timed loop.
+	rspBuf, err := repl.Lookup(reqBuf)
+	require.NoError(b, err)
+	batchRsp := rbuilder.NewBatchResponse(rspBuf)
+	for i := range numRecords {
+		findRsp, err := batchRsp.FindResponse(i)
+		require.NoError(b, err)
+		require.Equal(b, present, findRsp.GetPresent())
+		require.Equal(b, present && gcs, findRsp.GetGcsMetadata() != nil)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := repl.Lookup(reqBuf); err != nil {
+			b.Fatal(err)
+		}
+	}
 }
 
 func TestUsage(t *testing.T) {

@@ -42,12 +42,13 @@ message StorageMetadata {
   reserved 2, 4;
 
   message GCSMetadata {
-    string blob_name = 1;
+    string blob_name = 1 [(view.name) = "RaftFind"];
 
     // A unix micros value that is the last custom time applied to an object.
     // This is used in conjunction with a bucket LifecycleCondition that
     // deletes objects after DaysSinceCustomTime is exceeded.
-    int64 last_custom_time_usec = 2 [(view.name) = "FindMissing"];
+    int64 last_custom_time_usec = 2
+        [(view.name) = "FindMissing", (view.name) = "RaftFind"];
 
     // If true, this record does not own the stored object: other records (on
     // other cache peers) may refer to the same object. In this case, the object
@@ -56,7 +57,8 @@ message StorageMetadata {
     // cleaned up by GCS's object lifecycle management.
     bool shared = 3;
   }
-  GCSMetadata gcs_metadata = 5 [(view.name) = "FindMissing"];
+  GCSMetadata gcs_metadata = 5
+      [(view.name) = "FindMissing", (view.name) = "RaftFind"];
 
   // Insert other storage types (gcs, etc) here.
   // Upon read, the server will first read this record and then serve the
@@ -70,12 +72,18 @@ message FileMetadata {
   EncryptionMetadata encryption_metadata = 6;
 
   // If data is compressed, this will be the compressed size
-  int64 stored_size_bytes = 3
-      [(view.name) = "FindMissing", (view.name) = "Eviction"];
+  int64 stored_size_bytes = 3 [
+    (view.name) = "FindMissing",
+    (view.name) = "Eviction",
+    (view.name) = "RaftFind"
+  ];
 
   // Last access time of the record.
-  int64 last_access_usec = 4
-      [(view.name) = "FindMissing", (view.name) = "Eviction"];
+  int64 last_access_usec = 4 [
+    (view.name) = "FindMissing",
+    (view.name) = "Eviction",
+    (view.name) = "RaftFind"
+  ];
 
   // Last modify time of the record
   int64 last_modify_usec = 5;
