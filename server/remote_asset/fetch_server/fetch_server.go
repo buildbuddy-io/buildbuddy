@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,15 +21,20 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -78,6 +84,32 @@ func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
 type FetchServer struct {
 	env                  environment.Env
 	allowedPrivateIPNets []*net.IPNet
+	fetchGroup           singleflight.Group[fetchKey, *repb.Digest]
+}
+
+// fetchKey shares equivalent requests across users and API keys in one group.
+// Transport metadata is deliberately excluded.
+type fetchKey struct {
+	GroupID               string
+	InstanceName          string
+	StorageDigestFunction repb.DigestFunction_Value
+	URI                   string
+	CanonicalID           string
+	// Hash of effective headers for URI; empty when no headers are supplied.
+	HeaderHash string
+}
+
+func headerHash(headers http.Header) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	// Sort names but preserve repeated-value order. Hash each value list
+	// separately so header and value boundaries remain unambiguous.
+	parts := make([]string, 0, 2*len(headers))
+	for _, name := range slices.Sorted(maps.Keys(headers)) {
+		parts = append(parts, name, hash.Strings(headers[name]...))
+	}
+	return hash.Strings(parts...)
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -193,8 +225,19 @@ type fetchOptions struct {
 	uriHeaders            map[int]http.Header
 }
 
-// parseFetchOptions parses qualifiers only. URIs are checked when attempted, so
-// a cache hit or successful mirror does not require validating unused URIs.
+// parseFetchOptions recognizes these qualifier names:
+//   - checksum.sri: whitespace-separated checksum alternatives; at least one
+//     supported checksum must match the fetched content.
+//   - http_header:<name>: an HTTP header applied to all origin URIs.
+//   - http_header_url:<index>:<name>: an HTTP header overriding the shared header
+//     for the URI at the given zero-based index.
+//   - bazel.canonical_id: accepted for Bazel compatibility, but not currently
+//     enforced when looking up cached blobs.
+//
+// Other qualifier names are rejected with InvalidArgument and BadRequest details.
+// Malformed http_header_url names are currently skipped.
+// URIs are checked when attempted, so a cache hit or successful mirror does not
+// require validating unused URIs.
 func parseFetchOptions(ctx context.Context, req *rapb.FetchBlobRequest) (*fetchOptions, error) {
 	storageFunc := req.GetDigestFunction()
 	if storageFunc == repb.DigestFunction_UNKNOWN {
@@ -292,18 +335,59 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			return c.digestFunction != opts.storageDigestFunction
 		})
 	}
-	if blobDigest := p.findCachedBlob(ctx, req.GetInstanceName(), opts.storageDigestFunction, opts.checksums); blobDigest != nil {
-		return &rapb.FetchBlobResponse{
-			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
-			BlobDigest:     blobDigest,
-			DigestFunction: opts.storageDigestFunction,
-		}, nil
+	if response := p.cachedBlobResponse(ctx, req.GetInstanceName(), opts); response != nil {
+		return response, nil
 	}
 
 	if !canWrite {
 		return nil, status.PermissionDeniedError("This API key does not have CAS write permission, which FetchBlob requires when the requested blob is not cached. Use an API key with CAS write permission.")
 	}
 
+	// Mutable URLs and freshness constraints are not coalesced.
+	if len(opts.checksums) == 0 || req.GetOldestContentAccepted() != nil {
+		return p.fetchFromOrigins(ctx, req, opts, nil)
+	}
+	key, err := p.fetchKey(ctx, req, opts)
+	if err != nil {
+		return nil, err
+	}
+	return p.fetchFromOrigins(ctx, req, opts, &key)
+}
+
+func (p *FetchServer) fetchKey(ctx context.Context, req *rapb.FetchBlobRequest, opts *fetchOptions) (fetchKey, error) {
+	key := fetchKey{
+		GroupID:               interfaces.AuthAnonymousUser,
+		InstanceName:          req.GetInstanceName(),
+		StorageDigestFunction: opts.storageDigestFunction,
+	}
+	u, err := p.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err == nil {
+		key.GroupID = u.GetGroupID()
+	} else if !authutil.IsAnonymousUserError(err) || !p.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
+		return key, err
+	}
+	// Headers are handled separately for each URI, after applying overrides.
+	for _, q := range req.GetQualifiers() {
+		switch q.GetName() {
+		case BazelCanonicalIDQualifier:
+			key.CanonicalID = q.GetValue()
+		}
+	}
+	return key, nil
+}
+
+func (p *FetchServer) cachedBlobResponse(ctx context.Context, instanceName string, opts *fetchOptions) *rapb.FetchBlobResponse {
+	if blobDigest := p.findCachedBlob(ctx, instanceName, opts.storageDigestFunction, opts.checksums); blobDigest != nil {
+		return &rapb.FetchBlobResponse{
+			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
+			BlobDigest:     blobDigest,
+			DigestFunction: opts.storageDigestFunction,
+		}
+	}
+	return nil
+}
+
+func (p *FetchServer) fetchFromOrigins(ctx context.Context, req *rapb.FetchBlobRequest, opts *fetchOptions, key *fetchKey) (*rapb.FetchBlobResponse, error) {
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
 	// Don't send Referer headers on redirects. Go's http.Client adds these
 	// automatically, but some sites (e.g. SourceForge) use the Referer to
@@ -318,8 +402,12 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 	bsClient := getByteStreamClient(p.env)
 
+	// Each caller's fetch budget bounds its wait and validation. Keep the
+	// original RPC context to distinguish RPC cancellation from fetch timeout.
+	rpcCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
 	defer cancel()
+	instanceName := req.GetInstanceName()
 
 	// Keep track of the last fetch error so that if we fail to fetch, we at
 	// least have something we can return to the client.
@@ -327,36 +415,116 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	var lastFetchUri string
 
 	for i, uri := range req.GetUris() {
+		if key != nil && ctx.Err() != nil {
+			if rpcCtx.Err() != nil {
+				return nil, status.FromContextError(rpcCtx)
+			}
+			lastFetchErr = status.FromContextError(ctx)
+			break
+		}
 		_, err := url.Parse(uri)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI at index %d", i)
 		}
-		blobDigest, err := mirrorToCache(
-			ctx,
-			bsClient,
-			req.GetInstanceName(),
-			httpClient,
-			uri,
-			opts.headersForURI(i),
-			opts.storageDigestFunction,
-			opts.checksums,
-		)
+		headers := opts.headersForURI(i)
+		var blobDigest *repb.Digest
+		if key == nil {
+			blobDigest, err = mirrorToCache(ctx, bsClient, instanceName, httpClient, uri, headers, opts.storageDigestFunction, opts.checksums)
+		} else {
+			// Cache lookup depends on this caller's checksum expectations, so it
+			// must stay outside the checksum-independent shared work.
+			if response := p.cachedBlobResponse(ctx, instanceName, opts); response != nil {
+				return response, nil
+			}
+			uriKey := *key
+			uriKey.URI = uri
+			uriKey.HeaderHash = headerHash(headers)
+			// Shared work publishes the actual content without using any caller's
+			// expected checksum. It may outlive this RPC and must not read req.
+			blobDigest, _, err = p.fetchGroup.Do(ctx, uriKey, func(ctx context.Context) (*repb.Digest, error) {
+				// Caller deadlines only bound their waits. Shared work keeps
+				// running for remaining callers, up to the server limit.
+				ctx, cancel := context.WithTimeout(ctx, maxHTTPTimeout)
+				defer cancel()
+				return mirrorToCache(ctx, bsClient, instanceName, httpClient, uri, headers, opts.storageDigestFunction, nil)
+			})
+			if err == nil {
+				err = p.validateFetchedBlob(ctx, instanceName, uri, blobDigest, opts)
+				if err == nil {
+					err = ctx.Err()
+				}
+			}
+			if rpcCtx.Err() != nil {
+				return nil, status.FromContextError(rpcCtx)
+			}
+		}
+
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", redactedURI(uri), err)
 			lastFetchUri = uri
 			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", redactedURI(uri), err)
 			continue
 		}
+		// Each RPC owns its response, including any shared digest protobuf.
 		return &rapb.FetchBlobResponse{
 			Uri:            uri,
 			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
-			BlobDigest:     blobDigest,
+			BlobDigest:     proto.Clone(blobDigest).(*repb.Digest),
 			DigestFunction: opts.storageDigestFunction,
 		}, nil
 	}
 
 	log.CtxInfof(ctx, "Fetch: returning NotFound after trying %d URIs", len(req.GetUris()))
 	return fetchFailureResponse(lastFetchUri, lastFetchErr), nil
+}
+
+// validateFetchedBlob checks this caller's expectations after the shared download
+// has been published. A mismatch only affects this caller's mirror fallback.
+func (p *FetchServer) validateFetchedBlob(ctx context.Context, instanceName, uri string, blobDigest *repb.Digest, opts *fetchOptions) error {
+	needsConversion := false
+	for _, expected := range opts.checksums {
+		if expected.digestFunction != opts.storageDigestFunction {
+			needsConversion = true
+		} else if expected.hash == blobDigest.GetHash() {
+			return nil
+		}
+	}
+	if !needsConversion {
+		return status.InvalidArgumentErrorf("response body checksum for %q did not match any supported checksum", redactedURI(uri))
+	}
+
+	// Only cross-algorithm expectations require reading the cached bytes. Keep
+	// the file local to this caller so shared work does not own its lifetime.
+	tmpFile, err := scratchspace.CreateTemp("remote-asset-fetch-*")
+	if err != nil {
+		return status.UnavailableErrorf("failed to create temp file: %s", err)
+	}
+	defer func() {
+		if err := tmpFile.Close(); err != nil {
+			log.CtxErrorf(ctx, "Failed to close temp file: %s", err)
+		}
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			log.CtxErrorf(ctx, "Failed to remove temp file: %s", err)
+		}
+	}()
+	rn := digest.NewCASResourceName(blobDigest, instanceName, opts.storageDigestFunction)
+	if remote_cache_config.ZstdTranscodingEnabled() {
+		rn.SetCompressor(repb.Compressor_ZSTD)
+	}
+	bsClient := getByteStreamClient(p.env)
+	if err := cachetools.GetBlob(ctx, bsClient, rn, tmpFile); err != nil {
+		return status.UnavailableErrorf("failed to read downloaded blob from cache: %s", err)
+	}
+	matched, err := matchingChecksum(tmpFile.Name(), instanceName, redactedURI(uri), opts.checksums)
+	if err != nil {
+		return err
+	}
+	// Preserve future checksum-based cache lookups. This extra representation
+	// is best effort; the required storage representation is already published.
+	if _, err := cachetools.UploadFile(ctx, bsClient, instanceName, matched.digestFunction, tmpFile.Name()); err != nil {
+		log.CtxWarningf(ctx, "failed to cache object with checksumFunc: %s", err)
+	}
+	return nil
 }
 
 func fetchFailureResponse(uri string, fetchErr error) *rapb.FetchBlobResponse {
@@ -641,12 +809,10 @@ func cacheDownloadedFile(ctx context.Context, bsClient bspb.ByteStreamClient, in
 
 	// Publish the checksum representation for future lookups when it differs
 	// from the requested storage digest function. This extra copy is best effort.
-	// Legacy behavior also makes an unnecessary UNKNOWN (SHA256) copy for
-	// checksumless requests; this refactor leaves that behavior unchanged.
 	//
 	// TODO(sluongng): Track download information in a KV store pointing to the CAS
 	// entry, so the downloaded blob only needs to be stored once.
-	if expected.digestFunction != storageFunc {
+	if len(checksums) > 0 && expected.digestFunction != storageFunc {
 		checksumDigestRN, err := cachetools.ComputeFileDigest(path, instanceName, expected.digestFunction)
 		if err != nil {
 			return nil, status.UnavailableErrorf("failed to compute checksum digest: %s", err)
