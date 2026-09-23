@@ -66,9 +66,27 @@ cookies and local/session storage.
 - Logout, anonymous access to private invocations, and outsider/anonymous access
   after making the same invocation public.
 
-The companion HTTP RPC suite tests backend enforcement independently of hidden
-controls. Its assertions should include both an authorized positive control and
-unauthorized requests, and check persisted state after denied mutations.
+## HTTP RPC coverage
+
+The companion integration suite checks backend enforcement independently of
+hidden controls:
+
+- Per-organization capabilities and allowed RPCs for every fixture identity,
+  including a groupless user and the dual-role user.
+- Organization settings and membership administration, including attempts to
+  elevate one's own role and substitute another organization's ID.
+- Organization key listing, direct reads, and creation; admin-only keys remain
+  inaccessible by ID, not merely absent from lists.
+- Personal-key ownership and organization isolation, including authorized admin
+  access and rejected attempts to forge another owner.
+- Role downgrade and membership removal using an existing session, without
+  disabling the production auth caches.
+- Persisted database state after rejected writes.
+
+The hidden-org-key direct-read regression exposed a gap in `AuthDB.GetAPIKey`:
+list filtering was enforced, but direct reads previously relied on the key's
+broader group-read ACL. Direct reads now enforce the member-visibility flag for
+non-admins as well; personal-key owner access is unchanged.
 
 ## Extending coverage
 
