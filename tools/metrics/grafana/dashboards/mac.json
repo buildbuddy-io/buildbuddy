@@ -4978,72 +4978,86 @@
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "vm"
-      },
-      "description": "Number of Mac hosts by group name and Darwin kernel release (not public facing release version)",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [],
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
+      "collapsed": true,
       "gridPos": {
-        "h": 8,
+        "h": 1,
         "w": 24,
         "x": 0,
         "y": 10
       },
-      "id": 6307,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.6.2",
-      "targets": [
+      "id": 6308,
+      "panels": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "vm"
           },
-          "editorMode": "code",
-          "expr": "count by (group_name, release) (max by (group_name, inventory_hostname, release) (max_over_time(node_uname_info{job=\"mac-node\"}[$__range])))",
-          "instant": false,
-          "interval": "",
-          "legendFormat": "{{group_name}} Darwin {{release}}",
-          "range": true,
-          "refId": "A"
+          "description": "Number of Mac hosts by group name and Darwin kernel release (not public facing release version)",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 11
+          },
+          "id": 6307,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "multi",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.2",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "vm"
+              },
+              "editorMode": "code",
+              "expr": "count by (group_name, release) (max by (region, group_name, inventory_hostname, release) (node_uname_info{region=~\"${region}\", job=\"mac-node\", group_name=~\"${group_name}\", inventory_hostname=~\"${inventory_hostname_pattern}\"}))",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "{{group_name}} Darwin {{release}}",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Mac hosts by group and Darwin kernel release",
+          "type": "timeseries"
         }
       ],
-      "title": "Mac hosts by group and Darwin kernel release",
-      "type": "timeseries"
+      "title": "Mac hosts by Darwin kernel release",
+      "type": "row"
     }
   ],
   "preload": false,
