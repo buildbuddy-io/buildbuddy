@@ -438,7 +438,8 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				}
 				cancelReEnqueue()
 			} else if req.GetAskForMoreWorkRequest() != nil {
-				poolKey := h.nodePoolKey(h.getRegistration())
+				registration := h.getRegistration()
+				poolKey := h.nodePoolKey(registration)
 
 				if lastWorkTime.IsZero() {
 					lastWorkTime = time.Now()
@@ -448,7 +449,7 @@ func (h *executorHandle) Serve(ctx context.Context) error {
 				lastWorkTime = time.Now()
 
 				log.CtxDebugf(ctx, "Executor %q requested more work (last work %s ago).", executorID, timeSinceLastWork)
-				numEnqueued, err := h.scheduler.assignWorkToNode(ctx, h, poolKey)
+				numEnqueued, err := h.scheduler.assignWorkToNode(ctx, h, poolKey, registration)
 				if err != nil {
 					log.CtxWarningf(ctx, "Could not assign more work to executor %q: %s", executorID, err)
 					continue
@@ -931,6 +932,8 @@ func (k *nodePoolKey) redisUnclaimedTasksKey() string {
 type nodePool struct {
 	rdb   redis.UniversalClient
 	clock clockwork.Clock
+	// How long to cache the unclaimed task list. If <= 0, it is not cached.
+	unclaimedTasksCacheTTL time.Duration
 
 	mu        sync.Mutex
 	lastFetch time.Time
@@ -946,11 +949,12 @@ type nodePool struct {
 	unclaimedTasksExpiry time.Time
 }
 
-func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
+func newNodePool(env environment.Env, key nodePoolKey, unclaimedTasksCacheTTL time.Duration) *nodePool {
 	np := &nodePool{
-		key:   key,
-		rdb:   env.GetRemoteExecutionRedisClient(),
-		clock: env.GetClock(),
+		key:                    key,
+		rdb:                    env.GetRemoteExecutionRedisClient(),
+		clock:                  env.GetClock(),
+		unclaimedTasksCacheTTL: unclaimedTasksCacheTTL,
 	}
 	return np
 }
@@ -1181,14 +1185,14 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if *unclaimedTasksCacheTTL <= 0 {
+		if np.unclaimedTasksCacheTTL <= 0 {
 			return unclaimed, nil
 		}
 
 		np.unclaimedTasksMu.Lock()
 		defer np.unclaimedTasksMu.Unlock()
 		np.unclaimedTasks = unclaimed
-		np.unclaimedTasksExpiry = np.clock.Now().Add(*unclaimedTasksCacheTTL)
+		np.unclaimedTasksExpiry = np.clock.Now().Add(np.unclaimedTasksCacheTTL)
 
 		return unclaimed, nil
 	})
@@ -1330,6 +1334,9 @@ type SchedulerServer struct {
 	// TTL for LeaseTask action-merging Redis entries.
 	actionMergingLeaseTTL time.Duration
 
+	// How long node pools cache their unclaimed task lists.
+	unclaimedTasksCacheTTL time.Duration
+
 	mu    sync.RWMutex
 	pools map[nodePoolKey]*nodePool
 
@@ -1427,6 +1434,7 @@ func NewSchedulerServerWithOptions(env environment.Env, options *Options) (*Sche
 		enableRedisAvailabilityMonitoring: remote_execution_config.RemoteExecutionEnabled() && env.GetRemoteExecutionService().RedisAvailabilityMonitoringEnabled(),
 		ownHostPort:                       fmt.Sprintf("%s:%d", ownHostname, ownPort),
 		actionMergingLeaseTTL:             actionMergingLeaseTTL,
+		unclaimedTasksCacheTTL:            *unclaimedTasksCacheTTL,
 		leaseDuration:                     options.LeaseDuration,
 		leaseGracePeriod:                  options.LeaseGracePeriod,
 		detector:                          options.UpgradeDetector,
@@ -1621,7 +1629,9 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
 	go func() {
-		if _, err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
+		// Pass the node explicitly, since the handle's registration may not
+		// be set yet.
+		if _, err := s.assignWorkToNode(ctx, handle, poolKey, node); err != nil {
 			log.CtxWarningf(ctx, "Failed to assign work to new node: %s", err.Error())
 		}
 	}()
@@ -1676,8 +1686,8 @@ func (s *SchedulerServer) RegisterAndStreamWork(stream scpb.Scheduler_RegisterAn
 	return handle.Serve(stream.Context())
 }
 
-func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey) (int, error) {
-	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey, handle.getRegistration())
+func (s *SchedulerServer) assignWorkToNode(ctx context.Context, handle *executorHandle, nodePoolKey nodePoolKey, node *scpb.ExecutionNode) (int, error) {
+	tasks, err := s.sampleUnclaimedTasks(ctx, tasksToEnqueueOnJoin, nodePoolKey, node)
 	if err != nil {
 		return 0, err
 	}
@@ -1945,7 +1955,7 @@ func (s *SchedulerServer) getOrCreatePool(key nodePoolKey) *nodePool {
 	if ok {
 		return nodePool
 	}
-	nodePool = newNodePool(s.env, key)
+	nodePool = newNodePool(s.env, key, s.unclaimedTasksCacheTTL)
 	s.pools[key] = nodePool
 	return nodePool
 }
