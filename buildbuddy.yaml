@@ -89,12 +89,7 @@ actions:
           //enterprise/server/cmd/executor
           //enterprise/server/cmd/executor:executor_linux_arm64_static
     allow_concurrent_runs: false
-  # Builds (but does not push) container images, so that we notice when an image
-  # stops building. Images are built without the docker layer cache (which can
-  # survive in recycled runners), so that breakage from upstream package repos
-  # is caught.
-  # TODO: also build for arm64. The workflows pool has no linux arm64 executors.
-  - name: Build container images
+  - name: Build container images (linux_amd64)
     container_image: ubuntu-22.04
     triggers:
       schedule:
