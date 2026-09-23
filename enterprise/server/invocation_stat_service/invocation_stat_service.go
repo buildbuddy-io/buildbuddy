@@ -28,6 +28,7 @@ import (
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	stpb "github.com/buildbuddy-io/buildbuddy/proto/stats"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
 var (
@@ -887,6 +888,10 @@ func (i *InvocationStatService) getWhereClauseForHeatmapQuery(m *sfpb.Metric, q 
 	if m.GetInvocation() == sfpb.InvocationMetricType_DURATION_USEC_INVOCATION_METRIC {
 		placeholderQuery.AddWhereClause("duration_usec > 0")
 	}
+	if m.Execution != nil {
+		// Merged links reuse an execution; they are not separate executions.
+		placeholderQuery.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
+	}
 	whereString, whereArgs := placeholderQuery.Build()
 	return whereString, whereArgs, nil
 }
@@ -1235,6 +1240,9 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 
 	if err := i.addWhereClauses(placeholderQuery, req.GetQuery(), req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC, req.GetRequestContext()); err != nil {
 		return "", nil, err
+	}
+	if req.GetDrilldownMetric().Execution != nil {
+		placeholderQuery.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
 	}
 
 	drilldownStr, drilldownArgs, err := getDrilldownQueryFilter(req.GetFilter())
