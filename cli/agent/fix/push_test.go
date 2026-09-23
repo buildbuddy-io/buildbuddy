@@ -80,6 +80,18 @@ func TestCommitAndPush_PushesDirectlyToNonDefaultBranch(t *testing.T) {
 	require.Equal(t, testGit(t, work, "rev-parse", "HEAD"), testGit(t, bare, "rev-parse", "refs/heads/feature"))
 }
 
+func TestCommitAndPush_CreatesNewBranchWhenDefaultBranchIsUnknown(t *testing.T) {
+	work, bare := setupPushRepo(t, "main", "feature")
+	// Point HEAD to a nonexistent branch, so it's impossible to determine the default branch.
+	testGit(t, bare, "symbolic-ref", "HEAD", "refs/heads/nonexistent")
+	target, err := checkPushPreconditions(context.Background())
+	require.NoError(t, err)
+	require.True(t, target.createBranch)
+	require.NoError(t, os.WriteFile(filepath.Join(work, "file.txt"), []byte("fixed\n"), 0600))
+	require.NoError(t, commitAndPush(context.Background(), target, "", "12345678-0000-0000-0000-000000000000"))
+	require.Equal(t, target.base, testGit(t, bare, "rev-parse", "refs/heads/feature"))
+}
+
 func TestCommitAndPush_CreatesNewBranchFromDetachedHead(t *testing.T) {
 	work, bare := setupPushRepo(t, "main", "feature")
 	testGit(t, work, "checkout", "--detach")

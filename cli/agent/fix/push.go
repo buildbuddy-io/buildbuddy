@@ -63,7 +63,7 @@ func checkPushPreconditions(ctx context.Context) (*pushTarget, error) {
 	}
 	return &pushTarget{
 		root: root, remote: remote, branch: branch, base: base,
-		createBranch: branch == defaultBranch || branch == "main" || branch == "master",
+		createBranch: defaultBranch == "" || branch == defaultBranch,
 	}, nil
 }
 
