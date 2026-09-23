@@ -13,6 +13,7 @@ go_library(
         "//enterprise/server/util/oci",
         "//proto:registry_go_proto",
         "//server/real_environment",
+        "//server/util/log",
     ],
 )
 

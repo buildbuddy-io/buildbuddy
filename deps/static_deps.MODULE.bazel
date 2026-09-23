@@ -1,6 +1,10 @@
 install_static_dependencies_ext = use_extension(":deps.bzl", "install_static_dependencies_ext")
 use_repo(
     install_static_dependencies_ext,
+    "clickhouse_darwin_amd64",
+    "clickhouse_darwin_arm64",
+    "clickhouse_linux_amd64",
+    "clickhouse_linux_arm64",
     "cloudprober",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-amd64",
     "com_github_bazelbuild_bazelisk-bazelisk-darwin-arm64",
@@ -63,4 +67,5 @@ use_repo(
     "org_kernel_git_linux_kernel-vmlinux",
     "org_kernel_git_linux_kernel-vmlinux-6.1",
     "org_kernel_git_linux_kernel-vmlinux-arm64",
+    "se_curl_cacert",
 )

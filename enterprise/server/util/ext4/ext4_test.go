@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ext4"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
 
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
@@ -102,6 +104,56 @@ func TestDirectoryToImageAutoSize_DanglingSymlink(t *testing.T) {
 	err = ext4.DirectoryToImageAutoSize(ctx, workspace, filepath.Join(root, "workspace.ext4"))
 
 	require.NoError(t, err)
+}
+
+func TestDirectoryToImageAutoSize_Reproducible(t *testing.T) {
+	flags.Set(t, "executor.reproducible_ext4_images", true)
+	ctx := t.Context()
+	root := testfs.MakeTempDir(t)
+
+	// Build a tree with a nested directory, a symlink, and files with
+	// different mtimes, all of which end up in the image metadata. Like a
+	// freshly extracted archive, the files keep their creation-time atimes.
+	inputDir := testfs.MakeDirAll(t, root, "input")
+	testfs.WriteAllFileContents(t, inputDir, map[string]string{
+		"a.txt":     "hello",
+		"dir/b.txt": "world",
+	})
+	err := os.Symlink("a.txt", filepath.Join(inputDir, "link"))
+	require.NoError(t, err)
+	err = os.Chtimes(filepath.Join(inputDir, "a.txt"), time.Now(), time.Unix(1_600_000_000, 0))
+	require.NoError(t, err)
+
+	firstImage := filepath.Join(root, "first.ext4")
+	err = ext4.DirectoryToImageAutoSize(ctx, inputDir, firstImage)
+	require.NoError(t, err)
+
+	// Bump the atime of a file, which also updates its ctime, the way a fresh
+	// extraction of the same content on another machine would. Converting the
+	// tree again should still produce a byte-identical image, since these
+	// timestamps carry no information about the content.
+	b := filepath.Join(inputDir, "dir/b.txt")
+	info, err := os.Stat(b)
+	require.NoError(t, err)
+	err = os.Chtimes(b, time.Now().Add(time.Hour), info.ModTime())
+	require.NoError(t, err)
+
+	secondImage := filepath.Join(root, "second.ext4")
+	err = ext4.DirectoryToImageAutoSize(ctx, inputDir, secondImage)
+	require.NoError(t, err)
+
+	firstDigest := fileDigest(t, firstImage)
+	secondDigest := fileDigest(t, secondImage)
+	require.Equal(t, firstDigest, secondDigest)
+}
+
+func fileDigest(t *testing.T, path string) string {
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer f.Close()
+	d, err := digest.Compute(f, repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return d.GetHash()
 }
 
 func TestImageToDirectory(t *testing.T) {

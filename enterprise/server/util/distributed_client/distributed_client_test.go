@@ -1808,8 +1808,7 @@ func TestRemoteGetWithMetadataReference(t *testing.T) {
 // references for configured digests and recording accepted reference writes.
 type serverReferenceCache struct {
 	interfaces.Cache
-	refs  map[string]*refpb.Reference
-	blobs map[string][]byte
+	refs map[string]*refpb.Reference
 
 	mu            sync.Mutex
 	writtenRef    *refpb.Reference
@@ -1829,28 +1828,8 @@ func (c *serverReferenceCache) CreateReference(ctx context.Context, r *rspb.Reso
 	return nil, status.UnimplementedError("not implemented")
 }
 
-// Dereference serves the configured blob bytes, standing in for shared
-// storage. The read server never dereferences, but the write server does
-// when reference-write verification is enabled. Like the real
-// implementation, it reconciles the reference's stored compressor with the
-// compressor requested by r.
 func (c *serverReferenceCache) Dereference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, offset, limit int64) (io.ReadCloser, error) {
-	data, ok := c.blobs[ref.GetMetadata().GetStorageMetadata().GetGcsMetadata().GetBlobName()]
-	if !ok {
-		return nil, status.NotFoundError("blob not found")
-	}
-	stored := ref.GetMetadata().GetFileRecord().GetCompressor()
-	requested := r.GetCompressor()
-	if stored == repb.Compressor_ZSTD && requested == repb.Compressor_IDENTITY {
-		var err error
-		data, err = compression.DecompressZstd(nil, data)
-		if err != nil {
-			return nil, err
-		}
-	} else if stored == repb.Compressor_IDENTITY && requested == repb.Compressor_ZSTD {
-		data = compression.CompressZstd(nil, data)
-	}
-	return io.NopCloser(bytes.NewReader(data)), nil
+	return nil, status.UnimplementedError("not implemented")
 }
 
 func (c *serverReferenceCache) WriteReference(ctx context.Context, ref *refpb.Reference, r *rspb.ResourceName, mustClone bool) error {
@@ -2163,7 +2142,6 @@ func TestWriteReferenceAccept(t *testing.T) {
 	t.Run("reference before the last message is ignored", func(t *testing.T) {
 		earlyRN, earlyBuf := testdigest.RandomCASResourceBuf(t, 100)
 		earlyRef := makeReference(earlyRN, "blobs/early-blob", repb.Compressor_IDENTITY)
-		before := writeVerificationCounts(t)
 		rsp, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
 			{Resource: earlyRN, Reference: earlyRef},
 			{Resource: earlyRN, Data: earlyBuf, FinishWrite: true},
@@ -2173,11 +2151,9 @@ func TestWriteReferenceAccept(t *testing.T) {
 		got, err := te.GetCache().Get(ctx, earlyRN)
 		require.NoError(t, err)
 		require.Equal(t, earlyBuf, got)
-		// The early reference is neither installed nor verified.
-		c.WaitForPendingVerificationsForTesting()
+		// The early reference is not installed.
 		_, gotRN, _ := cache.lastWriteReference()
 		require.NotEqual(t, earlyRN.GetDigest().GetHash(), gotRN.GetDigest().GetHash())
-		require.Equal(t, before, writeVerificationCounts(t))
 	})
 
 	t.Run("reference with data bytes writes the bytes", func(t *testing.T) {
@@ -2191,7 +2167,6 @@ func TestWriteReferenceAccept(t *testing.T) {
 		}})
 		require.NoError(t, err)
 		require.Equal(t, int64(len(shadowBuf)), rsp.GetCommittedSize())
-		c.WaitForPendingVerificationsForTesting()
 		// The bytes are the write; the reference is not installed.
 		got, err := te.GetCache().Get(ctx, shadowRN)
 		require.NoError(t, err)
@@ -2200,10 +2175,9 @@ func TestWriteReferenceAccept(t *testing.T) {
 		require.NotEqual(t, shadowRN.GetDigest().GetHash(), gotRN.GetDigest().GetHash())
 	})
 
-	t.Run("reference on the last message is verified, not installed", func(t *testing.T) {
+	t.Run("reference on the last message of a streamed write is not installed", func(t *testing.T) {
 		lateRN, lateBuf := testdigest.RandomCASResourceBuf(t, 100)
 		lateRef := makeReference(lateRN, "blobs/late-blob", repb.Compressor_IDENTITY)
-		before := writeVerificationCounts(t)
 		rsp, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
 			{Resource: lateRN, Data: lateBuf[:50]},
 			{Resource: lateRN, Reference: lateRef, Data: lateBuf[50:], FinishWrite: true},
@@ -2213,15 +2187,8 @@ func TestWriteReferenceAccept(t *testing.T) {
 		got, err := te.GetCache().Get(ctx, lateRN)
 		require.NoError(t, err)
 		require.Equal(t, lateBuf, got)
-		// The reference is verified (the blob is not in shared storage, so
-		// verification errors), but never installed.
-		c.WaitForPendingVerificationsForTesting()
 		_, gotRN, _ := cache.lastWriteReference()
 		require.NotEqual(t, lateRN.GetDigest().GetHash(), gotRN.GetDigest().GetHash())
-		after := writeVerificationCounts(t)
-		require.Equal(t, before[distributed_client.VerificationError]+1, after[distributed_client.VerificationError])
-		require.Equal(t, before[distributed_client.VerificationSuccess], after[distributed_client.VerificationSuccess])
-		require.Equal(t, before[distributed_client.VerificationFailure], after[distributed_client.VerificationFailure])
 	})
 
 	t.Run("existing CAS digest still dedupes", func(t *testing.T) {
@@ -2249,180 +2216,6 @@ func TestWriteReferenceAccept(t *testing.T) {
 		}})
 		require.Error(t, err)
 		require.True(t, status.IsUnimplementedError(err), "expected UnimplementedError, got %s", err)
-	})
-}
-
-// writeVerificationCounts returns the current values of the reference write
-// verification counter, keyed by outcome.
-func writeVerificationCounts(t *testing.T) map[string]float64 {
-	counts := map[string]float64{}
-	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceWriteVerificationCount) {
-		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
-	}
-	return counts
-}
-
-func TestWriteReferenceVerification(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
-	require.NoError(t, err)
-
-	const blobName = "blobs/test-blob"
-	rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-	ref := makeReference(rn, blobName, repb.Compressor_IDENTITY)
-
-	newProxy := func(t *testing.T, blobs map[string][]byte) (string, *serverReferenceCache, *distributed_client.Proxy) {
-		cache := &serverReferenceCache{Cache: te.GetCache(), blobs: blobs}
-		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, cache, peer)
-		require.NoError(t, c.StartListening())
-		waitUntilServerIsAlive(peer)
-		return peer, cache, c
-	}
-	// writeShadow writes rn's bytes with ref riding along on the final (and
-	// only) message for verification.
-	writeShadow := func(t *testing.T, peer string, rn *rspb.ResourceName, ref *refpb.Reference, data []byte) error {
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
-			Resource:    rn,
-			Reference:   ref,
-			Data:        data,
-			FinishWrite: true,
-		}})
-		return err
-	}
-	// deltas returns the nonzero outcome-count changes between two
-	// writeVerificationCounts snapshots.
-	deltas := func(before, after map[string]float64) map[string]float64 {
-		d := map[string]float64{}
-		for s, v := range after {
-			if v != before[s] {
-				d[s] = v - before[s]
-			}
-		}
-		return d
-	}
-	// assertBytesWritten asserts the byte write landed and no reference was
-	// installed: the bytes must stay authoritative regardless of the
-	// verification outcome.
-	assertBytesWritten := func(t *testing.T, cache *serverReferenceCache, rn *rspb.ResourceName, data []byte) {
-		got, err := te.GetCache().Get(ctx, rn)
-		require.NoError(t, err)
-		require.Equal(t, data, got)
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Nil(t, gotRN)
-	}
-
-	t.Run("writes without a reference are not verified", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
-			Resource:    rn,
-			Data:        buf,
-			FinishWrite: true,
-		}})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Empty(t, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("matching content", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, rn, ref, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("mismatched content does not affect the write", func(t *testing.T) {
-		_, wrongBuf := testdigest.RandomCASResourceBuf(t, 100)
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: wrongBuf})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, rn, ref, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationFailure: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("unverifiable content does not affect the write", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, rn, ref, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("reference on the last message of a streamed write", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
-			{Resource: rn, Data: buf[:50]},
-			{Resource: rn, Reference: ref, Data: buf[50:], FinishWrite: true},
-		})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("reference on an earlier message is ignored", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		// A write's reference is not known until all of its bytes have been
-		// seen, so only the final message's reference counts.
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{
-			{Resource: rn, Reference: ref, Data: buf[:50]},
-			{Resource: rn, Data: buf[50:], FinishWrite: true},
-		})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Empty(t, deltas(before, writeVerificationCounts(t)))
-		assertBytesWritten(t, cache, rn, buf)
-	})
-
-	t.Run("compressed writes are verified against decompressed content", func(t *testing.T) {
-		zstdRN := rn.CloneVT()
-		zstdRN.Compressor = repb.Compressor_ZSTD
-		zstdRef := makeReference(zstdRN, blobName, repb.Compressor_ZSTD)
-		compressed := compression.CompressZstd(nil, buf)
-		// Shared storage holds the zstd blob; verification must hash the
-		// decompressed content.
-		peer, _, proxy := newProxy(t, map[string][]byte{blobName: compressed})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, zstdRN, zstdRef, compressed))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationSuccess: 1}, deltas(before, writeVerificationCounts(t)))
-	})
-
-	t.Run("AC writes are unverifiable", func(t *testing.T) {
-		acRN := rn.CloneVT()
-		acRN.CacheType = rspb.CacheType_AC
-		acRef := makeReference(acRN, blobName, repb.Compressor_IDENTITY)
-		peer, _, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		require.NoError(t, writeShadow(t, peer, acRN, acRef, buf))
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Equal(t, map[string]float64{distributed_client.VerificationError: 1}, deltas(before, writeVerificationCounts(t)))
-		got, err := te.GetCache().Get(ctx, acRN)
-		require.NoError(t, err)
-		require.Equal(t, buf, got)
-	})
-
-	t.Run("reference-only writes are not verified", func(t *testing.T) {
-		peer, cache, proxy := newProxy(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		_, err := writeRawRequests(t, peer, []*dcpb.WriteRequest{{
-			Resource:    rn,
-			Reference:   ref,
-			FinishWrite: true,
-		}})
-		require.NoError(t, err)
-		proxy.WaitForPendingVerificationsForTesting()
-		require.Empty(t, deltas(before, writeVerificationCounts(t)))
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Empty(t, cmp.Diff(rn, gotRN, protocmp.Transform()))
 	})
 }
 
@@ -2553,76 +2346,6 @@ func TestRemoteReferenceWriter(t *testing.T) {
 		// The failed commit is counted under its status code.
 		after := testmetrics.CounterValueForLabels(t, metrics.DistributedCacheWriteRequestCount, notFoundLabels)
 		require.Equal(t, before+1, after)
-	})
-}
-
-func TestRemoteVerifiedWriter(t *testing.T) {
-	te := getTestEnv(t, emptyUserMap)
-	ctx, err := prefix.AttachUserPrefixToContext(context.Background(), te.GetAuthenticator())
-	require.NoError(t, err)
-
-	const blobName = "blobs/verified-write-blob"
-	clientAddr := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-	client := distributed_client.New(te, te.GetCache(), clientAddr)
-	require.NoError(t, client.StartListening())
-	waitUntilServerIsAlive(clientAddr)
-
-	newPeer := func(t *testing.T, blobs map[string][]byte) (string, *serverReferenceCache, *distributed_client.Proxy) {
-		cache := &serverReferenceCache{Cache: te.GetCache(), blobs: blobs}
-		peer := fmt.Sprintf("localhost:%d", testport.FindFree(t))
-		c := distributed_client.New(te, cache, peer)
-		require.NoError(t, c.StartListening())
-		waitUntilServerIsAlive(peer)
-		return peer, cache, c
-	}
-	writeAll := func(t *testing.T, peer string, rn *rspb.ResourceName, ref *refpb.Reference, data []byte) {
-		t.Helper()
-		wc, err := client.RemoteVerifiedWriter(ctx, peer, "", rn)
-		require.NoError(t, err)
-		_, err = wc.Write(data)
-		require.NoError(t, err)
-		if ref != nil {
-			wc.SetReference(ref)
-		}
-		require.NoError(t, wc.Commit())
-		require.NoError(t, wc.Close())
-	}
-
-	t.Run("a bound reference rides on the final message", func(t *testing.T) {
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		ref := makeReference(rn, blobName, repb.Compressor_IDENTITY)
-		peer, cache, proxy := newPeer(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		beforeCounts, beforeSizes := writeRequestCounts(t)
-		writeAll(t, peer, rn, ref, buf)
-		proxy.WaitForPendingVerificationsForTesting()
-		// The bytes are the write and the reference was verified.
-		got, err := te.GetCache().Get(ctx, rn)
-		require.NoError(t, err)
-		require.Equal(t, buf, got)
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Nil(t, gotRN)
-		after := writeVerificationCounts(t)
-		require.Equal(t, before[distributed_client.VerificationSuccess]+1, after[distributed_client.VerificationSuccess])
-		// A verified write is a byte write; the reference only rides along.
-		afterCounts, afterSizes := writeRequestCounts(t)
-		require.Equal(t, beforeCounts["bytes"]+1, afterCounts["bytes"])
-		require.Equal(t, beforeSizes["bytes"]+float64(rn.GetDigest().GetSizeBytes()), afterSizes["bytes"])
-		require.Equal(t, beforeCounts["reference"], afterCounts["reference"])
-	})
-
-	t.Run("an unbound reference is a plain byte write", func(t *testing.T) {
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		peer, cache, proxy := newPeer(t, map[string][]byte{blobName: buf})
-		before := writeVerificationCounts(t)
-		writeAll(t, peer, rn, nil, buf)
-		proxy.WaitForPendingVerificationsForTesting()
-		got, err := te.GetCache().Get(ctx, rn)
-		require.NoError(t, err)
-		require.Equal(t, buf, got)
-		_, gotRN, _ := cache.lastWriteReference()
-		require.Nil(t, gotRN)
-		require.Equal(t, before, writeVerificationCounts(t))
 	})
 }
 

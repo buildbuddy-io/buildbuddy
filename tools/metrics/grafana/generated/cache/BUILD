@@ -24,6 +24,6 @@ go_binary(
 genrule(
     name = "cache_json",
     outs = ["cache.json"],
-    cmd = "$(location :cache) > $@",
+    cmd = "$(execpath :cache) > $@",
     tools = [":cache"],
 )

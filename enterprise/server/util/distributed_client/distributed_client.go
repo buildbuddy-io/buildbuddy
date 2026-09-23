@@ -18,9 +18,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/background"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bytebufferpool"
-	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
 	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/findmissing"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
@@ -46,15 +44,6 @@ import (
 )
 
 const (
-	// Reference verification outcomes.
-	VerificationSuccess = "success"
-	VerificationFailure = "failure"
-	VerificationError   = "error"
-
-	// How long an async write-reference verification may keep running after
-	// the write stream that spawned it completes.
-	referenceVerificationTimeout = 1 * time.Minute
-
 	// maxDecompressBufSizeBytes caps the initial buffer allocated for a
 	// decompressed peer response, since digest sizes are client-supplied.
 	// The buffer grows as needed.
@@ -83,11 +72,6 @@ type Proxy struct {
 	listenAddr            string
 	zone                  string
 	enableCompressedReads bool
-	verificationWG        sync.WaitGroup
-}
-
-func (c *Proxy) WaitForPendingVerificationsForTesting() {
-	c.verificationWG.Wait()
 }
 
 func New(env environment.Env, c interfaces.Cache, listenAddr string) *Proxy {
@@ -439,8 +423,6 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 
 	var bytesWritten int64
 	var writeCloser interfaces.CommittedWriteCloser
-	// The resource being written, for reference-write-verification.
-	var verifyRN *rspb.ResourceName
 	var req *dcpb.WriteRequest
 	for {
 		if req == nil {
@@ -471,7 +453,7 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			if req.GetReference() != nil && len(req.GetData()) == 0 && req.GetFinishWrite() {
 				return c.writeReference(ctx, stream, req, up)
 			}
-			// Else, this is the normal write or reference-write-verify path.
+			// Else, this is the normal write path.
 			wc, err := c.cache.Writer(ctx, rn)
 			if err != nil {
 				c.log.Debugf("Write(%q) failed (user prefix: %s), err: %s", ResourceIsolationString(rn), up, err)
@@ -479,7 +461,6 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 			}
 			defer wc.Close()
 			writeCloser = wc
-			verifyRN = rn.CloneVT()
 		}
 		n, err := writeCloser.Write(req.GetData())
 		if err != nil {
@@ -489,28 +470,6 @@ func (c *Proxy) Write(stream dcpb.DistributedCache_WriteServer) error {
 		if req.GetFinishWrite() {
 			if err := writeCloser.Commit(); err != nil {
 				return err
-			}
-			if req.GetReference() != nil && verifyRN != nil {
-				// If data was written and the final message has a reference,
-				// this is the write-verify path. Perform write-verification
-				// asynchronously to avoid slowing down the write response.
-				refCache, ok := c.cache.(interfaces.ReferenceCache)
-				if ok {
-					verifyRef := req.GetReference().CloneVT()
-					vctx, cancel := background.ExtendContextForFinalization(ctx, referenceVerificationTimeout)
-					c.verificationWG.Go(func() {
-						defer cancel()
-						c.verifyReferenceWrite(vctx, refCache, verifyRef, verifyRN)
-					})
-				} else {
-					c.log.Warningf("Write(%q) succeeded with data but verification was requested and the local cache does not support references", ResourceIsolationString(verifyRN))
-					metrics.DistributedCacheReferenceWriteVerificationCount.With(
-						prometheus.Labels{
-							metrics.GroupID:                  groupIDForMetrics(ctx),
-							metrics.VerificationOutcomeLabel: VerificationError,
-							metrics.StatusHumanReadableLabel: codes.Unimplemented.String(),
-						}).Inc()
-				}
 			}
 			c.log.Debugf("Write(%q) succeeded (user prefix: %s)", ResourceIsolationString(rn), up)
 			return c.finishWrite(ctx, stream, req, bytesWritten)
@@ -534,49 +493,6 @@ func (c *Proxy) writeReference(ctx context.Context, stream dcpb.DistributedCache
 	}
 	c.writeRefLogger.Debugf("Write(%q) succeeded by reference (user prefix: %s)", ResourceIsolationString(rn), userPrefix)
 	return c.finishWrite(ctx, stream, req, req.GetReference().GetMetadata().GetStoredSizeBytes())
-}
-
-// verifyReferenceWrite checks that dereferencing ref yields content that
-// hashes to rn's digest, and logs and counts the outcome.
-func (c *Proxy) verifyReferenceWrite(ctx context.Context, refCache interfaces.ReferenceCache, ref *refpb.Reference, rn *rspb.ResourceName) {
-	record := func(outcome string, statusLabel string) {
-		metrics.DistributedCacheReferenceWriteVerificationCount.With(
-			prometheus.Labels{
-				metrics.GroupID:                  groupIDForMetrics(ctx),
-				metrics.VerificationOutcomeLabel: outcome,
-				metrics.StatusHumanReadableLabel: statusLabel,
-			}).Inc()
-	}
-	if rn.GetCacheType() != rspb.CacheType_CAS {
-		c.log.Errorf("Reference write verification is only supported for CAS cache type, got %q", rn.GetCacheType())
-		record(VerificationError, codes.InvalidArgument.String())
-		return
-	}
-
-	// Dereference the reference with the IDENTITY compressor to verify its hash
-	identityRN := rn.CloneVT()
-	identityRN.Compressor = repb.Compressor_IDENTITY
-	readCloser, err := refCache.Dereference(ctx, ref, identityRN, 0, 0)
-	if err != nil {
-		c.log.Errorf("Error dereferencing %q for write verification: %s", ResourceIsolationString(rn), err)
-		record(VerificationError, status.MetricsLabel(err))
-		return
-	}
-	defer readCloser.Close()
-
-	// Compute the digest of the dereferenced bytes and compare what's expected
-	d, err := digest.Compute(readCloser, rn.GetDigestFunction())
-	if err != nil {
-		c.log.Errorf("Reference write verification error for %q: %s", ResourceIsolationString(rn), err)
-		record(VerificationError, status.MetricsLabel(err))
-		return
-	}
-	if d.GetHash() != rn.GetDigest().GetHash() || d.GetSizeBytes() != rn.GetDigest().GetSizeBytes() {
-		c.log.Errorf("Reference write verification failed for %q: expected %s/%d, got %s/%d", ResourceIsolationString(rn), rn.GetDigest().GetHash(), rn.GetDigest().GetSizeBytes(), d.GetHash(), d.GetSizeBytes())
-		record(VerificationFailure, codes.Internal.String())
-		return
-	}
-	record(VerificationSuccess, codes.OK.String())
 }
 
 func (c *Proxy) finishWrite(ctx context.Context, stream dcpb.DistributedCache_WriteServer, req *dcpb.WriteRequest, committedSize int64) error {
@@ -876,15 +792,6 @@ func (c *Proxy) remoteRead(ctx context.Context, peer string, r *rspb.ResourceNam
 	return nil, dr, nil
 }
 
-// groupIDForMetrics returns the authenticated group ID in ctx, for metric
-// labels.
-func groupIDForMetrics(ctx context.Context) string {
-	if c, err := claims.ClaimsFromContext(ctx); err == nil {
-		return c.GroupID
-	}
-	return interfaces.AuthAnonymousUser
-}
-
 // recordReadResponseMetrics records that a peer read's payload was received
 // as responseType ("reference" or "bytes") and the status of turning the
 // response into a reader, attributing the requested digest's size to it.
@@ -1003,8 +910,7 @@ type streamWriteCloser struct {
 	handoffPeer     string
 	alreadyExists   bool
 	// requestType records how this write's payload is sent, for metrics:
-	// "reference" for a reference-only write, "bytes" otherwise (a reference
-	// bound late via SetReference rides along on a byte write).
+	// "reference" for a reference-only write, "bytes" otherwise.
 	requestType string
 }
 
@@ -1113,32 +1019,6 @@ func (c *Proxy) RemoteWriter(ctx context.Context, peer, handoffPeer string, r *r
 		return nil, err
 	}
 	return w, nil
-}
-
-// VerifiedWriter is a CommittedWriteCloser whose write stream's final message
-// can carry a reference for the peer to verify against the written bytes.
-type VerifiedWriter struct {
-	interfaces.CommittedWriteCloser
-	swc *streamWriteCloser
-}
-
-// SetReference binds ref to the write stream's final message, for the peer to
-// verify against the written bytes. It must be called before Commit; the
-// reference can't be provided at open time because it isn't known until the
-// write has been fully streamed.
-func (w *VerifiedWriter) SetReference(ref *refpb.Reference) {
-	w.swc.ref = ref
-}
-
-// RemoteVerifiedWriter is like RemoteWriter, but returns a VerifiedWriter
-// whose final stream message carries the reference bound via SetReference, if
-// any, for the peer to verify against the written bytes.
-func (c *Proxy) RemoteVerifiedWriter(ctx context.Context, peer, handoffPeer string, r *rspb.ResourceName) (*VerifiedWriter, error) {
-	swc, err := c.newRemoteWriter(ctx, peer, handoffPeer, r, nil, false /*=refMustBeCloned*/)
-	if err != nil {
-		return nil, err
-	}
-	return &VerifiedWriter{CommittedWriteCloser: swc, swc: swc}, nil
 }
 
 // RemoteReferenceWriter opens a write stream that writes r to the peer by

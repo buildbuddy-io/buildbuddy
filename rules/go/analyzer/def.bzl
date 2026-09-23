@@ -1,3 +1,5 @@
+"""Modernize analyzer definitions for nogo."""
+
 # Keep this list aligned with the supported modernize.Suite.
 # Upstream excludes appendclipped and slicesdelete (nilness changes),
 # bloop (golang/go#74967), and fmtappendf (golang/go#77581).

@@ -19,7 +19,6 @@ go_library(
         "//proto:storage_go_proto",
         "//server/interfaces",
         "//server/metrics",
-        "//server/util/alert",
         "//server/util/approxlru",
         "//server/util/disk",
         "//server/util/log",

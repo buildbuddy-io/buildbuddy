@@ -26,6 +26,6 @@ go_binary(
 genrule(
     name = "raft_json",
     outs = ["raft.json"],
-    cmd = "$(location :raft) > $@",
+    cmd = "$(execpath :raft) > $@",
     tools = [":raft"],
 )

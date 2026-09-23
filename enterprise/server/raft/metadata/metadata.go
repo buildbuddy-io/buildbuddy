@@ -381,14 +381,22 @@ func (rc *Server) fileMetadataKey(fr *sgpb.FileRecord) ([]byte, error) {
 	return pebbleKey.Bytes(filestore.Version6)
 }
 
-func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*sender.KeyMeta, error) {
-	keys := make([]*sender.KeyMeta, 0, len(fileRecords))
+// Key types for the sender's multi-key operations, one per meta type.
+type (
+	fileRecordKeyMeta = sender.KeyMeta[*sgpb.FileRecord]
+	atimeKeyMeta      = sender.KeyMeta[atimeUpdateMeta]
+	setKeyMeta        = sender.KeyMeta[*mdpb.SetRequest_SetOperation]
+	deleteKeyMeta     = sender.KeyMeta[*mdpb.DeleteRequest_DeleteOperation]
+)
+
+func (rc *Server) fileRecordsToKeyMetas(fileRecords []*sgpb.FileRecord) ([]*fileRecordKeyMeta, error) {
+	keys := make([]*fileRecordKeyMeta, 0, len(fileRecords))
 	for _, fileRecord := range fileRecords {
 		fileMetadataKey, err := rc.fileMetadataKey(fileRecord)
 		if err != nil {
 			return nil, err
 		}
-		keys = append(keys, &sender.KeyMeta{Key: fileMetadataKey, Meta: fileRecord})
+		keys = append(keys, sender.NewKeyMeta(fileMetadataKey, fileRecord))
 	}
 	return keys, nil
 }
@@ -468,7 +476,7 @@ func (rc *Server) maybeUpdateGCSAtime(ctx context.Context, gcsMetadata *sgpb.Sto
 }
 
 func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan struct{}, atimeWriteBatchSize int) error {
-	var keys []*sender.KeyMeta
+	var keys []*atimeKeyMeta
 	timer := time.NewTimer(atimeFlushPeriod)
 	defer timer.Stop()
 	ctx, cancel := background.ExtendContextForFinalization(ctx, 10*time.Second)
@@ -493,14 +501,13 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 		// UpdateAtime is safe to send through RunMultiKey: retries may be
 		// re-executed on current state rather than replaying the original
 		// response, but the state-machine effect is monotonic/no-op on replay.
-		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+		_, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*atimeKeyMeta) (*rfpb.SyncProposeResponse, error) {
 			batch := rbuilder.NewBatchBuilder()
 			for _, k := range keys {
-				m := k.Meta.(atimeUpdateMeta)
 				batch.Add(&rfpb.UpdateAtimeRequest{
 					Key:                k.Key,
-					AccessTimeUsec:     m.accessTimeUsec,
-					LastCustomTimeUsec: m.lastCustomTimeUsec,
+					AccessTimeUsec:     k.Meta.accessTimeUsec,
+					LastCustomTimeUsec: k.Meta.lastCustomTimeUsec,
 				})
 			}
 			batchProto, err := batch.ToProto()
@@ -540,13 +547,10 @@ func (rc *Server) processAccessTimeUpdates(ctx context.Context, quitChan chan st
 				// Don't update the atime on raft if gcs atime update fails. This is to prevent the situation where the gcs file is deleted but the metadata still exist.
 				continue
 			}
-			keys = append(keys, &sender.KeyMeta{
-				Key: key,
-				Meta: atimeUpdateMeta{
-					accessTimeUsec:     rc.clock.Now().UnixMicro(),
-					lastCustomTimeUsec: customTimeUsec,
-				},
-			})
+			keys = append(keys, sender.NewKeyMeta(key, atimeUpdateMeta{
+				accessTimeUsec:     rc.clock.Now().UnixMicro(),
+				lastCustomTimeUsec: customTimeUsec,
+			}))
 			if len(keys) >= atimeWriteBatchSize {
 				flush()
 			}
@@ -589,7 +593,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*fileRecordKeyMeta) (getMetadataResult, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.GetRequest{
@@ -598,14 +602,14 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 		}
 		batchProto, err := batch.ToProto()
 		if err != nil {
-			return nil, err
+			return getMetadataResult{}, err
 		}
 		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  batchProto,
 		})
 		if err != nil {
-			return nil, err
+			return getMetadataResult{}, err
 		}
 		res := getMetadataResult{
 			found: make(map[*sgpb.FileRecord]*sgpb.FileMetadata),
@@ -614,7 +618,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 		for i, k := range keys {
 			r, err := batchRsp.GetResponse(i)
 			if err == nil {
-				fr := k.Meta.(*sgpb.FileRecord)
+				fr := k.Meta
 				if r.GetFileMetadata().GetFileRecord() == nil {
 					log.CtxWarningf(ctx, "replica returned FileMetadata with no FileRecord for key %q (requested %+v): %+v", k.Key, fr, r.GetFileMetadata())
 				}
@@ -634,12 +638,7 @@ func (rc *Server) Get(ctx context.Context, req *mdpb.GetRequest) (*mdpb.GetRespo
 
 	// Combine the partial responses from each shard.
 	allFound := make(map[*sgpb.FileRecord]*sgpb.FileMetadata, len(req.GetFileRecords()))
-	for _, rsp := range rsps {
-		res, ok := rsp.(getMetadataResult)
-		if !ok {
-			return nil, status.InternalError("response not of type getMetadataResult")
-		}
-
+	for _, res := range rsps {
 		maps.Copy(allFound, res.found)
 
 		for _, p := range res.atimeUpdates {
@@ -677,7 +676,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 	}
 
 	// Shard the query by key and query shards in parallel.
-	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
+	rsps, err := rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*fileRecordKeyMeta) (findMetadataResult, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
 			batch.Add(&rfpb.FindRequest{
@@ -686,14 +685,14 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 		}
 		batchProto, err := batch.ToProto()
 		if err != nil {
-			return nil, err
+			return findMetadataResult{}, err
 		}
 		rsp, err := c.SyncRead(ctx, &rfpb.SyncReadRequest{
 			Header: h,
 			Batch:  batchProto,
 		})
 		if err != nil {
-			return nil, err
+			return findMetadataResult{}, err
 		}
 		res := findMetadataResult{
 			found: make(map[*sgpb.FileRecord]bool),
@@ -702,10 +701,10 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 		for i, k := range keys {
 			findRsp, err := batchRsp.FindResponse(i)
 			if err != nil {
-				return nil, err
+				return findMetadataResult{}, err
 			}
 			present := findRsp.GetPresent() && !rc.gcsObjectMayBeExpired(findRsp.GetGcsMetadata())
-			res.found[k.Meta.(*sgpb.FileRecord)] = present
+			res.found[k.Meta] = present
 			if present {
 				res.atimeUpdates = append(res.atimeUpdates, atimeUpdateData{
 					key:            k.Key,
@@ -722,12 +721,7 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 
 	// Combine the partial responses from each shard.
 	allFound := make(map[*sgpb.FileRecord]bool, len(req.GetFileRecords()))
-	for _, rsp := range rsps {
-		res, ok := rsp.(findMetadataResult)
-		if !ok {
-			return nil, status.InternalError("response not of type findResult")
-		}
-
+	for _, res := range rsps {
 		maps.Copy(allFound, res.found)
 
 		for _, p := range res.atimeUpdates {
@@ -749,14 +743,14 @@ func (rc *Server) Find(ctx context.Context, req *mdpb.FindRequest) (*mdpb.FindRe
 	return rsp, nil
 }
 
-func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*sender.KeyMeta, error) {
-	keys := make([]*sender.KeyMeta, 0, len(setOperations))
+func (rc *Server) setOperationsToKeyMetas(setOperations []*mdpb.SetRequest_SetOperation) ([]*setKeyMeta, error) {
+	keys := make([]*setKeyMeta, 0, len(setOperations))
 	for _, setOperation := range setOperations {
 		fileMetadataKey, err := rc.fileMetadataKey(setOperation.GetFileMetadata().GetFileRecord())
 		if err != nil {
 			return nil, err
 		}
-		keys = append(keys, &sender.KeyMeta{Key: fileMetadataKey, Meta: setOperation})
+		keys = append(keys, sender.NewKeyMeta(fileMetadataKey, setOperation))
 	}
 	return keys, nil
 }
@@ -779,14 +773,10 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	}
 
 	// Shard the query by key and query shards in parallel.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
-		// sender runMultiKeyFuncs require that we return an interface{}
-		// and error, but in this case there's no value to return, so
-		// always return nil for the interface, even on success.
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*setKeyMeta) (struct{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
-			setOp := k.Meta.(*mdpb.SetRequest_SetOperation)
-			fm := setOp.GetFileMetadata()
+			fm := k.Meta.GetFileMetadata()
 			fm.LastAccessUsec = rc.clock.Now().UnixMicro()
 			batch.Add(&rfpb.SetRequest{
 				Key:          k.Key,
@@ -795,16 +785,16 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 		}
 		batchProto, err := batch.ToProto()
 		if err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
 		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 			Header: h,
 			Batch:  batchProto,
 		})
 		if err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
-		return nil, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
+		return struct{}{}, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err
@@ -813,14 +803,14 @@ func (rc *Server) Set(ctx context.Context, req *mdpb.SetRequest) (*mdpb.SetRespo
 	return &mdpb.SetResponse{}, nil
 }
 
-func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequest_DeleteOperation) ([]*sender.KeyMeta, error) {
-	var keys []*sender.KeyMeta
+func (rc *Server) deleteOperationsToKeyMetas(deleteOperations []*mdpb.DeleteRequest_DeleteOperation) ([]*deleteKeyMeta, error) {
+	var keys []*deleteKeyMeta
 	for _, deleteOperation := range deleteOperations {
 		fileMetadataKey, err := rc.fileMetadataKey(deleteOperation.GetFileRecord())
 		if err != nil {
 			return nil, err
 		}
-		keys = append(keys, &sender.KeyMeta{Key: fileMetadataKey, Meta: deleteOperation})
+		keys = append(keys, sender.NewKeyMeta(fileMetadataKey, deleteOperation))
 	}
 	return keys, nil
 }
@@ -841,30 +831,26 @@ func (rc *Server) Delete(ctx context.Context, req *mdpb.DeleteRequest) (*mdpb.De
 	// Shard the query by key and query shards in parallel.
 	// Delete is safe to send through RunMultiKey: once the key is gone,
 	// duplicate retries still return success.
-	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*sender.KeyMeta) (any, error) {
-		// sender runMultiKeyFuncs require that we return an interface{}
-		// and error, but in this case there's no value to return, so
-		// always return nil for the interface, even on success.
+	_, err = rc.sender().RunMultiKey(ctx, keys, func(ctx context.Context, c rfspb.ApiClient, h *rfpb.Header, keys []*deleteKeyMeta) (struct{}, error) {
 		batch := rbuilder.NewBatchBuilder()
 		for _, k := range keys {
-			deleteOp := k.Meta.(*mdpb.DeleteRequest_DeleteOperation)
 			batch.Add(&rfpb.DeleteRequest{
 				Key:        k.Key,
-				MatchAtime: deleteOp.GetMatchAtime(),
+				MatchAtime: k.Meta.GetMatchAtime(),
 			})
 		}
 		batchProto, err := batch.ToProto()
 		if err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
 		rsp, err := c.SyncPropose(ctx, &rfpb.SyncProposeRequest{
 			Header: h,
 			Batch:  batchProto,
 		})
 		if err != nil {
-			return nil, err
+			return struct{}{}, err
 		}
-		return nil, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
+		return struct{}{}, rbuilder.NewBatchResponseFromProto(rsp.GetBatch()).AnyError()
 	}, sender.WithConsistencyMode(rfpb.Header_RANGELEASE))
 	if err != nil {
 		return nil, err

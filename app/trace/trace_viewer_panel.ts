@@ -118,7 +118,7 @@ export default class Panel {
 
   private isSectionVisible(section: SectionModel) {
     return !(
-      constants.TIMESTAMP_HEADER_SIZE + section.y > this.scrollY + this.model.height ||
+      constants.TIMESTAMP_HEADER_SIZE + section.y > this.scrollY + this.canvasHeight ||
       constants.TIMESTAMP_HEADER_SIZE + section.y + section.height < this.scrollY
     );
   }
@@ -127,8 +127,7 @@ export default class Panel {
     // TODO: incorporate timestamp header size into section.y instead of having to account for it here
     return (
       section.y + constants.TIMESTAMP_HEADER_SIZE >= this.scrollY + constants.TIMESTAMP_HEADER_SIZE &&
-      section.y + constants.TIMESTAMP_HEADER_SIZE + section.height <=
-        this.scrollY + this.model.height - constants.SCROLLBAR_SIZE
+      section.y + constants.TIMESTAMP_HEADER_SIZE + section.height <= this.scrollY + this.canvasHeight
     );
   }
 

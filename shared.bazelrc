@@ -33,6 +33,9 @@ common --incompatible_strict_action_env
 # avoid outputs being wiped and rewritten when switching between platforms.
 common --experimental_platform_in_output_dir
 
+# Recover lost inputs within a single build rather than via a restart of the command.
+common --rewind_lost_inputs
+
 # Workaround for Bazel 7,8:
 # rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
 # Reference: https://github.com/bazelbuild/rules_docker/pull/1963
@@ -159,9 +162,8 @@ common:tests-macos --test_tag_filters=-performance,-webdriver,-docker,-bare
 # Windows CI runs locally and excludes benchmarks.
 common:tests-windows --test_tag_filters=-performance
 
-# Linux arm64 CI runs locally over a curated target list. Docker tests run in a
-# separate invocation using the docker suite below.
-common:tests-linux-arm64 --test_tag_filters=-performance,-docker
+# Linux arm64 CI excludes benchmarks, bare tests, and Docker tests.
+common:tests-linux-arm64 --test_tag_filters=-performance,-bare,-docker
 
 common:tests-bare --test_tag_filters=+bare
 common:tests-bare --build_tag_filters=+bare
@@ -295,7 +297,6 @@ common:download-minimal --nobuild_runfile_links
 common:remote-shared --config=cache-shared
 common:remote-shared --jobs=100
 common:remote-shared --verbose_failures
-common:remote-shared --rewind_lost_inputs
 common:remote-shared --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64,@toolchains_buildbuddy//platforms:linux_arm64,@toolchains_buildbuddy//platforms:darwin_arm64,@toolchains_buildbuddy//platforms:darwin_x86_64
 
 # Flags shared for prod RBE and cache

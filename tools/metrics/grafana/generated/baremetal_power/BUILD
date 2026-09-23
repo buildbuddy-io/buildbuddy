@@ -25,6 +25,6 @@ go_binary(
 genrule(
     name = "baremetal_power_json",
     outs = ["baremetal-power.json"],
-    cmd = "$(location :baremetal_power) > $@",
+    cmd = "$(execpath :baremetal_power) > $@",
     tools = [":baremetal_power"],
 )

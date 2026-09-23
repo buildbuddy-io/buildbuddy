@@ -39,15 +39,15 @@ func deleteUnion(err error) *rfpb.ResponseUnion {
 	}
 }
 
-func testSamples(n int) ([]*approxlru.Sample[*evictionKey], []*sender.KeyMeta) {
+func testSamples(n int) ([]*approxlru.Sample[*evictionKey], []*evictionKeyMeta) {
 	samples := make([]*approxlru.Sample[*evictionKey], n)
-	keys := make([]*sender.KeyMeta, n)
+	keys := make([]*evictionKeyMeta, n)
 	for i := range n {
 		samples[i] = &approxlru.Sample[*evictionKey]{
 			Key:       &evictionKey{bytes: []byte{byte('a' + i)}},
 			Timestamp: time.UnixMicro(int64(1000 + i)),
 		}
-		keys[i] = &sender.KeyMeta{Key: samples[i].Key.bytes, Meta: samples[i]}
+		keys[i] = sender.NewKeyMeta(samples[i].Key.bytes, samples[i])
 	}
 	return samples, keys
 }

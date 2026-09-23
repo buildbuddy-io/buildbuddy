@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/distributed_client"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/memory_cache"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -4101,10 +4100,9 @@ func (w *referenceMemoryCacheWriter) Close() error {
 // which is safe to do while servers are running; the env's experiment flag
 // provider must be installed before any servers start (background goroutines
 // read it without synchronization).
-func setWriteReferenceExperiments(t *testing.T, writeReferences bool, verifyReferences bool) {
+func setWriteReferenceExperiments(t *testing.T, writeReferences bool) {
 	setReferenceExperiments(t, map[string]bool{
-		"distributed_cache.write_gcs_references":        writeReferences,
-		"distributed_cache.verify_write_gcs_references": verifyReferences,
+		"distributed_cache.write_gcs_references": writeReferences,
 	})
 }
 
@@ -4145,14 +4143,6 @@ func backfillCounts(t *testing.T) backfillMetrics {
 		count: sumOK(metrics.DistributedCacheBackfillCount),
 		size:  sumOK(metrics.DistributedCacheBackfillSizeBytes),
 	}
-}
-
-func writeVerificationCounts(t *testing.T) map[string]float64 {
-	counts := map[string]float64{}
-	for _, v := range testmetrics.CounterValues(t, metrics.DistributedCacheReferenceWriteVerificationCount) {
-		counts[v.Labels[metrics.VerificationOutcomeLabel]] += v.Value
-	}
-	return counts
 }
 
 func TestWriteByReference(t *testing.T) {
@@ -4216,7 +4206,7 @@ func TestWriteByReference(t *testing.T) {
 	}
 
 	t.Run("write flag uploads once and distributes references", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true, false)
+		setWriteReferenceExperiments(t, true)
 		_, dcs, locals, store := newCluster(t, 3)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
@@ -4291,7 +4281,7 @@ func TestWriteByReference(t *testing.T) {
 	})
 
 	t.Run("duplicate writes are not staged again", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true, false)
+		setWriteReferenceExperiments(t, true)
 		_, dcs, locals, store := newCluster(t, 3)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
@@ -4307,33 +4297,8 @@ func TestWriteByReference(t *testing.T) {
 		assertReplicated(t, locals, dcs, rn)
 	})
 
-	t.Run("verify flag tees bytes and verifies references", func(t *testing.T) {
-		setWriteReferenceExperiments(t, false, true)
-		_, dcs, locals, store := newCluster(t, 3)
-		before := writeVerificationCounts(t)
-		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
-		require.NoError(t, dcs[0].Set(ctx, rn, buf))
-		for _, dc := range dcs {
-			dc.distributedProxy.WaitForPendingVerificationsForTesting()
-		}
-
-		// Every node received the bytes, with the staged reference riding on
-		// a single stream's final message for verification.
-		byteCommits, refWrites, _ := totals(locals)
-		require.Equal(t, 3, byteCommits)
-		require.Equal(t, 0, refWrites)
-		// The stage plus the three byte writes each uploaded to shared
-		// storage.
-		require.Equal(t, 4, store.uploadCount())
-		after := writeVerificationCounts(t)
-		require.Equal(t, before[distributed_client.VerificationSuccess]+1, after[distributed_client.VerificationSuccess])
-		require.Equal(t, before[distributed_client.VerificationFailure], after[distributed_client.VerificationFailure])
-		require.Equal(t, before[distributed_client.VerificationError], after[distributed_client.VerificationError])
-		assertReplicated(t, locals, dcs, rn)
-	})
-
 	t.Run("coordinator outside the write peerset stages the blob", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true, false)
+		setWriteReferenceExperiments(t, true)
 		peers, dcs, locals, store := newCluster(t, 4)
 		coordinator := dcs[3]
 		// Find a resource whose write peers exclude the coordinator, then
@@ -4365,7 +4330,7 @@ func TestWriteByReference(t *testing.T) {
 	})
 
 	t.Run("unstageable blobs fall back to bytes", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true, false)
+		setWriteReferenceExperiments(t, true)
 		_, dcs, locals, store := newCluster(t, 3)
 		store.mu.Lock()
 		store.disabled = true
@@ -4381,7 +4346,7 @@ func TestWriteByReference(t *testing.T) {
 	})
 
 	t.Run("experiments off leave the byte path alone", func(t *testing.T) {
-		setWriteReferenceExperiments(t, false, false)
+		setWriteReferenceExperiments(t, false)
 		_, dcs, locals, _ := newCluster(t, 3)
 		rn, buf := testdigest.RandomCASResourceBuf(t, 100)
 		require.NoError(t, dcs[0].Set(ctx, rn, buf))
@@ -4392,7 +4357,7 @@ func TestWriteByReference(t *testing.T) {
 	})
 
 	t.Run("caches without reference support write bytes", func(t *testing.T) {
-		setWriteReferenceExperiments(t, true, false)
+		setWriteReferenceExperiments(t, true)
 		var peers []string
 		for range 3 {
 			peers = append(peers, fmt.Sprintf("localhost:%d", testport.FindFree(t)))

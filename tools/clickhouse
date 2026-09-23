@@ -29,6 +29,7 @@ fi
 start_clickhouse() {
   local data_dir="/tmp/${USER}_clickhouse_data"
   mkdir -p "$data_dir"
+  data_dir="$(realpath "$data_dir")"
 
   # If outputting to a terminal, run docker in interactive mode and exit.
   # If outputting to a pipe, run docker in detached mode, and continue the

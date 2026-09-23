@@ -1,3 +1,5 @@
+"""Rules for packaging Bazel binaries and extracted installations."""
+
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
@@ -123,7 +125,12 @@ extract_bazel_installation = rule(
 )
 
 def bazel_binary_targets(versions = [], **kwargs):
-    """Create Bazel binary and extracted-installation targets for versions."""
+    """Creates Bazel binary and extracted-installation targets.
+
+    Args:
+      versions: Bazel versions for which to create targets.
+      **kwargs: Additional arguments passed to the generated targets.
+    """
     for version in versions:
         copy_file(
             name = "bazel-{}_crossplatform".format(version),
