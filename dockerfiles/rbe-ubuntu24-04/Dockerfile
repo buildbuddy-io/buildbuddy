@@ -68,9 +68,9 @@ RUN apt-get update && \
     echo >/etc/apt/sources.list.d/docker.list "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" && \
     apt-get update && \
     apt-get install -y \
-      docker-ce=5:28.1.0-1~ubuntu.24.04~noble \
-      docker-ce-cli=5:28.1.0-1~ubuntu.24.04~noble \
-      containerd.io=1.7.27-1 \
+      docker-ce=5:29.8.1-1~ubuntu.24.04~noble \
+      docker-ce-cli=5:29.8.1-1~ubuntu.24.04~noble \
+      containerd.io=2.3.5-1~ubuntu.24.04~noble \
       && \
     apt-get remove -y gnupg && \
     apt-get autoremove -y && \
