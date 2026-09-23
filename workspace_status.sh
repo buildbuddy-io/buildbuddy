@@ -35,7 +35,8 @@ echo "REPO_URL $repo_url"
 commit_sha=$(git rev-parse HEAD)
 echo "COMMIT_SHA $commit_sha"
 
-git_branch=$(git rev-parse --abbrev-ref HEAD)
+# Empty in detached HEAD state.
+git_branch=$(git branch --show-current)
 echo "GIT_BRANCH $git_branch"
 
 git_tree_status=$(git diff-index --quiet HEAD -- && echo 'Clean' || echo 'Modified')

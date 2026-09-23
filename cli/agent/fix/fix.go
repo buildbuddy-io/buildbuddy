@@ -261,7 +261,10 @@ func HandleFix(args []string) (int, error) {
 func findLatestFailure(ctx context.Context, target string) (string, error) {
 	branch, err := cligit.CurrentBranch(ctx, "")
 	if err != nil {
-		return "", fmt.Errorf("find current branch (a checked-out branch is required): %w", err)
+		return "", fmt.Errorf("find current branch to get latest failure: %w", err)
+	}
+	if branch == "" {
+		return "", fmt.Errorf("find current branch to get latest failure: a checked-out branch is required")
 	}
 
 	repoURL, err := invocationRepoURL(ctx)

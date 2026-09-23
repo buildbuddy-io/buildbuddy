@@ -42,6 +42,9 @@ func checkPushPreconditions(ctx context.Context) (*pushTarget, error) {
 	}
 	branch, err := cligit.CurrentBranch(ctx, root)
 	if err != nil {
+		return nil, err
+	}
+	if branch == "" {
 		// HEAD is detached, so push the fix to a new branch.
 		remote := detachedPushRemote(ctx, root)
 		// Fail fast if the remote is unreachable or we lack read access.
