@@ -184,6 +184,13 @@ type timelineState struct {
 	// - TIME_SERIES_METADATA in trace_events.ts
 }
 
+// NewUsageStats returns usage stats initialized for a new task.
+func NewUsageStats() *UsageStats {
+	s := &UsageStats{}
+	s.Reset()
+	return s
+}
+
 func (s *UsageStats) clock() clockwork.Clock {
 	if s.Clock == nil {
 		s.Clock = clockwork.NewRealClock()
