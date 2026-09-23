@@ -2,6 +2,7 @@ package auditlog_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -21,10 +23,12 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	aclpb "github.com/buildbuddy-io/buildbuddy/proto/acl"
 	alpb "github.com/buildbuddy-io/buildbuddy/proto/auditlog"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 	requestcontext "github.com/buildbuddy-io/buildbuddy/server/util/request_context"
 )
@@ -178,6 +182,102 @@ func TestGetLogs(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.True(t, status.IsPermissionDeniedError(err))
+}
+
+func TestAPIKeyAuthenticatedRPCLogsKeyMetadataAndMutation(t *testing.T) {
+	flags.Set(t, "app.audit_logs_enabled", true)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	flags.Set(t, "auth.api_key_group_cache_ttl", 0)
+	flags.Set(t, "testenv.reuse_server", true)
+	flags.Set(t, "testenv.use_clickhouse", true)
+
+	ctx := context.Background()
+	env := enterprise_testenv.New(t)
+	auth := enterprise_testauth.Configure(t, env)
+	require.NoError(t, auditlog.Register(env))
+
+	admin := enterprise_testauth.CreateRandomUser(t, env, "audit-api-key.example")
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	admin, err = env.GetUserDB().GetUser(adminCtx)
+	require.NoError(t, err)
+	require.Len(t, admin.Groups, 1)
+	group := admin.Groups[0].Group
+	group.URLIdentifier = "audit-api-key"
+	group.SharingEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, &group)
+	require.NoError(t, err)
+
+	hiddenKey, err := env.GetAuthDB().CreateAPIKey(adminCtx, group.GroupID, "hidden audit key", []cappb.Capability{cappb.Capability_CAS_WRITE}, 0, false)
+	require.NoError(t, err)
+
+	flags.Set(t, "auth.admin_group_id", group.GroupID)
+	impersonationKey, err := env.GetAuthDB().CreateImpersonationAPIKey(adminCtx, group.GroupID)
+	require.NoError(t, err)
+
+	updatedACL := &aclpb.ACL{
+		UserId:            &uidpb.UserId{Id: admin.UserID},
+		GroupId:           group.GroupID,
+		OwnerPermissions:  &aclpb.ACL_Permissions{Read: true, Write: true},
+		GroupPermissions:  &aclpb.ACL_Permissions{Read: true},
+		OthersPermissions: &aclpb.ACL_Permissions{Read: true},
+	}
+	expectedPerms, err := perms.FromACL(updatedACL)
+	require.NoError(t, err)
+	startedAt := time.Now().Add(-time.Second)
+	invocationIDsByKeyID := make(map[string]string)
+
+	for i, key := range []*tables.APIKey{hiddenKey, impersonationKey} {
+		invocationID := fmt.Sprintf("audit-api-key-update-%d-%d", time.Now().UnixNano(), i)
+		invocationIDsByKeyID[key.APIKeyID] = invocationID
+		err := env.GetDBHandle().NewQuery(ctx, "auditlog_test_create_invocation").Create(&tables.Invocation{
+			InvocationID: invocationID,
+			UserID:       admin.UserID,
+			GroupID:      group.GroupID,
+			Perms:        perms.OWNER_READ | perms.OWNER_WRITE | perms.GROUP_READ | perms.GROUP_WRITE,
+		})
+		require.NoError(t, err)
+
+		keyCtx := auth.AuthContextFromAPIKey(ctx, key.Value)
+		req := &inpb.UpdateInvocationRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: group.GroupID},
+			InvocationId:   invocationID,
+			Acl:            updatedACL,
+		}
+		_, err = env.GetBuildBuddyServer().UpdateInvocation(keyCtx, req)
+		require.NoError(t, err)
+
+		invocation, err := env.GetInvocationDB().LookupInvocation(keyCtx, invocationID)
+		require.NoError(t, err)
+		require.Equal(t, expectedPerms, invocation.Perms)
+	}
+
+	logs, err := env.GetAuditLogger().GetLogs(adminCtx, &alpb.GetAuditLogsRequest{
+		RequestContext:  &ctxpb.RequestContext{GroupId: group.GroupID},
+		TimestampAfter:  timestamppb.New(startedAt),
+		TimestampBefore: timestamppb.New(time.Now().Add(time.Second)),
+	})
+	require.NoError(t, err)
+
+	for _, key := range []*tables.APIKey{hiddenKey, impersonationKey} {
+		var matchingEntry *alpb.Entry
+		for _, entry := range logs.GetEntries() {
+			if entry.GetAuthenticationInfo().GetApiKey().GetId() == key.APIKeyID {
+				matchingEntry = entry
+				break
+			}
+		}
+		require.NotNil(t, matchingEntry, "missing audit entry for API key %q", key.APIKeyID)
+		require.Equal(t, key.Label, matchingEntry.GetAuthenticationInfo().GetApiKey().GetLabel())
+		require.Equal(t, alpb.ResourceType_INVOCATION, matchingEntry.GetResource().GetType())
+		require.Equal(t, invocationIDsByKeyID[key.APIKeyID], matchingEntry.GetResource().GetId())
+		require.Equal(t, alpb.Action_UPDATE, matchingEntry.GetAction())
+		loggedUpdate := matchingEntry.GetRequest().GetApiRequest().GetUpdateInvocation()
+		require.NotNil(t, loggedUpdate)
+		require.Equal(t, invocationIDsByKeyID[key.APIKeyID], loggedUpdate.GetInvocationId())
+		require.Empty(t, cmp.Diff(updatedACL, loggedUpdate.GetAcl(), protocmp.Transform()))
+	}
 }
 
 func newFakeUser(userID, domain string) *tables.User {

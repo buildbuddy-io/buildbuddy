@@ -1026,9 +1026,12 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 	}
 	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
 		// Listing org keys filters out keys that have not been shared with
-		// non-admin members. Apply the same restriction to direct ID lookups:
-		// org keys have GROUP_READ ACLs regardless of their visibility.
-		if key.UserID == "" && !key.VisibleToDevelopers {
+		// non-admin members. Apply the same restriction to direct ID lookups,
+		// except when an API key is looking up its own metadata (for example,
+		// when recording its label in an audit log). Org keys have GROUP_READ
+		// ACLs regardless of their visibility.
+		isOwnAuthenticatedAPIKey := user.GetAPIKeyInfo().ID != "" && user.GetAPIKeyInfo().ID == apiKeyID
+		if key.UserID == "" && !key.VisibleToDevelopers && !isOwnAuthenticatedAPIKey {
 			return nil, status.PermissionDeniedError("permission denied")
 		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)

@@ -529,6 +529,60 @@ func TestGetAPIKeys(t *testing.T) {
 	}
 }
 
+func TestGetAPIKey_SelfAuthenticatedHiddenKey(t *testing.T) {
+	ctx := context.Background()
+	env := setupEnv(t)
+	adb := env.GetAuthDB()
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+
+	const domain = "self-key-test.example"
+	admin := enterprise_testauth.CreateRandomUser(t, env, domain)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+	admin, err = env.GetUserDB().GetUser(adminCtx)
+	require.NoError(t, err)
+	require.Len(t, admin.Groups, 1)
+	group := admin.Groups[0].Group
+	group.URLIdentifier = "self-key-test"
+	group.OwnedDomain = domain
+	group.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, &group)
+	require.NoError(t, err)
+
+	member := enterprise_testauth.CreateRandomUser(t, env, domain)
+	memberCtx, err := auth.WithAuthenticatedUser(ctx, member.UserID)
+	require.NoError(t, err)
+
+	selfKey, err := adb.CreateAPIKey(adminCtx, group.GroupID, "self hidden key", []cappb.Capability{cappb.Capability_CAS_WRITE}, 0, false)
+	require.NoError(t, err)
+	siblingKey, err := adb.CreateAPIKey(adminCtx, group.GroupID, "sibling hidden key", []cappb.Capability{cappb.Capability_CAS_WRITE}, 0, false)
+	require.NoError(t, err)
+
+	selfKeyCtx := auth.AuthContextFromAPIKey(ctx, selfKey.Value)
+	got, err := adb.GetAPIKey(selfKeyCtx, selfKey.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, selfKey.Label, got.Label)
+
+	// Authenticating with one hidden key must not grant access to sibling
+	// hidden keys, even within the same group.
+	_, err = adb.GetAPIKey(selfKeyCtx, siblingKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "%v", err)
+
+	// A normal non-admin browser session still cannot retrieve a hidden org
+	// key by ID.
+	_, err = adb.GetAPIKey(memberCtx, selfKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "%v", err)
+
+	// User-owned keys retain their owner-only ACL semantics.
+	memberKey, err := adb.CreateUserAPIKey(adminCtx, group.GroupID, member.UserID, "member key", []cappb.Capability{cappb.Capability_CAS_WRITE}, 0)
+	require.NoError(t, err)
+	got, err = adb.GetAPIKey(memberCtx, memberKey.APIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, member.UserID, got.UserID)
+	_, err = adb.GetAPIKey(selfKeyCtx, memberKey.APIKeyID)
+	require.True(t, status.IsPermissionDeniedError(err), "%v", err)
+}
+
 func TestGetAPIKeyGroup_UserOwnedKeys(t *testing.T) {
 	ctx := context.Background()
 	env := setupEnv(t)
@@ -851,12 +905,22 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	// Same user should now be able to create an impersonation key for any
 	// group.
 	flags.Set(t, "auth.admin_group_id", admin.Groups[0].Group.GroupID)
+	groupAdmins := make(map[string]*tables.User)
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			groupAdmins[u.Groups[0].Group.GroupID] = u
+		}
+	}
 	for _, u := range users {
 		al.Reset()
 		targetGroupID := u.Groups[0].Group.GroupID
 		targetGroupCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
 		require.NoError(t, err)
-		prevKeys, err := adb.GetAPIKeys(targetGroupCtx, targetGroupID)
+		targetGroupAdmin := groupAdmins[targetGroupID]
+		require.NotNil(t, targetGroupAdmin)
+		targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, targetGroupAdmin.UserID)
+		require.NoError(t, err)
+		prevKeys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
 		require.NoError(t, err)
 
 		req := &akpb.CreateImpersonationApiKeyRequest{
@@ -877,25 +941,26 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 		require.NoError(t, err)
 
-		// Hidden impersonation keys are readable by org admins, but not by
-		// ordinary members even if they know the key ID.
-		key, err := adb.GetAPIKey(targetGroupCtx, rsp.GetApiKey().GetId())
-		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
-			require.NoError(t, err)
-			require.True(t, key.Impersonation)
-			require.NotEqualValues(t, 0, key.ExpiryUsec)
-			require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
-		} else {
+		// Hidden impersonation keys are readable by an org admin, regardless of
+		// which target-group member happened to be selected for this iteration.
+		key, err := adb.GetAPIKey(targetGroupAdminCtx, rsp.GetApiKey().GetId())
+		require.NoError(t, err)
+		require.True(t, key.Impersonation)
+		require.NotEqualValues(t, 0, key.ExpiryUsec)
+		require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
+
+		// Ordinary members still cannot retrieve an impersonation key even if
+		// they know its ID.
+		if !u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			key, err := adb.GetAPIKey(targetGroupCtx, rsp.GetApiKey().GetId())
 			require.True(t, status.IsPermissionDeniedError(err), "%v", err)
 			require.Nil(t, key)
 		}
 
 		// Verify "list" operation does not include the impersonation key.
-		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
-			keys, err := adb.GetAPIKeys(targetGroupCtx, targetGroupID)
-			require.NoError(t, err)
-			require.Equal(t, prevKeys, keys)
-		}
+		keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+		require.NoError(t, err)
+		require.Equal(t, prevKeys, keys)
 	}
 }
 
