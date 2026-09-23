@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -263,7 +264,7 @@ func validateAuthorizationRequest(v url.Values) error {
 	if v.Get("response_type") != "code" {
 		return fmt.Errorf("unsupported response_type")
 	}
-	if !contains(strings.Fields(v.Get("scope")), "openid") {
+	if !slices.Contains(strings.Fields(v.Get("scope")), "openid") {
 		return fmt.Errorf("openid scope is required")
 	}
 	return nil
@@ -340,6 +341,7 @@ func (p *Provider) issueTokens(w http.ResponseWriter, user identity, refreshToke
 		return
 	}
 	now := time.Now()
+	accessTokenHash := sha256.Sum256([]byte(accessToken))
 	claims := map[string]any{
 		"iss":            p.issuerURL,
 		"sub":            user.subject,
@@ -348,6 +350,7 @@ func (p *Provider) issueTokens(w http.ResponseWriter, user identity, refreshToke
 		"exp":            now.Add(time.Hour).Unix(),
 		"email":          user.email,
 		"email_verified": true,
+		"at_hash":        base64.RawURLEncoding.EncodeToString(accessTokenHash[:len(accessTokenHash)/2]),
 	}
 	if nonce != "" {
 		claims["nonce"] = nonce
@@ -405,13 +408,4 @@ func randomToken() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
 }

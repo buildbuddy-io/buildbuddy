@@ -90,6 +90,7 @@ func verifyClaims(t testing.TB, verifier *oidc.IDTokenVerifier, token *oauth2.To
 	require.True(t, ok)
 	idToken, err := verifier.Verify(context.Background(), rawIDToken)
 	require.NoError(t, err)
+	require.NoError(t, idToken.VerifyAccessToken(token.AccessToken))
 	c := &claims{}
 	require.NoError(t, idToken.Claims(c))
 	return c
