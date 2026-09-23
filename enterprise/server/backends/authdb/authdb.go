@@ -1025,6 +1025,12 @@ func (d *AuthDB) GetAPIKey(ctx context.Context, apiKeyID string) (*tables.APIKey
 		return nil, status.WrapError(err, "get capabilities")
 	}
 	if !slices.Contains(caps, cappb.Capability_ORG_ADMIN) {
+		// Listing org keys filters out keys that have not been shared with
+		// non-admin members. Apply the same restriction to direct ID lookups:
+		// org keys have GROUP_READ ACLs regardless of their visibility.
+		if key.UserID == "" && !key.VisibleToDevelopers {
+			return nil, status.PermissionDeniedError("permission denied")
+		}
 		acl := perms.ToACLProto(&uidpb.UserId{Id: key.UserID}, key.GroupID, key.Perms)
 		if err := perms.AuthorizeRead(user, acl); err != nil {
 			return nil, err

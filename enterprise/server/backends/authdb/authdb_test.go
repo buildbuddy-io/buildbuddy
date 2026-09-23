@@ -854,9 +854,9 @@ func TestImpersonationAPIKeys(t *testing.T) {
 	for _, u := range users {
 		al.Reset()
 		targetGroupID := u.Groups[0].Group.GroupID
-		targetGroupAdminCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
+		targetGroupCtx, err := auth.WithAuthenticatedUser(ctx, u.UserID)
 		require.NoError(t, err)
-		prevKeys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+		prevKeys, err := adb.GetAPIKeys(targetGroupCtx, targetGroupID)
 		require.NoError(t, err)
 
 		req := &akpb.CreateImpersonationApiKeyRequest{
@@ -877,16 +877,22 @@ func TestImpersonationAPIKeys(t *testing.T) {
 		_, err = adb.GetAPIKeyGroupFromAPIKey(ctx, rsp.GetApiKey().GetValue())
 		require.NoError(t, err)
 
-		// Verify correct key attributes.
-		key, err := adb.GetAPIKey(targetGroupAdminCtx, rsp.GetApiKey().GetId())
-		require.NoError(t, err)
-		require.True(t, key.Impersonation)
-		require.NotEqualValues(t, 0, key.ExpiryUsec)
-		require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
+		// Hidden impersonation keys are readable by org admins, but not by
+		// ordinary members even if they know the key ID.
+		key, err := adb.GetAPIKey(targetGroupCtx, rsp.GetApiKey().GetId())
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			require.NoError(t, err)
+			require.True(t, key.Impersonation)
+			require.NotEqualValues(t, 0, key.ExpiryUsec)
+			require.Equal(t, []cappb.Capability{cappb.Capability_CAS_WRITE}, capabilities.FromInt(key.Capabilities))
+		} else {
+			require.True(t, status.IsPermissionDeniedError(err), "%v", err)
+			require.Nil(t, key)
+		}
 
 		// Verify "list" operation does not include the impersonation key.
 		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
-			keys, err := adb.GetAPIKeys(targetGroupAdminCtx, targetGroupID)
+			keys, err := adb.GetAPIKeys(targetGroupCtx, targetGroupID)
 			require.NoError(t, err)
 			require.Equal(t, prevKeys, keys)
 		}
