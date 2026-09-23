@@ -443,6 +443,9 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			"2023-08",
 			"2023-07",
 		},
+		// Execution usage rows are expected in the query's order: cloud before
+		// self-hosted, RBE before workflows, then by isolation type, OS and
+		// arch.
 		OlapUsage: &usagepb.OLAPUsage{
 			FixedComputeNanos: []*usagepb.ExecutionUsage{
 				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 12_000},
@@ -453,22 +456,14 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 				{IsolationType: "oci", Os: "linux", Arch: "x86_64", Count: 8_000},
 			},
 			RemoteSnapshotSavedBytes: []*usagepb.ExecutionUsage{
-				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 1_001},
 				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 2_002},
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 1_001},
 			},
 			LocalSnapshotSavedBytes: []*usagepb.ExecutionUsage{
-				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 3_003},
 				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 4_004},
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 3_003},
 			},
 		},
 	}
-	assert.Empty(t, cmp.Diff(
-		expectedResponse, rsp,
-		protocmp.Transform(),
-		// Execution usage rows are ordered by their dimensions, which is not
-		// meaningful to the test; compare them as sets.
-		protocmp.SortRepeated(func(a, b *usagepb.ExecutionUsage) bool {
-			return a.GetCount() < b.GetCount()
-		}),
-	))
+	assert.Empty(t, cmp.Diff(expectedResponse, rsp, protocmp.Transform()))
 }

@@ -572,6 +572,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
       ...olapUsage.remoteSnapshotSavedBytes.map((row) => executionUsageRow("Remote snapshots", row, false)),
       ...olapUsage.localSnapshotSavedBytes.map((row) => executionUsageRow("Local snapshots", row, false)),
     ];
+    // Don't show the section to orgs that don't use snapshots.
+    if (!rows.length) return null;
     const totalBytes = rows.reduce((sum, row) => sum + row.value, 0);
     return (
       <>
@@ -593,6 +595,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
       ...olapUsage.fixedComputeNanos.map((row) => executionUsageRow("Fixed compute", row, true)),
       ...olapUsage.flexibleComputeNanos.map((row) => executionUsageRow("Flexible compute", row, true)),
     ];
+    // Don't show the section to orgs that don't use remote execution.
+    if (!rows.length) return null;
     const totalNanos = rows.reduce((sum, row) => sum + row.value, 0);
     return (
       <>
