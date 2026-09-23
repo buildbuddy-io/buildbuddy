@@ -326,6 +326,7 @@ func TestOrganizationAPIKeysAreRoleAndOrganizationScoped(t *testing.T) {
 	outsider := f.Login(t, f.Users[permissionstest.OutsiderName])
 	developer := f.Login(t, f.Users[permissionstest.DeveloperName])
 	reader := f.Login(t, f.Users[permissionstest.ReaderName])
+	writer := f.Login(t, f.Users[permissionstest.WriterName])
 
 	createOrgKey := func(t *testing.T, c *permissionstest.Client, groupID, label string, visible bool) *akpb.ApiKey {
 		t.Helper()
@@ -364,21 +365,65 @@ func TestOrganizationAPIKeysAreRoleAndOrganizationScoped(t *testing.T) {
 	}, forgedBody))
 	require.Equal(t, []string{"a-hidden", "a-visible"}, labels(forgedBody))
 
-	developerVisible := &akpb.GetApiKeyResponse{}
-	require.NoError(t, developer.RPC("GetApiKey", &akpb.GetApiKeyRequest{
-		RequestContext: requestContext(developer, f.OrgA),
-		ApiKeyId:       aVisible.GetId(),
-	}, developerVisible))
-	require.Equal(t, aVisible.GetId(), developerVisible.GetApiKey().GetId(), "developer-visible key is a positive control for direct key reads")
+	// Both public read endpoints reach AuthDB.GetAPIKey. Exercise all member
+	// roles and authenticate every session positively via Fixture.Login.
+	for _, method := range []string{"GetApiKey", "GetUserApiKey"} {
+		for _, tc := range []struct {
+			name   string
+			client *permissionstest.Client
+			admin  bool
+		}{
+			{"admin", admin, true}, {"developer", developer, false},
+			{"writer", writer, false}, {"reader", reader, false},
+		} {
+			t.Run(method+"/"+tc.name, func(t *testing.T) {
+				visible := &akpb.GetApiKeyResponse{}
+				require.NoError(t, tc.client.RPC(method, &akpb.GetApiKeyRequest{
+					RequestContext: requestContext(tc.client, f.OrgA), ApiKeyId: aVisible.GetId(),
+				}, visible))
+				require.Equal(t, aVisible.GetValue(), visible.GetApiKey().GetValue())
+				hidden := &akpb.GetApiKeyResponse{}
+				err := tc.client.RPC(method, &akpb.GetApiKeyRequest{
+					RequestContext: requestContext(tc.client, f.OrgA), ApiKeyId: aHidden.GetId(),
+				}, hidden)
+				if tc.admin {
+					require.NoError(t, err)
+					require.Equal(t, aHidden.GetValue(), hidden.GetApiKey().GetValue())
+				} else {
+					requireRPCCode(t, err, codes.PermissionDenied)
+					require.Nil(t, hidden.GetApiKey())
+				}
+			})
+		}
+	}
 
-	err := developer.RPC("GetApiKey", &akpb.GetApiKeyRequest{
-		RequestContext: requestContext(developer, f.OrgA),
-		ApiKeyId:       aHidden.GetId(),
-	}, &akpb.GetApiKeyResponse{})
-	rpcErr := requireRPCCode(t, err, codes.PermissionDenied)
-	require.Equal(t, "permission denied", rpcErr.Message)
-
-	err = admin.RPC("GetApiKey", &akpb.GetApiKeyRequest{
+	// API-key authentication must permit self lookup for audit attribution,
+	// but cannot grant access to any other hidden key (even in the same org).
+	sibling := createOrgKey(t, admin, f.OrgA, "a-hidden-sibling", false)
+	require.NotEmpty(t, aHidden.GetValue())
+	require.NotEmpty(t, sibling.GetValue())
+	keyClient := f.APIKeyClient(aHidden.GetValue())
+	for _, method := range []string{"GetApiKey", "GetUserApiKey"} {
+		t.Run(method+"/key_authenticated", func(t *testing.T) {
+			self := &akpb.GetApiKeyResponse{}
+			require.NoError(t, keyClient.RPC(method, &akpb.GetApiKeyRequest{
+				RequestContext: requestContext(keyClient, f.OrgA), ApiKeyId: aHidden.GetId(),
+			}, self))
+			require.Equal(t, aHidden.GetValue(), self.GetApiKey().GetValue())
+			for _, keyID := range []string{sibling.GetId(), bHidden.GetId()} {
+				denied := &akpb.GetApiKeyResponse{}
+				err := keyClient.RPC(method, &akpb.GetApiKeyRequest{
+					RequestContext: &ctxpb.RequestContext{
+						GroupId: f.OrgA, UserId: &uidpb.UserId{Id: f.Users[permissionstest.AdminName].ID},
+					},
+					ApiKeyId: keyID,
+				}, denied)
+				requireRPCCode(t, err, codes.PermissionDenied)
+				require.Nil(t, denied.GetApiKey())
+			}
+		})
+	}
+	err := admin.RPC("GetApiKey", &akpb.GetApiKeyRequest{
 		RequestContext: requestContext(admin, f.OrgA),
 		ApiKeyId:       bHidden.GetId(),
 	}, &akpb.GetApiKeyResponse{})
@@ -398,6 +443,7 @@ func TestOrganizationAPIKeysAreRoleAndOrganizationScoped(t *testing.T) {
 	}{
 		{name: "developer", c: developer},
 		{name: "reader", c: reader},
+		{name: "writer", c: writer},
 	} {
 		t.Run("denied_create_"+tc.name, func(t *testing.T) {
 			err := tc.c.RPC("CreateApiKey", &akpb.CreateApiKeyRequest{

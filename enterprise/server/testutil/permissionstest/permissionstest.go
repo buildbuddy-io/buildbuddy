@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/buildbuddy_enterprise"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/testoidc"
@@ -27,6 +28,7 @@ import (
 
 	ctxpb "github.com/buildbuddy-io/buildbuddy/proto/context"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
+	uspb "github.com/buildbuddy-io/buildbuddy/proto/user"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
 )
 
@@ -48,7 +50,7 @@ type User struct {
 }
 
 // Fixture owns a real enterprise app, OIDC provider, and pre-seeded users and
-// organizations. Every call to Login creates an independent browser session.
+// organizations. Every call to Login creates an independent cookie jar.
 type Fixture struct {
 	App  *app.App
 	IDP  *testoidc.Provider
@@ -58,11 +60,13 @@ type Fixture struct {
 	Users map[string]*User
 }
 
-// Client makes cookie-authenticated BuildBuddyService protolet RPCs.
+// Client makes BuildBuddyService protolet RPCs using session cookies, an API
+// key, or no credentials. APIKey clients are created without session cookies.
 type Client struct {
 	App            *app.App
 	HTTPClient     *http.Client
 	RequestContext *ctxpb.RequestContext
+	APIKey         string
 }
 
 // RPCError is returned when a protolet RPC fails. It preserves both the HTTP
@@ -85,8 +89,9 @@ var protoletErrorPattern = regexp.MustCompile(`^rpc error: code = ([A-Za-z]+) de
 
 // New starts a real enterprise server with self-auth disabled and a test OIDC
 // provider configured, then directly seeds its SQLite DB with two orgs and the
-// standard permission-test identities.
-func New(t *testing.T) *Fixture {
+// standard permission-test identities. Extra server flags override defaults
+// for explicit deployment/cache-policy test variants.
+func New(t *testing.T, extraArgs ...string) *Fixture {
 	t.Helper()
 
 	idp := testoidc.Start(t)
@@ -116,15 +121,18 @@ func New(t *testing.T) *Fixture {
 	}})
 	require.NoError(t, err)
 
+	args := append([]string{
+		"--auth.enable_self_auth=false",
+		"--auth.enable_anonymous_usage=true",
+		"--auth.oauth_providers=" + string(providerJSON),
+		"--http.client.allow_localhost=true",
+		"--app.user_owned_keys_enabled=true",
+	}, extraArgs...)
 	a := buildbuddy_enterprise.RunWithConfig(
 		t,
 		buildbuddy_enterprise.DefaultAppConfig(t),
 		buildbuddy_enterprise.NoAuthConfig,
-		"--auth.enable_self_auth=false",
-		"--auth.enable_anonymous_usage=true",
-		"--auth.oauth_providers="+string(providerJSON),
-		"--http.client.allow_localhost=true",
-		"--app.user_owned_keys_enabled=true",
+		args...,
 	)
 
 	f := &Fixture{
@@ -209,7 +217,7 @@ func (f *Fixture) Login(t *testing.T, user *User) *Client {
 
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
-	httpClient := &http.Client{Jar: jar}
+	httpClient := &http.Client{Jar: jar, Timeout: 30 * time.Second}
 
 	res, err := httpClient.Get(f.LoginURL())
 	require.NoError(t, err)
@@ -235,13 +243,36 @@ func (f *Fixture) Login(t *testing.T, user *User) *Client {
 	}
 	require.True(t, hasAuthorizationCookie, "OIDC login did not set the app authorization cookie")
 
-	return &Client{
+	client := &Client{
 		App:        f.App,
 		HTTPClient: httpClient,
 		RequestContext: &ctxpb.RequestContext{
 			UserId: &uidpb.UserId{Id: user.ID},
 		},
 	}
+	// A cookie alone does not prove authentication. Every negative permissions
+	// test must first establish a successful RPC as the intended identity.
+	identity := &uspb.GetUserResponse{}
+	require.NoError(t, client.RPC("GetUser", &uspb.GetUserRequest{RequestContext: client.RequestContext}, identity))
+	require.Equal(t, user.ID, identity.GetDisplayUser().GetUserId().GetId())
+	require.Equal(t, user.Email, identity.GetDisplayUser().GetEmail())
+	return client
+}
+
+// AnonymousClient returns a client with neither cookies nor an API key.
+func (f *Fixture) AnonymousClient() *Client {
+	return &Client{
+		App:            f.App,
+		HTTPClient:     &http.Client{Timeout: 30 * time.Second},
+		RequestContext: &ctxpb.RequestContext{},
+	}
+}
+
+// APIKeyClient returns a client authenticated solely by the supplied API key.
+func (f *Fixture) APIKeyClient(key string) *Client {
+	client := f.AnonymousClient()
+	client.APIKey = key
+	return client
 }
 
 func authorizationForm(t *testing.T, res *http.Response) (string, url.Values) {
@@ -293,7 +324,7 @@ func authorizationForm(t *testing.T, res *http.Response) (string, url.Values) {
 	return actionURL.String(), form
 }
 
-// RPC makes a cookie-authenticated BuildBuddyService request over HTTP.
+// RPC makes a BuildBuddyService request over HTTP with this client's credentials.
 func (c *Client) RPC(method string, req proto.Message, rsp proto.Message) error {
 	var body []byte
 	var err error
@@ -309,6 +340,9 @@ func (c *Client) RPC(method string, req proto.Message, rsp proto.Message) error 
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/proto")
+	if c.APIKey != "" {
+		httpReq.Header.Set("x-buildbuddy-api-key", c.APIKey)
+	}
 	httpRsp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
 		return err

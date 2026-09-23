@@ -12,6 +12,7 @@ go_library(
         "//enterprise/server/testutil/testoidc",
         "//proto:context_go_proto",
         "//proto:group_go_proto",
+        "//proto:user_go_proto",
         "//proto:user_id_go_proto",
         "//server/tables",
         "//server/testutil/app",
