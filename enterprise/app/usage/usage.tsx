@@ -879,7 +879,7 @@ const COMPUTE_USAGE_LEVELS = [HOSTING_ORDER, ["Fixed compute", "Flexible compute
 function computeUsageRow(computeType: string, row: usage.ExecutionUsage): BreakdownUsageRow {
   return {
     groups: [hostingName(row), computeType, poolName(row)],
-    leaf: [row.isolationType || "unknown", row.os || "unknown", row.arch || "unknown"],
+    leaf: [row.isolationType, row.os, row.arch],
     value: Number(row.count),
   };
 }
@@ -946,31 +946,15 @@ function breakdownLeafRows(
   keyPrefix: string,
   isZero: (value: number) => boolean
 ): BreakdownTableRow[] {
-  // The server already merges rows with identical dimensions, but merge again
-  // here in case the display collapses distinct values (e.g. missing and
-  // "unknown").
-  const merged = new Map<string, BreakdownTableRow>();
+  // The server returns one row per combination of leaf dimensions, already
+  // sorted by them.
+  const out: BreakdownTableRow[] = [];
   for (const { leaf, value } of rows) {
-    if (!leaf) continue;
-    const key = keyPrefix + leaf.join("/");
-    const existing = merged.get(key);
-    if (existing) {
-      existing.value += value;
-    } else {
-      merged.set(key, { key, level, cells: leaf, isGroup: false, isLeaf: true, value });
+    if (leaf && !isZero(value)) {
+      out.push({ key: keyPrefix + leaf.join("/"), level, cells: leaf, isGroup: false, isLeaf: true, value });
     }
   }
-  return Array.from(merged.values())
-    .filter((row) => !isZero(row.value))
-    .sort((a, b) => compareCells(a.cells, b.cells));
-}
-
-function compareCells(a: string[], b: string[]): number {
-  for (let i = 0; i < Math.min(a.length, b.length); i++) {
-    const c = a[i].localeCompare(b[i]);
-    if (c) return c;
-  }
-  return a.length - b.length;
+  return out;
 }
 
 function renderBreakdownTable(
