@@ -117,11 +117,10 @@ function supportsRemoteCacheChunking(version: BazelVersion | null) {
   );
 }
 
-// Rewinding needs the stale action-cache fix backported to Bazel 8.8.
+// Rewinding needs the stale action-cache fix backported to Bazel 8.8 and 9.3.
 // https://github.com/bazelbuild/bazel/pull/30266
-// Bazel 9.3+ enables it by default, so respect explicit opt-outs there.
 function shouldSuggestRemoteCacheRewinding(version: BazelVersion | null) {
-  return version?.major === 8 && version.minor >= 8;
+  return (version?.major === 8 && version.minor >= 8) || bazelVersionAtLeast(version, 9, 3);
 }
 
 // The BEP retains explicit values such as "false"; only --noflag becomes "0".
@@ -667,9 +666,8 @@ ${yamlSuggestions.map((s) => `      ${s}`).join("\n")}`}
     // Rolling builds with the same major/minor can predate recovery support.
     if (model.started?.buildToolVersion?.includes("-pre.")) return null;
 
-    const rewindOption = model.optionsMap.get("rewind_lost_inputs");
-    const rewindEnabled = rewindOption !== undefined && !isFalseOptionValue(rewindOption);
-    if (rewindEnabled) return null;
+    // Either value represents an explicit user choice, which we should respect.
+    if (model.optionsMap.has("rewind_lost_inputs")) return null;
 
     return {
       level: SuggestionLevel.INFO,
