@@ -179,17 +179,15 @@ common --incompatible_strict_action_env=true
 	require.Contains(t, execution.Text(), "genrule-setup.sh", "target page should show command_snippet")
 
 	// Now go to Drilldowns, drilldown by execution wall time, and click the
-	// rectangle shown in the heatmap. This should select the invocations
-	// we just performed.
+	// rectangle shown in the heatmap. This should select the original execution.
 	wt.Find(`[href="/trends/#drilldown"]`).Click()
 	wt.Find(`.drilldown-page-select`).SendKeys("Execution total wall time")
 	wt.Find(`[debug-id="heatmap-cells"] > *`).Click()
-	// There should be two identical executions shown.
+	// The merged invocation should not add a duplicate execution to Drilldowns.
 	waitForExecutionsToAppear(t, wt)
-	require.Contains(t, wt.Find(`body`).Text(), "Selected executions (2)")
+	require.Contains(t, wt.Find(`body`).Text(), "Selected executions (1)")
 	executions := wt.FindAll(".invocation-execution-row")
-	require.Len(t, executions, 2)
-	require.Equal(t, executions[0].Text(), executions[1].Text())
+	require.Len(t, executions, 1)
 	require.Contains(t, executions[0].Text(), "Succeeded")
 	require.Contains(t, executions[0].Text(), "genrule-setup.sh")
 }
