@@ -452,6 +452,9 @@ sh_binary(name = "nop", srcs = ["nop.sh"])`,
 	args = append(args, app.BESBazelFlags()...)
 	args = append(args, app.RemoteCacheBazelFlags()...)
 	args = append(args, "--remote_upload_local_results")
+	// Make the sidecar finish cache writes before the invocation is
+	// finalized, so that they are reflected in the cache scorecard.
+	args = append(args, "--bes_upload_mode=wait_for_upload_complete")
 	uid, err := uuid.NewRandom()
 	require.NoError(t, err)
 	iid := uid.String()
