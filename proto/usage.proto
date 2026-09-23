@@ -37,40 +37,56 @@ message GetUsageResponse {
   OLAPUsage olap_usage = 5;
 }
 
-// LabeledUsage is a usage count for a single combination of usage labels.
-message LabeledUsage {
-  // The usage labels that qualify the count, such as "client", "origin",
-  // "os", "arch", "self_hosted" and "isolation_type".
-  map<string, string> labels = 1;
+// ExecutionUsage is a usage count for a single combination of execution
+// dimensions.
+message ExecutionUsage {
+  // Whether the usage was incurred on self-hosted executors rather than
+  // BuildBuddy-hosted ones.
+  bool self_hosted = 1;
 
-  // The usage count for this combination of labels.
-  int64 count = 2;
+  // Whether the usage was incurred by BuildBuddy workflows rather than by
+  // remote build execution.
+  bool workflow = 2;
+
+  // The effective isolation type that ran the executions, such as
+  // "firecracker" or "oci".
+  string isolation_type = 3;
+
+  // The executor operating system, such as "linux".
+  string os = 4;
+
+  // The executor architecture, such as "x86_64".
+  string arch = 5;
+
+  // The usage count for this combination of dimensions.
+  int64 count = 6;
 }
 
 // OLAPUsage represents BuildBuddy resources used for a particular time period
 // that are only counted in the OLAP DB.
 message OLAPUsage {
   // Fixed compute usage, in compute-unit-nanoseconds (one compute unit
-  // reserved for one nanosecond), for each combination of labels with non-zero
-  // usage. Fixed compute is charged for the compute units reserved by an
-  // action for its whole execution duration. Firecracker actions and actions
-  // that request EstimatedComputeUnits are charged as fixed compute.
-  repeated LabeledUsage fixed_compute_nanos = 1;
+  // reserved for one nanosecond), for each combination of execution
+  // dimensions with non-zero usage. Fixed compute is charged for the compute
+  // units reserved by an action for its whole execution duration. Firecracker
+  // actions and actions that request EstimatedComputeUnits are charged as
+  // fixed compute.
+  repeated ExecutionUsage fixed_compute_nanos = 1;
 
   // Flexible compute usage, in compute-unit-nanoseconds, for each combination
-  // of labels with non-zero usage. Flexible compute is charged for the compute
-  // units the scheduler estimated for an action, for its whole execution
-  // duration.
-  repeated LabeledUsage flexible_compute_nanos = 2;
+  // of execution dimensions with non-zero usage. Flexible compute is charged
+  // for the compute units the scheduler estimated for an action, for its
+  // whole execution duration.
+  repeated ExecutionUsage flexible_compute_nanos = 2;
 
   // The number of bytes of VM snapshots saved to the remote cache, for each
-  // combination of labels with non-zero usage. Bytes saved remotely are not
-  // also counted as saved locally.
-  repeated LabeledUsage remote_snapshot_saved_bytes = 3;
+  // combination of execution dimensions with non-zero usage. Bytes saved
+  // remotely are not also counted as saved locally.
+  repeated ExecutionUsage remote_snapshot_saved_bytes = 3;
 
   // The number of bytes of VM snapshots saved only to the executor's local
-  // disk, for each combination of labels with non-zero usage.
-  repeated LabeledUsage local_snapshot_saved_bytes = 4;
+  // disk, for each combination of execution dimensions with non-zero usage.
+  repeated ExecutionUsage local_snapshot_saved_bytes = 4;
 }
 
 // Usage represents a count of BuildBuddy resources used for a particular time

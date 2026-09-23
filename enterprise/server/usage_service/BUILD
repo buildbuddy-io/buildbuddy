@@ -18,7 +18,6 @@ go_library(
         "//server/tables",
         "//server/usage/sku",
         "//server/util/authutil",
-        "//server/util/clickhouse/schema",
         "//server/util/db",
         "//server/util/log",
         "//server/util/lru",

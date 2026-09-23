@@ -64,6 +64,24 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 		sku.SelfHosted:    sku.SelfHostedFalse,
 		sku.IsolationType: "oci",
 	}
+	// Same execution dimensions as rbeFirecrackerLabels, differing only by a
+	// label that the Usage page doesn't return.
+	rbeFirecrackerNoOriginLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutor,
+		sku.Server:        sku.ServerApp,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.SelfHostedFalse,
+		sku.IsolationType: "firecracker",
+	}
+	selfHostedFirecrackerLabels := map[sku.LabelName]sku.LabelValue{
+		sku.Client:        sku.ClientExecutor,
+		sku.Server:        sku.ServerApp,
+		sku.OS:            sku.OSLinux,
+		sku.Arch:          sku.ArchX86_64,
+		sku.SelfHosted:    sku.SelfHostedTrue,
+		sku.IsolationType: "firecracker",
+	}
 
 	// Seed primary DB usage that would be visible if the OLAP flag were ignored.
 	err = env.GetDBHandle().NewQuery(ctx, "test_create_primary_db_usage").Create(&tables.Usage{
@@ -239,6 +257,22 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			PeriodStart: time.Date(2024, 2, 3, 0, 11, 0, 0, time.UTC),
 			Count:       7_000,
 		},
+		// Rows that differ only by labels the Usage page doesn't return are
+		// merged into the row with the same execution dimensions.
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFixedComputeNanos,
+			Labels:      orderedmap.FromMap(rbeFirecrackerNoOriginLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 10, 0, 0, time.UTC),
+			Count:       1_000,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFixedComputeNanos,
+			Labels:      orderedmap.FromMap(selfHostedFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 11, 0, 0, time.UTC),
+			Count:       9_000,
+		},
 		{
 			GroupID:     "GR1",
 			SKU:         sku.RemoteExecutionExecuteFlexibleComputeNanos,
@@ -410,29 +444,30 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			"2023-07",
 		},
 		OlapUsage: &usagepb.OLAPUsage{
-			FixedComputeNanos: []*usagepb.LabeledUsage{
-				{Labels: rbeFirecrackerLabels, Count: 11_000},
-				{Labels: workflowFirecrackerLabels, Count: 7_000},
+			FixedComputeNanos: []*usagepb.ExecutionUsage{
+				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 12_000},
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 7_000},
+				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 9_000},
 			},
-			FlexibleComputeNanos: []*usagepb.LabeledUsage{
-				{Labels: rbeOCILabels, Count: 8_000},
+			FlexibleComputeNanos: []*usagepb.ExecutionUsage{
+				{IsolationType: "oci", Os: "linux", Arch: "x86_64", Count: 8_000},
 			},
-			RemoteSnapshotSavedBytes: []*usagepb.LabeledUsage{
-				{Labels: workflowFirecrackerLabels, Count: 1_001},
-				{Labels: rbeFirecrackerLabels, Count: 2_002},
+			RemoteSnapshotSavedBytes: []*usagepb.ExecutionUsage{
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 1_001},
+				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 2_002},
 			},
-			LocalSnapshotSavedBytes: []*usagepb.LabeledUsage{
-				{Labels: workflowFirecrackerLabels, Count: 3_003},
-				{Labels: rbeFirecrackerLabels, Count: 4_004},
+			LocalSnapshotSavedBytes: []*usagepb.ExecutionUsage{
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 3_003},
+				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 4_004},
 			},
 		},
 	}
 	assert.Empty(t, cmp.Diff(
 		expectedResponse, rsp,
 		protocmp.Transform(),
-		// Labeled rows are ordered by labels, which is not meaningful to the
-		// test; compare them as sets.
-		protocmp.SortRepeated(func(a, b *usagepb.LabeledUsage) bool {
+		// Execution usage rows are ordered by their dimensions, which is not
+		// meaningful to the test; compare them as sets.
+		protocmp.SortRepeated(func(a, b *usagepb.ExecutionUsage) bool {
 			return a.GetCount() < b.GetCount()
 		}),
 	))

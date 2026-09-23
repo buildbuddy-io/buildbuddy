@@ -15,7 +15,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/usage/sku"
 	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
-	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
@@ -246,9 +245,9 @@ var UsageFields = []UsageField{
 // requires a primary DB expression and a UsageAlertingMetric for each field.
 // Nothing prevents alerting on them (usage alerts are evaluated against the
 // OLAP DB); it just needs an alerting metric and a UsageFields entry whose
-// primary DB expression is 0. Each SKU is returned per label combination
-// rather than as a single aggregate, so the Usage page can break it down as
-// it likes.
+// primary DB expression is 0. Each SKU is returned per combination of
+// execution dimensions rather than as a single aggregate, so the Usage page
+// can break it down as it likes.
 var olapOnlyUsageSKUs = []sku.SKU{
 	sku.RemoteExecutionExecuteFixedComputeNanos,
 	sku.RemoteExecutionExecuteFlexibleComputeNanos,
@@ -278,20 +277,24 @@ func rawUsageSumUsec(usageSKU sku.SKU, conditions ...string) string {
 	return "intDiv(" + rawUsageSum(usageSKU, conditions...) + ", 1000)"
 }
 
+func rawUsageLabel(name sku.LabelName) string {
+	return "labels['" + string(name) + "']"
+}
+
 func rawUsageLabelEquals(name sku.LabelName, value sku.LabelValue) string {
-	return "labels['" + string(name) + "'] = '" + string(value) + "'"
+	return rawUsageLabel(name) + " = '" + string(value) + "'"
 }
 
 func rawUsageLabelNotEquals(name sku.LabelName, value sku.LabelValue) string {
-	return "labels['" + string(name) + "'] != '" + string(value) + "'"
+	return rawUsageLabel(name) + " != '" + string(value) + "'"
 }
 
 func rawUsageLabelIn(name sku.LabelName, values ...sku.LabelValue) string {
-	return "labels['" + string(name) + "'] IN (" + quotedRawUsageLabelValues(values...) + ")"
+	return rawUsageLabel(name) + " IN (" + quotedRawUsageLabelValues(values...) + ")"
 }
 
 func rawUsageLabelNotIn(name sku.LabelName, values ...sku.LabelValue) string {
-	return "labels['" + string(name) + "'] NOT IN (" + quotedRawUsageLabelValues(values...) + ")"
+	return rawUsageLabel(name) + " NOT IN (" + quotedRawUsageLabelValues(values...) + ")"
 }
 
 func quotedRawUsageLabelValues(values ...sku.LabelValue) string {
@@ -713,34 +716,61 @@ func (s *usageService) scanOLAPUsages(ctx context.Context, groupID string, start
 }
 
 // scanOLAPOnlyUsage returns the usage metrics that are only recorded in the
-// OLAP DB, aggregated over [start, end) per (SKU, labels) combination so that
-// every non-zero row in the Usage view is visible on the Usage page.
+// OLAP DB, aggregated over [start, end) per combination of the execution
+// dimensions returned to the Usage page. Labels that aren't returned (client,
+// origin, server) are summed over, except that usage reported by workflow
+// executors is attributed to workflows. Unlike the cache SKUs in UsageFields,
+// execution usage is labeled by the executor rather than by bazel, so the
+// bazel client does not count as workflow usage here.
 func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, start, end time.Time) (*usagepb.OLAPUsage, error) {
+	type executionUsageRow struct {
+		SKU           sku.SKU
+		SelfHosted    bool
+		Workflow      bool
+		IsolationType string
+		OS            string
+		Arch          string
+		TotalCount    int64
+	}
 	rows, err := db.ScanAll(s.olapdbh.NewQuery(ctx, "usage_service_scan_olap_only").Raw(`
-		SELECT sku, labels, SUM(count) AS count
+		SELECT
+			sku,
+			`+rawUsageLabelEquals(sku.SelfHosted, sku.SelfHostedTrue)+` AS self_hosted,
+			`+rawUsageLabelEquals(sku.Client, sku.ClientExecutorWorkflows)+` AS workflow,
+			`+rawUsageLabel(sku.IsolationType)+` AS isolation_type,
+			`+rawUsageLabel(sku.OS)+` AS os,
+			`+rawUsageLabel(sku.Arch)+` AS arch,
+			SUM(count) AS total_count
 		FROM Usage
 		WHERE period_start >= ? AND period_start < ?
 		AND group_id = ?
 		AND sku IN ?
-		GROUP BY sku, labels
-		HAVING count > 0
-		ORDER BY sku, labels
-	`, start, end, groupID, olapOnlyUsageSKUs), &schema.Usage{})
+		GROUP BY sku, self_hosted, workflow, isolation_type, os, arch
+		HAVING total_count > 0
+		ORDER BY sku, self_hosted, workflow, isolation_type, os, arch
+	`, start, end, groupID, olapOnlyUsageSKUs), &executionUsageRow{})
 	if err != nil {
 		return nil, err
 	}
 	olapUsage := &usagepb.OLAPUsage{}
 	for _, row := range rows {
-		labeled := &usagepb.LabeledUsage{Labels: row.Labels, Count: row.Count}
+		u := &usagepb.ExecutionUsage{
+			SelfHosted:    row.SelfHosted,
+			Workflow:      row.Workflow,
+			IsolationType: row.IsolationType,
+			Os:            row.OS,
+			Arch:          row.Arch,
+			Count:         row.TotalCount,
+		}
 		switch row.SKU {
 		case sku.RemoteExecutionExecuteFixedComputeNanos:
-			olapUsage.FixedComputeNanos = append(olapUsage.FixedComputeNanos, labeled)
+			olapUsage.FixedComputeNanos = append(olapUsage.FixedComputeNanos, u)
 		case sku.RemoteExecutionExecuteFlexibleComputeNanos:
-			olapUsage.FlexibleComputeNanos = append(olapUsage.FlexibleComputeNanos, labeled)
+			olapUsage.FlexibleComputeNanos = append(olapUsage.FlexibleComputeNanos, u)
 		case sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes:
-			olapUsage.RemoteSnapshotSavedBytes = append(olapUsage.RemoteSnapshotSavedBytes, labeled)
+			olapUsage.RemoteSnapshotSavedBytes = append(olapUsage.RemoteSnapshotSavedBytes, u)
 		case sku.RemoteExecutionExecuteLocalSnapshotSavedBytes:
-			olapUsage.LocalSnapshotSavedBytes = append(olapUsage.LocalSnapshotSavedBytes, labeled)
+			olapUsage.LocalSnapshotSavedBytes = append(olapUsage.LocalSnapshotSavedBytes, u)
 		default:
 			return nil, status.InternalErrorf("unexpected OLAP-only usage SKU %q", row.SKU)
 		}

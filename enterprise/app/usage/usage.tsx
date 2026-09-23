@@ -597,13 +597,10 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     return (
       <>
         <div className="usage-resource-name">Compute unit</div>
-        <div className="usage-value" title={formatComputeNanos(totalNanos)}>
-          {formatMinutes(totalNanos / 1000)}
-        </div>
+        <div className="usage-value">{formatMinutes(totalNanos / 1000)}</div>
         {renderBreakdownTable(
           breakdownTableRows(rows, COMPUTE_USAGE_LEVELS, (nanos) => roundedMinutes(nanos) === 0),
-          (nanos) => formatMinutes(nanos / 1000),
-          formatComputeNanos
+          (nanos) => formatMinutes(nanos / 1000)
         )}
       </>
     );
@@ -848,35 +845,25 @@ function formatMinutes(usec: number, category?: string): string {
   return `${formatWithCommas(Math.round(usec / 60e6))}${category ? " " + category : ""} minutes`;
 }
 
-function formatComputeNanos(nanos: number | Long): string {
-  return `${formatWithCommas(nanos)} compute-unit-nanoseconds`;
-}
-
 function roundedMinutes(nanos: number): number {
   return Math.round(nanos / 60e9);
 }
 
-// Clients that identify BuildBuddy workflow runners. Keep in sync with the
-// workflow client labels used by the usage service.
-const WORKFLOW_CLIENTS = new Set(["executor-workflows", "bazel"]);
-
 const HOSTING_ORDER = ["Cloud", "Self-hosted"];
 const POOL_ORDER = ["RBE", "Workflows"];
 
-function hostingName(labels: { [name: string]: string }): string {
-  return labels["self_hosted"] === "true" ? "Self-hosted" : "Cloud";
+function hostingName(row: usage.ExecutionUsage): string {
+  return row.selfHosted ? "Self-hosted" : "Cloud";
 }
 
-function poolName(labels: { [name: string]: string }): string {
-  return WORKFLOW_CLIENTS.has(labels["client"] ?? "") ? "Workflows" : "RBE";
+function poolName(row: usage.ExecutionUsage): string {
+  return row.workflow ? "Workflows" : "RBE";
 }
 
 /**
  * A usage count resolved into the dimensions shown in a breakdown table: the
  * value of each grouping level, from outermost to innermost, and optionally
- * the leaf columns shown below the last group. Labels that aren't shown are
- * dropped, so several server rows may map to the same dimensions; they are
- * summed when the table is built.
+ * the leaf columns shown below the last group.
  */
 interface BreakdownUsageRow {
   groups: string[];
@@ -889,11 +876,10 @@ interface BreakdownUsageRow {
  * level show the isolation type, OS and arch. */
 const COMPUTE_USAGE_LEVELS = [HOSTING_ORDER, ["Fixed compute", "Flexible compute"], POOL_ORDER];
 
-function computeUsageRow(computeType: string, row: usage.LabeledUsage): BreakdownUsageRow {
-  const labels = row.labels;
+function computeUsageRow(computeType: string, row: usage.ExecutionUsage): BreakdownUsageRow {
   return {
-    groups: [hostingName(labels), computeType, poolName(labels)],
-    leaf: [labels["isolation_type"] || "unknown", labels["os"] || "unknown", labels["arch"] || "unknown"],
+    groups: [hostingName(row), computeType, poolName(row)],
+    leaf: [row.isolationType || "unknown", row.os || "unknown", row.arch || "unknown"],
     value: Number(row.count),
   };
 }
@@ -901,10 +887,9 @@ function computeUsageRow(computeType: string, row: usage.LabeledUsage): Breakdow
 /** Grouping levels of the snapshot usage table, from outermost to innermost. */
 const SNAPSHOT_USAGE_LEVELS = [HOSTING_ORDER, ["Remote snapshots", "Local snapshots"], POOL_ORDER];
 
-function snapshotUsageRow(snapshotType: string, row: usage.LabeledUsage): BreakdownUsageRow {
-  const labels = row.labels;
+function snapshotUsageRow(snapshotType: string, row: usage.ExecutionUsage): BreakdownUsageRow {
   return {
-    groups: [hostingName(labels), snapshotType, poolName(labels)],
+    groups: [hostingName(row), snapshotType, poolName(row)],
     value: Number(row.count),
   };
 }
@@ -961,6 +946,9 @@ function breakdownLeafRows(
   keyPrefix: string,
   isZero: (value: number) => boolean
 ): BreakdownTableRow[] {
+  // The server already merges rows with identical dimensions, but merge again
+  // here in case the display collapses distinct values (e.g. missing and
+  // "unknown").
   const merged = new Map<string, BreakdownTableRow>();
   for (const { leaf, value } of rows) {
     if (!leaf) continue;
@@ -988,7 +976,8 @@ function compareCells(a: string[], b: string[]): number {
 function renderBreakdownTable(
   rows: BreakdownTableRow[],
   formatValue: (value: number) => string,
-  formatTitle: (value: number) => string
+  // If set, formats the tooltip shown when hovering over a value.
+  formatTitle?: (value: number) => string
 ) {
   if (!rows.length) return null;
   // Group rows span all of the leaf columns.
@@ -1008,7 +997,7 @@ function renderBreakdownTable(
                 {cell}
               </td>
             ))}
-            <td className="usage-breakdown-value" title={formatTitle(row.value)}>
+            <td className="usage-breakdown-value" title={formatTitle?.(row.value)}>
               {formatValue(row.value)}
             </td>
           </tr>
