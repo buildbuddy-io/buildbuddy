@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -248,9 +249,17 @@ var UsageFields = []UsageField{
 // primary DB expression is 0. Each SKU is returned per combination of
 // execution dimensions rather than as a single aggregate, so the Usage page
 // can break it down as it likes.
-var olapOnlyUsageSKUs = []sku.SKU{
+var olapOnlyUsageSKUs = slices.Concat(computeUsageSKUs, snapshotUsageSKUs)
+
+// computeUsageSKUs are recorded in compute-unit-nanoseconds but returned in
+// compute-unit-microseconds, divided per row before summing: a few thousand
+// compute units running for a whole month overflow an Int64 of nanoseconds.
+var computeUsageSKUs = []sku.SKU{
 	sku.RemoteExecutionExecuteFixedComputeNanos,
 	sku.RemoteExecutionExecuteFlexibleComputeNanos,
+}
+
+var snapshotUsageSKUs = []sku.SKU{
 	sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes,
 	sku.RemoteExecutionExecuteLocalSnapshotSavedBytes,
 }
@@ -266,15 +275,24 @@ func UsageFieldForAlertingMetric(metric usagepb.UsageAlertingMetric_Value) (*Usa
 }
 
 func rawUsageSum(usageSKU sku.SKU, conditions ...string) string {
-	expression := "SUM(CASE WHEN sku = '" + string(usageSKU) + "'"
-	if len(conditions) > 0 {
-		expression += " AND " + strings.Join(conditions, " AND ")
-	}
-	return expression + " THEN count ELSE 0 END)"
+	return rawUsageSumOf("count", usageSKU, conditions...)
 }
 
+// rawUsageSumOf sums the given expression over the rows matching the SKU and
+// conditions.
+func rawUsageSumOf(expression string, usageSKU sku.SKU, conditions ...string) string {
+	sum := "SUM(CASE WHEN sku = '" + string(usageSKU) + "'"
+	if len(conditions) > 0 {
+		sum += " AND " + strings.Join(conditions, " AND ")
+	}
+	return sum + " THEN " + expression + " ELSE 0 END)"
+}
+
+// rawUsageSumUsec sums nanosecond counts and returns microseconds. Each row is
+// divided before summing so that large nanosecond totals can't overflow the
+// sum; the truncation costs at most a microsecond per row.
 func rawUsageSumUsec(usageSKU sku.SKU, conditions ...string) string {
-	return "intDiv(" + rawUsageSum(usageSKU, conditions...) + ", 1000)"
+	return rawUsageSumOf("intDiv(count, 1000)", usageSKU, conditions...)
 }
 
 func rawUsageLabel(name sku.LabelName) string {
@@ -737,7 +755,7 @@ func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, st
 			`+rawUsageLabel(sku.IsolationType)+` AS isolation_type,
 			`+rawUsageLabel(sku.OS)+` AS os,
 			`+rawUsageLabel(sku.Arch)+` AS arch,
-			SUM(count) AS total_count
+			SUM(intDiv(count, if(sku IN ?, 1000, 1))) AS total_count
 		FROM Usage
 		WHERE period_start >= ? AND period_start < ?
 		AND group_id = ?
@@ -745,7 +763,7 @@ func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, st
 		GROUP BY sku, self_hosted, workflow, isolation_type, os, arch
 		HAVING total_count > 0
 		ORDER BY sku, self_hosted, workflow, isolation_type, os, arch
-	`, start, end, groupID, olapOnlyUsageSKUs), &executionUsageRow{})
+	`, computeUsageSKUs, start, end, groupID, olapOnlyUsageSKUs), &executionUsageRow{})
 	if err != nil {
 		return nil, err
 	}
@@ -761,9 +779,9 @@ func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, st
 		}
 		switch row.SKU {
 		case sku.RemoteExecutionExecuteFixedComputeNanos:
-			olapUsage.FixedComputeNanos = append(olapUsage.FixedComputeNanos, u)
+			olapUsage.FixedComputeUsec = append(olapUsage.FixedComputeUsec, u)
 		case sku.RemoteExecutionExecuteFlexibleComputeNanos:
-			olapUsage.FlexibleComputeNanos = append(olapUsage.FlexibleComputeNanos, u)
+			olapUsage.FlexibleComputeUsec = append(olapUsage.FlexibleComputeUsec, u)
 		case sku.RemoteExecutionExecuteRemoteSnapshotSavedBytes:
 			olapUsage.RemoteSnapshotSavedBytes = append(olapUsage.RemoteSnapshotSavedBytes, u)
 		case sku.RemoteExecutionExecuteLocalSnapshotSavedBytes:

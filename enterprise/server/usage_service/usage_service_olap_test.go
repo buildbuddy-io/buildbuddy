@@ -2,6 +2,7 @@ package usage_service_test
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -288,6 +289,22 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 			PeriodStart: time.Date(2024, 2, 3, 0, 12, 0, 0, time.UTC),
 			Count:       0,
 		},
+		// Compute nanoseconds that overflow Int64 when summed must still be
+		// returned correctly, as microseconds.
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFlexibleComputeNanos,
+			Labels:      orderedmap.FromMap(selfHostedFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 12, 0, 0, time.UTC),
+			Count:       math.MaxInt64,
+		},
+		{
+			GroupID:     "GR1",
+			SKU:         sku.RemoteExecutionExecuteFlexibleComputeNanos,
+			Labels:      orderedmap.FromMap(selfHostedFirecrackerLabels),
+			PeriodStart: time.Date(2024, 2, 3, 0, 13, 0, 0, time.UTC),
+			Count:       1_000,
+		},
 		// Snapshot bytes are also returned per label combination.
 		{
 			GroupID:     "GR1",
@@ -447,13 +464,15 @@ func TestGetUsage_ReadsFromOLAPDB(t *testing.T) {
 		// self-hosted, RBE before workflows, then by isolation type, OS and
 		// arch.
 		OlapUsage: &usagepb.OLAPUsage{
-			FixedComputeNanos: []*usagepb.ExecutionUsage{
-				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 12_000},
-				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 7_000},
-				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 9_000},
+			// Compute usage is converted from nanoseconds to microseconds.
+			FixedComputeUsec: []*usagepb.ExecutionUsage{
+				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 12},
+				{Workflow: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 7},
+				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 9},
 			},
-			FlexibleComputeNanos: []*usagepb.ExecutionUsage{
-				{IsolationType: "oci", Os: "linux", Arch: "x86_64", Count: 8_000},
+			FlexibleComputeUsec: []*usagepb.ExecutionUsage{
+				{IsolationType: "oci", Os: "linux", Arch: "x86_64", Count: 8},
+				{SelfHosted: true, IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: (math.MaxInt64 + 1_000) / 1_000},
 			},
 			RemoteSnapshotSavedBytes: []*usagepb.ExecutionUsage{
 				{IsolationType: "firecracker", Os: "linux", Arch: "x86_64", Count: 2_002},

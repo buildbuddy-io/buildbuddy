@@ -584,6 +584,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
         </div>
         {renderBreakdownTable(
           breakdownTableRows(rows, SNAPSHOT_USAGE_LEVELS, (bytes) => bytes === 0),
+          SNAPSHOT_USAGE_LEVELS.length,
           (bytes) => formatBytes(bytes, totalBytes),
           (bytes) => formatWithCommas(bytes)
         )}
@@ -593,12 +594,12 @@ class UsageReport extends React.Component<UsageReportProps, State> {
 
   renderComputeUsage(olapUsage: usage.OLAPUsage) {
     const rows = [
-      ...olapUsage.fixedComputeNanos.map((row) => executionUsageRow("Fixed compute", row, true)),
-      ...olapUsage.flexibleComputeNanos.map((row) => executionUsageRow("Flexible compute", row, true)),
+      ...olapUsage.fixedComputeUsec.map((row) => executionUsageRow("Fixed compute", row, true)),
+      ...olapUsage.flexibleComputeUsec.map((row) => executionUsageRow("Flexible compute", row, true)),
     ];
     // Don't show the section to orgs that don't use remote execution.
     if (!rows.length) return null;
-    const totalNanos = rows.reduce((sum, row) => sum + row.value, 0);
+    const totalUsec = rows.reduce((sum, row) => sum + row.value, 0);
     return (
       <>
         <div className="usage-resource-name usage-resource-name-with-help">
@@ -610,10 +611,11 @@ class UsageReport extends React.Component<UsageReportProps, State> {
             multiplied by execution time and shown in minutes.
           </HelpTooltip>
         </div>
-        <div className="usage-value">{formatMinutes(totalNanos / 1000)}</div>
+        <div className="usage-value">{formatMinutes(totalUsec)}</div>
         {renderBreakdownTable(
-          breakdownTableRows(rows, COMPUTE_USAGE_LEVELS, (nanos) => roundedMinutes(nanos) === 0),
-          (nanos) => formatMinutes(nanos / 1000)
+          breakdownTableRows(rows, COMPUTE_USAGE_LEVELS, (usec) => roundedMinutes(usec) === 0),
+          COMPUTE_USAGE_LEVELS.length + 1,
+          formatMinutes
         )}
       </>
     );
@@ -858,8 +860,8 @@ function formatMinutes(usec: number, category?: string): string {
   return `${formatWithCommas(Math.round(usec / 60e6))}${category ? " " + category : ""} minutes`;
 }
 
-function roundedMinutes(nanos: number): number {
-  return Math.round(nanos / 60e9);
+function roundedMinutes(usec: number): number {
+  return Math.round(usec / 60e6);
 }
 
 const HOSTING_ORDER = ["Cloud", "Self-hosted"];
@@ -949,14 +951,14 @@ function breakdownLeafRows(
 
 function renderBreakdownTable(
   rows: BreakdownTableRow[],
+  // The level of leaf rows, which are styled differently from group rows.
+  leafLevel: number,
   formatValue: (value: number) => string,
   // If set, formats the tooltip shown when hovering over a value.
   formatTitle?: (value: number) => string
 ) {
   if (!rows.length) return null;
-  // Rows at the deepest level are leaves. Group rows have a single cell, which
-  // spans all of the leaf columns.
-  const maxLevel = Math.max(...rows.map((row) => row.level));
+  // Group rows have a single cell, which spans all of the leaf columns.
   const columns = Math.max(...rows.map((row) => row.cells.length));
   return (
     <table className="usage-breakdown-table">
@@ -964,12 +966,12 @@ function renderBreakdownTable(
         {rows.map((row, i) => (
           <tr
             key={i}
-            className={`usage-breakdown-level-${row.level} ${row.level === maxLevel ? "usage-breakdown-leaf" : ""}`}>
-            {row.cells.map((cell, i) => (
+            className={`usage-breakdown-level-${row.level} ${row.level === leafLevel ? "usage-breakdown-leaf" : ""}`}>
+            {row.cells.map((cell, j) => (
               <td
-                key={i}
+                key={j}
                 colSpan={row.cells.length === 1 ? columns : 1}
-                style={i === 0 ? { paddingLeft: 24 + 16 * (row.level - 1) } : undefined}>
+                style={j === 0 ? { paddingLeft: 24 + 16 * (row.level - 1) } : undefined}>
                 {cell}
               </td>
             ))}
