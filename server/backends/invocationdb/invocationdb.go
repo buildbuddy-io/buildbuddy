@@ -276,12 +276,31 @@ func (d *InvocationDB) DeleteInvocationWithPermsCheck(ctx context.Context, authe
 	}
 	u := *authenticatedUser
 
-	qb := query_builder.NewQuery(`DELETE FROM "Invocations"`)
-	qb.AddWhereClause("invocation_id = ?", invocationID)
-	if err := perms.AddPermissionsCheckToQuery(ctx, d.env, qb); err != nil {
-		return err
+	permissionClauses := make([]string, 0, 2)
+	args := []any{invocationID}
+	if userID := u.GetUserID(); userID != "" {
+		permissionClauses = append(permissionClauses, `(perms & ? != 0 AND user_id = ?)`)
+		args = append(args, perms.OWNER_WRITE, userID)
 	}
-	q, args := qb.Build()
+	groupIDs := make([]string, 0, len(u.GetAllowedGroups()))
+	for _, groupID := range u.GetAllowedGroups() {
+		if groupID != "" {
+			groupIDs = append(groupIDs, groupID)
+		}
+	}
+	if len(groupIDs) > 0 {
+		permissionClauses = append(permissionClauses,
+			`(perms & ? != 0 AND group_id IN (?`+strings.Repeat(",?", len(groupIDs)-1)+`))`)
+		args = append(args, perms.GROUP_WRITE)
+		for _, groupID := range groupIDs {
+			args = append(args, groupID)
+		}
+	}
+	permissionPredicate := "1 = 0"
+	if len(permissionClauses) > 0 {
+		permissionPredicate = strings.Join(permissionClauses, " OR ")
+	}
+	q := `DELETE FROM "Invocations" WHERE invocation_id = ? AND (` + permissionPredicate + `)`
 
 	return d.h.Transaction(ctx, func(tx interfaces.DB) error {
 		result := tx.NewQuery(ctx, "invocationdb_delete_invocation_with_perms_check").Raw(q, args...).Exec()

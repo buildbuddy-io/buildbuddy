@@ -8,11 +8,14 @@ import (
 
 	inspb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/server/backends/invocationdb"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/db"
+	"github.com/buildbuddy-io/buildbuddy/server/util/perms"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,6 +94,153 @@ func TestCreateReadUpdateDelete(t *testing.T) {
 	).Take(ie)
 	require.NoError(t, err)
 	require.Equal(t, "invocation-2-execution", ie.ExecutionID)
+}
+
+func TestDeleteInvocationWithPermsCheck(t *testing.T) {
+	ctx := context.Background()
+	env := testenv.GetTestEnv(t)
+	dbh := env.GetDBHandle()
+	idb := invocationdb.NewInvocationDB(env, dbh)
+
+	apiKeyWithoutGroups := testauth.User("", "group1")
+	apiKeyWithoutGroups.AllowedGroups = nil
+
+	tests := []struct {
+		name       string
+		actor      interfaces.UserInfo
+		ownerID    string
+		groupID    string
+		perms      int32
+		rowExists  bool
+		wantDelete bool
+	}{
+		{
+			name:       "owner write",
+			actor:      testauth.User("owner", "other-group"),
+			ownerID:    "owner",
+			groupID:    "owner-group",
+			perms:      perms.OWNER_WRITE,
+			rowExists:  true,
+			wantDelete: true,
+		},
+		{
+			name:       "group write",
+			actor:      testauth.User("group-member", "group1"),
+			ownerID:    "owner",
+			groupID:    "group1",
+			perms:      perms.GROUP_WRITE,
+			rowExists:  true,
+			wantDelete: true,
+		},
+		{
+			name:      "owner read only",
+			actor:     testauth.User("owner", "owner-group"),
+			ownerID:   "owner",
+			groupID:   "owner-group",
+			perms:     perms.OWNER_READ,
+			rowExists: true,
+		},
+		{
+			name:      "group read only",
+			actor:     testauth.User("group-member", "group1"),
+			ownerID:   "owner",
+			groupID:   "group1",
+			perms:     perms.GROUP_READ,
+			rowExists: true,
+		},
+		{
+			name:      "public permissions do not grant write",
+			actor:     testauth.User("outsider", "other-group"),
+			ownerID:   "owner",
+			groupID:   "owner-group",
+			perms:     perms.OTHERS_READ | perms.OTHERS_WRITE,
+			rowExists: true,
+		},
+		{
+			name:      "empty user ID does not match empty owner",
+			actor:     testauth.User("", ""),
+			ownerID:   "",
+			groupID:   "",
+			perms:     perms.OWNER_WRITE,
+			rowExists: true,
+		},
+		{
+			name:      "anonymous user cannot use public write",
+			actor:     testauth.User("", ""),
+			ownerID:   "owner",
+			groupID:   "owner-group",
+			perms:     perms.OTHERS_WRITE,
+			rowExists: true,
+		},
+		{
+			name:       "API key can write own group",
+			actor:      testauth.User("", "group1"),
+			ownerID:    "owner",
+			groupID:    "group1",
+			perms:      perms.GROUP_WRITE,
+			rowExists:  true,
+			wantDelete: true,
+		},
+		{
+			name:      "API key cannot write foreign group",
+			actor:     testauth.User("", "group1"),
+			ownerID:   "owner",
+			groupID:   "group2",
+			perms:     perms.GROUP_WRITE,
+			rowExists: true,
+		},
+		{
+			name:      "API key without allowed groups cannot write",
+			actor:     apiKeyWithoutGroups,
+			ownerID:   "owner",
+			groupID:   "group1",
+			perms:     perms.GROUP_WRITE,
+			rowExists: true,
+		},
+		{
+			name:  "missing invocation",
+			actor: testauth.User("owner", "owner-group"),
+			perms: perms.OWNER_WRITE,
+		},
+	}
+
+	for i, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			invocationID := fmt.Sprintf("invocation-%d", i)
+			executionID := invocationID + "-execution"
+
+			if tc.rowExists {
+				require.NoError(t, dbh.NewQuery(ctx, "insert_invocation").Raw(`
+					INSERT INTO "Invocations" (invocation_id, user_id, group_id, perms)
+					VALUES (?, ?, ?, ?)`, invocationID, tc.ownerID, tc.groupID, tc.perms).Exec().Error)
+				require.NoError(t, dbh.NewQuery(ctx, "insert_execution").Raw(`
+					INSERT INTO "Executions" (execution_id, invocation_id)
+					VALUES (?, ?)`, executionID, invocationID).Exec().Error)
+				require.NoError(t, dbh.NewQuery(ctx, "insert_invocation_execution").Raw(`
+					INSERT INTO "InvocationExecutions" (invocation_id, execution_id)
+					VALUES (?, ?)`, invocationID, executionID).Exec().Error)
+			}
+
+			actor := tc.actor
+			err := idb.DeleteInvocationWithPermsCheck(ctx, &actor, invocationID)
+			if tc.wantDelete {
+				require.NoError(t, err)
+			} else {
+				require.True(t, status.IsNotFoundError(err), "expected NotFound, got %v", err)
+			}
+
+			wantCount := 0
+			if tc.rowExists && !tc.wantDelete {
+				wantCount = 1
+			}
+			for _, table := range []string{"Invocations", "Executions", "InvocationExecutions"} {
+				var count int
+				require.NoError(t, dbh.NewQuery(ctx, "count_rows_after_delete").Raw(
+					fmt.Sprintf(`SELECT COUNT(*) FROM "%s" WHERE invocation_id = ?`, table), invocationID).Take(&count))
+				require.Equal(t, wantCount, count, "table %s", table)
+			}
+		})
+	}
 }
 
 func TestDeleteInvocations(t *testing.T) {
