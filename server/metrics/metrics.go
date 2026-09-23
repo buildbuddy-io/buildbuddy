@@ -3678,7 +3678,7 @@ var (
 				180 * day,
 				365 * day,
 			}),
-		Help: "Time since last write to a CAS entry when its atime was updated (msec)",
+		Help: "Records (atime - mtime) every time a CAS entry's atime is updated.",
 	}, []string{
 		PartitionID,
 		CacheNameLabel,
