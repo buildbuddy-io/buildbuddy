@@ -28,4 +28,4 @@ jobs:
           else
             echo >>user.bazelrc "common --config=ci-anon"
           fi
-          bazelisk build --repository_cache='~/repo-cache/' //website:website
+          bazelisk build //website:website

@@ -182,7 +182,7 @@ jobs:
 
           cd "${GITHUB_WORKSPACE}/buildbuddy"
           bazelisk build \
-              --repository_cache='~/repo-cache/' \
+              --repository_cache= \
               --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_ORG_API_KEY }} \
               --stamp \
               --compilation_mode=opt \
