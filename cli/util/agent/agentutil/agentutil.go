@@ -1,9 +1,15 @@
 package agentutil
 
 import (
+	"bytes"
+	"fmt"
 	"io"
 	"os"
+
+	"github.com/armon/circbuf"
 )
+
+const StderrTailBytes int64 = 4 * 1024
 
 const (
 	Claude = "claude"
@@ -58,4 +64,17 @@ func (r *RunRequest) ProgressWriter() io.Writer {
 		return r.Progress
 	}
 	return io.Discard
+}
+
+// FormatCommandError wraps a process error with the retained stderr tail.
+func FormatCommandError(agent string, err error, stderr *circbuf.Buffer) error {
+	err = fmt.Errorf("%s failed: %w", agent, err)
+	output := bytes.TrimSpace(stderr.Bytes())
+	if len(output) == 0 {
+		return err
+	}
+	if stderr.TotalWritten() > stderr.Size() {
+		return fmt.Errorf("%w\n[stderr truncated to last %d bytes]\n%s", err, stderr.Size(), output)
+	}
+	return fmt.Errorf("%w\n%s", err, output)
 }
