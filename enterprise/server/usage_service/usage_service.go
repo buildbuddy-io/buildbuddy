@@ -718,10 +718,7 @@ func (s *usageService) scanOLAPUsages(ctx context.Context, groupID string, start
 // scanOLAPOnlyUsage returns the usage metrics that are only recorded in the
 // OLAP DB, aggregated over [start, end) per combination of the execution
 // dimensions returned to the Usage page. Labels that aren't returned (client,
-// origin, server) are summed over, except that usage reported by workflow
-// executors is attributed to workflows. Unlike the cache SKUs in UsageFields,
-// execution usage is labeled by the executor rather than by bazel, so the
-// bazel client does not count as workflow usage here.
+// origin, server) are summed over.
 func (s *usageService) scanOLAPOnlyUsage(ctx context.Context, groupID string, start, end time.Time) (*usagepb.OLAPUsage, error) {
 	type executionUsageRow struct {
 		SKU           sku.SKU
