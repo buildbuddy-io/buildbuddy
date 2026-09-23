@@ -1275,6 +1275,11 @@ func (p *PebbleCache) updateAtime(update *accessTimeUpdate) error {
 		return err
 	}
 	metrics.PebbleCacheAtimeUpdateCount.With(lbls).Inc()
+
+	if update.key.CacheType() == rspb.CacheType_CAS {
+		casAge := newAtime.Sub(time.UnixMicro(md.GetLastModifyUsec()))
+		metrics.PebbleCacheCASAgeWhenAtimeUpdated.With(lbls).Observe(float64(casAge.Milliseconds()))
+	}
 	if err := db.Set(keyBytes, protoBytes, pebble.NoSync); err != nil {
 		return err
 	}
