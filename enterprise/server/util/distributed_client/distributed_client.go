@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -738,21 +739,30 @@ func (c *Proxy) dereferenceMulti(ctx context.Context, peer string, kvs []*dcpb.K
 		return status.FailedPreconditionErrorf("peer %q returned references, but the local cache (%T) cannot dereference", peer, c.cache)
 	}
 	var mu sync.Mutex
-	var eg errgroup.Group
-	eg.SetLimit(getMultiDereferenceConcurrency)
-	for _, kv := range kvs {
-		rn := requested[kv.GetKey().GetKey()]
-		ref := kv.GetValueReference()
-		eg.Go(func() error {
-			buf, found, err := c.dereferenceForGetMulti(ctx, peer, refCache, ref, rn)
-			if err != nil || !found {
+	var next atomic.Int64
+	handleBatch := func() error {
+		for {
+			i := int(next.Add(1)) - 1
+			if i >= len(kvs) {
+				return nil
+			}
+			kv := kvs[i]
+			rn := requested[kv.GetKey().GetKey()]
+			buf, found, err := c.dereferenceForGetMulti(ctx, peer, refCache, kv.GetValueReference(), rn)
+			if err != nil {
 				return err
+			}
+			if !found {
+				continue
 			}
 			mu.Lock()
 			resultMap[rn.GetDigest()] = buf
 			mu.Unlock()
-			return nil
-		})
+		}
+	}
+	var eg errgroup.Group
+	for range min(getMultiDereferenceConcurrency, len(kvs)) {
+		eg.Go(handleBatch)
 	}
 	return eg.Wait()
 }
