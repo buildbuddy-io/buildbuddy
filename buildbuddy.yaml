@@ -97,9 +97,8 @@ actions:
   - name: Build container images
     container_image: ubuntu-22.04
     triggers:
-      push:
-        branches:
-          - "master"
+      schedule:
+        crons: ["0 7 * * *"] # 7:00 UTC nightly
     steps:
       - run: >-
           docker build --no-cache --pull
