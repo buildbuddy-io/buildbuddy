@@ -22,6 +22,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -31,6 +32,7 @@ import (
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -248,8 +250,16 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if len(unsupportedQualifierNames) > 0 {
 		return nil, makeUnsupportedQualifiersErrStatus(unsupportedQualifierNames)
 	}
+	canWrite, err := capabilities.IsGranted(ctx, p.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	if err != nil {
+		return nil, err
+	}
 	for _, checksum := range checksums {
 		checksumFunc := checksum.digestFunction
+		// A read-only request cannot convert a cached blob to another digest.
+		if !canWrite && checksumFunc != storageFunc {
+			continue
+		}
 		blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, checksum.hash)
 		// If the digestFunc is supplied and differ from the checksum sri,
 		// after looking up the cached blob using checksum sri, re-upload
@@ -265,6 +275,10 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				DigestFunction: storageFunc,
 			}, nil
 		}
+	}
+
+	if !canWrite {
+		return nil, status.PermissionDeniedError("FetchBlob requires CAS write permission to fetch missing content or convert it to the requested digest format.")
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
