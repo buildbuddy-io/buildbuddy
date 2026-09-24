@@ -950,16 +950,31 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 	if err != nil {
 		return nil, err
 	}
-	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_unlink_repo").Raw(`
-		DELETE FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, u.GetGroupID(), normalizedURL).Exec()
-	if result.Error != nil {
-		return nil, status.InternalErrorf("failed to unlink repo: %s", err)
-	}
-	if result.RowsAffected == 0 {
-		return nil, status.NotFoundError("repo not found")
+	err = a.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		result := tx.NewQuery(ctx, "githubapp_unlink_repo").Raw(`
+			DELETE FROM "GitRepositories"
+			WHERE group_id = ?
+			AND repo_url = ?
+		`, u.GetGroupID(), normalizedURL).Exec()
+		if result.Error != nil {
+			return status.InternalErrorf("failed to unlink repo: %s", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return status.NotFoundError("repo not found")
+		}
+		// Delete any scheduled workflows for the repo, since they can no longer
+		// be dispatched without a linked repo.
+		if err := tx.NewQuery(ctx, "githubapp_unlink_repo_delete_scheduled_runs").Raw(`
+			DELETE FROM "ScheduledRuns"
+			WHERE group_id = ?
+			AND repo_url = ?
+		`, u.GetGroupID(), normalizedURL).Exec().Error; err != nil {
+			return status.InternalErrorf("failed to delete scheduled runs: %s", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return &ghpb.UnlinkRepoResponse{}, nil
 }
