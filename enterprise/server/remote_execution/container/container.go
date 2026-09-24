@@ -503,7 +503,7 @@ type FileSystemLayout struct {
 	OutputFiles        []string
 	OutputPaths        []string
 	// TrackUnusedInputs is whether the VFS records which input files the task
-	// leaves unopened, for tasks whose VFS prefetch mode is "used".
+	// leaves unopened, for tasks whose VFS prefetch mode is "skip-unused".
 	TrackUnusedInputs bool
 }
 

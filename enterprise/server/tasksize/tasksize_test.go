@@ -409,7 +409,7 @@ func TestSizer_UnusedInputsDigest(t *testing.T) {
 	cmd := &repb.Command{
 		Arguments: []string{"/usr/bin/clang", "foo.c", "-o", "foo.o"},
 	}
-	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeUsed}
+	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeSkipUnused}
 
 	// Nothing is recorded for the command initially, but the executor should
 	// still record what the task leaves unopened.
@@ -455,14 +455,14 @@ func TestSizer_UnusedInputsDigest(t *testing.T) {
 func TestSizer_UnusedInputsDigest_Disabled(t *testing.T) {
 	// With the flag off, the sizer doesn't need Redis, digests are neither
 	// recorded nor returned, and executors are told not to record, so that
-	// tasks in the "used" mode behave exactly like "all".
+	// tasks in the "skip-unused" mode behave exactly like "all".
 	env := testenv.GetTestEnv(t)
 	sizer, err := tasksize.NewSizer(env)
 	require.NoError(t, err)
 
 	ctx := t.Context()
 	cmd := &repb.Command{Arguments: []string{"/usr/bin/clang"}}
-	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeUsed}
+	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeSkipUnused}
 	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 1})
 	require.NoError(t, err)
 	got, track := sizer.UnusedInputsForTask(ctx, cmd, props)

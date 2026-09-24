@@ -1021,7 +1021,7 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		}
 	}
 
-	// Platform overrides applied above can switch a task to the "used" VFS
+	// Platform overrides applied above can switch a task to the "skip-unused" VFS
 	// prefetch mode, so decide from the effective properties.
 	if effectiveProps, err := platform.ParseProperties(executionTask); err != nil {
 		log.CtxWarningf(ctx, "Failed to parse effective platform properties: %s", err)

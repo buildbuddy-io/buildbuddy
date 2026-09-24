@@ -194,7 +194,7 @@ const (
 	// the same command left unopened. Inputs that are not prefetched are
 	// fetched on demand when the action opens them. If no previous execution
 	// has been recorded, every input is prefetched.
-	VFSPrefetchModeUsed = "used"
+	VFSPrefetchModeSkipUnused = "skip-unused"
 	// Do not prefetch anything; fetch every input on demand.
 	VFSPrefetchModeNone = "none"
 )
@@ -462,7 +462,7 @@ func ParseProperties(task *repb.ExecutionTask) (*Properties, error) {
 	vfsEnabled := boolProp(m, enableVFSPropertyName, false)
 	vfsPrefetchMode := stringProp(m, VFSPrefetchModePropertyName, VFSPrefetchModeAll)
 	switch vfsPrefetchMode {
-	case VFSPrefetchModeAll, VFSPrefetchModeUsed, VFSPrefetchModeNone:
+	case VFSPrefetchModeAll, VFSPrefetchModeSkipUnused, VFSPrefetchModeNone:
 	default:
 		return nil, status.InvalidArgumentErrorf("%s is not a valid value for the %q platform property", vfsPrefetchMode, VFSPrefetchModePropertyName)
 	}

@@ -102,9 +102,9 @@ type Workspace struct {
 type VFSPrefetchMode string
 
 const (
-	VFSPrefetchModeAll  VFSPrefetchMode = platform.VFSPrefetchModeAll
-	VFSPrefetchModeUsed VFSPrefetchMode = platform.VFSPrefetchModeUsed
-	VFSPrefetchModeNone VFSPrefetchMode = platform.VFSPrefetchModeNone
+	VFSPrefetchModeAll        VFSPrefetchMode = platform.VFSPrefetchModeAll
+	VFSPrefetchModeSkipUnused VFSPrefetchMode = platform.VFSPrefetchModeSkipUnused
+	VFSPrefetchModeNone       VFSPrefetchMode = platform.VFSPrefetchModeNone
 )
 
 type Opts struct {
@@ -128,7 +128,7 @@ type Opts struct {
 // New creates a new workspace directly under the given parent directory.
 func New(env environment.Env, parentDir string, opts *Opts) (*Workspace, error) {
 	switch opts.VFSPrefetchMode {
-	case "", VFSPrefetchModeAll, VFSPrefetchModeUsed, VFSPrefetchModeNone:
+	case "", VFSPrefetchModeAll, VFSPrefetchModeSkipUnused, VFSPrefetchModeNone:
 	default:
 		return nil, status.InvalidArgumentErrorf("invalid VFS prefetch mode %q", opts.VFSPrefetchMode)
 	}
@@ -355,7 +355,7 @@ func (ws *Workspace) DownloadInputs(ctx context.Context, layout *container.FileS
 	}
 	opts.ChunkedInputFiles = slices.Contains(ws.task.GetExperiments(), "executor.download_inputs_chunked")
 	opts.RecordInputFetchMetadata = *recordInputFetchMetadata && slices.Contains(ws.task.GetExperiments(), "remote_execution.record_input_fetch_metadata")
-	if vfsPrefetchMode == VFSPrefetchModeUsed {
+	if vfsPrefetchMode == VFSPrefetchModeSkipUnused {
 		// Skip prefetching the inputs that a previous execution of this
 		// command left unopened, if known. The VFS fetches them on demand if
 		// this execution opens them after all.

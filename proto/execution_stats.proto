@@ -164,7 +164,7 @@ message ExecutionAuxiliaryMetadata {
   // The digest of a CAS blob listing the input files that the action did not
   // open while running on a VFS-backed workspace, in the format described by
   // ExecutionTask.vfs_unused_inputs_digest. Only set for tasks whose
-  // vfs-prefetch-mode platform property is "used".
+  // vfs-prefetch-mode platform property is "skip-unused".
   build.bazel.remote.execution.v2.Digest vfs_unused_inputs_digest = 13;
 }
 

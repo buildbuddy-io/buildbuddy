@@ -2737,18 +2737,19 @@ message ExecutionTask {
   // position in the tree so that the list stays valid across source edits,
   // which change file contents and shift tree positions but rarely change
   // which paths an action reads. Only set for tasks whose vfs-prefetch-mode
-  // platform property is "used". When set, the executor prefetches every
-  // input except the listed files, which are fetched on demand if the action
-  // opens them after all. Listing the unopened files rather than the opened
-  // ones means that files added since the previous execution are prefetched,
-  // since whether the action needs them is unknown.
+  // platform property is "skip-unused". When set, the executor prefetches
+  // every input except the listed files, which are fetched on demand if the
+  // action opens them after all. Listing the unopened files rather than the
+  // opened ones means that files added since the previous execution are
+  // prefetched, since whether the action needs them is unknown.
   Digest vfs_unused_inputs_digest = 12;
 
   // Whether the executor should record the input files this task leaves
   // unopened and report the digest of the resulting list, in the format
   // above, in its execution metadata. Set by the app for tasks whose
-  // vfs-prefetch-mode platform property is "used" while the app stores such
-  // lists, so that executors record nothing when the feature is disabled.
+  // vfs-prefetch-mode platform property is "skip-unused" while the app stores
+  // such lists, so that executors record nothing when the feature is
+  // disabled.
   bool track_vfs_unused_inputs = 13;
 }
 

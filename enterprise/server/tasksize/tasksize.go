@@ -32,7 +32,7 @@ import (
 
 var (
 	useMeasuredSizes          = flag.Bool("remote_execution.use_measured_task_sizes", false, "Whether to use measured usage stats to determine task sizes.")
-	storeVFSUnusedInputs      = flag.Bool("remote_execution.store_vfs_unused_inputs", false, "Whether to store the digests of the unused inputs lists that actions with vfs-prefetch-mode=used produce, so that later executions of the same command skip prefetching those files. Requires the remote execution Redis client.")
+	storeVFSUnusedInputs      = flag.Bool("remote_execution.store_vfs_unused_inputs", false, "Whether to store the digests of the unused inputs lists that actions with vfs-prefetch-mode=skip-unused produce, so that later executions of the same command skip prefetching those files. Requires the remote execution Redis client.")
 	oomResizeMultiplier       = flag.Float64("remote_execution.oom_resize_multiplier", 1.2, "When a task is OOM-killed after using more memory than its estimate, its memory estimate for the next attempt is set to this factor times the observed memory usage. Must be at least 1, or 0 to disable resizing. Has no effect if the executor OOM killer is not enabled.")
 	modelEnabled              = flag.Bool("remote_execution.task_size_model.enabled", false, "Whether to enable model-based task size prediction.")
 	psiCorrectionFactor       = flag.Float64("remote_execution.task_size_psi_correction", 1.0, "What percentage of full-stall time should be subtracted from the execution duration.")
@@ -373,7 +373,7 @@ func (s *taskSizer) UpdateForOOM(ctx context.Context, cmd *repb.Command, props *
 // used inputs, so that executors neither skip any prefetching nor record
 // anything in that case.
 func (s *taskSizer) UnusedInputsForTask(ctx context.Context, cmd *repb.Command, props *platform.Properties) (*repb.Digest, bool) {
-	if !*storeVFSUnusedInputs || !props.EnableVFS || props.VFSPrefetchMode != platform.VFSPrefetchModeUsed {
+	if !*storeVFSUnusedInputs || !props.EnableVFS || props.VFSPrefetchMode != platform.VFSPrefetchModeSkipUnused {
 		return nil, false
 	}
 	key, err := s.commandScopedKey(ctx, unusedInputsRedisKeyPrefix, cmd)

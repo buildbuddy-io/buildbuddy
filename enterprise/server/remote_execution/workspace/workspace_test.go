@@ -634,16 +634,16 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 		{
 			// A previous execution of the task didn't open the input, so it
 			// isn't prefetched.
-			name:             "used",
-			mode:             workspace.VFSPrefetchModeUsed,
+			name:             "skip_unused",
+			mode:             workspace.VFSPrefetchModeSkipUnused,
 			unusedRecord:     true,
 			wantInputFetcher: true,
 		},
 		{
 			// No previous execution has been recorded, so every input is
 			// prefetched.
-			name:             "used_without_record",
-			mode:             workspace.VFSPrefetchModeUsed,
+			name:             "skip_unused_without_record",
+			mode:             workspace.VFSPrefetchModeSkipUnused,
 			wantInputFetcher: true,
 			wantCached:       true,
 		},
