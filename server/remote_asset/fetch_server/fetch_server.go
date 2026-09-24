@@ -2,12 +2,11 @@ package fetch_server
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -25,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
@@ -85,7 +85,7 @@ type FetchServer struct {
 
 	// mirrorGroup deduplicates concurrent identical per-URI fetches, so that
 	// only one upstream HTTP request is made for them.
-	mirrorGroup singleflight.Group[mirrorKey, *repb.Digest]
+	mirrorGroup singleflight.Group[string, *repb.Digest]
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -274,11 +274,6 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	var lastFetchErr error
 	var lastFetchUri string
 
-	namespace, err := prefix.UserPrefixFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	for i, uri := range req.GetUris() {
 		_, err := url.Parse(uri)
 		if err != nil {
@@ -293,20 +288,17 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				}
 			}
 		}
-		key := newMirrorKey(namespace, req.GetInstanceName(), uri, header, storageFunc, checksumFunc, expectedChecksum)
-		blobDigest, err := p.dedupedMirrorToCache(ctx, key, func(ctx context.Context) (*repb.Digest, error) {
-			return mirrorToCache(
-				ctx,
-				bsClient,
-				req.GetInstanceName(),
-				httpClient,
-				uri,
-				header,
-				storageFunc,
-				checksumFunc,
-				expectedChecksum,
-			)
-		})
+		blobDigest, err := p.dedupedMirrorToCache(
+			ctx,
+			bsClient,
+			req.GetInstanceName(),
+			httpClient,
+			uri,
+			header,
+			storageFunc,
+			checksumFunc,
+			expectedChecksum,
+		)
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
 			lastFetchUri = uri
@@ -426,76 +418,46 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 	return blobDigest
 }
 
-// mirrorKey identifies a single upstream fetch. It is a hash so that header
-// values (which may contain credentials) are not held in plain text.
-type mirrorKey [sha256.Size]byte
-
-// newMirrorKey returns the dedupe key for fetching uri with the given
-// effective (already merged) request headers. Two fetches share a key only if
-// they would send the same upstream request, apply the same checksum
-// verification, and write to the same cache namespace.
+// dedupedMirrorToCache calls mirrorToCache, unless an identical call is
+// already in flight, in which case it waits for that one and returns its
+// result. Calls are identical only if they would send the same upstream
+// request, apply the same checksum verification, and write to the same cache
+// namespace.
 //
-// TODO: include bazel.canonical_id once it is implemented.
-func newMirrorKey(
-	namespace string,
-	instanceName string,
+// Each caller stops waiting when its own ctx is done. The shared call is
+// cancelled only once every caller has stopped waiting (or after
+// maxHTTPTimeout), so a leader with a short timeout does not fail followers
+// that have more time left.
+func (p *FetchServer) dedupedMirrorToCache(
+	ctx context.Context,
+	bsClient bspb.ByteStreamClient,
+	remoteInstanceName string,
+	httpClient *http.Client,
 	uri string,
 	header http.Header,
 	storageFunc repb.DigestFunction_Value,
 	checksumFunc repb.DigestFunction_Value,
 	expectedChecksum string,
-) mirrorKey {
-	h := sha256.New()
-	writeInt := func(n int) {
-		h.Write(binary.BigEndian.AppendUint64(nil, uint64(n)))
+) (*repb.Digest, error) {
+	// The singleflight passes the leader's ctx values (including the group
+	// prefix) to the shared call, so the namespace must be part of the key.
+	namespace, err := prefix.UserPrefixFromContext(ctx)
+	if err != nil {
+		return nil, err
 	}
-	// Length-prefix every field so that the encoding is unambiguous.
-	writeString := func(s string) {
-		writeInt(len(s))
-		h.Write([]byte(s))
-	}
-	writeString(namespace)
-	writeString(instanceName)
-	writeString(uri)
-	writeInt(int(storageFunc))
-	writeInt(int(checksumFunc))
-	writeString(expectedChecksum)
-
-	// Canonicalize header names and sort them. Values keep their original
-	// order, since the order is sent upstream and may be significant.
-	canonical := make(map[string][]string, len(header))
-	for name, values := range header {
-		name = http.CanonicalHeaderKey(name)
-		canonical[name] = append(canonical[name], values...)
-	}
-	names := make([]string, 0, len(canonical))
-	for name := range canonical {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	writeInt(len(names))
-	for _, name := range names {
-		writeString(name)
-		values := canonical[name]
-		writeInt(len(values))
-		for _, v := range values {
-			writeString(v)
+	// TODO: include bazel.canonical_id once it is implemented.
+	keyParts := []string{namespace, remoteInstanceName, uri, storageFunc.String(), checksumFunc.String(), expectedChecksum}
+	// Header names are already canonical (built via Header.Add/Set). Values
+	// keep their order, since it is sent upstream.
+	for _, name := range slices.Sorted(maps.Keys(header)) {
+		for _, v := range header[name] {
+			keyParts = append(keyParts, name, v)
 		}
 	}
+	// Hashed so that header values (which may contain credentials) are not
+	// held in plain text.
+	key := hash.Strings(keyParts...)
 
-	var k mirrorKey
-	h.Sum(k[:0])
-	return k
-}
-
-// dedupedMirrorToCache runs fn, unless an fn with the same key is already in
-// flight, in which case it waits for that one and returns its result.
-//
-// Each caller stops waiting when its own ctx is done. The shared fn is
-// cancelled only once every caller has stopped waiting (or after
-// maxHTTPTimeout), so a leader with a short timeout does not fail followers
-// that have more time left.
-func (p *FetchServer) dedupedMirrorToCache(ctx context.Context, key mirrorKey, fn func(ctx context.Context) (*repb.Digest, error)) (*repb.Digest, error) {
 	metrics.RemoteAssetMirrorsInProgress.Inc()
 	defer metrics.RemoteAssetMirrorsInProgress.Dec()
 	var isLeader atomic.Bool
@@ -505,7 +467,7 @@ func (p *FetchServer) dedupedMirrorToCache(ctx context.Context, key mirrorKey, f
 		// cancellation, so bound the shared fetch independently.
 		ctx, cancel := context.WithTimeout(ctx, maxHTTPTimeout)
 		defer cancel()
-		return fn(ctx)
+		return mirrorToCache(ctx, bsClient, remoteInstanceName, httpClient, uri, header, storageFunc, checksumFunc, expectedChecksum)
 	})
 	role := mirrorRoleWaiter
 	if isLeader.Load() {
