@@ -25,6 +25,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/content_addressable_storage_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -307,6 +308,83 @@ func TestFetchBlobWithCache(t *testing.T) {
 			rn := digest.NewCASResourceName(resp.GetBlobDigest(), "", resp.GetDigestFunction())
 			require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), rn, &got))
 			require.Equal(t, content, got.String())
+		})
+	}
+}
+
+func TestFetchBlob_ReadOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		seedCache   bool
+		storageFunc repb.DigestFunction_Value
+		wantCode    gcodes.Code
+	}{
+		{
+			name:        "cached_requested_digest",
+			seedCache:   true,
+			storageFunc: repb.DigestFunction_SHA256,
+			wantCode:    gcodes.OK,
+		},
+		{
+			name:        "cold_miss",
+			storageFunc: repb.DigestFunction_SHA256,
+			wantCode:    gcodes.PermissionDenied,
+		},
+		{
+			name:        "cached_checksum_requires_conversion",
+			seedCache:   true,
+			storageFunc: repb.DigestFunction_BLAKE3,
+			wantCode:    gcodes.PermissionDenied,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			te := testenv.GetTestEnv(t)
+			users := testauth.TestUsers("US1", "GR1")
+			user := users["US1"].(*testauth.TestUser)
+			user.Capabilities = nil
+			te.SetAuthenticator(testauth.NewTestAuthenticator(t, users))
+			ctx = testauth.WithAuthenticatedUserInfo(ctx, user)
+			conn := runFetchServer(ctx, t, te)
+			cacheCtx, err := prefix.AttachUserPrefixToContext(ctx, te.GetAuthenticator())
+			require.NoError(t, err)
+
+			checksumDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+			require.NoError(t, err)
+			if tc.seedCache {
+				require.NoError(t, te.GetCache().Set(cacheCtx, digest.NewCASResourceName(checksumDigest, "", repb.DigestFunction_SHA256).ToProto(), []byte(content)))
+			}
+			storageDigest, err := digest.Compute(strings.NewReader(content), tc.storageFunc)
+			require.NoError(t, err)
+			storageRN := digest.NewCASResourceName(storageDigest, "", tc.storageFunc)
+
+			var requests atomic.Int64
+			origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				fmt.Fprint(w, content)
+			}))
+			defer origin.Close()
+
+			resp, err := rapb.NewFetchClient(conn).FetchBlob(ctx, &rapb.FetchBlobRequest{
+				Uris:           []string{origin.URL},
+				Qualifiers:     []*rapb.Qualifier{{Name: fetch_server.ChecksumQualifier, Value: sha256CRI}},
+				DigestFunction: tc.storageFunc,
+			})
+			if tc.wantCode == gcodes.OK {
+				require.NoError(t, err)
+				require.Equal(t, int32(gcodes.OK), resp.GetStatus().GetCode(), resp.GetStatus().GetMessage())
+				require.Equal(t, storageDigest, resp.GetBlobDigest())
+				var got bytes.Buffer
+				require.NoError(t, cachetools.GetBlob(ctx, te.GetByteStreamClient(), storageRN, &got))
+				require.Equal(t, content, got.String())
+			} else {
+				require.Nil(t, resp)
+				require.Equal(t, tc.wantCode, gstatus.Code(err))
+				exists, err := te.GetCache().Contains(cacheCtx, storageRN.ToProto())
+				require.NoError(t, err)
+				require.False(t, exists)
+			}
+			require.Zero(t, requests.Load())
 		})
 	}
 }

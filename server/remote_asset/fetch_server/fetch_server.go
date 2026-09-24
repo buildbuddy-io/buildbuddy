@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,6 +23,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
@@ -31,6 +33,7 @@ import (
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
+	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	rapb "github.com/buildbuddy-io/buildbuddy/proto/remote_asset"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	remote_cache_config "github.com/buildbuddy-io/buildbuddy/server/remote_cache/config"
@@ -278,12 +281,27 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if err != nil {
 		return nil, err
 	}
+	canWrite, err := capabilities.IsGranted(ctx, p.env.GetAuthenticator(), cappb.Capability_CACHE_WRITE|cappb.Capability_CAS_WRITE)
+	if err != nil {
+		return nil, err
+	}
+	if !canWrite {
+		// A cached blob is only usable without a write if no digest conversion
+		// is needed. Keep looking for a hit in the requested storage format.
+		opts.checksums = slices.DeleteFunc(opts.checksums, func(c checksum) bool {
+			return c.digestFunction != opts.storageDigestFunction
+		})
+	}
 	if blobDigest := p.findCachedBlob(ctx, req.GetInstanceName(), opts.storageDigestFunction, opts.checksums); blobDigest != nil {
 		return &rapb.FetchBlobResponse{
 			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
 			BlobDigest:     blobDigest,
 			DigestFunction: opts.storageDigestFunction,
 		}, nil
+	}
+
+	if !canWrite {
+		return nil, status.PermissionDeniedError("This API key does not have CAS write permission, which FetchBlob requires when the requested blob is not cached. Use an API key with CAS write permission.")
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
