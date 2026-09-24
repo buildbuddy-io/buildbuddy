@@ -892,9 +892,6 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			name:                   "InstanceNameWithColon",
 			instanceName:           "build-14:00",
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
-			// TODO: Expect a cache hit once execution IDs preserve colons in
-			// instance names. Currently the result is cached under build-14/00.
-			expectActionCacheMiss: true,
 		},
 		{
 			name:                   "SelfHostedExecutors",
@@ -995,7 +992,6 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 type publishTest struct {
 	name                     string
 	instanceName             string
-	expectActionCacheMiss    bool
 	platformOverrides        map[string]string
 	flagOverrides            map[string]any
 	expectedSelfHosted       bool
@@ -1257,7 +1253,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	arnAC, err := arn.CheckAC()
 	require.NoError(t, err)
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
-	if !test.expectActionCacheMiss && !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
+	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
 		require.NoError(t, err)
 		// Trim the aux metadata before comparing
 		cachedActionResult.GetExecutionMetadata().AuxiliaryMetadata = nil
