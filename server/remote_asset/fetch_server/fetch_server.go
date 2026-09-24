@@ -2,7 +2,9 @@ package fetch_server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -10,12 +12,15 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
@@ -24,6 +29,8 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -49,6 +56,9 @@ const (
 	BazelHttpHeaderUrlPrefixQualifier = "http_header_url:"
 
 	maxHTTPTimeout = 60 * time.Minute
+
+	mirrorRoleLeader = "leader"
+	mirrorRoleWaiter = "waiter"
 )
 
 // makeUnsupportedQualifiersErrStatus creates a gRPC status error that includes a list of unsupported qualifiers.
@@ -72,6 +82,10 @@ func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
 type FetchServer struct {
 	env                  environment.Env
 	allowedPrivateIPNets []*net.IPNet
+
+	// mirrorGroup deduplicates concurrent identical per-URI fetches, so that
+	// only one upstream HTTP request is made for them.
+	mirrorGroup singleflight.Group[mirrorKey, *repb.Digest]
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -260,6 +274,11 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	var lastFetchErr error
 	var lastFetchUri string
 
+	namespace, err := prefix.UserPrefixFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	for i, uri := range req.GetUris() {
 		_, err := url.Parse(uri)
 		if err != nil {
@@ -274,17 +293,20 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				}
 			}
 		}
-		blobDigest, err := mirrorToCache(
-			ctx,
-			bsClient,
-			req.GetInstanceName(),
-			httpClient,
-			uri,
-			header,
-			storageFunc,
-			checksumFunc,
-			expectedChecksum,
-		)
+		key := newMirrorKey(namespace, req.GetInstanceName(), uri, header, storageFunc, checksumFunc, expectedChecksum)
+		blobDigest, err := p.dedupedMirrorToCache(ctx, key, func(ctx context.Context) (*repb.Digest, error) {
+			return mirrorToCache(
+				ctx,
+				bsClient,
+				req.GetInstanceName(),
+				httpClient,
+				uri,
+				header,
+				storageFunc,
+				checksumFunc,
+				expectedChecksum,
+			)
+		})
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", uri, err)
 			lastFetchUri = uri
@@ -402,6 +424,95 @@ func (p *FetchServer) findBlobInCache(ctx context.Context, instanceName string, 
 
 	log.CtxDebugf(ctx, "FetchServer found %s in cache", digest.String(blobDigest))
 	return blobDigest
+}
+
+// mirrorKey identifies a single upstream fetch. It is a hash so that header
+// values (which may contain credentials) are not held in plain text.
+type mirrorKey [sha256.Size]byte
+
+// newMirrorKey returns the dedupe key for fetching uri with the given
+// effective (already merged) request headers. Two fetches share a key only if
+// they would send the same upstream request, apply the same checksum
+// verification, and write to the same cache namespace.
+//
+// TODO: include bazel.canonical_id once it is implemented.
+func newMirrorKey(
+	namespace string,
+	instanceName string,
+	uri string,
+	header http.Header,
+	storageFunc repb.DigestFunction_Value,
+	checksumFunc repb.DigestFunction_Value,
+	expectedChecksum string,
+) mirrorKey {
+	h := sha256.New()
+	writeInt := func(n int) {
+		h.Write(binary.BigEndian.AppendUint64(nil, uint64(n)))
+	}
+	// Length-prefix every field so that the encoding is unambiguous.
+	writeString := func(s string) {
+		writeInt(len(s))
+		h.Write([]byte(s))
+	}
+	writeString(namespace)
+	writeString(instanceName)
+	writeString(uri)
+	writeInt(int(storageFunc))
+	writeInt(int(checksumFunc))
+	writeString(expectedChecksum)
+
+	// Canonicalize header names and sort them. Values keep their original
+	// order, since the order is sent upstream and may be significant.
+	canonical := make(map[string][]string, len(header))
+	for name, values := range header {
+		name = http.CanonicalHeaderKey(name)
+		canonical[name] = append(canonical[name], values...)
+	}
+	names := make([]string, 0, len(canonical))
+	for name := range canonical {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	writeInt(len(names))
+	for _, name := range names {
+		writeString(name)
+		values := canonical[name]
+		writeInt(len(values))
+		for _, v := range values {
+			writeString(v)
+		}
+	}
+
+	var k mirrorKey
+	h.Sum(k[:0])
+	return k
+}
+
+// dedupedMirrorToCache runs fn, unless an fn with the same key is already in
+// flight, in which case it waits for that one and returns its result.
+func (p *FetchServer) dedupedMirrorToCache(ctx context.Context, key mirrorKey, fn func(ctx context.Context) (*repb.Digest, error)) (*repb.Digest, error) {
+	// The singleflight passes fn a ctx that keeps the leader's values but
+	// not its deadline, so re-apply the leader's deadline to bound the fetch.
+	deadline, hasDeadline := ctx.Deadline()
+	var isLeader atomic.Bool
+	d, _, err := p.mirrorGroup.Do(ctx, key, func(ctx context.Context) (*repb.Digest, error) {
+		isLeader.Store(true)
+		if hasDeadline {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithDeadline(ctx, deadline)
+			defer cancel()
+		}
+		return fn(ctx)
+	})
+	role := mirrorRoleWaiter
+	if isLeader.Load() {
+		role = mirrorRoleLeader
+	}
+	metrics.RemoteAssetMirrorCount.With(prometheus.Labels{
+		metrics.RemoteAssetFetchRoleLabel: role,
+		metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
+	}).Inc()
+	return d, err
 }
 
 // mirrorToCache uploads the contents at the given URI to the given cache,

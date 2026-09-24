@@ -422,6 +422,10 @@ const (
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
 
+	// Role of a deduplicated remote asset fetch: `leader` (made the upstream
+	// request) or `waiter` (shared a concurrent leader's result).
+	RemoteAssetFetchRoleLabel = "role"
+
 	// Label name for the eTLD+1 of the container image registry.
 	ImageFetchRegistryLabel = "registry"
 	// Label name for whether the image was already on disk on the executor.
@@ -4641,6 +4645,16 @@ var (
 	}, []string{
 		OCIFetcherMethodLabel,
 		OCIFetcherRoleLabel,
+	})
+
+	RemoteAssetMirrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_asset",
+		Name:      "mirror_count",
+		Help:      "Number of per-URI fetches attempted by the Remote Asset FetchBlob API, by dedupe role and status. Only `leader` fetches make an upstream request.",
+	}, []string{
+		RemoteAssetFetchRoleLabel,
+		StatusHumanReadableLabel,
 	})
 
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{

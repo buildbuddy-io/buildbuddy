@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
@@ -727,4 +730,239 @@ func TestFetchDirectory(t *testing.T) {
 	resp, err := fetchClient.FetchDirectory(ctx, &rapb.FetchDirectoryRequest{})
 	assert.EqualError(t, err, "rpc error: code = Unimplemented desc = FetchDirectory is not yet implemented")
 	assert.Nil(t, resp)
+}
+
+// blockingUpstream is an HTTP server that counts requests and holds each one
+// open until release is called, so that tests can control whether concurrent
+// fetches overlap.
+type blockingUpstream struct {
+	*httptest.Server
+	requests    atomic.Int32
+	arrived     chan struct{}
+	releaseCh   chan struct{}
+	releaseOnce sync.Once
+}
+
+func newBlockingUpstream(t *testing.T, content string) *blockingUpstream {
+	u := &blockingUpstream{
+		arrived:   make(chan struct{}, 100),
+		releaseCh: make(chan struct{}),
+	}
+	u.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u.requests.Add(1)
+		u.arrived <- struct{}{}
+		select {
+		case <-u.releaseCh:
+		case <-r.Context().Done():
+			return
+		}
+		fmt.Fprint(w, content)
+	}))
+	t.Cleanup(u.Close)
+	// Registered after Close so that it runs first, unblocking any handlers.
+	t.Cleanup(u.release)
+	return u
+}
+
+func (u *blockingUpstream) release() {
+	u.releaseOnce.Do(func() { close(u.releaseCh) })
+}
+
+// waitForRequests waits until n upstream requests have arrived.
+func (u *blockingUpstream) waitForRequests(t *testing.T, n int) {
+	for range n {
+		select {
+		case <-u.arrived:
+		case <-time.After(10 * time.Second):
+			require.FailNowf(t, "timed out waiting for upstream requests", "got %d, want %d", u.requests.Load(), n)
+		}
+	}
+}
+
+// followerJoinDelay is how long to wait, after the leader's upstream request
+// arrives, for concurrent followers to join it before releasing the leader.
+// A follower that has not joined by then would make its own upstream request
+// and fail the test, rather than making it pass incorrectly.
+const followerJoinDelay = 500 * time.Millisecond
+
+type fetchResult struct {
+	rsp *rapb.FetchBlobResponse
+	err error
+}
+
+func startFetch(ctx context.Context, client rapb.FetchClient, req *rapb.FetchBlobRequest) <-chan fetchResult {
+	ch := make(chan fetchResult, 1)
+	go func() {
+		rsp, err := client.FetchBlob(ctx, req)
+		ch <- fetchResult{rsp, err}
+	}()
+	return ch
+}
+
+func requireFetchOK(t *testing.T, ch <-chan fetchResult, wantDigest *repb.Digest) {
+	res := <-ch
+	require.NoError(t, res.err)
+	require.Equal(t, int32(gcodes.OK), res.rsp.GetStatus().GetCode(), "status: %s", res.rsp.GetStatus().GetMessage())
+	require.Equal(t, wantDigest.GetHash(), res.rsp.GetBlobDigest().GetHash())
+	require.Equal(t, wantDigest.GetSizeBytes(), res.rsp.GetBlobDigest().GetSizeBytes())
+}
+
+func setupDedupeTest(t *testing.T, content string) (rapb.FetchClient, *blockingUpstream, *repb.Digest) {
+	ctx := context.Background()
+	te := testenv.GetTestEnv(t)
+	require.NoError(t, scratchspace.Init())
+	clientConn := runFetchServer(ctx, t, te)
+	upstream := newBlockingUpstream(t, content)
+	d, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	return rapb.NewFetchClient(clientConn), upstream, d
+}
+
+func TestFetchBlob_Dedupe_IdenticalRequests(t *testing.T) {
+	ctx := context.Background()
+	client, upstream, d := setupDedupeTest(t, "dedupe-identical")
+
+	const n = 10
+	var results []<-chan fetchResult
+	for range n {
+		results = append(results, startFetch(ctx, client, &rapb.FetchBlobRequest{
+			Uris: []string{upstream.URL},
+			Qualifiers: []*rapb.Qualifier{
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "Authorization", Value: "Bearer token"},
+			},
+		}))
+	}
+	upstream.waitForRequests(t, 1)
+	time.Sleep(followerJoinDelay)
+	upstream.release()
+	for _, ch := range results {
+		requireFetchOK(t, ch, d)
+	}
+	require.Equal(t, int32(1), upstream.requests.Load())
+}
+
+func TestFetchBlob_Dedupe_SharedAndPerURIHeaderForms(t *testing.T) {
+	ctx := context.Background()
+	client, upstream, d := setupDedupeTest(t, "dedupe-header-forms")
+
+	shared := startFetch(ctx, client, &rapb.FetchBlobRequest{
+		Uris: []string{upstream.URL},
+		Qualifiers: []*rapb.Qualifier{
+			{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "authorization", Value: "Bearer token"},
+		},
+	})
+	upstream.waitForRequests(t, 1)
+	perURI := startFetch(ctx, client, &rapb.FetchBlobRequest{
+		Uris: []string{upstream.URL},
+		Qualifiers: []*rapb.Qualifier{
+			{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:Authorization", Value: "Bearer token"},
+		},
+	})
+	time.Sleep(followerJoinDelay)
+	upstream.release()
+	requireFetchOK(t, shared, d)
+	requireFetchOK(t, perURI, d)
+	require.Equal(t, int32(1), upstream.requests.Load())
+}
+
+func TestFetchBlob_Dedupe_DifferentRequestsNotShared(t *testing.T) {
+	content := "dedupe-different"
+	contentDigest, err := digest.Compute(strings.NewReader(content), repb.DigestFunction_SHA256)
+	require.NoError(t, err)
+	checksum := checksumQualifierFromContent(t, contentDigest.GetHash(), repb.DigestFunction_SHA256)
+
+	authQualifier := func(v string) *rapb.Qualifier {
+		return &rapb.Qualifier{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "Authorization", Value: v}
+	}
+	for _, tc := range []struct {
+		name string
+		a, b *rapb.FetchBlobRequest
+	}{
+		{
+			name: "different_authorization",
+			a:    &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{authQualifier("Bearer a")}},
+			b:    &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{authQualifier("Bearer b")}},
+		},
+		{
+			name: "authorization_vs_none",
+			a:    &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{authQualifier("Bearer a")}},
+			b:    &rapb.FetchBlobRequest{},
+		},
+		{
+			name: "different_accept",
+			a: &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "Accept", Value: "application/json"},
+			}},
+			b: &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{
+				{Name: fetch_server.BazelHttpHeaderPrefixQualifier + "Accept", Value: "text/plain"},
+			}},
+		},
+		{
+			name: "checksum_vs_none",
+			a: &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{
+				{Name: fetch_server.ChecksumQualifier, Value: checksum},
+			}},
+			b: &rapb.FetchBlobRequest{},
+		},
+		{
+			name: "different_checksum",
+			a: &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{
+				{Name: fetch_server.ChecksumQualifier, Value: checksum},
+			}},
+			b: &rapb.FetchBlobRequest{Qualifiers: []*rapb.Qualifier{
+				{Name: fetch_server.ChecksumQualifier, Value: sha1CRI},
+			}},
+		},
+		{
+			name: "different_instance_name",
+			a:    &rapb.FetchBlobRequest{InstanceName: "instance-a"},
+			b:    &rapb.FetchBlobRequest{InstanceName: "instance-b"},
+		},
+		{
+			name: "different_digest_function",
+			a:    &rapb.FetchBlobRequest{DigestFunction: repb.DigestFunction_SHA256},
+			b:    &rapb.FetchBlobRequest{DigestFunction: repb.DigestFunction_BLAKE3},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client, upstream, _ := setupDedupeTest(t, content)
+			tc.a.Uris = []string{upstream.URL}
+			tc.b.Uris = []string{upstream.URL}
+
+			a := startFetch(ctx, client, tc.a)
+			upstream.waitForRequests(t, 1)
+			b := startFetch(ctx, client, tc.b)
+			// b must make its own upstream request while a's is still in
+			// flight; if it were deduped with a, this would time out.
+			upstream.waitForRequests(t, 1)
+			upstream.release()
+			for _, ch := range []<-chan fetchResult{a, b} {
+				res := <-ch
+				require.NoError(t, res.err)
+				require.NotNil(t, res.rsp.GetStatus())
+			}
+			require.Equal(t, int32(2), upstream.requests.Load())
+		})
+	}
+}
+
+func TestFetchBlob_Dedupe_LeaderCanceled(t *testing.T) {
+	client, upstream, d := setupDedupeTest(t, "dedupe-leader-canceled")
+	req := &rapb.FetchBlobRequest{Uris: []string{upstream.URL}}
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	defer cancelLeader()
+	leader := startFetch(leaderCtx, client, req)
+	upstream.waitForRequests(t, 1)
+	follower := startFetch(context.Background(), client, req)
+	time.Sleep(followerJoinDelay)
+
+	cancelLeader()
+	res := <-leader
+	require.Equal(t, gcodes.Canceled, gstatus.Code(res.err), "leader error: %v", res.err)
+
+	upstream.release()
+	requireFetchOK(t, follower, d)
+	require.Equal(t, int32(1), upstream.requests.Load())
 }
