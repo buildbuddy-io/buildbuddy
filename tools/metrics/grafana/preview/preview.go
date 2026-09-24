@@ -79,10 +79,9 @@ const (
 	maxConfigMapBytes = 700 * 1024
 
 	// previewLabel marks everything the tool creates, so a label selector can
-	// find (and delete) all of it. previewKinds is everything it may have
-	// created; secrets are included because earlier versions made one.
+	// find (and delete) all of it. previewKinds is everything it creates.
 	previewLabel = "buildbuddy.io/grafana-preview"
-	previewKinds = "job,service,configmap,secret"
+	previewKinds = "job,service,configmap"
 
 	fieldManager = "grafana-preview"
 	readyTimeout = 5 * time.Minute
@@ -289,10 +288,33 @@ func (p *preview) up(ctx context.Context) error {
 		return err
 	}
 
-	// The Job is created suspended so it does not start a pod before the
-	// objects the pod mounts exist. Those objects get the Job as their owner
-	// so they disappear with it, which needs the Job's UID first.
 	log.Printf("Creating %s...", p.name)
+	if err := p.create(ctx, configMaps, provisioning); err != nil {
+		// A Job that never gets unsuspended never reaches its deadline, so it
+		// and the objects it owns would stay around indefinitely. Remove them
+		// with a context that survives Ctrl-C, the likeliest way to get here.
+		log.Printf("Creating the preview failed; removing what was created...")
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancel()
+		if cleanupErr := p.deleteAll(cleanupCtx); cleanupErr != nil {
+			log.Printf("Cleanup failed; remove it by hand with:\n    %s", p.kubectlDeleteCommand())
+		}
+		return err
+	}
+
+	log.Printf("Waiting for the pod to become ready...")
+	if err := p.waitForReady(ctx); err != nil {
+		return fmt.Errorf("%w\nInspect with: %s", err, p.bazelCommand("status"))
+	}
+	p.printLink(time.Now().Add(maxLifetime))
+	return nil
+}
+
+// create makes the Job and everything it owns, then starts it. The Job is
+// created suspended so it does not start a pod before the objects the pod
+// mounts exist. Those objects get the Job as their owner so they disappear
+// with it, which needs the Job's UID first.
+func (p *preview) create(ctx context.Context, configMaps []*corev1.ConfigMap, provisioning map[string]string) error {
 	if err := p.kube.apply(ctx, p.job(configMaps)); err != nil {
 		return err
 	}
@@ -319,16 +341,8 @@ func (p *preview) up(ctx context.Context) error {
 	if err := p.kube.apply(ctx, dependents...); err != nil {
 		return err
 	}
-	if _, err := p.kube.output(ctx, nil, "patch", "job", p.name, "--type=merge", "-p", `{"spec":{"suspend":false}}`); err != nil {
-		return err
-	}
-
-	log.Printf("Waiting for the pod to become ready...")
-	if err := p.waitForReady(ctx); err != nil {
-		return fmt.Errorf("%w\nInspect with: %s", err, p.bazelCommand("status"))
-	}
-	p.printLink(time.Now().Add(maxLifetime))
-	return nil
+	_, err = p.kube.output(ctx, nil, "patch", "job", p.name, "--type=merge", "-p", `{"spec":{"suspend":false}}`)
+	return err
 }
 
 func (p *preview) status(ctx context.Context) error {
@@ -478,6 +492,13 @@ func collectDashboards(ctx context.Context) (map[string][]byte, error) {
 	if err := build.Run(); err != nil {
 		return nil, fmt.Errorf("bazel build %s: %w", generatedTarget, err)
 	}
+	// cquery prints paths relative to the execution root (bazel-out/...).
+	// Resolve them there rather than through the bazel-out convenience
+	// symlink, which not every bazelrc creates.
+	execRoot, err := bazelInfo(ctx, "execution_root")
+	if err != nil {
+		return nil, err
+	}
 	query := exec.CommandContext(ctx, "bazel", "cquery", "--output=files", generatedTarget)
 	query.Stderr = os.Stderr
 	out, err := query.Output()
@@ -487,7 +508,7 @@ func collectDashboards(ctx context.Context) (map[string][]byte, error) {
 	var paths []string
 	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		if line != "" {
-			paths = append(paths, line)
+			paths = append(paths, filepath.Join(execRoot, line))
 		}
 	}
 	handEdited, err := filepath.Glob(filepath.Join(dashboardsDir, "*.json"))
@@ -515,6 +536,16 @@ func collectDashboards(ctx context.Context) (map[string][]byte, error) {
 		return nil, errors.New("found no dashboards")
 	}
 	return dashboards, nil
+}
+
+func bazelInfo(ctx context.Context, key string) (string, error) {
+	cmd := exec.CommandContext(ctx, "bazel", "info", key)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("bazel info %s: %w", key, err)
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // readProvisioning returns the deployed provisioning files (dashboard
