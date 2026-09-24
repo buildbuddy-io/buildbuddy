@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fastcopy"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/ioutil"
@@ -1281,13 +1280,12 @@ type DownloadTreeOpts struct {
 	// RecordInputFetchMetadata controls whether to record which inputs were
 	// fetched from remote CAS while materializing the tree.
 	RecordInputFetchMetadata bool
-	// UnusedInputsDigest, if set, leaves out of the fetch the files listed in
-	// the CAS blob with this digest, which holds the input root-relative
-	// paths that a previous execution of the action did not open (see
-	// repb.ExecutionTask.vfs_unused_inputs_digest), so that a VFS-backed
-	// workspace only prefetches inputs that are likely to be needed. Files
-	// left out are not fetched at all and must be fetched on demand by the
-	// caller. If the blob cannot be read, every file is fetched. Only
+	// UnusedInputsDigest, if set, is the digest of a TreeMask excluding the
+	// files that a previous execution of the action did not open (see
+	// repb.ExecutionTask.vfs_unused_inputs_digest). Excluded files are left
+	// out of the fetch, so that a VFS-backed workspace only prefetches inputs
+	// that are likely to be needed, and must be fetched on demand by the
+	// caller. If the mask cannot be read, every file is fetched. Only
 	// supported when RootDir is unset, since a materialized tree must contain
 	// every file.
 	UnusedInputsDigest *repb.Digest
@@ -1650,13 +1648,14 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	return &InputsState{NeedFetching: needFetching, Exist: exist}, nil
 }
 
-// readUnusedInputs returns the paths listed in the
-// DownloadTreeOpts.UnusedInputsDigest blob, or nil if there is no such blob or
-// it can't be read, in which case every file is fetched. The blob is read from
+// readUnusedInputs returns the paths excluded by the TreeMask with digest
+// DownloadTreeOpts.UnusedInputsDigest, or nil if there is no such mask or it
+// can't be read, in which case every file is fetched. The mask is read from
 // the file cache when this executor already has it, and from the CAS otherwise.
 func (f *TreeFetcher) readUnusedInputs() map[string]struct{} {
 	d := f.opts.UnusedInputsDigest
-	if d == nil {
+	// No mask, or an empty one, leaves nothing out.
+	if d.GetSizeBytes() == 0 {
 		return nil
 	}
 	node := &repb.FileNode{Digest: d}
@@ -1664,23 +1663,26 @@ func (f *TreeFetcher) readUnusedInputs() map[string]struct{} {
 	record, err := fc.Read(f.ctx, node)
 	if err != nil {
 		rn := digest.NewCASResourceName(d, f.instanceName, f.digestFunction)
+		if *enableDownloadCompression {
+			rn.SetCompressor(repb.Compressor_ZSTD)
+		}
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
 		if err := cachetools.GetBlob(f.ctx, f.env.GetByteStreamClient(), rn, buf); err != nil {
-			log.CtxWarningf(f.ctx, "Failed to fetch unused inputs list; fetching all inputs: %s", err)
+			log.CtxWarningf(f.ctx, "Failed to fetch unused inputs mask; fetching all inputs: %s", err)
 			return nil
 		}
 		record = buf.Bytes()
 		if _, err := fc.Write(f.ctx, node, record); err != nil {
-			log.CtxWarningf(f.ctx, "Failed to add unused inputs list to the file cache: %s", err)
+			log.CtxWarningf(f.ctx, "Failed to add unused inputs mask to the file cache: %s", err)
 		}
 	}
-	pathList, err := compression.DecompressZstd(nil, record)
-	if err != nil {
-		log.CtxWarningf(f.ctx, "Failed to decompress unused inputs list; fetching all inputs: %s", err)
+	mask := &repb.TreeMask{}
+	if err := proto.Unmarshal(record, mask); err != nil {
+		log.CtxWarningf(f.ctx, "Failed to parse unused inputs mask; fetching all inputs: %s", err)
 		return nil
 	}
-	unusedPaths := make(map[string]struct{})
-	for path := range strings.SplitSeq(string(pathList), "\n") {
+	unusedPaths := make(map[string]struct{}, len(mask.GetExcludedPaths()))
+	for _, path := range mask.GetExcludedPaths() {
 		unusedPaths[path] = struct{}{}
 	}
 	return unusedPaths

@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/alert"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -382,11 +381,6 @@ type Server struct {
 	inputFetcher       container.InputFetcher
 	retryInputFetcher  *casFetcher
 	remoteInstanceName string
-	digestFunction     repb.DigestFunction_Value
-	// trackUnusedInputs is whether the current task records the CAS input
-	// files it leaves unopened, so that later executions of the same command
-	// can skip prefetching them. See UnusedInputsDigest.
-	trackUnusedInputs bool
 	// prefetchMissCount is the number of CAS files opened during the current
 	// task that the input fetcher had left out of its fetch.
 	prefetchMissCount int64
@@ -720,27 +714,16 @@ func (p *Server) ComputeStats() *repb.VfsStats {
 	return stats
 }
 
-// UnusedInputsDigest stores the input root-relative paths of the CAS inputs
-// not opened since the last Prepare call as a CAS blob and returns its
-// digest, for reporting in the task's execution metadata. The blob format is
-// described by repb.ExecutionTask.vfs_unused_inputs_digest. It returns nil if
-// the task does not track unused inputs.
-func (p *Server) UnusedInputsDigest() (*repb.Digest, error) {
+// UnusedInputs returns a TreeMask that excludes the CAS inputs not opened
+// since the last Prepare call.
+func (p *Server) UnusedInputs() *repb.TreeMask {
 	p.mu.Lock()
-	if !p.trackUnusedInputs {
-		p.mu.Unlock()
-		return nil, nil
-	}
-	instanceName := p.remoteInstanceName
-	digestFunction := p.digestFunction
+	defer p.mu.Unlock()
 	var paths []string
 	var walkNode func(node *fsNode, path string)
 	walkNode = func(node *fsNode, path string) {
 		node.mu.Lock()
-		// The list is newline-separated, so a path containing a newline
-		// cannot be represented and is left out, which just means it is
-		// prefetched next time.
-		if node.fileNode != nil && !node.accessed && !strings.Contains(path, "\n") {
+		if node.fileNode != nil && !node.accessed {
 			paths = append(paths, path)
 		}
 		children := node.children
@@ -750,23 +733,8 @@ func (p *Server) UnusedInputsDigest() (*repb.Digest, error) {
 		}
 	}
 	walkNode(p.root, "")
-	p.mu.Unlock()
-
 	slices.Sort(paths)
-	record := compression.CompressZstd(nil, []byte(strings.Join(paths, "\n")))
-	ctx := p.taskCtx()
-	d, err := cachetools.UploadBlobToCAS(ctx, p.env.GetByteStreamClient(), instanceName, digestFunction, record)
-	if err != nil {
-		return nil, status.WrapError(err, "upload unused inputs list")
-	}
-	// Keep a local copy so that a later task on this executor reads the list
-	// without a round trip to the CAS.
-	if fc := p.env.GetFileCache(); fc != nil {
-		if _, err := fc.Write(ctx, &repb.FileNode{Digest: d}, record); err != nil {
-			log.CtxWarningf(ctx, "Failed to add unused inputs list to the file cache: %s", err)
-		}
-	}
-	return d, nil
+	return &repb.TreeMask{ExcludedPaths: paths}
 }
 
 // Prepare is used to inform the VFS server about files that can be lazily loaded on the first open attempt.
@@ -789,9 +757,6 @@ func (p *Server) Prepare(ctx context.Context, layout *container.FileSystemLayout
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.remoteInstanceName = layout.RemoteInstanceName
-	p.digestFunction = layout.DigestFunction
-	p.trackUnusedInputs = layout.TrackUnusedInputs
 	retryInputFetcher := newCASFetcher(p.env, layout.RemoteInstanceName, layout.DigestFunction)
 	if inputFetcher == nil {
 		inputFetcher = retryInputFetcher

@@ -417,9 +417,9 @@ func TestSizer_UnusedInputsDigest(t *testing.T) {
 	require.Nil(t, got)
 	require.True(t, track)
 
-	// Record the digest of the list produced by an execution, then read it
+	// Record the digest of the mask produced by an execution, then read it
 	// back.
-	d := &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 42}
+	d := &repb.Digest{Hash: "unused-inputs-mask", SizeBytes: 42}
 	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, d)
 	require.NoError(t, err)
 	got, track = sizer.UnusedInputsForTask(ctx, cmd, props)
@@ -463,7 +463,7 @@ func TestSizer_UnusedInputsDigest_Disabled(t *testing.T) {
 	ctx := t.Context()
 	cmd := &repb.Command{Arguments: []string{"/usr/bin/clang"}}
 	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeSkipUnused}
-	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 1})
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, &repb.Digest{Hash: "unused-inputs-mask", SizeBytes: 1})
 	require.NoError(t, err)
 	got, track := sizer.UnusedInputsForTask(ctx, cmd, props)
 	require.Nil(t, got)

@@ -13,14 +13,18 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/filecache"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
+	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
+	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 
@@ -609,6 +613,33 @@ func TestDownloadInputs_WorkingDirectoryNestedMissing(t *testing.T) {
 	assert.Contains(t, err.Error(), "a/b")
 }
 
+func TestUploadOutputs_VFSUnusedInputs(t *testing.T) {
+	ctx := t.Context()
+	te := testenv.GetTestEnv(t)
+	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
+	testcache.Setup(t, te, lis)
+	go runServer()
+	ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{})
+	require.NoError(t, err)
+	ws.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
+
+	// The command left two inputs unopened. Uploading the outputs also
+	// uploads the mask excluding them and records its digest for the
+	// execution metadata.
+	cmdResult := &interfaces.CommandResult{VfsUnusedInputs: &repb.TreeMask{ExcludedPaths: []string{"a.txt", "b.txt"}}}
+	executeResponse := &repb.ExecuteResponse{Result: &repb.ActionResult{}}
+	_, err = ws.UploadOutputs(ctx, &repb.Command{}, executeResponse, cmdResult)
+	require.NoError(t, err)
+	require.NotNil(t, cmdResult.VfsUnusedInputsDigest)
+
+	// The uploaded mask can be read back from the CAS by that digest.
+	uploaded := &repb.TreeMask{}
+	rn := digest.NewCASResourceName(cmdResult.VfsUnusedInputsDigest, "", repb.DigestFunction_SHA256)
+	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), rn, uploaded)
+	require.NoError(t, err)
+	require.Empty(t, cmp.Diff(cmdResult.VfsUnusedInputs, uploaded, protocmp.Transform()))
+}
+
 func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 	for _, testCase := range []struct {
 		name string
@@ -678,7 +709,8 @@ func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
 			require.NoError(t, err)
 			task := &repb.ExecutionTask{}
 			if testCase.unusedRecord {
-				record := compression.CompressZstd(nil, []byte(inputNode.GetName()))
+				record, err := proto.Marshal(&repb.TreeMask{ExcludedPaths: []string{inputNode.GetName()}})
+				require.NoError(t, err)
 				task.VfsUnusedInputsDigest, err = cachetools.UploadBlobToCAS(ctx, te.GetByteStreamClient(), "", repb.DigestFunction_SHA256, record)
 				require.NoError(t, err)
 			}

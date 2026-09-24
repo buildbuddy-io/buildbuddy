@@ -21,8 +21,8 @@ func (s *Server) ComputeStats() *repb.VfsStats {
 	return nil
 }
 
-func (s *Server) UnusedInputsDigest() (*repb.Digest, error) {
-	return nil, nil
+func (s *Server) UnusedInputs() *repb.TreeMask {
+	return nil
 }
 
 func New(env environment.Env, workspacePath string) (*Server, error) {

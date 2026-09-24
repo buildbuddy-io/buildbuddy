@@ -500,7 +500,6 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		log.CtxWarningf(ctx, "Command execution returned error: %s", cmdResult.Error)
 	}
 	auxMetadata.InputFetchDetailedStats = cmdResult.InputFetchMetadata
-	auxMetadata.VfsUnusedInputsDigest = cmdResult.VfsUnusedInputsDigest
 	auxMetadata.VmMetrics = cmdResult.VMMetrics
 
 	// Note: we continue to upload outputs, stderr, etc. below even if
@@ -534,6 +533,7 @@ func (s *Executor) ExecuteTaskAndStreamResults(ctx context.Context, st *repb.Sch
 		}
 		return finishWithErrFn(status.UnavailableErrorf("upload outputs: %s", err.Error()))
 	}
+	auxMetadata.VfsUnusedInputsDigest = cmdResult.VfsUnusedInputsDigest
 	md.OutputUploadCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	md.WorkerCompletedTimestamp = timestamppb.New(s.env.GetClock().Now())
 	actionResult.ExecutionMetadata = md

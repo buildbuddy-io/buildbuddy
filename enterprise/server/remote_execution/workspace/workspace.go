@@ -515,7 +515,7 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	digestFunction := ws.task.GetExecuteRequest().GetDigestFunction()
 
 	var txInfo *dirtools.TransferInfo
-	var stdoutDigest, stderrDigest *repb.Digest
+	var stdoutDigest, stderrDigest, unusedInputsDigest *repb.Digest
 
 	eg, egCtx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
@@ -588,9 +588,23 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 			return nil
 		})
 	}
+	if cmdResult.VfsUnusedInputs != nil {
+		eg.Go(func() error {
+			d, err := cachetools.UploadProto(egCtx, bsClient, instanceName, digestFunction, cmdResult.VfsUnusedInputs)
+			if err != nil {
+				// The mask only saves prefetching in later executions, so
+				// losing it isn't worth failing the task.
+				log.CtxWarningf(ctx, "Failed to upload VFS unused inputs mask: %s", err)
+				return nil
+			}
+			unusedInputsDigest = d
+			return nil
+		})
+	}
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+	cmdResult.VfsUnusedInputsDigest = unusedInputsDigest
 	txInfo.FileCount += 2 // for stdout and stderr
 	txInfo.BytesTransferred += int64(len(cmdResult.Stdout) + len(cmdResult.Stderr))
 	txInfo.FileCount += int64(len(cmdResult.AuxiliaryLogs))
@@ -680,14 +694,14 @@ func (ws *Workspace) ComputeVFSStats() *repb.VfsStats {
 	return ws.vfsServer.ComputeStats()
 }
 
-// VFSUnusedInputsDigest records the CAS inputs that the current task left
-// unopened as a CAS blob and returns its digest, or nil if the workspace does
-// not serve inputs through VFS or the task does not track unused inputs.
-func (ws *Workspace) VFSUnusedInputsDigest() (*repb.Digest, error) {
-	if ws.vfsServer == nil {
-		return nil, nil
+// VFSUnusedInputs returns a TreeMask that excludes the CAS inputs that the
+// current task didn't open, or nil if the workspace doesn't serve inputs
+// through VFS or the task doesn't record unused inputs.
+func (ws *Workspace) VFSUnusedInputs() *repb.TreeMask {
+	if ws.vfsServer == nil || !ws.task.GetTrackVfsUnusedInputs() {
+		return nil
 	}
-	return ws.vfsServer.UnusedInputsDigest()
+	return ws.vfsServer.UnusedInputs()
 }
 
 // TaskFinished informs the workspace that task execution is done.

@@ -1179,8 +1179,8 @@ type TaskSizer interface {
 	// of the command did not open while running on a VFS-backed workspace (see
 	// ExecutionTask.vfs_unused_inputs_digest), or nil if none is stored, and
 	// whether the executor should record the inputs the task leaves unopened.
-	// Both are unset when the store is disabled or the task does not prefetch
-	// used inputs.
+	// Both are unset when the store is disabled or the task's VFS prefetch
+	// mode is not "skip-unused".
 	UnusedInputsForTask(ctx context.Context, cmd *repb.Command, props *platform.Properties) (*repb.Digest, bool)
 
 	// UpdateUnusedInputsDigest records the digest of the unused inputs blob that
@@ -1387,9 +1387,13 @@ type CommandResult struct {
 	// remote CAS while preparing or serving the workspace.
 	InputFetchMetadata *espb.InputFetchMetadata
 
-	// VfsUnusedInputsDigest is the digest of the CAS blob listing the action
-	// inputs that the command did not open while running on a VFS-backed
-	// workspace. Only set if the task tracks unused inputs.
+	// VfsUnusedInputs excludes the action inputs that the command didn't open
+	// while running on a VFS-backed workspace. It is nil unless the task
+	// records unused inputs.
+	VfsUnusedInputs *repb.TreeMask
+
+	// VfsUnusedInputsDigest is the digest of VfsUnusedInputs, set by
+	// UploadOutputs once the mask has been uploaded to the CAS.
 	VfsUnusedInputsDigest *repb.Digest
 
 	// VMMetadata associated with the VM that ran the task, if applicable.

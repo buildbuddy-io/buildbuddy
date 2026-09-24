@@ -2728,29 +2728,37 @@ message ExecutionTask {
   repeated string experiments = 10;
   FastCdc2020Params fast_cdc_2020_params = 11;
 
-  // The digest of a CAS blob listing the input files that a previous
+  // The digest of a TreeMask that excludes the input files a previous
   // execution of this task's command did not open while running on a
-  // VFS-backed workspace, if known. The blob holds the input root-relative
-  // paths of the unopened files, sorted, joined with newlines, and then
-  // zstd-compressed, and is stored under this task's instance name and digest
-  // function. Files are identified by path rather than by digest or by
-  // position in the tree so that the list stays valid across source edits,
-  // which change file contents and shift tree positions but rarely change
-  // which paths an action reads. Only set for tasks whose vfs-prefetch-mode
-  // platform property is "skip-unused". When set, the executor prefetches
-  // every input except the listed files, which are fetched on demand if the
-  // action opens them after all. Listing the unopened files rather than the
-  // opened ones means that files added since the previous execution are
-  // prefetched, since whether the action needs them is unknown.
+  // VFS-backed workspace, if known. The blob is stored under this task's
+  // instance name and digest function. Only set for tasks whose
+  // vfs-prefetch-mode platform property is "skip-unused". When set, the
+  // executor prefetches every input that the mask doesn't exclude, and
+  // fetches excluded files on demand if the action opens them after all.
+  // Excluding the unopened files rather than including the opened ones means
+  // that files added since the previous execution are prefetched, since
+  // whether the action needs them is unknown.
   Digest vfs_unused_inputs_digest = 12;
 
-  // Whether the executor should record the input files this task leaves
-  // unopened and report the digest of the resulting list, in the format
-  // above, in its execution metadata. Set by the app for tasks whose
-  // vfs-prefetch-mode platform property is "skip-unused" while the app stores
-  // such lists, so that executors record nothing when the feature is
-  // disabled.
+  // Whether the executor should record the input files this task doesn't
+  // open and report the digest of the resulting TreeMask, as described above,
+  // in its execution metadata. Recording works in any VFS prefetch mode, but
+  // the app only sets this for tasks whose vfs-prefetch-mode platform
+  // property is "skip-unused", and only while it stores such masks, so that
+  // executors record nothing when the feature is disabled.
   bool track_vfs_unused_inputs = 13;
+}
+
+// A subset of the files in an input tree. Files are identified by their input
+// root-relative paths rather than by digest or by position in the tree, so
+// that a mask stays valid across source edits, which change file contents and
+// shift tree positions but rarely change which paths an action reads. Other
+// encodings can be added as new fields if paths turn out to be too large.
+message TreeMask {
+  // The input root-relative paths of the files that the mask excludes,
+  // sorted. Files that aren't listed are included, and listed paths that
+  // aren't in the tree are ignored.
+  repeated string excluded_paths = 1;
 }
 
 // ScheduledTask encapsulates a task based on a client's ExecuteRequest as well

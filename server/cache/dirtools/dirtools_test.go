@@ -25,7 +25,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testdigest"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
-	"github.com/buildbuddy-io/buildbuddy/server/util/compression"
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
@@ -1177,22 +1176,23 @@ func TestDownloadTree_InputFetchMetadataUsesDeterministicLeafOrder(t *testing.T)
 
 func TestDownloadTree_UnusedInputsLeftOutOfFetch(t *testing.T) {
 	// A previous execution left b.txt unopened but opened a.txt. sub/c.txt is
-	// not listed either, as a file added since the previous execution would
-	// not be, so it is prefetched. The list also names a path that is not in
-	// the tree, which is ignored.
-	record := compression.CompressZstd(nil, []byte("b.txt\nmissing.txt"))
+	// not excluded either, as a file added since the previous execution would
+	// not be, so it is prefetched. The mask also excludes a path that is not
+	// in the tree, which is ignored.
+	record, err := proto.Marshal(&repb.TreeMask{ExcludedPaths: []string{"b.txt", "missing.txt"}})
+	require.NoError(t, err)
 	recordDigest, err := digest.Compute(bytes.NewReader(record), repb.DigestFunction_SHA256)
 	require.NoError(t, err)
 	instanceName := "foo"
 	for _, testCase := range []struct {
 		name string
-		// storeRecord makes the list available the way the test case wants.
+		// storeRecord makes the mask available the way the test case wants.
 		storeRecord   func(t *testing.T, env *testenv.TestEnv, ctx context.Context)
 		wantCached    []string
 		wantNotCached []string
 	}{
 		{
-			// The list is fetched from the CAS.
+			// The mask is fetched from the CAS.
 			name: "record_in_cas",
 			storeRecord: func(t *testing.T, env *testenv.TestEnv, ctx context.Context) {
 				setFile(t, env, ctx, instanceName, string(record))
@@ -1201,7 +1201,7 @@ func TestDownloadTree_UnusedInputsLeftOutOfFetch(t *testing.T) {
 			wantNotCached: []string{"b"},
 		},
 		{
-			// The executor already has the list in its file cache, so it is
+			// The executor already has the mask in its file cache, so it is
 			// used without the CAS holding it.
 			name: "record_in_file_cache_only",
 			storeRecord: func(t *testing.T, env *testenv.TestEnv, ctx context.Context) {
@@ -1212,7 +1212,7 @@ func TestDownloadTree_UnusedInputsLeftOutOfFetch(t *testing.T) {
 			wantNotCached: []string{"b"},
 		},
 		{
-			// The list is nowhere to be found, so every input is fetched.
+			// The mask is nowhere to be found, so every input is fetched.
 			name:        "record_missing",
 			storeRecord: func(t *testing.T, env *testenv.TestEnv, ctx context.Context) {},
 			wantCached:  []string{"a", "b", "c"},
