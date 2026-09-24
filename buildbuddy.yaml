@@ -162,6 +162,8 @@ actions:
     allow_concurrent_runs: false
   - name: Benchmark
     container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
     triggers:
       push:
         branches:
