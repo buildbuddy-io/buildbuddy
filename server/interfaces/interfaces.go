@@ -846,6 +846,8 @@ type GitHubApp interface {
 	UpdateGithubPullRequestComment(ctx context.Context, req *ghpb.UpdateGithubPullRequestCommentRequest) (*ghpb.UpdateGithubPullRequestCommentResponse, error)
 	DeleteGithubPullRequestComment(ctx context.Context, req *ghpb.DeleteGithubPullRequestCommentRequest) (*ghpb.DeleteGithubPullRequestCommentResponse, error)
 	SendGithubPullRequestReview(ctx context.Context, req *ghpb.SendGithubPullRequestReviewRequest) (*ghpb.SendGithubPullRequestReviewResponse, error)
+	GetManagedWorkflows(ctx context.Context, req *ghpb.GetManagedWorkflowsRequest) (*ghpb.GetManagedWorkflowsResponse, error)
+	UpdateManagedWorkflow(ctx context.Context, req *ghpb.UpdateManagedWorkflowRequest) (*ghpb.UpdateManagedWorkflowResponse, error)
 }
 
 // GitHubAppService is a wrapper for GitHubApp. It's needed to determine the specific

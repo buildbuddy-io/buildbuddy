@@ -251,6 +251,37 @@ message UpdateRepoSettingsResponse {
   context.ResponseContext response_context = 1;
 }
 
+// A workflow whose implementation is owned and updated by BuildBuddy.
+enum ManagedWorkflowType {
+  UNKNOWN_MANAGED_WORKFLOW_TYPE = 0;
+  AI_CODE_REVIEW = 1;
+}
+
+message ManagedWorkflow {
+  ManagedWorkflowType type = 1;
+  bool enabled = 2;
+}
+
+message GetManagedWorkflowsRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+}
+
+message GetManagedWorkflowsResponse {
+  context.ResponseContext response_context = 1;
+  repeated ManagedWorkflow workflows = 2;
+}
+
+message UpdateManagedWorkflowRequest {
+  context.RequestContext request_context = 1;
+  string repo_url = 2;
+  ManagedWorkflow workflow = 3;
+}
+
+message UpdateManagedWorkflowResponse {
+  context.ResponseContext response_context = 1;
+}
+
 message GetGithubAppInstallPathRequest {
   context.RequestContext request_context = 1;
 }

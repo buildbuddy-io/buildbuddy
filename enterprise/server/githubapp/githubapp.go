@@ -45,6 +45,7 @@ import (
 	"github.com/shurcooL/githubv4"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm/clause"
 
 	gh_webhooks "github.com/buildbuddy-io/buildbuddy/enterprise/server/webhooks/github"
 	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
@@ -649,6 +650,28 @@ func (a *GitHubApp) GetDefaultBranch(ctx context.Context, repoURL string, access
 	return repo.GetDefaultBranch(), nil
 }
 
+func (a *GitHubApp) getLinkedRepo(ctx context.Context, groupID, repoURL string) (*tables.GitRepository, error) {
+	parsedRepoURL, err := gitutil.ParseGitHubRepoURL(repoURL)
+	if err != nil {
+		return nil, status.InvalidArgumentErrorf("invalid repo URL %s: %s", repoURL, err)
+	}
+
+	gitRepository := &tables.GitRepository{}
+	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_linked_repo").Raw(`
+		SELECT *
+		FROM "GitRepositories"
+		WHERE group_id = ?
+		AND repo_url = ?
+	`, groupID, parsedRepoURL.String()).Take(gitRepository)
+	if db.IsRecordNotFound(err) {
+		return nil, status.NotFoundErrorf("repo %s not found", repoURL)
+	}
+	if err != nil {
+		return nil, status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	}
+	return gitRepository, nil
+}
+
 func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID, repoURL string) (string, error) {
 	if err := authutil.AuthorizeGroupAccess(ctx, a.env, groupID); err != nil {
 		return "", err
@@ -659,19 +682,8 @@ func (a *GitHubApp) GetRepositoryInstallationToken(ctx context.Context, groupID,
 		return "", status.InvalidArgumentErrorf("invalid repo URL %s: %s", repoURL, err)
 	}
 
-	// Validate that the repo was imported to BB.
-	gitRepository := &tables.GitRepository{}
-	err = a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_repo_for_token").Raw(`
-		SELECT *
-		FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, groupID, parsedRepoURL.String()).Take(gitRepository)
-	if err != nil {
-		if db.IsRecordNotFound(err) {
-			return "", status.NotFoundErrorf("repo %s not found", repoURL)
-		}
-		return "", status.InternalErrorf("failed to look up repo %s: %s", repoURL, err)
+	if _, err := a.getLinkedRepo(ctx, groupID, repoURL); err != nil {
+		return "", err
 	}
 
 	var installation tables.GitHubAppInstallation
@@ -950,16 +962,29 @@ func (a *GitHubApp) UnlinkGitHubRepo(ctx context.Context, req *ghpb.UnlinkRepoRe
 	if err != nil {
 		return nil, err
 	}
-	result := a.env.GetDBHandle().NewQuery(ctx, "githubapp_unlink_repo").Raw(`
-		DELETE FROM "GitRepositories"
-		WHERE group_id = ?
-		AND repo_url = ?
-	`, u.GetGroupID(), normalizedURL).Exec()
-	if result.Error != nil {
-		return nil, status.InternalErrorf("failed to unlink repo: %s", err)
-	}
-	if result.RowsAffected == 0 {
-		return nil, status.NotFoundError("repo not found")
+	err = a.env.GetDBHandle().Transaction(ctx, func(tx interfaces.DB) error {
+		result := tx.NewQuery(ctx, "githubapp_unlink_repo").Raw(`
+			DELETE FROM "GitRepositories"
+			WHERE group_id = ?
+			AND repo_url = ?
+		`, u.GetGroupID(), normalizedURL).Exec()
+		if result.Error != nil {
+			return status.InternalErrorf("failed to unlink repo: %s", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return status.NotFoundError("repo not found")
+		}
+		if err := tx.NewQuery(ctx, "githubapp_delete_managed_workflows").Raw(`
+			DELETE FROM "ManagedWorkflows"
+			WHERE group_id = ?
+			AND repo_url = ?
+		`, u.GetGroupID(), normalizedURL).Exec().Error; err != nil {
+			return status.InternalErrorf("failed to delete managed workflows: %s", err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return &ghpb.UnlinkRepoResponse{}, nil
 }
@@ -987,6 +1012,73 @@ func (a *GitHubApp) UpdateRepoSettings(ctx context.Context, req *ghpb.UpdateRepo
 		return nil, status.NotFoundError("repo not found")
 	}
 	return &ghpb.UpdateRepoSettingsResponse{}, nil
+}
+
+func isSupportedManagedWorkflowType(workflowType ghpb.ManagedWorkflowType) bool {
+	_, ok := ghpb.ManagedWorkflowType_name[int32(workflowType)]
+	return ok && workflowType != ghpb.ManagedWorkflowType_UNKNOWN_MANAGED_WORKFLOW_TYPE
+}
+
+func (a *GitHubApp) getLinkedRepoForAuthenticatedUser(ctx context.Context, repoURL string) (interfaces.UserInfo, *tables.GitRepository, error) {
+	u, err := a.env.GetAuthenticator().AuthenticatedUser(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	repo, err := a.getLinkedRepo(ctx, u.GetGroupID(), repoURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	return u, repo, nil
+}
+
+func (a *GitHubApp) GetManagedWorkflows(ctx context.Context, req *ghpb.GetManagedWorkflowsRequest) (*ghpb.GetManagedWorkflowsResponse, error) {
+	u, repo, err := a.getLinkedRepoForAuthenticatedUser(ctx, req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.ScanAll(a.env.GetDBHandle().NewQuery(ctx, "githubapp_get_managed_workflows").Raw(`
+		SELECT *
+		FROM "ManagedWorkflows"
+		WHERE group_id = ? AND repo_url = ?
+	`, u.GetGroupID(), repo.RepoURL), &tables.ManagedWorkflow{})
+	if err != nil {
+		return nil, status.InternalErrorf("failed to query managed workflows: %s", err)
+	}
+	res := &ghpb.GetManagedWorkflowsResponse{}
+	for _, row := range rows {
+		res.Workflows = append(res.Workflows, &ghpb.ManagedWorkflow{
+			Type:    ghpb.ManagedWorkflowType(row.WorkflowType),
+			Enabled: row.Enabled,
+		})
+	}
+	return res, nil
+}
+
+// UpdateManagedWorkflow enables or disables a backend-defined workflow for a
+// linked repository.
+func (a *GitHubApp) UpdateManagedWorkflow(ctx context.Context, req *ghpb.UpdateManagedWorkflowRequest) (*ghpb.UpdateManagedWorkflowResponse, error) {
+	workflow := req.GetWorkflow()
+	if workflow == nil || !isSupportedManagedWorkflowType(workflow.GetType()) {
+		return nil, status.InvalidArgumentErrorf("unsupported managed workflow type: %s", workflow.GetType())
+	}
+	u, repo, err := a.getLinkedRepoForAuthenticatedUser(ctx, req.GetRepoUrl())
+	if err != nil {
+		return nil, err
+	}
+	row := &tables.ManagedWorkflow{
+		GroupID:      u.GetGroupID(),
+		RepoURL:      repo.RepoURL,
+		WorkflowType: int32(workflow.GetType()),
+		Enabled:      workflow.GetEnabled(),
+	}
+	result := a.env.GetDBHandle().GORM(ctx, "githubapp_update_managed_workflow").Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "group_id"}, {Name: "repo_url"}, {Name: "workflow_type"}},
+		DoUpdates: clause.AssignmentColumns([]string{"enabled", "updated_at_usec"}),
+	}).Create(row)
+	if result.Error != nil {
+		return nil, status.InternalErrorf("failed to update managed workflow: %s", result.Error)
+	}
+	return &ghpb.UpdateManagedWorkflowResponse{}, nil
 }
 
 func (a *GitHubApp) GetAccessibleGitHubRepos(ctx context.Context, req *ghpb.GetAccessibleReposRequest) (*ghpb.GetAccessibleReposResponse, error) {

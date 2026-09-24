@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/testutil/enterprise_testenv"
+	ghpb "github.com/buildbuddy-io/buildbuddy/proto/github"
 	"github.com/buildbuddy-io/buildbuddy/server/tables"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -101,6 +102,87 @@ func insertRepo(t *testing.T, te *testenv.TestEnv, ctx context.Context) {
 		Perms:   1,
 	})
 	require.NoError(t, err)
+}
+
+func TestManagedWorkflows(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertRepo(t, te, ctx)
+	app := newTestApp(te, nil)
+
+	res, err := app.GetManagedWorkflows(ctx, &ghpb.GetManagedWorkflowsRequest{RepoUrl: testRepoURL})
+	require.NoError(t, err)
+	require.Empty(t, res.GetWorkflows())
+
+	_, err = app.UpdateManagedWorkflow(ctx, &ghpb.UpdateManagedWorkflowRequest{
+		RepoUrl: testRepoURL,
+		Workflow: &ghpb.ManagedWorkflow{
+			Type:    ghpb.ManagedWorkflowType_AI_CODE_REVIEW,
+			Enabled: true,
+		},
+	})
+	require.NoError(t, err)
+
+	res, err = app.GetManagedWorkflows(ctx, &ghpb.GetManagedWorkflowsRequest{RepoUrl: testRepoURL})
+	require.NoError(t, err)
+	require.True(t, res.GetWorkflows()[0].GetEnabled())
+
+	_, err = app.UpdateManagedWorkflow(ctx, &ghpb.UpdateManagedWorkflowRequest{
+		RepoUrl: testRepoURL,
+		Workflow: &ghpb.ManagedWorkflow{
+			Type:    ghpb.ManagedWorkflowType_AI_CODE_REVIEW,
+			Enabled: false,
+		},
+	})
+	require.NoError(t, err)
+	res, err = app.GetManagedWorkflows(ctx, &ghpb.GetManagedWorkflowsRequest{RepoUrl: testRepoURL})
+	require.NoError(t, err)
+	require.Len(t, res.GetWorkflows(), 1)
+	require.False(t, res.GetWorkflows()[0].GetEnabled())
+
+	_, err = app.UpdateManagedWorkflow(ctx, &ghpb.UpdateManagedWorkflowRequest{
+		RepoUrl: testRepoURL,
+		Workflow: &ghpb.ManagedWorkflow{
+			Type: ghpb.ManagedWorkflowType_UNKNOWN_MANAGED_WORKFLOW_TYPE,
+		},
+	})
+	require.True(t, status.IsInvalidArgumentError(err))
+}
+
+func TestManagedWorkflows_RepoMustBeLinked(t *testing.T) {
+	te, ctx := setupEnv(t)
+	app := newTestApp(te, nil)
+
+	_, err := app.GetManagedWorkflows(ctx, &ghpb.GetManagedWorkflowsRequest{RepoUrl: testRepoURL})
+	require.True(t, status.IsNotFoundError(err))
+}
+
+func TestManagedWorkflows_DeletedOnUnlink(t *testing.T) {
+	te, ctx := setupEnv(t)
+	insertRepo(t, te, ctx)
+	app := newTestApp(te, nil)
+
+	_, err := app.UpdateManagedWorkflow(ctx, &ghpb.UpdateManagedWorkflowRequest{
+		RepoUrl: testRepoURL,
+		Workflow: &ghpb.ManagedWorkflow{
+			Type:    ghpb.ManagedWorkflowType_AI_CODE_REVIEW,
+			Enabled: true,
+		},
+	})
+	require.NoError(t, err)
+
+	res, err := app.GetManagedWorkflows(ctx, &ghpb.GetManagedWorkflowsRequest{RepoUrl: testRepoURL})
+	require.NoError(t, err)
+	require.Len(t, res.GetWorkflows(), 1)
+
+	_, err = app.UnlinkGitHubRepo(ctx, &ghpb.UnlinkRepoRequest{RepoUrl: testRepoURL})
+	require.NoError(t, err)
+
+	var workflows []*tables.ManagedWorkflow
+	err = te.GetDBHandle().GORM(ctx, "test_get_managed_workflows_after_unlink").
+		Where("group_id = ? AND repo_url = ?", testGroupID, testRepoURL).
+		Find(&workflows).Error
+	require.NoError(t, err)
+	require.Empty(t, workflows)
 }
 
 func TestGetRepositoryInstallationToken(t *testing.T) {

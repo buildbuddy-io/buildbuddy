@@ -219,6 +219,10 @@ service BuildBuddyService {
       returns (github.UnlinkRepoResponse);
   rpc UpdateGitHubRepoSettings(github.UpdateRepoSettingsRequest)
       returns (github.UpdateRepoSettingsResponse);
+  rpc GetManagedWorkflows(github.GetManagedWorkflowsRequest)
+      returns (github.GetManagedWorkflowsResponse);
+  rpc UpdateManagedWorkflow(github.UpdateManagedWorkflowRequest)
+      returns (github.UpdateManagedWorkflowResponse);
 
   // Installation-repos API (authenticates w/ GitHub using
   // installation access token)
