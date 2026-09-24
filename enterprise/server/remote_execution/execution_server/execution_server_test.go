@@ -889,6 +889,14 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
 		},
 		{
+			name:                   "InstanceNameWithColon",
+			instanceName:           "build-14:00",
+			expectedExecutionUsage: tables.UsageCounts{LinuxExecutionDurationUsec: durationUsec},
+			// TODO: Expect a cache hit once execution IDs preserve colons in
+			// instance names. Currently the result is cached under build-14/00.
+			expectActionCacheMiss: true,
+		},
+		{
 			name:                   "SelfHostedExecutors",
 			platformOverrides:      map[string]string{"use-self-hosted-executors": "true"},
 			expectedSelfHosted:     true,
@@ -986,6 +994,8 @@ func TestExecuteAndPublishOperation(t *testing.T) {
 
 type publishTest struct {
 	name                     string
+	instanceName             string
+	expectActionCacheMiss    bool
 	platformOverrides        map[string]string
 	flagOverrides            map[string]any
 	expectedSelfHosted       bool
@@ -1021,7 +1031,10 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	ctx, err := ta.WithAuthenticatedUser(ctx, "user1")
 	require.NoError(t, err)
 
-	const instanceName = "test-instance"
+	instanceName := test.instanceName
+	if instanceName == "" {
+		instanceName = "test-instance"
+	}
 	const invocationID = "93383cc1-5d6c-4ad1-a321-8ee87c2f6816"
 	const digestFunction = repb.DigestFunction_SHA256
 
@@ -1244,7 +1257,7 @@ func testExecuteAndPublishOperation(t *testing.T, test publishTest) {
 	arnAC, err := arn.CheckAC()
 	require.NoError(t, err)
 	cachedActionResult, err := cachetools.GetActionResult(ctx, env.GetActionCacheClient(), arnAC)
-	if !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
+	if !test.expectActionCacheMiss && !test.doNotCache && test.exitCode == 0 && test.status == nil && !test.cachedResult {
 		require.NoError(t, err)
 		// Trim the aux metadata before comparing
 		cachedActionResult.GetExecutionMetadata().AuxiliaryMetadata = nil
