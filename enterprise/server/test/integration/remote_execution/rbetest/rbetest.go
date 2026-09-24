@@ -1566,7 +1566,7 @@ func (f *FakeTaskSizer) UnusedInputsForTask(ctx context.Context, cmd *repb.Comma
 	return nil, false
 }
 
-func (f *FakeTaskSizer) UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, props *platform.Properties, d *repb.Digest) error {
+func (f *FakeTaskSizer) UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, d *repb.Digest) error {
 	return nil
 }
 

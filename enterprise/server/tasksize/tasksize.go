@@ -373,7 +373,7 @@ func (s *taskSizer) UpdateForOOM(ctx context.Context, cmd *repb.Command, props *
 // used inputs, so that executors neither skip any prefetching nor record
 // anything in that case.
 func (s *taskSizer) UnusedInputsForTask(ctx context.Context, cmd *repb.Command, props *platform.Properties) (*repb.Digest, bool) {
-	if !*storeVFSUnusedInputs || !prefetchesUsedInputs(props) {
+	if !*storeVFSUnusedInputs || !props.EnableVFS || props.VFSPrefetchMode != platform.VFSPrefetchModeUsed {
 		return nil, false
 	}
 	key, err := s.commandScopedKey(ctx, unusedInputsRedisKeyPrefix, cmd)
@@ -398,11 +398,11 @@ func (s *taskSizer) UnusedInputsForTask(ctx context.Context, cmd *repb.Command, 
 
 // UpdateUnusedInputsDigest records the digest of the unused inputs list that an
 // execution of the command produced, replacing any previously recorded
-// digest. A nil digest (the task did not record unused inputs) is ignored, and
-// so are tasks that do not prefetch used inputs, since the record would never
-// be read.
-func (s *taskSizer) UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, props *platform.Properties, d *repb.Digest) error {
-	if !*storeVFSUnusedInputs || d == nil || !prefetchesUsedInputs(props) {
+// digest. A nil digest, from a task that did not record unused inputs, is
+// ignored. Executors only record for tasks that UnusedInputsForTask asked to
+// record, so the digest needs no further checks here.
+func (s *taskSizer) UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, d *repb.Digest) error {
+	if !*storeVFSUnusedInputs || d == nil {
 		return nil
 	}
 	key, err := s.commandScopedKey(ctx, unusedInputsRedisKeyPrefix, cmd)
@@ -414,12 +414,6 @@ func (s *taskSizer) UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Comm
 		return err
 	}
 	return s.rdb.Set(ctx, key, string(b), sizeMeasurementExpiration).Err()
-}
-
-// prefetchesUsedInputs returns whether the task runs on VFS with the prefetch
-// mode that skips prefetching previously unused inputs.
-func prefetchesUsedInputs(props *platform.Properties) bool {
-	return props.EnableVFS && props.VFSPrefetchMode == platform.VFSPrefetchModeUsed
 }
 
 // EvaluateP90CPUTrial returns whether the command is included in the treatment

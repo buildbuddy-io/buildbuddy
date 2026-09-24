@@ -1555,6 +1555,7 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	if f.opts.UnusedInputsDigest != nil && !onlyDownloadToFileCache {
 		return nil, status.InvalidArgumentError("unused inputs can only be left out of fetches into the file cache")
 	}
+	unusedPaths := f.readUnusedInputs()
 	dirPerms := fs.FileMode(0777)
 	f.filesToFetch = make(map[fetchKey][]*FilePointer, 0)
 	nextBitsetIndex := uint32(0)
@@ -1583,6 +1584,12 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 				if ok && nodesEqual(node, skippedNode) {
 					return
 				}
+				// Files left out as unused are still part of the workspace,
+				// since the VFS fetches them on demand, so track them first.
+				trackTransfersFn(relPath, node)
+				if _, unused := unusedPaths[relPath]; unused {
+					return
+				}
 				dk := newFetchKey(d, node.IsExecutable)
 				f.filesToFetch[dk] = append(f.filesToFetch[dk], &FilePointer{
 					FileNode:     node,
@@ -1590,7 +1597,6 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 					RelativePath: relPath,
 					BitsetIndex:  bitsetIndex,
 				})
-				trackTransfersFn(relPath, node)
 			}(fileNode, parentDir)
 		}
 		for _, child := range dir.GetDirectories() {
@@ -1628,9 +1634,6 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	if err := fetchDirFn(dirMap[digest.NewKey(rootDirectoryDigest)], f.opts.RootDir); err != nil {
 		return nil, err
 	}
-	if f.opts.UnusedInputsDigest != nil {
-		f.dropUnusedInputs()
-	}
 
 	ff, err := newBatchFileFetcher(ctx, f.env, f.instanceName, f.digestFunction, f.filesToFetch, f.opts)
 	if err != nil {
@@ -1647,11 +1650,15 @@ func (f *TreeFetcher) Start() (*InputsState, error) {
 	return &InputsState{NeedFetching: needFetching, Exist: exist}, nil
 }
 
-// dropUnusedInputs drops files that a previous execution of the action
-// did not open from the set of files to fetch. The list is read from the file
-// cache when this executor already has it, and from the CAS otherwise.
-func (f *TreeFetcher) dropUnusedInputs() {
+// readUnusedInputs returns the paths listed in the
+// DownloadTreeOpts.UnusedInputsDigest blob, or nil if there is no such blob or
+// it can't be read, in which case every file is fetched. The blob is read from
+// the file cache when this executor already has it, and from the CAS otherwise.
+func (f *TreeFetcher) readUnusedInputs() map[string]struct{} {
 	d := f.opts.UnusedInputsDigest
+	if d == nil {
+		return nil
+	}
 	node := &repb.FileNode{Digest: d}
 	fc := f.env.GetFileCache()
 	record, err := fc.Read(f.ctx, node)
@@ -1660,7 +1667,7 @@ func (f *TreeFetcher) dropUnusedInputs() {
 		buf := bytes.NewBuffer(make([]byte, 0, d.GetSizeBytes()))
 		if err := cachetools.GetBlob(f.ctx, f.env.GetByteStreamClient(), rn, buf); err != nil {
 			log.CtxWarningf(f.ctx, "Failed to fetch unused inputs list; fetching all inputs: %s", err)
-			return
+			return nil
 		}
 		record = buf.Bytes()
 		if _, err := fc.Write(f.ctx, node, record); err != nil {
@@ -1670,25 +1677,13 @@ func (f *TreeFetcher) dropUnusedInputs() {
 	pathList, err := compression.DecompressZstd(nil, record)
 	if err != nil {
 		log.CtxWarningf(f.ctx, "Failed to decompress unused inputs list; fetching all inputs: %s", err)
-		return
+		return nil
 	}
 	unusedPaths := make(map[string]struct{})
 	for path := range strings.SplitSeq(string(pathList), "\n") {
 		unusedPaths[path] = struct{}{}
 	}
-	for key, filePointers := range f.filesToFetch {
-		kept := filePointers[:0]
-		for _, fp := range filePointers {
-			if _, unused := unusedPaths[fp.RelativePath]; !unused {
-				kept = append(kept, fp)
-			}
-		}
-		if len(kept) == 0 {
-			delete(f.filesToFetch, key)
-		} else {
-			f.filesToFetch[key] = kept
-		}
-	}
+	return unusedPaths
 }
 
 // Wait blocks until all transfers are complete.
@@ -1728,7 +1723,7 @@ func (f *TreeFetcher) Fetch(ctx context.Context, node *repb.FileNode) error {
 // Prefetching returns whether the file is part of the fetch. Files left out
 // by DownloadTreeOpts.UnusedInputsDigest are not.
 func (f *TreeFetcher) Prefetching(node *repb.FileNode) bool {
-	_, ok := f.ff.filesToFetch[newFetchKey(node.GetDigest(), node.GetIsExecutable())]
+	_, ok := f.filesToFetch[newFetchKey(node.GetDigest(), node.GetIsExecutable())]
 	return ok
 }
 

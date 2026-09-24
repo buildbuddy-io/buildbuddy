@@ -1185,8 +1185,8 @@ type TaskSizer interface {
 
 	// UpdateUnusedInputsDigest records the digest of the unused inputs blob that
 	// an execution of the command produced, replacing any previously recorded
-	// digest. Nothing is recorded for tasks that do not prefetch used inputs.
-	UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, props *platform.Properties, d *repb.Digest) error
+	// digest. A nil digest is ignored.
+	UpdateUnusedInputsDigest(ctx context.Context, cmd *repb.Command, d *repb.Digest) error
 }
 
 // ScheduledTask represents an execution task along with its scheduling metadata

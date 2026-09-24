@@ -420,7 +420,7 @@ func TestSizer_UnusedInputsDigest(t *testing.T) {
 	// Record the digest of the list produced by an execution, then read it
 	// back.
 	d := &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 42}
-	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, props, d)
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, d)
 	require.NoError(t, err)
 	got, track = sizer.UnusedInputsForTask(ctx, cmd, props)
 	require.Empty(t, cmp.Diff(d, got, protocmp.Transform()))
@@ -435,7 +435,7 @@ func TestSizer_UnusedInputsDigest(t *testing.T) {
 
 	// Tasks that don't run on VFS, or that prefetch every input, neither get
 	// the recorded digest nor record anything, since the executor would
-	// ignore the digest and the app would discard the record.
+	// ignore the digest.
 	got, track = sizer.UnusedInputsForTask(ctx, cmd, &platform.Properties{})
 	require.Nil(t, got)
 	require.False(t, track)
@@ -444,12 +444,9 @@ func TestSizer_UnusedInputsDigest(t *testing.T) {
 	require.Nil(t, got)
 	require.False(t, track)
 
-	// An execution that reports no digest (it did not run on VFS) leaves the
-	// recorded digest alone, and so does an execution of a task that
-	// prefetches every input.
-	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, props, nil)
-	require.NoError(t, err)
-	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, prefetchAllProps, &repb.Digest{Hash: "other", SizeBytes: 1})
+	// An execution that reports no digest, because it did not record unused
+	// inputs, leaves the recorded digest alone.
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, nil)
 	require.NoError(t, err)
 	got, _ = sizer.UnusedInputsForTask(ctx, cmd, props)
 	require.Empty(t, cmp.Diff(d, got, protocmp.Transform()))
@@ -466,7 +463,7 @@ func TestSizer_UnusedInputsDigest_Disabled(t *testing.T) {
 	ctx := t.Context()
 	cmd := &repb.Command{Arguments: []string{"/usr/bin/clang"}}
 	props := &platform.Properties{EnableVFS: true, VFSPrefetchMode: platform.VFSPrefetchModeUsed}
-	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, props, &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 1})
+	err = sizer.UpdateUnusedInputsDigest(ctx, cmd, &repb.Digest{Hash: "unused-inputs-list", SizeBytes: 1})
 	require.NoError(t, err)
 	got, track := sizer.UnusedInputsForTask(ctx, cmd, props)
 	require.Nil(t, got)

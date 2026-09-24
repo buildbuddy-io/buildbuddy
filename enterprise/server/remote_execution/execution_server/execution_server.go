@@ -1721,7 +1721,7 @@ func (s *ExecutionServer) markTaskComplete(ctx context.Context, actionResourceNa
 		if err := s.taskSizer.Update(ctx, cmd, properties, md); err != nil {
 			log.CtxWarningf(ctx, "Failed to update task size: %s", err)
 		}
-		if err := s.taskSizer.UpdateUnusedInputsDigest(ctx, cmd, properties, auxMeta.GetVfsUnusedInputsDigest()); err != nil {
+		if err := s.taskSizer.UpdateUnusedInputsDigest(ctx, cmd, auxMeta.GetVfsUnusedInputsDigest()); err != nil {
 			log.CtxWarningf(ctx, "Failed to update unused inputs: %s", err)
 		}
 	} else if details, ok := oom.DetailsFromError(execErr); ok {
