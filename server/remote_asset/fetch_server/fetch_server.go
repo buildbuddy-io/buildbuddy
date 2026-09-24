@@ -458,8 +458,8 @@ func (p *FetchServer) dedupedMirrorToCache(
 	// held in plain text.
 	key := hash.Strings(keyParts...)
 
-	metrics.RemoteAssetMirrorsInProgress.Inc()
-	defer metrics.RemoteAssetMirrorsInProgress.Dec()
+	metrics.RemoteAssetURIFetchesInProgress.Inc()
+	defer metrics.RemoteAssetURIFetchesInProgress.Dec()
 	var isLeader atomic.Bool
 	d, _, err := p.mirrorGroup.Do(ctx, key, func(ctx context.Context) (*repb.Digest, error) {
 		isLeader.Store(true)
@@ -473,7 +473,7 @@ func (p *FetchServer) dedupedMirrorToCache(
 	if isLeader.Load() {
 		role = mirrorRoleLeader
 	}
-	metrics.RemoteAssetMirrorCount.With(prometheus.Labels{
+	metrics.RemoteAssetURIFetchCount.With(prometheus.Labels{
 		metrics.RemoteAssetFetchRoleLabel: role,
 		metrics.StatusHumanReadableLabel:  status.MetricsLabel(err),
 	}).Inc()

@@ -422,8 +422,9 @@ const (
 	OCIFetcherRoleLabel   = "role"
 	OCIFetcherStatusLabel = "status"
 
-	// Role of a deduplicated remote asset fetch: `leader` (made the upstream
-	// request) or `waiter` (shared a concurrent leader's result).
+	// Role of a deduplicated remote asset URI fetch: `leader` (made the
+	// upstream request) or `waiter` (reused a concurrent identical fetch's
+	// result).
 	RemoteAssetFetchRoleLabel = "role"
 
 	// Label name for the eTLD+1 of the container image registry.
@@ -4647,21 +4648,21 @@ var (
 		OCIFetcherRoleLabel,
 	})
 
-	RemoteAssetMirrorCount = promauto.NewCounterVec(prometheus.CounterOpts{
+	RemoteAssetURIFetchCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_asset",
-		Name:      "mirror_count",
-		Help:      "Number of per-URI fetches attempted by the Remote Asset FetchBlob API, by dedupe role and status. Only `leader` fetches make an upstream request.",
+		Name:      "uri_fetch_count",
+		Help:      "Number of attempts to fetch a single URI for a Remote Asset FetchBlob request, which tries its URIs in order until one succeeds. `leader` attempts made the upstream request; `waiter` attempts reused a concurrent identical attempt's result.",
 	}, []string{
 		RemoteAssetFetchRoleLabel,
 		StatusHumanReadableLabel,
 	})
 
-	RemoteAssetMirrorsInProgress = promauto.NewGauge(prometheus.GaugeOpts{
+	RemoteAssetURIFetchesInProgress = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_asset",
-		Name:      "mirrors_in_progress",
-		Help:      "Number of per-URI fetches in progress in the Remote Asset FetchBlob API, including callers waiting on a deduplicated fetch.",
+		Name:      "uri_fetches_in_progress",
+		Help:      "Number of single-URI fetch attempts in progress for Remote Asset FetchBlob requests, including attempts waiting on a concurrent identical attempt.",
 	})
 
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{

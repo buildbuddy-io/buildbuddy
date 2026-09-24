@@ -782,15 +782,15 @@ func (u *blockingUpstream) waitForRequests(t *testing.T, n int) {
 	}
 }
 
-// waitForMirrorsInProgress waits until n per-URI fetches are in progress on the
-// server. The gauge is incremented just before singleflight.Do, so once it
+// waitForURIFetchesInProgress waits until n single-URI fetch attempts are in
+// progress on the server. The gauge is incremented just before singleflight.Do, so once it
 // reaches n, every caller is at most a few instructions from joining the
 // leader's call, which cannot finish until the test releases the upstream.
 // A caller that still missed the call would make a second upstream request
 // and fail the test; it can never make a broken dedupe pass.
-func waitForMirrorsInProgress(t *testing.T, n int) {
+func waitForURIFetchesInProgress(t *testing.T, n int) {
 	require.Eventually(t, func() bool {
-		return testutil.ToFloat64(metrics.RemoteAssetMirrorsInProgress) == float64(n)
+		return testutil.ToFloat64(metrics.RemoteAssetURIFetchesInProgress) == float64(n)
 	}, 10*time.Second, 5*time.Millisecond, "waiting for %d fetches in progress", n)
 }
 
@@ -842,7 +842,7 @@ func TestFetchBlob_Dedupe_IdenticalRequests(t *testing.T) {
 		}))
 	}
 	upstream.waitForRequests(t, 1)
-	waitForMirrorsInProgress(t, n)
+	waitForURIFetchesInProgress(t, n)
 	upstream.release()
 	for _, ch := range results {
 		requireFetchOK(t, ch, d)
@@ -867,7 +867,7 @@ func TestFetchBlob_Dedupe_SharedAndPerURIHeaderForms(t *testing.T) {
 			{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:Authorization", Value: "Bearer token"},
 		},
 	})
-	waitForMirrorsInProgress(t, 2)
+	waitForURIFetchesInProgress(t, 2)
 	upstream.release()
 	requireFetchOK(t, shared, d)
 	requireFetchOK(t, perURI, d)
@@ -965,7 +965,7 @@ func TestFetchBlob_Dedupe_LeaderCanceled(t *testing.T) {
 	leader := startFetch(leaderCtx, client, req)
 	upstream.waitForRequests(t, 1)
 	follower := startFetch(context.Background(), client, req)
-	waitForMirrorsInProgress(t, 2)
+	waitForURIFetchesInProgress(t, 2)
 
 	cancelLeader()
 	res := <-leader
@@ -988,7 +988,7 @@ func TestFetchBlob_Dedupe_LeaderTimesOut(t *testing.T) {
 	})
 	upstream.waitForRequests(t, 1)
 	follower := startFetch(ctx, client, &rapb.FetchBlobRequest{Uris: []string{upstream.URL}})
-	waitForMirrorsInProgress(t, 2)
+	waitForURIFetchesInProgress(t, 2)
 
 	// The leader gives up once its own timeout expires...
 	res := <-leader
