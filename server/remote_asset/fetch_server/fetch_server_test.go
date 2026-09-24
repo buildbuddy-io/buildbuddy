@@ -16,6 +16,7 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/proto/resource"
 	"github.com/buildbuddy-io/buildbuddy/server/buildbuddy_server"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/cache_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_asset/fetch_server"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/byte_stream_server"
@@ -27,9 +28,11 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	bbspb "github.com/buildbuddy-io/buildbuddy/proto/buildbuddy_service"
 	cspb "github.com/buildbuddy-io/buildbuddy/proto/cache_service"
@@ -779,11 +782,17 @@ func (u *blockingUpstream) waitForRequests(t *testing.T, n int) {
 	}
 }
 
-// followerJoinDelay is how long to wait, after the leader's upstream request
-// arrives, for concurrent followers to join it before releasing the leader.
-// A follower that has not joined by then would make its own upstream request
-// and fail the test, rather than making it pass incorrectly.
-const followerJoinDelay = 500 * time.Millisecond
+// waitForMirrorsInProgress waits until n per-URI fetches are in progress on the
+// server. The gauge is incremented just before singleflight.Do, so once it
+// reaches n, every caller is at most a few instructions from joining the
+// leader's call, which cannot finish until the test releases the upstream.
+// A caller that still missed the call would make a second upstream request
+// and fail the test; it can never make a broken dedupe pass.
+func waitForMirrorsInProgress(t *testing.T, n int) {
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(metrics.RemoteAssetMirrorsInProgress) == float64(n)
+	}, 10*time.Second, 5*time.Millisecond, "waiting for %d fetches in progress", n)
+}
 
 type fetchResult struct {
 	rsp *rapb.FetchBlobResponse
@@ -833,7 +842,7 @@ func TestFetchBlob_Dedupe_IdenticalRequests(t *testing.T) {
 		}))
 	}
 	upstream.waitForRequests(t, 1)
-	time.Sleep(followerJoinDelay)
+	waitForMirrorsInProgress(t, n)
 	upstream.release()
 	for _, ch := range results {
 		requireFetchOK(t, ch, d)
@@ -858,7 +867,7 @@ func TestFetchBlob_Dedupe_SharedAndPerURIHeaderForms(t *testing.T) {
 			{Name: fetch_server.BazelHttpHeaderUrlPrefixQualifier + "0:Authorization", Value: "Bearer token"},
 		},
 	})
-	time.Sleep(followerJoinDelay)
+	waitForMirrorsInProgress(t, 2)
 	upstream.release()
 	requireFetchOK(t, shared, d)
 	requireFetchOK(t, perURI, d)
@@ -956,12 +965,37 @@ func TestFetchBlob_Dedupe_LeaderCanceled(t *testing.T) {
 	leader := startFetch(leaderCtx, client, req)
 	upstream.waitForRequests(t, 1)
 	follower := startFetch(context.Background(), client, req)
-	time.Sleep(followerJoinDelay)
+	waitForMirrorsInProgress(t, 2)
 
 	cancelLeader()
 	res := <-leader
 	require.Equal(t, gcodes.Canceled, gstatus.Code(res.err), "leader error: %v", res.err)
 
+	upstream.release()
+	requireFetchOK(t, follower, d)
+	require.Equal(t, int32(1), upstream.requests.Load())
+}
+
+func TestFetchBlob_Dedupe_LeaderTimesOut(t *testing.T) {
+	ctx := context.Background()
+	client, upstream, d := setupDedupeTest(t, "dedupe-leader-times-out")
+
+	// The leader's timeout must outlast the follower joining; if the follower
+	// joins late, it starts its own upstream request and the test fails.
+	leader := startFetch(ctx, client, &rapb.FetchBlobRequest{
+		Uris:    []string{upstream.URL},
+		Timeout: durationpb.New(5 * time.Second),
+	})
+	upstream.waitForRequests(t, 1)
+	follower := startFetch(ctx, client, &rapb.FetchBlobRequest{Uris: []string{upstream.URL}})
+	waitForMirrorsInProgress(t, 2)
+
+	// The leader gives up once its own timeout expires...
+	res := <-leader
+	require.NoError(t, res.err)
+	require.Equal(t, int32(gcodes.NotFound), res.rsp.GetStatus().GetCode())
+
+	// ...but the shared fetch keeps going for the follower.
 	upstream.release()
 	requireFetchOK(t, follower, d)
 	require.Equal(t, int32(1), upstream.requests.Load())

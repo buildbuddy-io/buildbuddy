@@ -45,6 +45,7 @@ go_test(
         "//proto:resource_go_proto",
         "//server/buildbuddy_server",
         "//server/cache_server",
+        "//server/metrics",
         "//server/remote_cache/byte_stream_server",
         "//server/remote_cache/cachetools",
         "//server/remote_cache/content_addressable_storage_server",
@@ -54,6 +55,7 @@ go_test(
         "//server/util/proto",
         "//server/util/scratchspace",
         "//server/util/testing/flags",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
         "@com_github_stretchr_testify//assert",
         "@com_github_stretchr_testify//require",
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
@@ -61,5 +63,6 @@ go_test(
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",
+        "@org_golang_google_protobuf//types/known/durationpb",
     ],
 )

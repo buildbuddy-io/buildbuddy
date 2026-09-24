@@ -4657,6 +4657,13 @@ var (
 		StatusHumanReadableLabel,
 	})
 
+	RemoteAssetMirrorsInProgress = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_asset",
+		Name:      "mirrors_in_progress",
+		Help:      "Number of per-URI fetches in progress in the Remote Asset FetchBlob API, including callers waiting on a deduplicated fetch.",
+	})
+
 	InputTreeSetupOpLatencyUsec = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_execution",

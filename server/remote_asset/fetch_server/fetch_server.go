@@ -490,18 +490,21 @@ func newMirrorKey(
 
 // dedupedMirrorToCache runs fn, unless an fn with the same key is already in
 // flight, in which case it waits for that one and returns its result.
+//
+// Each caller stops waiting when its own ctx is done. The shared fn is
+// cancelled only once every caller has stopped waiting (or after
+// maxHTTPTimeout), so a leader with a short timeout does not fail followers
+// that have more time left.
 func (p *FetchServer) dedupedMirrorToCache(ctx context.Context, key mirrorKey, fn func(ctx context.Context) (*repb.Digest, error)) (*repb.Digest, error) {
-	// The singleflight passes fn a ctx that keeps the leader's values but
-	// not its deadline, so re-apply the leader's deadline to bound the fetch.
-	deadline, hasDeadline := ctx.Deadline()
+	metrics.RemoteAssetMirrorsInProgress.Inc()
+	defer metrics.RemoteAssetMirrorsInProgress.Dec()
 	var isLeader atomic.Bool
 	d, _, err := p.mirrorGroup.Do(ctx, key, func(ctx context.Context) (*repb.Digest, error) {
 		isLeader.Store(true)
-		if hasDeadline {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithDeadline(ctx, deadline)
-			defer cancel()
-		}
+		// The singleflight drops the leader's deadline along with its
+		// cancellation, so bound the shared fetch independently.
+		ctx, cancel := context.WithTimeout(ctx, maxHTTPTimeout)
+		defer cancel()
 		return fn(ctx)
 	})
 	role := mirrorRoleWaiter
