@@ -3,9 +3,11 @@ package codex
 import (
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 
+	"github.com/armon/circbuf"
 	"github.com/buildbuddy-io/buildbuddy/cli/util/agent/agentutil"
 )
 
@@ -19,9 +21,13 @@ func Run(ctx context.Context, request *agentutil.RunRequest) error {
 	cmd := exec.CommandContext(ctx, "codex", args...)
 	cmd.Stdin = strings.NewReader(request.Prompt)
 	cmd.Stdout = request.OutputWriter()
-	cmd.Stderr = request.ProgressWriter()
+	stderr, err := circbuf.NewBuffer(agentutil.StderrTailBytes)
+	if err != nil {
+		return fmt.Errorf("create stderr buffer: %w", err)
+	}
+	cmd.Stderr = io.MultiWriter(request.ProgressWriter(), stderr)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("codex failed: %w", err)
+		return agentutil.FormatCommandError("codex", err, stderr)
 	}
 	return nil
 }

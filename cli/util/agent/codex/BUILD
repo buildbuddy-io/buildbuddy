@@ -6,5 +6,8 @@ go_library(
     name = "codex",
     srcs = ["codex.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/cli/util/agent/codex",
-    deps = ["//cli/util/agent/agentutil"],
+    deps = [
+        "//cli/util/agent/agentutil",
+        "@com_github_armon_circbuf//:circbuf",
+    ],
 )
