@@ -1366,6 +1366,20 @@ var (
 		Help:      "Total size in bytes of trees written to the local filecache.",
 	})
 
+	RemoteAssetFetchSingleflightRequests = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_asset",
+		Name:      "fetch_singleflight_requests_total",
+		Help:      "Number of per-URI FetchBlob attempts entering process-local singleflight after cache lookup. Includes callers that later fail or cancel; excludes cache hits and requests that bypass coalescing.",
+	})
+
+	RemoteAssetFetchSingleflightExecutions = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: bbNamespace,
+		Subsystem: "remote_asset",
+		Name:      "fetch_singleflight_executions_total",
+		Help:      "Number of origin download and CAS publication operations started by FetchBlob singleflight. Includes failed or canceled operations. Compare with fetch_singleflight_requests_total to measure coalescing.",
+	})
+
 	LookasideCacheLookupCount = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: bbNamespace,
 		Subsystem: "remote_cache",
