@@ -570,7 +570,7 @@ func (q *PriorityTaskScheduler) EnqueueTaskReservation(ctx context.Context, req 
 			// yet.
 			return
 		}
-		log.CtxDebugf(ctx, "Added task %+v to pq.", req)
+		log.CtxDebugf(ctx, "Added task %q to pq.", req.GetTaskId())
 		// Wake up the scheduling loop so that it can run the task if there are
 		// enough resources available.
 		q.checkQueueSignal <- struct{}{}
