@@ -1873,7 +1873,13 @@ func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
 	te := setupTestEnvWithCache(t)
 	flags.Set(t, "executor.container_registry_allowed_private_ips", []string{"127.0.0.1/32"})
 	flags.Set(t, "executor.container_registry.use_cache_percent", 100)
-	registry := testregistry.Run(t, testregistry.Opts{})
+	counter := testhttp.NewRequestCounter()
+	registry := testregistry.Run(t, testregistry.Opts{
+		HttpInterceptor: func(w http.ResponseWriter, r *http.Request) bool {
+			counter.Inc(r)
+			return true
+		},
+	})
 	imageName := "test_no_direct_cache_access"
 	_, pushedImage := registry.PushNamedImageWithMultipleLayers(t, imageName, nil)
 	pushedLayers, err := pushedImage.Layers()
@@ -1891,7 +1897,7 @@ func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
 	// Pull twice: the first pull populates the OCIFetcher server's cache and
 	// the second should be served from it. Neither should touch the AC or BS
 	// from the executor.
-	for range 2 {
+	for pull := range 2 {
 		pulledImage, err := newResolver(t, te).Resolve(
 			ctx,
 			registry.ImageAddress(imageName),
@@ -1910,8 +1916,16 @@ func TestResolveWithOCIFetcher_NoDirectCacheAccess(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, rc.Close())
 		}
+		if pull == 0 {
+			counter.Reset()
+		}
 	}
 
+	// Resolving the tag requires a HEAD, but cached manifests and layers
+	// should not require any GET requests on the second pull.
+	require.Equal(t, map[string]int{
+		http.MethodHead + " /v2/" + imageName + "/manifests/latest": 1,
+	}, counter.Snapshot())
 	require.Equal(t, int32(0), acClient.calls.Load(), "executor made direct ActionCache calls with useOCIFetcher=true")
 	require.Equal(t, int32(0), bsClient.calls.Load(), "executor made direct ByteStream calls with useOCIFetcher=true")
 }
