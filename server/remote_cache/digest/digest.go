@@ -13,7 +13,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
-	"path/filepath"
+	"path"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -241,8 +241,8 @@ func CASDownloadString(r *rspb.ResourceName) (string, error) {
 }
 
 func casDownloadString(r *rspb.ResourceName) string {
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	// Normalize slashes, e.g. "//foo/bar//" becomes "/foo/bar".
+	instanceName := path.Join(r.GetInstanceName())
 	if isOldStyleDigestFunction(r.GetDigestFunction()) {
 		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
@@ -258,8 +258,8 @@ func (r *CASResourceName) DownloadString() string {
 // UploadString returns the upload-form resource name using the supplied upload
 // UUID.
 func (r *CASResourceName) UploadString(uploadID string) string {
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	// Normalize slashes, e.g. "//foo/bar//" becomes "/foo/bar".
+	instanceName := path.Join(r.GetInstanceName())
 	if isOldStyleDigestFunction(r.rn.DigestFunction) {
 		return instanceName + "/uploads/" + uploadID + "/" + blobTypeSegment(r.GetCompressor()) + "/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
@@ -291,8 +291,8 @@ func ActionCacheString(r *rspb.ResourceName) (string, error) {
 }
 
 func actionCacheString(r *rspb.ResourceName) string {
-	// Normalize slashes, e.g. "//foo/bar//"" becomes "/foo/bar".
-	instanceName := filepath.Join(filepath.SplitList(r.GetInstanceName())...)
+	// Normalize slashes, e.g. "//foo/bar//" becomes "/foo/bar".
+	instanceName := path.Join(r.GetInstanceName())
 	if isOldStyleDigestFunction(r.GetDigestFunction()) {
 		return instanceName + "/" + blobTypeSegment(r.GetCompressor()) + "/ac/" + r.GetDigest().GetHash() + "/" + strconv.FormatInt(r.GetDigest().GetSizeBytes(), 10)
 	}
