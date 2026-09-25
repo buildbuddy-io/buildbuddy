@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
@@ -226,7 +226,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 
 	// The persistent volumes experiment takes precedence over the
 	// persistent-volumes platform property.
-	if value := executor_experiments.PersistentVolumes.Get(ctx); value != "" {
+	if value := execution_experiments.PersistentVolumes.Get(ctx); value != "" {
 		var values []string
 		for v := range strings.SplitSeq(value, ",") {
 			if v := strings.TrimSpace(v); v != "" {
@@ -235,7 +235,7 @@ func ApplyOverrides(ctx context.Context, env environment.Env, executorProps *Exe
 		}
 		volumes, err := platform.ParsePersistentVolumes(values...)
 		if err != nil {
-			return status.WrapErrorf(err, "parse %s experiment", executor_experiments.PersistentVolumes.Name())
+			return status.WrapErrorf(err, "parse %s experiment", execution_experiments.PersistentVolumes.Name())
 		}
 		platformProps.PersistentVolumes = volumes
 	}

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
@@ -299,7 +299,7 @@ func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {
 	platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
 	require.NoError(t, err)
 	ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{
-		{Name: executor_experiments.PersistentVolumes.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache, other:/other"}},
+		{Name: execution_experiments.PersistentVolumes.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache, other:/other"}},
 	})
 
 	// The experiment's volumes should take precedence over the platform

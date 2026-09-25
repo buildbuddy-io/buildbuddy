@@ -15,7 +15,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -2508,7 +2508,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.PlatformOverrides = &repb.Platform{}
 	}
 
-	// TODO(bduffany): migrate these to use executor_experiments instead
+	// TODO(bduffany): migrate these to use execution_experiments instead
 	if shouldUpgrade := fp.Boolean(ctx, "upgrade-fc-guest-kernel", false, expOptions...); shouldUpgrade {
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
 	}
@@ -2518,10 +2518,10 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	}
 
 	if supportsExperimentFlags {
-		// When adding a new flag to executor_experiments, update this list to
+		// When adding a new flag to execution_experiments, update this list to
 		// ensure the experiment propagates to executors at lease time.
 		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
-			executor_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
+			execution_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
 		}
 	}
 

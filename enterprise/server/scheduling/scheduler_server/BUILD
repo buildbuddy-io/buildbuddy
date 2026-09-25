@@ -12,7 +12,7 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/action_merger",
-        "//enterprise/server/remote_execution/executor_experiments",
+        "//enterprise/server/remote_execution/execution_experiments",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_util",
         "//proto:capability_go_proto",

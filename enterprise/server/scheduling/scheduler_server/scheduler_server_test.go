@@ -417,7 +417,7 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 	// Enable an executor experiment for every task. The persistent volumes
 	// experiment is only an example here, since the scheduler handles every
-	// experiment in executor_experiments the same way.
+	// experiment in execution_experiments the same way.
 	tmp := testfs.MakeTempDir(t)
 	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
 	"$schema": "https://flagd.dev/schema/v0/flags.json",
