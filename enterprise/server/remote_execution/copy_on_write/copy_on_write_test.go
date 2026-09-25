@@ -306,13 +306,10 @@ func TestCOW_SparseData(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() })
 
-	// Make sure the full content matches our buffer.
-	dataOut := make([]byte, len(data))
-	n, err := c.ReadAt(dataOut, 0)
-	require.NoError(t, err)
-	require.Equal(t, len(dataOut), n)
-
 	// Inspect the chunk files and ensure they have the expected physical size.
+	// Do this before reading through the store: reads go through a shared
+	// mmap, and on tmpfs, faulting in a hole allocates a page, so a full read
+	// makes every chunk dense.
 	for i := range chunks {
 		chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
 		// We wrote one data block per chunk except for the one chunk that was
@@ -325,6 +322,23 @@ func TestCOW_SparseData(t *testing.T) {
 		}
 		nb := numIOBlocks(t, chunkPath)
 		require.Equal(t, int64(1), nb, "chunk %d IO block count", i)
+	}
+
+	// Make sure the full content matches our buffer.
+	dataOut := make([]byte, len(data))
+	n, err := c.ReadAt(dataOut, 0)
+	require.NoError(t, err)
+	require.Equal(t, len(dataOut), n)
+	require.Equal(t, data, dataOut)
+
+	// A writable shared mmap read allocates holes on some filesystems. When
+	// the same read leaves a scratch sparse file unchanged, verify that reading
+	// through the store also preserves the chunk files' sparseness.
+	if !mmapReadPreservesHoles(t, outDir, ioBlockSize) {
+		for i := 1; i < len(chunks); i++ {
+			chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
+			require.Equal(t, int64(1), numIOBlocks(t, chunkPath), "chunk %d IO block count after read", i)
+		}
 	}
 
 	// Now write a single data byte to the empty chunk (0), and sync it to disk.
@@ -995,6 +1009,31 @@ func numIOBlocks(t *testing.T, path string) int64 {
 	// See https://askubuntu.com/a/1308745
 	statBlocksPerIOBlock := int64(s.Blksize) / 512
 	return s.Blocks / statBlocksPerIOBlock
+}
+
+// mmapReadPreservesHoles reports whether reading a writable shared mmap of a
+// sparse file increases its allocated block count on this filesystem.
+func mmapReadPreservesHoles(t *testing.T, dir string, ioBlockSize int64) bool {
+	f, err := os.CreateTemp(dir, ".mmap-read-probe-*")
+	require.NoError(t, err)
+	defer f.Close()
+	defer os.Remove(f.Name())
+
+	size := int(4 * ioBlockSize)
+	require.NoError(t, f.Truncate(int64(size)))
+	_, err = f.WriteAt([]byte{1}, 0)
+	require.NoError(t, err)
+	require.NoError(t, f.Sync())
+	before := numIOBlocks(t, f.Name())
+	require.Equal(t, int64(1), before, "probe IO block count before read")
+
+	mapped, err := syscall.Mmap(int(f.Fd()), 0, size, syscall.PROT_WRITE, syscall.MAP_SHARED)
+	require.NoError(t, err)
+	defer syscall.Munmap(mapped)
+	buf := make([]byte, len(mapped))
+	copy(buf, mapped)
+	require.Equal(t, byte(1), buf[0])
+	return numIOBlocks(t, f.Name()) > before
 }
 
 func ioBlockSize(t testing.TB, path string) int64 {
