@@ -310,8 +310,6 @@ func TestCOW_SparseData(t *testing.T) {
 	// Do this before reading through the store: reads go through a shared
 	// mmap, and on tmpfs, faulting in a hole allocates a page, so a full read
 	// makes every chunk dense.
-	// TODO: avoid allocating pages for holes when reading chunks stored on
-	// tmpfs.
 	for i := range chunks {
 		chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
 		// We wrote one data block per chunk except for the one chunk that was
