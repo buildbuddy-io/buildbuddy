@@ -490,9 +490,10 @@ func main() {
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	schedulerOpts := &scheduler_client.Options{
-		FilecacheMaxSizeBytes: &filecacheSizeBytes,
-		WarmupImages:          warmupImagesForRegistration(),
-		StartTime:             timestamppb.New(executorStartTime),
+		FilecacheMaxSizeBytes:   &filecacheSizeBytes,
+		WarmupImages:            warmupImagesForRegistration(),
+		StartTime:               timestamppb.New(executorStartTime),
+		SupportsExperimentFlags: *schedulerControlledExperimentsEnabled,
 	}
 	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, executor.HostID(), schedulerOpts)
 	if err != nil {

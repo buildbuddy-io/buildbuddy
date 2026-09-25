@@ -1506,6 +1506,19 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPo
 	return poolInfo, nil
 }
 
+func (s *SchedulerServer) PoolSupportsExperimentFlags(ctx context.Context, os, arch, pool, groupID string) (bool, error) {
+	nodePool := s.getOrCreatePool(nodePoolKey{os: os, arch: arch, pool: pool, groupID: groupID})
+	if err := nodePool.RefreshNodes(ctx); err != nil {
+		return false, err
+	}
+	for _, node := range nodePool.GetNodes(false /*=connectedOnly*/) {
+		if node.GetSupportsExperimentFlags() {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from

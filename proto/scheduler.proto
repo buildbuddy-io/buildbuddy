@@ -661,6 +661,11 @@ message ExecutionNode {
   // config file), in "--name=value" form. Only flags set to non-default
   // values are included, and the values of secret flags are redacted.
   repeated string configured_flags = 25;
+
+  // Whether the executor reads experiment flag values from
+  // ExecutionTask.experiment_flags. The app only evaluates these experiments
+  // for pools where at least one executor sets this.
+  bool supports_experiment_flags = 27;
 }
 
 message GetExecutionNodesRequest {

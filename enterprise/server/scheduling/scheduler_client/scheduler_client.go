@@ -80,6 +80,9 @@ type Options struct {
 	WarmupImages []*scpb.WarmupImage
 	// StartTime is when the executor process started.
 	StartTime *timestamppb.Timestamp
+	// SupportsExperimentFlags is whether the executor reads experiment flag
+	// values from the ExecutionTask.
+	SupportsExperimentFlags bool
 }
 
 func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator interfaces.XcodeLocator, options *Options) (*scpb.ExecutionNode, error) {
@@ -143,6 +146,7 @@ func makeExecutionNode(pool, executorID, executorHostID string, xcodeLocator int
 		WarmupImages:                  options.WarmupImages,
 		FilecacheMaxSizeBytes:         options.FilecacheMaxSizeBytes,
 		StartTime:                     options.StartTime,
+		SupportsExperimentFlags:       options.SupportsExperimentFlags,
 		Labels:                        trimmedLabels,
 	}, nil
 }

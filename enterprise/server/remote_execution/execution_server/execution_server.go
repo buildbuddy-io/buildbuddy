@@ -966,10 +966,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
 	}
 
-	// Executors cannot evaluate experiments themselves, so evaluate every
-	// executor-visible experiment here and send the results with the task.
-	executionTask.ExperimentFlags = executor_experiments.Evaluate(ctx)
-
 	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
 		if efp.Boolean(ctx, "executor.remote_container_image_reads_enabled", false) {
 			executionTask.Experiments = append(executionTask.Experiments, "executor.remote_container_image_reads_enabled")
@@ -1036,6 +1032,17 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
+	}
+	// Executors cannot evaluate experiments themselves, so evaluate the
+	// experiments that executors read and send the results with the task. Skip
+	// this for pools where no executor reads the results, such as self-hosted
+	// pools.
+	supportsExperimentFlags, err := scheduler.PoolSupportsExperimentFlags(ctx, props.OS, props.Arch, pool.Name, pool.GroupID)
+	if err != nil {
+		return nil, status.WrapError(err, "check executor pool support for experiment flags")
+	}
+	if supportsExperimentFlags {
+		executionTask.ExperimentFlags = executor_experiments.Evaluate(ctx)
 	}
 	var hostnamePattern string
 	var routingConfig *scpb.RoutingConfig

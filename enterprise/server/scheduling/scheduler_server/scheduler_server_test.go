@@ -797,6 +797,34 @@ func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.E
 	return taskID
 }
 
+func TestPoolSupportsExperimentFlags(t *testing.T) {
+	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+
+	// Register an executor that reads experiment flags from its tasks in one
+	// pool, and an executor that does not in another pool.
+	supporting := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	supporting.node.Pool = "supporting-pool"
+	supporting.node.SupportsExperimentFlags = true
+	supporting.Register()
+	unsupporting := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	unsupporting.node.Pool = "unsupporting-pool"
+	unsupporting.Register()
+
+	// Only the pool with the opted-in executor should report support, so that
+	// the app skips evaluating experiments for the other pool's tasks.
+	supported, err := env.GetSchedulerService().PoolSupportsExperimentFlags(ctx, defaultOS, defaultArch, "supporting-pool", "")
+	require.NoError(t, err)
+	require.True(t, supported)
+	supported, err = env.GetSchedulerService().PoolSupportsExperimentFlags(ctx, defaultOS, defaultArch, "unsupporting-pool", "")
+	require.NoError(t, err)
+	require.False(t, supported)
+
+	// A pool without any registered executors should not report support.
+	supported, err = env.GetSchedulerService().PoolSupportsExperimentFlags(ctx, defaultOS, defaultArch, "empty-pool", "")
+	require.NoError(t, err)
+	require.False(t, supported)
+}
+
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
 
