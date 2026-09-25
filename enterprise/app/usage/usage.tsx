@@ -583,7 +583,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
           {formatBytes(totalBytes, totalBytes)}
         </div>
         {renderBreakdownTable(
-          breakdownTableRows(rows, SNAPSHOT_USAGE_LEVELS, (bytes) => bytes === 0),
+          breakdownTableRows(rows, SNAPSHOT_USAGE_LEVELS),
           SNAPSHOT_USAGE_LEVELS.length,
           (bytes) => formatBytes(bytes, totalBytes),
           (bytes) => formatWithCommas(bytes)
@@ -613,7 +613,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
         </div>
         <div className="usage-value">{formatMinutes(totalUsec)}</div>
         {renderBreakdownTable(
-          breakdownTableRows(rows, COMPUTE_USAGE_LEVELS, (usec) => roundedMinutes(usec) === 0),
+          breakdownTableRows(rows, COMPUTE_USAGE_LEVELS),
           COMPUTE_USAGE_LEVELS.length + 1,
           formatMinutes
         )}
@@ -858,10 +858,6 @@ function formatMinutes(usec: number, category?: string): string {
   return `${formatWithCommas(Math.round(usec / 60e6))}${category ? " " + category : ""} minutes`;
 }
 
-function roundedMinutes(usec: number): number {
-  return Math.round(usec / 60e6);
-}
-
 const HOSTING_ORDER = ["Cloud", "Self-hosted"];
 const POOL_ORDER = ["RBE", "Workflows"];
 
@@ -910,37 +906,28 @@ interface BreakdownTableRow {
 /**
  * Flattens usage rows into table rows, grouped by each of the levels in turn.
  * Group rows carry the sum of the rows nested under them. Rows whose value is
- * zero according to isZero (which may round) are omitted.
+ * zero are omitted.
  */
-function breakdownTableRows(
-  rows: BreakdownUsageRow[],
-  levels: string[][],
-  isZero: (value: number) => boolean,
-  level = 0
-): BreakdownTableRow[] {
+function breakdownTableRows(rows: BreakdownUsageRow[], levels: string[][], level = 0): BreakdownTableRow[] {
   if (level === levels.length) {
-    return breakdownLeafRows(rows, level + 1, isZero);
+    return breakdownLeafRows(rows, level + 1);
   }
   const out: BreakdownTableRow[] = [];
   for (const name of levels[level]) {
     const group = rows.filter((row) => row.groups[level] === name);
     const value = group.reduce((sum, row) => sum + row.value, 0);
-    if (isZero(value)) continue;
-    out.push({ level: level + 1, cells: [name], value }, ...breakdownTableRows(group, levels, isZero, level + 1));
+    if (value === 0) continue;
+    out.push({ level: level + 1, cells: [name], value }, ...breakdownTableRows(group, levels, level + 1));
   }
   return out;
 }
 
-function breakdownLeafRows(
-  rows: BreakdownUsageRow[],
-  level: number,
-  isZero: (value: number) => boolean
-): BreakdownTableRow[] {
+function breakdownLeafRows(rows: BreakdownUsageRow[], level: number): BreakdownTableRow[] {
   // The server returns one row per combination of leaf dimensions, already
   // sorted by them.
   const out: BreakdownTableRow[] = [];
   for (const { leaf, value } of rows) {
-    if (leaf && !isZero(value)) {
+    if (leaf && value !== 0) {
       out.push({ level, cells: leaf, value });
     }
   }
