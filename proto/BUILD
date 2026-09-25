@@ -61,6 +61,12 @@ proto_library(
 )
 
 proto_library(
+    name = "atlas_proto",
+    srcs = ["atlas.proto"],
+    deps = ["@com_google_protobuf//:timestamp_proto"],
+)
+
+proto_library(
     name = "auditlog_proto",
     srcs = [
         "auditlog.proto",
@@ -1050,6 +1056,14 @@ go_proto_library(
 )
 
 go_proto_library(
+    name = "atlas_go_proto",
+    importpath = "github.com/buildbuddy-io/buildbuddy/proto/atlas",
+    mode = "messages_and_services",
+    proto = ":atlas_proto",
+    deps = ["@org_golang_google_protobuf//types/known/timestamppb"],
+)
+
+go_proto_library(
     name = "auditlog_go_proto",
     importpath = "github.com/buildbuddy-io/buildbuddy/proto/auditlog",
     proto = ":auditlog_proto",
@@ -1990,6 +2004,12 @@ ts_proto_library(
         ":duration_ts_proto",
         ":timestamp_ts_proto",
     ],
+)
+
+ts_proto_library(
+    name = "atlas_ts_proto",
+    proto = ":atlas_proto",
+    deps = [":timestamp_ts_proto"],
 )
 
 ts_proto_library(
