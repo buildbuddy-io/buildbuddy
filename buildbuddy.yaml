@@ -203,7 +203,7 @@ actions:
     steps:
       - run: |
           enterprise/tools/agents/setup-gh.sh
-          enterprise/tools/agents/claude/setup.sh
+          tools/agents/claude/setup.sh
           bb agent review
 
 plugins:

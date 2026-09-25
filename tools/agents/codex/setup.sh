@@ -8,7 +8,11 @@
 set -euo pipefail
 
 if [[ -z "${CODEX_API_KEY:-}" ]]; then
-  echo "Error: CODEX_API_KEY is not set." >&2
+  if [[ -n "${BUILDBUDDY_CI_RUNNER_ROOT_DIR:-}" ]]; then
+    echo "Error: Add CODEX_API_KEY as a BuildBuddy secret to use Codex." >&2
+  else
+    echo "Error: CODEX_API_KEY is not set." >&2
+  fi
   exit 1
 fi
 
