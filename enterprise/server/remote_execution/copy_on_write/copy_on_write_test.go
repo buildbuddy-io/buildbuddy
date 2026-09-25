@@ -336,7 +336,7 @@ func TestCOW_SparseData(t *testing.T) {
 	// A writable shared mmap read allocates holes on some filesystems. When
 	// the same read leaves a scratch sparse file unchanged, verify that reading
 	// through the store also preserves the chunk files' sparseness.
-	if !mmapReadAllocatesHoles(t, outDir, ioBlockSize) {
+	if !mmapReadPreservesHoles(t, outDir, ioBlockSize) {
 		for i := 1; i < len(chunks); i++ {
 			chunkPath := filepath.Join(outDir, strconv.Itoa(i*int(chunkSize)))
 			require.Equal(t, int64(1), numIOBlocks(t, chunkPath), "chunk %d IO block count after read", i)
@@ -1013,9 +1013,9 @@ func numIOBlocks(t *testing.T, path string) int64 {
 	return s.Blocks / statBlocksPerIOBlock
 }
 
-// mmapReadAllocatesHoles reports whether reading a writable shared mmap of a
+// mmapReadPreservesHoles reports whether reading a writable shared mmap of a
 // sparse file increases its allocated block count on this filesystem.
-func mmapReadAllocatesHoles(t *testing.T, dir string, ioBlockSize int64) bool {
+func mmapReadPreservesHoles(t *testing.T, dir string, ioBlockSize int64) bool {
 	f, err := os.CreateTemp(dir, ".mmap-read-probe-*")
 	require.NoError(t, err)
 	defer f.Close()
