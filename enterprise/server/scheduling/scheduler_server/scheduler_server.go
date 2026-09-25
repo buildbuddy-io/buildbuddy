@@ -2490,6 +2490,11 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		// executor's default. This is mostly only reliable for targeting
 		// isolation_type == "firecracker" currently, and only on BB cloud where
 		// we don't have firecracker configured as the default.
+		//
+		// TODO: the executor should send the effective isolation type here
+		// so that we can target on that instead. Might need to deprecate/remove
+		// forced_network_isolation_type first though, since it complicates
+		// the logic.
 		experiments.WithContext("requested_isolation_type", platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)),
 	}
 
@@ -2503,18 +2508,18 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		taskProto.PlatformOverrides = &repb.Platform{}
 	}
 
+	// TODO(bduffany): migrate these to use executor_experiments instead
 	if shouldUpgrade := fp.Boolean(ctx, "upgrade-fc-guest-kernel", false, expOptions...); shouldUpgrade {
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
 	}
-
 	const recordInputFetchMetadataExperimentName = "remote_execution.record_input_fetch_metadata"
 	if fp.Boolean(ctx, recordInputFetchMetadataExperimentName, false, expOptions...) {
 		taskProto.Experiments = append(taskProto.Experiments, recordInputFetchMetadataExperimentName)
 	}
 
-	// Evaluate the experiments declared in executor_experiments, but only for
-	// executors that read the results.
 	if supportsExperimentFlags {
+		// When adding a new flag to executor_experiments, update this list to
+		// ensure the experiment propagates to executors at lease time.
 		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
 			executor_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
 		}
