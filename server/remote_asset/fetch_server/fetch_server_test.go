@@ -706,7 +706,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			invalidURI:   true,
 		},
 		{
-			name:         "hit_on_inflight_cache_recheck",
+			name:         "hit_on_fallback_uri_cache_recheck",
 			checksumFunc: repb.DigestFunction_SHA256,
 			storageFunc:  repb.DigestFunction_SHA256,
 			initialMiss:  true,
@@ -738,8 +738,15 @@ func TestFetchBlobWithCache(t *testing.T) {
 			}))
 			defer ts.Close()
 			uris := []string{ts.URL}
+			wantRequests := int64(0)
 			if tc.invalidURI {
 				uris = []string{"http://%zz"}
+			}
+			if tc.initialMiss {
+				// The first URI fails, then the cache recheck before the
+				// fallback URI finds the blob.
+				uris = []string{ts.URL, ts.URL}
+				wantRequests = 1
 			}
 			checksum := checksumQualifierFromContent(t, checksumDigest.GetHash(), tc.checksumFunc)
 
@@ -758,7 +765,7 @@ func TestFetchBlobWithCache(t *testing.T) {
 			assert.Equal(t, int32(0), resp.GetStatus().Code)
 			assert.Equal(t, tc.storageFunc, resp.GetDigestFunction())
 			assert.Empty(t, resp.GetUri())
-			assert.Zero(t, requests.Load())
+			assert.Equal(t, wantRequests, requests.Load())
 			storageDigest, err := digest.Compute(strings.NewReader(content), tc.storageFunc)
 			require.NoError(t, err)
 			assert.Equal(t, storageDigest, resp.GetBlobDigest())

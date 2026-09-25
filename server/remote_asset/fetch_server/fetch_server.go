@@ -21,12 +21,10 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
-	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
-	"github.com/buildbuddy-io/buildbuddy/server/util/authutil"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
@@ -91,7 +89,7 @@ type FetchServer struct {
 // fetchKey shares equivalent requests across users and API keys in one group.
 // Transport metadata is deliberately excluded.
 type fetchKey struct {
-	GroupID               string
+	UserPrefix            string
 	InstanceName          string
 	StorageDigestFunction repb.DigestFunction_Value
 	URI                   string
@@ -395,10 +393,12 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 		if key == nil {
 			blobDigest, err = mirrorToCache(ctx, bsClient, instanceName, httpClient, uri, header, storageFunc, checksums)
 		} else {
-			// Recheck the cache before joining a flight, since another request
-			// may have published the expected blob after our first lookup.
-			if response := cachedBlobResponse(); response != nil {
-				return response, nil
+			// Before falling back to a later URI, recheck the cache, since
+			// another request may have published the expected blob.
+			if i > 0 {
+				if response := cachedBlobResponse(); response != nil {
+					return response, nil
+				}
 			}
 			uriKey := *key
 			uriKey.URI = uri
@@ -414,10 +414,7 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				defer cancel()
 				return mirrorToCache(ctx, bsClient, instanceName, httpClient, uri, header, storageFunc, checksums)
 			})
-			if err == nil {
-				err = ctx.Err()
-			}
-			if rpcCtx.Err() != nil {
+			if err != nil && rpcCtx.Err() != nil {
 				return nil, status.FromContextError(rpcCtx)
 			}
 		}
@@ -465,16 +462,14 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 }
 
 func (p *FetchServer) fetchKey(ctx context.Context, req *rapb.FetchBlobRequest, storageFunc repb.DigestFunction_Value) (fetchKey, error) {
+	userPrefix, err := prefix.UserPrefixFromContext(ctx)
+	if err != nil {
+		return fetchKey{}, err
+	}
 	key := fetchKey{
-		GroupID:               interfaces.AuthAnonymousUser,
+		UserPrefix:            userPrefix,
 		InstanceName:          req.GetInstanceName(),
 		StorageDigestFunction: storageFunc,
-	}
-	u, err := p.env.GetAuthenticator().AuthenticatedUser(ctx)
-	if err == nil {
-		key.GroupID = u.GetGroupID()
-	} else if !authutil.IsAnonymousUserError(err) || !p.env.GetAuthenticator().AnonymousUsageEnabled(ctx) {
-		return key, err
 	}
 	// Headers are handled separately for each URI, after applying overrides.
 	for _, q := range req.GetQualifiers() {
