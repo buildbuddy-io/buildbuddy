@@ -13,6 +13,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/resources"
 	"github.com/buildbuddy-io/buildbuddy/server/util/bazel_request"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -69,8 +70,8 @@ func RegisterInProcessSync(env *real_environment.RealEnv, syncProvider flagdsync
 }
 
 // setProvider installs the given OpenFeature provider as the global provider
-// and wires the resulting FlagProvider into env. It blocks until the provider
-// is ready.
+// and wires the resulting FlagProvider into env and expflag. It blocks until
+// the provider is ready.
 func setProvider(env *real_environment.RealEnv, provider openfeature.FeatureProvider) error {
 	if err := openfeature.SetProviderAndWait(provider); err != nil {
 		return err
@@ -81,6 +82,7 @@ func setProvider(env *real_environment.RealEnv, provider openfeature.FeatureProv
 		return err
 	}
 	env.SetExperimentFlagProvider(fp)
+	expflag.SetFlagProvider(fp)
 	statusz.AddSection("experiments", "Configured experiments config", fp)
 	return nil
 }
