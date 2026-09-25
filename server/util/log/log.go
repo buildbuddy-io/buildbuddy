@@ -12,10 +12,12 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/buildbuddy-io/buildbuddy/server/metrics"
+	"github.com/buildbuddy-io/buildbuddy/server/util/lru"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rs/zerolog"
@@ -360,19 +362,71 @@ func (s *durationSampler) Sample(lvl zerolog.Level) bool {
 	return false
 }
 
+// newLevelDurationSampler returns a sampler that samples once every duration
+// d, tracked separately for each level.
+func newLevelDurationSampler(d time.Duration) zerolog.Sampler {
+	return &zerolog.LevelSampler{
+		TraceSampler: newDurationSampler(d),
+		DebugSampler: newDurationSampler(d),
+		InfoSampler:  newDurationSampler(d),
+		WarnSampler:  newDurationSampler(d),
+		ErrorSampler: newDurationSampler(d),
+	}
+}
+
 // EveryDuration returns a new logger that will only log anew after every
 // duration d has passed. This can be useful if you want to limit the
 // frequency of some logging to once per second or something.
 func (l Logger) EveryDuration(d time.Duration) Logger {
-	return Logger{
-		zl: l.zl.Sample(&zerolog.LevelSampler{
-			TraceSampler: newDurationSampler(d),
-			DebugSampler: newDurationSampler(d),
-			InfoSampler:  newDurationSampler(d),
-			WarnSampler:  newDurationSampler(d),
-			ErrorSampler: newDurationSampler(d),
-		}),
+	return Logger{zl: l.zl.Sample(newLevelDurationSampler(d))}
+}
+
+// maxSampledKeys bounds the number of keys a PerKeySampledLogger tracks. Beyond
+// that, the least recently used keys are evicted, which lets them log again
+// before their duration has passed.
+const maxSampledKeys = 10_000
+
+// PerKeySampledLogger derives loggers that are sampled independently for each
+// key. See Logger.EveryDurationPerKey.
+type PerKeySampledLogger struct {
+	base Logger
+	d    time.Duration
+
+	mu      sync.Mutex
+	loggers lru.LRU[*Logger]
+}
+
+// EveryDurationPerKey returns a logger that will only log anew after every
+// duration d has passed, tracked independently for each key. This is useful
+// when frequent logs about one key (for example, a group ID) should not
+// suppress logs about other keys. Use ForKey to log:
+//
+//	l := log.NamedSubLogger("foo").EveryDurationPerKey(time.Minute)
+//	...
+//	l.ForKey(groupID).CtxWarningf(ctx, "...")
+func (l Logger) EveryDurationPerKey(d time.Duration) *PerKeySampledLogger {
+	loggers, err := lru.New[*Logger](&lru.Config[*Logger]{
+		MaxSize: maxSampledKeys,
+		SizeFn:  func(*Logger) int64 { return 1 },
+	})
+	if err != nil {
+		// The config is fixed, so this can't happen.
+		panic(fmt.Sprintf("create per-key sampled logger: %s", err))
 	}
+	return &PerKeySampledLogger{base: l, d: d, loggers: loggers}
+}
+
+// ForKey returns the logger for the given key, which will only log anew after
+// the duration has passed since it last logged.
+func (l *PerKeySampledLogger) ForKey(key string) *Logger {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if logger, ok := l.loggers.Get(key); ok {
+		return logger
+	}
+	logger := &Logger{zl: l.base.zl.Sample(newLevelDurationSampler(l.d))}
+	l.loggers.Add(key, logger)
+	return logger
 }
 
 func NamedSubLogger(name string) Logger {
