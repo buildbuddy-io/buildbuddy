@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/commandutil"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/persistentworker"
@@ -1196,6 +1197,17 @@ func WarmupConfigs() []WarmupConfig {
 }
 
 func (p *pool) effectivePlatform(ctx context.Context, task *repb.ExecutionTask) (*platform.Properties, error) {
+	// Apply the persistent volumes experiment as a platform override, so that
+	// it takes precedence over the persistent-volumes platform property.
+	if volumes := executor_experiments.PersistentVolumes.Get(ctx); volumes != "" {
+		if task.PlatformOverrides == nil {
+			task.PlatformOverrides = &repb.Platform{}
+		}
+		task.PlatformOverrides.Properties = append(task.PlatformOverrides.Properties, &repb.Platform_Property{
+			Name:  platform.PersistentVolumesPropertyName,
+			Value: volumes,
+		})
+	}
 	props, err := platform.ParseProperties(task)
 	if err != nil {
 		return nil, err

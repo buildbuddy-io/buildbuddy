@@ -12,6 +12,7 @@ go_library(
     deps = [
         "//enterprise/server/experiments",
         "//enterprise/server/remote_execution/action_merger",
+        "//enterprise/server/remote_execution/executor_experiments",
         "//enterprise/server/tasksize",
         "//enterprise/server/util/ci_runner_util",
         "//proto:capability_go_proto",
@@ -71,6 +72,7 @@ go_test(
         "//enterprise/server/util/ci_runner_env",
         "//enterprise/server/util/ci_runner_util",
         "//proto:context_go_proto",
+        "//proto:experiments_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:scheduler_go_proto",
         "//proto:upgrade_go_proto",
@@ -82,6 +84,7 @@ go_test(
         "//server/testutil/testenv",
         "//server/testutil/testfs",
         "//server/util/claims",
+        "//server/util/expflag",
         "//server/util/log",
         "//server/util/platform",
         "//server/util/proto",

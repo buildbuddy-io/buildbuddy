@@ -15,6 +15,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -2517,18 +2518,6 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if taskProto.GetPlatformOverrides() == nil {
 		taskProto.PlatformOverrides = &repb.Platform{}
 	}
-	plat := taskProto.PlatformOverrides
-
-	persistentVolumes, details := fp.StringDetails(ctx, "remote_execution.persistent_volumes", "", expOptions...)
-	if persistentVolumes != "" {
-		plat.Properties = append(plat.Properties, &repb.Platform_Property{
-			Name:  platform.PersistentVolumesPropertyName,
-			Value: persistentVolumes,
-		})
-	}
-	if details.Variant() != "" {
-		taskProto.Experiments = append(taskProto.Experiments, "remote_execution.persistent_volumes:"+details.Variant())
-	}
 
 	if shouldUpgrade := fp.Boolean(ctx, "upgrade-fc-guest-kernel", false, expOptions...); shouldUpgrade {
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
@@ -2546,8 +2535,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		log.CtxWarningf(ctx, "Could not check whether executor %q supports experiment flags: %s", executorID, err)
 	} else if supportsExperimentFlags {
 		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
-			// TODO: add the GetProto(ctx, expOptions...) result for each
-			// experiment in executor_experiments here.
+			executor_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
 		}
 	}
 

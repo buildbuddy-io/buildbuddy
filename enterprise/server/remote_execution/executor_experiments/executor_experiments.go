@@ -6,6 +6,10 @@
 // executor leases a task.
 package executor_experiments
 
+import (
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
+)
+
 var (
-// TODO: add experiments here!
+	PersistentVolumes = expflag.String("executor.persistent_volumes", "", "Persistent volumes to mount into each task's container, in the same format as the persistent-volumes platform property. When set, this takes precedence over the platform property.")
 )
