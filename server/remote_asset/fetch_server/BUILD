@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//proto:cache_go_proto",
         "//proto:cache_service_go_proto",
+        "//proto:capability_go_proto",
         "//proto:remote_asset_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -16,6 +17,7 @@ go_library(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/config",
         "//server/remote_cache/digest",
+        "//server/util/capabilities",
         "//server/util/flag",
         "//server/util/log",
         "//server/util/prefix",
@@ -46,6 +48,7 @@ go_test(
         "//server/remote_cache/cachetools",
         "//server/remote_cache/content_addressable_storage_server",
         "//server/remote_cache/digest",
+        "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/prefix",
         "//server/util/proto",
