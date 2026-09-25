@@ -390,8 +390,6 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 	expflag.SetFlagProvider(fp)
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
-	// Schedule a task, then lease it from an executor that reads experiment
-	// flags from its tasks.
 	env, ctx := getEnv(t, &schedulerOpts{}, "")
 	env.SetExperimentFlagProvider(fp)
 	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
@@ -415,9 +413,8 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 }
 
 func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
-	// Enable an executor experiment for every task. The persistent volumes
-	// experiment is only an example here, since the scheduler handles every
-	// experiment in execution_experiments the same way.
+	// Note: persistent_volumes is just used as an example here. The scheduler
+	// should handle all experiments the same way.
 	tmp := testfs.MakeTempDir(t)
 	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
 	"$schema": "https://flagd.dev/schema/v0/flags.json",
@@ -500,9 +497,8 @@ type fakeExecutor struct {
 	t               *testing.T
 	schedulerClient scpb.SchedulerClient
 
-	id   string
-	node *scpb.ExecutionNode
-	// Whether lease requests say that the executor reads experiment flags.
+	id                      string
+	node                    *scpb.ExecutionNode
 	supportsExperimentFlags bool
 
 	ctx       context.Context

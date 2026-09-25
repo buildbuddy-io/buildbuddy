@@ -36,11 +36,9 @@ var _ interfaces.TaskLeaser = (*TaskLeaser)(nil)
 var _ interfaces.TaskLease = (*TaskLease)(nil)
 
 type TaskLeaser struct {
-	env              environment.Env
-	executorID       string
-	executorHostname string
-	// Whether the executor reads experiment flag values from the leased
-	// ExecutionTask.
+	env                     environment.Env
+	executorID              string
+	executorHostname        string
 	supportsExperimentFlags bool
 }
 
