@@ -379,12 +379,10 @@ common:release-shared --strip=always
 
 # Configuration used for Linux releases
 common:release --config=release-shared
-common:release --repository_cache=~/repo-cache/
 common:release --remote_instance_name=buildbuddy-io/buildbuddy/release/rin20260818
 
 # Configuration used for release-mac workflow
 common:release-mac --config=release-shared
-common:release-mac --repository_cache=~/repo-cache/
 
 # Configuration used for release-m1 workflow
 common:release-m1 --config=release-shared
@@ -402,7 +400,6 @@ common:ci-shared --config=download-minimal
 # common:ci-shared --config=race
 common:ci-shared --build_metadata=ROLE=CI
 common:ci-shared --flaky_test_attempts=2
-common:ci-shared --repository_cache=~/repo-cache/
 common:ci-shared --announce_rc
 common:ci-shared --color=yes
 
