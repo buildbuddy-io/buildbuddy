@@ -9,8 +9,9 @@
 }
 
 .popup {
-  position: absolute;
-  top: 100%;
+  position: fixed;
+  box-sizing: border-box;
+  overflow: auto;
 
   z-index: 6;
 
@@ -21,21 +22,11 @@
     0 3px 5px var(--color-popup-shadow-alt);
 }
 
-.popup.anchor-right {
-  right: 0;
-}
-
-.popup.anchor-left {
-  left: 0;
-}
-
 .popup.anchor-center {
-  left: 50%;
   transform: translateX(-50%);
 }
 
 .popup.anchor-center-right {
-  right: 0;
   transform: translateX(25%);
 }
 
