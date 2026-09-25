@@ -60,7 +60,7 @@ var implementationsByCommandName = map[string]implementation{
 	"index":           {handler: index.HandleIndex, flags: index.Flags},
 	"install":         {handler: plugin.HandleInstall, flags: plugin.Flags},
 	"login":           {handler: login.HandleLogin, flags: login.Flags},
-	"logout":          {handler: login.HandleLogout},
+	"logout":          {handler: login.HandleLogout, flags: login.LogoutFlags},
 	"print":           {handler: printlog.HandlePrint, flags: printlog.Flags},
 	"record":          {handler: record.HandleRecord, flags: record.Flags},
 	"remote":          {handler: remotebazel.HandleRemoteBazel, flags: remotebazel.RemoteFlagset},
