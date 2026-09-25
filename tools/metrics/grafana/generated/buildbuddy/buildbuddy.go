@@ -1091,7 +1091,7 @@ func grpcRow() *dashboard.RowBuilder {
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (pool_id, connection_id, pod_name, target) (buildbuddy_grpc_client_rpcs_per_connection{region="${region}", job="${job}"} > 0`, "{{target}} pool={{pool_id}} conn={{connection_id}} @ {{pod_name}}")))
+			WithTarget(dash.PromQuery(`sum by (pool_id, connection_id, pod_name, target) (buildbuddy_grpc_client_rpcs_per_connection{region="${region}", job="${job}"}) > 0`, "{{target}} pool={{pool_id}} conn={{connection_id}} @ {{pod_name}}")))
 }
 
 func trafficStatsRow() *dashboard.RowBuilder {
