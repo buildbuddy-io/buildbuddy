@@ -390,26 +390,50 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 	expflag.SetFlagProvider(fp)
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
-	// Register an executor that reads experiment flags from its tasks, then
-	// schedule a task and lease it from that executor.
-	env, ctx := getEnv(t, &schedulerOpts{}, "")
-	env.SetExperimentFlagProvider(fp)
-	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
-	fe.node.SupportsExperimentFlags = true
-	fe.Register()
+	for _, tc := range []struct {
+		name                    string
+		supportsExperimentFlags bool
+		wantFlags               []*expb.EvaluatedFlag
+	}{
+		{
+			// The scheduler should send the experiment's value with the leased
+			// task, and leave it to the executor to apply the value to the
+			// task's platform.
+			name:                    "ExecutorSupportsExperimentFlags",
+			supportsExperimentFlags: true,
+			wantFlags: []*expb.EvaluatedFlag{
+				{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
+			},
+		},
+		{
+			// The scheduler should skip evaluating the experiment, since the
+			// executor would ignore the result.
+			name:                    "ExecutorDoesNotSupportExperimentFlags",
+			supportsExperimentFlags: false,
+			wantFlags:               nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Schedule a task, then lease it from an executor that says in its
+			// lease request whether it reads experiment flags.
+			env, ctx := getEnv(t, &schedulerOpts{}, "")
+			env.SetExperimentFlagProvider(fp)
+			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			fe.supportsExperimentFlags = tc.supportsExperimentFlags
+			fe.Register()
 
-	taskID := scheduleTask(ctx, t, env, map[string]string{})
+			taskID := scheduleTask(ctx, t, env, map[string]string{})
 
-	fe.WaitForTask(taskID)
-	lease := fe.Claim(taskID)
-	defer lease.Finalize()
+			fe.WaitForTask(taskID)
+			lease := fe.Claim(taskID)
+			defer lease.Finalize()
 
-	// The scheduler should send the experiment's value with the leased task,
-	// and leave it to the executor to apply the value to the task's platform.
-	require.Empty(t, cmp.Diff([]*expb.EvaluatedFlag{
-		{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
-	}, lease.task.GetExperimentFlags(), protocmp.Transform()))
-	require.Empty(t, lease.task.GetPlatformOverrides().GetProperties())
+			// In both cases, the scheduler should not set the persistent
+			// volumes platform property itself.
+			require.Empty(t, cmp.Diff(tc.wantFlags, lease.task.GetExperimentFlags(), protocmp.Transform()))
+			require.Empty(t, lease.task.GetPlatformOverrides().GetProperties())
+		})
+	}
 }
 
 type task struct {
@@ -432,6 +456,8 @@ type fakeExecutor struct {
 
 	id   string
 	node *scpb.ExecutionNode
+	// Whether lease requests say that the executor reads experiment flags.
+	supportsExperimentFlags bool
 
 	ctx       context.Context
 	stop      context.CancelFunc
@@ -705,11 +731,12 @@ func (e *fakeExecutor) leaseTask(taskID, reconnectToken string) (*taskLease, err
 		return nil, err
 	}
 	err = stream.Send(&scpb.LeaseTaskRequest{
-		TaskId:            taskID,
-		ExecutorId:        e.id,
-		ExecutorHostname:  e.node.GetHost(),
-		SupportsReconnect: true,
-		ReconnectToken:    reconnectToken,
+		TaskId:                  taskID,
+		ExecutorId:              e.id,
+		ExecutorHostname:        e.node.GetHost(),
+		SupportsReconnect:       true,
+		ReconnectToken:          reconnectToken,
+		SupportsExperimentFlags: e.supportsExperimentFlags,
 	})
 	if err != nil {
 		return nil, err
@@ -804,35 +831,6 @@ func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.E
 	})
 	require.NoError(t, err)
 	return taskID
-}
-
-func TestExecutorSupportsExperimentFlags(t *testing.T) {
-	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
-	s := env.GetSchedulerService().(*SchedulerServer)
-
-	// Register two executors in the same pool, where only one of them reads
-	// experiment flags from its tasks.
-	supporting := newFakeExecutor(ctx, t, env.GetSchedulerClient())
-	supporting.node.SupportsExperimentFlags = true
-	supporting.Register()
-	unsupporting := newFakeExecutor(ctx, t, env.GetSchedulerClient())
-	unsupporting.Register()
-
-	// Only the opted-in executor should report support, so that the scheduler
-	// skips evaluating executor experiments when the other executor leases a
-	// task.
-	key := nodePoolKey{os: defaultOS, arch: defaultArch}
-	supported, err := s.executorSupportsExperimentFlags(ctx, key, supporting.id)
-	require.NoError(t, err)
-	require.True(t, supported)
-	supported, err = s.executorSupportsExperimentFlags(ctx, key, unsupporting.id)
-	require.NoError(t, err)
-	require.False(t, supported)
-
-	// An executor that is not registered in the pool should not report support.
-	supported, err = s.executorSupportsExperimentFlags(ctx, key, "unknown-executor")
-	require.NoError(t, err)
-	require.False(t, supported)
 }
 
 func TestExecutorReEnqueue_NoLeaseID(t *testing.T) {

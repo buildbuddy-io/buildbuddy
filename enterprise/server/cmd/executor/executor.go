@@ -457,7 +457,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error initializing ExecutionServer: %s", err)
 	}
-	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, executorHostName)
+	taskLeaser := task_leaser.NewTaskLeaser(env, executorID, executorHostName, *schedulerControlledExperimentsEnabled)
 	taskScheduler, err := priority_task_scheduler.NewPriorityTaskScheduler(env, executor, runnerPool, taskLeaser, &priority_task_scheduler.Options{})
 	if err != nil {
 		log.Fatalf("Error creating task scheduler: %v", err)
@@ -490,10 +490,9 @@ func main() {
 	http.Handle("/readyz", env.GetHealthChecker().ReadinessHandler())
 
 	schedulerOpts := &scheduler_client.Options{
-		FilecacheMaxSizeBytes:   &filecacheSizeBytes,
-		WarmupImages:            warmupImagesForRegistration(),
-		StartTime:               timestamppb.New(executorStartTime),
-		SupportsExperimentFlags: *schedulerControlledExperimentsEnabled,
+		FilecacheMaxSizeBytes: &filecacheSizeBytes,
+		WarmupImages:          warmupImagesForRegistration(),
+		StartTime:             timestamppb.New(executorStartTime),
 	}
 	reg, err := scheduler_client.NewRegistration(env, taskScheduler, executorID, executor.HostID(), schedulerOpts)
 	if err != nil {

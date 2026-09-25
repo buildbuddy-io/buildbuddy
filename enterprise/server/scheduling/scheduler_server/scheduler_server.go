@@ -1508,22 +1508,6 @@ func (s *SchedulerServer) GetPoolInfo(ctx context.Context, os, arch, requestedPo
 	return poolInfo, nil
 }
 
-// executorSupportsExperimentFlags returns whether the executor's registration
-// in the pool says that it reads experiment flag values from the
-// ExecutionTask.
-func (s *SchedulerServer) executorSupportsExperimentFlags(ctx context.Context, key nodePoolKey, executorID string) (bool, error) {
-	nodePool := s.getOrCreatePool(key)
-	if err := nodePool.RefreshNodes(ctx); err != nil {
-		return false, err
-	}
-	for _, node := range nodePool.GetNodes(false /*=connectedOnly*/) {
-		if node.GetExecutorId() == executorID {
-			return node.GetSupportsExperimentFlags(), nil
-		}
-	}
-	return false, nil
-}
-
 func (s *SchedulerServer) getPoolInfo(ctx context.Context, os, arch, requestedPool, workflowID string, poolType platform.PoolType) (*interfaces.PoolInfo, error) {
 	// Note: The defaultPoolName flag only applies to the shared executor pool.
 	// The pool name for self-hosted pools is always determined directly from
@@ -2270,7 +2254,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorId(), req.GetExecutorHostname(), key, task.serializedTask, task.metadata.GetTaskGroupId())
+			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
 
 			// Prometheus: observe queue wait time.
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
@@ -2458,14 +2442,14 @@ func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTa
 // for things like experiments and token refreshes.
 // This is important for tasks that are queued for a long time or are retried
 // after some time, as values computed at initial enqueue can be stale.
-func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorID, executorHostname string, poolKey nodePoolKey, task []byte, taskGroupID string) []byte {
+func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, task []byte, taskGroupID string) []byte {
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
 	}
 
-	taskProto = s.modifyTaskForExperiments(ctx, executorID, executorHostname, poolKey, taskProto)
+	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, supportsExperimentFlags, poolKey, taskProto)
 	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
 		if status.IsNotFoundError(err) {
 			// This can be expected with Remote Bazel on public repos, where tokens are not needed.
@@ -2482,7 +2466,7 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorID, ex
 	}
 }
 
-func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorID, executorHostname string, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
+func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
 		return taskProto
@@ -2530,10 +2514,7 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 
 	// Evaluate the experiments declared in executor_experiments, but only for
 	// executors that read the results.
-	supportsExperimentFlags, err := s.executorSupportsExperimentFlags(ctx, poolKey, executorID)
-	if err != nil {
-		log.CtxWarningf(ctx, "Could not check whether executor %q supports experiment flags: %s", executorID, err)
-	} else if supportsExperimentFlags {
+	if supportsExperimentFlags {
 		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
 			executor_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
 		}
