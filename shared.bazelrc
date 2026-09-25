@@ -459,11 +459,19 @@ common:linux-arm64-workflows --build_metadata=TAGS=linux-arm64-workflow
 # TODO(vanja) turn on once https://github.com/buildbuddy-io/buildbuddy-internal/issues/6247 is fixed
 # common:linux-workflows --remote_header=x-buildbuddy-platform.enable-vfs=true
 
-# Configuration used for Mac workflows
-# TODO(bduffany): Enable RBE for Mac workflows, and reconcile this with other configs
+# Compile Darwin targets with the hermetic toolchains on Linux RBE. Tests
+# still execute natively on the Mac running Bazel. In particular, do not let
+# cache-shared's --jobs=100 become the local test concurrency on shared Macs.
 common:mac-workflows --config=cache
 common:mac-workflows --config=workflows
+common:mac-workflows --config=buildbuddy_remote_executor
 common:mac-workflows --config=tests-macos
+common:mac-workflows --extra_execution_platforms=@toolchains_buildbuddy//platforms:linux_x86_64
+common:mac-workflows --strategy=TestRunner=darwin-sandbox
+common:mac-workflows --remote_download_toplevel
+common:mac-workflows --jobs=32
+common:mac-workflows --local_test_jobs=2
+common:mac-workflows --local_resources=cpu=2
 common:mac-workflows --build_metadata=TAGS=mac-workflow
 
 # Build fully static binaries linked against musl on Linux.
