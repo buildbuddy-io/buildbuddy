@@ -442,8 +442,6 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 		wantFlags               []*expb.EvaluatedFlag
 	}{
 		{
-			// An executor that reads experiment flags should receive the
-			// evaluated experiments with the leased task.
 			name:                    "ExecutorSupportsExperimentFlags",
 			supportsExperimentFlags: true,
 			wantFlags: []*expb.EvaluatedFlag{
@@ -451,16 +449,12 @@ func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
 			},
 		},
 		{
-			// An executor that does not read experiment flags would ignore
-			// them, so the scheduler should skip evaluating them.
 			name:                    "ExecutorDoesNotSupportExperimentFlags",
 			supportsExperimentFlags: false,
 			wantFlags:               nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// Schedule a task, then lease it from an executor that says in its
-			// lease request whether it reads experiment flags.
 			env, ctx := getEnv(t, &schedulerOpts{}, "")
 			env.SetExperimentFlagProvider(fp)
 			fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
