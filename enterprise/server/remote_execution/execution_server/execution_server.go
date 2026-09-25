@@ -189,6 +189,7 @@ type ExecutionServer struct {
 	taskSizer                         interfaces.TaskSizer
 	actionCacheClient                 repb.ActionCacheClient
 	clock                             clockwork.Clock
+	invalidPriorityLogger             log.Logger
 
 	mu          sync.Mutex
 	teeLimiters map[string]*rate.Limiter
@@ -255,6 +256,7 @@ func NewExecutionServer(env environment.Env) (*ExecutionServer, error) {
 		taskSizer:                         taskSizer,
 		actionCacheClient:                 actionCacheClient,
 		clock:                             env.GetClock(),
+		invalidPriorityLogger:             log.NamedSubLogger("execution_server").EveryDuration(time.Minute),
 	}, nil
 }
 
@@ -1117,6 +1119,23 @@ func (s *ExecutionServer) execute(req *repb.ExecuteRequest, stream streamLike) e
 	ctx, err := prefix.AttachUserPrefixToContext(stream.Context(), s.authenticator)
 	if err != nil {
 		return err
+	}
+	if fp := s.env.GetExperimentFlagProvider(); fp != nil {
+		if user, err := s.authenticator.AuthenticatedUser(ctx); err == nil && authutil.IsUserAPIKeyRequest(user) {
+			const flagName = "remote_execution.user_api_key_highest_priority"
+			highestPriority := fp.Int64(ctx, flagName, capabilities_server.MinExecutionPriority)
+			if highestPriority < capabilities_server.MinExecutionPriority || highestPriority > capabilities_server.MaxExecutionPriority {
+				s.invalidPriorityLogger.CtxWarningf(ctx, "Ignoring out-of-range %s value %d", flagName, highestPriority)
+			} else if req.GetExecutionPolicy().GetPriority() < int32(highestPriority) {
+				// Lower numeric values mean higher scheduling priority. Cap the
+				// importance of user-key work without promoting lower-priority work.
+				req = req.CloneVT()
+				if req.ExecutionPolicy == nil {
+					req.ExecutionPolicy = &repb.ExecutionPolicy{}
+				}
+				req.ExecutionPolicy.Priority = int32(highestPriority)
+			}
+		}
 	}
 
 	downloadString := adInstanceDigest.DownloadString()

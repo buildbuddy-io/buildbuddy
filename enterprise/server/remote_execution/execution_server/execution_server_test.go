@@ -194,6 +194,92 @@ func createInvocation(ctx context.Context, t *testing.T, db interfaces.DB, inv *
 	require.NoError(t, err)
 }
 
+func TestExecute_UserAPIKeyHighestPriority(t *testing.T) {
+	env, conn, _ := setupEnv(t)
+	flagPath := testfs.WriteFile(t, testfs.MakeTempDir(t), "config.flagd.json", `{
+  "flags": {
+    "remote_execution.user_api_key_highest_priority": {
+      "state": "ENABLED",
+      "variants": {"default": -1000, "capped": 100, "invalid_high": 4294967296, "invalid_low": -1001},
+      "defaultVariant": "default",
+      "targeting": {"if": [
+        {"==": [{"var": "group_id"}, "GR1"]}, "capped",
+        {"==": [{"var": "group_id"}, "GRHIGH"]}, "invalid_high",
+        {"==": [{"var": "group_id"}, "GRLOW"]}, "invalid_low",
+        "default"
+      ]}
+    }
+  }
+}`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(flagPath))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, openfeature.SetProviderAndWait(openfeature.NoopProvider{}))
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	env.SetExperimentFlagProvider(fp)
+
+	for _, tc := range []struct {
+		name       string
+		groupID    string
+		userID     string
+		keyID      string
+		policy     *repb.ExecutionPolicy
+		noProvider bool
+		want       int32
+		invalid    bool
+	}{
+		{name: "default", groupID: "GR1", userID: "US1", keyID: "AK1", want: 100},
+		{name: "elevated", groupID: "GR1", userID: "US1", keyID: "AK1", policy: &repb.ExecutionPolicy{Priority: -100}, want: 100},
+		{name: "deprioritized", groupID: "GR1", userID: "US1", keyID: "AK1", policy: &repb.ExecutionPolicy{Priority: 200}, want: 200},
+		{name: "untargeted_org", groupID: "GR2", userID: "US1", keyID: "AK1", policy: &repb.ExecutionPolicy{Priority: -100}, want: -100},
+		{name: "org_key", groupID: "GR1", keyID: "AK1", policy: &repb.ExecutionPolicy{Priority: -100}, want: -100},
+		{name: "user_session", groupID: "GR1", userID: "US1", policy: &repb.ExecutionPolicy{Priority: -100}, want: -100},
+		{name: "no_provider", groupID: "GR1", userID: "US1", keyID: "AK1", noProvider: true, policy: &repb.ExecutionPolicy{Priority: -100}, want: -100},
+		{name: "invalid_high_flag", groupID: "GRHIGH", userID: "US1", keyID: "AK1", policy: &repb.ExecutionPolicy{Priority: -100}, want: -100},
+		{name: "invalid_low_flag", groupID: "GRLOW", userID: "US1", keyID: "AK1", policy: &repb.ExecutionPolicy{Priority: -100}, want: -100},
+		{name: "invalid_request", groupID: "GR1", userID: "US1", keyID: "AK1", policy: &repb.ExecutionPolicy{Priority: -1001}, invalid: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			env.SetExperimentFlagProvider(fp)
+			if tc.noProvider {
+				env.SetExperimentFlagProvider(nil)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			user := testauth.User(tc.userID, tc.groupID)
+			user.APIKeyID = tc.keyID
+			ctx = testauth.WithAuthenticatedUserInfo(ctx, user)
+			arn := uploadAction(ctx, t, env, "", repb.DigestFunction_SHA256, &repb.Action{DoNotCache: true})
+			sched := env.GetSchedulerService().(*schedulerServerMock)
+			before := len(sched.scheduleReqs)
+			stream, err := repb.NewExecutionClient(conn).Execute(ctx, &repb.ExecuteRequest{
+				ActionDigest: arn.GetDigest(), DigestFunction: arn.GetDigestFunction(), ExecutionPolicy: tc.policy,
+			})
+			require.NoError(t, err)
+			_, err = stream.Recv()
+			if tc.invalid {
+				require.True(t, status.IsInvalidArgumentError(err), "got %v", err)
+				require.Len(t, sched.scheduleReqs, before)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, sched.scheduleReqs, before+1)
+			scheduled := sched.scheduleReqs[before]
+			assert.Equal(t, tc.want, scheduled.GetMetadata().GetPriority())
+			task := &repb.ExecutionTask{}
+			require.NoError(t, proto.Unmarshal(scheduled.GetSerializedTask(), task))
+			assert.Equal(t, tc.want, task.GetExecuteRequest().GetExecutionPolicy().GetPriority())
+			cancel()
+			for err == nil {
+				_, err = stream.Recv()
+			}
+		})
+	}
+}
+
 func TestDispatch(t *testing.T) {
 	env, _, _ := setupEnv(t)
 	ctx := context.Background()
