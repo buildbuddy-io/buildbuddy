@@ -1083,7 +1083,15 @@ func grpcRow() *dashboard.RowBuilder {
 				SortBy("Last *").
 				SortDesc(true)).
 			Tooltip(multiTooltip()).
-			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}")))
+			WithTarget(dash.PromQuery(`sum by (rpc_service, rpc_method) (rate(rpc_server_response_size_bytes_sum{region="${region}", job="${job}"}[${window}]))`, "/{{rpc_service}}/{{rpc_method}}"))).
+		WithPanel(ts("gRPC client RPCs per connection (top 10)", dash.UnitShort).
+			Description("Active RPCs on each gRPC client connection, summed over methods. Shows the 10 busiest (pool, connection, pod, target) tuples at each point in time.").
+			Min(0).
+			Legend(tableLegend("lastNotNull").
+				SortBy("Last *").
+				SortDesc(true)).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`topk(10, sum by (pool_id, connection_id, pod_name, target) (buildbuddy_grpc_client_rpcs_per_connection{region="${region}", job="${job}"}))`, "{{target}} pool={{pool_id}} conn={{connection_id}} @ {{pod_name}}")))
 }
 
 func trafficStatsRow() *dashboard.RowBuilder {
