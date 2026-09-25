@@ -141,6 +141,7 @@ func TestGetStatDrilldown(t *testing.T) {
 func TestExecutionDrilldownExcludesMergedExecutions(t *testing.T) {
 	flags.Set(t, "testenv.use_clickhouse", true)
 	flags.Set(t, "app.trends_heatmap_enabled", true)
+	flags.Set(t, "app.enable_target_trends", true)
 	te := testenv.GetTestEnv(t)
 	ta := testauth.NewTestAuthenticator(t, testauth.TestUsers("US1", "GR1"))
 	te.SetAuthenticator(ta)
@@ -157,6 +158,7 @@ func TestExecutionDrilldownExcludesMergedExecutions(t *testing.T) {
 	}
 	for i := range executions {
 		executions[i].GroupID = "GR1"
+		executions[i].TargetLabel = "//:target"
 		executions[i].UpdatedAtUsec = updatedAt
 	}
 	err = te.GetOLAPDBHandle().GORM(ctx, "test_create_executions").Create(executions).Error
@@ -172,6 +174,21 @@ func TestExecutionDrilldownExcludesMergedExecutions(t *testing.T) {
 				UpdatedAfter:  timestamppb.New(windowStart),
 				UpdatedBefore: timestamppb.New(windowStart.Add(2 * time.Hour)),
 			}
+			t.Run("target trends retain merged-only executions", func(t *testing.T) {
+				// Target trends already deduplicate by execution UUID, independently
+				// of Drilldown's policy of excluding merged invocation links.
+				rsp, err := iss.GetTargetTrends(ctx, &statspb.GetTargetTrendsRequest{
+					RequestContext: reqCtx, Query: query, Metric: peakMemory,
+					Agg: statspb.TargetAggregation_SUM_TARGET_AGGREGATION,
+				})
+				require.NoError(t, err)
+				require.Len(t, rsp.GetTargetStats(), 1)
+				want := int64(1030)
+				if user == "merged" {
+					want = 1020
+				}
+				require.Equal(t, want, rsp.GetTargetStats()[0].GetValue())
+			})
 			t.Run("heatmap", func(t *testing.T) {
 				rsp, err := iss.GetStatHeatmap(ctx, &statspb.GetStatHeatmapRequest{
 					RequestContext: reqCtx, Metric: metric, Query: query,
