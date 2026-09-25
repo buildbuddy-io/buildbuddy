@@ -6,8 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_env"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/google/go-cmp/cmp"
@@ -16,6 +18,7 @@ import (
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 )
 
@@ -59,7 +62,7 @@ func TestParse_ContainerImage_Success(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.Command{})
 		require.NoError(t, err)
 		assert.Equal(t, testCase.expected, platformProps.ContainerImage, testCase)
 	}
@@ -84,7 +87,7 @@ func TestParse_ContainerImage_Error(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, testCase.execProps, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, testCase.execProps, platformProps, &repb.Command{})
 		assert.Error(t, err)
 	}
 }
@@ -273,7 +276,7 @@ func TestParse_ApplyOverrides(t *testing.T) {
 				"MacOSX11.3": "Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.3.sdk",
 			},
 		})
-		err = ApplyOverrides(env, execProps, platformProps, command)
+		err = ApplyOverrides(t.Context(), env, execProps, platformProps, command)
 		if testCase.errorExpected {
 			require.Error(t, err)
 		} else {
@@ -281,6 +284,31 @@ func TestParse_ApplyOverrides(t *testing.T) {
 		}
 		assert.ElementsMatch(t, command.EnvironmentVariables, append(testCase.startingEnvVars, testCase.expectedEnvVars...))
 	}
+}
+
+func TestApplyOverrides_PersistentVolumesExperiment(t *testing.T) {
+	expflag.SetFlagProvider(expflag.NewContextProvider())
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
+	// The task requests a persistent volume through its platform properties,
+	// while the scheduler sends a different list of volumes for the persistent
+	// volumes experiment.
+	plat := &repb.Platform{Properties: []*repb.Platform_Property{
+		{Name: platform.PersistentVolumesPropertyName, Value: "task:/task"},
+	}}
+	platformProps, err := platform.ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: plat}})
+	require.NoError(t, err)
+	ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{
+		{Name: executor_experiments.PersistentVolumes.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache, other:/other"}},
+	})
+
+	// The experiment's volumes should take precedence over the platform
+	// property.
+	err = ApplyOverrides(ctx, testenv.GetTestEnv(t), bare, platformProps, &repb.Command{})
+	require.NoError(t, err)
+	want, err := platform.ParsePersistentVolumes("cache:/tmp/.cache", "other:/other")
+	require.NoError(t, err)
+	require.Equal(t, want, platformProps.PersistentVolumes)
 }
 
 func TestEnvAndArgOverrides(t *testing.T) {
@@ -301,7 +329,7 @@ func TestEnvAndArgOverrides(t *testing.T) {
 		},
 	}
 	env := testenv.GetTestEnv(t)
-	err = ApplyOverrides(env, execProps, platformProps, command)
+	err = ApplyOverrides(t.Context(), env, execProps, platformProps, command)
 	require.NoError(t, err)
 
 	expectedCmd := &repb.Command{
@@ -369,7 +397,7 @@ func TestRunUnder(t *testing.T) {
 			require.NoError(t, err)
 			command := &repb.Command{Arguments: tc.initialArgs}
 			env := testenv.GetTestEnv(t)
-			err = ApplyOverrides(env, bare, platformProps, command)
+			err = ApplyOverrides(t.Context(), env, bare, platformProps, command)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedArgs, command.Arguments)
 		})
@@ -411,7 +439,7 @@ func TestExtraEnvVars(t *testing.T) {
 			env := testenv.GetTestEnv(t)
 			cmd := &repb.Command{}
 			platformProps := &platform.Properties{}
-			ApplyOverrides(env, podmanAndFirecracker, platformProps, cmd)
+			ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, cmd)
 			require.Empty(t, cmp.Diff(
 				tc.expectedEnvVars,
 				cmd.EnvironmentVariables,
@@ -514,7 +542,7 @@ func TestForceNetworkIsolationType(t *testing.T) {
 		require.NoError(t, err)
 		env := testenv.GetTestEnv(t)
 		env.SetXcodeLocator(&xcodeLocator{})
-		err = ApplyOverrides(env, podmanAndFirecracker, platformProps, &repb.Command{})
+		err = ApplyOverrides(t.Context(), env, podmanAndFirecracker, platformProps, &repb.Command{})
 		assert.NoError(t, err)
 		assert.Equal(t, testCase.expectedIsolationType, platformProps.WorkloadIsolationType, testCase)
 	}

@@ -7,6 +7,7 @@ go_library(
     srcs = ["executorplatform.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executorplatform",
     deps = [
+        "//enterprise/server/remote_execution/executor_experiments",
         "//enterprise/server/util/ci_runner_env",
         "//proto:remote_execution_go_proto",
         "//server/environment",
@@ -25,9 +26,12 @@ go_test(
     srcs = ["executorplatform_test.go"],
     embed = [":executorplatform"],
     deps = [
+        "//enterprise/server/remote_execution/executor_experiments",
         "//enterprise/server/util/ci_runner_env",
+        "//proto:experiments_go_proto",
         "//proto:remote_execution_go_proto",
         "//server/testutil/testenv",
+        "//server/util/expflag",
         "//server/util/platform",
         "//server/util/testing/flags",
         "@com_github_google_go_cmp//cmp",

@@ -18,7 +18,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/container"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/containers/bare"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor/oomkiller"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/workspace"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -33,7 +32,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testmetrics"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
-	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
@@ -43,7 +41,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
 
-	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rnpb "github.com/buildbuddy-io/buildbuddy/proto/runner"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -184,32 +181,6 @@ type RunnerPoolOptions struct {
 	MaxTotalRunnerMemoryUsageBytes int64
 	MaxRunnerDiskSizeBytes         int64
 	MaxRunnerMemoryUsageBytes      int64
-}
-
-func TestEffectivePlatform_PersistentVolumesExperiment(t *testing.T) {
-	env := newTestEnv(t)
-	pool := newRunnerPool(t, env, noLimitsCfg())
-	expflag.SetFlagProvider(expflag.NewContextProvider())
-	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
-
-	// The task requests a persistent volume through its platform properties,
-	// while the scheduler sends a different value for the persistent volumes
-	// experiment.
-	task := newTask().ExecutionTask
-	task.Command.Platform.Properties = append(task.Command.Platform.Properties, &repb.Platform_Property{
-		Name: platform.PersistentVolumesPropertyName, Value: "task:/task",
-	})
-	ctx := expflag.ContextWithEvaluatedFlags(t.Context(), []*expb.EvaluatedFlag{
-		{Name: executor_experiments.PersistentVolumes.Name(), Variant: "treatment", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
-	})
-
-	// The experiment's value should take precedence over the platform
-	// property.
-	props, err := pool.effectivePlatform(ctx, task)
-	require.NoError(t, err)
-	want, err := platform.ParsePersistentVolumes("cache:/tmp/.cache")
-	require.NoError(t, err)
-	require.Equal(t, want, props.PersistentVolumes)
 }
 
 func newTask() *repb.ScheduledTask {
