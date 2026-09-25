@@ -690,8 +690,15 @@ message GetExecutionNodesResponse {
 // Persisted information about connected executors.
 message RegisteredExecutionNode {
   ExecutionNode registration = 1;
+  // Legacy plaintext endpoint. Empty when advertising TLS.
   string scheduler_host_port = 2;
   string group_id = 3;
   acl.ACL acl = 4;
   google.protobuf.Timestamp last_ping_time = 5;
+
+  // Endpoint of the scheduler that owns this registration, including grpc://
+  // or grpcs:// and an explicit port. Prefer this over scheduler_host_port.
+  // Readers of legacy records without this field use
+  // grpc://scheduler_host_port.
+  string scheduler_target = 6;
 }

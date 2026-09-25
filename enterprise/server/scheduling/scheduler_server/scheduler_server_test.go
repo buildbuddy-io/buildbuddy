@@ -2,9 +2,20 @@ package scheduler_server
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
+	"math/big"
+	"net"
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"sync"
@@ -26,6 +37,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/interfaces"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
+	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testauth"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testcache"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
@@ -42,6 +54,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -102,17 +115,31 @@ func (f *fakeTaskRouter) MarkFailed(ctx context.Context, action *repb.Action, cm
 }
 
 type schedulerOpts struct {
+	redisTarget        string
 	options            Options
+	sslCertFile        string
+	sslKeyFile         string
 	userOwnedEnabled   bool
 	groupOwnedEnabled  bool
 	preferredExecutors []string
 }
 
 func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, context.Context) {
-	redisTarget := testredis.Start(t).Target
+	redisTarget := opts.redisTarget
+	if redisTarget == "" {
+		redisTarget = testredis.Start(t).Target
+	}
 	env := enterprise_testenv.GetCustomTestEnv(t, &enterprise_testenv.Options{
 		RedisTarget: redisTarget,
 	})
+	if opts.sslCertFile != "" {
+		flags.Set(t, "ssl.enable_ssl", true)
+		flags.Set(t, "ssl.cert_file", opts.sslCertFile)
+		flags.Set(t, "ssl.key_file", opts.sslKeyFile)
+		sslService, err := ssl.NewSSLService(env)
+		require.NoError(t, err)
+		env.SetSSLService(sslService)
+	}
 	if opts.options.Clock != nil {
 		env.SetClock(opts.options.Clock)
 	}
@@ -2240,4 +2267,301 @@ func TestGetNewestVersion_ScopedToSharedPoolGroup(t *testing.T) {
 	v := s.getNewestVersion(ctx)
 	require.NotNil(t, v)
 	require.Equal(t, "2.153.0", v.String())
+}
+
+var (
+	schedulerTestCA    *x509.Certificate
+	schedulerTestCAKey *ecdsa.PrivateKey
+)
+
+func TestMain(m *testing.M) {
+	// Go caches system roots on first use. Install the test CA before any test
+	// can open a TLS connection, regardless of test order or selection.
+	dir, err := os.MkdirTemp("", "scheduler-test-ca-")
+	if err != nil {
+		panic(err)
+	}
+	schedulerTestCA, schedulerTestCAKey, err = newSchedulerTestCA()
+	if err != nil {
+		panic(err)
+	}
+	caFile := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: schedulerTestCA.Raw}), 0600); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("SSL_CERT_FILE", caFile); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("SSL_CERT_DIR", dir); err != nil {
+		panic(err)
+	}
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}
+
+func newSchedulerTestCA() (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "scheduler test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	cert, err := x509.ParseCertificate(der)
+	return cert, key, err
+}
+
+func writeSchedulerTestCertificate(t *testing.T, dir, name string, ca *x509.Certificate, caKey *ecdsa.PrivateKey, hostname string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:     []string{hostname},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, ca, &key.PublicKey, caKey)
+	require.NoError(t, err)
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name+".pem"), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name+".key"), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0600))
+}
+
+func TestSchedulerRegistrationAdvertisesEndpoint(t *testing.T) {
+	certDir := t.TempDir()
+	writeSchedulerTestCertificate(t, certDir, "scheduler", schedulerTestCA, schedulerTestCAKey, "localhost")
+	for _, tc := range []struct {
+		name, scheme, host, envPort, wantTarget, wantLegacy string
+	}{
+		{name: "plaintext", scheme: "grpc", host: "localhost", wantTarget: "grpc://localhost:1985", wantLegacy: "localhost:1985"},
+		{name: "tls", scheme: "grpcs", host: "localhost", wantTarget: "grpcs://localhost:1986"},
+		{name: "environment port", scheme: "grpcs", host: "localhost", envPort: "4321", wantTarget: "grpcs://localhost:4321"},
+		{name: "ipv6", scheme: "grpcs", host: "::1", wantTarget: "grpcs://[::1]:1986"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.scheduler_rpc_scheme", tc.scheme)
+			flags.Set(t, "grpc_port", 1985)
+			flags.Set(t, "grpcs_port", 1986)
+			t.Setenv("MY_HOSTNAME", tc.host)
+			t.Setenv("MY_PORT", tc.envPort)
+			opts := &schedulerOpts{}
+			if tc.scheme == "grpcs" {
+				opts.sslCertFile = filepath.Join(certDir, "scheduler.pem")
+				opts.sslKeyFile = filepath.Join(certDir, "scheduler.key")
+			}
+			env, ctx := getEnv(t, opts, "")
+			executor := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+			executor.Register()
+			_, registration := readSchedulerRegistration(t, env, executor.id)
+			require.Equal(t, tc.wantTarget, registration.GetSchedulerTarget())
+			require.Equal(t, tc.wantLegacy, registration.GetSchedulerHostPort())
+
+			if tc.name != "tls" {
+				return
+			}
+			// Local reservations bypass dialing even with a TLS endpoint.
+			req := newScheduleRequest(ctx, t, env, scheduleOpts{})
+			_, err := env.GetSchedulerClient().ScheduleTask(ctx, req)
+			require.NoError(t, err)
+			executor.WaitForTask(req.GetTaskId())
+		})
+	}
+}
+
+func TestSchedulerServerRejectsInvalidEndpointConfiguration(t *testing.T) {
+	env, _ := getEnv(t, &schedulerOpts{}, "")
+	flags.Set(t, "ssl.enable_ssl", false)
+	disabledSSL, err := ssl.NewSSLService(env)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name, scheme, port, wantError string
+		sslService                    interfaces.SSLService
+	}{
+		{name: "missing SSL", scheme: "grpcs", wantError: "requires an enabled SSL service"},
+		{name: "disabled SSL", scheme: "grpcs", sslService: disabledSSL, wantError: "requires an enabled SSL service"},
+		{name: "plaintext", scheme: "grpc", sslService: disabledSSL},
+		{name: "invalid scheme", scheme: "https", wantError: "must be one of"},
+		{name: "zero port", scheme: "grpc", port: "0", wantError: "scheduler target port must be between 1 and 65535"},
+		{name: "port overflow", scheme: "grpc", port: "65536", wantError: "scheduler target port must be between 1 and 65535"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.scheduler_rpc_scheme", tc.scheme)
+			t.Setenv("MY_PORT", tc.port)
+			env.SetSSLService(tc.sslService)
+			_, err := NewSchedulerServer(env)
+			if tc.wantError == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.True(t, status.IsInvalidArgumentError(err), "%v", err)
+			require.ErrorContains(t, err, tc.wantError)
+		})
+	}
+}
+
+// Inspect the persisted registration contract after RegisterAndStreamWork has
+// completed; no scheduler implementation helpers are needed to create records.
+func readSchedulerRegistration(t *testing.T, env environment.Env, executorID string) (string, *scpb.RegisteredExecutionNode) {
+	t.Helper()
+	rdb := env.GetRemoteExecutionRedisClient()
+	var poolKey string
+	var registration *scpb.RegisteredExecutionNode
+	require.Eventually(t, func() bool {
+		keys, err := rdb.Keys(context.Background(), "executorPool/*").Result()
+		require.NoError(t, err)
+		for _, key := range keys {
+			data, err := rdb.HGet(context.Background(), key, executorID).Bytes()
+			if err != nil {
+				continue
+			}
+			registration = &scpb.RegisteredExecutionNode{}
+			require.NoError(t, proto.Unmarshal(data, registration))
+			poolKey = key
+			return true
+		}
+		return false
+	}, 5*time.Second, 10*time.Millisecond)
+	return poolKey, registration
+}
+
+func TestSchedulerPeerTLS(t *testing.T) {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		t.Skip("test requires a platform where SSL_CERT_FILE configures system trust")
+	}
+	fixtureDir := t.TempDir()
+	writeSchedulerTestCertificate(t, fixtureDir, "trusted", schedulerTestCA, schedulerTestCAKey, "localhost")
+	writeSchedulerTestCertificate(t, fixtureDir, "wrong-host", schedulerTestCA, schedulerTestCAKey, "wrong-scheduler.invalid")
+	untrustedCA, untrustedKey, err := newSchedulerTestCA()
+	require.NoError(t, err)
+	writeSchedulerTestCertificate(t, fixtureDir, "untrusted", untrustedCA, untrustedKey, "localhost")
+
+	// Work enters one scheduler and must reach an executor registered on a
+	// second scheduler, using the endpoint that second scheduler wrote to Redis.
+	// Opposite caller/peer schemes verify that the destination selects transport;
+	// trust and malformed-registration cases only need to run once.
+	for _, tc := range []struct {
+		name, callerScheme, certificate string
+		legacy, invalid                 bool
+		validPeer                       bool
+		wantFailure                     bool
+	}{
+		{name: "trusted_tls", callerScheme: "grpc", certificate: "trusted"},
+		{name: "plaintext", callerScheme: "grpcs"},
+		{name: "legacy_registration", callerScheme: "grpcs", legacy: true},
+		{name: "unknown_ca", callerScheme: "grpc", certificate: "untrusted", wantFailure: true},
+		{name: "hostname_mismatch", callerScheme: "grpc", certificate: "wrong-host", wantFailure: true},
+		{name: "invalid_target_with_legacy_address", callerScheme: "grpcs", invalid: true, wantFailure: true},
+		{name: "invalid_target_with_valid_peer", callerScheme: "grpc", invalid: true, validPeer: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			redisTarget := testredis.Start(t).Target
+			t.Setenv("MY_HOSTNAME", "localhost")
+			t.Setenv("MY_PORT", "")
+			flags.Set(t, "remote_execution.scheduler_rpc_scheme", tc.callerScheme)
+			callerOpts := &schedulerOpts{redisTarget: redisTarget, options: Options{LocalPortOverride: 1}}
+			if tc.callerScheme == "grpcs" {
+				callerOpts.sslCertFile = filepath.Join(fixtureDir, "trusted.pem")
+				callerOpts.sslKeyFile = filepath.Join(fixtureDir, "trusted.key")
+			}
+			caller, ctx := getEnv(t, callerOpts, "")
+
+			lis, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = lis.Close() })
+			remoteScheme := "grpc"
+			if tc.certificate != "" {
+				remoteScheme = "grpcs"
+			}
+			flags.Set(t, "remote_execution.scheduler_rpc_scheme", remoteScheme)
+			remoteOpts := &schedulerOpts{redisTarget: redisTarget, options: Options{LocalPortOverride: int32(lis.Addr().(*net.TCPAddr).Port)}}
+			if tc.certificate != "" {
+				remoteOpts.sslCertFile = filepath.Join(fixtureDir, tc.certificate+".pem")
+				remoteOpts.sslKeyFile = filepath.Join(fixtureDir, tc.certificate+".key")
+			}
+			remote, remoteCtx := getEnv(t, remoteOpts, "")
+			var options []grpc.ServerOption
+			if tc.certificate != "" {
+				creds, err := remote.GetSSLService().GetGRPCSTLSCreds()
+				require.NoError(t, err)
+				options = append(options, grpc.Creds(creds))
+			}
+			var reservations atomic.Int32
+			options = append(options, grpc.UnaryInterceptor(func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+				if info.FullMethod == "/scheduler.Scheduler/EnqueueTaskReservation" {
+					reservations.Add(1)
+				}
+				return handler(ctx, req)
+			}))
+			server := grpc.NewServer(options...)
+			scpb.RegisterSchedulerServer(server, remote.GetSchedulerService())
+			serveDone := make(chan error, 1)
+			go func() { serveDone <- server.Serve(lis) }()
+			t.Cleanup(func() {
+				server.Stop()
+				require.NoError(t, <-serveDone)
+			})
+			executor := newFakeExecutor(remoteCtx, t, remote.GetSchedulerClient())
+			executor.Register()
+			key, registration := readSchedulerRegistration(t, remote, executor.id)
+			validExecutor := executor
+			if tc.validPeer {
+				validExecutor = newFakeExecutor(remoteCtx, t, remote.GetSchedulerClient())
+				validExecutor.Register()
+			}
+			if tc.legacy || tc.invalid {
+				// Emulate a record written by an old binary, or a malformed
+				// explicit endpoint with an otherwise valid legacy address.
+				registration.SchedulerTarget = ""
+				if tc.invalid {
+					registration.SchedulerTarget = "https://" + registration.GetSchedulerHostPort()
+				}
+				data, err := proto.Marshal(registration)
+				require.NoError(t, err)
+				require.NoError(t, remote.GetRemoteExecutionRedisClient().HSet(ctx, key, executor.id, data).Err())
+			}
+			flags.Set(t, "remote_execution.scheduler_rpc_scheme", tc.callerScheme)
+			req := newScheduleRequest(ctx, t, caller, scheduleOpts{})
+			scheduleCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+			defer cancel()
+			_, err = caller.GetSchedulerClient().ScheduleTask(scheduleCtx, req)
+			if tc.wantFailure {
+				if tc.invalid {
+					require.True(t, status.IsUnavailableError(err), "expected Unavailable before the deadline, got: %v", err)
+					require.NoError(t, scheduleCtx.Err(), "scheduling must fail before the deadline")
+				} else {
+					require.Error(t, err)
+				}
+				executor.EnsureTaskNotReceived(req.GetTaskId())
+				require.Zero(t, reservations.Load(), "rejected peer received a reservation")
+				if tc.invalid {
+					require.True(t, remote.GetRemoteExecutionRedisClient().HExists(ctx, key, executor.id).Val(), "malformed registration should remain in Redis")
+				}
+				return
+			}
+			require.NoError(t, err)
+			validExecutor.WaitForTask(req.GetTaskId())
+			if tc.validPeer {
+				executor.EnsureTaskNotReceived(req.GetTaskId())
+			}
+			require.Positive(t, reservations.Load(), "task must traverse the remote scheduler")
+			if tc.validPeer {
+				require.EqualValues(t, 1, reservations.Load(), "malformed registration must not increase the probe count")
+			}
+		})
+	}
 }
