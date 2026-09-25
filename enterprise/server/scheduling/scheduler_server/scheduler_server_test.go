@@ -1782,10 +1782,9 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 		{name: "cache disabled", cacheTTL: 0},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", testCase.cacheTTL)
 			rdb := testredis.Start(t).Client()
 			t.Cleanup(func() { rdb.Close() })
-			np := &nodePool{rdb: rdb, clock: clockwork.NewFakeClock()}
+			np := &nodePool{rdb: rdb, clock: clockwork.NewFakeClock(), unclaimedTasksCacheTTL: testCase.cacheTTL}
 			tasks := []string{"a", "b", "c", "d", "e"}
 			for _, task := range tasks {
 				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))
