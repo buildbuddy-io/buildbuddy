@@ -537,7 +537,13 @@ func grpcRow() *dashboard.RowBuilder {
 		WithPanel(bytesPanel("gRPC Client Request Bytes", "rpc_client_request_size_bytes_sum")).
 		WithPanel(bytesPanel("gRPC Client Response Bytes", "rpc_client_response_size_bytes_sum")).
 		WithPanel(bytesPanel("gRPC Server Request Bytes", "rpc_server_request_size_bytes_sum")).
-		WithPanel(bytesPanel("gRPC Server Response Bytes", "rpc_server_response_size_bytes_sum"))
+		WithPanel(bytesPanel("gRPC Server Response Bytes", "rpc_server_response_size_bytes_sum")).
+		WithPanel(ts("gRPC client RPCs per connection", dash.UnitShort).
+			Description("Active RPCs on each gRPC client connection, summed over methods. Hides 0 values.").
+			Min(0).
+			Legend(tableLegend("last").SortBy("Last").SortDesc(true)).
+			Tooltip(multiTooltip()).
+			WithTarget(dash.PromQuery(`sum by (pool_id, connection_id, pod_name, target) (buildbuddy_grpc_client_rpcs_per_connection{`+proxyFilter+`}) > 0`, "{{target}} pool={{pool_id}} conn={{connection_id}} @ {{pod_name}}")))
 }
 
 func trafficStatsRow() *dashboard.RowBuilder {
