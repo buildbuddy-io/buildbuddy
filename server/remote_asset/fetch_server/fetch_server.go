@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,15 +21,19 @@ import (
 
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
 	"github.com/buildbuddy-io/buildbuddy/server/http/httpclient"
+	"github.com/buildbuddy-io/buildbuddy/server/metrics"
 	"github.com/buildbuddy-io/buildbuddy/server/real_environment"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/cachetools"
 	"github.com/buildbuddy-io/buildbuddy/server/remote_cache/digest"
 	"github.com/buildbuddy-io/buildbuddy/server/util/capabilities"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
+	"github.com/buildbuddy-io/buildbuddy/server/util/hash"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/prefix"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/scratchspace"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
+	"github.com/buildbuddy-io/buildbuddy/third_party/singleflight"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	cachepb "github.com/buildbuddy-io/buildbuddy/proto/cache"
@@ -77,6 +83,43 @@ func makeUnsupportedQualifiersErrStatus(qualifierNames []string) error {
 type FetchServer struct {
 	env                  environment.Env
 	allowedPrivateIPNets []*net.IPNet
+	fetchGroup           singleflight.Group[fetchKey, *repb.Digest]
+}
+
+// fetchKey shares equivalent requests across users and API keys in one group.
+// Transport metadata is deliberately excluded.
+type fetchKey struct {
+	UserPrefix            string
+	InstanceName          string
+	StorageDigestFunction repb.DigestFunction_Value
+	URI                   string
+	CanonicalID           string
+	// Hash of parsed checksum alternatives in request order. Shared work must
+	// verify against the same expectations for every waiting caller.
+	ChecksumHash string
+	// Hash of effective headers for URI; empty when no headers are supplied.
+	HeaderHash string
+}
+
+func headerHash(headers http.Header) string {
+	if len(headers) == 0 {
+		return ""
+	}
+	// Sort names but preserve repeated-value order. Hash each value list
+	// separately so header and value boundaries remain unambiguous.
+	parts := make([]string, 0, 2*len(headers))
+	for _, name := range slices.Sorted(maps.Keys(headers)) {
+		parts = append(parts, name, hash.Strings(headers[name]...))
+	}
+	return hash.Strings(parts...)
+}
+
+func checksumHash(checksums []checksum) string {
+	parts := make([]string, 0, 2*len(checksums))
+	for _, checksum := range checksums {
+		parts = append(parts, strconv.Itoa(int(checksum.digestFunction)), checksum.hash)
+	}
+	return hash.Strings(parts...)
 }
 
 func Register(env *real_environment.RealEnv) error {
@@ -254,31 +297,49 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	if err != nil {
 		return nil, err
 	}
-	for _, checksum := range checksums {
-		checksumFunc := checksum.digestFunction
-		// A read-only request cannot convert a cached blob to another digest.
-		if !canWrite && checksumFunc != storageFunc {
-			continue
-		}
-		blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, checksum.hash)
-		// If the digestFunc is supplied and differ from the checksum sri,
-		// after looking up the cached blob using checksum sri, re-upload
-		// that blob using the requested digestFunc.
-		if blobDigest != nil && checksumFunc != storageFunc {
-			blobDigest = p.rewriteToCache(ctx, blobDigest, req.GetInstanceName(), checksumFunc, storageFunc)
+	cachedBlobResponse := func() *rapb.FetchBlobResponse {
+		for _, checksum := range checksums {
+			checksumFunc := checksum.digestFunction
+			// A read-only request cannot convert a cached blob to another digest.
+			if !canWrite && checksumFunc != storageFunc {
+				continue
+			}
+			blobDigest := p.findBlobInCache(ctx, req.GetInstanceName(), checksumFunc, checksum.hash)
+			// If the digestFunc is supplied and differ from the checksum sri,
+			// after looking up the cached blob using checksum sri, re-upload
+			// that blob using the requested digestFunc.
+			if blobDigest != nil && checksumFunc != storageFunc {
+				blobDigest = p.rewriteToCache(ctx, blobDigest, req.GetInstanceName(), checksumFunc, storageFunc)
+			}
+
+			if blobDigest != nil {
+				return &rapb.FetchBlobResponse{
+					Status:         &statuspb.Status{Code: int32(gcodes.OK)},
+					BlobDigest:     blobDigest,
+					DigestFunction: storageFunc,
+				}
+			}
 		}
 
-		if blobDigest != nil {
-			return &rapb.FetchBlobResponse{
-				Status:         &statuspb.Status{Code: int32(gcodes.OK)},
-				BlobDigest:     blobDigest,
-				DigestFunction: storageFunc,
-			}, nil
-		}
+		return nil
+	}
+	if response := cachedBlobResponse(); response != nil {
+		return response, nil
 	}
 
 	if !canWrite {
 		return nil, status.PermissionDeniedError("FetchBlob requires CAS write permission to fetch missing content or convert it to the requested digest format.")
+	}
+
+	// Mutable URLs and freshness constraints are not coalesced.
+	var key *fetchKey
+	if len(checksums) > 0 && req.GetOldestContentAccepted() == nil {
+		k, err := p.fetchKey(ctx, req, storageFunc)
+		if err != nil {
+			return nil, err
+		}
+		key = &k
+		key.ChecksumHash = checksumHash(checksums)
 	}
 
 	httpClient := httpclient.New(p.allowedPrivateIPNets, "fetch_server")
@@ -295,6 +356,9 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	}
 	bsClient := getByteStreamClient(p.env)
 
+	// Each caller has its own wait budget; shared work has the server limit.
+	rpcCtx := ctx
+	instanceName := req.GetInstanceName()
 	ctx, cancel := context.WithTimeout(ctx, p.computeRequestTimeout(ctx, req.GetTimeout()))
 	defer cancel()
 
@@ -304,6 +368,14 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 	var lastFetchUri string
 
 	for i, uri := range req.GetUris() {
+		if key != nil && ctx.Err() != nil {
+			if rpcCtx.Err() != nil {
+				return nil, status.FromContextError(rpcCtx)
+			}
+			lastFetchErr = status.FromContextError(ctx)
+			break
+		}
+
 		_, err := url.Parse(uri)
 		if err != nil {
 			return nil, status.InvalidArgumentErrorf("unparsable URI at index %d", i)
@@ -317,26 +389,47 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 				}
 			}
 		}
-		blobDigest, err := mirrorToCache(
-			ctx,
-			bsClient,
-			req.GetInstanceName(),
-			httpClient,
-			uri,
-			header,
-			storageFunc,
-			checksums,
-		)
+		var blobDigest *repb.Digest
+		if key == nil {
+			blobDigest, err = mirrorToCache(ctx, bsClient, instanceName, httpClient, uri, header, storageFunc, checksums)
+		} else {
+			// Before falling back to a later URI, recheck the cache, since
+			// another request may have published the expected blob.
+			if i > 0 {
+				if response := cachedBlobResponse(); response != nil {
+					return response, nil
+				}
+			}
+			uriKey := *key
+			uriKey.URI = uri
+			uriKey.HeaderHash = headerHash(header)
+			// Equivalent requests share checksum validation and publication.
+			// Shared work may outlive this RPC and must not read req.
+			metrics.RemoteAssetFetchSingleflightRequests.Inc()
+			blobDigest, _, err = p.fetchGroup.Do(ctx, uriKey, func(ctx context.Context) (*repb.Digest, error) {
+				metrics.RemoteAssetFetchSingleflightExecutions.Inc()
+				// Caller deadlines only bound their waits. Shared work keeps
+				// running for remaining callers, up to the server limit.
+				ctx, cancel := context.WithTimeout(ctx, maxHTTPTimeout)
+				defer cancel()
+				return mirrorToCache(ctx, bsClient, instanceName, httpClient, uri, header, storageFunc, checksums)
+			})
+			if err != nil && rpcCtx.Err() != nil {
+				return nil, status.FromContextError(rpcCtx)
+			}
+		}
+
 		if err != nil {
 			lastFetchErr = fmt.Errorf("%s: %w", redactedURI(uri), err)
 			lastFetchUri = uri
 			log.CtxWarningf(ctx, "Failed to mirror %q to cache: %s", redactedURI(uri), err)
 			continue
 		}
+		// Each RPC owns its response, including any shared digest protobuf.
 		return &rapb.FetchBlobResponse{
 			Uri:            uri,
 			Status:         &statuspb.Status{Code: int32(gcodes.OK)},
-			BlobDigest:     blobDigest,
+			BlobDigest:     proto.Clone(blobDigest).(*repb.Digest),
 			DigestFunction: storageFunc,
 		}, nil
 	}
@@ -366,6 +459,26 @@ func (p *FetchServer) FetchBlob(ctx context.Context, req *rapb.FetchBlobRequest)
 			SizeBytes: 1,
 		},
 	}, nil
+}
+
+func (p *FetchServer) fetchKey(ctx context.Context, req *rapb.FetchBlobRequest, storageFunc repb.DigestFunction_Value) (fetchKey, error) {
+	userPrefix, err := prefix.UserPrefixFromContext(ctx)
+	if err != nil {
+		return fetchKey{}, err
+	}
+	key := fetchKey{
+		UserPrefix:            userPrefix,
+		InstanceName:          req.GetInstanceName(),
+		StorageDigestFunction: storageFunc,
+	}
+	// Headers are handled separately for each URI, after applying overrides.
+	for _, q := range req.GetQualifiers() {
+		switch q.GetName() {
+		case BazelCanonicalIDQualifier:
+			key.CanonicalID = q.GetValue()
+		}
+	}
+	return key, nil
 }
 
 func (p *FetchServer) FetchDirectory(ctx context.Context, req *rapb.FetchDirectoryRequest) (*rapb.FetchDirectoryResponse, error) {
@@ -600,7 +713,7 @@ func mirrorToCache(
 	// TODO(sluongng): We can track download information in a KV store with value
 	// pointing to the CAS entry. That way, we would only need to store the download
 	// blob once.
-	if checksumFunc != storageFunc {
+	if len(checksums) > 0 && checksumFunc != storageFunc {
 		// Multiple alternatives have already been checked against the file above.
 		if len(checksums) <= 1 {
 			checksumDigestRN, err := cachetools.ComputeFileDigest(tmpFilePath, remoteInstanceName, checksumFunc)
