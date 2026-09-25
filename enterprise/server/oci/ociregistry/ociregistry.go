@@ -72,7 +72,7 @@ type Mirror struct {
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
-	cacheAPIKey               = flag.String("ociregistry.cache_api_key", "", "API key used to authenticate OCI registry cache reads and writes.", flag.Secret)
+	publicMirrorCacheAPIKey               = flag.String("ociregistry.public_mirror_cache_api_key", "", "API key used to authenticate OCI registry cache reads and writes.", flag.Secret)
 	registryDomain            = flag.String("ociregistry.domain", "", "The domain on which the registry is hosted.")
 	mirrorConfigs             = flag.Slice("ociregistry.mirrors", []Mirror{}, "List of repositories to mirror.")
 )
@@ -145,7 +145,7 @@ func New(env environment.Env) (*registry, error) {
 }
 
 func (r *registry) checkCacheAPIKey(ctx context.Context) error {
-	if *cacheAPIKey == "" {
+	if *publicMirrorCacheAPIKey == "" {
 		return nil
 	}
 	ctx, err := r.cacheContext(ctx)
@@ -153,7 +153,7 @@ func (r *registry) checkCacheAPIKey(ctx context.Context) error {
 		_, err = r.env.GetAuthenticator().AuthenticatedUser(ctx)
 	}
 	if err != nil {
-		return status.FailedPreconditionErrorf("ociregistry.cache_api_key is not a valid API key: %s", err)
+		return status.FailedPreconditionErrorf("ociregistry.public_mirror_cache_api_key is not a valid API key: %s", err)
 	}
 	return nil
 }
@@ -187,11 +187,11 @@ func (r *registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *registry) cacheContext(ctx context.Context) (context.Context, error) {
-	if *cacheAPIKey != "" {
+	if *publicMirrorCacheAPIKey != "" {
 		// The registry API key is a server-owned credential, so it should not be
 		// scoped by the subdomain of the incoming registry request.
 		ctx = subdomain.Context(ctx, "")
-		ctx = r.env.GetAuthenticator().AuthContextFromAPIKey(ctx, *cacheAPIKey)
+		ctx = r.env.GetAuthenticator().AuthContextFromAPIKey(ctx, *publicMirrorCacheAPIKey)
 	}
 	return prefix.AttachUserPrefixToContext(ctx, r.env.GetAuthenticator())
 }
