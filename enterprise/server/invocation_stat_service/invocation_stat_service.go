@@ -302,14 +302,10 @@ func (i *InvocationStatService) addWhereClauses(q *query_builder.Query, tq *stpb
 		dialectName = i.olapdbh.DialectName()
 	}
 
-	for _, f := range tq.GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, queryObjects, dialectName)
-		if err != nil {
-			return err
-		}
-		q.AddWhereClause(s, a...)
+	err := filter.AddGenericFiltersToQuery(q, tq.GetGenericFilters(), queryObjects, dialectName)
+	if err != nil {
+		return err
 	}
-
 	q.AddWhereClause(`group_id = ?`, reqCtx.GetGroupId())
 	return nil
 }
@@ -1114,13 +1110,9 @@ func (i *InvocationStatService) GetInvocationStat(ctx context.Context, req *inpb
 	} else {
 		dbh = i.dbh
 	}
-
-	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, sfpb.ObjectTypes_INVOCATION_OBJECTS, dbh.DialectName())
-		if err != nil {
-			return nil, err
-		}
-		q.AddWhereClause(s, a...)
+	err = filter.AddGenericFiltersToQuery(q, req.GetQuery().GetGenericFilters(), sfpb.ObjectTypes_INVOCATION_OBJECTS, dbh.DialectName())
+	if err != nil {
+		return nil, err
 	}
 
 	statusClauses := toStatusClauses(req.GetQuery().GetStatus())
@@ -1228,8 +1220,11 @@ func (i *InvocationStatService) getDrilldownQuery(ctx context.Context, req *stpb
 		drilldownFields = append(drilldownFields, "tag")
 	}
 	executionDrilldownFields := []string{"worker", "target_label", "action_mnemonic", "effective_pool", "exit_code", "os", "arch"}
+	invocationDrilldownFields := []string{"bazel_exit_code"}
 	if req.GetDrilldownMetric().GetExecution() != sfpb.ExecutionMetricType_UNKNOWN_EXECUTION_METRIC {
 		drilldownFields = append(drilldownFields, executionDrilldownFields...)
+	} else {
+		drilldownFields = append(drilldownFields, invocationDrilldownFields...)
 	}
 	placeholderQuery := query_builder.NewQuery("")
 
@@ -1417,6 +1412,7 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 		GormExitCode       *string
 		GormArch           *string
 		GormOs             *string
+		GormBazelExitCode  *string
 		Selection          int64
 		Inverse            int64
 	}
@@ -1459,6 +1455,8 @@ func (i *InvocationStatService) GetStatDrilldown(ctx context.Context, req *stpb.
 			addOutputChartEntry(m, dm, stpb.DrilldownType_OS_DRILLDOWN_TYPE, stat.GormOs, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormArch != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_ARCH_DRILLDOWN_TYPE, stat.GormArch, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
+		} else if stat.GormBazelExitCode != nil {
+			addOutputChartEntry(m, dm, stpb.DrilldownType_BAZEL_EXIT_CODE_DRILLDOWN_TYPE, stat.GormBazelExitCode, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else if stat.GormTag != nil {
 			addOutputChartEntry(m, dm, stpb.DrilldownType_TAG_DRILLDOWN_TYPE, stat.GormTag, stat.Inverse, stat.Selection, rsp.TotalInBase, rsp.TotalInSelection)
 		} else {

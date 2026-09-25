@@ -7,6 +7,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	"github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	"github.com/buildbuddy-io/buildbuddy/server/util/filter"
+	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
@@ -88,7 +89,7 @@ func TestValidGenericFilters(t *testing.T) {
 				},
 			},
 			filterType:    stat_filter.ObjectTypes_EXECUTION_OBJECTS,
-			expectedQStr:  " (invocation_status = ? AND success = ?) OR (invocation_status = ? AND success = ?) ",
+			expectedQStr:  "(invocation_status = ? AND success = ?) OR (invocation_status = ? AND success = ?)",
 			expectedQArgs: []any{1, 1, 1, 0},
 		},
 		{
@@ -310,13 +311,18 @@ func TestValidGenericFilters(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
+		q := query_builder.NewQuery("SELECT * FROM bogus_table")
+		err := filter.AddGenericFiltersToQuery(q, []*stat_filter.GenericFilter{tc.filter}, tc.filterType, "clickhouse")
+		qStr, qArgs := q.Build()
 		assert.Nil(t, err)
-		assert.Equal(t, tc.expectedQStr, qStr)
+		assert.Equal(t, "SELECT * FROM bogus_table WHERE  ( "+tc.expectedQStr+" ) ", qStr)
 		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
-		qStr, qArgs, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "mysql")
+
+		q = query_builder.NewQuery("SELECT * FROM bogus_table")
+		err = filter.AddGenericFiltersToQuery(q, []*stat_filter.GenericFilter{tc.filter}, tc.filterType, "mysql")
+		qStr, qArgs = q.Build()
 		assert.Nil(t, err)
-		assert.Equal(t, tc.expectedQStr, qStr)
+		assert.Equal(t, "SELECT * FROM bogus_table WHERE  ( "+tc.expectedQStr+" ) ", qStr)
 		assert.ElementsMatch(t, tc.expectedQArgs, qArgs)
 	}
 }
@@ -324,20 +330,47 @@ func TestValidGenericFilters(t *testing.T) {
 // Tags are annoying to template because they behave different for different
 // dialects, so they get their own test case.
 func TestTagGenericFilters(t *testing.T) {
-	f := &stat_filter.GenericFilter{
+	q := query_builder.NewQuery("SELECT * FROM bogus_table")
+	f := []*stat_filter.GenericFilter{&stat_filter.GenericFilter{
 		Type:    stat_filter.FilterType_TAG_FILTER_TYPE,
 		Operand: stat_filter.FilterOperand_ARRAY_CONTAINS_OPERAND,
 		Value: &stat_filter.FilterValue{
 			StringValue: []string{"tag_one", "tag_two"},
-		}}
-	qStr, qArgs, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
+		}}}
+	err := filter.AddGenericFiltersToQuery(q, f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
 	assert.Nil(t, err)
-	assert.Equal(t, "hasAny(tags, array(?))", qStr)
+	qStr, qArgs := q.Build()
+	assert.Equal(t, "SELECT * FROM bogus_table WHERE  ( hasAny(tags, array(?)) ) ", qStr)
 	assert.ElementsMatch(t, []any{[]string{"tag_one", "tag_two"}}, qArgs)
-	qStr, qArgs, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "mysql")
+
+	q = query_builder.NewQuery("SELECT * FROM bogus_table")
+	err = filter.AddGenericFiltersToQuery(q, f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "mysql")
 	assert.Nil(t, err)
-	assert.Equal(t, " INSTR(tags, ?) OR INSTR(tags, ?) ", qStr)
+	qStr, qArgs = q.Build()
+	assert.Equal(t, "SELECT * FROM bogus_table WHERE  ( INSTR(tags, ?) OR INSTR(tags, ?) ) ", qStr)
 	assert.ElementsMatch(t, []any{"tag_one", "tag_two"}, qArgs)
+}
+
+func TestSkippedGenericFilters(t *testing.T) {
+	q := query_builder.NewQuery("SELECT * FROM bogus_table")
+	f := []*stat_filter.GenericFilter{&stat_filter.GenericFilter{
+		Type:    stat_filter.FilterType_EXECUTION_CREATED_AT_USEC_FILTER_TYPE,
+		Operand: stat_filter.FilterOperand_LESS_THAN_OPERAND,
+		Value: &stat_filter.FilterValue{
+			IntValue: []int64{10001},
+		},
+	}}
+	err := filter.AddGenericFiltersToQuery(q, f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "clickhouse")
+	assert.Nil(t, err)
+	qStr, qArgs := q.Build()
+	assert.Equal(t, "SELECT * FROM bogus_table", qStr)
+	assert.Empty(t, qArgs)
+
+	err = filter.AddGenericFiltersToQuery(q, f, stat_filter.ObjectTypes_INVOCATION_OBJECTS, "mysql")
+	assert.Nil(t, err)
+	qStr, qArgs = q.Build()
+	assert.Equal(t, "SELECT * FROM bogus_table", qStr)
+	assert.Empty(t, qArgs)
 }
 
 func TestInvalidGenericFilters(t *testing.T) {
@@ -358,18 +391,6 @@ func TestInvalidGenericFilters(t *testing.T) {
 			filterType:       stat_filter.ObjectTypes_INVOCATION_OBJECTS,
 			errorTypeFn:      status.IsInvalidArgumentError,
 			errorExplanation: "duration_usec shouldn't accept a string",
-		},
-		{
-			filter: &stat_filter.GenericFilter{
-				Type:    stat_filter.FilterType_EXECUTION_CREATED_AT_USEC_FILTER_TYPE,
-				Operand: stat_filter.FilterOperand_LESS_THAN_OPERAND,
-				Value: &stat_filter.FilterValue{
-					IntValue: []int64{10001},
-				},
-			},
-			filterType:       stat_filter.ObjectTypes_INVOCATION_OBJECTS,
-			errorTypeFn:      status.IsInvalidArgumentError,
-			errorExplanation: "Shouldn't be able to filter execution creation time on invocations.",
 		},
 		{
 			filter: &stat_filter.GenericFilter{
@@ -409,9 +430,11 @@ func TestInvalidGenericFilters(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		_, _, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "clickhouse")
+		q := query_builder.NewQuery("SELECT * FROM something")
+		err := filter.AddGenericFiltersToQuery(q, []*stat_filter.GenericFilter{tc.filter}, tc.filterType, "clickhouse")
 		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
-		_, _, err = filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(tc.filter, tc.filterType, "mysql")
+		q = query_builder.NewQuery("SELECT * FROM something")
+		err = filter.AddGenericFiltersToQuery(q, []*stat_filter.GenericFilter{tc.filter}, tc.filterType, "mysql")
 		assert.True(t, tc.errorTypeFn(err), tc.errorExplanation)
 	}
 }

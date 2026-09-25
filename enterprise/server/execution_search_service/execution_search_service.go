@@ -177,12 +177,9 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		q.AddWhereClause(str, args...)
 	}
 
-	for _, f := range req.GetQuery().GetGenericFilters() {
-		s, a, err := filter.ValidateAndGenerateGenericFilterQueryStringAndArgs(f, stat_filter.ObjectTypes_EXECUTION_OBJECTS, s.oh.DialectName())
-		if err != nil {
-			return nil, err
-		}
-		q.AddWhereClause(s, a...)
+	err = filter.AddGenericFiltersToQuery(q, req.GetQuery().GetGenericFilters(), stat_filter.ObjectTypes_EXECUTION_OBJECTS, s.oh.DialectName())
+	if err != nil {
+		return nil, err
 	}
 
 	q.SetOrderBy("created_at_usec", true)
