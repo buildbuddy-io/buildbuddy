@@ -114,20 +114,12 @@ actions:
         branches:
           - "*"
         merge_with_base_interval: 3h
-    # TODO: Fix the tests below on Mac, and re-enable.
+    # Compile on Linux RBE; reserve the Mac for bounded native executor tests.
     steps:
       - run: >-
           bazel test --config=mac-workflows
-          --
-          //...
-          -//server/backends/disk_cache:all
-          -//server/test/integration/remote_asset:all
-          -//enterprise/server/backends/pebble_cache:all
-          -//enterprise/server/raft/txn:all
-          -//enterprise/server/raft/store:all
-          -//enterprise/server/remote_execution/commandutil:all
-          -//enterprise/server/remote_execution/runner:all
-          -//enterprise/server/test/integration/...
+          //enterprise/server/remote_execution:darwin_tests
+          //enterprise/server/cmd/executor:executor
     allow_concurrent_runs: false
   - name: Test (darwin_arm64)
     os: "darwin"
@@ -142,20 +134,12 @@ actions:
         branches:
           - "*"
         merge_with_base_interval: 3h
-    # TODO: Fix the tests below on Mac, and re-enable.
+    # Compile on Linux RBE; reserve the Mac for bounded native executor tests.
     steps:
       - run: >-
           bazel test --config=mac-workflows
-          --
-          //...
-          -//server/backends/disk_cache:all
-          -//server/test/integration/remote_asset:all
-          -//enterprise/server/backends/pebble_cache:all
-          -//enterprise/server/raft/txn:all
-          -//enterprise/server/raft/store:all
-          -//enterprise/server/remote_execution/commandutil:all
-          -//enterprise/server/remote_execution/runner:all
-          -//enterprise/server/test/integration/...
+          //enterprise/server/remote_execution:darwin_tests
+          //enterprise/server/cmd/executor:executor
     allow_concurrent_runs: false
   - name: Benchmark
     container_image: ubuntu-22.04
