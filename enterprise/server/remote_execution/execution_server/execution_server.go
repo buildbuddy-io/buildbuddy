@@ -1042,7 +1042,16 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 		return nil, status.WrapError(err, "check executor pool support for experiment flags")
 	}
 	if supportsExperimentFlags {
-		executionTask.ExperimentFlags = executor_experiments.Evaluate(ctx)
+		// Let targeting rules match the platform that the task will run on.
+		// The isolation type is empty when the task uses the executor's
+		// default.
+		executionTask.ExperimentFlags = executor_experiments.Evaluate(
+			ctx,
+			experiments.WithContext("os", props.OS),
+			experiments.WithContext("arch", props.Arch),
+			experiments.WithContext("pool", pool.Name),
+			experiments.WithContext("isolation_type", platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName)),
+		)
 	}
 	var hostnamePattern string
 	var routingConfig *scpb.RoutingConfig

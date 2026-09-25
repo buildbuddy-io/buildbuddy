@@ -11,9 +11,12 @@ import (
 	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 )
 
-// Evaluate returns the executor experiments to send with a task.
-func Evaluate(ctx context.Context) []*expb.EvaluatedFlag {
+// Evaluate returns the executor experiments to send with a task. The options
+// are passed to every experiment, so that targeting rules can use the task's
+// attributes.
+func Evaluate(ctx context.Context, opts ...any) []*expb.EvaluatedFlag {
 	return []*expb.EvaluatedFlag{
-		// Add the GetProto(ctx) result for each experiment that executors read.
+		// Add the GetProto(ctx, opts...) result for each experiment that
+		// executors read.
 	}
 }
