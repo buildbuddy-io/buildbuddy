@@ -131,8 +131,8 @@ func ShouldReadChunked(digestSizeBytes, offset, limit int64) bool {
 	return digestSizeBytes > MinChunkedReadFallbackSizeBytes() && limit == 0
 }
 
-func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, offset, limit int64) bool {
-	return digestSizeBytes > MaxChunkSizeBytes() &&
+func ShouldReadChunkedOnProxy(ctx context.Context, efp interfaces.ExperimentFlagProvider, digestSizeBytes, avgChunkSizeBytes, offset, limit int64) bool {
+	return digestSizeBytes > avgChunkSizeBytes*4 &&
 		limit == 0 &&
 		(efp == nil || efp.Boolean(ctx, "cache_proxy.attempt_chunked_reads", true))
 }
@@ -169,7 +169,7 @@ func (c *Chunker) Close() error {
 // averageSize is typically a power of 2. It must be in the range 256B to 256MB.
 // The minimum allowed chunk size is averageSize / 4, and the maximum allowed
 // chunk size is averageSize * 4.
-func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*Chunker, error) {
+func NewChunker(ctx context.Context, averageSize int, seed uint64, writeChunkFn WriteFunc) (*Chunker, error) {
 	pr, pw := io.Pipe()
 	c := &Chunker{
 		pw:   pw,
@@ -185,9 +185,7 @@ func NewChunker(ctx context.Context, averageSize int, writeChunkFn WriteFunc) (*
 		fastcdc.WithMinSize(averageSize/4),
 		fastcdc.WithMaxSize(averageSize*4),
 
-		// We want to keep the rolling hash the same to ensure that given the same
-		// file, the library will chunk the file in the same way.
-		fastcdc.WithSeed(0),
+		fastcdc.WithSeed(seed),
 
 		// Normalization defaults to 2 from testing using Bazel build
 		// artifacts, since it provided the best balance of deduplication
