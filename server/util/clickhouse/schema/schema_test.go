@@ -205,3 +205,27 @@ func TestSameViewQuery(t *testing.T) {
 		"",
 	))
 }
+
+func TestSupportsJSONType(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		want    bool
+	}{
+		// The JSON type is generally available starting with 25.3. Compare
+		// versions numerically, since "25.10" sorts before "25.3" as a string.
+		{version: "25.3.14.14", want: true},
+		{version: "25.10.1.3832", want: true},
+		{version: "26.1.2.11", want: true},
+		// Earlier versions either lack the type or require an experimental
+		// setting to use it.
+		{version: "25.2.2.39", want: false},
+		{version: "24.8.14.39", want: false},
+		{version: "23.8.16.16", want: false},
+		// RunMigrations passes an empty version if it cannot query the server,
+		// in which case the column should be left out.
+		{version: "", want: false},
+	} {
+		got := supportsJSONType(tc.version)
+		assert.Equal(t, tc.want, got, "version %q", tc.version)
+	}
+}

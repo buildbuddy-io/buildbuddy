@@ -3,6 +3,7 @@ package clickhouse_test
 import (
 	"context"
 	"encoding/hex"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 	"github.com/buildbuddy-io/buildbuddy/server/util/testing/flags"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
@@ -260,4 +263,139 @@ func TestFlushExecutionStats_AllMalformedExecutionIDs_SkipsInsert(t *testing.T) 
 	).Count(&count).Error
 	require.NoError(t, err)
 	require.Zero(t, count)
+}
+
+func TestFlushExecutionStats_ExperimentFlags(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	env := testenv.GetTestEnv(t)
+	ctx := t.Context()
+
+	object, err := structpb.NewStruct(map[string]any{
+		"z":   nil,
+		"a.b": map[string]any{"z": false, "a": map[string]any{}},
+	})
+	require.NoError(t, err)
+	experimentFlags := []*expb.EvaluatedFlag{
+		{Name: "executor.string", Value: &expb.EvaluatedFlag_StringValue{StringValue: ""}},
+		{Name: "executor.object", Variant: "nested", Value: &expb.EvaluatedFlag_ObjectValue{ObjectValue: object}},
+		{Name: "executor.int64", Value: &expb.EvaluatedFlag_Int64Value{Int64Value: 9007199254740993}},
+		{Name: "executor.float64", Value: &expb.EvaluatedFlag_Float64Value{Float64Value: 1}},
+		{Name: "executor.bool", Variant: "control", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false}},
+		{Name: "executor.zero", Value: &expb.EvaluatedFlag_Int64Value{Int64Value: 0}},
+		{Name: "executor.empty_object", Value: &expb.EvaluatedFlag_ObjectValue{ObjectValue: &structpb.Struct{}}},
+	}
+	const invocationID = "f613dc0a-c1c4-40c9-8193-cbf428c5d321"
+	invocation := &sipb.StoredInvocation{InvocationId: invocationID}
+	invocationUUID := strings.ReplaceAll(invocationID, "-", "")
+	var executions []*repb.StoredExecution
+	for _, values := range [][]*expb.EvaluatedFlag{nil, experimentFlags} {
+		executionID := digest.NewCASResourceName(&repb.Digest{
+			Hash: strings.Repeat("a", 64), SizeBytes: 123,
+		}, "", repb.DigestFunction_SHA256).NewUploadString()
+		executions = append(executions, &repb.StoredExecution{
+			ExecutionId: executionID, InvocationUuid: invocationUUID,
+			UpdatedAtUsec: time.Now().UnixMicro(), ExperimentFlags: values,
+		})
+	}
+
+	require.NoError(t, env.GetOLAPDBHandle().FlushExecutionStats(ctx, invocation, executions))
+
+	var storedKeys []string
+	err = env.GetOLAPDBHandle().GORM(ctx, "test_experiment_keys").Raw(`
+		SELECT mapKeys(experiment_flags) AS names
+		FROM Executions
+		WHERE invocation_uuid = ? AND notEmpty(experiment_flags)
+	`, invocationUUID).Row().Scan(&storedKeys)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"executor.bool", "executor.empty_object", "executor.float64", "executor.int64",
+		"executor.object", "executor.string", "executor.zero",
+	}, storedKeys)
+
+	type evaluation struct {
+		Name            string
+		Variant         string
+		BoolValue       *bool
+		StringValue     *string
+		Int64Value      *int64
+		Float64Value    *float64
+		ObjectValueJSON *string
+	}
+	var got []evaluation
+	err = env.GetOLAPDBHandle().GORM(ctx, "test_experiment_values").Raw(`
+		SELECT
+			name,
+			getSubcolumn(experiment_flags[name], 'variant') AS variant,
+			getSubcolumn(experiment_flags[name], 'bool_value') AS bool_value,
+			getSubcolumn(experiment_flags[name], 'string_value') AS string_value,
+			getSubcolumn(experiment_flags[name], 'int64_value') AS int64_value,
+			getSubcolumn(experiment_flags[name], 'float64_value') AS float64_value,
+			getSubcolumn(experiment_flags[name], 'object_value_json') AS object_value_json
+		FROM Executions
+		ARRAY JOIN mapKeys(experiment_flags) AS name
+		WHERE invocation_uuid = ?
+		ORDER BY name
+	`, invocationUUID).Scan(&got).Error
+	require.NoError(t, err)
+	require.Equal(t, []evaluation{
+		{Name: "executor.bool", Variant: "control", BoolValue: new(false)},
+		{Name: "executor.empty_object", ObjectValueJSON: new("{}")},
+		{Name: "executor.float64", Float64Value: new(float64(1))},
+		{Name: "executor.int64", Int64Value: new(int64(9007199254740993))},
+		{Name: "executor.object", Variant: "nested", ObjectValueJSON: new(`{"a.b":{"a":{},"z":false},"z":null}`)},
+		{Name: "executor.string", StringValue: new("")},
+		{Name: "executor.zero", Int64Value: new(int64(0))},
+	}, got)
+
+	var rows []schema.Execution
+	err = env.GetOLAPDBHandle().GORM(ctx, "test_experiment_rows").Where("invocation_uuid = ?", invocationUUID).Find(&rows).Error
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	lengths := []int{len(rows[0].ExperimentFlags), len(rows[1].ExperimentFlags)}
+	slices.Sort(lengths)
+	require.Equal(t, []int{0, len(experimentFlags)}, lengths)
+}
+
+func TestFlushExecutionStats_WithoutExperimentFlagsColumn(t *testing.T) {
+	flags.Set(t, "testenv.use_clickhouse", true)
+	flags.Set(t, "testenv.reuse_server", true)
+	env := testenv.GetTestEnv(t)
+	ctx := t.Context()
+
+	// Simulate a ClickHouse server that is too old for the JSON type, where
+	// migrations leave out the experiment_flags column. Then connect again
+	// without migrations, so that the new handle sees the table without it.
+	err := env.GetOLAPDBHandle().GORM(ctx, "test_drop_experiment_flags").Exec(
+		"ALTER TABLE Executions DROP COLUMN experiment_flags",
+	).Error
+	require.NoError(t, err)
+	flags.Set(t, "olap_database.auto_migrate_db", false)
+	err = clickhouse.Register(env)
+	require.NoError(t, err)
+
+	// Flush an execution that reports an experiment flag.
+	const invocationID = "0b5f1c9e-7a3d-4c2b-9e8f-1d2c3b4a5f6e"
+	invocation := &sipb.StoredInvocation{InvocationId: invocationID}
+	invocationUUID := strings.ReplaceAll(invocationID, "-", "")
+	executionID := digest.NewCASResourceName(&repb.Digest{
+		Hash: strings.Repeat("a", 64), SizeBytes: 123,
+	}, "", repb.DigestFunction_SHA256).NewUploadString()
+	executions := []*repb.StoredExecution{{
+		ExecutionId: executionID, InvocationUuid: invocationUUID,
+		UpdatedAtUsec: time.Now().UnixMicro(),
+		ExperimentFlags: []*expb.EvaluatedFlag{
+			{Name: "executor.bool", Variant: "treatment", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true}},
+		},
+	}}
+	err = env.GetOLAPDBHandle().FlushExecutionStats(ctx, invocation, executions)
+	require.NoError(t, err)
+
+	// The execution should be stored without its experiment flags.
+	var count int64
+	err = env.GetOLAPDBHandle().GORM(ctx, "test_count_executions").Model(&schema.Execution{}).Where(
+		"invocation_uuid = ?", invocationUUID,
+	).Count(&count).Error
+	require.NoError(t, err)
+	require.Equal(t, int64(1), count)
 }

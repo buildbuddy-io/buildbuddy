@@ -1,0 +1,25 @@
+diff --git a/lib/column/json.go b/lib/column/json.go
+--- a/lib/column/json.go
++++ b/lib/column/json.go
+@@ -263,7 +263,20 @@ func (c *JSON) Rows() int {
+ func (c *JSON) Row(row int, ptr bool) any {
+ 	switch c.serializationVersion {
+ 	case JSONObjectSerializationVersion:
+-		return c.rowAsJSON(row)
++		// BuildBuddy stores experiment flag records in a
++		// Map(LowCardinality(String), JSON(...)) column, so reading ExperimentFlags
++		// exercises the map decoder with JSON values.
++		//
++		// The map decoder uses ScanType() to create a map[string]chcol.JSON, then
++		// calls Row(row, false) for each value. rowAsJSON returns *chcol.JSON, which
++		// cannot be inserted into that map without dereferencing it, so the decoder's
++		// reflect.SetMapIndex call panics. Honor ptr to return chcol.JSON when a
++		// value is requested and preserve *chcol.JSON when a pointer is requested.
++		obj := c.rowAsJSON(row)
++		if ptr {
++			return obj
++		}
++		return *obj
+ 	case JSONStringSerializationVersion:
+ 		str := c.jsonStrings.Row(row, false).(string)
+ 		strBytes := binary.Str2Bytes(str, len(str))

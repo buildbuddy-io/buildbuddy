@@ -1,0 +1,25 @@
+diff --git a/migrator.go b/migrator.go
+--- a/migrator.go
++++ b/migrator.go
+@@ -93,6 +93,10 @@
+ 			columnSlice := make([]string, 0, len(stmt.Schema.DBNames))
+ 			for _, dbName := range stmt.Schema.DBNames {
+ 				field := stmt.Schema.FieldsByDBName[dbName]
++				// Like gorm's default migrator, skip fields tagged "-:migration".
++				if field.IgnoreMigration {
++					continue
++				}
+ 				columnSlice = append(columnSlice, "? ?")
+ 				args = append(args,
+ 					clause.Column{Name: dbName},
+@@ -201,6 +205,10 @@
+ func (m Migrator) AddColumn(value interface{}, field string) error {
+ 	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+ 		if field := stmt.Schema.LookUpField(field); field != nil {
++			// Like gorm's default migrator, skip fields tagged "-:migration".
++			if field.IgnoreMigration {
++				return nil
++			}
+ 			return m.DB.Exec(
+ 				"ALTER TABLE ? ADD COLUMN ? ?",
+ 				clause.Table{Name: stmt.Table}, clause.Column{Name: field.DBName},

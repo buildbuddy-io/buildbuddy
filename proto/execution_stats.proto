@@ -6,6 +6,7 @@ import "google/protobuf/duration.proto";
 import "google/rpc/status.proto";
 import "proto/acl.proto";
 import "proto/context.proto";
+import "proto/experiments.proto";
 import "proto/invocation_status.proto";
 import "proto/remote_execution.proto";
 import "proto/scheduler.proto";
@@ -160,6 +161,10 @@ message ExecutionAuxiliaryMetadata {
 
   // Metrics reported by the guest VM which executed this action.
   VMMetrics vm_metrics = 12;
+
+  // Effective experiment values used by the executor, including local defaults
+  // when the executor has not opted in to app-controlled experiments.
+  repeated experiments.EvaluatedFlag experiment_flags = 13;
 }
 
 // Metrics associated with the guest VM which executed an action. Mostly

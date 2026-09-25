@@ -19,6 +19,20 @@ inject_repo(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:clickhouse_json_row.patch",
+    ],
+    path = "github.com/ClickHouse/clickhouse-go/v2",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "@com_github_buildbuddy_io_buildbuddy//buildpatches:gorm_clickhouse_ignore_migration.patch",
+    ],
+    path = "gorm.io/driver/clickhouse",
+)
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
         "@io_bazel_rules_go//third_party:com_github_gogo_protobuf-gazelle.patch",
     ],
     path = "github.com/gogo/protobuf",

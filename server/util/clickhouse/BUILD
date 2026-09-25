@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse",
     visibility = ["//visibility:public"],
     deps = [
+        "//proto:experiments_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/build_event_protocol/invocation_format",
@@ -42,6 +43,7 @@ go_test(
     tags = ["docker"],
     deps = [
         ":clickhouse",
+        "//proto:experiments_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/remote_cache/digest",
@@ -49,5 +51,6 @@ go_test(
         "//server/util/clickhouse/schema",
         "//server/util/testing/flags",
         "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/structpb",
     ],
 )

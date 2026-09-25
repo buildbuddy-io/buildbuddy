@@ -83,6 +83,7 @@ go_test(
         "//enterprise/server/util/execution",
         "//enterprise/server/util/redisutil",
         "//proto:execution_stats_go_proto",
+        "//proto:experiments_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:resource_go_proto",

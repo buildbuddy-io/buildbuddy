@@ -57,6 +57,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	rspb "github.com/buildbuddy-io/buildbuddy/proto/resource"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
@@ -1925,6 +1926,9 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 			ExecutorGroupId: sharedPoolGroupID,
 			Pool:            "test-pool",
 		},
+		ExperimentFlags: []*expb.EvaluatedFlag{
+			{Name: "executor.example", Variant: "control", Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false}},
+		},
 	}
 	auxAny, err := anypb.New(aux)
 	require.NoError(t, err)
@@ -1990,6 +1994,7 @@ func testPublishOperationSecondCompletedCarriesSnapshotStats(t *testing.T, flush
 	assert.Equal(t, "//some:test", got.GetTargetLabel())
 	assert.Equal(t, workerStartTime.UnixMicro(), got.GetWorkerStartTimestampUsec())
 	assert.Equal(t, workerEndTime.UnixMicro(), got.GetWorkerCompletedTimestampUsec())
+	assert.Empty(t, cmp.Diff(aux.GetExperimentFlags(), got.GetExperimentFlags(), protocmp.Transform()))
 	if flushAfterCleanup {
 		// Second-COMPLETED snapshot stats were merged in.
 		assert.True(t, got.GetSnapshotSavedLocally(), "snapshot_saved_locally")

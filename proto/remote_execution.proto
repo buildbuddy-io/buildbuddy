@@ -3338,6 +3338,9 @@ message StoredExecution {
   // Experiments used by this execution.
   repeated string experiments = 61;
 
+  // Effective experiment values reported by the executor.
+  repeated experiments.EvaluatedFlag experiment_flags = 97;
+
   // The requested pool name from platform properties, before resolution to effective pool.
   string requested_pool = 77;
   string effective_pool = 78;
