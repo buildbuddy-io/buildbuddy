@@ -182,8 +182,8 @@ func refreshKey(ctx context.Context, ck crypter_key_cache.CacheKey, dbh interfac
 	return key, md, nil
 }
 
-func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, groupID string, chunkSize int) (*crypter.Encryptor, error) {
-	loadedKey, err := c.cache.EncryptionKey(ctx)
+func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*crypter.Encryptor, error) {
+	loadedKey, err := c.cache.EncryptionKeyForMetadata(ctx, em)
 	if err != nil {
 		return nil, err
 	}
@@ -191,23 +191,24 @@ func (c *Crypter) newEncryptorWithChunkSize(ctx context.Context, digest *repb.Di
 }
 
 func (c *Crypter) ActiveKey(ctx context.Context) (*sgpb.EncryptionMetadata, error) {
-	loadedKey, err := c.cache.EncryptionKey(ctx)
+	loadedKey, err := c.cache.ActiveEncryptionKey(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return loadedKey.Metadata, nil
 }
 
-func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser) (interfaces.Encryptor, error) {
+// NewEncryptor creates an encryptor using the specified key metadata.
+func (c *Crypter) NewEncryptor(ctx context.Context, digest *repb.Digest, w interfaces.CommittedWriteCloser, em *sgpb.EncryptionMetadata) (interfaces.Encryptor, error) {
 	u, err := c.env.GetAuthenticator().AuthenticatedUser(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return c.newEncryptorWithChunkSize(ctx, digest, w, u.GetGroupID(), crypter.PlainTextChunkSize)
+	return c.newEncryptorWithChunkSize(ctx, digest, w, em, u.GetGroupID(), crypter.PlainTextChunkSize)
 }
 
 func (c *Crypter) newDecryptorWithChunkSize(ctx context.Context, digest *repb.Digest, r io.ReadCloser, em *sgpb.EncryptionMetadata, groupID string, chunkSize int) (*crypter.Decryptor, error) {
-	loadedKey, err := c.cache.DecryptionKey(ctx, em)
+	loadedKey, err := c.cache.EncryptionKeyForMetadata(ctx, em)
 	if err != nil {
 		return nil, err
 	}
@@ -615,13 +616,13 @@ func (c *Crypter) GetEncryptionKey(ctx context.Context, req *enpb.GetEncryptionK
 
 	var loadedKey *crypter.DerivedKey
 	if req.GetMetadata().GetVersion() == 0 {
-		loadedKey, err = c.cache.EncryptionKey(ctx)
+		loadedKey, err = c.cache.ActiveEncryptionKey(ctx)
 	} else {
 		metadata := sgpb.EncryptionMetadata{
 			EncryptionKeyId: req.GetMetadata().GetId(),
 			Version:         req.GetMetadata().GetVersion(),
 		}
-		loadedKey, err = c.cache.DecryptionKey(ctx, &metadata)
+		loadedKey, err = c.cache.EncryptionKeyForMetadata(ctx, &metadata)
 	}
 	if err != nil {
 		return nil, err

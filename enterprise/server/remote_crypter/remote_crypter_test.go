@@ -199,7 +199,9 @@ func TestEncryptDecrypt(t *testing.T) {
 	for _, size := range []int64{1, 10, 100, 1000, 1000 * 1000} {
 		t.Run(fmt.Sprint(size), func(t *testing.T) {
 			out := bytes.NewBuffer(nil)
-			encryptor, err := crypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out))
+			md, err := crypter.ActiveKey(ctx)
+			require.NoError(t, err)
+			encryptor, err := crypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
 			require.NoError(t, err)
 
 			testData := make([]byte, size)
@@ -227,7 +229,9 @@ func TestDecryptWrongDigest(t *testing.T) {
 
 	out := bytes.NewBuffer(nil)
 
-	encryptor, err := crypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out))
+	md, err := crypter.ActiveKey(ctx)
+	require.NoError(t, err)
+	encryptor, err := crypter.NewEncryptor(ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
 	require.NoError(t, err)
 
 	testData := make([]byte, 1000)
@@ -276,7 +280,9 @@ func TestAuth(t *testing.T) {
 
 	// user1 should be able to encrypt and decrypt using their own key
 	{
-		encryptor, err := crypter.NewEncryptor(user1Ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out))
+		md, err := crypter.ActiveKey(user1Ctx)
+		require.NoError(t, err)
+		encryptor, err := crypter.NewEncryptor(user1Ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
 		require.NoError(t, err)
 		require.Equal(t, group1Key, encryptor.Metadata().GetEncryptionKeyId())
 		require.EqualValues(t, 1, encryptor.Metadata().GetVersion())
@@ -293,7 +299,9 @@ func TestAuth(t *testing.T) {
 
 	// user2 should not be able to decrypt using user1's key
 	{
-		encryptor, err := crypter.NewEncryptor(user2Ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out))
+		md, err := crypter.ActiveKey(user2Ctx)
+		require.NoError(t, err)
+		encryptor, err := crypter.NewEncryptor(user2Ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out), md)
 		require.NoError(t, err)
 		require.Equal(t, group2Key, encryptor.Metadata().GetEncryptionKeyId())
 		require.EqualValues(t, 1, encryptor.Metadata().GetVersion())
@@ -307,7 +315,7 @@ func TestAuth(t *testing.T) {
 
 	// user3 key lookup should fail since they don't have a key setup
 	{
-		_, err = crypter.NewEncryptor(user3Ctx, fooDigest, ioutil.NewCustomCommitWriteCloser(out))
+		_, err = crypter.ActiveKey(user3Ctx)
 		require.True(t, status.IsNotFoundError(err))
 	}
 }
