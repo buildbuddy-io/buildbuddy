@@ -541,7 +541,7 @@ func grpcRow() *dashboard.RowBuilder {
 		WithPanel(ts("gRPC client RPCs per connection", dash.UnitShort).
 			Description("Active RPCs on each gRPC client connection, summed over methods. Hides 0 values.").
 			Min(0).
-			Legend(lastValueLegend()).
+			Legend(tableLegend("last").SortBy("Last").SortDesc(true)).
 			Tooltip(multiTooltip()).
 			WithTarget(dash.PromQuery(`sum by (pool_id, connection_id, pod_name, target) (buildbuddy_grpc_client_rpcs_per_connection{`+proxyFilter+`}) > 0`, "{{target}} pool={{pool_id}} conn={{connection_id}} @ {{pod_name}}")))
 }
