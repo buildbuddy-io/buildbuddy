@@ -961,8 +961,8 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 		}
 	}
 
-	remoteEncryptionRequested := s.shouldBypassLocalCacheForEncryption(ctx)
-	if proxy_util.SkipRemote(ctx) && remoteEncryptionRequested {
+	remoteOnlyForEncryption := s.shouldBypassLocalCacheForEncryption(ctx)
+	if proxy_util.SkipRemote(ctx) && remoteOnlyForEncryption {
 		err := status.FailedPreconditionError("proxy_skip_remote is incompatible with encrypted cache requests on proxies without encryption support")
 		recordWriteMetrics(byteStreamMetrics{
 			requestType: requestTypeLabel,
@@ -973,7 +973,7 @@ func (s *ByteStreamServerProxy) Write(stream bspb.ByteStream_WriteServer) error 
 		return err
 	}
 	var err error
-	if remoteEncryptionRequested {
+	if remoteOnlyForEncryption {
 		err = s.writeRemoteOnly(ctx, stream)
 	} else if proxy_util.SkipRemote(ctx) {
 		err = s.writeLocalOnly(stream)
