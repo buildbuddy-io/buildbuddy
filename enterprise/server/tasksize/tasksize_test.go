@@ -336,6 +336,170 @@ func TestApplyLimits_MaxDiskLimitDisabled(t *testing.T) {
 	assert.Equal(t, tasksize.MaxEstimatedFreeDisk*10, sz.EstimatedFreeDiskBytes)
 }
 
+func TestApplyLimits_GPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		disabled bool
+		estimate *int64
+		fallback int64
+		minimum  int64
+		want     *int64
+	}{
+		{name: "disabled", disabled: true, estimate: new(int64(8)), fallback: 16, minimum: 32},
+		{name: "no request"},
+		{name: "fallback", fallback: 16, want: new(int64(16))},
+		{name: "minimum without fallback", minimum: 4, want: new(int64(4))},
+		{name: "minimum above fallback", fallback: 4, minimum: 8, want: new(int64(8))},
+		{name: "fallback above minimum", fallback: 8, minimum: 4, want: new(int64(8))},
+		{name: "estimate below fallback", estimate: new(int64(4)), fallback: 8, want: new(int64(4))},
+		{name: "estimate above fallback", estimate: new(int64(8)), fallback: 4, want: new(int64(8))},
+		{name: "zero estimate", estimate: new(int64(0)), fallback: 8, want: new(int64(0))},
+		{name: "negative estimate", estimate: new(int64(-1)), fallback: 8, want: new(int64(0))},
+		{name: "minimum above estimate", estimate: new(int64(4)), fallback: 16, minimum: 8, want: new(int64(8))},
+		{name: "estimate above minimum", estimate: new(int64(8)), minimum: 4, want: new(int64(8))},
+		{name: "negative hints ignored", fallback: -1, minimum: -1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			fp := gpuSizingFlagProvider(t, !testCase.disabled)
+			props := &platform.Properties{
+				EstimatedGPUMemoryBytes: testCase.fallback,
+				MinGPUMemoryBytes:       testCase.minimum,
+			}
+			size := &scpb.TaskSize{EstimatedGpuMemoryBytes: testCase.estimate}
+			requested := &scpb.TaskSize{}
+			if testCase.fallback > 0 {
+				requested.EstimatedGpuMemoryBytes = new(testCase.fallback)
+			}
+
+			// The fallback cannot replace an automatic estimate, including a
+			// measured zero. The minimum is applied after choosing the estimate.
+			limited := tasksize.ApplyLimits(t.Context(), fp, &repb.Command{}, props, size)
+			require.Equal(t, testCase.want, limited.EstimatedGpuMemoryBytes)
+			withRequested := tasksize.ApplyLimitsWithRequestedSize(t.Context(), fp, &repb.Command{}, props, size, requested)
+			require.Equal(t, testCase.want, withRequested.EstimatedGpuMemoryBytes)
+			require.Equal(t, testCase.estimate, size.EstimatedGpuMemoryBytes, "applying limits must not change the measured size")
+		})
+	}
+}
+
+func TestRequested_GPUMemory(t *testing.T) {
+	// Compute units specify CPU and RAM only. Capture the independent GPU
+	// fallback without folding the minimum into the user's requested estimate.
+	size := tasksize.Requested(&repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{
+		Properties: []*repb.Platform_Property{
+			{Name: "EstimatedComputeUnits", Value: "2"},
+			{Name: "EstimatedGPUMemory", Value: "8GB"},
+			{Name: "MinGPUMemory", Value: "16GB"},
+		},
+	}}})
+	require.Equal(t, int64(5_000_000_000), size.GetEstimatedMemoryBytes())
+	require.Equal(t, int64(2000), size.GetEstimatedMilliCpu())
+	require.Equal(t, int64(8*1024*1024*1024), size.GetEstimatedGpuMemoryBytes())
+}
+
+func TestSizer_GPUMemory(t *testing.T) {
+	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
+	rdb := testredis.Start(t).Client()
+	for i, testCase := range []struct {
+		name       string
+		disabled   bool
+		measured   *int64
+		props      platform.Properties
+		wantNil    bool
+		wantMemory int64
+		wantCPU    int64
+		wantStored *int64
+		wantGPU    *int64
+	}{
+		{name: "disabled", disabled: true, measured: new(int64(8)), props: platform.Properties{EstimatedGPUMemoryBytes: 16, MinGPUMemoryBytes: 32}},
+		{name: "measured", measured: new(int64(8)), props: platform.Properties{EstimatedGPUMemoryBytes: 16}, wantStored: new(int64(8)), wantGPU: new(int64(8))},
+		{name: "measured zero", measured: new(int64(0)), props: platform.Properties{EstimatedGPUMemoryBytes: 16}, wantStored: new(int64(0)), wantGPU: new(int64(0))},
+		{name: "missing measurement", props: platform.Properties{EstimatedGPUMemoryBytes: 16}, wantGPU: new(int64(16))},
+		{name: "minimum", measured: new(int64(8)), props: platform.Properties{EstimatedGPUMemoryBytes: 16, MinGPUMemoryBytes: 12}, wantStored: new(int64(8)), wantGPU: new(int64(12))},
+		{name: "measured zero with minimum", measured: new(int64(0)), props: platform.Properties{EstimatedGPUMemoryBytes: 16, MinGPUMemoryBytes: 4}, wantStored: new(int64(0)), wantGPU: new(int64(4))},
+		{name: "compute units", measured: new(int64(8)), props: platform.Properties{EstimatedComputeUnits: 2, EstimatedGPUMemoryBytes: 16}, wantStored: new(int64(8)), wantGPU: new(int64(8)), wantMemory: 5_000_000_000, wantCPU: 2000},
+		{name: "compute units and explicit CPU RAM", measured: new(int64(8)), props: platform.Properties{EstimatedComputeUnits: 2, EstimatedMemoryBytes: 20_000_000_000, EstimatedMilliCPU: 5000, EstimatedGPUMemoryBytes: 16}, wantStored: new(int64(8)), wantGPU: new(int64(8)), wantMemory: 20_000_000_000, wantCPU: 5000},
+		{name: "compute units with no GPU measurement", props: platform.Properties{EstimatedComputeUnits: 2, EstimatedGPUMemoryBytes: 16}, wantNil: true},
+		{name: "compute units with experiment disabled", disabled: true, measured: new(int64(8)), props: platform.Properties{EstimatedComputeUnits: 2}, wantNil: true},
+		{name: "measured sizing disabled by task", measured: new(int64(8)), props: platform.Properties{DisableMeasuredTaskSize: true}, wantStored: new(int64(8)), wantNil: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			env := testenv.GetTestEnv(t)
+			env.SetRemoteExecutionRedisClient(rdb)
+			env.SetAuthenticator(testauth.NewTestAuthenticator(t, testauth.TestUsers()))
+			env.SetExperimentFlagProvider(gpuSizingFlagProvider(t, !testCase.disabled))
+			sizer, err := tasksize.NewSizer(env)
+			require.NoError(t, err)
+			ctx := t.Context()
+			cmd := &repb.Command{Arguments: []string{fmt.Sprintf("gpu-test-%d", i)}}
+			start := time.Now()
+			md := &repb.ExecutedActionMetadata{
+				UsageStats:                  &repb.UsageStats{PeakMemoryBytes: 9_000_000, CpuNanos: 1_000_000_000},
+				ExecutionStartTimestamp:     timestamppb.New(start),
+				ExecutionCompletedTimestamp: timestamppb.New(start.Add(time.Second)),
+			}
+			if testCase.measured != nil {
+				md.UsageStats.GpuUsage = &repb.GPUUsage{PeakTotalMemoryBytes: *testCase.measured}
+			}
+
+			// Redis must hold the raw measurement, including a present zero,
+			// rather than the fallback or minimum requested by the user.
+			require.NoError(t, sizer.Update(ctx, cmd, &testCase.props, md))
+			keys, err := rdb.Keys(ctx, fmt.Sprintf("taskSize/*/gpu-test-%d/*", i)).Result()
+			require.NoError(t, err)
+			require.Len(t, keys, 1)
+			serialized, err := rdb.Get(ctx, keys[0]).Bytes()
+			require.NoError(t, err)
+			stored := &scpb.TaskSize{}
+			require.NoError(t, proto.Unmarshal(serialized, stored))
+			require.Equal(t, testCase.wantStored, stored.EstimatedGpuMemoryBytes)
+
+			// Reading applies GPU hints only where permitted. Compute units
+			// keep their CPU/RAM assignments while GPU usage remains automatic.
+			size := sizer.Get(ctx, cmd, &testCase.props)
+			if testCase.wantNil {
+				require.Nil(t, size)
+				return
+			}
+			require.NotNil(t, size)
+			wantMemory, wantCPU := int64(9_000_000), int64(1000)
+			if testCase.wantMemory != 0 {
+				wantMemory, wantCPU = testCase.wantMemory, testCase.wantCPU
+			}
+			require.Equal(t, wantMemory, size.GetEstimatedMemoryBytes())
+			require.Equal(t, wantCPU, size.GetEstimatedMilliCpu())
+			require.Equal(t, testCase.wantGPU, size.EstimatedGpuMemoryBytes)
+
+			// Turning the experiment off must ignore measurements already in
+			// Redis as well as any GPU platform properties.
+			env.SetExperimentFlagProvider(nil)
+			size = sizer.Get(ctx, cmd, &testCase.props)
+			if testCase.props.EstimatedComputeUnits != 0 {
+				require.Nil(t, size)
+			} else {
+				require.NotNil(t, size)
+				require.Nil(t, size.EstimatedGpuMemoryBytes)
+			}
+		})
+	}
+}
+
+func gpuSizingFlagProvider(t *testing.T, enabled bool) *experiments.FlagProvider {
+	provider := openfeatureTesting.NewTestProvider()
+	provider.UsingFlags(t, map[string]memprovider.InMemoryFlag{
+		"remote_execution.task_gpu_sizing_enabled": {
+			State:          memprovider.Enabled,
+			DefaultVariant: "default",
+			Variants:       map[string]any{"default": enabled},
+		},
+	})
+	require.NoError(t, openfeature.SetProviderAndWait(provider))
+	t.Cleanup(provider.Cleanup)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	return fp
+}
+
 func TestSizer_Get_ShouldReturnRecordedUsageStats(t *testing.T) {
 	flags.Set(t, "remote_execution.use_measured_task_sizes", true)
 

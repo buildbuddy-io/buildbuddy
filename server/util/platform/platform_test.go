@@ -260,6 +260,35 @@ func TestParse_EstimatedMemory(t *testing.T) {
 	}
 }
 
+func TestParse_GPUMemory(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		value string
+		want  int64
+	}{
+		{name: "unset"},
+		{name: "bytes", value: "1000", want: 1000},
+		{name: "scientific notation", value: "1e9", want: 1_000_000_000},
+		{name: "IEC units", value: "2GB", want: 2 * 1024 * 1024 * 1024},
+		{name: "whitespace", value: " 1GB ", want: 1024 * 1024 * 1024},
+		{name: "invalid", value: "invalid"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			// GPU hints use the byte-size syntax accepted for system memory,
+			// including case-insensitive property names.
+			props, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{
+				Properties: []*repb.Platform_Property{
+					{Name: "estimatedgpumemory", Value: testCase.value},
+					{Name: "MinGPUMemory", Value: testCase.value},
+				},
+			}}})
+			require.NoError(t, err)
+			require.Equal(t, testCase.want, props.EstimatedGPUMemoryBytes)
+			require.Equal(t, testCase.want, props.MinGPUMemoryBytes)
+		})
+	}
+}
+
 func TestParse_ShmSize(t *testing.T) {
 	platformProps, err := ParseProperties(&repb.ExecutionTask{Command: &repb.Command{Platform: &repb.Platform{}}})
 	require.NoError(t, err)
