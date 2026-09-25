@@ -23,6 +23,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/uuid",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/query_builder"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/uuid"
+	"golang.org/x/sync/errgroup"
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
@@ -480,12 +481,26 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 
 	interval, location := executionTimelineInterval(req.GetQuery(), req.GetRequestContext().GetTimezone(), stats.FinerTimeBucketsEnabled())
 
-	statsRows, err := s.queryTimelineStats(ctx, req, u.GetGroupID(), interval, location)
-	if err != nil {
-		return nil, err
-	}
-	sampledExecutions, err := s.queryTimelineExecutions(ctx, req, u.GetGroupID())
-	if err != nil {
+	var statsRows []*timelineStatsRow
+	var sampledExecutions []*schema.Execution
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.Go(func() error {
+		rows, err := s.queryTimelineStats(egCtx, req, u.GetGroupID(), interval, location)
+		if err != nil {
+			return err
+		}
+		statsRows = rows
+		return nil
+	})
+	eg.Go(func() error {
+		executions, err := s.queryTimelineExecutions(egCtx, req, u.GetGroupID())
+		if err != nil {
+			return err
+		}
+		sampledExecutions = executions
+		return nil
+	})
+	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
 
