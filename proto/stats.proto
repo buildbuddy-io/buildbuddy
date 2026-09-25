@@ -298,6 +298,7 @@ enum DrilldownType {
   EXIT_CODE_DRILLDOWN_TYPE = 14;
   ARCH_DRILLDOWN_TYPE = 15;
   OS_DRILLDOWN_TYPE = 16;
+  BAZEL_EXIT_CODE_DRILLDOWN_TYPE = 17;
 }
 
 message DrilldownChart {

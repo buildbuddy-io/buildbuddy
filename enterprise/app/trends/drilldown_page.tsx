@@ -674,6 +674,9 @@ export default class DrilldownPageComponent extends React.Component<Props, State
       case stats.DrilldownType.ARCH_DRILLDOWN_TYPE:
         this.navigateGenericFilterBarClick(`arch:"${originalLabel}"`);
         return;
+      case stats.DrilldownType.BAZEL_EXIT_CODE_DRILLDOWN_TYPE:
+        this.navigateGenericFilterBarClick(`bazel_exit_code:"${originalLabel}"`);
+        return;
       case stats.DrilldownType.GROUP_ID_DRILLDOWN_TYPE:
       case stats.DrilldownType.DATE_DRILLDOWN_TYPE:
       default:
@@ -731,6 +734,8 @@ export default class DrilldownPageComponent extends React.Component<Props, State
         return "arch (execution)";
       case stats.DrilldownType.OS_DRILLDOWN_TYPE:
         return "os (execution)";
+      case stats.DrilldownType.BAZEL_EXIT_CODE_DRILLDOWN_TYPE:
+        return "bazel exit code";
       default:
         return "???";
     }
