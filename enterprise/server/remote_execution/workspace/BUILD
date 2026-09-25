@@ -29,6 +29,7 @@ go_library(
         "//server/util/fspath",
         "//server/util/log",
         "//server/util/platform",
+        "//server/util/proto",
         "//server/util/status",
         "//server/util/tracing",
         "@com_github_gobwas_glob//:glob",

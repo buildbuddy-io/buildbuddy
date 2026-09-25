@@ -30,6 +30,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/fspath"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
+	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"github.com/buildbuddy-io/buildbuddy/server/util/tracing"
 	"github.com/gobwas/glob"
@@ -590,12 +591,25 @@ func (ws *Workspace) UploadOutputs(ctx context.Context, cmd *repb.Command, execu
 	}
 	if cmdResult.VfsUnusedInputs != nil {
 		eg.Go(func() error {
-			d, err := cachetools.UploadProto(egCtx, bsClient, instanceName, digestFunction, cmdResult.VfsUnusedInputs)
+			// The mask only saves prefetching in later executions, so losing
+			// it isn't worth failing the task.
+			b, err := proto.Marshal(cmdResult.VfsUnusedInputs)
 			if err != nil {
-				// The mask only saves prefetching in later executions, so
-				// losing it isn't worth failing the task.
+				log.CtxWarningf(ctx, "Failed to marshal VFS unused inputs mask: %s", err)
+				return nil
+			}
+			d, err := cachetools.UploadBlob(egCtx, bsClient, instanceName, digestFunction, bytes.NewReader(b))
+			if err != nil {
 				log.CtxWarningf(ctx, "Failed to upload VFS unused inputs mask: %s", err)
 				return nil
+			}
+			// Task routing often sends the next execution of the command to
+			// this executor, so keep a local copy that it can read without a
+			// round trip to the CAS.
+			if fc := ws.env.GetFileCache(); fc != nil {
+				if _, err := fc.Write(egCtx, &repb.FileNode{Digest: d}, b); err != nil {
+					log.CtxWarningf(ctx, "Failed to add VFS unused inputs mask to the file cache: %s", err)
+				}
 			}
 			unusedInputsDigest = d
 			return nil

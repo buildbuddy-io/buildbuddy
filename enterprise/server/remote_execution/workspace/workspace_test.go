@@ -619,6 +619,10 @@ func TestUploadOutputs_VFSUnusedInputs(t *testing.T) {
 	_, runServer, lis := testenv.RegisterLocalGRPCServer(t, te)
 	testcache.Setup(t, te, lis)
 	go runServer()
+	fc, err := filecache.NewFileCache(testfs.MakeTempDir(t), 1e9, false)
+	require.NoError(t, err)
+	fc.WaitForDirectoryScanToComplete()
+	te.SetFileCache(fc)
 	ws, err := workspace.New(te, testfs.MakeTempDir(t), &workspace.Opts{})
 	require.NoError(t, err)
 	ws.SetTask(ctx, &repb.ExecutionTask{Command: &repb.Command{}})
@@ -638,6 +642,11 @@ func TestUploadOutputs_VFSUnusedInputs(t *testing.T) {
 	err = cachetools.GetBlobAsProto(ctx, te.GetByteStreamClient(), rn, uploaded)
 	require.NoError(t, err)
 	require.Empty(t, cmp.Diff(cmdResult.VfsUnusedInputs, uploaded, protocmp.Transform()))
+
+	// The executor also keeps the mask in its file cache, so that the next
+	// execution on this executor reads it without a round trip to the CAS.
+	cached := fc.ContainsFile(ctx, &repb.FileNode{Digest: cmdResult.VfsUnusedInputsDigest})
+	require.True(t, cached)
 }
 
 func TestDownloadInputs_VFSPrefetchMode(t *testing.T) {
