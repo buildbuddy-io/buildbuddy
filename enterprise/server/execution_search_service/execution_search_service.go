@@ -201,6 +201,10 @@ func (s *ExecutionSearchService) addExecutionQueryFilters(q *query_builder.Query
 	}
 	if start := query.GetUpdatedAfter(); start.IsValid() {
 		q.AddWhereClause("updated_at_usec >= ?", start.AsTime().UnixMicro())
+	} else {
+		// If no start time is specified, default to 7 days.
+		lookbackWindowHours := 7 * 24 * time.Hour
+		q.AddWhereClause("updated_at_usec >= ?", time.Now().Add(-lookbackWindowHours).UnixMicro())
 	}
 	if end := query.GetUpdatedBefore(); end.IsValid() {
 		q.AddWhereClause("updated_at_usec < ?", end.AsTime().UnixMicro())
@@ -461,6 +465,13 @@ func shardFromOutputPath(outputPath string) int64 {
 	return 0
 }
 
+func clampedDuration(start int64, end int64) int64 {
+	if end < start || start == 0 {
+		return 0
+	}
+	return end - start
+}
+
 func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *expb.GetExecutionTimelineRequest) (*expb.GetExecutionTimelineResponse, error) {
 	if s.oh == nil {
 		return nil, status.UnavailableError("An OLAP DB is required to search executions.")
@@ -553,12 +564,12 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 			ActionDigestHash:  hex.EncodeToString([]byte(ex.ActionDigestHash)),
 			InvocationId:      id,
 			StartTimeUsec:     ex.WorkerStartTimestampUsec,
-			DurationUsec:      max(0, ex.WorkerCompletedTimestampUsec-ex.QueuedTimestampUsec),
+			DurationUsec:      clampedDuration(ex.QueuedTimestampUsec, ex.WorkerCompletedTimestampUsec),
 			CpuNanos:          ex.CPUNanos,
-			WorkerQueueUsec:   max(0, ex.InputFetchStartTimestampUsec-ex.QueuedTimestampUsec),
-			InputDownloadUsec: max(0, ex.InputFetchCompletedTimestampUsec-ex.InputFetchStartTimestampUsec),
-			ExecutionUsec:     max(0, ex.ExecutionCompletedTimestampUsec-ex.ExecutionStartTimestampUsec),
-			OutputUploadUsec:  max(0, ex.OutputUploadCompletedTimestampUsec-ex.OutputUploadStartTimestampUsec),
+			WorkerQueueUsec:   clampedDuration(ex.QueuedTimestampUsec, ex.WorkerStartTimestampUsec),
+			InputDownloadUsec: clampedDuration(ex.InputFetchStartTimestampUsec, ex.InputFetchCompletedTimestampUsec),
+			ExecutionUsec:     clampedDuration(ex.ExecutionStartTimestampUsec, ex.ExecutionCompletedTimestampUsec),
+			OutputUploadUsec:  clampedDuration(ex.OutputUploadStartTimestampUsec, ex.OutputUploadCompletedTimestampUsec),
 			PeakMemoryBytes:   ex.PeakMemoryBytes,
 			UploadedBytes:     ex.FileUploadSizeBytes,
 			DownloadedBytes:   ex.FileDownloadSizeBytes,
