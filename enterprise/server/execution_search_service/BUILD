@@ -7,7 +7,9 @@ go_library(
     srcs = ["execution_search_service.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/execution_search_service",
     deps = [
+        "//enterprise/server/invocation_stat_service",
         "//enterprise/server/util/execution",
+        "//enterprise/server/util/stats",
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:stat_filter_go_proto",
@@ -21,6 +23,7 @@ go_library(
         "//server/util/query_builder",
         "//server/util/status",
         "//server/util/uuid",
+        "@org_golang_x_sync//errgroup",
     ],
 )
 
@@ -40,11 +43,13 @@ go_test(
         "//proto:execution_stats_go_proto",
         "//proto:invocation_status_go_proto",
         "//proto:remote_execution_go_proto",
+        "//proto:stats_go_proto",
         "//server/remote_cache/digest",
         "//server/testutil/testauth",
         "//server/testutil/testenv",
         "//server/util/clickhouse",
         "//server/util/clickhouse/schema",
+        "//server/util/status",
         "//server/util/testing/flags",
         "//server/util/uuid",
         "@com_github_stretchr_testify//assert",
