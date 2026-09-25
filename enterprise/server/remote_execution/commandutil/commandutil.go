@@ -31,6 +31,8 @@ const (
 	// never started, or its actual exit code could not be determined because of an
 	// error.
 	NoExitCode = -2
+	// Exit code 139 represents 11 (SIGSEGV signal) + 128 https://tldp.org/LDP/abs/html/exitcodes.html
+	SegmentationFaultExitCode = 128 + int(syscall.SIGSEGV)
 )
 
 var (
@@ -420,6 +422,10 @@ func ExitCode(ctx context.Context, cmd *exec.Cmd, err error) (int, error) {
 		}
 		if dl, ok := ctx.Deadline(); ok && time.Now().After(dl) {
 			return exitCode, status.DeadlineExceededErrorf("command timed out: %s", err.Error())
+		}
+		if ws, ok := processState.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGSEGV {
+			// Treat SIGSEVs as real failures from the code, don't auto-retry them.
+			return SegmentationFaultExitCode, nil
 		}
 		// If the command didn't time out, it was probably killed by the kernel due to OOM.
 		return exitCode, status.ResourceExhaustedErrorf("command was killed: %s", err.Error())

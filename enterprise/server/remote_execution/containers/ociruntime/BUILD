@@ -65,7 +65,10 @@ genrule(
 
 go_test(
     name = "ociruntime_test",
-    srcs = ["ociruntime_test.go"],
+    srcs = [
+        "ociruntime_test.go",
+        "ociruntime_unit_test.go",
+    ],
     data = [
         ":crun",
         "//enterprise/server/cmd/executor:tini",
@@ -73,6 +76,7 @@ go_test(
         "@busybox",
         "@net_tools",
     ],
+    embed = [":ociruntime"],
     exec_properties = {
         "test.workload-isolation-type": "firecracker",
         "test.container-image": "docker://" + NET_TOOLS_IMAGE,
@@ -99,8 +103,8 @@ go_test(
         "testworkerRlocationpath": "$(rlocationpath //enterprise/server/remote_execution/runner/testworker)",
     },
     deps = [
-        ":ociruntime",
         "//enterprise/server/remote_execution/cgroup",
+        "//enterprise/server/remote_execution/commandutil",
         "//enterprise/server/remote_execution/container",
         "//enterprise/server/remote_execution/filecache",
         "//enterprise/server/remote_execution/persistentworker",
