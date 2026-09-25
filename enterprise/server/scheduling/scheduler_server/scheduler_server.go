@@ -15,6 +15,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/execution_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/util/ci_runner_util"
 	"github.com/buildbuddy-io/buildbuddy/server/environment"
@@ -47,6 +48,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	scpb "github.com/buildbuddy-io/buildbuddy/proto/scheduler"
 	tpb "github.com/buildbuddy-io/buildbuddy/proto/trace"
@@ -2252,7 +2254,7 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 					log.CtxWarningf(ctx, "Could not remove task from unclaimed list: %s", err)
 				}
 			}
-			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), task.serializedTask, task.metadata.GetTaskGroupId())
+			task.serializedTask = s.modifyTaskForLease(ctx, req.GetExecutorHostname(), req.GetSupportsExperimentFlags(), key, task.serializedTask, task.metadata.GetTaskGroupId())
 
 			// Prometheus: observe queue wait time.
 			ageInMillis := time.Since(task.queuedTimestamp).Milliseconds()
@@ -2440,14 +2442,14 @@ func (s *SchedulerServer) checkTaskAccess(ctx context.Context, task *persistedTa
 // for things like experiments and token refreshes.
 // This is important for tasks that are queued for a long time or are retried
 // after some time, as values computed at initial enqueue can be stale.
-func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, task []byte, taskGroupID string) []byte {
+func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, task []byte, taskGroupID string) []byte {
 	taskProto := &repb.ExecutionTask{}
 	if err := proto.Unmarshal(task, taskProto); err != nil {
 		log.CtxWarningf(ctx, "Failed to unmarshal ExecutionTask: %s", err)
 		return task
 	}
 
-	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, taskProto)
+	taskProto = s.modifyTaskForExperiments(ctx, executorHostname, supportsExperimentFlags, poolKey, taskProto)
 	if err := ci_runner_util.SetTaskRepositoryToken(ctx, s.env, taskProto, taskGroupID); err != nil {
 		if status.IsNotFoundError(err) {
 			// This can be expected with Remote Bazel on public repos, where tokens are not needed.
@@ -2464,7 +2466,7 @@ func (s *SchedulerServer) modifyTaskForLease(ctx context.Context, executorHostna
 	}
 }
 
-func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
+func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executorHostname string, supportsExperimentFlags bool, poolKey nodePoolKey, taskProto *repb.ExecutionTask) *repb.ExecutionTask {
 	fp := s.env.GetExperimentFlagProvider()
 	if fp == nil {
 		return taskProto
@@ -2481,6 +2483,19 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 		experiments.WithContext("executor_hostname", executorHostname),
 		experiments.WithContext("self_hosted", selfHosted),
 		experiments.WithContext("workflow_name", getWorkflowName(taskProto)),
+		experiments.WithContext("os", poolKey.os),
+		experiments.WithContext("arch", poolKey.arch),
+		experiments.WithContext("pool", poolKey.pool),
+		// NOTE: The requested isolation type is empty when the task uses the
+		// executor's default. This is mostly only reliable for targeting
+		// isolation_type == "firecracker" currently, and only on BB cloud where
+		// we don't have firecracker configured as the default.
+		//
+		// TODO: the executor should send the effective isolation type here
+		// so that we can target on that instead. Might need to deprecate/remove
+		// forced_network_isolation_type first though, since it complicates
+		// the logic.
+		experiments.WithContext("requested_isolation_type", platform.FindEffectiveValue(taskProto, platform.WorkloadIsolationPropertyName)),
 	}
 
 	// We need the bazel RequestMetadata to make experiment decisions. The Lease
@@ -2492,26 +2507,22 @@ func (s *SchedulerServer) modifyTaskForExperiments(ctx context.Context, executor
 	if taskProto.GetPlatformOverrides() == nil {
 		taskProto.PlatformOverrides = &repb.Platform{}
 	}
-	plat := taskProto.PlatformOverrides
 
-	persistentVolumes, details := fp.StringDetails(ctx, "remote_execution.persistent_volumes", "", expOptions...)
-	if persistentVolumes != "" {
-		plat.Properties = append(plat.Properties, &repb.Platform_Property{
-			Name:  platform.PersistentVolumesPropertyName,
-			Value: persistentVolumes,
-		})
-	}
-	if details.Variant() != "" {
-		taskProto.Experiments = append(taskProto.Experiments, "remote_execution.persistent_volumes:"+details.Variant())
-	}
-
+	// TODO(bduffany): migrate these to use execution_experiments instead
 	if shouldUpgrade := fp.Boolean(ctx, "upgrade-fc-guest-kernel", false, expOptions...); shouldUpgrade {
 		taskProto.Experiments = append(taskProto.Experiments, "upgrade-fc-guest-kernel")
 	}
-
 	const recordInputFetchMetadataExperimentName = "remote_execution.record_input_fetch_metadata"
 	if fp.Boolean(ctx, recordInputFetchMetadataExperimentName, false, expOptions...) {
 		taskProto.Experiments = append(taskProto.Experiments, recordInputFetchMetadataExperimentName)
+	}
+
+	if supportsExperimentFlags {
+		// When adding a new flag to execution_experiments, update this list to
+		// ensure the experiment propagates to executors at lease time.
+		taskProto.ExperimentFlags = []*expb.EvaluatedFlag{
+			execution_experiments.PersistentVolumes.GetProto(ctx, expOptions...),
+		}
 	}
 
 	return taskProto
