@@ -2,6 +2,7 @@ package seccomp
 
 import (
 	"encoding/json"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -18,7 +19,29 @@ func TestNew_Default(t *testing.T) {
 
 	got, err := New(nil)
 	require.NoError(t, err)
+	// Architecture conversion is asserted separately. All other fields must
+	// retain the existing OCI decoding behavior.
+	got.Architectures = nil
 	assert.Equal(t, want, got)
+}
+
+func TestNew_DefaultArchitectures(t *testing.T) {
+	wantByGoArch := map[string][]specs.Arch{
+		"amd64":    {specs.ArchX86_64, specs.ArchX86, specs.ArchX32},
+		"arm64":    {specs.ArchAARCH64, specs.ArchARM},
+		"mips64":   {specs.ArchMIPS64, specs.ArchMIPS, specs.ArchMIPS64N32},
+		"mips64le": {specs.ArchMIPSEL64, specs.ArchMIPSEL, specs.ArchMIPSEL64N32},
+		"s390x":    {specs.ArchS390X, specs.ArchS390},
+	}
+	want, ok := wantByGoArch[runtime.GOARCH]
+	if !ok {
+		t.Skipf("embedded profile has no compatibility architectures for %s", runtime.GOARCH)
+	}
+	for _, additionalSyscalls := range [][]string{nil, {"userfaultfd"}} {
+		profile, err := New(additionalSyscalls)
+		require.NoError(t, err)
+		assert.Equal(t, want, profile.Architectures)
+	}
 }
 
 func TestNew_AdditionalSyscalls(t *testing.T) {

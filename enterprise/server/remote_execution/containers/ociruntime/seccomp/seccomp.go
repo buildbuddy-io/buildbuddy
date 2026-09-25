@@ -3,6 +3,7 @@ package seccomp
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"slices"
 
 	_ "embed"
@@ -18,9 +19,36 @@ var defaultProfileJSON []byte
 // The configured names are removed from the default rules so that the appended
 // allow rule is the only rule matching them.
 func New(additionalSyscalls []string) (*specs.LinuxSeccomp, error) {
-	profile := &specs.LinuxSeccomp{}
-	if err := json.Unmarshal(defaultProfileJSON, profile); err != nil {
+	// The embedded profile uses Docker's archMap field. OCI expects an
+	// architectures list containing the native architecture and its compatible
+	// sub-architectures. Select only the entry for this executor's architecture.
+	dockerProfile := &struct {
+		specs.LinuxSeccomp
+		ArchMap []struct {
+			Architecture     specs.Arch   `json:"architecture"`
+			SubArchitectures []specs.Arch `json:"subArchitectures"`
+		} `json:"archMap"`
+	}{}
+	if err := json.Unmarshal(defaultProfileJSON, dockerProfile); err != nil {
 		return nil, fmt.Errorf("parse seccomp profile: %w", err)
+	}
+	profile := &dockerProfile.LinuxSeccomp
+	// These are the native architectures with compatibility entries in the
+	// embedded profile. Other architectures retain OCI's native-only default.
+	nativeArch, ok := map[string]specs.Arch{
+		"amd64":    specs.ArchX86_64,
+		"arm64":    specs.ArchAARCH64,
+		"mips64":   specs.ArchMIPS64,
+		"mips64le": specs.ArchMIPSEL64,
+		"s390x":    specs.ArchS390X,
+	}[runtime.GOARCH]
+	if ok {
+		for _, mapping := range dockerProfile.ArchMap {
+			if mapping.Architecture == nativeArch {
+				profile.Architectures = append([]specs.Arch{mapping.Architecture}, mapping.SubArchitectures...)
+				break
+			}
+		}
 	}
 	if len(additionalSyscalls) == 0 {
 		return profile, nil
