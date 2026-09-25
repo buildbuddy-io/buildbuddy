@@ -4,6 +4,7 @@ import React from "react";
 import { User } from "../../../app/auth/auth_service";
 import capabilities from "../../../app/capabilities/capabilities";
 import Select, { Option } from "../../../app/components/select/select";
+import HelpTooltip from "../../../app/components/tooltip/help_tooltip";
 import errorService from "../../../app/errors/error_service";
 import { bytes, count, formatWithCommas } from "../../../app/format/format";
 import router, { Path, TrendsChartId } from "../../../app/router/router";
@@ -567,6 +568,59 @@ class UsageReport extends React.Component<UsageReportProps, State> {
     );
   }
 
+  renderSnapshotUsage(selection: usage.Usage) {
+    const rows = [
+      ...selection.remoteSnapshotSavedBytes.map((row) => executionUsageRow("Remote snapshots", row, false)),
+      ...selection.localSnapshotSavedBytes.map((row) => executionUsageRow("Local snapshots", row, false)),
+    ];
+    // Don't show the section to orgs that don't use snapshots.
+    if (!rows.length) return null;
+    const totalBytes = rows.reduce((sum, row) => sum + row.value, 0);
+    return (
+      <>
+        <div className="usage-resource-name">Snapshot bytes saved</div>
+        <div className="usage-value" title={formatWithCommas(totalBytes)}>
+          {formatBytes(totalBytes, totalBytes)}
+        </div>
+        {renderBreakdownTable(
+          breakdownTableRows(rows, SNAPSHOT_USAGE_LEVELS),
+          SNAPSHOT_USAGE_LEVELS.length,
+          (bytes) => formatBytes(bytes, totalBytes),
+          (bytes) => formatWithCommas(bytes)
+        )}
+      </>
+    );
+  }
+
+  renderComputeUsage(selection: usage.Usage) {
+    const rows = [
+      ...selection.fixedComputeUsec.map((row) => executionUsageRow("Fixed compute", row, true)),
+      ...selection.flexibleComputeUsec.map((row) => executionUsageRow("Flexible compute", row, true)),
+    ];
+    // Don't show the section to orgs that don't use remote execution.
+    if (!rows.length) return null;
+    const totalUsec = rows.reduce((sum, row) => sum + row.value, 0);
+    return (
+      <>
+        <div className="usage-resource-name usage-resource-name-with-help">
+          <span>Compute unit</span>
+          <HelpTooltip>
+            A compute unit is 1 CPU, 2.5GiB of memory or 25GiB of disk, whichever an action needs the most of. Fixed
+            compute charges the units an action reserves, for Firecracker actions and actions that set
+            EstimatedComputeUnits. Flexible compute charges the units the scheduler estimated for the action. Units are
+            multiplied by execution time and shown in minutes.
+          </HelpTooltip>
+        </div>
+        <div className="usage-value">{formatMinutes(totalUsec)}</div>
+        {renderBreakdownTable(
+          breakdownTableRows(rows, COMPUTE_USAGE_LEVELS),
+          COMPUTE_USAGE_LEVELS.length + 1,
+          formatMinutes
+        )}
+      </>
+    );
+  }
+
   render() {
     if (!this.state.response) return null;
     // Wait for the bill so the top panel does not switch after it renders.
@@ -681,7 +735,8 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
-                <div className="usage-resource-name">Linux remote execution duration</div>
+                {this.renderSnapshotUsage(selection)}
+                <div className="usage-resource-name">Linux remote execution</div>
                 <div className="usage-value">{formatMinutes(Number(selection.linuxExecutionDurationUsec))}</div>
                 {detailed && (
                   <>
@@ -703,7 +758,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
-                <div className="usage-resource-name">Linux cpu duration</div>
+                <div className="usage-resource-name">Linux cpu</div>
                 <div className="usage-value">{formatMinutes(+selection.cloudCpuNanos / 1000)}</div>
                 {detailed && (
                   <>
@@ -725,6 +780,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                     )}
                   </>
                 )}
+                {this.renderComputeUsage(selection)}
                 {Boolean(selection.totalCustomerProxyDownloadSizeBytes) && (
                   <>
                     <div className="usage-resource-name">Total bytes downloaded from cache proxy</div>
@@ -800,4 +856,116 @@ function formatBytes(bytes: Long | number, totalBytes: Long | number) {
 
 function formatMinutes(usec: number, category?: string): string {
   return `${formatWithCommas(Math.round(usec / 60e6))}${category ? " " + category : ""} minutes`;
+}
+
+const HOSTING_ORDER = ["Cloud", "Self-hosted"];
+const POOL_ORDER = ["RBE", "Workflows"];
+
+/**
+ * A usage count resolved into the dimensions shown in a breakdown table: the
+ * value of each grouping level, from outermost to innermost, and optionally
+ * the leaf columns shown below the last group.
+ */
+interface BreakdownUsageRow {
+  groups: string[];
+  leaf?: string[];
+  value: number;
+}
+
+/**
+ * Resolves a server row into the dimensions shown in a breakdown table:
+ * hosting, then the given type name, then pool, and if requested the
+ * isolation type, OS and arch as leaf columns.
+ */
+function executionUsageRow(typeName: string, row: usage.ExecutionUsage, withLeafColumns: boolean): BreakdownUsageRow {
+  return {
+    groups: [row.selfHosted ? "Self-hosted" : "Cloud", typeName, row.workflow ? "Workflows" : "RBE"],
+    leaf: withLeafColumns ? [row.isolationType, row.os, row.arch] : undefined,
+    value: Number(row.count),
+  };
+}
+
+/** Grouping levels of the compute usage table, from outermost to innermost,
+ * with the display order of each level's values. Leaf rows below the last
+ * level show the isolation type, OS and arch. */
+const COMPUTE_USAGE_LEVELS = [HOSTING_ORDER, ["Fixed compute", "Flexible compute"], POOL_ORDER];
+
+/** Grouping levels of the snapshot usage table, from outermost to innermost. */
+const SNAPSHOT_USAGE_LEVELS = [HOSTING_ORDER, ["Remote snapshots", "Local snapshots"], POOL_ORDER];
+
+/** A row of a rendered breakdown table: either a group heading carrying the
+ * sum of everything nested under it, or a leaf row. */
+interface BreakdownTableRow {
+  // 1-based nesting depth.
+  level: number;
+  // Cells shown before the value: the group name, or the leaf columns.
+  cells: string[];
+  value: number;
+}
+
+/**
+ * Flattens usage rows into table rows, grouped by each of the levels in turn.
+ * Group rows carry the sum of the rows nested under them. Rows whose value is
+ * zero are omitted.
+ */
+function breakdownTableRows(rows: BreakdownUsageRow[], levels: string[][], level = 0): BreakdownTableRow[] {
+  if (level === levels.length) {
+    return breakdownLeafRows(rows, level + 1);
+  }
+  const out: BreakdownTableRow[] = [];
+  for (const name of levels[level]) {
+    const group = rows.filter((row) => row.groups[level] === name);
+    const value = group.reduce((sum, row) => sum + row.value, 0);
+    if (value === 0) continue;
+    out.push({ level: level + 1, cells: [name], value }, ...breakdownTableRows(group, levels, level + 1));
+  }
+  return out;
+}
+
+function breakdownLeafRows(rows: BreakdownUsageRow[], level: number): BreakdownTableRow[] {
+  // The server returns one row per combination of leaf dimensions, already
+  // sorted by them.
+  const out: BreakdownTableRow[] = [];
+  for (const { leaf, value } of rows) {
+    if (leaf && value !== 0) {
+      out.push({ level, cells: leaf, value });
+    }
+  }
+  return out;
+}
+
+function renderBreakdownTable(
+  rows: BreakdownTableRow[],
+  // The level of leaf rows, which are styled differently from group rows.
+  leafLevel: number,
+  formatValue: (value: number) => string,
+  // If set, formats the tooltip shown when hovering over a value.
+  formatTitle?: (value: number) => string
+) {
+  if (!rows.length) return null;
+  // Group rows have a single cell, which spans all of the leaf columns.
+  const columns = Math.max(...rows.map((row) => row.cells.length));
+  return (
+    <table className="usage-breakdown-table">
+      <tbody>
+        {rows.map((row, i) => (
+          <tr
+            key={i}
+            className={`usage-breakdown-level-${row.level} ${row.level === leafLevel ? "usage-breakdown-leaf" : ""}`}>
+            {row.cells.map((cell, j) => (
+              <td
+                key={j}
+                colSpan={row.cells.length === 1 ? columns : 1}
+                style={j === 0 ? { paddingLeft: 24 + 16 * (row.level - 1) } : undefined}>
+                {cell}
+              </td>
+            ))}
+            <td className="usage-breakdown-value" title={formatTitle?.(row.value)}>
+              {formatValue(row.value)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }

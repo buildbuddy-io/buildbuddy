@@ -33,6 +33,31 @@ message GetUsageResponse {
   repeated string available_usage_periods = 3;
 }
 
+// ExecutionUsage is a usage count for a single combination of execution
+// dimensions.
+message ExecutionUsage {
+  // Whether the usage was incurred on self-hosted executors rather than
+  // BuildBuddy-hosted ones.
+  bool self_hosted = 1;
+
+  // Whether the usage was incurred by BuildBuddy workflows rather than by
+  // remote build execution.
+  bool workflow = 2;
+
+  // The effective isolation type that ran the executions, such as
+  // "firecracker" or "oci".
+  string isolation_type = 3;
+
+  // The executor operating system, such as "linux".
+  string os = 4;
+
+  // The executor architecture, such as "x86_64".
+  string arch = 5;
+
+  // The usage count for this combination of dimensions.
+  int64 count = 6;
+}
+
 // Usage represents a count of BuildBuddy resources used for a particular time
 // period.
 message Usage {
@@ -68,7 +93,8 @@ message Usage {
   // excluding workflows.
   int64 total_internal_download_size_bytes = 10;
 
-  // The number of bytes downloaded from BuildBuddy-owned workflow servers.
+  // The number of (non-snapshot) bytes downloaded from BuildBuddy-owned
+  // workflow servers.
   int64 total_workflow_download_size_bytes = 11;
 
   // The number of bytes uploaded from outside of BuildBuddy-owned servers.
@@ -78,7 +104,8 @@ message Usage {
   // excluding workflows.
   int64 total_internal_upload_size_bytes = 13;
 
-  // The number of bytes uploaded from BuildBuddy-owned workflow servers.
+  // The number of (non-snapshot) bytes uploaded from BuildBuddy-owned
+  // workflow servers.
   int64 total_workflow_upload_size_bytes = 14;
 
   // Total raw cpu time (2 cpus for 1 minutes = 2 minutes) used on
@@ -108,6 +135,29 @@ message Usage {
   // The number of bytes uploaded to cache through a customer-managed
   // (customer-run) cache proxy.
   int64 total_customer_proxy_upload_size_bytes = 21;
+
+  // Fixed compute usage, in compute-unit-microseconds (one compute unit
+  // reserved for one microsecond), for each combination of execution
+  // dimensions with non-zero usage. Fixed compute is charged for the compute
+  // units reserved by an action for its whole execution duration. Firecracker
+  // actions and actions that request EstimatedComputeUnits are charged as
+  // fixed compute.
+  repeated ExecutionUsage fixed_compute_usec = 22;
+
+  // Flexible compute usage, in compute-unit-microseconds, for each
+  // combination of execution dimensions with non-zero usage. Flexible compute
+  // is charged for the compute units the scheduler estimated for an action,
+  // for its whole execution duration.
+  repeated ExecutionUsage flexible_compute_usec = 23;
+
+  // The number of bytes of VM snapshots saved to the remote cache, for each
+  // combination of execution dimensions with non-zero usage. Bytes saved
+  // remotely are not also counted as saved locally.
+  repeated ExecutionUsage remote_snapshot_saved_bytes = 24;
+
+  // The number of bytes of VM snapshots saved only to the executor's local
+  // disk, for each combination of execution dimensions with non-zero usage.
+  repeated ExecutionUsage local_snapshot_saved_bytes = 25;
 }
 
 // Alerting rule for usage-based alerts.
