@@ -58,3 +58,8 @@ common:workflows --remote_instance_name=buildbuddy-io/buildbuddy/workflows/rin20
 # You can create your own by copying and editing the template-user.bazelrc template:
 # cp template-user.bazelrc user.bazelrc
 try-import %workspace%/user.bazelrc
+
+# Keep these after ci-shared and user config so workflow runner snapshots do not
+# include Bazel's repository cache or Bazel 9's repo contents cache.
+common:workflows --repository_cache=
+common:workflows --repo_contents_cache=
