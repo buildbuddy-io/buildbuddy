@@ -786,6 +786,7 @@ func run() error {
 	ws.rootDir = rootDir
 	os.Setenv("BUILDBUDDY_CI_RUNNER_ROOT_DIR", rootDir)
 	os.Setenv(ci_runner_env.BuildBuddyRunIDEnvVarName, runID)
+	os.Setenv("BUILDBUDDY_CI_RUNNER_IS_WORKFLOW", strconv.FormatBool(*workflowID != ""))
 
 	// Bazel needs a HOME dir; ensure that one is set.
 	if err := ensureHomeDir(); err != nil {
@@ -909,6 +910,16 @@ func run() error {
 // to be called after the current invocation has completed, to avoid blocking
 // the invocation status from being reported.
 func (ws *workspace) prepareRunnerForNextInvocation(ctx context.Context, taskWorkspaceDir string) {
+	// Older workflow configs populated this cache even though --config=workflows
+	// tried to disable it. Remove it before a recycled runner is snapshotted.
+	if *workflowID != "" {
+		if home, err := os.UserHomeDir(); err != nil {
+			ws.log.Printf("WARNING: could not locate repository cache: %s", err)
+		} else if err := os.RemoveAll(filepath.Join(home, "repo-cache")); err != nil {
+			ws.log.Printf("WARNING: could not remove repository cache: %s", err)
+		}
+	}
+
 	//If we don't run our automatic GitHub setup, we can't guarantee the user
 	// cloned a git repo or that it's at the path we expect. These git cleanup
 	// and bazel checks will likely fail, so skip them. The user should run
@@ -3092,6 +3103,12 @@ func runBazelWrapper() error {
 	bazelArgs := append(bbStartupArgs, originalArgs...)
 	bazelCmd := append([]string{bazelBin}, bazelArgs...)
 	bazelCmd = appendBazelSubcommandArgs(bazelCmd, metadataFlag)
+	if os.Getenv("BUILDBUDDY_CI_RUNNER_IS_WORKFLOW") == "true" {
+		// Command-line options take precedence over the workspace .bazelrc.
+		// In Bazel 9, an empty repository cache also disables the default
+		// repo contents cache, which otherwise lives under it.
+		bazelCmd = appendBazelSubcommandArgs(bazelCmd, "--repository_cache=")
+	}
 
 	// When using the bb CLI and running `bb run`, stream the run logs to the server.
 	if isExecutableName(filepath.Base(bazelBin), bbBinaryName) && bazelSubcmd == "run" {

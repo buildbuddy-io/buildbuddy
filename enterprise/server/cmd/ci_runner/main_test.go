@@ -56,6 +56,22 @@ func TestBazelChildProcessResult_StartError(t *testing.T) {
 	require.False(t, errors.As(err, &result))
 }
 
+func TestPrepareRunnerForNextInvocation_RemovesWorkflowRepositoryCache(t *testing.T) {
+	flags.Set(t, "workflow_id", "test-workflow")
+	flags.Set(t, "skip_auto_checkout", true)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cacheFile := filepath.Join(home, "repo-cache", "contents", "entry")
+	require.NoError(t, os.MkdirAll(filepath.Dir(cacheFile), 0755))
+	require.NoError(t, os.WriteFile(cacheFile, []byte("cached"), 0644))
+
+	ws := &workspace{log: &buildEventReporter{log: &invocationLog{
+		writer: io.Discard, writeListener: func(string) {},
+	}}}
+	ws.prepareRunnerForNextInvocation(context.Background(), t.TempDir())
+	require.NoDirExists(t, filepath.Join(home, "repo-cache"))
+}
+
 func TestCollectRunfiles_RelativeDirectorySymlink(t *testing.T) {
 	rootDir := t.TempDir()
 	targetDir := filepath.Join(rootDir, "target")
