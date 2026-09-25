@@ -183,11 +183,13 @@ common --incompatible_strict_action_env=true
 	wt.Find(`[href="/trends/#drilldown"]`).Click()
 	wt.Find(`.drilldown-page-select`).SendKeys("Execution total wall time")
 	wt.Find(`[debug-id="heatmap-cells"] > *`).Click()
-	// The merged invocation should not add a duplicate execution to Drilldowns.
+	// Selected examples include both invocation links, even though the heatmap
+	// counts only the original execution.
 	waitForExecutionsToAppear(t, wt)
-	require.Contains(t, wt.Find(`body`).Text(), "Selected executions (1)")
+	require.Contains(t, wt.Find(`body`).Text(), "Selected executions (2)")
 	executions := wt.FindAll(".invocation-execution-row")
-	require.Len(t, executions, 1)
+	require.Len(t, executions, 2)
+	require.Equal(t, executions[0].Text(), executions[1].Text())
 	require.Contains(t, executions[0].Text(), "Succeeded")
 	require.Contains(t, executions[0].Text(), "genrule-setup.sh")
 }

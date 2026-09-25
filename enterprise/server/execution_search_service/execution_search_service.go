@@ -21,7 +21,6 @@ import (
 
 	expb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
-	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
 
 const (
@@ -90,6 +89,8 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		return nil, err
 	}
 
+	// Keep merged invocation links in the selected examples, even though
+	// Drilldown aggregates exclude them to avoid counting reused work twice.
 	q := query_builder.NewQuery(`
 		SELECT invocation_uuid, ` + strings.Join(execution.ExecutionListingColumns(), ", ") + `
 		FROM "Executions"
@@ -98,7 +99,6 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 	// Always filter to the currently selected (and authorized) group.
 	q.AddWhereClause("group_id = ?", u.GetGroupID())
 	q.AddWhereClause("invocation_uuid != ''")
-	q.AddWhereClause("invocation_link_type != ?", int(sipb.StoredInvocationLink_MERGED))
 
 	if user := req.GetQuery().GetInvocationUser(); user != "" {
 		q.AddWhereClause("\"user\" = ?", user)

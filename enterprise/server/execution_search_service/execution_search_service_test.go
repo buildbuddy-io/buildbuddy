@@ -20,6 +20,7 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
@@ -143,6 +144,7 @@ func TestSearchExecutions(t *testing.T) {
 			User:               "ci-runner",
 			RepoURL:            "https://github.com/buildbuddy-io/buildbuddy",
 			InvocationLinkType: int8(sipb.StoredInvocationLink_MERGED),
+			PeakMemoryBytes:    1024 * 1024 * 1024,
 			CreatedAtUsec:      testTimestampUsec - 1000,
 			UpdatedAtUsec:      testTimestampUsec - 1000,
 		},
@@ -161,7 +163,7 @@ func TestSearchExecutions(t *testing.T) {
 
 	rsp, err := service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{})
 	require.NoError(t, err)
-	assert.Len(t, rsp.Execution, 2, "should return 2 executions for GR1")
+	assert.Len(t, rsp.Execution, 3, "should return all invocation links for GR1")
 
 	gotExecutionIDs := make([]string, len(rsp.Execution))
 	for i, ex := range rsp.Execution {
@@ -170,19 +172,19 @@ func TestSearchExecutions(t *testing.T) {
 	assert.Contains(t, gotExecutionIDs, exid1)
 	assert.Contains(t, gotExecutionIDs, exid2)
 	assert.NotContains(t, gotExecutionIDs, exid3, "should not contain execution from GR2")
-	assert.NotContains(t, gotExecutionIDs, exid4, "should not contain merged execution")
+	assert.Contains(t, gotExecutionIDs, exid4, "should retain merged examples even without an original link")
 
-	firstPage, err := service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{Count: 1})
-	require.NoError(t, err)
-	require.Len(t, firstPage.Execution, 1)
-	assert.Equal(t, exid1, firstPage.Execution[0].Execution.ExecutionId)
-	secondPage, err := service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{
-		Count:     1,
-		PageToken: firstPage.NextPageToken,
-	})
-	require.NoError(t, err)
-	require.Len(t, secondPage.Execution, 1)
-	assert.Equal(t, exid2, secondPage.Execution[0].Execution.ExecutionId)
+	pageToken := ""
+	for _, wantID := range []string{exid4, exid1, exid2} {
+		page, err := service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{
+			Count: 1, PageToken: pageToken,
+		})
+		require.NoError(t, err)
+		require.Len(t, page.Execution, 1)
+		assert.Equal(t, wantID, page.Execution[0].Execution.ExecutionId)
+		require.NotEmpty(t, page.NextPageToken)
+		pageToken = page.NextPageToken
+	}
 
 	for _, ex := range rsp.Execution {
 		assert.NotEmpty(t, ex.InvocationMetadata.Id)
@@ -196,8 +198,9 @@ func TestSearchExecutions(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Len(t, rsp.Execution, 1)
-	assert.Equal(t, exid1, rsp.Execution[0].Execution.ExecutionId)
+	assert.Len(t, rsp.Execution, 2)
+	assert.Equal(t, exid4, rsp.Execution[0].Execution.ExecutionId)
+	assert.Equal(t, exid1, rsp.Execution[1].Execution.ExecutionId)
 
 	rsp, err = service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{
 		Query: &espb.ExecutionQuery{
@@ -223,7 +226,19 @@ func TestSearchExecutions(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Len(t, rsp.Execution, 2)
+	assert.Len(t, rsp.Execution, 3)
+
+	// A metric selection containing only a merged link must still return it.
+	peakMemory := sfpb.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC
+	selectionMin := int64(1024 * 1024 * 1024)
+	rsp, err = service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{
+		Query: &espb.ExecutionQuery{
+			Filter: []*sfpb.StatFilter{{Metric: &sfpb.Metric{Execution: &peakMemory}, Min: &selectionMin}},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.Execution, 1)
+	assert.Equal(t, exid4, rsp.Execution[0].Execution.ExecutionId)
 }
 
 func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
