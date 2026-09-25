@@ -58,6 +58,25 @@ func TestUsageViewMigration_CreateNoopAndReplace(t *testing.T) {
 	assert.Equal(t, int64(5), queryUsageCount(t, db))
 }
 
+func TestExecutionExperimentFlagsTypeMatchesClickHouse(t *testing.T) {
+	db := openClickHouseDB(t)
+	require.NoError(t, schema.RunMigrations(db))
+
+	statement := &gorm.Statement{DB: db}
+	require.NoError(t, statement.Parse(&schema.Execution{}))
+	field := statement.Schema.LookUpField("ExperimentFlags")
+	require.NotNil(t, field)
+	want := db.Migrator().FullDataTypeOf(field).SQL
+	var got string
+	err := db.Raw(`
+		SELECT type FROM system.columns
+		WHERE database = currentDatabase()
+			AND table = 'Executions' AND name = 'experiment_flags'
+	`).Row().Scan(&got)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
 func openClickHouseDB(t *testing.T) *gorm.DB {
 	dsn := testclickhouse.Start(t, true /*=reuseServer*/)
 	options, err := clickhouse.ParseDSN(dsn)

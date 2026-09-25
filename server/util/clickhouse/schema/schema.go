@@ -3,6 +3,7 @@ package schema
 import (
 	"bufio"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -17,6 +18,9 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/status"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 var (
@@ -313,6 +317,26 @@ type Execution struct {
 	BuildrootDiskUsageBytes int64 `gorm:"codec:T64,ZSTD(1)"`
 
 	Experiments []string `gorm:"type:Array(LowCardinality(String))"`
+	// ExperimentFlags stores a typed value and variant per experiment. Nullable
+	// value fields distinguish an absent oneof arm from false, zero, or empty.
+	// Objects are JSON strings to preserve dotted keys, nulls, and empty objects.
+	// This example omits null fields for readability.
+	//
+	//	{
+	//	  "executor.example_bool": {
+	//	    "bool_value": false,
+	//	    "variant": "control"
+	//	  },
+	//	  "executor.example_object": {
+	//	    "object_value_json": "{\"enabled\":true,\"limit\":10}",
+	//	    "variant": "treatment"
+	//	  }
+	//	}
+	//
+	// The JSON type requires ClickHouse 25.3, so auto-migration skips this
+	// column. RunMigrations adds it only on servers that support the JSON type,
+	// and FlushExecutionStats omits it when the column is missing.
+	ExperimentFlags ExperimentFlags `gorm:"-:migration;type:Map(LowCardinality(String), JSON(bool_value Nullable(Bool), float64_value Nullable(Float64), int64_value Nullable(Int64), object_value_json Nullable(String), string_value Nullable(String), variant LowCardinality(String)))"`
 
 	// Long string fields
 	OutputPath     string `gorm:"codec:ZSTD(1)"`
@@ -434,8 +458,18 @@ func (e *Execution) AdditionalFields() []string {
 		"BuildrootDiskUsageBytes",
 		"ExecutorHostname",
 		"Experiments",
+		"ExperimentFlags",
 		"ClientIP",
 	}
+}
+
+// ExperimentFlags maps experiment names to extensible evaluation records.
+type ExperimentFlags map[string]clickhouse.JSON
+
+// Value orders experiment names so ClickHouse preserves a stable map order.
+// JSON paths are ordered by the ClickHouse serializer itself.
+func (f ExperimentFlags) Value() (driver.Value, error) {
+	return orderedmap.FromMap(f), nil
 }
 
 // TestTargetStatus represents the status of a target, the target info and
@@ -758,6 +792,17 @@ func extractProjectionNamesFromCreateStmt(createStmt string) map[string]struct{}
 	return names
 }
 
+// supportsJSONType reports whether the JSON column type is generally available,
+// which starts with ClickHouse 25.3. Earlier versions either lack the type or
+// require an experimental setting to use it.
+func supportsJSONType(clickhouseVersion string) bool {
+	var major, minor int
+	if _, err := fmt.Sscanf(clickhouseVersion, "%d.%d", &major, &minor); err != nil {
+		return false
+	}
+	return major > 25 || (major == 25 && minor >= 3)
+}
+
 func RunMigrations(gdb *gorm.DB) error {
 	versionStr := ""
 	if err := gdb.Raw("select version()").Scan(&versionStr).Error; err != nil {
@@ -771,6 +816,26 @@ func RunMigrations(gdb *gorm.DB) error {
 		gdb = gdb.Set("gorm:table_options", t.TableOptions(versionStr))
 		if err := gdb.AutoMigrate(t); err != nil {
 			return err
+		}
+	}
+	// Execution.ExperimentFlags is tagged "-:migration" so that AutoMigrate
+	// never adds it on servers without the JSON type. Add it here instead.
+	if !supportsJSONType(versionStr) {
+		log.Warningf("ClickHouse version %q does not support the JSON type, so experiment flags will not be recorded in the Executions table.", versionStr)
+	} else if !gdb.Migrator().HasColumn(&Execution{}, "ExperimentFlags") {
+		stmt := &gorm.Statement{DB: gdb}
+		if err := stmt.Parse(&Execution{}); err != nil {
+			return fmt.Errorf("parse Execution schema: %w", err)
+		}
+		field := stmt.Schema.LookUpField("ExperimentFlags")
+		err := gdb.Exec(
+			"ALTER TABLE ? ADD COLUMN ? ?",
+			clause.Table{Name: stmt.Table},
+			clause.Column{Name: field.DBName},
+			gdb.Migrator().FullDataTypeOf(field),
+		).Error
+		if err != nil {
+			return fmt.Errorf("add experiment_flags column: %w", err)
 		}
 	}
 	for _, v := range getAllViews() {

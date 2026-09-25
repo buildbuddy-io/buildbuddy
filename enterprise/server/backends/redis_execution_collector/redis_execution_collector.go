@@ -320,6 +320,12 @@ func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, e
 		// concatenating, which may or may not make sense. For now, just have
 		// the last value win.
 		out.Experiments = event.Experiments
+		// Post-completion stats omit experiment flags. Preserve the last
+		// reported values across those updates, without concatenating repeated
+		// reports from execution progress or a retried completion stream.
+		if event.ExperimentFlags != nil {
+			out.ExperimentFlags = event.ExperimentFlags
+		}
 
 		lastStage = event.GetStage()
 	}

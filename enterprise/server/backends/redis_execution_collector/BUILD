@@ -23,6 +23,7 @@ go_test(
     deps = [
         ":redis_execution_collector",
         "//enterprise/server/testutil/testredis",
+        "//proto:experiments_go_proto",
         "//proto:remote_execution_go_proto",
         "//proto:stored_invocation_go_proto",
         "//server/util/status",

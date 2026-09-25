@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/testing/protocmp"
 
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 )
@@ -207,6 +208,35 @@ func TestMergeExecutionUpdatesWithRepeatedFields(t *testing.T) {
 			assert.Failf(t, "unhandled slice field", "StoredExecution field %q was concatenated instead of overwritten by mergeExecutionUpdates - method needs updating?", fieldName)
 		}
 	}
+}
+
+func TestExperimentFlagsSurvivePostCompletionUpdates(t *testing.T) {
+	rdb := testredis.Start(t)
+	collector := redis_execution_collector.New(rdb.Client())
+	const executionID = "execution-with-experiments"
+	initial := &expb.EvaluatedFlag{
+		Name: "executor.example", Variant: "treatment",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: true},
+	}
+	final := &expb.EvaluatedFlag{
+		Name: "executor.example", Variant: "control",
+		Value: &expb.EvaluatedFlag_BoolValue{BoolValue: false},
+	}
+
+	for _, update := range []*repb.StoredExecution{
+		{Stage: int64(repb.ExecutionStage_EXECUTING), ExperimentFlags: []*expb.EvaluatedFlag{initial}},
+		{Stage: int64(repb.ExecutionStage_COMPLETED), ExperimentFlags: []*expb.EvaluatedFlag{final}},
+		{Stage: int64(repb.ExecutionStage_COMPLETED), ExperimentFlags: []*expb.EvaluatedFlag{final}},
+		{Stage: int64(repb.ExecutionStage_COMPLETED), PauseDurationUsec: 123},
+	} {
+		update.ExecutionId = executionID
+		require.NoError(t, collector.UpdateInProgressExecution(t.Context(), update))
+	}
+
+	execution, err := collector.GetInProgressExecution(t.Context(), executionID)
+	require.NoError(t, err)
+	require.Equal(t, int64(123), execution.GetPauseDurationUsec())
+	require.Empty(t, cmp.Diff([]*expb.EvaluatedFlag{final}, execution.GetExperimentFlags(), protocmp.Transform()))
 }
 
 func TestInvocationExecutionLinkDuplicates(t *testing.T) {

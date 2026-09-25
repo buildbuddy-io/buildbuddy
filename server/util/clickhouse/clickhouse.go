@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -31,6 +32,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	clickhouse "github.com/ClickHouse/clickhouse-go/v2"
+	expb "github.com/buildbuddy-io/buildbuddy/proto/experiments"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
 	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	gormclickhouse "gorm.io/driver/clickhouse"
@@ -63,6 +65,10 @@ var (
 
 type DBHandle struct {
 	db *gorm.DB
+
+	// hasExperimentFlagsColumn is false when the server is too old for the
+	// Executions.experiment_flags column, which uses the JSON type.
+	hasExperimentFlagsColumn bool
 
 	shutdown     chan struct{}
 	invocationCh chan *schema.Invocation
@@ -227,6 +233,7 @@ type InsertOpt func(*insertOpts)
 type insertOpts struct {
 	asyncBusyTimeoutMinMs int
 	asyncBusyTimeoutMaxMs int
+	omit                  []string
 }
 
 func defaultInsertOpts() *insertOpts {
@@ -248,6 +255,13 @@ func withAsyncBusyTimeout(minMs, maxMs int) InsertOpt {
 	return func(o *insertOpts) {
 		o.asyncBusyTimeoutMinMs = minMs
 		o.asyncBusyTimeoutMaxMs = maxMs
+	}
+}
+
+// withOmit excludes the given fields from the insert.
+func withOmit(fields ...string) InsertOpt {
+	return func(o *insertOpts) {
+		o.omit = fields
 	}
 }
 
@@ -283,7 +297,7 @@ func (h *DBHandle) insertWithRetrier(ctx context.Context, tableName string, numE
 	}
 	queryName := fmt.Sprintf("INSERT INTO '%v'", tableName)
 	for retrier.Next() {
-		res := h.GORM(ctx, queryName).Create(value)
+		res := h.GORM(ctx, queryName).Omit(o.omit...).Create(value)
 		lastError = res.Error
 		if errors.Is(res.Error, syscall.ECONNRESET) || errors.Is(res.Error, syscall.ECONNREFUSED) || isTimeout(res.Error) || errors.Is(res.Error, driver.ErrBadConn) {
 			// Retry since it's an transient error.
@@ -478,6 +492,37 @@ func ExecutionFromProto(in *repb.StoredExecution, inv *sipb.StoredInvocation) (*
 	if err := FillExecutionResourceFieldsFromExecutionID(out, in.GetExecutionId()); err != nil {
 		return out, err
 	}
+	out.ExperimentFlags = make(schema.ExperimentFlags, len(in.GetExperimentFlags()))
+	for _, f := range in.GetExperimentFlags() {
+		if f.GetName() == "" {
+			continue
+		}
+		record := clickhouse.NewJSON()
+		record.SetValueAtPath("variant", f.GetVariant())
+		switch value := f.GetValue().(type) {
+		case *expb.EvaluatedFlag_BoolValue:
+			record.SetValueAtPath("bool_value", value.BoolValue)
+		case *expb.EvaluatedFlag_StringValue:
+			record.SetValueAtPath("string_value", value.StringValue)
+		case *expb.EvaluatedFlag_Int64Value:
+			record.SetValueAtPath("int64_value", value.Int64Value)
+		case *expb.EvaluatedFlag_Float64Value:
+			record.SetValueAtPath("float64_value", value.Float64Value)
+		case *expb.EvaluatedFlag_ObjectValue:
+			// Native JSON normalizes dotted keys, nulls, and empty objects.
+			// Encode the object as text to preserve these values; encoding/json
+			// also sorts map keys for deterministic output.
+			data, err := json.Marshal(value.ObjectValue.AsMap())
+			if err != nil {
+				return nil, fmt.Errorf("marshal experiment %q object: %w", f.GetName(), err)
+			}
+			record.SetValueAtPath("object_value_json", string(data))
+		default:
+			// An unset or unknown oneof arm is not an evaluated value.
+			continue
+		}
+		out.ExperimentFlags[f.GetName()] = *record
+	}
 	return out, nil
 }
 
@@ -495,7 +540,11 @@ func (h *DBHandle) FlushExecutionStats(ctx context.Context, inv *sipb.StoredInvo
 	if num == 0 {
 		return nil
 	}
-	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries); err != nil {
+	var opts []InsertOpt
+	if !h.hasExperimentFlagsColumn {
+		opts = append(opts, withOmit("ExperimentFlags"))
+	}
+	if err := h.insertWithRetrier(ctx, (&schema.Execution{}).TableName(), num, &entries, opts...); err != nil {
 		return status.UnavailableErrorf("failed to insert %d execution(s) for invocation (invocation_id = %q), err: %s", num, inv.GetInvocationId(), err)
 	}
 	return nil
@@ -618,9 +667,10 @@ func Register(env *real_environment.RealEnv) error {
 	}
 
 	dbh := &DBHandle{
-		db:           db,
-		shutdown:     make(chan struct{}),
-		invocationCh: make(chan *schema.Invocation),
+		db:                       db,
+		hasExperimentFlagsColumn: db.Migrator().HasColumn(&schema.Execution{}, "ExperimentFlags"),
+		shutdown:                 make(chan struct{}),
+		invocationCh:             make(chan *schema.Invocation),
 	}
 	if *invocationBatchInsertInterval > 0 && !*asyncInsert {
 		stop := dbh.startInvocationBatchInserter(*invocationBatchInsertInterval)
