@@ -33,6 +33,10 @@
          You can learn more about what parameters a subcommand can take by running `bb help <subcommand>`, for example: `bb help download`
     " />
 
+    {{if .AutoRefresh}}
+    <script nonce="{{.Nonce}}" async src="/auto_refresh.js" data-server-id="{{.ServerID}}"></script>
+    {{end}}
+
     <script nonce="{{.Nonce}}">
       window.buildbuddyConfig = {{.Config}};
     </script>
