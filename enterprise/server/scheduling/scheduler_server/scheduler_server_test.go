@@ -390,24 +390,72 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 	expflag.SetFlagProvider(fp)
 	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
 
+	// Schedule a task, then lease it from an executor that reads experiment
+	// flags from its tasks.
+	env, ctx := getEnv(t, &schedulerOpts{}, "")
+	env.SetExperimentFlagProvider(fp)
+	fe := newFakeExecutor(ctx, t, env.GetSchedulerClient())
+	fe.supportsExperimentFlags = true
+	fe.Register()
+
+	taskID := scheduleTask(ctx, t, env, map[string]string{})
+
+	fe.WaitForTask(taskID)
+	lease := fe.Claim(taskID)
+	defer lease.Finalize()
+
+	// The scheduler should send the experiment's value with the leased task,
+	// and leave it to the executor to apply the value to the task's platform.
+	gotFlags := lease.task.GetExperimentFlags()
+	require.Empty(t, cmp.Diff([]*expb.EvaluatedFlag{
+		{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
+	}, gotFlags, protocmp.Transform()))
+	gotOverrides := lease.task.GetPlatformOverrides().GetProperties()
+	require.Empty(t, gotOverrides)
+}
+
+func TestLeaseTask_ExecutorExperimentFlags(t *testing.T) {
+	// Enable an executor experiment for every task. The persistent volumes
+	// experiment is only an example here, since the scheduler handles every
+	// experiment in executor_experiments the same way.
+	tmp := testfs.MakeTempDir(t)
+	configFile := testfs.WriteFile(t, tmp, "config.flagd.json", `{
+	"$schema": "https://flagd.dev/schema/v0/flags.json",
+	"flags": {
+		"executor.persistent_volumes": {
+			"state": "ENABLED",
+			"defaultVariant": "enabled",
+			"variants": {
+				"enabled": "cache:/tmp/.cache"
+			}
+		}
+	}
+}`)
+	provider, err := flagd.NewProvider(flagd.WithInProcessResolver(), flagd.WithOfflineFilePath(configFile))
+	require.NoError(t, err)
+	openfeature.SetProviderAndWait(provider)
+	fp, err := experiments.NewFlagProvider("test")
+	require.NoError(t, err)
+	expflag.SetFlagProvider(fp)
+	t.Cleanup(func() { expflag.SetFlagProvider(nil) })
+
 	for _, tc := range []struct {
 		name                    string
 		supportsExperimentFlags bool
 		wantFlags               []*expb.EvaluatedFlag
 	}{
 		{
-			// The scheduler should send the experiment's value with the leased
-			// task, and leave it to the executor to apply the value to the
-			// task's platform.
+			// An executor that reads experiment flags should receive the
+			// evaluated experiments with the leased task.
 			name:                    "ExecutorSupportsExperimentFlags",
 			supportsExperimentFlags: true,
 			wantFlags: []*expb.EvaluatedFlag{
-				{Name: "executor.persistent_volumes", Variant: "tmp-cache", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
+				{Name: "executor.persistent_volumes", Variant: "enabled", Value: &expb.EvaluatedFlag_StringValue{StringValue: "cache:/tmp/.cache"}},
 			},
 		},
 		{
-			// The scheduler should skip evaluating the experiment, since the
-			// executor would ignore the result.
+			// An executor that does not read experiment flags would ignore
+			// them, so the scheduler should skip evaluating them.
 			name:                    "ExecutorDoesNotSupportExperimentFlags",
 			supportsExperimentFlags: false,
 			wantFlags:               nil,
@@ -428,10 +476,8 @@ func TestSchedulerServerPersistentVolumes(t *testing.T) {
 			lease := fe.Claim(taskID)
 			defer lease.Finalize()
 
-			// In both cases, the scheduler should not set the persistent
-			// volumes platform property itself.
-			require.Empty(t, cmp.Diff(tc.wantFlags, lease.task.GetExperimentFlags(), protocmp.Transform()))
-			require.Empty(t, lease.task.GetPlatformOverrides().GetProperties())
+			gotFlags := lease.task.GetExperimentFlags()
+			require.Empty(t, cmp.Diff(tc.wantFlags, gotFlags, protocmp.Transform()))
 		})
 	}
 }
