@@ -11,6 +11,7 @@ go_library(
         "//enterprise/server/experiments",
         "//enterprise/server/gcplink",
         "//enterprise/server/remote_execution/action_merger",
+        "//enterprise/server/remote_execution/executor_experiments",
         "//enterprise/server/remote_execution/oom",
         "//enterprise/server/remote_execution/operation",
         "//enterprise/server/tasksize",

@@ -24,6 +24,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
+	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -964,6 +965,10 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	if efp != nil && efp.Boolean(ctx, "remote_execution.publish_post_completion_stats", false) {
 		executionTask.Experiments = append(executionTask.Experiments, "remote_execution.publish_post_completion_stats")
 	}
+
+	// Executors cannot evaluate experiments themselves, so evaluate every
+	// executor-visible experiment here and send the results with the task.
+	executionTask.ExperimentFlags = executor_experiments.Evaluate(ctx)
 
 	if efp != nil && platform.ContainerType(props.WorkloadIsolationType) == platform.FirecrackerContainerType {
 		if efp.Boolean(ctx, "executor.remote_container_image_reads_enabled", false) {

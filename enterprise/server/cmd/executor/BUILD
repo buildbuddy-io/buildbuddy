@@ -63,6 +63,7 @@ go_library(
         "//server/ssl",
         "//server/util/canary",
         "//server/util/disk",
+        "//server/util/expflag",
         "//server/util/flag",
         "//server/util/grpc_client",
         "//server/util/grpc_server",

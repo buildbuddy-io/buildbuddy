@@ -43,6 +43,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/ssl"
 	"github.com/buildbuddy-io/buildbuddy/server/util/canary"
 	"github.com/buildbuddy-io/buildbuddy/server/util/disk"
+	"github.com/buildbuddy-io/buildbuddy/server/util/expflag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/flag"
 	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_client"
 	"github.com/buildbuddy-io/buildbuddy/server/util/healthcheck"
@@ -85,6 +86,8 @@ var (
 	maximumDiskFullness       = flag.Float64("executor.maximum_disk_fullness", 1.01, "Fail health check if device containing executor.local_cache_directory is more than this full")
 	startupCommands           = flag.Slice("executor.startup_commands", []string{}, "Commands to run on startup. These are run sequentially and block executor startup.")
 	clientType                = flag.String("executor.grpc_client_type", "executor", "The client type label for requests from this executor, used to differentiate e.g. workflow executor traffic.")
+
+	schedulerControlledExperimentsEnabled = flag.Bool("executor.scheduler_controlled_experiments_enabled", false, "If true, experiment flag values sent by the scheduler with each task take priority over this executor's own experiment flag values.", flag.Internal)
 
 	listen            = flag.String("listen", "0.0.0.0", "The interface to listen on (default: 0.0.0.0)")
 	port              = flag.Int("port", 8080, "The port to listen for HTTP traffic on")
@@ -347,6 +350,10 @@ func main() {
 
 	if *maxThreads > 0 {
 		debug.SetMaxThreads(*maxThreads)
+	}
+
+	if *schedulerControlledExperimentsEnabled {
+		expflag.SetFlagProvider(expflag.NewContextProvider())
 	}
 
 	if err := log.Configure(); err != nil {
