@@ -41,6 +41,7 @@ const (
 )
 
 var (
+	// Used to count run_35_of_200, etc. in the same timeline.
 	runMatcher      = regexp.MustCompile(`[_/]run_\d+_of_\d+`)
 	shardMatcher    = regexp.MustCompile(`/shard_(\d+)_of_\d+/`)
 	quantiles       = []int32{0, 5, 10, 50, 90, 95, 100}
@@ -284,25 +285,16 @@ func executionTimelineInterval(query *expb.ExecutionQuery, timezone string, fine
 	return interval, location
 }
 
-// addTimelineWhereClauses applies the WHERE clauses shared by both
-// GetExecutionTimeline queries (the stats aggregation and the execution
-// sample).
 func (s *ExecutionSearchService) addTimelineWhereClauses(q *query_builder.Query, groupID string, req *expb.GetExecutionTimelineRequest) error {
-	// Always filter to the currently selected (and authorized) group, and to
-	// the requested target to constrain the scan size.
 	q.AddWhereClause("group_id = ?", groupID)
 	q.AddWhereClause("target_label = ?", req.GetTarget())
-	// Only include executions that actually ran on a worker; entries that never
-	// started have nothing meaningful to plot on the timeline.
+	// Only include executions that actually recorded a start and end time.
 	q.AddWhereClause("worker_start_timestamp_usec > 0")
 	q.AddWhereClause("worker_completed_timestamp_usec > 0")
 	return s.addExecutionQueryFilters(q, req.GetQuery())
 }
 
-// timelineStatsRow is a single row of the OLAP aggregation query issued by
-// GetExecutionTimeline: a summary of one timeline's executions, either within
-// a single time bucket (bucket_start_time_usec > 0) or across the whole
-// timeline (bucket_start_time_usec == 0, from the GROUPING SETS rollup).
+/** A timelineStatsRow is the GORM-friendly version of  `expb.ExecutionTimelineSummary` */
 type timelineStatsRow struct {
 	CleanedOutputPath      string
 	ActionMnemonic         string
@@ -330,11 +322,10 @@ type timelineStatsRow struct {
 	OutputUploadUsecQuantiles  []int64 `gorm:"type:int64[]"`
 }
 
-// Current usage effectively guarantees that these array lookups will always
-// succeed, but maybe we'll want to be more strict in the future.
 func makeQuantiles(in []int64) []*expb.Quantile {
 	out := make([]*expb.Quantile, 0, len(in))
 	for i, q := range quantiles {
+		// Current usage guarantees that these array lookups will always succeed.
 		out = append(out, &expb.Quantile{Quantile: q, Value: in[i]})
 	}
 	return out
@@ -369,15 +360,15 @@ func timelineKey(cleanedOutputPath, mnemonic, os, arch string) string {
 	return cleanedOutputPath + "|" + mnemonic + "|" + os + "|" + arch
 }
 
-// queryTimelineStats computes summary stats for every timeline matching the
-// request directly in the OLAP DB.  It returns one row per (timeline, time
-// bucket) pair plus one whole-timeline rollup row per timeline (with
-// bucket_start_time_usec == 0), ordered so that each timeline's rollup row
-// immediately precedes its bucket rows.
-//
-// quantilesExactLow is used because it matches the nearest-rank percentiles
-// this service previously computed in Go (including returning the lower of
-// the two middle values for the median of an even-sized set).
+/**
+ * queryTimelineStats computes a timeline matching the provided filters directly
+ * inside of ClickHouse.
+ *
+ * Timelines are keyed by a (trimmed_output_path, action_mnemonic, os, arch) tuple.
+ * This returns one row per (tuple, time bucket) pair plus one rollup row per tuple
+ * (identified with bucket_start_time_usec == 0), The rows are ordered so that each
+ * timeline's rollup row immediately precedes its bucket rows.
+ */
 func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *expb.GetExecutionTimelineRequest, groupID string, interval stats.StatInterval, location *time.Location) ([]*timelineStatsRow, error) {
 	durationUsec, err := filter.ExecutionMetricToDbField(stat_filter.ExecutionMetricType_EXECUTION_WALL_TIME_EXECUTION_METRIC)
 	if err != nil {
@@ -439,9 +430,11 @@ func (s *ExecutionSearchService) queryTimelineStats(ctx context.Context, req *ex
 	return db.ScanAll(rq, &timelineStatsRow{})
 }
 
-// queryTimelineExecutions fetches a uniformly random sample of up to
-// timelineExecutionSampleSize individual executions matching the request, for
-// rendering individual points on the timeline.
+/**
+ * queryTimelineExecutions fetches a uniform random sample of executions matching
+ * the user's query.  These values are used to show a representative sample of
+ * executions to the user which they can then directly select for comparison.
+ */
 func (s *ExecutionSearchService) queryTimelineExecutions(ctx context.Context, req *expb.GetExecutionTimelineRequest, groupID string) ([]*schema.Execution, error) {
 	q := query_builder.NewQuery(`
 		SELECT invocation_uuid, action_digest_hash, queued_timestamp_usec, input_fetch_start_timestamp_usec, input_fetch_completed_timestamp_usec, execution_start_timestamp_usec, execution_completed_timestamp_usec, output_upload_start_timestamp_usec, output_upload_completed_timestamp_usec, worker_start_timestamp_usec, worker_completed_timestamp_usec, cpu_nanos, peak_memory_bytes, file_download_size_bytes, file_upload_size_bytes, action_mnemonic, os, arch, output_path
@@ -457,8 +450,6 @@ func (s *ExecutionSearchService) queryTimelineExecutions(ctx context.Context, re
 	return s.rawQueryExecutions(ctx, qString, qArgs...)
 }
 
-// shardFromOutputPath extracts the shard number from a test output path like
-// ".../shard_3_of_5/...", returning 0 if the path has no shard component.
 func shardFromOutputPath(outputPath string) int64 {
 	shardMatch := shardMatcher.FindStringSubmatch(outputPath)
 	if len(shardMatch) > 1 {
@@ -504,8 +495,10 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 	timelinesByKey := make(map[string]*expb.ExecutionTimeline)
 	for _, row := range statsRows {
 		k := timelineKey(row.CleanedOutputPath, row.ActionMnemonic, row.OS, row.Arch)
+
+		// Timeline query data is sorted such that a summary row (start time == 0)
+		// always comes before the corresponding data for that timeline.
 		if row.BucketStartTimeUsec == 0 {
-			// Whole-timeline rollup row: starts a new timeline.
 			tl := &expb.ExecutionTimeline{
 				OutputPath: row.CleanedOutputPath,
 				Mnemonic:   row.ActionMnemonic,
@@ -519,8 +512,9 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 			continue
 		}
 		tl := timelinesByKey[k]
+		// This shouldn't happen because the row.BucketStartTimeUsec == 0 block
+		// above should always run before we process any other rows with the key `k`.
 		if tl == nil {
-			// Shouldn't happen: rollup rows sort before their bucket rows.
 			continue
 		}
 		tl.AggregatedStats = append(tl.AggregatedStats, &expb.AggregatedExecutionTimelineEntry{
@@ -531,9 +525,9 @@ func (s *ExecutionSearchService) GetExecutionTimeline(ctx context.Context, req *
 	for _, ex := range sampledExecutions {
 		cleanedOutput := runMatcher.ReplaceAllString(ex.OutputPath, "")
 		tl := timelinesByKey[timelineKey(cleanedOutput, ex.ActionMnemonic, ex.OS, ex.Arch)]
+		// Sampling runs as a separate query from timeline stats collection, so a
+		// sampled execution might not match any timeline.  If this happens, skip it.
 		if tl == nil {
-			// The sample runs as a separate query from the stats, so a
-			// just-written execution can miss its timeline; skip it.
 			continue
 		}
 		id, err := uuid.Base64StringToString(ex.InvocationUUID)
