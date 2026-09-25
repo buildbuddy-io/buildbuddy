@@ -1082,9 +1082,6 @@ type SchedulerService interface {
 	GetExecutionNodes(ctx context.Context, req *scpb.GetExecutionNodesRequest) (*scpb.GetExecutionNodesResponse, error)
 	GetPoolInfo(ctx context.Context, os, arch, requestedPool, originalPool, workflowID string, poolType platform.PoolType) (*PoolInfo, error)
 	GetSharedExecutorPoolGroupID() string
-	// PoolSupportsExperimentFlags returns whether any executor registered in
-	// the pool reads experiment flag values from the ExecutionTask.
-	PoolSupportsExperimentFlags(ctx context.Context, os, arch, pool, groupID string) (bool, error)
 }
 
 // PoolInfo holds high level metadata for an executor pool.

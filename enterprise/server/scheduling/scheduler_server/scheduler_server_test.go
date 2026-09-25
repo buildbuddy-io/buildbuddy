@@ -797,30 +797,31 @@ func enqueueTaskReservation(ctx context.Context, t *testing.T, env environment.E
 	return taskID
 }
 
-func TestPoolSupportsExperimentFlags(t *testing.T) {
+func TestExecutorSupportsExperimentFlags(t *testing.T) {
 	env, ctx := getEnv(t, &schedulerOpts{}, "user1")
+	s := env.GetSchedulerService().(*SchedulerServer)
 
-	// Register an executor that reads experiment flags from its tasks in one
-	// pool, and an executor that does not in another pool.
+	// Register two executors in the same pool, where only one of them reads
+	// experiment flags from its tasks.
 	supporting := newFakeExecutor(ctx, t, env.GetSchedulerClient())
-	supporting.node.Pool = "supporting-pool"
 	supporting.node.SupportsExperimentFlags = true
 	supporting.Register()
 	unsupporting := newFakeExecutor(ctx, t, env.GetSchedulerClient())
-	unsupporting.node.Pool = "unsupporting-pool"
 	unsupporting.Register()
 
-	// Only the pool with the opted-in executor should report support, so that
-	// the app skips evaluating experiments for the other pool's tasks.
-	supported, err := env.GetSchedulerService().PoolSupportsExperimentFlags(ctx, defaultOS, defaultArch, "supporting-pool", "")
+	// Only the opted-in executor should report support, so that the scheduler
+	// skips evaluating executor experiments when the other executor leases a
+	// task.
+	key := nodePoolKey{os: defaultOS, arch: defaultArch}
+	supported, err := s.executorSupportsExperimentFlags(ctx, key, supporting.id)
 	require.NoError(t, err)
 	require.True(t, supported)
-	supported, err = env.GetSchedulerService().PoolSupportsExperimentFlags(ctx, defaultOS, defaultArch, "unsupporting-pool", "")
+	supported, err = s.executorSupportsExperimentFlags(ctx, key, unsupporting.id)
 	require.NoError(t, err)
 	require.False(t, supported)
 
-	// A pool without any registered executors should not report support.
-	supported, err = env.GetSchedulerService().PoolSupportsExperimentFlags(ctx, defaultOS, defaultArch, "empty-pool", "")
+	// An executor that is not registered in the pool should not report support.
+	supported, err = s.executorSupportsExperimentFlags(ctx, key, "unknown-executor")
 	require.NoError(t, err)
 	require.False(t, supported)
 }

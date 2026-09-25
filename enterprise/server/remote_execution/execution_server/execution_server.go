@@ -24,7 +24,6 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/gcplink"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/action_merger"
-	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/oom"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/operation"
 	"github.com/buildbuddy-io/buildbuddy/enterprise/server/tasksize"
@@ -1032,26 +1031,6 @@ func (s *ExecutionServer) dispatch(ctx context.Context, req *repb.ExecuteRequest
 	pool, err := scheduler.GetPoolInfo(ctx, props.OS, props.Arch, props.Pool, props.OriginalPool, props.WorkflowID, props.PoolType)
 	if err != nil {
 		return nil, status.WrapError(err, "get executor pool info")
-	}
-	// Executors cannot evaluate experiments themselves, so evaluate the
-	// experiments that executors read and send the results with the task. Skip
-	// this for pools where no executor reads the results, such as self-hosted
-	// pools.
-	supportsExperimentFlags, err := scheduler.PoolSupportsExperimentFlags(ctx, props.OS, props.Arch, pool.Name, pool.GroupID)
-	if err != nil {
-		return nil, status.WrapError(err, "check executor pool support for experiment flags")
-	}
-	if supportsExperimentFlags {
-		// Let targeting rules match the platform that the task will run on.
-		// The isolation type is empty when the task uses the executor's
-		// default.
-		executionTask.ExperimentFlags = executor_experiments.Evaluate(
-			ctx,
-			experiments.WithContext("os", props.OS),
-			experiments.WithContext("arch", props.Arch),
-			experiments.WithContext("pool", pool.Name),
-			experiments.WithContext("isolation_type", platform.FindEffectiveValue(executionTask, platform.WorkloadIsolationPropertyName)),
-		)
 	}
 	var hostnamePattern string
 	var routingConfig *scpb.RoutingConfig

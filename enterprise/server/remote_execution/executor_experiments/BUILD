@@ -7,5 +7,4 @@ go_library(
     srcs = ["executor_experiments.go"],
     importpath = "github.com/buildbuddy-io/buildbuddy/enterprise/server/remote_execution/executor_experiments",
     visibility = ["//visibility:public"],
-    deps = ["//proto:experiments_go_proto"],
 )

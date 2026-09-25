@@ -98,10 +98,6 @@ func (s *schedulerServerMock) GetSharedExecutorPoolGroupID() string {
 	return sharedPoolGroupID
 }
 
-func (s *schedulerServerMock) PoolSupportsExperimentFlags(ctx context.Context, os, arch, pool, groupID string) (bool, error) {
-	return false, nil
-}
-
 func (s *schedulerServerMock) ScheduleTask(ctx context.Context, req *scpb.ScheduleTaskRequest) (*scpb.ScheduleTaskResponse, error) {
 	s.scheduleReqs = append(s.scheduleReqs, req)
 	if s.scheduleErr != nil {
