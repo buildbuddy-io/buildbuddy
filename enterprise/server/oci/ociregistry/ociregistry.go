@@ -72,7 +72,7 @@ type Mirror struct {
 var (
 	blobsOrManifestsReqRegexp = regexp.MustCompile("/v2/(.+?)/(blobs|manifests)/(.+)")
 	enableRegistry            = flag.Bool("ociregistry.enabled", false, "Whether to enable registry services")
-	publicMirrorCacheAPIKey               = flag.String("ociregistry.public_mirror_cache_api_key", "", "API key used to authenticate OCI registry cache reads and writes.", flag.Secret)
+	publicMirrorCacheAPIKey   = flag.String("ociregistry.public_mirror_cache_api_key", "", "API key used to authenticate OCI registry cache reads and writes.", flag.Secret)
 	registryDomain            = flag.String("ociregistry.domain", "", "The domain on which the registry is hosted.")
 	mirrorConfigs             = flag.Slice("ociregistry.mirrors", []Mirror{}, "List of repositories to mirror.")
 )
