@@ -29,9 +29,7 @@ func makeExecutionID(actionDigest *repb.Digest) string {
 	return digest.NewCASResourceName(actionDigest, "buildbuddy-io/buildbuddy", repb.DigestFunction_SHA256).NewUploadString()
 }
 
-// quantileValue returns the value recorded for the given quantile (0-100),
-// failing the test if the quantile is not present.
-func quantileValue(t *testing.T, quantiles []*espb.Quantile, quantile int32) int64 {
+func getQuantileValueOrFail(t *testing.T, quantiles []*espb.Quantile, quantile int32) int64 {
 	t.Helper()
 	for _, q := range quantiles {
 		if q.GetQuantile() == quantile {
@@ -426,10 +424,10 @@ func TestGetExecutionTimeline(t *testing.T) {
 	// don't depend on the finer-time-buckets default.
 	flags.Set(t, "app.finer_time_buckets", false)
 
-	actionDigest1 := &repb.Digest{Hash: "1c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", SizeBytes: 142}
-	actionDigest2 := &repb.Digest{Hash: "2cde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9", SizeBytes: 256}
-	actionDigest3 := &repb.Digest{Hash: "3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550", SizeBytes: 0}
-	actionDigest4 := &repb.Digest{Hash: "4b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b8550", SizeBytes: 0}
+	actionDigest1 := &repb.Digest{Hash: "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe", SizeBytes: 142}
+	actionDigest2 := &repb.Digest{Hash: "fafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafa", SizeBytes: 256}
+	actionDigest3 := &repb.Digest{Hash: "f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0", SizeBytes: 0}
+	actionDigest4 := &repb.Digest{Hash: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", SizeBytes: 0}
 
 	exid1 := makeExecutionID(actionDigest1)
 	exid2 := makeExecutionID(actionDigest2)
@@ -543,13 +541,13 @@ func TestGetExecutionTimeline(t *testing.T) {
 	assert.Equal(t, testDayStartUsec, bucket.GetBucketStartTimeUsec())
 	summary := bucket.GetSummary()
 	assert.Equal(t, int64(6000000), summary.GetDurationUsecTotal())
-	assert.Equal(t, int64(2000000), quantileValue(t, summary.GetDurationUsec(), 50))
-	assert.Equal(t, int64(4000000), quantileValue(t, summary.GetDurationUsec(), 90))
+	assert.Equal(t, int64(2000000), getQuantileValueOrFail(t, summary.GetDurationUsec(), 50))
+	assert.Equal(t, int64(4000000), getQuantileValueOrFail(t, summary.GetDurationUsec(), 90))
 	assert.Equal(t, int64(3000000000), summary.GetCpuNanosTotal())
-	assert.Equal(t, int64(1000000000), quantileValue(t, summary.GetCpuNanos(), 50))
-	assert.Equal(t, int64(2000000000), quantileValue(t, summary.GetCpuNanos(), 90))
-	assert.Equal(t, int64(256*1024*1024), quantileValue(t, summary.GetPeakMemory(), 50))
-	assert.Equal(t, int64(512*1024*1024), quantileValue(t, summary.GetPeakMemory(), 90))
+	assert.Equal(t, int64(1000000000), getQuantileValueOrFail(t, summary.GetCpuNanos(), 50))
+	assert.Equal(t, int64(2000000000), getQuantileValueOrFail(t, summary.GetCpuNanos(), 90))
+	assert.Equal(t, int64(256*1024*1024), getQuantileValueOrFail(t, summary.GetPeakMemory(), 50))
+	assert.Equal(t, int64(512*1024*1024), getQuantileValueOrFail(t, summary.GetPeakMemory(), 90))
 
 	// The shared ExecutionQuery filters should apply.
 	rsp, err = service.GetExecutionTimeline(testCtx, &espb.GetExecutionTimelineRequest{
