@@ -438,6 +438,8 @@ common:workflows --noexperimental_remote_downloader_local_fallback
 # This helps reduce disk space usage in the Firecracker, thus reduce the VM snapshot size.
 # Rely on remote downloader to cache downloads through Remote Asset API instead.
 common:workflows --repository_cache=
+# Explicitly disable Bazel 9's cache of fetched repository directories too.
+common:workflows --repo_contents_cache=
 
 # Configuration used for Linux workflows
 common:linux-workflows --config=remote-shared
