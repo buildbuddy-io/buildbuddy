@@ -1,0 +1,77 @@
+{
+  "schema": 1,
+  "harness_sha256": "11d6162757f5ff8e894dbf29afbed625e07932a702f28932be4767b9fec00b9d",
+  "go_version": "go version go1.27.1 linux/amd64",
+  "platform": [
+    "linux",
+    "amd64"
+  ],
+  "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+  "results": [
+    {
+      "revision": "WORKTREE",
+      "package": "rangemap",
+      "profile": "improved",
+      "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+      "source_sha256": "9747fad5c9fc05054c110f151114ee677bb14df81095c796faeea01b5a35788b",
+      "status": "pass",
+      "exit_code": 0,
+      "failures": {},
+      "log": "rangemap-WORKTREE-improved.jsonl",
+      "test_counts": {
+        "pass": 476,
+        "fail": 0,
+        "skip": 0
+      }
+    },
+    {
+      "revision": "WORKTREE",
+      "package": "retry",
+      "profile": "improved",
+      "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+      "source_sha256": "6a3d243da5ab79d2cd5d0169b3e83153cac965f6604062f4cc22902bbda5b382",
+      "status": "pass",
+      "exit_code": 0,
+      "failures": {},
+      "log": "retry-WORKTREE-improved.jsonl",
+      "test_counts": {
+        "pass": 44,
+        "fail": 0,
+        "skip": 0
+      }
+    },
+    {
+      "revision": "WORKTREE",
+      "package": "peerset",
+      "profile": "improved",
+      "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+      "source_sha256": "36dae0fd4da29e53f683062a976246f20cf5feed581c470d3272ccd214c2dbfd",
+      "status": "pass",
+      "exit_code": 0,
+      "failures": {},
+      "log": "peerset-WORKTREE-improved.jsonl",
+      "test_counts": {
+        "pass": 40,
+        "fail": 0,
+        "skip": 0
+      }
+    },
+    {
+      "revision": "WORKTREE",
+      "package": "seq",
+      "profile": "improved",
+      "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+      "source_sha256": "fa040773673af736b2fb5919a37d86664484d918c4e441ba8895a5cd9f42f7cd",
+      "status": "pass",
+      "exit_code": 0,
+      "failures": {},
+      "log": "seq-WORKTREE-improved.jsonl",
+      "test_counts": {
+        "pass": 117,
+        "fail": 0,
+        "skip": 0
+      }
+    }
+  ],
+  "source_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5"
+}

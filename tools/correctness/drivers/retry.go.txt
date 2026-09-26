@@ -1,0 +1,118 @@
+package retry
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/jonboulle/clockwork"
+)
+
+// A synchronous dependency model: timers are either ready immediately or never
+// ready. No sleeps, goroutines, scheduler races, or wall-clock assertions.
+type harnessClock struct {
+	clockwork.Clock
+	ready bool
+}
+type harnessTimer struct{ ch chan time.Time }
+
+func (t harnessTimer) Chan() <-chan time.Time   { return t.ch }
+func (t harnessTimer) Stop() bool               { return true }
+func (t harnessTimer) Reset(time.Duration) bool { return false }
+func (c harnessClock) NewTimer(time.Duration) clockwork.Timer {
+	ch := make(chan time.Time, 1)
+	if c.ready {
+		ch <- time.Unix(0, 0)
+	}
+	return harnessTimer{ch}
+}
+func (c harnessClock) After(d time.Duration) <-chan time.Time { return c.NewTimer(d).Chan() }
+
+func TestRetryOutcomes(t *testing.T) {
+	kinds := []string{"success", "transient"}
+	if os.Getenv("HARNESS_PROFILE") != "baseline" {
+		kinds = append(kinds, "terminal", "cancelled")
+	}
+	for _, kind := range kinds {
+		for budget := 1; budget <= 5; budget++ {
+			t.Run(fmt.Sprintf("%s/budget=%d", kind, budget), func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
+				ready := kind != "cancelled"
+				if !ready {
+					cancel()
+				}
+				opts := &Options{MaxRetries: budget, InitialBackoff: time.Nanosecond, MaxBackoff: time.Nanosecond, Multiplier: 1, Clock: harnessClock{clockwork.NewRealClock(), ready}, DontLogFailedAttempts: true}
+				sentinel := errors.New("dependency failure")
+				attempts := 0
+				value, err := Do(ctx, opts, func(context.Context) (int, error) {
+					attempts++
+					switch kind {
+					case "transient":
+						if attempts == 1 {
+							return 0, sentinel
+						}
+					case "terminal":
+						return 0, NonRetryableError(sentinel)
+					case "cancelled":
+						t.Fatal("cancelled dependency invoked")
+					}
+					return 42, nil
+				})
+				switch kind {
+				case "cancelled":
+					if !errors.Is(err, context.Canceled) || attempts != 0 {
+						t.Fatalf("cancellation result err=%v attempts=%d", err, attempts)
+					}
+				case "terminal":
+					if attempts != 1 {
+						t.Fatalf("terminal dependency invoked %d times", attempts)
+					}
+					if err == nil {
+						t.Fatal("terminal error lost")
+					}
+				default:
+					if err != nil || value != 42 {
+						t.Fatalf("successful result value=%d err=%v", value, err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// Any returned error must be inspectable by callers and logging code. Exercise
+// the cross product of dependency outcomes and retry policy, including nil.
+func TestRetryErrorObservability(t *testing.T) {
+	if os.Getenv("HARNESS_PROFILE") == "baseline" {
+		t.Skip("error inspection oracle and nullable outcomes absent")
+	}
+	sentinel := errors.New("dependency failure")
+	inputs := []error{nil, errors.New(""), sentinel, fmt.Errorf("wrapped: %w", sentinel)}
+	for index, input := range inputs {
+		for _, terminal := range []bool{false, true} {
+			for budget := 1; budget <= 3; budget++ {
+				t.Run(fmt.Sprintf("input=%d/terminal=%t/budget=%d", index, terminal, budget), func(t *testing.T) {
+					defer func() {
+						if p := recover(); p != nil {
+							t.Fatalf("error inspection panicked: %v", p)
+						}
+					}()
+					_, err := Do(context.Background(), &Options{MaxRetries: budget, Clock: harnessClock{clockwork.NewRealClock(), true}, DontLogFailedAttempts: true}, func(context.Context) (int, error) {
+						if terminal {
+							return 0, NonRetryableError(input)
+						}
+						return 0, input
+					})
+					if err != nil {
+						_ = err.Error()
+						_ = errors.Is(err, sentinel)
+					}
+				})
+			}
+		}
+	}
+}

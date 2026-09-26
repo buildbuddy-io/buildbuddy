@@ -1,0 +1,45 @@
+package seq
+
+import (
+	"fmt"
+	"iter"
+	"os"
+	"slices"
+	"testing"
+)
+
+// Check both the yielded prefix and conservation of the underlying stream.
+func TestSequenceConservation(t *testing.T) {
+	for length := 0; length <= 12; length++ {
+		for limit := 0; limit <= length+2; limit++ {
+			t.Run(fmt.Sprintf("length=%d/limit=%d", length, limit), func(t *testing.T) {
+				input := make([]int, length)
+				for i := range input {
+					input[i] = i + 1
+				}
+				position := 0
+				var source iter.Seq[int] = func(yield func(int) bool) {
+					for position < len(input) {
+						v := input[position]
+						position++
+						if !yield(v) {
+							return
+						}
+					}
+				}
+				got := slices.Collect(@TAKE@[int](source, limit))
+				n := min(limit, length)
+				if !slices.Equal(got, input[:n]) {
+					t.Fatalf("prefix got=%v want=%v", got, input[:n])
+				}
+				if os.Getenv("HARNESS_PROFILE") == "baseline" {
+					return
+				}
+				rest := slices.Collect(source)
+				if !slices.Equal(append(got, rest...), input) {
+					t.Fatalf("stream lost or duplicated elements: prefix=%v rest=%v input=%v", got, rest, input)
+				}
+			})
+		}
+	}
+}

@@ -1,0 +1,88 @@
+package peerset
+
+import (
+	"fmt"
+	"os"
+	"testing"
+)
+
+func TestPeerRouting(t *testing.T) {
+	depth := 1
+	if os.Getenv("HARNESS_PROFILE") != "baseline" {
+		depth = 8
+	}
+	for count := 1; count <= 4; count++ {
+		for mask := 0; mask < (1 << count); mask++ {
+			t.Run(fmt.Sprintf("preferred=%d/failures=%d", count, mask), func(t *testing.T) {
+				preferred := []string{}
+				fallback := []string{}
+				for i := 0; i < count; i++ {
+					preferred = append(preferred, fmt.Sprintf("p%d", i))
+				}
+				for i := 0; i < 8; i++ {
+					fallback = append(fallback, fmt.Sprintf("f%d", i))
+				}
+				p := New(preferred, fallback)
+				failed := map[string]bool{}
+				for step := 0; step < min(count, depth); step++ {
+					peer, handoff := p.GetNextPeerAndHandoff()
+					if peer != preferred[step] || handoff != "" {
+						t.Fatalf("preferred ordering step=%d peer=%q handoff=%q", step, peer, handoff)
+					}
+					if mask&(1<<step) != 0 {
+						p.MarkPeerAsFailed(peer)
+						failed[peer] = true
+					}
+					if os.Getenv("HARNESS_PROFILE") == "baseline" {
+						continue
+					}
+					source, targets := p.GetBackfillTargets()
+					if failed[source] {
+						t.Fatalf("failed peer used as backfill source: %q", source)
+					}
+					for _, target := range targets {
+						if failed[target] {
+							t.Fatalf("failed peer used as backfill destination: %q; step=%d", target, step)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestPeerFailureBudget(t *testing.T) {
+	if os.Getenv("HARNESS_PROFILE") == "baseline" {
+		t.Skip("failure sequences absent")
+	}
+	if harnessFallbackLimit == 0 {
+		t.Skip("this API version has no fallback failure budget")
+	}
+	for size := 1; size <= 10; size++ {
+		t.Run(fmt.Sprintf("fallbacks=%d", size), func(t *testing.T) {
+			fallback := []string{}
+			for i := 0; i < size; i++ {
+				fallback = append(fallback, fmt.Sprintf("f%d", i))
+			}
+			p := New([]string{"primary"}, fallback)
+			primary := p.GetNextPeer()
+			p.MarkPeerAsFailed(primary)
+			attempts := 0
+			for step := 0; step <= size; step++ {
+				peer, handoff := p.GetNextPeerAndHandoff()
+				if peer == "" {
+					break
+				}
+				if handoff != primary {
+					t.Fatalf("handoff=%q want=%q", handoff, primary)
+				}
+				attempts++
+				p.MarkPeerAsFailed(peer)
+			}
+			want := min(size, harnessFallbackLimit)
+			if attempts != want {
+				t.Fatalf("fallback attempts=%d budget=%d available=%d", attempts, harnessFallbackLimit, size)
+			}
+		})
+	}
+}

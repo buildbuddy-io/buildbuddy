@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+  "cases": [
+    {
+      "id": "range-panic",
+      "fix": "0c58359feb269c5baa2e273ef006ea59f191ef6d",
+      "before": "3b64d1a7dbb6441106044d2a8f2cf81176d7a76a",
+      "package": "rangemap",
+      "subject": "Fix panic in rangemap.GetOverlapping",
+      "missing_capabilities": [
+        "operation coverage",
+        "input coverage"
+      ],
+      "improvement": "Overlap enumeration was absent; include queries before, within, between and beyond stored intervals."
+    },
+    {
+      "id": "range-exclusive-end",
+      "fix": "e7794fb3427c397b1d16a26932b77fc88c283be9",
+      "before": "58af92f75e1ced6b7167f3315ccea125f53bcf84",
+      "package": "rangemap",
+      "subject": "Fix range overlap check. (#2440)",
+      "missing_capabilities": [
+        "operation coverage",
+        "input coverage"
+      ],
+      "improvement": "Generate query endpoints equal to stored endpoints under the half-open interval model."
+    },
+    {
+      "id": "range-before-first",
+      "fix": "aea0bec7ccad1c259ca431a8ed386a0afb3fcbad",
+      "before": "8fb83f7c16928016bf38119b2a836f01471173e6",
+      "package": "rangemap",
+      "subject": "Fix overlap check. (#2456)",
+      "missing_capabilities": [
+        "operation coverage",
+        "input coverage"
+      ],
+      "improvement": "Include disjoint queries on both sides of the stored domain, including adjacency."
+    },
+    {
+      "id": "range-diagnostic-text",
+      "fix": "1223d351ef32858ba0066866767e8ea792f205a3",
+      "before": "5ea60daed9f9a944b297b973bd7282bce3210629",
+      "package": "rangemap",
+      "subject": "Ensure Range.String() outputs utf8 valid string (#6096)",
+      "missing_capabilities": [
+        "input coverage",
+        "invariant/oracle"
+      ],
+      "improvement": "Generate the entire byte alphabet and require diagnostics to remain valid UTF-8."
+    },
+    {
+      "id": "retry-cancellation",
+      "fix": "c0942dce5fc38f1822024d57c3a367ecc2e1087b",
+      "before": "9437f054257dd6bfae36d18fabcedcc350e637e7",
+      "package": "retry",
+      "subject": "retry.Do should return context error if context is done on 1st attempt. (#5363)",
+      "missing_capabilities": [
+        "environment or dependency behavior",
+        "input coverage"
+      ],
+      "improvement": "Model a cancelled context with a blocked timer; require cancellation error propagation."
+    },
+    {
+      "id": "retry-terminal",
+      "fix": "d5a42771d1f2c870ed9fd8aaeabcc6723ab4640b",
+      "before": "cde625931a2c9d93983b533d2e0087375d298429",
+      "package": "retry",
+      "subject": "Actually check for non-retryable errors. (#5368)",
+      "missing_capabilities": [
+        "input coverage",
+        "invariant/oracle"
+      ],
+      "improvement": "Generate terminal and transient dependency outcomes and constrain terminal call count."
+    },
+    {
+      "id": "retry-error-observability",
+      "fix": "3e3af7a67bc399a166cc2f0d27ad8ad40b79da38",
+      "before": "5c2e1796e6fd60ea4c94bbf7adbe4b54886aa51b",
+      "package": "retry",
+      "subject": "Unwrap nonRetryableError (#12443)",
+      "missing_capabilities": [
+        "input coverage",
+        "invariant/oracle"
+      ],
+      "improvement": "Cross nullable and wrapped dependency outcomes with retry policies; require returned errors to be safely inspectable."
+    },
+    {
+      "id": "peer-failure-budget",
+      "fix": "17a5e0b8857b2b88a0894f7e2dc728cd3f2b168f",
+      "before": "95e28d86c95c5338849d2719a811c13a8337c0d6",
+      "package": "peerset",
+      "subject": "Fix off-by-one in failed peers check. (#2404)",
+      "missing_capabilities": [
+        "sequence depth",
+        "configuration"
+      ],
+      "improvement": "Explore failure traces beyond the configured fallback budget for multiple peer-list sizes."
+    },
+    {
+      "id": "peer-backfill-health",
+      "fix": "34a38446c73b1f5ffe7aa75002eaf37230f93318",
+      "before": "3632eb46775b57b34c37e2c0bdd91446a9aa1107",
+      "package": "peerset",
+      "subject": "Don't attempt to backfill failed peers.",
+      "missing_capabilities": [
+        "operation coverage",
+        "sequence depth",
+        "invariant/oracle"
+      ],
+      "improvement": "Observe backfill after each success/failure transition and exclude failed endpoints."
+    },
+    {
+      "id": "sequence-consumption",
+      "fix": "ae7e21e13d7f0a374df3c0bf289a07aa0b49cf35",
+      "before": "e029416832219f7a63c4a2828e931a44f93bdb4d",
+      "package": "seq",
+      "subject": "Fix bug in `seq.Truncate` that caused it to consume an extra element of a sequence (#9701)",
+      "missing_capabilities": [
+        "invariant/oracle",
+        "sequence depth"
+      ],
+      "improvement": "Read the residual stateful stream after taking a prefix; require conservation of the input."
+    }
+  ]
+}

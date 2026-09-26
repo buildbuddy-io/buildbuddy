@@ -1,0 +1,945 @@
+{
+  "schema": 1,
+  "harness_sha256": "11d6162757f5ff8e894dbf29afbed625e07932a702f28932be4767b9fec00b9d",
+  "go_version": "go version go1.27.1 linux/amd64",
+  "platform": [
+    "linux",
+    "amd64"
+  ],
+  "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+  "cases": [
+    {
+      "id": "range-panic",
+      "fix": "0c58359feb269c5baa2e273ef006ea59f191ef6d",
+      "before": "3b64d1a7dbb6441106044d2a8f2cf81176d7a76a",
+      "package": "rangemap",
+      "subject": "Fix panic in rangemap.GetOverlapping",
+      "missing_capabilities": [
+        "operation coverage",
+        "input coverage"
+      ],
+      "improvement": "Overlap enumeration was absent; include queries before, within, between and beyond stored intervals.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "3b64d1a7dbb6441106044d2a8f2cf81176d7a76a",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "b2a03566cd4ca56f4d4858e06a773d1d14f15f7346b3857877755e696ebb70af",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-3b64d1a7dbb6-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "0c58359feb269c5baa2e273ef006ea59f191ef6d",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "98c0ba65d10839a6e40fe98e81fb9a78fd980f93d32dd7c07ccad4e087894f16",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-0c58359feb26-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestRangeModel/count=1/query=0-2"
+          ],
+          "before": {
+            "revision": "3b64d1a7dbb6441106044d2a8f2cf81176d7a76a",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "b2a03566cd4ca56f4d4858e06a773d1d14f15f7346b3857877755e696ebb70af",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestRangeModel/count=1/query=0-2": "=== RUN   TestRangeModel/count=1/query=0-2\n    contract_harness_test.go:12: contract panic: runtime error: slice bounds out of range [-1:]\n--- FAIL: TestRangeModel/count=1/query=0-2 (0.00s)\n"
+            },
+            "log": "rangemap-3b64d1a7dbb6-improved.jsonl",
+            "test_counts": {
+              "pass": 253,
+              "fail": 223,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "0c58359feb269c5baa2e273ef006ea59f191ef6d",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "98c0ba65d10839a6e40fe98e81fb9a78fd980f93d32dd7c07ccad4e087894f16",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {},
+            "log": "rangemap-0c58359feb26-improved.jsonl",
+            "test_counts": {
+              "pass": 330,
+              "fail": 146,
+              "skip": 0
+            }
+          },
+          "witness_count": 77
+        }
+      }
+    },
+    {
+      "id": "range-exclusive-end",
+      "fix": "e7794fb3427c397b1d16a26932b77fc88c283be9",
+      "before": "58af92f75e1ced6b7167f3315ccea125f53bcf84",
+      "package": "rangemap",
+      "subject": "Fix range overlap check. (#2440)",
+      "missing_capabilities": [
+        "operation coverage",
+        "input coverage"
+      ],
+      "improvement": "Generate query endpoints equal to stored endpoints under the half-open interval model.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "58af92f75e1ced6b7167f3315ccea125f53bcf84",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "98c0ba65d10839a6e40fe98e81fb9a78fd980f93d32dd7c07ccad4e087894f16",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-58af92f75e1c-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "e7794fb3427c397b1d16a26932b77fc88c283be9",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "6751dd37644e8c97fe1bbe2bb9a532434ab57fde6ba0f2c12f83e8e355a60bd5",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-e7794fb3427c-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestRangeModel/count=2/query=0-4"
+          ],
+          "before": {
+            "revision": "58af92f75e1ced6b7167f3315ccea125f53bcf84",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "98c0ba65d10839a6e40fe98e81fb9a78fd980f93d32dd7c07ccad4e087894f16",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestRangeModel/count=2/query=0-4": "=== RUN   TestRangeModel/count=2/query=0-4\n    contract_harness_test.go:56: overlap got=[1 2] want=[1]\n--- FAIL: TestRangeModel/count=2/query=0-4 (0.00s)\n"
+            },
+            "log": "rangemap-58af92f75e1c-improved.jsonl",
+            "test_counts": {
+              "pass": 330,
+              "fail": 146,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "e7794fb3427c397b1d16a26932b77fc88c283be9",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "6751dd37644e8c97fe1bbe2bb9a532434ab57fde6ba0f2c12f83e8e355a60bd5",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {},
+            "log": "rangemap-e7794fb3427c-improved.jsonl",
+            "test_counts": {
+              "pass": 345,
+              "fail": 131,
+              "skip": 0
+            }
+          },
+          "witness_count": 15
+        }
+      }
+    },
+    {
+      "id": "range-before-first",
+      "fix": "aea0bec7ccad1c259ca431a8ed386a0afb3fcbad",
+      "before": "8fb83f7c16928016bf38119b2a836f01471173e6",
+      "package": "rangemap",
+      "subject": "Fix overlap check. (#2456)",
+      "missing_capabilities": [
+        "operation coverage",
+        "input coverage"
+      ],
+      "improvement": "Include disjoint queries on both sides of the stored domain, including adjacency.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "8fb83f7c16928016bf38119b2a836f01471173e6",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "6751dd37644e8c97fe1bbe2bb9a532434ab57fde6ba0f2c12f83e8e355a60bd5",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-8fb83f7c1692-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "aea0bec7ccad1c259ca431a8ed386a0afb3fcbad",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "6b51ae7bc9be6114ab0141a405555d7594aef658d18226907ce89ae56adf76c1",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-aea0bec7ccad-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestRangeModel/count=1/query=0-1"
+          ],
+          "before": {
+            "revision": "8fb83f7c16928016bf38119b2a836f01471173e6",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "6751dd37644e8c97fe1bbe2bb9a532434ab57fde6ba0f2c12f83e8e355a60bd5",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestRangeModel/count=1/query=0-1": "=== RUN   TestRangeModel/count=1/query=0-1\n    contract_harness_test.go:56: overlap got=[1] want=[]\n--- FAIL: TestRangeModel/count=1/query=0-1 (0.00s)\n"
+            },
+            "log": "rangemap-8fb83f7c1692-improved.jsonl",
+            "test_counts": {
+              "pass": 345,
+              "fail": 131,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "aea0bec7ccad1c259ca431a8ed386a0afb3fcbad",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "6b51ae7bc9be6114ab0141a405555d7594aef658d18226907ce89ae56adf76c1",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {},
+            "log": "rangemap-aea0bec7ccad-improved.jsonl",
+            "test_counts": {
+              "pass": 348,
+              "fail": 128,
+              "skip": 0
+            }
+          },
+          "witness_count": 3
+        }
+      }
+    },
+    {
+      "id": "range-diagnostic-text",
+      "fix": "1223d351ef32858ba0066866767e8ea792f205a3",
+      "before": "5ea60daed9f9a944b297b973bd7282bce3210629",
+      "package": "rangemap",
+      "subject": "Ensure Range.String() outputs utf8 valid string (#6096)",
+      "missing_capabilities": [
+        "input coverage",
+        "invariant/oracle"
+      ],
+      "improvement": "Generate the entire byte alphabet and require diagnostics to remain valid UTF-8.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "5ea60daed9f9a944b297b973bd7282bce3210629",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "94880c02901ee9eaa1e60e6297d4289ed5ca77dc8d57405a7b460631b2ad3c4f",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-5ea60daed9f9-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "1223d351ef32858ba0066866767e8ea792f205a3",
+            "package": "rangemap",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "098d8ad42fd5224d24b98a1288d5dfe1deeb4be4ec45b4627a69a79cb44b0590",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-1223d351ef32-baseline.jsonl",
+            "test_counts": {
+              "pass": 220,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestRangeDiagnosticText/byte=128"
+          ],
+          "before": {
+            "revision": "5ea60daed9f9a944b297b973bd7282bce3210629",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "94880c02901ee9eaa1e60e6297d4289ed5ca77dc8d57405a7b460631b2ad3c4f",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestRangeDiagnosticText/byte=128": "=== RUN   TestRangeDiagnosticText/byte=128\n    contract_harness_test.go:78: diagnostic is invalid UTF-8: \"[\\x80, \\x80\\x00)\"\n--- FAIL: TestRangeDiagnosticText/byte=128 (0.00s)\n"
+            },
+            "log": "rangemap-5ea60daed9f9-improved.jsonl",
+            "test_counts": {
+              "pass": 348,
+              "fail": 128,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "1223d351ef32858ba0066866767e8ea792f205a3",
+            "package": "rangemap",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "098d8ad42fd5224d24b98a1288d5dfe1deeb4be4ec45b4627a69a79cb44b0590",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "rangemap-1223d351ef32-improved.jsonl",
+            "test_counts": {
+              "pass": 476,
+              "fail": 0,
+              "skip": 0
+            }
+          },
+          "witness_count": 128
+        }
+      }
+    },
+    {
+      "id": "retry-cancellation",
+      "fix": "c0942dce5fc38f1822024d57c3a367ecc2e1087b",
+      "before": "9437f054257dd6bfae36d18fabcedcc350e637e7",
+      "package": "retry",
+      "subject": "retry.Do should return context error if context is done on 1st attempt. (#5363)",
+      "missing_capabilities": [
+        "environment or dependency behavior",
+        "input coverage"
+      ],
+      "improvement": "Model a cancelled context with a blocked timer; require cancellation error propagation.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "9437f054257dd6bfae36d18fabcedcc350e637e7",
+            "package": "retry",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "9e27ccffa68740a6585428a3f6a7b5c029291ad4521c11bc7eb46f3822d78a16",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "retry-9437f054257d-baseline.jsonl",
+            "test_counts": {
+              "pass": 10,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "c0942dce5fc38f1822024d57c3a367ecc2e1087b",
+            "package": "retry",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "de71c6f2ade0180c9af46d88d1813aaa9072257e47b9fbfc32cbd41f5d1408c3",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "retry-c0942dce5fc3-baseline.jsonl",
+            "test_counts": {
+              "pass": 10,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestRetryOutcomes/cancelled/budget=1"
+          ],
+          "before": {
+            "revision": "9437f054257dd6bfae36d18fabcedcc350e637e7",
+            "package": "retry",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "9e27ccffa68740a6585428a3f6a7b5c029291ad4521c11bc7eb46f3822d78a16",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestRetryOutcomes/cancelled/budget=1": "=== RUN   TestRetryOutcomes/cancelled/budget=1\n    contract_harness_test.go:68: cancellation result err=<nil> attempts=0\n--- FAIL: TestRetryOutcomes/cancelled/budget=1 (0.00s)\n"
+            },
+            "log": "retry-9437f054257d-improved.jsonl",
+            "test_counts": {
+              "pass": 31,
+              "fail": 13,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "c0942dce5fc38f1822024d57c3a367ecc2e1087b",
+            "package": "retry",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "de71c6f2ade0180c9af46d88d1813aaa9072257e47b9fbfc32cbd41f5d1408c3",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {},
+            "log": "retry-c0942dce5fc3-improved.jsonl",
+            "test_counts": {
+              "pass": 36,
+              "fail": 8,
+              "skip": 0
+            }
+          },
+          "witness_count": 5
+        }
+      }
+    },
+    {
+      "id": "retry-terminal",
+      "fix": "d5a42771d1f2c870ed9fd8aaeabcc6723ab4640b",
+      "before": "cde625931a2c9d93983b533d2e0087375d298429",
+      "package": "retry",
+      "subject": "Actually check for non-retryable errors. (#5368)",
+      "missing_capabilities": [
+        "input coverage",
+        "invariant/oracle"
+      ],
+      "improvement": "Generate terminal and transient dependency outcomes and constrain terminal call count.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "cde625931a2c9d93983b533d2e0087375d298429",
+            "package": "retry",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "de71c6f2ade0180c9af46d88d1813aaa9072257e47b9fbfc32cbd41f5d1408c3",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "retry-cde625931a2c-baseline.jsonl",
+            "test_counts": {
+              "pass": 10,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "d5a42771d1f2c870ed9fd8aaeabcc6723ab4640b",
+            "package": "retry",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "d9a63937f6c481afc032ee694137ca840a2221062c2ce581f0539ad3db162d62",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "retry-d5a42771d1f2-baseline.jsonl",
+            "test_counts": {
+              "pass": 10,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestRetryOutcomes/terminal/budget=1"
+          ],
+          "before": {
+            "revision": "cde625931a2c9d93983b533d2e0087375d298429",
+            "package": "retry",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "de71c6f2ade0180c9af46d88d1813aaa9072257e47b9fbfc32cbd41f5d1408c3",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestRetryOutcomes/terminal/budget=1": "=== RUN   TestRetryOutcomes/terminal/budget=1\n    contract_harness_test.go:72: terminal dependency invoked 2 times\n--- FAIL: TestRetryOutcomes/terminal/budget=1 (0.00s)\n"
+            },
+            "log": "retry-cde625931a2c-improved.jsonl",
+            "test_counts": {
+              "pass": 36,
+              "fail": 8,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "d5a42771d1f2c870ed9fd8aaeabcc6723ab4640b",
+            "package": "retry",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "d9a63937f6c481afc032ee694137ca840a2221062c2ce581f0539ad3db162d62",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {},
+            "log": "retry-d5a42771d1f2-improved.jsonl",
+            "test_counts": {
+              "pass": 41,
+              "fail": 3,
+              "skip": 0
+            }
+          },
+          "witness_count": 5
+        }
+      }
+    },
+    {
+      "id": "retry-error-observability",
+      "fix": "3e3af7a67bc399a166cc2f0d27ad8ad40b79da38",
+      "before": "5c2e1796e6fd60ea4c94bbf7adbe4b54886aa51b",
+      "package": "retry",
+      "subject": "Unwrap nonRetryableError (#12443)",
+      "missing_capabilities": [
+        "input coverage",
+        "invariant/oracle"
+      ],
+      "improvement": "Cross nullable and wrapped dependency outcomes with retry policies; require returned errors to be safely inspectable.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "5c2e1796e6fd60ea4c94bbf7adbe4b54886aa51b",
+            "package": "retry",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "b00a0077a782819db9cea0b86b52fc5b98c6e58fea749d6afe84dbe1b79ef8b1",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "retry-5c2e1796e6fd-baseline.jsonl",
+            "test_counts": {
+              "pass": 10,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "3e3af7a67bc399a166cc2f0d27ad8ad40b79da38",
+            "package": "retry",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "ac0095b2ffbeb15d7280e524201a12f814a2977f340aa83024445852af4707eb",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "retry-3e3af7a67bc3-baseline.jsonl",
+            "test_counts": {
+              "pass": 10,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestRetryErrorObservability/input=0/terminal=true/budget=1"
+          ],
+          "before": {
+            "revision": "5c2e1796e6fd60ea4c94bbf7adbe4b54886aa51b",
+            "package": "retry",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "b00a0077a782819db9cea0b86b52fc5b98c6e58fea749d6afe84dbe1b79ef8b1",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestRetryErrorObservability/input=0/terminal=true/budget=1": "=== RUN   TestRetryErrorObservability/input=0/terminal=true/budget=1\n    contract_harness_test.go:101: error inspection panicked: runtime error: invalid memory address or nil pointer dereference\n--- FAIL: TestRetryErrorObservability/input=0/terminal=true/budget=1 (0.00s)\n"
+            },
+            "log": "retry-5c2e1796e6fd-improved.jsonl",
+            "test_counts": {
+              "pass": 41,
+              "fail": 3,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "3e3af7a67bc399a166cc2f0d27ad8ad40b79da38",
+            "package": "retry",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "ac0095b2ffbeb15d7280e524201a12f814a2977f340aa83024445852af4707eb",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "retry-3e3af7a67bc3-improved.jsonl",
+            "test_counts": {
+              "pass": 44,
+              "fail": 0,
+              "skip": 0
+            }
+          },
+          "witness_count": 3
+        }
+      }
+    },
+    {
+      "id": "peer-failure-budget",
+      "fix": "17a5e0b8857b2b88a0894f7e2dc728cd3f2b168f",
+      "before": "95e28d86c95c5338849d2719a811c13a8337c0d6",
+      "package": "peerset",
+      "subject": "Fix off-by-one in failed peers check. (#2404)",
+      "missing_capabilities": [
+        "sequence depth",
+        "configuration"
+      ],
+      "improvement": "Explore failure traces beyond the configured fallback budget for multiple peer-list sizes.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "95e28d86c95c5338849d2719a811c13a8337c0d6",
+            "package": "peerset",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "5b2fb5d04c56bdddbb2e147c94fe0b82c9ac325795ad2aceaca45c6b1375d1bd",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "peerset-95e28d86c95c-baseline.jsonl",
+            "test_counts": {
+              "pass": 30,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "17a5e0b8857b2b88a0894f7e2dc728cd3f2b168f",
+            "package": "peerset",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "aaf8eae67ffd862a9e0aa490cc56572d160813720ba8e33a24abb5336a608b56",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "peerset-17a5e0b8857b-baseline.jsonl",
+            "test_counts": {
+              "pass": 30,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestPeerFailureBudget/fallbacks=4"
+          ],
+          "before": {
+            "revision": "95e28d86c95c5338849d2719a811c13a8337c0d6",
+            "package": "peerset",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "5b2fb5d04c56bdddbb2e147c94fe0b82c9ac325795ad2aceaca45c6b1375d1bd",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestPeerFailureBudget/fallbacks=4": "=== RUN   TestPeerFailureBudget/fallbacks=4\n    contract_harness_test.go:84: fallback attempts=4 budget=3 available=4\n--- FAIL: TestPeerFailureBudget/fallbacks=4 (0.00s)\n"
+            },
+            "log": "peerset-95e28d86c95c-improved.jsonl",
+            "test_counts": {
+              "pass": 33,
+              "fail": 7,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "17a5e0b8857b2b88a0894f7e2dc728cd3f2b168f",
+            "package": "peerset",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "aaf8eae67ffd862a9e0aa490cc56572d160813720ba8e33a24abb5336a608b56",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "peerset-17a5e0b8857b-improved.jsonl",
+            "test_counts": {
+              "pass": 40,
+              "fail": 0,
+              "skip": 0
+            }
+          },
+          "witness_count": 7
+        }
+      }
+    },
+    {
+      "id": "peer-backfill-health",
+      "fix": "34a38446c73b1f5ffe7aa75002eaf37230f93318",
+      "before": "3632eb46775b57b34c37e2c0bdd91446a9aa1107",
+      "package": "peerset",
+      "subject": "Don't attempt to backfill failed peers.",
+      "missing_capabilities": [
+        "operation coverage",
+        "sequence depth",
+        "invariant/oracle"
+      ],
+      "improvement": "Observe backfill after each success/failure transition and exclude failed endpoints.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "3632eb46775b57b34c37e2c0bdd91446a9aa1107",
+            "package": "peerset",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "2fa64c77f775a89608e63f0ee518e0c7775de80d0054ab0d977407f5fca14f65",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "peerset-3632eb46775b-baseline.jsonl",
+            "test_counts": {
+              "pass": 30,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "34a38446c73b1f5ffe7aa75002eaf37230f93318",
+            "package": "peerset",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "d75395d66d9dccc38352ce136bf0d1996c079f54c6d76f4e3e6f95657b4023fd",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "peerset-34a38446c73b-baseline.jsonl",
+            "test_counts": {
+              "pass": 30,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestPeerRouting/preferred=1/failures=1"
+          ],
+          "before": {
+            "revision": "3632eb46775b57b34c37e2c0bdd91446a9aa1107",
+            "package": "peerset",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "2fa64c77f775a89608e63f0ee518e0c7775de80d0054ab0d977407f5fca14f65",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestPeerRouting/preferred=1/failures=1": "=== RUN   TestPeerRouting/preferred=1/failures=1\n    contract_harness_test.go:41: failed peer used as backfill source: \"p0\"\n--- FAIL: TestPeerRouting/preferred=1/failures=1 (0.00s)\n"
+            },
+            "log": "peerset-3632eb46775b-improved.jsonl",
+            "test_counts": {
+              "pass": 4,
+              "fail": 26,
+              "skip": 1
+            }
+          },
+          "after": {
+            "revision": "34a38446c73b1f5ffe7aa75002eaf37230f93318",
+            "package": "peerset",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "d75395d66d9dccc38352ce136bf0d1996c079f54c6d76f4e3e6f95657b4023fd",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "peerset-34a38446c73b-improved.jsonl",
+            "test_counts": {
+              "pass": 30,
+              "fail": 0,
+              "skip": 1
+            }
+          },
+          "witness_count": 26
+        }
+      }
+    },
+    {
+      "id": "sequence-consumption",
+      "fix": "ae7e21e13d7f0a374df3c0bf289a07aa0b49cf35",
+      "before": "e029416832219f7a63c4a2828e931a44f93bdb4d",
+      "package": "seq",
+      "subject": "Fix bug in `seq.Truncate` that caused it to consume an extra element of a sequence (#9701)",
+      "missing_capabilities": [
+        "invariant/oracle",
+        "sequence depth"
+      ],
+      "improvement": "Read the residual stateful stream after taking a prefix; require conservation of the input.",
+      "measurements": {
+        "baseline": {
+          "outcome": "missed",
+          "witnesses": [],
+          "before": {
+            "revision": "e029416832219f7a63c4a2828e931a44f93bdb4d",
+            "package": "seq",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "d58bf33ac55ea8611d372c3c06f66c22561b542fbe48ce567630223584d4b892",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "seq-e02941683221-baseline.jsonl",
+            "test_counts": {
+              "pass": 117,
+              "fail": 0,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "ae7e21e13d7f0a374df3c0bf289a07aa0b49cf35",
+            "package": "seq",
+            "profile": "baseline",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "803e23d076f87422f2d1e76c60821b9539f47a375726bcaace0d6daf508f4192",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "seq-ae7e21e13d7f-baseline.jsonl",
+            "test_counts": {
+              "pass": 117,
+              "fail": 0,
+              "skip": 0
+            }
+          },
+          "witness_count": 0
+        },
+        "improved": {
+          "outcome": "detected",
+          "witnesses": [
+            "TestSequenceConservation/length=2/limit=1"
+          ],
+          "before": {
+            "revision": "e029416832219f7a63c4a2828e931a44f93bdb4d",
+            "package": "seq",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "d58bf33ac55ea8611d372c3c06f66c22561b542fbe48ce567630223584d4b892",
+            "status": "fail",
+            "exit_code": 1,
+            "failures": {
+              "TestSequenceConservation/length=2/limit=1": "=== RUN   TestSequenceConservation/length=2/limit=1\n    contract_harness_test.go:40: stream lost or duplicated elements: prefix=[1] rest=[] input=[1 2]\n--- FAIL: TestSequenceConservation/length=2/limit=1 (0.00s)\n"
+            },
+            "log": "seq-e02941683221-improved.jsonl",
+            "test_counts": {
+              "pass": 51,
+              "fail": 66,
+              "skip": 0
+            }
+          },
+          "after": {
+            "revision": "ae7e21e13d7f0a374df3c0bf289a07aa0b49cf35",
+            "package": "seq",
+            "profile": "improved",
+            "support_revision": "266066a57cb351ae38d5f5c71289ff94b2a49eb5",
+            "source_sha256": "803e23d076f87422f2d1e76c60821b9539f47a375726bcaace0d6daf508f4192",
+            "status": "pass",
+            "exit_code": 0,
+            "failures": {},
+            "log": "seq-ae7e21e13d7f-improved.jsonl",
+            "test_counts": {
+              "pass": 117,
+              "fail": 0,
+              "skip": 0
+            }
+          },
+          "witness_count": 66
+        }
+      }
+    }
+  ],
+  "totals": {
+    "baseline": {
+      "detected": 0,
+      "missed": 10,
+      "infrastructure_error": 0
+    },
+    "improved": {
+      "detected": 10,
+      "missed": 0,
+      "infrastructure_error": 0
+    }
+  }
+}
