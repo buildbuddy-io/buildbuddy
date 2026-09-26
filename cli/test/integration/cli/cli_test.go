@@ -45,37 +45,57 @@ func TestBazelVersion(t *testing.T) {
 }
 
 func TestBazelRun(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-sh_binary(name = "fail", srcs = ["fail.sh"])`,
-		"fail.sh": `exit 1`,
-	})
-	testfs.MakeExecutable(t, ws, "fail.sh")
+	// Bazel run writes a script; the CLI must execute it and preserve its exit
+	// status, rather than returning the successful build's exit status.
+	ws := newFakeBazelWorkspace(t, `
+for arg in "$@"; do
+  if [[ "$arg" == --script_path=* ]]; then
+    printf '#!/usr/bin/env bash\nexit 42\n' > "${arg#--script_path=}"
+    exit 0
+  fi
+done
+echo 'missing --script_path' >&2
+exit 1
+`)
 	cmd := testcli.BazelCommand(t, ws, "run", ":fail")
 	b, err := testcli.CombinedOutput(cmd)
 	require.Error(t, err, "output: %s", string(b))
-	require.Equal(t, cmd.ProcessState.ExitCode(), 1)
+	require.Equal(t, 42, cmd.ProcessState.ExitCode())
 }
 
 func TestParseGlobalFlags(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-sh_binary(name = "print_args", srcs = ["print_args.sh"])`,
-		"print_args.sh": `echo $@`,
-	})
-	testfs.MakeExecutable(t, ws, "print_args.sh")
-	cmd := testcli.BazelCommand(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello", "--after")
+	ws := newFakeBazelWorkspace(t, `
+script_path=""
+for arg in "$@"; do
+  if [[ "$arg" == --script_path=* ]]; then
+    script_path="${arg#--script_path=}"
+  fi
+done
+# Generate a launch script with the executable args quoted just as Bazel would.
+printf '#!/usr/bin/env bash\nprintf "<%%s>\\n" ' > "$script_path"
+for arg in "$@"; do
+  if [[ "${forward:-0}" == 1 ]]; then
+    printf '%q ' "$arg" >> "$script_path"
+  elif [[ "$arg" == -- ]]; then
+    forward=1
+  fi
+done
+printf '\n' >> "$script_path"
+`)
+	cmd := testcli.BazelCommand(t, ws, "run", ":print_args", "--", "--before", "--verbose", "hello world", "--after")
 	b, err := testcli.Output(cmd)
 	require.NoError(t, err, "output: %s", string(b))
-	require.Equal(t, "--before --verbose hello --after\n", string(b))
+	require.Equal(t, "<--before>\n<--verbose>\n<hello world>\n<--after>\n", string(b))
 }
 
 func TestInvokeViaBazelisk(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
+	ws := newFakeBazelWorkspace(t, `echo "Build label: workspace-bazel"`)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		".bazelversion": fmt.Sprintf("%s\n%s\n", testcli.BinaryPath(t), testbazel.BinaryPath(t)),
+		"override-bazel.sh": strings.ReplaceAll(testfs.ReadFileAsString(t, ws, "fake-bazel.sh"), "workspace-bazel", "override-bazel"),
+	})
+	testfs.MakeExecutable(t, ws, "override-bazel.sh")
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelversion": fmt.Sprintf("%s\n%s\n", testcli.BinaryPath(t), ws+"/fake-bazel.sh"),
 	})
 
 	{
@@ -86,22 +106,19 @@ func TestInvokeViaBazelisk(t *testing.T) {
 
 		require.NoError(t, err, "output: %s", string(b))
 		require.Regexp(t, `(?m)^bb (unknown|\d+\.\d+\.\d+)$`, string(b))
-		require.Contains(t, string(b), "Build label: "+testbazel.Version)
+		require.Contains(t, string(b), "Build label: workspace-bazel")
 	}
 	{
 		// Make sure that if we're using the .bazelversion trick, we still have
 		// a way to override the bazel version via env var
 		// (BB_USE_BAZEL_VERSION).
 		cmd := testcli.BazeliskCommand(t, ws, "version")
-		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION=6.0.0")
-		// Sanity check: make sure testbazel.Version is different from the one
-		// we're testing here.
-		require.NotEqual(t, "6.0.0", testbazel.Version)
+		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION="+ws+"/override-bazel.sh")
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
 		require.Regexp(t, `(?m)^bb (unknown|\d+\.\d+\.\d+)$`, string(b))
-		require.Contains(t, string(b), "Build label: 6.0.0")
+		require.Contains(t, string(b), "Build label: override-bazel")
 	}
 }
 
@@ -177,7 +194,10 @@ func TestHelpWithoutHomeEnv(t *testing.T) {
 }
 
 func TestBazelBuildWithLocalPlugin(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
+	ws := newFakeBazelWorkspace(t, `
+printf 'BAZEL_ARG:<%s>\n' "$@"
+echo 'Build completed successfully' >&2
+`)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"plugins/test/pre_bazel.sh": `
 			echo 'Hello from pre_bazel.sh!'
@@ -199,8 +219,6 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	b, err := cmd.CombinedOutput()
 	require.NoError(t, err, "output: %s", string(b))
 
-	testfs.WriteAllFileContents(t, ws, map[string]string{"BUILD": ``})
-
 	cmd = testcli.BazelCommand(t, ws, "build", "//...", "--build_metadata", "FOO=bar")
 
 	b, err = testcli.CombinedOutput(cmd)
@@ -208,6 +226,9 @@ func TestBazelBuildWithLocalPlugin(t *testing.T) {
 	require.NoError(t, err, "output: %s", string(b))
 	output := strings.ReplaceAll(string(b), "\r\n", "\n")
 
+	require.Contains(t, output, "BAZEL_ARG:<build>")
+	require.Contains(t, output, "BAZEL_ARG:<//...>")
+	require.Contains(t, output, "BAZEL_ARG:<--build_metadata=FOO=bar>")
 	require.Contains(t, output, "Hello from pre_bazel.sh!")
 	require.Contains(t, output, "--build_metadata FOO=bar was canonicalized as expected!")
 	require.Contains(t, output, "Hello from handle_bazel_output.sh! Build was successful.")
@@ -402,15 +423,45 @@ func TestBBRC_SidecarRollback(t *testing.T) {
 	require.Contains(t, output, "FAKE_BAZEL_ARGS:")
 }
 
+// newFakeBazelWorkspace exercises the CLI/Bazelisk boundary without starting a
+// Bazel server. The option metadata query uses the same fixture as parser tests;
+// all other invocations run the test-specific script with the forwarded args.
+func newFakeBazelWorkspace(t *testing.T, script string) string {
+	t.Helper()
+	ws := testcli.NewWorkspace(t)
+	writeFakeBazelBinary(t, ws, script)
+	return ws
+}
+
+func writeFakeBazelBinary(t *testing.T, ws, script string) {
+	t.Helper()
+	// Embed the metadata: Bazelisk copies local binaries into its cache, so
+	// the script cannot rely on files relative to its own path.
+	testfs.WriteAllFileContents(t, ws, map[string]string{
+		".bazelversion": ws + "/fake-bazel.sh",
+		"fake-bazel.sh": `#!/usr/bin/env bash
+set -euo pipefail
+for arg in "$@"; do
+  if [[ "$arg" == flags-as-proto ]]; then
+    printf '%s\n' "` + strings.TrimSpace(test_data.BazelHelpFlagsAsProtoOutput) + `"
+    exit 0
+  fi
+done
+` + script,
+	})
+	testfs.MakeExecutable(t, ws, "fake-bazel.sh")
+}
+
 // writeFakeBazel installs a workspace Bazel wrapper that completes `run`
 // commands without starting Bazel. It also rejects BB-only arguments, since
 // those must be consumed by the CLI before it invokes Bazelisk.
 func writeFakeBazel(t *testing.T, ws string) {
+	t.Helper()
+	writeFakeBazelBinary(t, ws, `echo "unexpected direct Bazel invocation" >&2; exit 1`)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		"tools/bazel": `#!/usr/bin/env bash
 set -euo pipefail
-# The CLI queries Bazel's option definitions before parsing the command. Let
-# the hermetic test Bazel answer that query, and intercept the final run only.
+# Answer metadata queries with the fixture, and intercept the final run.
 for arg in "$@"; do
   if [[ "$arg" == "help" ]]; then
     exec "$BAZEL_REAL" "$@"
@@ -536,46 +587,53 @@ sh_test(name = "test", srcs = ["test.sh"])`,
 }
 
 func TestTargetPatternFile(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
-	testfs.WriteAllFileContents(t, ws, map[string]string{
-		".bazelrc": `
-test:pattern-file --target_pattern_file=targets.txt
-`,
-		"BUILD": `
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
-sh_test(name = "pass", srcs = ["pass.sh"])
-sh_test(name = "fail", srcs = ["fail.sh"])
-`,
-		"pass.sh":     "",
-		"fail.sh":     "exit 1",
-		"targets.txt": "//:pass",
-	})
+	for _, tc := range []struct {
+		name              string
+		args              []string
+		wantDefaultTarget bool
+	}{
+		{name: "build direct", args: []string{"build", "--target_pattern_file=targets.txt"}},
+		{name: "test direct", args: []string{"test", "--target_pattern_file=targets.txt"}},
+		{name: "build config", args: []string{"build", "--config=pattern-file"}},
+		{name: "test config", args: []string{"test", "--config=pattern-file"}},
+		{name: "test default", args: []string{"test"}, wantDefaultTarget: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := newFakeBazelWorkspace(t, `printf '%s\n' "$@"`)
+			testfs.WriteAllFileContents(t, ws, map[string]string{
+				".bazelrc":    `build:pattern-file --target_pattern_file=targets.txt`,
+				"targets.txt": "//:pass",
+			})
 
-	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "build", "--target_pattern_file=targets.txt"))
-	require.NoErrorf(t, err, "output: %s", string(b))
-
-	b, err = testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--target_pattern_file=targets.txt"))
-	require.NoErrorf(t, err, "output: %s", string(b))
-
-	b, err = testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test", "--config=pattern-file"))
-	require.NoErrorf(t, err, "output: %s", string(b))
-
-	// "test" should expand to "test //..." and the tests should fail.
-	b, err = testcli.CombinedOutput(testcli.BazelCommand(t, ws, "test"))
-	require.Errorf(t, err, "output: %s", string(b))
+			b, err := testcli.Output(testcli.BazelCommand(t, ws, tc.args...))
+			require.NoErrorf(t, err, "output: %s", string(b))
+			args := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+			require.Contains(t, args, tc.args[0])
+			if tc.wantDefaultTarget {
+				require.Contains(t, args, "//...")
+				require.NotContains(t, args, "--target_pattern_file=targets.txt")
+			} else {
+				// Configs are resolved for CLI decisions, but left intact for
+				// Bazel to expand. Either form must suppress the default target.
+				require.Contains(t, args, tc.args[1])
+				require.NotContains(t, args, "//...")
+			}
+		})
+	}
 }
 
 func TestQueryFile(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
+	ws := newFakeBazelWorkspace(t, `printf '%s\n' "$@"`)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
-		"BUILD": `load("@rules_shell//shell:sh_test.bzl", "sh_test")
-sh_test(name = "nop", srcs = ["nop.sh"])`,
-		"nop.sh":      "",
 		"targets.txt": "//:nop",
 	})
 
-	b, err := testcli.CombinedOutput(testcli.BazelCommand(t, ws, "query", "--query_file=targets.txt"))
+	b, err := testcli.Output(testcli.BazelCommand(t, ws, "query", "--query_file=targets.txt"))
 	require.NoErrorf(t, err, "output: %s", string(b))
+	args := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+	require.Contains(t, args, "query")
+	require.Contains(t, args, "--query_file=targets.txt")
+	require.NotContains(t, args, "//...")
 }
 
 func TestFixDiff(t *testing.T) {
@@ -606,7 +664,13 @@ startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
 }
 
 func TestBazelModDumpRepoMappingEmptyString(t *testing.T) {
-	ws := testcli.NewWorkspace(t)
+	ws := newFakeBazelWorkspace(t, `
+args=("$@")
+[[ ${#args[@]} -ge 3 ]]
+[[ "${args[${#args[@]}-1]}" == "" ]]
+[[ "${args[${#args[@]}-2]}" == "dump_repo_mapping" ]]
+printf '%s\n' 'empty repo mapping argument preserved'
+`)
 	testfs.WriteAllFileContents(t, ws, map[string]string{
 		// Add a nop plugin to make sure we properly handle args when there is
 		// at least one plugin in the pre-bazel plugin pipeline.
@@ -619,8 +683,7 @@ plugins:
 	cmd := testcli.Command(t, ws, "mod", "dump_repo_mapping", "")
 	b, err := testcli.Output(cmd)
 	require.NoErrorf(t, err, "output: %s", string(b))
-	// stdout should look like a JSON object
-	require.Regexp(t, `^\{.*\}$`, strings.TrimSpace(string(b)))
+	require.Equal(t, "empty repo mapping argument preserved\n", string(b))
 }
 
 func retryUntilSuccess(t *testing.T, f func() error) {
