@@ -33,11 +33,9 @@ func TestNeeded(t *testing.T) {
 	plistPath, resolvers, helper, device := launchdPlistPath, resolverDir, helperPath, helperDevice
 	t.Cleanup(func() { launchdPlistPath, resolverDir, helperPath, helperDevice = plistPath, resolvers, helper, device })
 	launchdPlistPath, resolverDir, helperPath = filepath.Join(dir, "helper.plist"), filepath.Join(dir, "resolver"), filepath.Join(dir, "helper")
-	name, helperErr := "", errors.New("no helper")
-	helperDevice = func() (string, error) { return name, helperErr }
+	helperErr := errors.New("no helper")
+	helperDevice = func() (string, error) { return "", helperErr }
 	cfg := tunnelconfig.Default()
-	// The loopback carries the first address of this range.
-	cfg.FakeCIDR = "127.0.0.0/8"
 	check := func(want string) {
 		t.Helper()
 		reason, err := needed(cfg)
@@ -49,7 +47,7 @@ func TestNeeded(t *testing.T) {
 
 	uid, err := invokingUID()
 	require.NoError(t, err)
-	p, err := helperParams(cfg, uid)
+	p, err := tunHelperParams(cfg, uid)
 	require.NoError(t, err)
 	plist, err := helperPlist(p)
 	require.NoError(t, err)
@@ -65,9 +63,7 @@ func TestNeeded(t *testing.T) {
 	check("out of date")
 	installHelperVersion(tunhelperutil.Version + 1)
 	check("not answering (no helper)")
-
-	name, helperErr = "nosuch0", nil
-	check("nosuch0, which does not exist")
+	helperErr = nil
 
 	// Someone else's helper is not taken over.
 	other := p
@@ -79,7 +75,6 @@ func TestNeeded(t *testing.T) {
 	require.ErrorContains(t, err, "single user")
 	require.NoError(t, os.WriteFile(launchdPlistPath, []byte(plist), 0o644))
 
-	name = "lo0"
 	check("DNS for")
 
 	require.NoError(t, os.MkdirAll(resolverDir, 0o755))

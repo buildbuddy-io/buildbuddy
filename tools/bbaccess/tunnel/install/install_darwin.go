@@ -52,7 +52,7 @@ var (
 	}
 )
 
-// helperAnswers checks whether the tun device helper is responding.
+// pingTunHelper checks whether the tun device helper is responding.
 func pingTunHelper() error {
 	_, err := helperDevice()
 	return err
@@ -227,7 +227,7 @@ func needed(cfg *tunnelconfig.Config) (string, error) {
 		return reason, nil
 	}
 	if err := pingTunHelper(); err != nil {
-		return fmt.Sprintf("the device helper is %s", err), nil
+		return fmt.Sprintf("the device helper is not answering (%s)", err), nil
 	}
 
 	host, port, err := splitHostPort(cfg.DNSListen)
