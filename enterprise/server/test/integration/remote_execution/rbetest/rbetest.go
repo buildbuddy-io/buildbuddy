@@ -134,6 +134,7 @@ type Env struct {
 	// Used to generate executor names when not specified.
 	executorNameCounter atomic.Uint64
 	envOpts             *enterprise_testenv.Options
+	commandTimeout      time.Duration
 
 	AppProxy     *testgrpc.Proxy
 	appProxyConn *grpc.ClientConn
@@ -223,22 +224,22 @@ func (el *envLike) GetCapabilitiesClient() repb.CapabilitiesClient {
 	return repb.NewCapabilitiesClient(el.r.appProxyConn)
 }
 
-func (r *Env) uploadInputRoot(ctx context.Context, rootDir string) *repb.Digest {
+func (r *Env) uploadInputRoot(t *testing.T, ctx context.Context, rootDir string) *repb.Digest {
 	digest, _, err := cachetools.UploadDirectoryToCAS(ctx, &envLike{r.testEnv, r}, "" /*=instanceName*/, repb.DigestFunction_SHA256, rootDir)
 	if err != nil {
-		assert.FailNow(r.t, err.Error())
+		assert.FailNow(t, err.Error())
 	}
 	return digest
 }
 
-func (r *Env) setupRootDirectoryWithTestCommandBinary(ctx context.Context) *repb.Digest {
+func (r *Env) setupRootDirectoryWithTestCommandBinary(t *testing.T, ctx context.Context) *repb.Digest {
 	rfp, err := runfiles.Rlocation(testCommandBinaryRunfilePath)
 	if err != nil {
-		assert.FailNow(r.t, "unable to find test binary in runfiles", err.Error())
+		assert.FailNow(t, "unable to find test binary in runfiles", err.Error())
 	}
-	rootDir := testfs.MakeTempDir(r.t)
-	testfs.CopyFile(r.t, rfp, rootDir, testCommandBinaryName)
-	return r.uploadInputRoot(ctx, rootDir)
+	rootDir := testfs.MakeTempDir(t)
+	testfs.CopyFile(t, rfp, rootDir, testCommandBinaryName)
+	return r.uploadInputRoot(t, ctx, rootDir)
 }
 
 // NewRBETestEnv sets up components required for testing Remote Build Execution.
@@ -251,9 +252,19 @@ func NewRBETestEnv(t *testing.T) *Env {
 type EnvOptions struct {
 	// ShardedRedis indicates whether to use a sharded redis setup.
 	ShardedRedis bool
+	// CommandTimeout limits how long Command.Wait and the Must* result helpers
+	// wait for a command result, including scheduling and container setup.
+	// This does not change the action's execution timeout (ExecuteOpts.ActionTimeout)
+	// or executor registration waits. If zero, defaults to 60 seconds.
+	CommandTimeout time.Duration
 }
 
 func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
+	commandTimeout := opts.CommandTimeout
+	if commandTimeout == 0 {
+		commandTimeout = defaultWaitTimeout
+	}
+	require.Greater(t, commandTimeout, time.Duration(0), "CommandTimeout must not be negative")
 	envOpts := &enterprise_testenv.Options{}
 	if opts.ShardedRedis {
 		ring := testredis.StartSharded(t, 0 /*use default shard count*/)
@@ -305,6 +316,7 @@ func NewRBETestEnvWithOptions(t *testing.T, opts *EnvOptions) *Env {
 		buildBuddyServers: make(map[*BuildBuddyServer]struct{}),
 		executors:         make(map[string]*Executor),
 		envOpts:           envOpts,
+		commandTimeout:    commandTimeout,
 		UserID1:           userID,
 		GroupID1:          groupID,
 		APIKey1:           key.Value,
@@ -1145,16 +1157,20 @@ func (r *Env) AddCacheProxyWithOptions(opts *CacheProxyOptions) *CacheProxy {
 }
 
 func (r *Env) DownloadOutputsToNewTempDir(res *CommandResult) string {
-	tmpDir := testfs.MakeTempDir(r.t)
-
-	env := enterprise_testenv.GetCustomTestEnv(r.t, r.envOpts)
-	env.SetByteStreamClient(r.GetByteStreamClient())
-	env.SetContentAddressableStorageClient(r.GetContentAddressableStorageClient())
-	env.SetCapabilitiesClient(r.testEnv.GetCapabilitiesClient())
-	// TODO: Does the context need the user ID if the CommandResult was produced
-	// by an authenticated user?
-	if err := r.rbeClient.DownloadActionOutputs(context.Background(), env, res.CommandResult, tmpDir); err != nil {
-		assert.FailNow(r.t, "failed to download action outputs", err.Error())
+	t := res.t
+	if t == nil {
+		t = r.t
+	}
+	tmpDir := testfs.MakeTempDir(t)
+	// Reuse the app's clients without constructing another test environment:
+	// environment setup changes global flags and is unsafe in parallel cases.
+	env := &envLike{r.testEnv, r}
+	ctx := context.Background()
+	if res.apiKey != "" {
+		ctx = r.WithAPIKey(ctx, res.apiKey)
+	}
+	if err := r.rbeClient.DownloadActionOutputs(ctx, env, res.CommandResult, tmpDir); err != nil {
+		assert.FailNow(t, "failed to download action outputs", err.Error())
 	}
 	return tmpDir
 }
@@ -1186,6 +1202,7 @@ func (r *Env) GetStdoutAndStderr(ctx context.Context, actionResult *repb.ActionR
 }
 
 type Command struct {
+	t   *testing.T
 	env *Env
 	*rbeclient.Command
 	rbeClient *rbeclient.Client
@@ -1193,7 +1210,9 @@ type Command struct {
 }
 
 type CommandResult struct {
+	t *testing.T
 	*rbeclient.CommandResult
+	apiKey string
 	Stdout string
 	Stderr string
 }
@@ -1202,12 +1221,13 @@ type CommandResult struct {
 // an execution error. It fails the test immediately if an error occurs that
 // is not a remote execution error.
 func (c *Command) getResult() *CommandResult {
-	timeout := time.NewTimer(defaultWaitTimeout)
+	timeout := time.NewTimer(c.env.commandTimeout)
+	defer timeout.Stop()
 	for {
 		select {
 		case result, ok := <-c.StatusChannel():
 			if !ok {
-				assert.FailNow(c.env.t, fmt.Sprintf("command %q did not send a result", c.Name))
+				assert.FailNow(c.t, fmt.Sprintf("command %q did not send a result", c.Name))
 			}
 			if result.Stage != repb.ExecutionStage_COMPLETED {
 				continue
@@ -1222,16 +1242,18 @@ func (c *Command) getResult() *CommandResult {
 				var err error
 				stdout, stderr, err = c.env.GetStdoutAndStderr(ctx, result.ActionResult, result.InstanceName)
 				if err != nil {
-					assert.FailNowf(c.env.t, "could not fetch outputs", err.Error())
+					assert.FailNowf(c.t, "could not fetch outputs", err.Error())
 				}
 			}
 			return &CommandResult{
+				t:             c.t,
 				CommandResult: result,
+				apiKey:        c.apiKey,
 				Stdout:        stdout,
 				Stderr:        stderr,
 			}
 		case <-timeout.C:
-			assert.FailNow(c.env.t, fmt.Sprintf("command %q did not finish within timeout", c.Name))
+			assert.FailNow(c.t, fmt.Sprintf("command %q did not finish within %s", c.Name, c.env.commandTimeout))
 			return nil
 		}
 	}
@@ -1242,7 +1264,7 @@ func (c *Command) getResult() *CommandResult {
 // then this will fail the test.
 func (c *Command) Wait() *CommandResult {
 	result := c.getResult()
-	require.NoError(c.env.t, result.Err)
+	require.NoError(c.t, result.Err)
 	return result
 }
 
@@ -1251,8 +1273,8 @@ func (c *Command) Wait() *CommandResult {
 // platform props, etc). This returns the raw error that was encountered.
 func (c *Command) MustFailToSchedule() error {
 	result := c.getResult()
-	require.Nil(c.env.t, result.ActionResult, "command unexpectedly return an action result")
-	require.Error(c.env.t, result.Err, "command should have failed to schedule")
+	require.Nil(c.t, result.ActionResult, "command unexpectedly return an action result")
+	require.Error(c.t, result.Err, "command should have failed to schedule")
 	return result.Err
 }
 
@@ -1262,9 +1284,9 @@ func (c *Command) MustFailToSchedule() error {
 func (c *Command) MustFailToStart() error {
 	result := c.getResult()
 	require.NotEmpty(
-		c.env.t, result.ActionResult.GetExecutionMetadata().GetWorker(),
+		c.t, result.ActionResult.GetExecutionMetadata().GetWorker(),
 		"exepcted execution_metadata.worker to help debugging")
-	require.Error(c.env.t, result.Err, "command should have failed to start")
+	require.Error(c.t, result.Err, "command should have failed to start")
 	return result.Err
 }
 
@@ -1278,9 +1300,9 @@ func (c *Command) MustFailToStart() error {
 func (c *Command) MustTerminateAbnormally() *CommandResult {
 	result := c.getResult()
 	require.NotNil(
-		c.env.t, result.ActionResult,
+		c.t, result.ActionResult,
 		"expected action result with debug outputs to help diagnose abnormal termination")
-	require.Error(c.env.t, result.Err, "expected abnormal termination")
+	require.Error(c.t, result.Err, "expected abnormal termination")
 	return result
 }
 
@@ -1289,7 +1311,7 @@ func (c *Command) MustTerminateAbnormally() *CommandResult {
 func (c *Command) MustBeCancelled() {
 	result := c.getResult()
 	require.True(
-		c.env.t, status.IsCanceledError(result.Err),
+		c.t, status.IsCanceledError(result.Err),
 		"expected Canceled error but got: %s", result.Err)
 }
 
@@ -1299,8 +1321,8 @@ func (c *Command) MustBeCancelled() {
 // retried by Bazel (currently just CI runner tasks).
 func (c *Command) MustFailAfterSchedulerRetry() error {
 	result := c.getResult()
-	require.Error(c.env.t, result.Err)
-	require.Contains(c.env.t, result.Err.Error(), "already attempted")
+	require.Error(c.t, result.Err)
+	require.Contains(c.t, result.Err.Error(), "already attempted")
 	return result.Err
 }
 
@@ -1310,7 +1332,7 @@ func (c *Command) WaitAccepted() string {
 		// Command accepted.
 		return opName
 	case <-time.After(defaultWaitTimeout):
-		assert.FailNow(c.env.t, fmt.Sprintf("command %q was not accepted within timeout", c.Name))
+		assert.FailNow(c.t, fmt.Sprintf("command %q was not accepted within timeout", c.Name))
 		return ""
 	}
 }
@@ -1318,7 +1340,7 @@ func (c *Command) WaitAccepted() string {
 func (c *Command) ReplaceWaitUsingWaitExecutionAPI() {
 	err := c.Command.ReplaceWaitUsingWaitExecutionAPI(context.Background())
 	if err != nil {
-		assert.FailNow(c.env.t, "could not switch from Execute to WaitExecution API", err.Error())
+		assert.FailNow(c.t, "could not switch from Execute to WaitExecution API", err.Error())
 	}
 }
 
@@ -1383,7 +1405,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 		ctx = testcontext.AttachInvocationIDToContext(r.t, ctx, opts.InvocationID)
 	}
 
-	inputRootDigest := r.setupRootDirectoryWithTestCommandBinary(ctx)
+	inputRootDigest := r.setupRootDirectoryWithTestCommandBinary(r.t, ctx)
 
 	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, 0, false)
 	if err != nil {
@@ -1397,7 +1419,7 @@ func (r *Env) ExecuteControlledCommand(name string, opts *ExecuteControlledOpts)
 	}
 	return &ControlledCommand{
 		t:          r.t,
-		Command:    &Command{r, cmd, r.rbeClient, "" /*=apiKey*/},
+		Command:    &Command{t: r.t, env: r, Command: cmd, rbeClient: r.rbeClient},
 		controller: r.testCommandController,
 	}
 }
@@ -1418,6 +1440,13 @@ func (r *Env) WithAPIKey(ctx context.Context, apiKey string) context.Context {
 }
 
 type ExecuteOpts struct {
+	// TestingT owns execution assertions and output-directory cleanup. This
+	// allows parallel subtests to share an Env without copying its mutable
+	// fixture state. If nil, the Env's original test is used.
+	TestingT *testing.T
+	// Context controls input uploads and the execution RPC. If nil,
+	// context.Background() is used, preserving existing fixture behavior.
+	Context context.Context
 	// InputRootDir is the path to the dir containing inputs for the command.
 	InputRootDir string
 	// APIKey is the API key to be used for remote execution.
@@ -1439,13 +1468,20 @@ type ExecuteOpts struct {
 }
 
 func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
-	ctx := context.Background()
+	t := opts.TestingT
+	if t == nil {
+		t = r.t
+	}
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if opts.APIKey != "" {
 		ctx = r.WithAPIKey(ctx, opts.APIKey)
 	}
 
 	if opts.InvocationID != "" {
-		ctx = testcontext.AttachInvocationIDToContext(r.t, ctx, opts.InvocationID)
+		ctx = testcontext.AttachInvocationIDToContext(t, ctx, opts.InvocationID)
 	}
 	for header, value := range opts.RemoteHeaders {
 		ctx = metadata.AppendToOutgoingContext(ctx, header, value)
@@ -1454,27 +1490,27 @@ func (r *Env) Execute(command *repb.Command, opts *ExecuteOpts) *Command {
 	var inputRootDigest *repb.Digest
 	if opts.SimulateMissingDigest {
 		// Generate a digest, but don't upload it.
-		rn, _ := testdigest.RandomCASResourceBuf(r.t, 1234)
+		rn, _ := testdigest.RandomCASResourceBuf(t, 1234)
 		inputRootDigest = rn.GetDigest()
 	} else {
 		if opts.InputRootDir != "" {
-			inputRootDigest = r.uploadInputRoot(ctx, opts.InputRootDir)
+			inputRootDigest = r.uploadInputRoot(t, ctx, opts.InputRootDir)
 		} else {
-			inputRootDigest = r.setupRootDirectoryWithTestCommandBinary(ctx)
+			inputRootDigest = r.setupRootDirectoryWithTestCommandBinary(t, ctx)
 		}
 	}
 
 	name := strings.Join(command.GetArguments(), " ")
 	cmd, err := r.rbeClient.PrepareCommand(ctx, defaultInstanceName, name, inputRootDigest, command, opts.ActionTimeout, opts.DoNotCacheAction)
 	if err != nil {
-		assert.FailNowf(r.t, fmt.Sprintf("unable to request action execution for command %q", name), err.Error())
+		assert.FailNowf(t, fmt.Sprintf("unable to request action execution for command %q", name), err.Error())
 	}
 
 	err = cmd.Start(ctx, &rbeclient.StartOpts{SkipCacheLookup: !opts.CheckCache})
 	if err != nil {
-		assert.FailNow(r.t, fmt.Sprintf("Could not execute command %q", name), err.Error())
+		assert.FailNow(t, fmt.Sprintf("Could not execute command %q", name), err.Error())
 	}
-	return &Command{r, cmd, r.rbeClient, opts.APIKey}
+	return &Command{t: t, env: r, Command: cmd, rbeClient: r.rbeClient, apiKey: opts.APIKey}
 }
 
 // RunFunc is the function signature for runner.Runner.Run().
