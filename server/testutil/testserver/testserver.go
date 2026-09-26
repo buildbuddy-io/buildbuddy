@@ -1,11 +1,14 @@
 package testserver
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -45,6 +48,11 @@ type Opts struct {
 	Args                  []string
 	HTTPPort              int
 	HealthCheckServerType string
+	// GracefulShutdownTimeout opts into SIGTERM followed by waiting for the
+	// server to exit during cleanup. If the deadline expires, cleanup kills
+	// and reaps the process and fails the test. Zero preserves the default
+	// immediate-kill cleanup. Supported on Unix only.
+	GracefulShutdownTimeout time.Duration
 }
 
 func Run(t *testing.T, opts *Opts) *Server {
@@ -54,15 +62,33 @@ func Run(t *testing.T, opts *Opts) *Server {
 	}
 
 	cmd := exec.Command(runfile(t, opts.BinaryRunfilePath), opts.Args...)
+	if opts.GracefulShutdownTimeout > 0 {
+		// A leaked child inheriting the output pipes should fail cleanup rather
+		// than leave cmd.Wait blocked forever after the server itself exits.
+		cmd.WaitDelay = 5 * time.Second
+	}
 	cmd.Stdout = log.Writer("[testserver] ")
 	cmd.Stderr = log.Writer("[testserver] ")
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	exited := make(chan struct{})
 	t.Cleanup(func() {
-		cmd.Process.Kill() // ignore errors
+		if opts.GracefulShutdownTimeout <= 0 {
+			cmd.Process.Kill() // ignore errors
+			return
+		}
+		if err := stopProcess(cmd, exited, opts.GracefulShutdownTimeout); err != nil {
+			t.Errorf("server cleanup: %s", err)
+		}
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		if server.err != nil {
+			t.Errorf("server exited with an error: %s", server.err)
+		}
 	})
 	go func() {
+		defer close(exited)
 		err := cmd.Wait()
 		server.mu.Lock()
 		defer server.mu.Unlock()
@@ -73,6 +99,32 @@ func Run(t *testing.T, opts *Opts) *Server {
 		t.Fatal(err)
 	}
 	return server
+}
+
+// stopProcess is called only after cmd.Start, with exited closed after cmd.Wait.
+// Waiting here ensures later test cleanups cannot delete files while the server
+// is still tearing down its runners, mounts, or child processes.
+func stopProcess(cmd *exec.Cmd, exited <-chan struct{}, timeout time.Duration) error {
+	select {
+	case <-exited:
+		return nil
+	default:
+	}
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		_ = cmd.Process.Kill()
+		<-exited
+		return fmt.Errorf("signal server for graceful shutdown: %w", err)
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-exited:
+		return nil
+	case <-timer.C:
+		_ = cmd.Process.Kill()
+		<-exited
+		return fmt.Errorf("server did not exit within %s of SIGTERM; killed and reaped it", timeout)
+	}
 }
 
 func isOK(resp *http.Response) (bool, error) {
