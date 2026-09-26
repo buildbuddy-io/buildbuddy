@@ -89,6 +89,8 @@ func (s *ExecutionSearchService) SearchExecutions(ctx context.Context, req *expb
 		return nil, err
 	}
 
+	// Keep merged invocation links in the selected examples, even though
+	// Drilldown aggregates exclude them to avoid counting reused work twice.
 	q := query_builder.NewQuery(`
 		SELECT invocation_uuid, ` + strings.Join(execution.ExecutionListingColumns(), ", ") + `
 		FROM "Executions"

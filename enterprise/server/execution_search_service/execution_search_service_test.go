@@ -20,6 +20,8 @@ import (
 	espb "github.com/buildbuddy-io/buildbuddy/proto/execution_stats"
 	ispb "github.com/buildbuddy-io/buildbuddy/proto/invocation_status"
 	repb "github.com/buildbuddy-io/buildbuddy/proto/remote_execution"
+	sfpb "github.com/buildbuddy-io/buildbuddy/proto/stat_filter"
+	sipb "github.com/buildbuddy-io/buildbuddy/proto/stored_invocation"
 	olaptables "github.com/buildbuddy-io/buildbuddy/server/util/clickhouse/schema"
 )
 
@@ -37,10 +39,12 @@ func TestSearchExecutions(t *testing.T) {
 	actionDigest1 := &repb.Digest{Hash: "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", SizeBytes: 142}
 	actionDigest2 := &repb.Digest{Hash: "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9", SizeBytes: 256}
 	actionDigest3 := &repb.Digest{Hash: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", SizeBytes: 0}
+	actionDigest4 := &repb.Digest{Hash: "b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c", SizeBytes: 1024}
 
 	exid1 := makeExecutionID(actionDigest1)
 	exid2 := makeExecutionID(actionDigest2)
 	exid3 := makeExecutionID(actionDigest3)
+	exid4 := makeExecutionID(actionDigest4)
 
 	testTimestampUsec := time.Now().UnixMicro()
 
@@ -111,6 +115,7 @@ func TestSearchExecutions(t *testing.T) {
 			ExitCode:                        0,
 			Success:                         true,
 			InvocationStatus:                int64(ispb.InvocationStatus_COMPLETE_INVOCATION_STATUS),
+			InvocationLinkType:              int8(sipb.StoredInvocationLink_NEW),
 			QueuedTimestampUsec:             testTimestampUsec + 1000000 - 5000000,
 			WorkerStartTimestampUsec:        testTimestampUsec + 1000000 - 4000000,
 			ExecutionStartTimestampUsec:     testTimestampUsec + 1000000 - 3000000,
@@ -133,8 +138,18 @@ func TestSearchExecutions(t *testing.T) {
 			CreatedAtUsec:    testTimestampUsec + 2000,
 			UpdatedAtUsec:    testTimestampUsec + 2000,
 		},
+		{
+			GroupID:            "GR1",
+			InvocationUUID:     strings.ReplaceAll(uuid.New(), "-", ""),
+			User:               "ci-runner",
+			RepoURL:            "https://github.com/buildbuddy-io/buildbuddy",
+			InvocationLinkType: int8(sipb.StoredInvocationLink_MERGED),
+			PeakMemoryBytes:    1024 * 1024 * 1024,
+			CreatedAtUsec:      testTimestampUsec - 1000,
+			UpdatedAtUsec:      testTimestampUsec - 1000,
+		},
 	}
-	executionIDs := []string{exid1, exid2, exid3}
+	executionIDs := []string{exid1, exid2, exid3, exid4}
 	for i, execution := range executions {
 		require.NoError(t, clickhouse.FillExecutionResourceFieldsFromExecutionID(execution, executionIDs[i]))
 		err := env.GetOLAPDBHandle().GORM(ctx, "test_create_execution").Create(execution).Error
@@ -148,7 +163,7 @@ func TestSearchExecutions(t *testing.T) {
 
 	rsp, err := service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{})
 	require.NoError(t, err)
-	assert.Len(t, rsp.Execution, 2, "should return 2 executions for GR1")
+	assert.Len(t, rsp.Execution, 3, "should return all invocation links for GR1")
 
 	gotExecutionIDs := make([]string, len(rsp.Execution))
 	for i, ex := range rsp.Execution {
@@ -157,6 +172,19 @@ func TestSearchExecutions(t *testing.T) {
 	assert.Contains(t, gotExecutionIDs, exid1)
 	assert.Contains(t, gotExecutionIDs, exid2)
 	assert.NotContains(t, gotExecutionIDs, exid3, "should not contain execution from GR2")
+	assert.Contains(t, gotExecutionIDs, exid4, "should retain merged examples even without an original link")
+
+	pageToken := ""
+	for _, wantID := range []string{exid4, exid1, exid2} {
+		page, err := service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{
+			Count: 1, PageToken: pageToken,
+		})
+		require.NoError(t, err)
+		require.Len(t, page.Execution, 1)
+		assert.Equal(t, wantID, page.Execution[0].Execution.ExecutionId)
+		require.NotEmpty(t, page.NextPageToken)
+		pageToken = page.NextPageToken
+	}
 
 	for _, ex := range rsp.Execution {
 		assert.NotEmpty(t, ex.InvocationMetadata.Id)
@@ -170,8 +198,9 @@ func TestSearchExecutions(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Len(t, rsp.Execution, 1)
-	assert.Equal(t, exid1, rsp.Execution[0].Execution.ExecutionId)
+	assert.Len(t, rsp.Execution, 2)
+	assert.Equal(t, exid4, rsp.Execution[0].Execution.ExecutionId)
+	assert.Equal(t, exid1, rsp.Execution[1].Execution.ExecutionId)
 
 	rsp, err = service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{
 		Query: &espb.ExecutionQuery{
@@ -197,7 +226,19 @@ func TestSearchExecutions(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Len(t, rsp.Execution, 2)
+	assert.Len(t, rsp.Execution, 3)
+
+	// A metric selection containing only a merged link must still return it.
+	peakMemory := sfpb.ExecutionMetricType_PEAK_MEMORY_EXECUTION_METRIC
+	selectionMin := int64(1024 * 1024 * 1024)
+	rsp, err = service.SearchExecutions(testCtx, &espb.SearchExecutionRequest{
+		Query: &espb.ExecutionQuery{
+			Filter: []*sfpb.StatFilter{{Metric: &sfpb.Metric{Execution: &peakMemory}, Min: &selectionMin}},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, rsp.Execution, 1)
+	assert.Equal(t, exid4, rsp.Execution[0].Execution.ExecutionId)
 }
 
 func TestSearchExecutions_SkipsEmptyInvocationUUID(t *testing.T) {
