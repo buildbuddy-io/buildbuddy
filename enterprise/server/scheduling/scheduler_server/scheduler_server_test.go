@@ -31,6 +31,7 @@ import (
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testenv"
 	"github.com/buildbuddy-io/buildbuddy/server/testutil/testfs"
 	"github.com/buildbuddy-io/buildbuddy/server/util/claims"
+	"github.com/buildbuddy-io/buildbuddy/server/util/grpc_server"
 	"github.com/buildbuddy-io/buildbuddy/server/util/log"
 	"github.com/buildbuddy-io/buildbuddy/server/util/platform"
 	"github.com/buildbuddy-io/buildbuddy/server/util/proto"
@@ -42,6 +43,8 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -125,7 +128,11 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	err = redis_execution_collector.Register(env)
 	require.NoError(t, err)
 
-	server, runFunc, lis := testenv.RegisterLocalGRPCServer(t, env)
+	// Make Stop wait for RPC handlers so that no new background work can
+	// start once we begin waiting for it during cleanup.
+	lis := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer(append(grpc_server.CommonGRPCServerOptions(env), grpc.WaitForHandlers(true))...)
+	env.SetGRPCServer(server)
 	testcache.Setup(t, env, lis)
 
 	err = execution_server.Register(env)
@@ -134,9 +141,19 @@ func getEnv(t *testing.T, opts *schedulerOpts, user string) (*testenv.TestEnv, c
 	s, err := NewSchedulerServerWithOptions(env, &opts.options)
 	require.NoError(t, err)
 	env.SetSchedulerService(s)
+	// Stop the server and wait for any goroutines it left behind, so that they
+	// don't touch shared state (e.g. flags) while later tests are running.
+	t.Cleanup(func() {
+		server.Stop()
+		s.waitForBackgroundWork()
+	})
 
 	scpb.RegisterSchedulerServer(server, env.GetSchedulerService())
-	go runFunc()
+	go func() {
+		if err := server.Serve(lis); err != nil && err != grpc.ErrServerStopped {
+			log.Fatal(err.Error())
+		}
+	}()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -1782,9 +1799,10 @@ func TestSampleUnclaimedTasks_Concurrent(t *testing.T) {
 		{name: "cache disabled", cacheTTL: 0},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			flags.Set(t, "remote_execution.unclaimed_tasks_cache_ttl", testCase.cacheTTL)
 			rdb := testredis.Start(t).Client()
 			t.Cleanup(func() { rdb.Close() })
-			np := &nodePool{rdb: rdb, clock: clockwork.NewFakeClock(), unclaimedTasksCacheTTL: testCase.cacheTTL}
+			np := &nodePool{rdb: rdb, clock: clockwork.NewFakeClock()}
 			tasks := []string{"a", "b", "c", "d", "e"}
 			for _, task := range tasks {
 				require.NoError(t, np.AddUnclaimedTask(t.Context(), task))

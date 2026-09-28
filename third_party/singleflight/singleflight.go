@@ -43,6 +43,8 @@ func (p *panicError) Unwrap() error {
 type Group[K comparable, V any] struct {
 	calls map[K]*call[V] // lazily initialized
 	mu    sync.Mutex     // protects calls
+
+	running sync.WaitGroup // tracks in-flight fn executions
 }
 
 // Do executes and returns the results of the given function, making sure that
@@ -82,9 +84,11 @@ func (g *Group[K, V]) Do(ctx context.Context, key K, fn func(ctx context.Context
 		counter: 1,
 	}
 	g.calls[key] = c
+	g.running.Add(1)
 	g.mu.Unlock()
 
 	go func() {
+		defer g.running.Done()
 		defer func() {
 			if v := recover(); v != nil {
 				c.panicErr = &panicError{value: v, stack: debug.Stack()}
@@ -123,6 +127,13 @@ func (g *Group[K, V]) wait(ctx context.Context, key K, c *call[V]) (v V, shared 
 	}
 
 	return v, shared, err
+}
+
+// Wait blocks until every fn passed to Do has returned, including ones that
+// are still running after all of their callers stopped waiting. Do must not be
+// called concurrently with Wait.
+func (g *Group[K, V]) Wait() {
+	g.running.Wait()
 }
 
 // Forget tells the singleflight to forget about a key. Future calls

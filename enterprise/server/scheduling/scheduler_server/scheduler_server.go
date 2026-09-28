@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"math/rand"
 	"regexp"
 	"slices"
@@ -940,9 +941,6 @@ type nodePool struct {
 	connectedExecutors []*executionNode
 
 	unclaimedTasksSingleFlight singleflight.Group[string, []string]
-	// Snapshot of the unclaimed_tasks_cache_ttl flag. Singleflight callbacks
-	// can outlive their callers, so they shouldn't read the flag directly.
-	unclaimedTasksCacheTTL time.Duration
 
 	unclaimedTasksMu     sync.Mutex
 	unclaimedTasks       []string
@@ -954,8 +952,6 @@ func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
 		key:   key,
 		rdb:   env.GetRemoteExecutionRedisClient(),
 		clock: env.GetClock(),
-
-		unclaimedTasksCacheTTL: *unclaimedTasksCacheTTL,
 	}
 	return np
 }
@@ -1186,14 +1182,14 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if np.unclaimedTasksCacheTTL <= 0 {
+		if *unclaimedTasksCacheTTL <= 0 {
 			return unclaimed, nil
 		}
 
 		np.unclaimedTasksMu.Lock()
 		defer np.unclaimedTasksMu.Unlock()
 		np.unclaimedTasks = unclaimed
-		np.unclaimedTasksExpiry = np.clock.Now().Add(np.unclaimedTasksCacheTTL)
+		np.unclaimedTasksExpiry = np.clock.Now().Add(*unclaimedTasksCacheTTL)
 
 		return unclaimed, nil
 	})
@@ -1337,6 +1333,9 @@ type SchedulerServer struct {
 
 	mu    sync.RWMutex
 	pools map[nodePoolKey]*nodePool
+
+	// Tracks goroutines that can outlive the RPC that started them.
+	backgroundWork sync.WaitGroup
 
 	leaseDuration, leaseGracePeriod time.Duration
 
@@ -1625,11 +1624,11 @@ func (s *SchedulerServer) AddConnectedExecutor(ctx context.Context, handle *exec
 	log.CtxInfof(ctx, "Scheduler: registered executor %q (host ID %q, host %q, version %q) for pool %+v", node.GetExecutorId(), node.GetExecutorHostId(), node.GetHost(), node.GetVersion(), poolKey)
 	metrics.RemoteExecutionExecutorRegistrationCount.With(prometheus.Labels{metrics.VersionLabel: node.GetVersion()}).Inc()
 
-	go func() {
+	s.backgroundWork.Go(func() {
 		if _, err := s.assignWorkToNode(ctx, handle, poolKey); err != nil {
 			log.CtxWarningf(ctx, "Failed to assign work to new node: %s", err.Error())
 		}
-	}()
+	})
 	return nil
 }
 
@@ -1936,6 +1935,20 @@ func (s *SchedulerServer) getPool(key nodePoolKey) (*nodePool, bool) {
 	return nodePool, ok
 }
 
+// waitForBackgroundWork waits for goroutines that can outlive the RPC that
+// started them, such as initial work assignment and unclaimed task lookups. The
+// gRPC server must already be stopped, with handlers drained, so that no new
+// work is started.
+func (s *SchedulerServer) waitForBackgroundWork() {
+	s.backgroundWork.Wait()
+	s.mu.RLock()
+	pools := slices.Collect(maps.Values(s.pools))
+	s.mu.RUnlock()
+	for _, np := range pools {
+		np.unclaimedTasksSingleFlight.Wait()
+	}
+}
+
 func (s *SchedulerServer) getOrCreatePool(key nodePoolKey) *nodePool {
 	s.mu.RLock()
 	nodePool, ok := s.pools[key]
@@ -2191,6 +2204,10 @@ func (s *SchedulerServer) LeaseTask(stream scpb.Scheduler_LeaseTaskServer) error
 		case msg := <-msgs:
 			req = msg.req
 			err = msg.err
+		case <-ctx.Done():
+			// The recv goroutine may exit without forwarding the error once
+			// the stream is cancelled, so check for cancellation here too.
+			err = ctx.Err()
 		case <-livenessTicker.Chan():
 			if s.clock.Since(lastCheckin) > (s.leaseDuration + s.leaseGracePeriod) {
 				err = status.DeadlineExceededErrorf("lease was not renewed by executor and expired (last renewal: %s)", lastCheckin)
