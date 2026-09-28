@@ -218,6 +218,9 @@ message FrontendConfig {
 
   // Whether the current bill can be viewed on the usage page.
   bool usage_bill_enabled = 72;
+  
+  // Whether per-target execution stats are enabled.
+  bool single_target_stats_enabled = 73;
 }
 
 message Region {

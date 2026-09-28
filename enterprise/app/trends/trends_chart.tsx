@@ -45,7 +45,7 @@ export interface ClickCoordinateInfo {
 export interface ChartDataSeries {
   name: string;
   formatHoverValue?: (datum: number) => string | JSX.Element;
-  extractValue: (datum: number) => number | null;
+  extractValue: (datum: number) => any;
   onClick?: (datum: number, e: MouseEvent<SVGElement>, s: ClickCoordinateInfo) => void;
   type: SeriesType;
   color: ChartColor | string;
