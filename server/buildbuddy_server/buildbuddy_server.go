@@ -110,6 +110,10 @@ const (
 
 var (
 	WriteEventLogTimeout = 1 * time.Hour
+
+	// API Key visibilities that may be returned to client. Exists to prevent
+	// accidentally returning any new visibilities to the client.
+	returnableAPIKeyVisibilities = int32(akpb.Visibility_VISIBLE_TO_DEVELOPERS | akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
 )
 
 // samlMetadataHTTPClient fetches the customer-provided SAML IdP metadata URL
@@ -1005,6 +1009,17 @@ func (s *BuildBuddyServer) UpdateUserListMembership(ctx context.Context, request
 	return &ulpb.UpdateUserListMembershipResponse{}, nil
 }
 
+func apiKeyVisibilities(mask int32) []akpb.Visibility {
+	mask &= returnableAPIKeyVisibilities
+	var visibilities []akpb.Visibility
+	for bit := int32(1); bit <= mask; bit <<= 1 {
+		if mask&bit != 0 {
+			visibilities = append(visibilities, akpb.Visibility(bit))
+		}
+	}
+	return visibilities
+}
+
 func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysRequest) (*akpb.GetApiKeysResponse, error) {
 	authDB := s.env.GetAuthDB()
 	if authDB == nil {
@@ -1029,6 +1044,7 @@ func (s *BuildBuddyServer) GetApiKeys(ctx context.Context, req *akpb.GetApiKeysR
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 			CreationMetadata:    creationMetadata[k.APIKeyID],
 		})
 	}
@@ -1122,6 +1138,7 @@ func (s *BuildBuddyServer) GetApiKey(ctx context.Context, req *akpb.GetApiKeyReq
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(key.Visibility),
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1167,6 +1184,7 @@ func (s *BuildBuddyServer) CreateApiKey(ctx context.Context, req *akpb.CreateApi
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 		},
 	}, nil
 }
@@ -1257,6 +1275,7 @@ func (s *BuildBuddyServer) CreateImpersonationApiKey(ctx context.Context, req *a
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 			ExpiryUsec:          k.ExpiryUsec,
 		},
 	}, nil
@@ -1293,6 +1312,7 @@ func (s *BuildBuddyServer) GetUserApiKeys(ctx context.Context, req *akpb.GetApiK
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 		})
 	}
 	return rsp, nil
@@ -1326,6 +1346,7 @@ func (s *BuildBuddyServer) GetUserApiKey(ctx context.Context, req *akpb.GetApiKe
 			Label:               key.Label,
 			Capability:          capabilities.FromInt(key.Capabilities),
 			VisibleToDevelopers: key.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(key.Visibility),
 		},
 	}
 	if req.GetIncludeCertificate() {
@@ -1382,6 +1403,7 @@ func (s *BuildBuddyServer) CreateUserApiKey(ctx context.Context, req *akpb.Creat
 			Label:               k.Label,
 			Capability:          capabilities.FromInt(k.Capabilities),
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 		},
 	}, nil
 
@@ -1509,6 +1531,7 @@ func toProtoAPIKeys(tableKeys []*tables.APIKey) []*akpb.ApiKey {
 			Value:               k.Value,
 			Label:               k.Label,
 			VisibleToDevelopers: k.VisibleToDevelopers,
+			Visibility:          apiKeyVisibilities(k.Visibility),
 			UserOwned:           k.Perms&perms.OWNER_READ > 0,
 		}
 	}

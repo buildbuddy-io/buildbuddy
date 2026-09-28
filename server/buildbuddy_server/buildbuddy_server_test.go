@@ -547,6 +547,50 @@ func TestGetApiKeys_CreationMetadata(t *testing.T) {
 	})
 }
 
+func TestGetApiKeys_Visibility(t *testing.T) {
+	const (
+		developers = int32(akpb.Visibility_VISIBLE_TO_DEVELOPERS)
+		admins     = int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
+		// A bit with no corresponding Visibility value.
+		unknown = int32(1 << 20)
+	)
+	te := testenv.GetTestEnv(t)
+	auth := testauth.NewTestAuthenticator(t, map[string]interfaces.UserInfo{
+		"DEV": testUserWithCapabilities("DEV", group1, cappb.Capability_CACHE_WRITE),
+	})
+	te.SetAuthenticator(auth)
+	te.SetAuthDB(&fakeAuthDB{keys: []*tables.APIKey{
+		{APIKeyID: "none", Visibility: 0},
+		{APIKeyID: "developers", Visibility: developers},
+		{APIKeyID: "admins", Visibility: admins},
+		{APIKeyID: "both", Visibility: developers | admins},
+		{APIKeyID: "unknown", Visibility: unknown},
+		{APIKeyID: "both-and-unknown", Visibility: developers | admins | unknown},
+	}})
+	server, err := buildbuddy_server.NewBuildBuddyServer(te, nil)
+	require.NoError(t, err)
+
+	ctx, err := auth.WithAuthenticatedUser(context.Background(), "DEV")
+	require.NoError(t, err)
+	rsp, err := server.GetApiKeys(ctx, &akpb.GetApiKeysRequest{
+		RequestContext: testauth.RequestContext("DEV", group1),
+	})
+	require.NoError(t, err)
+	got := map[string][]akpb.Visibility{}
+	for _, k := range rsp.GetApiKey() {
+		got[k.GetId()] = k.GetVisibility()
+	}
+	require.Equal(t, map[string][]akpb.Visibility{
+		"none":       nil,
+		"developers": {akpb.Visibility_VISIBLE_TO_DEVELOPERS},
+		"admins":     {akpb.Visibility_VISIBLE_TO_GROUP_ADMINS},
+		"both":       {akpb.Visibility_VISIBLE_TO_DEVELOPERS, akpb.Visibility_VISIBLE_TO_GROUP_ADMINS},
+		// Bits that aren't explicitly returnable are never returned.
+		"unknown":          nil,
+		"both-and-unknown": {akpb.Visibility_VISIBLE_TO_DEVELOPERS, akpb.Visibility_VISIBLE_TO_GROUP_ADMINS},
+	}, got)
+}
+
 func TestGetTree(t *testing.T) {
 	te := testenv.GetTestEnv(t)
 	fakeCAS := &fakeCASServer{
