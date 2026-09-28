@@ -24,6 +24,30 @@ def ts_library(name, srcs, tsconfig = "//:tsconfig", **kwargs):
         **kwargs
     )
 
+def ts_embed(name, src, out, **kwargs):
+    """Embeds a text file as a TypeScript default string export.
+
+    Args:
+      name: Name of the genrule target.
+      src: Label of the file to embed.
+      out: Generated TypeScript file.
+      **kwargs: Additional arguments passed to the genrule.
+    """
+    native.genrule(
+        name = name,
+        srcs = [src],
+        outs = [out],
+        # Escape template literal syntax so shell expressions remain literal text.
+        cmd_bash = r"""
+            {
+                echo -n 'export default `'
+                perl -pe 's/([\\`\$$])/\\$$1/g' "$(location %s)"
+                echo '`;'
+            } > "$@"
+        """ % src,
+        **kwargs
+    )
+
 def ts_jasmine_node_test(name, srcs, deps = [], size = "small", **kwargs):
     """Defines a Jasmine test for a single TypeScript source file.
 

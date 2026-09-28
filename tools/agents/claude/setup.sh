@@ -8,7 +8,11 @@
 set -euo pipefail
 
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  echo "Error: ANTHROPIC_API_KEY is not set." >&2
+  if [[ -n "${BUILDBUDDY_CI_RUNNER_ROOT_DIR:-}" ]]; then
+    echo "Error: Add ANTHROPIC_API_KEY as a BuildBuddy secret to use Claude." >&2
+  else
+    echo "Error: ANTHROPIC_API_KEY is not set." >&2
+  fi
   exit 1
 fi
 
