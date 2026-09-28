@@ -1,4 +1,4 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
@@ -28,5 +28,15 @@ go_library(
         "@org_golang_google_genproto_googleapis_bytestream//:bytestream",
         "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//encoding/protojson",
+    ],
+)
+
+go_test(
+    name = "download_test",
+    srcs = ["download_test.go"],
+    embed = [":download"],
+    deps = [
+        "//proto/api/v1:api_v1_go_proto",
+        "@com_github_stretchr_testify//require",
     ],
 )

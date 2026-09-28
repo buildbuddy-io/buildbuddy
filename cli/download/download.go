@@ -45,8 +45,8 @@ var (
 	apiKey          = flags.String("api_key", "", "Optionally override the API key with this value")
 
 	usage = `
-usage: bb ` + flags.Name() + ` {digest}/{size}
-       bb ` + flags.Name() + ` artifacts {invocation-id-or-url} [--output_directory=DIR]
+usage: bb ` + flags.Name() + ` <digest>/<size>
+       bb ` + flags.Name() + ` artifacts <invocation-id-or-url> [--output_directory=DIR]
 
 Downloads the blob identified by digest from the CAS and outputs its contents.
 
@@ -142,23 +142,21 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 		return nil
 	}
 
-	paths := make([]string, len(artifacts))
-	seen := make(map[string]struct{}, len(artifacts))
-	var patchPaths []string
-	for i, artifact := range artifacts {
-		name := filepath.Clean(filepath.FromSlash(artifact.GetName()))
-		if !filepath.IsLocal(name) {
-			return fmt.Errorf("artifact has invalid path %q", artifact.GetName())
-		}
-		if _, ok := seen[name]; ok {
-			return fmt.Errorf("multiple artifacts have path %q", name)
-		}
-		seen[name] = struct{}{}
-		paths[i] = filepath.Join(outputDir, name)
+	paths, skipped := artifactOutputPaths(artifacts, outputDir)
+	if skipped > 0 {
+		log.Warnf("Skipped %d artifacts due to invalid paths or duplicates", skipped)
 	}
 
+	var patchPaths []string
 	for i, artifact := range artifacts {
 		path := paths[i]
+		if path == "" {
+			continue
+		}
+		if strings.HasPrefix(artifact.GetUri(), "file://") {
+			log.Debugf("Skipping local artifact %q (%s)", artifact.GetName(), artifact.GetUri())
+			continue
+		}
 		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 			return fmt.Errorf("create artifact directory: %w", err)
 		}
@@ -166,11 +164,12 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 		if err != nil {
 			return fmt.Errorf("create artifact %q: %w", path, err)
 		}
+		var getFileErr error
 		if artifact.GetUri() == "" {
 			_, err = f.Write(artifact.GetContents())
 		} else {
 			stream, streamErr := client.GetFile(ctx, &apipb.GetFileRequest{Uri: artifact.GetUri()})
-			err = streamErr
+			getFileErr = streamErr
 			if streamErr == nil {
 				for {
 					chunk, recvErr := stream.Recv()
@@ -178,7 +177,7 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 						break
 					}
 					if recvErr != nil {
-						err = recvErr
+						getFileErr = recvErr
 						break
 					}
 					if _, err = f.Write(chunk.GetData()); err != nil {
@@ -194,6 +193,13 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 		if closeErr != nil {
 			return fmt.Errorf("close artifact %q: %w", artifact.GetName(), closeErr)
 		}
+		if getFileErr != nil {
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Warnf("Failed to remove partial artifact %q: %s", artifact.GetName(), err)
+			}
+			log.Warnf("Skipping artifact %q after GetFile failed: %s", artifact.GetName(), getFileErr)
+			continue
+		}
 		log.Printf("Downloaded %s", path)
 		if strings.HasSuffix(strings.ToLower(path), ".patch") {
 			patchPaths = append(patchPaths, path)
@@ -203,6 +209,28 @@ func downloadArtifacts(ctx context.Context, client apipb.ApiServiceClient, invoc
 		log.Printf("To apply the downloaded patch artifacts, run: git apply %s", shlex.Quote(patchPaths...))
 	}
 	return nil
+}
+
+func artifactOutputPaths(artifacts []*apipb.File, outputDir string) ([]string, int) {
+	paths := make([]string, len(artifacts))
+	seen := make(map[string]struct{}, len(artifacts))
+	skipped := 0
+	for i, artifact := range artifacts {
+		name := filepath.Clean(filepath.FromSlash(artifact.GetName()))
+		if name == "." || !filepath.IsLocal(name) {
+			log.Warnf("Skipping artifact with invalid path %q", name)
+			skipped++
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			log.Warnf("Skipping duplicate artifact path %q (URI %q)", name, artifact.GetUri())
+			skipped++
+			continue
+		}
+		seen[name] = struct{}{}
+		paths[i] = filepath.Join(outputDir, name)
+	}
+	return paths, skipped
 }
 
 func HandleDownload(args []string) (int, error) {
