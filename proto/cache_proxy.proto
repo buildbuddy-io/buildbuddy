@@ -101,20 +101,34 @@ message GetCacheProxiesRequest {
   context.RequestContext request_context = 1;
 }
 
+message CacheProxy {
+  CacheProxyNode node = 1;
+
+  // Last time this cache proxy checked in with the server.
+  google.protobuf.Timestamp last_check_in_time = 2;
+
+  // Statistics about this cache proxy's performance.
+  Statistics statistics = 3;
+}
+
 message GetCacheProxiesResponse {
   context.ResponseContext response_context = 1;
 
   repeated CacheProxy cache_proxy = 2;
 
-  message CacheProxy {
-    CacheProxyNode node = 1;
+  upgrade.Prompt upgrade_prompt = 3;
+}
 
-    // Last time this cache proxy checked in with the server.
-    google.protobuf.Timestamp last_check_in_time = 2;
+message GetCacheProxyRequest {
+  context.RequestContext request_context = 1;
 
-    // Statistics about this cache proxy's performance.
-    Statistics statistics = 3;
-  }
+  string proxy_id = 2;
+}
+
+message GetCacheProxyResponse {
+  context.ResponseContext response_context = 1;
+
+  CacheProxy cache_proxy = 2;
 
   upgrade.Prompt upgrade_prompt = 3;
 }

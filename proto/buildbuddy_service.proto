@@ -154,6 +154,8 @@ service BuildBuddyService {
   // Cache Proxy API
   rpc GetCacheProxies(cache_proxy.GetCacheProxiesRequest)
       returns (cache_proxy.GetCacheProxiesResponse);
+  rpc GetCacheProxy(cache_proxy.GetCacheProxyRequest)
+      returns (cache_proxy.GetCacheProxyResponse);
 
   // Targets API
   rpc GetTarget(target.GetTargetRequest) returns (target.GetTargetResponse);

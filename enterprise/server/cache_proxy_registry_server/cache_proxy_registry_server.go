@@ -296,7 +296,7 @@ func (s *CacheProxyRegistryServer) getNewestVersion(ctx context.Context) *semver
 // if any of the given proxies meets one of the configured upgrade triggers
 // (see the --cache_proxy.upgrade_prompt_* flags), and nil otherwise. The
 // urgency reflects the most-outdated proxy in the list.
-func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.GetCacheProxiesResponse_CacheProxy) *uppb.Prompt {
+func (s *CacheProxyRegistryServer) upgradePrompt(ctx context.Context, proxies []*cppb.CacheProxy) *uppb.Prompt {
 	if s.detector == nil || len(proxies) == 0 {
 		return nil
 	}
@@ -335,7 +335,7 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		return nil, err
 	}
 
-	proxies := make([]*cppb.GetCacheProxiesResponse_CacheProxy, 0, len(entries))
+	proxies := make([]*cppb.CacheProxy, 0, len(entries))
 	for id, data := range entries {
 		reg := &cppb.RegisteredCacheProxy{}
 		if err := proto.Unmarshal([]byte(data), reg); err != nil {
@@ -355,14 +355,14 @@ func (s *CacheProxyRegistryServer) GetCacheProxies(ctx context.Context, req *cpp
 		if err := perms.AuthorizeRead(user, reg.GetAcl()); err != nil {
 			continue
 		}
-		proxies = append(proxies, &cppb.GetCacheProxiesResponse_CacheProxy{
+		proxies = append(proxies, &cppb.CacheProxy{
 			Node:            reg.GetRegistration(),
 			LastCheckInTime: reg.GetLastPingTime(),
 			Statistics:      reg.GetStatistics(),
 		})
 	}
 
-	slices.SortFunc(proxies, func(a, b *cppb.GetCacheProxiesResponse_CacheProxy) int {
+	slices.SortFunc(proxies, func(a, b *cppb.CacheProxy) int {
 		if c := strings.Compare(a.GetNode().GetHost(), b.GetNode().GetHost()); c != 0 {
 			return c
 		}

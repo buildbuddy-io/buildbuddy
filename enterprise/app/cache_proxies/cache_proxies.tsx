@@ -152,7 +152,7 @@ interface Props {
 
 type RegionalCacheProxy = {
   region: string;
-  proxy: cache_proxy.GetCacheProxiesResponse.ICacheProxy;
+  proxy: cache_proxy.ICacheProxy;
   node: cache_proxy.CacheProxyNode;
 };
 
