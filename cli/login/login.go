@@ -63,6 +63,15 @@ The exit code indicates the result of the check:
 	1: credentials are invalid
 	2: error validating credentials
 `
+
+	logoutFlags = flag.NewFlagSet("logout", flag.ContinueOnError)
+	LogoutFlags = logoutFlags
+
+	logoutUsage = `
+bb ` + logoutFlags.Name() + `
+
+Removes the API key that bb login saved to .git/config.
+`
 )
 
 func authenticate(apiKey string) error {
@@ -230,6 +239,14 @@ func HandleLogin(args []string) (exitCode int, err error) {
 }
 
 func HandleLogout(args []string) (exitCode int, err error) {
+	if err := arg.ParseFlagSet(logoutFlags, args); err != nil {
+		if err == flag.ErrHelp {
+			log.Print(logoutUsage)
+			return 1, nil
+		}
+		return -1, err
+	}
+
 	if err := storage.WriteRepoConfig(apiKeyRepoSetting, ""); err != nil {
 		return -1, fmt.Errorf("failed to clear api key from local .git/config: %s", err)
 	}

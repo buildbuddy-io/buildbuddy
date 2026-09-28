@@ -110,6 +110,32 @@ func TestAPIKeyDiscovery(t *testing.T) {
 	}
 }
 
+func TestHandleLogoutHelpDoesNotLogOut(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+
+	repoRoot, _ := testgit.MakeTempRepo(t, map[string]string{
+		"README.md": "# test repo",
+	})
+	previousRepoRootPath := storage.RepoRootPath
+	storage.RepoRootPath = func() (string, error) {
+		return repoRoot, nil
+	}
+	t.Cleanup(func() {
+		storage.RepoRootPath = previousRepoRootPath
+	})
+	require.NoError(t, storage.WriteRepoConfig(apiKeyRepoSetting, "repo-api-key"))
+
+	exitCode, err := HandleLogout([]string{"--help"})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, exitCode)
+	apiKey, err := storage.ReadRepoConfig(apiKeyRepoSetting)
+	require.NoError(t, err)
+	require.Equal(t, "repo-api-key", apiKey)
+}
+
 func setNonTTYStdin(t *testing.T) {
 	t.Helper()
 
