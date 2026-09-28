@@ -33,6 +33,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	akpb "github.com/buildbuddy-io/buildbuddy/proto/api_key"
 	cappb "github.com/buildbuddy-io/buildbuddy/proto/capability"
 	grpb "github.com/buildbuddy-io/buildbuddy/proto/group"
 	uidpb "github.com/buildbuddy-io/buildbuddy/proto/user_id"
@@ -754,6 +755,7 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 	if u, err := d.env.GetAuthenticator().AuthenticatedUser(ctx); err == nil {
 		ak.CreatedByUserID = u.GetUserID()
 	}
+	ak.Visibility = apiKeyVisibility(ak.VisibleToDevelopers, ak.Impersonation)
 
 	err = db.NewQuery(ctx, "authdb_create_api_key").Raw(`
 		INSERT INTO "APIKeys" (
@@ -767,12 +769,13 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 			nonce,
 			label,
 			visible_to_developers,
+			visibility,
 			impersonation,
 			expiry_usec,
 			created_at_usec,
 			updated_at_usec,
 			created_by_user_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		pk,
 		ak.UserID,
 		ak.GroupID,
@@ -783,6 +786,7 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 		nonce,
 		ak.Label,
 		ak.VisibleToDevelopers,
+		ak.Visibility,
 		ak.Impersonation,
 		ak.ExpiryUsec,
 		ak.CreatedAtUsec,
@@ -795,6 +799,16 @@ func (d *AuthDB) createAPIKey(ctx context.Context, db interfaces.DB, ak tables.A
 	ak.APIKeyID = pk
 	ak.Value = key
 	return &ak, nil
+}
+
+func apiKeyVisibility(visibleToDevelopers, impersonation bool) int32 {
+	if impersonation {
+		return int32(akpb.Visibility_UNKNOWN_VISIBILITY)
+	}
+	if visibleToDevelopers {
+		return int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS | akpb.Visibility_VISIBLE_TO_DEVELOPERS)
+	}
+	return int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
 }
 
 func newAPIKeyToken() (string, error) {
@@ -1176,12 +1190,14 @@ func (d *AuthDB) UpdateAPIKey(ctx context.Context, key *tables.APIKey) error {
 		SET
 			label = ?,
 			capabilities = ?,
-			visible_to_developers = ?
+			visible_to_developers = ?,
+			visibility = ?
 		WHERE
 			api_key_id = ?`,
 		key.Label,
 		key.Capabilities,
 		key.VisibleToDevelopers,
+		apiKeyVisibility(key.VisibleToDevelopers, existingKey.Impersonation),
 		key.APIKeyID,
 	).Exec().Error
 }

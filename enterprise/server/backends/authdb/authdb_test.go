@@ -958,6 +958,78 @@ func TestAPIKeyCreationMetadata(t *testing.T) {
 	require.Equal(t, fakeClock.Now().UnixMicro(), fetched.CreatedAtUsec)
 }
 
+func TestAPIKeyVisibility(t *testing.T) {
+	ctx := t.Context()
+	env := setupEnv(t)
+	flags.Set(t, "app.create_group_per_user", true)
+	flags.Set(t, "app.no_default_user_group", true)
+	adb, err := authdb.NewAuthDB(env, env.GetDBHandle())
+	require.NoError(t, err)
+
+	users := enterprise_testauth.CreateRandomGroups(t, env)
+	var admin *tables.User
+	for _, u := range users {
+		if u.Groups[0].HasCapability(cappb.Capability_ORG_ADMIN) {
+			admin = u
+			break
+		}
+	}
+	require.NotNil(t, admin, "expected at least one admin user")
+	groupID := admin.Groups[0].Group.GroupID
+	auth := env.GetAuthenticator().(*testauth.TestAuthenticator)
+	adminCtx, err := auth.WithAuthenticatedUser(ctx, admin.UserID)
+	require.NoError(t, err)
+
+	// Enable user-owned keys and treat the admin's group as the server admin
+	// group so we can create every kind of key.
+	g, err := env.GetUserDB().GetGroupByID(adminCtx, groupID)
+	require.NoError(t, err)
+	g.UserOwnedKeysEnabled = true
+	_, err = env.GetUserDB().UpdateGroup(adminCtx, g)
+	require.NoError(t, err)
+	flags.Set(t, "auth.admin_group_id", groupID)
+
+	adminsOnly := int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS)
+	adminsAndDevelopers := int32(akpb.Visibility_VISIBLE_TO_GROUP_ADMINS | akpb.Visibility_VISIBLE_TO_DEVELOPERS)
+
+	readVisibility := func(apiKeyID string) int32 {
+		row := &tables.APIKey{}
+		err := env.GetDBHandle().NewQuery(ctx, "read_visibility").Raw(
+			`SELECT visibility FROM "APIKeys" WHERE api_key_id = ?`, apiKeyID).Take(row)
+		require.NoError(t, err)
+		return row.Visibility
+	}
+
+	groupKey, err := adb.CreateAPIKey(adminCtx, groupID, "group key", nil, 0, false /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	require.Equal(t, adminsOnly, readVisibility(groupKey.APIKeyID))
+
+	developerKey, err := adb.CreateAPIKey(adminCtx, groupID, "developer key", nil, 0, true /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	require.Equal(t, adminsAndDevelopers, readVisibility(developerKey.APIKeyID))
+
+	noAuthKey, err := adb.CreateAPIKeyWithoutAuthCheck(adminCtx, env.GetDBHandle(), groupID, "no auth key", nil, true /*=visibleToDevelopers*/)
+	require.NoError(t, err)
+	require.Equal(t, adminsAndDevelopers, readVisibility(noAuthKey.APIKeyID))
+
+	userKey, err := adb.CreateUserAPIKey(adminCtx, groupID, admin.UserID, "user key", nil, 0)
+	require.NoError(t, err)
+	require.Equal(t, adminsOnly, readVisibility(userKey.APIKeyID))
+
+	impersonationKey, err := adb.CreateImpersonationAPIKey(adminCtx, groupID)
+	require.NoError(t, err)
+	require.Equal(t, int32(akpb.Visibility_UNKNOWN_VISIBILITY), readVisibility(impersonationKey.APIKeyID))
+
+	// Updates keep the two columns in sync in both directions.
+	groupKey.VisibleToDevelopers = true
+	require.NoError(t, adb.UpdateAPIKey(adminCtx, groupKey))
+	require.Equal(t, adminsAndDevelopers, readVisibility(groupKey.APIKeyID))
+
+	developerKey.VisibleToDevelopers = false
+	require.NoError(t, adb.UpdateAPIKey(adminCtx, developerKey))
+	require.Equal(t, adminsOnly, readVisibility(developerKey.APIKeyID))
+}
+
 func setupEnv(t *testing.T) *testenv.TestEnv {
 	flags.Set(t, "app.user_owned_keys_enabled", true)
 	env := enterprise_testenv.New(t)
