@@ -25,11 +25,12 @@ import (
 )
 
 var (
-	// Bazel binary used to test overriding the .bazelversion bazel via
-	// BB_USE_BAZEL_VERSION.
+	// Bazel binary and its version, used to test overriding the .bazelversion
+	// bazel via BB_USE_BAZEL_VERSION.
 	//
 	// Injected via x_defs.
-	bazel8Rlocationpath string
+	overrideBazelRlocationpath string
+	overrideBazelVersion       string
 )
 
 func init() {
@@ -101,15 +102,16 @@ func TestInvokeViaBazelisk(t *testing.T) {
 		// a way to override the bazel version via env var
 		// (BB_USE_BAZEL_VERSION).
 		cmd := testcli.BazeliskCommand(t, ws, "version")
-		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION="+testfs.RunfilePath(t, bazel8Rlocationpath))
+		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION="+testfs.RunfilePath(t, overrideBazelRlocationpath))
 		// Sanity check: make sure testbazel.Version is different from the one
 		// we're testing here.
-		require.NotEqual(t, "8.5.0", testbazel.Version)
+		require.NotEmpty(t, overrideBazelVersion)
+		require.NotEqual(t, overrideBazelVersion, testbazel.Version)
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
 		require.Regexp(t, `(?m)^bb (unknown|\d+\.\d+\.\d+)$`, string(b))
-		require.Contains(t, string(b), "Build label: 8.5.0")
+		require.Contains(t, string(b), "Build label: "+overrideBazelVersion)
 	}
 }
 

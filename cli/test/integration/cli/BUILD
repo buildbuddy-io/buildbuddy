@@ -2,17 +2,24 @@ load("@io_bazel_rules_go//go:def.bzl", "go_test")
 
 package(default_visibility = ["//cli:__subpackages__"])
 
+# Bazel version used to test overriding the .bazelversion bazel via
+# BB_USE_BAZEL_VERSION. Must differ from the testbazel version.
+OVERRIDE_BAZEL_VERSION = "8.5.0"
+
+OVERRIDE_BAZEL = "//server/util/bazel:bazel-{}_crossplatform".format(OVERRIDE_BAZEL_VERSION)
+
 go_test(
     name = "cli_test",
     srcs = ["cli_test.go"],
-    data = ["//server/util/bazel:bazel-8.5.0_crossplatform"],
+    data = [OVERRIDE_BAZEL],
     exec_properties = {
         # TODO: remove network dependency.
         "test.dockerNetwork": "bridge",
     },
     shard_count = 4,
     x_defs = {
-        "bazel8Rlocationpath": "$(rlocationpath //server/util/bazel:bazel-8.5.0_crossplatform)",
+        "overrideBazelRlocationpath": "$(rlocationpath {})".format(OVERRIDE_BAZEL),
+        "overrideBazelVersion": OVERRIDE_BAZEL_VERSION,
     },
     deps = [
         "//cli/log",
