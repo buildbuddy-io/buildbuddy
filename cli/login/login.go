@@ -452,12 +452,11 @@ func debugAPIKey(source, apiKey string) {
 	log.Debugf("Using BuildBuddy API key from %s: %s", source, apiKeyDebugString(apiKey))
 }
 
+// apiKeyDebugString hides the whole API key, including its length, since
+// debug logs get pasted into issues and CI output.
 func apiKeyDebugString(apiKey string) string {
-	if len(apiKey) > 8 {
-		prefix := apiKey[:1]
-		suffix := apiKey[len(apiKey)-1:]
-		trunc := strings.Repeat("*", len(apiKey)-len(prefix)-len(suffix))
-		return prefix + trunc + suffix
+	if apiKey == "" {
+		return "(empty)"
 	}
-	return strings.Repeat("*", len(apiKey))
+	return "(redacted)"
 }
