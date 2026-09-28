@@ -1,0 +1,39 @@
+name: "Tag release branch updates"
+
+on:
+  push:
+    branches:
+      - "bb_release_*"
+
+permissions:
+  contents: read
+
+# Do not use a concurrency group here: pending runs can be replaced, losing a
+# push. The script waits for the previous push's tag to preserve version order.
+jobs:
+  tag:
+    # The internal cut-release workflow creates the initial minor-version tag.
+    if: ${{ !github.event.created && !github.event.deleted }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ github.event.after }}
+          fetch-depth: 0
+          token: ${{ secrets.BUILDBUDDY_GITHUB_USER_TOKEN }}
+
+      - name: Create patch version tag
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          FORCED: ${{ github.event.forced }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          if [[ "$FORCED" == "true" ]]; then
+            echo "Refusing to version a force-pushed release branch." >&2
+            exit 1
+          fi
+          git config --local user.email "github-actions-release-bot@users.noreply.github.com"
+          git config --local user.name "github-actions-release[bot]"
+          python3 tools/tag_release_branch.py "$BEFORE" "$AFTER" "$RELEASE_BRANCH"

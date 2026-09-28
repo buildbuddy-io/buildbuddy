@@ -138,6 +138,12 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
     if len(release_notes) > 0:
         commit_message = "\n".join([commit_message, release_notes])
 
+    # Several release branches can start at the same commit. Record ownership
+    # so later patch pushes don't pick another branch's minor-version tag.
+    branch = run_or_die("git rev-parse --abbrev-ref HEAD", capture_stdout=True).stdout.strip()
+    if branch.startswith("bb_release_"):
+        commit_message += f"\n\nRelease-Branch: {branch}"
+
     commit_msg_file = tempfile.NamedTemporaryFile(mode='w+', delete=False)
     commit_msg_file_name = commit_msg_file.name
     commit_msg_file.write(commit_message)
