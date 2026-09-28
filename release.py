@@ -258,7 +258,7 @@ def generate_release_notes(old_version):
         buf += line.decode("utf-8")
     return buf
 
-def get_latest_remote_version():
+def fetch_latest_version_reachable_from_head():
     run_or_die('git fetch --all --tags')
     p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
     return p.stdout.strip()
@@ -318,7 +318,7 @@ def main():
     elif args.bump_version_type == 'none':
         new_version = get_version_tag_at_head()
     else:
-        old_version = get_latest_remote_version()
+        old_version = fetch_latest_version_reachable_from_head()
         existing_tags = get_version_tags_at_head()
         if existing_tags and not args.force:
             die(f"HEAD is already tagged {', '.join(existing_tags)}." +
