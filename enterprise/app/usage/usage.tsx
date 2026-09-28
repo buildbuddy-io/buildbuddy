@@ -783,7 +783,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 {this.renderComputeUsage(selection)}
                 {Boolean(selection.totalCustomerProxyDownloadSizeBytes) && (
                   <>
-                    <div className="usage-resource-name">Total bytes downloaded from cache proxy</div>
+                    <div className="usage-resource-name">Total bytes downloaded from self-hosted cache proxy</div>
                     <div
                       className="usage-value"
                       title={formatWithCommas(selection.totalCustomerProxyDownloadSizeBytes)}>
@@ -796,7 +796,7 @@ class UsageReport extends React.Component<UsageReportProps, State> {
                 )}
                 {Boolean(selection.totalCustomerProxyUploadSizeBytes) && (
                   <>
-                    <div className="usage-resource-name">Total bytes uploaded to cache proxy</div>
+                    <div className="usage-resource-name">Total bytes uploaded only to self-hosted cache proxy</div>
                     <div className="usage-value" title={formatWithCommas(selection.totalCustomerProxyUploadSizeBytes)}>
                       {formatBytes(
                         selection.totalCustomerProxyUploadSizeBytes,
