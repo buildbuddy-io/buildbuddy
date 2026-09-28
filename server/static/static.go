@@ -5,7 +5,6 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
-	"os"
 	"path"
 	"strings"
 
@@ -80,7 +79,7 @@ var (
 
 	jsEntryPointPath = flag.String("js_entry_point_path", "/app/app_bundle/app.js?hash={APP_BUNDLE_HASH}", "Absolute URL path of the app JS entry point")
 	disableGA        = flag.Bool("disable_ga", false, "If true; ga will be disabled")
-	autoRefresh      = flag.Bool("auto_refresh", os.Getenv("BB_DEV_AUTO_REFRESH") == "1", "If set, the web UI reloads itself when the server restarts. Intended for local development. Defaults to true if BB_DEV_AUTO_REFRESH=1 is set in the environment.", flag.Internal)
+	autoRefresh      = flag.Bool("auto_refresh", false, "If set, the web UI reloads itself when the server restarts. Intended for local development.", flag.Internal)
 )
 
 var (
