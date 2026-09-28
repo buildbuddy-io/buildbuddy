@@ -302,7 +302,7 @@ export default class FlakesComponent extends React.Component<Props, State> {
   }
 
   handleStatsFilterChange(newValue: string) {
-    router.updateParams({ targetFilter: newValue.trim() });
+    router.setQueryParam("targetFilter", newValue.trim());
   }
 
   handleTableSortChange(tableSortString: string) {
