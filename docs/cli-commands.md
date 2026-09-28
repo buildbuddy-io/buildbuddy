@@ -108,6 +108,30 @@ bb remote --script='bb agent fix <INVOCATION_ID>'
 
 - Run the command from the workspace that produced the failure, ideally checked out at the same commit.
 
+### bb agent review
+
+`bb agent review` reviews the open GitHub pull request for the checked-out branch, then posts the findings as PR review comments.
+
+The review reads the source from the local checkout, so to review another PR, check it out first with `gh pr checkout <PR>`.
+
+Draft PRs and PRs that already have a bot review are skipped. Pass `--force` (or set `AGENT_REVIEW_FORCE=1`) to review them anyway.
+PRs from forks are refused by default, because reviewing one runs the agent over untrusted code. Pass `--allow_fork` to review one anyway.
+
+#### Usage
+
+```bash
+# Review the PR and post comments.
+bb agent review
+
+# Print the review without posting it.
+bb agent review --dry_run
+```
+
+#### Prerequisites
+
+- The `gh` CLI must be installed and available in `PATH`.
+- A GitHub token must be set in `REPO_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`.
+
 ## bb detect
 
 ### bb detect nondeterminism
@@ -173,3 +197,39 @@ make the builds faster, and make the Workflow runner less likely to run out of l
 ```bash
 bb detect nondeterminism --bazel_command='build //foo:bar --remote_executor=grpcs://remote.buildbuddy.io'
 ```
+
+## bb remote
+
+`bb remote` runs Bazel commands or scripts on a remote runner, automatically mirroring your local git state.
+
+```bash
+bb remote build //foo:bar
+bb remote --script='bb agent fix <INVOCATION_ID>'
+```
+
+See [Remote Bazel](/docs/remote-bazel) for full documentation.
+
+## bb view
+
+`bb view` fetches and prints the build logs for an invocation. It accepts an invocation ID or invocation URL.
+
+#### Usage
+
+```bash
+# Print the full build logs.
+bb view <INVOCATION_ID>
+bb view https://app.buildbuddy.io/invocation/<INVOCATION_ID>
+
+# Print only the first build error.
+bb view <INVOCATION_ID> --errors
+
+# Print the output of failed test cases for a target.
+bb view <INVOCATION_ID> //foo:bar_test
+
+# Print the output of failed test cases matching a test filter.
+bb view <INVOCATION_ID> //foo:bar_test --test_filter=TestBaz
+```
+
+`--errors` cannot be combined with targets or `--test_filter`.
+
+Use `--lines` to set the minimum number of log lines to fetch (default `100000`).
