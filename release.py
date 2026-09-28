@@ -266,14 +266,10 @@ def generate_release_notes(old_version):
         buf += line.decode("utf-8")
     return buf
 
-def get_latest_remote_version(reachable_from_head=False):
+def get_latest_remote_version():
     run_or_die('git fetch --all --tags')
-    # Minor bumps use the highest repository version. Patch bumps stay on the
-    # release branch's history, ignoring newer releases on other branches.
-    cmd = "git tag -l 'v*' --sort=-version:refname"
-    if reachable_from_head:
-        cmd += " --merged HEAD"
-    p = run_or_die(cmd, capture_stdout=True)
+    # Use version order, not creation date: a recent patch may be for an older minor.
+    p = run_or_die("git tag -l 'v*' --sort=-version:refname", capture_stdout=True)
     for tag in p.stdout.splitlines():
         if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
             return tag
@@ -294,6 +290,7 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
+    parser.add_argument('--base_version', default='', help='Version tag to bump. Defaults to the highest version tag in the repository.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
@@ -304,6 +301,8 @@ def main():
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     parser.add_argument('--mark_workspace_as_safe', default='')
     args = parser.parse_args()
+    if args.base_version and not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", args.base_version):
+        parser.error('--base_version must be a vX.Y.Z version tag')
 
     if args.mark_workspace_as_safe:
         run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)
@@ -316,8 +315,7 @@ def main():
         die('Your workspace has uncommitted changes. ' +
             'Please run this in a clean workspace!')
 
-    old_version = get_latest_remote_version(
-        reachable_from_head=args.bump_version_type == 'patch' and not args.version)
+    old_version = args.base_version or get_latest_remote_version()
     if not args.force and not is_published_release(old_version):
         die(f"The latest tag {old_version} does not correspond to a published github release." +
         " It may be a draft release or it may have never been created." +

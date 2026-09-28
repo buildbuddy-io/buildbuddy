@@ -19,6 +19,12 @@ jobs:
 
       - name: Create patch version tag
         run: |
+          previous_version=$(git tag --merged HEAD -l 'v*' --sort=version:refname |
+            sed -nE '/^v[0-9]+\.[0-9]+\.[0-9]+$/p' | tail -n1)
+          if [[ -z "$previous_version" ]]; then
+            echo "No version tag found in release branch history." >&2
+            exit 1
+          fi
           git config --local user.email "github-actions-release-bot@users.noreply.github.com"
           git config --local user.name "github-actions-release[bot]"
-          ./release.py --auto --force --bump_version_type=patch
+          ./release.py --auto --force --bump_version_type=patch --base_version="$previous_version"
