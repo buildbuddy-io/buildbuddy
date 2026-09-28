@@ -112,6 +112,7 @@ var (
 		buildBuddyServicePrefix + "GetStatDrilldown",
 		buildBuddyServicePrefix + "GetTargetTrends",
 		buildBuddyServicePrefix + "SearchExecution",
+		buildBuddyServicePrefix + "GetExecutionTimeline",
 		buildBuddyServicePrefix + "GetTargetStats",
 		buildBuddyServicePrefix + "GetDailyTargetStats",
 		buildBuddyServicePrefix + "GetTargetFlakeSamples",
