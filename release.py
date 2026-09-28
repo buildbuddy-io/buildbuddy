@@ -14,11 +14,15 @@ release.py - A simple script to create a release.
 This script will do the following:
 
   1) Check that your working repository is clean.
-  2) Compute a new version tag by bumping the latest remote version tag,
-     and create the tag pointing at HEAD.
-  3) Pushes the tag to GitHub.
-     This kicks off some workflows which will build the release artifacts.
-  4) Builds and tags new Docker images locally, and pushes them to the registry.
+  2) Determine the version to release:
+     - With --bump_version_type, compute a new version tag by bumping the
+       latest version tag reachable from HEAD, create the tag pointing at HEAD,
+       and push it to GitHub. This kicks off some workflows which will build
+       the release artifacts. The release branch cut workflow uses
+       --bump_version_type=minor; after cherry-picking onto a release branch,
+       run this with --bump_version_type=patch.
+     - Otherwise, use --version, or the version tag already pointing at HEAD.
+  3) Builds and tags new Docker images locally, and pushes them to the registry.
      Also updates the ":latest" tag for each image.
 """
 
@@ -49,19 +53,6 @@ def workspace_is_clean():
     out = [l.decode() for l in p.stdout.readlines()]
     print('git status output:\n%s' % "\n".join(out))
     return len(out) == 0
-
-def is_published_release(version_tag):
-    github_token = os.environ.get('GITHUB_TOKEN')
-    # This API does not return draft releases
-    query_url = f"https://api.github.com/repos/buildbuddy-io/buildbuddy/releases/tags/{version_tag}"
-    headers = {'Authorization': f'token {github_token}'}
-    r = requests.get(query_url, headers=headers)
-    if r.status_code == 401:
-        die("Invalid github credentials. Did you set the GITHUB_TOKEN environment variable?")
-    elif r.status_code == 200:
-        return True
-    else:
-        return False
 
 def bump_patch_version(version):
     parts = version.split(".")
@@ -133,7 +124,7 @@ def get_image(project, tag):
         die(f"Registry returned an unsupported media type for image gcr.io/{project}:{tag}: {media_type!r}")
     return {"digest": digest, "media_type": media_type}
 
-def create_and_push_tag(old_version, new_version, release_notes=''):
+def create_and_push_tag(old_version, new_version, release_notes='', skip_push=False):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
     if len(release_notes) > 0:
         commit_message = "\n".join([commit_message, release_notes])
@@ -145,6 +136,8 @@ def create_and_push_tag(old_version, new_version, release_notes=''):
 
     tag_cmd = 'git tag -a %s -F "%s"' % (new_version, commit_msg_file_name)
     run_or_die(tag_cmd)
+    if skip_push:
+        return
     push_tag_cmd = 'git push origin %s' % new_version
     run_or_die(push_tag_cmd)
 
@@ -270,6 +263,15 @@ def get_latest_remote_version():
     p = run_or_die("./tools/latest_version_tag.sh", capture_stdout=True)
     return p.stdout.strip()
 
+def get_version_tags_at_head():
+    p = run_or_die("git tag --points-at HEAD -l 'v*'", capture_stdout=True)
+    return nonempty_lines(p.stdout)
+
+def get_version_tag_at_head():
+    # Also checks that the version stamped into binaries matches the tag.
+    p = run_or_die("./tools/version_tag_at_head.sh", capture_stdout=True)
+    return p.stdout.strip()
+
 def get_cpu_architecture():
     arch = platform.machine()
     if arch in ['x86_64', 'AMD64']:
@@ -283,8 +285,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--auto', default=False, action='store_true')
     parser.add_argument('--allow_dirty', default=False, action='store_true')
-    parser.add_argument('--force', default=False, action='store_true')
-    parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
+    parser.add_argument('--force', default=False, action='store_true', help='Create a new version tag even if HEAD already has one, and skip checking that --version is the version tag at HEAD.')
+    parser.add_argument('--bump_version_type', default='none', choices=['major', 'minor', 'patch', 'none'], help="Create and push a new version tag at HEAD by bumping the latest version tag reachable from HEAD. If 'none', use the version tag already at HEAD.")
+    parser.add_argument('--skip_push', default=False, action='store_true', help='Create the new version tag locally without pushing it.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
@@ -307,18 +310,21 @@ def main():
         die('Your workspace has uncommitted changes. ' +
             'Please run this in a clean workspace!')
 
-    old_version = get_latest_remote_version()
-    is_old_version_published = is_published_release(old_version)
-
-    if not is_old_version_published and not args.force:
-        die(f"The latest tag {old_version} does not correspond to a published github release." +
-        " It may be a draft release or it may have never been created." +
-        " If you still want to upgrade the version, rerun the script with --force.")
-
-    new_version = old_version
     if args.version:
         new_version = args.version
-    elif args.bump_version_type != 'none':
+        if not args.force and get_version_tag_at_head() != new_version:
+            die(f"--version={new_version} is not the version tag at HEAD, so it won't match the version stamped into binaries." +
+                " Check out that tag, or rerun with --force.")
+    elif args.bump_version_type == 'none':
+        new_version = get_version_tag_at_head()
+    else:
+        old_version = get_latest_remote_version()
+        existing_tags = get_version_tags_at_head()
+        if existing_tags and not args.force:
+            die(f"HEAD is already tagged {', '.join(existing_tags)}." +
+                " To use that version, rerun without --bump_version_type." +
+                " To add another version tag anyway, rerun with --force.")
+
         if args.bump_version_type == 'patch':
             new_version = bump_patch_version(old_version)
         elif args.bump_version_type == 'minor':
@@ -334,8 +340,11 @@ def main():
         print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
         time.sleep(2)
-        create_and_push_tag(old_version, new_version, release_notes)
-        print("Pushed tag for new version %s" % new_version)
+        create_and_push_tag(old_version, new_version, release_notes, args.skip_push)
+        if args.skip_push:
+            print("Created tag for new version %s (not pushed)" % new_version)
+        else:
+            print("Pushed tag for new version %s" % new_version)
 
     # Write the version tag to $GITHUB_OUTPUT if it exists.
     github_outputs_file = os.environ.get('GITHUB_OUTPUT')

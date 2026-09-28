@@ -45,7 +45,10 @@ echo "GIT_TREE_STATUS $git_tree_status"
 # Note: the "STABLE_" suffix causes these to be part of the "stable" workspace
 # status, which may trigger rebuilds of certain targets if these values change
 # and you're building with the "--stamp" flag.
-latest_version_tag=$(./tools/latest_version_tag.sh)
+# This runs for every build (including shallow CI checkouts), so fall back to
+# "unknown" rather than failing. Release workflows check the version up front
+# with tools/version_tag_at_head.sh.
+latest_version_tag=$(./tools/latest_version_tag.sh) || latest_version_tag="unknown"
 echo "STABLE_VERSION_TAG $latest_version_tag"
 echo "STABLE_COMMIT_SHA $commit_sha"
 
