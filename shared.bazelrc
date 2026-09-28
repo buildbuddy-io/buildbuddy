@@ -5,10 +5,6 @@
 # Use BLAKE3 digest function.
 startup --digest_function=BLAKE3
 
-# Bazel doesn't track the contents of source directories by default, which can result
-# in non-hermeticity.
-startup --host_jvm_args=-DBAZEL_TRACK_SOURCE_DIRECTORIES=1
-
 ################
 # COMMON FLAGS #
 ################
@@ -22,37 +18,12 @@ common --module_mirrors=https://bcr.cloudflaremirrors.com
 # Avoid being broken by version requirement changes in transitive deps.
 common --check_direct_dependencies=error
 
-# Enable proto toolchain resolution to use pre-built protoc.
-common --incompatible_enable_proto_toolchain_resolution
-common --@com_google_protobuf//bazel/toolchains:prefer_prebuilt_protoc
-
-# Sanitize environment variables to avoid cache misses.
-common --incompatible_strict_action_env
-
 # Write build outputs in a platform-specific directory,
 # avoid outputs being wiped and rewritten when switching between platforms.
 common --experimental_platform_in_output_dir
 
 # Recover lost inputs within a single build rather than via a restart of the command.
 common --rewind_lost_inputs
-
-# Workaround for Bazel 7,8:
-# rules_docker (archived) defines a transition that helps ensure building containers with binary would use the same platform for both.
-# Reference: https://github.com/bazelbuild/rules_docker/pull/1963
-#
-# However, the platform and transition made use of `label_setting` instead of `constraint_value`.
-# This used to work in Bazel 6, but Bazel 7 introduced a new mandatory provider `ConstraintValueInfo` for all constraints_value targets.
-# Since `label_setting` does not return this provider, it is no longer possible to use `label_setting` in Bazel 7.
-#
-# Disabling this is safe because today, we are building these constainers on Linux host, executing Linux actions and targeting Linux machines.
-# This assumption might not hold in the future, but we can revisit this when that happens.
-common --@io_bazel_rules_docker//transitions:enable=false
-
-# Currently only works for go tests
-# Coverage outputs could be viewed with `genhtml`:
-#   $ genhtml -o cover bazel-out/_coverage/_coverage_report.dat
-#   $ open cover/index.html
-common --combined_report=lcov
 
 # Include target names in timing profile so it's clickable.
 common --experimental_profile_include_target_label
@@ -182,10 +153,6 @@ common:tests-performance --test_tag_filters=+performance
 # based on the host machine.
 common --enable_platform_specific_config=true
 
-# rules_nodejs needs runfiles to be explicitly enabled.
-common:linux --enable_runfiles
-common:macos --enable_runfiles
-
 # Allow disk/remote cache hits across different Bazel configurations for supported actions (e.g. GoCompilePkg).
 # Requires a sandboxed execution strategy and is thus not enabled on Windows.
 # https://github.com/bazelbuild/bazel/discussions/22658
@@ -267,7 +234,6 @@ build:dev --experimental_execution_graph_include_change_pruned_actions
 
 # Common flags to be used with remote cache
 common:cache-shared --remote_cache_compression
-common:cache-shared --experimental_remote_cache_compression_threshold=100
 common:cache-shared --experimental_remote_cache_chunking
 common:cache-shared --remote_timeout=10m
 common:cache-shared --jobs=100
