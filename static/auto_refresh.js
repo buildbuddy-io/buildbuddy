@@ -12,7 +12,7 @@
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) controller.abort();
   });
-  let delayMs = 10;
+  let delayMs = 50;
   while (true) {
     if (document.hidden) {
       await new Promise((resolve) => document.addEventListener("visibilitychange", resolve, { once: true }));
@@ -29,6 +29,6 @@
     } catch {}
     if (controller.signal.aborted) continue;
     await new Promise((resolve) => setTimeout(resolve, delayMs));
-    delayMs = Math.min(delayMs * 1.01, 5000);
+    delayMs = Math.min(delayMs * 1.05, 5000);
   }
 })();
