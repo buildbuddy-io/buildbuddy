@@ -24,6 +24,14 @@ import (
 	inpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 )
 
+var (
+	// Bazel binary used to test overriding the .bazelversion bazel via
+	// BB_USE_BAZEL_VERSION.
+	//
+	// Injected via x_defs.
+	bazel8Rlocationpath string
+)
+
 func init() {
 	parser.SetBazelHelpForTesting(test_data.BazelHelpFlagsAsProtoOutput)
 }
@@ -93,15 +101,15 @@ func TestInvokeViaBazelisk(t *testing.T) {
 		// a way to override the bazel version via env var
 		// (BB_USE_BAZEL_VERSION).
 		cmd := testcli.BazeliskCommand(t, ws, "version")
-		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION=6.0.0")
+		cmd.Env = append(os.Environ(), "BB_USE_BAZEL_VERSION="+testfs.RunfilePath(t, bazel8Rlocationpath))
 		// Sanity check: make sure testbazel.Version is different from the one
 		// we're testing here.
-		require.NotEqual(t, "6.0.0", testbazel.Version)
+		require.NotEqual(t, "8.5.0", testbazel.Version)
 		b, err := testcli.CombinedOutput(cmd)
 
 		require.NoError(t, err, "output: %s", string(b))
 		require.Regexp(t, `(?m)^bb (unknown|\d+\.\d+\.\d+)$`, string(b))
-		require.Contains(t, string(b), "Build label: 6.0.0")
+		require.Contains(t, string(b), "Build label: 8.5.0")
 	}
 }
 
