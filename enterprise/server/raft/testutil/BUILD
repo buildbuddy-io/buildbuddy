@@ -50,8 +50,12 @@ go_test(
     srcs = ["testutil_test.go"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
-        "test.workload-isolation-type": "firecracker",
-    },
+    } | select({
+        "@io_bazel_rules_go//go/platform:linux": {
+            "test.workload-isolation-type": "firecracker",
+        },
+        "//conditions:default": {},
+    }),
     deps = [
         ":testutil",
         "@com_github_jonboulle_clockwork//:clockwork",

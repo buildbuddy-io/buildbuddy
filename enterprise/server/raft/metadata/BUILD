@@ -53,8 +53,12 @@ go_test(
     embed = [":metadata"],
     exec_properties = {
         "test.EstimatedComputeUnits": "8",
-        "test.workload-isolation-type": "firecracker",
-    },
+    } | select({
+        "@io_bazel_rules_go//go/platform:linux": {
+            "test.workload-isolation-type": "firecracker",
+        },
+        "//conditions:default": {},
+    }),
     deps = [
         "//enterprise/server/filestore",
         "//enterprise/server/raft/config",
