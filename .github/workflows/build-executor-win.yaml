@@ -1,6 +1,9 @@
 name: "Build Windows executor"
 
 on:
+  push:
+    branches:
+      - master
   pull_request:
 
 jobs:
@@ -97,7 +100,7 @@ jobs:
       #     }
       #     exit 1
 
-      - name: Build & test
+      - name: Test
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Because "startup" options could not be assigned to different configs in .bazelrc, we are adding them directly here.
@@ -119,9 +122,6 @@ jobs:
                    --config=untrusted-ci-windows `
                    @authArgs `
                    -- `
-                   //enterprise/server/cmd/executor:executor_windows_amd64 `
-                   //enterprise/server/cmd/executor:executor_windows_386 `
-                   //enterprise/server/cmd/executor:executor_windows_arm64 `
                    //enterprise/server/remote_execution/commandutil:commandutil_test `
                    //enterprise/server/remote_execution/filecache:filecache_test `
                    //enterprise/server/remote_execution/workspace:workspace_test `

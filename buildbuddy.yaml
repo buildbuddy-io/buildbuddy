@@ -87,6 +87,27 @@ actions:
           //enterprise/server/cmd/executor
           //enterprise/server/cmd/executor:executor_linux_arm64_static
     allow_concurrent_runs: false
+  - name: Build public release artifacts (windows)
+    container_image: ubuntu-22.04
+    resource_requests:
+      disk: 27GB
+    triggers:
+      push:
+        branches:
+          - "master"
+      pull_request:
+        branches:
+          - "*"
+    # Release stamping needs version tags.
+    git_fetch_depth: 0
+    steps:
+      # Windows GitHub release binaries, cross-compiled on Linux.
+      - run: >-
+          bazel build --config=release --config=linux-workflows
+          //enterprise/server/cmd/executor:executor_windows_amd64
+          //enterprise/server/cmd/executor:executor_windows_386
+          //enterprise/server/cmd/executor:executor_windows_arm64
+    allow_concurrent_runs: false
   - name: Check style
     container_image: ubuntu-22.04
     triggers:
