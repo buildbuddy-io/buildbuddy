@@ -43,7 +43,8 @@ const (
 )
 
 var (
-	// Flush snapshot batches before they approach Pebble's size limit.
+	// Flush snapshot batches before they approach Pebble's size limit. Pebble
+	// panics when the batch is greater than ~4GB (or 2GB on 32-bit systems)
 	// Tests lower this to exercise multi-batch restores.
 	snapshotBatchSizeBytes = 1 * gb
 
