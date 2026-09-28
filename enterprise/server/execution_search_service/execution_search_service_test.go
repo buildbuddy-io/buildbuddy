@@ -517,17 +517,17 @@ func TestGetExecutionTimeline(t *testing.T) {
 	// they are grouped into a single timeline.
 	require.Len(t, rsp.Timelines, 1, "should only return GR1 executions for the requested target")
 	timeline := rsp.Timelines[0]
-	require.Len(t, timeline.Execution, 2)
+	require.Len(t, timeline.ExecutionSamples, 2)
 
 	// Results should be ordered by start_time_usec ascending.
-	assert.Equal(t, testTimestampUsec, timeline.Execution[0].StartTimeUsec)
-	assert.Equal(t, int64(2000000), timeline.Execution[0].DurationUsec)
-	assert.Equal(t, int64(1000000000), timeline.Execution[0].CpuNanos)
-	assert.Equal(t, int64(256*1024*1024), timeline.Execution[0].PeakMemoryBytes)
-	assert.Equal(t, testTimestampUsec+1000000, timeline.Execution[1].StartTimeUsec)
-	assert.Equal(t, int64(4000000), timeline.Execution[1].DurationUsec)
-	assert.Equal(t, int64(2000000000), timeline.Execution[1].CpuNanos)
-	assert.Equal(t, int64(512*1024*1024), timeline.Execution[1].PeakMemoryBytes)
+	assert.Equal(t, testTimestampUsec, timeline.ExecutionSamples[0].StartTimeUsec)
+	assert.Equal(t, int64(2000000), timeline.ExecutionSamples[0].DurationUsec)
+	assert.Equal(t, int64(1000000000), timeline.ExecutionSamples[0].CpuNanos)
+	assert.Equal(t, int64(256*1024*1024), timeline.ExecutionSamples[0].PeakMemoryBytes)
+	assert.Equal(t, testTimestampUsec+1000000, timeline.ExecutionSamples[1].StartTimeUsec)
+	assert.Equal(t, int64(4000000), timeline.ExecutionSamples[1].DurationUsec)
+	assert.Equal(t, int64(2000000000), timeline.ExecutionSamples[1].CpuNanos)
+	assert.Equal(t, int64(512*1024*1024), timeline.ExecutionSamples[1].PeakMemoryBytes)
 
 	// With finer time buckets disabled, stats are aggregated into 1-day
 	// buckets.
@@ -556,8 +556,8 @@ func TestGetExecutionTimeline(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, rsp.Timelines, 1)
-	require.Len(t, rsp.Timelines[0].Execution, 1)
-	assert.Equal(t, testTimestampUsec, rsp.Timelines[0].Execution[0].StartTimeUsec)
+	require.Len(t, rsp.Timelines[0].ExecutionSamples, 1)
+	assert.Equal(t, testTimestampUsec, rsp.Timelines[0].ExecutionSamples[0].StartTimeUsec)
 }
 
 func TestGetExecutionTimeline_RequiresTarget(t *testing.T) {

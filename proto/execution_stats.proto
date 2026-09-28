@@ -447,6 +447,7 @@ message ExecutionTimelineEntry {
   string action_digest_hash = 1;
   string invocation_id = 2;
 
+  // These timestamps all come from the executor that the task ran on.
   int64 start_time_usec = 3;
   int64 duration_usec = 4;
   int64 cpu_nanos = 5;
@@ -454,6 +455,7 @@ message ExecutionTimelineEntry {
   int64 input_download_usec = 7;
   int64 execution_usec = 8;
   int64 output_upload_usec = 9;
+
   int64 peak_memory_bytes = 10;
   int64 downloaded_bytes = 11;
   int64 uploaded_bytes = 12;
@@ -507,7 +509,7 @@ message ExecutionTimeline {
   int64 shard = 5;
 
   ExecutionTimelineSummary summary = 6;
-  repeated ExecutionTimelineEntry execution = 7;
+  repeated ExecutionTimelineEntry execution_samples = 7;
   repeated AggregatedExecutionTimelineEntry aggregated_stats = 8;
 }
 
