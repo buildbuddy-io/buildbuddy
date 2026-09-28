@@ -7,7 +7,9 @@ LATEST="$PWD/$LATEST_VERSION_TAG"
 AT_HEAD="$PWD/$VERSION_TAG_AT_HEAD"
 
 TMP=$(mktemp -d "${TEST_TMPDIR:-/tmp}/version_tag_test.XXXXXX")
-export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+# Keep this compatible with older git (the Linux RBE image has git 2.25), and
+# isolated from the host's git config.
+export HOME="$TMP" GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 
@@ -41,8 +43,9 @@ tag() {
   git tag -a "$1" -m "$1"
 }
 
-git init -q -b master "$TMP/repo"
+git init -q "$TMP/repo"
 cd "$TMP/repo"
+git symbolic-ref HEAD refs/heads/master
 
 expect_failure "no commits or tags" "$LATEST"
 commit a
