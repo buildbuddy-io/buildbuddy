@@ -940,6 +940,9 @@ type nodePool struct {
 	connectedExecutors []*executionNode
 
 	unclaimedTasksSingleFlight singleflight.Group[string, []string]
+	// Snapshot of the unclaimed_tasks_cache_ttl flag. Singleflight callbacks
+	// can outlive their callers, so they shouldn't read the flag directly.
+	unclaimedTasksCacheTTL time.Duration
 
 	unclaimedTasksMu     sync.Mutex
 	unclaimedTasks       []string
@@ -951,6 +954,8 @@ func newNodePool(env environment.Env, key nodePoolKey) *nodePool {
 		key:   key,
 		rdb:   env.GetRemoteExecutionRedisClient(),
 		clock: env.GetClock(),
+
+		unclaimedTasksCacheTTL: *unclaimedTasksCacheTTL,
 	}
 	return np
 }
@@ -1181,14 +1186,14 @@ func (np *nodePool) getAllTaskIDs(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		if *unclaimedTasksCacheTTL <= 0 {
+		if np.unclaimedTasksCacheTTL <= 0 {
 			return unclaimed, nil
 		}
 
 		np.unclaimedTasksMu.Lock()
 		defer np.unclaimedTasksMu.Unlock()
 		np.unclaimedTasks = unclaimed
-		np.unclaimedTasksExpiry = np.clock.Now().Add(*unclaimedTasksCacheTTL)
+		np.unclaimedTasksExpiry = np.clock.Now().Add(np.unclaimedTasksCacheTTL)
 
 		return unclaimed, nil
 	})
