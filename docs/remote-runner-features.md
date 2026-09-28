@@ -24,16 +24,25 @@ invocation. To automatically upload these to our UI, you could run a command lik
 BuildBuddy creates a new artifacts directory for each step executed on the remote
 runner, and recursively uploads all files in the directory after the step exits.
 
-#### Fetching artifacts programmatically
+#### Downloading artifacts
 
-If you'd like to fetch artifacts generated during a remote run programmatically,
-you can either:
+Download all artifacts attached to a remote run with the BuildBuddy CLI:
 
-- Upload the artifacts to a hosted storage site (like S3), where you can later fetch
-  the files
-- Upload the artifacts to BuildBuddy (using the approach described above)
+```bash
+bb download artifacts <INVOCATION_ID_OR_URL>
+```
 
-If you upload the artifacts to BuildBuddy, you can fetch them by:
+By default, the command creates a temporary directory and prints its path. To
+choose the destination, pass `--output_directory`:
+
+```bash
+bb download artifacts <INVOCATION_ID_OR_URL> --output_directory=/tmp/artifacts
+```
+
+If the downloaded artifacts include Git patches, the command also prints a
+`git apply` command that can be used to apply them.
+
+You can also fetch artifacts using the BuildBuddy API:
 
 1. Using the [`GetInvocation` API](https://www.buildbuddy.io/docs/enterprise-api#getinvocation)
    with the `include_artifacts` field set to fetch the invocation for the remote run

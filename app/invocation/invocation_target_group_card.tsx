@@ -16,7 +16,9 @@ import React from "react";
 import { api as api_common } from "../../proto/api/v1/common_ts_proto";
 import { build_event_stream } from "../../proto/build_event_stream_ts_proto";
 import { target } from "../../proto/target_ts_proto";
+import alert_service from "../alert/alert_service";
 import capabilities from "../capabilities/capabilities";
+import { OutlinedButton } from "../components/button/button";
 import DigestComponent from "../components/digest/digest";
 import Link, { TextLink } from "../components/link/link";
 import Spinner from "../components/spinner/spinner";
@@ -133,6 +135,11 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
     callback();
   }
 
+  private onCopyArtifactsDownloadCommand() {
+    copyToClipboard(`bb download artifacts ${this.props.invocationId}`);
+    alert_service.success("Download command copied to clipboard");
+  }
+
   render() {
     let targets = this.props.group.targets.concat(this.state.fetchedTargets);
     let className = "";
@@ -207,11 +214,17 @@ export default class TargetGroupCard extends React.Component<TargetGroupCardProp
           <div className="title">
             {format.formatWithCommas(this.props.group.totalCount)}
             {this.props.filter ? " matching" : ""} {pastVerb}{" "}
-            {this.state.copied ? (
-              <Check className="copy-icon green" onClick={() => this.onCopyClicked()} />
-            ) : (
-              <Copy className="copy-icon" onClick={() => this.onCopyClicked()} />
-            )}{" "}
+            <OutlinedButton className="small-button" onClick={() => this.onCopyClicked()}>
+              {this.state.copied ? <Check className="icon green" /> : <Copy className="icon" />}
+              {this.state.copied ? "Copied target labels" : "Copy target labels"}
+            </OutlinedButton>{" "}
+            {this.props.group.status === 0 && (
+              <OutlinedButton
+                className="artifacts-download-button small-button"
+                onClick={() => this.onCopyArtifactsDownloadCommand()}>
+                <Copy className="icon" /> Copy command to download artifacts
+              </OutlinedButton>
+            )}
             {Boolean(this.props.repo && renderFlakyChip && capabilities.config.targetFlakesUiEnabled) && (
               <div className="invocation-flaky-chip-alignment-hack">
                 <FlakyTargetChipComponent labels={targetLabels} repo={this.props.repo}></FlakyTargetChipComponent>
