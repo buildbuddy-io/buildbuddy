@@ -1,26 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 package(default_visibility = ["//visibility:public"])
-
-py_test(
-    name = "tag_release_branch_test",
-    size = "small",
-    srcs = [
-        "release_test_utils.py",
-        "tag_release_branch_test.py",
-    ],
-    data = ["//:release.py"],
-)
-
-py_test(
-    name = "release_tag_test",
-    size = "small",
-    srcs = [
-        "release_tag_test.py",
-        "release_test_utils.py",
-    ],
-    data = ["//:release.py"],
-)
 
 py_binary(
     name = "check_release_assets_uploaded",

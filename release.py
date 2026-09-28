@@ -6,6 +6,7 @@ import re
 import requests
 import subprocess
 import sys
+import tempfile
 import time
 
 """
@@ -14,8 +15,8 @@ release.py - A simple script to create a release.
 This script will do the following:
 
   1) Check that your working repository is clean.
-  2) Compute a new version tag: minor bumps use the highest repository version;
-     patch bumps use the release branch's own version. Create the tag at HEAD.
+  2) Compute a new version tag by bumping the latest remote version tag,
+     and create the tag pointing at HEAD.
   3) Pushes the tag to GitHub.
      This kicks off some workflows which will build the release artifacts.
   4) Builds and tags new Docker images locally, and pushes them to the registry.
@@ -133,58 +134,20 @@ def get_image(project, tag):
         die(f"Registry returned an unsupported media type for image gcr.io/{project}:{tag}: {media_type!r}")
     return {"digest": digest, "media_type": media_type}
 
-def git(*args):
-    return subprocess.check_output(["git", *args], text=True).strip()
-
-def remote_tag_commit(tag):
-    refs = dict(
-        line.split()[::-1]
-        for line in git(
-            "ls-remote", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"
-        ).splitlines()
-    )
-    return refs.get(f"refs/tags/{tag}^{{}}", refs.get(f"refs/tags/{tag}"))
-
-def check_remote_tag_owner(tag, head, branch):
-    if not branch.startswith("bb_release_"):
-        return
-    # Fetch the remote object without updating the local tag: after a failed
-    # racing push the local annotation could still describe our losing run.
-    git("fetch", "--no-tags", "origin", f"refs/tags/{tag}")
-    if (git("rev-parse", "FETCH_HEAD^{commit}") != head
-            or git("cat-file", "-t", "FETCH_HEAD") != "tag"
-            or git("cat-file", "tag", "FETCH_HEAD").splitlines()[-1] != f"Release-Branch: {branch}"):
-        raise ValueError(f"{tag} does not belong to release branch {branch}")
-
-def create_and_push_tag(old_version, new_version, release_notes='', branch=None):
-    head = git("rev-parse", "HEAD")
-    branch = branch or git("rev-parse", "--abbrev-ref", "HEAD")
-    existing = remote_tag_commit(new_version)
-    if existing == head:
-        check_remote_tag_owner(new_version, head, branch)
-        print(f"{new_version} already tags {head}")
-        return
-    if existing:
-        raise ValueError(f"{new_version} already tags another commit: {existing}")
-
+def create_and_push_tag(old_version, new_version, release_notes=''):
     commit_message = "Bump tag %s -> %s (release.py)" % (old_version, new_version)
     if len(release_notes) > 0:
         commit_message = "\n".join([commit_message, release_notes])
 
-    # Several release branches can start at the same commit. Record ownership
-    # so later patch pushes don't pick another branch's minor-version tag.
-    if branch.startswith("bb_release_"):
-        commit_message += f"\n\nRelease-Branch: {branch}"
+    commit_msg_file = tempfile.NamedTemporaryFile(mode='w+', delete=False)
+    commit_msg_file_name = commit_msg_file.name
+    commit_msg_file.write(commit_message)
+    commit_msg_file.close()
 
-    git("tag", "-a", new_version, head, "-m", commit_message)
-    try:
-        git("push", "origin", f"refs/tags/{new_version}:refs/tags/{new_version}")
-    except subprocess.CalledProcessError:
-        # Concurrent retries may race to push the same tag. Never move a tag;
-        # accept the other run's result only if it tags the same event commit.
-        if remote_tag_commit(new_version) != head:
-            raise
-        check_remote_tag_owner(new_version, head, branch)
+    tag_cmd = 'git tag -a %s -F "%s"' % (new_version, commit_msg_file_name)
+    run_or_die(tag_cmd)
+    push_tag_cmd = 'git push origin %s' % new_version
+    run_or_die(push_tag_cmd)
 
 def push_image_for_project(project, version_tag, bazel_target, skip_update_latest_tag, platform_target=None):
     version_image = get_image(project, version_tag)
@@ -303,67 +266,18 @@ def generate_release_notes(old_version):
         buf += line.decode("utf-8")
     return buf
 
-def version_tuple(tag):
-    return tuple(map(int, tag[1:].split(".")))
-
-def get_version_tags(*filters, branch=None):
-    tags = []
-    for tag in git("tag", *filters, "-l", "v*").splitlines():
-        if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
-            continue
-        if branch:
-            # Lightweight tag contents are the *commit* message, not ownership
-            # metadata. Only trust the final line of an annotated tag.
-            if git("cat-file", "-t", f"refs/tags/{tag}") != "tag":
-                continue
-            contents = git("for-each-ref", "--format=%(contents)", f"refs/tags/{tag}")
-            if not contents or contents.splitlines()[-1] != f"Release-Branch: {branch}":
-                continue
-        tags.append(tag)
-    return tags
-
-def get_latest_remote_version():
-    git("fetch", "origin", "--tags")
-    tags = get_version_tags()
-    if not tags:
-        raise ValueError("No vX.Y.Z version tags found")
-    # A recent patch on an older release must not move the next minor backward.
-    return max(tags, key=version_tuple)
-
-def get_patch_base_version(branch, previous_commit=None, attempts=90, interval=10):
-    if not re.fullmatch(r"bb_release_[A-Za-z0-9_-]+", branch):
-        raise ValueError("Expected a bb_release_* branch")
-    if git("rev-parse", "--is-shallow-repository") == "true":
-        raise ValueError("Full history is required")
-    if previous_commit:
-        if not re.fullmatch(r"[0-9a-f]{40}", previous_commit):
-            raise ValueError("Expected a full previous commit SHA")
-        head = git("rev-parse", "HEAD")
-        if previous_commit == head:
-            raise ValueError("Expected a push with new commits")
-        git("merge-base", "--is-ancestor", previous_commit, head)
-        filters = ("--points-at", previous_commit)
-    else:
-        # Manual invocation on a named release branch uses its reachable tags.
-        filters = ("--merged", "HEAD")
-        attempts = 1
-
-    for attempt in range(attempts):
-        git("fetch", "origin", "--tags")
-        tags = get_version_tags(*filters, branch=branch)
-        if tags:
-            if len({version_tuple(tag)[:2] for tag in tags}) != 1:
-                raise ValueError(f"Ambiguous release version tags for {branch}")
-            return max(tags, key=version_tuple)
-        if attempt + 1 < attempts:
-            # Waiting on the preceding push preserves order without a workflow
-            # concurrency group, which could replace pending runs.
-            print(f"Waiting for the release tag at previous head {previous_commit}", flush=True)
-            time.sleep(interval)
-    raise ValueError(
-        f"No release version tag at {previous_commit or 'HEAD history'} for branch {branch}; "
-        "repair the initial cut or previous push's tagging run, then rerun"
-    )
+def get_latest_remote_version(reachable_from_head=False):
+    run_or_die('git fetch --all --tags')
+    # Minor bumps use the highest repository version. Patch bumps stay on the
+    # release branch's history, ignoring newer releases on other branches.
+    cmd = "git tag -l 'v*' --sort=-version:refname"
+    if reachable_from_head:
+        cmd += " --merged HEAD"
+    p = run_or_die(cmd, capture_stdout=True)
+    for tag in p.stdout.splitlines():
+        if re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+            return tag
+    die("No version tag found to base the release on.")
 
 def get_cpu_architecture():
     arch = platform.machine()
@@ -380,8 +294,6 @@ def main():
     parser.add_argument('--allow_dirty', default=False, action='store_true')
     parser.add_argument('--force', default=False, action='store_true')
     parser.add_argument('--bump_version_type', default='minor', choices=['major', 'minor', 'patch', 'none'])
-    parser.add_argument('--release_branch', default='', help='Release branch owning the tag; defaults to the checked-out branch. Required for patch bumps from a detached checkout.')
-    parser.add_argument('--previous_commit', default='', help='Previous release-branch head for an automated patch push. Wait for its tag rather than skipping an earlier push.')
     parser.add_argument('--update_app_image', default=False, action='store_true')
     parser.add_argument('--update_enterprise_app_image', default=False, action='store_true')
     parser.add_argument('--update_executor_image', default=False, action='store_true')
@@ -392,10 +304,6 @@ def main():
     parser.add_argument('--skip_latest_tag', default=False, action='store_true')
     parser.add_argument('--mark_workspace_as_safe', default='')
     args = parser.parse_args()
-    if args.previous_commit and (args.bump_version_type != 'patch' or args.version or not args.auto):
-        parser.error('--previous_commit requires --auto --bump_version_type=patch and cannot be combined with --version')
-    if args.release_branch and not re.fullmatch(r"bb_release_[A-Za-z0-9_-]+", args.release_branch):
-        parser.error('--release_branch must be a bb_release_* branch')
 
     if args.mark_workspace_as_safe:
         run_or_die('git config --global --add safe.directory %s' % args.mark_workspace_as_safe)
@@ -408,13 +316,8 @@ def main():
         die('Your workspace has uncommitted changes. ' +
             'Please run this in a clean workspace!')
 
-    branch = args.release_branch or git("rev-parse", "--abbrev-ref", "HEAD")
-    if args.bump_version_type == 'patch' and not args.version:
-        old_version = get_patch_base_version(branch, args.previous_commit or None)
-    else:
-        old_version = get_latest_remote_version()
-
-    # Automated tag creation is independent of Github release publication.
+    old_version = get_latest_remote_version(
+        reachable_from_head=args.bump_version_type == 'patch' and not args.version)
     if not args.force and not is_published_release(old_version):
         die(f"The latest tag {old_version} does not correspond to a published github release." +
         " It may be a draft release or it may have never been created." +
@@ -438,7 +341,8 @@ def main():
             new_version = confirm_new_version(new_version)
         print("Ok, I'm doing it! bumping %s => %s..." % (old_version, new_version))
 
-        create_and_push_tag(old_version, new_version, release_notes, branch=branch)
+        time.sleep(2)
+        create_and_push_tag(old_version, new_version, release_notes)
         print("Pushed tag for new version %s" % new_version)
 
     # Write the version tag to $GITHUB_OUTPUT if it exists.
