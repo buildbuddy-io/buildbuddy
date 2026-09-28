@@ -318,8 +318,12 @@ func mergeExecutionUpdates(serializedResults []string) (*repb.StoredExecution, e
 		proto.Merge(out, event)
 		// Slice-valued fields need special handling since they are merged by
 		// concatenating, which may or may not make sense. For now, just have
-		// the last value win.
-		out.Experiments = event.Experiments
+		// the last non-empty value win. Post-completion stats updates arrive
+		// after the COMPLETED update and do not include experiments, so they
+		// must not clear the experiments reported at completion.
+		if len(event.GetExperiments()) > 0 {
+			out.Experiments = event.GetExperiments()
+		}
 
 		lastStage = event.GetStage()
 	}

@@ -41,6 +41,15 @@ func TestCollectExecutionUpdates(t *testing.T) {
 			ExitCode:                     1,
 			WorkerStartTimestampUsec:     1e6,
 			WorkerCompletedTimestampUsec: 2e6,
+			Experiments:                  []string{"some_experiment:treatment"},
+		},
+		// Post-completion stats (such as snapshot save results) arrive in a
+		// separate COMPLETED update which does not include experiments. The
+		// experiments from the previous update should be preserved.
+		{
+			ExecutionId:       executionID,
+			Stage:             int64(repb.ExecutionStage_COMPLETED),
+			PauseDurationUsec: 100,
 		},
 		// Updates from duplicate attempts should be ignored. This can happen
 		// since the scheduler currently doesn't provide a guarantee that each
@@ -85,6 +94,8 @@ func TestCollectExecutionUpdates(t *testing.T) {
 		ExitCode:                     1,
 		WorkerStartTimestampUsec:     1e6,
 		WorkerCompletedTimestampUsec: 2e6,
+		Experiments:                  []string{"some_experiment:treatment"},
+		PauseDurationUsec:            100,
 	}, execution, protocmp.Transform()))
 
 	// Read the updates back, using the invocation ID (via the reverse link).
@@ -99,6 +110,8 @@ func TestCollectExecutionUpdates(t *testing.T) {
 			ExitCode:                     1,
 			WorkerStartTimestampUsec:     1e6,
 			WorkerCompletedTimestampUsec: 2e6,
+			Experiments:                  []string{"some_experiment:treatment"},
+			PauseDurationUsec:            100,
 			InvocationLinkType:           int32(sipb.StoredInvocationLink_NEW),
 		},
 	}, executions, protocmp.Transform()))
