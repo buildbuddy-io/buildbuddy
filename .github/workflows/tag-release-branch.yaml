@@ -5,6 +5,9 @@ on:
     branches:
       - "bb_release_*"
 
+permissions:
+  contents: write
+
 # Serialize runs per branch so concurrent pushes don't pick the same patch version.
 concurrency:
   group: tag-release-branch-${{ github.ref }}
