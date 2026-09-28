@@ -25,6 +25,7 @@ go_library(
         "//server/util/region",
         "//server/util/status",
         "//server/util/subdomain",
+        "//server/util/uuid",
         "//server/version",
         "@io_bazel_rules_go//go/runfiles",
         "@org_golang_google_protobuf//encoding/protojson",
